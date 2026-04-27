@@ -1,13 +1,17 @@
 [workspace]
 resolver = "2"
+# Trimmed for keyhog vendoring: drops members whose tests/ or benches/
+# subtrees are excluded by keyhog's root .gitignore (benches/competition,
+# xtask, vyre-cc, conform/{generate,enforce,runner}) and vyre-driver-spirv
+# (not transitively reached by vyre-{core,libs,driver-wgpu}). Edit upstream
+# at libs/performance/matching/vyre/Cargo.toml then re-rsync if you need
+# the full member list.
 members = [
-    "benches/competition",
     "vyre-core",
     "vyre-foundation",
     "vyre-driver",
     "vyre-driver-megakernel",
     "vyre-driver-wgpu",
-    "vyre-driver-spirv",
     "vyre-reference",
     "vyre-spec",
     "vyre-macros",
@@ -15,15 +19,10 @@ members = [
     # feature-gated per domain. See docs/primitives-tier.md.
     "vyre-primitives",
     "conform/vyre-conform-spec",
-    "conform/vyre-conform-generate",
-    "conform/vyre-conform-enforce",
-    "conform/vyre-conform-runner",
     "conform/vyre-test-harness",
-    "xtask",
     "vyre-runtime",
     "vyre-libs",
     "vyre-intrinsics",
-    "vyre-cc",
 ]
 
 # Removed from workspace for 0.6: `demos/rust_lexer_gpu` and
