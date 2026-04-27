@@ -43,7 +43,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
-      - run: cargo fmt --all -- --check
+      # Scope fmt to keyhog's own crates. The vendored vyre tree under
+      # vendor/vyre/ has tests/ subtrees excluded by keyhog's root
+      # .gitignore — cargo fmt --all walks those `mod tests;` decls and
+      # fails on missing files. vyre's own CI formats vyre.
+      - run: cargo fmt -p keyhog-core -p keyhog-scanner -p keyhog -p keyhog-verifier -p keyhog-sources -- --check
 
   build:
     name: Build Release
