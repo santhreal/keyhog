@@ -1,0 +1,43 @@
+# NEW-MOD-002 — enforce zero unused dependencies on every PR.
+#
+# Motivation: the MOD-001/002/003 sweep found percent-encoding, wgpu,
+# pollster, and automoduse declared in vyre-core/Cargo.toml with zero uses in
+# vyre-core/src. Manual audit found them; CI should catch them next time.
+#
+# cargo-machete is faster + less noisy than cargo-udeps for this purpose:
+# cargo-udeps requires nightly and a full build, cargo-machete parses
+# manifests and scans source text.
+
+name: dependency-audit
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  machete:
+    name: cargo machete (unused deps)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-machete-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install cargo-machete
+        run: cargo install --locked cargo-machete
+
+      - name: Run cargo-machete on workspace
+        # --with-metadata is slower but catches dev-only / build-only deps
+        # that a shallow parse would miss.
+        run: cargo machete --with-metadata

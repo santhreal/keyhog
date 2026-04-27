@@ -1,0 +1,21 @@
+# Docs: https://devdocs.prestashop-project.org/9/webservice/tutorials/creating-access/
+# Format: 32 alphanumeric characters (generated or custom)
+# Verify: GET /api/ with ws_key parameter or Authorization header
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "prestashop-api-key"
+name = "PrestaShop API Key"
+service = "prestashop"
+severity = "high"
+keywords = ["prestashop", "PRESTASHOP", "webservice", "ws_key", "ps_ws_key"]
+
+[[detector.patterns]]
+regex = "(?:prestashop|PRESTASHOP|webservice|ws_key)[=:\\s\"'']+([a-zA-Z0-9]{32})"
+description = "PrestaShop WebService API key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "ws_key[=:\\s\"'']+([a-zA-Z0-9]{32})"
+description = "PrestaShop WebService key via ws_key parameter"
+group = 1

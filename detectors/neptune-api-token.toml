@@ -1,0 +1,16 @@
+# Docs: https://docs.neptune.ai/api_token
+# Format: Base64-encoded string (no unique prefix)
+# Verify: no public verification endpoint
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "neptune-api-token"
+name = "Neptune.ai API Token"
+service = "neptune"
+severity = "high"
+keywords = ["NEPTUNE_API_TOKEN", "neptune"]
+
+[[detector.patterns]]
+regex = "(?:NEPTUNE_API_TOKEN|neptune.api.token)[=: \\s\"'']+([A-Za-z0-9+/]{40,}={0,2})"
+description = "Neptune.ai API token with context anchor"
+group = 1

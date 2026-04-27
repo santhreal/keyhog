@@ -1,0 +1,21 @@
+# Docs: https://techdocs.akamai.com/linode-api/reference/post-object-storage-keys
+# Format: 20 alphanumeric characters for Access Key, 40 base64 characters for Secret Key
+# Verify: none (S3-compatible services require signature-based auth, no simple endpoint)
+# Prefix: none (generic S3-like format, requires context anchoring)
+
+[detector]
+id = "linode-object-storage-access-key"
+name = "Linode Object Storage Access Key"
+service = "linode"
+severity = "high"
+keywords = ["LINODE_OBJECT_STORAGE", "linode_object_storage", "LINODE_ACCESS_KEY", "linodeobjects.com"]
+
+[[detector.patterns]]
+regex = "(?:LINODE|linode)[._-]?(?:OBJECT[._-]?STORAGE|object[._-]?storage)?[._-]?(?:ACCESS[._-]?)?(?:KEY|key)[=:\\s\"'']+([A-Z0-9]{20})"
+description = "Linode Object Storage access key ID with context anchor"
+group = 1
+
+[[detector.companions]]
+name = "secret_access_key"
+regex = "[A-Za-z0-9/+=]{40}"
+within_lines = 5

@@ -1,0 +1,496 @@
+<!DOCTYPE HTML>
+<html lang="en" class="rust sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>The Binary Verdict API - The vyre Book</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="The GPU compute IR with a conformance prover">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-2459343d.css">
+        <link rel="stylesheet" href="css/chrome-ae938929.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "rust";
+            const default_dark_theme = "navy";
+            window.path_to_searchindex_js = "searchindex-bc7bdb82.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc-16d598fb.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('rust')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">The vyre Book</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/santhsecurity/vyre" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/santhsecurity/vyre/edit/main/core/docs/./certify.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                            <span class=fa-svg id="git-edit-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M421.7 220.3l-11.3 11.3-22.6 22.6-205 205c-6.6 6.6-14.8 11.5-23.8 14.1L30.8 511c-8.4 2.5-17.5 .2-23.7-6.1S-1.5 489.7 1 481.2L38.7 353.1c2.6-9 7.5-17.2 14.1-23.8l205-205 22.6-22.6 11.3-11.3 33.9 33.9 62.1 62.1 33.9 33.9zM96 353.9l-9.3 9.3c-.9 .9-1.6 2.1-2 3.4l-25.3 86 86-25.3c1.3-.4 2.5-1.1 3.4-2l9.3-9.3H112c-8.8 0-16-7.2-16-16V353.9zM453.3 19.3l39.4 39.4c25 25 25 65.5 0 90.5l-14.5 14.5-22.6 22.6-11.3 11.3-33.9-33.9-62.1-62.1L314.3 67.7l11.3-11.3 22.6-22.6 14.5-14.5c25-25 65.5-25 90.5 0z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="certify--the-binary-verdict"><a class="header" href="#certify--the-binary-verdict">certify — the binary verdict</a></h1>
+<p>This chapter documents the <code>certify()</code> entry point: how vyre-conform produces a binary pass/fail verdict for a backend, what the certificate contains, and what a violation looks like.</p>
+<blockquote>
+<p>For the full test architecture that underpins this API, see <a href="testing/architecture.html">Architecture</a>.</p>
+</blockquote>
+<p>vyre-conform’s public API is one function.
+It accepts a backend, a set of operation specs, and a verification strength, and returns either a <code>Certificate</code> (the backend is Santh-worthy) or an error string with a concrete counterexample and a <code>Fix:</code> hint.
+There is no ‘83% passing’, no ‘known limitations’, no judgment calls.
+Pass or fail.</p>
+<h2 id="the-signature"><a class="header" href="#the-signature">The signature</a></h2>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>pub fn certify(
+    backend: &amp;dyn WgslBackend,
+    specs: &amp;[OpSpec],
+    strength: CertificateStrength,
+) -&gt; Result&lt;Certificate, String&gt;;
+<span class="boring">}</span></code></pre>
+<p>The backend is tested against every registered op, every declared law, every archetype, and every mutation.
+Any failure at any gate returns <code>Err(Violation)</code>.
+Full pass returns <code>Ok(Certificate)</code>.</p>
+<p>There is no middle ground.
+A backend that passes every test except one is not conformant.
+A backend that produces correct output for 99.99% of inputs but fails on a single edge case is not conformant.
+The binary verdict is the community-facing promise: one call, one answer, no ambiguity.</p>
+<h2 id="what-certify-runs-the-8-gate-pipeline"><a class="header" href="#what-certify-runs-the-8-gate-pipeline">What certify runs (the 8-gate pipeline)</a></h2>
+<p><code>certify</code> executes the following enforcement layers in order, aborting at the first failure:</p>
+<ol>
+<li>
+<p><strong>L1 Executable Spec</strong> — The CPU reference function for every registered op exists, compiles, and produces deterministic output.
+If the reference does not exist, the gate fails immediately.
+The reference is the ground truth against which all other backends are measured.
+Determinism is verified by running the same input multiple times and asserting identical output.
+Nondeterministic backends fail here.</p>
+</li>
+<li>
+<p><strong>L2 Law Inference</strong> — Every declared algebraic law is verified exhaustively over the <code>u8</code> domain and witnessed over the <code>u32</code> domain.
+Exhaustive means every possible <code>u8</code> input pair is tested.
+Witnessed means a large random sample over <code>u32</code> is tested.
+A law that cannot be proven or witnessed is a failure.
+Laws include commutativity, associativity, identity, and any domain-specific invariants declared in the op registry.
+A backend that violates even one law on one input fails this gate.</p>
+</li>
+<li>
+<p><strong>L3 Reference Interpreter</strong> — The pure-Rust IR interpreter agrees with the CPU reference on all canonical inputs.
+If the interpreter diverges from the reference, the gate fails.
+The interpreter is the portable oracle used when the CPU reference is not available on a target platform.
+Agreement is tested for every op and every canonical program shape.
+The interpreter must be trustworthy because it is used as the oracle for GPU backends that cannot run the CPU reference natively.</p>
+</li>
+<li>
+<p><strong>L4 Mutation Gate</strong> — Source-code mutations that would weaken semantics are caught and rejected by the test suite.
+Mutations that survive indicate insufficient test coverage.
+This gate uses mutation testing to verify that the test suite is sensitive to semantic changes.
+A mutation that changes a law implementation but does not cause a test failure is a critical finding.
+Mutants are generated automatically and run against the full suite.</p>
+</li>
+<li>
+<p><strong>L5 Adversarial Gauntlet</strong> — Three roles (implementor, prosecutor, defender) collaboratively probe the backend for weaknesses.
+The implementor writes the backend, the prosecutor generates hostile inputs and edge cases, and the defender hardens the oracle and test suite.
+A backend that survives the gauntlet has been actively stressed against real-world adversarial conditions.
+The gauntlet includes resource bombs, malformed inputs, and boundary conditions.</p>
+</li>
+<li>
+<p><strong>L6 Stability</strong> — The public API is stable; no regression is introduced without a breaking-change announcement.
+Backward-incompatible changes without justification fail this gate.
+This includes ABI changes, wire-format changes, and op semantic changes that break existing certificates.
+Stability is verified by running the full regression suite and comparing results against the previous release baseline.</p>
+</li>
+<li>
+<p><strong>L7 Composition Proof</strong> — Op compositions are proven correct via proof tokens that carry semantic guarantees.
+If composed ops do not match their sequential equivalent, the gate fails.
+Composition is where most backends fail because individual op correctness does not guarantee multi-op correctness.
+The proof token links the composed program to its verified semantics.
+Token verification is mandatory for the Full track.</p>
+</li>
+<li>
+<p><strong>L8 Feedback Loop</strong> — Every contribution is validated through the full pipeline before it can reach main.
+Untested or unreviewed changes cannot enter the release branch.
+This gate ensures that the certification criteria themselves are not degraded over time.
+The feedback loop includes automated tests, manual review, and mutation gate results.
+CI must be green before merge.</p>
+</li>
+</ol>
+<p>Beyond the eight core gates, the following specialized gates are also enforced:</p>
+<ul>
+<li>
+<p><strong>Gate 7 (Coverage)</strong> — Every op, every archetype, and every declared law has at least one dedicated test.
+Missing coverage is a hard failure.
+Coverage is measured by instrumented test runs and audited by maintainers.
+A line that is not covered is treated as potentially broken.
+The coverage threshold is 100% of registered ops and laws.</p>
+</li>
+<li>
+<p><strong>Gate 8 (No CPU Runtime)</strong> — The backend must not silently fall back to CPU execution.
+If it claims to dispatch to a GPU, it must run on the GPU.
+Detected fallback triggers an immediate violation with the hint: <code>Fix: remove the fallback path or declare a CPU-only backend.</code>
+Silent fallback undermines the entire purpose of backend certification.</p>
+</li>
+<li>
+<p><strong>Category A/B/C enforcement</strong> — Ops are classified into categories A, B, and C.
+Category A ops require full algebraic verification.
+Category B ops require parity and witness coverage.
+Category C ops require basic correctness.
+Each category has its own track requirements, and all must be met.
+No category is optional.
+A backend cannot skip Category C ops by claiming they are unimportant.</p>
+</li>
+<li>
+<p><strong>OOB gate</strong> — Out-of-bounds buffer access returns a structured error.
+No undefined behavior, no silent clamping, no wraparound.
+The backend must prove that every access is either in-bounds or reports an error.
+This applies to all buffer types and all access modes.
+OOB is tested at the exact boundary and one-past-the-boundary.</p>
+</li>
+<li>
+<p><strong>Atomics gate</strong> — Atomic operations exhibit sequential consistency across workgroups.
+Races, torn reads, or inconsistent visibility are violations.
+This gate is run with multiple workgroup sizes to expose implementation-dependent behavior.
+Atomic correctness is required for any backend that claims to support parallel dispatch.</p>
+</li>
+<li>
+<p><strong>Barriers gate</strong> — Memory barriers make preceding writes visible to all invocations in the scope as specified.
+Missing or incorrectly lowered barriers fail this gate.
+Barriers are tested under divergent control flow to ensure correctness in all cases.
+A backend that elides barriers for performance fails here.</p>
+</li>
+<li>
+<p><strong>Wire format gate</strong> — IR round-trips through serialization and deserialization byte-for-byte.
+Any deviation in encoding or decoding is a failure.
+The wire format is part of the public contract; backward-incompatible changes are not permitted without a major version bump.
+The wire format is tested with a committed corpus of canonical programs.</p>
+</li>
+<li>
+<p><strong>Overflow gate</strong> — Arithmetic overflow is either detected or defined by specification.
+It is never silent.
+A backend that wraps on overflow without declaring it fails this gate.
+Signed and unsigned integer overflow are both tested.
+Floating-point overflow follows the IEEE-754 rules declared in the op registry.</p>
+</li>
+<li>
+<p><strong>No-silent-wrong invariant</strong> — Any incorrect output is reported as a failure.
+There is no partial credit and no rounding up.
+Wrong is wrong.
+A backend that produces incorrect output but does not report an error is the worst kind of failure.
+This invariant is the moral center of the entire certification system.</p>
+</li>
+</ul>
+<h2 id="the-certificate"><a class="header" href="#the-certificate">The Certificate</a></h2>
+<p>A <code>Certificate</code> is a durable proof of conformance.
+It can be checked into version control and independently verified by any third party.
+It contains:</p>
+<ul>
+<li>
+<p><strong>Registry hash</strong> — A deterministic cryptographic fingerprint of the entire op registry.
+Replays use this hash to verify that the exact same ops and laws were tested.
+If the registry changes, old certificates are invalidated.
+This prevents stale certificates from being reused after semantic changes.</p>
+</li>
+<li>
+<p><strong>Backend id</strong> — The name and version string of the backend under test.</p>
+</li>
+<li>
+<p><strong>Timestamp</strong> — Unix seconds since epoch.
+The value is always greater than or equal to <code>MIN_CERTIFICATE_UNIX_SECONDS</code>.
+This prevents back-dating and establishes a minimum age for trust.
+Certificates issued before this threshold are rejected by verification tools.</p>
+</li>
+<li>
+<p><strong>Coverage metrics</strong> — Exact counts of ops exercised, laws verified, archetypes visited, and mutations rejected.
+These numbers are auditable.
+A certificate without coverage metrics is incomplete and will not verify.</p>
+</li>
+<li>
+<p><strong>Per-op verdicts</strong> — A pass or fail result for every op in the registry.
+No aggregate score is provided because aggregation would obscure individual failures.
+You can inspect the certificate to see exactly which ops passed and which failed.</p>
+</li>
+<li>
+<p><strong>Levels</strong> — The certificate records the highest conformance level reached for each data-type track:</p>
+<ul>
+<li><strong>Integer track</strong> — <code>L1</code> (parity) or <code>L2</code> (parity + algebraic laws).</li>
+<li><strong>Float track</strong> — <code>L1f</code> or <code>L2f</code> for strict IEEE-754 floating-point ops.</li>
+<li><strong>Approximate track</strong> — <code>L1a</code> for ops with declared ULP tolerance.
+A backend can achieve different levels on different tracks; each track is graded independently.</li>
+</ul>
+</li>
+</ul>
+<p>The certificate is not a suggestion. It is evidence.
+It is the artifact you show when a downstream user asks, “How do I know this backend is correct?”
+The answer is: here is the certificate, here is the registry hash, here is the timestamp.
+Reproduce it yourself if you doubt it.</p>
+<h2 id="the-violation"><a class="header" href="#the-violation">The Violation</a></h2>
+<p>A <code>Violation</code> contains at least one concrete counterexample and an actionable <code>Fix: ...</code> hint.
+It reports:</p>
+<ul>
+<li>Which gate failed.</li>
+<li>Which op triggered the failure.</li>
+<li>The exact input that produced the wrong output.</li>
+<li>The expected output according to the oracle.</li>
+<li>A byte-level diff when the output is a buffer or wire-format stream.</li>
+</ul>
+<p>There is no ambiguity.
+A violation tells you exactly what is broken and where to start fixing it.
+You do not need to debug the backend from scratch.
+You do not need to wonder whether the test is flaky.
+You read the violation, apply the fix, and rerun <code>certify</code>.</p>
+<p>If the violation comes from the adversarial gauntlet, it may include a minimized input that was found automatically.
+If it comes from the mutation gate, it will name the mutant that survived.
+If it comes from a law inference failure, it will show the counterexample input pair.
+The <code>Fix:</code> hint is always present and always actionable.</p>
+<h2 id="usage"><a class="header" href="#usage">Usage</a></h2>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use vyre_conform::{certify, to_json, CertificateStrength, WgslBackend};
+
+let backend = MyBackend::new();
+let specs = vyre_conform::registry::all_specs();
+
+match certify(&amp;backend, &amp;specs, CertificateStrength::Standard) {
+    Ok(cert) =&gt; {
+        std::fs::write("my_backend.cert.json", to_json(&amp;cert)).unwrap();
+        println!("Santh-worthy: certificate generated");
+    }
+    Err(e) =&gt; {
+        eprintln!("NOT conformant:\n{}", e);
+        std::process::exit(1);
+    }
+}
+<span class="boring">}</span></code></pre>
+<p>The typical integration is a single call in your backend’s test suite or release script.
+Save the certificate on success.
+Print the violation and exit non-zero on failure.
+This pattern is intended to be copy-pasted into CI pipelines and release automation.</p>
+<h2 id="the-invariant-certify-enforces"><a class="header" href="#the-invariant-certify-enforces">The invariant certify enforces</a></h2>
+<p>If <code>certify</code> returns <code>Ok</code>, the backend produces byte-identical output to the CPU reference for every op, every input, every time.
+That is the whole contract.</p>
+<p>There are no disclaimers.
+There are no escape clauses.
+Byte-identical means exactly that: the backend’s output buffer, when compared to the reference buffer, matches at every offset.
+Not approximately, not within tolerance, not for most inputs.
+Every op, every input, every time.</p>
+<h2 id="ci-integration"><a class="header" href="#ci-integration">CI integration</a></h2>
+<p>Run <code>cargo test -p vyre-conform</code> in continuous integration.
+Any red test means the backend is not Santh-worthy.
+The deploy gate is the certificate: a backend without a current, valid certificate does not ship.</p>
+<p>Commit the certificate to your repository so that downstream users can verify it independently.
+The certificate is the deploy gate.
+No certificate, no release.
+If the certificate is stale because the registry has changed, regenerate it and commit the new one.</p>
+<h2 id="see-also"><a class="header" href="#see-also">See also</a></h2>
+<ul>
+<li><a href="certificates.html">Certificates</a></li>
+<li><a href="testing/architecture.html">Testing Architecture</a></li>
+<li><a href="testing/the-promises.html">The Promises</a></li>
+</ul>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="certificates.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="competitors/index.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="certificates.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="competitors/index.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-c2a407aa.js"></script>
+
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-a0b12cfe.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+
+    </div>
+    </body>
+</html>

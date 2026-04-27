@@ -1,0 +1,32 @@
+# Docs: https://docs.cerebrium.ai/cerebrium/endpoints/inference-api
+# Format: JWT token format (three base64 segments separated by dots)
+# Verify: GET /v4/projects with Bearer token
+# Prefix: none (JWT format)
+
+[detector]
+id = "cerebrium-api-key"
+name = "Cerebrium API Key"
+service = "cerebrium"
+severity = "high"
+keywords = ["CEREBRIUM_API_KEY", "CEREBRIUM_TOKEN", "cerebrium.ai", "cortex.cerebrium"]
+
+[[detector.patterns]]
+regex = "(?:CEREBRIUM_API_KEY|CEREBRIUM_TOKEN)[=:\\s\"\\']+([A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+)"
+description = "Cerebrium JWT API token"
+group = 1
+
+[[detector.patterns]]
+regex = "Authorization[=:\\s\"\\']*Bearer[=:\\s\"\\']+([A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+).*cerebrium\\.ai"
+description = "Cerebrium JWT bearer token with endpoint context"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://api.cortex.cerebrium.ai/v4/projects"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[detector.verify.success]
+status = 200

@@ -1,0 +1,50 @@
+[package]
+name = "vyre-driver"
+version = "0.6.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Driver layer: registry, runtime, pipeline, routing, diagnostics. Substrate-agnostic backend machinery. Part of the vyre GPU compiler."
+readme = "README.md"
+keywords = ["gpu", "compiler", "runtime", "registry", "vyre"]
+categories = ["compilers", "hardware-support", "api-bindings"]
+documentation = "https://docs.rs/vyre-driver"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[dependencies]
+vyre-foundation = { version = "0.6.0", path = "../vyre-foundation" }
+vyre-spec.workspace = true
+vyre-macros.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+rustc-hash.workspace = true
+smallvec.workspace = true
+blake3.workspace = true
+bytemuck.workspace = true
+inventory.workspace = true
+toml.workspace = true
+naga.workspace = true
+arc-swap = "1.9.1"
+lasso = { version = "0.7.3", features = ["multi-threaded"] }
+dashmap.workspace = true
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+# The `vyre` meta-shim re-exports every driver-tier public type. Doctest
+# examples in this crate demonstrate the consumer-facing `vyre::X` path
+# (that's how surgec / pyrograph / warpscan call them in production), so
+# the shim must be in scope when doctests compile. Dev-dep only — the
+# library itself has no runtime dependency on `vyre`.
+vyre = { workspace = true }
+vyre-conform-spec = { path = "../conform/vyre-conform-spec" }
+tempfile.workspace = true

@@ -1,0 +1,33 @@
+name: Random-order tests (flaky detection)
+
+on:
+  pull_request:
+    paths:
+      - "vyre-conform/**"
+      - "vyre-core/**"
+      - "vyre-spec/**"
+
+permissions:
+  contents: read
+
+jobs:
+  shuffle-tests:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        seed: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@cargo-nextest
+      - name: Run tests in random order (seed ${{ matrix.seed }})
+        env:
+          NEXTEST_EXPERIMENTAL_SEED: ${{ matrix.seed }}
+          VYRE_CONFORM_OPS_ROOT: /nonexistent
+        run: |
+          cargo nextest run \
+            -p vyre-conform \
+            --no-default-features \
+            --no-fail-fast \
+            --retries 0 \
+            --failure-output immediate

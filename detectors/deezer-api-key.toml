@@ -1,0 +1,16 @@
+# Docs: https://developers.deezer.com/api
+# Format: Alphanumeric API key for Deezer API access
+# Verify: no public verification endpoint
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "deezer-api-key"
+name = "Deezer API Key"
+service = "deezer"
+severity = "medium"
+keywords = ["DEEZER", "deezer", "DEEZER_API_KEY", "deezer_api_key"]
+
+[[detector.patterns]]
+regex = "(?:DEEZER|deezer)[\\\\s_-]?(?:API|api)?[\\\\s_-]?(?:KEY|key)?[=:\\s\"'']+([a-f0-9]{32})"
+description = "Deezer API key with context anchor"
+group = 1

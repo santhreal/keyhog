@@ -1,0 +1,21 @@
+# Docs: https://invisioncommunity.com/developers/rest-api/index/
+# Format: 32 character hex string for API keys, 97 character for OAuth tokens
+# Verify: GET /core/hello with Authorization header
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "invision-api-key"
+name = "InVision API Key"
+service = "invision"
+severity = "high"
+keywords = ["INVISION", "invision", "IPS4_API_KEY"]
+
+[[detector.patterns]]
+regex = "(?:INVISION|invision|IPS4)[_=:\\s\"'']+(?:api[_-]?)?(?:key|token)[=:\\s\"'']+([a-f0-9]{32})"
+description = "InVision Community API key (32 hex characters)"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:INVISION|invision)[_=:\\s\"'']+(?:access[_-]?)?token[=:\\s\"'']+([a-zA-Z0-9]{90,100})"
+description = "InVision OAuth access token"
+group = 1

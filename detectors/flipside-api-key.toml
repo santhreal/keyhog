@@ -1,0 +1,16 @@
+# Docs: https://flipsidecrypto.xyz/
+# Format: UUID format (8-4-4-4-12 hex characters)
+# Verify: no public verification endpoint
+# Prefix: none (UUID format, requires context anchoring)
+
+[detector]
+id = "flipside-api-key"
+name = "Flipside Crypto API Key"
+service = "flipside"
+severity = "high"
+keywords = ["flipside", "FLIPSIDE", "api_key", "apikey"]
+
+[[detector.patterns]]
+regex = "(?:FLIPSIDE|flipside)[_a-zA-Z0-9]*[=:\\s\"'']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
+description = "Flipside Crypto API key (UUID format) with context anchor"
+group = 1

@@ -1,0 +1,19 @@
+# Docs: https://neon.tech/docs/connect/connect-from-any-app
+# Format: postgresql://user:password@host.neon.tech/database
+# Verify: no public verification endpoint (requires psql connection)
+# Prefix: postgres:// or postgresql:// with .neon.tech hostname
+
+[detector]
+id = "neon-db-connection-string"
+name = "Neon Database Connection String"
+service = "neon"
+severity = "critical"
+keywords = ["neon.tech", "NEON_DATABASE_URL", "NEON_CONNECTION_STRING"]
+
+[[detector.patterns]]
+regex = 'postgres(?:ql)?://[^:]+:[^@]+@[a-z0-9-]+\.neon\.tech/[a-zA-Z0-9_-]+'
+description = "Neon database connection string with embedded credentials"
+
+[[detector.patterns]]
+regex = 'neon_conn_[a-z0-9]{20,}'
+description = "Neon connection string identifier"

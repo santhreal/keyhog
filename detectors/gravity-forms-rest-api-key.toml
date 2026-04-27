@@ -1,0 +1,26 @@
+# Docs: https://docs.gravityforms.com/gravity-forms-rest-api-settings/
+# Format: 32 character hex public key paired with 32 character hex private key
+# Verify: no public verification endpoint (requires WordPress instance)
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "gravity-forms-rest-api-key"
+name = "Gravity Forms REST API Key"
+service = "gravityforms"
+severity = "high"
+keywords = ["gravityforms", "GRAVITY_FORMS", "gravity_forms"]
+
+[[detector.patterns]]
+regex = "(?:gravity[_\\s]*forms?|GRAVITY[_\\s]*FORMS)[_.\\s]*(?:public[_\\s]*key|api[_\\s]*key)[\\s\"'']+([a-f0-9]{32})"
+description = "Gravity Forms REST API public key"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:gravity[_\\s]*forms?|GRAVITY[_\\s]*FORMS)[_.\\s]*(?:private[_\\s]*key|secret[_\\s]*key)[\\s\"'']+([a-f0-9]{32})"
+description = "Gravity Forms REST API private key"
+group = 1
+
+[[detector.companions]]
+name = "gravity_forms_key_pair"
+regex = "(?:gravity[_\\s]*forms?|GRAVITY[_\\s]*FORMS)[_.\\s]*(?:private[_\\s]*key|public[_\\s]*key)[\\s\"'']+[a-f0-9]{32}"
+within_lines = 5

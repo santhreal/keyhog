@@ -1,0 +1,15 @@
+name: Lint No Test Sleep
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint-no-test-sleep:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run no-test-sleep lint
+        run: bash scripts/lint-no-test-sleep.sh

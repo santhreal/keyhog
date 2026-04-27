@@ -1,0 +1,31 @@
+# Docs: https://developer.webex.com/docs/getting-started
+# Format: Webex tokens are JWT format (base64-encoded) with ZmRk prefix pattern
+# Verify: GET /v1/people/me with Bearer token returns 200 if valid
+# Prefix: ZmRk (base64 indicator for webex token pattern)
+
+[detector]
+id = "webex-access-token"
+name = "Webex Access Token"
+service = "webex"
+severity = "critical"
+keywords = ["webex", "WEBEX", "WEBEX_ACCESS_TOKEN", "webex_access_token", "webexteamssdk", "WEBEX_TEAMS_ACCESS_TOKEN"]
+
+[[detector.patterns]]
+regex = "(?:webex|WEBEX)[_\\-\\s]*(?:access[_\\-\\s]*token|ACCESS[_\\-\\s]*TOKEN|teams[_\\-\\s]*access[_\\-\\s]*token|TEAMS[_\\-\\s]*ACCESS[_\\-\\s]*TOKEN)[=:\\s\\\"']+([A-Za-z0-9_-]{100,400})"
+description = "Webex access token with context anchor (JWT format)"
+group = 1
+
+[[detector.patterns]]
+regex = "ZmRk[a-zA-Z0-9_-]{50,200}\\.[a-zA-Z0-9_-]*\\.[a-zA-Z0-9_-]*"
+description = "Webex JWT token pattern (base64 encoded with ZmRk header indicator)"
+
+[detector.verify]
+method = "GET"
+url = "https://webexapis.com/v1/people/me"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[detector.verify.success]
+status = 200

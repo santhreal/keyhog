@@ -1,0 +1,21 @@
+# Docs: https://www.sec.gov/search-filings/edgar-application-programming-interfaces
+# Format: Filer API Token and User API Token for filing APIs (JWT-like or long alphanumeric)
+# Verify: no public verification endpoint
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "sec-edgar-api-token"
+name = "SEC EDGAR API Token"
+service = "sec-edgar"
+severity = "high"
+keywords = ["SEC_EDGAR_TOKEN", "EDGAR_API", "sec_filer_token", "SEC_API_KEY"]
+
+[[detector.patterns]]
+regex = "(?:SEC_EDGAR_TOKEN|EDGAR_API|sec_filer_token|SEC_API_KEY)[=:\\s\"'\\']+([a-zA-Z0-9_-]+\\.[a-zA-Z0-9_-]+\\.[a-zA-Z0-9_-]+)"
+description = "SEC EDGAR JWT-like API token with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:SEC_EDGAR_TOKEN|EDGAR_API|sec_filer_token|SEC_API_KEY)[=:\\s\"'\\']+([a-zA-Z0-9]{32,})"
+description = "SEC EDGAR alphanumeric API token with context anchor"
+group = 1

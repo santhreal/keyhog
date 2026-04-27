@@ -1,0 +1,11 @@
+op_id = "primitive.bitwise.ctz"
+
+[[golden]]
+input = "00000080"
+expected = "1f000000"
+reason = "ctz(0x80000000) = 31 (only MSB set)"
+
+[[golden]]
+input = "00000000"
+expected = "20000000"
+reason = "ctz(0) = 32 (all zeros)"

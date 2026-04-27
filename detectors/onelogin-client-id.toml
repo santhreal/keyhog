@@ -1,0 +1,21 @@
+# Docs: https://developers.onelogin.com/api-docs/2/oauth20-tokens/generate-tokens-2
+# Format: 32 hex characters for client ID, paired with client secret
+# Verify: POST /auth/oauth2/v2/token with client credentials
+# Prefix: none (32 hex, requires keyword context)
+
+[detector]
+id = "onelogin-client-id"
+name = "OneLogin Client ID"
+service = "onelogin"
+severity = "high"
+keywords = ["ONELOGIN_CLIENT_ID", "onelogin_client_id", "ONELOGIN", "onelogin", "client_id"]
+
+[[detector.patterns]]
+regex = "(?:ONELOGIN|onelogin)[_\\s]*(?:CLIENT|client)?[_\\s]*(?:ID|id)?[=:\\s\"']+([a-f0-9]{32})"
+description = "OneLogin Client ID with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "client_id[=:\\s\"']+([a-f0-9]{32})[^\\n]{0,100}(?:onelogin|ONELOGIN|onelogin.com)"
+description = "OneLogin Client ID in OAuth config with context"
+group = 1

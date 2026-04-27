@@ -1,0 +1,21 @@
+# Docs: https://docs.filebase.com/
+# Format: 20 alphanumeric chars for Access Key, 40 base64 chars for Secret Key (S3-compatible)
+# Verify: none (S3-compatible service, requires signature-based auth)
+# Prefix: none (S3-compatible format, requires context anchoring)
+
+[detector]
+id = "filebase-api-key"
+name = "Filebase API Key"
+service = "filebase"
+severity = "high"
+keywords = ["FILEBASE", "filebase", "FILEBASE_ACCESS_KEY", "s3.filebase.com"]
+
+[[detector.patterns]]
+regex = "(?:FILEBASE|filebase)[._-]?(?:S3|s3)?[._-]?(?:ACCESS[._-]?)?(?:KEY|key)[=:\\s\"'']+([A-Z0-9]{20})"
+description = "Filebase S3 API access key with context anchor"
+group = 1
+
+[[detector.companions]]
+name = "secret_access_key"
+regex = "[A-Za-z0-9/+=]{40}"
+within_lines = 5

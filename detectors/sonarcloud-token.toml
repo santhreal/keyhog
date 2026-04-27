@@ -1,0 +1,27 @@
+# Docs: https://docs.sonarsource.com/sonarcloud/advanced-setup/web-api/
+# Format: 40-character alphanumeric string (SHA-1 hash style)
+# Verify: GET /api/measures/component with Authorization: Bearer header
+# Prefix: none (40 char hex/alphanumeric, requires context anchoring)
+
+[detector]
+id = "sonarcloud-token"
+name = "SonarCloud API Token"
+service = "sonarcloud"
+severity = "high"
+keywords = ["SONARCLOUD", "sonarcloud.io", "SONAR_TOKEN", "SONAR_CLOUD_TOKEN"]
+
+[[detector.patterns]]
+regex = "(?:SONAR|sonar)(?:_?CLOUD|_?cloud)?(?:_?TOKEN|_?token)?[=:\\s\"'']+([a-f0-9]{40})"
+description = "SonarCloud API token with context anchor (40 hex characters)"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://sonarcloud.io/api/measures/component?component=test&metricKeys=ncloc"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[detector.verify.success]
+status = 200

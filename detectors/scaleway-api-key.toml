@@ -1,0 +1,26 @@
+# Docs: https://www.scaleway.com/en/docs/scaleway-sdk/python-sdk/
+# Format: Access key starting with SCW followed by 20 alphanumeric chars, Secret key is UUID format
+# Verify: GET /iam/v1/api-keys with x-auth-token header returns 200 if valid
+# Prefix: SCW (for access key)
+
+[detector]
+id = "scaleway-api-key"
+name = "Scaleway API Key"
+service = "scaleway"
+severity = "critical"
+keywords = ["SCW", "SCALEWAY_ACCESS_KEY", "scaleway"]
+
+[[detector.patterns]]
+regex = "(?:SCW|SCALEWAY_ACCESS_KEY|scaleway.access.key)[=:\\s\"'']+(SCW[A-Z0-9]{20})"
+description = "Scaleway access key (SCW prefix)"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:SCW_SECRET_KEY|scaleway_secret_key|secret[_-]key)[=:\\s\"'']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
+description = "Scaleway secret key (UUID format)"
+group = 1
+
+[[detector.companions]]
+name = "scaleway_access_key"
+regex = "(?:SCW|SCALEWAY_ACCESS_KEY|scaleway.access.key)[=:\\s\"'']+(SCW[A-Z0-9]{20})"
+within_lines = 5

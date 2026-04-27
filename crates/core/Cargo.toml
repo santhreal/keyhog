@@ -1,0 +1,57 @@
+[package]
+name = "keyhog-core"
+description = "Core types, traits, and detector specs for the secret scanner"
+version = "0.2.1"
+edition = "2021"
+rust-version = "1.89"
+authors = ["Santh Project <contact@santh.dev>"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/santhsecurity/keyhog"
+homepage = "https://github.com/santhsecurity/keyhog"
+documentation = "https://docs.rs/keyhog-core"
+keywords = ["secret-scanner", "security", "credentials", "api-keys", "git"]
+categories = ["command-line-utilities", "development-tools"]
+readme = "README.md"
+
+[package.metadata.santh]
+status = "alpha"
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+toml = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+regex = { workspace = true }
+regex-syntax = { workspace = true }
+sha2 = { workspace = true }
+rayon = { workspace = true }
+hex = { workspace = true }
+once_cell = { workspace = true }
+async-trait = { workspace = true }
+serde_with = { workspace = true }
+parking_lot = { workspace = true }
+indexmap = { workspace = true }
+blake3 = { workspace = true }
+dirs = { workspace = true }
+zeroize = { workspace = true }
+anyhow.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+libc = { workspace = true }
+
+[features]
+default = []
+# Hardened mode for security-critical deployments (e.g. embedded inside
+# EnvSeal). Enables: process-isolated scan worker, mlock on credential
+# buffers, no on-disk caches, no live verifier, refuse to run if core
+# dumps are enabled, refuse signed-corpus mismatches. Always-on
+# protections (zeroize-on-drop, redacted Debug, HTTPS-only, hash-only
+# allowlist) are unconditional and live outside this gate.
+lockdown = []
+
+[dev-dependencies]
+proptest = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
+tempfile = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["fmt"] }

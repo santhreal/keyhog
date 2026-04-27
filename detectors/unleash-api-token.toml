@@ -1,0 +1,20 @@
+# Docs: https://docs.getunleash.io/reference/api-tokens-and-client-keys
+# Format: *:development.<random> or *:production.<random> for client keys
+# Verify: GET /api/client/features with Authorization header
+# Prefix: default:development. or default:production.
+
+[detector]
+id = "unleash-api-token"
+name = "Unleash API Token"
+service = "unleash"
+severity = "high"
+keywords = ["default:development.", "default:production.", "UNLEASH"]
+
+[[detector.patterns]]
+regex = "default:(?:development|production)\\.[a-zA-Z0-9_-]{10,}"
+description = "Unleash client API token"
+
+[[detector.patterns]]
+regex = "(?:UNLEASH|unleash)[=:][\\s\"'']*(default:[a-z]+\\.[a-zA-Z0-9_-]+)"
+description = "Unleash token with context anchor"
+group = 1

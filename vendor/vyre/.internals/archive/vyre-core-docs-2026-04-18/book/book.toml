@@ -1,0 +1,30 @@
+[book]
+title = "The vyre Book"
+authors = ["Santh Project"]
+description = "The GPU compute IR with a conformance prover"
+language = "en"
+src = "."
+
+[output.html]
+default-theme = "rust"
+preferred-dark-theme = "navy"
+git-repository-url = "https://github.com/santhsecurity/vyre"
+edit-url-template = "https://github.com/santhsecurity/vyre/edit/main/vyre-core/docs/{path}"
+site-url = "/vyre/"
+
+[output.html.playground]
+copyable = true
+editable = false
+line-numbers = true
+
+[output.html.search]
+enable = true
+limit-results = 30
+use-boolean-and = true
+boost-title = 2
+boost-hierarchy = 1
+boost-paragraph = 1
+
+[preprocessor.index]
+
+[preprocessor.links]

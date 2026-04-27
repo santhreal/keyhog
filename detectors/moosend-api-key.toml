@@ -1,0 +1,33 @@
+# Docs: https://moosendapp.docs.apiary.io/#introduction/authentication
+# Format: 32-character hex string (API key) with account-specific format
+# Verify: GET /v3/subscribers with X-Api-Key header returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "moosend-api-key"
+name = "Moosend API Key"
+service = "moosend"
+severity = "high"
+keywords = ["MOOSEND", "moosend", "MOOSEND_API_KEY", "moosend_api_key"]
+
+[[detector.patterns]]
+regex = "(?:MOOSEND|moosend)[._-]?(?:API|api)?[._-]?(?:KEY|key)[=:\\s\"'']+([a-f0-9-]{32,36})"
+description = "Moosend API key (32 hex characters, may include dashes)"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:X-Api-Key|x-api-key)[=:\\s\"'']+([a-f0-9-]{32,36})"
+description = "Moosend API key from header format"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://api.moosend.com/v3/subscribers.json"
+
+[detector.verify.auth]
+type = "query"
+param = "apikey"
+field = "match"
+
+[detector.verify.success]
+status = 200

@@ -1,0 +1,9 @@
+[substrates]
+reference = "vyre-reference"
+wgpu = "vyre-driver-wgpu"
+spirv = "vyre-driver-spirv"
+
+[[claims]]
+primitive = "vyre-libs::math::square"
+contract = "byte-identical reference/wgpu output; shared naga module for spirv emission"
+evidence = "docs/parity"

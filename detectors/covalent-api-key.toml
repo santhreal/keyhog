@@ -1,0 +1,27 @@
+# Docs: https://www.covalenthq.com/docs/unified-api/
+# Format: cqt_ prefix followed by 32 alphanumeric characters
+# Verify: GET /v1/chains/ with key query param, returns 200 if valid
+# Prefix: cqt_
+
+[detector]
+id = "covalent-api-key"
+name = "Covalent API Key"
+service = "covalent"
+severity = "high"
+keywords = ["cqt_", "covalent", "COVALENT"]
+
+[[detector.patterns]]
+regex = 'cqt_[a-zA-Z0-9]{32}'
+description = "Covalent API key (cqt_ prefix)"
+
+[detector.verify]
+method = "GET"
+url = "https://api.covalenthq.com/v1/chains/"
+
+[detector.verify.auth]
+type = "query"
+param = "key"
+field = "match"
+
+[detector.verify.success]
+status = 200

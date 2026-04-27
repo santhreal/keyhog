@@ -1,0 +1,26 @@
+# Docs: https://unsplash.com/documentation
+# Format: 43 character alphanumeric string (Access Key)
+# Verify: GET /photos with Authorization header returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "unsplash-api-key"
+name = "Unsplash API Key"
+service = "unsplash"
+severity = "medium"
+keywords = ["UNSPLASH", "unsplash", "Client-ID"]
+
+[[detector.patterns]]
+regex = '(?:UNSPLASH|unsplash)[._-]?(?:ACCESS|access)[._-]?(?:KEY|key)[=:\s""]+([a-zA-Z0-9_-]{43})'
+description = "Unsplash access key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = '(?:UNSPLASH|unsplash)[._-]?(?:API|api)[._-]?(?:KEY|key)[=:\s""]+([a-zA-Z0-9_-]{43})'
+description = "Unsplash API key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = 'Client-ID\s+([a-zA-Z0-9_-]{43})'
+description = "Unsplash Client-ID header value"
+group = 1

@@ -1,0 +1,27 @@
+# Docs: https://developer.hashicorp.com/terraform/cloud-docs/api-docs
+# Format: {id}.atlasv1.{secret} - atlasv1 suffix identifies TFC tokens
+# Verify: GET /api/v2/account/details with Bearer token
+# Prefix: .atlasv1. (infix)
+
+[detector]
+id = "terraform-cloud-api-token"
+name = "Terraform Cloud API Token"
+service = "terraform-cloud"
+severity = "critical"
+keywords = [".atlasv1.", "TFE_TOKEN", "tfe_token", "TERRAFORM_TOKEN", "terraform_token", "app.terraform.io"]
+
+[[detector.patterns]]
+regex = "[a-zA-Z0-9]{14}\\.atlasv1\\.[a-zA-Z0-9]{67,}"
+description = "Terraform Cloud API token (atlasv1 infix format)"
+
+[detector.verify]
+method = "GET"
+url = "https://app.terraform.io/api/v2/account/details"
+
+[detector.verify.auth]
+type = "header"
+name = "Authorization"
+template = "Bearer {{match}}"
+
+[detector.verify.success]
+status = 200

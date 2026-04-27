@@ -1,0 +1,20 @@
+# Docs: https://developers.viber.com/docs/api/rest-bot-api/
+# Format: Authentication token is a UUID-like alphanumeric string
+# Verify: POST /pa/set_webhook with X-Viber-Auth-Token header
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "viber-api-token"
+name = "Viber API Token"
+service = "viber"
+severity = "high"
+keywords = ["viber", "VIBER", "x-viber-auth-token", "auth_token"]
+
+[[detector.patterns]]
+regex = "(?:viber|VIBER)[_\\-\\s]*(?:auth[_\\-\\s]*token|AUTH[_\\-\\s]*TOKEN)[=: \\s\"'']+([a-zA-Z0-9]{32,48})"
+description = "Viber authentication token with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "X-Viber-Auth-Token: [a-zA-Z0-9]{32,48}"
+description = "Viber auth token in HTTP header"

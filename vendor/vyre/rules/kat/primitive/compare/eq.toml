@@ -1,0 +1,11 @@
+op_id = "primitive.compare.eq"
+
+[[golden]]
+input = "0700000007000000"
+expected = "01000000"
+reason = "7 == 7 â 1"
+
+[[golden]]
+input = "0700000008000000"
+expected = "00000000"
+reason = "7 == 8 â 0"

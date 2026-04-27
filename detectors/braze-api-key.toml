@@ -1,0 +1,33 @@
+# Docs: https://www.braze.com/docs/api/basics/
+# Format: UUID v4 format (8-4-4-4-12 hex segments)
+# Verify: GET /users/export/ids with X-Braze-Authorization header returns 201 if valid
+# Prefix: none (UUID format, requires context anchoring)
+
+[detector]
+id = "braze-api-key"
+name = "Braze API Key"
+service = "braze"
+severity = "critical"
+keywords = ["BRAZE", "braze", "BRAZE_API_KEY", "braze_api_key"]
+
+[[detector.patterns]]
+regex = "(?:BRAZE|braze)[._-]?(?:API|api)?[._-]?(?:KEY|key)[=:\\s\"'']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
+description = "Braze REST API key (UUID format)"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:X-Braze-Authorization|x-braze-authorization)[=:\\s\"'']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
+description = "Braze API key from Authorization header"
+group = 1
+
+[detector.verify]
+method = "POST"
+url = "https://rest.iad-01.braze.com/users/export/ids"
+
+[detector.verify.auth]
+type = "header"
+name = "X-Braze-Authorization"
+template = "{{match}}"
+
+[detector.verify.success]
+status = 201

@@ -1,0 +1,28 @@
+# Docs: https://docs.opsgenie.com/docs/api-key-management
+# Format: UUID (8-4-4-4-12 hex segments) used with GenieKey prefix in Authorization header
+# Verify: GET /v2/account with GenieKey authorization returns 200 if valid
+# Prefix: none (UUID format, uses GenieKey keyword context)
+
+[detector]
+id = "opsgenie-api-key"
+name = "OpsGenie API Key"
+service = "opsgenie"
+severity = "critical"
+keywords = ["GenieKey", "OPSGENIE", "opsgenie", "api_key", "api-key"]
+
+[[detector.patterns]]
+regex = "(?:opsgenie|OPSGENIE)[._]?(?:API|api)?[._]?(?:KEY|key)?[=:\\s\"']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
+description = "OpsGenie API key with context anchor (UUID format)"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://api.opsgenie.com/v2/account"
+
+[detector.verify.auth]
+type = "header"
+name = "Authorization"
+template = "GenieKey {{match}}"
+
+[detector.verify.success]
+status = 200

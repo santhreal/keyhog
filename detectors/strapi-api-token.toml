@@ -1,0 +1,21 @@
+# Docs: https://docs.strapi.io/dev-docs/configurations/api-tokens
+# Format: API token generated via admin panel, passed as bearer token in Authorization header
+# Verify: GET /api/users/me with Authorization header returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "strapi-api-token"
+name = "Strapi API Token"
+service = "strapi"
+severity = "high"
+keywords = ["STRAPI_API_TOKEN", "strapi", "API_TOKEN_SALT"]
+
+[[detector.patterns]]
+regex = "(?:STRAPI|strapi)[_\\s]?API[_\\s]?TOKEN[=:\\s\"'']+([a-zA-Z0-9]{20,})"
+description = "Strapi API token with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "Authorization:\\s*[Bb]earer\\s+([a-zA-Z0-9]{30,})[^\\n]*strapi"
+description = "Strapi bearer token with context"
+group = 1

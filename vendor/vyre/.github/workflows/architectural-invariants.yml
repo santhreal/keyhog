@@ -1,0 +1,172 @@
+name: architectural-invariants
+
+# Enforces the substrate-neutrality contract from THESIS.md + ARCHITECTURE.md.
+# Each guard catches a different class of rebuild regression and runs in under
+# five seconds with zero Rust toolchain requirement. A PR that fails any of
+# them is a rebuild regression.
+#
+#   1. check_architectural_invariants.sh  — pure crates may not carry
+#                                            non-dev backend/conform deps.
+#   2. check_no_closed_ir_enums.sh        — Law A: IR uses open traits,
+#                                            not closed enums.
+#   3. check_no_string_wgsl.sh            — Law B (string): shader emission
+#                                            goes through the naga AST, not
+#                                            string concatenation.
+#   4. check_no_shader_assets.sh          — Law B (asset): no .wgsl asset
+#                                            files under op / dialect trees.
+#   5. check_capability_negotiation.sh    — Law C: backends advertise
+#                                            supported_ops and validate
+#                                            programs before dispatch.
+#   6. check_unsafe_justifications.sh     — Law D: every `unsafe` block has
+#                                            a `// SAFETY:` comment.
+#   7. check_dialect_coverage.sh          — every Category::C OpDef has
+#                                            at least one backend lowering.
+#   8. check_trait_freeze.sh              — the frozen trait contracts from
+#                                            ARCHITECTURE.md still exist.
+#   9. check_registry_consistency.sh      — DialectRegistry + OpDefRegistration
+#                                            registries agree.
+
+on:
+  pull_request:
+    paths:
+      - '**/Cargo.toml'
+      - '**/*.rs'
+      - 'scripts/check_*.sh'
+      - '.github/workflows/architectural-invariants.yml'
+  push:
+    branches: [main]
+
+jobs:
+  architectural-invariants:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pure-crate dependency invariant
+        working-directory: libs/performance/matching/vyre
+        run: bash scripts/check_architectural_invariants.sh
+
+  law-a-closed-enums:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Law A — no closed IR enums
+        working-directory: libs/performance/matching/vyre
+        run: bash scripts/check_no_closed_ir_enums.sh
+
+  law-b-string-wgsl:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Law B — no string-based WGSL emission
+        working-directory: libs/performance/matching/vyre
+        run: bash scripts/check_no_string_wgsl.sh
+
+  law-b-shader-assets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Law B — no shader asset files under op / dialect trees
+        working-directory: libs/performance/matching/vyre
+        run: bash scripts/check_no_shader_assets.sh
+
+  law-c-capability-negotiation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Law C — supported_ops + validate_program
+        working-directory: libs/performance/matching/vyre
+        run: bash scripts/check_capability_negotiation.sh
+
+  law-d-unsafe-justifications:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Law D — every unsafe block has SAFETY justification
+        working-directory: libs/performance/matching/vyre
+        run: bash scripts/check_unsafe_justifications.sh
+
+  dialect-coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Every Category::C OpDef has a backend lowering
+        working-directory: libs/performance/matching/vyre
+        run: bash scripts/check_dialect_coverage.sh
+
+  trait-freeze:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Frozen trait contracts still exist
+        working-directory: libs/performance/matching/vyre
+        run: bash scripts/check_trait_freeze.sh
+
+  registry-consistency:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: DialectRegistry and OpDefRegistration inventories agree
+        working-directory: libs/performance/matching/vyre
+        run: bash scripts/check_registry_consistency.sh
+
+  no-raw-unwrap:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Hard ban on raw unwrap() and expect()
+        working-directory: libs/performance/matching/vyre
+        run: bash scripts/check_no_raw_unwrap.sh
+
+  no-hot-path-inventory:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: inventory::iter forbidden on dispatch hot path
+        working-directory: libs/performance/matching/vyre
+        run: bash scripts/check_no_hot_path_inventory.sh
+
+  no-opspec-tokens:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Legacy OpSpec shim eradicated from source
+        working-directory: libs/performance/matching/vyre
+        run: bash scripts/check_no_opspec_tokens.sh
+
+  error-codes-cataloged:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Every V### / E-* / W-* / B-* / C-* code in source is cataloged
+        working-directory: libs/performance/matching/vyre
+        run: bash scripts/check_error_codes_cataloged.sh
+
+  consistency-contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Op id uniqueness + dialect format invariants
+        working-directory: libs/performance/matching/vyre
+        run: bash scripts/check_consistency_contracts.sh
+
+  base-monument:
+    runs-on: ubuntu-latest
+    # Monument base: 9 prerequisites vyre must satisfy before any claim
+    # to legendary. Extensibility demo exists, three-substrate parity,
+    # signed certs, benchmark honesty, zero-runtime-cost evidence,
+    # adversarial-test floor, reference-interpreter isolation, hot-path
+    # allocation ceiling, IEEE-754 strict. See check_base_monument.sh.
+    steps:
+      - uses: actions/checkout@v4
+      - name: 9 monument-base prerequisites
+        working-directory: libs/performance/matching/vyre
+        run: bash scripts/check_base_monument.sh
+
+  abstraction-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Registered building-block abstraction
+        working-directory: libs/performance/matching/vyre
+        run: bash scripts/check_abstraction.sh

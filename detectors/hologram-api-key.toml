@@ -1,0 +1,33 @@
+# Docs: https://hologram.io/docs/reference/cloud/http/#/introduction/authentication
+# Format: API key starting with specific prefixes for device/cloud API
+# Verify: GET /api/1/users/me/ with X-Api-Key header returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "hologram-api-key"
+name = "Hologram API Key"
+service = "hologram"
+severity = "critical"
+keywords = ["HOLOGRAM", "hologram", "HOLOGRAM_API", "hologram.io"]
+
+[[detector.patterns]]
+regex = "(?:HOLOGRAM|hologram)[._-]?API[_-]?KEY[=:\\s\"'']+([a-zA-Z0-9]{32,64})"
+description = "Hologram API key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:HOLOGRAM|hologram)[._-]?DEVICE[_-]?KEY[=:\\s\"'']+([a-zA-Z0-9]{16,32})"
+description = "Hologram device key"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://dashboard.hologram.io/api/1/users/me/"
+
+[detector.verify.auth]
+type = "header"
+name = "X-Api-Key"
+template = "{{match}}"
+
+[detector.verify.success]
+status = 200

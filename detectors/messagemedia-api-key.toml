@@ -1,0 +1,33 @@
+# Docs: https://developers.messagemedia.com/
+# Format: API Key and API Secret pair used for HTTP Basic Auth or HMAC
+# Verify: GET /v1/messages with Basic Auth returns 200 if valid
+# Prefix: none (generic alphanumeric, requires keyword context)
+
+[detector]
+id = "messagemedia-api-key"
+name = "MessageMedia API Key"
+service = "messagemedia"
+severity = "high"
+keywords = ["MESSAGEMEDIA", "messagemedia", "MessageMedia", "API_KEY", "API_SECRET", "basicAuthUserName", "basicAuthPassword"]
+
+[[detector.patterns]]
+regex = "(?:MESSAGEMEDIA|messagemedia|MessageMedia)[_\\s]*(?:API[_\\s]*)?(?:KEY|USER|USERNAME)[=:\\s\"']+([a-zA-Z0-9]{20,})"
+description = "MessageMedia API key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:basicAuthUserName|hmacAuthUserName)[=:\\s\"']+([a-zA-Z0-9]{20,})"
+description = "MessageMedia SDK API key"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://api.messagemedia.com/v1/messages"
+
+[detector.verify.auth]
+type = "basic"
+username = "match"
+password = ""
+
+[detector.verify.success]
+status = 200

@@ -1,0 +1,35 @@
+# Docs: https://developer.deel.com/docs/authentication
+# Format: Organization tokens with 'organization_' or 'org_' prefix followed by alphanumeric characters
+# Verify: GET /rest/v2/me with Bearer token returns 200 if valid
+# Prefix: organization_ or org_
+
+[detector]
+id = "deel-api-key"
+name = "Deel API Key"
+service = "deel"
+severity = "critical"
+keywords = ["organization_", "org_", "DEEL_API_KEY", "deel_token"]
+
+[[detector.patterns]]
+regex = "organization_[a-zA-Z0-9_-]{30,}"
+description = "Deel organization token with organization_ prefix"
+
+[[detector.patterns]]
+regex = "org_[a-zA-Z0-9_-]{30,}"
+description = "Deel organization token with org_ prefix"
+
+[[detector.patterns]]
+regex = "(?:DEEL_API_KEY|DEEL_TOKEN|deel_api_key|deel_token)[=:\\s\"'']+([a-zA-Z0-9_-]{30,})"
+description = "Deel API key with context anchor"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://api.letsdeel.com/rest/v2/me"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[detector.verify.success]
+status = 200

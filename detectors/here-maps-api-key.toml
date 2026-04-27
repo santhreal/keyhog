@@ -1,0 +1,28 @@
+# Docs: https://developer.here.com/documentation/authentication/dev_guide/index.html
+# Format: API Key is a 40+ character alphanumeric string (no unique prefix)
+# Verify: GET /v3/health with apiKey query parameter returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "here-maps-api-key"
+name = "HERE Maps API Key"
+service = "here"
+severity = "high"
+keywords = ["HERE_API_KEY", "here.api.key", "here_api_key"]
+
+[[detector.patterns]]
+regex = "(?:HERE[_-]?API[_-]?KEY|here[_-]?api[_-]?key|here\\.api\\.key)[=:\\s\"'']+([A-Za-z0-9]{40,})"
+description = "HERE Maps API key with context anchor"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://geocode.search.hereapi.com/v1/health"
+
+[detector.verify.auth]
+type = "query"
+param = "apiKey"
+field = "match"
+
+[detector.verify.success]
+status = 200

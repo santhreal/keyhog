@@ -1,0 +1,124 @@
+pub const MAX_SHARED_BYTES: usize = MAX_WORKGROUP_BYTES;
+pub const MAX_WORKGROUP_BYTES: usize = 64 * 1024 * 1024;
+pub const OP_ID: &str = "primitive.bitwise.xor";
+pub const OP_ID: &str = Xor::SPEC.id();
+pub const REFERENCE_BACKEND_NAME: &str = "reference";
+pub const ZERO: Self = Self {
+pub enum Frame<'a> {
+pub enum Value {
+pub fn apply(
+pub fn assign(&mut self, name: &str, value: Value) -> Result<(), vyre::Error> {
+pub fn as_u32(&self) -> u32 {
+pub fn as_u64(&self) -> u64 {
+pub fn atomic_add(old: u32, value: u32) -> (u32, u32) {
+pub fn atomic_and(old: u32, value: u32) -> (u32, u32) {
+pub fn atomic_compare_exchange(
+pub fn atomic_exchange(old: u32, value: u32) -> (u32, u32) {
+pub fn atomic_max(old: u32, value: u32) -> (u32, u32) {
+pub fn atomic_min(old: u32, value: u32) -> (u32, u32) {
+pub fn atomic_or(old: u32, value: u32) -> (u32, u32) {
+pub fn atomic_xor(old: u32, value: u32) -> (u32, u32) {
+pub fn bind_loop_var(&mut self, name: &str, value: Value) -> Result<(), vyre::Error> {
+pub fn bind(&mut self, name: &str, value: Value) -> Result<(), vyre::Error> {
+pub fn buffer_mut<'a>(
+pub fn bytes(&self) -> &[u8] {
+pub fn dispatch_op(op_id: &str, input: &[u8], output: &mut Vec<u8>) -> Result<(), BackendError> {
+pub fn done(&self) -> bool {
+pub fn dual_op_ids() -> &'static [&'static str] {
+pub fn empty() -> Self {
+pub fn eval(
+pub fn eval_hashmap_reference(
+pub fn for_nodes(nodes: &[Node]) -> Self {
+pub fn for_program(program: &Program) -> Self {
+pub fn from_bytes(bytes: Vec<u8>) -> Self {
+pub fn from_element_bytes(ty: vyre::ir::DataType, bytes: &[u8]) -> Result<Self, String> {
+pub fn get_mut(&mut self, name: &str) -> Option<&mut Buffer> {
+pub fn get(&self, name: &str) -> Option<&Buffer> {
+pub fn insert(&mut self, name: impl Into<Arc<str>>, buffer: Buffer) -> Option<Buffer> {
+pub fn into_bytes(self) -> Vec<u8> {
+pub fn into_iter_pairs(self) -> impl Iterator<Item = (Arc<str>, Buffer)> {
+pub fn invocation_count(&self) -> u32 {
+pub fn invocations(&self, workgroup_id: [u32; 3]) -> impl Iterator<Item = InvocationIds> {
+pub fn is_empty(&self) -> bool {
+pub fn iter(&self) -> impl Iterator<Item = (&str, &Buffer)> {
+pub fn len(&self) -> usize {
+pub fn local(&self, name: &str) -> Option<&Value> {
+pub fn new(bytes: Vec<u8>, element: DataType) -> Self {
+pub fn new(ids: InvocationIds, entry: &'a [Node]) -> Self {
+pub fn new(message: impl Into<String>) -> Self {
+pub fn new() -> Self {
+pub fn pending_float_types() -> Error {
+pub fn pop_scope(&mut self) {
+pub fn push_scope(&mut self) {
+pub fn reference(input: &[u8]) -> Vec<u8> {
+pub fn resolve_dual(op_id: &str) -> Option<(dual::ReferenceFn, dual::ReferenceFn)> {
+pub fn run_arena_reference(program: &Program, inputs: &[Value]) -> Result<Vec<Value>, vyre::Error> {
+pub fn run_flat(program: &Program, input: &[u8], output: &mut Vec<u8>) -> Result<(), vyre::Error> {
+pub fn run_node_graph<'a, I>(nodes: I, outputs: &[NodeId]) -> Result<Vec<IrValue>, vyre::Error>
+pub fn run(program: &Program, inputs: &[Value]) -> Result<Vec<Value>, vyre::Error> {
+pub fn run_storage_graph(
+pub fn step<'a>(
+pub fn to_bytes(&self) -> Vec<u8> {
+pub fn to_bytes_width(&self, declared_width: usize) -> Vec<u8> {
+pub fn truthy(&self) -> bool {
+pub fn try_as_f32(&self) -> Option<f32> {
+pub fn try_as_u32(&self) -> Option<u32> {
+pub fn try_as_u64(&self) -> Option<u64> {
+pub fn try_zero_for(ty: vyre::ir::DataType) -> Option<Self> {
+pub fn wide_bytes(&self) -> Vec<u8> {
+pub fn with_storage(mut self, name: impl Into<Arc<str>>, buffer: Buffer) -> Self {
+pub fn with_workgroup(mut self, name: impl Into<Arc<str>>, buffer: Buffer) -> Self {
+pub fn zero_for(ty: vyre::ir::DataType) -> Self {
+pub mod arith_add;
+pub mod arith_mul;
+pub mod atomics;
+pub mod bitwise;
+pub mod bitwise_and;
+pub mod bitwise_or;
+pub mod bitwise_xor;
+pub mod clz;
+pub mod compare_eq;
+pub mod compare_lt;
+pub mod cpu_op;
+pub mod dialect_dispatch;
+pub mod dual;
+pub mod eval_expr;
+pub mod eval_node;
+pub mod flat_cpu;
+pub mod gather;
+pub mod hash_blake3;
+pub mod hash_fnv1a;
+pub mod ieee754;
+pub mod interp;
+pub mod scan_dfa;
+pub mod scan_literal;
+pub mod popcount;
+pub mod primitive;
+pub mod primitives;
+pub mod reduce;
+pub mod reference_a;
+pub mod reference_b;
+pub mod scan;
+pub mod scatter;
+pub mod sequential;
+pub mod shift_left;
+pub mod shift_right;
+pub mod shuffle;
+pub mod value;
+pub mod workgroup;
+pub mod xor;
+pub struct Buffer {
+pub struct BufferMap {
+pub struct EvalError {
+pub struct Invocation<'a> {
+pub struct InvocationIds {
+pub struct LocalSlots {
+pub struct Memory {
+pub struct SequentialWorkgroup {
+pub struct XorDualReference;
+pub trait CategoryAOp {
+pub trait CpuOp {
+pub trait DualReference {
+pub trait ReferenceEvaluator {
+pub type CpuFn = fn(input: &[u8], output: &mut Vec<u8>);
+pub type ReferenceFn = fn(&[u8]) -> Vec<u8>;

@@ -1,0 +1,33 @@
+# Docs: https://dev.bandwidth.com/docs/account/credentials/legacy/
+# Format: Client ID and Client Secret pair used for Basic Auth or OAuth2 token generation
+# Verify: POST /api/v1/oauth2/token with Basic Auth returns 200 if valid
+# Prefix: none (generic alphanumeric, requires keyword context)
+
+[detector]
+id = "bandwidth-api-key"
+name = "Bandwidth API Credentials"
+service = "bandwidth"
+severity = "critical"
+keywords = ["BANDWIDTH", "BANDWIDTH_API_USER", "BANDWIDTH_API_TOKEN", "BANDWIDTH_USERNAME", "BANDWIDTH_PASSWORD", "ClientID", "ClientSecret"]
+
+[[detector.patterns]]
+regex = "(?:BANDWIDTH|bandwidth)[_\\s]*(?:API[_\\s]*)?(?:USER|USERNAME|TOKEN|PASSWORD|SECRET)[=:\\s\"']+([a-zA-Z0-9_-]{20,})"
+description = "Bandwidth API credential with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:ClientID|ClientSecret)[=:\\s\"']+([a-zA-Z0-9_-]{20,})"
+description = "Bandwidth WebRTC Client credential"
+group = 1
+
+[detector.verify]
+method = "POST"
+url = "https://id.voxbone.com/api/v1/oauth2/token"
+
+[detector.verify.auth]
+type = "basic"
+username = "match"
+password = ""
+
+[detector.verify.success]
+status = 200

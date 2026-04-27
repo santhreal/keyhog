@@ -1,0 +1,16 @@
+# Docs: https://docs.codecov.com/docs/codecov-uploader
+# Format: UUID format (8-4-4-4-12 hex characters with dashes)
+# Verify: none (no public validation endpoint available)
+# Prefix: none (UUID format, requires context anchoring)
+
+[detector]
+id = "codecov-token"
+name = "Codecov Token"
+service = "codecov"
+severity = "high"
+keywords = ["CODECOV_TOKEN", "codecov", "upload_token"]
+
+[[detector.patterns]]
+regex = "(?:CODECOV_TOKEN|codecov)[=:\\s\"']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
+description = "Codecov upload token with context anchor (UUID format)"
+group = 1

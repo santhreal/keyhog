@@ -1,0 +1,21 @@
+# Docs: https://www.infobip.com/docs/api/authentication
+# Format: 32 hex characters with 4 hyphens (UUID-like), prefixed with "App " in Authorization header
+# Verify: GET /account/1/balance with App {{api_key}} Authorization header
+# Prefix: none (UUID format, requires context anchoring)
+
+[detector]
+id = "infobip-api-key"
+name = "Infobip API Key"
+service = "infobip"
+severity = "critical"
+keywords = ["infobip", "INFOBIP", "authorization", "app"]
+
+[[detector.patterns]]
+regex = '''(?:infobip|INFOBIP)[_.-]?(?:api|API)?[_.-]?(?:key|KEY)?[=:\s"\' ]+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})'''
+description = "Infobip API Key (UUID format) with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = '''Authorization[=:\s"\' ]+(?:App|APP)?\s+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})'''
+description = "Infobip API Key in Authorization header"
+group = 1

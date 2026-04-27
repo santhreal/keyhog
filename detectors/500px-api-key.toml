@@ -1,0 +1,26 @@
+# Docs: https://github.com/500px/api-documentation
+# Format: OAuth Consumer Key (alphanumeric string)
+# Verify: no public verification endpoint (requires OAuth flow)
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "500px-api-key"
+name = "500px API Key"
+service = "500px"
+severity = "medium"
+keywords = ["500PX", "500px"]
+
+[[detector.patterns]]
+regex = '''(?:500PX|500px)[._-]?(?:API|api)[._-]?(?:KEY|key)[=:\s"']+([a-zA-Z0-9_-]{32,})'''
+description = "500px API key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = '''(?:500PX|500px)[._-]?(?:CONSUMER|consumer)[._-]?(?:KEY|key)[=:\s"']+([a-zA-Z0-9_-]{32,})'''
+description = "500px consumer key with context anchor"
+group = 1
+
+[[detector.companions]]
+name = "500px-consumer-secret"
+regex = '''(?:500PX|500px)[._-]?(?:CONSUMER|consumer)[._-]?(?:SECRET|secret)[=:\s"']+[a-zA-Z0-9_-]{32,}'''
+within_lines = 5

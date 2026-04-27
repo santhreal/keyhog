@@ -1,0 +1,46 @@
+# Docs: https://docs.aws.amazon.com/govcloud-us/latest/UserGuide/using-govcloud-endpoints.html
+# Format: AKIA or ASIA prefix followed by 16 uppercase alphanumeric characters (same format as commercial)
+# Verify: GET /?Action=GetCallerIdentity with AWS Signature V4 to us-gov-west-1 endpoint
+# Prefix: AKIA or ASIA
+
+[detector]
+id = "aws-govcloud-access-key"
+name = "AWS GovCloud Access Key"
+service = "aws-govcloud"
+severity = "critical"
+keywords = ["AKIA", "ASIA", "govcloud", "us-gov-"]
+
+[[detector.patterns]]
+regex = "(?:AWS[_-]?GOVCLOUD|GOVCLOUD)[_\\s]*(?:ACCESS[_-]?KEY|KEY[_-]?ID)[=:\\s\"'']+(AKIA|ASIA)[0-9A-Z]{16}"
+description = "AWS GovCloud access key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:AWS[_-]?REGION|REGION)[=:\\s\"'']+(us-gov-[a-z]+-[0-9])"
+description = "AWS GovCloud region identifier"
+group = 1
+
+[[detector.companions]]
+regex = "(?:AWS[_-]?SECRET[_-]?ACCESS[_-]?KEY|SECRET[_-]?KEY|AWS[_-]?SECRET|aws[_-]?secret)[=:\\s\"'']+([0-9a-zA-Z/+=]{40})"
+within_lines = 5
+name = "secret_key"
+
+[[detector.companions]]
+regex = "(?:AWS[_-]?SESSION[_-]?TOKEN|aws[_-]?session[_-]?token|X-Amz-Security-Token)[=:\\s\"'']+([A-Za-z0-9/+=]{80,})"
+within_lines = 5
+name = "session_token"
+
+[detector.verify]
+method = "GET"
+url = "https://sts.us-gov-west-1.amazonaws.com/?Action=GetCallerIdentity&Version=2011-06-15"
+
+[detector.verify.auth]
+type = "aws_v4"
+access_key = "match"
+secret_key = "companion.secret_key"
+session_token = "companion.session_token"
+region = "us-gov-west-1"
+service = "sts"
+
+[detector.verify.success]
+status = 200

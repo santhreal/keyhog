@@ -1,0 +1,26 @@
+# Docs: https://render.com/docs/api
+# Format: API key starting with 'rnd_' followed by 24 alphanumeric characters
+# Verify: Bearer token sent to api.render.com/v1/services, returns 200 on success
+# Prefix: rnd_
+
+[detector]
+id = "render-api-key"
+name = "Render API Key"
+service = "render"
+severity = "critical"
+keywords = ["rnd_"]
+
+[[detector.patterns]]
+regex = 'rnd_[a-zA-Z0-9]{24}'
+description = "Render API key (rnd_ prefix followed by 24 alphanumeric characters)"
+
+[detector.verify]
+method = "GET"
+url = "https://api.render.com/v1/services?limit=1"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[detector.verify.success]
+status = 200

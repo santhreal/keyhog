@@ -1,0 +1,111 @@
+pub const EXTENSION_RANGE_MASK: u32 = 0x8000_0000;
+pub const fn as_u32(self) -> u32 {
+pub const fn category_id(&self) -> &'static str {
+pub const fn cpu_fn(&self) -> CpuFn {
+pub const fn element_size(&self) -> Option<usize> {
+pub const fn from_name(name: &str) -> Self {
+pub const fn hardware(&self) -> &'static str {
+pub const fn id(&self) -> &'static str {
+pub const fn is_extension(self) -> bool {
+pub const fn is_float_family(&self) -> bool {
+pub const fn layer_description(&self) -> &'static str {
+pub const fn max_bytes(&self) -> Option<usize> {
+pub const fn min_bytes(&self) -> usize {
+pub const fn name(&self) -> &'static str {
+pub const fn new(name: &'static str, hardware: &'static str, cpu_fn: CpuFn) -> Self {
+pub const fn new(predicate: fn(&str) -> bool) -> Self {
+pub const fn ordinal(&self) -> u8 {
+pub const fn size_bytes(&self) -> Option<usize> {
+pub enum AlgebraicLaw {
+pub enum AtomicOp {
+pub enum Backend {
+pub enum BinOp {
+pub enum BufferAccess {
+pub enum Category {
+pub enum Convention {
+pub enum DataType {
+pub enum EngineInvariant {
+pub enum FloatType {
+pub enum InvariantCategory {
+pub enum Layer {
+pub enum MetadataCategory {
+pub enum MonotonicDirection {
+pub enum UnOp {
+pub enum Verification {
+pub fn all_algebraic_laws() -> &'static [AlgebraicLaw] {
+pub fn as_str(&self) -> &str {
+pub fn available(&self, op: &str) -> bool {
+pub fn by_category(category: InvariantCategory) -> impl Iterator<Item = &'static Invariant> {
+pub fn by_id(id: InvariantId) -> Option<&'static Invariant> {
+pub fn catalog_is_complete() -> bool {
+pub fn empty_test_family() -> &'static [TestDescriptor] {
+pub fn id(&self) -> &str {
+pub fn invariants() -> &'static [Invariant] {
+pub fn is_binary(&self) -> bool {
+pub fn is_unary(&self) -> bool {
+pub fn is_unclassified(&self) -> bool {
+pub fn iter() -> impl Iterator<Item = Self> {
+pub fn law_catalog() -> &'static [&'static str] {
+pub fn min_input_bytes(&self) -> usize {
+pub fn missing_backends(&self) -> impl Iterator<Item = &'static str> + '_ {
+pub fn name(&self) -> &str {
+pub fn new(name: impl Into<Arc<str>>) -> Self {
+pub fn unclassified() -> Self {
+pub fn witness_count(&self) -> Option<u64> {
+pub mod adversarial_input;
+pub mod algebraic_law;
+pub mod all_algebraic_laws;
+pub mod atomic_op;
+pub mod bin_op;
+pub mod buffer_access;
+pub mod by_category;
+pub mod by_id;
+pub mod catalog_is_complete;
+pub mod category;
+pub mod convention;
+pub mod data_type;
+pub mod engine_invariant;
+pub mod extension;
+pub mod float_type;
+pub mod golden_sample;
+pub mod intrinsic_descriptor;
+pub mod intrinsic_table;
+pub mod invariant;
+pub mod invariant_category;
+pub mod invariants;
+pub mod kat_vector;
+pub mod law_catalog;
+pub mod layer;
+pub mod metadata_category;
+pub mod monotonic_direction;
+pub mod op_metadata;
+pub mod op_signature;
+pub mod test_descriptor;
+pub mod un_op;
+pub mod verification;
+pub struct AdversarialInput {
+pub struct BackendAvailabilityPredicate {
+pub struct BackendId(Arc<str>);
+pub struct ExtensionAtomicOpId(pub u32);
+pub struct ExtensionBackend(pub Arc<dyn BackendKind>);
+pub struct ExtensionBinOpId(pub u32);
+pub struct ExtensionDataTypeId(pub u32);
+pub struct ExtensionRuleConditionId(pub u32);
+pub struct ExtensionUnOpId(pub u32);
+pub struct GoldenSample {
+pub struct IntrinsicDescriptor {
+pub struct IntrinsicTable {
+pub struct Invariant {
+pub struct KatVector {
+pub struct OpMetadata {
+pub struct OpSignature {
+pub struct TestDescriptor {
+pub trait BackendAvailability: Send + Sync {
+pub trait BackendKind: std::fmt::Debug + Send + Sync + 'static {
+pub trait ExtensionAtomicOp: Send + Sync + Debug + 'static {
+pub trait ExtensionBinOp: Send + Sync + Debug + 'static {
+pub trait ExtensionDataType: Send + Sync + Debug + 'static {
+pub trait ExtensionUnOp: Send + Sync + Debug + 'static {
+pub type CpuFn = fn(input: &[u8], output: &mut Vec<u8>);
+pub type InvariantId = EngineInvariant;
+pub type LawCheckFn = fn(fn(&[u8]) -> Vec<u8>, &[u32]) -> bool;

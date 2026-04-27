@@ -1,0 +1,21 @@
+# Docs: https://dados.gov.br/
+# Format: CKAN-style API key for Brazilian open data portal
+# Verify: Authorization header with CKAN API key
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "brazil-dadosgovbr-api-key"
+name = "Brazil Dados.gov.br API Key"
+service = "brazil-dadosgovbr"
+severity = "medium"
+keywords = ["dados.gov.br", "DADOS_GOV_BR", "CKAN_BRAZIL", "dadosgovbr"]
+
+[[detector.patterns]]
+regex = '''(?:dados\.gov\.br|DADOS_GOV|BRAZIL)[_.-]?(?:API[_-]?KEY|api_key|CKAN[_-]?KEY|ckan_key)[\s"'=:]+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})'''
+description = "Brazil dados.gov.br CKAN API key"
+group = 1
+
+[[detector.patterns]]
+regex = '''(?:dados\.gov\.br).{0,30}Authorization[:\s]+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})'''
+description = "Brazil dados.gov.br API key in Authorization header"
+group = 1

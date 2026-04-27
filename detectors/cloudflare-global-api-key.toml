@@ -1,0 +1,34 @@
+# Docs: https://developers.cloudflare.com/fundamentals/api/get-started/keys/
+# Format: 37 character hex string, used with Cloudflare account email
+# Verify: GET /client/v4/user/tokens/verify with X-Auth-Key header
+# Prefix: none (37 char hex, requires context anchoring)
+
+[detector]
+id = "cloudflare-global-api-key"
+name = "Cloudflare Global API Key"
+service = "cloudflare"
+severity = "critical"
+keywords = ["X-Auth-Key", "CLOUDFLARE_API_KEY", "cloudflare_api_key"]
+
+[[detector.patterns]]
+regex = "(?:X-Auth-Key|CLOUDFLARE_API_KEY|cloudflare_api_key)[=:\\s\"']+([a-f0-9]{37})"
+description = "Cloudflare Global API Key with context anchor"
+group = 1
+
+[[detector.companions]]
+name = "cloudflare_email"
+regex = "[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}"
+within_lines = 5
+[detector.verify]
+method = "GET"
+url = "https://api.cloudflare.com/client/v4/user/tokens/verify"
+
+[detector.verify.auth]
+type = "header"
+name = "X-Auth-Key"
+template = "{{match}}"
+
+[detector.verify.success]
+status = 200
+json_path = "success"
+equals = "true"

@@ -1,0 +1,31 @@
+# Docs: https://core.telegram.org/bots/tutorial
+# Format: {numeric_bot_id}:{alphanumeric_token} (e.g., 123456789:ABCdef...)
+# Verify: GET https://api.telegram.org/bot{token}/getMe
+# Prefix: numeric ID followed by colon (digits:alphanumeric)
+
+[detector]
+id = "telegram-bot-token"
+name = "Telegram Bot Token"
+service = "telegram"
+severity = "high"
+keywords = ["TELEGRAM_BOT_TOKEN", "telegram_bot_token", "TELEGRAM_TOKEN", "telegram_token", "bot"]
+
+[[detector.patterns]]
+regex = "[0-9]{8,10}:[A-Za-z0-9_-]{35}"
+description = "Telegram bot token (numeric_id:alphanumeric token format)"
+
+[detector.verify]
+method = "GET"
+url = "https://api.telegram.org/bot{{match}}/getMe"
+
+[detector.verify.auth]
+type = "none"
+
+[detector.verify.success]
+status = 200
+json_path = "ok"
+equals = "true"
+
+[[detector.verify.metadata]]
+name = "bot_name"
+json_path = "result.username"

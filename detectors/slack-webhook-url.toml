@@ -1,0 +1,36 @@
+# Docs: https://api.slack.com/messaging/webhooks
+# Format: https://hooks.slack.com/services/T{10-char-team-id}/B{10-char-channel-id}/{24-char-secret}
+# Verify: POST to webhook URL returns 200 with "ok" body if valid
+# Prefix: https://hooks.slack.com/services/
+
+[detector]
+id = "slack-webhook-url"
+name = "Slack Webhook URL"
+service = "slack"
+severity = "high"
+keywords = ["hooks.slack.com", "slack-webhook", "SLACK_WEBHOOK"]
+
+[[detector.patterns]]
+regex = "https://hooks\\.slack\\.com/services/T[a-zA-Z0-9]{8,10}/B[a-zA-Z0-9]{8,10}/[a-zA-Z0-9]{24}"
+description = "Slack incoming webhook URL (full services path)"
+
+[[detector.patterns]]
+regex = "(?:slack[_\\-\\s]?webhook[_\\-\\s]?url|SLACK[_\\-\\s]?WEBHOOK[_\\-\\s]?URL)[\"\\'\\s]*[=:][\"\\'\\s]*(https://hooks\\.slack\\.com/services/[a-zA-Z0-9/]+)"
+description = "Slack webhook URL with context anchor"
+group = 1
+
+[detector.verify]
+method = "POST"
+url = "{{match}}"
+body = "{}"
+
+[detector.verify.auth]
+type = "none"
+
+[[detector.verify.headers]]
+name = "Content-Type"
+value = "application/json"
+
+[detector.verify.success]
+status = 400
+body_contains = "invalid_payload"

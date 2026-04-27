@@ -1,0 +1,33 @@
+# Build-only bench target smoke gate.
+#
+# Compiles the active Criterion bench surface on hosted CI. Real
+# throughput/regression checks live in `bench.yml` (Criterion baseline
+# compare) and `gpu-parity.yml` (self-hosted GPU).
+
+name: bench-regression
+
+on:
+  pull_request:
+    branches: [main]
+  schedule:
+    # Nightly sweep so drift is caught even if no PR touches perf code.
+    - cron: "0 6 * * *"
+
+jobs:
+  bench-target-smoke:
+    name: bench target build
+    runs-on: ubuntu-latest
+    # Skip bench regression checks when CI is just running quick smoke work.
+    if: "!contains(github.event.pull_request.labels.*.name, 'skip-bench')"
+    steps:
+      - uses: ./.github/actions/rust-bench-setup
+
+      - name: Compile non-GPU bench targets
+        working-directory: libs/performance/matching/vyre
+        run: |
+          cargo bench -p vyre-foundation --no-run
+          cargo bench -p vyre-intrinsics --no-run
+          cargo bench -p vyre-libs --no-run
+          cargo bench -p vyre-reference --no-run
+          cargo bench -p vyre-runtime --no-run
+          cargo bench -p vyre-driver-wgpu --no-run

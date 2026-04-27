@@ -1,0 +1,138 @@
+//! Source trait and chunk types: the abstraction for pluggable input backends.
+
+use serde::Serialize;
+use thiserror::Error;
+
+/// A scannable chunk of text with metadata about where it came from.
+///
+/// # Examples
+///
+/// ```rust
+/// use keyhog_core::{Chunk, ChunkMetadata};
+///
+/// let chunk = Chunk {
+///     data: "API_KEY=sk_live_example".into(),
+///     metadata: ChunkMetadata {
+///         source_type: "filesystem".into(),
+///         path: Some("app.env".into()),
+///         commit: None,
+///         author: None,
+///         date: None,
+///     },
+/// };
+///
+/// assert_eq!(chunk.metadata.path.as_deref(), Some("app.env"));
+/// ```
+#[derive(Debug, Clone, Serialize)]
+pub struct Chunk {
+    /// UTF-8 text content to scan.
+    pub data: String,
+    /// Provenance details used in findings and reporters.
+    pub metadata: ChunkMetadata,
+}
+
+/// Metadata that tracks the source location for a scanned chunk.
+///
+/// # Examples
+///
+/// ```rust
+/// use keyhog_core::ChunkMetadata;
+///
+/// let metadata = ChunkMetadata {
+///     source_type: "git-diff".into(),
+///     path: Some("src/lib.rs".into()),
+///     commit: Some("abc123".into()),
+///     author: Some("Dev".into()),
+///     date: Some("2026-03-26T00:00:00Z".into()),
+/// };
+///
+/// assert_eq!(metadata.source_type, "git-diff");
+/// ```
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct ChunkMetadata {
+    /// Logical source backend, such as `filesystem` or `git`.
+    pub source_type: String,
+    /// Best-effort file path or object key.
+    ///
+    /// Paths stored here must be valid UTF-8. Callers that originate from
+    /// non-UTF-8 paths should preserve them using an escaped representation
+    /// before constructing [`ChunkMetadata`].
+    pub path: Option<String>,
+    /// Commit identifier for git-derived chunks.
+    pub commit: Option<String>,
+    /// Author name when available from history sources.
+    pub author: Option<String>,
+    /// Source timestamp when available from history sources.
+    pub date: Option<String>,
+}
+
+/// Produces chunks of text for the scanner to process.
+/// Each implementation handles a different input source.
+///
+/// # Examples
+///
+/// ```rust
+/// use keyhog_core::{Chunk, ChunkMetadata, Source, SourceError};
+///
+/// struct StaticSource;
+///
+/// impl Source for StaticSource {
+///     fn name(&self) -> &str {
+///         "static"
+///     }
+///
+///     fn chunks(&self) -> Box<dyn Iterator<Item = Result<Chunk, SourceError>> + '_> {
+///         Box::new(std::iter::once(Ok(Chunk {
+///             data: "TOKEN=value".into(),
+///             metadata: ChunkMetadata {
+///                 source_type: "static".into(),
+///                 path: None,
+///                 commit: None,
+///                 author: None,
+///                 date: None,
+///             },
+///         })))
+///     }
+///
+///     fn as_any(&self) -> &dyn std::any::Any {
+///         self
+///     }
+/// }
+///
+/// let source = StaticSource;
+/// assert_eq!(source.name(), "static");
+/// ```
+pub trait Source: Send + Sync {
+    /// Human-readable source name used in warnings and telemetry.
+    fn name(&self) -> &str;
+    /// Yield all readable chunks from this source.
+    fn chunks(&self) -> Box<dyn Iterator<Item = Result<Chunk, SourceError>> + '_>;
+    /// Support downcasting to concrete types.
+    fn as_any(&self) -> &dyn std::any::Any;
+}
+
+/// Errors returned by input sources while enumerating or reading content.
+///
+/// # Examples
+///
+/// ```rust
+/// use keyhog_core::SourceError;
+///
+/// let error = SourceError::Other("pass a readable file or directory".into());
+/// assert!(error.to_string().contains("Fix"));
+/// ```
+#[derive(Debug, Error)]
+pub enum SourceError {
+    #[error(
+        "failed to read source: {0}. Fix: check the path exists, is readable, and is not a broken symlink"
+    )]
+    Io(#[from] std::io::Error),
+    #[error(
+        "failed to access git source: {0}. Fix: run inside a valid git repository and verify the requested refs exist"
+    )]
+    Git(String),
+    #[error(
+        "failed to read source: {0}. Fix: adjust the source settings or input so KeyHog can read plain text safely"
+    )]
+    Other(String),
+}

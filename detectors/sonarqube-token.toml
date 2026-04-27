@@ -1,0 +1,27 @@
+# Docs: https://docs.sonarsource.com/sonarqube-server/latest/extension-guide/web-api/
+# Format: 40-character alphanumeric string (SHA-1 hash style)
+# Verify: GET /api/server/version with Authorization: Bearer header
+# Prefix: none (40 char hex/alphanumeric, requires context anchoring)
+
+[detector]
+id = "sonarqube-token"
+name = "SonarQube API Token"
+service = "sonarqube"
+severity = "high"
+keywords = ["SONARQUBE", "sonarqube", "SONAR_TOKEN", "SONARQUBE_TOKEN", "SONAR_HOST_URL"]
+
+[[detector.patterns]]
+regex = "(?:SONAR|sonar)(?:_?QUBE|_?qube)?(?:_?TOKEN|_?token)?[=:\\s\"'']+([a-f0-9]{40})"
+description = "SonarQube API token with context anchor (40 hex characters)"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://sonarcloud.io/api/server/version"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[detector.verify.success]
+status = 200

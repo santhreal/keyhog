@@ -1,0 +1,21 @@
+name: Adversarial
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  gauntlet:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Run adversarial gauntlet
+        run: cargo test -p vyre-conform --test adversarial_gauntlet_registry -- adversarial_gauntlet_registry

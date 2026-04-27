@@ -1,0 +1,21 @@
+# Docs: https://www.weather.gov/documentation/services-web-api
+# Format: User-Agent header required, no API key currently (only requires User-Agent)
+# Verify: no public verification endpoint
+# Prefix: none (configuration-based detection)
+
+[detector]
+id = "noaa-api-config"
+name = "NOAA API Configuration"
+service = "noaa"
+severity = "low"
+keywords = ["NOAA_API", "noaa", "api.weather.gov", "User-Agent"]
+
+[[detector.patterns]]
+regex = "(?:NOAA|noaa)[._-]?(?:API|api)[._-]?(?:URL|url|endpoint)[=:\\s\"'\\']+(https?://[^\\s\"'\\']+)"
+description = "NOAA API endpoint configuration"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:User-Agent|user_agent)[=:\\s\"'\\']+([^\\s\"'\\']*(?:NOAA|noaa|weather\\.gov)[^\\s\"'\\']*)"
+description = "NOAA API User-Agent header configuration"
+group = 1

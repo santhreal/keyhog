@@ -1,0 +1,177 @@
+# Audit: reachability_witness.rs — 2026-04-27
+# Auditor: Kimi Code CLI
+# Scope: libs/dataflow/weir/src/reachability_witness.rs and all tests
+# Method: read every .rs file under libs/dataflow/weir/src/ before writing findings
+
+[[finding]]
+severity = "CRITICAL"
+file = "libs/dataflow/weir/src/reachability_witness.rs"
+line_range = "1-35"
+description = """
+Module docstring claims `extract_path` bridges "weir's IFDS output" and reconstructs "the path the IFDS proved exists."
+However, the GPU-native IFDS implementation (`ifds_gpu.rs`) operates on an exploded supergraph where nodes are encoded `(proc, block, fact)` triples (see `encode_node` / `decode_node`).
+`extract_path` expects `source_node` and `sink_node` to be statement ids indexing into `pg_nodes` (plain program graph).
+The two node-id namespaces are disjoint; `extract_path` cannot consume the output of the real IFDS solver.
+It only works with the non-exploded `ifds_reach_step` in `ifds.rs`, which is explicitly tagged `MayOver` and is not real IFDS (it lacks call/return matching, summary edges, and sanitizer gating, per `ifds.rs:19-22`).
+"""
+suggested_fix = """
+Either:
+1. Add an exploded-supergraph path decoder that maps encoded `(proc, block, fact)` node ids back to statement ids before calling `extract_path`, or
+2. Remove the false claim that this module bridges real IFDS output and document that `extract_path` only works with the Tier-3 ProgramGraph forward-reach primitive.
+"""
+
+[[finding]]
+severity = "CRITICAL"
+file = "libs/dataflow/weir/src/reachability_witness.rs"
+line_range = "128-192"
+description = """
+`extract_path` has no sanitizer awareness whatsoever.
+It accepts only a single `ifds_reach` bitmask and greedily follows any reached predecessor.
+The upstream `ifds.rs` analysis is tagged `MayOver` and its docstring states "Rules requiring zero-FP MUST compose this primitive with an explicit sanitizer mask after each step" (`ifds.rs:34-36`).
+If the caller fails to perfectly sanitize the bitmask (or if the analysis over-approximates through a sanitizer), `extract_path` will emit a path that crosses a sanitizer node as if it were a valid proof bundle.
+This directly violates the load-bearing claim that the returned path is a valid IFDS witness.
+"""
+suggested_fix = """
+Add a `sanitizer_mask: &[u32]` parameter to `extract_path`.
+In `find_reached_predecessor`, reject any predecessor whose bit is set in the sanitizer mask.
+Return `None` if the only reachable predecessors are sanitizers.
+Update tests to cover a sanitizer node on the path.
+"""
+
+[[finding]]
+severity = "CRITICAL"
+file = "libs/dataflow/weir/src/reachability_witness.rs"
+line_range = "207-228"
+description = """
+In multi-source taint scenarios, `find_reached_predecessor` checks only that a predecessor is reached (`bit_is_set(ifds_reach, pred)`), not that it was reached by the specific `source_node` in the `PathSeed`.
+The bitmask is a single aggregate over all sources.
+The function iterates `pred` in numeric order (line 207: `for pred in 0..node_count`) and returns the first reached predecessor it finds.
+If source B reaches a predecessor with a lower node id than the correct predecessor on source A's path, the walker will build a witness from source B toward the sink, producing a path that does not actually connect `seed.source_node` to `seed.sink_node`.
+This is a silent false-positive witness.
+"""
+suggested_fix = """
+Require per-source reachability bitmasks (one bitmask per source fact), or precompute a backward-reachability bitmask from `source_node` and intersect it with `ifds_reach` at each step.
+Alternatively, change `PathSeed` to include a `source_specific_reach: &[u32]` field and validate that every predecessor on the path is set in that bitmask.
+"""
+
+[[finding]]
+severity = "HIGH"
+file = "libs/dataflow/weir/src/reachability_witness.rs"
+line_range = "96-99,164-183"
+description = """
+`MAX_PATH_DEPTH = 1024` causes `extract_path` to silently return `None` for any valid path longer than 1024 statements (line 181-183: `if current != seed.source_node { return None; }`).
+The docstring claims "Real source-to-sink paths in launch fixtures are <50 statements; 1024 is generous," but this is an assumption, not a guarantee.
+Deep call chains (e.g., nested dispatcher patterns in the Linux kernel), heavily unrolled loops, or obfuscated code can easily exceed 1024 edges.
+The test `respects_max_depth` (lines 404-434) only tests a disconnected graph; it does not exercise a valid path that exceeds the limit.
+"""
+suggested_fix = """
+Return a dedicated enum variant (e.g., `PathError::DepthExceeded { partial_chain: Vec<u32> }`) instead of collapsing to `None`.
+Callers can then distinguish "no path exists" from "path exists but is too long for greedy reconstruction" and optionally fall back to a shortest-path algorithm.
+Add a test with a linear chain of 1025 edges and assert the depth-exceeded variant is returned.
+"""
+
+[[finding]]
+severity = "HIGH"
+file = "libs/dataflow/weir/src/reachability_witness.rs"
+line_range = "158-162"
+description = """
+`visited` is sized to `pg_node_attrs.len()` (line 158), but `current` (initialized to `seed.sink_node`) is validated only against the `ifds_reach` bitmask (line 153), not against `pg_node_attrs` bounds.
+If `pg_node_attrs.len() < edge_offsets.len() - 1` and `seed.sink_node >= pg_node_attrs.len()`, line 162 (`visited[current as usize] = true;`) panics with an out-of-bounds index.
+This is a denial-of-service vector against the witness builder: a malformed or malicious `PathSeed` can crash the process.
+"""
+suggested_fix = """
+Add an upfront bounds check after the trivial-self-path branch:
+`if seed.sink_node as usize >= pg_node_attrs.len() || seed.source_node as usize >= pg_node_attrs.len() { return None; }`
+Alternatively, size `visited` to `edge_offsets.len().saturating_sub(1)` (the canonical node count) and validate both node ids against that bound before indexing.
+"""
+
+[[finding]]
+severity = "HIGH"
+file = "libs/dataflow/weir/src/reachability_witness.rs"
+line_range = "110-192"
+description = """
+The walker reconstructs paths on the plain program graph CSR, not the exploded supergraph.
+It has no concept of call/return balance: a path may enter a function via a `CALL_ARG` edge and exit via a `RETURN` edge belonging to a completely different call site, producing an unrealizable path.
+Real IFDS (Reps-Horwitz-Sagiv) requires paths to be "realizable" — call and return edges must be properly matched.
+The module docstring falsely claims the output is "the path the IFDS proved exists" (line 16-17), but the non-exploded `ifds_reach_step` (`ifds.rs:70-72`) itself does not enforce realizable paths.
+"""
+suggested_fix = """
+For interprocedural findings, reconstruct the path on the exploded supergraph where each node carries its calling context.
+If keeping the plain-graph walker, add a post-hoc validation pass that ensures every `CALL_ARG` edge along the path is matched with a corresponding `RETURN` edge from the same callee, and reject paths that violate realizable-path semantics.
+"""
+
+[[finding]]
+severity = "MEDIUM"
+file = "libs/dataflow/weir/src/reachability_witness.rs"
+line_range = "82-94"
+description = """
+`IFDS_PATH_EDGE_MASK` includes `ASSIGNMENT | CALL_ARG | RETURN | PHI | ALIAS | MEM_STORE | MEM_LOAD | MUT_REF`.
+The `edge_kind` enum (`vyre_primitives::predicate::edge_kind` and `surge-source/src/pipeline/edge_kinds.rs`) defines no exception-related kinds (e.g., `THROW`, `CATCH`, `LONGJMP`).
+Exception-based control flow is therefore completely unmodeled.
+If the upstream pipeline ever tags a `throw` as `CALL_ARG` to approximate it, the walker will include exception-only paths as normal dataflow; if it tags them as `CONTROL` (excluded), those paths are silently lost.
+Either way, the witness is unsound for C++ or languages with exceptions.
+"""
+suggested_fix = """
+Add `edge_kind::EXCEPTION_THROW` and `edge_kind::EXCEPTION_CATCH` (or `UNWIND`) to the edge-kind enum.
+Decide explicitly whether they belong in `IFDS_PATH_EDGE_MASK`:
+- If taint can flow through exceptions, include them and document the MayOver assumption.
+- If they must be excluded, add an explicit exclusion in `IFDS_PATH_EDGE_MASK` and document the limitation.
+"""
+
+[[finding]]
+severity = "MEDIUM"
+file = "libs/dataflow/weir/src/reachability_witness.rs"
+line_range = "187-191,250-267"
+description = """
+`build_statement` returns `None` only when `pg_node_attrs.get(node_id as usize)` fails (line 250).
+For invalid `file_idx` (line 252-254) it emits `"<unknown>"`; for missing `descriptions` (line 255-258) it emits a synthetic string.
+Line 189 (`filter_map`) drops nodes only when `pg_node_attrs` is missing the node, creating gaps in the path.
+Additionally, a garbage `file_idx` produces a misleading `"<unknown>"` file entry instead of failing, making the proof bundle untrustworthy.
+"""
+suggested_fix = """
+Make `build_statement` strict: return `None` if `file_idx` is out of bounds for `file_table` or if `node_id` is out of bounds for `descriptions`.
+Then replace `filter_map` with a strict mapping that returns `None` from `extract_path` if any node in `chain` fails to build, ensuring the path is complete or absent.
+"""
+
+[[finding]]
+severity = "MEDIUM"
+file = "libs/dataflow/weir/src/reachability_witness.rs"
+line_range = "206-228"
+description = """
+`find_reached_predecessor` performs a linear scan over all `node_count` nodes and iterates each node's outgoing edges to find one targeting `current`.
+With `node_count` potentially in the hundreds of thousands and `MAX_PATH_DEPTH` = 1024, worst-case complexity is O(1024 * E) where E is the total edge count.
+On large graphs (e.g., Linux kernel with millions of edges), this makes witness reconstruction a multi-second CPU operation per finding, violating the latency budget for a launch-scale pipeline.
+"""
+suggested_fix = """
+Build a reverse CSR (incoming-edge adjacency) once and pass it to `extract_path`.
+`find_reached_predecessor` then only scans the incoming edges of `current`, reducing per-step complexity to O(in-degree of current).
+"""
+
+[[finding]]
+severity = "LOW"
+file = "libs/dataflow/weir/src/reachability_witness.rs"
+line_range = "404-434"
+description = """
+Test `respects_max_depth` uses a disconnected graph (source 5, sink 6, all nodes have zero outgoing edges) and asserts `path.is_none()`.
+It does not exercise the actual depth-limit behavior on a valid long path.
+A bug that causes the depth limit to be ignored on connected graphs would not be caught.
+"""
+suggested_fix = """
+Add a test `valid_long_path_truncated_at_1024` that constructs a linear chain of 1025 `ASSIGNMENT` edges from source 0 to sink 1025, seeds the bitmask for all 1026 nodes, and asserts the expected behavior (depth-exceeded error, not `None` from "no path").
+"""
+
+[[finding]]
+severity = "LOW"
+file = "libs/dataflow/weir/src/reachability_witness.rs"
+line_range = "269-435"
+description = """
+The test module has no coverage for multi-source taint pollution.
+A test with two independent sources both reaching the sink would expose the wrong-source-selection bug in `find_reached_predecessor`.
+"""
+suggested_fix = """
+Add a test `multi_source_does_not_pollute_path` where:
+- Source A (node 0) reaches sink (node 3) via node 1.
+- Source B (node 4) reaches sink via node 2.
+- Seed uses source_node = 0.
+- Assert the reconstructed path is [0, 1, 3] and does not include node 2 or 4.
+"""

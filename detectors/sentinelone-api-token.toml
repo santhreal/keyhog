@@ -1,0 +1,28 @@
+# Docs: https://usea1-partners.sentinelone.net/apidocs/
+# Format: API token - long alphanumeric string, often 80+ characters
+# Verify: GET /web/api/v2.1/users with Authorization header
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "sentinelone-api-token"
+name = "SentinelOne API Token"
+service = "sentinelone"
+severity = "critical"
+keywords = ["SENTINELONE", "sentinelone", "S1_API", "SENTINEL"]
+
+[[detector.patterns]]
+regex = "(?:SENTINELONE|sentinelone|S1|sentinel)[_\\s]*(?:API[_\\s]*)?(?:TOKEN|KEY)[=:\\s\"'']+([a-zA-Z0-9_-]{60,100})"
+description = "SentinelOne API token with context anchor"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://usea1.sentinelone.net/web/api/v2.1/users"
+
+[detector.verify.auth]
+type = "header"
+name = "Authorization"
+template = "ApiToken {{match}}"
+
+[detector.verify.success]
+status = 200

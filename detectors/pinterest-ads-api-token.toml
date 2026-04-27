@@ -1,0 +1,26 @@
+# Docs: https://developers.pinterest.com/docs/api/v5/#tag/Authentication
+# Format: OAuth 2.0 access token, typically starting with pina_ for v5 API
+# Verify: GET https://api.pinterest.com/v5/user_account with Bearer token
+# Prefix: pina_
+
+[detector]
+id = "pinterest-ads-api-token"
+name = "Pinterest Ads API Token"
+service = "pinterest-ads"
+severity = "critical"
+keywords = ["pina_", "pinterest_ads", "PINTEREST_ADS"]
+
+[[detector.patterns]]
+regex = 'pina_[a-zA-Z0-9_-]{50,}'
+description = "Pinterest Ads API v5 access token (pina_ prefix)"
+
+[detector.verify]
+method = "GET"
+url = "https://api.pinterest.com/v5/user_account"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[detector.verify.success]
+status = 200

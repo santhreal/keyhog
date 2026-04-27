@@ -1,0 +1,31 @@
+# Docs: https://www.activepieces.com/docs/install/configuration/environment-variables
+# Format: API key for Activepieces automation platform
+# Verify: GET /api/v1/flows with Bearer token
+# Prefix: ap_
+
+[detector]
+id = "activepieces-api-key"
+name = "Activepieces API Key"
+service = "activepieces"
+severity = "high"
+keywords = ["ap_", "activepieces", "ACTIVEPIECES", "AP_API_KEY"]
+
+[[detector.patterns]]
+regex = "ap_[a-f0-9]{32,}"
+description = "Activepieces API key (ap_ prefix)"
+
+[[detector.patterns]]
+regex = "(?:ACTIVEPIECES|activepieces)[_\\.]?(?:API[_\\.]?)?(?:KEY|TOKEN)[=:\\s\"'']+([a-zA-Z0-9_-]{32,})"
+description = "Activepieces API key with context anchor"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://cloud.activepieces.com/api/v1/flows"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[detector.verify.success]
+status = 200

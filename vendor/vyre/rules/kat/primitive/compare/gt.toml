@@ -1,0 +1,11 @@
+op_id = "primitive.compare.gt"
+
+[[golden]]
+input = "0a00000005000000"
+expected = "01000000"
+reason = "10 > 5 is true â 1"
+
+[[golden]]
+input = "050000000a000000"
+expected = "00000000"
+reason = "5 > 10 is false â 0"

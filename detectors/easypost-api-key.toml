@@ -1,0 +1,24 @@
+# Docs: https://docs.easypost.com/guides/getting-started
+# Format: EZAK (production) or EZTK (test) prefix followed by base64-like string
+# Verify: GET /v2/addresses with Basic auth returns 200 if valid
+# Prefix: EZAK or EZTK
+
+[detector]
+id = "easypost-api-key"
+name = "EasyPost API Key"
+service = "easypost"
+severity = "high"
+keywords = ["EZAK", "EZTK", "EASYPOST", "api.easypost.com"]
+
+[[detector.patterns]]
+regex = "EZAK[0-9A-Za-z_-]{50,}"
+description = "EasyPost Production API key (EZAK prefix)"
+
+[[detector.patterns]]
+regex = "EZTK[0-9A-Za-z_-]{50,}"
+description = "EasyPost Test API key (EZTK prefix)"
+
+[[detector.patterns]]
+regex = "(?:EASYPOST|easypost)[._](?:API|api)[._](?:KEY|key)[=:\\s\"'']+(EZ[AT]K[0-9A-Za-z_-]+)"
+description = "EasyPost API key with context"
+group = 1

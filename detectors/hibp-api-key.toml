@@ -1,0 +1,28 @@
+# Docs: https://haveibeenpwned.com/API/v3
+# Format: 32-character hexadecimal string
+# Verify: GET /api/v3/breachedaccount/test@example.com with hibp-api-key header returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "hibp-api-key"
+name = "Have I Been Pwned API Key"
+service = "hibp"
+severity = "high"
+keywords = ["hibp-api-key", "haveibeenpwned", "HIBP_API_KEY"]
+
+[[detector.patterns]]
+regex = "(?:hibp-api-key|HIBP_API_KEY|haveibeenpwned)[=:\\s\"'']+([a-f0-9]{32})"
+description = "HIBP API key with context anchor"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://haveibeenpwned.com/api/v3/breachedaccount/test@hibp-integration-tests.com"
+
+[detector.verify.auth]
+type = "header"
+name = "hibp-api-key"
+template = "{{match}}"
+
+[detector.verify.success]
+status = 200

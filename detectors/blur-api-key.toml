@@ -1,0 +1,16 @@
+# Docs: https://blur.io/ (no public API documentation available)
+# Format: API key for programmatic trading (limited public info)
+# Verify: no public verification endpoint
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "blur-api-key"
+name = "Blur API Key"
+service = "blur"
+severity = "high"
+keywords = ["blur", "BLUR", "BLUR_API_KEY", "blur.io"]
+
+[[detector.patterns]]
+regex = "(?:blur|BLUR)[_\\s]*(?:API[_\\s]*)?KEY[_\\s]*[=:][\\s]*[\"'']+([a-zA-Z0-9_-]{20,})[\"'']+"
+description = "Blur API key in assignment context"
+group = 1

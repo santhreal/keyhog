@@ -1,0 +1,21 @@
+# Docs: https://developer.matomo.org/guides/authentication-in-depth
+# Format: 32-character hexadecimal string (token_auth)
+# Verify: GET /index.php?module=API&method=API.getMatomoVersion&token_auth=... returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "matomo-api-token"
+name = "Matomo API Token"
+service = "matomo"
+severity = "high"
+keywords = ["MATOMO_API_TOKEN", "token_auth", "MATOMO_TOKEN"]
+
+[[detector.patterns]]
+regex = "(?:MATOMO[_\\-\\s]?(?:API[_\\-\\s]?)?TOKEN|matomo[_\\-\\s]?(?:api[_\\-\\s]?)?token|token_auth)[=:\\s\"'']+([a-f0-9]{32})"
+description = "Matomo API token (token_auth) - 32 hex characters with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "matomo.*token_auth[=:\\s\"'']+([a-f0-9]{32})"
+description = "Matomo URL with token_auth parameter"
+group = 1

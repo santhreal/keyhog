@@ -1,0 +1,33 @@
+# Docs: https://min-api.cryptocompare.com/documentation
+# Format: Variable length alphanumeric string (no distinctive prefix)
+# Verify: GET /data/price with Authorization header returns 200 if valid
+# Prefix: none (alphanumeric string, requires context keywords)
+
+[detector]
+id = "cryptocompare-api-key"
+name = "CryptoCompare API Key"
+service = "cryptocompare"
+severity = "medium"
+keywords = ["cryptocompare", "CRYPTOCOMPARE", "CRYPTOCOMPARE_API_KEY", "cryptocompare_api_key", "min-api.cryptocompare.com"]
+
+[[detector.patterns]]
+regex = "(?:CRYPTOCOMPARE|cryptocompare)[_\\-\\.]?(?:API[_\\-\\.]?KEY|api[_\\-\\.]?key)[=:\\s\\\"']+([a-zA-Z0-9]{20,})"
+description = "CryptoCompare API key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "Authorization[=:\\s\\\"']+(?:Apikey\\s+)?([a-zA-Z0-9]{20,})"
+description = "CryptoCompare API key in Authorization header"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://min-api.cryptocompare.com/data/price?fsym=BTC&tsyms=USD"
+
+[detector.verify.auth]
+type = "header"
+name = "Authorization"
+template = "Apikey {{match}}"
+
+[detector.verify.success]
+status = 200

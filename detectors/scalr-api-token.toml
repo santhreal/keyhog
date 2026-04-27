@@ -1,0 +1,26 @@
+# Docs: https://docs.scalr.io/reference/overview-1
+# Format: JWT-style token (Bearer token) or Personal Access Token
+# Verify: GET /api/iacp/v3/account with Authorization: Bearer header returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "scalr-api-token"
+name = "Scalr API Token"
+service = "scalr"
+severity = "critical"
+keywords = ["SCALR_TOKEN", "scalr.io", "Authorization", "Bearer"]
+
+[[detector.patterns]]
+regex = "(?:SCALR[_-]TOKEN|SCALR[_-]API[_-]TOKEN)[=:\\s\"'']+(eyJ[a-zA-Z0-9_-]*\\.eyJ[a-zA-Z0-9_-]*\\.[a-zA-Z0-9_-]*)"
+description = "Scalr API JWT token with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:SCALR[_-]HOSTNAME)[=:\\s\"'']+([a-zA-Z0-9_-]+\\.scalr\\.io)"
+description = "Scalr hostname for API endpoint"
+group = 1
+
+[[detector.patterns]]
+regex = "Authorization[=:\\s\"'']+[Bb]earer\\s+(eyJ[a-zA-Z0-9_-]*\\.eyJ[a-zA-Z0-9_-]*\\.[a-zA-Z0-9_-]*)"
+description = "Scalr Bearer JWT token"
+group = 1

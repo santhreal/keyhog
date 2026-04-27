@@ -1,0 +1,31 @@
+# Docs: https://docs.gitlab.com/ee/user/profile/personal_access_tokens.html
+# Format: glpat- prefix followed by alphanumeric characters and hyphens (20+ chars)
+# Verify: HTTP GET to /api/v4/user with Private-Token header
+# Prefix: glpat-
+
+[detector]
+id = "gitlab-personal-access-token"
+name = "GitLab Personal Access Token"
+service = "gitlab"
+severity = "critical"
+keywords = ["glpat-", "gitlab"]
+
+[[detector.patterns]]
+regex = 'glpat-[a-zA-Z0-9\-]{20,64}'
+description = "GitLab personal access token (glpat- prefix, 20-64 chars)"
+
+[detector.verify]
+method = "GET"
+url = "https://gitlab.com/api/v4/user"
+
+[detector.verify.auth]
+type = "header"
+name = "Private-Token"
+template = "{{match}}"
+
+[detector.verify.success]
+status = 200
+
+[[detector.verify.metadata]]
+name = "username"
+json_path = "username"

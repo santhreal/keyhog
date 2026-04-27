@@ -1,0 +1,21 @@
+# Docs: https://amplitude.com/docs/apis/analytics/dashboard-rest
+# Format: API key is a 32 character hexadecimal string; paired with secret key
+# Verify: GET /api/2/events/list with Basic auth (api_key:secret_key base64)
+# Prefix: none (generic hex, requires keyword context)
+
+[detector]
+id = "amplitude-api-key"
+name = "Amplitude API Key"
+service = "amplitude"
+severity = "high"
+keywords = ["amplitude", "AMPLITUDE_API_KEY", "AMPLITUDE_KEY"]
+
+[[detector.patterns]]
+regex = "(?:amplitude|AMPLITUDE)[_.]?(?:api[_.]?)?key[=:\\s\"']+([a-f0-9]{32})"
+description = "Amplitude API key (32 hex chars) with context anchor"
+group = 1
+
+[[detector.companions]]
+name = "amplitude_secret_key"
+regex = "(?:amplitude|AMPLITUDE)[_.]?(?:secret|SECRET)[_.]?(?:key|KEY)[=:\\s\"']+([a-f0-9]{32})"
+within_lines = 5

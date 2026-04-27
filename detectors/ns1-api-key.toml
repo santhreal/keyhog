@@ -1,0 +1,41 @@
+# Docs: https://www.ns1.com/api
+# Format: API key passed in X-NSONE-Key header, typically 32-64 character alphanumeric
+# Verify: GET /v1/account/settings with X-NSONE-Key header returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "ns1-api-key"
+name = "NS1 API Key"
+service = "ns1"
+severity = "critical"
+keywords = ["NS1", "ns1", "NSONE", "nson", "X-NSONE-Key", "X-NS1-Key"]
+
+[[detector.patterns]]
+regex = "(?:NS1|ns1|NSONE|nsone)(?:_API)?[_-]?(?:KEY|key)[=:\\s\"']+([a-zA-Z0-9_-]{32,64})"
+description = "NS1 API key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "X-NSONE-Key[=:\\s\"']+([a-zA-Z0-9_-]{32,64})"
+description = "NS1 API key in X-NSONE-Key header format"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://api.nsone.net/v1/account/settings"
+
+[detector.verify.auth]
+type = "header"
+name = "X-NSONE-Key"
+template = "{{match}}"
+
+[detector.verify.success]
+status = 200
+
+[[detector.verify.metadata]]
+name = "name"
+json_path = "name"
+
+[[detector.verify.metadata]]
+name = "email"
+json_path = "email"

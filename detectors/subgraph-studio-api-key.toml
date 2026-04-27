@@ -1,0 +1,16 @@
+# Docs: https://thegraph.com/docs/en/querying/subgraph-studio/
+# Format: 32 character hexadecimal string
+# Verify: Bearer token to api.thegraph.com/subgraphs/name/{subgraph}, returns 200 if valid
+# Prefix: none (32 char hex, requires context anchoring)
+
+[detector]
+id = "subgraph-studio-api-key"
+name = "Subgraph Studio API Key"
+service = "subgraph-studio"
+severity = "high"
+keywords = ["subgraph", "studio", "api_key", "SUBGRAPH_STUDIO"]
+
+[[detector.patterns]]
+regex = "(?:SUBGRAPH_STUDIO|subgraph.?studio|studio.?api)[=:\\s\"'']+([a-f0-9]{32})"
+description = "Subgraph Studio API key with context anchor"
+group = 1

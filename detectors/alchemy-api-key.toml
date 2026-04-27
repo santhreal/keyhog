@@ -1,0 +1,26 @@
+# Docs: https://www.alchemy.com/docs/how-to-create-access-keys
+# Format: 32 character hexadecimal string (no prefix)
+# Verify: POST to eth_blockNumber endpoint with Bearer token returns 200 if valid
+# Prefix: none (32 hex chars, requires context keywords)
+
+[detector]
+id = "alchemy-api-key"
+name = "Alchemy API Key"
+service = "alchemy"
+severity = "critical"
+keywords = ["alchemy", "ALCHEMY_API_KEY", "ALCHEMY_APIKEY", "alchemy_api_key", "alchemy.com"]
+
+[[detector.patterns]]
+regex = "(?:ALCHEMY|alchemy)[_\\-\\.]?(?:API[_\\-\\.]?KEY|api[_\\-\\.]?key)[=:\\s\\\"']+([a-f0-9]{32})"
+description = "Alchemy API key with context anchor"
+group = 1
+
+[detector.verify]
+method = "POST"
+url = "https://eth-mainnet.g.alchemy.com/v2/{{match}}"
+
+[detector.verify.auth]
+type = "none"
+
+[detector.verify.success]
+status = 200

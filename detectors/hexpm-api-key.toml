@@ -1,0 +1,20 @@
+# Docs: https://hexdocs.pm/hex/Mix.Tasks.Hex.html
+# Format: hexpm_ prefix followed by Base64-encoded data, or legacy 64-char hex
+# Verify: GET /api/users with Authorization header returns 200 if valid
+# Prefix: hexpm_
+
+[detector]
+id = "hexpm-api-key"
+name = "Hex.pm API Key"
+service = "hexpm"
+severity = "high"
+keywords = ["hexpm_", "HEX_API_KEY", "HEXPM", "hex.pm"]
+
+[[detector.patterns]]
+regex = "hexpm_[A-Za-z0-9+/]{40,}={0,2}"
+description = "Hex.pm API key with hexpm_ prefix (new format)"
+
+[[detector.patterns]]
+regex = "(?:HEX_API_KEY|HEXPM_API_KEY|hex_api_key)[=:\\s\"'']+(hexpm_[A-Za-z0-9+/]{40,}={0,2}|[a-f0-9]{64})"
+description = "Hex.pm API key in environment/config context"
+group = 1

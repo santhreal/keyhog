@@ -1,0 +1,11 @@
+op_id = "primitive.compare.ge"
+
+[[golden]]
+input = "0500000005000000"
+expected = "01000000"
+reason = "5 >= 5 is true â 1"
+
+[[golden]]
+input = "0400000005000000"
+expected = "00000000"
+reason = "4 >= 5 is false â 0"

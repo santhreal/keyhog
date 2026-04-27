@@ -1,0 +1,16 @@
+# Docs: https://www.meilisearch.com/docs/learn/security/master_api_keys
+# Format: Alphanumeric string, typically 36+ characters (no fixed prefix)
+# Verify: GET /health with Authorization: Bearer header returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "meilisearch-api-key"
+name = "Meilisearch API Key"
+service = "meilisearch"
+severity = "high"
+keywords = ["MEILISEARCH_API_KEY", "MEILISEARCH_MASTER_KEY", "meilisearch_api_key", "meilisearch_master_key"]
+
+[[detector.patterns]]
+regex = "(?:MEILISEARCH[_-]?(?:API|MASTER|ADMIN)[_-]?KEY|meilisearch[_-]?(?:api|master|admin)[_-]?key)[=:\\s\"'']+([a-zA-Z0-9_-]{16,})"
+description = "Meilisearch API key with context anchor"
+group = 1

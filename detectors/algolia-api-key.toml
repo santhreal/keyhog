@@ -1,0 +1,36 @@
+# Docs: https://www.algolia.com/doc/guides/security/api-keys/
+# Format: 32 character hexadecimal string (search-only key)
+# Verify: none (requires paired application ID for verification)
+# Prefix: none (generic hex, requires keyword context)
+
+[detector]
+id = "algolia-api-key"
+name = "Algolia API Key"
+service = "algolia"
+severity = "medium"
+keywords = ["ALGOLIA_API_KEY", "algolia_api_key", "search_api_key", "ALGOLIA_SEARCH_KEY"]
+
+[[detector.patterns]]
+regex = "(?:ALGOLIA_API_KEY|algolia_api_key|search_api_key|ALGOLIA_SEARCH_KEY)[=:\\s\"']+([a-f0-9]{32})"
+description = "Algolia API key with context anchor"
+group = 1
+
+[[detector.companions]]
+name = "application_id"
+regex = "[A-Z0-9]{10}"
+within_lines = 5
+[detector.verify]
+method = "GET"
+url = "https://{{companion.application_id}}-dsn.algolia.net/1/indexes"
+
+[detector.verify.auth]
+type = "header"
+name = "X-Algolia-API-Key"
+template = "{{match}}"
+
+[[detector.verify.headers]]
+name = "X-Algolia-Application-Id"
+value = "{{companion.application_id}}"
+
+[detector.verify.success]
+status = 200

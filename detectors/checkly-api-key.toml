@@ -1,0 +1,40 @@
+# Docs: https://www.checklyhq.com/docs/cli/authentication
+# Format: cu_ prefix followed by 24 alphanumeric characters
+# Verify: GET /v1/checks with X-Checkly-Account header and Bearer token returns 200
+# Prefix: cu-
+
+[detector]
+id = "checkly-api-key"
+name = "Checkly API Key"
+service = "checkly"
+severity = "high"
+keywords = ["cu_", "CHECKLY_API_KEY", "checkly_api_key"]
+
+[[detector.patterns]]
+regex = "cu_[a-zA-Z0-9]{24}"
+description = "Checkly API key (cu- prefix)"
+
+[[detector.patterns]]
+regex = "(?:CHECKLY_API_KEY|checkly_api_key)[=:\\s\"'']+(cu_[a-zA-Z0-9]{24})"
+description = "Checkly API key with context anchor"
+group = 1
+
+[[detector.companions]]
+name = "account_id"
+regex = "(?:CHECKLY_ACCOUNT_ID|checkly_account_id)[=:\\s\"'']+([a-f0-9-]{36}|[a-zA-Z0-9]+)"
+within_lines = 5
+[detector.verify]
+method = "GET"
+url = "https://api.checklyhq.com/v1/checks"
+
+[detector.verify.auth]
+type = "header"
+name = "Authorization"
+template = "Bearer {{match}}"
+
+[[detector.verify.headers]]
+name = "X-Checkly-Account"
+value = "{{companion.account_id}}"
+
+[detector.verify.success]
+status = 200

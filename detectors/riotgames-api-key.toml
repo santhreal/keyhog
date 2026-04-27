@@ -1,0 +1,27 @@
+# Docs: https://developer.riotgames.com/docs/portal
+# Format: RGAPI- prefix followed by 40+ alphanumeric characters
+# Verify: GET https://americas.api.riotgames.com/riot/account/v1/accounts/me with X-Riot-Token header
+# Prefix: RGAPI-
+
+[detector]
+id = "riotgames-api-key"
+name = "Riot Games API Key"
+service = "riotgames"
+severity = "critical"
+keywords = ["RGAPI-", "RIOT_API_KEY", "X-Riot-Token"]
+
+[[detector.patterns]]
+regex = 'RGAPI-[a-zA-Z0-9]{40,}'
+description = "Riot Games API key (RGAPI-)"
+
+[detector.verify]
+method = "GET"
+url = "https://americas.api.riotgames.com/riot/account/v1/accounts/me"
+
+[detector.verify.auth]
+type = "header"
+name = "X-Riot-Token"
+template = "{{match}}"
+
+[detector.verify.success]
+status = 200

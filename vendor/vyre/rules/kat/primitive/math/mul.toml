@@ -1,0 +1,6 @@
+op_id = "primitive.math.mul"
+
+[[golden]]
+input = "ffff0000ffff0000"
+expected = "0100feff"
+reason = "65535 * 65535 = 0xFFFE0001 (wrapping mul, lower 32 bits)"

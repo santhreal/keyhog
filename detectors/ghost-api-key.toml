@@ -1,0 +1,16 @@
+# Docs: https://ghost.org/docs/admin-api/
+# Format: Admin API Key is id:secret pair (both hex), used to generate JWT
+# Verify: POST to /admin/session endpoint to generate JWT, then use in subsequent requests
+# Prefix: none (id:secret format with context anchoring)
+
+[detector]
+id = "ghost-api-key"
+name = "Ghost CMS Admin API Key"
+service = "ghost"
+severity = "high"
+keywords = ["ghost", "GHOST", "admin_api_key", "ghost_admin"]
+
+[[detector.patterns]]
+regex = '''(?:ghost|GHOST|admin[_-]?api[_-]?key|GHOST[_-]?ADMIN)[=:\s"\']+([a-f0-9]{24}:[a-f0-9]{64})'''
+description = "Ghost Admin API key in id:secret format"
+group = 1

@@ -1,0 +1,11 @@
+op_id = "primitive.math.div"
+
+[[golden]]
+input = "0a00000003000000"
+expected = "03000000"
+reason = "10 / 3 = 3 (integer floor division)"
+
+[[golden]]
+input = "0a00000000000000"
+expected = "00000000"
+reason = "10 / 0 = 0 (vyre div-by-zero policy)"

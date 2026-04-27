@@ -1,0 +1,26 @@
+# Docs: https://steamcommunity.com/dev/apikey
+# Format: 32 hex characters
+# Verify: GET https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/?key=<key>&steamids=76561197960434622
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "steam-api-key"
+name = "Steam Web API Key"
+service = "steam"
+severity = "high"
+keywords = ["STEAM_API_KEY", "steam_api_key", "SteamAPIKey"]
+
+[[detector.patterns]]
+regex = '''(?:STEAM_API_KEY|steam_api_key|SteamAPIKey)[=:\s"']+([a-f0-9]{32})'''
+description = "Steam Web API key (32 hex characters with context anchor)"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/?key={{match}}&steamids=76561197960434622"
+
+[detector.verify.auth]
+type = "none"
+
+[detector.verify.success]
+status = 200

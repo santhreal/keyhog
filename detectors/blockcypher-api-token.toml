@@ -1,0 +1,31 @@
+# Docs: https://www.blockcypher.com/dev/
+# Format: 24-32 character hexadecimal string (no distinctive prefix)
+# Verify: GET /v1/btc/main with token query parameter returns 200 if valid
+# Prefix: none (hex string, requires context keywords)
+
+[detector]
+id = "blockcypher-api-token"
+name = "BlockCypher API Token"
+service = "blockcypher"
+severity = "high"
+keywords = ["blockcypher", "BLOCKCYPHER", "BLOCKCYPHER_TOKEN", "blockcypher_token", "blockcypher.com"]
+
+[[detector.patterns]]
+regex = "(?:BLOCKCYPHER|blockcypher)[_\\-\\.]?(?:TOKEN|token|API[_\\-\\.]?TOKEN|api[_\\-\\.]?token)[=:\\s\\\"']+([a-f0-9]{24,32})"
+description = "BlockCypher API token with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "token[=:\\s\\\"']+([a-f0-9]{24,32})"
+description = "BlockCypher token in URL parameter"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://api.blockcypher.com/v1/btc/main?token={{match}}"
+
+[detector.verify.auth]
+type = "none"
+
+[detector.verify.success]
+status = 200

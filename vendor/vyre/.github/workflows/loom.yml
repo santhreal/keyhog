@@ -1,0 +1,26 @@
+name: loom
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: loom-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  loom:
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: --cfg loom
+      LOOM_MAX_PREEMPTIONS: '3'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Run loom tests
+        working-directory: libs/performance/matching/vyre
+        run: |
+          # Only run tests named loom_* under cfg loom. If a crate has none, it is a no-op.
+          cargo test --workspace --release -- --test-threads=1 loom_

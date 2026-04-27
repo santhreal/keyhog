@@ -1,0 +1,32 @@
+# Docs: https://developers.miro.com/docs/rest-api-reference-guide
+# Format: Bearer token - typically a long alphanumeric string
+# Verify: GET /v2/boards with Bearer token
+# Prefix: none (standard OAuth2 bearer token)
+
+[detector]
+id = "miro-api-token"
+name = "Miro API Access Token"
+service = "miro"
+severity = "high"
+keywords = ["MIRO", "miro"]
+
+[[detector.patterns]]
+regex = '''(?:MIRO|miro)[._-]?(?:TOKEN|token|ACCESS|access|API|api)[=:\s"']+(eyJ[A-Za-z0-9_-]*\.eyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]*)'''
+description = "Miro access token with context anchor (JWT format)"
+group = 1
+
+[[detector.patterns]]
+regex = '''(?:MIRO|miro)[._-]?(?:TOKEN|token|ACCESS|access|API|api)[=:\s"']+([a-zA-Z0-9_-]{40,})'''
+description = "Miro access token with context anchor (opaque format)"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://api.miro.com/v2/boards"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[detector.verify.success]
+status = 200

@@ -1,0 +1,27 @@
+pub mod vyre_build_scan
+pub struct vyre_build_scan::Registry<'a>
+pub vyre_build_scan::Registry::const_name: &'a str
+pub vyre_build_scan::Registry::element_type: &'a str
+pub vyre_build_scan::Registry::item_const_name: &'a str
+pub vyre_build_scan::Registry::module_prefix: &'a str
+pub vyre_build_scan::Registry::output_file: &'a str
+pub vyre_build_scan::Registry::scan_dir: &'a str
+impl<'a> core::marker::Freeze for vyre_build_scan::Registry<'a>
+impl<'a> core::marker::Send for vyre_build_scan::Registry<'a>
+impl<'a> core::marker::Sync for vyre_build_scan::Registry<'a>
+impl<'a> core::marker::Unpin for vyre_build_scan::Registry<'a>
+impl<'a> core::panic::unwind_safe::RefUnwindSafe for vyre_build_scan::Registry<'a>
+impl<'a> core::panic::unwind_safe::UnwindSafe for vyre_build_scan::Registry<'a>
+pub struct vyre_build_scan::RustSpecRegistry<'a>
+pub vyre_build_scan::RustSpecRegistry::const_name: &'a str
+pub vyre_build_scan::RustSpecRegistry::output_file: &'a str
+pub vyre_build_scan::RustSpecRegistry::scan_dirs: &'a [&'a str]
+impl<'a> core::marker::Freeze for vyre_build_scan::RustSpecRegistry<'a>
+impl<'a> core::marker::Send for vyre_build_scan::RustSpecRegistry<'a>
+impl<'a> core::marker::Sync for vyre_build_scan::RustSpecRegistry<'a>
+impl<'a> core::marker::Unpin for vyre_build_scan::RustSpecRegistry<'a>
+impl<'a> core::panic::unwind_safe::RefUnwindSafe for vyre_build_scan::RustSpecRegistry<'a>
+impl<'a> core::panic::unwind_safe::UnwindSafe for vyre_build_scan::RustSpecRegistry<'a>
+pub fn vyre_build_scan::scan(registry: &vyre_build_scan::Registry<'_>)
+pub fn vyre_build_scan::scan_all(registries: &[vyre_build_scan::Registry<'_>])
+pub fn vyre_build_scan::scan_rust_specs(registry: &vyre_build_scan::RustSpecRegistry<'_>)

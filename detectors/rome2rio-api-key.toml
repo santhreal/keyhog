@@ -1,0 +1,21 @@
+# Docs: https://www.rome2rio.com/documentation/
+# Format: 32-64 character alphanumeric string with no prefix
+# Verify: no public verification endpoint
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "rome2rio-api-key"
+name = "Rome2Rio API Key"
+service = "rome2rio"
+severity = "low"
+keywords = ["ROME2RIO", "rome2rio", "R2R", "r2r", "ROME2RIO_API_KEY"]
+
+[[detector.patterns]]
+regex = "(?:ROME2RIO|rome2rio|R2R_API_KEY|r2r_api_key)[=:\\s\"'']+([A-Za-z0-9]{32,64})"
+description = "Rome2Rio API key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:rome2rio|Rome2rio|Rome2Rio)[=:\\s\"'']+([A-Za-z0-9]{32,64})"
+description = "Rome2Rio key generic context"
+group = 1

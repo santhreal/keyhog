@@ -1,0 +1,16 @@
+# Docs: https://docs.strangebee.com/cortex/installation-and-configuration/authentication/
+# Format: Random alphanumeric API key
+# Verify: GET /api/analyzer with Authorization header
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "cortex-api-key"
+name = "Cortex API Key"
+service = "cortex"
+severity = "high"
+keywords = ["cortex", "CORTEX_API_KEY", "cortex_key"]
+
+[[detector.patterns]]
+regex = "(?:cortex|CORTEX)[\\s_-]*(?:api[_-]?key|key)[=:\\s\"'']+([a-zA-Z0-9_-]{20,64})"
+description = "Cortex API key with context anchor"
+group = 1

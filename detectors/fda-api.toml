@@ -1,0 +1,21 @@
+# Docs: https://open.fda.gov/apis/authentication/
+# Format: 40-character alphanumeric API key passed as query parameter or Basic Auth
+# Verify: no public verification endpoint
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "fda-api-key"
+name = "FDA Open API Key"
+service = "fda"
+severity = "medium"
+keywords = ["FDA_API_KEY", "OPENFDA_API_KEY", "openfda", "fda", "open.fda.gov"]
+
+[[detector.patterns]]
+regex = "(?:FDA|OPENFDA)_API_KEY[=:\\s\"'\\']+([a-zA-Z0-9]{40})"
+description = "FDA API key (40 alphanumeric chars) with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "open\\.fda\\.gov.*[?&]api_key=([a-zA-Z0-9]{40})"
+description = "FDA API key in URL query parameter"
+group = 1

@@ -1,0 +1,47 @@
+# Docs: https://customer.io/docs/api/track/#section/Authentication
+# Format: Site ID (alphanumeric) and API Key (base64 string starting with specific prefixes)
+# Verify: GET /v1/accounts/region with Bearer token returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "customerio-api-key"
+name = "Customer.io API Key"
+service = "customerio"
+severity = "critical"
+keywords = ["CUSTOMER_IO", "CUSTOMERIO", "CIO_SITE_ID", "CIO_API_KEY", "customer.io"]
+
+[[detector.patterns]]
+regex = "(?:CUSTOMERIO|CUSTOMER_IO|customerio|customer_io)[._-]?(?:SITE|site)[._-]?(?:ID|id)[=:\\s\"'']+([a-zA-Z0-9]{20,40})"
+description = "Customer.io Site ID"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:CUSTOMERIO|CUSTOMER_IO|customerio|customer_io)[._-]?(?:API|api)[._-]?(?:KEY|key)[=:\\s\"'']+([a-zA-Z0-9_-]{20,60})"
+description = "Customer.io API Key"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:CIO|cio)[._-]?(?:SITE|site)[._-]?(?:ID|id)[=:\\s\"'']+([a-zA-Z0-9]{20,40})"
+description = "Customer.io Site ID (CIO_ prefix format)"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:CIO|cio)[._-]?(?:API|api)[._-]?(?:KEY|key)[=:\\s\"'']+([a-zA-Z0-9_-]{20,60})"
+description = "Customer.io API Key (CIO_ prefix format)"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://track.customer.io/api/v1/accounts/region"
+
+[detector.verify.auth]
+type = "basic"
+username = "match"
+password = ""
+
+[detector.verify.success]
+status = 200
+
+[[detector.verify.metadata]]
+name = "region"
+json_path = "$.region"

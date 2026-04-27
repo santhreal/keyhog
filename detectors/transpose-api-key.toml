@@ -1,0 +1,16 @@
+# Docs: https://docs.transpose.io/
+# Format: 32 character hexadecimal string
+# Verify: GET /endpoint with X-API-Key header, returns 200 if valid
+# Prefix: none (32 char hex, requires context anchoring)
+
+[detector]
+id = "transpose-api-key"
+name = "Transpose API Key"
+service = "transpose"
+severity = "high"
+keywords = ["transpose", "TRANSPOSE", "api_key", "apikey"]
+
+[[detector.patterns]]
+regex = "(?:TRANSPOSE|transpose)[_a-zA-Z0-9]*[=:\\s\"'']+([a-f0-9]{32})"
+description = "Transpose API key with context anchor"
+group = 1

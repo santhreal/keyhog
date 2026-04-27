@@ -1,0 +1,26 @@
+name: Random-Order Tests
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_TEST_RETRIES: 0
+
+jobs:
+  random-order:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        threads: [1, 2, 4, 8]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+      - name: Run tests in random order
+        run: |
+          cargo test --workspace --all-targets -- -Z unstable-options --shuffle --test-threads=${{ matrix.threads }}

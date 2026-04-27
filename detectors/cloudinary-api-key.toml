@@ -1,0 +1,20 @@
+# Docs: https://cloudinary.com/documentation/finding_your_credentials_tutorial
+# Format: cloudinary:// protocol with API key, secret, and cloud name in URL format
+# Verify: No verify endpoint (credentials used in SDK or URL construction)
+# Prefix: cloudinary://
+
+[detector]
+id = "cloudinary-api-key"
+name = "Cloudinary API Key"
+service = "cloudinary"
+severity = "critical"
+keywords = ["cloudinary://", "cloudinary"]
+
+[[detector.patterns]]
+regex = 'cloudinary://[0-9]+:[A-Za-z0-9_-]+@[A-Za-z0-9_-]+'
+description = "Cloudinary full URL with API key and secret"
+
+[[detector.companions]]
+name = "cloudinary_secret"
+regex = 'CLOUDINARY_URL=cloudinary://[0-9]+:([A-Za-z0-9_-]+)@[A-Za-z0-9_-]+'
+within_lines = 5

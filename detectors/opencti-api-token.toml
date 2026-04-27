@@ -1,0 +1,16 @@
+# Docs: https://docs.opencti.io/latest/deployment/integrations/
+# Format: UUID v4 token
+# Verify: POST /graphql with Authorization header
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "opencti-api-token"
+name = "OpenCTI API Token"
+service = "opencti"
+severity = "critical"
+keywords = ["opencti", "OPENCTI_TOKEN", "opencti_api_key"]
+
+[[detector.patterns]]
+regex = "(?:opencti|OPENCTI)[\\s_-]*(?:token|api[_-]?key)[=:\\s\"'']+([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})"
+description = "OpenCTI API token (UUID v4) with context anchor"
+group = 1

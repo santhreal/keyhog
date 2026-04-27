@@ -1,0 +1,26 @@
+# Docs: https://resend.com/docs/api-reference/introduction
+# Format: API key starting with 're_' followed by 48 alphanumeric characters
+# Verify: Bearer token sent to api.resend.com/api-keys, returns 200 on success
+# Prefix: re_
+
+[detector]
+id = "resend-api-key"
+name = "Resend API Key"
+service = "resend"
+severity = "critical"
+keywords = ["re_"]
+
+[[detector.patterns]]
+regex = 're_[a-zA-Z0-9]{48}'
+description = "Resend API key (re_ prefix with 48 alphanumeric characters)"
+
+[detector.verify]
+method = "GET"
+url = "https://api.resend.com/api-keys"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[detector.verify.success]
+status = 200

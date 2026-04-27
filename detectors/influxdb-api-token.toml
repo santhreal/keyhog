@@ -1,0 +1,20 @@
+# Docs: https://docs.influxdata.com/influxdb/v2/admin/tokens/
+# Format: Organization-specific token with glc_, iex_, or user-generated format
+# Verify: POST /api/v2/query with Authorization: Token header
+# Prefix: glc_ (InfluxDB Cloud) or token prefix varies
+
+[detector]
+id = "influxdb-api-token"
+name = "InfluxDB API Token"
+service = "influxdb"
+severity = "critical"
+keywords = ["INFLUXDB_TOKEN", "influxdb", "influx-token"]
+
+[[detector.patterns]]
+regex = "(?:INFLUXDB_TOKEN|influxdb[_-]?token|influx[_-]?token)[=:\\s\"'']+([a-zA-Z0-9_-]{50,})"
+description = "InfluxDB API token with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "glc_[A-Za-z0-9+/=]{100,}"
+description = "InfluxDB Cloud token (glc_ prefix)"

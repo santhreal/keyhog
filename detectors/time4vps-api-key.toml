@@ -1,0 +1,26 @@
+# Docs: https://billing.time4vps.com/userapi/
+# Format: Username is email, Password is user-defined (Basic Auth)
+# Verify: GET /api/details with Basic auth returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "time4vps-api-key"
+name = "Time4VPS API Credentials"
+service = "time4vps"
+severity = "critical"
+keywords = ["TIME4VPS_USERNAME", "TIME4VPS_PASSWORD", "time4vps"]
+
+[[detector.patterns]]
+regex = "(?:TIME4VPS_USERNAME|time4vps_username)[=:\\s\"'']+([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,})"
+description = "Time4VPS API username (email) with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:TIME4VPS_PASSWORD|time4vps_password)[=:\\s\"'']+([A-Za-z0-9!@#$%^&*()_+\\-=\\[\\]{};\\'\":\"\\\\|,.<>/?]{8,64})"
+description = "Time4VPS API password with context anchor"
+group = 1
+
+[[detector.companions]]
+name = "time4vps_username"
+regex = "(?:TIME4VPS_USERNAME|time4vps_username)[=:\\s\"'']+([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,})"
+within_lines = 3

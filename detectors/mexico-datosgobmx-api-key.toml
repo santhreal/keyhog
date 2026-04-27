@@ -1,0 +1,26 @@
+# Docs: https://datos.gob.mx/busca/api/3/
+# Format: CKAN API key for Mexican open data portal (Sistema Ajolote)
+# Verify: Authorization header with CKAN API key to datos.gob.mx
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "mexico-datosgobmx-api-key"
+name = "Mexico Datos.gob.mx API Key"
+service = "mexico-datosgobmx"
+severity = "medium"
+keywords = ["datos.gob.mx", "DATOS_GOB_MX", "SISTEMA_AJOLOTE", "datosgobmx"]
+
+[[detector.patterns]]
+regex = '''(?:datos\.gob\.mx|DATOS_GOB|AJOLOTE)[_.-]?(?:API[_-]?KEY|api_key|CKAN[_-]?KEY|ckan_key)[\s"'=:]+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})'''
+description = "Mexico datos.gob.mx CKAN API key"
+group = 1
+
+[[detector.patterns]]
+regex = '''(?:datos\.gob\.mx).{0,30}Authorization[:\s]+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})'''
+description = "Mexico datos.gob.mx API key in Authorization header"
+group = 1
+
+[[detector.patterns]]
+regex = '''(?:api|admin)[_.-]?key[\s"'=:]+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}).{0,30}(?:datos\.gob\.mx|mexico)'''
+description = "Mexico CKAN API key with trailing context"
+group = 1

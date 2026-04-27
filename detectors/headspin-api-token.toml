@@ -1,0 +1,20 @@
+# Docs: https://www.headspin.io/docs/adb-api
+# Format: 32 character hexadecimal API token passed as Bearer token
+# Verify: GET /v0/adb/devices with Bearer token returns 200 if valid
+# Prefix: none (hexadecimal, requires context keyword or companion detection)
+
+[detector]
+id = "headspin-api-token"
+name = "HeadSpin API Token"
+service = "headspin"
+severity = "high"
+keywords = ["HEADSPIN_API_TOKEN", "headspin_api_token", "api-dev.headspin.io"]
+
+[[detector.patterns]]
+regex = "(?:HEADSPIN_API_TOKEN|headspin_api_token|headspin-token)[=:\\s\"'']+([a-f0-9]{32})"
+description = "HeadSpin API token (32 hex chars) with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "https://[a-z0-9-]*\\.headspin\\.io[^\\s\"'']*"
+description = "HeadSpin API endpoint URL"

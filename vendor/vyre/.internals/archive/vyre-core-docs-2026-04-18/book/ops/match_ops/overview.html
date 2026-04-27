@@ -1,0 +1,532 @@
+<!DOCTYPE HTML>
+<html lang="en" class="rust sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Match - The vyre Book</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="The GPU compute IR with a conformance prover">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../../favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="../../favicon-8114d1fc.png">
+        <link rel="stylesheet" href="../../css/variables-8adf115d.css">
+        <link rel="stylesheet" href="../../css/general-2459343d.css">
+        <link rel="stylesheet" href="../../css/chrome-ae938929.css">
+        <link rel="stylesheet" href="../../css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../../fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="../../highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="../../tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="../../ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "../../";
+            const default_light_theme = "rust";
+            const default_dark_theme = "navy";
+            window.path_to_searchindex_js = "../../searchindex-bc7bdb82.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="../../toc-16d598fb.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('rust')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="../../toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">The vyre Book</h1>
+
+                    <div class="right-buttons">
+                        <a href="../../print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/santhsecurity/vyre" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/santhsecurity/vyre/edit/main/core/docs/./ops/match_ops/overview.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                            <span class=fa-svg id="git-edit-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M421.7 220.3l-11.3 11.3-22.6 22.6-205 205c-6.6 6.6-14.8 11.5-23.8 14.1L30.8 511c-8.4 2.5-17.5 .2-23.7-6.1S-1.5 489.7 1 481.2L38.7 353.1c2.6-9 7.5-17.2 14.1-23.8l205-205 22.6-22.6 11.3-11.3 33.9 33.9 62.1 62.1 33.9 33.9zM96 353.9l-9.3 9.3c-.9 .9-1.6 2.1-2 3.4l-25.3 86 86-25.3c1.3-.4 2.5-1.1 3.4-2l9.3-9.3H112c-8.8 0-16-7.2-16-16V353.9zM453.3 19.3l39.4 39.4c25 25 25 65.5 0 90.5l-14.5 14.5-22.6 22.6-11.3 11.3-33.9-33.9-62.1-62.1L314.3 67.7l11.3-11.3 22.6-22.6 14.5-14.5c25-25 65.5-25 90.5 0z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="match-operations"><a class="header" href="#match-operations">Match Operations</a></h1>
+<h2 id="the-scanners-inner-loop"><a class="header" href="#the-scanners-inner-loop">The scanner’s inner loop</a></h2>
+<p>A security scanner’s value is determined by one thing: whether it
+finds the pattern. Everything else — the rule language, the report
+format, the CI integration, the dashboard — is packaging around a
+core question: given a byte buffer and a set of patterns, which
+patterns appear in the buffer and where?</p>
+<p>For decades, the answer has been the deterministic finite automaton.
+A DFA is a state machine compiled from a set of patterns. You feed
+it bytes one at a time. It transitions between states. When it
+reaches an accept state, it has found a pattern. The DFA processes
+one byte per cycle, regardless of how many patterns are loaded. A
+DFA with 10,000 patterns processes bytes at the same speed as a DFA
+with 10. This is the property that makes DFA-based scanners scale.</p>
+<p>GPU DFA scanning multiplies this advantage by the GPU’s parallelism.
+A CPU scans bytes sequentially: byte 0, then byte 1, then byte 2.
+A GPU scans from every starting byte simultaneously: invocation 0
+starts at byte 0, invocation 1 starts at byte 1, invocation 2
+starts at byte 2, and so on. Ten thousand invocations scan from ten
+thousand starting positions in parallel. The entire input buffer is
+scanned in one pass.</p>
+<p><code>match.dfa_scan</code> is this inner loop expressed as a vyre operation.
+It is not the DFA engine — the engine (<code>engine::dfa</code>) handles
+resource management, shader specialization, match deduplication,
+and readback. The op is the scanning kernel: the code that each
+invocation executes. It is a Layer 2 compound operation because it
+composes Layer 1 primitives (byte loads, table lookups, comparisons,
+atomic writes) into a complete scanning function.</p>
+<p>The distinction between the op and the engine matters for
+composability. A user who wants end-to-end scanning uses the engine.
+A user who wants to embed DFA scanning into a larger GPU program —
+perhaps a decode-then-scan pipeline, or a multi-pass scanner that
+runs different DFA tables on different regions — uses the op
+directly. The op is the reusable piece; the engine is the
+convenience wrapper.</p>
+<h2 id="how-dfa-scanning-works-on-the-gpu"><a class="header" href="#how-dfa-scanning-works-on-the-gpu">How DFA scanning works on the GPU</a></h2>
+<p>To understand the op, you need to understand the data structures it
+consumes. A compiled DFA is four arrays:</p>
+<h3 id="the-transition-table"><a class="header" href="#the-transition-table">The transition table</a></h3>
+<p>A flat <code>u32</code> array of length <code>state_count * 256</code>. Entry
+<code>state * 256 + byte</code> contains the next state for the given
+(state, byte) pair. The table encodes the entire DFA: every state,
+every possible input byte, every transition.</p>
+<pre><code class="language-text">next_state = transitions[current_state * 256 + input_byte]
+</code></pre>
+<p>Every entry must be <code>&lt; state_count</code>. The DFA compiler (from
+<code>warpstate</code>, <code>dfajit</code>, or any other source) is responsible for
+producing a valid table. vyre validates the table at compile time
+and rejects tables with out-of-range entries.</p>
+<p>The 256-wide stride means each state occupies exactly 256 words
+(1KB) in the table. This is a deliberate tradeoff: the table is
+large (a DFA with 10,000 states uses 10,000 * 256 * 4 = 10MB) but
+the lookup is a single array access with no branching. GPU memory
+controllers handle large sequential reads efficiently; the table
+fits in GPU VRAM with room to spare for inputs up to millions of
+states.</p>
+<h3 id="the-accept-map"><a class="header" href="#the-accept-map">The accept map</a></h3>
+<p>A <code>u32</code> array indexed by state. <code>accept_map[state]</code> is
+<code>0xFFFFFFFF</code> for non-accepting states and an output-link index for
+accepting states. The sentinel value <code>0xFFFFFFFF</code> was chosen because
+it is the maximum <code>u32</code> value and is unlikely to collide with a
+valid output-link index (which counts from 0).</p>
+<h3 id="the-output-links"><a class="header" href="#the-output-links">The output links</a></h3>
+<p>A table that maps accepting states to pattern IDs. A single accept
+state may match multiple patterns (if the DFA was compiled from
+overlapping pattern sets). The output-link structure varies by DFA
+compiler; the exposed result is always one match row per
+(pattern_id, start, end) tuple.</p>
+<h3 id="the-pattern-lengths"><a class="header" href="#the-pattern-lengths">The pattern lengths</a></h3>
+<p>A <code>u32</code> array indexed by pattern ID. <code>pattern_lengths[pattern_id]</code>
+stores the length of the pattern in bytes. This is necessary for
+reconstructing the match start position:</p>
+<pre><code class="language-text">match_end = current_byte_offset + 1
+match_start = match_end - pattern_lengths[pattern_id]
+</code></pre>
+<p>The DFA scanner knows where a match <em>ends</em> (the byte where it
+reached an accept state) but not where it <em>started</em> (the DFA does
+not track start positions during forward scanning). The pattern
+length bridges the gap.</p>
+<h2 id="the-operation"><a class="header" href="#the-operation">The operation</a></h2>
+<h3 id="matchdfa_scan"><a class="header" href="#matchdfa_scan">match.dfa_scan</a></h3>
+<p><strong>Identifier:</strong> <code>match.dfa_scan</code></p>
+<p><strong>Current state:</strong> Legacy WGSL-only. Production shader defined
+inline. Does not implement <code>Op::program()</code>.</p>
+<p><strong>Signature:</strong> <code>(Bytes) -&gt; U32</code></p>
+<p>The simplified signature understates the actual buffer interface.
+The DFA scan requires eight bindings:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Binding</th><th>Name</th><th>Access</th><th>Purpose</th></tr>
+</thead>
+<tbody>
+<tr><td>0</td><td><code>input_bytes</code></td><td>ReadOnly</td><td>Packed input bytes</td></tr>
+<tr><td>1</td><td><code>transitions</code></td><td>ReadOnly</td><td>DFA transition table</td></tr>
+<tr><td>2</td><td><code>accept_map</code></td><td>ReadOnly</td><td>Per-state accept indicator</td></tr>
+<tr><td>3</td><td><code>matches</code></td><td>ReadWrite</td><td>Match output rows</td></tr>
+<tr><td>4</td><td><code>match_count</code></td><td>ReadWrite</td><td>Atomic match counter</td></tr>
+<tr><td>5</td><td><code>params</code></td><td>Uniform</td><td><code>{input_len, state_count, max_matches}</code></td></tr>
+<tr><td>6</td><td><code>output_links</code></td><td>ReadOnly</td><td>Accept state → pattern ID mapping</td></tr>
+<tr><td>7</td><td><code>pattern_lengths</code></td><td>ReadOnly</td><td>Pattern lengths for start reconstruction</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Workgroup size:</strong> 256.</p>
+<p><strong>The scanning loop:</strong></p>
+<p>Each invocation starts at a different byte offset and walks forward
+through the input until the end:</p>
+<pre><code class="language-text">start_offset = global_invocation_id.x
+if start_offset &gt;= input_len: return
+
+state = 0
+for pos in start_offset .. input_len:
+    byte = read_byte(input_bytes, pos)
+    state = transitions[state * 256 + byte]
+    if accept_map[state] != 0xFFFFFFFF:
+        emit_matches(state, pos)
+</code></pre>
+<p>This is the entire inner loop. It is simple by design. The
+complexity lives in the DFA compiler (which produces the transition
+table); the scanner is just a table walker.</p>
+<p><strong>Why every invocation scans to end-of-input:</strong></p>
+<p>A tempting optimization is to have each invocation scan only a
+fixed-size window of bytes. Invocation 0 scans bytes 0–255,
+invocation 1 scans bytes 256–511, and so on. This would reduce
+redundant work.</p>
+<p>It would also miss matches. A pattern that starts at byte 200 and
+ends at byte 300 would not be found by invocation 0 (which stops
+at byte 255) or by invocation 1 (which starts at byte 256 and
+therefore starts the DFA in state 0, missing the prefix at bytes
+200–255). The match falls in the gap between windows.</p>
+<p>Scanning to end-of-input guarantees completeness: every match is
+found by at least the invocation that starts at the match’s first
+byte. The cost is redundant work — invocations near the start of
+the input traverse almost the entire input. For a 1MB input with
+256-byte workgroups, the first workgroup’s invocations each scan
+~1MB. Later invocations scan progressively less.</p>
+<p>In practice, the redundant work is not as expensive as it sounds.
+The transition table is in GPU cache after the first few invocations
+read it. The input buffer is read sequentially by each invocation.
+The GPU’s memory hierarchy handles both patterns efficiently. And
+the alternative — missed matches — is not acceptable for a security
+scanner.</p>
+<p><strong>Byte reading:</strong></p>
+<p>Input bytes are packed into <code>array&lt;u32&gt;</code> using vyre’s standard
+<code>Bytes</code> encoding. Byte <code>i</code> is extracted from word <code>i / 4</code>, lane
+<code>i % 4</code>:</p>
+<pre><code class="language-wgsl">fn read_byte(pos: u32) -&gt; u32 {
+    let word = input_bytes[pos / 4u];
+    return (word &gt;&gt; ((pos % 4u) * 8u)) &amp; 0xFFu;
+}
+</code></pre>
+<p>Out-of-bounds reads (pos &gt;= input buffer length in words) return
+zero via vyre’s OOB policy. The scan loop checks <code>pos &lt; input_len</code>
+to prevent zero-padding bytes from generating false matches. Without
+this check, the DFA would process zero bytes beyond the input, which
+could reach accept states for patterns that end with zero bytes.</p>
+<p><strong>Match emission:</strong></p>
+<p>When <code>accept_map[state] != 0xFFFFFFFF</code>, the invocation emits match
+rows. Each row is three consecutive <code>u32</code> values:</p>
+<pre><code class="language-text">matches[idx * 3 + 0] = pattern_id
+matches[idx * 3 + 1] = pos + 1 - pattern_lengths[pattern_id]   // start (inclusive)
+matches[idx * 3 + 2] = pos + 1                                  // end (exclusive)
+</code></pre>
+<p>The index <code>idx</code> is obtained by <code>atomicAdd(&amp;match_count, 1)</code>. The
+atomic ensures that concurrent invocations do not overwrite each
+other’s match rows. If <code>idx &gt;= max_matches</code>, the row is not written,
+but the counter continues incrementing. This provides two pieces of
+information after readback:</p>
+<ol>
+<li>The actual match count (including overflow).</li>
+<li>Whether overflow occurred (<code>match_count &gt; max_matches</code>).</li>
+</ol>
+<p>The host can use the overflow count to decide whether to re-dispatch
+with a larger match buffer.</p>
+<p><strong>Match deduplication:</strong></p>
+<p>Because every invocation scans to end-of-input, the same match may
+be discovered by multiple invocations. If a pattern starts at byte
+100, invocations 0 through 100 will all discover it (assuming they
+all reach the accept state at the same position). The op does NOT
+deduplicate — it emits all discoveries. Deduplication is the
+engine’s responsibility (<code>engine::dfa</code> sorts and deduplicates after
+readback).</p>
+<p>This separation is deliberate. Deduplication on the GPU would
+require either a hash set (complex, memory-intensive) or a
+sort-then-compact pass (a separate dispatch). Both add complexity
+to the scanning kernel. Moving deduplication to the host keeps the
+kernel simple and lets the engine choose the most efficient
+deduplication strategy for the workload.</p>
+<p><strong>Match ordering:</strong></p>
+<p>Matches are emitted in atomic-append order, which is
+nondeterministic (it depends on GPU thread scheduling). The engine
+sorts matches into the canonical order <code>(start, end, pattern_id)</code>
+after readback. This sort is the mechanism that restores determinism
+— the same input always produces the same sorted match list,
+regardless of the GPU’s internal scheduling.</p>
+<h2 id="beyond-security-scanning"><a class="header" href="#beyond-security-scanning">Beyond security scanning</a></h2>
+<p>DFA scanning was motivated by pattern matching in security rules, but DFA
+engines are used everywhere patterns must be matched at speed:</p>
+<ul>
+<li>
+<p><strong>Log analysis.</strong> Searching terabytes of logs for patterns (error codes,
+IP addresses, timestamps, exception traces) is DFA matching. GPU DFA
+processing turns hours of grep into seconds.</p>
+</li>
+<li>
+<p><strong>Network intrusion detection.</strong> Snort, Suricata, and every IDS/IPS
+matches network packets against thousands of signatures using DFA engines.
+GPU acceleration enables line-rate matching on 100Gbps links.</p>
+</li>
+<li>
+<p><strong>DNA sequence matching.</strong> Genomics tools match short read sequences
+against reference genomes using finite automata. GPU DFA scanning
+parallelizes across millions of reads.</p>
+</li>
+<li>
+<p><strong>Content filtering.</strong> Spam detection, content moderation, and data loss
+prevention all match text against pattern databases. The same DFA op
+powers all of them.</p>
+</li>
+<li>
+<p><strong>Compiler lexing.</strong> Lexical analysis is DFA matching — the lexer walks
+a transition table to classify input characters into tokens. A GPU
+lexer built on <code>match.dfa_scan</code> could lex millions of source files
+simultaneously.</p>
+</li>
+</ul>
+<p>The DFA scan op is domain-agnostic. It walks a transition table over bytes.
+What the patterns represent — malware signatures, log patterns, DNA
+sequences, lexer rules — is determined by the DFA compiler, not by the op.</p>
+<h2 id="future-match-operations"><a class="header" href="#future-match-operations">Future match operations</a></h2>
+<p>The spec envisions additional match operations that extract
+predicates from match results:</p>
+<ul>
+<li><strong>match.proximity</strong> — do two patterns appear within N bytes?</li>
+<li><strong>match.count</strong> — how many of N specified patterns matched?</li>
+<li><strong>match.scope</strong> — do two patterns appear in the same syntactic
+scope (brace-balanced region)?</li>
+<li><strong>match.sequential</strong> — do patterns appear in a specific order?</li>
+<li><strong>match.contains</strong> — does one match region contain another?</li>
+</ul>
+<p>These predicates will be added as standalone Layer 2 ops in the
+match_ops domain. Each is a Category A composition of primitives,
+usable directly from any vyre Program — for example, a taint
+analysis that needs proximity information between sources and
+sinks consumes <code>match.proximity</code> the same way it consumes any
+other op.</p>
+<h2 id="migration-to-ir-first"><a class="header" href="#migration-to-ir-first">Migration to IR-first</a></h2>
+<p>Expressing <code>match.dfa_scan</code> as an <code>ir::Program</code>:</p>
+<pre><code class="language-text">Program {
+    buffers: [input, transitions, accept_map, matches, match_count, params, output_links, pattern_lengths],
+    workgroup_size: [256, 1, 1],
+    entry: [
+        Let("gid", InvocationId(0)),
+        If(Lt(Var("gid"), Load(params, "input_len")), [
+            Let("state", LitU32(0)),
+            Loop("pos", Var("gid"), Load(params, "input_len"), [
+                Let("byte", read_byte_expr(Var("pos"))),
+                Assign("state", Load(transitions, BinOp(Add, BinOp(Mul, Var("state"), LitU32(256)), Var("byte")))),
+                If(Ne(Load(accept_map, Var("state")), LitU32(0xFFFFFFFF)), [
+                    // emit match logic using Atomic { op: Add } on match_count
+                ]),
+            ]),
+        ]),
+    ],
+}
+</code></pre>
+<p>Every construct — the loop, the conditional, the table lookup, the
+atomic counter, the byte extraction — maps directly to IR nodes and
+expressions. The migration is mechanical.</p>
+<h2 id="what-the-conformance-suite-will-verify"><a class="header" href="#what-the-conformance-suite-will-verify">What the conformance suite will verify</a></h2>
+<p><strong>Empty input:</strong> 0 bytes. Expected: 0 matches.</p>
+<p><strong>Single-byte patterns:</strong> One pattern per ASCII character (256
+patterns). Input is “the quick brown fox.” Expected: matches at
+every character position.</p>
+<p><strong>Overlapping patterns:</strong> Patterns “ab”, “abc”, “abcd”. Input is
+“abcde”. Expected: three matches starting at position 0.</p>
+<p><strong>No matches:</strong> Input that contains no pattern. Expected: 0 matches.</p>
+<p><strong>Maximum input size:</strong> Input at the GPU buffer size limit. Expected:
+successful scan or structured resource-exceeded error.</p>
+<p><strong>Transition table with maximum state count:</strong> Stress test for
+table lookup performance and OOB handling.</p>
+<p><strong>Determinism:</strong> Same input, same DFA, 100 runs. Expected: identical
+sorted match lists.</p>
+<h2 id="permanence"><a class="header" href="#permanence">Permanence</a></h2>
+<p>The operation identifier <code>match.dfa_scan</code> is permanent. The
+transition table format (<code>state_count * 256</code> entries, each
+<code>&lt; state_count</code>) is permanent. The <code>0xFFFFFFFF</code> sentinel for
+non-accepting states is permanent. The match output format
+<code>(pattern_id, start, end)</code> as three packed <code>u32</code> values is
+permanent. The byte encoding (<code>Bytes</code> layout, byte <code>i</code> in word
+<code>i/4</code> lane <code>i%4</code>) is permanent.</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../../ops/graph/overview.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="../../ops/compression/overview.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../../ops/graph/overview.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="../../ops/compression/overview.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="../../elasticlunr-ef4e11c1.min.js"></script>
+        <script src="../../mark-09e88c2c.min.js"></script>
+        <script src="../../searcher-c2a407aa.js"></script>
+
+        <script src="../../clipboard-1626706a.min.js"></script>
+        <script src="../../highlight-abc7f01d.js"></script>
+        <script src="../../book-a0b12cfe.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+
+    </div>
+    </body>
+</html>

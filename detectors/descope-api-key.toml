@@ -1,0 +1,21 @@
+# Docs: https://docs.descope.com/api/management/users
+# Format: Project ID (P2 followed by alphanumeric) and Management Key pair used as Bearer token
+# Verify: GET /v1/management/users with Bearer token (ProjectID:ManagementKey)
+# Prefix: P2 (project ID prefix)
+
+[detector]
+id = "descope-api-key"
+name = "Descope Management API Key"
+service = "descope"
+severity = "critical"
+keywords = ["P2", "descope", "management key"]
+
+[[detector.patterns]]
+regex = "(?:descope|DESCOPE)[\\s\\S]{0,100}?(P2[a-zA-Z0-9_-]+)[\"\\']?"
+description = "Descope Project ID with context"
+group = 1
+
+[[detector.companions]]
+name = "management_key"
+regex = "(?:management[_-]?key|api[_-]?secret)[\"\\']?\\s*[:=]\\s*[\"\\']([a-zA-Z0-9_-]{20,})[\"\\']"
+within_lines = 5

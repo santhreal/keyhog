@@ -1,0 +1,28 @@
+# Docs: https://agenta.ai/docs/reference/api/agenta-api
+# Format: 32-character hex string, no unique prefix
+# Verify: GET /apps with Authorization: ApiKey header returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "agenta-api-key"
+name = "Agenta API Key"
+service = "agenta"
+severity = "high"
+keywords = ["AGENTA_API_KEY", "ApiKey", "agenta"]
+
+[[detector.patterns]]
+regex = "(?:AGENTA_API_KEY|agenta.api.key)[=:\\s\"'']+([a-f0-9]{32})"
+description = "Agenta API key with context anchor"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://cloud.agenta.ai/api/apps"
+
+[detector.verify.auth]
+type = "header"
+name = "Authorization"
+template = "ApiKey {{match}}"
+
+[detector.verify.success]
+status = 200

@@ -1,0 +1,21 @@
+# Docs: https://uptimerobot.com/api/
+# Format: API key sent in POST body (alphanumeric string, typically 10+ chars)
+# Verify: POST /v2/getAccountDetails with api_key returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "uptimerobot-api-key"
+name = "Uptime Robot API Key"
+service = "uptimerobot"
+severity = "high"
+keywords = ["uptimerobot", "UPTIMEROBOT", "api_key", "api.uptimerobot.com"]
+
+[[detector.patterns]]
+regex = "(?:uptimerobot|UPTIMEROBOT)[_.]?api[_-]?key[=:\\s\"'']+([a-zA-Z0-9_-]{10,})"
+description = "Uptime Robot API key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "api_key[=:\\s\"'']+([a-zA-Z0-9_-]{10,})[^\\n]*(?:uptimerobot|UPTIMEROBOT|api\\.uptimerobot\\.com)"
+description = "Uptime Robot API key followed by context"
+group = 1

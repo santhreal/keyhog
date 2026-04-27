@@ -1,0 +1,21 @@
+# Docs: https://docs.routee.net/docs/get-authenticated
+# Format: application-id (24 hex chars) and application-secret (12 alphanumeric chars)
+# Verify: POST /oauth/token with Basic auth to exchange for access token
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "routee-api-key"
+name = "Routee API Credentials"
+service = "routee"
+severity = "critical"
+keywords = ["routee", "ROUTEE", "application-id", "application-secret", "go.routee.net"]
+
+[[detector.patterns]]
+regex = '''(?:routee|ROUTEE)[_.-]?(?:application|APPLICATION)?[_.-]?(?:id|ID)?[=:\s"\' ]+([a-f0-9]{24})'''
+description = "Routee Application ID (24 hex characters)"
+group = 1
+
+[[detector.patterns]]
+regex = '''(?:routee|ROUTEE)[_.-]?(?:application|APPLICATION)?[_.-]?(?:secret|SECRET)?[=:\s"\' ]+([a-zA-Z0-9]{12,32})'''
+description = "Routee Application Secret (alphanumeric string)"
+group = 1

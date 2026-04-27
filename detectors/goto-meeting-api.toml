@@ -1,0 +1,21 @@
+# Docs: https://developer.goto.com/GoToMeetingV1
+# Format: GoTo Meeting uses OAuth2 access tokens and organizer keys
+# Verify: GET /G2M/rest/v1/meetings with Bearer token
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "goto-meeting-api"
+name = "GoTo Meeting API Credentials"
+service = "goto-meeting"
+severity = "critical"
+keywords = ["goto", "gotomeeting", "GOTO_MEETING", "getgo.com"]
+
+[[detector.patterns]]
+regex = "(?:goto[_\\-\\s]?meeting|gotomeeting|G2M)[_\\-\\s]?(?:api[_\\-\\s]?key|access[_\\-\\s]?token|secret)[\"\\'\\s]*[=:][\"\\'\\s]*([a-zA-Z0-9_\\-]{32,})"
+description = "GoTo Meeting API credential with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:GOTO[_\\-\\s]?MEETING[_\\-\\s]?API[_\\-\\s]?KEY|G2M[_\\-\\s]?TOKEN|GOTO[_\\-\\s]?SECRET)[\"\\'\\s]*[=:][\"\\'\\s]*([a-zA-Z0-9_\\-]{32,})"
+description = "GoTo Meeting API credential in environment variable format"
+group = 1

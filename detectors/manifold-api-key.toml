@@ -1,0 +1,21 @@
+# Docs: https://docs.manifold.markets/api
+# Format: API key passed as "Authorization: Key {key}" header
+# Verify: GET /v0/me with Authorization header returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "manifold-api-key"
+name = "Manifold API Key"
+service = "manifold"
+severity = "medium"
+keywords = ["manifold", "MANIFOLD", "manifold.markets"]
+
+[[detector.patterns]]
+regex = "(?:manifold|MANIFOLD)[_\\s]*(?:API[_\\s]*)?KEY[_\\s]*[=:][\\s]*[\"'']+([a-zA-Z0-9_-]{20,})[\"'']+"
+description = "Manifold API key in assignment context"
+group = 1
+
+[[detector.patterns]]
+regex = "Authorization[\\s]*:[\\s]*Key[\\s]+([a-zA-Z0-9_-]{20,})"
+description = "Manifold API key in Authorization header"
+group = 1

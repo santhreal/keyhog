@@ -1,0 +1,21 @@
+# Docs: https://redis.io/docs/latest/operate/rc/api/get-started/manage-api-keys/
+# Format: 32 hex characters (account key) with x-api-key header
+# Verify: none (no simple public verification endpoint)
+# Prefix: none (generic hex - REQUIRES context anchoring)
+
+[detector]
+id = "redis-labs-api-key"
+name = "Redis Labs API Key"
+service = "redis"
+severity = "high"
+keywords = ["x-api-key", "redislabs", "redis_labs", "REDIS_LABS", "api.redislabs", "REDIS_API_KEY", "redis_api_key"]
+
+[[detector.patterns]]
+regex = "(?:REDIS|redis|REDISLABS|redislabs).{0,20}(?:API_KEY|api_key|api-key|key).{0,5}[=:\\s\"']+([a-f0-9]{32})"
+description = "Redis Labs Cloud API account key with context anchor (32 hex chars)"
+group = 1
+
+[[detector.companions]]
+name = "secret_key"
+regex = "(?:REDIS|redis|REDISLABS|redislabs).{0,20}(?:SECRET|secret).{0,5}[=:\\s\"']+([a-f0-9]{64})"
+within_lines = 5

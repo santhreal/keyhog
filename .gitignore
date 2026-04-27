@@ -1,0 +1,44 @@
+target/
+scripts/logs/
+*.pyc
+__pycache__/
+*.log
+
+# ── Test data (contains secret-like patterns for testing) ──
+tests/
+benches/
+!crates/*/benches/
+!crates/*/benches/**
+crates/scanner/tests/
+crates/scanner/src/adversarial_tests/
+crates/verifier/tests/
+!crates/*/tests/
+!crates/*/tests/**
+!crates/scanner/tests/
+!crates/scanner/tests/**
+!crates/verifier/tests/
+!crates/verifier/tests/**
+
+# ── ML training data (contains secret examples) ──
+ml/
+
+# ── Internal audit docs ──
+audits/
+
+# ── Benchmark results (downloadable from releases) ──
+BENCHMARKS.md
+VALIDATION.md
+benchmarks/
+
+# ── Non-Rust project dirs (separate repos) ──
+deno/
+go/
+laravel/
+linux/
+ruff/
+tailwind/
+react/
+benchmark-harness/data/
+benchmark-harness/data/
+benchmark-harness/
+benchmark-harness/data/

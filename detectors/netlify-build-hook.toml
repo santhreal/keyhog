@@ -1,0 +1,20 @@
+# Docs: https://docs.netlify.com/configure-builds/build-hooks/
+# Format: URL containing UUID at https://api.netlify.com/build_hooks/{uuid}
+# Verify: POST to hook URL triggers build (no auth required for POST)
+# Prefix: https://api.netlify.com/build_hooks/
+
+[detector]
+id = "netlify-build-hook"
+name = "Netlify Build Hook"
+service = "netlify"
+severity = "high"
+keywords = ["netlify", "build_hooks"]
+
+[[detector.patterns]]
+regex = "https://api\\.netlify\\.com/build_hooks/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+description = "Netlify build hook URL with UUID"
+
+[[detector.patterns]]
+regex = "(?:NETLIFY|netlify)[_\\-\\s]*(?:BUILD|build)[_\\-\\s]*(?:HOOK|hook)[_\\-\\s]*(?:URL|url)?[=:\\s\"'\\']+https://api\\.netlify\\.com/build_hooks/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"
+description = "Netlify build hook URL with context anchor"
+group = 1

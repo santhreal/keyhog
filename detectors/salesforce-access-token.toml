@@ -1,0 +1,20 @@
+# Docs: https://developer.salesforce.com/docs/service/messaging-partner/guide/generate-token.html
+# Format: {orgId}!{token} or long OAuth access token (120+ chars)
+# Verify: GET /services/oauth2/userinfo with Bearer token
+# Prefix: 00D (org ID prefix) OR {orgId}! format
+
+[detector]
+id = "salesforce-access-token"
+name = "Salesforce Access Token"
+service = "salesforce"
+severity = "critical"
+keywords = ["salesforce", "SALESFORCE", "force.com", "SF_ACCESS_TOKEN", "sf_access_token"]
+
+[[detector.patterns]]
+regex = "00D[a-zA-Z0-9]{12,18}![a-zA-Z0-9\\.\\-]{100,}"
+description = "Salesforce session ID/access token with instance ID prefix (00D)"
+
+[[detector.patterns]]
+regex = "(?:SALESFORCE|salesforce|SF_|sf_).{0,20}(?:TOKEN|token|ACCESS|access).{0,5}[=:\\s\"']+([a-zA-Z0-9]{120,})"
+description = "Salesforce OAuth access token with context anchor (long alphanumeric)"
+group = 1

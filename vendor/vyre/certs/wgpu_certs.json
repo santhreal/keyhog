@@ -1,0 +1,6 @@
+{
+  "status": "placeholder — regenerated at release-tag time by `cargo run -p vyre-conform-runner --all-features`",
+  "note": "Prior file shipped 10 entries whose program_blake3 + witness_set_blake3 were literal 'TBD' with `1970-01-01T00:00:00Z` timestamps and empty laws_verified arrays, all signed with a real ed25519 signature over placeholder content. That made the signatures cover no meaningful claim — deleted 2026-04-22 per LAW 9.",
+  "regeneration": "The conform runner writes one entry per registered op, signing each over (program_blake3 || witness_set_blake3 || adapter_fingerprint || laws_verified). Run on the release host so the emitted signatures are anchored to the shipped binary.",
+  "cert_schema_reference": "conform/vyre-conform-runner/src/bundle_cert.rs"
+}

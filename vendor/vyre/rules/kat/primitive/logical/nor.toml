@@ -1,0 +1,15 @@
+op_id = "primitive.logical.nor"
+
+[[kat]]
+input = "0000000000000000"
+expected = "01000000"
+source = "hand-verified reference vector from Rust semantics"
+
+[[adversarial]]
+input = ""
+reason = "empty input exercises validation and boundary handling"
+
+[[golden]]
+input = "0000000000000000"
+expected = "01000000"
+reason = "nor(0,0)=1"

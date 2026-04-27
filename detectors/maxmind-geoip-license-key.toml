@@ -1,0 +1,21 @@
+# Docs: https://dev.maxmind.com/geoip/docs/web-services/requests
+# Format: 16 alphanumeric characters
+# Verify: GET /geoip/v2.1/country/me with basic auth returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "maxmind-geoip-license-key"
+name = "MaxMind GeoIP License Key"
+service = "maxmind"
+severity = "medium"
+keywords = ["MAXMIND_LICENSE_KEY", "MAXMIND_ACCOUNT_ID", "maxmind", "GEOIP_LICENSE"]
+
+[[detector.patterns]]
+regex = "(?:MAXMIND|maxmind)(?:_LICENSE)?(?:_KEY)?[=:\\s\"'']+([a-zA-Z0-9]{16})"
+description = "MaxMind GeoIP license key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:MAXMIND|maxmind)_ACCOUNT_ID[=:\\s\"'']+([0-9]{5,})"
+description = "MaxMind account ID with context anchor"
+group = 1

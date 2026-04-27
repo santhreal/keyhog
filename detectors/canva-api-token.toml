@@ -1,0 +1,21 @@
+# Docs: https://www.canva.dev/docs/connect/authentication/
+# Format: OAuth2 access token - base64url encoded string, variable length
+# Verify: GET /rest/v1/oauth/introspect or API calls with Bearer token
+# Prefix: none (OAuth2 standard token)
+
+[detector]
+id = "canva-api-token"
+name = "Canva API Access Token"
+service = "canva"
+severity = "high"
+keywords = ["CANVA", "canva", "cnvca"]
+
+[[detector.patterns]]
+regex = '''(?:CANVA|canva)[._-]?(?:TOKEN|token|ACCESS|access)[=:\s"']+([a-zA-Z0-9_-]{50,})'''
+description = "Canva access token with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = '''(?:CANVA|canva)[._-]?(?:CLIENT|client)[._-]?(?:SECRET|secret)[=:\s"']+(cnvca[a-zA-Z0-9]{20,})'''
+description = "Canva client secret (cnvca prefix)"
+group = 1

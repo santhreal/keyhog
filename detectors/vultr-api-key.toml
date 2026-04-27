@@ -1,0 +1,40 @@
+# Docs: https://www.vultr.com/api/
+# Format: 36 character uppercase alphanumeric string (no unique prefix)
+# Verify: GET /v2/account with Bearer token returns 200 if valid
+# Prefix: none (36 char uppercase alphanumeric, requires keyword context)
+
+[detector]
+id = "vultr-api-key"
+name = "Vultr API Key"
+service = "vultr"
+severity = "critical"
+keywords = ["vultr", "VULTR", "VULTR_API_KEY", "vultr_api_key", "Authorization"]
+
+[[detector.patterns]]
+regex = "(?:vultr|VULTR)[_\\-\\s]*(?:api[_\\-\\s]*key|API[_\\-\\s]*KEY)[=:\\s\\\"']+([A-Z0-9]{36})"
+description = "Vultr API key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "Authorization:\\s*[Bb]earer\\s+([A-Z0-9]{36})"
+description = "Vultr API key in Authorization header"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://api.vultr.com/v2/account"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[detector.verify.success]
+status = 200
+
+[[detector.verify.metadata]]
+name = "email"
+json_path = "account.email"
+
+[[detector.verify.metadata]]
+name = "name"
+json_path = "account.name"

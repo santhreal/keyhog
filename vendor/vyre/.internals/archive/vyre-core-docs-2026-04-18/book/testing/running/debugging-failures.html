@@ -1,0 +1,485 @@
+<!DOCTYPE HTML>
+<html lang="en" class="rust sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Debugging Failures - The vyre Book</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="The GPU compute IR with a conformance prover">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../../favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="../../favicon-8114d1fc.png">
+        <link rel="stylesheet" href="../../css/variables-8adf115d.css">
+        <link rel="stylesheet" href="../../css/general-2459343d.css">
+        <link rel="stylesheet" href="../../css/chrome-ae938929.css">
+        <link rel="stylesheet" href="../../css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../../fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="../../highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="../../tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="../../ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "../../";
+            const default_light_theme = "rust";
+            const default_dark_theme = "navy";
+            window.path_to_searchindex_js = "../../searchindex-bc7bdb82.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="../../toc-16d598fb.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('rust')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="../../toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">The vyre Book</h1>
+
+                    <div class="right-buttons">
+                        <a href="../../print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/santhsecurity/vyre" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/santhsecurity/vyre/edit/main/core/docs/./testing/running/debugging-failures.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                            <span class=fa-svg id="git-edit-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M421.7 220.3l-11.3 11.3-22.6 22.6-205 205c-6.6 6.6-14.8 11.5-23.8 14.1L30.8 511c-8.4 2.5-17.5 .2-23.7-6.1S-1.5 489.7 1 481.2L38.7 353.1c2.6-9 7.5-17.2 14.1-23.8l205-205 22.6-22.6 11.3-11.3 33.9 33.9 62.1 62.1 33.9 33.9zM96 353.9l-9.3 9.3c-.9 .9-1.6 2.1-2 3.4l-25.3 86 86-25.3c1.3-.4 2.5-1.1 3.4-2l9.3-9.3H112c-8.8 0-16-7.2-16-16V353.9zM453.3 19.3l39.4 39.4c25 25 25 65.5 0 90.5l-14.5 14.5-22.6 22.6-11.3 11.3-33.9-33.9-62.1-62.1L314.3 67.7l11.3-11.3 22.6-22.6 14.5-14.5c25-25 65.5-25 90.5 0z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="debugging-failures"><a class="header" href="#debugging-failures">Debugging failures</a></h1>
+<h2 id="the-first-rule"><a class="header" href="#the-first-rule">The first rule</a></h2>
+<p>When a test fails, the first question is not “what is wrong
+with the test?” The first question is “what is the test
+telling me?” The test is a statement about expected behavior,
+and a failure is a signal that the behavior differs from the
+expectation. The signal is useful only if you read it
+carefully.</p>
+<p>Contributors under time pressure want to make the failure go
+away. The temptation is to edit the test until it passes,
+or to add a catch-all, or to relax an assertion. These fixes
+all work in the sense that CI turns green, but they all
+leave the actual problem unresolved. The actual problem is
+that the code does not match the specification, and the
+specification is what users depend on.</p>
+<p>This chapter is about debugging failures properly: reading
+the signal, reproducing the failure, finding the root cause,
+and fixing the code. The emphasis is on debugging, not on
+test-maintenance triage. Test-maintenance (the case where
+the test is wrong) is the minority of failures and is
+handled at the end.</p>
+<h2 id="the-debug-workflow"><a class="header" href="#the-debug-workflow">The debug workflow</a></h2>
+<h3 id="step-1--read-the-failure-message"><a class="header" href="#step-1--read-the-failure-message">Step 1 — Read the failure message</a></h3>
+<p>The failure message tells you which assertion fired and what
+values were involved. Read it carefully. A typical message:</p>
+<pre><code>test test_add_overflow ... FAILED
+
+---- test_add_overflow stdout ----
+thread 'test_add_overflow' panicked at 'assertion `left == right` failed: u32::MAX + 1 should wrap to 0
+  left: 4294967295
+  right: 0', tests/integration/primitive_ops/add.rs:42:5
+</code></pre>
+<p>The message has:</p>
+<ul>
+<li><strong>The test name:</strong> <code>test_add_overflow</code>.</li>
+<li><strong>The file and line:</strong> <code>tests/integration/primitive_ops/add.rs:42</code>.</li>
+<li><strong>The assertion:</strong> <code>left == right</code>.</li>
+<li><strong>The failure context:</strong> <code>u32::MAX + 1 should wrap to 0</code>.</li>
+<li><strong>The actual values:</strong> <code>left: 4294967295</code> (what the code
+produced), <code>right: 0</code> (what was expected).</li>
+</ul>
+<p>From this, you know: the test expected 0, the code produced
+<code>u32::MAX</code> (4294967295), and the expected behavior is
+wrapping overflow. The bug is that the code is not wrapping;
+it is saturating or returning the input unchanged.</p>
+<h3 id="step-2--reproduce-locally"><a class="header" href="#step-2--reproduce-locally">Step 2 — Reproduce locally</a></h3>
+<pre><code class="language-bash">cargo test -p vyre test_add_overflow
+</code></pre>
+<p>Run the exact failing test on your machine. If it fails
+locally with the same error, you have a clean reproducer. If
+it passes locally, the failure is environment-specific, and
+you have a different debugging problem (see <a href="debugging-flakes.html">Debugging
+flakes</a>).</p>
+<p>Run with backtrace enabled:</p>
+<pre><code class="language-bash">RUST_BACKTRACE=1 cargo test -p vyre test_add_overflow
+</code></pre>
+<p>The backtrace shows the call stack at the point of failure,
+which helps locate the code path involved.</p>
+<h3 id="step-3--isolate-the-problem"><a class="header" href="#step-3--isolate-the-problem">Step 3 — Isolate the problem</a></h3>
+<p>Once you have a reproducer, narrow the test to the smallest
+case that still fails. If the failing test uses multiple
+inputs, try just the first input. If the test composes
+multiple operations, try just one operation. The goal is to
+find the minimum conditions under which the bug fires.</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>#[test]
+fn test_minimal_reproducer() {
+    // Just the failing case, nothing else.
+    let program = build_single_binop(BinOp::Add, u32::MAX, 1u32);
+    let result = run_on_default_backend(&amp;program).expect("dispatch");
+    assert_eq!(result, 0u32);
+}
+<span class="boring">}</span></code></pre>
+<p>Copy the minimal reproducer into a scratch file or a debugger
+script. Experiment with variations to understand the bug’s
+boundaries.</p>
+<h3 id="step-4--find-the-root-cause"><a class="header" href="#step-4--find-the-root-cause">Step 4 — Find the root cause</a></h3>
+<p>Walk the code path the test exercises. For a failing add
+test:</p>
+<ol>
+<li>The test calls <code>build_single_binop(BinOp::Add, u32::MAX, 1u32)</code>.</li>
+<li>The builder constructs a Program with the add op.</li>
+<li><code>run_on_default_backend</code> dispatches the Program.</li>
+<li>The default backend (wgpu) takes the Program.</li>
+<li>The backend calls <code>lower::wgsl::lower()</code> to translate to
+WGSL.</li>
+<li>The backend dispatches the lowered shader.</li>
+<li>The shader runs on the GPU and produces an output.</li>
+<li>The output is returned to the test.</li>
+</ol>
+<p>The bug is somewhere in steps 5-7. Read the lowered WGSL to
+see what operation is being performed. If the WGSL looks
+correct, the bug might be in how wgpu compiles it. If the
+WGSL looks wrong, the bug is in the lowering.</p>
+<p>For this specific case, a likely root cause is that the
+lowering emits <code>+</code> instead of a wrapping-explicit operation,
+and the backend’s WGSL compilation uses a mode that does not
+wrap by default.</p>
+<h3 id="step-5--confirm-the-hypothesis"><a class="header" href="#step-5--confirm-the-hypothesis">Step 5 — Confirm the hypothesis</a></h3>
+<p>Once you have a hypothesis, confirm it before changing code.
+Add a printf or an <code>eprintln!</code> to the lowering to see what
+WGSL it produces for the failing case. Run the reproducer and
+inspect the output:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// In src/lower/wgsl/add.rs temporarily
+fn emit_add(lhs: &amp;str, rhs: &amp;str) -&gt; String {
+    let result = format!("{} + {}", lhs, rhs);
+    eprintln!("LOWERING: emit_add produced: {}", result);
+    result
+}
+<span class="boring">}</span></code></pre>
+<p>Run the test. The eprintln output appears in the test output
+and tells you what the lowering is actually emitting. If it
+matches your hypothesis, you have confirmed the bug. If not,
+your hypothesis is wrong and you need another.</p>
+<h3 id="step-6--fix-the-code"><a class="header" href="#step-6--fix-the-code">Step 6 — Fix the code</a></h3>
+<p>Once the root cause is confirmed, fix the code. For the
+overflow case, the fix is to emit a wrapping-explicit
+operation in the lowering:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>fn emit_add(lhs: &amp;str, rhs: &amp;str) -&gt; String {
+    // Use explicit wrapping semantics to ensure u32 overflow
+    // wraps as specified.
+    format!("({} + {})", lhs, rhs)  // wgpu's u32 addition wraps by default; verify
+}
+<span class="boring">}</span></code></pre>
+<p>The fix is small and targeted. Do not make unrelated changes;
+if you notice other issues in the file, file them as
+separate tasks and fix them separately.</p>
+<h3 id="step-7--verify-the-fix"><a class="header" href="#step-7--verify-the-fix">Step 7 — Verify the fix</a></h3>
+<p>Run the failing test again. It should pass.</p>
+<pre><code class="language-bash">cargo test -p vyre test_add_overflow
+</code></pre>
+<p>If it does, run the whole primitive_ops category to ensure
+you did not break other tests:</p>
+<pre><code class="language-bash">cargo test -p vyre integration::primitive_ops
+</code></pre>
+<p>If that passes, run the full vyre suite:</p>
+<pre><code class="language-bash">cargo test -p vyre
+</code></pre>
+<p>Three tiers of verification. The fix is not complete until
+all three pass.</p>
+<h3 id="step-8--add-a-regression-test-if-applicable"><a class="header" href="#step-8--add-a-regression-test-if-applicable">Step 8 — Add a regression test if applicable</a></h3>
+<p>If the bug was not already covered by the failing test (the
+failing test was an existing test that started failing for
+environmental reasons, or the bug is different from what the
+test was checking), add a new regression test in
+<code>tests/regression/</code> that captures the specific bug and its
+fix.</p>
+<p>If the failing test itself was the correct test for this bug
+(as in the add overflow case), no additional regression is
+needed — the existing test is the regression.</p>
+<h3 id="step-9--commit"><a class="header" href="#step-9--commit">Step 9 — Commit</a></h3>
+<p>The commit message includes:</p>
+<ul>
+<li>What was broken.</li>
+<li>What the fix does.</li>
+<li>How it was verified.</li>
+</ul>
+<pre><code>fix(lower/wgsl): wrap u32 addition instead of saturating
+
+The WGSL lowering for BinOp::Add was emitting a saturating
+addition on wgpu because of a miscompiled form. Replaced with
+an explicit wrapping addition per the vyre specification.
+
+Verified: test_add_overflow passes, full vyre suite passes,
+mutation gate on add.rs reports zero surviving arithmetic
+mutations.
+</code></pre>
+<p>The message is for future maintainers who need to understand
+what changed and why.</p>
+<h2 id="common-shapes-of-failure"><a class="header" href="#common-shapes-of-failure">Common shapes of failure</a></h2>
+<p>Some failures follow common shapes that can be diagnosed
+quickly once recognized:</p>
+<h3 id="assertion-values-are-identical-but-the-test-fails"><a class="header" href="#assertion-values-are-identical-but-the-test-fails">Assertion values are identical but the test fails</a></h3>
+<pre><code>left: Value::U32(42)
+right: Value::U32(42)
+FAILED
+</code></pre>
+<p>This almost always means the values look the same in <code>Debug</code>
+output but are different in some other way. Common causes:
+floating-point with different NaN bit patterns, structs with
+distinct but visually-identical hidden fields, or different
+type tags on enum variants that print the same. Use
+<code>to_bits()</code> or direct field comparison to see the actual
+difference.</p>
+<h3 id="test-passes-in-isolation-but-fails-in-the-full-suite"><a class="header" href="#test-passes-in-isolation-but-fails-in-the-full-suite">Test passes in isolation but fails in the full suite</a></h3>
+<p>This is a state leakage issue. Some earlier test is modifying
+global state that this test depends on. Common sources:
+shared caches, lazy-initialized statics that get into bad
+states, file system side effects. Debug by running the suite
+with <code>--test-threads=1</code> and bisecting the test order to find
+the interfering test.</p>
+<h3 id="test-fails-only-on-ci"><a class="header" href="#test-fails-only-on-ci">Test fails only on CI</a></h3>
+<p>Environment difference between local and CI. Common causes:
+different OS (file paths, line endings), different CPU
+(non-deterministic behavior from ordering), different GPU or
+driver. Debug by running locally in a container that matches
+CI’s environment.</p>
+<h3 id="test-fails-with-dispatch-error"><a class="header" href="#test-fails-with-dispatch-error">Test fails with “dispatch error”</a></h3>
+<p>The backend could not run the Program. Read the error
+message for details. Common causes: shader compilation
+failure (the lowering produced invalid WGSL), resource
+exhaustion (the Program tries to allocate too much), or
+backend-specific limits.</p>
+<h3 id="test-fails-with-a-panic-in-production-code"><a class="header" href="#test-fails-with-a-panic-in-production-code">Test fails with a panic in production code</a></h3>
+<p>The panic itself is a bug: production code should not panic
+on validated inputs. Investigate the panic and fix the
+production code. If the panic is in a <code>expect</code> with a clear
+message, the message points at the cause. If it is an
+<code>unwrap</code> without context, add context and re-run to see
+where exactly it fires.</p>
+<h2 id="when-the-test-is-wrong"><a class="header" href="#when-the-test-is-wrong">When the test is wrong</a></h2>
+<p>Occasionally the test is wrong and the code is right. The
+signs:</p>
+<ul>
+<li>The code’s output matches the specification, but the test
+expects something else.</li>
+<li>The test’s expected value is outdated (a recent spec
+change has not propagated to the test).</li>
+<li>The test is hitting a case that the spec has decided to
+handle differently than originally specified.</li>
+</ul>
+<p>In these cases, the fix is to update the test. But be
+careful: the default assumption is that the code is wrong.
+Updating the test is only correct if you can point at a
+specific spec change or a specific review that agreed the
+test’s expectation was wrong. “It passes after I change the
+expected value” is not a justification.</p>
+<p>When you do update a test, do it with care. Document the
+change in the commit message. If the test was a regression
+test, consult <a href="../discipline/regression-rule.html">the regression rule</a>
+for the narrow exception rules.</p>
+<h2 id="summary"><a class="header" href="#summary">Summary</a></h2>
+<p>Debugging failures starts with reading the failure message
+carefully. Reproduce locally, isolate to the minimal case,
+find the root cause by walking the code path, confirm with
+printf-style investigation, fix the code, verify at multiple
+levels, and commit with a descriptive message. Common failure
+shapes have common causes. Test-is-wrong is the exception,
+not the default.</p>
+<p>Next: <a href="debugging-flakes.html">Debugging flakes</a>.</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../../testing/running/continuous-integration.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="../../testing/running/debugging-flakes.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../../testing/running/continuous-integration.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="../../testing/running/debugging-flakes.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="../../elasticlunr-ef4e11c1.min.js"></script>
+        <script src="../../mark-09e88c2c.min.js"></script>
+        <script src="../../searcher-c2a407aa.js"></script>
+
+        <script src="../../clipboard-1626706a.min.js"></script>
+        <script src="../../highlight-abc7f01d.js"></script>
+        <script src="../../book-a0b12cfe.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+
+    </div>
+    </body>
+</html>

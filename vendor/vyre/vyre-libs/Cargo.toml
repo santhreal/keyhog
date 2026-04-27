@@ -1,0 +1,172 @@
+[package]
+name = "vyre-libs"
+version = "0.6.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "vyre Category A library ecosystem — pure-IR compositions over vyre-ops hardware primitives"
+readme = "README.md"
+keywords = ["gpu", "ml", "linear-algebra", "cryptography", "vyre"]
+categories = ["algorithms", "science"]
+documentation = "https://docs.rs/vyre-libs"
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+# P2.5 — granular per-dialect feature flags. Every domain pack gates
+# its own module so minimum-footprint consumers can pick one tiny
+# feature and skip the rest. The dialect-level flags roll up legacy
+# aggregate flags (`math`, `nn`, `matching`, `crypto`) so existing
+# consumers that pin against 0.6.0's default feature set stay green.
+# See docs/vyre-libs-features.md for the CI matrix and ownership rules.
+default = [
+    "math-linalg", "math-scan", "math-broadcast", "math-algebra", "math-succinct",
+    "nn-activation", "nn-linear", "nn-norm", "nn-attention",
+    "matching-substring", "matching-dfa",
+    "decode",
+    "crypto-fnv", "crypto-blake3",
+    # `c-parser` is opt-in. The C11 pipeline scaffold is still
+    # stabilizing against the vyre IR surface and is not yet load-
+    # bearing for consumers that depend on vyre-libs default features.
+]
+# Enables benchmark-only helpers inside the library (e.g. lane-major
+# CPU reference step, table-layout introspection).  Not part of
+# default features so normal consumers do not pay compile-time cost.
+bench = []
+
+# Legacy aggregate flags — map to the new granular flags so existing
+# consumers' `default-features = false` + `features = ["math"]`
+# continues to resolve.
+math = ["math-linalg", "math-scan", "math-broadcast", "math-algebra", "math-succinct"]
+nn = ["nn-activation", "nn-linear", "nn-norm", "nn-attention"]
+matching = ["matching-substring", "matching-dfa"]
+crypto = ["crypto-fnv", "crypto-blake3"]
+decode = []
+logical = []
+hardware = []
+rule = []
+composite = []
+vyre_wgpu = ["dep:vyre-driver-wgpu"]
+vyre_driver_wgpu = ["dep:vyre-driver-wgpu"]
+
+# Granular dialect flags.
+"math-linalg" = []                  # dot, matmul, matmul_tiled
+"math-scan" = []                    # scan_prefix_sum
+"math-broadcast" = []               # broadcast
+"math-algebra" = []                 # lattice_join, lattice_meet, semiring_min_plus_mul, sketch_mix
+"math-succinct" = []                # rank1_superblocks, rank1_query, select1_query
+"nn-activation" = []                # relu (future: gelu, silu, tanh)
+"nn-linear" = ["math-linalg"]       # linear depends on matmul
+"nn-norm" = []                      # layer_norm, rmsnorm (future)
+"nn-attention" = ["nn-norm", "math-linalg"]  # softmax, attention
+"nn-moe" = ["nn-attention"]                 # moe_gate, top_k
+"matching-substring" = []
+"matching-dfa" = []                 # dfa_compile, aho_corasick
+"matching-nfa" = ["matching-dfa"]   # G1: subgroup-cooperative NFA scan
+"matching-regex" = ["matching-nfa", "dep:regex-syntax"]  # regex AST → NfaPlan frontend
+"intern" = []                       # G9: vector-widened label string interning
+"crypto-fnv" = []
+"crypto-blake3" = []
+"visual" = []                       # GPU-accelerated visual effects (blur, shadow, gradient, glass)
+"parsing" = ["c-parser", "go-parser", "python-parser"]
+"c-parser" = []                     # GPU C11 lexer/structural parser (WIP)
+"go-parser" = []                    # GPU Go lexer/structural parser
+"python-parser" = []                # GPU Python 3.12 sparse lexer/structural parser
+# Shared fixture corpus exposed publicly. Off by default; consumers that
+# need the same canonical literal/regex/haystack triples our integration
+# tests use opt in here. The fixtures themselves are always compiled
+# inside `cfg(test)` so the in-tree tests keep using them.
+"test-fixtures" = []
+# Security / taint primitives. Off by default; enabling this feature compiles
+# the security module and the weir soundness tags it implements.
+security = ["dep:weir"]
+
+[dependencies]
+vyre-driver-wgpu = { workspace = true, optional = true }
+vyre.workspace = true
+vyre-foundation.workspace = true
+vyre-harness.workspace = true
+vyre-spec.workspace = true
+vyre-driver.workspace = true
+# Tier 2.5 LEGO substrate — single crate with per-domain feature flags.
+# See docs/primitives-tier.md. vyre-libs enables the domains it consumes.
+vyre-primitives = { workspace = true, features = ["text", "matching", "decode", "math", "nn", "hash", "parsing", "graph", "bitset", "reduce", "label", "predicate", "fixpoint", "nfa", "inventory-registry"] }
+smallvec.workspace = true
+inventory.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+# Optional regex AST parser used by the regex_compile frontend
+# (matching::regex_compile). Off by default; only consumers that opt
+# into the `matching-regex` feature pay the dep.
+regex-syntax = { workspace = true, optional = true }
+# `weir` is the standalone GPU-resident dataflow crate (libs/dataflow/weir).
+# vyre-libs/security/* tags primitives with weir's Soundness markers; the
+# rest of vyre-libs does not depend on weir. This is a workspace path dep,
+# not a registry stub.
+weir = { workspace = true, optional = true }
+
+[dev-dependencies]
+vyre-driver-wgpu = { workspace = true }
+proptest.workspace = true
+tempfile.workspace = true
+vyre-reference = { workspace = true, features = ["subgroup-ops"] }
+blake3.workspace = true
+criterion.workspace = true
+vyre-driver.workspace = true
+vyre-driver-spirv.workspace = true
+vyre-intrinsics.workspace = true
+surgec-grammar-gen = { path = "../shared/surgec-grammar-gen" }
+naga = { workspace = true, features = ["wgsl-out"] }
+tree-sitter = "=0.26.8"
+tree-sitter-go = "=0.25.0"
+
+[[bench]]
+name = "cat_a_bench"
+harness = false
+required-features = [
+    "math-linalg", "math-scan", "math-broadcast",
+    "nn-activation", "nn-linear", "nn-norm", "nn-attention",
+    "matching-substring", "matching-dfa",
+    "crypto-fnv", "crypto-blake3",
+]
+
+[[bench]]
+name = "inventory_driven"
+harness = false
+required-features = [
+    "math-linalg", "math-scan", "math-broadcast",
+    "nn-activation", "nn-linear", "nn-norm", "nn-attention",
+    "matching-substring", "matching-dfa",
+    "crypto-fnv", "crypto-blake3",
+]
+
+[[bench]]
+name = "decode_scan"
+harness = false
+required-features = ["decode", "matching-dfa"]
+
+[[bench]]
+name = "cooperative_dfa_vs_classic"
+harness = false
+required-features = ["matching-dfa"]
+
+[[bench]]
+name = "nfa_transition_layout"
+harness = false
+required-features = ["matching-nfa", "bench"]
+
+[[bench]]
+name = "production_corpus"
+harness = false
+required-features = ["matching-dfa", "test-fixtures"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[lints]
+workspace = true

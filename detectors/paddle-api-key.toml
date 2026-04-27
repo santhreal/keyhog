@@ -1,0 +1,27 @@
+# Docs: https://developer.paddle.com/api-reference/about/api-keys
+# Format: pdl_live_apikey_ or pdl_sdbx_apikey_ prefix followed by alphanumeric characters and underscores
+# Verify: GET /v2/products with Authorization header returns 200 if valid
+# Prefix: pdl_live_apikey_, pdl_sdbx_apikey_
+
+[detector]
+id = "paddle-api-key"
+name = "Paddle API Key"
+service = "paddle"
+severity = "critical"
+keywords = ["pdl_live_apikey_", "pdl_sdbx_apikey_", "PADDLE_API_KEY"]
+
+[[detector.patterns]]
+regex = 'pdl_(?:live|sdbx)_apikey_[a-zA-Z0-9_]{30,}'
+description = "Paddle API key (pdl_live_apikey_ or pdl_sdbx_apikey_ prefix)"
+
+[detector.verify]
+method = "GET"
+url = "https://api.paddle.com/v2/products"
+
+[detector.verify.auth]
+type = "header"
+name = "Authorization"
+template = "Bearer {{match}}"
+
+[detector.verify.success]
+status = 200

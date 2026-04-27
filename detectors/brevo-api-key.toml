@@ -1,0 +1,27 @@
+# Docs: https://developers.brevo.com/docs/quickstart-reference
+# Format: xkeysib- prefix followed by 64 hexadecimal characters
+# Verify: GET request to Brevo account endpoint with api-key header
+# Prefix: xkeysib-
+
+[detector]
+id = "brevo-api-key"
+name = "Brevo/Sendinblue API Key"
+service = "brevo"
+severity = "critical"
+keywords = ["xkeysib-", "brevo", "sendinblue"]
+
+[[detector.patterns]]
+regex = 'xkeysib-[a-f0-9]{64}'
+description = "Brevo/Sendinblue API v3 key (xkeysib- prefix with 64 hex characters)"
+
+[detector.verify]
+method = "GET"
+url = "https://api.brevo.com/v3/account"
+
+[detector.verify.auth]
+type = "header"
+name = "api-key"
+template = "{{match}}"
+
+[detector.verify.success]
+status = 200

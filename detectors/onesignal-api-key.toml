@@ -1,0 +1,27 @@
+# Docs: https://documentation.onesignal.com/docs/keys-and-ids
+# Format: Basic auth with base64 encoded app_id:rest_api_key, or NGEwMD... key format
+# Verify: GET /api/v1/apps with Basic auth returns 200 if valid
+# Prefix: Basic (auth header)
+
+[detector]
+id = "onesignal-api-key"
+name = "OneSignal API Key"
+service = "onesignal"
+severity = "critical"
+keywords = ["onesignal", "OS_APP_ID", "OS_API_KEY"]
+
+[[detector.patterns]]
+regex = '(?:onesignal|OS_API_KEY|OS_APP_ID)[=:][\s"]*([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})'
+description = "OneSignal App ID or API key with context anchor"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://onesignal.com/api/v1/apps"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[detector.verify.success]
+status = 200

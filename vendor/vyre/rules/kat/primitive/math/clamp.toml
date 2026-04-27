@@ -1,0 +1,11 @@
+op_id = "primitive.math.clamp"
+
+[[golden]]
+input = "320000000a006400"
+expected = "32000000"
+reason = "clamp(50, 10, 100) = 50 (in range)"
+
+[[golden]]
+input = "050000000a006400"
+expected = "0a000000"
+reason = "clamp(5, 10, 100|10) = 10 (clamped to low)"

@@ -1,0 +1,16 @@
+# Docs: https://github.com/ourzora/zora-docs/blob/main/docs/zora-api/intro.mdx
+# Format: Optional API key for higher rate limits (120 req/min without key)
+# Verify: no public verification endpoint
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "zora-api-key"
+name = "Zora API Key"
+service = "zora"
+severity = "low"
+keywords = ["zora", "ZORA", "ZORA_API_KEY"]
+
+[[detector.patterns]]
+regex = "(?:zora|ZORA)[_\\s]*(?:API[_\\s]*)?KEY[_\\s]*[=:][\\s]*[\"'']+([a-zA-Z0-9_-]{16,})[\"'']+"
+description = "Zora API key in assignment context"
+group = 1

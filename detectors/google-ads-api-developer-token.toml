@@ -1,0 +1,16 @@
+# Docs: https://developers.google.com/google-ads/api/docs/get-started/dev-token
+# Format: Developer token is a 22-character alphanumeric string
+# Verify: No public verification endpoint (requires Google Ads API access)
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "google-ads-api-developer-token"
+name = "Google Ads API Developer Token"
+service = "google-ads"
+severity = "critical"
+keywords = ["developer_token", "DEVELOPER_TOKEN", "google_ads", "googleads"]
+
+[[detector.patterns]]
+regex = "(?:developer_token|DEVELOPER_TOKEN|google\\.ads\\.developerToken)[=:\\s\"'']+([a-zA-Z0-9]{22})"
+description = "Google Ads API developer token with context anchor"
+group = 1

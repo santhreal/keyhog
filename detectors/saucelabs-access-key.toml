@@ -1,0 +1,21 @@
+# Docs: https://docs.saucelabs.com/dev/api/
+# Format: 36 character UUID (access key) used with username for HTTP Basic Auth
+# Verify: GET /team-management/v1/users/{user_id}/access-key/ with Basic auth returns 200
+# Prefix: none (UUID format, requires context keyword or companion detection)
+
+[detector]
+id = "saucelabs-access-key"
+name = "SauceLabs Access Key"
+service = "saucelabs"
+severity = "critical"
+keywords = ["SAUCE_ACCESS_KEY", "sauce_access_key", "SAUCE_ACCESSKEY", "sauce-access-key"]
+
+[[detector.patterns]]
+regex = "(?:SAUCE_ACCESS[_-]?KEY|sauce_access[_-]?key)[=:\\s\"']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
+description = "SauceLabs access key (UUID format) with context anchor"
+group = 1
+
+[[detector.companions]]
+name = "saucelabs-username"
+regex = "(?:SAUCE_USERNAME|sauce_username)[=:\\s\"']+([a-zA-Z0-9_-]+)"
+within_lines = 5

@@ -1,0 +1,16 @@
+# Docs: https://www.spiderfoot.net/documentation/
+# Format: Alphanumeric API key
+# Verify: no public verification endpoint
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "spiderfoot-api-key"
+name = "SpiderFoot API Key"
+service = "spiderfoot"
+severity = "high"
+keywords = ["spiderfoot", "SPIDERFOOT_API_KEY", "sf_api_key"]
+
+[[detector.patterns]]
+regex = "(?:spiderfoot|SPIDERFOOT|sf_)[\\s_-]*(?:api[_-]?key|token)[=:\\s\"'']+([a-zA-Z0-9_-]{20,64})"
+description = "SpiderFoot API key with context anchor"
+group = 1

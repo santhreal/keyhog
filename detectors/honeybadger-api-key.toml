@@ -1,0 +1,28 @@
+# Docs: https://docs.honeybadger.io/api/getting-started/
+# Format: 32 or 48 hexadecimal characters
+# Verify: GET /v2/projects with HTTP Basic Auth (token as username) returns 200 if valid
+# Prefix: none (hex characters, requires keyword context)
+
+[detector]
+id = "honeybadger-api-key"
+name = "Honeybadger API Key"
+service = "honeybadger"
+severity = "high"
+keywords = ["HONEYBADGER_API_KEY", "honeybadger_api_key", "HONEYBADGER-API-KEY", "api_key"]
+
+[[detector.patterns]]
+regex = "(?:HONEYBADGER[_\\-]?API[_\\-]?KEY|honeybadger[_\\-]?api[_\\-]?key|api_key)[=:\\s\\\"']+([a-f0-9]{32,48})"
+description = "Honeybadger API key (32-48 hex chars with context anchor)"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://app.honeybadger.io/v2/projects"
+
+[detector.verify.auth]
+type = "basic"
+username = "match"
+password = ""
+
+[detector.verify.success]
+status = 200

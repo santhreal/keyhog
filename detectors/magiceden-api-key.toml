@@ -1,0 +1,21 @@
+# Docs: https://help.magiceden.us/en/articles/9827820-how-to-use-the-magic-eden-api-access-keys-rate-limits-docs
+# Format: UUID-like string used as Bearer token
+# Verify: GET /v2/collections with Authorization header returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "magiceden-api-key"
+name = "Magic Eden API Key"
+service = "magiceden"
+severity = "medium"
+keywords = ["magiceden", "MAGIC_EDEN", "magic_eden"]
+
+[[detector.patterns]]
+regex = "(?:MAGIC_EDEN|magiceden|magic[_\\s]eden)[_\\s]*(?:API[_\\s]*)?KEY[_\\s]*[=:][\\s]*[\"'']+([a-f0-9-]{36,})[\"'']+"
+description = "Magic Eden API key in assignment context"
+group = 1
+
+[[detector.patterns]]
+regex = "Authorization[\\s]*:[\\s]*Bearer[\\s]+([a-f0-9-]{36,})"
+description = "Magic Eden Bearer token in HTTP header"
+group = 1

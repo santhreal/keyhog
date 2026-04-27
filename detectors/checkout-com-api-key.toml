@@ -1,0 +1,51 @@
+# Docs: https://www.checkout.com/docs/developer-resources/api/manage-api-keys/api-keys
+# Format: sk_sbox_ or sk_ for secret, pk_sbox_ or pk_ for public, followed by alphanumeric
+# Verify: GET to api.checkout.com with Bearer token
+# Prefix: sk_sbox_, sk_, pk_sbox_, pk_
+
+[detector]
+id = "checkout-com-api-key"
+name = "Checkout.com API Key"
+service = "checkout-com"
+severity = "critical"
+keywords = ["checkout", "checkout.com", "cko"]
+
+# Sandbox keys have specific prefixes that are unlikely to match false positives
+[[detector.patterns]]
+regex = "sk_sbox_[a-z0-9]{24,}"
+description = "Checkout.com sandbox secret key"
+
+[[detector.patterns]]
+regex = "pk_sbox_[a-z0-9]{24,}"
+description = "Checkout.com sandbox public key"
+
+[[detector.patterns]]
+regex = "ack_sbox_[a-z0-9]{8,}"
+description = "Checkout.com sandbox access credential ID"
+
+# Production keys need context anchoring since sk_, pk_, ack_ are too generic alone
+[[detector.patterns]]
+regex = "(?:checkout|cko)[\\s]*[=:]+[\\s]*[\"\\']*(sk_[a-z0-9]{24,})"
+description = "Checkout.com production secret key with context"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:checkout|cko)[\\s]*[=:]+[\\s]*[\"\\']*(pk_[a-z0-9]{24,})"
+description = "Checkout.com production public key with context"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:checkout|cko)[\\s]*[=:]+[\\s]*[\"\\']*(ack_[a-z0-9]{8,})"
+description = "Checkout.com production access credential ID with context"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://api.sandbox.checkout.com/payments?limit=1"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[detector.verify.success]
+status = 200

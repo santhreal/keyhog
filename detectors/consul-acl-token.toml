@@ -1,0 +1,26 @@
+# Docs: https://developer.hashicorp.com/consul/docs/secure/acl/token
+# Format: UUID format (e.g., 86cddfb9-2760-d947-358d-a2811156bf31) - bootstrap and management tokens
+# Verify: GET /v1/acl/token/self with X-Consul-Token header returns 200 if valid
+# Prefix: none (requires context anchoring with UUID format)
+
+[detector]
+id = "consul-acl-token"
+name = "Consul ACL Token"
+service = "consul"
+severity = "critical"
+keywords = ["CONSUL_HTTP_TOKEN", "consul_token", "CONSUL_TOKEN", "bootstrap_token"]
+
+[[detector.patterns]]
+regex = "(?:CONSUL_HTTP_TOKEN|CONSUL_TOKEN|consul_token|bootstrap_token)[=:\\s\"'']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
+description = "Consul ACL token in environment variable (UUID format)"
+group = 1
+
+[[detector.patterns]]
+regex = "token:\\s*[\"'']?([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})[\"'']?"
+description = "Consul ACL token in configuration file"
+group = 1
+
+[[detector.patterns]]
+regex = "SecretID:\\s+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
+description = "Consul ACL token from CLI output"
+group = 1

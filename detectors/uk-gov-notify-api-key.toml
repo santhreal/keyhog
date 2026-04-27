@@ -1,0 +1,26 @@
+# Docs: https://docs.notifications.service.gov.uk/ruby.html
+# Format: {key_name}-{iss-uuid}-{secret} format with name, UUID, and 100+ char secret
+# Verify: Bearer token sent to api.notifications.service.gov.uk, returns 200 on success
+# Prefix: govuk-notify-, test-, team-, live-, etc.
+
+[detector]
+id = "uk-gov-notify-api-key"
+name = "UK GOV.UK Notify API Key"
+service = "uk-gov-notify"
+severity = "critical"
+keywords = ["govuk-notify", "live-", "test-", "team-"]
+
+[[detector.patterns]]
+regex = '(?:live|test|team|govuk-notify)[a-zA-Z0-9_-]*-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}-[a-zA-Z0-9_-]{100,}'
+description = "GOV.UK Notify API key with service prefix, UUID, and secret"
+
+[detector.verify]
+method = "GET"
+url = "https://api.notifications.service.gov.uk/v2/notifications"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[detector.verify.success]
+status = 200

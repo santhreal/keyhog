@@ -1,0 +1,6 @@
+op_id = "primitive.float.f32_cos"
+
+[[golden]]
+input = "00000000"
+expected = "0000803f"
+reason = "cos(0.0) = 1.0"

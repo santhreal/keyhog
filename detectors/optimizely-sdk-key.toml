@@ -1,0 +1,21 @@
+# Docs: https://docs.developers.optimizely.com/full-stack/docs/sdk-keys
+# Format: alphanumeric string typically starting with project-specific identifier
+# Verify: no public verification endpoint
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "optimizely-sdk-key"
+name = "Optimizely SDK Key"
+service = "optimizely"
+severity = "high"
+keywords = ["OPTIMIZELY", "optimizely", "OPTIMIZELY_SDK_KEY"]
+
+[[detector.patterns]]
+regex = "(?:OPTIMIZELY|optimizely)[_:](?:SDK_KEY|sdk_key)[=:][\\s\"'']*([a-zA-Z0-9_-]{16,})"
+description = "Optimizely SDK key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:OPTIMIZELY_SDK_KEY|optimizely_sdk_key)[=:][\\s\"'']*([a-zA-Z0-9_-]{16,})"
+description = "Optimizely SDK key environment variable"
+group = 1

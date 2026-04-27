@@ -1,0 +1,27 @@
+# Docs: https://docs.rootly.com/api-reference/overview
+# Format: rootly- prefix followed by alphanumeric/underscore characters (40+ chars)
+# Verify: GET /v1/incidents with Authorization header
+# Prefix: rootly-
+
+[detector]
+id = "rootly-api-token"
+name = "Rootly API Token"
+service = "rootly"
+severity = "critical"
+keywords = ["rootly-", "ROOTLY_API_KEY", "rootly"]
+
+[[detector.patterns]]
+regex = 'rootly-[a-zA-Z0-9_]{40,}'
+description = "Rootly API token with rootly- prefix"
+
+[detector.verify]
+method = "GET"
+url = "https://api.rootly.com/v1/incidents"
+
+[detector.verify.auth]
+type = "header"
+name = "Authorization"
+template = "Bearer {{match}}"
+
+[detector.verify.success]
+status = 200

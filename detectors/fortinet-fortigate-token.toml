@@ -1,0 +1,24 @@
+# Docs: https://docs.fortinet.com/document/fortigate/7.0.0/administration-guide/399768
+# Format: API token or admin password for FortiGate REST API
+# Verify: GET /api/v2/monitor/system/status with access_token parameter
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "fortinet-fortigate-token"
+name = "Fortinet FortiGate API Token"
+service = "fortinet"
+severity = "critical"
+keywords = ["FORTINET", "fortinet", "FORTIGATE", "fortigate"]
+
+[[detector.patterns]]
+regex = "(?:FORTINET|fortinet|FORTIGATE|fortigate)[_\\s]*(?:API[_\\s]*)?(?:TOKEN|KEY)[=:\\s\"'']+([A-Za-z0-9_-]{32,64})"
+description = "Fortinet FortiGate API token with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:FORTINET|fortinet|FORTIGATE|fortigate)[_\\s]*(?:HOST|URL|ADDRESS)[=:\\s\"'']+(https?://[^\\s\"'']+)"
+description = "Fortinet FortiGate host with context anchor"
+group = 1
+
+# NOTE: live verification disabled. Single-brace `{hostname}` was invalid
+# template syntax (interpolate.rs only handles `{{...}}`). kimi-wave3 §1.

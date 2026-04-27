@@ -1,0 +1,37 @@
+# Docs: https://appwrite.io/docs/advanced/platform/api-keys
+# Format: Unique prefix with project context - standard keys are 256-bit hex or 32-char mixed
+# Verify: GET /v1/account with X-Appwrite-Key header returns 200 if valid
+# Prefix: none (requires context anchoring with project ID)
+
+[detector]
+id = "appwrite-api-key"
+name = "Appwrite API Key"
+service = "appwrite"
+severity = "critical"
+keywords = ["appwrite", "X-Appwrite-Key", "APPWRITE_API_KEY", "APPWRITE_KEY"]
+
+[[detector.patterns]]
+regex = "(?:APPWRITE|appwrite)[_\\s]?(?:API[_\\s]?KEY|KEY)[=:\\s\"']+([a-zA-Z0-9_-]{32,64})"
+description = "Appwrite API key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "X-Appwrite-Key[=:\\s\"']+([a-zA-Z0-9_-]{32,64})"
+description = "Appwrite API key in header context"
+group = 1
+
+[[detector.companions]]
+name = "appwrite_project_id"
+regex = "[a-z0-9]{20}"
+within_lines = 5
+[detector.verify]
+method = "GET"
+url = "https://cloud.appwrite.io/v1/account"
+
+[detector.verify.auth]
+type = "header"
+name = "X-Appwrite-Key"
+template = "{{match}}"
+
+[detector.verify.success]
+status = 200

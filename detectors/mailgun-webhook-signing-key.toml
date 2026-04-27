@@ -1,0 +1,21 @@
+# Docs: https://documentation.mailgun.com/docs/mailgun/user-manual/webhooks/#securing-webhooks
+# Format: 32-64 character alphanumeric string used for HMAC-SHA256 signature verification
+# Verify: no public verification endpoint (local signature verification using timestamp + token + signature)
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "mailgun-webhook-signing-key"
+name = "Mailgun Webhook Signing Key"
+service = "mailgun"
+severity = "high"
+keywords = ["MAILGUN_WEBHOOK_KEY", "mailgun_webhook_key", "webhook_signing_key", "X-Mailgun-Signature"]
+
+[[detector.patterns]]
+regex = "(?:MAILGUN|mailgun)[._-]?(?:WEBHOOK|webhook)[._-]?(?:KEY|key|SECRET|secret|SIGNING|signing)[=:\\s\"'']+([a-zA-Z0-9]{32,64})"
+description = "Mailgun webhook signing key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:MAILGUN|mailgun)[._-]?(?:API|api)[._-]?(?:KEY|key)[=:\\s\"'']+(key-[a-f0-9]{32})"
+description = "Mailgun API key (companion for webhook verification)"
+group = 1

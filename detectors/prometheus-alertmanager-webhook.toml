@@ -1,0 +1,21 @@
+# Docs: https://prometheus.io/docs/alerting/latest/configuration/#webhook_config
+# Format: Webhook URL with embedded basic auth or bearer token for alert notifications
+# Verify: no public verification endpoint (webhook receiver specific)
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "prometheus-alertmanager-webhook"
+name = "Prometheus Alertmanager Webhook"
+service = "prometheus"
+severity = "high"
+keywords = ["webhook_configs", "webhook_url", "alertmanager"]
+
+[[detector.patterns]]
+regex = "webhook_configs:\\s*\\n\\s*-\\s*url:\\s*[\"\\']?https?://[^:]+:([^@]+)@[a-zA-Z0-9.-]+"
+description = "Alertmanager webhook URL with embedded credentials"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:webhook_url|webhook\\.url)[=:\\s\"\\']+(https?://[a-zA-Z0-9._-]+/hooks/[a-zA-Z0-9/_-]+)"
+description = "Generic webhook URL in Alertmanager config"
+group = 1

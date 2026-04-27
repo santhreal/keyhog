@@ -1,0 +1,21 @@
+# Docs: https://docs.particle.io/getting-started/cloud/cloud-api/
+# Format: 40-character hex string access token
+# Verify: GET /v1/devices with Authorization: Bearer token header
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "particle-api-token"
+name = "Particle Cloud API Token"
+service = "particle"
+severity = "high"
+keywords = ["particle", "access_token", "api.particle.io"]
+
+[[detector.patterns]]
+regex = "(?:particle|PARTICLE)[._-]?(?:ACCESS[_-]?TOKEN|access[_-]?token)[=:\\s\"'']+([a-f0-9]{40})"
+description = "Particle Cloud API access token with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "access_token[=:\\s\"'']+([a-f0-9]{40})[\\s\\S]{0,100}api\\.particle\\.io"
+description = "Particle API token near api.particle.io endpoint"
+group = 1

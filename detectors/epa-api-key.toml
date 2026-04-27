@@ -1,0 +1,21 @@
+# Docs: https://www.epa.gov/comptox-tools/computational-toxicology-and-exposure-apis
+# Format: 32-40 character alphanumeric API key passed as query parameter or header
+# Verify: no public verification endpoint
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "epa-api-key"
+name = "EPA API Key"
+service = "epa"
+severity = "medium"
+keywords = ["EPA_API_KEY", "EPA_API", "epa"]
+
+[[detector.patterns]]
+regex = "(?:EPA_API_KEY|EPA_API|epa_api)[=:\\s\"'\\']+([a-zA-Z0-9]{32,40})"
+description = "EPA API key (32-40 alphanumeric chars) with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:api[_-]?key|X-Api-Key)[=:\\s\"'\\']+([a-zA-Z0-9]{32,40}).*(?:epa\\.gov|EPA)"
+description = "EPA API key in header or query with EPA context"
+group = 1

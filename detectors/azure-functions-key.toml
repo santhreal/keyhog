@@ -1,0 +1,26 @@
+# Docs: https://docs.microsoft.com/en-us/azure/azure-functions/functions-bindings-http-webhook-trigger?tabs=csharp#authorization-keys
+# Format: API key passed as query parameter (?code=...) or x-functions-key header
+# Verify: GET request to function with code returns 200 if valid
+# Prefix: none (requires URL/context)
+
+[detector]
+id = "azure-functions-key"
+name = "Azure Functions Key"
+service = "azure"
+severity = "critical"
+keywords = ["azure", "functions", "code=", "x-functions-key"]
+
+[[detector.patterns]]
+regex = "https://[a-z0-9-]+\\.azurewebsites\\.net/api/[^?]*\\?.*(?:code|Code)=([a-zA-Z0-9_-]{40,})"
+description = "Azure Functions URL with function key in query string"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:AZURE|azure)[_\\-\\s]*(?:FUNCTIONS|functions)?[_\\-\\s]*(?:KEY|key)[_\\-\\s]*(?:CODE|code)?[=:\\s\"'\\']+([a-zA-Z0-9_-]{40,})"
+description = "Azure Functions key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:x-functions-key|X-Functions-Key)[\\s]*[=:\\s\"'\\']+([a-zA-Z0-9_-]{40,})"
+description = "Azure Functions key in header format"
+group = 1

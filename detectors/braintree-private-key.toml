@@ -1,0 +1,21 @@
+# Docs: https://developer.paypal.com/braintree/articles/control-panel/important-gateway-credentials
+# Format: 32-40 character hexadecimal string
+# Verify: none (requires paired public key and merchant ID)
+# Prefix: none (generic hex, requires keyword context)
+
+[detector]
+id = "braintree-private-key"
+name = "Braintree Private Key"
+service = "braintree"
+severity = "critical"
+keywords = ["braintree_private_key", "BRAINTREE_PRIVATE_KEY", "private_key"]
+
+[[detector.patterns]]
+regex = "(?:braintree_private_key|BRAINTREE_PRIVATE_KEY)[=:\\s\"']+([a-f0-9]{32,40})"
+description = "Braintree private key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:braintree|BRAINTREE)[_\\s]?(?:private_key|PRIVATE_KEY)[=:\\s\"']+([a-f0-9]{32,40})"
+description = "Braintree private key with braintree prefix context"
+group = 1

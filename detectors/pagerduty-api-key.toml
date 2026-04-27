@@ -1,0 +1,28 @@
+# Docs: https://support.pagerduty.com/main/docs/api-access-keys
+# Format: 32-character lowercase alphanumeric string
+# Verify: GET /users with Authorization: Token token=<key> returns 200 if valid
+# Prefix: none (generic alphanumeric, requires keyword context)
+
+[detector]
+id = "pagerduty-api-key"
+name = "PagerDuty API Key"
+service = "pagerduty"
+severity = "critical"
+keywords = ["PAGERDUTY", "pagerduty", "PD_API_KEY", "PAGERDUTY_API_KEY", "Token token="]
+
+[[detector.patterns]]
+regex = "(?:PAGERDUTY|pagerduty)[._]?(?:API|api)?[._]?(?:KEY|key)?[=:\\s\"']+([a-z0-9]{32})"
+description = "PagerDuty REST API v2 key with context anchor"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://api.pagerduty.com/users"
+
+[detector.verify.auth]
+type = "header"
+name = "Authorization"
+template = "Token token={{match}}"
+
+[detector.verify.success]
+status = 200

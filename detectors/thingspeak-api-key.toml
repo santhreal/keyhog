@@ -1,0 +1,26 @@
+# Docs: https://www.mathworks.com/help/thingspeak/rest-api.html
+# Format: 16-character alphanumeric Write or Read API Key
+# Verify: GET /channels/CHANNEL_ID/feeds.json?api_key=KEY returns data
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "thingspeak-api-key"
+name = "ThingSpeak API Key"
+service = "thingspeak"
+severity = "medium"
+keywords = ["thingspeak", "api_key", "write_api_key", "read_api_key"]
+
+[[detector.patterns]]
+regex = "(?:thingspeak|THINGSPEAK)[._-]?(?:WRITE[_-]?API[_-]?KEY|write[_-]?api[_-]?key)[=:\\s\"'']+([a-zA-Z0-9]{16})"
+description = "ThingSpeak channel write API key"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:thingspeak|THINGSPEAK)[._-]?(?:READ[_-]?API[_-]?KEY|read[_-]?api[_-]?key)[=:\\s\"'']+([a-zA-Z0-9]{16})"
+description = "ThingSpeak channel read API key"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:thingspeak|THINGSPEAK)[._-]?(?:API[_-]?KEY|api[_-]?key)[=:\\s\"'']+([a-zA-Z0-9]{16})"
+description = "ThingSpeak API key"
+group = 1

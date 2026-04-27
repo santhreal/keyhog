@@ -1,0 +1,35 @@
+# Docs: https://developer.bigcommerce.com/docs/start/authentication/api-accounts
+# Format: bbc_ prefix followed by 48+ alphanumeric characters (V2/V3 API tokens) or at_ prefix followed by 64+ alphanumeric characters (Stencil CLI tokens)
+# Verify: GET /stores/{store_hash}/v3/store with X-Auth-Token header returns store info if valid
+# Prefix: bbc_
+
+[detector]
+id = "bigcommerce-access-token"
+name = "BigCommerce Access Token"
+service = "bigcommerce"
+severity = "critical"
+keywords = ["bbc_", "bigcommerce", "access_token", "X-Auth-Token"]
+
+[[detector.patterns]]
+regex = "bbc_[a-zA-Z0-9]{48,}"
+description = "BigCommerce V2/V3 API access token (bbc_ prefix)"
+
+[[detector.patterns]]
+regex = "at_[a-zA-Z0-9]{64,}"
+description = "BigCommerce Stencil CLI access token (at_ prefix)"
+
+[detector.verify]
+method = "GET"
+url = "https://api.bigcommerce.com/stores/v3/store"
+
+[detector.verify.auth]
+type = "header"
+name = "X-Auth-Token"
+template = "{{match}}"
+
+[detector.verify.success]
+status = 200
+
+[[detector.verify.metadata]]
+name = "store_name"
+json_path = "$.name"

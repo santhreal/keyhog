@@ -1,0 +1,11 @@
+op_id = "primitive.bitwise.shr"
+
+[[golden]]
+input = "0001000008000000"
+expected = "01000000"
+reason = "256 >> 8 = 1"
+
+[[golden]]
+input = "ffffffff01000000"
+expected = "ffffff7f"
+reason = "L.1.32: shr(u32::MAX, 1) drops the LSB leaving 0x7FFFFFFF"

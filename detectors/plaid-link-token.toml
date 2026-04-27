@@ -1,0 +1,25 @@
+# Docs: https://plaid.com/docs/link/
+# Format: link-sandbox- or link-production- followed by alphanumeric string
+# Verify: POST /link/token/create with client_id and secret
+# Prefix: link-sandbox-, link-production-, link-development-
+
+[detector]
+id = "plaid-link-token"
+name = "Plaid Link Token"
+service = "plaid"
+severity = "high"
+keywords = ["link-sandbox-", "link-production-", "link-development-", "link_token"]
+
+[[detector.patterns]]
+regex = "link-(?:sandbox|production|development)-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}"
+description = "Plaid Link token (UUID format with environment prefix)"
+
+[[detector.patterns]]
+regex = "(?:PLAID|plaid)[._-]?LINK[._-]?(?:TOKEN|token)[=:\\s\"'']+([a-f0-9-]{20,50})"
+description = "Plaid Link token with context anchor"
+group = 1
+
+[[detector.companions]]
+name = "plaid_client_id"
+regex = "(?:PLAID|plaid)[._-]?(?:CLIENT|client)?[._-]?(?:ID|id)?[=:\\s\"'']+([a-f0-9]{24})"
+within_lines = 5

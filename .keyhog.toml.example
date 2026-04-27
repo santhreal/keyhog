@@ -1,0 +1,182 @@
+# KeyHog Configuration File
+# Place this file as `.keyhog.toml` in your project root
+# All options are optional - KeyHog uses sensible defaults
+
+# ============================================================================
+# BASIC OPTIONS
+# ============================================================================
+
+# Path to detector TOML directory (default: "detectors")
+detectors = "detectors"
+
+# Minimum severity to report: info, low, medium, high, critical
+severity = "medium"
+
+# Output format: text, json, jsonl, sarif
+format = "text"
+
+# Number of parallel scanning threads (default: number of CPU cores)
+threads = 8
+
+# Deduplication scope: credential, file, none
+dedup = "credential"
+
+# ============================================================================
+# SCANNING MODES
+# ============================================================================
+
+# Fast mode: pattern matching only, maximum speed
+# Use for pre-commit hooks and quick scans
+# WARNING: --fast disables decode + entropy + ML simultaneously, the largest
+# detection blind spot keyhog ships. Encoded secrets (base64, hex, URL),
+# novel high-entropy strings, and ML-only catches will all be missed.
+# This flag is REFUSED in --lockdown mode (kimi-wave3 §5).
+fast = false
+
+# Deep mode: all features enabled, maximum recall
+# Use for security audits and CI/CD pipelines
+deep = false
+
+# Skip decode-through scanning (base64, hex, URL decoding)
+# WARNING: encoded secrets like base64('AKIA…') will slip through.
+# REFUSED in --lockdown mode.
+no_decode = false
+
+# Skip entropy-based detection for unknown patterns
+# WARNING: only catch for novel / unknown high-entropy secrets.
+# REFUSED in --lockdown mode.
+no_entropy = false
+
+# ============================================================================
+# ADVANCED ENCODING OPTIONS
+# ============================================================================
+
+# Maximum depth for recursive decoding (1-10, default: 4)
+# - 2: Fast, basic detection
+# - 4: Balanced (default) - catches double/triple encoding
+# - 8: Thorough - catches sophisticated evasion
+# - 10: Maximum - catches state-level adversaries
+decode_depth = 4
+
+# Maximum file size for decode-through scanning (default: 64KB)
+# Files larger than this skip encoding detection for performance
+# Accepts: "32KB", "1MB", "10MB", "100MB"
+decode_size_limit = "64KB"
+
+# ============================================================================
+# ENTROPY DETECTION OPTIONS
+# ============================================================================
+
+# Enable entropy scanning in source code files (.py, .js, .go, etc.)
+# Disabled by default to reduce false positives in code
+entropy_source_files = false
+
+# Entropy threshold in bits per byte (default: 4.5)
+# - 3.5: Aggressive (more findings, more false positives)
+# - 4.5: Balanced (default)
+# - 5.5: Conservative (fewer findings, fewer false positives)
+entropy_threshold = 4.5
+
+# ============================================================================
+# CONFIDENCE & ML OPTIONS
+# ============================================================================
+
+# Minimum confidence score to report findings (0.0 - 1.0, default: 0.70)
+# - 0.50: Aggressive (more findings, more false positives)
+# - 0.70: Balanced (default)
+# - 0.85: Conservative (fewer findings, fewer false positives)
+min_confidence = 0.70
+
+# Disable ML-based confidence scoring
+# WARNING: increases false positives, hurts recall on hand-crafted
+# near-misses. REFUSED in --lockdown mode.
+no_ml = false
+
+# ML weight for confidence scoring (0.0-1.0, default: 0.6)
+# Higher values trust ML more; lower values favor heuristics
+ml_weight = 0.6
+
+# ============================================================================
+# UNICODE & SECURITY OPTIONS
+# ============================================================================
+
+# Disable Unicode normalization (NOT recommended)
+# Leaving enabled prevents homoglyph and evasion attacks where an attacker
+# uses Cyrillic/Greek lookalikes (e.g. `аpі_key` with Cyrillic а) to
+# evade detection. REFUSED in --lockdown mode.
+no_unicode_norm = false
+
+# ============================================================================
+# VERIFICATION OPTIONS (requires --verify feature)
+# ============================================================================
+
+# Verify discovered credentials via API calls
+# WARNING: enabling this sends every detected secret to a third-party
+# HTTPS endpoint (only domains on the per-detector allowlist or the
+# builtin service map — see `verifier::domain_allowlist`). Use only in
+# isolated environments and never in CI logs that capture verifier
+# output. REFUSED in --lockdown mode.
+verify = false
+
+# Verification timeout in seconds
+timeout = 5
+
+# Max concurrent verification requests per service
+rate = 5
+
+# ============================================================================
+# GIT OPTIONS
+# ============================================================================
+
+# Maximum git commits to traverse in history scan
+max_commits = 1000
+
+# ============================================================================
+# OUTPUT OPTIONS
+# ============================================================================
+
+# Show full credentials in output (default: redacted)
+# WARNING: enabling this prints plaintext credentials to stdout, log
+# files, CI artifacts, and anywhere keyhog's output is routed. NEVER
+# enable in CI, on shared hosts, or with --output to a path that
+# survives the run. REFUSED in --lockdown mode.
+show_secrets = false
+
+# ============================================================================
+# INCREMENTAL SCAN (v0.3.0+)
+# ============================================================================
+
+# Persist a BLAKE3 Merkle index of file hashes; subsequent runs skip
+# unchanged files entirely. 10–100× speedup on CI re-runs.
+# CLI override: `--incremental` (with optional `--incremental-cache <path>`).
+# Default cache path: `~/.cache/keyhog/merkle.idx` (platform-aware via `dirs`).
+# incremental = false
+# incremental_cache = "~/.cache/keyhog/merkle.idx"
+
+# ============================================================================
+# BAYESIAN CALIBRATION (v0.3.0+)
+# ============================================================================
+
+# Per-detector Beta(α, β) confidence multiplier. Update with
+#   keyhog calibrate --tp <detector-id>     # record true positive
+#   keyhog calibrate --fp <detector-id>     # record false positive
+#   keyhog calibrate --show                  # posterior-mean bar chart
+# Persisted at `~/.cache/keyhog/calibration.json`. Detectors with zero
+# observations are not multiplied (no penalty on a fresh install).
+
+# ============================================================================
+# DIFF-AWARE SEVERITY (v0.3.0+)
+# ============================================================================
+
+# When scanning git history (`--git-history`), findings whose blob OID is
+# reachable from HEAD keep their detector's declared severity (live leak).
+# Findings only present in older commits drop one tier (Critical → High,
+# etc.). No config knob — always on for git sources.
+
+# ============================================================================
+# WATCH DAEMON (v0.3.0+)
+# ============================================================================
+
+# `keyhog watch <path>` starts a notify-based file watcher and re-scans
+# any modified file with the same compiled detector corpus. Sub-100ms
+# detection on file save. No config knob — invoke as a separate command.

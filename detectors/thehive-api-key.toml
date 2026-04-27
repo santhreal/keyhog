@@ -1,0 +1,16 @@
+# Docs: https://docs.strangebee.com/thehive/api-docs
+# Format: Random alphanumeric API key
+# Verify: GET /api/v1/user/current with Authorization header
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "thehive-api-key"
+name = "TheHive API Key"
+service = "thehive"
+severity = "critical"
+keywords = ["thehive", "THEHIVE_API_KEY", "hive_api_key"]
+
+[[detector.patterns]]
+regex = "(?:thehive|THEHIVE|hive)[\\s_-]*(?:api[_-]?key|key)[=:\\s\"'']+([a-zA-Z0-9_-]{20,64})"
+description = "TheHive API key with context anchor"
+group = 1

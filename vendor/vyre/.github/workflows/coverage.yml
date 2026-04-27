@@ -1,0 +1,36 @@
+name: coverage
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: coverage-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  COVERAGE_FLOOR_LINES: '85'
+  COVERAGE_FLOOR_BRANCHES: '75'
+
+jobs:
+  llvm-cov:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+      - name: Run coverage
+        working-directory: libs/performance/matching/vyre
+        run: |
+          cargo llvm-cov --workspace --all-features --lcov --output-path lcov.info --fail-under-lines "$COVERAGE_FLOOR_LINES"
+      - name: Upload
+        uses: codecov/codecov-action@v4
+        with:
+          files: libs/performance/matching/vyre/lcov.info
+          fail_ci_if_error: true

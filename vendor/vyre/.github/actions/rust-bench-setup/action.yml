@@ -1,0 +1,13 @@
+name: rust-bench-setup
+description: Shared checkout, Rust toolchain, and cargo cache setup for VYRE bench workflows.
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - uses: dtolnay/rust-toolchain@stable
+
+    - uses: Swatinem/rust-cache@v2

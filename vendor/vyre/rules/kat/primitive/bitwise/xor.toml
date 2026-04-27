@@ -1,0 +1,21 @@
+op_id = "primitive.bitwise.xor"
+
+[[golden]]
+input = "ff000000ff000000"
+expected = "00000000"
+reason = "0xFF ^ 0xFF = 0 (self-XOR is always zero)"
+
+[[golden]]
+input = "aa00000055000000"
+expected = "ff000000"
+reason = "0xAA ^ 0x55 = 0xFF (complementary bits)"
+
+[[golden]]
+input = "ffffffffffffffff"
+expected = "00000000"
+reason = "L.1.32: u32::MAX XOR u32::MAX = 0 (exercises the full-width boundary)"
+
+[[golden]]
+input = "ffffffff00000000"
+expected = "ffffffff"
+reason = "L.1.32: u32::MAX XOR 0 preserves u32::MAX"

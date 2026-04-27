@@ -1,0 +1,31 @@
+# Docs: https://developer.box.com/guides/authentication/tokens/developer-tokens/
+# Format: Short-lived OAuth2 access token, typically base64url-encoded JWT or random string
+# Verify: GET /2.0/users/me with Bearer token returns 200 if valid
+# Prefix: none (OAuth2 bearer token format)
+
+[detector]
+id = "box-developer-token"
+name = "Box Developer Token"
+service = "box"
+severity = "high"
+keywords = ["BOX_DEVELOPER_TOKEN", "box_developer_token", "developer_token"]
+
+[[detector.patterns]]
+regex = "(?:BOX|box)[._-]?(?:DEVELOPER|developer)[._-]?(?:TOKEN|token)[=:\\s\"']+([a-zA-Z0-9_-]{20,})"
+description = "Box Developer Token with context anchor"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://api.box.com/2.0/users/me"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[detector.verify.success]
+status = 200
+
+[[detector.verify.metadata]]
+name = "login"
+json_path = "$.login"

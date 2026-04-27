@@ -1,0 +1,16 @@
+# Docs: https://www.circl.lu/doc/misp/automation/
+# Format: 40-character hexadecimal string
+# Verify: GET /events/index with Authorization header
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "misp-api-key"
+name = "MISP API Key"
+service = "misp"
+severity = "critical"
+keywords = ["misp", "MISP_API_KEY", "Authkey", "automation"]
+
+[[detector.patterns]]
+regex = "(?:misp|MISP)[\\s_-]*(?:api[_-]?key|authkey|key)[=:\\s\"'']+([a-f0-9]{40})"
+description = "MISP API key (40 hex chars) with context anchor"
+group = 1

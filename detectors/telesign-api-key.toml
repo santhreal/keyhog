@@ -1,0 +1,21 @@
+# Docs: https://developer.telesign.com/enterprise/docs/authentication
+# Format: UUID (36 chars with dashes) for Customer ID, Base64-encoded string for API Key
+# Verify: POST /v1/messaging with Digest auth (requires HMAC signature)
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "telesign-api-key"
+name = "Telesign API Credentials"
+service = "telesign"
+severity = "critical"
+keywords = ["telesign", "TELESIGN", "customer_id", "api_key", "API_KEY"]
+
+[[detector.patterns]]
+regex = '''(?:telesign|TELESIGN)[_.-]?(?:customer|CUSTOMER)[_.-]?(?:id|ID)?[=:\s"\' ]+([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})'''
+description = "Telesign Customer ID (UUID format)"
+group = 1
+
+[[detector.patterns]]
+regex = '''(?:telesign|TELESIGN)[_.-]?(?:api|API)[_.-]?(?:key|KEY|secret|SECRET)?[=:\s"\' ]+([A-Za-z0-9+/]{20,}={0,2})'''
+description = "Telesign API Key (Base64-encoded string)"
+group = 1

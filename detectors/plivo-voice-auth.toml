@@ -1,0 +1,27 @@
+# Docs: https://www.plivo.com/docs/voice/api/overview
+# Format: Auth ID is a 20-character alphanumeric string, Auth Token is a 40-character alphanumeric string
+# Verify: GET /v1/Account/{auth_id}/ with Basic auth returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "plivo-voice-auth"
+name = "Plivo Voice Auth Credentials"
+service = "plivo"
+severity = "critical"
+keywords = ["PLIVO_AUTH_ID", "PLIVO_AUTH_TOKEN", "plivo", "auth_id", "auth_token"]
+
+[[detector.patterns]]
+regex = "(?:PLIVO_AUTH_ID|plivo_auth_id|auth_id)[\"\\'\\s]*[=:]\\s*[\"\\']?([a-zA-Z0-9]{20})[\"\\']?"
+description = "Plivo Auth ID with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:PLIVO_AUTH_TOKEN|plivo_auth_token|auth_token)[\"\\'\\s]*[=:]\\s*[\"\\']?([a-zA-Z0-9]{40})[\"\\']?"
+description = "Plivo Auth Token with context anchor"
+group = 1
+
+# Auth ID and Auth Token are used together as a pair
+[[detector.companions]]
+name = "plivo_auth_token"
+regex = "[a-zA-Z0-9]{40}"
+within_lines = 5

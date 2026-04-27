@@ -1,0 +1,9 @@
+op_id = "match.dfa_scan"
+cert_version = "0.5.0"
+wire_format_version = 1
+signature_blake3 = "TBD"
+witness_set_blake3 = "TBD"
+program_blake3 = "TBD"
+allowed_backends = ["wgpu"]
+laws = []
+notes = "Dense table-driven DFA emitting (match_count: u32, match_positions: [u32]). Table is a compiled index artifact; scan is a uniform-array-lookup compute kernel."

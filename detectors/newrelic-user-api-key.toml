@@ -1,0 +1,27 @@
+# Docs: https://docs.newrelic.com/docs/apis/intro-apis/new-relic-api-keys/
+# Format: NRAK- prefix followed by 27 uppercase alphanumeric characters
+# Verify: GET request to New Relic API /users.json with Api-Key header
+# Prefix: NRAK-
+
+[detector]
+id = "newrelic-user-api-key"
+name = "New Relic User API Key"
+service = "newrelic"
+severity = "critical"
+keywords = ["NRAK-"]
+
+[[detector.patterns]]
+regex = 'NRAK-[A-Z0-9]{27}'
+description = "New Relic user API key (NRAK- prefix)"
+
+[detector.verify]
+method = "GET"
+url = "https://api.newrelic.com/v2/users.json"
+
+[detector.verify.auth]
+type = "header"
+name = "Api-Key"
+template = "{{match}}"
+
+[detector.verify.success]
+status = 200

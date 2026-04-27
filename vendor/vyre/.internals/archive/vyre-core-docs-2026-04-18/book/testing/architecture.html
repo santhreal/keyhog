@@ -1,0 +1,816 @@
+<!DOCTYPE HTML>
+<html lang="en" class="rust sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Architecture - The vyre Book</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="The GPU compute IR with a conformance prover">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="../favicon-8114d1fc.png">
+        <link rel="stylesheet" href="../css/variables-8adf115d.css">
+        <link rel="stylesheet" href="../css/general-2459343d.css">
+        <link rel="stylesheet" href="../css/chrome-ae938929.css">
+        <link rel="stylesheet" href="../css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="../highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="../tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="../ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "../";
+            const default_light_theme = "rust";
+            const default_dark_theme = "navy";
+            window.path_to_searchindex_js = "../searchindex-bc7bdb82.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="../toc-16d598fb.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('rust')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="../toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">The vyre Book</h1>
+
+                    <div class="right-buttons">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/santhsecurity/vyre" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/santhsecurity/vyre/edit/main/core/docs/./testing/architecture.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                            <span class=fa-svg id="git-edit-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M421.7 220.3l-11.3 11.3-22.6 22.6-205 205c-6.6 6.6-14.8 11.5-23.8 14.1L30.8 511c-8.4 2.5-17.5 .2-23.7-6.1S-1.5 489.7 1 481.2L38.7 353.1c2.6-9 7.5-17.2 14.1-23.8l205-205 22.6-22.6 11.3-11.3 33.9 33.9 62.1 62.1 33.9 33.9zM96 353.9l-9.3 9.3c-.9 .9-1.6 2.1-2 3.4l-25.3 86 86-25.3c1.3-.4 2.5-1.1 3.4-2l9.3-9.3H112c-8.8 0-16-7.2-16-16V353.9zM453.3 19.3l39.4 39.4c25 25 25 65.5 0 90.5l-14.5 14.5-22.6 22.6-11.3 11.3-33.9-33.9-62.1-62.1L314.3 67.7l11.3-11.3 22.6-22.6 14.5-14.5c25-25 65.5-25 90.5 0z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="architecture"><a class="header" href="#architecture">Architecture</a></h1>
+<p>This chapter is the reference for vyre’s test suite directory
+layout. It describes what every directory is for, what belongs in
+each, what does not, and the rationale for every boundary. It is
+the chapter you will open most often once you know how to write
+tests — when you have a test in mind and need to know where it
+goes.</p>
+<p>The layout is permanent. The categories defined here are the
+categories vyre will have forever. New categories are not added
+lightly; every category corresponds to an invariant the suite
+must prove, and every invariant has been considered. If you
+believe a new category is needed, the burden is on you to explain
+why the existing categories cannot absorb the work.</p>
+<h2 id="the-top-level"><a class="header" href="#the-top-level">The top level</a></h2>
+<pre><code>vyre/tests/
+├── unit/                  Fast isolated tests with no cross-module deps
+├── integration/           Full pipeline: build → validate → lower → dispatch
+│   ├── primitive_ops/
+│   ├── ir_construction/
+│   ├── validation/
+│   ├── lowering/
+│   └── wire_format/
+├── adversarial/           Hostile inputs, panic-free assertion
+├── property/              proptest-based invariants
+├── backend/               Cross-backend equivalence, determinism
+├── regression/            Permanent reproducers for past bugs
+├── benchmarks/            criterion-based performance gates
+├── support/               Shared test utilities
+└── corpus/                Committed input fixtures (fuzz seeds, round-trip)
+</code></pre>
+<p>Nine top-level directories. Each has a single purpose and each
+corresponds to one or more invariants from
+<a href="the-promises.html">The promises</a>.</p>
+<h2 id="unit"><a class="header" href="#unit">unit/</a></h2>
+<p><strong>Purpose:</strong> fast, isolated tests for a single function or data
+structure, with no cross-module dependencies and no pipeline
+invocation.</p>
+<p><strong>Scope:</strong> tests in <code>unit/</code> do not build <code>ir::Program</code> values, do
+not call <code>validate()</code>, do not lower to a backend, do not instantiate
+any runtime. They exercise code in isolation — a parser, a visitor,
+a data structure method — and nothing else.</p>
+<p><strong>Preferred location:</strong> inline <code>#[cfg(test)] mod tests { ... }</code> in
+the source file that owns the function being tested. The
+<code>unit/</code> directory exists for cases where integration test scoping
+is necessary (separate target directory, no access to private items,
+binary-only testing), which is rare.</p>
+<p><strong>Why this boundary:</strong> <code>#[cfg(test)]</code> modules in source files keep
+the test next to the code it verifies, which is where readers look
+first. Every time a test is separated from its subject, the reader
+has to look in two places. Inline modules collapse that distance.
+The <code>tests/unit/</code> directory exists as a fallback, not a default.</p>
+<p><strong>What belongs:</strong></p>
+<ul>
+<li>A test for <code>Opcode::parse(byte) -&gt; Option&lt;Opcode&gt;</code> that does not
+construct a Program.</li>
+<li>A test for <code>BufferAccess</code> field accessors that verifies getter
+behavior on synthetically constructed values.</li>
+<li>A test for <code>ValidationError::display()</code> formatting that constructs
+an error value directly.</li>
+</ul>
+<p><strong>What does not belong:</strong></p>
+<ul>
+<li>Any test that calls <code>Program::builder()</code> or constructs an
+<code>ir::Program</code>.</li>
+<li>Any test that calls <code>lower::wgsl::lower()</code>.</li>
+<li>Any test that imports <code>wgpu</code> or any backend.</li>
+<li>Any test that is “like a unit test but also exercises the pipeline
+a little bit.”</li>
+</ul>
+<p><strong>Invariants served:</strong> none specifically. Unit tests support the
+rest of the suite by ensuring individual components work in
+isolation. They are not the main defense for any top-level
+invariant.</p>
+<h2 id="integration"><a class="header" href="#integration">integration/</a></h2>
+<p><strong>Purpose:</strong> tests that exercise the complete
+<code>ir::Program</code> → validate → lower → dispatch pipeline on specific
+inputs with specific expected outputs. The bulk of vyre’s
+hand-written correctness coverage lives here.</p>
+<p>Integration tests are subdivided into five subcategories, each
+with its own purpose. The subdivision is not optional; every
+integration test belongs to exactly one subcategory, and the
+subcategory corresponds to a different aspect of the pipeline.</p>
+<h3 id="integrationprimitive_ops"><a class="header" href="#integrationprimitive_ops">integration/primitive_ops/</a></h3>
+<p><strong>Purpose:</strong> exercise each primitive op through the complete
+pipeline, with oracle-backed expected values.</p>
+<p><strong>Structure:</strong> one file per op. For the ten primitive ops currently
+defined, that is ten files: <code>add.rs</code>, <code>and.rs</code>, <code>eq.rs</code>, <code>mul.rs</code>,
+<code>not.rs</code>, <code>or.rs</code>, <code>popcount.rs</code>, <code>shl.rs</code>, <code>sub.rs</code>, <code>xor.rs</code>.</p>
+<p><strong>Tests per file:</strong> at least ten per op, covering:</p>
+<ul>
+<li>Every archetype that applies to the op’s signature
+(<a href="archetypes.html">A1..A7</a>).</li>
+<li>Every declared law on the op, with a specific-input test
+exercising it.</li>
+<li>At least one full cross-backend equivalence test.</li>
+<li>At least one adversarial instance (overflow, boundary).</li>
+<li>At least one minimum-program test (archetype S1).</li>
+<li>At least one long-chain test (archetype S6).</li>
+</ul>
+<p><strong>Oracles:</strong> specification table row, algebraic law, reference
+interpreter, in that priority order.</p>
+<p><strong>What belongs:</strong> tests whose subject is one primitive op, exercised
+through a complete Program, with inputs chosen from the archetype
+catalog or from hand-written spec table entries.</p>
+<p><strong>What does not belong:</strong></p>
+<ul>
+<li>Tests whose subject is a composed Program with multiple ops.
+Those belong in <code>ir_construction/</code> or <code>backend/</code>.</li>
+<li>Tests whose subject is the validator. Those belong in
+<code>validation/</code>.</li>
+<li>Tests whose subject is the lowering. Those belong in <code>lowering/</code>.</li>
+<li>Tests that are about cross-backend agreement without pinning a
+specific expected value. Those belong in <code>backend/</code>.</li>
+</ul>
+<p><strong>Invariants served:</strong> I3 (backend equivalence), I7 (law
+monotonicity — via specific-input law tests), I8 (reference
+agreement — via reference interpreter oracle), I11 (no panic —
+implicitly, since well-formed tests must not panic).</p>
+<h3 id="integrationir_construction"><a class="header" href="#integrationir_construction">integration/ir_construction/</a></h3>
+<p><strong>Purpose:</strong> tests for Program building, visiting, wire-format
+encoding, and composition.</p>
+<p><strong>Structure:</strong> by concern. Files include <code>builders.rs</code> (builder
+API correctness), <code>visitors.rs</code> (visit ordering and coverage),
+<code>wire_format.rs</code> (encoding/decoding), <code>composition.rs</code> (multi-op
+Program composition).</p>
+<p><strong>What belongs:</strong></p>
+<ul>
+<li>A test that builds a Program using the public builder API and
+asserts the resulting structure matches an expected shape.</li>
+<li>A test that visits a Program and asserts every node is visited
+exactly once.</li>
+<li>A test that composes two Programs and asserts the composition’s
+semantics match the sequential equivalent.</li>
+<li>A test that decodes a hand-crafted wire format buffer into an IR
+structure.</li>
+</ul>
+<p><strong>What does not belong:</strong></p>
+<ul>
+<li>Validation rule tests (those go in <code>validation/</code>).</li>
+<li>Specific-op correctness (those go in <code>primitive_ops/</code>).</li>
+<li>Serialization round-trip testing for arbitrary Programs (those
+go in <code>property/wire_format_roundtrip.rs</code>; this directory is for
+specific cases, property tests are for the general case).</li>
+</ul>
+<p><strong>Invariants served:</strong> I2 (composition commutativity with lowering),
+I4 (IR wire format round-trip identity, for specific hand-crafted cases),
+I14 (non-exhaustive discipline, where enum variants are exercised
+to ensure match exhaustiveness).</p>
+<h3 id="integrationvalidation"><a class="header" href="#integrationvalidation">integration/validation/</a></h3>
+<p><strong>Purpose:</strong> tests for <code>validate(&amp;Program)</code>. Every validation rule
+(V001 through V020) has its own test file or test function.</p>
+<p><strong>Structure:</strong> grouped by rule family.</p>
+<pre><code>validation/
+├── shadowing.rs       V-rules about variable shadowing
+├── buffers.rs         V-rules about buffer declarations
+├── control.rs         V-rules about control flow
+├── types.rs           V-rules about type checking
+├── limits.rs          V-rules about size and nesting limits
+└── separability.rs    The meta-test for invariant I6
+</code></pre>
+<p><strong>Tests per rule:</strong> at least two — one must-reject (a Program
+that violates the rule, and no other rule) and one must-accept
+(the reject case with the violation removed). Separability is the
+property that each rule can be triggered in isolation; a rule that
+cannot be triggered without also triggering another rule is a
+finding.</p>
+<p><strong>What belongs:</strong></p>
+<ul>
+<li><code>test_v001_rejects_duplicate_buffer_name</code></li>
+<li><code>test_v001_accepts_distinct_buffer_names</code></li>
+<li><code>test_v013_rejects_barrier_under_divergent_control</code></li>
+<li>A separability meta-test that iterates every <code>ValidationRule</code>
+variant and asserts each has at least one must-reject test.</li>
+</ul>
+<p><strong>What does not belong:</strong></p>
+<ul>
+<li>Tests for ops that happen to validate. Those go in
+<code>primitive_ops/</code>.</li>
+<li>Tests for lowering behavior on valid programs. Those go in
+<code>lowering/</code>.</li>
+<li>Tests that assert specific error messages rather than specific
+error rules (error message stability is not a vyre invariant).</li>
+</ul>
+<p><strong>Invariants served:</strong> I5 (validation soundness), I6 (validation
+completeness).</p>
+<h3 id="integrationlowering"><a class="header" href="#integrationlowering">integration/lowering/</a></h3>
+<p><strong>Purpose:</strong> tests for <code>lower::wgsl::lower(&amp;Program)</code> — the IR to
+WGSL translation.</p>
+<p><strong>Structure:</strong></p>
+<pre><code>lowering/
+├── expr_coverage.rs   One test per Expr variant, asserting lowering handles it
+├── node_coverage.rs   One test per Node variant
+├── binop_coverage.rs  One test per BinOp variant
+├── wgsl_syntax.rs     Output is valid WGSL (shader compiles on wgpu)
+├── roundtrip.rs       Specific program lowers to specific shader
+├── bounds_checks.rs   Every buffer access has a bounds check
+└── shift_masks.rs     Every shift has a mask
+</code></pre>
+<p><strong>Meta-test:</strong> <code>expr_coverage.rs</code> and <code>node_coverage.rs</code> each
+include an enum-exhaustiveness test that enumerates the variants
+and fails at compile time if a variant has no corresponding test.
+Adding a new variant without coverage causes the meta-test to
+fail, which forces the contributor to write the missing test.</p>
+<p><strong>What belongs:</strong></p>
+<ul>
+<li>A test that builds a Program containing a specific <code>Expr</code>
+variant, lowers it, and asserts the output contains the expected
+WGSL construct.</li>
+<li>A test that lowers a Program and checks the WGSL for a bounds
+check on every buffer access.</li>
+<li>A test that feeds the lowered WGSL to wgpu’s shader compiler and
+asserts it compiles successfully.</li>
+</ul>
+<p><strong>What does not belong:</strong></p>
+<ul>
+<li>Tests that assert the lowered output equals a specific string
+byte-for-byte (those are brittle and do not survive formatting
+changes in the emitter).</li>
+<li>Tests for what the shader computes when dispatched — those go
+in <code>primitive_ops/</code> or <code>backend/</code>.</li>
+<li>Tests that specific functions are called during lowering
+(implementation details, not behavior).</li>
+</ul>
+<p><strong>Invariants served:</strong> I3 (backend equivalence, indirectly — the
+lowering must preserve semantics), I12 (no undefined behavior —
+via bounds check and shift mask coverage).</p>
+<h3 id="integrationwire_format"><a class="header" href="#integrationwire_format">integration/wire_format/</a></h3>
+<p><strong>Purpose:</strong> tests for wire format ↔ IR conversion and round-trip
+identity.</p>
+<p><strong>Structure:</strong></p>
+<pre><code>wire_format/
+├── from_wire.rs       Each wire tag to IR conversion
+├── to_wire.rs         Each IR shape to wire format
+├── roundtrip.rs       Program → bytes → Program equality for corpus
+├── tag_coverage.rs    Meta-test: every WireTag variant is tested
+└── constraints.rs     Legacy constraint encoding tests (to be merged)
+</code></pre>
+<p><strong>Coverage requirement:</strong> every wire tag in the IR wire format must
+have at least one <code>from_wire</code> test. Every IR shape that has a wire format
+form must have at least one <code>to_wire</code> test. The round-trip
+file uses a corpus of Programs from <code>corpus/wire_format/</code> and asserts
+identity over the full set.</p>
+<p><strong>What belongs:</strong></p>
+<ul>
+<li>A test that decodes a specific wire format sequence to an IR
+structure and asserts the structure matches expected.</li>
+<li>A test that encodes an IR structure to wire format and asserts the
+bytes match expected.</li>
+<li>A test that round-trips a corpus entry and asserts identity.</li>
+</ul>
+<p><strong>What does not belong:</strong></p>
+<ul>
+<li>IR wire format schema validation — vyre’s wire format is schema-free;
+malformed wire-format bytes are caught by decoder errors, not schemas.</li>
+<li>IR wire format execution semantics — wire format is serialization, not an
+executable. Tests that “run wire format” are misunderstanding the
+architecture.</li>
+</ul>
+<p><strong>Invariants served:</strong> I4 (IR wire format round-trip identity).</p>
+<h2 id="adversarial"><a class="header" href="#adversarial">adversarial/</a></h2>
+<p><strong>Purpose:</strong> hostile inputs, resource bombs, malformed IR and
+wire format, OOM and fault injection. The category where every test’s
+assertion is “graceful error handling, no panic, no undefined
+behavior.”</p>
+<p><strong>Structure:</strong></p>
+<pre><code>adversarial/
+├── malformed_ir.rs        Corrupted Program structures
+├── malformed_wire_format.rs  Truncated or invalid wire format
+├── oom.rs                 Allocation exhaustion
+├── resource_bombs.rs      Deeply nested, extremely wide
+├── oob_indices.rs         Buffer access at boundaries
+├── panic_probes.rs        Inputs engineered from past panics
+└── fuzz_corpus.rs         Replay of inputs from fuzz corpus
+</code></pre>
+<p><strong>The assertion rule:</strong> every adversarial test asserts “did not
+panic and returned a structured error.” Nothing more specific. The
+test does not assert what error was returned; it asserts the
+runtime survived.</p>
+<p><strong>What belongs:</strong></p>
+<ul>
+<li>A test that passes a Program with 10,000 nested conditionals and
+asserts the validator rejects it without panicking.</li>
+<li>A test that passes malformed wire-format bytes and asserts the
+decoder returns <code>DecodeError::Truncated</code> without panicking.</li>
+<li>A test that runs with OOM injection and asserts allocation
+failures are reported as structured errors.</li>
+</ul>
+<p><strong>What does not belong:</strong></p>
+<ul>
+<li>Tests that assert specific error messages (brittle; not in
+scope).</li>
+<li>Tests that assert specific error rules (those go in
+<code>validation/</code>, where the goal is to pin down which rule fired).</li>
+<li>Tests for normal behavior on normal inputs (those go in
+<code>integration/</code>).</li>
+</ul>
+<p><strong>The fuzz corpus subdirectory:</strong> <code>fuzz_corpus.rs</code> replays inputs
+from <code>corpus/fuzz/</code> — inputs discovered by <code>cargo fuzz</code> runs that
+caused panics in past versions of vyre. Every entry in the corpus
+is a permanent regression against panic. The file loads the
+corpus at test time and asserts every input returns without
+panic.</p>
+<p><strong>Invariants served:</strong> I10 (bounded allocation), I11 (no panic),
+I12 (no undefined behavior — via OOB and malformed inputs).</p>
+<h2 id="property"><a class="header" href="#property">property/</a></h2>
+<p><strong>Purpose:</strong> proptest-based invariant tests. Each file is one
+invariant and one proptest.</p>
+<p><strong>Structure:</strong></p>
+<pre><code>property/
+├── determinism.rs           I1: same inputs → same outputs
+├── wire_format_roundtrip.rs I4: roundtrip is identity
+├── validation_soundness.rs  I5: validated → safe to lower
+├── lowering_invariants.rs   Lowering produces valid WGSL for all validated Programs
+└── law_preservation.rs      I7: composition preserves laws
+</code></pre>
+<p><strong>Seed discipline:</strong> every proptest has a fixed seed set via
+<code>ProptestConfig</code>. Failing cases are committed to
+<code>proptest-regressions/</code> at the crate root and become permanent
+regressions.</p>
+<p><strong>Case count:</strong> normal CI runs execute each proptest with 1,000
+cases for speed. Release CI runs execute each with 100,000 cases
+(these are marked <code>#[ignore]</code> and invoked separately). Nightly
+runs execute each with 1,000,000 cases.</p>
+<p><strong>What belongs:</strong></p>
+<ul>
+<li>A proptest that generates random valid Programs and asserts
+running them twice produces the same output.</li>
+<li>A proptest that generates arbitrary Programs, encodes them to
+wire format, decodes them back, and asserts equality.</li>
+<li>A proptest that generates valid Programs, validates them, lowers
+them, and asserts the lowered shader compiles.</li>
+</ul>
+<p><strong>What does not belong:</strong></p>
+<ul>
+<li>Specific-input tests masquerading as property tests. Those are
+integration tests; stop using proptest for them.</li>
+<li>Property tests without fixed seeds. Those are rejected at
+review.</li>
+<li>Properties that are restatements of the implementation (“the
+output has the same length as the input” without reason).</li>
+</ul>
+<p><strong>Invariants served:</strong> I1, I4, I5, I7 — and any other invariant
+that can be expressed as a universal quantification.</p>
+<h2 id="backend"><a class="header" href="#backend">backend/</a></h2>
+<p><strong>Purpose:</strong> cross-backend equivalence tests. Proves I3.</p>
+<p><strong>Structure:</strong></p>
+<pre><code>backend/
+├── wgpu_vs_cpu.rs                 wgpu backend vs cpu reference fn
+├── wgpu_vs_reference_interp.rs    wgpu backend vs reference interpreter
+├── reference_cpu_agreement.rs     I8: reference interp agrees with cpu ref
+├── determinism_across_runs.rs     I1: same run, many iterations
+└── cross_backend_smoke.rs         Every backend on every canonical Program
+</code></pre>
+<p><strong>The skip rule:</strong> if only one backend is registered, tests in
+<code>backend/</code> that require multiple backends skip with a clear
+reason message. They do not silently pass (which would hide
+missing coverage). They do not fail (which would cause spurious
+failures on single-backend development machines). They skip with
+“<code>needs ≥ 2 backends</code>” printed to the test output.</p>
+<p><strong>What belongs:</strong></p>
+<ul>
+<li>A test that runs a canonical Program on every registered backend
+and asserts identical output.</li>
+<li>A test that runs the same Program 1,000 times on the same
+backend and asserts identical output.</li>
+<li>A test that verifies the reference interpreter matches the CPU
+reference function for every op on a witnessed input sample.</li>
+</ul>
+<p><strong>What does not belong:</strong></p>
+<ul>
+<li>Tests for specific op correctness on a single backend — those
+go in <code>primitive_ops/</code>.</li>
+<li>Tests for shader syntax — those go in <code>integration/lowering/</code>.</li>
+<li>Tests that only run on one backend — those are not cross-backend
+tests and belong elsewhere.</li>
+</ul>
+<p><strong>Invariants served:</strong> I1, I3, I8.</p>
+<h2 id="regression"><a class="header" href="#regression">regression/</a></h2>
+<p><strong>Purpose:</strong> permanent reproducers for every bug that has ever
+been fixed in vyre.</p>
+<p><strong>Structure:</strong> one file per bug. Files are named
+<code>YYYY-MM-DD-short-description.rs</code>. Files are ordered by date in
+directory listings.</p>
+<p><strong>File format:</strong> every file starts with a header comment recording:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>//! Regression: YYYY-MM-DD — short description
+//!
+//! Symptom: what went wrong from the user's perspective
+//!
+//! Root cause: what was actually broken
+//!
+//! Fixed: commit &lt;hash&gt; — short description of fix
+<span class="boring">}</span></code></pre>
+<p>After the header, the file contains the test itself: a Program
+built with the minimal inputs that trigger the bug, a run that
+asserts the correct behavior. The test would have failed before
+the fix; it passes after.</p>
+<p><strong>The regression rule:</strong> files in <code>regression/</code> are never deleted.
+When a regression test starts failing, the bug has returned. The
+fix is to the code, never to the test. This is non-negotiable and
+is enforced by the review checklist.</p>
+<p><strong>What belongs:</strong></p>
+<ul>
+<li>A file per fixed bug, with the header and a test.</li>
+<li>Corpus files imported from external sources when they
+reproducibly identify a past bug.</li>
+</ul>
+<p><strong>What does not belong:</strong></p>
+<ul>
+<li>Tests that are not tied to a specific past bug. Those belong in
+other categories.</li>
+<li>Tests that no longer exercise the bug they were added for (if
+the codebase changed such that the test no longer tests what it
+was meant to test, add a new regression, do not edit the old
+one).</li>
+</ul>
+<p><strong>Invariants served:</strong> none specifically. Regression tests support
+the rest of the suite by pinning down past bugs forever.</p>
+<h2 id="benchmarks"><a class="header" href="#benchmarks">benchmarks/</a></h2>
+<p><strong>Purpose:</strong> criterion-based performance regression gates. Not
+correctness tests.</p>
+<p><strong>Structure:</strong></p>
+<pre><code>benchmarks/
+├── construction.rs   Program construction perf
+├── validation.rs     validate() perf
+├── lowering.rs       lower::wgsl perf
+├── dispatch.rs       End-to-end dispatch perf
+└── wire_format.rs   encode/decode perf
+</code></pre>
+<p><strong>Baseline discipline:</strong> every benchmark has a committed baseline.
+CI runs compare each benchmark’s current time to the baseline and
+fail if any benchmark regresses by more than 10% without an
+explicit override label on the PR.</p>
+<p><strong>What belongs:</strong></p>
+<ul>
+<li>Benchmarks that measure vyre’s performance on representative
+workloads.</li>
+<li>Benchmarks that represent real user use cases (e.g., a Program
+with the shape a Karyx consumer actually dispatches).</li>
+</ul>
+<p><strong>What does not belong:</strong></p>
+<ul>
+<li>Correctness assertions. A benchmark that asserts the output
+equals some value is half a correctness test and half a
+benchmark; split it.</li>
+<li>Microbenchmarks for Rust code that has no effect on vyre’s
+observable behavior. Those are not worth the CI cost.</li>
+</ul>
+<p><strong>Invariants served:</strong> none. Performance is not an invariant in
+the sense used in this book; it is a quality attribute with
+regression detection.</p>
+<h2 id="support"><a class="header" href="#support">support/</a></h2>
+<p><strong>Purpose:</strong> shared test utilities used by multiple test files.</p>
+<p><strong>Structure:</strong></p>
+<pre><code>support/
+├── mod.rs          Top-level re-exports
+├── programs.rs     Pre-built ir::Program factories
+├── backends.rs     Backend harness wrappers
+├── oracles.rs      Oracle helpers (spec table lookup, law assertions)
+└── fixtures.rs     Static test data
+</code></pre>
+<p><strong>The rule:</strong> helpers exist to reduce boilerplate, not to obscure
+test intent. A test that uses a helper should read as clearly as
+a test that inlines the helper. If the helper’s name does not
+tell the reader what is happening, the helper is wrong.</p>
+<p><strong>What belongs:</strong></p>
+<ul>
+<li><code>build_single_op(op, args)</code> — factory for minimal Programs.</li>
+<li><code>run_on_default_backend(program)</code> — dispatch wrapper.</li>
+<li><code>spec_table_lookup(op, inputs)</code> — oracle helper that looks up a
+spec table row.</li>
+<li><code>assert_law(law, op, inputs)</code> — oracle helper that verifies a
+declared law on specific inputs.</li>
+</ul>
+<p><strong>What does not belong:</strong></p>
+<ul>
+<li>Factories that take so many parameters the call site is longer
+than the inlined code would be.</li>
+<li>Helpers that hide what op is being tested, what inputs are
+being used, or what the expected value is. Those obscure test
+intent.</li>
+<li>Implementation utilities that should live in vyre’s own source
+tree instead of its test tree.</li>
+</ul>
+<h2 id="corpus"><a class="header" href="#corpus">corpus/</a></h2>
+<p><strong>Purpose:</strong> committed input fixtures used by multiple tests.</p>
+<p><strong>Structure:</strong></p>
+<pre><code>corpus/
+├── wire_format/    Round-trip corpus for wire_format/roundtrip.rs
+├── fuzz/        Inputs from past cargo-fuzz runs that caught bugs
+└── external/    Inputs imported from external conformance suites
+</code></pre>
+<p><strong>The rule:</strong> corpus files are authoritative for their specific
+inputs. Editing a corpus file requires a review rationale. Adding
+a corpus file requires a source citation (where the input came
+from, why it is in the corpus).</p>
+<h2 id="proptest-regressions"><a class="header" href="#proptest-regressions">proptest-regressions/</a></h2>
+<p>Not under <code>tests/</code> but at the crate root: <code>vyre/proptest-regressions/</code>.
+When a proptest fails, proptest records the failing input in a
+regression file. The file must be committed so the regression is
+permanent. See <a href="discipline/seed-discipline.html">Seed discipline</a>.</p>
+<h2 id="tests_generated"><a class="header" href="#tests_generated">tests_generated/</a></h2>
+<p>This directory does not exist in <code>vyre/</code>. It exists in
+<code>vyre-conform/tests_generated/</code> and is gitignored. Generated tests
+are materialized at build time from the specification and are not
+committed. They run alongside hand-written tests but are managed
+entirely by vyre-conform. See
+<a href="vyre-conform/two-tier-suite.html">vyre-conform/two-tier-suite.md</a>.</p>
+<h2 id="the-rule-for-where-does-this-test-go"><a class="header" href="#the-rule-for-where-does-this-test-go">The rule for “where does this test go”</a></h2>
+<p>When you have a test in mind and do not know where it goes, the
+decision tree in <a href="writing/decision-tree.html">Writing/decision-tree.md</a>
+is the authority. But for reference, the short version is:</p>
+<ol>
+<li>Does it build <code>ir::Program</code> and run the pipeline? → <code>integration/</code>.</li>
+<li>Is it about a single primitive op? → <code>integration/primitive_ops/</code>.</li>
+<li>Is it about Program building, visiting, or encoding? →
+<code>integration/ir_construction/</code>.</li>
+<li>Is it about validation rules? → <code>integration/validation/</code>.</li>
+<li>Is it about lowering to WGSL? → <code>integration/lowering/</code>.</li>
+<li>Is it about wire format conversion? → <code>integration/wire_format/</code>.</li>
+<li>Is the input hostile and the assertion “no panic”? →
+<code>adversarial/</code>.</li>
+<li>Is it a forall proptest? → <code>property/</code>.</li>
+<li>Is it about agreement between backends? → <code>backend/</code>.</li>
+<li>Is it a reproducer for a specific past bug? → <code>regression/</code>.</li>
+<li>Is it measuring performance? → <code>benchmarks/</code>.</li>
+<li>Is it a shared helper? → <code>support/</code>.</li>
+<li>None of the above? → read Part V and the decision tree.
+If it still does not fit, you are either testing something
+that does not need to be tested, or the suite has a gap that
+warrants a new category. Open a PR against this book before
+adding the test.</li>
+</ol>
+<h2 id="the-file-level-layout"><a class="header" href="#the-file-level-layout">The file-level layout</a></h2>
+<p>Every test file begins with a module-level doc comment stating
+what the file is for. Every test function has a one-line doc
+comment stating what it verifies and which oracle it uses. This is
+not optional; it is enforced by the review checklist.</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>//! Tests for BinOp::Add via the full ir::Program → lower → dispatch
+//! path.
+//!
+//! Oracles: specification table (hand-written), laws (Commutative,
+//! Associative, Identity(0)), cross-backend equivalence.
+
+use vyre::ir::{Program, Expr, Node, DataType, BinOp};
+use vyre::lower::wgsl;
+
+use crate::support::programs::build_single_binop;
+use crate::support::backends::run_on_default_backend;
+
+/// Add of (0, 0) is 0. Oracle: SpecRow from vyre-conform spec table.
+#[test]
+fn test_add_zero_zero_spec_table() {
+    let program = build_single_binop(BinOp::Add, 0u32, 0u32);
+    let result = run_on_default_backend(&amp;program).expect("dispatch");
+    assert_eq!(result, 0u32);
+}
+<span class="boring">}</span></code></pre>
+<p>Short, readable, self-contained. The reader knows what is being
+tested, what the oracle is, and what the assertion is, in under
+fifteen lines.</p>
+<h2 id="summary"><a class="header" href="#summary">Summary</a></h2>
+<p>Nine top-level directories, each with a single purpose, each
+serving specific invariants. Subdirectories under <code>integration/</code>
+split that category into five distinct concerns. Every test lives
+in exactly one place, and the place is determined mechanically by
+the decision tree in Part V. Files have doc comments stating
+intent. Tests have doc comments stating oracles. Helpers reduce
+boilerplate without hiding intent. Regression files are permanent.
+Corpora are authoritative.</p>
+<p>This is the layout. It is permanent. Part III’s category chapters
+go into each category in depth; this chapter was the map.</p>
+<p>Next: Part III opens with <a href="categories/unit.html">Unit tests</a>.</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../testing/mutations.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="../testing/categories/unit.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../testing/mutations.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="../testing/categories/unit.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="../elasticlunr-ef4e11c1.min.js"></script>
+        <script src="../mark-09e88c2c.min.js"></script>
+        <script src="../searcher-c2a407aa.js"></script>
+
+        <script src="../clipboard-1626706a.min.js"></script>
+        <script src="../highlight-abc7f01d.js"></script>
+        <script src="../book-a0b12cfe.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+
+    </div>
+    </body>
+</html>

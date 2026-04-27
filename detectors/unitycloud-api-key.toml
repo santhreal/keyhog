@@ -1,0 +1,15 @@
+# Docs: https://services.docs.unity.com/docs/api-keys
+# Format: UCA- prefix followed by 32 alphanumeric characters, or 36-char UUID
+# Verify: GET https://services.api.unity.com/unity/v1/users/me with Unity-Session-Token or Authorization header
+# Prefix: UCA-
+
+[detector]
+id = "unitycloud-api-key"
+name = "Unity Cloud API Key"
+service = "unitycloud"
+severity = "critical"
+keywords = ["UCA-", "UNITY_API_KEY", "unity_cloud_api", "UnityProjectID"]
+
+[[detector.patterns]]
+regex = 'UCA-[a-zA-Z0-9]{32,}'
+description = "Unity Cloud API key (UCA- prefix followed by 32 alphanumeric characters)"

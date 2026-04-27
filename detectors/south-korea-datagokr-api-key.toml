@@ -1,0 +1,26 @@
+# Docs: https://www.data.go.kr/en/
+# Format: Korean government data portal API key (service key)
+# Verify: GET requests with serviceKey parameter to api.data.go.kr
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "south-korea-datagokr-api-key"
+name = "South Korea data.go.kr API Key"
+service = "south-korea-datagokr"
+severity = "medium"
+keywords = ["data.go.kr", "DATA_GO_KR", "serviceKey", "공공데이터포털"]
+
+[[detector.patterns]]
+regex = "(?:data\\.go\\.kr|DATA_GO_KR|datagokr)[_.-]?(?:SERVICE[_-]?KEY|service_key|API[_-]?KEY|api_key)[\\s\"''=:]+([a-zA-Z0-9]{20,50})"
+description = "Korea data.go.kr service API key"
+group = 1
+
+[[detector.patterns]]
+regex = "serviceKey[\\s\"''=:]+([a-zA-Z0-9%]{30,60})"
+description = "Korea data.go.kr serviceKey parameter"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:api\\.data\\.go\\.kr|data\\.go\\.kr).{0,40}serviceKey[=:]+([a-zA-Z0-9%]{30,60})"
+description = "Korea data.go.kr serviceKey in URL"
+group = 1

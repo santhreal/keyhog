@@ -1,0 +1,27 @@
+# Docs: https://planetscale.com/docs/concepts/service-tokens
+# Format: Service token starting with 'pscale_tkn_' followed by 43 alphanumeric characters
+# Verify: Sent in Authorization header to api.planetscale.com/v1/organizations, returns 200 on success
+# Prefix: pscale_tkn_
+
+[detector]
+id = "planetscale-service-token"
+name = "PlanetScale Service Token"
+service = "planetscale"
+severity = "high"
+keywords = ["pscale_tkn", "planetscale", "PLANETSCALE_SERVICE_TOKEN"]
+
+[[detector.patterns]]
+regex = 'pscale_tkn_[a-zA-Z0-9]{43}'
+description = "PlanetScale service token (pscale_tkn_ prefix, 43 chars)"
+
+[detector.verify]
+method = "GET"
+url = "https://api.planetscale.com/v1/organizations"
+
+[detector.verify.auth]
+type = "header"
+name = "Authorization"
+template = "{{match}}"
+
+[detector.verify.success]
+status = 200

@@ -1,0 +1,20 @@
+# Docs: https://www.pubnub.com/docs/general/setup/connect-to-pubnub
+# Format: Subscribe key starting with 'sub-c-' followed by a UUID (8-4-4-4-12 hex pattern)
+# Verify: Must be paired with publish key; used for subscribing to PubNub channels
+# Prefix: sub-c-
+
+[detector]
+id = "pubnub-subscribe-key"
+name = "PubNub Subscribe Key"
+service = "pubnub"
+severity = "medium"
+keywords = ["sub-c-"]
+
+[[detector.patterns]]
+regex = 'sub-c-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}'
+description = "PubNub subscribe key (UUID format with sub-c- prefix)"
+
+[[detector.companions]]
+name = "publish_key"
+regex = 'pub-c-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}'
+within_lines = 5

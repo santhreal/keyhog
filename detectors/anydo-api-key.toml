@@ -1,0 +1,16 @@
+# Docs: https://docs.any.do/
+# Format: API key, variable length alphanumeric string
+# Verify: No public verification endpoint available
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "anydo-api-key"
+name = "Any.do API Key"
+service = "anydo"
+severity = "high"
+keywords = ["ANYDO_API_KEY", "ANYDO_KEY", "ANYDO_TOKEN"]
+
+[[detector.patterns]]
+regex = "(?:ANYDO_API_KEY|ANYDO_KEY|ANYDO_TOKEN)[=:\\s\"'']+([A-Za-z0-9_-]{30,60})"
+description = "Any.do API key with context anchor"
+group = 1

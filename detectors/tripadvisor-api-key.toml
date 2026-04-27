@@ -1,0 +1,21 @@
+# Docs: https://developer-tripadvisor.com/content-api/
+# Format: 32-64 character alphanumeric string with no unique prefix
+# Verify: no public verification endpoint
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "tripadvisor-api-key"
+name = "TripAdvisor API Key"
+service = "tripadvisor"
+severity = "medium"
+keywords = ["TRIPADVISOR_API_KEY", "tripadvisor", "trip_advisor", "TA_API_KEY"]
+
+[[detector.patterns]]
+regex = "(?:TRIPADVISOR|tripadvisor|trip_advisor|TA_API_KEY)[=:\\s\"'']+([a-f0-9]{32,64})"
+description = "TripAdvisor API key hex format with context"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:TRIPADVISOR|tripadvisor)[=:\\s\"'']+([A-Za-z0-9_-]{32,64})"
+description = "TripAdvisor API key generic format with context"
+group = 1

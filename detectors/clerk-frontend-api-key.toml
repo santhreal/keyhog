@@ -1,0 +1,15 @@
+# Docs: https://clerk.com/docs/references/nextjs/clerk-middleware
+# Format: pk_ prefix followed by live/test and 32 alphanumeric characters (publishable key)
+# Verify: no verify endpoint (client-side key)
+# Prefix: pk_
+
+[detector]
+id = "clerk-frontend-api-key"
+name = "Clerk Frontend API Key"
+service = "clerk"
+severity = "medium"
+keywords = ["pk_live_", "pk_test_"]
+
+[[detector.patterns]]
+regex = 'pk_(?:live|test)_[a-zA-Z0-9]{32}'
+description = "Clerk frontend publishable API key (pk_live_ or pk_test_)"

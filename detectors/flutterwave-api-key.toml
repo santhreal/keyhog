@@ -1,0 +1,30 @@
+# Docs: https://developer.flutterwave.com/docs/authentication
+# Format: Secret keys start with FLWSECK_TEST- or FLWSECK_LIVE-, public keys with FLWPUBK_TEST- or FLWPUBK_LIVE-
+# Verify: GET /v3/transactions with Bearer token returns 200 if valid
+# Prefix: FLWSECK_, FLWPUBK_
+
+[detector]
+id = "flutterwave-api-key"
+name = "Flutterwave API Key"
+service = "flutterwave"
+severity = "critical"
+keywords = ["FLWSECK_", "FLWPUBK_", "FLUTTERWAVE", "flutterwave", "FLW_SECRET_KEY"]
+
+[[detector.patterns]]
+regex = '(FLWSECK_(?:TEST|LIVE)-[a-f0-9]{32,64}-X)'
+description = "Flutterwave secret key (FLWSECK_TEST/LIVE prefix)"
+
+[[detector.patterns]]
+regex = '(FLWPUBK_(?:TEST|LIVE)-[a-f0-9]{32,64}-X)'
+description = "Flutterwave public key (FLWPUBK_TEST/LIVE prefix)"
+
+[detector.verify]
+method = "GET"
+url = "https://api.flutterwave.com/v3/transactions"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[detector.verify.success]
+status = 200

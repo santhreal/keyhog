@@ -1,0 +1,21 @@
+# Docs: https://ngrok.com/docs/agent/config/
+# Format: authtoken is a base64-like string without unique prefix, typically found in config files
+# Verify: no public verification endpoint (requires ngrok agent)
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "ngrok-auth-token"
+name = "Ngrok Auth Token"
+service = "ngrok"
+severity = "high"
+keywords = ["NGROK_AUTHTOKEN", "ngrok", "authtoken"]
+
+[[detector.patterns]]
+regex = "(?:NGROK_AUTHTOKEN|ngrok.?authtoken)[=:\\s\"'']+([a-zA-Z0-9_=+/]{40,})"
+description = "Ngrok auth token in environment variable or config"
+group = 1
+
+[[detector.patterns]]
+regex = "authtoken:\\s*([a-zA-Z0-9_=+/]{40,})"
+description = "Ngrok auth token in YAML config file"
+group = 1

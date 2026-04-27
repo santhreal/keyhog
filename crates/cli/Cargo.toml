@@ -1,0 +1,85 @@
+[package]
+name = "keyhog"
+description = "keyhog scans source trees, git history, Docker images, and S3 buckets for leaked credentials"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors = ["Santh Project <contact@santh.dev>"]
+license.workspace = true
+repository = "https://github.com/santhsecurity/keyhog"
+homepage = "https://github.com/santhsecurity/keyhog"
+documentation = "https://docs.rs/keyhog"
+keywords.workspace = true
+categories.workspace = true
+readme = "README.md"
+
+[package.metadata.santh]
+status = "alpha"
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "keyhog"
+path = "src/main.rs"
+
+[features]
+# Default = full experience. Only gpu, simd, and binary (Ghidra) are opt-in
+# because they require heavy compile-time deps or system libraries.
+# cargo install keyhog gives you EVERYTHING else.
+default = [
+    "keyhog-scanner/default",  # ML, entropy, decode-through, multiline
+    "git",                      # Git source backends
+    "web",                      # URL scanning (JS/sourcemap/WASM)
+    "github",                   # GitHub org scanning
+    "s3",                       # S3 bucket scanning
+    "docker",                   # Docker image scanning
+    "verify",                   # Live credential verification
+]
+fast = []  # Override: pattern matching only, no ML/decode. For pre-commit hooks.
+full = [
+    "keyhog-scanner/ml",
+    "keyhog-scanner/entropy",
+    "keyhog-scanner/decode",
+    "keyhog-scanner/multiline",
+    "git", "web", "github", "s3", "docker",
+    "verify",
+    "binary",
+]
+git = ["keyhog-sources/git"]
+github = ["keyhog-sources/github"]
+s3 = ["keyhog-sources/s3"]
+docker = ["keyhog-sources/docker"]
+binary = ["keyhog-sources/binary"]     # Ghidra decompiler (requires Ghidra installed)
+web = ["keyhog-sources/web"]
+verify = ["keyhog-verifier/live"]
+gpu = ["keyhog-scanner/gpu"]           # wgpu compute shader inference (heavy)
+simd = ["keyhog-scanner/simd"]         # Vectorscan/Hyperscan SIMD regex (system lib required)
+
+[dependencies]
+keyhog-core = { workspace = true }
+keyhog-scanner = { workspace = true, default-features = false }
+keyhog-verifier = { workspace = true, optional = true }
+keyhog-sources = { workspace = true }
+clap = { workspace = true }
+clap_complete = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = { workspace = true }
+rayon = { workspace = true }
+toml = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+dirs = { workspace = true }
+indicatif = { workspace = true }
+notify = { workspace = true }
+
+[dev-dependencies]
+keyhog-core = { workspace = true }
+keyhog-scanner = { workspace = true, default-features = false }
+keyhog-sources = { workspace = true }
+serde_json = { workspace = true }
+tempfile = { workspace = true }
+regex = { workspace = true }

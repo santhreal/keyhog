@@ -1,0 +1,53 @@
+name: Bench
+
+on:
+  pull_request:
+    paths:
+      - 'libs/performance/matching/vyre/**'
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+defaults:
+  run:
+    working-directory: libs/performance/matching/vyre
+
+jobs:
+  criterion-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: ./.github/actions/rust-bench-setup
+
+      - name: Save baseline from main
+        run: |
+          git fetch origin main
+          git checkout origin/main
+          cargo bench -p vyre-libs -- --save-baseline main
+          git checkout -
+
+      - name: Compare PR against baseline
+        run: |
+          cargo bench -p vyre-libs -- --baseline main --save-baseline pr 2>&1 | tee bench.log
+
+      - name: Check for regressions > 5%
+        run: |
+          python3 -c "
+import sys, re
+log = open('bench.log').read()
+regressions = []
+for m in re.finditer(r'change: \\[([-\d.]+%)\s+([-\d.]+%)\s+([-\d.]+%)\\]', log):
+    median = float(m.group(2).replace('%', ''))
+    if median > 5:
+        regressions.append(median)
+if regressions:
+    print('FAIL: criterion regressions > 5% detected:', regressions)
+    sys.exit(1)
+if 'change: [' not in log:
+    print('FAIL: no Criterion comparison lines found; benchmark target is not exercising Criterion')
+    sys.exit(1)
+print('PASS: no criterion regressions > 5%')
+"

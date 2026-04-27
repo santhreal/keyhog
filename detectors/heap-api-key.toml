@@ -1,0 +1,16 @@
+# Docs: https://developers.heap.io/docs/api-reference
+# Format: Environment ID typically 10-12 digit numeric string
+# Verify: none (no simple verification endpoint available)
+# Prefix: none (numeric, requires keyword context)
+
+[detector]
+id = "heap-api-key"
+name = "Heap API Key"
+service = "heap"
+severity = "medium"
+keywords = ["heap", "HEAP_APP_ID", "heap.load", "HEAP_ID"]
+
+[[detector.patterns]]
+regex = "(?:heap|HEAP)[_.]?(?:app[_.]?id|id|env|environment)[=:\\s\"']+(\\d{10,12})"
+description = "Heap environment/app ID (10-12 digits) with context anchor"
+group = 1

@@ -1,0 +1,586 @@
+<!DOCTYPE HTML>
+<html lang="en" class="rust sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Integration - The vyre Book</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="The GPU compute IR with a conformance prover">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../../favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="../../favicon-8114d1fc.png">
+        <link rel="stylesheet" href="../../css/variables-8adf115d.css">
+        <link rel="stylesheet" href="../../css/general-2459343d.css">
+        <link rel="stylesheet" href="../../css/chrome-ae938929.css">
+        <link rel="stylesheet" href="../../css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../../fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="../../highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="../../tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="../../ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "../../";
+            const default_light_theme = "rust";
+            const default_dark_theme = "navy";
+            window.path_to_searchindex_js = "../../searchindex-bc7bdb82.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="../../toc-16d598fb.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('rust')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="../../toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">The vyre Book</h1>
+
+                    <div class="right-buttons">
+                        <a href="../../print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/santhsecurity/vyre" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/santhsecurity/vyre/edit/main/core/docs/./testing/categories/integration.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                            <span class=fa-svg id="git-edit-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M421.7 220.3l-11.3 11.3-22.6 22.6-205 205c-6.6 6.6-14.8 11.5-23.8 14.1L30.8 511c-8.4 2.5-17.5 .2-23.7-6.1S-1.5 489.7 1 481.2L38.7 353.1c2.6-9 7.5-17.2 14.1-23.8l205-205 22.6-22.6 11.3-11.3 33.9 33.9 62.1 62.1 33.9 33.9zM96 353.9l-9.3 9.3c-.9 .9-1.6 2.1-2 3.4l-25.3 86 86-25.3c1.3-.4 2.5-1.1 3.4-2l9.3-9.3H112c-8.8 0-16-7.2-16-16V353.9zM453.3 19.3l39.4 39.4c25 25 25 65.5 0 90.5l-14.5 14.5-22.6 22.6-11.3 11.3-33.9-33.9-62.1-62.1L314.3 67.7l11.3-11.3 22.6-22.6 14.5-14.5c25-25 65.5-25 90.5 0z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="integration-tests"><a class="header" href="#integration-tests">Integration tests</a></h1>
+<h2 id="the-category-where-vyres-promise-is-tested"><a class="header" href="#the-category-where-vyres-promise-is-tested">The category where vyre’s promise is tested</a></h2>
+<p>Integration tests are the largest category in vyre’s suite and the
+one that matters most for users. When a user writes an
+<code>ir::Program</code> and runs it, they are invoking the full pipeline:
+construction, validation, lowering, dispatch, and the backend’s
+execution of the generated shader. Every stage of that pipeline
+has to work correctly, and the stages have to cooperate.
+Integration tests are the category that exercises the full
+pipeline end to end on specific inputs with oracle-backed expected
+outputs.</p>
+<p>The name “integration” is borrowed from the Rust ecosystem, where
+tests outside the <code>src/</code> tree are called integration tests because
+they compile against the crate as an external consumer and can
+only use the public API. vyre’s integration tests do both of those
+things, but the name here is doing more work than that. These are
+tests that integrate the pipeline stages — where unit tests look
+at one function in isolation, integration tests look at the whole
+machine.</p>
+<h2 id="the-five-subcategories"><a class="header" href="#the-five-subcategories">The five subcategories</a></h2>
+<p>Integration tests are subdivided into five subcategories, each
+with a distinct subject:</p>
+<ul>
+<li><strong><code>integration/primitive_ops/</code></strong> — tests for individual primitive
+ops (Add, Mul, Xor, etc.) exercised through a complete Program.
+One file per op. The bulk of per-op hand-written correctness
+coverage.</li>
+<li><strong><code>integration/ir_construction/</code></strong> — tests for Program building,
+visiting, and encoding. Verifies that the IR data structures
+work correctly and that composition is well-behaved.</li>
+<li><strong><code>integration/validation/</code></strong> — tests for the V001..V020
+validation rules. One must-reject and one must-accept per rule,
+plus the separability meta-test.</li>
+<li><strong><code>integration/lowering/</code></strong> — tests for <code>lower::wgsl::lower()</code>.
+Covers every Expr, Node, BinOp, UnOp, AtomicOp, and BufferAccess
+variant, and verifies that lowered shaders have bounds checks
+and shift masks.</li>
+<li><strong><code>integration/wire_format/</code></strong> — tests for wire format ↔ IR conversion
+and round-trip identity.</li>
+</ul>
+<p>Each subcategory has its own chapter in Part III with the full
+treatment. This chapter covers the conventions, patterns, and
+discipline that apply across all of them.</p>
+<h2 id="what-every-integration-test-has-in-common"><a class="header" href="#what-every-integration-test-has-in-common">What every integration test has in common</a></h2>
+<p>Regardless of which subcategory it lives in, every integration
+test shares the same structure:</p>
+<ol>
+<li><strong>Construct</strong> an <code>ir::Program</code> using builder APIs or direct
+construction.</li>
+<li><strong>Optionally validate</strong> the Program (depending on what the test
+is verifying).</li>
+<li><strong>Optionally lower</strong> the Program to a backend shader.</li>
+<li><strong>Optionally dispatch</strong> the lowered shader on a backend.</li>
+<li><strong>Observe</strong> the output.</li>
+<li><strong>Assert</strong> the output against an independent oracle.</li>
+</ol>
+<p>A specific test may stop at any step depending on its subject. A
+validation test stops at step 2. A lowering test stops at step 3.
+A primitive op test goes all the way through step 6. The structure
+is the same; the depth varies.</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>/// BinOp::Add of (u32::MAX, 1) wraps to 0.
+/// Oracle: SpecRow from vyre-conform spec table (overflow behavior).
+#[test]
+fn test_add_u32_max_plus_one_wraps_to_zero() {
+    // Step 1: construct
+    let program = build_single_binop(
+        BinOp::Add,
+        Value::U32(u32::MAX),
+        Value::U32(1),
+    );
+
+    // Step 2: validate
+    validate(&amp;program).expect("program is well-formed");
+
+    // Step 3: lower
+    let shader = wgsl::lower(&amp;program).expect("lowering succeeds");
+
+    // Step 4: dispatch
+    let result = default_backend()
+        .dispatch(&amp;shader, &amp;program.buffers)
+        .expect("dispatch succeeds");
+
+    // Step 5: observe
+    let output = result.get_u32(0);
+
+    // Step 6: assert
+    assert_eq!(output, 0, "u32::MAX + 1 should wrap to 0");
+}
+<span class="boring">}</span></code></pre>
+<p>Six steps, each doing one thing. The test is readable top to
+bottom. A reader who has never seen this test before can understand
+what it does without leaving the file, because every step is
+inline and every expected value has a visible justification.</p>
+<p>In practice, most tests do not write out all six steps explicitly —
+they use helpers from <code>tests/support/</code> to collapse repeated
+boilerplate:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>/// BinOp::Add of (u32::MAX, 1) wraps to 0.
+/// Oracle: SpecRow from vyre-conform spec table (overflow behavior).
+#[test]
+fn test_add_u32_max_plus_one_wraps_to_zero() {
+    let program = build_single_binop(BinOp::Add, 0xFFFF_FFFFu32, 1u32);
+    let result = run_on_default_backend(&amp;program).expect("dispatch");
+    assert_eq!(result, 0u32, "u32::MAX + 1 should wrap to 0");
+}
+<span class="boring">}</span></code></pre>
+<p>The second form is the idiomatic shape. The six steps are still
+there, but the helpers (<code>build_single_binop</code>,
+<code>run_on_default_backend</code>) compress them into a readable form. The
+helpers are small and their names are descriptive; a reader who
+does not know what <code>run_on_default_backend</code> does can infer it in
+one sentence.</p>
+<p>The rule for helper use is that the helper’s name must tell the
+reader what the helper does, at the level of abstraction the test
+needs. <code>build_single_binop(op, a, b)</code> is fine because “build a
+Program with one binary op” is exactly what the reader needs to
+know. <code>build_test_case(config)</code> would be wrong because the reader
+has to open <code>config</code> to figure out what the test is actually doing.
+See <a href="../writing/support-utilities.html">Support utilities</a> for the
+full rule.</p>
+<h2 id="oracles-in-integration-tests"><a class="header" href="#oracles-in-integration-tests">Oracles in integration tests</a></h2>
+<p>Integration tests use the strongest oracle in the hierarchy that
+applies to the subject. For primitive op tests, that is usually a
+specification table row or an algebraic law. For composed
+Program tests, it is usually the reference interpreter. For
+validation tests, the “oracle” is the rule definition itself — the
+test asserts the validator returns the expected <code>ValidationRule</code>
+variant.</p>
+<p>The hierarchy from <a href="../oracles.html">Oracles</a> applies without
+exception:</p>
+<ol>
+<li>Algebraic law — strongest.</li>
+<li>Specification table row.</li>
+<li>Reference interpreter.</li>
+<li>CPU reference function.</li>
+<li>Composition theorem.</li>
+<li>External corpus.</li>
+<li>Property.</li>
+</ol>
+<p>If more than one oracle applies to a test’s property, the
+strongest is used. If none of the first four apply, the test is
+likely either a property test that belongs in <code>tests/property/</code> or
+a test with an ambiguous subject that needs to be split.</p>
+<h2 id="the-density-requirement"><a class="header" href="#the-density-requirement">The density requirement</a></h2>
+<p>Each file in <code>integration/primitive_ops/</code> must have at least ten
+tests for its op. This is a floor, not a target. The specific
+tests required are:</p>
+<ul>
+<li><strong>Identity-pair tests (archetype A1)</strong>: at least one.</li>
+<li><strong>Overflow-pair tests (archetype A2)</strong>: at least one for ops
+whose type can overflow.</li>
+<li><strong>Power-of-two boundary tests (archetype A3)</strong>: at least one for
+ops that are sensitive to bit-level boundaries.</li>
+<li><strong>Bit-pattern alternation tests (archetype A5)</strong>: at least one.</li>
+<li><strong>Law tests</strong>: at least one per declared law on the op.</li>
+<li><strong>Minimum program test (archetype S1)</strong>: at least one.</li>
+<li><strong>Backend equivalence test (archetype X1)</strong>: at least one.</li>
+</ul>
+<p>For an op with three declared laws, that is a minimum of ten tests.
+Ops with more complex signatures or more laws have more. The
+point is that ten is the starting point; the actual number depends
+on how much coverage the op’s semantics require.</p>
+<p>When the archetype catalog or the mutation gate indicates a test
+is missing (a mutation survives that should be killed, or an
+applicable archetype has not been instantiated), the count grows
+until all findings are addressed.</p>
+<h2 id="the-composition-tests"><a class="header" href="#the-composition-tests">The composition tests</a></h2>
+<p><code>integration/ir_construction/</code> contains composition tests —
+tests that exercise Programs with more than one op. These are the
+tests that verify invariant I2 (composition lowering commutes with
+pipeline lowering).</p>
+<p>A composition test builds a Program with multiple ops, runs it,
+and asserts the output equals the sequential equivalent:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>/// Sequential composition: Add then Mul produces the same result
+/// as running Add to produce intermediate and then Mul on the
+/// intermediate.
+/// Oracle: reference interpreter.
+#[test]
+fn test_add_then_mul_equals_sequential() {
+    let composed = build_program()
+        .buffer("x", DataType::U32, 1)
+        .buffer("y", DataType::U32, 1)
+        .buffer("z", DataType::U32, 1)
+        .buffer("out", DataType::U32, 1)
+        .compute(|prog| {
+            let tmp = prog.add(prog.load("x"), prog.load("y"));
+            let result = prog.mul(tmp, prog.load("z"));
+            prog.store("out", result);
+        })
+        .build();
+
+    let inputs = [Value::U32(2), Value::U32(3), Value::U32(4)];
+    let composed_result = run(&amp;composed, &amp;inputs).expect("dispatch");
+
+    let reference_result = vyre_conform::reference::run(&amp;composed, &amp;inputs)
+        .expect("reference interpreter");
+
+    assert_eq!(composed_result, reference_result);
+}
+<span class="boring">}</span></code></pre>
+<p>The oracle is the reference interpreter, which is an independent
+implementation of Program semantics. The composed result agreeing
+with the reference is the proof that the pipeline preserved
+semantics through composition. If they disagree, either the
+lowering is wrong or the reference interpreter is wrong, and the
+suite’s first job is to figure out which.</p>
+<h2 id="the-validation-tests"><a class="header" href="#the-validation-tests">The validation tests</a></h2>
+<p>Validation tests have a specific pattern that does not appear in
+the other subcategories: they assert on the error list returned by
+<code>validate()</code>, not on the output of running the Program. A
+validation test never runs the Program; the whole point is that
+the Program should be rejected before running.</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>/// V001: duplicate buffer names are rejected.
+/// Oracle: V-rule definition in src/ir/validate.rs.
+#[test]
+fn test_v001_rejects_duplicate_buffer_name() {
+    let mut program = Program::empty();
+    program.buffers.push(BufferDecl::new("foo", DataType::U32, 16));
+    program.buffers.push(BufferDecl::new("foo", DataType::U32, 16));
+
+    let errors = validate(&amp;program);
+    assert_eq!(errors.len(), 1, "expected exactly one error");
+    assert_eq!(errors[0].rule, ValidationRule::V001);
+}
+
+/// V001: distinct buffer names are accepted.
+/// Oracle: V-rule definition in src/ir/validate.rs.
+#[test]
+fn test_v001_accepts_distinct_buffer_names() {
+    let mut program = Program::empty();
+    program.buffers.push(BufferDecl::new("foo", DataType::U32, 16));
+    program.buffers.push(BufferDecl::new("bar", DataType::U32, 16));
+
+    let errors = validate(&amp;program);
+    assert!(errors.is_empty(), "expected no errors, got {:?}", errors);
+}
+<span class="boring">}</span></code></pre>
+<p>The must-reject asserts exactly one error with the expected rule.
+The must-accept asserts no errors. Together, they pin down the rule’s
+behavior on both sides of the boundary and make the rule independently
+triggerable (which the separability meta-test verifies across the
+whole rule set).</p>
+<p>See <a href="validation.html">Validation tests</a> for the complete treatment of
+this subcategory, including the separability audit.</p>
+<h2 id="the-lowering-tests"><a class="header" href="#the-lowering-tests">The lowering tests</a></h2>
+<p>Lowering tests exercise <code>lower::wgsl::lower()</code> — the conversion
+from <code>ir::Program</code> to WGSL shader source. The tests verify that
+every IR construct has a lowering, that the lowered output is
+valid WGSL, and that safety properties (bounds checks, shift
+masks) are preserved.</p>
+<p>The most important lowering tests are the meta-tests that
+enumerate IR enum variants:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>/// Every Expr variant has a lowering test.
+/// Oracle: compile-time exhaustiveness match.
+#[test]
+fn test_every_expr_variant_is_lowered() {
+    // This match intentionally covers every variant.
+    // Adding a new Expr variant requires adding a case here,
+    // which forces a lowering test for the new variant.
+    let covered: fn(&amp;Expr) -&gt; bool = |expr| match expr {
+        Expr::Const(_) =&gt; test_lowering_of_const(),
+        Expr::Load(_) =&gt; test_lowering_of_load(),
+        Expr::BinOp { .. } =&gt; test_lowering_of_binop(),
+        Expr::UnOp { .. } =&gt; test_lowering_of_unop(),
+        Expr::Atomic { .. } =&gt; test_lowering_of_atomic(),
+        Expr::Index { .. } =&gt; test_lowering_of_index(),
+        Expr::Cast { .. } =&gt; test_lowering_of_cast(),
+        // ... all variants
+    };
+    // The function is never called; the match is the test.
+    let _ = covered;
+}
+<span class="boring">}</span></code></pre>
+<p>The trick is that Rust’s exhaustiveness checker enforces the
+coverage at compile time. If someone adds a new <code>Expr</code> variant and
+does not add a case to this match, the file does not compile.
+The broken build is the finding: write the lowering test for the
+new variant before the code compiles.</p>
+<p>See <a href="lowering.html">Lowering tests</a> for the full treatment of this
+pattern and the specific tests required for each IR construct.</p>
+<h2 id="the-wire-format-tests"><a class="header" href="#the-wire-format-tests">The wire format tests</a></h2>
+<p>Wire format tests exercise the IR wire format ↔ IR conversion paths. Every
+wire tag must have a <code>from_wire</code> test. Every IR shape with a wire format
+representation must have a <code>to_wire</code> test. A corpus of
+Programs is round-tripped to verify byte-identical encoding.</p>
+<p>See <a href="wire_format.html">Wire format tests</a>.</p>
+<h2 id="discipline-rules"><a class="header" href="#discipline-rules">Discipline rules</a></h2>
+<p>A few discipline rules apply across all integration test
+subcategories:</p>
+<ul>
+<li><strong>Every test has a one-line doc comment</strong> stating what it
+verifies and which oracle it uses. Tests without this comment
+are rejected at review.</li>
+<li><strong>Every test asserts specific expected values</strong>, not
+existence. <code>assert_eq!(result, 42)</code> is correct;
+<code>assert!(result &gt; 0)</code> is usually wrong (too weak to catch real
+bugs).</li>
+<li><strong>Every test uses specific inputs</strong> from the archetype catalog
+or from hand-written spec table rows. Random inputs belong in
+property tests, not integration tests.</li>
+<li><strong>Every test is standalone</strong>: constructs its own Program, runs
+it, asserts. No shared mutable state between tests. No test
+depends on another test having run first.</li>
+<li><strong>Every test handles errors explicitly</strong>: <code>expect("what this should succeed at")</code> with a clear message. No <code>.unwrap()</code>
+without context. No silent error swallowing.</li>
+<li><strong>Every test is fast enough to run in CI</strong>: integration tests
+should complete in under a second each. A test that takes
+longer is doing too much or should be marked <code>#[ignore]</code> and
+run only in release CI.</li>
+</ul>
+<h2 id="when-integration-tests-are-not-enough"><a class="header" href="#when-integration-tests-are-not-enough">When integration tests are not enough</a></h2>
+<p>Integration tests are strong but they are not the whole suite.
+They cover specific inputs; they do not cover the combinatorial
+space of possible inputs. They cover the pipeline with specific
+backends; they do not prove that every future backend will
+behave correctly. They catch bugs introduced today; they do not
+catch all possible future bugs.</p>
+<p>Complement integration tests with:</p>
+<ul>
+<li><strong>Property tests</strong> for universal claims over input spaces.</li>
+<li><strong>Backend tests</strong> for cross-backend equivalence stress.</li>
+<li><strong>Adversarial tests</strong> for hostile inputs.</li>
+<li><strong>Regression tests</strong> for past bugs that integration tests did
+not catch the first time.</li>
+</ul>
+<p>An integration test is a statement of fact about a specific input.
+The suite as a whole is stronger than any single statement,
+because the statements compose.</p>
+<h2 id="summary"><a class="header" href="#summary">Summary</a></h2>
+<p>Integration tests exercise the full pipeline on specific inputs
+with independent oracles. They are the bulk of vyre’s hand-written
+correctness coverage and the category where invariants are
+verified at the level a user cares about. Five subcategories
+(primitive_ops, ir_construction, validation, lowering, wire_format)
+split the work by subject. The next chapters cover each
+subcategory in detail.</p>
+<p>Next: <a href="validation.html">Validation tests</a>.</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../../testing/categories/unit.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="../../testing/categories/property.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../../testing/categories/unit.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="../../testing/categories/property.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="../../elasticlunr-ef4e11c1.min.js"></script>
+        <script src="../../mark-09e88c2c.min.js"></script>
+        <script src="../../searcher-c2a407aa.js"></script>
+
+        <script src="../../clipboard-1626706a.min.js"></script>
+        <script src="../../highlight-abc7f01d.js"></script>
+        <script src="../../book-a0b12cfe.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+
+    </div>
+    </body>
+</html>

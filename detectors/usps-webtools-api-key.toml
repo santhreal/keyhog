@@ -1,0 +1,26 @@
+# Docs: https://www.usps.com/business/web-tools-apis/welcome.htm
+# Format: User ID for Web Tools is alphanumeric, typically 6-20 characters
+# Verify: POST to shipping API endpoint with UserID in XML body
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "usps-webtools-api-key"
+name = "USPS Web Tools API Key"
+service = "usps"
+severity = "medium"
+keywords = ["USPS_USER_ID", "USPS_WEBTOOLS", "USPS_API", "UserID", "usps.com"]
+
+[[detector.patterns]]
+regex = "(?:USPS|usps)[._](?:USER|user)[._]?(?:ID|id)?[=:\\s\"'']+([A-Za-z0-9_]{6,20})"
+description = "USPS Web Tools User ID"
+group = 1
+
+[[detector.patterns]]
+regex = "<UserID>([^<]{6,20})</UserID>"
+description = "USPS Web Tools User ID in XML"
+group = 1
+
+[[detector.patterns]]
+regex = "usps.*?user.?id[=:\\s\"'']+([A-Za-z0-9_]{6,20})"
+description = "USPS User ID with context"
+group = 1

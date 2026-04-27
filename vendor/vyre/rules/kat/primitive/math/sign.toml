@@ -1,0 +1,6 @@
+op_id = "primitive.math.sign"
+
+[[golden]]
+input = "feffffff"
+expected = "ffffffff"
+reason = "sign(-2) = -1"

@@ -1,0 +1,27 @@
+# Docs: https://documentation.mailgun.com/docs/mailgun/api-reference/api-overview
+# Format: key- prefix followed by 32 hexadecimal characters
+# Verify: GET request to Mailgun /v3/domains with HTTP Basic Auth (api:key)
+# Prefix: key-
+
+[detector]
+id = "mailgun-api-key"
+name = "Mailgun API Key"
+service = "mailgun"
+severity = "critical"
+keywords = ["key-"]
+
+[[detector.patterns]]
+regex = 'key-[a-f0-9]{32}'
+description = "Mailgun API key (key- prefix with 32 hex characters)"
+
+[detector.verify]
+method = "GET"
+url = "https://api.mailgun.net/v3/domains"
+
+[detector.verify.auth]
+type = "basic"
+username = "api"
+password = "match"
+
+[detector.verify.success]
+status = 200

@@ -1,0 +1,28 @@
+# Docs: https://www.papertrail.com/help/http-api/
+# Format: 32-character hexadecimal string (no specific prefix)
+# Verify: GET /api/v1/systems.json with X-Papertrail-Token header returns 200 if valid
+# Prefix: none (generic hex, requires keyword context)
+
+[detector]
+id = "papertrail-api-token"
+name = "Papertrail API Token"
+service = "papertrail"
+severity = "medium"
+keywords = ["X-Papertrail-Token", "PAPERTRAIL_API_TOKEN", "papertrail_api_token", "papertrailapp.com"]
+
+[[detector.patterns]]
+regex = "(?:X-Papertrail-Token|PAPERTRAIL_API_TOKEN|papertrail_api_token)[=:\\s\"']+([a-f0-9]{32})"
+description = "Papertrail API token (32 hex chars) with context anchor"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://papertrailapp.com/api/v1/systems.json"
+
+[detector.verify.auth]
+type = "header"
+name = "X-Papertrail-Token"
+template = "{{match}}"
+
+[detector.verify.success]
+status = 200

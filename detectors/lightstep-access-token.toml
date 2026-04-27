@@ -1,0 +1,16 @@
+# Docs: https://docs.lightstep.com/docs/create-and-manage-api-keys
+# Format: 32 hex characters with no unique prefix (context-anchored detection)
+# Verify: no public verification endpoint
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "lightstep-access-token"
+name = "Lightstep Access Token"
+service = "lightstep"
+severity = "high"
+keywords = ["lightstep", "LIGHTSTEP", "lightstep-access-token"]
+
+[[detector.patterns]]
+regex = "(?:lightstep[._-]access[._-]token|LIGHTSTEP_ACCESS_TOKEN)[=:\\s\"'']+([a-f0-9]{32})"
+description = "Lightstep access token with context anchor"
+group = 1

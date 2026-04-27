@@ -1,0 +1,26 @@
+# Docs: https://developers.sinch.com/docs/est/api-reference
+# Format: key_id (UUID) and key_secret (long alphanumeric string)
+# Verify: Basic auth with key_id:key_secret to any Sinch API
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "sinch-api-key"
+name = "Sinch API Credentials"
+service = "sinch"
+severity = "critical"
+keywords = ["sinch", "SINCH", "key_id", "key_secret", "project_id"]
+
+[[detector.patterns]]
+regex = '''(?:sinch|SINCH)[_.-]?(?:key|KEY)[_.-]?(?:id|ID)?[=:\s"\' ]+([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})'''
+description = "Sinch Key ID (UUID format)"
+group = 1
+
+[[detector.patterns]]
+regex = '''(?:sinch|SINCH)[_.-]?(?:key|KEY)[_.-]?(?:secret|SECRET)?[=:\s"\' ]+([a-zA-Z0-9_-]{40,})'''
+description = "Sinch Key Secret (long alphanumeric string)"
+group = 1
+
+[[detector.patterns]]
+regex = '''(?:sinch|SINCH)[_.-]?(?:project|PROJECT)[_.-]?(?:id|ID)?[=:\s"\' ]+([0-9a-fA-F]{32})'''
+description = "Sinch Project ID (32 hex chars)"
+group = 1

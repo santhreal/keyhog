@@ -1,0 +1,21 @@
+# Docs: https://pixabay.com/api/docs/
+# Format: 32+ character alphanumeric string
+# Verify: GET /api/?key=xxx returns JSON with totalHits if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "pixabay-api-key"
+name = "Pixabay API Key"
+service = "pixabay"
+severity = "medium"
+keywords = ["PIXABAY", "pixabay"]
+
+[[detector.patterns]]
+regex = '(?:PIXABAY|pixabay)[._-]?(?:API|api)[._-]?(?:KEY|key)[=:\s""]+([a-zA-Z0-9_-]{32,})'
+description = "Pixabay API key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = 'pixabay\.com/api/\?key=([a-zA-Z0-9_-]{32,})'
+description = "Pixabay API key in URL"
+group = 1

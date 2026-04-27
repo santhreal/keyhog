@@ -1,0 +1,25 @@
+# Docs: https://docs.rudder.io/api/
+# Format: 32-character alphanumeric token passed in X-API-Token header
+# Verify: GET /rudder/api/latest/rules with X-API-Token header returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "rudder-api-token"
+name = "Rudder API Token"
+service = "rudder"
+severity = "critical"
+keywords = ["X-API-Token", "rudder", "RUDDER_TOKEN"]
+
+[[detector.patterns]]
+regex = "(?:RUDDER[_-]TOKEN|RUDDER[_-]API[_-]TOKEN)[=:\\s\"'']+([a-zA-Z0-9_-]{32})"
+description = "Rudder API token with context anchor (32 chars)"
+group = 1
+
+[[detector.patterns]]
+regex = "X-API-Token[=:\\s\"'']+([a-zA-Z0-9_-]{32})"
+description = "Rudder X-API-Token header value"
+group = 1
+
+[[detector.patterns]]
+regex = "/var/rudder/run/api-token"
+description = "Rudder system token file path"

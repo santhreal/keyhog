@@ -1,0 +1,27 @@
+# Docs: https://radar.com/documentation/api
+# Format: prj_live_ or prj_test_ prefix followed by 40+ alphanumeric characters
+# Verify: GET /v1/users with Authorization header
+# Prefix: prj_live_ or prj_test_
+
+[detector]
+id = "radar-io-api-key"
+name = "Radar.io API Key"
+service = "radar"
+severity = "high"
+keywords = ["prj_live_", "prj_test_", "RADAR"]
+
+[[detector.patterns]]
+regex = 'prj_(?:live|test)_[a-zA-Z0-9]{40,}'
+description = "Radar.io API key (prj_live_ or prj_test_ prefix)"
+
+[detector.verify]
+method = "GET"
+url = "https://api.radar.io/v1/geofences"
+
+[detector.verify.auth]
+type = "header"
+name = "Authorization"
+template = "{{match}}"
+
+[detector.verify.success]
+status = 200

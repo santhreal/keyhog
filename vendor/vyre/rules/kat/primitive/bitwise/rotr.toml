@@ -1,0 +1,11 @@
+op_id = "primitive.bitwise.rotr"
+
+[[golden]]
+input = "0100000001000000"
+expected = "00000080"
+reason = "1 rotr 1 = 0x80000000 (LSB wraps to MSB)"
+
+[[golden]]
+input = "ffffffff01000000"
+expected = "ffffffff"
+reason = "L.1.32: rotr(u32::MAX, 1) = u32::MAX (all-ones is rotation-invariant)"

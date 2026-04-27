@@ -1,0 +1,16 @@
+# Docs: https://intelowl.readthedocs.io/
+# Format: Random alphanumeric API key
+# Verify: GET /api/auth/token/verify with Authorization header
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "intelowl-api-key"
+name = "IntelOwl API Key"
+service = "intelowl"
+severity = "high"
+keywords = ["intelowl", "INTELOWL_API_KEY", "intel_owl"]
+
+[[detector.patterns]]
+regex = "(?:intelowl|INTELOWL|intel[_-]?owl)[\\s_-]*(?:api[_-]?key|key)[=:\\s\"'']+([a-zA-Z0-9_-]{20,64})"
+description = "IntelOwl API key with context anchor"
+group = 1

@@ -1,0 +1,26 @@
+# Docs: https://www.dropbox.com/developers/documentation/http/documentation#auth
+# Format: Short-lived access token starting with "sl." followed by base64url characters
+# Verify: POST /oauth2/token or /check/user with Bearer token
+# Prefix: sl.
+
+[detector]
+id = "dropbox-access-token"
+name = "Dropbox Access Token"
+service = "dropbox"
+severity = "high"
+keywords = ["sl."]
+
+[[detector.patterns]]
+regex = 'sl\.[a-zA-Z0-9_-]{100,}'
+description = "Dropbox short-lived access token (sl. prefix)"
+
+[detector.verify]
+method = "POST"
+url = "https://api.dropboxapi.com/2/check/user"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[detector.verify.success]
+status = 200

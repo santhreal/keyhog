@@ -1,0 +1,31 @@
+# Docs: https://docs.spacelift.io/concepts/spacectl
+# Format: API key ID and secret pair, plus JWT tokens (SPACELIFT_API_KEY_ID, SPACELIFT_API_KEY_SECRET)
+# Verify: POST /graphql with apiKeyUser mutation returns JWT if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "spacelift-api-key"
+name = "Spacelift API Key"
+service = "spacelift"
+severity = "critical"
+keywords = ["SPACELIFT_API_KEY", "spacectl", "SPACELIFT_TOKEN"]
+
+[[detector.patterns]]
+regex = "(?:SPACELIFT[_-]API[_-]KEY[_-]ID)[=:\\s\"'']+([a-zA-Z0-9_-]+)"
+description = "Spacelift API Key ID"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:SPACELIFT[_-]API[_-]KEY[_-]SECRET)[=:\\s\"'']+([a-zA-Z0-9_-]{20,})"
+description = "Spacelift API Key Secret"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:SPACELIFT[_-]API[_-]TOKEN|SPACELIFT[_-]TOKEN)[=:\\s\"'']+(eyJ[a-zA-Z0-9_-]*\\.eyJ[a-zA-Z0-9_-]*\\.[a-zA-Z0-9_-]*)"
+description = "Spacelift JWT API token"
+group = 1
+
+[[detector.patterns]]
+regex = "apiKeyUser\\s*\\(\\s*id\\s*:\\s*\"([a-zA-Z0-9_-]+)\""
+description = "Spacelift API Key ID in GraphQL mutation"
+group = 1

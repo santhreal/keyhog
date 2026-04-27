@@ -1,0 +1,26 @@
+# Docs: https://developer.drip.com/
+# Format: API token used for Basic Auth (as username) or OAuth access token
+# Verify: GET /v3/accounts with Basic auth (username=token, password=any) returns 200
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "drip-api-token"
+name = "Drip API Token"
+service = "drip"
+severity = "critical"
+keywords = ["drip", "DRIP", "api_token", "access_token"]
+
+[[detector.patterns]]
+regex = '(?:DRIP|drip)[_]*(?:API|api)?[_]*(?:TOKEN|token|KEY|key)[=: ]+([a-zA-Z0-9_-]{20,})'
+description = "Drip API token with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = '(?:DRIP|drip)[_]*(?:ACCOUNT|account)?[_]*(?:ID|id)[=: ]+([a-zA-Z0-9]{6,})'
+description = "Drip Account ID"
+group = 1
+
+[[detector.patterns]]
+regex = '(?:DRIP|drip)[_]*(?:OAUTH|oauth)?[_]*(?:TOKEN|token)[=: ]+([a-zA-Z0-9_-]{20,})'
+description = "Drip OAuth access token"
+group = 1

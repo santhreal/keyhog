@@ -1,0 +1,16 @@
+# Docs: https://qdrant.tech/documentation/cloud/authentication/
+# Format: Alphanumeric string, typically 36+ characters (no fixed prefix)
+# Verify: GET /collections with api-key header returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "qdrant-api-key"
+name = "Qdrant API Key"
+service = "qdrant"
+severity = "high"
+keywords = ["QDRANT_API_KEY", "qdrant_api_key", "QDRANT_APIKEY", "qdrantApiKey"]
+
+[[detector.patterns]]
+regex = "(?:QDRANT[_-]?API[_-]?KEY|qdrant[_-]?api[_-]?key)[=:\\s\"'']+([a-zA-Z0-9_-]{16,})"
+description = "Qdrant API key with context anchor"
+group = 1

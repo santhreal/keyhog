@@ -1,0 +1,26 @@
+# Docs: https://dataeuropa.gitlab.io/data-provider-manual/api-documentation/
+# Format: Bearer token for service account authentication with EU Login
+# Verify: POST to data.europa.eu/auth/middleware/login/service with client credentials
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "eu-open-data-api-key"
+name = "EU Open Data Portal API Key"
+service = "eu-open-data"
+severity = "medium"
+keywords = ["data.europa.eu", "EU_LOGIN", "EU-Login", "party_token"]
+
+[[detector.patterns]]
+regex = "(?:EU|data\\.europa)[_.-]?(?:CLIENT[_-]?ID|client_id)[\\s\"''=:]+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
+description = "EU Open Data client ID for service account"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:EU|data\\.europa)[_.-]?(?:CLIENT[_-]?SECRET|client_secret)[\\s\"''=:]+([a-zA-Z0-9_-]{20,})"
+description = "EU Open Data client secret for service account"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:data\\.europa|EDP)[_.-]?(?:API[_-]?TOKEN|token)[\\s\"''=:]+([a-zA-Z0-9_-]{30,})"
+description = "EU Open Data Portal API token"
+group = 1

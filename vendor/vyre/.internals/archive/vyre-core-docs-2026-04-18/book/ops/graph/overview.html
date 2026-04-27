@@ -1,0 +1,707 @@
+<!DOCTYPE HTML>
+<html lang="en" class="rust sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Graph - The vyre Book</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="The GPU compute IR with a conformance prover">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../../favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="../../favicon-8114d1fc.png">
+        <link rel="stylesheet" href="../../css/variables-8adf115d.css">
+        <link rel="stylesheet" href="../../css/general-2459343d.css">
+        <link rel="stylesheet" href="../../css/chrome-ae938929.css">
+        <link rel="stylesheet" href="../../css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../../fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="../../highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="../../tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="../../ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "../../";
+            const default_light_theme = "rust";
+            const default_dark_theme = "navy";
+            window.path_to_searchindex_js = "../../searchindex-bc7bdb82.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="../../toc-16d598fb.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('rust')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="../../toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">The vyre Book</h1>
+
+                    <div class="right-buttons">
+                        <a href="../../print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/santhsecurity/vyre" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/santhsecurity/vyre/edit/main/core/docs/./ops/graph/overview.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                            <span class=fa-svg id="git-edit-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M421.7 220.3l-11.3 11.3-22.6 22.6-205 205c-6.6 6.6-14.8 11.5-23.8 14.1L30.8 511c-8.4 2.5-17.5 .2-23.7-6.1S-1.5 489.7 1 481.2L38.7 353.1c2.6-9 7.5-17.2 14.1-23.8l205-205 22.6-22.6 11.3-11.3 33.9 33.9 62.1 62.1 33.9 33.9zM96 353.9l-9.3 9.3c-.9 .9-1.6 2.1-2 3.4l-25.3 86 86-25.3c1.3-.4 2.5-1.1 3.4-2l9.3-9.3H112c-8.8 0-16-7.2-16-16V353.9zM453.3 19.3l39.4 39.4c25 25 25 65.5 0 90.5l-14.5 14.5-22.6 22.6-11.3 11.3-33.9-33.9-62.1-62.1L314.3 67.7l11.3-11.3 22.6-22.6 14.5-14.5c25-25 65.5-25 90.5 0z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="graph-operations"><a class="header" href="#graph-operations">Graph Operations</a></h1>
+<p>Graph operations provide GPU-accelerated traversal primitives over
+CSR-encoded directed graphs. They are the algorithmic foundation of
+interprocedural analysis in vyre, supporting taint tracking,
+reachability queries, and data-flow propagation.</p>
+<h2 id="every-program-is-a-graph"><a class="header" href="#every-program-is-a-graph">Every program is a graph</a></h2>
+<p>Before a security scanner can answer “does user input reach
+<code>eval()</code>?”, it must answer a prior question: what is the structure
+of this program? Which functions call which other functions? Which
+variables flow into which expressions? Which modules import which
+dependencies? These questions are graph questions. The program is a
+graph. The call relationships are edges. The data flows are edges.
+The import chains are edges. The security question — “can an
+attacker’s input reach a dangerous function?” — is a reachability
+question on that graph.</p>
+<p>This is not a metaphor. Taint analysis, the most important
+interprocedural security analysis technique, is literally
+breadth-first search. You start from a source (user input), you
+follow edges (data flows, function calls, assignments), and you
+check whether you can reach a sink (eval, exec, SQL query, file
+write, DOM mutation). If the path exists, the vulnerability exists.
+If a sanitizer sits on the path, the path is blocked. If the
+sanitizer has a bypass, the path is unblocked. Every real-world
+taint analysis engine — from academic frameworks to commercial
+SAST tools — is a graph traversal engine with domain-specific
+transfer functions.</p>
+<p>The same structure appears in dependency analysis (can a compromised
+npm package reach your production code?), permission propagation
+(does this IAM role transitively grant admin access?), malware
+analysis (does this binary’s call graph reach a known-malicious
+API?), and supply chain verification (is this artifact reachable
+from a trusted build pipeline?). Different domains, same algorithm:
+start from sources, propagate along edges, report what you reach.</p>
+<p>GPU hardware is built for this. A graph with 100,000 nodes has
+100,000 independent starting points for BFS. Each starting point
+is one GPU invocation. A GPU with 10,000 active invocations
+processes 10,000 BFS traversals simultaneously. The traversal at
+each level is also parallel: every node in the current frontier
+expands its neighbors independently. Graph algorithms have both
+inter-traversal and intra-level parallelism, and GPUs exploit both.</p>
+<p>vyre provides graph operations as Layer 2 compound ops because graph
+traversal is the algorithmic foundation of interprocedural security
+analysis, and every tool that does interprocedural analysis needs
+the same primitives: a graph representation, a BFS traversal, a
+reachability query. Reimplementing these per tool is wasted effort
+and a source of divergence. vyre’s graph ops provide a single
+tested implementation that every tool inherits.</p>
+<h2 id="the-csr-representation"><a class="header" href="#the-csr-representation">The CSR representation</a></h2>
+<p>Every graph algorithm on the GPU starts with the same question: how
+do you store a graph in flat arrays? Adjacency matrices waste space
+(O(N^2) for a graph with N nodes, regardless of edge count).
+Adjacency lists use pointer-based linked lists, which GPUs cannot
+traverse efficiently (random memory access, no coalescing, cache
+misses on every hop).</p>
+<p>Compressed Sparse Row (CSR) is the answer the GPU computing
+community converged on decades ago. CSR stores a directed graph as
+three flat arrays:</p>
+<pre><code class="language-text">offsets:   [u32; node_count + 1]
+targets:   [u32; edge_count]
+node_data: [u32; node_count]
+</code></pre>
+<p>The <code>offsets</code> array is an index into <code>targets</code>. The outgoing edges
+of node <code>n</code> are <code>targets[offsets[n] .. offsets[n+1]]</code>. The <code>offsets</code>
+array is monotonically non-decreasing, starts at 0, and ends at
+<code>edge_count</code>. The <code>node_data</code> array carries per-node metadata —
+in vyre’s case, the node’s role in the analysis (source, sink,
+sanitizer, normal).</p>
+<p>CSR is optimal for GPU traversal because the memory access pattern
+is coalesced. Adjacent invocations processing adjacent nodes read
+adjacent regions of <code>offsets</code> (one read per node, sequential
+addresses) and then adjacent regions of <code>targets</code> (one read per
+edge, sequential within each node’s edge range). The GPU’s memory
+controller can service these reads in bulk, hiding latency behind
+parallelism.</p>
+<p>CSR is also compact. A graph with N nodes and E edges uses
+<code>N + 1 + E + N</code> words of storage: <code>N+1</code> for offsets, <code>E</code> for
+targets, <code>N</code> for node_data. No pointers, no padding, no
+per-node allocation overhead. The entire graph is three contiguous
+GPU buffers.</p>
+<h3 id="construction"><a class="header" href="#construction">Construction</a></h3>
+<p><code>to_csr(node_count, edges)</code> converts a list of <code>(source, target)</code>
+directed edges into a <code>CsrGraph</code>. The algorithm is:</p>
+<ol>
+<li>Count outgoing edges per node (histogram).</li>
+<li>Compute prefix sum of the histogram to get <code>offsets</code>.</li>
+<li>Scatter edges into <code>targets</code> at the positions determined by
+<code>offsets</code>, decrementing a per-node counter to fill each node’s
+edge range.</li>
+</ol>
+<p>Invalid edges (source or target outside <code>0..node_count</code>) are
+silently omitted by <code>to_csr</code> and produce an error in <code>try_to_csr</code>.
+The silent omission in <code>to_csr</code> is a deliberate robustness choice:
+a malformed graph extracted from an untrusted program should not
+crash the scanner; it should be scanned with whatever valid edges
+exist.</p>
+<h3 id="validation"><a class="header" href="#validation">Validation</a></h3>
+<p><code>CsrGraph::validate()</code> enforces the structural invariants that the
+GPU shader assumes. Every invariant corresponds to a specific
+failure mode in the shader if violated:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Invariant</th><th>What breaks without it</th></tr>
+</thead>
+<tbody>
+<tr><td><code>offsets.len() == node_count + 1</code></td><td>The shader reads past the end of the offsets buffer, triggering OOB (returns zero, causing incorrect neighbor enumeration).</td></tr>
+<tr><td><code>offsets</code> is monotonically non-decreasing</td><td>The shader computes a negative edge range (<code>offsets[n+1] &lt; offsets[n]</code>), which wraps around as unsigned and enumerates millions of garbage edges.</td></tr>
+<tr><td><code>offsets[node_count] == targets.len()</code></td><td>The shader reads valid offsets that point past the end of the targets buffer.</td></tr>
+<tr><td>Every target is <code>&lt; node_count</code></td><td>The shader follows an edge to a nonexistent node, reading garbage from <code>node_labels</code> and <code>edge_offsets</code>.</td></tr>
+</tbody>
+</table>
+</div>
+<p>A CSR graph that fails validation must not be dispatched. The
+validation errors are actionable: they identify which invariant was
+violated, which array position contains the invalid value, and what
+the valid range is.</p>
+<h2 id="operations"><a class="header" href="#operations">Operations</a></h2>
+<h3 id="graphbfs"><a class="header" href="#graphbfs">graph.bfs</a></h3>
+<p><strong>Identifier:</strong> <code>graph.bfs</code></p>
+<p><strong>Current state:</strong> IR-first. <code>graph.bfs</code> is implemented as an
+<code>ir::Program</code> composition using workgroup queues, atomic visited
+bitmaps, and conditional frontier expansion. It lowers through the
+standard vyre IR pipeline and participates in the conformance parity
+harness.</p>
+<p><strong>Signature:</strong> <code>(Bytes) -&gt; Bytes</code> (simplified; actual buffer
+interface is complex)</p>
+<p><strong>What this operation does:</strong> Multi-source breadth-first search
+over a CSR graph with labeled nodes. One GPU invocation per source
+node. Each invocation runs a complete BFS from its assigned source,
+expanding level by level up to a configurable maximum depth. When
+the traversal reaches a sink node, it emits a finding. When it
+reaches a sanitizer node, it stops expanding along that path.</p>
+<p><strong>Why one invocation per source, not one invocation per node:</strong>
+There are two natural parallelization strategies for multi-source
+BFS. The first is source-parallel: each invocation handles one
+complete BFS from one source. The second is frontier-parallel: all
+sources share a single frontier, and each invocation expands one
+node from the frontier.</p>
+<p>vyre uses source-parallel because it eliminates cross-invocation
+synchronization during traversal. Each invocation has its own
+visited bitmap, its own frontier queue, its own depth counter. No
+barriers, no atomic coordination (except for finding emission), no
+cross-workgroup communication. The invocations are completely
+independent.</p>
+<p>The cost is redundant work: if two sources share a subgraph, both
+invocations traverse it independently. The benefit is simplicity,
+correctness, and determinism. Frontier-parallel BFS requires
+careful synchronization to avoid lost updates, duplicate frontier
+entries, and nondeterministic traversal order. Source-parallel BFS
+has none of these problems.</p>
+<p>For the graph sizes encountered in security scanning (typically
+10K–1M nodes per analyzed program), source-parallel BFS saturates
+the GPU’s compute units without needing frontier-parallel
+optimization. For billion-node graphs (social networks, web
+graphs), frontier-parallel would be necessary, and vyre’s
+architecture supports adding it as a separate engine without
+changing the source-parallel BFS op.</p>
+<p><strong>Buffer layout:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Binding</th><th>Name</th><th>Access</th><th>Content</th></tr>
+</thead>
+<tbody>
+<tr><td>0</td><td><code>node_labels</code></td><td>ReadOnly</td><td>Per-node metadata (role encoded in bits 16..23)</td></tr>
+<tr><td>1</td><td><code>edge_offsets</code></td><td>ReadOnly</td><td>CSR offsets array</td></tr>
+<tr><td>2</td><td><code>edge_targets</code></td><td>ReadOnly</td><td>CSR targets array</td></tr>
+<tr><td>3</td><td><code>source_nodes</code></td><td>ReadOnly</td><td>Array of source node IDs to start BFS from</td></tr>
+<tr><td>4</td><td><code>findings</code></td><td>ReadWrite</td><td>Output: <code>vec4&lt;u32&gt;(source, sink, depth, source_idx)</code></td></tr>
+<tr><td>5</td><td><code>finding_count</code></td><td>ReadWrite</td><td>Atomic counter for finding emission</td></tr>
+<tr><td>6</td><td><code>params</code></td><td>Uniform</td><td>Configuration: <code>{num_sources, num_nodes, max_findings, max_depth, words_per_source}</code></td></tr>
+<tr><td>7</td><td><code>visited_set</code></td><td>ReadWrite</td><td>Per-source visited bitmaps</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Node labels:</strong></p>
+<p>The label type occupies bits 16..23 of each node’s label word. The
+remaining bits are available for domain-specific metadata (e.g.,
+language-specific node type, file ID, line number).</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Value</th><th>Role</th><th>Traversal behavior</th></tr>
+</thead>
+<tbody>
+<tr><td>0</td><td>Normal</td><td>Traversed; no special action</td></tr>
+<tr><td>1</td><td>Source</td><td>BFS starts here; if reached from another source, not reported as finding</td></tr>
+<tr><td>2</td><td>Sink</td><td>Reaching this from a source emits a finding</td></tr>
+<tr><td>3</td><td>Source AND sink</td><td>Both roles simultaneously</td></tr>
+<tr><td>4</td><td>Sanitizer</td><td>Blocks propagation — outgoing edges are not followed</td></tr>
+</tbody>
+</table>
+</div>
+<p>The sanitizer role is critical for reducing false positives. A taint
+analysis that reports every source-to-sink path without considering
+sanitizers produces thousands of findings that are not
+vulnerabilities because the data was sanitized before reaching the
+sink. The BFS shader checks the sanitizer label and skips the node’s
+outgoing edges, pruning the entire subgraph beyond the sanitizer.</p>
+<p><strong>The frontier queue:</strong></p>
+<p>Each invocation maintains a private frontier queue as a fixed-size
+array in registers/local memory:</p>
+<pre><code class="language-text">var queue: array&lt;u32, 4096&gt;;
+var queue_head: u32 = 0;
+var queue_tail: u32 = 1;
+queue[0] = start_node;
+</code></pre>
+<p>The queue size (4096 entries) is a compile-time constant that limits
+the maximum frontier width per source. For security scanning
+workloads, 4096 is sufficient because the graphs are sparse
+(function call graphs have low average degree). For denser graphs,
+the constant can be increased at the cost of register pressure.</p>
+<p>If the frontier overflows (more than 4096 nodes at one BFS level),
+the excess nodes are silently dropped. This is a known limitation
+documented in the op’s specification. The overflow is detectable
+(the queue wraps and <code>queue_tail</code> exceeds <code>MAX_BFS_QUEUE</code>) but not
+currently reported to the host. A future version may add an overflow
+counter to the output.</p>
+<p><strong>The visited bitmap:</strong></p>
+<p>Each source node gets its own visited bitmap:</p>
+<pre><code class="language-text">visited_set[source_idx * words_per_source + node / 32] bit (node % 32)
+</code></pre>
+<p>where <code>words_per_source = ceil(num_nodes / 32)</code>. Setting a bit is
+an atomic OR to handle the case where two sources’ BFS invocations
+run on the same workgroup and share the same <code>visited_set</code> buffer.</p>
+<p>Why per-source bitmaps instead of a shared bitmap: if all sources
+shared one visited bitmap, the first source to reach a node would
+mark it visited, and all other sources would skip it. This would
+cause sources to miss findings that pass through shared subgraphs.
+Per-source bitmaps ensure each source’s BFS is independent.</p>
+<p><strong>Findings output:</strong></p>
+<pre><code class="language-text">findings[idx] = vec4&lt;u32&gt;(source_node, sink_node, depth, source_idx)
+</code></pre>
+<p>Findings are appended atomically via <code>atomicAdd(&amp;finding_count, 1)</code>.
+The atomic append means findings are written in nondeterministic
+order (depending on GPU scheduling). The host must sort findings
+into a deterministic order after readback. The canonical sort key is
+<code>(source_node, sink_node, depth)</code>.</p>
+<p>If <code>finding_count</code> exceeds <code>max_findings</code>, excess findings are not
+written but the counter continues incrementing, providing a total
+finding count for diagnostics. The host can detect overflow by
+comparing the counter value against <code>max_findings</code>.</p>
+<p><strong>Workgroup size:</strong> 64. One invocation per source node. A dispatch
+of <code>ceil(num_sources / 64)</code> workgroups processes all sources.</p>
+<h3 id="graphreachability"><a class="header" href="#graphreachability">graph.reachability</a></h3>
+<p><strong>Identifier:</strong> <code>graph.reachability</code></p>
+<p><strong>Current state:</strong> Has both a CPU reference implementation and a GPU
+path that delegates to <code>graph.bfs</code>.</p>
+<p><strong>Signature:</strong> <code>(Bytes) -&gt; Bytes</code></p>
+<p><strong>What this operation does:</strong> Multi-source reachability — a
+higher-level interface over <code>graph.bfs</code>. Given a CSR graph, a list
+of source nodes, and a maximum depth, compute all <code>(source, node, depth)</code> tuples where <code>node</code> is reachable from <code>source</code> within
+<code>max_depth</code> hops. Sanitizer nodes block traversal.</p>
+<p><strong>The CPU reference:</strong> <code>reachable_nodes()</code> is a pure-Rust
+implementation of the same algorithm using <code>VecDeque</code> for the
+frontier and <code>Vec&lt;bool&gt;</code> for visited state. It exists for two
+purposes:</p>
+<ol>
+<li>
+<p><strong>Conformance oracle.</strong> The GPU output must match the CPU output
+exactly (after sorting) for every valid CSR graph and source set.
+If they disagree on any input, the GPU shader has a bug.</p>
+</li>
+<li>
+<p><strong>Fallback.</strong> When no GPU is available, consumers can call the
+CPU reference directly. This is an application-level fallback,
+not a vyre-internal one — vyre itself does not fall back; it
+returns <code>Err(NoGpuAdapter)</code> and the application decides.</p>
+</li>
+</ol>
+<p><strong>Dependencies:</strong> <code>graph.bfs</code> for GPU execution.</p>
+<h3 id="graphcsr-not-an-op"><a class="header" href="#graphcsr-not-an-op">graph.csr (not an Op)</a></h3>
+<p><code>CsrGraph</code> is a data structure, not a GPU operation. It lives in
+the graph module because every graph op consumes CSR input. The
+construction (<code>to_csr</code>, <code>try_to_csr</code>) and validation
+(<code>CsrGraph::validate()</code>) are host-side utilities that prepare data
+for GPU dispatch. They are not <code>Op</code> implementations because they
+run on the CPU and produce data, not <code>ir::Program</code> values.</p>
+<h2 id="beyond-security-scanning"><a class="header" href="#beyond-security-scanning">Beyond security scanning</a></h2>
+<p>Graph traversal was motivated by taint analysis, but graphs are everywhere:</p>
+<ul>
+<li>
+<p><strong>Social network analysis.</strong> Influence propagation, community detection,
+and friend-of-friend queries are BFS and connected-component algorithms
+on social graphs with billions of nodes. GPU BFS processes these at
+scale.</p>
+</li>
+<li>
+<p><strong>Supply chain analysis.</strong> Dependency graphs for npm, PyPI, Maven, and
+Cargo form DAGs with millions of nodes. “Does this vulnerable package
+transitively affect my production code?” is a reachability query.</p>
+</li>
+<li>
+<p><strong>Knowledge graphs.</strong> Entity-relationship graphs in databases, ontologies,
+and recommendation systems use BFS for path finding and PageRank for
+importance scoring.</p>
+</li>
+<li>
+<p><strong>Compiler analysis.</strong> Control-flow graphs, data-flow graphs, and
+call graphs are the foundation of every compiler optimization. A GPU
+compiler built on vyre would use vyre’s own graph ops for its analyses.</p>
+</li>
+<li>
+<p><strong>Network routing.</strong> Shortest-path and reachability queries on network
+topologies are graph algorithms. GPU acceleration enables real-time
+routing table computation.</p>
+</li>
+</ul>
+<p>The graph ops are domain-agnostic traversal primitives. Taint analysis is
+one application. Every application that needs to answer “what can I reach
+from here?” on a large graph is a potential consumer.</p>
+<h2 id="how-graph-ops-compose-with-the-rest-of-vyre"><a class="header" href="#how-graph-ops-compose-with-the-rest-of-vyre">How graph ops compose with the rest of vyre</a></h2>
+<p>The graph ops are the foundation of the <code>engine::dataflow</code> engine.
+The relationship between the layers is:</p>
+<pre><code class="language-text">Layer 1: primitive ops (bitwise, arithmetic, comparison)
+    ↓ composed into
+Layer 2: graph.bfs, graph.reachability
+    ↓ orchestrated by
+Layer 3: engine::dataflow (fixpoint iteration with transfer function)
+    ↓ consumed by
+Application: pyrograph (taint analysis with language-specific parsers)
+</code></pre>
+<p>Each layer adds domain knowledge without changing the layer below.</p>
+<ul>
+<li>
+<p><strong>graph.bfs</strong> knows about CSR traversal. It does not know about
+taint, about JavaScript, about call graphs. It traverses nodes
+and reports reachability.</p>
+</li>
+<li>
+<p><strong>engine::dataflow</strong> knows about convergence. It dispatches
+<code>graph.bfs</code> (or a generalized fixpoint step) repeatedly until no
+new facts are discovered. It knows about transfer functions — the
+pluggable logic that decides whether a fact propagates across an
+edge. It does not know about specific languages or security
+domains.</p>
+</li>
+<li>
+<p><strong>pyrograph</strong> knows about taint. It parses JavaScript (or Rust, or
+Python, or Go) into a control/data-flow graph, labels source nodes
+(user input), sink nodes (dangerous functions), and sanitizer
+nodes (input validation). It calls <code>engine::dataflow</code> and
+interprets the results as security findings. It does not know
+about GPU dispatch, CSR layout, or BFS implementation.</p>
+</li>
+</ul>
+<p>This separation is what makes each layer independently testable. The
+graph ops can be tested with synthetic graphs that have nothing to
+do with security. The dataflow engine can be tested with synthetic
+transfer functions that have nothing to do with taint. pyrograph can
+be tested with real code against known vulnerabilities. A bug in any
+layer is localized to that layer.</p>
+<h2 id="migration-to-ir-first"><a class="header" href="#migration-to-ir-first">Migration to IR-first</a></h2>
+<p>The BFS shader is currently a monolithic WGSL string — 100+ lines
+of hand-written shader code. Migrating it to an <code>ir::Program</code>
+requires expressing every construct in IR terms:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>WGSL construct</th><th>IR equivalent</th></tr>
+</thead>
+<tbody>
+<tr><td><code>var queue: array&lt;u32, 4096&gt;</code></td><td><code>BufferDecl</code> with <code>Workgroup</code> access and <code>count: 4096</code></td></tr>
+<tr><td><code>while queue_head &lt; queue_tail</code></td><td><code>Node::Loop</code> with dynamic bounds</td></tr>
+<tr><td><code>visited_set[...] | start_bit</code></td><td><code>Expr::Atomic { op: AtomicOp::Or }</code></td></tr>
+<tr><td><code>atomicAdd(&amp;finding_count, 1)</code></td><td><code>Expr::Atomic { op: AtomicOp::Add }</code></td></tr>
+<tr><td><code>if label_type == LABEL_SANITIZER { continue; }</code></td><td><code>Node::If</code> with early <code>Node::Return</code> or skip logic</td></tr>
+<tr><td><code>for (var e = edge_start; e &lt; edge_end; e++)</code></td><td><code>Node::Loop { var: "e", from: edge_start, to: edge_end }</code></td></tr>
+</tbody>
+</table>
+</div>
+<p>The IR supports all of these constructs. The migration is
+mechanical: translate each WGSL statement to its IR equivalent,
+verify the lowered WGSL matches the original, run the parity
+harness against the CPU reference.</p>
+<p>The payoff of migration:</p>
+<ol>
+<li>
+<p><strong>Retargeting.</strong> The BFS runs on SPIR-V, PTX, Metal — any backend
+that lowers vyre IR. Today it only works on WGSL/wgpu.</p>
+</li>
+<li>
+<p><strong>Optimization.</strong> The IR optimizer can specialize the BFS for
+specific graph structures. A graph with no sanitizers can have
+the sanitizer check eliminated. A graph with a known maximum
+depth can have the depth check hoisted.</p>
+</li>
+<li>
+<p><strong>Composition.</strong> The BFS can be called from a composed program.
+A taint analysis that needs to run BFS and then immediately
+evaluate results can compose both into one dispatch, eliminating
+the intermediate buffer.</p>
+</li>
+<li>
+<p><strong>Conformance.</strong> The BFS participates in the parity harness with
+generated graph inputs — random graphs, degenerate graphs
+(disconnected, complete, star, chain, DAG, cyclic), boundary
+cases (empty graph, single node, maximum depth reached).</p>
+</li>
+</ol>
+<h2 id="what-the-conformance-suite-will-verify"><a class="header" href="#what-the-conformance-suite-will-verify">What the conformance suite will verify</a></h2>
+<p>When graph ops are migrated to IR-first:</p>
+<p><strong>Structural archetypes:</strong></p>
+<ul>
+<li>Empty graph (0 nodes, 0 edges). Expected: no findings.</li>
+<li>Single node, self-loop. Expected: no finding (source == sink not
+reported unless node has both labels).</li>
+<li>Complete graph (all-to-all edges). Expected: every sink reachable
+from every source at depth 1.</li>
+<li>Linear chain (A→B→C→…→Z). Expected: sinks reachable at
+predictable depths.</li>
+<li>Star graph (one hub, N spokes). Expected: all spokes reachable at
+depth 1 from hub.</li>
+<li>Binary tree. Expected: depths match tree level.</li>
+<li>DAG with diamond merge. Expected: shortest-path depth reported.</li>
+<li>Graph with a cycle. Expected: BFS terminates (visited bitmap
+prevents infinite loop). Cycle does not produce duplicate findings.</li>
+<li>Disconnected components. Expected: sources in one component do
+not reach sinks in another.</li>
+</ul>
+<p><strong>Sanitizer archetypes:</strong></p>
+<ul>
+<li>Sanitizer on the only path from source to sink. Expected: no
+finding.</li>
+<li>Sanitizer on one path but not another. Expected: finding via the
+unsanitized path.</li>
+<li>Sanitizer that is also a sink (label 4 and 2 simultaneously — if
+allowed by encoding). Expected: sanitizer behavior takes
+precedence (no finding, no further traversal).</li>
+</ul>
+<p><strong>Scale archetypes:</strong></p>
+<ul>
+<li>Graph with exactly <code>MAX_BFS_QUEUE</code> frontier nodes at one level.
+Expected: all processed correctly.</li>
+<li>Graph with <code>MAX_BFS_QUEUE + 1</code> frontier nodes. Expected: overflow
+— some nodes silently dropped. The test asserts the shader does
+not crash.</li>
+<li>Graph where <code>num_sources * words_per_source</code> approaches buffer
+size limits. Expected: either successful dispatch or structured
+resource-exceeded error.</li>
+</ul>
+<p><strong>Determinism:</strong></p>
+<ul>
+<li>Same graph, same sources, 100 runs. Expected: identical findings
+(after sorting) every time.</li>
+<li>Same graph, different dispatch dimensions (varying workgroup
+count). Expected: identical findings.</li>
+</ul>
+<h2 id="permanence"><a class="header" href="#permanence">Permanence</a></h2>
+<p>The operation identifiers (<code>graph.bfs</code>, <code>graph.reachability</code>) are
+permanent. The CSR format (offsets, targets, node_data with the
+specified invariants) is permanent. The node label encoding (role in
+bits 16..23, values 0–4 with the specified traversal semantics) is
+permanent. The finding format
+<code>vec4&lt;u32&gt;(source, sink, depth, source_idx)</code> is permanent. The
+sanitizer semantics (label type 4 blocks outgoing edge traversal)
+are permanent.</p>
+<p>Future graph ops — connected components, PageRank, topological sort,
+shortest path — will be added as new identifiers. They will consume
+the same CSR format and the same node label encoding. The existing
+ops will not change behavior.</p>
+<h2 id="see-also"><a class="header" href="#see-also">See also</a></h2>
+<ul>
+<li><a href="../overview.html">Operations Overview</a></li>
+<li><a href="../match_ops/overview.html">Match Operations</a></li>
+<li><a href="../../engine/dataflow.html">Engine Dataflow</a></li>
+</ul>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../../ops/string/overview.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="../../ops/match_ops/overview.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../../ops/string/overview.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="../../ops/match_ops/overview.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="../../elasticlunr-ef4e11c1.min.js"></script>
+        <script src="../../mark-09e88c2c.min.js"></script>
+        <script src="../../searcher-c2a407aa.js"></script>
+
+        <script src="../../clipboard-1626706a.min.js"></script>
+        <script src="../../highlight-abc7f01d.js"></script>
+        <script src="../../book-a0b12cfe.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+
+    </div>
+    </body>
+</html>

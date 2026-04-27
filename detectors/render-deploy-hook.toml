@@ -1,0 +1,20 @@
+# Docs: https://render.com/docs/deploy-hooks
+# Format: https://api.render.com/deploy/{service_id}?key={key} or srv- prefix
+# Verify: POST to hook URL triggers deploy (no auth required for POST)
+# Prefix: https://api.render.com/deploy/
+
+[detector]
+id = "render-deploy-hook"
+name = "Render Deploy Hook"
+service = "render"
+severity = "high"
+keywords = ["render", "deploy"]
+
+[[detector.patterns]]
+regex = "https://api\\.render\\.com/deploy/srv-[a-z0-9]+\\?key=[a-zA-Z0-9_-]{20,}"
+description = "Render deploy hook URL with service ID and key"
+
+[[detector.patterns]]
+regex = "(?:RENDER|render)[_\\-\\s]*(?:DEPLOY|deploy)[_\\-\\s]*(?:HOOK|hook)[_\\-\\s]*(?:URL|url)?[=:\\s\"'\\']+(https://api\\.render\\.com/deploy/srv-[a-z0-9]+\\?key=[a-zA-Z0-9_-]{20,})"
+description = "Render deploy hook URL with context anchor"
+group = 1

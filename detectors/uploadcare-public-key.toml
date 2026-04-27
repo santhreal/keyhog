@@ -1,0 +1,16 @@
+# Docs: https://uploadcare.com/docs/keys/
+# Format: 32 hexadecimal characters (hex string, no dashes)
+# Verify: GET /files/ with Uploadcare.Simple auth header
+# Prefix: none (generic hex, requires context anchoring)
+
+[detector]
+id = "uploadcare-public-key"
+name = "Uploadcare Public Key"
+service = "uploadcare"
+severity = "medium"
+keywords = ["UPLOADCARE_PUB_KEY", "UPLOADCARE_PUBLIC_KEY", "pubkey", "pub_key", "demopublickey"]
+
+[[detector.patterns]]
+regex = "(?:UPLOADCARE|uploadcare)[._-]?(?:PUB[._-]?)?(?:KEY|key)[=:\\s\"']+([a-f0-9]{32})"
+description = "Uploadcare public key (32 hex chars) with context anchor"
+group = 1

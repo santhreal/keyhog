@@ -1,0 +1,20 @@
+op_id = "primitive.logical.xor"
+
+[[kat]]
+input = "0000000000000000"
+expected = "00000000"
+source = "hand-verified reference vector from Rust semantics"
+
+[[adversarial]]
+input = ""
+reason = "empty input exercises validation and boundary handling"
+
+[[golden]]
+input = "0000000000000000"
+expected = "00000000"
+reason = "xor(0,0)=0"
+
+[[golden]]
+input = "0100000000000000"
+expected = "01000000"
+reason = "xor(1,0)=1"

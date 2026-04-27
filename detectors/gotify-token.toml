@@ -1,0 +1,16 @@
+# Docs: https://gotify.net/docs/pushmsg
+# Format: Application token is alphanumeric (typically 15+ chars), or X-Gotify-Key header
+# Verify: POST to /message with X-Gotify-Key header
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "gotify-token"
+name = "Gotify Token"
+service = "gotify"
+severity = "medium"
+keywords = ["GOTIFY", "gotify", "GOTIFY_TOKEN", "GOTIFY_APP_TOKEN"]
+
+[[detector.patterns]]
+regex = '(?:GOTIFY|gotify)[=:][\s"]*([A-Za-z0-9]{15,})'
+description = "Gotify application token with context anchor"
+group = 1

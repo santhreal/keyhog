@@ -1,0 +1,31 @@
+# Docs: https://docs.servicenow.com/bundle/xanadu-platform-administration/page/administer/security/concept/c_IntegrateWithThirdParty.html
+# Format: Base64 encoded username:password or token for REST API authentication
+# Verify: GET /api/now/table/sys_user with Basic auth returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "servicenow-api-key"
+name = "ServiceNow API Key"
+service = "servicenow"
+severity = "critical"
+keywords = ["servicenow", "SN_INSTANCE", "SN_USER", "SN_PASSWORD"]
+
+[[detector.patterns]]
+regex = "(?:servicenow|SN)[._-]?(?:instance|url)[=:\\s\"'']+([a-z0-9-]+\\.service-now\\.com)"
+description = "ServiceNow instance URL"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:servicenow|SN)[._-]?(?:user|username)[=:\\s\"'']+([a-zA-Z0-9_-]+)"
+description = "ServiceNow username with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:servicenow|SN)[._-]?(?:pass|password|pwd)[=:\\s\"'']+([a-zA-Z0-9!@#$%^&*._-]{8,})"
+description = "ServiceNow password with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:servicenow|SN)[._-]?(?:token|api[_-]?key)[=:\\s\"'']+([a-zA-Z0-9_-]{20,})"
+description = "ServiceNow API token with context anchor"
+group = 1

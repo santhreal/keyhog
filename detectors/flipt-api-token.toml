@@ -1,0 +1,15 @@
+# Docs: https://www.flipt.io/docs/authentication/using-tokens
+# Format: flipt_ prefix followed by 40+ alphanumeric characters
+# Verify: no public verification endpoint
+# Prefix: flipt_
+
+[detector]
+id = "flipt-api-token"
+name = "Flipt API Token"
+service = "flipt"
+severity = "high"
+keywords = ["flipt_", "FLIPT_TOKEN"]
+
+[[detector.patterns]]
+regex = 'flipt_[a-f0-9]{40,}'
+description = "Flipt API authentication token"

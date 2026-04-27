@@ -1,0 +1,21 @@
+# Docs: https://www.mongodb.com/docs/atlas/configure-api-access/
+# Format: Public Key is 8+ characters, Private Key is UUID format paired with Public Key
+# Verify: GET /api/atlas/v2/groups with Digest auth (public:private) returns 200
+# Prefix: none (requires paired keys, public key has no fixed prefix)
+
+[detector]
+id = "mongodb-atlas-api-key"
+name = "MongoDB Atlas API Key"
+service = "mongodb"
+severity = "critical"
+keywords = ["MONGODB_ATLAS", "mongodb_atlas", "publicKey", "privateKey", "ATLAS_PUBLIC_KEY"]
+
+[[detector.patterns]]
+regex = "(?:ATLAS|atlas)[_\\s]*(?:PUBLIC|public)?[_\\s]*(?:KEY|key)?[=:\\s\"']+([a-zA-Z]{8,})"
+description = "MongoDB Atlas Public Key with context anchor"
+group = 1
+
+[[detector.companions]]
+name = "privateKey"
+regex = "(?:ATLAS|atlas)[_\\s]*(?:PRIVATE|private)?[_\\s]*(?:KEY|key)?[=:\\s\"']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
+within_lines = 3

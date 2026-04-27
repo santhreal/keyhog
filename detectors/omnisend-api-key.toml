@@ -1,0 +1,37 @@
+# Docs: https://api.omnisend.com/v3/docs
+# Format: 32-character hex string
+# Verify: GET /v3/account with X-API-Key header returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "omnisend-api-key"
+name = "Omnisend API Key"
+service = "omnisend"
+severity = "critical"
+keywords = ["OMNISEND", "omnisend", "OMNISEND_API_KEY", "omnisend_api_key"]
+
+[[detector.patterns]]
+regex = "(?:OMNISEND|omnisend)[._-]?(?:API|api)?[._-]?(?:KEY|key)[=:\\s\"'']+([a-f0-9]{32})"
+description = "Omnisend API key (32 hex characters) with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:X-API-Key|x-api-key)[=:\\s\"'']+([a-f0-9]{32})"
+description = "Omnisend API key from header format"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://api.omnisend.com/v3/account"
+
+[detector.verify.auth]
+type = "header"
+name = "X-API-Key"
+template = "{{match}}"
+
+[detector.verify.success]
+status = 200
+
+[[detector.verify.metadata]]
+name = "accountID"
+json_path = "$.accountID"

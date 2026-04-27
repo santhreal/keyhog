@@ -1,0 +1,21 @@
+# Docs: https://www.elastic.co/guide/en/elasticsearch/reference/current/security-api-create-api-key.html
+# Format: Base64-encoded id:api_key pair or raw API key string
+# Verify: GET /_cluster/health with Authorization: ApiKey header returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "elasticsearch-basic-auth"
+name = "Elasticsearch API Key"
+service = "elasticsearch"
+severity = "high"
+keywords = ["ELASTICSEARCH_API_KEY", "ELASTIC_API_KEY", "ES_API_KEY", "elasticsearch_api_key", "elastic_api_key"]
+
+[[detector.patterns]]
+regex = "(?:ELASTICSEARCH[_-]?API[_-]?KEY|ELASTIC[_-]?API[_-]?KEY|ES[_-]?API[_-]?KEY|elasticsearch[_-]?api[_-]?key|elastic[_-]?api[_-]?key)[=:\\s\"'']+([a-zA-Z0-9_-]{48,})"
+description = "Elasticsearch API key with context anchor (48+ chars)"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:ELASTICSEARCH[_-]?API[_-]?KEY|ELASTIC[_-]?API[_-]?KEY|ES[_-]?API[_-]?KEY|elasticsearch[_-]?api[_-]?key|elastic[_-]?api[_-]?key)[=:\\s\"'']+([A-Za-z0-9+/]{40,}={0,2})"
+description = "Elasticsearch API key (base64 encoded) with context anchor"
+group = 1

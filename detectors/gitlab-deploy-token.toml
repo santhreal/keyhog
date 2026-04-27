@@ -1,0 +1,20 @@
+# Docs: https://docs.gitlab.com/ee/user/project/deploy_tokens/
+# Format: gldt- prefix followed by 20+ alphanumeric characters
+# Verify: git ls-remote with token as username or header auth
+# Prefix: gldt-
+
+[detector]
+id = "gitlab-deploy-token"
+name = "GitLab Deploy Token"
+service = "gitlab"
+severity = "high"
+keywords = ["gldt-", "gitlab_deploy", "deploy_token"]
+
+[[detector.patterns]]
+regex = 'gldt-[a-zA-Z0-9_-]{20,}'
+description = "GitLab deploy token (gldt- prefix)"
+
+[[detector.companions]]
+name = "username"
+regex = "(?:GITLAB[_-]?DEPLOY[_-]?TOKEN[_-]?USER|username|user)[=:\\s\"'']+([a-zA-Z0-9_-]+)"
+within_lines = 5

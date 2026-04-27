@@ -1,0 +1,28 @@
+# Docs: https://developers.deepgram.com/docs/create-additional-api-keys
+# Format: 40-character hexadecimal string with no unique prefix
+# Verify: GET /v1/projects with Authorization header returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "deepgram-api-key"
+name = "Deepgram API Key"
+service = "deepgram"
+severity = "high"
+keywords = ["DEEPGRAM_API_KEY", "deepgram"]
+
+[[detector.patterns]]
+regex = "(?:DEEPGRAM|deepgram)[=:\\s\"'']+([a-f0-9]{40})"
+description = "Deepgram API key with context anchor"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://api.deepgram.com/v1/projects"
+
+[detector.verify.auth]
+type = "header"
+name = "Authorization"
+template = "Token {{match}}"
+
+[detector.verify.success]
+status = 200

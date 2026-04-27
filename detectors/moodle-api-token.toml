@@ -1,0 +1,21 @@
+# Docs: https://docs.moodle.org/dev/Web_service_API_functions
+# Format: 32-character hex string (token) used for web service access
+# Verify: POST /webservice/rest/server.php with wstoken param returns data if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "moodle-api-token"
+name = "Moodle Web Service API Token"
+service = "moodle"
+severity = "high"
+keywords = ["moodle", "MOODLE", "wstoken", "webservice"]
+
+[[detector.patterns]]
+regex = "(?:moodle|webservice)[_\\s.-]*(?:token|wstoken)[=:\\s\"'']+([a-f0-9]{32})"
+description = "Moodle web service token (32 hex chars) with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "wstoken[=:]([a-f0-9]{32})"
+description = "Moodle wstoken parameter"
+group = 1

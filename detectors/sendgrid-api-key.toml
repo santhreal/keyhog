@@ -1,0 +1,26 @@
+# Docs: https://docs.sendgrid.com/api-reference/how-to-use-the-sendgrid-v3-api/authentication
+# Format: API key starting with 'SG.' followed by 22 Base64 chars, a dot, and 43 more Base64 chars
+# Verify: Bearer token sent to api.sendgrid.com/v3/scopes, returns 200 on success
+# Prefix: SG.
+
+[detector]
+id = "sendgrid-api-key"
+name = "SendGrid API Key"
+service = "sendgrid"
+severity = "high"
+keywords = ["SG."]
+
+[[detector.patterns]]
+regex = 'SG\.[a-zA-Z0-9_-]{22,32}\.[a-zA-Z0-9_-]{43,47}'
+description = "SendGrid API key (tightened segment lengths)"
+
+[detector.verify]
+method = "GET"
+url = "https://api.sendgrid.com/v3/scopes"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[detector.verify.success]
+status = 200

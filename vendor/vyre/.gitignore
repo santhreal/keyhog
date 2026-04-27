@@ -1,0 +1,41 @@
+# Build artifacts — target directories at any depth.
+target/
+**/target/
+*/target/
+conform/fuzz/target/
+
+# Cargo lock backup.
+Cargo.lock.old
+
+# Temporary cargo target directories (e.g. CI / tooling).
+**/.cargo-target-*
+/tmp/cargo-target-*
+
+# Mutation testing.
+mutants.out/
+mutants.out.old/
+*.rlib
+
+# proptest regression corpus — regenerated deterministically from seeds.
+# See scripts/fetch-regressions.sh.
+conform/regressions/
+
+# Profiling / flamegraph artifacts.
+*.profdata
+*.profraw
+perf.data*
+flamegraph.svg
+
+# Editor / IDE scratch.
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Merge / rebase leftovers.
+*.orig
+*.rej
+
+# macOS.
+.DS_Store

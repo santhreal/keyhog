@@ -1,0 +1,21 @@
+# Docs: https://developer.smartthings.com/docs/getting-started/authorization-and-permissions
+# Format: Personal Access Token (PAT) - long alphanumeric string with hyphens
+# Verify: GET /v1/devices with Authorization: Bearer token header
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "smartthings-api-token"
+name = "SmartThings API Token"
+service = "smartthings"
+severity = "high"
+keywords = ["smartthings", "personal_access_token", "api.smartthings.com"]
+
+[[detector.patterns]]
+regex = "(?:smartthings|SMARTTHINGS)[._-]?(?:PAT|pat|PERSONAL[_-]?ACCESS[_-]?TOKEN|personal[_-]?access[_-]?token|ACCESS[_-]?TOKEN|access[_-]?token)[=:\\s\"'']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
+description = "SmartThings Personal Access Token (UUID format)"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:smartthings|SMARTTHINGS)[._-]?(?:PAT|pat|PERSONAL[_-]?ACCESS[_-]?TOKEN|personal[_-]?access[_-]?token|ACCESS[_-]?TOKEN|access[_-]?token)[=:\\s\"'']+([a-f0-9]{36,64})"
+description = "SmartThings API token (hex format)"
+group = 1

@@ -1,0 +1,28 @@
+# Docs: https://docs.snyk.io/snyk-api/authentication-for-api
+# Format: UUID format (8-4-4-4-12 hex with dashes)
+# Verify: GET /rest/self with Authorization: token header
+# Prefix: none (UUID format - REQUIRES context anchoring)
+
+[detector]
+id = "snyk-api-token"
+name = "Snyk API Token"
+service = "snyk"
+severity = "high"
+keywords = ["SNYK_TOKEN", "snyk_token", "SNYK_API_TOKEN", "snyk_api_token", "snyk.io", "SNYK"]
+
+[[detector.patterns]]
+regex = "(?:SNYK|snyk).{0,20}(?:TOKEN|token|API|api).{0,5}[=:\\s\"']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
+description = "Snyk API token with context anchor (UUID format)"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://api.snyk.io/rest/self?version=2024-06-10"
+
+[detector.verify.auth]
+type = "header"
+name = "Authorization"
+template = "token {{match}}"
+
+[detector.verify.success]
+status = 200

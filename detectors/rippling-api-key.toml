@@ -1,0 +1,32 @@
+# Docs: https://developer.rippling.com/documentation/rest-api
+# Format: Bearer token - starts with 'rpl_' prefix for new tokens, or specific alphanumeric patterns
+# Verify: GET /platform/api/me with Bearer token returns 200 if valid
+# Prefix: rpl_ (new format), or context-anchored only for legacy
+
+[detector]
+id = "rippling-api-key"
+name = "Rippling API Key"
+service = "rippling"
+severity = "critical"
+keywords = ["RIPPLING_API_KEY", "RIPPLING_TOKEN", "rippling_api_key", "rpl_"]
+
+[[detector.patterns]]
+regex = "(?:RIPPLING_API_KEY|RIPPLING_TOKEN|rippling_api_key)[=:\\s\"'\\']+(rpl_[a-zA-Z0-9]{40,})"
+description = "Rippling API key with rpl_ prefix (new format)"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:Authorization:[\\s]*)Bearer[\\s]+(rpl_[a-zA-Z0-9]{40,})"
+description = "Rippling bearer token with rpl_ prefix in Authorization header"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://api.rippling.com/platform/api/me"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[detector.verify.success]
+status = 200

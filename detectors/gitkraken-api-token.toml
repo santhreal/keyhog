@@ -1,0 +1,20 @@
+# Docs: https://www.gitkraken.com/faq
+# Format: GitKraken uses OAuth for API access, no fixed token format
+# Verify: no public verification endpoint
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "gitkraken-api-token"
+name = "GitKraken API Token"
+service = "gitkraken"
+severity = "medium"
+keywords = ["gitkraken", "GITKRAKEN", "gk_token"]
+
+[[detector.patterns]]
+regex = "(?:gitkraken|GITKRAKEN)[_-]?(?:api|API)?[_-]?(?:token|TOKEN|key|KEY)[=:\\s\"'']+([a-zA-Z0-9_-]{32,})"
+description = "GitKraken API token with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:gk_|GK_)[a-zA-Z0-9_-]{32,}"
+description = "GitKraken token with gk_ prefix"

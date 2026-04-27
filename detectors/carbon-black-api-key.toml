@@ -1,0 +1,37 @@
+# Docs: https://developer.carbonblack.com/reference/carbon-black-cloud/authentication/
+# Format: API key with CB prefix or custom org key, combined with API ID
+# Verify: GET /appservices/v6/orgs/{org_key}/devices with X-Auth-Token header
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "carbon-black-api-key"
+name = "Carbon Black API Key"
+service = "carbon-black"
+severity = "critical"
+keywords = ["CARBONBLACK", "carbonblack", "CB_API", "VMWARE_CB"]
+
+[[detector.patterns]]
+regex = "(?:CARBON[_\\s]*BLACK|carbon[_\\s]*black|CB|vmware_cb)[_\\s]*(?:API[_\\s]*)?KEY[=:\\s\"'']+([A-F0-9]{20,32})"
+description = "Carbon Black API key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:CARBON[_\\s]*BLACK|carbon[_\\s]*black|CB)[_\\s]*ORG[_\\s]*KEY[=:\\s\"'']+([A-Z0-9]{8,16})"
+description = "Carbon Black organization key with context anchor"
+group = 1
+
+[[detector.companions]]
+name = "carbon_black_api_id"
+regex = "(?:CARBON[_\\s]*BLACK|carbon[_\\s]*black|CB)[_\\s]*(?:API[_\\s]*)?ID[=:\\s\"'']+([0-9]+)"
+within_lines = 5
+[detector.verify]
+method = "GET"
+url = "https://defense.conferdeploy.net/appservices/v6/orgs/{org_key}/devices"
+
+[detector.verify.auth]
+type = "header"
+name = "X-Auth-Token"
+template = "{{match}}"
+
+[detector.verify.success]
+status = 200

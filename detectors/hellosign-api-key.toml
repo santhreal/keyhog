@@ -1,0 +1,16 @@
+# Docs: https://developers.hellosign.com/docs/api-reference/api-authentication/
+# Format: API key - 64 character hexadecimal string
+# Verify: GET https://api.hellosign.com/v3/account with Basic auth (api_key:empty_password)
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "hellosign-api-key"
+name = "HelloSign API Key"
+service = "hellosign"
+severity = "critical"
+keywords = ["HELLOSIGN_API_KEY", "HELLOSIGN_KEY", "hellosign_api_key", "HelloSign-Key"]
+
+[[detector.patterns]]
+regex = "(?:HELLOSIGN|hellosign)[_\\s]?(?:API[_\\s]?KEY|KEY)[=:\\s\"'']+([a-f0-9]{64})"
+description = "HelloSign API key (64 hex characters)"
+group = 1

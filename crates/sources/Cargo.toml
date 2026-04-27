@@ -1,0 +1,80 @@
+[package]
+name = "keyhog-sources"
+description = "Pluggable input sources: filesystem, git history, stdin, s3"
+version.workspace = true
+authors = ["Santh Project <contact@santh.dev>"]
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository = "https://github.com/santhsecurity/keyhog"
+homepage = "https://github.com/santhsecurity/keyhog"
+documentation = "https://docs.rs/keyhog-sources"
+keywords.workspace = true
+categories.workspace = true
+readme = "README.md"
+
+[package.metadata.santh]
+status = "alpha"
+
+[features]
+default = ["git", "web"]
+git = ["gix"]
+web = ["dep:reqwest", "dep:serde_json"]
+github = ["dep:reqwest", "dep:tempfile", "dep:serde", "dep:serde_json", "dep:base64"]
+slack = ["dep:reqwest", "dep:serde", "dep:serde_json"]
+s3 = [
+    "dep:reqwest",
+    "dep:serde",
+    "dep:quick-xml",
+    "dep:urlencoding",
+    "dep:hmac",
+    "dep:sha2",
+    "dep:hex",
+    "dep:chrono",
+]
+docker = ["dep:tar", "dep:tempfile"]
+binary = ["dep:goblin", "dep:tempfile", "dep:glob", "dep:wait-timeout"]  # ELF/PE/Mach-O + Ghidra decompiler
+
+[dependencies]
+keyhog-core = { workspace = true }
+codewalk = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+rayon = { workspace = true }
+gix = { workspace = true, optional = true }
+memmap2 = { workspace = true }
+memchr = { workspace = true }
+regex = { workspace = true }
+ziftsieve = { workspace = true, features = ["gzip", "lz4", "zstd", "snappy"] }
+openpack = { workspace = true, features = ["zip", "apk", "ipa", "crx"] }
+# Binary analysis dependencies
+goblin = { workspace = true, optional = true }
+glob = { workspace = true, optional = true }
+wait-timeout = { workspace = true, optional = true }
+
+[target.'cfg(unix)'.dependencies]
+libc = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+io-uring = { workspace = true }
+
+# GitHub feature dependencies
+reqwest = { workspace = true, optional = true, features = ["blocking"] }
+base64 = { workspace = true, optional = true }
+serde = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
+tempfile = { workspace = true, optional = true }
+quick-xml = { workspace = true, optional = true }
+tar = { workspace = true, optional = true }
+urlencoding = { workspace = true, optional = true }
+unicode-normalization = { workspace = true }
+hmac = { workspace = true, optional = true }
+sha2 = { workspace = true, optional = true }
+hex = { workspace = true, optional = true }
+chrono = { workspace = true, default-features = true, optional = true }
+
+[dev-dependencies]
+httpmock = { workspace = true }
+proptest = { workspace = true }
+proptest-derive = { workspace = true }
+tempfile = { workspace = true }

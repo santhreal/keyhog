@@ -1,0 +1,38 @@
+# Docs: https://docs.clickatell.com/archive/channels/sms-http-s-api-archived/using-the-http-api/
+# Format: API Key for One API (alphanumeric string) or API ID + Username + Password for HTTP API
+# Verify: POST /messages with Authorization: {{api_key}} header (One API)
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "clickatell-api-key"
+name = "Clickatell API Key"
+service = "clickatell"
+severity = "critical"
+keywords = ["clickatell", "CLICKATELL", "clickatell.com", "api_key", "api_id"]
+
+[[detector.patterns]]
+regex = '''(?:clickatell|CLICKATELL)[_.-]?(?:api|API)?[_.-]?(?:key|KEY)?[=:\s"\' ]+([a-zA-Z0-9_-]{20,})'''
+description = "Clickatell API Key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = '''Authorization[=:\s"\' ]+([a-zA-Z0-9_-]{20,})'''
+description = "Clickatell API Key in Authorization header (One API)"
+group = 1
+
+[[detector.patterns]]
+regex = '''(?:clickatell|CLICKATELL)[_.-]?(?:api|API)?[_.-]?(?:id|ID)?[=:\s"\' ]+(\d{6,8})'''
+description = "Clickatell API ID (6-8 digit number)"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://platform.clickatell.com/public-client/authenticate"
+
+[detector.verify.auth]
+type = "header"
+name = "Authorization"
+template = "{{match}}"
+
+[detector.verify.success]
+status = 200

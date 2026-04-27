@@ -1,0 +1,28 @@
+# Docs: https://docs.rollbar.com/reference/getting-started-1
+# Format: 32 hexadecimal characters
+# Verify: GET /api/1/item with X-Rollbar-Access-Token header returns 200 if valid
+# Prefix: none (32 hex characters, requires keyword context)
+
+[detector]
+id = "rollbar-access-token"
+name = "Rollbar Access Token"
+service = "rollbar"
+severity = "high"
+keywords = ["ROLLBAR_ACCESS_TOKEN", "rollbar_access_token", "X-Rollbar-Access-Token", "ROLLBAR_TOKEN", "rollbarToken", "access_token"]
+
+[[detector.patterns]]
+regex = "(?:ROLLBAR[_\\-]?ACCESS[_\\-]?TOKEN|rollbar[_\\-]?access[_\\-]?token|X-Rollbar-Access-Token|ROLLBAR[_\\-]?TOKEN|rollbarToken)[=:\\s\\\"']+([a-f0-9]{32})"
+description = "Rollbar project access token (32 hex chars with context anchor)"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://api.rollbar.com/api/1/item/1"
+
+[detector.verify.auth]
+type = "header"
+name = "X-Rollbar-Access-Token"
+template = "{{match}}"
+
+[detector.verify.success]
+status = 200

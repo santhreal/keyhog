@@ -1,0 +1,31 @@
+# Docs: https://learn.microsoft.com/en-us/onedrive/developer/rest-api/getting-started/graph-oauth
+# Format: Base64-encoded JWT token (typical Microsoft OAuth2 format)
+# Verify: GET /v1.0/me with Bearer token via Microsoft Graph
+# Prefix: none (standard JWT format)
+
+[detector]
+id = "onedrive-access-token"
+name = "OneDrive/SharePoint Access Token"
+service = "onedrive"
+severity = "high"
+keywords = ["ONEDRIVE_TOKEN", "SHAREPOINT_TOKEN", "graph.microsoft.com"]
+
+[[detector.patterns]]
+regex = '''(?:ONEDRIVE|onedrive|SHAREPOINT|sharepoint)[._-]?(?:TOKEN|token|ACCESS|access)[=:\s"']+(eyJ0eX[A-Za-z0-9_-]*\.eyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]*)'''
+description = "OneDrive/SharePoint access token with context anchor (JWT format)"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://graph.microsoft.com/v1.0/me"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[detector.verify.success]
+status = 200
+
+[[detector.verify.metadata]]
+name = "userPrincipalName"
+json_path = "$.userPrincipalName"

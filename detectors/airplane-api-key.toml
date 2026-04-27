@@ -1,0 +1,24 @@
+# Docs: https://docs.airplane.dev/platform/api-keys
+# Format: aptk_ prefix followed by alphanumeric characters
+# Verify: no public verification endpoint
+# Prefix: aptk_
+
+[detector]
+id = "airplane-api-key"
+name = "Airplane API Key"
+service = "airplane"
+severity = "critical"
+keywords = ["aptk_", "AIRPLANE", "airplane"]
+
+[[detector.patterns]]
+regex = "aptk_[a-zA-Z0-9_\\-]{30,}"
+description = "Airplane API key (aptk_ prefix)"
+
+[[detector.patterns]]
+regex = "(?:AIRPLANE|airplane)[_\\.\\s]*(?:API_KEY|api_key|token)[=:\\s\"'']+(aptk_[a-zA-Z0-9_\\-]{30,})"
+description = "Airplane API key in environment variable"
+group = 1
+
+[[detector.patterns]]
+regex = "Authorization[=:\\s\"'']+Bearer aptk_[a-zA-Z0-9_\\-]{30,}"
+description = "Airplane API key in Authorization header"

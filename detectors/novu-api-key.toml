@@ -1,0 +1,27 @@
+# Docs: https://docs.novu.co/api-reference/overview
+# Format: nvu_ prefix followed by alphanumeric characters (typically 40+ chars)
+# Verify: GET /v1/environments/me with ApiKey header returns 200 if valid
+# Prefix: nvu_
+
+[detector]
+id = "novu-api-key"
+name = "Novu API Key"
+service = "novu"
+severity = "critical"
+keywords = ["nvu_"]
+
+[[detector.patterns]]
+regex = 'nvu_[a-zA-Z0-9]{30,}'
+description = "Novu API key (nvu_ prefix)"
+
+[detector.verify]
+method = "GET"
+url = "https://api.novu.co/v1/environments/me"
+
+[detector.verify.auth]
+type = "header"
+name = "Authorization"
+template = "ApiKey {{match}}"
+
+[detector.verify.success]
+status = 200

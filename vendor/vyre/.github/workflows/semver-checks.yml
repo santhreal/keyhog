@@ -1,0 +1,24 @@
+name: semver-checks
+
+on:
+  push:
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: semver-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: obi1kenobi/cargo-semver-checks-action@v2
+        with:
+          manifest-path: libs/performance/matching/vyre/Cargo.toml
+          package: vyre,vyre-spec,vyre-macros,vyre-reference,vyre-driver,vyre-driver-wgpu,vyre-driver-spirv,vyre-driver-megakernel,vyre-foundation,vyre-primitives,vyre-libs,vyre-intrinsics,vyre-runtime,vyre-conform-spec,vyre-conform-generate,vyre-conform-enforce,vyre-conform-runner,vyre-test-harness

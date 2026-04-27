@@ -1,0 +1,6 @@
+op_id = "primitive.math.min"
+
+[[golden]]
+input = "0500000003000000"
+expected = "03000000"
+reason = "min(5, 3) = 3"

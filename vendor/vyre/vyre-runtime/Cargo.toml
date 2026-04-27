@@ -1,0 +1,90 @@
+[package]
+name = "vyre-runtime"
+version = "0.6.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Persistent megakernel + io_uring zero-copy streaming runtime for vyre — GPU as VIR0 bytecode interpreter"
+readme = "README.md"
+keywords = ["gpu", "io-uring", "megakernel", "nvme", "vyre"]
+categories = ["asynchronous", "hardware-support", "api-bindings"]
+documentation = "https://docs.rs/vyre-runtime"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[features]
+default = []
+megakernel-batch = []
+subgroup-ops = []
+# V7-API-008: domain-prefixed feature naming convention. `remote-cache`
+# is the canonical name; `remote` is kept as a back-compat alias for
+# 0.6.x consumers and will be removed in a future semver-major.
+remote-cache = ["ureq"]
+remote = ["remote-cache"]
+# Opt-in NVMe passthrough via `IORING_OP_URING_CMD` (Linux kernel 6.0+).
+uring-cmd-nvme = []
+
+[dependencies]
+vyre-driver.workspace = true
+vyre-driver-megakernel.workspace = true
+vyre-driver-wgpu = { path = "../vyre-driver-wgpu" }
+vyre-foundation.workspace = true
+thiserror.workspace = true
+blake3.workspace = true
+bytemuck.workspace = true
+ureq = { version = "=2.10.1", optional = true }
+wgpu.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = { version = "0.2", default-features = false }
+
+[dev-dependencies]
+tempfile.workspace = true
+criterion.workspace = true
+proptest.workspace = true
+# `tests/fingerprint_cross_host.rs` imports the `vyre` meta-crate re-export path.
+vyre = { path = "../vyre-core" }
+vyre-libs = { path = "../vyre-libs", features = ["matching-dfa"] }
+# Explicit path (not `workspace = true`) because the parent Santh
+# workspace at libs/../Cargo.toml does not re-declare every internal
+# vyre dep — and that workspace's members (tools/vyrec) transitively
+# compile vyre-runtime. Using a path dependency keeps the manifest
+# resolvable from either workspace root.
+vyre-intrinsics = { path = "../vyre-intrinsics", features = ["subgroup-ops"] }
+
+[[bench]]
+name = "pipeline_cache_bench"
+harness = false
+
+[[bench]]
+name = "megakernel_bench"
+harness = false
+
+[[bench]]
+name = "ring_protocol_bench"
+harness = false
+
+[[bench]]
+name = "nvme_ingest"
+harness = false
+
+[[bench]]
+name = "megakernel_batch"
+harness = false
+required-features = ["megakernel-batch"]
+
+[[bench]]
+name = "megakernel_vs_serial"
+harness = false
+required-features = ["megakernel-batch"]
+
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+libc = { version = "0.2", default-features = false }
+
+[lints]
+workspace = true

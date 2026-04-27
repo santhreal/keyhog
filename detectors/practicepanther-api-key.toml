@@ -1,0 +1,16 @@
+# Docs: https://practicepanther Support Center (API v2 uses token-based auth)
+# Format: API key token - alphanumeric string typically 40+ characters
+# Verify: no public verification endpoint
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "practicepanther-api-key"
+name = "PracticePanther API Key"
+service = "practicepanther"
+severity = "critical"
+keywords = ["PRACTICEPANTHER_API_KEY", "PRACTICEPANTHER_TOKEN", "practicepanther_api_key", "x-practicepanther-token"]
+
+[[detector.patterns]]
+regex = "(?:PRACTICEPANTHER|practicepanther)[_\\s]?(?:API[_\\s]?KEY|TOKEN|token)[=:\\s\"'']+([a-zA-Z0-9_\\-]{40,})"
+description = "PracticePanther API key or token"
+group = 1

@@ -1,0 +1,26 @@
+# Docs: https://learn.microsoft.com/en-us/azure/container-registry/container-registry-authentication
+# Format: ACR access token (JWT-like) or admin password (long base64)
+# Verify: az acr login --expose-token or docker login with token
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "azure-container-registry-token"
+name = "Azure Container Registry Token"
+service = "azure-container-registry"
+severity = "high"
+keywords = ["azurecr.io", "ACR", "azurecr", "ACR_TOKEN", "AZURE_CR"]
+
+[[detector.patterns]]
+regex = "(?:azurecr\\.io|ACR|azurecr)[\\w_]*(?:TOKEN|PWD|PASSWORD)[=:\\s\"'']+(eyJ[a-zA-Z0-9_-]*\\.eyJ[a-zA-Z0-9_-]*)"
+description = "Azure Container Registry JWT access token with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:ACR|azurecr)[\\w_]*(?:USERNAME|USER)[=:\\s\"'']+([a-zA-Z0-9_-]+)"
+description = "Azure Container Registry username with captured token reference"
+group = 1
+
+[[detector.patterns]]
+regex = "docker login [a-z0-9]+\\.azurecr\\.io.*?(?:password|token)[=:\\s\"'']+([A-Za-z0-9+/=]{50,})"
+description = "Azure Container Registry docker login pattern with token"
+group = 1

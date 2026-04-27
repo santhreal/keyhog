@@ -1,0 +1,32 @@
+# Docs: https://developer.hashicorp.com/terraform/enterprise/api-docs
+# Format: Same as Terraform Cloud - {id}.atlasv1.{secret} or team/organization tokens
+# Verify: GET /api/v2/account/details with Bearer token
+# Prefix: .atlasv1. (infix)
+
+[detector]
+id = "terraform-enterprise-token"
+name = "Terraform Enterprise API Token"
+service = "terraform-enterprise"
+severity = "critical"
+keywords = [".atlasv1.", "TFE_TOKEN", "tfe_token", "TERRAFORM_ENTERPRISE_TOKEN", "terraform_enterprise_token"]
+
+[[detector.patterns]]
+regex = "[a-zA-Z0-9]{14}\\.atlasv1\\.[a-zA-Z0-9]{67,}"
+description = "Terraform Enterprise API token (atlasv1 infix format)"
+
+[[detector.patterns]]
+regex = "(?:TFE_TOKEN|tfe_token|TERRAFORM_ENTERPRISE_TOKEN|terraform_enterprise_token)[=:\\s\"'']+([a-zA-Z0-9]{14}\\.atlasv1\\.[a-zA-Z0-9]{67,})"
+description = "Terraform Enterprise token in environment variable"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://app.terraform.io/api/v2/account/details"
+
+[detector.verify.auth]
+type = "header"
+name = "Authorization"
+template = "Bearer {{match}}"
+
+[detector.verify.success]
+status = 200

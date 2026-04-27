@@ -1,0 +1,38 @@
+# Docs: https://developers.deepl.com/docs/getting-started/auth
+# Format: UUID-like string, free keys end with ':fx' (e.g., 279a2e9d-83b3-c416-7e2d-f721593e42a0:fx)
+# Verify: GET /v2/usage with DeepL-Auth-Key header returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "deepl-api-key"
+name = "DeepL API Key"
+service = "deepl"
+severity = "high"
+keywords = ["DEEPL_API_KEY", "DEEPL_AUTH_KEY", "DeepL-Auth-Key", "auth_key"]
+
+[[detector.patterns]]
+regex = "(?:DEEPL_API_KEY|DEEPL_AUTH_KEY|DEEPL.KEY|deepl.api.key)[=:\\s\"'']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}:fx?)"
+description = "DeepL API key with context anchor (free/pro format)"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:DEEPL_API_KEY|DEEPL_AUTH_KEY|DEEPL.KEY|deepl.api.key)[=:\\s\"'']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
+description = "DeepL API key with context anchor (standard format)"
+group = 1
+
+[[detector.patterns]]
+regex = "DeepL-Auth-Key\\s+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}:fx?)"
+description = "DeepL API key in Authorization header"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://api-free.deepl.com/v2/usage"
+
+[detector.verify.auth]
+type = "header"
+name = "Authorization"
+template = "DeepL-Auth-Key {{match}}"
+
+[detector.verify.success]
+status = 200

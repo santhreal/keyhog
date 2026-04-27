@@ -1,0 +1,31 @@
+# Docs: https://pulsar.apache.org/docs/security-jwt/
+# Format: JWT token with alg and sub claims, used with Pulsar-specific configuration
+# Verify: no public verification endpoint
+# Prefix: eyJ (JWT header), but requires Pulsar context
+
+[detector]
+id = "pulsar-jwt-token"
+name = "Apache Pulsar JWT Token"
+service = "pulsar"
+severity = "critical"
+keywords = ["pulsar", "authParams", "brokerClientAuthenticationParameters", "PULSAR_TOKEN"]
+
+[[detector.patterns]]
+regex = "authParams\\s*=\\s*token:([a-zA-Z0-9_-]+\\.eyJ[a-zA-Z0-9_-]*\\.[a-zA-Z0-9_-]+)"
+description = "Pulsar client.conf authParams with JWT token"
+group = 1
+
+[[detector.patterns]]
+regex = "brokerClientAuthenticationParameters\\s*[=:]\\s*[\"'\\']?(?:\\{[^}]*token[\"'\\']?\\s*:\\s*[\"'\\']?)?(eyJ[a-zA-Z0-9_-]*\\.eyJ[a-zA-Z0-9_-]*\\.[a-zA-Z0-9_-]+)"
+description = "Pulsar brokerClientAuthenticationParameters JWT token"
+group = 1
+
+[[detector.patterns]]
+regex = "PULSAR_TOKEN\\s*[=:]\\s*[\"'\\']?(eyJ[a-zA-Z0-9_-]*\\.eyJ[a-zA-Z0-9_-]*\\.[a-zA-Z0-9_-]+)"
+description = "Pulsar JWT token environment variable"
+group = 1
+
+[[detector.patterns]]
+regex = "webServiceUrl.*pulsar.*\\n.*token[\"'\\']?\\s*[=:]\\s*[\"'\\']?(eyJ[a-zA-Z0-9_-]*\\.eyJ[a-zA-Z0-9_-]*\\.[a-zA-Z0-9_-]+)"
+description = "Pulsar client configuration with JWT token"
+group = 1

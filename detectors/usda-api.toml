@@ -1,0 +1,21 @@
+# Docs: https://fdc.nal.usda.gov/api-key-signup.html
+# Format: 36-40 character alphanumeric API key passed as query parameter
+# Verify: no public verification endpoint
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "usda-api-key"
+name = "USDA Food Data Central API Key"
+service = "usda"
+severity = "medium"
+keywords = ["USDA_API_KEY", "FDC_API_KEY", "usda", "fdc", "nal.usda.gov"]
+
+[[detector.patterns]]
+regex = "(?:USDA|FDC)_API_KEY[=:\\s\"'\\']+([a-zA-Z0-9]{36,40})"
+description = "USDA API key (36-40 alphanumeric chars) with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "fdc\\.nal\\.usda\\.gov.*[?&]api_key=([a-zA-Z0-9]{36,40})"
+description = "USDA API key in URL query parameter"
+group = 1

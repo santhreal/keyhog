@@ -1,0 +1,33 @@
+# Docs: https://docs.moralis.io/web3-data-api/solana/reference/authentication
+# Format: 64+ character alphanumeric string (no distinctive prefix)
+# Verify: GET /api/v2.2/block/1 with X-API-Key header returns 200 if valid
+# Prefix: none (long alphanumeric string, requires context keywords)
+
+[detector]
+id = "moralis-api-key"
+name = "Moralis API Key"
+service = "moralis"
+severity = "critical"
+keywords = ["moralis", "MORALIS", "MORALIS_API_KEY", "moralis_api_key", "X-API-Key", "deep-index.moralis.io"]
+
+[[detector.patterns]]
+regex = "(?:MORALIS|moralis)[_\\-\\.]?(?:API[_\\-\\.]?KEY|api[_\\-\\.]?key)[=:\\s\\\"']+([a-zA-Z0-9]{60,})"
+description = "Moralis API key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "X-API-Key[=:\\s\\\"']+([a-zA-Z0-9]{60,})"
+description = "Moralis API key in X-API-Key header"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://deep-index.moralis.io/api/v2.2/block/1?chain=eth"
+
+[detector.verify.auth]
+type = "header"
+name = "X-API-Key"
+template = "{{match}}"
+
+[detector.verify.success]
+status = 200

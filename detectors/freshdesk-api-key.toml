@@ -1,0 +1,19 @@
+# Docs: https://developers.freshdesk.com/api/#authentication
+# Format: 20 character alphanumeric string, used with Basic auth (key:X)
+# Verify: GET /api/v2/tickets with Basic auth (api_key:X)
+# Prefix: none (20 char alphanumeric, requires context anchoring)
+
+[detector]
+id = "freshdesk-api-key"
+name = "Freshdesk API Key"
+service = "freshdesk"
+severity = "high"
+keywords = ["FRESHDESK_API_KEY", "freshdesk_api_key", "freshdesk.com"]
+
+[[detector.patterns]]
+regex = "(?:FRESHDESK_API_KEY|freshdesk_api_key)[=:\\s\"']+([A-Za-z0-9]{20})"
+description = "Freshdesk API key (20 character alphanumeric) with context anchor"
+group = 1
+
+# NOTE: live verification disabled. `{{subdomain}}` was undefined.
+# kimi-wave3 §1.

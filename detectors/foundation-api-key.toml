@@ -1,0 +1,16 @@
+# Docs: https://foundation.app/ (no public API documentation available)
+# Format: API credentials for foundation.app (primarily wallet-based)
+# Verify: no public verification endpoint
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "foundation-api-key"
+name = "Foundation API Key"
+service = "foundation"
+severity = "medium"
+keywords = ["foundation", "FOUNDATION", "foundation.app"]
+
+[[detector.patterns]]
+regex = "(?:foundation|FOUNDATION)[_\\s]*(?:API[_\\s]*)?KEY[_\\s]*[=:][\\s]*[\"'']+([a-zA-Z0-9_-]{20,})[\"'']+"
+description = "Foundation API key in assignment context"
+group = 1

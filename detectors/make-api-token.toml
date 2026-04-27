@@ -1,0 +1,28 @@
+# Docs: https://www.make.com/en/help/api/authentication
+# Format: <32 hex chars>-<4 hex chars>-<4 hex chars>-<4 hex chars>-<12 hex chars>
+# Verify: GET /users/me with Authorization header
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "make-api-token"
+name = "Make (Integromat) API Token"
+service = "make"
+severity = "critical"
+keywords = ["MAKE_API_KEY", "INTEGROMAT_API_KEY", "make.com", "integromat"]
+
+[[detector.patterns]]
+regex = "(?:MAKE_API_KEY|INTEGROMAT_API_KEY|make|integromat)[=:\\s\"'']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
+description = "Make/Integromat API token with context anchor"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://us1.make.com/api/v2/users/me"
+
+[detector.verify.auth]
+type = "header"
+name = "Authorization"
+template = "Token {{match}}"
+
+[detector.verify.success]
+status = 200

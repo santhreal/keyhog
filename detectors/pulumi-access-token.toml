@@ -1,0 +1,27 @@
+# Docs: https://www.pulumi.com/docs/administration/access-identity/access-tokens/
+# Format: Token starting with 'pul-' followed by 40 hexadecimal characters
+# Verify: Sent as token in Authorization header to api.pulumi.com/api/user, returns 200 on success
+# Prefix: pul-
+
+[detector]
+id = "pulumi-access-token"
+name = "Pulumi Access Token"
+service = "pulumi"
+severity = "critical"
+keywords = ["pul-"]
+
+[[detector.patterns]]
+regex = 'pul-[a-f0-9]{40}'
+description = "Pulumi access token (pul-)"
+
+[detector.verify]
+method = "GET"
+url = "https://api.pulumi.com/api/user"
+
+[detector.verify.auth]
+type = "header"
+name = "Authorization"
+template = "token {{match}}"
+
+[detector.verify.success]
+status = 200

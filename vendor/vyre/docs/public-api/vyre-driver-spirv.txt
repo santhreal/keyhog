@@ -1,0 +1,9 @@
+pub const BACKEND_ID: &'static str = super::SPIRV_BACKEND_ID;
+pub const SPIRV_BACKEND_ID: &str = "spirv";
+pub fn emit_spv(module: &naga::Module) -> Result<Vec<u32>, String> {
+pub fn new() -> Self {
+pub fn spirv_factory() -> Result<Box<dyn VyreBackend>, BackendError> {
+pub fn spirv_supported_ops() -> &'static std::collections::HashSet<vyre_foundation::ir::OpId> {
+pub mod backend;
+pub struct SpirvBackend;
+pub struct SpirvBackendRegistration;

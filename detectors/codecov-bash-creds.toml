@@ -1,0 +1,10 @@
+[detector]
+id = "codecov-bash-creds"
+name = "Codecov 2021 Bash Uploader Credentials"
+service = "codecov"
+severity = "critical"
+keywords = ["codecov", "token", "upload"]
+
+[[detector.patterns]]
+regex = 'https://codecov\.io/upload/v4\?package=bash-[0-9.]+&token=([a-zA-Z0-9-]+)'
+group = 1

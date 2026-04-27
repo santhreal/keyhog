@@ -1,0 +1,15 @@
+# Docs: https://www.figma.com/developers/api
+# Format: figd_ prefix followed by alphanumeric, hyphen, underscore characters (20-50 chars)
+# Verify: HTTP GET to /v1/me with X-Figma-Token header
+# Prefix: figd_
+
+[detector]
+id = "figma-pat"
+name = "Figma Personal Access Token"
+service = "figma"
+severity = "high"
+keywords = ["figd_", "figma"]
+
+[[detector.patterns]]
+regex = 'figd_[a-zA-Z0-9-_]{20,50}'
+description = "Figma personal access token (figd_ prefix)"

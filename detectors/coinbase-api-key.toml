@@ -1,0 +1,15 @@
+# Docs: https://docs.cdp.coinbase.com/advanced-trade/docs/rest-api-auth/
+# Format: organizations/ followed by UUID/apiKeys/ followed by UUID (API Key ID)
+# Verify: No verify endpoint (requires private key for authentication)
+# Prefix: organizations/
+
+[detector]
+id = "coinbase-api-key"
+name = "Coinbase API Key"
+service = "coinbase"
+severity = "critical"
+keywords = ["organizations/", "apiKeys", "coinbase"]
+
+[[detector.patterns]]
+regex = 'organizations/[a-f0-9-]+/apiKeys/[a-f0-9-]+'
+description = "Coinbase Cloud API Key ID (organization-scoped)"

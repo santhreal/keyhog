@@ -1,0 +1,15 @@
+# Docs: https://docs.pinecone.io/reference/api/authentication
+# Format: pcsk_ prefix followed by 100+ alphanumeric characters
+# Verify: GET /indexes with Api-Key header returns 200 if valid
+# Prefix: pcsk_
+
+[detector]
+id = "pinecone-api-key"
+name = "Pinecone API Key"
+service = "pinecone"
+severity = "high"
+keywords = ["pcsk_", "PINECONE_API_KEY", "pinecone_api_key"]
+
+[[detector.patterns]]
+regex = 'pcsk_[a-zA-Z0-9_-]{100,}'
+description = "Pinecone API key with pcsk- prefix"

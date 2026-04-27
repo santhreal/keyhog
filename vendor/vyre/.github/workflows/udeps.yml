@@ -1,0 +1,25 @@
+name: cargo-udeps
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '0 6 * * 2'
+
+concurrency:
+  group: udeps-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  udeps:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - name: Install cargo-udeps
+        run: cargo install cargo-udeps --locked
+      - name: Run
+        working-directory: libs/performance/matching/vyre
+        run: cargo +nightly udeps --workspace --all-targets --all-features

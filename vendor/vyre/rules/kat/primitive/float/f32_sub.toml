@@ -1,0 +1,6 @@
+op_id = "primitive.float.f32_sub"
+
+[[golden]]
+input = "000040400000803f"
+expected = "00000040"
+reason = "3.0 - 1.0 = 2.0"

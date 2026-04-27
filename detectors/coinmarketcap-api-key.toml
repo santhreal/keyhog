@@ -1,0 +1,33 @@
+# Docs: https://coinmarketcap.com/api/documentation/v1/
+# Format: 32-40 character alphanumeric with dashes (UUID-like format)
+# Verify: GET /v1/cryptocurrency/map with X-CMC_PRO_API_KEY header returns 200 if valid
+# Prefix: none (UUID-like format, requires context keywords)
+
+[detector]
+id = "coinmarketcap-api-key"
+name = "CoinMarketCap API Key"
+service = "coinmarketcap"
+severity = "high"
+keywords = ["coinmarketcap", "CMC", "CMC_API_KEY", "COINMARKETCAP_API_KEY", "coinmarketcap_api_key", "X-CMC_PRO_API_KEY", "pro-api.coinmarketcap.com"]
+
+[[detector.patterns]]
+regex = "(?:CMC|COINMARKETCAP|coinmarketcap)[_\\-\\.]?(?:API[_\\-\\.]?KEY|api[_\\-\\.]?key)[=:\\s\\\"']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
+description = "CoinMarketCap API key (UUID format) with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "X-CMC_PRO_API_KEY[=:\\s\\\"']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
+description = "CoinMarketCap API key in X-CMC_PRO_API_KEY header"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://pro-api.coinmarketcap.com/v1/cryptocurrency/map"
+
+[detector.verify.auth]
+type = "header"
+name = "X-CMC_PRO_API_KEY"
+template = "{{match}}"
+
+[detector.verify.success]
+status = 200

@@ -1,0 +1,43 @@
+name: Parity + Determinism
+
+on:
+  pull_request:
+    paths:
+      - 'libs/performance/matching/vyre/**'
+  push:
+    branches: [main]
+    paths:
+      - 'libs/performance/matching/vyre/**'
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: libs/performance/matching/vyre
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  composition-parity:
+    name: composition_parity (CPU ref ≡ GPU kernel)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Run composition parity
+        run: cargo test -p vyre-conform --test composition_parity -- --nocapture
+
+  determinism-stress:
+    name: determinism_stress (100× identical dispatch)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Run determinism stress
+        run: cargo test -p vyre-conform --test determinism_stress -- --nocapture

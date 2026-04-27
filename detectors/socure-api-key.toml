@@ -1,0 +1,21 @@
+# Docs: https://developer.socure.com/
+# Format: API key used for Socure ID+ and Predictive DocV
+# Verify: no public verification endpoint
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "socure-api-key"
+name = "Socure API Key"
+service = "socure"
+severity = "high"
+keywords = ["socure", "SOCURE", "id_plus"]
+
+[[detector.patterns]]
+regex = "(?:socure|SOCURE)[_\\s]*(api[_\\s]*key|key)[=:;\\s\"'']+([a-zA-Z0-9_-]{20,})"
+description = "Socure API key with context anchor"
+group = 2
+
+[[detector.patterns]]
+regex = "(?:socure|SOCURE)[_\\s]*(sdk[_\\s]*key)[=:;\\s\"'']+([a-zA-Z0-9_-]{20,})"
+description = "Socure SDK key with context anchor"
+group = 2

@@ -1,0 +1,28 @@
+# Docs: https://opencagedata.com/api
+# Format: 32 character hexadecimal string
+# Verify: GET /geocode/v1/json with key parameter
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "opencage-api-key"
+name = "OpenCage API Key"
+service = "opencage"
+severity = "medium"
+keywords = ["OPENCAGE_API_KEY", "opencage.api.key", "opencage_api_key"]
+
+[[detector.patterns]]
+regex = "(?:OPENCAGE[_-]?API[_-]?KEY|opencage[_-]?api[_-]?key|opencage\\.api\\.key)[=:\\s\"'']+([a-f0-9]{32})"
+description = "OpenCage API key with context anchor (32 hex chars)"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://api.opencagedata.com/geocode/v1/json"
+
+[detector.verify.auth]
+type = "query"
+param = "key"
+field = "match"
+
+[detector.verify.success]
+status = 200

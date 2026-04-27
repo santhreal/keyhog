@@ -1,0 +1,16 @@
+# Docs: https://supabase.com/docs/guides/api/api-keys
+# Format: eyJ... JWT with 'role: anon' claim
+# Verify: no public verification endpoint (requires Supabase instance)
+# Prefix: eyJ
+
+[detector]
+id = "supabase-anon-key"
+name = "Supabase Anon Key"
+service = "supabase"
+severity = "medium"
+keywords = ["supabase", "anon", "anon key", "SUPABASE_ANON_KEY"]
+
+[[detector.patterns]]
+regex = "(?:SUPABASE_ANON_KEY|anon key)[=:\\s\"'']+(eyJ[a-zA-Z0-9_-]+\\.eyJ[a-zA-Z0-9_-]+\\.[a-zA-Z0-9_-]+)"
+description = "Supabase anon key with context anchor"
+group = 1

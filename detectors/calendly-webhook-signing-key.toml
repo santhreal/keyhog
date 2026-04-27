@@ -1,0 +1,16 @@
+# Docs: https://developer.calendly.com/api-docs/ZG9jOjM2MzE2MDM4-webhook-signatures
+# Format: User-defined signing key (minimum 10 characters, alphanumeric with symbols)
+# Verify: no public verification endpoint
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "calendly-webhook-signing-key"
+name = "Calendly Webhook Signing Key"
+service = "calendly"
+severity = "medium"
+keywords = ["signing_key", "signingKey", "CALENDLY_SIGNING_KEY"]
+
+[[detector.patterns]]
+regex = "(?:calendly|CALENDLY)[_.\\s]*(?:signing[_\\s]*key|SIGNING[_\\s]*KEY)[\\s\"''']+([a-zA-Z0-9!@#$%^&*()_+\\-=\\[\\]{};':\"\\\\|,.<>\\/?]{10,})"
+description = "Calendly webhook signing key with context anchor"
+group = 1

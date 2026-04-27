@@ -1,0 +1,31 @@
+# Docs: https://www.visualcrossing.com/resources/documentation/weather-api/weather-api-documentation/
+# Format: API key passed as 'key' parameter
+# Verify: GET /VisualCrossingWebServices/rest/services/timeline with key parameter
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "visualcrossing-api-key"
+name = "Visual Crossing API Key"
+service = "visualcrossing"
+severity = "medium"
+keywords = ["VISUALCROSSING", "visualcrossing", "VISUAL_CROSSING_API_KEY"]
+
+[[detector.patterns]]
+regex = "(?:VISUALCROSSING|visualcrossing|VISUAL[_\\s]CROSSING)[_\\s]*(?:API[_\\s]*)?KEY[=:\\s\"'']+([a-zA-Z0-9]{16,})"
+description = "Visual Crossing API key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:key|KEY)[=:\\s\"'']+([a-zA-Z0-9]{16,})[^a-zA-Z0-9].*visualcrossing"
+description = "Visual Crossing key parameter with URL context"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/London?key={{match}}"
+
+[detector.verify.auth]
+type = "none"
+
+[detector.verify.success]
+status = 200

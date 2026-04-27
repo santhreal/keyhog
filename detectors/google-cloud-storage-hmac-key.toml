@@ -1,0 +1,31 @@
+# Docs: https://cloud.google.com/storage/docs/authentication/hmackeys
+# Format: GOOG... or HMAC... prefix with 40+ character access key, paired with 40 char secret
+# Verify: HMAC signature validation (requires full key pair)
+# Prefix: GOOG (HMAC access key)
+
+[detector]
+id = "google-cloud-storage-hmac-key"
+name = "Google Cloud Storage HMAC Key"
+service = "gcp"
+severity = "critical"
+keywords = ["GOOG", "HMAC", "GOOG1", "GOOG2", "GOOG3", "GOOG4", "GOOG5", "gcs_hmac"]
+
+[[detector.patterns]]
+regex = "(GOOG[0-9A-Z]{37,40})"
+description = "Google Cloud Storage HMAC access key ID"
+group = 1
+
+[[detector.patterns]]
+regex = "hmac[_-]?access[_-]?key[=:\\s\"'']+(GOOG[0-9A-Z]{37,40})"
+description = "GCS HMAC access key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "hmac[_-]?secret[=:\\s\"'']+([a-zA-Z0-9+/]{40,})"
+description = "GCS HMAC secret with context anchor"
+group = 1
+
+[[detector.companions]]
+name = "hmac_secret"
+regex = "[a-zA-Z0-9+/]{40,}"
+within_lines = 3

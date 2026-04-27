@@ -1,0 +1,16 @@
+# Docs: https://www.keycdn.com/api
+# Format: 40-character hexadecimal string
+# Verify: GET /zones.json with Authorization header returns 200 if valid
+# Prefix: none (40 char hex, requires context anchoring)
+
+[detector]
+id = "keycdn-api-key"
+name = "KeyCDN API Key"
+service = "keycdn"
+severity = "critical"
+keywords = ["KEYCDN", "keycdn", "KEYCDN_API_KEY", "keycdn_api_key"]
+
+[[detector.patterns]]
+regex = "(?:KEYCDN|keycdn)(?:_API)?[_-]?(?:KEY|key)[=:\\s\"']+([a-f0-9]{40})"
+description = "KeyCDN API key with context anchor"
+group = 1

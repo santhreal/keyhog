@@ -1,0 +1,21 @@
+# Docs: https://docs.directus.io/reference/authentication.html
+# Format: Static token (non-expiring) stored in directus_users.token, or JWT access token
+# Verify: GET /users/me with Authorization header returns 200 if valid
+# Prefix: none for static tokens (requires context anchoring)
+
+[detector]
+id = "directus-api-token"
+name = "Directus API Token"
+service = "directus"
+severity = "high"
+keywords = ["DIRECTUS_TOKEN", "directus", "DIRECTUS_API_KEY"]
+
+[[detector.patterns]]
+regex = "(?:DIRECTUS|directus)[_\\s]?(?:TOKEN|token|API[_\\s]?KEY)[=:\\s\"'']+([a-zA-Z0-9_-]{20,})"
+description = "Directus API token with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "Authorization:\\s*Bearer\\s+([a-zA-Z0-9_-]{30,})[^\\n]*directus"
+description = "Directus bearer token with context"
+group = 1

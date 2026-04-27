@@ -1,0 +1,20 @@
+# Docs: https://woocommerce.github.io/woocommerce-rest-api-docs/#authentication
+# Format: ck_ prefix followed by 40 alphanumeric characters (consumer key), cs_ prefix followed by 40 alphanumeric characters (consumer secret)
+# Verify: none (requires store URL for verification)
+# Prefix: ck_
+
+[detector]
+id = "woocommerce-consumer-key"
+name = "WooCommerce Consumer Key"
+service = "woocommerce"
+severity = "high"
+keywords = ["ck_", "woocommerce", "consumer_key"]
+
+[[detector.patterns]]
+regex = "ck_[a-f0-9]{40}"
+description = "WooCommerce REST API consumer key (ck_ prefix)"
+
+[[detector.companions]]
+name = "woocommerce_consumer_secret"
+regex = "cs_[a-f0-9]{40}"
+within_lines = 10

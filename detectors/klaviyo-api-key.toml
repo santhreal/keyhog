@@ -1,0 +1,45 @@
+# Docs: https://developers.klaviyo.com/en/reference/api_overview
+# Format: pk_ prefix followed by alphanumeric string for public API keys, sk_ for private
+# Verify: GET /api/profiles/ with Authorization header returns 200 if valid
+# Prefix: pk_ (public) or sk_ (private)
+
+[detector]
+id = "klaviyo-api-key"
+name = "Klaviyo API Key"
+service = "klaviyo"
+severity = "critical"
+keywords = ["pk_", "sk_", "KLAVIYO", "klaviyo", "KLAVIYO_API_KEY"]
+
+[[detector.patterns]]
+regex = "pk_[a-zA-Z0-9]{30,50}"
+description = "Klaviyo public API key (pk_ prefix)"
+
+[[detector.patterns]]
+regex = "sk_[a-zA-Z0-9]{30,50}"
+description = "Klaviyo private API key (sk_ prefix)"
+
+[[detector.patterns]]
+regex = "(?:KLAVIYO|klaviyo)[._-]?(?:API|api)?[._-]?(?:KEY|key)[=:\\s\"'']+(pk_[a-zA-Z0-9]{30,50})"
+description = "Klaviyo public API key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:KLAVIYO|klaviyo)[._-]?(?:API|api)?[._-]?(?:KEY|key)[=:\\s\"'']+(sk_[a-zA-Z0-9]{30,50})"
+description = "Klaviyo private API key with context anchor"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://a.klaviyo.com/api/profiles/"
+
+[detector.verify.auth]
+type = "header"
+name = "Authorization"
+template = "Klaviyo-API-Key {{match}}"
+
+[detector.verify.success]
+status = 200
+
+[[detector.verify.metadata]]
+name = "data"
+json_path = "$.data"

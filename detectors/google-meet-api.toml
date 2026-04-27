@@ -1,0 +1,21 @@
+# Docs: https://developers.google.com/meet/api/guides/authenticate-authorize
+# Format: Google OAuth2 client secrets and API keys
+# Verify: Uses standard Google OAuth2 endpoints
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "google-meet-api"
+name = "Google Meet API Credentials"
+service = "google-meet"
+severity = "critical"
+keywords = ["google-meet", "meet-api", "GOOGLE_MEET", "meetings.space"]
+
+[[detector.patterns]]
+regex = "(?:google[_\\-\\s]?meet|gmeet|meet[_\\-\\s]?api)[_\\-\\s]?(?:key|secret|token)[\"\\'\\s]*[=:][\"\\'\\s]*([a-zA-Z0-9_\\-]{32,})"
+description = "Google Meet API credential with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:GOOGLE[_\\-\\s]?MEET[_\\-\\s]?API[_\\-\\s]?KEY|GMEET[_\\-\\s]?SECRET|MEET[_\\-\\s]?CREDENTIALS)[\"\\'\\s]*[=:][\"\\'\\s]*([a-zA-Z0-9_\\-]{32,})"
+description = "Google Meet API credential in environment variable format"
+group = 1

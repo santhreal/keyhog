@@ -1,0 +1,34 @@
+# Snowflake account configuration (non-secret identifiers).
+# Docs: https://docs.snowflake.com/en/user-guide/security-access-control-overview
+
+[detector]
+id = "snowflake-account-info"
+name = "Snowflake Account Info"
+service = "snowflake"
+severity = "info"
+keywords = ["SNOWFLAKE", "snowflakecomputing", "SNOWSQL"]
+
+[[detector.patterns]]
+regex = "(?:SNOWFLAKE|snowflake)[._-]?(?:account|acct|accountname)[=:\\s\"'']+([a-z0-9]+(?:\\.[a-z0-9-]+)?)"
+description = "Snowflake account identifier"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:SNOWFLAKE|snowflake)[._-]?(?:user|username|usr)[=:\\s\"'']+([a-zA-Z0-9_-]+)"
+description = "Snowflake username"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:SNOWFLAKE|snowflake)[._-]?(?:warehouse|wh)[=:\\s\"'']+([a-zA-Z0-9_-]+)"
+description = "Snowflake warehouse"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:SNOWFLAKE|snowflake)[._-]?(?:database|db)[=:\\s\"'']+([a-zA-Z0-9_-]+)"
+description = "Snowflake database"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:SNOWFLAKE|snowflake)[._-]?(?:role)[=:\\s\"'']+([a-zA-Z0-9_-]+)"
+description = "Snowflake role"
+group = 1

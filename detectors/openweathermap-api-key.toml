@@ -1,0 +1,31 @@
+# Docs: https://openweathermap.org/api
+# Format: 32-character hexadecimal string
+# Verify: GET /data/2.5/weather with appid parameter returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "openweathermap-api-key"
+name = "OpenWeatherMap API Key"
+service = "openweathermap"
+severity = "medium"
+keywords = ["OPENWEATHERMAP", "openweathermap", "OWM_API_KEY", "appid"]
+
+[[detector.patterns]]
+regex = "(?:OPENWEATHERMAP|openweathermap|OWM)[_\\s]*(?:API[_\\s]*)?KEY[=:\\s\"'']+([a-f0-9]{32})"
+description = "OpenWeatherMap API key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:appid|APPID)[=:\\s\"'']+([a-f0-9]{32})"
+description = "OpenWeatherMap appid parameter"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://api.openweathermap.org/data/2.5/weather?q=London&appid={{match}}"
+
+[detector.verify.auth]
+type = "none"
+
+[detector.verify.success]
+status = 200

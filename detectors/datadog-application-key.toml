@@ -1,0 +1,36 @@
+# Docs: https://docs.datadoghq.com/account_management/api-app-keys/
+# Format: 40 character hex string
+# Verify: GET /api/v1/current_user with DD-API-Key and DD-APPLICATION-Key headers
+# Prefix: none (40 char hex, requires context anchoring)
+
+[detector]
+id = "datadog-application-key"
+name = "Datadog Application Key"
+service = "datadog"
+severity = "high"
+keywords = ["DD-APP-Key", "DD_APP_KEY", "DATADOG_APP_KEY", "datadog_app_key"]
+
+[[detector.patterns]]
+regex = "(?:DD.APP.KEY|DATADOG_APP_KEY|datadog_app_key)[=:\\s\"']+([a-f0-9]{40})"
+description = "Datadog application key with context anchor"
+group = 1
+
+[[detector.companions]]
+name = "datadog_api_key"
+regex = "[a-f0-9]{32}"
+within_lines = 10
+[detector.verify]
+method = "GET"
+url = "https://api.datadoghq.com/api/v2/current_user"
+
+[detector.verify.auth]
+type = "header"
+name = "DD-APPLICATION-KEY"
+template = "{{match}}"
+
+[[detector.verify.headers]]
+name = "DD-API-KEY"
+value = "{{companion.datadog_api_key}}"
+
+[detector.verify.success]
+status = 200

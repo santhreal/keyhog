@@ -1,0 +1,21 @@
+# Docs: https://x2y2.readme.io/reference/authentication-1
+# Format: API key string passed in X-API-KEY header
+# Verify: no public verification endpoint
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "x2y2-api-key"
+name = "X2Y2 API Key"
+service = "x2y2"
+severity = "medium"
+keywords = ["x2y2", "X2Y2", "X-API-KEY"]
+
+[[detector.patterns]]
+regex = "(?:x2y2|X2Y2)[_\\s]*(?:API[_\\s]*)?KEY[_\\s]*[=:][\\s]*[\"'']+([a-zA-Z0-9_-]{20,})[\"'']+"
+description = "X2Y2 API key in assignment context"
+group = 1
+
+[[detector.patterns]]
+regex = "X-API-KEY[\\s]*:[\\s]*([a-zA-Z0-9_-]{20,})"
+description = "X2Y2 API key in HTTP header"
+group = 1

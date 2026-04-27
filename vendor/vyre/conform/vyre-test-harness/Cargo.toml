@@ -1,0 +1,27 @@
+[package]
+name = "vyre-test-harness"
+version = "0.6.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Shared parity and lens test infrastructure for vyre backends and conform tools"
+readme = "README.md"
+keywords = ["test", "conformance", "parity", "vyre"]
+categories = ["development-tools::testing"]
+documentation = "https://docs.rs/vyre-test-harness"
+
+[dependencies]
+vyre-driver.workspace = true
+vyre-foundation.workspace = true
+vyre-libs.workspace = true
+vyre-reference.workspace = true
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[lints]
+workspace = true

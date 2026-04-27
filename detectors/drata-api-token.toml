@@ -1,0 +1,28 @@
+# Docs: https://developer.drata.com/docs/openapi/reference/operation/get-public-apiv2-monitoring-monitors/
+# Format: Bearer token format with 64+ hex characters
+# Verify: GET /public/apiv2/monitors with Authorization header
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "drata-api-token"
+name = "Drata API Token"
+service = "drata"
+severity = "critical"
+keywords = ["DRATA_API_KEY", "DRATA_TOKEN", "drata.com", "x-api-key"]
+
+[[detector.patterns]]
+regex = "(?:DRATA|drata)(?:_API)?(?:_KEY|_TOKEN|Token|Key)?[=:\\s\"'']+([a-f0-9]{64,})"
+description = "Drata API token with context anchor (64+ hex characters)"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://api.drata.com/public/apiv2/monitors"
+
+[detector.verify.auth]
+type = "header"
+name = "Authorization"
+template = "Bearer {{match}}"
+
+[detector.verify.success]
+status = 200

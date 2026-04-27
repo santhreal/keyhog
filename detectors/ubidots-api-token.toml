@@ -1,0 +1,15 @@
+# Docs: https://docs.ubidots.com/v1.6/reference/how-ubidots-works
+# Format: BBFF- prefix followed by 40 alphanumeric characters
+# Verify: GET /api/v1.6/devices with X-Auth-Token header returns device list
+# Prefix: BBFF-
+
+[detector]
+id = "ubidots-api-token"
+name = "Ubidots API Token"
+service = "ubidots"
+severity = "high"
+keywords = ["BBFF-", "ubidots", "auth_token", "X-Auth-Token"]
+
+[[detector.patterns]]
+regex = 'BBFF-[a-zA-Z0-9]{40}'
+description = "Ubidots API token (BBFF- prefix)"

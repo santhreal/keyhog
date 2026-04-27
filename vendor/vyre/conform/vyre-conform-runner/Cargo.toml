@@ -1,0 +1,62 @@
+[package]
+name = "vyre-conform-runner"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Conformance test runner + certificate emitter for vyre."
+readme = "README.md"
+
+[[bin]]
+name = "vyre-conform"
+path = "src/main.rs"
+
+[dependencies]
+vyre = { path = "../../vyre-core", version = "0.6" }
+vyre-conform-spec = { path = "../vyre-conform-spec" }
+vyre-conform-generate = { path = "../vyre-conform-generate" }
+vyre-conform-enforce = { path = "../vyre-conform-enforce" }
+vyre-libs = { workspace = true, features = [
+    "math-linalg", "math-scan", "math-broadcast",
+    "nn-activation", "nn-linear", "nn-norm", "nn-attention",
+    "matching-substring", "matching-dfa",
+    "crypto-fnv", "crypto-blake3",
+] }
+vyre-intrinsics = { version = "0.6.0", path = "../../vyre-intrinsics", features = ["hardware"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+blake3 = { workspace = true }
+thiserror.workspace = true
+ed25519-dalek = { workspace = true, features = ["rand_core"] }
+rand_core = { version = "0.6", features = ["getrandom"] }
+vyre-driver = { version = "0.6.0", path = "../../vyre-driver" }
+vyre-driver-wgpu = { workspace = true, optional = true }
+vyre-driver-spirv = { workspace = true }
+vyre-reference = { workspace = true, features = ["subgroup-ops"] }
+vyre-foundation = { version = "0.6.0", path = "../../vyre-foundation" }
+vyre-spec = { version = "0.6.0", path = "../../vyre-spec" }
+vyre-test-harness.workspace = true
+vyre-primitives = { version = "0.6.0", path = "../../vyre-primitives", features = [
+    "text", "matching", "math", "nn", "hash", "parsing",
+    "graph", "bitset", "reduce", "label", "predicate", "fixpoint",
+    "inventory-registry",
+] }
+hex.workspace = true
+
+[features]
+default = []
+gpu = ["dep:vyre-driver-wgpu"]
+strict-fp = []
+subgroup-ops = ["vyre-intrinsics/subgroup-ops", "vyre-reference/subgroup-ops"]
+
+[dev-dependencies]
+tempfile.workspace = true
+inventory.workspace = true
+vyre-foundation = { version = "0.6.0", path = "../../vyre-foundation" }
+vyre-primitives = { version = "0.6.0", path = "../../vyre-primitives", features = [
+    "inventory-registry", "text", "matching", "math", "nn", "hash",
+    "parsing", "graph", "bitset", "reduce", "label", "predicate", "fixpoint",
+] }

@@ -1,0 +1,41 @@
+# Docs: https://help.tableau.com/current/api/rest_api/en-us/REST/rest_api_concepts_auth.htm
+# Format: Personal Access Token with name and secret pair
+# Verify: POST /api/{version}/auth/signin with token credentials
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "tableau-api-token"
+name = "Tableau Personal Access Token"
+service = "tableau"
+severity = "high"
+keywords = ["TABLEAU", "tableau", "PAT_NAME", "PAT_SECRET"]
+
+[[detector.patterns]]
+regex = "(?:TABLEAU|tableau)[._-]?(?:server|host|url)[=:\\s\"'']+(https?://[a-z0-9.-]+)"
+description = "Tableau Server URL"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:TABLEAU|tableau)[._-]?(?:token[_-]?name|pat[_-]?name)[=:\\s\"'']+([a-zA-Z0-9_-]+)"
+description = "Tableau personal access token name"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:TABLEAU|tableau)[._-]?(?:token[_-]?secret|pat[_-]?secret)[=:\\s\"'']+([a-zA-Z0-9_-]{20,})"
+description = "Tableau personal access token secret"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:TABLEAU|tableau)[._-]?(?:site[_-]?id|site)[=:\\s\"'']+([a-zA-Z0-9_-]+)"
+description = "Tableau site ID"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:TABLEAU|tableau)[._-]?(?:username|user)[=:\\s\"'']+([a-zA-Z0-9_-]+)"
+description = "Tableau username"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:TABLEAU|tableau)[._-]?(?:password|pass|pwd)[=:\\s\"'']+([a-zA-Z0-9!@#$%^&*._-]{8,})"
+description = "Tableau password"
+group = 1

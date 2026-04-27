@@ -1,0 +1,20 @@
+# Docs: https://docs.dynatrace.com/docs/manage/identity-access-management/access-tokens-and-oauth-clients/access-tokens
+# Format: dt0[a-z]{1}[0-9]{2}.[A-Z0-9]{24}.[A-Z0-9]{64} (three-part dot-separated format)
+# Verify: GET /api/v1/tokens with Api-Token authorization header
+# Prefix: dt0
+
+[detector]
+id = "dynatrace-api-token"
+name = "Dynatrace API Token"
+service = "dynatrace"
+severity = "critical"
+keywords = ["dt0", "dynatrace", "Api-Token"]
+
+[[detector.patterns]]
+regex = "dt0[a-zA-Z][0-9]{2}\\.[A-Z0-9]{24}\\.[A-Z0-9]{64}"
+description = "Dynatrace API token (new format with dt0 prefix)"
+
+[[detector.patterns]]
+regex = "(?:dynatrace|DYNATRACE)[_.]?(?:api[_-]?token|token)[=:\\s\"'']+(dt0[a-zA-Z][0-9]{2}\\.[A-Z0-9]{24}\\.[A-Z0-9]{64})"
+description = "Dynatrace API token with context anchor"
+group = 1

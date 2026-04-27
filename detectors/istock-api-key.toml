@@ -1,0 +1,21 @@
+# Docs: https://developers.gettyimages.com/docs/
+# Format: API Key sent in api-key header (same as Getty Images)
+# Verify: GET /v3/countries with api-key header returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "istock-api-key"
+name = "iStock API Key"
+service = "istock"
+severity = "high"
+keywords = ["ISTOCK", "istock", "iStock"]
+
+[[detector.patterns]]
+regex = '(?:ISTOCK|istock)[._-]?(?:API|api)[._-]?(?:KEY|key)[=:\s""]+([a-zA-Z0-9_-]{32,})'
+description = "iStock API key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = '(?:ISTOCK|istock)[._-]?(?:CLIENT|client)[._-]?(?:ID|id)[=:\s""]+([a-zA-Z0-9_-]{32,})'
+description = "iStock Client ID with context anchor"
+group = 1

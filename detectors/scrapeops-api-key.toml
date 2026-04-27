@@ -1,0 +1,33 @@
+# Docs: https://scrapeops.io/docs/web-scraping-proxy-api-aggregator/getting-started/api-basics/
+# Format: 32-character alphanumeric string with no unique prefix
+# Verify: GET /v1/?api_key=...&url=... returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "scrapeops-api-key"
+name = "ScrapeOps API Key"
+service = "scrapeops"
+severity = "high"
+keywords = ["scrapeops", "SCRAPEOPS", "scrape_ops", "SCRAPEOPS_API_KEY"]
+
+[[detector.patterns]]
+regex = "(?:scrapeops|SCRAPEOPS)[=:\\s\"'']+([a-zA-Z0-9]{32})"
+description = "ScrapeOps API key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:api[_-]?key|apikey)[=:\\s\"'']+([a-zA-Z0-9]{32}).{0,50}(?:scrapeops)"
+description = "ScrapeOps API key with api_key prefix and scrapeops context"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://proxy.scrapeops.io/v1/"
+
+[detector.verify.auth]
+type = "query"
+param = "api_key"
+field = "match"
+
+[detector.verify.success]
+status = 200

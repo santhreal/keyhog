@@ -1,0 +1,16 @@
+# Docs: https://learn.microsoft.com/en-us/gaming/gdk/_content/gc/live/concepts/live-concepts-overview
+# Format: UUID-like or 40-char base64 string, no unique prefix
+# Verify: no public verification endpoint
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "xboxlive-api-key"
+name = "Xbox Live API Key"
+service = "xboxlive"
+severity = "high"
+keywords = ["XBOX_API_KEY", "XBOX_LIVE_KEY", "XSTS_TOKEN", "XboxLiveAPI"]
+
+[[detector.patterns]]
+regex = '''(?:XBOX_API_KEY|XBOX_LIVE_KEY|XSTS_TOKEN|XboxLiveAPI)[=:\s"']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}|[A-Za-z0-9+/]{40}=?)'''
+description = "Xbox Live API key or XSTS token (UUID-like or 40-char base64 with context anchor)"
+group = 1

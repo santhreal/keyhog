@@ -1,0 +1,31 @@
+# Docs: https://developers.africastalking.com/docs/request_headers
+# Format: Username + API Key (alphanumeric string)
+# Verify: POST /version1/messaging with apiKey header
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "africastalking-api-key"
+name = "Africa's Talking API Key"
+service = "africastalking"
+severity = "critical"
+keywords = ["africastalking", "AFRICASTALKING", "africa", "AT_API_KEY", "apiKey"]
+
+[[detector.patterns]]
+regex = '''(?:africas?talking|AFRICAS?TALKING|at|AT)[_.-]?(?:api|API)[_.-]?(?:key|KEY)?[=:\s"\' ]+([a-zA-Z0-9_-]{32,})'''
+description = "Africa's Talking API Key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = '''(?:apiKey|ApiKey)["\' ]?\s*[:=]\s*["\' ]?([a-zA-Z0-9_-]{32,})["\' ]?.*(?:africas?talking|AFRICAS?TALKING)'''
+description = "Africa's Talking API Key from header with context"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://api.africastalking.com/version1/user"
+[detector.verify.success]
+status = 200
+
+[[detector.verify.headers]]
+name = "apiKey"
+value = "{{match}}"

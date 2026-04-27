@@ -1,0 +1,32 @@
+# Docs: https://docs.pingdom.com/api/
+# Format: API token used with Bearer authentication (long alphanumeric string)
+# Verify: GET /api/3.1/checks with Bearer token returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "pingdom-api-key"
+name = "Pingdom API Key"
+service = "pingdom"
+severity = "high"
+keywords = ["pingdom", "PINGDOM", "Authorization", "Bearer", "api.pingdom.com"]
+
+[[detector.patterns]]
+regex = "(?:pingdom|PINGDOM)[_.]?(?:api[_-]?key|token)[=:\\s\"'']+([a-zA-Z0-9_-]{20,})"
+description = "Pingdom API key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "Authorization:\\s*Bearer\\s+([a-zA-Z0-9_-]{20,})[^\\n]*(?:pingdom|api\\.pingdom\\.com)"
+description = "Pingdom bearer token in Authorization header with context"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://api.pingdom.com/api/3.1/checks"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[detector.verify.success]
+status = 200

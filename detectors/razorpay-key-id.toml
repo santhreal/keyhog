@@ -1,0 +1,24 @@
+# Docs: https://razorpay.com/docs/api/
+# Format: rzp_test_ or rzp_live_ prefix followed by 14+ alphanumeric characters
+# Verify: Basic auth with Key ID and Key Secret to GET /v1/orders
+# Prefix: rzp_test_, rzp_live_
+
+[detector]
+id = "razorpay-key-id"
+name = "Razorpay Key ID"
+service = "razorpay"
+severity = "high"
+keywords = ["rzp_test_", "rzp_live_", "RAZORPAY_KEY_ID", "razorpay_key_id"]
+
+[[detector.patterns]]
+regex = "rzp_test_[a-zA-Z0-9]{14,}"
+description = "Razorpay Test Key ID"
+
+[[detector.patterns]]
+regex = "rzp_live_[a-zA-Z0-9]{14,}"
+description = "Razorpay Live Key ID"
+
+[[detector.companions]]
+name = "razorpay_key_secret"
+regex = "(?:RAZORPAY|razorpay).{0,20}(?:SECRET|secret|password|pass).{0,5}[=:\\s\"']+([a-zA-Z0-9]{20,40})"
+within_lines = 10

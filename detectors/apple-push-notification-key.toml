@@ -1,0 +1,20 @@
+# Docs: https://developer.apple.com/documentation/usernotifications/setting_up_a_remote_notification_server
+# Format: APNs auth key is a JWT starting with eyJ (base64 header), or p8 file format
+# Verify: JWT signature validation (no public HTTP endpoint for verification)
+# Prefix: eyJ (JWT header)
+
+[detector]
+id = "apple-push-notification-key"
+name = "Apple Push Notification Key"
+service = "apple"
+severity = "critical"
+keywords = ["APNS", "apns", "push notification", "AuthKey_"]
+
+[[detector.patterns]]
+regex = '(?:APNS|apns)[=:][\s"]*([A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,})'
+description = "APNs authentication token/JWT with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = 'AuthKey_[A-Z0-9]{10}\.p8'
+description = "Apple Auth Key file reference"

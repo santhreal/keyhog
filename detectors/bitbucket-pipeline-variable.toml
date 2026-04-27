@@ -1,0 +1,21 @@
+# Docs: https://support.atlassian.com/bitbucket-cloud/docs/variables-and-secrets/
+# Format: Variable name with $ or ${} syntax, value is arbitrary user-defined secret
+# Verify: no public verification endpoint
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "bitbucket-pipeline-variable"
+name = "Bitbucket Pipeline Variable"
+service = "bitbucket"
+severity = "high"
+keywords = ["BITBUCKET_", "$", "pipeline", "variable"]
+
+[[detector.patterns]]
+regex = "(?:BITBUCKET_)[A-Z_]*(?:PASSWORD|SECRET|TOKEN|KEY|API)[=:\\s\"'']+([A-Za-z0-9_!@#$%^&*+=/-]{16,})"
+description = "Bitbucket pipeline variable containing sensitive credential"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:bitbucket[_-]?pipeline|BITBUCKET[_-]?PIPELINE)[_\\s]?(?:var|VAR)?[=:\\s\"'']+([A-Za-z0-9_!@#$%^&*+=/-]{16,})"
+description = "Bitbucket pipeline variable with context anchor"
+group = 1

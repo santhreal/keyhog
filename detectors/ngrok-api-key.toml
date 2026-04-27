@@ -1,0 +1,27 @@
+# Docs: https://ngrok.com/docs/api/
+# Format: API key used as Bearer token, no unique prefix
+# Verify: GET /api/v2/endpoints with Bearer token and Ngrok-Version header returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "ngrok-api-key"
+name = "Ngrok API Key"
+service = "ngrok"
+severity = "critical"
+keywords = ["NGROK_API_KEY", "ngrok-api-key", "ngrok"]
+
+[[detector.patterns]]
+regex = "(?:NGROK_API_KEY|ngrok.?api.?key)[=:\\s\"'']+([a-zA-Z0-9_]{40,})"
+description = "Ngrok API key in environment variable"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://api.ngrok.com/endpoints"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[detector.verify.success]
+status = 200

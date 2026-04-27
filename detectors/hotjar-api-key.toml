@@ -1,0 +1,26 @@
+# Docs: https://help.hotjar.com/hc/en-us/articles/36820005914001
+# Format: OAuth client_id and client_secret pair, or numeric Site ID
+# Verify: POST to /v1/oauth/token for bearer token
+# Prefix: none (requires context anchoring for API keys)
+
+[detector]
+id = "hotjar-api-key"
+name = "Hotjar API Credentials"
+service = "hotjar"
+severity = "medium"
+keywords = ["HOTJAR_CLIENT_ID", "HOTJAR_CLIENT_SECRET", "hotjar_client", "hjid"]
+
+[[detector.patterns]]
+regex = "(?:HOTJAR[_.-]?CLIENT[_.-]?ID|hotjar[_.-]?client[_.-]?id)[=:\\s\"'']+([a-zA-Z0-9_-]{20,})"
+description = "Hotjar API client ID"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:HOTJAR[_.-]?CLIENT[_.-]?SECRET|hotjar[_.-]?client[_.-]?secret)[=:\\s\"'']+([a-zA-Z0-9_-]{20,})"
+description = "Hotjar API client secret"
+group = 1
+
+[[detector.companions]]
+name = "hotjar-client-secret"
+regex = "(?:HOTJAR[_.-]?CLIENT|hotjar[_.-]?client)[_.-]?(?:SECRET|secret)[=:\\s\"'']+[a-zA-Z0-9_-]{20,}"
+within_lines = 5

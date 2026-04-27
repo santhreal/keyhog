@@ -1,0 +1,16 @@
+# Docs: https://developer.wordpress.com/docs/api/
+# Format: OAuth2 access token - long alphanumeric string
+# Verify: GET /rest/v1/me with Bearer token
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "wordpress-api-token"
+name = "WordPress.com API Token"
+service = "wordpress"
+severity = "high"
+keywords = ["wordpress", "WORDPRESS", "wpcom", "WPCOM_TOKEN"]
+
+[[detector.patterns]]
+regex = '''(?:wordpress|WORDPRESS|wpcom|WPCOM|access[_-]?token)[=:\s"\']+([a-zA-Z0-9_%\-]{50,})'''
+description = "WordPress.com OAuth2 access token with context anchor"
+group = 1

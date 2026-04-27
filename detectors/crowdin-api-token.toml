@@ -1,0 +1,33 @@
+# Docs: https://developer.crowdin.com/api/v2/#section/Authentication
+# Format: Personal access token (40 hex characters) or OAuth token
+# Verify: GET /api/v2/user with Authorization header
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "crowdin-api-token"
+name = "Crowdin API Token"
+service = "crowdin"
+severity = "high"
+keywords = ["CROWDIN", "CROWDIN_API_KEY", "CROWDIN_TOKEN", "crowdin.com"]
+
+[[detector.patterns]]
+regex = "(?:CROWDIN|CROWDIN_API|CROWDIN_TOKEN)[_\\s]?(?:API[_\\s]?(?:KEY|TOKEN)|TOKEN|KEY)?[=:\\s\"'']+([a-f0-9]{40})"
+description = "Crowdin API token with context anchor (personal access token)"
+group = 1
+
+[[detector.patterns]]
+regex = "crowdin\\.com.*[=:\\s\"'']+([a-f0-9]{40})"
+description = "Crowdin API token with domain context"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://api.crowdin.com/api/v2/user"
+
+[detector.verify.auth]
+type = "header"
+name = "Authorization"
+template = "Bearer {{match}}"
+
+[detector.verify.success]
+status = 200

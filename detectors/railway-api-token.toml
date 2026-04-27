@@ -1,0 +1,31 @@
+# Docs: https://docs.railway.com/integrations/api
+# Format: UUID v4 (8-4-4-4-12 hex segments)
+# Verify: POST /graphql/v2 with Authorization: Bearer token returns 200 with me { id }
+# Prefix: none (UUID format, requires keyword context)
+
+[detector]
+id = "railway-api-token"
+name = "Railway API Token"
+service = "railway"
+severity = "critical"
+keywords = ["RAILWAY", "railway", "RAILWAY_API_TOKEN", "railway_token", "backboard.railway"]
+
+[[detector.patterns]]
+regex = "(?:RAILWAY|railway)[._]?(?:API|api)?[._]?(?:TOKEN|token)?[=:\\s\"']+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"
+description = "Railway API token with context anchor (UUID v4 format)"
+group = 1
+
+[detector.verify]
+method = "POST"
+url = "https://backboard.railway.app/graphql/v2"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[detector.verify.success]
+status = 200
+
+[[detector.verify.metadata]]
+name = "user_id"
+json_path = "data.me.id"

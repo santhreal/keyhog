@@ -1,0 +1,503 @@
+<!DOCTYPE HTML>
+<html lang="en" class="rust sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Vision - The vyre Book</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="The GPU compute IR with a conformance prover">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-2459343d.css">
+        <link rel="stylesheet" href="css/chrome-ae938929.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "rust";
+            const default_dark_theme = "navy";
+            window.path_to_searchindex_js = "searchindex-bc7bdb82.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc-16d598fb.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('rust')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">The vyre Book</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/santhsecurity/vyre" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/santhsecurity/vyre/edit/main/core/docs/./vision.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                            <span class=fa-svg id="git-edit-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M421.7 220.3l-11.3 11.3-22.6 22.6-205 205c-6.6 6.6-14.8 11.5-23.8 14.1L30.8 511c-8.4 2.5-17.5 .2-23.7-6.1S-1.5 489.7 1 481.2L38.7 353.1c2.6-9 7.5-17.2 14.1-23.8l205-205 22.6-22.6 11.3-11.3 33.9 33.9 62.1 62.1 33.9 33.9zM96 353.9l-9.3 9.3c-.9 .9-1.6 2.1-2 3.4l-25.3 86 86-25.3c1.3-.4 2.5-1.1 3.4-2l9.3-9.3H112c-8.8 0-16-7.2-16-16V353.9zM453.3 19.3l39.4 39.4c25 25 25 65.5 0 90.5l-14.5 14.5-22.6 22.6-11.3 11.3-33.9-33.9-62.1-62.1L314.3 67.7l11.3-11.3 22.6-22.6 14.5-14.5c25-25 65.5-25 90.5 0z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="vision"><a class="header" href="#vision">Vision</a></h1>
+<blockquote>
+<p>For the complete system architecture, see <a href="../ARCHITECTURE.html">ARCHITECTURE.md</a>.</p>
+</blockquote>
+<h2 id="the-abstraction-thesis"><a class="header" href="#the-abstraction-thesis">The Abstraction Thesis</a></h2>
+<p>Every complex system in computing history was built bottom-up through forced
+abstraction layers.</p>
+<p>The CPU path: transistor → logic gate → ALU → microcode → instruction set →
+assembler → compiler → operating system → programming language → application.</p>
+<p>Nobody chose to build ten layers of abstraction. The complexity of each layer
+demanded the next one. A transistor cannot execute Python. Python cannot flip a
+transistor. Both work perfectly because every intermediate layer is simple,
+complete, tested, and invisible.</p>
+<p>The critical property: <strong>abstractions do not decrease performance.</strong> C++
+templates compile to the same machine code as hand-written C. Linux’s VFS adds
+zero overhead to a raw <code>read()</code> syscall. Rust’s iterators compile to the same
+loops as manual indexing. The abstraction exists at design time. It vanishes at
+execution time. This is not an observation — it is a requirement. An abstraction
+that costs performance at execution time is not an abstraction. It is overhead.</p>
+<h2 id="why-gpu-compute-has-failed-to-generalize"><a class="header" href="#why-gpu-compute-has-failed-to-generalize">Why GPU compute has failed to generalize</a></h2>
+<p>GPU compute has not followed the CPU’s path.</p>
+<p>When researchers and engineers see GPU hardware — thousands of parallel cores,
+massive memory bandwidth — they recognize the parallel to CPUs. They have seen
+the CPU’s final form: compilers, databases, operating systems. They attempt to
+reproduce it directly. They jump from CUDA threads to compilers, from shader
+units to databases, from GPU cores to neural network frameworks.</p>
+<p>They skip the intermediate layers because they already know what the end looks
+like. They have seen the destination and try to teleport there.</p>
+<p>This fails every time.</p>
+<p>Not because GPUs are harder than CPUs. Because the abstraction layers between
+“GPU core” and “GPU application” do not exist yet. A CPU compiler works because
+it stands on an ISA, which stands on microcode, which stands on an ALU, which
+stands on logic gates. Each layer is simple, tested, trusted, invisible. The
+compiler author does not think about transistors. The transistor does not know
+about compilers.</p>
+<p>A GPU “compiler” built directly on CUDA or WGSL stands on nothing. It
+reimplements every primitive from scratch — untested, uncomposable, unreusable.
+When it breaks, there is no intermediate layer to debug. When it needs a new
+capability, there is no primitive to compose. The complexity of the final
+application is borne by a single layer, which is why it collapses.</p>
+<p>Anthropic demonstrated this precisely: an estimated $500K and 16 AI agents for
+two weeks built a C compiler from scratch. Every component reimplemented from
+zero — lexing, parsing, SSA construction, dataflow analysis, register
+allocation, instruction selection, code emission, linking. The result has bugs,
+no optimizations, and helps nobody else. If composable, tested GPU primitives
+existed — a DFA engine for lexing, a dataflow engine for analysis, a sort for
+ordering — the compiler would have been a composition exercise, not a research
+expedition.</p>
+<p>The gap is not capability. The gap is substrate.</p>
+<h2 id="what-vyre-is"><a class="header" href="#what-vyre-is">What vyre is</a></h2>
+<p>vyre builds the missing abstraction layers for GPU compute.</p>
+<p>vyre is a <strong>GPU compute intermediate representation</strong> — the same kind of thing
+as LLVM IR, WebAssembly, or SQL.</p>
+<ul>
+<li><strong>LLVM IR</strong> defines how CPU computation is expressed. Frontends (C, Rust,
+Swift) compile to it. Backends (x86, ARM, RISC-V) execute it.</li>
+<li><strong>WebAssembly</strong> defines how portable computation is expressed. Any language
+compiles to it. Any runtime executes it.</li>
+<li><strong>SQL</strong> defines how data queries are expressed. Any question compiles to
+relational algebra. Any engine executes it.</li>
+<li><strong>vyre</strong> defines how GPU computation is expressed. Any workload compiles to
+vyre IR. Any GPU backend executes it.</li>
+</ul>
+<p>The IR is the contract. Implementations come and go. The specification is
+forever.</p>
+<p>vyre ships as a library crate with a single public surface: <code>Program</code>,
+<code>VyreBackend</code>, and the standard operation library. The IR lives in <code>vyre::ir</code>.
+Backends implement <code>vyre::backend::VyreBackend</code>. Operations are declared in
+co-located <code>spec.toml</code> files and discovered at build time by the module walker —
+no central enum, no registry list, no manual registration. At launch, the
+standard library contains 47 operations across primitives, buffer utilities,
+string matching, compression, cryptography, graph algorithms, and security
+detection. New ops are added by creating a directory and a <code>spec.toml</code>; the
+build script absorbs them automatically.</p>
+<h2 id="the-cat-a--cat-b--cat-c-discipline"><a class="header" href="#the-cat-a--cat-b--cat-c-discipline">The Cat A / Cat B / Cat C discipline</a></h2>
+<p>This is the move that separates vyre from every other GPU framework.</p>
+<p><strong>Category A — Compositional ops.</strong> These are pure IR compositions. They derive
+their semantics from primitive operations and cost nothing at runtime because
+the lowering backend inlines them completely. Sort, scan, string search,
+decode, hash: all Category A. If you can build it from existing primitives
+without a performance penalty, it belongs here.</p>
+<p><strong>Category C — Hardware intrinsics.</strong> These map 1:1 to hardware capabilities
+that cannot be matched by software composition. Tensor cores, subgroup
+operations, async copy, ray-tracing units. Category C ops are strictly optional
+per backend. If a backend lacks the hardware, it returns
+<code>Error::UnsupportedByBackend</code>. There is no software fallback, no degraded path,
+no silent performance loss.</p>
+<p><strong>Category B — Forbidden.</strong> Category B is the runtime abstraction layer:
+interpreters, virtual machines, dynamic dispatch, fallback CPU paths. These are
+banned from vyre entirely. They add overhead, introduce nondeterminism, and
+create two execution paths where there should be one. If an op cannot be
+expressed as Category A or Category C, it does not exist in vyre.</p>
+<p>The discipline is harsh and it is the reason vyre works. Category A guarantees
+zero-cost composition. Category C guarantees honest hardware mapping. Category
+B’s absence guarantees that what you see in the IR is exactly what executes on
+the GPU.</p>
+<h2 id="the-6-frozen-trait-contracts"><a class="header" href="#the-6-frozen-trait-contracts">The 6 frozen trait contracts</a></h2>
+<p>Extensibility in vyre is not a social contract. It is six trait signatures that
+are frozen at 1.0 and guaranteed for five years.</p>
+<ol>
+<li>
+<p><strong><code>VyreBackend</code></strong> (<code>vyre/core</code>) — the dispatch contract. Every backend
+implements <code>id()</code> and <code>dispatch(program, inputs, config)</code>. Byte-identical
+output to the CPU reference on success; actionable <code>BackendError</code> on failure.</p>
+</li>
+<li>
+<p><strong><code>Finding</code></strong> (<code>vyre-conform/spec</code>) — the violation contract. Every gate,
+oracle, and verifier returns structured findings with a <code>fix_hint()</code> that
+starts with <code>Fix: </code>. Any finding anywhere means fail.</p>
+</li>
+<li>
+<p><strong><code>EnforceGate</code></strong> (<code>vyre-conform/enforce</code>) — the enforcement contract. Each
+gate has an <code>id()</code>, a <code>name()</code>, and a <code>run(ctx)</code> that returns a vector of
+findings. Empty vector means pass.</p>
+</li>
+<li>
+<p><strong><code>Oracle</code></strong> (<code>vyre-conform/proof</code>) — the truth contract. Oracles declare
+their kind, applicability, and a <code>verify()</code> method that produces a <code>Verdict</code>.
+The strongest applicable oracle wins.</p>
+</li>
+<li>
+<p><strong><code>Archetype</code></strong> (<code>vyre-conform/generate</code>) — the input-shape contract.
+Archetypes instantiate test inputs from op signatures. They declare what they
+apply to and generate the vectors that stress-test correctness.</p>
+</li>
+<li>
+<p><strong><code>MutationClass</code></strong> (<code>vyre-conform/adversarial</code>) — the adversarial contract.
+Each mutation class produces source-code mutations that must be caught by the
+test suite. A surviving mutant is a suite failure.</p>
+</li>
+</ol>
+<p>New methods may be added with default implementations. Existing method signatures
+never change. Breaking a frozen trait requires a major version bump. This is the
+contract that lets NVIDIA, AMD, Intel, and a hundred independent contributors
+extend vyre without coordination: implement the trait, run the suite, ship the
+backend.</p>
+<h2 id="certify--the-binary-verdict"><a class="header" href="#certify--the-binary-verdict">certify() — the binary verdict</a></h2>
+<p><code>vyre_conform::certify(backend)</code> accepts a backend and returns exactly one of
+two things:</p>
+<ul>
+<li><code>Ok(Certificate)</code> — the backend is conformant.</li>
+<li><code>Err(Violation)</code> — the backend failed, with a concrete counterexample and an
+actionable <code>Fix: ...</code> hint.</li>
+</ul>
+<p>There is no “mostly passing.” There is no “known limitations” document. There
+is no human judgment. Pass or fail. Nothing else.</p>
+<p><code>certify</code> runs the full eight-gate pipeline: executable spec verification,
+algebraic law inference, reference interpreter agreement, mutation testing,
+adversarial gauntlet, stability enforcement, composition proof, and
+feedback-loop validation. Beyond the core gates, it enforces coverage minimums,
+the no-CPU-fallback rule, out-of-bounds behavior, atomic sequential consistency,
+barrier correctness, wire-format round-trip identity, and the no-silent-wrong
+invariant.</p>
+<p>The <code>Certificate</code> is a durable, independently verifiable artifact. It contains a
+cryptographic registry hash, backend identification, timestamp, exact coverage
+metrics, per-op verdicts, and the achieved track. Downstream users do not trust
+marketing slides. They trust the certificate.</p>
+<h2 id="the-zero-conflict-architecture"><a class="header" href="#the-zero-conflict-architecture">The zero-conflict architecture</a></h2>
+<p>vyre is built so that 100 contributors can each add a leaf file with zero merge
+conflicts, zero <code>lib.rs</code> edits, and zero central registry edits. This is not
+aspirational. It is enforced in CI.</p>
+<p>The rules are simple and mechanical:</p>
+<ul>
+<li><strong>One top-level item per file.</strong> Every <code>.rs</code> file contains exactly one struct,
+enum, trait, type, const, static, single <code>fn</code>, or one impl block with one
+associated item.</li>
+<li><strong>Max 5 entries per directory.</strong> When a sixth item is needed, the directory
+splits.</li>
+<li><strong>No <code>mod.rs</code> files.</strong> The build script owns the module tree.</li>
+<li><strong><code>lib.rs</code> is frozen.</strong> It contains only crate-level attributes and a single
+<code>include!()</code> for the build-script-generated module tree.</li>
+<li><strong>No central enums, no central lists.</strong> Every catalog is a trait implemented
+by per-file types, collected at build time by <code>vyre-build-scan</code> or at link
+time via distributed slices.</li>
+</ul>
+<p><code>vyre-build-scan</code> walks the source tree at compile time, identifies trait
+implementations, and emits static registration tables. Adding a new gate,
+oracle, archetype, or op is a single-file drop. The filesystem is the registry.
+The build script is the librarian. Contributors never touch a shared file.</p>
+<p>The consequence: 100 contributors, 100 new ops, zero conflicts. The system only
+ever grows by adding leaf files. That guarantee lets parallel waves of
+contributors produce hundreds of operations in an afternoon without a single
+rebase.</p>
+<h2 id="determinism-via-restriction-not-by-elimination"><a class="header" href="#determinism-via-restriction-not-by-elimination">Determinism via restriction, not by elimination</a></h2>
+<p>A recurring question: “you need floats for LLMs, graphics, physics, ML. But
+GPU floats are nondeterministic. How does vyre reconcile this?”</p>
+<p>The answer is the Rust pattern applied to floating-point.</p>
+<p>Rust’s memory safety isn’t achieved by eliminating memory access. It’s
+achieved by forbidding the patterns that make memory access unsafe. Raw
+pointers, data races, use-after-free, buffer overflows — these are specific
+patterns the compiler refuses to emit from safe code. Safe Rust has
+full memory access. It just can’t access memory in the unsafe ways.</p>
+<p>vyre applies the same pattern to floating-point. GPU floats aren’t
+nondeterministic because floats are inherently nondeterministic. They’re
+nondeterministic because backends are PERMITTED to:</p>
+<ul>
+<li>Fuse <code>mul+add</code> into hardware FMA (one rounding vs two)</li>
+<li>Reorder reductions (“addition is approximately associative”)</li>
+<li>Flush subnormals to zero for speed</li>
+<li>Substitute vendor math libraries for transcendentals</li>
+<li>Use tensor core accumulators of lower precision than declared</li>
+</ul>
+<p><strong>Each permission is a specific pattern vyre forbids.</strong> The IR contains
+only strict IEEE 754 operations. <code>FMul + FAdd</code> stays as two roundings —
+the backend cannot fuse it. Reductions are ordered (sequential or canonical
+binary tree). Subnormals are preserved. Transcendentals use CR-Math
+correctly-rounded implementations. Tensor operations declare their
+accumulator type explicitly.</p>
+<p>The hardware is as nondeterministic as it was before. The IR is not.
+A <code>FAdd(a, b)</code> in vyre produces bit-exact IEEE 754 round-to-nearest-even
+on every conforming backend, because the backend is not allowed to emit
+the hardware instructions that would produce different results.</p>
+<p>This costs performance. Strict <code>sin()</code> via CR-Math is 20-50× slower than
+<code>cuBLAS sinf()</code>. Strict reduction is slower than parallel unordered reduction.
+FMA fusion is forbidden even though it’s more accurate. The tradeoff is the
+same as safe Rust: you pay runtime for a compile-time guarantee.</p>
+<p>And like Rust’s <code>unsafe</code> block, vyre has an explicit escape hatch:
+approximate operations (<code>FReduceApprox</code>, <code>FSinApprox</code>) are a separate class
+with declared ULP tolerance. Backends can use fast paths for approximate
+ops. But approximate and strict never mix in the same certificate. You
+choose per operation, in the IR, visibly.</p>
+<p><strong>Permissions grow, determinism is preserved.</strong> This is how vyre supports
+LLMs, neural networks, physics, graphics, scientific computing — everything
+real-valued — without giving up the proof system. The proof system extends:
+integer ops have bit-exact proofs, float ops have bit-exact IEEE 754 proofs,
+approximate ops have ULP-bounded proofs. Three proof classes, all provable,
+all deterministic within their stated class.</p>
+<h2 id="what-vyre-is-not"><a class="header" href="#what-vyre-is-not">What vyre is not</a></h2>
+<p>vyre is a GPU compute IR, a standard operation library, and a conformance suite.
+That is all.</p>
+<p>vyre is not a runtime-interpretation engine, not an opcode or microcode virtual
+machine, and not a stack-machine evaluator. The only binary form is the
+lossless IR wire format, and bytes are decoded back into <code>ir::Program</code> before
+they are lowered to a backend. There is no VM, no opcode interpreter, no
+execution path that bypasses IR lowering.</p>
+<p>Any file that adds runtime opcode dispatch on the GPU or CPU is a Category B
+violation and must be rewritten as IR compositions. Category A compositions and
+Category C hardware intrinsics are the only permitted execution paths. Category
+C has no fallback interpreter; unsupported hardware reports an explicit
+unsupported-backend error instead of running a slower semantic path.</p>
+<p>Rule, policy, and pattern-matching evaluation live as composed operations in
+<code>ops/rule/</code> and <code>ops/match_ops/</code>, built from Layer 1 primitives. They are never
+interpreters hidden inside vyre. Downstream products import vyre domains as
+libraries; vyre does not embed their product surfaces.</p>
+<h2 id="where-vyre-goes-from-here"><a class="header" href="#where-vyre-goes-from-here">Where vyre goes from here</a></h2>
+<p>vyre must become the standard for expressing GPU computation. Not by decree —
+by being so correct, so composable, so well-tested that building a GPU project
+without vyre is obviously more expensive than building with it.</p>
+<p>The test: if NVIDIA wanted to add a CUDA backend tomorrow, could they? The
+answer is: yes, trivially. An engineer reads the spec, implements <code>VyreBackend</code>,
+runs <code>certify()</code>, gets a certificate. No communication with us needed. If AMD
+wants to do the same independently, they can. Both backends produce identical
+bytes for every input — not because they coordinated, but because the spec is
+unambiguous and the conformance suite is the arbiter.</p>
+<p>This is the Linux property. NVIDIA spends tens of millions per year on Linux
+kernel engineers — not because they love open source, but because if their GPUs
+don’t work on Linux, they can’t sell to data centers. The substrate has more
+leverage than the vendor. The cost of not being on Linux is higher than the cost
+of contributing to it.</p>
+<p>vyre achieves this when the spec is the authority, the conformance is automatic,
+the ecosystem compounds, and the alternative is worse. At 0.4.0, the foundation
+is frozen: six traits, three categories, one binary verdict, and zero merge
+conflicts. The next ten years are composition.</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="why-vyre.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="universality.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="why-vyre.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="universality.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-c2a407aa.js"></script>
+
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-a0b12cfe.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+
+    </div>
+    </body>
+</html>

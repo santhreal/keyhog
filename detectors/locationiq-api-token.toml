@@ -1,0 +1,27 @@
+# Docs: https://locationiq.com/docs
+# Format: pk.{32+hex} for public tokens, sk.{32+hex} for secret tokens
+# Verify: GET /v1/reverse.php with key parameter returns 200
+# Prefix: pk. or sk.
+
+[detector]
+id = "locationiq-api-token"
+name = "LocationIQ API Token"
+service = "locationiq"
+severity = "high"
+keywords = ["pk.", "sk.", "LOCATIONIQ"]
+
+[[detector.patterns]]
+regex = '(?:pk|sk)\.[a-f0-9]{32,}'
+description = "LocationIQ API token (pk. or sk. prefix)"
+
+[detector.verify]
+method = "GET"
+url = "https://eu1.locationiq.com/v1/reverse.php"
+
+[detector.verify.auth]
+type = "query"
+param = "key"
+field = "match"
+
+[detector.verify.success]
+status = 200

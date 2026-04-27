@@ -1,0 +1,11 @@
+op_id = "primitive.compare.le"
+
+[[golden]]
+input = "0500000005000000"
+expected = "01000000"
+reason = "5 <= 5 is true â 1"
+
+[[golden]]
+input = "0600000005000000"
+expected = "00000000"
+reason = "6 <= 5 is false â 0"

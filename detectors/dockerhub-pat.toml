@@ -1,0 +1,26 @@
+# Docs: https://docs.docker.com/security/access-tokens/
+# Format: dckr_pat_ prefix followed by alphanumeric characters (27+ chars)
+# Verify: HTTP GET to /v2/access-tokens with Bearer token authentication
+# Prefix: dckr_pat_
+
+[detector]
+id = "dockerhub-pat"
+name = "Docker Hub Personal Access Token"
+service = "dockerhub"
+severity = "critical"
+keywords = ["dckr_pat_", "docker"]
+
+[[detector.patterns]]
+regex = 'dckr_pat_[a-zA-Z0-9_-]{27,64}'
+description = "Docker Hub personal access token (dckr_pat_, 27-64 chars)"
+
+[detector.verify]
+method = "GET"
+url = "https://hub.docker.com/v2/access-tokens"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[detector.verify.success]
+status = 200

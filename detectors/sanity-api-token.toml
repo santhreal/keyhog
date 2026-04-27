@@ -1,0 +1,25 @@
+# Docs: https://www.sanity.io/docs/http-auth
+# Format: API token with sk prefix followed by project-specific identifier and 24-char hex secret
+# Verify: GET /v1/data/query with Authorization header returns 200 if valid
+# Prefix: sk
+
+[detector]
+id = "sanity-api-token"
+name = "Sanity.io API Token"
+service = "sanity"
+severity = "critical"
+keywords = ["sanity", "sk", "SANITY_API_TOKEN", "@sanity/client"]
+
+[[detector.patterns]]
+regex = "sk[a-zA-Z0-9]{8,16}[a-f0-9]{24}"
+description = "Sanity.io API token (sk prefix with project ID and secret)"
+
+[[detector.patterns]]
+regex = "(?:SANITY|sanity)[_\\s]?(?:API[_\\s]?TOKEN|TOKEN)[=:\\s\"']+(sk[a-zA-Z0-9]{8,16}[a-f0-9]{24})"
+description = "Sanity.io API token with context anchor"
+group = 1
+
+[[detector.companions]]
+name = "sanity_project_id"
+regex = "[a-z0-9]{8,12}"
+within_lines = 5

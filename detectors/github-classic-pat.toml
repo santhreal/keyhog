@@ -1,0 +1,30 @@
+# Docs: https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens
+# Format: ghp_ prefix followed by exactly 36 alphanumeric characters
+# Verify: GET /user with Bearer token returns 200 if valid
+# Prefix: ghp_
+
+[detector]
+id = "github-classic-pat"
+name = "GitHub Classic PAT"
+service = "github"
+severity = "critical"
+keywords = ["ghp_"]
+
+[[detector.patterns]]
+regex = 'ghp_[A-Za-z0-9]{36}'
+description = "GitHub classic personal access token"
+
+[detector.verify]
+method = "GET"
+url = "https://api.github.com/user"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[[detector.verify.headers]]
+name = "User-Agent"
+value = "keyhog-secret-scanner/{{version}}"
+
+[detector.verify.success]
+status = 200

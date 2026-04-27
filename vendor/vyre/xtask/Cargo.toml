@@ -1,0 +1,33 @@
+[package]
+name = "xtask"
+version = "0.1.0"
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Build task runner for the vyre workspace."
+# Deep-sweep: xtask is an internal build-task runner, not a
+# published crate. `cargo publish` on the workspace must skip it.
+publish = false
+
+[dependencies]
+sha2.workspace = true
+blake3.workspace = true
+vyre.workspace = true
+vyre-foundation.workspace = true
+# P6.2 — xtask is a build-task runner and does not *use* the c-parser
+# feature in its source. Activating the feature here caused Cargo's
+# feature unification to pull the heavy C-parser AST into every other
+# crate that depends on `vyre-libs`, inflating compile time for
+# unrelated builds. The strict minimum of features xtask actually
+# needs: `logical` (boolean compositions used by the op catalog dump)
+# and `nn-moe` (referenced by the auto-generated op inventory).
+vyre-libs = { workspace = true, features = ["logical", "nn-moe"] }
+vyre-intrinsics = { version = "0.6.0", path = "../vyre-intrinsics" }
+vyre-primitives = { version = "0.6.0", path = "../vyre-primitives", features = ["text", "matching", "math", "nn", "hash", "parsing", "graph", "bitset", "reduce", "label", "predicate", "fixpoint", "inventory-registry"] }
+vyre-reference = { version = "0.6.0", path = "../vyre-reference" }
+vyre-driver-wgpu.workspace = true
+toml.workspace = true
+syn = { workspace = true, features = ["full", "visit"] }
+quote = { workspace = true }
+proc-macro2 = { workspace = true, features = ["span-locations"] }
+walkdir.workspace = true

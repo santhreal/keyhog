@@ -1,0 +1,16 @@
+# Docs: https://documentation.solarwinds.com/en/success_center/loggly/content/admin/customer-token-authentication-token.htm
+# Format: UUID format (8-4-4-4-12 hex pattern), example: 69af9e44-e002-4f67-8777-7b3b93ab0297
+# Verify: none (token is used in syslog structured data or HTTP URL, no direct validation endpoint)
+# Prefix: none (UUID format, requires keyword context)
+
+[detector]
+id = "loggly-customer-token"
+name = "Loggly Customer Token"
+service = "loggly"
+severity = "medium"
+keywords = ["loggly", "LOGGLY_TOKEN", "loggly_token", "customer_token", "loggly.com"]
+
+[[detector.patterns]]
+regex = "(?:loggly|LOGGLY_TOKEN|loggly_token|customer_token)[=:\\s\"']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
+description = "Loggly customer token (UUID format) with context anchor"
+group = 1

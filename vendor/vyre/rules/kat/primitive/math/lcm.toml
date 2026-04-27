@@ -1,0 +1,6 @@
+op_id = "primitive.math.lcm"
+
+[[golden]]
+input = "0600000008000000"
+expected = "18000000"
+reason = "lcm(6, 8) = 24"

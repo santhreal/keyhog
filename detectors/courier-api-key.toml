@@ -1,0 +1,26 @@
+# Docs: https://www.courier.com/docs/reference/auth/
+# Format: pk_prod_ or pk_test_ prefix followed by alphanumeric characters
+# Verify: GET /notifications with Bearer token returns 200 if valid
+# Prefix: pk_prod_, pk_test_
+
+[detector]
+id = "courier-api-key"
+name = "Courier API Key"
+service = "courier"
+severity = "critical"
+keywords = ["pk_prod_", "pk_test_", "courier"]
+
+[[detector.patterns]]
+regex = 'pk_(prod|test)_[A-Za-z0-9]{20,}'
+description = "Courier API key (pk_prod_ or pk_test_ prefix)"
+
+[detector.verify]
+method = "GET"
+url = "https://api.courier.com/notifications"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[detector.verify.success]
+status = 200

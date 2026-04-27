@@ -1,0 +1,21 @@
+# Docs: https://docs.opensea.io/reference/api-keys
+# Format: 32+ character alphanumeric string passed in X-API-Key header
+# Verify: GET /api/v1/collections with X-API-Key header returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "opensea-api-key"
+name = "OpenSea API Key"
+service = "opensea"
+severity = "high"
+keywords = ["opensea", "X-API-Key", "OPENSEA_API_KEY"]
+
+[[detector.patterns]]
+regex = "(?:opensea|OPENSEA)[\\s]*[=:][\\s]*[\"'']+([a-zA-Z0-9_-]{32,})[\"'']+"
+description = "OpenSea API key in assignment context"
+group = 1
+
+[[detector.patterns]]
+regex = "X-API-Key[\\s]*:[\\s]*([a-zA-Z0-9_-]{32,})"
+description = "OpenSea API key in HTTP header"
+group = 1

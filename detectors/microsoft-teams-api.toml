@@ -1,0 +1,21 @@
+# Docs: https://learn.microsoft.com/en-us/graph/auth/auth-concepts
+# Format: Microsoft Graph uses OAuth2 - detect client secrets and access tokens
+# Verify: POST to login.microsoftonline.com for token exchange
+# Prefix: none (requires context anchoring for client secrets)
+
+[detector]
+id = "microsoft-teams-api"
+name = "Microsoft Teams API Credentials"
+service = "microsoft-teams"
+severity = "critical"
+keywords = ["microsoft-teams", "TEAMS_API", "MS_TEAMS", "graph.microsoft.com"]
+
+[[detector.patterns]]
+regex = "(?:microsoft[_\\-\\s]?teams|ms[_\\-\\s]?teams|teams)[_\\-\\s]?(?:api[_\\-\\s]?key|secret|token)[\"\\'\\s]*[=:][\"\\'\\s]*([a-zA-Z0-9_\\-\\.]{32,})"
+description = "Microsoft Teams API credential with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:TEAMS[_\\-\\s]?API[_\\-\\s]?KEY|MICROSOFT[_\\-\\s]?TEAMS[_\\-\\s]?SECRET|MS[_\\-\\s]?TEAMS[_\\-\\s]?TOKEN)[\"\\'\\s]*[=:][\"\\'\\s]*([a-zA-Z0-9_\\-\\.]{32,})"
+description = "Microsoft Teams API credential in environment variable format"
+group = 1

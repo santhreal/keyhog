@@ -1,0 +1,16 @@
+# Docs: https://discord.com/developers/docs
+# Format: Base64-encoded JWT-like format with three parts separated by dots
+# Verify: WebSocket authentication to Discord Gateway
+# Prefix: none (starts with base64 encoded values like MTA, MTE, etc)
+
+[detector]
+id = "discord-bot-token"
+name = "Discord Bot Token"
+service = "discord"
+severity = "critical"
+keywords = ["MTA", "MTE", "MTI", "MTM", "MTQ", "MTU", "MTY", "MTc", "MTg", "MTk", "MjA", "MjE", "MjI", "MjM", "MjQ", "NDA", "NDE", "NDI", "NDM", "NDQ", "NDU", "NDY", "NDc", "NDg", "NDk", "NTA", "NTE", "NTI", "NTM", "NTQ", "NTU", "NTY", "NTc", "NTg", "NTk"]
+
+
+[[detector.patterns]]
+regex = '([MN][A-Za-z0-9_-]{21,24}\.){2}[A-Za-z0-9_-]{27,38}'
+description = "Discord bot token (base64-encoded JWT format)"

@@ -1,0 +1,13 @@
+[package]
+name = "vyre-cc"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+vyre = { path = "../vyre-core" }
+vyre-libs = { path = "../vyre-libs", default-features = false, features = ["c-parser"] }
+vyre-driver-wgpu = { path = "../vyre-driver-wgpu" }
+vyre-primitives = { path = "../vyre-primitives", default-features = false, features = ["matching"] }
+surgec-grammar-gen = { path = "../shared/surgec-grammar-gen" }
+vyre-runtime = { path = "../vyre-runtime" }
+object = { version = "0.36", default-features = false, features = ["write"] }

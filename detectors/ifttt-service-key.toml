@@ -1,0 +1,21 @@
+# Docs: https://ifttt.com/docs/api_reference
+# Format: 22 alphanumeric characters for webhook service key
+# Verify: POST to webhook endpoint returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "ifttt-service-key"
+name = "IFTTT Service/Webhook Key"
+service = "ifttt"
+severity = "medium"
+keywords = ["IFTTT", "ifttt", "maker.ifttt.com", "webhook"]
+
+[[detector.patterns]]
+regex = "(?:IFTTT|ifttt)[=:\\s\"'']+([a-zA-Z0-9]{22})"
+description = "IFTTT webhook/service key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "maker\\.ifttt\\.com/trigger/[a-zA-Z0-9_]+/with/key/([a-zA-Z0-9]{22})"
+description = "IFTTT maker webhook URL with key"
+group = 1

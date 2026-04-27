@@ -1,0 +1,28 @@
+# Docs: https://developer.mapquest.com/documentation/
+# Format: API key is a 32 character alphanumeric string
+# Verify: GET /directions/v2/route with key parameter
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "mapquest-api-key"
+name = "MapQuest API Key"
+service = "mapquest"
+severity = "high"
+keywords = ["MAPQUEST_API_KEY", "mapquest.api.key", "mapquest_api_key"]
+
+[[detector.patterns]]
+regex = "(?:MAPQUEST[_-]?API[_-]?KEY|mapquest[_-]?api[_-]?key|mapquest\\.api\\.key)[=:\\s\"'']+([A-Za-z0-9]{32})"
+description = "MapQuest API key with context anchor (32 chars)"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://www.mapquestapi.com/directions/v2/route"
+
+[detector.verify.auth]
+type = "query"
+param = "key"
+field = "match"
+
+[detector.verify.success]
+status = 200

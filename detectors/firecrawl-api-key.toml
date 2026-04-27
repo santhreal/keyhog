@@ -1,0 +1,26 @@
+# Docs: https://docs.firecrawl.dev/api-reference/introduction
+# Format: fc- prefix followed by alphanumeric characters (typically 100+ chars)
+# Verify: GET /v1/models with Bearer token returns 200 if valid
+# Prefix: fc-
+
+[detector]
+id = "firecrawl-api-key"
+name = "Firecrawl API Key"
+service = "firecrawl"
+severity = "critical"
+keywords = ["fc-", "firecrawl", "FIRECRAWL_API_KEY"]
+
+[[detector.patterns]]
+regex = 'fc-[a-zA-Z0-9_-]{50,}'
+description = "Firecrawl API key with fc- prefix"
+
+[detector.verify]
+method = "GET"
+url = "https://api.firecrawl.dev/v1/scrape"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[detector.verify.success]
+status = 200

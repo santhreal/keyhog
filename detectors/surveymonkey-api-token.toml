@@ -1,0 +1,27 @@
+# Docs: https://developer.surveymonkey.com/api/v3/
+# Format: OAuth2 access token or long alphanumeric string
+# Verify: GET /v3/users/me with Bearer token returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "surveymonkey-api-token"
+name = "SurveyMonkey API Token"
+service = "surveymonkey"
+severity = "high"
+keywords = ["surveymonkey", "SURVEYMONKEY_API_KEY", "SurveyMonkey"]
+
+[[detector.patterns]]
+regex = "(?:surveymonkey|SurveyMonkey|SURVEYMONKEY)[_.\\s]*(?:api[_\\s]*token|api[_\\s]*key|access[_\\s]*token)[\\s\"''']+([a-zA-Z0-9_-]{20,})"
+description = "SurveyMonkey API token with context anchor"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://api.surveymonkey.com/v3/users/me"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[detector.verify.success]
+status = 200

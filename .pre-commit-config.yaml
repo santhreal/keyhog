@@ -1,0 +1,45 @@
+# KeyHog Secret Scanner - Pre-commit Configuration
+# 
+# This file configures KeyHog as a pre-commit hook for the pre-commit framework.
+# 
+# Installation:
+#   1. Install pre-commit: pip install pre-commit
+#   2. Install the hook: pre-commit install
+#   3. (Optional) Run on all files: pre-commit run --all-files
+#
+# For more information: https://pre-commit.com
+
+repos:
+  # KeyHog Secret Scanner - Local hook (requires binary to be built)
+  - repo: local
+    hooks:
+      - id: keyhog-secret-scan
+        name: KeyHog Secret Scanner
+        description: Scan staged files for secrets using KeyHog
+        entry: scripts/pre-commit
+        language: script
+        # Pass all staged files to the hook
+        pass_filenames: false
+        # Always run (even if no files match patterns)
+        always_run: true
+        stages: [pre-commit]
+        # Require the binary to be built
+        require_serial: true
+
+  # Alternative: Direct repository hook (when published)
+  # Uncomment and modify when KeyHog is published to a Git repository
+  # - repo: https://github.com/your-org/keyhog
+  #   rev: v0.1.0
+  #   hooks:
+  #     - id: keyhog-secret-scan
+  #       args: ['--min-confidence', '0.5']
+
+  # Standard pre-commit hooks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+        args: ['--maxkb=1000']

@@ -1,0 +1,28 @@
+# Docs: https://developers.forem.com/api
+# Format: API key is a 32-character hex string (no specific prefix)
+# Verify: GET /api/users/me with api-key header returns 200
+# Note: Dev.to/Forem API keys are hex strings without prefix - requires strict context anchoring
+
+[detector]
+id = "devto-api-key"
+name = "Dev.to (Forem) API Key"
+service = "devto"
+severity = "medium"
+keywords = ["DEVTO_API_KEY", "DEV_TO_API_KEY", "FOREM_API_KEY"]
+
+[[detector.patterns]]
+regex = "(?:DEVTO_API_KEY|DEV_TO_API_KEY|FOREM_API_KEY)[=:\\s\"'']+([a-f0-9]{32})"
+description = "Dev.to/Forem API key with exact variable name anchor (32-char hex)"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://dev.to/api/users/me"
+
+[detector.verify.auth]
+type = "header"
+name = "api-key"
+template = "{{match}}"
+
+[detector.verify.success]
+status = 200

@@ -1,0 +1,28 @@
+# Docs: https://docs.securitytrails.com/reference/test-connection
+# Format: Random alphanumeric string, typically 32+ characters
+# Verify: GET /v1/ping with APIKEY header returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "securitytrails-api-key"
+name = "SecurityTrails API Key"
+service = "securitytrails"
+severity = "high"
+keywords = ["SECURITYTRAILS_API_KEY", "securitytrails", "SECURITY_TRAILS"]
+
+[[detector.patterns]]
+regex = "(?:SECURITYTRAILS|securitytrails|SECURITY_TRAILS)(?:_API)?(?:_KEY)?[=:\\s\"'']+([a-zA-Z0-9_-]{32,})"
+description = "SecurityTrails API key with context anchor"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://api.securitytrails.com/v1/ping"
+
+[detector.verify.auth]
+type = "header"
+name = "APIKEY"
+template = "{{match}}"
+
+[detector.verify.success]
+status = 200

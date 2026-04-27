@@ -1,0 +1,31 @@
+# Docs: https://developer.constantcontact.com/api_guide/getting_started.html
+# Format: API Key (client ID) for V3 API, plus optional client secret and access token
+# Verify: GET /v3/account_info with Bearer token returns 200
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "constant-contact-api-key"
+name = "Constant Contact API Key"
+service = "constantcontact"
+severity = "critical"
+keywords = ["constantcontact", "CONSTANTCONTACT", "constant_contact", "client_id", "client_secret"]
+
+[[detector.patterns]]
+regex = '(?:CONSTANT[_]*CONTACT|constant[_]*contact)[_]*(?:API|api)?[_]*(?:KEY|key)[=: ]+([a-zA-Z0-9]{20,})'
+description = "Constant Contact API Key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = '(?:CONSTANT[_]*CONTACT|constant[_]*contact)[_]*(?:CLIENT|client)?[_]*(?:ID|id)[=: ]+([a-zA-Z0-9]{20,})'
+description = "Constant Contact Client ID"
+group = 1
+
+[[detector.patterns]]
+regex = '(?:CONSTANT[_]*CONTACT|constant[_]*contact)[_]*(?:CLIENT|client)?[_]*(?:SECRET|secret)[=: ]+([a-zA-Z0-9_-]{20,})'
+description = "Constant Contact Client Secret"
+group = 1
+
+[[detector.patterns]]
+regex = '(?:CONSTANT[_]*CONTACT|constant[_]*contact)[_]*(?:ACCESS|access)?[_]*(?:TOKEN|token)[=: ]+([a-zA-Z0-9_-]{20,})'
+description = "Constant Contact Access Token"
+group = 1

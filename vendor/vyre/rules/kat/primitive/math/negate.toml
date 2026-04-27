@@ -1,0 +1,11 @@
+op_id = "primitive.math.negate"
+
+[[golden]]
+input = "01000000"
+expected = "ffffffff"
+reason = "negate(1) = 0xFFFFFFFF (two's complement)"
+
+[[golden]]
+input = "00000000"
+expected = "00000000"
+reason = "negate(0) = 0"

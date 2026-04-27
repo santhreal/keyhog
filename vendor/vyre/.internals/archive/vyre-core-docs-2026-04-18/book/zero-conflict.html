@@ -1,0 +1,393 @@
+<!DOCTYPE HTML>
+<html lang="en" class="rust sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Zero-Conflict Architecture - The vyre Book</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="The GPU compute IR with a conformance prover">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-2459343d.css">
+        <link rel="stylesheet" href="css/chrome-ae938929.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "rust";
+            const default_dark_theme = "navy";
+            window.path_to_searchindex_js = "searchindex-bc7bdb82.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc-16d598fb.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('rust')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">The vyre Book</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/santhsecurity/vyre" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/santhsecurity/vyre/edit/main/core/docs/./zero-conflict.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                            <span class=fa-svg id="git-edit-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M421.7 220.3l-11.3 11.3-22.6 22.6-205 205c-6.6 6.6-14.8 11.5-23.8 14.1L30.8 511c-8.4 2.5-17.5 .2-23.7-6.1S-1.5 489.7 1 481.2L38.7 353.1c2.6-9 7.5-17.2 14.1-23.8l205-205 22.6-22.6 11.3-11.3 33.9 33.9 62.1 62.1 33.9 33.9zM96 353.9l-9.3 9.3c-.9 .9-1.6 2.1-2 3.4l-25.3 86 86-25.3c1.3-.4 2.5-1.1 3.4-2l9.3-9.3H112c-8.8 0-16-7.2-16-16V353.9zM453.3 19.3l39.4 39.4c25 25 25 65.5 0 90.5l-14.5 14.5-22.6 22.6-11.3 11.3-33.9-33.9-62.1-62.1L314.3 67.7l11.3-11.3 22.6-22.6 14.5-14.5c25-25 65.5-25 90.5 0z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="zero-conflict-architecture--how-vyre-scales-to-100-contributors"><a class="header" href="#zero-conflict-architecture--how-vyre-scales-to-100-contributors">Zero-Conflict Architecture — how vyre scales to 100 contributors</a></h1>
+<h2 id="the-problem"><a class="header" href="#the-problem">The problem</a></h2>
+<p>When N contributors edit the same file, they collide. Central enums, central <code>mod.rs</code>, central registry lists — every one is a collision point that gates parallelism down to single-contributor-at-a-time. No amount of review tooling fixes this. The file itself is the bottleneck.</p>
+<p>In most Rust codebases, adding an operation means touching a chain of shared files:</p>
+<ol>
+<li>Open the central enum and add a variant.</li>
+<li>Open the root <code>mod.rs</code> and add a <code>pub mod</code> line.</li>
+<li>Open a dispatch table and wire in the new variant.</li>
+<li>Open a test registry and append a pointer.</li>
+<li>Open the benchmark list and add an entry.</li>
+</ol>
+<p>Every step touches a file that every other contributor also wants to touch. Merge conflicts are guaranteed. Rebasing is mandatory. Velocity collapses to the speed of the slowest review. In a large project, the queue becomes the primary cost.</p>
+<p>The pain is not linear. With ten active contributors, the conflict rate is manageable. With fifty, it becomes a tax on every change. With a hundred, the project stops scaling. Contributors spend more time resolving merge conflicts than writing code. Reviewers spend more time verifying rebase correctness than reviewing substance. The codebase does not slow down because the compiler is slower. It slows down because the humans are fighting over shared mutable state.</p>
+<p>Consider a concrete example. Agent A adds <code>OpA</code> to the central enum on line 47. Agent B adds <code>OpB</code> to the same enum on line 47. Both changes are correct in isolation. When they meet, Git produces a conflict. Neither agent edited the other’s operation. They edited the <em>list</em>. The list is the bottleneck. In vyre, there is no list. Agent A creates <code>src/ops/category/op_a/spec.toml</code>. Agent B creates <code>src/ops/category/op_b/spec.toml</code>. The files are on different branches of the tree. Git merges them automatically. The compiler sees both. Both operations exist. Zero human coordination was required.</p>
+<p>vyre does not accept this. The architecture is built so that 100 contributors can each add a leaf file with zero merge conflicts, zero <code>lib.rs</code> edits, and zero central registry edits. This is not a tooling trick. It is a structural property enforced by five hard rules that are checked in CI and have no exceptions.</p>
+<h2 id="the-5-rules"><a class="header" href="#the-5-rules">The 5 rules</a></h2>
+<ol>
+<li>
+<p><strong>One top-level item per file.</strong>
+Every <code>.rs</code> file under <code>src/</code> contains exactly one of: a <code>struct</code>, an <code>enum</code>, a <code>trait</code>, a <code>type</code>, a <code>const</code>, a <code>static</code>, a single <code>fn</code>, or one <code>impl</code> block with exactly one associated item. A file with two structs is a CI failure. An <code>impl</code> block with two methods is a CI failure. A helper function hidden at the bottom of a struct file is a CI failure. No exceptions. No <code>#[allow]</code> escape hatch. Never.</p>
+<p>This rule makes the file the unit of contribution. If you want to add a method to a type, you create a new file. If you want to add a helper, you create a new file. The file count goes up, but the conflict count goes to zero. Searching the codebase is faster too: the filename tells you what it contains, and there is no scrolling through a thousand-line god file to find the one method you need.</p>
+</li>
+<li>
+<p><strong>Max 5 entries per directory.</strong>
+A directory may contain at most five entries, counting both <code>.rs</code> files and subdirectories. If a sixth item is needed, the directory splits into a deeper level. The tree fans out as the catalog grows. Flat directories are forbidden because flat directories become battlegrounds.</p>
+<p>Five is small enough that you can read a directory listing at a glance. It is large enough that the tree does not become excessively deep. When a directory fills up, you group related items into a new subdirectory and continue. The directory structure becomes a taxonomy, not a dumping ground. A contributor looking for a validation method knows to look under <code>src/ir/program/methods/validation/</code>. A contributor looking for a bitwise op knows to look under <code>src/ops/primitive/bitwise/</code>. The path is the index.</p>
+</li>
+</ol>
+<p>Directory names are chosen to be searchable and stable. Once a directory exists, it is never renamed without a dedicated refactor commit. This keeps historical diffs readable and prevents widespread import churn. The stability of the tree is as important as its shape.</p>
+<ol start="3">
+<li>
+<p><strong>No <code>mod.rs</code> files.</strong>
+<code>mod.rs</code> does not exist anywhere under <code>src/</code>. Not written by hand, not generated, not present. The build script owns the module tree. Contributors do not. This removes the most common source of Rust merge conflicts entirely.</p>
+<p>In a conventional Rust project, every new file requires a matching <code>mod.rs</code> edit. Two contributors adding files to the same directory will conflict on the <code>mod.rs</code> even if their files are completely unrelated. Removing <code>mod.rs</code> removes the conflict. The build script generates the module tree from the filesystem, so the tree is always correct by construction.</p>
+</li>
+<li>
+<p><strong><code>lib.rs</code> is frozen.</strong>
+<code>lib.rs</code> contains only crate-level attributes, the crate doc comment, and a single <code>include!()</code> pointing at a build-script-generated module tree. It has no hand-edited <code>pub mod</code> lines. Its body never changes. Contributors do not open it. Reviewers do not debate it.</p>
+<p>The frozen <code>lib.rs</code> is the keystone of the architecture. Once it is locked, no contributor can add a centralized hook. There is no escape hatch back to the old pattern. The crate root becomes a constant, not a variable.</p>
+</li>
+<li>
+<p><strong>No central enum, no central list, no central registry.</strong>
+Every catalog is a trait implemented by per-file types, collected at link time via a distributed slice. <code>Finding</code> is a trait, not an enum. <code>OpMetadata</code> self-registers at link time. Algebraic laws are trait implementations, not enum variants. Any design that requires “add a variant to the central enum to hook in your feature” is an architecture failure and is banned from the codebase.</p>
+<p>Central enums are seductive. They are type-safe, exhaustive, and easy to match on. They are also serial bottlenecks. In vyre, exhaustiveness is checked by tests and oracles, not by the compiler matching on a single enum definition. The tradeoff is intentional: we sacrifice compiler-enforced exhaustiveness for human-enforced parallelism.</p>
+</li>
+</ol>
+<h2 id="why-it-works"><a class="header" href="#why-it-works">Why it works</a></h2>
+<p>The rules remove every shared mutation point.</p>
+<p>Two contributors cannot conflict if they never touch the same file. With one item per file, every new operation is a new file. With max-five entries per directory, sibling files are few enough that even directory-level overlap is rare, and deep paths are cheap. With no <code>mod.rs</code>, nobody fights over module declarations. With a frozen <code>lib.rs</code>, nobody edits the crate root. With distributed slices, nobody appends to a central list.</p>
+<p>The result is a system that grows monotonically at the leaves. It never requires a central edit. Twenty contributors. Two hundred contributors. Two thousand contributors. The merge remains trivial because the only changes are file additions at disjoint paths. Rebase hell disappears because there is no shared baseline to rebase against.</p>
+<p>This is the engineering property that makes vyre legendary. It is not the 500-line file ceiling in isolation, and it is not the one-item-per-file rule by itself. It is the guarantee that the system only ever grows by adding leaf files. That guarantee lets parallel waves of contributors produce hundreds of operations in an afternoon without a single rebase or a single edit to a file they do not own.</p>
+<p>Most large codebases slow down as they grow. vyre speeds up. Every new op deepens the catalog without widening the conflict surface. The cost of adding the thousandth op is the same as the cost of adding the first: create one file, write one item, open one PR. There is no coordination overhead. There is no waiting for a wave to settle. There is no central maintainer acting as a router.</p>
+<p>Other projects approximate this with plugin systems. Bevy uses plugins. LLVM uses passes. But plugins solve the problem at the macro level, not the semantic level. In vyre, every individual struct, every individual function, every individual trait implementation is a leaf. The parallelism is not at the crate boundary or the plugin boundary. It is at the file boundary. That is the difference between “parallel-friendly” and “parallel-native”.</p>
+<h2 id="the-mechanism"><a class="header" href="#the-mechanism">The mechanism</a></h2>
+<h3 id="module-tree-generation-in-buildrs"><a class="header" href="#module-tree-generation-in-buildrs">Module-tree generation in <code>build.rs</code></a></h3>
+<p><code>vyre/core/build.rs</code> walks <code>src/</code>, discovers every <code>.rs</code> file except <code>lib.rs</code> itself, and emits <code>$OUT_DIR/vyre_tree.rs</code>. That generated file contains a flat list of <code>#[path = "&lt;abs-path&gt;"] mod __vyre_auto_&lt;hash&gt;;</code> declarations, wrapped in nested <code>pub mod</code> shims that recreate the directory structure as a Rust module tree.</p>
+<p>For example, a file at:</p>
+<pre><code>src/ir/program/methods/validation/validate_workgroups.rs
+</code></pre>
+<p>is emitted as a module at path <code>ir::program::methods::validation::validate_workgroups</code>. The build script also scans the leaf file for optional re-export directives such as <code>//! @root_export Program</code>, and emits <code>pub use &lt;path&gt;::Program;</code> at the crate root when it finds one.</p>
+<p>The generated tree is idempotent. Cargo reruns the build script only when the <code>src/</code> tree changes, via <code>cargo:rerun-if-changed</code> on each subdirectory. The contributor adds a file. Cargo regenerates the tree. No human edits a module declaration. No human even thinks about it.</p>
+<p>The build script computes the crate path by stripping the <code>src/</code> prefix and the <code>.rs</code> extension, then replacing path separators with <code>::</code>. A file at <code>src/ir/buffer_decl.rs</code> becomes module <code>ir::buffer_decl</code>. A file at <code>src/ir/node/kinds/load.rs</code> becomes <code>ir::node::kinds::load</code>. The mapping is deterministic and reversible. If you know the filesystem path, you know the module path.</p>
+<p>This is the same principle as the <code>automod</code> pattern used in other high-velocity Rust projects: the filesystem is the source of truth for the module tree, not a hand-maintained list of <code>mod</code> statements. The difference is that vyre enforces it as a hard rule rather than an optional convenience.</p>
+<p>The frozen <code>lib.rs</code> looks like this:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span>#![warn(clippy::pedantic)]
+<span class="boring">fn main() {
+</span>// crate-level lint attributes are locked here
+//! # vyre — GPU compute intermediate representation
+//! (doc comment stays here, locked)
+
+include!(concat!(env!("OUT_DIR"), "/vyre_tree.rs"));
+<span class="boring">}</span></code></pre>
+<p>Nothing else is permitted. Anything else is a rule violation.</p>
+<h3 id="leaf-file-shape"><a class="header" href="#leaf-file-shape">Leaf file shape</a></h3>
+<p>A leaf file is a complete, self-contained unit. It imports nothing via <code>super</code> or wildcard. Every dependency is referenced by its full crate path. This makes navigation trivial: click any type name and jump directly to its file. It also means a leaf file can be moved or renamed without chasing relative import breakage.</p>
+<p>A struct leaf:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// src/ir/program/type.rs
+//! @root_export Program
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Program {
+    pub buffers: Vec&lt;crate::ir::buffer_decl::BufferDecl&gt;,
+    pub workgroup_size: [u32; 3],
+    pub entry: Vec&lt;crate::ir::node::Node&gt;,
+    pub entry_op_id: Option&lt;String&gt;,
+}
+<span class="boring">}</span></code></pre>
+<p>A constructor leaf:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// src/ir/program/methods/construction/new.rs
+impl crate::ir::program::ProgramType {
+    pub fn new(
+        buffers: Vec&lt;crate::ir::buffer_decl::BufferDecl&gt;,
+        workgroup_size: [u32; 3],
+        entry: Vec&lt;crate::ir::node::Node&gt;,
+    ) -&gt; Self {
+        Self { buffers, workgroup_size, entry, entry_op_id: None }
+    }
+}
+<span class="boring">}</span></code></pre>
+<p>A validation leaf:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// src/ir/program/methods/validation/is_valid.rs
+impl crate::ir::program::ProgramType {
+    pub fn is_valid(&amp;self) -&gt; bool {
+        crate::ir::validate::validate_program::validate_program(self).is_empty()
+    }
+}
+<span class="boring">}</span></code></pre>
+<p>Notice the pattern: each file does exactly one thing, and it does it with explicit paths. There is no <code>use super::*</code> hiding context. There is no nested module creating indentation debt. The file is the module. The module does one thing.</p>
+<p>Explicit paths also make the codebase friendlier to automated tooling. A regex search for <code>crate::ir::program::Program</code> finds every usage without ambiguity. An IDE’s “Go to Definition” jumps straight to the single file that defines the item. A code-review tool can display a complete diff in a single screen because the file is short. These are side effects of the one-item-per-file rule, but they compound into a codebase that is easier to read, review, and maintain.</p>
+<h3 id="trait-impl-registries-with-vyre-build-scan"><a class="header" href="#trait-impl-registries-with-vyre-build-scan">Trait-impl registries with <code>vyre-build-scan</code></a></h3>
+<p>Not everything can be discovered from the filesystem alone. Some registries need to know which types implement a particular trait. For this, vyre uses <code>vyre-build-scan</code>.</p>
+<p><code>vyre-build-scan</code> is a compile-time scanner that walks the crate, identifies trait implementations, and generates static registration tables. It replaces the manual step of “add your type to the central registry” with an automated scan that runs during the build.</p>
+<p>For example, instead of maintaining a central enum of every <code>Finding</code>, vyre declares <code>Finding</code> as a trait. Each finding lives in its own file and implements the trait:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// src/findings/missing_binding_0.rs
+use linkme::distributed_slice;
+use crate::finding::Finding;
+
+#[distributed_slice(crate::finding::FINDINGS)]
+static MISSING_BINDING_0: Finding = Finding {
+    id: "missing-binding-0",
+    enforcer: |op| { /* ... */ },
+    // ...
+};
+<span class="boring">}</span></code></pre>
+<p>Adding a finding is <code>touch src/findings/&lt;id&gt;.rs</code> with one static registration. Zero central file edits. The collection happens at link time via the <code>linkme</code> crate. Parallel-safe. <code>vyre-build-scan</code> provides the same capability for more complex trait-impl registries that need structured metadata rather than raw slices.</p>
+<p>The distributed slice approach scales linearly with the number of registered items. There is no runtime registry builder that iterates over a growing list. The linker collects the slices into a single static array. Registration cost is paid at link time, not at startup. For a system that may eventually register thousands of operations, laws, and findings, this matters.</p>
+<p>Together, <code>build.rs</code> and <code>vyre-build-scan</code> eliminate the two remaining reasons to touch a shared file: module declarations and registry entries. The build owns both. The contributors own only their leaf files.</p>
+<p>This design also makes reverts safe. If one contributor’s leaf file is wrong, a revert deletes exactly one file. No other contributor’s work is affected. There is no central file to roll back to a previous version. There is no cascade of broken imports across unrelated modules. The isolation that prevents conflicts also prevents regressions from spreading.</p>
+<h3 id="ci-enforcement"><a class="header" href="#ci-enforcement">CI enforcement</a></h3>
+<p>The rules are not aspirational. They are enforced mechanically by the conformance suite:</p>
+<ul>
+<li>Any <code>mod.rs</code> under <code>src/</code> fails the build.</li>
+<li>Any <code>.rs</code> file with more than one top-level item fails the build.</li>
+<li>Any directory with more than five entries fails the build.</li>
+<li>Any <code>pub mod</code> or <code>mod </code> declaration in <code>lib.rs</code> outside the locked header fails the build.</li>
+</ul>
+<p>These four checks are the legendary-property gate. They guarantee that no contributor can accidentally reintroduce a shared mutation point. The architecture is self-defending. A regression is impossible because CI will catch it before it reaches <code>main</code>.</p>
+<p>The conformance suite treats these structural checks as seriously as it treats algebraic law verification or GPU parity. A PR that passes every test but violates the max-five-entries rule is rejected. The rules are not guidelines. They are the foundation of the project’s scalability.</p>
+<h2 id="the-consequence"><a class="header" href="#the-consequence">The consequence</a></h2>
+<p>100 contributors, 100 new ops, zero conflicts.</p>
+<p>This is not a social contract. It is not a request to “please try to avoid conflicts.” It is a mechanical property of the filesystem layout. When every contributor adds a new leaf file in a directory no one else is touching, Git has nothing to merge. The changes are disjoint by construction.</p>
+<p>The architecture makes vyre parallel-native. It is the reason a large team can move at the speed of individual contributors rather than the speed of a serialized queue. That property is what rustc does not have, LLVM does not have, and most plugin-based frameworks only approximate. In vyre, it is built into the tree.</p>
+<p>If you are contributing to vyre, you should internalize this: your job is to add a leaf. One file. One item. One clear path. The system handles the rest.</p>
+<p>The keystone commit that froze <code>lib.rs</code> and introduced <code>build.rs</code> was serial. Everything after it is parallel. A hundred-agent wave can run safely because each agent produces distinct target leaf file paths, no two agents write the same file, and no two agents edit <code>lib.rs</code>, <code>mod.rs</code>, or any central list. That is not an accident. It is the architecture working as designed.</p>
+<p>That is the zero-conflict promise. That is what makes vyre scale.</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="extensibility.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="vyre-and-conform.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="extensibility.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="vyre-and-conform.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-c2a407aa.js"></script>
+
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-a0b12cfe.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+
+    </div>
+    </body>
+</html>

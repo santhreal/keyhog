@@ -1,0 +1,26 @@
+# Docs: https://dev.writer.com/api-reference/api-keys
+# Format: UUID format starting with sk- (e.g., sk-12345678-1234-1234-1234-123456789abc)
+# Verify: GET /v1/models with Bearer token returns 200 if valid
+# Prefix: sk-
+
+[detector]
+id = "writer-api-key"
+name = "Writer API Key"
+service = "writer"
+severity = "high"
+keywords = ["WRITER_API_KEY", "writer"]
+
+[[detector.patterns]]
+regex = 'sk-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}'
+description = "Writer API key (UUID format with sk- prefix)"
+
+[detector.verify]
+method = "GET"
+url = "https://api.writer.com/v1/models"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[detector.verify.success]
+status = 200

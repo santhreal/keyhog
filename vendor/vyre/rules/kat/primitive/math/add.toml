@@ -1,0 +1,6 @@
+op_id = "primitive.math.add"
+
+[[golden]]
+input = "ffffffff01000000"
+expected = "00000000"
+reason = "u32::MAX + 1 = 0 (wrapping add)"

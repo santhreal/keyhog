@@ -1,0 +1,24 @@
+# Docs: https://docs.goauthentik.io/docs/developer-docs/api/working-with-api
+# Format: Bearer token or API token (long alphanumeric string)
+# Verify: GET /api/v3/core/users/ with Authorization header
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "authentik-token"
+name = "Authentik API Token"
+service = "authentik"
+severity = "critical"
+keywords = ["AUTHENTIK_TOKEN", "AUTHENTIK_API_TOKEN", "authentik"]
+
+[[detector.patterns]]
+regex = "(?:AUTHENTIK[_-]?TOKEN|AUTHENTIK[_-]?API[_-]?TOKEN)[=:\\s\"'']+([a-zA-Z0-9]{40,})"
+description = "Authentik API token with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "Authorization:\\s*Bearer\\s+([a-zA-Z0-9]{40,})"
+description = "Authentik Bearer token in Authorization header"
+group = 1
+
+# NOTE: live verification disabled. `{service}` was single-brace and
+# never resolved. kimi-wave3 §1.

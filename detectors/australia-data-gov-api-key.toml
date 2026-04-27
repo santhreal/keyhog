@@ -1,0 +1,33 @@
+# Docs: https://data.gov.au/data/api/1/util/snippet/api_info.html
+# Format: CKAN API key - 36 character UUID format
+# Verify: Authorization header with CKAN API key to data.gov.au/api/action
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "australia-data-gov-api-key"
+name = "Australia Data.gov.au API Key"
+service = "australia-data-gov"
+severity = "medium"
+keywords = ["data.gov.au", "CKAN_API_KEY", "auckan"]
+
+[[detector.patterns]]
+regex = "(?:data\\.gov\\.au|CKAN|AUSTRALIA)[_.-]?(?:API[_-]?KEY|apikey)[\\s\"''=:]+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
+description = "Australia data.gov.au CKAN API key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:data\\.gov\\.au).{0,30}Authorization[:\\s]+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
+description = "Australia data.gov.au API key in Authorization header"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://data.gov.au/data/api/3/action/package_list?limit=1"
+
+[detector.verify.auth]
+type = "header"
+name = "Authorization"
+template = "{{match}}"
+
+[detector.verify.success]
+status = 200

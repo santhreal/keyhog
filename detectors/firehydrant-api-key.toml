@@ -1,0 +1,26 @@
+# Docs: https://support.firehydrant.io/hc/en-us/articles/360058262813-API-Keys
+# Format: fhc prefix followed by 64 hex characters
+# Verify: GET /v1/organizations with Authorization header
+# Prefix: fhc
+
+[detector]
+id = "firehydrant-api-key"
+name = "FireHydrant API Key"
+service = "firehydrant"
+severity = "critical"
+keywords = ["fhc", "FIREHYDRANT_API_KEY", "firehydrant"]
+
+[[detector.patterns]]
+regex = 'fhc[a-f0-9]{64}'
+description = "FireHydrant API key with fhc prefix"
+
+[detector.verify]
+method = "GET"
+url = "https://api.firehydrant.io/v1/organizations"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[detector.verify.success]
+status = 200

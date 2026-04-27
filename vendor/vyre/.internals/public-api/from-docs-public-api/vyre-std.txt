@@ -1,0 +1,453 @@
+pub mod vyre_std
+pub mod vyre_std::arith
+pub fn vyre_std::arith::abs_diff_i16(a: i16, b: i16) -> u16
+pub fn vyre_std::arith::abs_diff_i32(a: i32, b: i32) -> u32
+pub fn vyre_std::arith::abs_diff_i64(a: i64, b: i64) -> u64
+pub fn vyre_std::arith::abs_diff_i8(a: i8, b: i8) -> u8
+pub fn vyre_std::arith::abs_diff_u16(a: u16, b: u16) -> u16
+pub fn vyre_std::arith::abs_diff_u32(a: u32, b: u32) -> u32
+pub fn vyre_std::arith::abs_diff_u64(a: u64, b: u64) -> u64
+pub fn vyre_std::arith::abs_diff_u8(a: u8, b: u8) -> u8
+pub fn vyre_std::arith::clamp_i16(x: i16, lo: i16, hi: i16) -> i16
+pub fn vyre_std::arith::clamp_i32(x: i32, lo: i32, hi: i32) -> i32
+pub fn vyre_std::arith::clamp_i64(x: i64, lo: i64, hi: i64) -> i64
+pub fn vyre_std::arith::clamp_i8(x: i8, lo: i8, hi: i8) -> i8
+pub fn vyre_std::arith::clamp_u16(x: u16, lo: u16, hi: u16) -> u16
+pub fn vyre_std::arith::clamp_u32(x: u32, lo: u32, hi: u32) -> u32
+pub fn vyre_std::arith::clamp_u64(x: u64, lo: u64, hi: u64) -> u64
+pub fn vyre_std::arith::clamp_u8(x: u8, lo: u8, hi: u8) -> u8
+pub fn vyre_std::arith::div_ceil_u32(numer: u32, denom: u32) -> u32
+pub fn vyre_std::arith::div_ceil_u64(numer: u64, denom: u64) -> u64
+pub fn vyre_std::arith::div_floor_u32(numer: u32, denom: u32) -> u32
+pub fn vyre_std::arith::div_floor_u64(numer: u64, denom: u64) -> u64
+pub fn vyre_std::arith::div_round_u16(numer: u16, denom: u16) -> u16
+pub fn vyre_std::arith::div_round_u32(numer: u32, denom: u32) -> u32
+pub fn vyre_std::arith::div_round_u64(numer: u64, denom: u64) -> u64
+pub fn vyre_std::arith::div_round_u8(numer: u8, denom: u8) -> u8
+pub fn vyre_std::arith::lerp_f32(a: f32, b: f32, t: f32) -> f32
+pub fn vyre_std::arith::lerp_f64(a: f64, b: f64, t: f64) -> f64
+pub fn vyre_std::arith::max_i16(a: i16, b: i16) -> i16
+pub fn vyre_std::arith::max_i32(a: i32, b: i32) -> i32
+pub fn vyre_std::arith::max_i64(a: i64, b: i64) -> i64
+pub fn vyre_std::arith::max_i8(a: i8, b: i8) -> i8
+pub fn vyre_std::arith::max_u16(a: u16, b: u16) -> u16
+pub fn vyre_std::arith::max_u32(a: u32, b: u32) -> u32
+pub fn vyre_std::arith::max_u64(a: u64, b: u64) -> u64
+pub fn vyre_std::arith::max_u8(a: u8, b: u8) -> u8
+pub fn vyre_std::arith::midpoint_i16(a: i16, b: i16) -> i16
+pub fn vyre_std::arith::midpoint_i32(a: i32, b: i32) -> i32
+pub fn vyre_std::arith::midpoint_i64(a: i64, b: i64) -> i64
+pub fn vyre_std::arith::midpoint_i8(a: i8, b: i8) -> i8
+pub fn vyre_std::arith::midpoint_u16(a: u16, b: u16) -> u16
+pub fn vyre_std::arith::midpoint_u32(a: u32, b: u32) -> u32
+pub fn vyre_std::arith::midpoint_u64(a: u64, b: u64) -> u64
+pub fn vyre_std::arith::midpoint_u8(a: u8, b: u8) -> u8
+pub fn vyre_std::arith::min_i16(a: i16, b: i16) -> i16
+pub fn vyre_std::arith::min_i32(a: i32, b: i32) -> i32
+pub fn vyre_std::arith::min_i64(a: i64, b: i64) -> i64
+pub fn vyre_std::arith::min_i8(a: i8, b: i8) -> i8
+pub fn vyre_std::arith::min_u16(a: u16, b: u16) -> u16
+pub fn vyre_std::arith::min_u32(a: u32, b: u32) -> u32
+pub fn vyre_std::arith::min_u64(a: u64, b: u64) -> u64
+pub fn vyre_std::arith::min_u8(a: u8, b: u8) -> u8
+pub fn vyre_std::arith::saturating_add_i16(a: i16, b: i16) -> i16
+pub fn vyre_std::arith::saturating_add_i32(a: i32, b: i32) -> i32
+pub fn vyre_std::arith::saturating_add_i64(a: i64, b: i64) -> i64
+pub fn vyre_std::arith::saturating_add_i8(a: i8, b: i8) -> i8
+pub fn vyre_std::arith::saturating_add_u16(a: u16, b: u16) -> u16
+pub fn vyre_std::arith::saturating_add_u32(a: u32, b: u32) -> u32
+pub fn vyre_std::arith::saturating_add_u64(a: u64, b: u64) -> u64
+pub fn vyre_std::arith::saturating_add_u8(a: u8, b: u8) -> u8
+pub fn vyre_std::arith::saturating_mul_i16(a: i16, b: i16) -> i16
+pub fn vyre_std::arith::saturating_mul_i32(a: i32, b: i32) -> i32
+pub fn vyre_std::arith::saturating_mul_i64(a: i64, b: i64) -> i64
+pub fn vyre_std::arith::saturating_mul_i8(a: i8, b: i8) -> i8
+pub fn vyre_std::arith::saturating_mul_u16(a: u16, b: u16) -> u16
+pub fn vyre_std::arith::saturating_mul_u32(a: u32, b: u32) -> u32
+pub fn vyre_std::arith::saturating_mul_u64(a: u64, b: u64) -> u64
+pub fn vyre_std::arith::saturating_mul_u8(a: u8, b: u8) -> u8
+pub fn vyre_std::arith::saturating_sub_i16(a: i16, b: i16) -> i16
+pub fn vyre_std::arith::saturating_sub_i32(a: i32, b: i32) -> i32
+pub fn vyre_std::arith::saturating_sub_i64(a: i64, b: i64) -> i64
+pub fn vyre_std::arith::saturating_sub_i8(a: i8, b: i8) -> i8
+pub fn vyre_std::arith::saturating_sub_u16(a: u16, b: u16) -> u16
+pub fn vyre_std::arith::saturating_sub_u32(a: u32, b: u32) -> u32
+pub fn vyre_std::arith::saturating_sub_u64(a: u64, b: u64) -> u64
+pub fn vyre_std::arith::saturating_sub_u8(a: u8, b: u8) -> u8
+pub fn vyre_std::arith::wrapping_add_i16(a: i16, b: i16) -> i16
+pub fn vyre_std::arith::wrapping_add_i32(a: i32, b: i32) -> i32
+pub fn vyre_std::arith::wrapping_add_i64(a: i64, b: i64) -> i64
+pub fn vyre_std::arith::wrapping_add_i8(a: i8, b: i8) -> i8
+pub fn vyre_std::arith::wrapping_add_u16(a: u16, b: u16) -> u16
+pub fn vyre_std::arith::wrapping_add_u32(a: u32, b: u32) -> u32
+pub fn vyre_std::arith::wrapping_add_u64(a: u64, b: u64) -> u64
+pub fn vyre_std::arith::wrapping_add_u8(a: u8, b: u8) -> u8
+pub fn vyre_std::arith::wrapping_mul_i16(a: i16, b: i16) -> i16
+pub fn vyre_std::arith::wrapping_mul_i32(a: i32, b: i32) -> i32
+pub fn vyre_std::arith::wrapping_mul_i64(a: i64, b: i64) -> i64
+pub fn vyre_std::arith::wrapping_mul_i8(a: i8, b: i8) -> i8
+pub fn vyre_std::arith::wrapping_mul_u16(a: u16, b: u16) -> u16
+pub fn vyre_std::arith::wrapping_mul_u32(a: u32, b: u32) -> u32
+pub fn vyre_std::arith::wrapping_mul_u64(a: u64, b: u64) -> u64
+pub fn vyre_std::arith::wrapping_mul_u8(a: u8, b: u8) -> u8
+pub fn vyre_std::arith::wrapping_sub_i16(a: i16, b: i16) -> i16
+pub fn vyre_std::arith::wrapping_sub_i32(a: i32, b: i32) -> i32
+pub fn vyre_std::arith::wrapping_sub_i64(a: i64, b: i64) -> i64
+pub fn vyre_std::arith::wrapping_sub_i8(a: i8, b: i8) -> i8
+pub fn vyre_std::arith::wrapping_sub_u16(a: u16, b: u16) -> u16
+pub fn vyre_std::arith::wrapping_sub_u32(a: u32, b: u32) -> u32
+pub fn vyre_std::arith::wrapping_sub_u64(a: u64, b: u64) -> u64
+pub fn vyre_std::arith::wrapping_sub_u8(a: u8, b: u8) -> u8
+pub mod vyre_std::pattern
+pub mod vyre_std::pattern::cache
+pub fn vyre_std::pattern::cache::cache_path(patterns: &[vyre_std::pattern::dfa_assemble::Pattern<'_>], options: vyre_std::pattern::dfa_assemble::AssembleOptions) -> std::path::PathBuf
+pub fn vyre_std::pattern::cache::clear() -> std::io::error::Result<()>
+pub fn vyre_std::pattern::cache::load_or_compute(patterns: &[vyre_std::pattern::dfa_assemble::Pattern<'_>], options: vyre_std::pattern::dfa_assemble::AssembleOptions) -> core::result::Result<vyre_std::pattern::types::PackedDfa, vyre_std::pattern::types::PatternError>
+pub fn vyre_std::pattern::cache::size() -> u64
+pub mod vyre_std::pattern::dfa_assemble
+pub enum vyre_std::pattern::dfa_assemble::Pattern<'a>
+pub vyre_std::pattern::dfa_assemble::Pattern::Literal(&'a [u8])
+pub vyre_std::pattern::dfa_assemble::Pattern::Regex(&'a str)
+impl<'a> core::clone::Clone for vyre_std::pattern::dfa_assemble::Pattern<'a>
+pub fn vyre_std::pattern::dfa_assemble::Pattern<'a>::clone(&self) -> vyre_std::pattern::dfa_assemble::Pattern<'a>
+impl<'a> core::cmp::Eq for vyre_std::pattern::dfa_assemble::Pattern<'a>
+impl<'a> core::cmp::PartialEq for vyre_std::pattern::dfa_assemble::Pattern<'a>
+pub fn vyre_std::pattern::dfa_assemble::Pattern<'a>::eq(&self, other: &vyre_std::pattern::dfa_assemble::Pattern<'a>) -> bool
+impl<'a> core::fmt::Debug for vyre_std::pattern::dfa_assemble::Pattern<'a>
+pub fn vyre_std::pattern::dfa_assemble::Pattern<'a>::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a> core::marker::StructuralPartialEq for vyre_std::pattern::dfa_assemble::Pattern<'a>
+impl<'a> core::marker::Freeze for vyre_std::pattern::dfa_assemble::Pattern<'a>
+impl<'a> core::marker::Send for vyre_std::pattern::dfa_assemble::Pattern<'a>
+impl<'a> core::marker::Sync for vyre_std::pattern::dfa_assemble::Pattern<'a>
+impl<'a> core::marker::Unpin for vyre_std::pattern::dfa_assemble::Pattern<'a>
+impl<'a> core::panic::unwind_safe::RefUnwindSafe for vyre_std::pattern::dfa_assemble::Pattern<'a>
+impl<'a> core::panic::unwind_safe::UnwindSafe for vyre_std::pattern::dfa_assemble::Pattern<'a>
+#[non_exhaustive] pub struct vyre_std::pattern::dfa_assemble::AssembleOptions
+pub vyre_std::pattern::dfa_assemble::AssembleOptions::format: vyre_std::pattern::types::DfaPackFormat
+pub vyre_std::pattern::dfa_assemble::AssembleOptions::minimize: bool
+impl core::clone::Clone for vyre_std::pattern::dfa_assemble::AssembleOptions
+pub fn vyre_std::pattern::dfa_assemble::AssembleOptions::clone(&self) -> vyre_std::pattern::dfa_assemble::AssembleOptions
+impl core::cmp::Eq for vyre_std::pattern::dfa_assemble::AssembleOptions
+impl core::cmp::PartialEq for vyre_std::pattern::dfa_assemble::AssembleOptions
+pub fn vyre_std::pattern::dfa_assemble::AssembleOptions::eq(&self, other: &vyre_std::pattern::dfa_assemble::AssembleOptions) -> bool
+impl core::default::Default for vyre_std::pattern::dfa_assemble::AssembleOptions
+pub fn vyre_std::pattern::dfa_assemble::AssembleOptions::default() -> Self
+impl core::fmt::Debug for vyre_std::pattern::dfa_assemble::AssembleOptions
+pub fn vyre_std::pattern::dfa_assemble::AssembleOptions::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for vyre_std::pattern::dfa_assemble::AssembleOptions
+impl core::marker::StructuralPartialEq for vyre_std::pattern::dfa_assemble::AssembleOptions
+impl core::marker::Freeze for vyre_std::pattern::dfa_assemble::AssembleOptions
+impl core::marker::Send for vyre_std::pattern::dfa_assemble::AssembleOptions
+impl core::marker::Sync for vyre_std::pattern::dfa_assemble::AssembleOptions
+impl core::marker::Unpin for vyre_std::pattern::dfa_assemble::AssembleOptions
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_std::pattern::dfa_assemble::AssembleOptions
+impl core::panic::unwind_safe::UnwindSafe for vyre_std::pattern::dfa_assemble::AssembleOptions
+pub fn vyre_std::pattern::dfa_assemble::dfa_assemble(patterns: &[vyre_std::pattern::dfa_assemble::Pattern<'_>], options: vyre_std::pattern::dfa_assemble::AssembleOptions) -> core::result::Result<vyre_std::pattern::types::PackedDfa, vyre_std::pattern::types::PatternError>
+pub mod vyre_std::pattern::dfa_minimize
+pub fn vyre_std::pattern::dfa_minimize::dfa_minimize(dfa: &vyre_std::pattern::types::Dfa) -> vyre_std::pattern::types::Dfa
+pub mod vyre_std::pattern::dfa_pack
+pub fn vyre_std::pattern::dfa_pack::dfa_pack(dfa: &vyre_std::pattern::types::Dfa, format: vyre_std::pattern::types::DfaPackFormat) -> vyre_std::pattern::types::PackedDfa
+pub fn vyre_std::pattern::dfa_pack::dfa_unpack(packed: &vyre_std::pattern::types::PackedDfa) -> core::option::Option<vyre_std::pattern::types::Dfa>
+pub mod vyre_std::pattern::nfa_to_dfa
+pub const vyre_std::pattern::nfa_to_dfa::MAX_DFA_STATES: u32
+pub fn vyre_std::pattern::nfa_to_dfa::nfa_to_dfa(nfa: &vyre_std::pattern::types::Nfa) -> core::result::Result<vyre_std::pattern::types::Dfa, vyre_std::pattern::types::PatternError>
+pub mod vyre_std::pattern::regex_to_nfa
+pub fn vyre_std::pattern::regex_to_nfa::regex_to_nfa(source: &str) -> core::result::Result<vyre_std::pattern::types::Nfa, vyre_std::pattern::types::PatternError>
+pub mod vyre_std::pattern::types
+#[non_exhaustive] pub enum vyre_std::pattern::types::DfaPackFormat
+pub vyre_std::pattern::types::DfaPackFormat::Dense
+pub vyre_std::pattern::types::DfaPackFormat::EquivClass
+impl core::clone::Clone for vyre_std::pattern::types::DfaPackFormat
+pub fn vyre_std::pattern::types::DfaPackFormat::clone(&self) -> vyre_std::pattern::types::DfaPackFormat
+impl core::cmp::Eq for vyre_std::pattern::types::DfaPackFormat
+impl core::cmp::PartialEq for vyre_std::pattern::types::DfaPackFormat
+pub fn vyre_std::pattern::types::DfaPackFormat::eq(&self, other: &vyre_std::pattern::types::DfaPackFormat) -> bool
+impl core::fmt::Debug for vyre_std::pattern::types::DfaPackFormat
+pub fn vyre_std::pattern::types::DfaPackFormat::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for vyre_std::pattern::types::DfaPackFormat
+impl core::marker::StructuralPartialEq for vyre_std::pattern::types::DfaPackFormat
+impl core::marker::Freeze for vyre_std::pattern::types::DfaPackFormat
+impl core::marker::Send for vyre_std::pattern::types::DfaPackFormat
+impl core::marker::Sync for vyre_std::pattern::types::DfaPackFormat
+impl core::marker::Unpin for vyre_std::pattern::types::DfaPackFormat
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_std::pattern::types::DfaPackFormat
+impl core::panic::unwind_safe::UnwindSafe for vyre_std::pattern::types::DfaPackFormat
+#[non_exhaustive] pub enum vyre_std::pattern::types::PatternError
+pub vyre_std::pattern::types::PatternError::EmptyPatternSet
+pub vyre_std::pattern::types::PatternError::ParseError
+pub vyre_std::pattern::types::PatternError::ParseError::message: alloc::string::String
+pub vyre_std::pattern::types::PatternError::ParseError::offset: usize
+pub vyre_std::pattern::types::PatternError::RecursionLimit
+pub vyre_std::pattern::types::PatternError::RecursionLimit::limit: usize
+pub vyre_std::pattern::types::PatternError::StateOverflow
+pub vyre_std::pattern::types::PatternError::StateOverflow::limit: u32
+pub vyre_std::pattern::types::PatternError::UnsupportedEscape
+pub vyre_std::pattern::types::PatternError::UnsupportedEscape::escape: char
+pub vyre_std::pattern::types::PatternError::UnsupportedEscape::offset: usize
+impl core::clone::Clone for vyre_std::pattern::types::PatternError
+pub fn vyre_std::pattern::types::PatternError::clone(&self) -> vyre_std::pattern::types::PatternError
+impl core::cmp::Eq for vyre_std::pattern::types::PatternError
+impl core::cmp::PartialEq for vyre_std::pattern::types::PatternError
+pub fn vyre_std::pattern::types::PatternError::eq(&self, other: &vyre_std::pattern::types::PatternError) -> bool
+impl core::error::Error for vyre_std::pattern::types::PatternError
+impl core::fmt::Debug for vyre_std::pattern::types::PatternError
+pub fn vyre_std::pattern::types::PatternError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for vyre_std::pattern::types::PatternError
+pub fn vyre_std::pattern::types::PatternError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for vyre_std::pattern::types::PatternError
+impl core::marker::Freeze for vyre_std::pattern::types::PatternError
+impl core::marker::Send for vyre_std::pattern::types::PatternError
+impl core::marker::Sync for vyre_std::pattern::types::PatternError
+impl core::marker::Unpin for vyre_std::pattern::types::PatternError
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_std::pattern::types::PatternError
+impl core::panic::unwind_safe::UnwindSafe for vyre_std::pattern::types::PatternError
+pub struct vyre_std::pattern::types::Dfa
+pub vyre_std::pattern::types::Dfa::accept: alloc::vec::Vec<bool>
+pub vyre_std::pattern::types::Dfa::start: u32
+pub vyre_std::pattern::types::Dfa::state_count: u32
+pub vyre_std::pattern::types::Dfa::transitions: alloc::vec::Vec<u32>
+impl vyre_std::pattern::types::Dfa
+pub fn vyre_std::pattern::types::Dfa::go(&self, state: u32, byte: u8) -> u32
+pub fn vyre_std::pattern::types::Dfa::set(&mut self, state: u32, byte: u8, next: u32)
+impl core::clone::Clone for vyre_std::pattern::types::Dfa
+pub fn vyre_std::pattern::types::Dfa::clone(&self) -> vyre_std::pattern::types::Dfa
+impl core::cmp::Eq for vyre_std::pattern::types::Dfa
+impl core::cmp::PartialEq for vyre_std::pattern::types::Dfa
+pub fn vyre_std::pattern::types::Dfa::eq(&self, other: &vyre_std::pattern::types::Dfa) -> bool
+impl core::fmt::Debug for vyre_std::pattern::types::Dfa
+pub fn vyre_std::pattern::types::Dfa::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for vyre_std::pattern::types::Dfa
+impl core::marker::Freeze for vyre_std::pattern::types::Dfa
+impl core::marker::Send for vyre_std::pattern::types::Dfa
+impl core::marker::Sync for vyre_std::pattern::types::Dfa
+impl core::marker::Unpin for vyre_std::pattern::types::Dfa
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_std::pattern::types::Dfa
+impl core::panic::unwind_safe::UnwindSafe for vyre_std::pattern::types::Dfa
+pub struct vyre_std::pattern::types::Nfa
+pub vyre_std::pattern::types::Nfa::accept: alloc::vec::Vec<bool>
+pub vyre_std::pattern::types::Nfa::edges: alloc::vec::Vec<vyre_std::pattern::types::NfaEdge>
+pub vyre_std::pattern::types::Nfa::start: vyre_std::pattern::types::NfaStateId
+pub vyre_std::pattern::types::Nfa::state_count: u32
+impl core::clone::Clone for vyre_std::pattern::types::Nfa
+pub fn vyre_std::pattern::types::Nfa::clone(&self) -> vyre_std::pattern::types::Nfa
+impl core::cmp::Eq for vyre_std::pattern::types::Nfa
+impl core::cmp::PartialEq for vyre_std::pattern::types::Nfa
+pub fn vyre_std::pattern::types::Nfa::eq(&self, other: &vyre_std::pattern::types::Nfa) -> bool
+impl core::fmt::Debug for vyre_std::pattern::types::Nfa
+pub fn vyre_std::pattern::types::Nfa::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for vyre_std::pattern::types::Nfa
+impl core::marker::Freeze for vyre_std::pattern::types::Nfa
+impl core::marker::Send for vyre_std::pattern::types::Nfa
+impl core::marker::Sync for vyre_std::pattern::types::Nfa
+impl core::marker::Unpin for vyre_std::pattern::types::Nfa
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_std::pattern::types::Nfa
+impl core::panic::unwind_safe::UnwindSafe for vyre_std::pattern::types::Nfa
+pub struct vyre_std::pattern::types::NfaEdge
+pub vyre_std::pattern::types::NfaEdge::byte: core::option::Option<u8>
+pub vyre_std::pattern::types::NfaEdge::from: vyre_std::pattern::types::NfaStateId
+pub vyre_std::pattern::types::NfaEdge::to: vyre_std::pattern::types::NfaStateId
+impl core::clone::Clone for vyre_std::pattern::types::NfaEdge
+pub fn vyre_std::pattern::types::NfaEdge::clone(&self) -> vyre_std::pattern::types::NfaEdge
+impl core::cmp::Eq for vyre_std::pattern::types::NfaEdge
+impl core::cmp::PartialEq for vyre_std::pattern::types::NfaEdge
+pub fn vyre_std::pattern::types::NfaEdge::eq(&self, other: &vyre_std::pattern::types::NfaEdge) -> bool
+impl core::fmt::Debug for vyre_std::pattern::types::NfaEdge
+pub fn vyre_std::pattern::types::NfaEdge::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for vyre_std::pattern::types::NfaEdge
+impl core::marker::Freeze for vyre_std::pattern::types::NfaEdge
+impl core::marker::Send for vyre_std::pattern::types::NfaEdge
+impl core::marker::Sync for vyre_std::pattern::types::NfaEdge
+impl core::marker::Unpin for vyre_std::pattern::types::NfaEdge
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_std::pattern::types::NfaEdge
+impl core::panic::unwind_safe::UnwindSafe for vyre_std::pattern::types::NfaEdge
+pub struct vyre_std::pattern::types::PackedDfa
+pub vyre_std::pattern::types::PackedDfa::bytes: alloc::vec::Vec<u8>
+pub vyre_std::pattern::types::PackedDfa::format: vyre_std::pattern::types::DfaPackFormat
+pub vyre_std::pattern::types::PackedDfa::start: u32
+pub vyre_std::pattern::types::PackedDfa::state_count: u32
+impl core::clone::Clone for vyre_std::pattern::types::PackedDfa
+pub fn vyre_std::pattern::types::PackedDfa::clone(&self) -> vyre_std::pattern::types::PackedDfa
+impl core::cmp::Eq for vyre_std::pattern::types::PackedDfa
+impl core::cmp::PartialEq for vyre_std::pattern::types::PackedDfa
+pub fn vyre_std::pattern::types::PackedDfa::eq(&self, other: &vyre_std::pattern::types::PackedDfa) -> bool
+impl core::fmt::Debug for vyre_std::pattern::types::PackedDfa
+pub fn vyre_std::pattern::types::PackedDfa::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for vyre_std::pattern::types::PackedDfa
+impl core::marker::Freeze for vyre_std::pattern::types::PackedDfa
+impl core::marker::Send for vyre_std::pattern::types::PackedDfa
+impl core::marker::Sync for vyre_std::pattern::types::PackedDfa
+impl core::marker::Unpin for vyre_std::pattern::types::PackedDfa
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_std::pattern::types::PackedDfa
+impl core::panic::unwind_safe::UnwindSafe for vyre_std::pattern::types::PackedDfa
+pub const vyre_std::pattern::types::INVALID_STATE: u32
+pub type vyre_std::pattern::types::NfaStateId = u32
+#[non_exhaustive] pub enum vyre_std::pattern::DfaPackFormat
+pub vyre_std::pattern::DfaPackFormat::Dense
+pub vyre_std::pattern::DfaPackFormat::EquivClass
+impl core::clone::Clone for vyre_std::pattern::types::DfaPackFormat
+pub fn vyre_std::pattern::types::DfaPackFormat::clone(&self) -> vyre_std::pattern::types::DfaPackFormat
+impl core::cmp::Eq for vyre_std::pattern::types::DfaPackFormat
+impl core::cmp::PartialEq for vyre_std::pattern::types::DfaPackFormat
+pub fn vyre_std::pattern::types::DfaPackFormat::eq(&self, other: &vyre_std::pattern::types::DfaPackFormat) -> bool
+impl core::fmt::Debug for vyre_std::pattern::types::DfaPackFormat
+pub fn vyre_std::pattern::types::DfaPackFormat::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for vyre_std::pattern::types::DfaPackFormat
+impl core::marker::StructuralPartialEq for vyre_std::pattern::types::DfaPackFormat
+impl core::marker::Freeze for vyre_std::pattern::types::DfaPackFormat
+impl core::marker::Send for vyre_std::pattern::types::DfaPackFormat
+impl core::marker::Sync for vyre_std::pattern::types::DfaPackFormat
+impl core::marker::Unpin for vyre_std::pattern::types::DfaPackFormat
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_std::pattern::types::DfaPackFormat
+impl core::panic::unwind_safe::UnwindSafe for vyre_std::pattern::types::DfaPackFormat
+pub enum vyre_std::pattern::Pattern<'a>
+pub vyre_std::pattern::Pattern::Literal(&'a [u8])
+pub vyre_std::pattern::Pattern::Regex(&'a str)
+impl<'a> core::clone::Clone for vyre_std::pattern::dfa_assemble::Pattern<'a>
+pub fn vyre_std::pattern::dfa_assemble::Pattern<'a>::clone(&self) -> vyre_std::pattern::dfa_assemble::Pattern<'a>
+impl<'a> core::cmp::Eq for vyre_std::pattern::dfa_assemble::Pattern<'a>
+impl<'a> core::cmp::PartialEq for vyre_std::pattern::dfa_assemble::Pattern<'a>
+pub fn vyre_std::pattern::dfa_assemble::Pattern<'a>::eq(&self, other: &vyre_std::pattern::dfa_assemble::Pattern<'a>) -> bool
+impl<'a> core::fmt::Debug for vyre_std::pattern::dfa_assemble::Pattern<'a>
+pub fn vyre_std::pattern::dfa_assemble::Pattern<'a>::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a> core::marker::StructuralPartialEq for vyre_std::pattern::dfa_assemble::Pattern<'a>
+impl<'a> core::marker::Freeze for vyre_std::pattern::dfa_assemble::Pattern<'a>
+impl<'a> core::marker::Send for vyre_std::pattern::dfa_assemble::Pattern<'a>
+impl<'a> core::marker::Sync for vyre_std::pattern::dfa_assemble::Pattern<'a>
+impl<'a> core::marker::Unpin for vyre_std::pattern::dfa_assemble::Pattern<'a>
+impl<'a> core::panic::unwind_safe::RefUnwindSafe for vyre_std::pattern::dfa_assemble::Pattern<'a>
+impl<'a> core::panic::unwind_safe::UnwindSafe for vyre_std::pattern::dfa_assemble::Pattern<'a>
+#[non_exhaustive] pub enum vyre_std::pattern::PatternError
+pub vyre_std::pattern::PatternError::EmptyPatternSet
+pub vyre_std::pattern::PatternError::ParseError
+pub vyre_std::pattern::PatternError::ParseError::message: alloc::string::String
+pub vyre_std::pattern::PatternError::ParseError::offset: usize
+pub vyre_std::pattern::PatternError::RecursionLimit
+pub vyre_std::pattern::PatternError::RecursionLimit::limit: usize
+pub vyre_std::pattern::PatternError::StateOverflow
+pub vyre_std::pattern::PatternError::StateOverflow::limit: u32
+pub vyre_std::pattern::PatternError::UnsupportedEscape
+pub vyre_std::pattern::PatternError::UnsupportedEscape::escape: char
+pub vyre_std::pattern::PatternError::UnsupportedEscape::offset: usize
+impl core::clone::Clone for vyre_std::pattern::types::PatternError
+pub fn vyre_std::pattern::types::PatternError::clone(&self) -> vyre_std::pattern::types::PatternError
+impl core::cmp::Eq for vyre_std::pattern::types::PatternError
+impl core::cmp::PartialEq for vyre_std::pattern::types::PatternError
+pub fn vyre_std::pattern::types::PatternError::eq(&self, other: &vyre_std::pattern::types::PatternError) -> bool
+impl core::error::Error for vyre_std::pattern::types::PatternError
+impl core::fmt::Debug for vyre_std::pattern::types::PatternError
+pub fn vyre_std::pattern::types::PatternError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for vyre_std::pattern::types::PatternError
+pub fn vyre_std::pattern::types::PatternError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for vyre_std::pattern::types::PatternError
+impl core::marker::Freeze for vyre_std::pattern::types::PatternError
+impl core::marker::Send for vyre_std::pattern::types::PatternError
+impl core::marker::Sync for vyre_std::pattern::types::PatternError
+impl core::marker::Unpin for vyre_std::pattern::types::PatternError
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_std::pattern::types::PatternError
+impl core::panic::unwind_safe::UnwindSafe for vyre_std::pattern::types::PatternError
+#[non_exhaustive] pub struct vyre_std::pattern::AssembleOptions
+pub vyre_std::pattern::AssembleOptions::format: vyre_std::pattern::types::DfaPackFormat
+pub vyre_std::pattern::AssembleOptions::minimize: bool
+impl core::clone::Clone for vyre_std::pattern::dfa_assemble::AssembleOptions
+pub fn vyre_std::pattern::dfa_assemble::AssembleOptions::clone(&self) -> vyre_std::pattern::dfa_assemble::AssembleOptions
+impl core::cmp::Eq for vyre_std::pattern::dfa_assemble::AssembleOptions
+impl core::cmp::PartialEq for vyre_std::pattern::dfa_assemble::AssembleOptions
+pub fn vyre_std::pattern::dfa_assemble::AssembleOptions::eq(&self, other: &vyre_std::pattern::dfa_assemble::AssembleOptions) -> bool
+impl core::default::Default for vyre_std::pattern::dfa_assemble::AssembleOptions
+pub fn vyre_std::pattern::dfa_assemble::AssembleOptions::default() -> Self
+impl core::fmt::Debug for vyre_std::pattern::dfa_assemble::AssembleOptions
+pub fn vyre_std::pattern::dfa_assemble::AssembleOptions::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for vyre_std::pattern::dfa_assemble::AssembleOptions
+impl core::marker::StructuralPartialEq for vyre_std::pattern::dfa_assemble::AssembleOptions
+impl core::marker::Freeze for vyre_std::pattern::dfa_assemble::AssembleOptions
+impl core::marker::Send for vyre_std::pattern::dfa_assemble::AssembleOptions
+impl core::marker::Sync for vyre_std::pattern::dfa_assemble::AssembleOptions
+impl core::marker::Unpin for vyre_std::pattern::dfa_assemble::AssembleOptions
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_std::pattern::dfa_assemble::AssembleOptions
+impl core::panic::unwind_safe::UnwindSafe for vyre_std::pattern::dfa_assemble::AssembleOptions
+pub struct vyre_std::pattern::Dfa
+pub vyre_std::pattern::Dfa::accept: alloc::vec::Vec<bool>
+pub vyre_std::pattern::Dfa::start: u32
+pub vyre_std::pattern::Dfa::state_count: u32
+pub vyre_std::pattern::Dfa::transitions: alloc::vec::Vec<u32>
+impl vyre_std::pattern::types::Dfa
+pub fn vyre_std::pattern::types::Dfa::go(&self, state: u32, byte: u8) -> u32
+pub fn vyre_std::pattern::types::Dfa::set(&mut self, state: u32, byte: u8, next: u32)
+impl core::clone::Clone for vyre_std::pattern::types::Dfa
+pub fn vyre_std::pattern::types::Dfa::clone(&self) -> vyre_std::pattern::types::Dfa
+impl core::cmp::Eq for vyre_std::pattern::types::Dfa
+impl core::cmp::PartialEq for vyre_std::pattern::types::Dfa
+pub fn vyre_std::pattern::types::Dfa::eq(&self, other: &vyre_std::pattern::types::Dfa) -> bool
+impl core::fmt::Debug for vyre_std::pattern::types::Dfa
+pub fn vyre_std::pattern::types::Dfa::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for vyre_std::pattern::types::Dfa
+impl core::marker::Freeze for vyre_std::pattern::types::Dfa
+impl core::marker::Send for vyre_std::pattern::types::Dfa
+impl core::marker::Sync for vyre_std::pattern::types::Dfa
+impl core::marker::Unpin for vyre_std::pattern::types::Dfa
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_std::pattern::types::Dfa
+impl core::panic::unwind_safe::UnwindSafe for vyre_std::pattern::types::Dfa
+pub struct vyre_std::pattern::Nfa
+pub vyre_std::pattern::Nfa::accept: alloc::vec::Vec<bool>
+pub vyre_std::pattern::Nfa::edges: alloc::vec::Vec<vyre_std::pattern::types::NfaEdge>
+pub vyre_std::pattern::Nfa::start: vyre_std::pattern::types::NfaStateId
+pub vyre_std::pattern::Nfa::state_count: u32
+impl core::clone::Clone for vyre_std::pattern::types::Nfa
+pub fn vyre_std::pattern::types::Nfa::clone(&self) -> vyre_std::pattern::types::Nfa
+impl core::cmp::Eq for vyre_std::pattern::types::Nfa
+impl core::cmp::PartialEq for vyre_std::pattern::types::Nfa
+pub fn vyre_std::pattern::types::Nfa::eq(&self, other: &vyre_std::pattern::types::Nfa) -> bool
+impl core::fmt::Debug for vyre_std::pattern::types::Nfa
+pub fn vyre_std::pattern::types::Nfa::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for vyre_std::pattern::types::Nfa
+impl core::marker::Freeze for vyre_std::pattern::types::Nfa
+impl core::marker::Send for vyre_std::pattern::types::Nfa
+impl core::marker::Sync for vyre_std::pattern::types::Nfa
+impl core::marker::Unpin for vyre_std::pattern::types::Nfa
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_std::pattern::types::Nfa
+impl core::panic::unwind_safe::UnwindSafe for vyre_std::pattern::types::Nfa
+pub struct vyre_std::pattern::NfaEdge
+pub vyre_std::pattern::NfaEdge::byte: core::option::Option<u8>
+pub vyre_std::pattern::NfaEdge::from: vyre_std::pattern::types::NfaStateId
+pub vyre_std::pattern::NfaEdge::to: vyre_std::pattern::types::NfaStateId
+impl core::clone::Clone for vyre_std::pattern::types::NfaEdge
+pub fn vyre_std::pattern::types::NfaEdge::clone(&self) -> vyre_std::pattern::types::NfaEdge
+impl core::cmp::Eq for vyre_std::pattern::types::NfaEdge
+impl core::cmp::PartialEq for vyre_std::pattern::types::NfaEdge
+pub fn vyre_std::pattern::types::NfaEdge::eq(&self, other: &vyre_std::pattern::types::NfaEdge) -> bool
+impl core::fmt::Debug for vyre_std::pattern::types::NfaEdge
+pub fn vyre_std::pattern::types::NfaEdge::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for vyre_std::pattern::types::NfaEdge
+impl core::marker::Freeze for vyre_std::pattern::types::NfaEdge
+impl core::marker::Send for vyre_std::pattern::types::NfaEdge
+impl core::marker::Sync for vyre_std::pattern::types::NfaEdge
+impl core::marker::Unpin for vyre_std::pattern::types::NfaEdge
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_std::pattern::types::NfaEdge
+impl core::panic::unwind_safe::UnwindSafe for vyre_std::pattern::types::NfaEdge
+pub struct vyre_std::pattern::PackedDfa
+pub vyre_std::pattern::PackedDfa::bytes: alloc::vec::Vec<u8>
+pub vyre_std::pattern::PackedDfa::format: vyre_std::pattern::types::DfaPackFormat
+pub vyre_std::pattern::PackedDfa::start: u32
+pub vyre_std::pattern::PackedDfa::state_count: u32
+impl core::clone::Clone for vyre_std::pattern::types::PackedDfa
+pub fn vyre_std::pattern::types::PackedDfa::clone(&self) -> vyre_std::pattern::types::PackedDfa
+impl core::cmp::Eq for vyre_std::pattern::types::PackedDfa
+impl core::cmp::PartialEq for vyre_std::pattern::types::PackedDfa
+pub fn vyre_std::pattern::types::PackedDfa::eq(&self, other: &vyre_std::pattern::types::PackedDfa) -> bool
+impl core::fmt::Debug for vyre_std::pattern::types::PackedDfa
+pub fn vyre_std::pattern::types::PackedDfa::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for vyre_std::pattern::types::PackedDfa
+impl core::marker::Freeze for vyre_std::pattern::types::PackedDfa
+impl core::marker::Send for vyre_std::pattern::types::PackedDfa
+impl core::marker::Sync for vyre_std::pattern::types::PackedDfa
+impl core::marker::Unpin for vyre_std::pattern::types::PackedDfa
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_std::pattern::types::PackedDfa
+impl core::panic::unwind_safe::UnwindSafe for vyre_std::pattern::types::PackedDfa
+pub const vyre_std::pattern::INVALID_STATE: u32
+pub fn vyre_std::pattern::dfa_assemble(patterns: &[vyre_std::pattern::dfa_assemble::Pattern<'_>], options: vyre_std::pattern::dfa_assemble::AssembleOptions) -> core::result::Result<vyre_std::pattern::types::PackedDfa, vyre_std::pattern::types::PatternError>
+pub fn vyre_std::pattern::dfa_minimize(dfa: &vyre_std::pattern::types::Dfa) -> vyre_std::pattern::types::Dfa
+pub fn vyre_std::pattern::dfa_pack(dfa: &vyre_std::pattern::types::Dfa, format: vyre_std::pattern::types::DfaPackFormat) -> vyre_std::pattern::types::PackedDfa
+pub fn vyre_std::pattern::dfa_unpack(packed: &vyre_std::pattern::types::PackedDfa) -> core::option::Option<vyre_std::pattern::types::Dfa>
+pub fn vyre_std::pattern::nfa_to_dfa(nfa: &vyre_std::pattern::types::Nfa) -> core::result::Result<vyre_std::pattern::types::Dfa, vyre_std::pattern::types::PatternError>
+pub fn vyre_std::pattern::regex_to_nfa(source: &str) -> core::result::Result<vyre_std::pattern::types::Nfa, vyre_std::pattern::types::PatternError>
+pub type vyre_std::pattern::NfaStateId = u32

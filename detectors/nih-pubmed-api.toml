@@ -1,0 +1,21 @@
+# Docs: https://www.ncbi.nlm.nih.gov/home/develop/api/
+# Format: 36-character alphanumeric API key for NCBI E-utilities
+# Verify: no public verification endpoint
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "nih-pubmed-api-key"
+name = "NIH PubMed/NCBI API Key"
+service = "nih"
+severity = "medium"
+keywords = ["NCBI_API_KEY", "PUBMED_API_KEY", "ncbi", "pubmed", "eutils", "ncbi.nlm.nih.gov"]
+
+[[detector.patterns]]
+regex = "(?:NCBI|PUBMED)_API_KEY[=:\\s\"'\\']+([a-zA-Z0-9]{36})"
+description = "NCBI/PubMed API key (36 alphanumeric chars) with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "ncbi\\.nlm\\.nih\\.gov.*[?&]api_key=([a-zA-Z0-9]{36})"
+description = "NCBI API key in URL query parameter"
+group = 1

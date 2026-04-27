@@ -1,0 +1,16 @@
+# Docs: https://developer.adobe.com/commerce/webapi/get-started/authentication/gs-authentication-token/
+# Format: 32 hexadecimal characters (no distinctive prefix - requires context anchoring)
+# Verify: POST /rest/V1/integration/admin/token returns token if valid credentials provided
+# Prefix: none (generic hex, requires keyword context)
+
+[detector]
+id = "magento-integration-token"
+name = "Magento Integration Token"
+service = "magento"
+severity = "high"
+keywords = ["magento", "integration", "MAGE", "MAGENTO", "access_token"]
+
+[[detector.patterns]]
+regex = "(?:magento|integration|MAGE|MAGENTO)[_=:\\s\"']+(?:token|access_token)?[=:\\s\"']*([a-f0-9]{32})"
+description = "Magento integration/admin access token with context anchor"
+group = 1

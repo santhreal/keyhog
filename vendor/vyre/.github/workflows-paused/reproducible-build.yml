@@ -1,0 +1,57 @@
+name: Reproducible Build
+
+on:
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_DATE_EPOCH: 0
+
+jobs:
+  reproducible:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build pass 1
+        run: |
+          cargo clean
+          cargo build --workspace --release
+          mkdir -p /tmp/pass1
+          find target/release -name '*.rlib' -exec cp --parents {} /tmp/pass1 \;
+          find /tmp/pass1 -name '*.rlib' | sort | xargs sha256sum > /tmp/sums1.txt
+
+      - name: Build pass 2
+        run: |
+          cargo clean
+          cargo build --workspace --release
+          mkdir -p /tmp/pass2
+          find target/release -name '*.rlib' -exec cp --parents {} /tmp/pass2 \;
+          find /tmp/pass2 -name '*.rlib' | sort | xargs sha256sum > /tmp/sums2.txt
+
+      - name: Compare checksums
+        run: |
+          echo "=== Pass 1 ==="
+          cat /tmp/sums1.txt
+          echo ""
+          echo "=== Pass 2 ==="
+          cat /tmp/sums2.txt
+          diff /tmp/sums1.txt /tmp/sums2.txt && echo "Reproducible: PASS" || {
+            echo "Reproducible: FAIL — .rlib checksums differ between identical builds"
+            exit 1
+          }
+
+      - name: Diffoscope (optional)
+        if: failure()
+        run: |
+          if command -v diffoscope >/dev/null 2>&1; then
+            echo "diffoscope is available; manual inspection of .rlib differences may be needed"
+          else
+            echo "diffoscope not installed"
+          fi

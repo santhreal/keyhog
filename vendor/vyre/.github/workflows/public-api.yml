@@ -1,0 +1,23 @@
+name: public-api-diff
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: public-api-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  diff:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - name: Install cargo-public-api
+        run: cargo install cargo-public-api --locked
+      - name: Diff every publishable crate
+        working-directory: libs/performance/matching/vyre
+        run: bash scripts/check_public_api.sh

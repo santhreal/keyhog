@@ -1,0 +1,33 @@
+# Docs: https://docs.scraperapi.com/
+# Format: 32-character alphanumeric string with no unique prefix
+# Verify: GET /account?api_key=... returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "scraperapi-key"
+name = "ScraperAPI Key"
+service = "scraperapi"
+severity = "high"
+keywords = ["scraperapi", "SCRAPERAPI", "scraper_api"]
+
+[[detector.patterns]]
+regex = "(?:scraperapi|SCRAPERAPI)[=:\\s\"'']+([a-zA-Z0-9]{32})"
+description = "ScraperAPI key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:api[_-]?key|apikey)[=:\\s\"'']+([a-zA-Z0-9]{32}).{0,50}(?:scraperapi)"
+description = "ScraperAPI key with api_key prefix and scraperapi context"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://api.scraperapi.com/account"
+
+[detector.verify.auth]
+type = "query"
+param = "api_key"
+field = "match"
+
+[detector.verify.success]
+status = 200

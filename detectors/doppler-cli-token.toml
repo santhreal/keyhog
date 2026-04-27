@@ -1,0 +1,30 @@
+# Docs: https://docs.doppler.com/reference/api
+# Format: dp.ct.{44_char_base58} for CLI tokens, dp.pt.{44_char_base58} for personal tokens
+# Verify: GET /v3/workplace with Bearer token returns 200 if valid
+# Prefix: dp.ct. or dp.pt.
+
+[detector]
+id = "doppler-cli-token"
+name = "Doppler CLI Token"
+service = "doppler"
+severity = "critical"
+keywords = ["dp.ct.", "dp.pt.", "doppler"]
+
+[[detector.patterns]]
+regex = 'dp\.(ct|pt)\.[a-zA-Z0-9]{44}'
+description = "Doppler CLI token or personal token with dp.ct. or dp.pt. prefix"
+
+[detector.verify]
+method = "GET"
+url = "https://api.doppler.com/v3/workplace"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[detector.verify.success]
+status = 200
+
+[[detector.verify.metadata]]
+name = "workplace_name"
+json_path = "$.workplace.name"

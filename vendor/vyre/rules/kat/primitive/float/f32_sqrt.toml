@@ -1,0 +1,6 @@
+op_id = "primitive.float.f32_sqrt"
+
+[[golden]]
+input = "00008040"
+expected = "00000040"
+reason = "sqrt(4.0) = 2.0"

@@ -1,0 +1,6 @@
+pub trait EnforceGate: private::Sealed + Send + Sync {
+/// Name of this gate — appears in verdicts and logs.
+fn name(&self) -> &'static str;
+/// Evaluate the gate against `program`. Must be pure.
+fn evaluate(&self, program: &Program) -> EnforceVerdict;
+}

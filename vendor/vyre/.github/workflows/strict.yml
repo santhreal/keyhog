@@ -1,0 +1,39 @@
+name: strict-warnings
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: strict-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  strict:
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: -D warnings
+      RUSTDOCFLAGS: -D warnings
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - name: Build every crate with -D warnings
+        working-directory: libs/performance/matching/vyre
+        run: |
+          cargo build --workspace --all-targets --all-features --locked
+      - name: Abstraction gate
+        working-directory: libs/performance/matching/vyre
+        run: |
+          cargo xtask abstraction-gate
+      - name: Clippy with -D warnings
+        working-directory: libs/performance/matching/vyre
+        run: |
+          cargo clippy --workspace --all-targets --all-features -- -D warnings
+      - name: Rustdoc with -D warnings
+        working-directory: libs/performance/matching/vyre
+        run: |
+          cargo doc --workspace --all-features --no-deps

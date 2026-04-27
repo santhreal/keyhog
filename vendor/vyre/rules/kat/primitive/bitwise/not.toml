@@ -1,0 +1,11 @@
+op_id = "primitive.bitwise.not"
+
+[[golden]]
+input = "00000000"
+expected = "ffffffff"
+reason = "!0 = u32::MAX (all bits set)"
+
+[[golden]]
+input = "ffffffff"
+expected = "00000000"
+reason = "!u32::MAX = 0"

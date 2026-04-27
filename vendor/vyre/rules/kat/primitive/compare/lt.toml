@@ -1,0 +1,11 @@
+op_id = "primitive.compare.lt"
+
+[[golden]]
+input = "0300000005000000"
+expected = "01000000"
+reason = "3 < 5 â 1"
+
+[[golden]]
+input = "0500000003000000"
+expected = "00000000"
+reason = "5 < 3 â 0"

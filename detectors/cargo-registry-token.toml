@@ -1,0 +1,21 @@
+# Docs: https://doc.rust-lang.org/cargo/commands/cargo-login.html
+# Format: 32-character hexadecimal string for crates.io
+# Verify: GET /api/v1/me with Bearer token returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "cargo-registry-token"
+name = "Cargo Registry Token"
+service = "cargo"
+severity = "high"
+keywords = ["CARGO_REGISTRY_TOKEN", "cargo login", "crates.io", "cargo token"]
+
+[[detector.patterns]]
+regex = "(?:CARGO_REGISTRY_TOKEN|cargo.registry.token|cargo_token)[=:\\s\"'']+([a-f0-9]{32})"
+description = "Cargo registry token for crates.io (32 hex characters)"
+group = 1
+
+[[detector.patterns]]
+regex = "cargo\\s+login\\s+[\\'\"]?([a-f0-9]{32})[\\'\"]?"
+description = "Cargo login command with token"
+group = 1

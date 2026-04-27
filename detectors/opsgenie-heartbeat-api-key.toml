@@ -1,0 +1,28 @@
+# Docs: https://support.atlassian.com/opsgenie/docs/heartbeat-monitoring/
+# Format: UUID format (8-4-4-4-12 hex characters)
+# Verify: GET /v2/heartbeats with Authorization header returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "opsgenie-heartbeat-api-key"
+name = "OpsGenie Heartbeat API Key"
+service = "opsgenie"
+severity = "critical"
+keywords = ["OPSGENIE_HEARTBEAT", "opsgenie_heartbeat", "GenieKey"]
+
+[[detector.patterns]]
+regex = "(?:OPSGENIE_HEARTBEAT|opsgenie.heartbeat)[=:\\s\"\\']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
+description = "OpsGenie heartbeat API key with context anchor"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://api.opsgenie.com/v2/heartbeats"
+
+[detector.verify.auth]
+type = "header"
+name = "Authorization"
+template = "GenieKey {{match}}"
+
+[detector.verify.success]
+status = 200

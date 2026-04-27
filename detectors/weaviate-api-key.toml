@@ -1,0 +1,28 @@
+# Docs: https://weaviate.io/developers/weaviate/configuration/authentication
+# Format: Alphanumeric string, typically 32+ characters (no fixed prefix)
+# Verify: https://weaviate.io/developers/weaviate/api/rest/v1
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "weaviate-api-key"
+name = "Weaviate API Key"
+service = "weaviate"
+severity = "high"
+keywords = ["WEAVIATE_API_KEY", "weaviate_api_key", "WEAVIATE_APIKEY", "weaviateApiKey"]
+
+[[detector.patterns]]
+regex = "(?:WEAVIATE[_-]?API[_-]?KEY|weaviate[_-]?api[_-]?key)[=:\\s\"'']+([a-zA-Z0-9_-]{32,})"
+description = "Weaviate API key with context anchor"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://{host}/v1/meta"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[detector.verify.success]
+status = 200
+json_path = "version"

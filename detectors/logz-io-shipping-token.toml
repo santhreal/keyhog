@@ -1,0 +1,16 @@
+# Docs: https://docs.logz.io/docs/log-shipping/
+# Format: 32-character hexadecimal string (no specific prefix)
+# Verify: POST to listener.logz.io:8071 with token returns 200 if valid
+# Prefix: none (generic hex, requires keyword context)
+
+[detector]
+id = "logz-io-shipping-token"
+name = "Logz.io Shipping Token"
+service = "logz.io"
+severity = "medium"
+keywords = ["LOGZIO_TOKEN", "logzio_token", "logz.io", "LOGZIO_SHIPPING_TOKEN", "listener.logz.io"]
+
+[[detector.patterns]]
+regex = "(?:LOGZIO_TOKEN|logzio_token|LOGZIO_SHIPPING_TOKEN)[=:\\s\"']+([a-f0-9]{32})"
+description = "Logz.io log shipping token (32 hex chars) with context anchor"
+group = 1

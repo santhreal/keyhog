@@ -1,0 +1,28 @@
+# Docs: https://otx.alienvault.com/api
+# Format: 64 hexadecimal characters
+# Verify: GET /api/v1/user/me with X-OTX-API-KEY header returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "alienvault-otx-api-key"
+name = "AlienVault OTX API Key"
+service = "alienvault"
+severity = "medium"
+keywords = ["OTX_API_KEY", "ALIENVAULT_API_KEY", "otx", "alienvault"]
+
+[[detector.patterns]]
+regex = "(?:OTX|ALIENVAULT|alienvault|otx)(?:_API)?(?:_KEY)?[=:\\s\"'']+([a-f0-9]{64})"
+description = "AlienVault OTX API key with context anchor"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://otx.alienvault.com/api/v1/user/me"
+
+[detector.verify.auth]
+type = "header"
+name = "X-OTX-API-KEY"
+template = "{{match}}"
+
+[detector.verify.success]
+status = 200

@@ -1,0 +1,588 @@
+<!DOCTYPE HTML>
+<html lang="en" class="rust sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Compression - The vyre Book</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="The GPU compute IR with a conformance prover">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../../favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="../../favicon-8114d1fc.png">
+        <link rel="stylesheet" href="../../css/variables-8adf115d.css">
+        <link rel="stylesheet" href="../../css/general-2459343d.css">
+        <link rel="stylesheet" href="../../css/chrome-ae938929.css">
+        <link rel="stylesheet" href="../../css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../../fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="../../highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="../../tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="../../ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "../../";
+            const default_light_theme = "rust";
+            const default_dark_theme = "navy";
+            window.path_to_searchindex_js = "../../searchindex-bc7bdb82.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="../../toc-16d598fb.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('rust')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="../../toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">The vyre Book</h1>
+
+                    <div class="right-buttons">
+                        <a href="../../print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/santhsecurity/vyre" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/santhsecurity/vyre/edit/main/core/docs/./ops/compression/overview.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                            <span class=fa-svg id="git-edit-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M421.7 220.3l-11.3 11.3-22.6 22.6-205 205c-6.6 6.6-14.8 11.5-23.8 14.1L30.8 511c-8.4 2.5-17.5 .2-23.7-6.1S-1.5 489.7 1 481.2L38.7 353.1c2.6-9 7.5-17.2 14.1-23.8l205-205 22.6-22.6 11.3-11.3 33.9 33.9 62.1 62.1 33.9 33.9zM96 353.9l-9.3 9.3c-.9 .9-1.6 2.1-2 3.4l-25.3 86 86-25.3c1.3-.4 2.5-1.1 3.4-2l9.3-9.3H112c-8.8 0-16-7.2-16-16V353.9zM453.3 19.3l39.4 39.4c25 25 25 65.5 0 90.5l-14.5 14.5-22.6 22.6-11.3 11.3-33.9-33.9-62.1-62.1L314.3 67.7l11.3-11.3 22.6-22.6 14.5-14.5c25-25 65.5-25 90.5 0z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="compression-operations"><a class="header" href="#compression-operations">Compression Operations</a></h1>
+<h2 id="the-archive-problem"><a class="header" href="#the-archive-problem">The archive problem</a></h2>
+<p>A scanner that cannot look inside archives cannot see most of the
+software supply chain. npm packages are tarballs inside gzipped
+tarballs. Python wheels are ZIP files. Java JARs are ZIP files.
+Docker images are layers of tar archives. APK files are ZIP files.
+Electron apps bundle entire Node.js installations inside ZIP-like
+ASAR archives. At every level of the modern software stack, the code
+a scanner needs to examine is compressed inside a container.</p>
+<p>The naive approach is to decompress on the CPU, write the
+decompressed bytes to disk or memory, and then scan them. This
+works but introduces a serial bottleneck: decompression is CPU-bound,
+and the GPU sits idle while the CPU unzips. For a scanning workload
+that processes thousands of packages per minute, the CPU
+decompression time can exceed the GPU scanning time by an order of
+magnitude. The GPU is fast enough to scan everything in seconds; the
+CPU cannot decompress everything fast enough to feed it.</p>
+<p>GPU decompression inverts this bottleneck. The host parses the
+archive structure (ZIP central directory, tar headers, LZ4 frame
+headers) to identify independent compressed blocks. Each block is
+dispatched to a GPU decompression kernel. Thousands of blocks
+decompress simultaneously. The decompressed bytes land in GPU
+memory, ready for the next pipeline stage — decode, tokenize,
+scan — without a round-trip to the CPU.</p>
+<p>The parallelism is across blocks, not within blocks. LZ4 and Zstd
+are sequential algorithms: each decompressed byte may depend on a
+previously decompressed byte (backward references). You cannot
+parallelize the decompression of a single block. But you can
+parallelize across blocks, and archives contain many blocks. A ZIP
+file with 500 entries has 500 independent blocks. A large LZ4 frame
+has dozens of independent blocks. The GPU processes all of them at
+once.</p>
+<h2 id="what-gpu-decompression-can-and-cannot-do"><a class="header" href="#what-gpu-decompression-can-and-cannot-do">What GPU decompression can and cannot do</a></h2>
+<p>GPU decompression is effective for algorithms with simple, bounded
+control flow and no complex state machines. LZ4 qualifies: its
+decompression loop is a simple sequence of literal copies and
+backward-reference copies, with lengths encoded in compact token
+bytes. The algorithm is small enough to fit in a GPU shader, and the
+operations (byte loads, byte stores, memcpy-like copies) are
+primitives the GPU handles natively.</p>
+<p>Full Zstandard decompression does not qualify — today. Zstd’s
+compressed blocks use Huffman coding and Finite State Entropy (FSE),
+both of which require building and traversing decoding tables that
+are specific to each block. These tables have complex construction
+algorithms and variable-length entries. Implementing Huffman/FSE
+decoding in a GPU shader is technically possible but produces a
+shader that is large, slow (branch-heavy, memory-indirect), and
+hard to verify for correctness. The performance gain over CPU
+decompression would be marginal because the algorithm is not
+parallelizable within a single block, and the constant factor of
+GPU execution for branch-heavy code is worse than the CPU’s.</p>
+<p>vyre handles this honestly: <code>compression.zstd</code> supports raw blocks
+(uncompressed) and RLE blocks (single repeated byte), both of which
+are trivial on the GPU. Compressed blocks (Huffman/FSE) are
+<strong>rejected</strong> with an explicit error code, and the host falls back
+to CPU decompression for those blocks. This is not a failure — it
+is a deliberate architectural choice. The GPU handles what it does
+well; the host handles what the GPU does not; the system works.</p>
+<h2 id="operations"><a class="header" href="#operations">Operations</a></h2>
+<h3 id="compressionlz4"><a class="header" href="#compressionlz4">compression.lz4</a></h3>
+<p><strong>Identifier:</strong> <code>compression.lz4</code></p>
+<p><strong>Current state:</strong> Legacy WGSL-only. Production shader defined
+inline. Does not implement <code>Op::program()</code>.</p>
+<p><strong>Signature:</strong> <code>(Bytes) -&gt; Bytes</code></p>
+<p><strong>What this operation does:</strong> Decompress one independent LZ4 block
+per GPU invocation. The input is a compressed block described by a
+5-word block descriptor. The output is the decompressed bytes
+written to a pre-allocated output region.</p>
+<p><strong>The LZ4 block format:</strong></p>
+<p>An LZ4 block is a sequence of <em>sequences</em>. Each sequence has:</p>
+<ol>
+<li>
+<p><strong>A token byte.</strong> The high nibble encodes the literal length
+(0–15). The low nibble encodes the match length minus 4 (0–15,
+so match length is 4–19).</p>
+</li>
+<li>
+<p><strong>Additional literal length bytes</strong> (if literal length nibble is
+15). Each additional byte adds its value to the literal length.
+A byte less than 255 terminates the chain.</p>
+</li>
+<li>
+<p><strong>Literal bytes.</strong> Copied directly to the output.</p>
+</li>
+<li>
+<p><strong>A 2-byte little-endian match offset.</strong> A backward reference
+into the already-decompressed output. Offset 0 is invalid.</p>
+</li>
+<li>
+<p><strong>Additional match length bytes</strong> (if match length nibble is 15).
+Same encoding as additional literal length.</p>
+</li>
+</ol>
+<p>The decompression loop processes sequences until the input is
+exhausted:</p>
+<pre><code class="language-text">while input_pos &lt; compressed_size:
+    token = read_byte(input_pos++)
+    literal_len = token &gt;&gt; 4
+    if literal_len == 15:
+        while (extra = read_byte(input_pos++)) == 255:
+            literal_len += 255
+        literal_len += extra
+    copy literal_len bytes from input to output
+    if input_pos &gt;= compressed_size: break  // last sequence has no match
+    offset = read_u16_le(input_pos); input_pos += 2
+    match_len = (token &amp; 0xF) + 4
+    if match_len == 19:
+        while (extra = read_byte(input_pos++)) == 255:
+            match_len += 255
+        match_len += extra
+    copy match_len bytes from output[output_pos - offset] to output[output_pos]
+</code></pre>
+<p>The backward copy may overlap: if <code>offset &lt; match_len</code>, the copy
+reads bytes that were just written. This is how LZ4 encodes
+run-length repetition. The copy must proceed byte-by-byte in this
+case (not as a bulk memcpy).</p>
+<p><strong>Block descriptors:</strong></p>
+<p>The host prepares a descriptor buffer with 5 <code>u32</code> words per block:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Word</th><th>Content</th></tr>
+</thead>
+<tbody>
+<tr><td>0</td><td>Byte offset into <code>compressed_data</code> where this block starts</td></tr>
+<tr><td>1</td><td>Compressed size in bytes</td></tr>
+<tr><td>2</td><td>Byte offset into <code>decompressed_data</code> where output should be written</td></tr>
+<tr><td>3</td><td>Expected decompressed size in bytes</td></tr>
+<tr><td>4</td><td>Flags (bit 0: uncompressed block — copy directly, skip decompression)</td></tr>
+</tbody>
+</table>
+</div>
+<p>The uncompressed flag (word 4, bit 0) handles LZ4 frames that mark
+specific blocks as stored without compression. These blocks are
+copied verbatim.</p>
+<p><strong>Error handling:</strong></p>
+<p>Each block writes a 2-word status:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Word</th><th>Content</th></tr>
+</thead>
+<tbody>
+<tr><td>0</td><td>Error code</td></tr>
+<tr><td>1</td><td>Actual decompressed size (valid even on error, for diagnostics)</td></tr>
+</tbody>
+</table>
+</div>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Error</th><th>Code</th><th>Meaning</th></tr>
+</thead>
+<tbody>
+<tr><td><code>ERROR_NONE</code></td><td>0</td><td>Successful decompression</td></tr>
+<tr><td><code>ERROR_CORRUPT_TOKEN</code></td><td>1</td><td>Invalid token byte structure</td></tr>
+<tr><td><code>ERROR_OFFSET_OOB</code></td><td>2</td><td>Match offset exceeds available decompressed history</td></tr>
+<tr><td><code>ERROR_OUTPUT_OVERFLOW</code></td><td>3</td><td>Decompressed size exceeds expected (descriptor word 3)</td></tr>
+<tr><td><code>ERROR_LITERAL_OVERFLOW</code></td><td>4</td><td>Literal run extends past input boundary</td></tr>
+<tr><td><code>ERROR_MATCH_OVERFLOW</code></td><td>5</td><td>Match copy extends past output boundary</td></tr>
+</tbody>
+</table>
+</div>
+<p>Errors do not panic the shader. Every error path writes the error
+code, writes the actual output size (which may be partial), and
+returns. The host reads the status buffer and decides how to handle
+the error — typically by falling back to CPU decompression for the
+affected block and flagging the input as potentially corrupt.</p>
+<p><strong>Workgroup size:</strong> 1. Each invocation processes one block. There is
+no intra-workgroup cooperation because LZ4 block decompression is
+inherently serial — each decompressed byte may depend on a
+previously decompressed byte via backward references.</p>
+<p>The parallelism is across blocks. A dispatch of 1,000 workgroups
+decompresses 1,000 blocks simultaneously. For a ZIP file with 500
+entries, each compressed with LZ4, all 500 decompress in one
+dispatch.</p>
+<h3 id="compressionzstd"><a class="header" href="#compressionzstd">compression.zstd</a></h3>
+<p><strong>Identifier:</strong> <code>compression.zstd</code></p>
+<p><strong>Current state:</strong> Legacy WGSL-only. Production shader defined
+inline. Does not implement <code>Op::program()</code>.</p>
+<p><strong>Signature:</strong> <code>(Bytes) -&gt; Bytes</code></p>
+<p><strong>What this operation does:</strong> Handle Zstandard raw and RLE blocks on
+the GPU. Compressed blocks (Huffman/FSE) are rejected with an
+explicit error code.</p>
+<p><strong>Why partial support is the right design:</strong></p>
+<p>A compression op that silently produces wrong output for some block
+types is worse than a compression op that explicitly rejects what it
+cannot handle. The host needs to know which blocks succeeded and
+which returned an explicit unsupported-block error. An error code is an honest signal; a
+corrupt decompression is a silent data corruption that propagates
+through the entire scan pipeline.</p>
+<p>vyre will never silently approximate decompression. If a future
+version adds Huffman/FSE support to <code>compression.zstd</code>, the
+decompressed output will be byte-identical to the CPU reference
+implementation. Until that guarantee can be made, the block type is
+rejected.</p>
+<p><strong>Block types handled:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Type</th><th>ID</th><th>Behavior</th></tr>
+</thead>
+<tbody>
+<tr><td>Raw</td><td>0</td><td>Direct byte copy from input to output. Trivial — no decompression needed.</td></tr>
+<tr><td>RLE</td><td>1</td><td>Fill output with a single repeated byte. The byte is the first byte of the block payload.</td></tr>
+<tr><td>Compressed</td><td>2</td><td><strong>Rejected.</strong> Returns <code>ERROR_UNSUPPORTED_COMPRESSED_BLOCK</code>.</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Error codes:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Error</th><th>Code</th><th>Meaning</th></tr>
+</thead>
+<tbody>
+<tr><td><code>ERROR_NONE</code></td><td>0</td><td>Successful handling</td></tr>
+<tr><td><code>ERROR_CORRUPT_BLOCK</code></td><td>1</td><td>Invalid block structure</td></tr>
+<tr><td><code>ERROR_OUTPUT_OVERFLOW</code></td><td>2</td><td>Output exceeds expected size</td></tr>
+<tr><td><code>ERROR_RLE_PAYLOAD_MISSING</code></td><td>3</td><td>RLE block with no payload byte</td></tr>
+<tr><td><code>ERROR_UNSUPPORTED_COMPRESSED_BLOCK</code></td><td>4</td><td>Huffman/FSE block (returns explicit error)</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Block descriptor and status format:</strong> Same as LZ4.</p>
+<p><strong>Workgroup size:</strong> 1.</p>
+<h2 id="beyond-security-scanning"><a class="header" href="#beyond-security-scanning">Beyond security scanning</a></h2>
+<p>Decompression was motivated by scanning inside archives, but compression
+is everywhere:</p>
+<ul>
+<li>
+<p><strong>Data lakes.</strong> Parquet, ORC, and other columnar formats use LZ4, Zstd,
+and Snappy internally. GPU decompression of columnar pages enables
+GPU-native query processing without CPU decompression bottlenecks.</p>
+</li>
+<li>
+<p><strong>Database storage.</strong> RocksDB, LevelDB, and other LSM-tree databases
+compress SSTables. GPU decompression could accelerate bulk reads.</p>
+</li>
+<li>
+<p><strong>Streaming media.</strong> Video frames are compressed. While video codecs are
+more complex than LZ4, the block-decompression pattern (independent
+blocks processed in parallel) applies to many intermediate formats.</p>
+</li>
+<li>
+<p><strong>Scientific data.</strong> HDF5, NetCDF, and FITS files use various
+compression algorithms internally. GPU decompression enables direct
+GPU-side analysis without CPU decompression passes.</p>
+</li>
+<li>
+<p><strong>Backup and archival.</strong> Restoring from compressed backups is
+decompression-bound. GPU-accelerated restore could reduce recovery time
+from hours to minutes.</p>
+</li>
+</ul>
+<p>The compression ops decompress byte streams. What those bytes represent —
+source code, database pages, scientific measurements — is irrelevant to
+the decompression algorithm.</p>
+<h2 id="composition-in-the-pipeline"><a class="header" href="#composition-in-the-pipeline">Composition in the pipeline</a></h2>
+<p>Compression ops sit at the front of the pipeline, before everything
+else:</p>
+<pre><code class="language-text">archive bytes → parse structure (CPU) → GPU decompress → decode → tokenize → DFA scan → eval
+</code></pre>
+<p>The host parses the archive structure on the CPU because archive
+formats (ZIP, tar, LZ4 frame) have complex variable-length headers
+that are not parallelizable. The host extracts block descriptors —
+(offset, size, output_offset, expected_size, flags) — and uploads
+them to the GPU. The GPU decompresses all blocks in one dispatch.
+The decompressed bytes are in GPU memory, ready for the next stage.</p>
+<p><strong>Multi-layer archives:</strong> A ZIP file inside a ZIP file requires two
+decompression dispatches. The first dispatch decompresses the outer
+ZIP entries. The host parses the decompressed bytes to identify
+inner archive entries. The second dispatch decompresses the inner
+entries. Each layer is one dispatch. The depth is unlimited in
+principle, limited by GPU memory in practice.</p>
+<p><strong>Hybrid CPU/GPU decompression:</strong> For Zstd archives where some
+blocks are compressed (Huffman/FSE) and some are raw/RLE, the
+pipeline uses a hybrid approach:</p>
+<ol>
+<li>Dispatch GPU decompression for all blocks.</li>
+<li>Read back the status buffer.</li>
+<li>For blocks with <code>ERROR_UNSUPPORTED_COMPRESSED_BLOCK</code>, decompress
+on the CPU.</li>
+<li>Upload the CPU-decompressed bytes to the GPU.</li>
+<li>Continue the pipeline with all blocks decompressed.</li>
+</ol>
+<p>The hybrid approach maximizes GPU utilization for the blocks it can
+handle while falling back gracefully for blocks it cannot.</p>
+<h2 id="migration-to-ir-first"><a class="header" href="#migration-to-ir-first">Migration to IR-first</a></h2>
+<p>The LZ4 shader is among the most complex ops to migrate because the
+decompression loop has:</p>
+<ul>
+<li>Variable-length token parsing (the literal/match length encoding
+with 255-byte extension chains).</li>
+<li>Backward-reference copies that may overlap.</li>
+<li>Multiple error exit paths.</li>
+<li>Byte-level buffer access at arbitrary offsets.</li>
+</ul>
+<p>Expressing this in IR requires:</p>
+<ul>
+<li><code>Node::Loop</code> with a dynamic upper bound (input exhaustion).</li>
+<li>Nested <code>Node::Loop</code> for 255-byte extension chains.</li>
+<li><code>Node::If</code> for each error condition.</li>
+<li><code>Expr::Load</code> and <code>Node::Store</code> for byte-level access.</li>
+<li>Careful handling of the overlapping backward copy (a byte-by-byte
+loop, not a bulk copy).</li>
+</ul>
+<p>The IR supports all of this. The migration will produce a large
+<code>ir::Program</code> (dozens of nodes), but each node is simple. The
+payoff is the same as for all legacy ops: retargeting,
+conformance coverage, and the possibility of optimization
+(e.g., the IR optimizer could detect non-overlapping backward
+copies and replace byte-by-byte loops with bulk copies).</p>
+<h2 id="what-the-conformance-suite-will-verify"><a class="header" href="#what-the-conformance-suite-will-verify">What the conformance suite will verify</a></h2>
+<p><strong>LZ4:</strong></p>
+<ul>
+<li>Empty block (0 compressed bytes). Expected: 0 decompressed bytes.</li>
+<li>Block with only literals (no match sequences). Expected: literal
+bytes copied verbatim.</li>
+<li>Block with a match that does not overlap. Expected: correct copy.</li>
+<li>Block with a match that overlaps (offset &lt; match_len). Expected:
+correct byte-by-byte RLE expansion.</li>
+<li>Block with maximum literal length (15 + 255*N). Expected: correct
+extended length parsing.</li>
+<li>Block with maximum match length (19 + 255*N). Expected: correct
+extended length parsing.</li>
+<li>Corrupt block (truncated input, invalid offset). Expected:
+appropriate error code, no panic.</li>
+<li>Uncompressed block (flag bit set). Expected: verbatim copy.</li>
+</ul>
+<p><strong>Zstd:</strong></p>
+<ul>
+<li>Raw block. Expected: verbatim copy.</li>
+<li>RLE block. Expected: repeated byte fill.</li>
+<li>Compressed block. Expected: <code>ERROR_UNSUPPORTED_COMPRESSED_BLOCK</code>.</li>
+<li>Corrupt block. Expected: <code>ERROR_CORRUPT_BLOCK</code>, no panic.</li>
+</ul>
+<p><strong>Determinism:</strong> Same blocks, 100 runs. Expected: identical output.</p>
+<h2 id="permanence"><a class="header" href="#permanence">Permanence</a></h2>
+<p>The operation identifiers (<code>compression.lz4</code>, <code>compression.zstd</code>)
+are permanent. The block descriptor format (5 words per block) is
+permanent. The error codes are permanent. The status format (2 words
+per block) is permanent.</p>
+<p>The Zstd limitation (compressed blocks rejected) is documented
+behavior. If Huffman/FSE support is added, it will be either a new
+op (<code>compression.zstd_full</code>) or a new version of the existing op
+with an incremented <code>version()</code>. The existing behavior — raw/RLE
+handled, compressed rejected — will remain available at version 1.</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../../ops/match_ops/overview.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="../../ops/collection/overview.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../../ops/match_ops/overview.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="../../ops/collection/overview.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="../../elasticlunr-ef4e11c1.min.js"></script>
+        <script src="../../mark-09e88c2c.min.js"></script>
+        <script src="../../searcher-c2a407aa.js"></script>
+
+        <script src="../../clipboard-1626706a.min.js"></script>
+        <script src="../../highlight-abc7f01d.js"></script>
+        <script src="../../book-a0b12cfe.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+
+    </div>
+    </body>
+</html>

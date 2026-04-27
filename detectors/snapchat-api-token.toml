@@ -1,0 +1,21 @@
+# Docs: https://developers.snapchat.com/api/marketing/
+# Format: 64-character hexadecimal string for Marketing API access token
+# Verify: GET /me with Authorization: Bearer header
+# Prefix: none (64-char hex, requires context anchoring)
+
+[detector]
+id = "snapchat-api-token"
+name = "Snapchat Marketing API Token"
+service = "snapchat"
+severity = "high"
+keywords = ["snapchat", "SNAPCHAT", "snap_chat", " Snapchat"]
+
+[[detector.patterns]]
+regex = "(?:snapchat|SNAPCHAT)[_\\-\\s]*(?:api[_\\-\\s]*key|API[_\\-\\s]*KEY|access[_\\-\\s]*token|ACCESS[_\\-\\s]*TOKEN)[=: \\s\"'']+([a-f0-9]{64})"
+description = "Snapchat Marketing API access token (64-char hex) with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:snapchat|SNAPCHAT)[_\\-\\s]*(?:client[_\\-\\s]*id|CLIENT[_\\-\\s]*ID)[=: \\s\"'']+([a-f0-9]{32,})"
+description = "Snapchat client ID with context anchor"
+group = 1

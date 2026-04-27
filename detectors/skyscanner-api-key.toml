@@ -1,0 +1,33 @@
+# Docs: https://developers.skyscanner.net/docs/getting-started/authentication
+# Format: 32-64 character alphanumeric string with no prefix
+# Verify: GET /apiservices/v3/cultures with x-api-key header returns 200
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "skyscanner-api-key"
+name = "Skyscanner API Key"
+service = "skyscanner"
+severity = "medium"
+keywords = ["SKYSCANNER", "skyscanner", "x-api-key", "X-API-KEY"]
+
+[[detector.patterns]]
+regex = "(?:SKYSCANNER|skyscanner)[_\\s]?(?:API_KEY|api_key|KEY|key)[=:\\s\"'']+([A-Za-z0-9]{32,64})"
+description = "Skyscanner API key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:x-api-key|X-API-KEY)[=:\\s\"'']+([A-Za-z0-9]{32,64})"
+description = "Skyscanner x-api-key header value"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://partners.api.skyscanner.net/apiservices/v3/cultures"
+
+[detector.verify.auth]
+type = "header"
+name = "x-api-key"
+template = "{{match}}"
+
+[detector.verify.success]
+status = 200

@@ -1,0 +1,16 @@
+# Docs: https://rocketmatter.com/api-documentation/
+# Format: API token - typically alphanumeric string 32+ characters
+# Verify: no public verification endpoint
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "rocketmatter-api-key"
+name = "Rocket Matter API Key"
+service = "rocketmatter"
+severity = "critical"
+keywords = ["ROCKETMATTER_API_KEY", "ROCKETMATTER_TOKEN", "rocketmatter_api_key", "X-RocketMatter-Token"]
+
+[[detector.patterns]]
+regex = "(?:ROCKETMATTER|rocketmatter)[_\\s]?(?:API[_\\s]?KEY|TOKEN)[=:\\s\"'']+([a-zA-Z0-9_\\-]{32,})"
+description = "Rocket Matter API key or token with context anchor"
+group = 1

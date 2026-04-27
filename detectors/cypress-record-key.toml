@@ -1,0 +1,26 @@
+# Docs: https://docs.cypress.io/cloud/faq
+# Format: GUID format (8-4-4-4-12 hex digits) used to authenticate recording to Cypress Cloud
+# Verify: POST to Cypress Cloud recording API with key returns 200 if valid
+# Prefix: none (UUID/GUID format, requires context keyword or companion detection)
+
+[detector]
+id = "cypress-record-key"
+name = "Cypress Record Key"
+service = "cypress"
+severity = "high"
+keywords = ["CYPRESS_RECORD_KEY", "cypress_record_key", "record_key", "record-key", "--record --key"]
+
+[[detector.patterns]]
+regex = "(?:CYPRESS_RECORD_KEY|cypress[_-]?record[_-]?key)[=:\\s\"']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
+description = "Cypress record key (GUID format) with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "--record(?:\\s+--key\\s+|\\s+-k\\s+)[\"']?([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
+description = "Cypress record key in CLI command"
+group = 1
+
+[[detector.companions]]
+name = "cypress-project-id"
+regex = "(?:projectId|CYPRESS_PROJECT_ID)[=:\\s\"']+([a-zA-Z0-9]{6,})"
+within_lines = 10

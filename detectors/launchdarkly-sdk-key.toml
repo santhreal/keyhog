@@ -1,0 +1,15 @@
+# Docs: https://docs.launchdarkly.com/sdk/concepts/client-side-server-side
+# Format: sdk- prefix followed by 8-4-4-4-12 UUID pattern
+# Verify: SDK connects via streaming/polling; no simple HTTP verification available
+# Prefix: sdk-
+
+[detector]
+id = "launchdarkly-sdk-key"
+name = "LaunchDarkly SDK Key"
+service = "launchdarkly"
+severity = "critical"
+keywords = ["sdk-"]
+
+[[detector.patterns]]
+regex = "sdk-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}"
+description = "LaunchDarkly SDK key (sdk- prefix with UUID)"

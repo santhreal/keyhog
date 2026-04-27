@@ -1,0 +1,16 @@
+# Docs: https://dev.epicgames.com/docs/epic-games-store/getting-started
+# Format: 32-64 character alphanumeric string (hex-like), no unique prefix
+# Verify: no public verification endpoint
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "epicgames-api-key"
+name = "Epic Games API Key"
+service = "epicgames"
+severity = "critical"
+keywords = ["EPIC_API_KEY", "EPIC_GAMES_API", "epic_games_api_key", "EG_CLIENT_ID"]
+
+[[detector.patterns]]
+regex = '''(?:EPIC_API_KEY|EPIC_GAMES_API|epic_games_api_key|EG_CLIENT_ID)[=:\s"']+([a-f0-9]{32,64})'''
+description = "Epic Games API key (32-64 hex chars with context anchor)"
+group = 1

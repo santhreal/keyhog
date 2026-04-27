@@ -1,0 +1,20 @@
+# Docs: https://help.cloudsmith.io/reference/authentication
+# Format: Alphanumeric API key with underscore prefix, typically cs_xxx or formatted as Basic auth
+# Verify: GET /v1/user/self/ with Basic auth returns 200 if valid
+# Prefix: cs_
+
+[detector]
+id = "cloudsmith-api-key"
+name = "Cloudsmith API Key"
+service = "cloudsmith"
+severity = "high"
+keywords = ["cs_", "cloudsmith", "CLOUDSMITH_API_KEY"]
+
+[[detector.patterns]]
+regex = "cs_[a-zA-Z0-9]{32,48}"
+description = "Cloudsmith API key with cs_ prefix"
+
+[[detector.patterns]]
+regex = "(?:cloudsmith|CLOUDSMITH)[_\\s]*(?:API[_\\s]*KEY|api[_\\s]*key)[\\s\"'']+([a-zA-Z0-9_]{32,64})"
+description = "Cloudsmith API key in configuration context"
+group = 1

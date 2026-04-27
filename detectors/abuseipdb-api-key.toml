@@ -1,0 +1,28 @@
+# Docs: https://docs.abuseipdb.com/
+# Format: 80 alphanumeric characters
+# Verify: GET /api/v2/check with Key header returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "abuseipdb-api-key"
+name = "AbuseIPDB API Key"
+service = "abuseipdb"
+severity = "medium"
+keywords = ["ABUSEIPDB_API_KEY", "ABUSEIPDB", "abuseipdb"]
+
+[[detector.patterns]]
+regex = "(?:ABUSEIPDB|abuseipdb)[_a-zA-Z0-9]*[=:\\s\"'']+([a-zA-Z0-9]{80})"
+description = "AbuseIPDB API key with context anchor"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://api.abuseipdb.com/api/v2/check?ipAddress=8.8.8.8"
+
+[detector.verify.auth]
+type = "header"
+name = "Key"
+template = "{{match}}"
+
+[detector.verify.success]
+status = 200

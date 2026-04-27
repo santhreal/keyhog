@@ -1,0 +1,21 @@
+# Docs: https://developer.zendesk.com/api-reference/introduction/security-and-auth/
+# Format: email/token:40_char_alphanumeric or standalone 40 char token
+# Verify: GET /api/v2/users/me.json with Basic auth returns 200 if valid
+# Prefix: none (40 char alphanumeric, requires keyword context or email/token format)
+
+[detector]
+id = "zendesk-api-token"
+name = "Zendesk API Token"
+service = "zendesk"
+severity = "high"
+keywords = ["zendesk", "ZENDESK", "/token", "zendesk_api_token", "ZENDESK_API_TOKEN"]
+
+[[detector.patterns]]
+regex = "[a-zA-Z0-9_\\-]+@([a-zA-Z0-9_\\-]+)\\.[a-zA-Z]{2,}/token:([a-zA-Z0-9]{40})"
+description = "Zendesk API token with email (email/token:format)"
+group = 2
+
+[[detector.patterns]]
+regex = "(?:zendesk|ZENDESK)[_\\-\\s]*(?:api[_\\-\\s]*token|API[_\\-\\s]*TOKEN)[=:\\s\\\"']+([a-zA-Z0-9]{40})"
+description = "Zendesk API token with context anchor"
+group = 1

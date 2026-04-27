@@ -1,0 +1,21 @@
+# Docs: https://docs.instabug.com/docs/flutter-integration
+# Format: App token string for SDK initialization, no unique prefix
+# Verify: no public verification endpoint
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "instabug-token"
+name = "Instabug App Token"
+service = "instabug"
+severity = "medium"
+keywords = ["INSTABUG_APP_TOKEN", "instabug_token", "Instabug.init", "Instabug.start", "APP_TOKEN"]
+
+[[detector.patterns]]
+regex = "(?:INSTABUG[_.-]?APP[_.-]?TOKEN|instabug[_.-]?token|Instabug\\.init|Instabug\\.start|Instabug\\.Builder)[\\s(]*[\"'']+([a-zA-Z0-9_-]{20,})"
+description = "Instabug app token with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "Instabug\\.Builder\\([^,]+,\\s*[\"'']([a-zA-Z0-9_-]{20,})[\"'']"
+description = "Instabug Android builder with app token"
+group = 1

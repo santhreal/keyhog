@@ -1,0 +1,21 @@
+# Docs: https://developers.kit.com/api-reference/v3/authentication
+# Format: API Secret (formerly called API Key) - alphanumeric string
+# Verify: GET /v3/account with api_secret query param or header returns 200
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "convertkit-api-key"
+name = "ConvertKit API Key"
+service = "convertkit"
+severity = "critical"
+keywords = ["convertkit", "CONVERTKIT", "api_secret", "api_key"]
+
+[[detector.patterns]]
+regex = '(?:CONVERTKIT|convertkit)[_]*(?:API|api)?[_]*(?:SECRET|secret|KEY|key)[=: ]+([a-zA-Z0-9_-]{20,})'
+description = "ConvertKit API Secret/Key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = '(?:CONVERTKIT|convertkit)[_]*(?:API|api)?[_]*(?:KEY|key)[_]*(?:V3|v3)?[=: ]+([a-zA-Z0-9_-]{20,})'
+description = "ConvertKit V3 API Key"
+group = 1

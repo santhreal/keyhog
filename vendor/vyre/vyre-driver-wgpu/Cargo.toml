@@ -1,0 +1,83 @@
+[package]
+name = "vyre-driver-wgpu"
+version = "0.6.0"
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "wgpu backend for vyre IR — implements VyreBackend, owns GPU runtime, buffer pool, pipeline cache"
+readme = "README.md"
+keywords = ["gpu", "wgpu", "ir", "backend", "vyre"]
+categories = ["graphics", "rendering::graphics-api", "hardware-support"]
+documentation = "https://docs.rs/vyre-wgpu"
+
+[features]
+default = []
+# Enables `WgpuBackend::probe_op` — a parity-testing shortcut that bypasses
+# vyre IR + validation + conform. Off by default so production builds cannot
+# accidentally route through the unvalidated path. vyre-reference enables it
+# in its dev-deps for the transcendental parity oracle.
+parity-testing = []
+
+[dependencies]
+vyre = { workspace = true }
+vyre-driver = { workspace = true }
+vyre-driver-megakernel.workspace = true
+vyre-foundation = { workspace = true }
+vyre-spec.workspace = true
+naga = { workspace = true, features = ["wgsl-out"] }
+wgpu.workspace = true
+pollster.workspace = true
+bytemuck.workspace = true
+crossbeam-queue = "0.3"
+crossbeam-channel.workspace = true
+arc-swap = "1.7"
+tokio.workspace = true
+tracing.workspace = true
+thiserror.workspace = true
+rustc-hash.workspace = true
+blake3.workspace = true
+serde.workspace = true
+toml.workspace = true
+inventory.workspace = true
+dashmap = "6.1.0"
+smallvec.workspace = true
+moka = { version = "0.12.15", features = ["sync"] }
+crc32fast = "1.5.0"
+fs2.workspace = true
+
+[dev-dependencies]
+criterion.workspace = true
+stats_alloc.workspace = true
+tokio.workspace = true
+tempfile.workspace = true
+proptest.workspace = true
+vyre.workspace = true
+vyre-libs = { workspace = true, features = [
+    "math-linalg", "math-scan", "math-broadcast",
+    "nn-activation", "nn-linear", "nn-norm", "nn-attention",
+    "matching-substring", "matching-dfa",
+    "crypto-fnv", "crypto-blake3",
+    "c-parser",
+] }
+vyre-reference.workspace = true
+vyre-runtime = { path = "../vyre-runtime" }
+vyre-test-harness.workspace = true
+tracing-subscriber.workspace = true
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[lints]
+workspace = true
+
+[[bench]]
+name = "zero_init_alloc"
+harness = false
+
+[[bin]]
+name = "vyre-wgpu"
+path = "src/bin/vyre.rs"

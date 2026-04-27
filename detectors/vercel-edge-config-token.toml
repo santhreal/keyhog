@@ -1,0 +1,15 @@
+# Docs: https://vercel.com/docs/storage/edge-config
+# Format: ecfg_ prefix followed by 64 alphanumeric characters
+# Verify: no public verification endpoint
+# Prefix: ecfg_
+
+[detector]
+id = "vercel-edge-config-token"
+name = "Vercel Edge Config Token"
+service = "vercel"
+severity = "high"
+keywords = ["ecfg_", "EDGE_CONFIG", "edge_config"]
+
+[[detector.patterns]]
+regex = 'ecfg_[a-zA-Z0-9]{64}'
+description = "Vercel Edge Config connection string token"

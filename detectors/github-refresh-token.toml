@@ -1,0 +1,29 @@
+# Docs: https://docs.github.com/en/authentication
+# Format: ghr_ prefix followed by 36 alphanumeric characters
+# Prefix: ghr_
+
+[detector]
+id = "github-refresh-token"
+name = "GitHub Refresh Token"
+service = "github"
+severity = "critical"
+keywords = ["ghr_"]
+
+[[detector.patterns]]
+regex = 'ghr_[A-Za-z0-9]{36}'
+description = "GitHub Refresh Token (ghr_ prefix)"
+
+[detector.verify]
+method = "GET"
+url = "https://api.github.com/user"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[[detector.verify.headers]]
+name = "User-Agent"
+value = "keyhog-secret-scanner/{{version}}"
+
+[detector.verify.success]
+status = 200

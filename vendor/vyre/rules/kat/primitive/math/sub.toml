@@ -1,0 +1,6 @@
+op_id = "primitive.math.sub"
+
+[[golden]]
+input = "0000000001000000"
+expected = "ffffffff"
+reason = "0 - 1 = u32::MAX (wrapping sub)"

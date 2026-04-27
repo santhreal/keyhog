@@ -1,0 +1,21 @@
+# Docs: https://infinitecampus.notion.site/Campus-API-Introduction-38b98c588c204dbfab6c44e4423f8e69
+# Format: API key issued by Infinite Campus for district access
+# Verify: GET /campus/api/verify with Authorization header returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "infinite-campus-api-key"
+name = "Infinite Campus API Key"
+service = "infinite-campus"
+severity = "critical"
+keywords = ["infinite", "campus", "INFINITE_CAMPUS", "campus_api", "icampus"]
+
+[[detector.patterns]]
+regex = "(?:infinite[_\\s-]*campus|icampus|campus)[_\\s.-]*(?:api[_\\s.-]*)?(?:key|token)[=:\\s\"'']+([a-zA-Z0-9_-]{32,64})"
+description = "Infinite Campus API key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:infinite[_\\s-]*campus|icampus)[_\\s.-]*(?:client[_\\s.-]*id)[=:\\s\"'']+([a-zA-Z0-9]{20,40})"
+description = "Infinite Campus client ID with context anchor"
+group = 1

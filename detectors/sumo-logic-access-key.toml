@@ -1,0 +1,21 @@
+# Docs: https://www.sumologic.com/help/docs/api/about-apis/getting-started/
+# Format: Access ID and Access Key pair. Access Key is 64-character base64-like string.
+# Verify: GET /api/v1/collectors with Basic auth (accessId:accessKey) returns 200 if valid
+# Prefix: none (generic format, requires keyword context)
+
+[detector]
+id = "sumo-logic-access-key"
+name = "Sumo Logic Access Key"
+service = "sumologic"
+severity = "high"
+keywords = ["SUMOLOGIC_ACCESSKEY", "SUMOLOGIC_ACCESS_KEY", "sumologic_access_key", "sumologic.com", "accessId", "accessKey"]
+
+[[detector.patterns]]
+regex = "(?:SUMOLOGIC_ACCESSKEY|SUMOLOGIC_ACCESS_KEY|sumologic_access_key|accessKey)[=:\\s\"']+([A-Za-z0-9+/]{64})"
+description = "Sumo Logic access key (64 chars base64-like) with context anchor"
+group = 1
+
+[[detector.companions]]
+name = "sumo-logic-access-id"
+regex = "(?:SUMOLOGIC_ACCESSID|SUMOLOGIC_ACCESS_ID|sumologic_access_id|accessId)[=:\\s\"']+([A-Za-z0-9]+)"
+within_lines = 5

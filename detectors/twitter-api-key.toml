@@ -1,0 +1,21 @@
+# Docs: https://developer.twitter.com/en/docs/twitter-api
+# Format: API Key (Consumer Key) is 25 alphanumeric characters (no unique prefix)
+# Verify: none (Twitter uses OAuth 1.0a which requires signature)
+# Prefix: none (25 char alphanumeric, requires keyword context)
+
+[detector]
+id = "twitter-api-key"
+name = "Twitter/X API Key"
+service = "twitter"
+severity = "critical"
+keywords = ["twitter", "TWITTER", "api_key", "API_KEY", "consumer_key", "CONSUMER_KEY"]
+
+[[detector.patterns]]
+regex = "(?:twitter|TWITTER)[_\\-\\s]*(?:api[_\\-\\s]*key|API[_\\-\\s]*KEY|consumer[_\\-\\s]*key|CONSUMER[_\\-\\s]*KEY)[=:\\s\\\"']+([a-zA-Z0-9]{25})"
+description = "Twitter/X API Key with context anchor"
+group = 1
+
+[[detector.companions]]
+name = "api_secret"
+regex = "[a-zA-Z0-9]{50}"
+within_lines = 5

@@ -1,0 +1,60 @@
+[package]
+name = "vyre-foundation"
+version = "0.6.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Foundation layer: IR, type system, memory model, wire format. Zero application semantics. Part of the vyre GPU compiler."
+readme = "README.md"
+keywords = ["gpu", "ir", "compiler", "wgsl", "vyre"]
+categories = ["algorithms", "compilers", "hardware-support"]
+documentation = "https://docs.rs/vyre-foundation"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[dependencies]
+dashmap = "6.1.0"
+vyre-spec.workspace = true
+vyre-macros.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+rustc-hash.workspace = true
+smallvec.workspace = true
+blake3.workspace = true
+bytemuck.workspace = true
+inventory.workspace = true
+lasso = { version = "0.7.3", features = ["multi-threaded"] }
+bumpalo.workspace = true
+im.workspace = true
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+# Doctests in this crate reach through the `vyre` meta-shim (that's how
+# every downstream consumer spells the imports in their own doctests), so
+# the shim must be in scope at test time. Dev-dep only; the library has
+# no runtime dependency on `vyre`.
+vyre = { workspace = true }
+vyre-reference.workspace = true
+proptest.workspace = true
+criterion.workspace = true
+
+[[bench]]
+name = "cse"
+harness = false
+
+[[bench]]
+name = "optimizer_scheduler"
+harness = false
+
+[[bench]]
+name = "fuse_programs"
+harness = false

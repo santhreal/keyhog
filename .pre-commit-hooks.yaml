@@ -1,0 +1,6 @@
+- id: keyhog
+  name: KeyHog Secret Scanner
+  entry: keyhog scan --fast --git-staged
+  language: rust
+  types: [text]
+  stages: [pre-commit]

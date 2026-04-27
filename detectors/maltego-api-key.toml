@@ -1,0 +1,16 @@
+# Docs: https://docs.maltego.com/
+# Format: Various API key formats for different integrations
+# Verify: no public verification endpoint
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "maltego-api-key"
+name = "Maltego API Key"
+service = "maltego"
+severity = "high"
+keywords = ["maltego", "MALTEGO_API_KEY", "transform_hub"]
+
+[[detector.patterns]]
+regex = "(?:maltego|MALTEGO)[\\s_-]*(?:api[_-]?key|key)[=:\\s\"'']+([a-zA-Z0-9_-]{16,64})"
+description = "Maltego API key with context anchor"
+group = 1

@@ -1,0 +1,26 @@
+# Docs: https://vercel.com/docs/rest-api
+# Format: vercel_v2_ prefix followed by 24 alphanumeric characters
+# Verify: GET /v9/user with Bearer token returns 200 if valid
+# Prefix: vercel_v2_
+
+[detector]
+id = "vercel-api-token-v2"
+name = "Vercel API Token v2"
+service = "vercel"
+severity = "critical"
+keywords = ["vercel_v2_"]
+
+[[detector.patterns]]
+regex = 'vercel_v2_[a-zA-Z0-9]{24}'
+description = "Vercel API token v2 format (vercel_v2_ prefix)"
+
+[detector.verify]
+method = "GET"
+url = "https://api.vercel.com/v9/user"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[detector.verify.success]
+status = 200

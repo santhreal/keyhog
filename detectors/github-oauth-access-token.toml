@@ -1,0 +1,29 @@
+# Docs: https://docs.github.com/en/authentication
+# Format: gho_ prefix followed by 36 alphanumeric characters
+# Prefix: gho_
+
+[detector]
+id = "github-oauth-access-token"
+name = "GitHub OAuth Access Token"
+service = "github"
+severity = "critical"
+keywords = ["gho_"]
+
+[[detector.patterns]]
+regex = 'gho_[A-Za-z0-9]{36}'
+description = "GitHub OAuth Access Token (gho_ prefix)"
+
+[detector.verify]
+method = "GET"
+url = "https://api.github.com/user"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[[detector.verify.headers]]
+name = "User-Agent"
+value = "keyhog-secret-scanner/{{version}}"
+
+[detector.verify.success]
+status = 200

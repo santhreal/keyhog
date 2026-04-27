@@ -1,0 +1,33 @@
+# Docs: https://documentation.bamboohr.com/docs/getting-started
+# Format: 160-bit hexadecimal API key (40 hex characters)
+# Verify: GET /employees/directory with API key in Authorization header returns 200
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "bamboohr-api-key"
+name = "BambooHR API Key"
+service = "bamboohr"
+severity = "critical"
+keywords = ["BAMBOOHR_API_KEY", "bamboo_hr", "bamboohr"]
+
+[[detector.patterns]]
+regex = "(?:BAMBOOHR_API_KEY|BAMBOO_API_KEY|bamboohr_api_key|bamboo_api_key)[=:\\s\"'']+([a-f0-9]{40})"
+description = "BambooHR API key with context anchor (40 hex characters)"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:bamboohr\\.com/api/gateway\\.php)[^\"'']*Authorization[^\"'']*Basic[\\s]+([a-zA-Z0-9+/=]{20,})"
+description = "BambooHR basic auth header in URL or config"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://api.bamboohr.com/api/gateway.php/test/v1/employees/directory"
+
+[detector.verify.auth]
+type = "basic"
+username = "match"
+password = "x"
+
+[detector.verify.success]
+status = 200

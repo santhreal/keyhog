@@ -1,0 +1,11 @@
+op_id = "primitive.compare.select"
+
+[[golden]]
+input = "4200000001000000"
+expected = "42000000"
+reason = "select(0x42, cond=1) â 0x42 (non-zero condition passes value through)"
+
+[[golden]]
+input = "4200000000000000"
+expected = "00000000"
+reason = "select(0x42, cond=0) â 0 (zero condition returns 0)"

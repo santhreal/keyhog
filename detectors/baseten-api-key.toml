@@ -1,0 +1,21 @@
+# Docs: https://docs.baseten.co/organization/api-keys
+# Format: 40+ alphanumeric characters, used with Api-Key or Authorization header
+# Verify: no public verification endpoint
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "baseten-api-key"
+name = "Baseten API Key"
+service = "baseten"
+severity = "high"
+keywords = ["BASETEN_API_KEY", "baseten", "inference.baseten.co", "Api-Key"]
+
+[[detector.patterns]]
+regex = "(?:BASETEN_API_KEY)[=:\\s\"\\']+([a-zA-Z0-9_-]{30,})"
+description = "Baseten API key from environment variable"
+group = 1
+
+[[detector.patterns]]
+regex = "Authorization[=:\\s\"\\']*Api-Key[=:\\s\"\\']+([a-zA-Z0-9_-]{30,})"
+description = "Baseten Api-Key authorization header"
+group = 1

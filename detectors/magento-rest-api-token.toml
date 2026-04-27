@@ -1,0 +1,21 @@
+# Docs: https://developer.adobe.com/commerce/webapi/get-started/authentication/gs-authentication-token/
+# Format: 32 hexadecimal characters or Bearer token from admin/integration authentication
+# Verify: POST /rest/V1/integration/admin/token returns token
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "magento-rest-api-token"
+name = "Magento REST API Token"
+service = "magento"
+severity = "high"
+keywords = ["magento", "MAGE", "MAGENTO", "access_token", "rest_token", "admin_token"]
+
+[[detector.patterns]]
+regex = "(?:magento|MAGE|MAGENTO)[_=:\\s\"'']+(?:rest[_-]?token|admin[_-]?token|access[_-]?token)?[=:\\s\"'']*([a-f0-9]{32})"
+description = "Magento REST API token with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:magento|MAGE)[_=:\\s\"'']+(?:bearer|token)[=:\\s\"'']+([a-zA-Z0-9_-]{100,})"
+description = "Magento Bearer token with context anchor"
+group = 1

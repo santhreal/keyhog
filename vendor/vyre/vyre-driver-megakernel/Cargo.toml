@@ -1,0 +1,26 @@
+[package]
+name = "vyre-driver-megakernel"
+version = "0.6.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Shared megakernel dispatch contracts and work-queue types for vyre backends"
+readme = "README.md"
+keywords = ["gpu", "megakernel", "backend", "vyre"]
+categories = ["hardware-support", "api-bindings"]
+documentation = "https://docs.rs/vyre-driver-megakernel"
+
+[dependencies]
+bytemuck.workspace = true
+vyre-driver.workspace = true
+vyre-foundation.workspace = true
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[lints]
+workspace = true

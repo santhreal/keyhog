@@ -1,0 +1,21 @@
+# Docs: https://docs.logrocket.com/reference/stack-traces-android
+# Format: API key with colon separators, e.g., "your:api:key"
+# Verify: no public verification endpoint
+# Prefix: none (colon-separated format)
+
+[detector]
+id = "logrocket-api-key"
+name = "LogRocket API Key"
+service = "logrocket"
+severity = "medium"
+keywords = ["LOGROCKET_API_KEY", "logrocket_api_key", "apikey=", "api-key"]
+
+[[detector.patterns]]
+regex = "(?:LOGROCKET[_.-]?API[_.-]?KEY|logrocket[_.-]?api[_.-]?key)[=:\\s\"'']+([a-zA-Z0-9_-]+:[a-zA-Z0-9_-]+:[a-zA-Z0-9_-]+)"
+description = "LogRocket API key with context anchor and colon format"
+group = 1
+
+[[detector.patterns]]
+regex = "logrocket[\\s\\w]*upload[^\\n]{0,100}[=:\\s\"'']([a-zA-Z0-9_-]+:[a-zA-Z0-9_-]+:[a-zA-Z0-9_-]+)"
+description = "LogRocket CLI upload command with API key"
+group = 1

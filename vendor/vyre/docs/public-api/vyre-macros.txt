@@ -1,0 +1,4 @@
+pub const LAWS: &'static [::vyre::ops::AlgebraicLaw] = &[
+pub fn define_op(item: TokenStream) -> TokenStream {
+pub fn derive_algebraic_laws(item: TokenStream) -> TokenStream {
+pub fn vyre_pass(args: TokenStream, item: TokenStream) -> TokenStream {

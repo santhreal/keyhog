@@ -1,0 +1,16 @@
+# Docs: https://docs.propelauth.com/reference/api/getting-started
+# Format: 32 hex character string with no unique prefix, used as Bearer token
+# Verify: GET /api/backend/v1/user/{userId} with Bearer token
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "propelauth-api-key"
+name = "PropelAuth API Key"
+service = "propelauth"
+severity = "critical"
+keywords = ["PROPELAUTH_API_KEY", "PROPELAUTH_AUTH_URL", "propelauth"]
+
+[[detector.patterns]]
+regex = "(?:PROPELAUTH_API_KEY|propelauth[_-]?api[_-]?key)[=:\\s\"'']+([a-f0-9]{32})"
+description = "PropelAuth API key with context anchor (32 hex chars)"
+group = 1

@@ -1,0 +1,11 @@
+[package]
+name = "external_ir_extension"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+vyre-core = { path = "../../vyre-core" }
+vyre-driver = { path = "../../vyre-driver" }
+inventory = "0.3"
+
+[workspace]

@@ -1,0 +1,15 @@
+# Docs: https://docs.retool.com/data/api
+# Format: retool_api_<32+ alphanumeric characters>
+# Verify: none (Retool deployments are organization-specific; generic verification is unsafe)
+# Prefix: retool_api_
+
+[detector]
+id = "retool-api-key"
+name = "Retool API Key"
+service = "retool"
+severity = "critical"
+keywords = ["retool_api_", "RETOOL_API_KEY", "retool"]
+
+[[detector.patterns]]
+regex = 'retool_api_[a-zA-Z0-9]{32,}'
+description = "Retool API key (retool_api_ prefix)"

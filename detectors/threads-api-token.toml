@@ -1,0 +1,16 @@
+# Docs: https://developers.facebook.com/docs/threads/get-started
+# Format: OAuth2 access token - can be short-lived user token or long-lived token
+# Verify: GET /debug_token with app credentials on graph.facebook.com
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "threads-api-token"
+name = "Threads API Access Token"
+service = "threads"
+severity = "high"
+keywords = ["threads", "THREADS", "thread_id", "THREADS_ACCESS_TOKEN"]
+
+[[detector.patterns]]
+regex = '''(?:threads|THREADS|thread[_-]?id|THREADS[_-]?ACCESS[_-]?TOKEN)[=:\s"\']+([a-zA-Z0-9]{100,})'''
+description = "Threads API access token with context anchor"
+group = 1

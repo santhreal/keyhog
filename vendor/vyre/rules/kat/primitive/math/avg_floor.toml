@@ -1,0 +1,15 @@
+op_id = "primitive.math.avg_floor"
+
+[[kat]]
+input = "0200000004000000"
+expected = "03000000"
+source = "hand-verified reference vector from Rust semantics"
+
+[[adversarial]]
+input = ""
+reason = "empty input exercises validation and boundary handling"
+
+[[golden]]
+input = "0200000004000000"
+expected = "03000000"
+reason = "avg_floor(2, 4) = 3"

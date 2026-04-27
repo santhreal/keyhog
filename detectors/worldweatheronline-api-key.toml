@@ -1,0 +1,31 @@
+# Docs: https://www.worldweatheronline.com/developer/api/docs/
+# Format: API key passed as 'key' parameter
+# Verify: GET /premium/v1/weather.ashx with key parameter returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "worldweatheronline-api-key"
+name = "World Weather Online API Key"
+service = "worldweatheronline"
+severity = "medium"
+keywords = ["WORLDWEATHERONLINE", "worldweatheronline", "WORLD_WEATHER_ONLINE", "WWO_API_KEY"]
+
+[[detector.patterns]]
+regex = "(?:WORLDWEATHERONLINE|worldweatheronline|WORLD[_\\s]WEATHER[_\\s]ONLINE|WWO)[_\\s]*(?:API[_\\s]*)?KEY[=:\\s\"'']+([a-zA-Z0-9]{20,})"
+description = "World Weather Online API key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:key|KEY)[=:\\s\"'']+([a-zA-Z0-9]{20,})[^a-zA-Z0-9].*worldweatheronline"
+description = "World Weather Online key parameter with URL context"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://api.worldweatheronline.com/premium/v1/weather.ashx?q=London&format=json&key={{match}}"
+
+[detector.verify.auth]
+type = "none"
+
+[detector.verify.success]
+status = 200

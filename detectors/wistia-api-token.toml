@@ -1,0 +1,31 @@
+# Docs: https://wistia.com/support/developers/data-api#getting-started
+# Format: Password-protected API token, typically found in Account Settings > API
+# Verify: GET /v1/medias.json with Bearer auth returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "wistia-api-token"
+name = "Wistia API Token"
+service = "wistia"
+severity = "high"
+keywords = ["wistia", "WISTIA", "WISTIA_API_KEY", "wistia_api_key", "wistia.com"]
+
+[[detector.patterns]]
+regex = "(?:wistia|WISTIA)[_\\s]?(?:api_key|API_KEY|api_token|token)[=:\\s\"'']+([a-f0-9]{32,64})"
+description = "Wistia API token with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "WISTIA_API_KEY[=:\\s\"'']+([a-f0-9]{32,64})"
+description = "Wistia API key from environment variable"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://api.wistia.com/v1/medias.json"
+[detector.verify.success]
+status = 200
+
+[[detector.verify.headers]]
+name = "Authorization"
+value = "Bearer {{match}}"

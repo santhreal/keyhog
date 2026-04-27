@@ -1,0 +1,26 @@
+# Docs: https://docs.dacast.com/docs/api-key-documentation
+# Format: API Key is a 32-character alphanumeric string
+# Verify: GET /v3/lives with X-Api-Key header returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "dacast-api-key"
+name = "Dacast API Key"
+service = "dacast"
+severity = "high"
+keywords = ["dacast", "DACAST", "dacast.com", "BROADKEY", "API_KEY", "X-Api-Key"]
+
+[[detector.patterns]]
+regex = "(?:dacast|DACAST)[_\\s]?(?:api_key|API_KEY|apikey)[=:\\s\"'']+([a-f0-9]{32})"
+description = "Dacast API Key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "DACAST_API_KEY[=:\\s\"'']+([a-f0-9]{32})"
+description = "Dacast API Key from environment variable"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:BROADKEY|broadkey)[=:\\s\"'']+([a-f0-9]{32})"
+description = "Dacast Broadkey (legacy name) with context anchor"
+group = 1

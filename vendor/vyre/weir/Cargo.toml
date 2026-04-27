@@ -1,0 +1,29 @@
+[package]
+name = "weir"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "GPU-resident dataflow primitives — SSA, IFDS, reaching defs, points-to, callgraph, slice, summary, loop acceleration. Composable Programs over the vyre IR."
+readme = "README.md"
+keywords = ["gpu", "dataflow", "ifds", "ssa", "static-analysis"]
+categories = ["algorithms", "compilers", "development-tools"]
+documentation = "https://docs.rs/weir"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+vyre.workspace = true
+vyre-foundation.workspace = true
+vyre-primitives = { workspace = true, features = ["graph", "bitset", "reduce", "fixpoint", "predicate", "label", "nfa"] }
+vyre-harness.workspace = true
+inventory.workspace = true
+smallvec.workspace = true
+
+[dev-dependencies]
+vyre-driver.workspace = true
+proptest.workspace = true

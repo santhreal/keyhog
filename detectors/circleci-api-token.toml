@@ -1,0 +1,37 @@
+# Docs: https://circleci.com/docs/managing-api-tokens/
+# Format: 40 character hexadecimal string (personal API token)
+# Verify: GET /api/v2/me with Circle-Token header returns 200 if valid
+# Prefix: none (generic hex, requires keyword context)
+
+[detector]
+id = "circleci-api-token"
+name = "CircleCI Personal API Token"
+service = "circleci"
+severity = "critical"
+keywords = ["circleci", "CIRCLECI", "circle_token", "CIRCLE_TOKEN"]
+
+[[detector.patterns]]
+regex = "(?:circleci|CIRCLECI)[_\\s]?(?:token|TOKEN|api_token|API_TOKEN)[=:\\s\"']+([a-f0-9]{40})"
+description = "CircleCI API token with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "CIRCLE_TOKEN[=:\\s\"']+([a-f0-9]{40})"
+description = "CircleCI token from environment variable"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://circleci.com/api/v2/me"
+
+[detector.verify.auth]
+type = "header"
+name = "Circle-Token"
+template = "{{match}}"
+
+[detector.verify.success]
+status = 200
+
+[[detector.verify.metadata]]
+name = "login"
+json_path = "login"

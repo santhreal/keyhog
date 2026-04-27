@@ -1,0 +1,16 @@
+# Docs: https://raygun.com/documentation/product-guides/deployment-tracking/overview/
+# Format: Alphanumeric string, no unique prefix - requires context anchoring
+# Verify: POST to /v3/applications/api-key/{api_key}/deployments with Bearer auth
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "raygun-api-key"
+name = "Raygun API Key"
+service = "raygun"
+severity = "high"
+keywords = ["RAYGUN_API_KEY", "RAYGUN_APIKEY", "raygun_api_key", "apiKey: \"", "apiKey: '", "api_key"]
+
+[[detector.patterns]]
+regex = "(?:RAYGUN[_.-]?API[_.-]?KEY|raygun[_.-]?api[_.-]?key)[=:\\s\"'']+([a-zA-Z0-9_-]{20,})"
+description = "Raygun API key with context anchor"
+group = 1

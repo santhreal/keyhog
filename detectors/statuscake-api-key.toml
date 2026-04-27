@@ -1,0 +1,32 @@
+# Docs: https://developers.statuscake.com/guides/api/authentication/
+# Format: Bearer token authentication (alphanumeric string)
+# Verify: GET /v1/uptime with Bearer token returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "statuscake-api-key"
+name = "StatusCake API Key"
+service = "statuscake"
+severity = "high"
+keywords = ["statuscake", "STATUSCAKE", "Authorization", "Bearer", "api.statuscake.com"]
+
+[[detector.patterns]]
+regex = "(?:statuscake|STATUSCAKE)[_.]?(?:api[_-]?key|token)[=:\\s\"'']+([a-zA-Z0-9_-]{20,})"
+description = "StatusCake API key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "Authorization:\\s*Bearer\\s+([a-zA-Z0-9_-]{20,})[^\\n]*(?:statuscake|api\\.statuscake\\.com)"
+description = "StatusCake bearer token with context"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://api.statuscake.com/v1/uptime"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[detector.verify.success]
+status = 200

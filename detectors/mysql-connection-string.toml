@@ -1,0 +1,14 @@
+# Docs: https://dev.mysql.com/doc/connector-j/en/
+# Format: mysql://user:pass@host.domain:port/db
+# Prefix: mysql
+
+[detector]
+id = "mysql-connection-string"
+name = "MySQL Connection String"
+service = "mysql"
+severity = "critical"
+keywords = ["mysql", "DATABASE_URL"]
+
+[[detector.patterns]]
+regex = 'mysql://[^:]+:[^@\s]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9._-]+'
+description = "MySQL connection string with credentials (requires domain host)"

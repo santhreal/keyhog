@@ -1,0 +1,16 @@
+# Docs: https://gumroad.com/api
+# Format: 32-64 character alphanumeric access token used with Bearer authentication
+# Verify: GET /v2/user with Authorization header returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "gumroad-api-key"
+name = "Gumroad API Key"
+service = "gumroad"
+severity = "critical"
+keywords = ["GUMROAD", "gumroad", "access_token"]
+
+[[detector.patterns]]
+regex = "(?:GUMROAD|gumroad)[_=:\\s\"'']+(?:access_token|api_key|token)[=:\\s\"'']+([a-f0-9]{32,64})"
+description = "Gumroad API key with context anchor"
+group = 1

@@ -1,0 +1,21 @@
+# Docs: https://www.loc.gov/apis/
+# Format: API key obtained via api.data.gov, passed as query parameter
+# Verify: no public verification endpoint
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "library-of-congress-api-key"
+name = "Library of Congress API Key"
+service = "library-of-congress"
+severity = "medium"
+keywords = ["LOC_API_KEY", "LIBRARY_OF_CONGRESS", "congress.gov", "loc.gov", "library_of_congress"]
+
+[[detector.patterns]]
+regex = "(?:LOC|LIBRARY_OF_CONGRESS)_API_KEY[=:\\s\"'\\']+([a-zA-Z0-9_-]{20,50})"
+description = "Library of Congress API key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:loc\\.gov|congress\\.gov).*[?&]api_key=([a-zA-Z0-9_-]{20,50})"
+description = "Library of Congress API key in URL query parameter"
+group = 1

@@ -1,0 +1,31 @@
+# Docs: https://docs.workday.com/en-us/admin_guide/ch_api_rest_api.html
+# Format: Base64 encoded credentials or bearer token for REST API
+# Verify: no public verification endpoint
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "workday-api-key"
+name = "Workday API Key"
+service = "workday"
+severity = "critical"
+keywords = ["workday", "WD_HOST", "WD_USER", "WD_PASSWORD"]
+
+[[detector.patterns]]
+regex = "(?:workday|WD)[._-]?(?:host|tenant|instance)[=:\\s\"'']+([a-z0-9-]+\\.workday\\.com)"
+description = "Workday tenant hostname"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:workday|WD)[._-]?(?:user|username)[=:\\s\"'']+([a-zA-Z0-9_-]+)"
+description = "Workday username with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:workday|WD)[._-]?(?:pass|password|pwd)[=:\\s\"'']+([a-zA-Z0-9!@#$%^&*._-]{8,})"
+description = "Workday password with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:workday|WD)[._-]?(?:token|api[_-]?key|bearer)[=:\\s\"'']+([a-zA-Z0-9_-]{20,})"
+description = "Workday API token/bearer with context anchor"
+group = 1

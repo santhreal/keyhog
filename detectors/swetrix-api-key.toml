@@ -1,0 +1,21 @@
+# Docs: https://swetrix.com/docs/statistics-api
+# Format: 32-character hexadecimal string
+# Verify: GET /v1/log with X-Api-Key header returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "swetrix-api-key"
+name = "Swetrix API Key"
+service = "swetrix"
+severity = "medium"
+keywords = ["SWETRIX_API_KEY", "swetrix"]
+
+[[detector.patterns]]
+regex = "(?:SWETRIX[_\\-\\s]?API[_\\-\\s]?KEY|swetrix[_\\-\\s]?api[_\\-\\s]?key)[=:\\s\"'']+([a-f0-9]{32})"
+description = "Swetrix API key - 32 hex characters with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "X-Api-Key[=:\\s\"'']+([a-f0-9]{32}).*swetrix|swetrix.*X-Api-Key[=:\\s\"'']+([a-f0-9]{32})"
+description = "Swetrix API call with X-Api-Key header"
+group = 1

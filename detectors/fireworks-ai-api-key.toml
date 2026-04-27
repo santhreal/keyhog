@@ -1,0 +1,26 @@
+# Docs: https://docs.fireworks.ai/getting-started/introduction
+# Format: fw_ prefix followed by 40 alphanumeric characters
+# Verify: GET request to Fireworks /models endpoint with Bearer token
+# Prefix: fw_
+
+[detector]
+id = "fireworks-ai-api-key"
+name = "Fireworks AI API Key"
+service = "fireworks"
+severity = "critical"
+keywords = ["fw_", "fireworks"]
+
+[[detector.patterns]]
+regex = 'fw_[a-zA-Z0-9]{40}'
+description = "Fireworks AI API key (fw_)"
+
+[detector.verify]
+method = "GET"
+url = "https://api.fireworks.ai/inference/v1/models"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[detector.verify.success]
+status = 200

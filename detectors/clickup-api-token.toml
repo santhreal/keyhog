@@ -1,0 +1,27 @@
+# Docs: https://clickup.com/api/developer-portal/authentication/
+# Format: pk_ prefix followed by 20-40 alphanumeric characters
+# Verify: GET request to ClickUp team endpoint with Authorization header
+# Prefix: pk_
+
+[detector]
+id = "clickup-api-token"
+name = "ClickUp API Token"
+service = "clickup"
+severity = "high"
+keywords = ["pk_", "clickup"]
+
+[[detector.patterns]]
+regex = 'pk_[a-zA-Z0-9]{20,40}'
+description = "ClickUp personal API token (pk_ prefix)"
+
+[detector.verify]
+method = "GET"
+url = "https://api.clickup.com/api/v2/team"
+
+[detector.verify.auth]
+type = "header"
+name = "Authorization"
+template = "{{match}}"
+
+[detector.verify.success]
+status = 200

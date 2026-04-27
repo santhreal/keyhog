@@ -1,0 +1,16 @@
+op_id = "primitive.bitwise.and"
+
+[[golden]]
+input = "ff0000000f000000"
+expected = "0f000000"
+reason = "0xFF & 0x0F = 0x0F (mask low nibble)"
+
+[[golden]]
+input = "ffffffffffffffff"
+expected = "ffffffff"
+reason = "L.1.32: u32::MAX AND u32::MAX = u32::MAX (idempotence at full width)"
+
+[[golden]]
+input = "ffffffff00000000"
+expected = "00000000"
+reason = "L.1.32: u32::MAX AND 0 = 0 (zero absorbs at full width)"

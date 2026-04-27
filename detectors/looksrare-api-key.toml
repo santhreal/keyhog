@@ -1,0 +1,21 @@
+# Docs: https://looksrare.dev/
+# Format: 32+ character alphanumeric string passed in X-Looks-Api-Key header
+# Verify: GET /api/v2/collections with X-Looks-Api-Key header returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "looksrare-api-key"
+name = "LooksRare API Key"
+service = "looksrare"
+severity = "medium"
+keywords = ["looksrare", "X-Looks-Api-Key", "LOOKSRARE_API_KEY"]
+
+[[detector.patterns]]
+regex = "(?:looksrare|LOOKSRARE)[_\\s]*(?:API[_\\s]*)?KEY[_\\s]*[=:][\\s]*[\"'']+([a-zA-Z0-9_-]{32,})[\"'']+"
+description = "LooksRare API key in assignment context"
+group = 1
+
+[[detector.patterns]]
+regex = "X-Looks-Api-Key[\\s]*:[\\s]*([a-zA-Z0-9_-]{32,})"
+description = "LooksRare API key in HTTP header"
+group = 1

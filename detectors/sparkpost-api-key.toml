@@ -1,0 +1,28 @@
+# Docs: https://developers.sparkpost.com/api/
+# Format: 32 hex characters - used in Authorization header
+# Verify: GET /api/v1/account with API key in Authorization header
+# Prefix: none (generic hex - REQUIRES context anchoring)
+
+[detector]
+id = "sparkpost-api-key"
+name = "SparkPost API Key"
+service = "sparkpost"
+severity = "critical"
+keywords = ["SPARKPOST", "sparkpost", "SPARKPOST_API_KEY", "sparkpost_api_key", "sparkpost.com"]
+
+[[detector.patterns]]
+regex = "(?:SPARKPOST|sparkpost).{0,20}(?:API_KEY|api_key|api-key|key|API|api).{0,5}[=:\\s\"']+([a-f0-9]{32})"
+description = "SparkPost API key with context anchor (32 hex characters)"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://api.sparkpost.com/api/v1/account"
+
+[detector.verify.auth]
+type = "header"
+name = "Authorization"
+template = "{{match}}"
+
+[detector.verify.success]
+status = 200

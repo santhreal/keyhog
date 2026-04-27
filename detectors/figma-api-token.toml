@@ -1,0 +1,20 @@
+# Docs: https://developers.figma.com/docs/rest-api/authentication/
+# Format: OAuth 2.0 access token or Personal Access Token (figd_ prefix for PATs)
+# Verify: GET /v1/me with Bearer token returns 200 if valid
+# Prefix: figd_ (for PATs) or none (for OAuth tokens)
+
+[detector]
+id = "figma-api-token"
+name = "Figma API Token"
+service = "figma"
+severity = "critical"
+keywords = ["figd_", "figma", "X-Figma-Token"]
+
+[[detector.patterns]]
+regex = "figd_[a-zA-Z0-9_-]{20,48}"
+description = "Figma personal access token (figd_ prefix, 20-48 chars)"
+
+[[detector.patterns]]
+regex = "(?:figma|FIGMA)[=:\\s\"'']{1,5}([a-zA-Z0-9_-]{30,48})"
+description = "Figma OAuth token or API key with context anchor"
+group = 1

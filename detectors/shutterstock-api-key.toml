@@ -1,0 +1,26 @@
+# Docs: https://developers.shutterstock.com/documentation
+# Format: Consumer Key and Consumer Secret (alphanumeric, ~32 chars each)
+# Verify: GET /v2/images/search with basic auth returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "shutterstock-api-key"
+name = "Shutterstock API Key"
+service = "shutterstock"
+severity = "high"
+keywords = ["SHUTTERSTOCK", "shutterstock", "consumer_key", "consumer_secret"]
+
+[[detector.patterns]]
+regex = '(?:SHUTTERSTOCK|shutterstock)[._-]?(?:CONSUMER|consumer)[._-]?(?:KEY|key)[=:\s""]+([a-zA-Z0-9_-]{32,})'
+description = "Shutterstock consumer key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = '(?:SHUTTERSTOCK|shutterstock)[._-]?(?:API|api)[._-]?(?:KEY|key)[=:\s""]+([a-zA-Z0-9_-]{32,})'
+description = "Shutterstock API key with context anchor"
+group = 1
+
+[[detector.companions]]
+name = "shutterstock-consumer-secret"
+regex = '(?:SHUTTERSTOCK|shutterstock)[._-]?(?:CONSUMER|consumer)[._-]?(?:SECRET|secret)[=:\s""]+([a-zA-Z0-9_-]{32,})'
+within_lines = 5

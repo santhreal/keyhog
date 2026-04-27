@@ -1,0 +1,25 @@
+# Docs: https://guides.rubygems.org/rubygems-org-api/
+# Format: rubygems_ prefix followed by 48 hexadecimal characters
+# Verify: GET /api/v1/gems.json with Authorization header returns 200 if valid
+# Prefix: rubygems_
+
+[detector]
+id = "rubygems-api-key"
+name = "RubyGems API Key"
+service = "rubygems"
+severity = "critical"
+keywords = ["rubygems_", "RUBYGEMS_API_KEY", "gem push", "rubygems.org"]
+
+[[detector.patterns]]
+regex = "rubygems_[a-f0-9]{48}"
+description = "RubyGems API key with rubygems_ prefix"
+
+[[detector.patterns]]
+regex = "(?:RUBYGEMS_API_KEY|rubygems.api.key|:rubygems_api_key:)[=:\\s\"'']+(rubygems_[a-f0-9]{48})"
+description = "RubyGems API key in environment/config context"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:RUBYGEMS_API_KEY|rubygems.api.key|:rubygems_api_key:)[=:\\s\"'']([a-f0-9]{48})\\b"
+description = "Legacy RubyGems API key in environment/config context without prefix"
+group = 1

@@ -1,0 +1,16 @@
+# Docs: https://apidocs.hashnode.com/
+# Format: Personal Access Token (PAT) - alphanumeric string for GraphQL API
+# Verify: POST to gql.hashnode.com with Authorization header
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "hashnode-api-token"
+name = "Hashnode Personal Access Token"
+service = "hashnode"
+severity = "medium"
+keywords = ["hashnode", "HASHNODE", "pat", "personal_access_token"]
+
+[[detector.patterns]]
+regex = '''(?:hashnode|HASHNODE|personal[_-]?access[_-]?token|HASHNODE[_-]?TOKEN)[=:\s"\']+([a-f0-9]{32,})'''
+description = "Hashnode Personal Access Token with context anchor"
+group = 1

@@ -1,0 +1,26 @@
+# Docs: https://huggingface.co/docs/hub/en/security-tokens
+# Format: hf_ prefix followed by 34 alphanumeric characters
+# Verify: GET request to HuggingFace /api/whoami-v2 endpoint with Bearer token
+# Prefix: hf_
+
+[detector]
+id = "huggingface-api-key"
+name = "HuggingFace API Key"
+service = "huggingface"
+severity = "high"
+keywords = ["hf_"]
+
+[[detector.patterns]]
+regex = 'hf_[a-zA-Z0-9]{34}'
+description = "HuggingFace API token (hf_)"
+
+[detector.verify]
+method = "GET"
+url = "https://huggingface.co/api/whoami-v2"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[detector.verify.success]
+status = 200

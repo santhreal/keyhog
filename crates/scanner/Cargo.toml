@@ -1,0 +1,89 @@
+[package]
+name = "keyhog-scanner"
+description = "Secret detection engine with literal matching, regex fallback, entropy scoring, and decode-through scanning"
+version = "0.2.1"
+edition = "2021"
+rust-version = "1.89"
+authors = ["Santh Project <contact@santh.dev>"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/santhsecurity/keyhog"
+homepage = "https://github.com/santhsecurity/keyhog"
+documentation = "https://docs.rs/keyhog-scanner"
+keywords = ["secret-scanner", "security", "credentials", "api-keys", "git"]
+categories = ["command-line-utilities", "development-tools"]
+readme = "README.md"
+
+[package.metadata.santh]
+status = "alpha"
+
+[features]
+# GPU is ALWAYS compiled in — keyhog auto-routes to GPU/SIMD/CPU based on
+# hardware probe, OS, and workload size. There is no "no-GPU" build profile;
+# the runtime gracefully degrades when no compatible adapter is found.
+default = ["ml", "entropy", "decode", "multiline", "simdsieve", "simd"]
+ml = []
+entropy = []
+decode = []
+multiline = []
+simd = ["dep:hyperscan"]  # Vectorscan/Hyperscan SIMD regex compilation (builds HS database)
+simd_scan = ["simd"]      # Enable SIMD scan path (experimental — AC+fallback is faster for <2K patterns)
+simdsieve = ["dep:simdsieve"]  # SIMD-accelerated prefilter for top 8 patterns (50 GB/s)
+gpu = []  # GPU stack is mandatory; feature exists for CLI compatibility
+
+[dependencies]
+keyhog-core = { workspace = true }
+# GPU stack is mandatory — auto-routes to GPU vs SIMD vs scalar based on the
+# hardware probe at startup. wgpu is the cross-platform device backend; vyre
+# provides the GPU AC literal-set scanner.
+wgpu = { workspace = true }
+pollster = { workspace = true }
+bytemuck = { workspace = true }
+aho-corasick = { workspace = true }
+regex = { workspace = true }
+base64 = { workspace = true }
+unicode-normalization = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+sha2 = { workspace = true }
+memchr = { workspace = true }
+rayon = { workspace = true }
+lru = { workspace = true }
+lazy_static = { workspace = true }
+dirs = { workspace = true }
+libc = { workspace = true }
+zeroize = { workspace = true }
+hyperscan = { workspace = true, optional = true }
+vyre = { workspace = true }
+vyre_libs = { workspace = true, features = ["vyre_driver_wgpu", "matching-nfa", "matching-regex"] }
+vyre-driver-wgpu = { workspace = true }
+
+simdsieve = { workspace = true, optional = true }
+parking_lot = { workspace = true }
+hex = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+tokio = { workspace = true, features = ["rt", "time"] }
+base64-simd = "0.8.0"
+hex-simd = "0.8.0"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+io-uring = { workspace = true }
+
+# Optional: Vectorscan SIMD backend
+
+[dev-dependencies]
+criterion = { workspace = true }
+keyhog-verifier = { workspace = true }
+proptest = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
+tempfile = { workspace = true }
+toml = { workspace = true }
+
+[[bench]]
+name = "scan_throughput"
+harness = false
+
+[[bench]]
+name = "size_pattern_sweep"
+harness = false

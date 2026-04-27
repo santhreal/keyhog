@@ -1,0 +1,524 @@
+<!DOCTYPE HTML>
+<html lang="en" class="rust sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>A Tour of What Can Go Wrong - The vyre Book</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="The GPU compute IR with a conformance prover">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="../favicon-8114d1fc.png">
+        <link rel="stylesheet" href="../css/variables-8adf115d.css">
+        <link rel="stylesheet" href="../css/general-2459343d.css">
+        <link rel="stylesheet" href="../css/chrome-ae938929.css">
+        <link rel="stylesheet" href="../css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="../highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="../tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="../ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "../";
+            const default_light_theme = "rust";
+            const default_dark_theme = "navy";
+            window.path_to_searchindex_js = "../searchindex-bc7bdb82.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="../toc-16d598fb.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('rust')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="../toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">The vyre Book</h1>
+
+                    <div class="right-buttons">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/santhsecurity/vyre" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/santhsecurity/vyre/edit/main/core/docs/./testing/a-tour-of-what-can-go-wrong.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                            <span class=fa-svg id="git-edit-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M421.7 220.3l-11.3 11.3-22.6 22.6-205 205c-6.6 6.6-14.8 11.5-23.8 14.1L30.8 511c-8.4 2.5-17.5 .2-23.7-6.1S-1.5 489.7 1 481.2L38.7 353.1c2.6-9 7.5-17.2 14.1-23.8l205-205 22.6-22.6 11.3-11.3 33.9 33.9 62.1 62.1 33.9 33.9zM96 353.9l-9.3 9.3c-.9 .9-1.6 2.1-2 3.4l-25.3 86 86-25.3c1.3-.4 2.5-1.1 3.4-2l9.3-9.3H112c-8.8 0-16-7.2-16-16V353.9zM453.3 19.3l39.4 39.4c25 25 25 65.5 0 90.5l-14.5 14.5-22.6 22.6-11.3 11.3-33.9-33.9-62.1-62.1L314.3 67.7l11.3-11.3 22.6-22.6 14.5-14.5c25-25 65.5-25 90.5 0z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="a-tour-of-what-can-go-wrong"><a class="header" href="#a-tour-of-what-can-go-wrong">A tour of what can go wrong</a></h1>
+<p>This chapter is a tour of the specific failure modes vyre’s test suite
+exists to prevent. Each failure mode is a category of bug that would
+break vyre’s promise to its users, and each category corresponds to
+one or more parts of the test architecture described in Part III.
+Knowing which bugs the suite catches is how you know whether the
+suite is complete. Knowing how each bug manifests is how you know
+whether your own test is strong enough to catch it.</p>
+<p>The seven failure modes below are not hypothetical. Every one of them
+has appeared at least once in the history of GPU compute, in systems
+shipped by companies with thousands of engineers. None of them are
+exotic. All of them are the kind of bug that reaches production when
+the test suite was not built to catch them.</p>
+<h2 id="failure-mode-1--miscompilation"><a class="header" href="#failure-mode-1--miscompilation">Failure mode 1 — Miscompilation</a></h2>
+<p>A miscompilation is when the compiler — in vyre’s case, the lowering
+from <code>ir::Program</code> to a backend shader language — produces output
+that does not preserve the semantics of the input. The IR says “add
+these two values.” The lowered shader does something that is not
+adding them. The program runs. It returns values. The values are
+wrong.</p>
+<p>Miscompilations are the most dangerous class of bug because they do
+not announce themselves. The program does not crash. The runtime
+does not error. The test harness does not trip. A user writes a
+Program, runs it, and receives answers that are plausible, repeatable,
+and wrong. If the user is running an ML inference, the model
+predicts subtly worse. If the user is running a cryptographic
+operation, the ciphertext is subtly corrupted. If the user is
+running a scientific simulation, the results disagree with reality
+in ways that take months to track down.</p>
+<p>The history of GPU compute is full of miscompilations. NVIDIA’s
+shader compiler has had versions that silently replaced <code>sin(x)</code>
+with a low-precision approximation in contexts where the user
+expected the IEEE function. AMD’s GLSL compiler has had versions
+that reordered associative reductions in ways that broke scientific
+simulations. Intel’s GPU compiler has had versions where integer
+overflow on loop counters produced different behavior than the
+source language required. Each of these is a miscompilation. Each
+of them was caught eventually, most after shipping, some after
+years.</p>
+<p>vyre’s test suite catches miscompilations through two mechanisms.
+First, the reference interpreter (<code>vyre-conform::reference</code>) is a
+pure-Rust evaluator that runs Programs with obvious correctness.
+Every backend’s output is diffed against the reference interpreter’s
+output for the same Program. If the lowered shader disagrees with
+the reference, the lowering is wrong. Second, the lowering coverage
+tests in <code>tests/integration/lowering/</code> exercise every <code>Expr</code> variant,
+every <code>Node</code> variant, and every <code>BinOp</code>/<code>UnOp</code>/<code>AtomicOp</code> combination,
+with enough structural diversity that a miscompilation affecting any
+one variant shows up. The category map in Part III describes these
+tests in detail.</p>
+<p>The key defense against miscompilation is the oracle discipline from
+<a href="oracles.html">the previous chapter</a>: the expected value never comes
+from the lowered shader itself. It always comes from an independent
+source — the reference interpreter, a specification table, a law —
+so that a miscompilation cannot hide by making the test agree with
+the broken output.</p>
+<h2 id="failure-mode-2--nondeterminism"><a class="header" href="#failure-mode-2--nondeterminism">Failure mode 2 — Nondeterminism</a></h2>
+<p>A nondeterministic operation is one that produces different results
+for the same inputs on different runs, or on different devices, or
+in different thread schedules. Nondeterminism is vyre’s existential
+enemy. The entire value proposition of vyre is byte-identical output
+from identical input, forever, on every conformant backend. A single
+nondeterministic operation anywhere in the system breaks this
+contract and breaks the product.</p>
+<p>GPU nondeterminism sneaks in through many channels. Parallel
+reductions that are “approximately associative” produce different
+sums depending on the order in which the partial sums are combined.
+Atomic operations that race produce results that depend on the
+schedule. Hardware that flushes subnormal floats to zero produces
+different outputs from hardware that handles them correctly.
+Workgroup sizes that differ across devices produce different memory
+access patterns, which can expose ordering bugs that were hidden on
+the original hardware. Vendor math libraries substitute different
+implementations of transcendental functions, each accurate to within
+a few ULP but differing in the last bits.</p>
+<p>The test suite catches nondeterminism through the property chapter
+of Part III’s property tests and the determinism harnesses in Part
+III’s backend tests. A property test in <code>tests/property/determinism.rs</code>
+runs a large population of random Programs many times and asserts
+every run produces bit-identical output. A backend test in
+<code>tests/backend/determinism_across_runs.rs</code> runs a curated set of
+Programs one thousand times each and asserts every run agrees. A
+cross-backend test runs the same Program on every registered backend
+and asserts agreement to the byte.</p>
+<p>When a nondeterminism bug is caught by the suite, the fix is almost
+always at the IR level, not the backend level. The backend is doing
+what it was allowed to do; the IR must forbid the operation, or
+constrain it further, so that the backend no longer has the license
+to be nondeterministic. See <a href="advanced/concurrency-and-ordering.html">Concurrency and
+ordering</a> in Part VIII for the
+specific patterns vyre forbids and the tests that enforce each.</p>
+<h2 id="failure-mode-3--backend-drift"><a class="header" href="#failure-mode-3--backend-drift">Failure mode 3 — Backend drift</a></h2>
+<p>Backend drift is the cumulative divergence between two conformant
+backends over time. Day zero, backend A and backend B produce
+identical output for every Program. Day one hundred, they produce
+identical output for almost every Program, but a small class of
+inputs triggers a one-ULP difference because one backend picked up
+a driver update that changed the rounding behavior of a specific
+instruction. Day five hundred, the set of divergent inputs has
+grown to a few percent because the drift went unnoticed and other
+backends started drifting too. Day one thousand, vyre’s promise is
+a fiction.</p>
+<p>Backend drift is the failure mode that kills substrates. CUDA’s
+early promise of portability eroded as NVIDIA and other CUDA
+implementers drifted apart. OpenCL’s promise eroded for the same
+reason. The pattern is always the same: the specification does not
+pin down a detail, two implementations interpret the gap
+differently, the gap widens, the promise breaks.</p>
+<p>vyre’s defense against backend drift is cross-backend equivalence
+tests that run in CI on every commit. The test corpus is the union
+of every <code>tests/backend/</code> file, every <code>tests/integration/primitive_ops/</code>
+file run through the backend harness, and the entire set of
+vyre-conform generated tests. Every one of those tests runs on
+every registered backend, and any disagreement — even a single bit
+— is a CI failure. The suite does not let drift accumulate because
+the suite does not let drift enter. A commit that introduces a
+drift-producing change cannot land.</p>
+<p>The stronger version of this defense is the conformance certificate.
+A backend is not conformant until it has passed the full suite. A
+certificate is valid only for the exact backend version that earned
+it. A driver update that changes behavior invalidates the
+certificate and the backend must re-earn it. See <a href="vyre-conform/two-tier-suite.html">the two-tier
+suite</a> in Part X for how vyre and
+vyre-conform cooperate to issue and revoke certificates.</p>
+<h2 id="failure-mode-4--composition-bugs"><a class="header" href="#failure-mode-4--composition-bugs">Failure mode 4 — Composition bugs</a></h2>
+<p>Operations in vyre compose. A Program is a composition of nodes, each
+of which contains expressions that may themselves call other
+operations or read from buffers populated by previous operations.
+When two correct operations compose, the composition should also be
+correct. When the composition surprises, there is either a bug in
+one of the operations, a bug in the composition logic, or a bug in
+the algebraic theorem that claimed the composition would be
+well-behaved.</p>
+<p>Composition bugs are insidious because the individual operations
+look correct when tested in isolation. <code>BinOp::Add</code> passes all its
+unit tests. <code>BinOp::Mul</code> passes all its unit tests. A Program that
+composes them in a specific order, perhaps under a conditional
+branch with a loop counter, produces wrong output. The bug is not
+in <code>Add</code> or <code>Mul</code>; the bug is in how they were joined, or in the
+lowering’s handling of the join, or in an optimization that fired
+under the composition but not under the individual operations.</p>
+<p>The test suite catches composition bugs through two mechanisms.
+First, the integration tests in <code>tests/integration/</code> exercise
+multi-op Programs directly. Every test in <code>primitive_ops/</code> builds a
+small Program and runs it through the full pipeline, but larger
+tests in <code>tests/integration/ir_construction/</code> build bigger Programs
+with real composition structures — diamonds, chains, loops, nested
+conditionals — and assert on the end-to-end output. Second,
+vyre-conform’s composition theorems prove certain properties are
+preserved under composition, and tests that rely on those theorems
+fail loudly if the composition breaks the property. A commutative
+op composed under a rule that preserves commutativity must stay
+commutative; a test asserts this, and if the composition violates
+the theorem the test fires.</p>
+<p>See <a href="oracles.html">Composition theorem oracle</a> in the oracle chapter
+for how tests leverage the theorem system.</p>
+<h2 id="failure-mode-5--validation-gaps"><a class="header" href="#failure-mode-5--validation-gaps">Failure mode 5 — Validation gaps</a></h2>
+<p>Validation is vyre’s contract with its consumers: if <code>validate(program)</code>
+returns empty, the program is safe to lower and dispatch. A validation
+gap is any case where a malformed Program passes validation and then
+causes a panic, an undefined behavior, an unbounded allocation, or a
+wrong result at lowering or dispatch time. Validation gaps are bugs
+because they break the contract; the consumer has no way to know the
+program was malformed, so the responsibility falls on vyre.</p>
+<p>Validation gaps are common in systems that grow organically. A new
+feature is added, a new <code>Expr</code> variant is introduced, the lowering
+handles the new variant but validation does not — nobody remembered
+to update the validator. A malformed program containing the new
+variant slips through validation and breaks lowering. From the
+user’s perspective, vyre crashed; from vyre’s perspective, the
+contract was violated silently until the day someone wrote the
+malformed program.</p>
+<p>vyre’s defense against validation gaps is the validation test
+category (<code>tests/integration/validation/</code>), which contains one test
+per V-rule plus a meta-test that enumerates <code>ValidationRule</code> and
+requires every variant to have a corresponding test. Adding a new
+V-rule without a test is a compile error because the meta-test
+enumerates the enum and fails on any unmatched variant. Removing the
+meta-test itself is caught by a review rule.</p>
+<p>The deeper defense is invariant I5 (validation soundness): every
+Program that passes validation must lower safely. This is a property
+that <code>tests/property/validation_soundness.rs</code> asserts by generating
+random Programs, validating them, and running the validated ones
+through the full pipeline. Any failure is a validation gap, which
+becomes a finding and a new V-rule. The property test is the
+continuous audit on the contract.</p>
+<h2 id="failure-mode-6--float-nondeterminism"><a class="header" href="#failure-mode-6--float-nondeterminism">Failure mode 6 — Float nondeterminism</a></h2>
+<p>Floating-point nondeterminism is nondeterminism specifically
+concerning floats. It gets its own failure mode because the causes
+are specific, the detection is specific, and the consequences are
+specific.</p>
+<p>A float nondeterminism bug looks like this: a Program that uses
+<code>f32</code> arithmetic produces <code>0.1 + 0.2 == 0.30000000000000004</code> on one
+backend and <code>0.1 + 0.2 == 0.30000000000000003</code> on another. Both
+results are within one ULP of the true sum. Both are “correct” in
+the informal sense. But they are different bytes, and vyre’s promise
+is byte-identical, so they are wrong.</p>
+<p>The sources of float nondeterminism are the permissions the
+hardware grants the compiler that vyre must forbid: fused multiply-add,
+reordered reductions, subnormal flush, approximate reciprocals,
+approximate square roots, vendor transcendental substitutions,
+tensor-core accumulation at reduced precision. vyre’s specification
+forbids each of these for the strict IEEE 754 track, and the
+lowering is responsible for emitting shader code that the backend
+cannot optimize into a forbidden form.</p>
+<p>The test suite catches float nondeterminism through the floating-point
+category of Part VIII, which covers both the strict IEEE 754 track
+and the approximate track with ULP-bounded tolerance. Every floating-point
+op has cross-backend equivalence tests, determinism tests, and
+boundary tests (subnormals, NaN, infinity, signed zeros, round-to-even
+edge cases). See <a href="advanced/floating-point.html">Floating-point</a> in
+Part VIII for the full treatment.</p>
+<h2 id="failure-mode-7--regression"><a class="header" href="#failure-mode-7--regression">Failure mode 7 — Regression</a></h2>
+<p>A regression is when a bug that was previously fixed returns. It is
+not strictly a new failure mode; it is the return of an old one. But
+regressions deserve their own entry in this tour because the defense
+against them is specific and non-optional.</p>
+<p>Every bug that has been fixed in vyre is a test waiting to happen.
+The bug had inputs that triggered it, behavior that was wrong, and
+a fix that made the behavior right. The minimal repro for that bug
+is a permanent test. If the fix is ever accidentally undone — by a
+refactor that drops a branch, by an optimization that rearranges
+control flow, by a merge that silently reverts a patch — the test
+fires and the regression is caught before it reaches users.</p>
+<p>The defense against regressions is <code>tests/regression/</code>. Every file
+in that directory is a past bug’s minimal reproducer, with a header
+comment recording the bug’s symptom, root cause, fix commit, and
+date. Files in this directory are never deleted. If a test in
+<code>tests/regression/</code> starts failing, the bug has returned, and the
+fix is to the code, never to the test. See <a href="categories/regression.html">Regression
+tests</a> and <a href="discipline/regression-rule.html">The regression
+rule</a> for the complete treatment.</p>
+<p>The cultural rule that makes this work is: when a bug is fixed, the
+fix is not complete until a regression test has been committed that
+would have caught the bug before the fix. This is non-optional. A
+PR that fixes a bug without adding a regression test is rejected at
+review. The test comes with the fix or the fix is incomplete.</p>
+<h2 id="what-this-tour-leaves-out"><a class="header" href="#what-this-tour-leaves-out">What this tour leaves out</a></h2>
+<p>This tour covers the big seven failure modes, but there are smaller
+ones that the suite also catches:</p>
+<ul>
+<li><strong>Resource exhaustion:</strong> a Program that looks well-formed but
+consumes unbounded memory or time. Caught by adversarial tests
+that feed the limits of each resource and assert graceful
+rejection.</li>
+<li><strong>IR wire format round-trip loss:</strong> serializing a Program and
+deserializing it produces a different Program. Caught by
+<code>tests/integration/wire_format/roundtrip.rs</code> which asserts identity
+on a large corpus.</li>
+<li><strong>Validation incompleteness beyond I5:</strong> the separability
+requirement (invariant I6) says every V-rule must be independently
+triggerable. If two rules are coupled, one of them is redundant or
+both have a gap. Caught by the validation separability audit in
+Part III’s validation chapter.</li>
+<li><strong>Backend initialization bugs:</strong> a backend that works on its
+second dispatch but fails on its first because some lazy
+initialization did not happen. Caught by running every backend
+test from a cold state in addition to the warm path.</li>
+<li><strong>Cross-version bugs:</strong> a Program valid under v1.x that produces
+different output under v1.y. This is a stability invariant (I13)
+violation. Caught by a nightly job that runs every committed test
+against pinned historical vyre versions.</li>
+</ul>
+<p>Each of these has a specific test category responsible for it, and
+each category has a chapter in Part III. The mapping from failure
+mode to category is <a href="appendices/B-invariants-catalog.html">Appendix B</a>.</p>
+<h2 id="what-the-tour-says-about-the-suite"><a class="header" href="#what-the-tour-says-about-the-suite">What the tour says about the suite</a></h2>
+<p>The suite has to catch all of these failure modes. That is a lot of
+bugs to catch, and no single category of test can catch them all.
+Miscompilations need lowering tests and backend diff tests.
+Nondeterminism needs determinism stress and cross-backend equivalence.
+Drift needs continuous cross-backend runs in CI. Composition bugs
+need integration tests on real composed Programs. Validation gaps
+need per-rule tests plus soundness properties. Float nondeterminism
+needs dedicated float tests. Regressions need the regression corpus.</p>
+<p>No single test catches a bug in every failure mode. The suite is
+strong because it has the right categories, each doing its specific
+job, with no overlap that matters and no gaps that matter. Part III
+explains each category, and the <a href="writing/decision-tree.html">decision
+tree</a> in Part V tells you which category
+your test belongs in.</p>
+<p>Next: <a href="the-promises.html">The promises</a> — the fifteen invariants the
+suite must prove, expressed as promises to vyre’s users rather than
+as numbered rules.</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../testing/introduction.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="../testing/the-promises.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../testing/introduction.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="../testing/the-promises.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="../elasticlunr-ef4e11c1.min.js"></script>
+        <script src="../mark-09e88c2c.min.js"></script>
+        <script src="../searcher-c2a407aa.js"></script>
+
+        <script src="../clipboard-1626706a.min.js"></script>
+        <script src="../highlight-abc7f01d.js"></script>
+        <script src="../book-a0b12cfe.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+
+    </div>
+    </body>
+</html>

@@ -1,0 +1,20 @@
+# Docs: https://docs.github.com/en/developers/apps/building-github-apps/authenticating-with-github-apps
+# Format: PEM-encoded RSA private key beginning with -----BEGIN RSA PRIVATE KEY-----
+# Verify: Generate JWT and call GitHub API /app endpoint
+# Prefix: -----BEGIN RSA PRIVATE KEY-----
+
+[detector]
+id = "github-app-private-key"
+name = "GitHub App Private Key"
+service = "github"
+severity = "critical"
+keywords = ["-----BEGIN RSA PRIVATE KEY-----", "-----BEGIN OPENSSH PRIVATE KEY-----", "GitHub App"]
+
+[[detector.patterns]]
+regex = "-----BEGIN (RSA|OPENSSH) PRIVATE KEY-----[\\s\\S]{200,}?-----END (RSA|OPENSSH) PRIVATE KEY-----"
+description = "PEM-encoded private key for GitHub App authentication"
+
+[[detector.patterns]]
+regex = "(?:github[_-]?app|GITHUB[_-]?APP)[=:\\s\"'']+(-----BEGIN (?:RSA|OPENSSH) PRIVATE KEY-----[\\s\\S]{200,}?-----END (?:RSA|OPENSSH) PRIVATE KEY-----)"
+description = "GitHub App private key with context anchor"
+group = 1

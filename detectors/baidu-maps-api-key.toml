@@ -1,0 +1,16 @@
+# Docs: https://lbsyun.baidu.com/index.php?title=jspopularGL/guide/getkey
+# Format: API key is a 24-32 character alphanumeric string (AK)
+# Verify: no public verification endpoint
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "baidu-maps-api-key"
+name = "Baidu Maps API Key"
+service = "baidu"
+severity = "high"
+keywords = ["BAIDU_MAPS_KEY", "baidu.maps.key", "baidu_maps_key", "ak"]
+
+[[detector.patterns]]
+regex = "(?:BAIDU[_-]?MAPS[_-]?KEY|baidu[_-]?maps[_-]?key|baidu\\.maps\\.key)[=:\\s\"'']+([A-Za-z0-9]{24,32})"
+description = "Baidu Maps API key with context anchor"
+group = 1

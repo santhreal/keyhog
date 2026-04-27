@@ -1,0 +1,31 @@
+# Docs: https://docs.sentry.io/account/auth-tokens/
+# Format: sntrys_ prefix (new) OR 64 hex characters (legacy)
+# Verify: GET /api/0/organizations/ with Bearer token
+# Prefix: sntrys_ (new format)
+
+[detector]
+id = "sentry-auth-token"
+name = "Sentry Auth Token"
+service = "sentry"
+severity = "critical"
+keywords = ["sntrys_", "SENTRY_AUTH_TOKEN", "sentry_auth_token", "sentry.io"]
+
+[[detector.patterns]]
+regex = "sntrys_[a-zA-Z0-9+/]{64,128}"
+description = "Sentry auth token (sntrys_ prefix, base64-encoded)"
+
+[[detector.patterns]]
+regex = "(?:SENTRY|sentry).{0,20}(?:TOKEN|token|AUTH|auth).{0,5}[=:\\s\"']+([a-f0-9]{64})"
+description = "Legacy Sentry auth token with context anchor (64 character hex)"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://sentry.io/api/0/organizations/"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[detector.verify.success]
+status = 200

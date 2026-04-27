@@ -1,0 +1,33 @@
+# Docs: https://bluejeans.github.io/api-documentation/
+# Format: BlueJeans API uses access tokens - 32+ alphanumeric characters
+# Verify: GET /v1/user/{userId}/scheduled_meetings with access_token query param
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "bluejeans-api"
+name = "BlueJeans API Credentials"
+service = "bluejeans"
+severity = "critical"
+keywords = ["bluejeans", "BLUEJEANS", "bjn", "bluejeans.com"]
+
+[[detector.patterns]]
+regex = "(?:bluejeans|BJN)[_\\-\\s]?(?:api[_\\-\\s]?key|access[_\\-\\s]?token|secret)[\"\\'\\s]*[=:][\"\\'\\s]*([a-zA-Z0-9]{32,})"
+description = "BlueJeans API credential with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:BLUEJEANS[_\\-\\s]?API[_\\-\\s]?KEY|BLUEJEANS[_\\-\\s]?TOKEN|BJN[_\\-\\s]?SECRET)[\"\\'\\s]*[=:][\"\\'\\s]*([a-zA-Z0-9]{32,})"
+description = "BlueJeans API credential in environment variable format"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://api.bluejeans.com/v1/user/info"
+
+[detector.verify.auth]
+type = "header"
+name = "Authorization"
+template = "Bearer {{match}}"
+
+[detector.verify.success]
+status = 200

@@ -1,0 +1,21 @@
+# Docs: https://www.pexels.com/api/documentation/
+# Format: 56 character alphanumeric string
+# Verify: GET /v1/curated with Authorization header returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "pexels-api-key"
+name = "Pexels API Key"
+service = "pexels"
+severity = "medium"
+keywords = ["PEXELS", "pexels"]
+
+[[detector.patterns]]
+regex = '(?:PEXELS|pexels)[._-]?(?:API|api)[._-]?(?:KEY|key)[=:\s""]+([a-zA-Z0-9]{56})'
+description = "Pexels API key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = 'Authorization:\s*([a-zA-Z0-9]{56})'
+description = "Pexels Authorization header (API key)"
+group = 1

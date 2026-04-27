@@ -1,0 +1,9 @@
+op_id = "graph.bfs"
+cert_version = "0.5.0"
+wire_format_version = 1
+signature_blake3 = "TBD"
+witness_set_blake3 = "TBD"
+program_blake3 = "TBD"
+allowed_backends = ["wgpu"]
+laws = []
+notes = "Layer-by-layer breadth-first traversal. Emits frontier per layer; caller chains across layers via vyre IR control flow."

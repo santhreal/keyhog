@@ -1,0 +1,65 @@
+name: Fuzz
+
+on:
+  pull_request:
+    paths:
+      - 'libs/performance/matching/vyre/**'
+  schedule:
+    - cron: "0 7 * * *"
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  smoke:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - decoder
+          - program_wire
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz
+      - name: Run smoke fuzz
+        run: |
+          cd libs/performance/matching/vyre/vyre-foundation/fuzz
+          cargo fuzz run ${{ matrix.target }} --release -- -max_total_time=60
+      - name: Upload crash artifact
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crash-smoke-${{ matrix.target }}
+          path: libs/performance/matching/vyre/vyre-foundation/fuzz/artifacts/${{ matrix.target }}/
+          if-no-files-found: ignore
+
+  ci:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - decoder
+          - program_wire
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz
+      - name: Run CI fuzz
+        run: |
+          cd libs/performance/matching/vyre/vyre-foundation/fuzz
+          cargo fuzz run ${{ matrix.target }} --release -- -max_total_time=600
+      - name: Upload crash artifact
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crash-ci-${{ matrix.target }}
+          path: libs/performance/matching/vyre/vyre-foundation/fuzz/artifacts/${{ matrix.target }}/
+          if-no-files-found: ignore

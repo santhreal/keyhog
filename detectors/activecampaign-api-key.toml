@@ -1,0 +1,33 @@
+# Docs: https://developers.activecampaign.com/reference/authentication
+# Format: API key passed in Api-Token header, typically 40+ alphanumeric characters
+# Verify: GET /api/3/account with Api-Token header returns 200
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "activecampaign-api-key"
+name = "ActiveCampaign API Key"
+service = "activecampaign"
+severity = "critical"
+keywords = ["activecampaign", "ACTIVECAMPAIGN", "Api-Token", "api_token"]
+
+[[detector.patterns]]
+regex = '(?:ACTIVECAMPAIGN|activecampaign)[_]*(?:API|api)?[_]*(?:KEY|key|TOKEN|token)[=: ]+([a-zA-Z0-9]{32,})'
+description = "ActiveCampaign API key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = '(?:API-TOKEN|Api-Token|api-token)[=: ]+([a-zA-Z0-9]{32,})'
+description = "ActiveCampaign Api-Token header value"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://{account_name}.api-us1.com/api/3/account"
+
+[detector.verify.auth]
+type = "header"
+name = "Api-Token"
+template = "{{match}}"
+
+[detector.verify.success]
+status = 200

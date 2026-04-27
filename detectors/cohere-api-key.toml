@@ -1,0 +1,32 @@
+# Docs: https://docs.cohere.com/docs/authentication
+# Format: API key starting with 'co_' followed by 30+ alphanumeric/underscore/hyphen chars;
+#         legacy 40+ char alphanumeric keys also supported with context anchor
+# Verify: POST /v1/tokenize with Authorization header
+# Prefix: co_
+
+[detector]
+id = "cohere-api-key"
+name = "Cohere API Key"
+service = "cohere"
+severity = "critical"
+keywords = ["co_", "cohere", "COHERE_API_KEY", "cohere_api_key"]
+
+[[detector.patterns]]
+regex = 'co_[a-zA-Z0-9_-]{30,}'
+description = "Cohere API key (co_)"
+
+[[detector.patterns]]
+regex = "(?:COHERE_API_KEY|cohere_api_key)[=:\\s\"']+([a-zA-Z0-9]{40,})"
+description = "Cohere legacy API key with context anchor"
+group = 1
+
+[detector.verify]
+method = "POST"
+url = "https://api.cohere.com/v1/tokenize"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[detector.verify.success]
+status = 200

@@ -1,0 +1,16 @@
+# Docs: https://docs.brew.sh/Manpage#environment
+# Format: GitHub Personal Access Token (ghp_ prefix or classic 40-char hex)
+# Verify: Uses GitHub API verification (same as GitHub PAT)
+# Prefix: ghp_ or 40-char hex
+
+[detector]
+id = "homebrew-api-token"
+name = "Homebrew GitHub API Token"
+service = "homebrew"
+severity = "medium"
+keywords = ["HOMEBREW_GITHUB_API_TOKEN", "HOMEBREW_GITHUB_PACKAGES_TOKEN"]
+
+[[detector.patterns]]
+regex = "(?:HOMEBREW_GITHUB_API_TOKEN|HOMEBREW_GITHUB_PACKAGES_TOKEN)[=:\\s\"'']+(ghp_[a-zA-Z0-9]{36}|[a-f0-9]{40})"
+description = "Homebrew GitHub API token environment variable"
+group = 1

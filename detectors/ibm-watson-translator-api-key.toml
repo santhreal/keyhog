@@ -1,0 +1,31 @@
+# Docs: https://cloud.ibm.com/docs/language-translator
+# Format: API key is a random string, paired with a service URL
+# Verify: GET /v3/translate?version=2018-05-01 with Authorization header
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "ibm-watson-translator-api-key"
+name = "IBM Watson Language Translator API Key"
+service = "ibm-watson-translator"
+severity = "high"
+keywords = ["IBM_WATSON", "WATSON_TRANSLATOR", "IBM_TRANSLATOR", "IAM_API_KEY", "language-translator", "ibm_cloud"]
+
+[[detector.patterns]]
+regex = "(?:IBM_WATSON|WATSON_TRANSLATOR|IBM_TRANSLATOR)[_\\s]?(?:API[_\\s]?KEY)?[=:\\s\"'']+([A-Za-z0-9_-]{22,44})"
+description = "IBM Watson Language Translator API key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:IAM_API_KEY|IBM_CLOUD_API_KEY)[=:\\s\"'']+([A-Za-z0-9_-]{22,44})"
+description = "IBM Cloud API key (Watson Translator compatible)"
+group = 1
+
+[[detector.patterns]]
+regex = "language-translator.*apikey[=:\\s\"'']+([A-Za-z0-9_-]{22,44})"
+description = "IBM Watson Translator API key with service context"
+group = 1
+
+[[detector.companions]]
+name = "IBM Watson Service URL"
+regex = "(?:WATSON|IBM_TRANSLATOR|language-translator)[_\\s]?(?:URL|SERVICE_URL)[=:\\s\"'']+(https://api\\.[a-z-]+\\.language-translator\\.watson\\.cloud\\.ibm\\.com)"
+within_lines = 5

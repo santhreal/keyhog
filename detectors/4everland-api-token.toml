@@ -1,0 +1,21 @@
+# Docs: https://docs.4everland.org/
+# Format: S3-compatible API with Access Key ID and Secret Key
+# Verify: none (S3-compatible service, requires signature-based auth)
+# Prefix: none (S3-compatible format, requires context anchoring)
+
+[detector]
+id = "4everland-api-token"
+name = "4everland API Token"
+service = "4everland"
+severity = "high"
+keywords = ["4EVERLAND", "4everland", "EVERLAND", "everland", "4ever", "endpoint.4everland.co"]
+
+[[detector.patterns]]
+regex = "(?:4EVER|4ever|EVERLAND|everland)[._-]?(?:ACCESS|access)?[._-]?(?:KEY|key)[=:\\s\"'']+([A-Z0-9]{20,32})"
+description = "4everland access key with context anchor"
+group = 1
+
+[[detector.companions]]
+name = "secret_key"
+regex = "(?:4EVER|4ever|EVERLAND|everland|SECRET|secret)[._-]?(?:SECRET|secret)?[._-]?(?:KEY|key)[=:\\s\"'']+([A-Za-z0-9/+=]{40})"
+within_lines = 5

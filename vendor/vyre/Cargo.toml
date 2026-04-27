@@ -1,0 +1,131 @@
+[workspace]
+resolver = "2"
+members = [
+    "benches/competition",
+    "vyre-core",
+    "vyre-foundation",
+    "vyre-driver",
+    "vyre-driver-megakernel",
+    "vyre-driver-wgpu",
+    "vyre-driver-spirv",
+    "vyre-reference",
+    "vyre-spec",
+    "vyre-macros",
+    # Tier 2.5 LEGO substrate lives under vyre-primitives/src/<domain>/
+    # feature-gated per domain. See docs/primitives-tier.md.
+    "vyre-primitives",
+    "conform/vyre-conform-spec",
+    "conform/vyre-conform-generate",
+    "conform/vyre-conform-enforce",
+    "conform/vyre-conform-runner",
+    "conform/vyre-test-harness",
+    "xtask",
+    "vyre-runtime",
+    "vyre-libs",
+    "vyre-intrinsics",
+    "vyre-cc",
+]
+
+# Removed from workspace for 0.6: `demos/rust_lexer_gpu` and
+# `demos/rust_parser_gpu`. Both depend on the `workgroup` / `hash`
+# dialects that were nuked along with the rest of the WGSL-string
+# dialects when 0.6 narrowed vyre-ops to pure-IR primitives. They return
+# once the native naga-AST emitter lands in 0.7.
+
+# Room for future layered members without touching this file's shape:
+#   "domains/*", "libraries/*", "applications/*"
+
+[workspace.package]
+edition = "2021"
+rust-version = "1.85"
+license = "MIT OR Apache-2.0"
+authors = ["Santh Project <contact@santh.dev>"]
+repository = "https://github.com/santhsecurity/vyre"
+homepage = "https://github.com/santhsecurity/vyre"
+
+[workspace.lints.clippy]
+cast_lossless = "allow"
+cast_possible_truncation = "allow"
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+missing_docs = "deny"
+unreachable_pub = "warn"
+nonstandard_style = { level = "warn", priority = -1 }
+rust_2018_idioms = { level = "warn", priority = -1 }
+
+[workspace.lints.rustdoc]
+broken_intra_doc_links = "deny"
+private_intra_doc_links = "warn"
+
+# Workspace-level dependency declarations. Internal members use path +
+# version (the `version` is required so a published crate can resolve its
+# workspace siblings from crates.io after publication).
+[workspace.dependencies]
+vyre = { version = "0.6.0", path = "vyre-core", default-features = false }
+vyre-foundation = { version = "0.6.0", path = "vyre-foundation" }
+vyre-driver = { version = "0.6.0", path = "vyre-driver" }
+vyre-driver-megakernel = { version = "0.6.0", path = "vyre-driver-megakernel" }
+vyre-driver-wgpu = { version = "0.6.0", path = "vyre-driver-wgpu" }
+vyre-driver-spirv = { version = "0.6.0", path = "vyre-driver-spirv" }
+vyre-reference = { version = "0.6.0", path = "vyre-reference" }
+vyre-spec = { version = "0.6.0", path = "vyre-spec" }
+vyre-macros = { version = "0.6.0", path = "vyre-macros" }
+vyre-primitives = { version = "0.6.0", path = "vyre-primitives" }
+vyre-runtime = { version = "0.6.0", path = "vyre-runtime" }
+vyre-libs = { version = "0.6.0", path = "vyre-libs" }
+vyre-intrinsics = { version = "0.6.0", path = "vyre-intrinsics" }
+vyre-test-harness = { version = "0.6.0", path = "conform/vyre-test-harness" }
+vyre-harness = { version = "0.6.0", path = "vyre-harness" }
+weir = { version = "0.1", path = "weir" }
+
+# Shared third-party pins; every member agrees on versions.
+serde = { version = "=1.0.228", features = ["derive"] }
+serde_json = "=1.0.149"
+thiserror = "=2.0.18"
+tracing = "=0.1.44"
+tempfile = "=3.27.0"
+proptest = "=1.9.0"
+pollster = "=0.4.0"
+tokio = { version = "=1.51.1", features = ["full"] }
+wgpu = { version = "=24.0.5", features = ["wgsl", "naga-ir"] }
+bytemuck = { version = "=1.25.0", features = ["derive"] }
+naga = { version = ">=25.0.0, <26.0.0", features = ["wgsl-in", "wgsl-out", "spv-out"] }
+proc-macro2 = { version = "=1.0.106", features = ["span-locations"] }
+syn = { version = "=2.0.117", features = ["full", "visit", "visit-mut"] }
+walkdir = "=2.5.0"
+toml = "=0.8.23"
+aho-corasick = "=1.1.4"
+regex-syntax = "=0.8.10"
+blake3 = "=1.8.4"
+sha2 = "=0.10.9"
+percent-encoding = "=2.3.2"
+ed25519-dalek = { version = "=2.1.1", default-features = false, features = ["std"] }
+rustc-hash = "=1.1.0"
+im = "=15.1.0"
+rayon = "=1.12.0"
+hex = "=0.4.3"
+clap = { version = "=4.6.0", features = ["derive"] }
+fs2 = "=0.4.3"
+stats_alloc = "=0.1.10"
+loom = "=0.7.2"
+regex = "=1.12.3"
+regex-automata = "=0.4.14"
+rustc_lexer = "=0.1.0"
+criterion = { version = "=0.5.1", features = ["html_reports"] }
+bumpalo = "=3.20.2"
+inventory = "=0.3.17"
+quote = "=1.0.45"
+smallvec = { version = "=1.14.0", features = ["serde"] }
+crossbeam-channel = "0.5.14"
+libm = "=0.2.15"
+dashmap = "6.1.0"
+tracing-subscriber = "0.3"
+
+# In-workspace patch: while consumers still spell the meta-crate `vyre` and
+# the reference interpreter `vyre-reference`, route both to the local paths
+# so every build uses the current source tree rather than a published
+# older revision.
+[patch.crates-io]
+vyre = { path = "vyre-core" }
+vyre-reference = { path = "vyre-reference" }

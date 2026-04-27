@@ -1,0 +1,21 @@
+# Docs: https://www.lambdatest.com/support/docs/authentication/
+# Format: 40+ alphanumeric characters (access key) used with username for HTTP Basic Auth
+# Verify: none (no public validation endpoint without username)
+# Prefix: none (generic alphanumeric, requires context keyword or companion detection)
+
+[detector]
+id = "lambdatest-access-key"
+name = "LambdaTest Access Key"
+service = "lambdatest"
+severity = "critical"
+keywords = ["LT_ACCESS_KEY", "LT_ACCESSKEY", "access_key", "access-key", "lambdatest"]
+
+[[detector.patterns]]
+regex = "(?:LT_ACCESS[_-]?KEY|access[_-]?key)[=:\\s\"']+([a-zA-Z0-9]{40,})"
+description = "LambdaTest access key with context anchor"
+group = 1
+
+[[detector.companions]]
+name = "lambdatest-username"
+regex = "(?:LT_USERNAME|username)[=:\\s\"']+([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}|[a-zA-Z0-9_-]+)"
+within_lines = 5

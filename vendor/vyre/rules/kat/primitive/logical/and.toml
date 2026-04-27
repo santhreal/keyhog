@@ -1,0 +1,26 @@
+op_id = "primitive.logical.and"
+
+[[golden]]
+input = "0000000000000000"
+expected = "00000000"
+reason = "logical_and(0, 0) = 0"
+
+[[golden]]
+input = "0100000000000000"
+expected = "00000000"
+reason = "logical_and(1, 0) = 0"
+
+[[golden]]
+input = "0000000001000000"
+expected = "00000000"
+reason = "logical_and(0, 1) = 0"
+
+[[golden]]
+input = "0100000001000000"
+expected = "01000000"
+reason = "logical_and(1, 1) = 1"
+
+[[golden]]
+input = "2a00000011000000"
+expected = "01000000"
+reason = "logical_and(42, 17) = 1"

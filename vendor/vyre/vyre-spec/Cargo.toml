@@ -1,0 +1,25 @@
+[package]
+name = "vyre-spec"
+version = "0.6.0"
+edition.workspace = true
+rust-version.workspace = true
+description = "Frozen data contracts for vyre — OpDef, AlgebraicLaw, Category, IntrinsicTable"
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "README.md"
+keywords = ["gpu", "ir", "specification", "wgsl", "vyre"]
+categories = ["algorithms", "api-bindings"]
+documentation = "https://docs.rs/vyre-spec"
+
+[dependencies]
+serde.workspace = true
+smallvec.workspace = true
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[lints]
+workspace = true

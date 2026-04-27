@@ -1,0 +1,29 @@
+# Docs: https://docs.github.com/en/authentication
+# Format: ghu_ prefix followed by 36 alphanumeric characters
+# Prefix: ghu_
+
+[detector]
+id = "github-user-to-server-token"
+name = "GitHub User-to-Server Token"
+service = "github"
+severity = "critical"
+keywords = ["ghu_"]
+
+[[detector.patterns]]
+regex = 'ghu_[A-Za-z0-9]{36}'
+description = "GitHub User-to-Server Token (ghu_ prefix)"
+
+[detector.verify]
+method = "GET"
+url = "https://api.github.com/user"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[[detector.verify.headers]]
+name = "User-Agent"
+value = "keyhog-secret-scanner/{{version}}"
+
+[detector.verify.success]
+status = 200

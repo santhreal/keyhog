@@ -1,0 +1,16 @@
+# Docs: https://segment.com/docs/connections/sources/catalog/libraries/server/http-api/
+# Format: Base64-encoded string, typically starts with pattern when decoded
+# Verify: POST to /v1/import or /v1/track with Basic auth; returns 200 if valid
+# Prefix: none (base64, requires keyword context)
+
+[detector]
+id = "segment-write-key"
+name = "Segment Write Key"
+service = "segment"
+severity = "high"
+keywords = ["segment", "SEGMENT_WRITE_KEY", "writeKey", "write_key"]
+
+[[detector.patterns]]
+regex = "(?:segment|SEGMENT)[_.]?(?:write[_.]?)?key[=:\\s\"']+([A-Za-z0-9+/]{30,}=?)"
+description = "Segment write key (base64) with context anchor"
+group = 1

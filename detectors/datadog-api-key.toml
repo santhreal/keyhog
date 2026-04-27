@@ -1,0 +1,28 @@
+# Docs: https://docs.datadoghq.com/account_management/api-app-keys/
+# Format: 32 character hex string
+# Verify: GET /api/v1/validate with DD-API-Key header
+# Prefix: none (32 char hex, requires context anchoring)
+
+[detector]
+id = "datadog-api-key"
+name = "Datadog API Key"
+service = "datadog"
+severity = "critical"
+keywords = ["DD-API-Key", "DD_API_KEY", "DATADOG_API_KEY", "datadog_api_key"]
+
+[[detector.patterns]]
+regex = "(?:DD.API.KEY|DATADOG.API.KEY|datadog.api.key)[=:\\s\"']+([a-f0-9]{32})"
+description = "Datadog API key with context anchor"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://api.datadoghq.com/api/v1/validate"
+
+[detector.verify.auth]
+type = "header"
+name = "DD-API-Key"
+template = "{{match}}"
+
+[detector.verify.success]
+status = 200

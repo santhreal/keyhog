@@ -1,0 +1,959 @@
+pub mod vyre_wgpu
+pub mod vyre_wgpu::engine
+pub mod vyre_wgpu::engine::bfs_queue_slots_for_device
+pub fn vyre_wgpu::engine::bfs_queue_slots_for_device::bfs_queue_slots_for_device(device: &wgpu::api::device::Device, toml_override: core::option::Option<u32>) -> u32
+pub mod vyre_wgpu::engine::dataflow
+pub const vyre_wgpu::engine::dataflow::MAX_FINDINGS: usize
+pub const vyre_wgpu::engine::dataflow::WORKGROUP_SIZE: u32
+pub fn vyre_wgpu::engine::dataflow::bfs_reachability_cached(csr: &vyre::ops::graph::csr::CsrGraph, sources: &[u32], max_depth: u32) -> vyre::error::Result<alloc::vec::Vec<(u32, u32, u32)>>
+pub fn vyre_wgpu::engine::dataflow::read_finding_count(device: &wgpu::api::device::Device, readback_count_buffer: &wgpu::api::buffer::Buffer, max_findings: u32, submission: wgpu::api::queue::SubmissionIndex) -> vyre::error::Result<u32>
+pub fn vyre_wgpu::engine::dataflow::read_finding_rows(device: &wgpu::api::device::Device, readback_buffer: &wgpu::api::buffer::Buffer, count: u32, submission: wgpu::api::queue::SubmissionIndex) -> vyre::error::Result<alloc::vec::Vec<(u32, u32, u32)>>
+pub mod vyre_wgpu::engine::decode
+pub mod vyre_wgpu::engine::decode::codec
+pub mod vyre_wgpu::engine::decode::codec::decoder
+#[non_exhaustive] pub struct vyre_wgpu::engine::decode::codec::decoder::GpuDecoder
+impl vyre_wgpu::engine::decode::codec::decoder::GpuDecoder
+pub fn vyre_wgpu::engine::decode::codec::decoder::GpuDecoder::decode_recursive(&self, file_bytes: &[u8]) -> vyre::error::Result<alloc::vec::Vec<vyre_wgpu::engine::decode::DecodedRegion>>
+pub fn vyre_wgpu::engine::decode::codec::decoder::GpuDecoder::decode_recursive_with_rules(&self, file_bytes: &[u8], rules: &vyre_wgpu::engine::decode::DecodeRules) -> vyre::error::Result<alloc::vec::Vec<vyre_wgpu::engine::decode::DecodedRegion>>
+pub fn vyre_wgpu::engine::decode::codec::decoder::GpuDecoder::new() -> vyre::error::Result<Self>
+pub fn vyre_wgpu::engine::decode::codec::decoder::GpuDecoder::try_new() -> vyre::error::Result<Self>
+impl core::clone::Clone for vyre_wgpu::engine::decode::codec::decoder::GpuDecoder
+pub fn vyre_wgpu::engine::decode::codec::decoder::GpuDecoder::clone(&self) -> vyre_wgpu::engine::decode::codec::decoder::GpuDecoder
+impl core::default::Default for vyre_wgpu::engine::decode::codec::decoder::GpuDecoder
+pub fn vyre_wgpu::engine::decode::codec::decoder::GpuDecoder::default() -> vyre_wgpu::engine::decode::codec::decoder::GpuDecoder
+impl core::fmt::Debug for vyre_wgpu::engine::decode::codec::decoder::GpuDecoder
+pub fn vyre_wgpu::engine::decode::codec::decoder::GpuDecoder::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for vyre_wgpu::engine::decode::codec::decoder::GpuDecoder
+impl core::marker::Freeze for vyre_wgpu::engine::decode::codec::decoder::GpuDecoder
+impl core::marker::Send for vyre_wgpu::engine::decode::codec::decoder::GpuDecoder
+impl core::marker::Sync for vyre_wgpu::engine::decode::codec::decoder::GpuDecoder
+impl core::marker::Unpin for vyre_wgpu::engine::decode::codec::decoder::GpuDecoder
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_wgpu::engine::decode::codec::decoder::GpuDecoder
+impl core::panic::unwind_safe::UnwindSafe for vyre_wgpu::engine::decode::codec::decoder::GpuDecoder
+pub fn vyre_wgpu::engine::decode::codec::decoder::decode_base64(input: &[u8]) -> vyre::error::Result<alloc::vec::Vec<u8>>
+pub fn vyre_wgpu::engine::decode::codec::decoder::decode_bytes(input: &[u8], format: vyre_wgpu::engine::decode::codec::format::DecodeFormat) -> vyre::error::Result<alloc::vec::Vec<u8>>
+pub fn vyre_wgpu::engine::decode::codec::decoder::decode_file(file_bytes: &[u8]) -> vyre::error::Result<alloc::vec::Vec<vyre_wgpu::engine::decode::DecodedRegion>>
+pub fn vyre_wgpu::engine::decode::codec::decoder::decode_file_with_rules(file_bytes: &[u8], rules: &vyre_wgpu::engine::decode::DecodeRules) -> vyre::error::Result<alloc::vec::Vec<vyre_wgpu::engine::decode::DecodedRegion>>
+pub fn vyre_wgpu::engine::decode::codec::decoder::decode_hex(input: &[u8]) -> vyre::error::Result<alloc::vec::Vec<u8>>
+pub fn vyre_wgpu::engine::decode::codec::decoder::decode_recursive_gpu(file_bytes: &[u8], rules: &vyre_wgpu::engine::decode::DecodeRules) -> vyre::error::Result<alloc::vec::Vec<vyre_wgpu::engine::decode::DecodedRegion>>
+pub fn vyre_wgpu::engine::decode::codec::decoder::decode_regions(input: &[u8], format: vyre_wgpu::engine::decode::codec::format::DecodeFormat, rules: &vyre_wgpu::engine::decode::DecodeRules) -> vyre::error::Result<alloc::vec::Vec<vyre_wgpu::engine::decode::DecodedRegion>>
+pub fn vyre_wgpu::engine::decode::codec::decoder::decode_unicode(input: &[u8]) -> vyre::error::Result<alloc::vec::Vec<u8>>
+pub fn vyre_wgpu::engine::decode::codec::decoder::decode_url(input: &[u8]) -> vyre::error::Result<alloc::vec::Vec<u8>>
+pub mod vyre_wgpu::engine::decode::codec::format
+#[non_exhaustive] pub enum vyre_wgpu::engine::decode::codec::format::DecodeFormat
+pub vyre_wgpu::engine::decode::codec::format::DecodeFormat::Base64
+pub vyre_wgpu::engine::decode::codec::format::DecodeFormat::Hex
+pub vyre_wgpu::engine::decode::codec::format::DecodeFormat::Unicode
+pub vyre_wgpu::engine::decode::codec::format::DecodeFormat::Url
+impl core::clone::Clone for vyre_wgpu::engine::decode::codec::format::DecodeFormat
+pub fn vyre_wgpu::engine::decode::codec::format::DecodeFormat::clone(&self) -> vyre_wgpu::engine::decode::codec::format::DecodeFormat
+impl core::cmp::Eq for vyre_wgpu::engine::decode::codec::format::DecodeFormat
+impl core::cmp::PartialEq for vyre_wgpu::engine::decode::codec::format::DecodeFormat
+pub fn vyre_wgpu::engine::decode::codec::format::DecodeFormat::eq(&self, other: &vyre_wgpu::engine::decode::codec::format::DecodeFormat) -> bool
+impl core::fmt::Debug for vyre_wgpu::engine::decode::codec::format::DecodeFormat
+pub fn vyre_wgpu::engine::decode::codec::format::DecodeFormat::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for vyre_wgpu::engine::decode::codec::format::DecodeFormat
+impl core::marker::StructuralPartialEq for vyre_wgpu::engine::decode::codec::format::DecodeFormat
+impl core::marker::Freeze for vyre_wgpu::engine::decode::codec::format::DecodeFormat
+impl core::marker::Send for vyre_wgpu::engine::decode::codec::format::DecodeFormat
+impl core::marker::Sync for vyre_wgpu::engine::decode::codec::format::DecodeFormat
+impl core::marker::Unpin for vyre_wgpu::engine::decode::codec::format::DecodeFormat
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_wgpu::engine::decode::codec::format::DecodeFormat
+impl core::panic::unwind_safe::UnwindSafe for vyre_wgpu::engine::decode::codec::format::DecodeFormat
+pub const vyre_wgpu::engine::decode::codec::format::BASE64_WGSL_BODY: &str
+pub const vyre_wgpu::engine::decode::codec::format::DECODE_WGSL_HEADER: &str
+pub const vyre_wgpu::engine::decode::codec::format::HEX_WGSL_BODY: &str
+pub const vyre_wgpu::engine::decode::codec::format::UNICODE_WGSL_BODY: &str
+pub const vyre_wgpu::engine::decode::codec::format::URL_WGSL_BODY: &str
+pub mod vyre_wgpu::engine::decode::dispatch
+pub mod vyre_wgpu::engine::decode::dispatch::gpu
+#[repr(C)] pub struct vyre_wgpu::engine::decode::dispatch::gpu::Params
+impl bytemuck::pod::Pod for vyre_wgpu::engine::decode::dispatch::gpu::Params
+impl bytemuck::zeroable::Zeroable for vyre_wgpu::engine::decode::dispatch::gpu::Params
+impl core::clone::Clone for vyre_wgpu::engine::decode::dispatch::gpu::Params
+pub fn vyre_wgpu::engine::decode::dispatch::gpu::Params::clone(&self) -> vyre_wgpu::engine::decode::dispatch::gpu::Params
+impl core::marker::Copy for vyre_wgpu::engine::decode::dispatch::gpu::Params
+impl core::marker::Freeze for vyre_wgpu::engine::decode::dispatch::gpu::Params
+impl core::marker::Send for vyre_wgpu::engine::decode::dispatch::gpu::Params
+impl core::marker::Sync for vyre_wgpu::engine::decode::dispatch::gpu::Params
+impl core::marker::Unpin for vyre_wgpu::engine::decode::dispatch::gpu::Params
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_wgpu::engine::decode::dispatch::gpu::Params
+impl core::panic::unwind_safe::UnwindSafe for vyre_wgpu::engine::decode::dispatch::gpu::Params
+#[repr(C)] pub struct vyre_wgpu::engine::decode::dispatch::gpu::RegionMeta
+impl bytemuck::pod::Pod for vyre_wgpu::engine::decode::dispatch::gpu::RegionMeta
+impl bytemuck::zeroable::Zeroable for vyre_wgpu::engine::decode::dispatch::gpu::RegionMeta
+impl core::clone::Clone for vyre_wgpu::engine::decode::dispatch::gpu::RegionMeta
+pub fn vyre_wgpu::engine::decode::dispatch::gpu::RegionMeta::clone(&self) -> vyre_wgpu::engine::decode::dispatch::gpu::RegionMeta
+impl core::marker::Copy for vyre_wgpu::engine::decode::dispatch::gpu::RegionMeta
+impl core::marker::Freeze for vyre_wgpu::engine::decode::dispatch::gpu::RegionMeta
+impl core::marker::Send for vyre_wgpu::engine::decode::dispatch::gpu::RegionMeta
+impl core::marker::Sync for vyre_wgpu::engine::decode::dispatch::gpu::RegionMeta
+impl core::marker::Unpin for vyre_wgpu::engine::decode::dispatch::gpu::RegionMeta
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_wgpu::engine::decode::dispatch::gpu::RegionMeta
+impl core::panic::unwind_safe::UnwindSafe for vyre_wgpu::engine::decode::dispatch::gpu::RegionMeta
+pub const vyre_wgpu::engine::decode::dispatch::gpu::MAX_DECODE_INPUT_BYTES: usize
+pub const vyre_wgpu::engine::decode::dispatch::gpu::MAX_DECODE_REGIONS: u32
+pub const vyre_wgpu::engine::decode::dispatch::gpu::REGION_META_SIZE: u64
+pub const vyre_wgpu::engine::decode::dispatch::gpu::WORKGROUP_SIZE: u32
+pub fn vyre_wgpu::engine::decode::dispatch::gpu::map_readback_region_meta(device: &wgpu::api::device::Device, buffer: &wgpu::api::buffer::Buffer, submission: wgpu::api::queue::SubmissionIndex) -> vyre::error::Result<alloc::vec::Vec<vyre_wgpu::engine::decode::dispatch::gpu::RegionMeta>>
+pub fn vyre_wgpu::engine::decode::dispatch::gpu::map_readback_u32(device: &wgpu::api::device::Device, buffer: &wgpu::api::buffer::Buffer, submission: wgpu::api::queue::SubmissionIndex) -> vyre::error::Result<alloc::vec::Vec<u32>>
+pub fn vyre_wgpu::engine::decode::dispatch::gpu::readback_buffer(device: &wgpu::api::device::Device, encoder: &mut wgpu::api::command_encoder::CommandEncoder, source: &wgpu::api::buffer::Buffer, size: u64) -> vyre::error::Result<vyre_wgpu::runtime::cache::buffer_pool::PooledBuffer>
+pub fn vyre_wgpu::engine::decode::dispatch::gpu::readback_regions(device: &wgpu::api::device::Device, counters_readback: &wgpu::api::buffer::Buffer, regions_readback: &wgpu::api::buffer::Buffer, output_readback: &wgpu::api::buffer::Buffer, input_len: usize, submission: wgpu::api::queue::SubmissionIndex) -> vyre::error::Result<alloc::vec::Vec<vyre_wgpu::engine::decode::DecodedRegion>>
+pub fn vyre_wgpu::engine::decode::dispatch::gpu::validate_gpu_sizes(device: &wgpu::api::device::Device, input_len: u32, input_size: usize) -> vyre::error::Result<()>
+pub fn vyre_wgpu::engine::decode::dispatch::gpu::zeroed_storage(device: &wgpu::api::device::Device, label: &str, bytes: usize) -> vyre::error::Result<vyre_wgpu::runtime::cache::buffer_pool::PooledBuffer>
+pub enum vyre_wgpu::engine::decode::DecodeError
+pub vyre_wgpu::engine::decode::DecodeError::MaxPassesOutOfRange
+pub vyre_wgpu::engine::decode::DecodeError::MaxPassesZero
+pub vyre_wgpu::engine::decode::DecodeError::MinBase64RunTooSmall
+pub vyre_wgpu::engine::decode::DecodeError::MinHexRunTooSmall
+impl core::clone::Clone for vyre_wgpu::engine::decode::DecodeError
+pub fn vyre_wgpu::engine::decode::DecodeError::clone(&self) -> vyre_wgpu::engine::decode::DecodeError
+impl core::cmp::Eq for vyre_wgpu::engine::decode::DecodeError
+impl core::cmp::PartialEq for vyre_wgpu::engine::decode::DecodeError
+pub fn vyre_wgpu::engine::decode::DecodeError::eq(&self, other: &vyre_wgpu::engine::decode::DecodeError) -> bool
+impl core::error::Error for vyre_wgpu::engine::decode::DecodeError
+impl core::fmt::Debug for vyre_wgpu::engine::decode::DecodeError
+pub fn vyre_wgpu::engine::decode::DecodeError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for vyre_wgpu::engine::decode::DecodeError
+pub fn vyre_wgpu::engine::decode::DecodeError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for vyre_wgpu::engine::decode::DecodeError
+impl core::marker::StructuralPartialEq for vyre_wgpu::engine::decode::DecodeError
+impl core::marker::Freeze for vyre_wgpu::engine::decode::DecodeError
+impl core::marker::Send for vyre_wgpu::engine::decode::DecodeError
+impl core::marker::Sync for vyre_wgpu::engine::decode::DecodeError
+impl core::marker::Unpin for vyre_wgpu::engine::decode::DecodeError
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_wgpu::engine::decode::DecodeError
+impl core::panic::unwind_safe::UnwindSafe for vyre_wgpu::engine::decode::DecodeError
+#[non_exhaustive] pub enum vyre_wgpu::engine::decode::DecodeFormat
+pub vyre_wgpu::engine::decode::DecodeFormat::Base64
+pub vyre_wgpu::engine::decode::DecodeFormat::Hex
+pub vyre_wgpu::engine::decode::DecodeFormat::Unicode
+pub vyre_wgpu::engine::decode::DecodeFormat::Url
+impl core::clone::Clone for vyre_wgpu::engine::decode::codec::format::DecodeFormat
+pub fn vyre_wgpu::engine::decode::codec::format::DecodeFormat::clone(&self) -> vyre_wgpu::engine::decode::codec::format::DecodeFormat
+impl core::cmp::Eq for vyre_wgpu::engine::decode::codec::format::DecodeFormat
+impl core::cmp::PartialEq for vyre_wgpu::engine::decode::codec::format::DecodeFormat
+pub fn vyre_wgpu::engine::decode::codec::format::DecodeFormat::eq(&self, other: &vyre_wgpu::engine::decode::codec::format::DecodeFormat) -> bool
+impl core::fmt::Debug for vyre_wgpu::engine::decode::codec::format::DecodeFormat
+pub fn vyre_wgpu::engine::decode::codec::format::DecodeFormat::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for vyre_wgpu::engine::decode::codec::format::DecodeFormat
+impl core::marker::StructuralPartialEq for vyre_wgpu::engine::decode::codec::format::DecodeFormat
+impl core::marker::Freeze for vyre_wgpu::engine::decode::codec::format::DecodeFormat
+impl core::marker::Send for vyre_wgpu::engine::decode::codec::format::DecodeFormat
+impl core::marker::Sync for vyre_wgpu::engine::decode::codec::format::DecodeFormat
+impl core::marker::Unpin for vyre_wgpu::engine::decode::codec::format::DecodeFormat
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_wgpu::engine::decode::codec::format::DecodeFormat
+impl core::panic::unwind_safe::UnwindSafe for vyre_wgpu::engine::decode::codec::format::DecodeFormat
+pub enum vyre_wgpu::engine::decode::EntropyError
+pub vyre_wgpu::engine::decode::EntropyError::InputTooLarge
+impl core::clone::Clone for vyre_wgpu::engine::decode::EntropyError
+pub fn vyre_wgpu::engine::decode::EntropyError::clone(&self) -> vyre_wgpu::engine::decode::EntropyError
+impl core::cmp::Eq for vyre_wgpu::engine::decode::EntropyError
+impl core::cmp::PartialEq for vyre_wgpu::engine::decode::EntropyError
+pub fn vyre_wgpu::engine::decode::EntropyError::eq(&self, other: &vyre_wgpu::engine::decode::EntropyError) -> bool
+impl core::error::Error for vyre_wgpu::engine::decode::EntropyError
+impl core::fmt::Debug for vyre_wgpu::engine::decode::EntropyError
+pub fn vyre_wgpu::engine::decode::EntropyError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for vyre_wgpu::engine::decode::EntropyError
+pub fn vyre_wgpu::engine::decode::EntropyError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for vyre_wgpu::engine::decode::EntropyError
+impl core::marker::StructuralPartialEq for vyre_wgpu::engine::decode::EntropyError
+impl core::marker::Freeze for vyre_wgpu::engine::decode::EntropyError
+impl core::marker::Send for vyre_wgpu::engine::decode::EntropyError
+impl core::marker::Sync for vyre_wgpu::engine::decode::EntropyError
+impl core::marker::Unpin for vyre_wgpu::engine::decode::EntropyError
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_wgpu::engine::decode::EntropyError
+impl core::panic::unwind_safe::UnwindSafe for vyre_wgpu::engine::decode::EntropyError
+#[non_exhaustive] pub struct vyre_wgpu::engine::decode::DecodeRules
+pub vyre_wgpu::engine::decode::DecodeRules::max_passes: u32
+pub vyre_wgpu::engine::decode::DecodeRules::min_base64_run: u32
+pub vyre_wgpu::engine::decode::DecodeRules::min_hex_run: u32
+impl vyre_wgpu::engine::decode::DecodeRules
+pub fn vyre_wgpu::engine::decode::DecodeRules::from_toml(toml_source: &str) -> vyre::error::Result<Self>
+pub fn vyre_wgpu::engine::decode::DecodeRules::validate(&self) -> core::result::Result<(), vyre_wgpu::engine::decode::DecodeError>
+pub fn vyre_wgpu::engine::decode::DecodeRules::with_values(min_base64_run: u32, min_hex_run: u32, max_passes: u32) -> Self
+impl core::clone::Clone for vyre_wgpu::engine::decode::DecodeRules
+pub fn vyre_wgpu::engine::decode::DecodeRules::clone(&self) -> vyre_wgpu::engine::decode::DecodeRules
+impl core::cmp::Eq for vyre_wgpu::engine::decode::DecodeRules
+impl core::cmp::PartialEq for vyre_wgpu::engine::decode::DecodeRules
+pub fn vyre_wgpu::engine::decode::DecodeRules::eq(&self, other: &vyre_wgpu::engine::decode::DecodeRules) -> bool
+impl core::default::Default for vyre_wgpu::engine::decode::DecodeRules
+pub fn vyre_wgpu::engine::decode::DecodeRules::default() -> Self
+impl core::fmt::Debug for vyre_wgpu::engine::decode::DecodeRules
+pub fn vyre_wgpu::engine::decode::DecodeRules::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for vyre_wgpu::engine::decode::DecodeRules
+impl<'de> serde_core::de::Deserialize<'de> for vyre_wgpu::engine::decode::DecodeRules
+pub fn vyre_wgpu::engine::decode::DecodeRules::deserialize<__D>(__deserializer: __D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for vyre_wgpu::engine::decode::DecodeRules
+impl core::marker::Send for vyre_wgpu::engine::decode::DecodeRules
+impl core::marker::Sync for vyre_wgpu::engine::decode::DecodeRules
+impl core::marker::Unpin for vyre_wgpu::engine::decode::DecodeRules
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_wgpu::engine::decode::DecodeRules
+impl core::panic::unwind_safe::UnwindSafe for vyre_wgpu::engine::decode::DecodeRules
+#[non_exhaustive] pub struct vyre_wgpu::engine::decode::DecodedRegion
+pub vyre_wgpu::engine::decode::DecodedRegion::decoded_bytes: alloc::vec::Vec<u8>
+pub vyre_wgpu::engine::decode::DecodedRegion::length: usize
+pub vyre_wgpu::engine::decode::DecodedRegion::offset: usize
+impl vyre_wgpu::engine::decode::DecodedRegion
+pub fn vyre_wgpu::engine::decode::DecodedRegion::new(offset: usize, length: usize, decoded_bytes: alloc::vec::Vec<u8>) -> Self
+impl core::clone::Clone for vyre_wgpu::engine::decode::DecodedRegion
+pub fn vyre_wgpu::engine::decode::DecodedRegion::clone(&self) -> vyre_wgpu::engine::decode::DecodedRegion
+impl core::cmp::Eq for vyre_wgpu::engine::decode::DecodedRegion
+impl core::cmp::PartialEq for vyre_wgpu::engine::decode::DecodedRegion
+pub fn vyre_wgpu::engine::decode::DecodedRegion::eq(&self, other: &vyre_wgpu::engine::decode::DecodedRegion) -> bool
+impl core::fmt::Debug for vyre_wgpu::engine::decode::DecodedRegion
+pub fn vyre_wgpu::engine::decode::DecodedRegion::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for vyre_wgpu::engine::decode::DecodedRegion
+pub fn vyre_wgpu::engine::decode::DecodedRegion::hash<__H: core::hash::Hasher>(&self, state: &mut __H)
+impl core::marker::StructuralPartialEq for vyre_wgpu::engine::decode::DecodedRegion
+impl core::marker::Freeze for vyre_wgpu::engine::decode::DecodedRegion
+impl core::marker::Send for vyre_wgpu::engine::decode::DecodedRegion
+impl core::marker::Sync for vyre_wgpu::engine::decode::DecodedRegion
+impl core::marker::Unpin for vyre_wgpu::engine::decode::DecodedRegion
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_wgpu::engine::decode::DecodedRegion
+impl core::panic::unwind_safe::UnwindSafe for vyre_wgpu::engine::decode::DecodedRegion
+pub struct vyre_wgpu::engine::decode::FrontierState<'a>
+impl<'a> core::marker::Freeze for vyre_wgpu::engine::decode::FrontierState<'a>
+impl<'a> core::marker::Send for vyre_wgpu::engine::decode::FrontierState<'a>
+impl<'a> core::marker::Sync for vyre_wgpu::engine::decode::FrontierState<'a>
+impl<'a> core::marker::Unpin for vyre_wgpu::engine::decode::FrontierState<'a>
+impl<'a> core::panic::unwind_safe::RefUnwindSafe for vyre_wgpu::engine::decode::FrontierState<'a>
+impl<'a> !core::panic::unwind_safe::UnwindSafe for vyre_wgpu::engine::decode::FrontierState<'a>
+#[non_exhaustive] pub struct vyre_wgpu::engine::decode::GpuDecoder
+impl vyre_wgpu::engine::decode::codec::decoder::GpuDecoder
+pub fn vyre_wgpu::engine::decode::codec::decoder::GpuDecoder::decode_recursive(&self, file_bytes: &[u8]) -> vyre::error::Result<alloc::vec::Vec<vyre_wgpu::engine::decode::DecodedRegion>>
+pub fn vyre_wgpu::engine::decode::codec::decoder::GpuDecoder::decode_recursive_with_rules(&self, file_bytes: &[u8], rules: &vyre_wgpu::engine::decode::DecodeRules) -> vyre::error::Result<alloc::vec::Vec<vyre_wgpu::engine::decode::DecodedRegion>>
+pub fn vyre_wgpu::engine::decode::codec::decoder::GpuDecoder::new() -> vyre::error::Result<Self>
+pub fn vyre_wgpu::engine::decode::codec::decoder::GpuDecoder::try_new() -> vyre::error::Result<Self>
+impl core::clone::Clone for vyre_wgpu::engine::decode::codec::decoder::GpuDecoder
+pub fn vyre_wgpu::engine::decode::codec::decoder::GpuDecoder::clone(&self) -> vyre_wgpu::engine::decode::codec::decoder::GpuDecoder
+impl core::default::Default for vyre_wgpu::engine::decode::codec::decoder::GpuDecoder
+pub fn vyre_wgpu::engine::decode::codec::decoder::GpuDecoder::default() -> vyre_wgpu::engine::decode::codec::decoder::GpuDecoder
+impl core::fmt::Debug for vyre_wgpu::engine::decode::codec::decoder::GpuDecoder
+pub fn vyre_wgpu::engine::decode::codec::decoder::GpuDecoder::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for vyre_wgpu::engine::decode::codec::decoder::GpuDecoder
+impl core::marker::Freeze for vyre_wgpu::engine::decode::codec::decoder::GpuDecoder
+impl core::marker::Send for vyre_wgpu::engine::decode::codec::decoder::GpuDecoder
+impl core::marker::Sync for vyre_wgpu::engine::decode::codec::decoder::GpuDecoder
+impl core::marker::Unpin for vyre_wgpu::engine::decode::codec::decoder::GpuDecoder
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_wgpu::engine::decode::codec::decoder::GpuDecoder
+impl core::panic::unwind_safe::UnwindSafe for vyre_wgpu::engine::decode::codec::decoder::GpuDecoder
+pub const vyre_wgpu::engine::decode::DEFAULT_REGION_EXPANSION: usize
+pub const vyre_wgpu::engine::decode::MAX_INPUT_BYTES: usize
+pub const vyre_wgpu::engine::decode::MAX_WINDOW_SIZE: usize
+pub fn vyre_wgpu::engine::decode::decode_base64(input: &[u8]) -> vyre::error::Result<alloc::vec::Vec<u8>>
+pub fn vyre_wgpu::engine::decode::decode_bytes(input: &[u8], format: vyre_wgpu::engine::decode::codec::format::DecodeFormat) -> vyre::error::Result<alloc::vec::Vec<u8>>
+pub fn vyre_wgpu::engine::decode::decode_file(file_bytes: &[u8]) -> vyre::error::Result<alloc::vec::Vec<vyre_wgpu::engine::decode::DecodedRegion>>
+pub fn vyre_wgpu::engine::decode::decode_file_with_rules(file_bytes: &[u8], rules: &vyre_wgpu::engine::decode::DecodeRules) -> vyre::error::Result<alloc::vec::Vec<vyre_wgpu::engine::decode::DecodedRegion>>
+pub fn vyre_wgpu::engine::decode::decode_frontier<F>(base_offset: usize, bytes: &[u8], rules: &vyre_wgpu::engine::decode::DecodeRules, decode_one: &mut F, state: &mut vyre_wgpu::engine::decode::FrontierState<'_>) -> vyre::error::Result<()> where F: core::ops::function::FnMut(vyre_wgpu::engine::decode::codec::format::DecodeFormat, &[u8], &vyre_wgpu::engine::decode::DecodeRules) -> vyre::error::Result<alloc::vec::Vec<vyre_wgpu::engine::decode::DecodedRegion>>
+pub fn vyre_wgpu::engine::decode::decode_hex(input: &[u8]) -> vyre::error::Result<alloc::vec::Vec<u8>>
+pub fn vyre_wgpu::engine::decode::decode_regions(input: &[u8], format: vyre_wgpu::engine::decode::codec::format::DecodeFormat, rules: &vyre_wgpu::engine::decode::DecodeRules) -> vyre::error::Result<alloc::vec::Vec<vyre_wgpu::engine::decode::DecodedRegion>>
+pub fn vyre_wgpu::engine::decode::decode_unicode(input: &[u8]) -> vyre::error::Result<alloc::vec::Vec<u8>>
+pub fn vyre_wgpu::engine::decode::decode_url(input: &[u8]) -> vyre::error::Result<alloc::vec::Vec<u8>>
+pub fn vyre_wgpu::engine::decode::entropy_map_cpu(data: &[u8], window_size: usize) -> core::result::Result<alloc::vec::Vec<f32>, vyre_wgpu::engine::decode::EntropyError>
+pub fn vyre_wgpu::engine::decode::find_high_entropy_regions(entropy: &[f32], threshold: f32) -> alloc::vec::Vec<(usize, usize)>
+pub fn vyre_wgpu::engine::decode::find_high_entropy_regions_with_window(entropy: &[f32], threshold: f32, window_size: usize) -> alloc::vec::Vec<(usize, usize)>
+pub fn vyre_wgpu::engine::decode::push_region(base_offset: usize, bytes: &[u8], region: vyre_wgpu::engine::decode::DecodedRegion, state: &mut vyre_wgpu::engine::decode::FrontierState<'_>) -> vyre::error::Result<()>
+pub fn vyre_wgpu::engine::decode::shannon_entropy(bytes: &[u8]) -> f32
+pub fn vyre_wgpu::engine::decode::stable_hash(bytes: &[u8]) -> u64
+pub mod vyre_wgpu::engine::decompress
+pub mod vyre_wgpu::engine::decompress::formats
+pub mod vyre_wgpu::engine::decompress::formats::lz4
+pub struct vyre_wgpu::engine::decompress::formats::lz4::Lz4DispatchArgs<'a>
+pub vyre_wgpu::engine::decompress::formats::lz4::Lz4DispatchArgs::block_count: u32
+pub vyre_wgpu::engine::decompress::formats::lz4::Lz4DispatchArgs::data: &'a [u8]
+pub vyre_wgpu::engine::decompress::formats::lz4::Lz4DispatchArgs::descriptor_words: &'a [u32]
+pub vyre_wgpu::engine::decompress::formats::lz4::Lz4DispatchArgs::device: &'a wgpu::api::device::Device
+pub vyre_wgpu::engine::decompress::formats::lz4::Lz4DispatchArgs::output_words_len: usize
+pub vyre_wgpu::engine::decompress::formats::lz4::Lz4DispatchArgs::queue: &'a wgpu::api::queue::Queue
+pub vyre_wgpu::engine::decompress::formats::lz4::Lz4DispatchArgs::status_words_len: usize
+pub vyre_wgpu::engine::decompress::formats::lz4::Lz4DispatchArgs::uniforms: vyre_wgpu::engine::decompress::Lz4Uniforms
+impl<'a> core::marker::Freeze for vyre_wgpu::engine::decompress::formats::lz4::Lz4DispatchArgs<'a>
+impl<'a> core::marker::Send for vyre_wgpu::engine::decompress::formats::lz4::Lz4DispatchArgs<'a>
+impl<'a> core::marker::Sync for vyre_wgpu::engine::decompress::formats::lz4::Lz4DispatchArgs<'a>
+impl<'a> core::marker::Unpin for vyre_wgpu::engine::decompress::formats::lz4::Lz4DispatchArgs<'a>
+impl<'a> !core::panic::unwind_safe::RefUnwindSafe for vyre_wgpu::engine::decompress::formats::lz4::Lz4DispatchArgs<'a>
+impl<'a> !core::panic::unwind_safe::UnwindSafe for vyre_wgpu::engine::decompress::formats::lz4::Lz4DispatchArgs<'a>
+#[repr(C)] pub struct vyre_wgpu::engine::decompress::formats::lz4::Lz4Uniforms
+pub vyre_wgpu::engine::decompress::formats::lz4::Lz4Uniforms::input_len: u32
+pub vyre_wgpu::engine::decompress::formats::lz4::Lz4Uniforms::output_len: u32
+pub vyre_wgpu::engine::decompress::formats::lz4::Lz4Uniforms::total_output_size: u32
+impl bytemuck::pod::Pod for vyre_wgpu::engine::decompress::Lz4Uniforms
+impl bytemuck::zeroable::Zeroable for vyre_wgpu::engine::decompress::Lz4Uniforms
+impl core::clone::Clone for vyre_wgpu::engine::decompress::Lz4Uniforms
+pub fn vyre_wgpu::engine::decompress::Lz4Uniforms::clone(&self) -> vyre_wgpu::engine::decompress::Lz4Uniforms
+impl core::fmt::Debug for vyre_wgpu::engine::decompress::Lz4Uniforms
+pub fn vyre_wgpu::engine::decompress::Lz4Uniforms::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for vyre_wgpu::engine::decompress::Lz4Uniforms
+impl core::marker::Freeze for vyre_wgpu::engine::decompress::Lz4Uniforms
+impl core::marker::Send for vyre_wgpu::engine::decompress::Lz4Uniforms
+impl core::marker::Sync for vyre_wgpu::engine::decompress::Lz4Uniforms
+impl core::marker::Unpin for vyre_wgpu::engine::decompress::Lz4Uniforms
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_wgpu::engine::decompress::Lz4Uniforms
+impl core::panic::unwind_safe::UnwindSafe for vyre_wgpu::engine::decompress::Lz4Uniforms
+pub fn vyre_wgpu::engine::decompress::formats::lz4::dispatch_lz4(args: vyre_wgpu::engine::decompress::formats::lz4::Lz4DispatchArgs<'_>, command_encoder: core::option::Option<&mut wgpu::api::command_encoder::CommandEncoder>) -> vyre::error::Result<(alloc::vec::Vec<u8>, alloc::vec::Vec<u32>)>
+pub fn vyre_wgpu::engine::decompress::formats::lz4::read_extended_len(data: &[u8], cursor: &mut usize, nibble: usize, label: &'static str) -> vyre::error::Result<usize>
+pub mod vyre_wgpu::engine::decompress::formats::zstd
+pub struct vyre_wgpu::engine::decompress::formats::zstd::ZstdDispatchArgs<'a>
+pub vyre_wgpu::engine::decompress::formats::zstd::ZstdDispatchArgs::block_count: u32
+pub vyre_wgpu::engine::decompress::formats::zstd::ZstdDispatchArgs::data: &'a [u8]
+pub vyre_wgpu::engine::decompress::formats::zstd::ZstdDispatchArgs::descriptor_words: &'a [u32]
+pub vyre_wgpu::engine::decompress::formats::zstd::ZstdDispatchArgs::device: &'a wgpu::api::device::Device
+pub vyre_wgpu::engine::decompress::formats::zstd::ZstdDispatchArgs::output_words_len: usize
+pub vyre_wgpu::engine::decompress::formats::zstd::ZstdDispatchArgs::queue: &'a wgpu::api::queue::Queue
+pub vyre_wgpu::engine::decompress::formats::zstd::ZstdDispatchArgs::status_words_len: usize
+pub vyre_wgpu::engine::decompress::formats::zstd::ZstdDispatchArgs::uniforms: vyre_wgpu::engine::decompress::ZstdUniforms
+impl<'a> core::marker::Freeze for vyre_wgpu::engine::decompress::formats::zstd::ZstdDispatchArgs<'a>
+impl<'a> core::marker::Send for vyre_wgpu::engine::decompress::formats::zstd::ZstdDispatchArgs<'a>
+impl<'a> core::marker::Sync for vyre_wgpu::engine::decompress::formats::zstd::ZstdDispatchArgs<'a>
+impl<'a> core::marker::Unpin for vyre_wgpu::engine::decompress::formats::zstd::ZstdDispatchArgs<'a>
+impl<'a> !core::panic::unwind_safe::RefUnwindSafe for vyre_wgpu::engine::decompress::formats::zstd::ZstdDispatchArgs<'a>
+impl<'a> !core::panic::unwind_safe::UnwindSafe for vyre_wgpu::engine::decompress::formats::zstd::ZstdDispatchArgs<'a>
+#[repr(C)] pub struct vyre_wgpu::engine::decompress::formats::zstd::ZstdUniforms
+pub vyre_wgpu::engine::decompress::formats::zstd::ZstdUniforms::input_len: u32
+pub vyre_wgpu::engine::decompress::formats::zstd::ZstdUniforms::output_len: u32
+pub vyre_wgpu::engine::decompress::formats::zstd::ZstdUniforms::total_output_size: u32
+impl bytemuck::pod::Pod for vyre_wgpu::engine::decompress::ZstdUniforms
+impl bytemuck::zeroable::Zeroable for vyre_wgpu::engine::decompress::ZstdUniforms
+impl core::clone::Clone for vyre_wgpu::engine::decompress::ZstdUniforms
+pub fn vyre_wgpu::engine::decompress::ZstdUniforms::clone(&self) -> vyre_wgpu::engine::decompress::ZstdUniforms
+impl core::fmt::Debug for vyre_wgpu::engine::decompress::ZstdUniforms
+pub fn vyre_wgpu::engine::decompress::ZstdUniforms::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for vyre_wgpu::engine::decompress::ZstdUniforms
+impl core::marker::Freeze for vyre_wgpu::engine::decompress::ZstdUniforms
+impl core::marker::Send for vyre_wgpu::engine::decompress::ZstdUniforms
+impl core::marker::Sync for vyre_wgpu::engine::decompress::ZstdUniforms
+impl core::marker::Unpin for vyre_wgpu::engine::decompress::ZstdUniforms
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_wgpu::engine::decompress::ZstdUniforms
+impl core::panic::unwind_safe::UnwindSafe for vyre_wgpu::engine::decompress::ZstdUniforms
+pub fn vyre_wgpu::engine::decompress::formats::zstd::dispatch_zstd(args: vyre_wgpu::engine::decompress::formats::zstd::ZstdDispatchArgs<'_>, command_encoder: core::option::Option<&mut wgpu::api::command_encoder::CommandEncoder>) -> vyre::error::Result<(alloc::vec::Vec<u8>, alloc::vec::Vec<u32>)>
+#[non_exhaustive] pub struct vyre_wgpu::engine::decompress::DecompressLimits
+pub vyre_wgpu::engine::decompress::DecompressLimits::max_input_size: usize
+pub vyre_wgpu::engine::decompress::DecompressLimits::max_output_size: usize
+impl core::clone::Clone for vyre_wgpu::engine::decompress::DecompressLimits
+pub fn vyre_wgpu::engine::decompress::DecompressLimits::clone(&self) -> vyre_wgpu::engine::decompress::DecompressLimits
+impl core::cmp::Eq for vyre_wgpu::engine::decompress::DecompressLimits
+impl core::cmp::PartialEq for vyre_wgpu::engine::decompress::DecompressLimits
+pub fn vyre_wgpu::engine::decompress::DecompressLimits::eq(&self, other: &vyre_wgpu::engine::decompress::DecompressLimits) -> bool
+impl core::default::Default for vyre_wgpu::engine::decompress::DecompressLimits
+pub fn vyre_wgpu::engine::decompress::DecompressLimits::default() -> Self
+impl core::fmt::Debug for vyre_wgpu::engine::decompress::DecompressLimits
+pub fn vyre_wgpu::engine::decompress::DecompressLimits::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for vyre_wgpu::engine::decompress::DecompressLimits
+impl core::marker::StructuralPartialEq for vyre_wgpu::engine::decompress::DecompressLimits
+impl core::marker::Freeze for vyre_wgpu::engine::decompress::DecompressLimits
+impl core::marker::Send for vyre_wgpu::engine::decompress::DecompressLimits
+impl core::marker::Sync for vyre_wgpu::engine::decompress::DecompressLimits
+impl core::marker::Unpin for vyre_wgpu::engine::decompress::DecompressLimits
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_wgpu::engine::decompress::DecompressLimits
+impl core::panic::unwind_safe::UnwindSafe for vyre_wgpu::engine::decompress::DecompressLimits
+pub struct vyre_wgpu::engine::decompress::Lz4DispatchArgs<'a>
+pub vyre_wgpu::engine::decompress::Lz4DispatchArgs::block_count: u32
+pub vyre_wgpu::engine::decompress::Lz4DispatchArgs::data: &'a [u8]
+pub vyre_wgpu::engine::decompress::Lz4DispatchArgs::descriptor_words: &'a [u32]
+pub vyre_wgpu::engine::decompress::Lz4DispatchArgs::device: &'a wgpu::api::device::Device
+pub vyre_wgpu::engine::decompress::Lz4DispatchArgs::output_words_len: usize
+pub vyre_wgpu::engine::decompress::Lz4DispatchArgs::queue: &'a wgpu::api::queue::Queue
+pub vyre_wgpu::engine::decompress::Lz4DispatchArgs::status_words_len: usize
+pub vyre_wgpu::engine::decompress::Lz4DispatchArgs::uniforms: vyre_wgpu::engine::decompress::Lz4Uniforms
+impl<'a> core::marker::Freeze for vyre_wgpu::engine::decompress::formats::lz4::Lz4DispatchArgs<'a>
+impl<'a> core::marker::Send for vyre_wgpu::engine::decompress::formats::lz4::Lz4DispatchArgs<'a>
+impl<'a> core::marker::Sync for vyre_wgpu::engine::decompress::formats::lz4::Lz4DispatchArgs<'a>
+impl<'a> core::marker::Unpin for vyre_wgpu::engine::decompress::formats::lz4::Lz4DispatchArgs<'a>
+impl<'a> !core::panic::unwind_safe::RefUnwindSafe for vyre_wgpu::engine::decompress::formats::lz4::Lz4DispatchArgs<'a>
+impl<'a> !core::panic::unwind_safe::UnwindSafe for vyre_wgpu::engine::decompress::formats::lz4::Lz4DispatchArgs<'a>
+#[repr(C)] pub struct vyre_wgpu::engine::decompress::Lz4Uniforms
+pub vyre_wgpu::engine::decompress::Lz4Uniforms::input_len: u32
+pub vyre_wgpu::engine::decompress::Lz4Uniforms::output_len: u32
+pub vyre_wgpu::engine::decompress::Lz4Uniforms::total_output_size: u32
+impl bytemuck::pod::Pod for vyre_wgpu::engine::decompress::Lz4Uniforms
+impl bytemuck::zeroable::Zeroable for vyre_wgpu::engine::decompress::Lz4Uniforms
+impl core::clone::Clone for vyre_wgpu::engine::decompress::Lz4Uniforms
+pub fn vyre_wgpu::engine::decompress::Lz4Uniforms::clone(&self) -> vyre_wgpu::engine::decompress::Lz4Uniforms
+impl core::fmt::Debug for vyre_wgpu::engine::decompress::Lz4Uniforms
+pub fn vyre_wgpu::engine::decompress::Lz4Uniforms::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for vyre_wgpu::engine::decompress::Lz4Uniforms
+impl core::marker::Freeze for vyre_wgpu::engine::decompress::Lz4Uniforms
+impl core::marker::Send for vyre_wgpu::engine::decompress::Lz4Uniforms
+impl core::marker::Sync for vyre_wgpu::engine::decompress::Lz4Uniforms
+impl core::marker::Unpin for vyre_wgpu::engine::decompress::Lz4Uniforms
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_wgpu::engine::decompress::Lz4Uniforms
+impl core::panic::unwind_safe::UnwindSafe for vyre_wgpu::engine::decompress::Lz4Uniforms
+pub struct vyre_wgpu::engine::decompress::ZstdDispatchArgs<'a>
+pub vyre_wgpu::engine::decompress::ZstdDispatchArgs::block_count: u32
+pub vyre_wgpu::engine::decompress::ZstdDispatchArgs::data: &'a [u8]
+pub vyre_wgpu::engine::decompress::ZstdDispatchArgs::descriptor_words: &'a [u32]
+pub vyre_wgpu::engine::decompress::ZstdDispatchArgs::device: &'a wgpu::api::device::Device
+pub vyre_wgpu::engine::decompress::ZstdDispatchArgs::output_words_len: usize
+pub vyre_wgpu::engine::decompress::ZstdDispatchArgs::queue: &'a wgpu::api::queue::Queue
+pub vyre_wgpu::engine::decompress::ZstdDispatchArgs::status_words_len: usize
+pub vyre_wgpu::engine::decompress::ZstdDispatchArgs::uniforms: vyre_wgpu::engine::decompress::ZstdUniforms
+impl<'a> core::marker::Freeze for vyre_wgpu::engine::decompress::formats::zstd::ZstdDispatchArgs<'a>
+impl<'a> core::marker::Send for vyre_wgpu::engine::decompress::formats::zstd::ZstdDispatchArgs<'a>
+impl<'a> core::marker::Sync for vyre_wgpu::engine::decompress::formats::zstd::ZstdDispatchArgs<'a>
+impl<'a> core::marker::Unpin for vyre_wgpu::engine::decompress::formats::zstd::ZstdDispatchArgs<'a>
+impl<'a> !core::panic::unwind_safe::RefUnwindSafe for vyre_wgpu::engine::decompress::formats::zstd::ZstdDispatchArgs<'a>
+impl<'a> !core::panic::unwind_safe::UnwindSafe for vyre_wgpu::engine::decompress::formats::zstd::ZstdDispatchArgs<'a>
+#[repr(C)] pub struct vyre_wgpu::engine::decompress::ZstdUniforms
+pub vyre_wgpu::engine::decompress::ZstdUniforms::input_len: u32
+pub vyre_wgpu::engine::decompress::ZstdUniforms::output_len: u32
+pub vyre_wgpu::engine::decompress::ZstdUniforms::total_output_size: u32
+impl bytemuck::pod::Pod for vyre_wgpu::engine::decompress::ZstdUniforms
+impl bytemuck::zeroable::Zeroable for vyre_wgpu::engine::decompress::ZstdUniforms
+impl core::clone::Clone for vyre_wgpu::engine::decompress::ZstdUniforms
+pub fn vyre_wgpu::engine::decompress::ZstdUniforms::clone(&self) -> vyre_wgpu::engine::decompress::ZstdUniforms
+impl core::fmt::Debug for vyre_wgpu::engine::decompress::ZstdUniforms
+pub fn vyre_wgpu::engine::decompress::ZstdUniforms::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for vyre_wgpu::engine::decompress::ZstdUniforms
+impl core::marker::Freeze for vyre_wgpu::engine::decompress::ZstdUniforms
+impl core::marker::Send for vyre_wgpu::engine::decompress::ZstdUniforms
+impl core::marker::Sync for vyre_wgpu::engine::decompress::ZstdUniforms
+impl core::marker::Unpin for vyre_wgpu::engine::decompress::ZstdUniforms
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_wgpu::engine::decompress::ZstdUniforms
+impl core::panic::unwind_safe::UnwindSafe for vyre_wgpu::engine::decompress::ZstdUniforms
+pub const vyre_wgpu::engine::decompress::MAX_DECOMPRESS_OUTPUT_BYTES: usize
+pub fn vyre_wgpu::engine::decompress::dispatch_lz4(args: vyre_wgpu::engine::decompress::formats::lz4::Lz4DispatchArgs<'_>, command_encoder: core::option::Option<&mut wgpu::api::command_encoder::CommandEncoder>) -> vyre::error::Result<(alloc::vec::Vec<u8>, alloc::vec::Vec<u32>)>
+pub fn vyre_wgpu::engine::decompress::dispatch_zstd(args: vyre_wgpu::engine::decompress::formats::zstd::ZstdDispatchArgs<'_>, command_encoder: core::option::Option<&mut wgpu::api::command_encoder::CommandEncoder>) -> vyre::error::Result<(alloc::vec::Vec<u8>, alloc::vec::Vec<u32>)>
+pub fn vyre_wgpu::engine::decompress::validate_output_ratio(format: &str, compressed_len: usize, declared_output_len: usize, max_output_ratio: usize) -> vyre::error::Result<()>
+pub mod vyre_wgpu::engine::dfa
+#[non_exhaustive] pub struct vyre_wgpu::engine::dfa::GpuDfa
+impl vyre_wgpu::engine::dfa::GpuDfa
+pub fn vyre_wgpu::engine::dfa::GpuDfa::compile(device: &wgpu::api::device::Device, transitions: &[u32], state_count: usize, accept_states: &[(u32, u32)], output_links: &[u32], pattern_lengths: &[u32]) -> vyre::error::Result<Self>
+pub fn vyre_wgpu::engine::dfa::GpuDfa::compile_with_max_matches(device: &wgpu::api::device::Device, transitions: &[u32], state_count: usize, accept_states: &[(u32, u32)], output_links: &[u32], pattern_lengths: &[u32], max_matches: u32) -> vyre::error::Result<Self>
+pub fn vyre_wgpu::engine::dfa::GpuDfa::max_matches(&self) -> u32
+pub fn vyre_wgpu::engine::dfa::GpuDfa::pattern_lengths(&self) -> &[u32]
+pub fn vyre_wgpu::engine::dfa::GpuDfa::scan(&self, device: &wgpu::api::device::Device, queue: &wgpu::api::queue::Queue, input: &[u8], command_encoder: core::option::Option<&mut wgpu::api::command_encoder::CommandEncoder>) -> vyre::error::Result<alloc::vec::Vec<vyre::match_result::Match>>
+pub fn vyre_wgpu::engine::dfa::GpuDfa::scan_shared(&self, input: &[u8]) -> vyre::error::Result<alloc::vec::Vec<vyre::match_result::Match>>
+pub fn vyre_wgpu::engine::dfa::GpuDfa::state_count(&self) -> u32
+impl core::fmt::Debug for vyre_wgpu::engine::dfa::GpuDfa
+pub fn vyre_wgpu::engine::dfa::GpuDfa::fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl !core::marker::Freeze for vyre_wgpu::engine::dfa::GpuDfa
+impl core::marker::Send for vyre_wgpu::engine::dfa::GpuDfa
+impl core::marker::Sync for vyre_wgpu::engine::dfa::GpuDfa
+impl core::marker::Unpin for vyre_wgpu::engine::dfa::GpuDfa
+impl !core::panic::unwind_safe::RefUnwindSafe for vyre_wgpu::engine::dfa::GpuDfa
+impl !core::panic::unwind_safe::UnwindSafe for vyre_wgpu::engine::dfa::GpuDfa
+pub const vyre_wgpu::engine::dfa::DEFAULT_MAX_MATCHES: u32
+pub const vyre_wgpu::engine::dfa::MAX_DFA_MATCHES: u32
+pub mod vyre_wgpu::runtime
+pub mod vyre_wgpu::runtime::cache
+pub mod vyre_wgpu::runtime::cache::buffer_pool
+pub struct vyre_wgpu::runtime::cache::buffer_pool::BufferPool
+impl vyre_wgpu::runtime::cache::buffer_pool::BufferPool
+pub fn vyre_wgpu::runtime::cache::buffer_pool::BufferPool::acquire(&self, device: &wgpu::api::device::Device, label: &str, size: u64, usage: wgpu_types::BufferUsages) -> vyre::error::Result<vyre_wgpu::runtime::cache::buffer_pool::PooledBuffer>
+pub fn vyre_wgpu::runtime::cache::buffer_pool::BufferPool::global() -> &'static Self
+pub fn vyre_wgpu::runtime::cache::buffer_pool::BufferPool::new() -> Self
+pub fn vyre_wgpu::runtime::cache::buffer_pool::BufferPool::release(&self, buffer: vyre_wgpu::runtime::cache::buffer_pool::PooledBuffer)
+pub fn vyre_wgpu::runtime::cache::buffer_pool::BufferPool::with_buffer<R>(&self, device: &wgpu::api::device::Device, label: &str, size: u64, usage: wgpu_types::BufferUsages, f: impl core::ops::function::FnOnce(&wgpu::api::buffer::Buffer) -> R) -> vyre::error::Result<R>
+impl core::clone::Clone for vyre_wgpu::runtime::cache::buffer_pool::BufferPool
+pub fn vyre_wgpu::runtime::cache::buffer_pool::BufferPool::clone(&self) -> vyre_wgpu::runtime::cache::buffer_pool::BufferPool
+impl core::default::Default for vyre_wgpu::runtime::cache::buffer_pool::BufferPool
+pub fn vyre_wgpu::runtime::cache::buffer_pool::BufferPool::default() -> vyre_wgpu::runtime::cache::buffer_pool::BufferPool
+impl core::marker::Freeze for vyre_wgpu::runtime::cache::buffer_pool::BufferPool
+impl core::marker::Send for vyre_wgpu::runtime::cache::buffer_pool::BufferPool
+impl core::marker::Sync for vyre_wgpu::runtime::cache::buffer_pool::BufferPool
+impl core::marker::Unpin for vyre_wgpu::runtime::cache::buffer_pool::BufferPool
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_wgpu::runtime::cache::buffer_pool::BufferPool
+impl core::panic::unwind_safe::UnwindSafe for vyre_wgpu::runtime::cache::buffer_pool::BufferPool
+pub struct vyre_wgpu::runtime::cache::buffer_pool::PooledBuffer
+impl vyre_wgpu::runtime::cache::buffer_pool::PooledBuffer
+pub fn vyre_wgpu::runtime::cache::buffer_pool::PooledBuffer::buffer(&self) -> &wgpu::api::buffer::Buffer
+pub fn vyre_wgpu::runtime::cache::buffer_pool::PooledBuffer::size(&self) -> u64
+impl core::ops::deref::Deref for vyre_wgpu::runtime::cache::buffer_pool::PooledBuffer
+pub type vyre_wgpu::runtime::cache::buffer_pool::PooledBuffer::Target = wgpu::api::buffer::Buffer
+pub fn vyre_wgpu::runtime::cache::buffer_pool::PooledBuffer::deref(&self) -> &Self::Target
+impl core::ops::drop::Drop for vyre_wgpu::runtime::cache::buffer_pool::PooledBuffer
+pub fn vyre_wgpu::runtime::cache::buffer_pool::PooledBuffer::drop(&mut self)
+impl core::marker::Freeze for vyre_wgpu::runtime::cache::buffer_pool::PooledBuffer
+impl core::marker::Send for vyre_wgpu::runtime::cache::buffer_pool::PooledBuffer
+impl core::marker::Sync for vyre_wgpu::runtime::cache::buffer_pool::PooledBuffer
+impl core::marker::Unpin for vyre_wgpu::runtime::cache::buffer_pool::PooledBuffer
+impl !core::panic::unwind_safe::RefUnwindSafe for vyre_wgpu::runtime::cache::buffer_pool::PooledBuffer
+impl !core::panic::unwind_safe::UnwindSafe for vyre_wgpu::runtime::cache::buffer_pool::PooledBuffer
+pub mod vyre_wgpu::runtime::cache::cache_entry
+#[non_exhaustive] pub struct vyre_wgpu::runtime::cache::cache_entry::CacheEntry
+pub vyre_wgpu::runtime::cache::cache_entry::CacheEntry::key: u64
+pub vyre_wgpu::runtime::cache::cache_entry::CacheEntry::size: u64
+pub vyre_wgpu::runtime::cache::cache_entry::CacheEntry::tier: usize
+impl core::clone::Clone for vyre_wgpu::runtime::cache::tiered_cache::CacheEntry
+pub fn vyre_wgpu::runtime::cache::tiered_cache::CacheEntry::clone(&self) -> vyre_wgpu::runtime::cache::tiered_cache::CacheEntry
+impl core::cmp::Eq for vyre_wgpu::runtime::cache::tiered_cache::CacheEntry
+impl core::cmp::PartialEq for vyre_wgpu::runtime::cache::tiered_cache::CacheEntry
+pub fn vyre_wgpu::runtime::cache::tiered_cache::CacheEntry::eq(&self, other: &vyre_wgpu::runtime::cache::tiered_cache::CacheEntry) -> bool
+impl core::fmt::Debug for vyre_wgpu::runtime::cache::tiered_cache::CacheEntry
+pub fn vyre_wgpu::runtime::cache::tiered_cache::CacheEntry::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for vyre_wgpu::runtime::cache::tiered_cache::CacheEntry
+impl core::marker::StructuralPartialEq for vyre_wgpu::runtime::cache::tiered_cache::CacheEntry
+impl core::marker::Freeze for vyre_wgpu::runtime::cache::tiered_cache::CacheEntry
+impl core::marker::Send for vyre_wgpu::runtime::cache::tiered_cache::CacheEntry
+impl core::marker::Sync for vyre_wgpu::runtime::cache::tiered_cache::CacheEntry
+impl core::marker::Unpin for vyre_wgpu::runtime::cache::tiered_cache::CacheEntry
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_wgpu::runtime::cache::tiered_cache::CacheEntry
+impl core::panic::unwind_safe::UnwindSafe for vyre_wgpu::runtime::cache::tiered_cache::CacheEntry
+pub mod vyre_wgpu::runtime::cache::cache_tier
+#[non_exhaustive] pub struct vyre_wgpu::runtime::cache::cache_tier::CacheTier
+pub vyre_wgpu::runtime::cache::cache_tier::CacheTier::capacity: u64
+pub vyre_wgpu::runtime::cache::cache_tier::CacheTier::name: alloc::string::String
+pub vyre_wgpu::runtime::cache::cache_tier::CacheTier::used: u64
+impl vyre_wgpu::runtime::cache::tiered_cache::CacheTier
+pub fn vyre_wgpu::runtime::cache::tiered_cache::CacheTier::new(name: impl core::convert::Into<alloc::string::String>, capacity: u64) -> Self
+impl core::marker::Freeze for vyre_wgpu::runtime::cache::tiered_cache::CacheTier
+impl core::marker::Send for vyre_wgpu::runtime::cache::tiered_cache::CacheTier
+impl core::marker::Sync for vyre_wgpu::runtime::cache::tiered_cache::CacheTier
+impl core::marker::Unpin for vyre_wgpu::runtime::cache::tiered_cache::CacheTier
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_wgpu::runtime::cache::tiered_cache::CacheTier
+impl core::panic::unwind_safe::UnwindSafe for vyre_wgpu::runtime::cache::tiered_cache::CacheTier
+pub mod vyre_wgpu::runtime::cache::lru
+pub struct vyre_wgpu::runtime::cache::lru::AccessMeta
+pub vyre_wgpu::runtime::cache::lru::AccessMeta::frequency: u32
+pub vyre_wgpu::runtime::cache::lru::AccessMeta::last_access: u64
+pub vyre_wgpu::runtime::cache::lru::AccessMeta::size: u64
+impl core::clone::Clone for vyre_wgpu::runtime::cache::lru::AccessMeta
+pub fn vyre_wgpu::runtime::cache::lru::AccessMeta::clone(&self) -> vyre_wgpu::runtime::cache::lru::AccessMeta
+impl core::default::Default for vyre_wgpu::runtime::cache::lru::AccessMeta
+pub fn vyre_wgpu::runtime::cache::lru::AccessMeta::default() -> vyre_wgpu::runtime::cache::lru::AccessMeta
+impl core::fmt::Debug for vyre_wgpu::runtime::cache::lru::AccessMeta
+pub fn vyre_wgpu::runtime::cache::lru::AccessMeta::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for vyre_wgpu::runtime::cache::lru::AccessMeta
+impl core::marker::Freeze for vyre_wgpu::runtime::cache::lru::AccessMeta
+impl core::marker::Send for vyre_wgpu::runtime::cache::lru::AccessMeta
+impl core::marker::Sync for vyre_wgpu::runtime::cache::lru::AccessMeta
+impl core::marker::Unpin for vyre_wgpu::runtime::cache::lru::AccessMeta
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_wgpu::runtime::cache::lru::AccessMeta
+impl core::panic::unwind_safe::UnwindSafe for vyre_wgpu::runtime::cache::lru::AccessMeta
+#[non_exhaustive] pub struct vyre_wgpu::runtime::cache::lru::AccessTracker
+impl vyre_wgpu::runtime::cache::lru::AccessTracker
+pub fn vyre_wgpu::runtime::cache::lru::AccessTracker::hot_set(&self, n: usize) -> alloc::vec::Vec<u64>
+pub fn vyre_wgpu::runtime::cache::lru::AccessTracker::new() -> Self
+pub fn vyre_wgpu::runtime::cache::lru::AccessTracker::record(&mut self, key: u64)
+pub fn vyre_wgpu::runtime::cache::lru::AccessTracker::stats(&self, key: u64) -> core::option::Option<vyre_wgpu::runtime::cache::tiered_cache::AccessStats>
+impl core::default::Default for vyre_wgpu::runtime::cache::lru::AccessTracker
+pub fn vyre_wgpu::runtime::cache::lru::AccessTracker::default() -> Self
+impl core::marker::Freeze for vyre_wgpu::runtime::cache::lru::AccessTracker
+impl core::marker::Send for vyre_wgpu::runtime::cache::lru::AccessTracker
+impl core::marker::Sync for vyre_wgpu::runtime::cache::lru::AccessTracker
+impl core::marker::Unpin for vyre_wgpu::runtime::cache::lru::AccessTracker
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_wgpu::runtime::cache::lru::AccessTracker
+impl core::panic::unwind_safe::UnwindSafe for vyre_wgpu::runtime::cache::lru::AccessTracker
+pub struct vyre_wgpu::runtime::cache::lru::IntrusiveLru<K, V>
+impl<K, V> vyre_wgpu::runtime::cache::lru::IntrusiveLru<K, V> where K: core::hash::Hash + core::cmp::Eq + core::marker::Copy, V: core::default::Default
+pub fn vyre_wgpu::runtime::cache::lru::IntrusiveLru<K, V>::ensure(&mut self, key: K) -> &mut V
+pub fn vyre_wgpu::runtime::cache::lru::IntrusiveLru<K, V>::get(&self, key: &K) -> core::option::Option<&V>
+pub fn vyre_wgpu::runtime::cache::lru::IntrusiveLru<K, V>::hottest(&self, n: usize) -> alloc::vec::Vec<K>
+pub fn vyre_wgpu::runtime::cache::lru::IntrusiveLru<K, V>::iter_coldest(&self) -> impl core::iter::traits::iterator::Iterator<Item = (&K, &V)> + '_
+pub fn vyre_wgpu::runtime::cache::lru::IntrusiveLru<K, V>::iter_hottest(&self) -> impl core::iter::traits::iterator::Iterator<Item = (&K, &V)> + '_
+pub fn vyre_wgpu::runtime::cache::lru::IntrusiveLru<K, V>::new() -> Self
+pub fn vyre_wgpu::runtime::cache::lru::IntrusiveLru<K, V>::remove(&mut self, key: &K)
+pub fn vyre_wgpu::runtime::cache::lru::IntrusiveLru<K, V>::touch(&mut self, key: K)
+pub fn vyre_wgpu::runtime::cache::lru::IntrusiveLru<K, V>::with_capacity(capacity: usize) -> Self
+impl<K, V> core::default::Default for vyre_wgpu::runtime::cache::lru::IntrusiveLru<K, V> where K: core::hash::Hash + core::cmp::Eq + core::marker::Copy, V: core::default::Default
+pub fn vyre_wgpu::runtime::cache::lru::IntrusiveLru<K, V>::default() -> Self
+impl<K, V> core::marker::Freeze for vyre_wgpu::runtime::cache::lru::IntrusiveLru<K, V>
+impl<K, V> core::marker::Send for vyre_wgpu::runtime::cache::lru::IntrusiveLru<K, V> where K: core::marker::Send, V: core::marker::Send
+impl<K, V> core::marker::Sync for vyre_wgpu::runtime::cache::lru::IntrusiveLru<K, V> where K: core::marker::Sync, V: core::marker::Sync
+impl<K, V> core::marker::Unpin for vyre_wgpu::runtime::cache::lru::IntrusiveLru<K, V> where K: core::marker::Unpin, V: core::marker::Unpin
+impl<K, V> core::panic::unwind_safe::RefUnwindSafe for vyre_wgpu::runtime::cache::lru::IntrusiveLru<K, V> where K: core::panic::unwind_safe::RefUnwindSafe, V: core::panic::unwind_safe::RefUnwindSafe
+impl<K, V> core::panic::unwind_safe::UnwindSafe for vyre_wgpu::runtime::cache::lru::IntrusiveLru<K, V> where K: core::panic::unwind_safe::UnwindSafe, V: core::panic::unwind_safe::UnwindSafe
+pub const vyre_wgpu::runtime::cache::lru::DEFAULT_INTRUSIVE_LRU_CAPACITY: usize
+pub mod vyre_wgpu::runtime::cache::tier
+#[non_exhaustive] pub enum vyre_wgpu::runtime::cache::tier::CacheError
+pub vyre_wgpu::runtime::cache::tier::CacheError::EntryTooLarge
+pub vyre_wgpu::runtime::cache::tier::CacheError::KeyNotFound
+impl core::clone::Clone for vyre_wgpu::runtime::cache::tiered_cache::CacheError
+pub fn vyre_wgpu::runtime::cache::tiered_cache::CacheError::clone(&self) -> vyre_wgpu::runtime::cache::tiered_cache::CacheError
+impl core::cmp::Eq for vyre_wgpu::runtime::cache::tiered_cache::CacheError
+impl core::cmp::PartialEq for vyre_wgpu::runtime::cache::tiered_cache::CacheError
+pub fn vyre_wgpu::runtime::cache::tiered_cache::CacheError::eq(&self, other: &vyre_wgpu::runtime::cache::tiered_cache::CacheError) -> bool
+impl core::error::Error for vyre_wgpu::runtime::cache::tiered_cache::CacheError
+impl core::fmt::Debug for vyre_wgpu::runtime::cache::tiered_cache::CacheError
+pub fn vyre_wgpu::runtime::cache::tiered_cache::CacheError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for vyre_wgpu::runtime::cache::tiered_cache::CacheError
+pub fn vyre_wgpu::runtime::cache::tiered_cache::CacheError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for vyre_wgpu::runtime::cache::tiered_cache::CacheError
+impl core::marker::StructuralPartialEq for vyre_wgpu::runtime::cache::tiered_cache::CacheError
+impl core::marker::Freeze for vyre_wgpu::runtime::cache::tiered_cache::CacheError
+impl core::marker::Send for vyre_wgpu::runtime::cache::tiered_cache::CacheError
+impl core::marker::Sync for vyre_wgpu::runtime::cache::tiered_cache::CacheError
+impl core::marker::Unpin for vyre_wgpu::runtime::cache::tiered_cache::CacheError
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_wgpu::runtime::cache::tiered_cache::CacheError
+impl core::panic::unwind_safe::UnwindSafe for vyre_wgpu::runtime::cache::tiered_cache::CacheError
+#[non_exhaustive] pub struct vyre_wgpu::runtime::cache::tier::AccessStats
+pub vyre_wgpu::runtime::cache::tier::AccessStats::frequency: u32
+pub vyre_wgpu::runtime::cache::tier::AccessStats::recency_rank: usize
+pub vyre_wgpu::runtime::cache::tier::AccessStats::size: u64
+impl core::marker::Freeze for vyre_wgpu::runtime::cache::tiered_cache::AccessStats
+impl core::marker::Send for vyre_wgpu::runtime::cache::tiered_cache::AccessStats
+impl core::marker::Sync for vyre_wgpu::runtime::cache::tiered_cache::AccessStats
+impl core::marker::Unpin for vyre_wgpu::runtime::cache::tiered_cache::AccessStats
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_wgpu::runtime::cache::tiered_cache::AccessStats
+impl core::panic::unwind_safe::UnwindSafe for vyre_wgpu::runtime::cache::tiered_cache::AccessStats
+#[non_exhaustive] pub struct vyre_wgpu::runtime::cache::tier::LruPolicy
+pub vyre_wgpu::runtime::cache::tier::LruPolicy::promote_threshold: u32
+impl vyre_wgpu::runtime::cache::tiered_cache::LruPolicy
+pub const vyre_wgpu::runtime::cache::tiered_cache::LruPolicy::DEFAULT_THRESHOLD: u32
+pub fn vyre_wgpu::runtime::cache::tiered_cache::LruPolicy::new(promote_threshold: u32) -> Self
+impl core::default::Default for vyre_wgpu::runtime::cache::tiered_cache::LruPolicy
+pub fn vyre_wgpu::runtime::cache::tiered_cache::LruPolicy::default() -> Self
+impl vyre_wgpu::runtime::cache::tiered_cache::TierPolicy for vyre_wgpu::runtime::cache::tiered_cache::LruPolicy
+pub fn vyre_wgpu::runtime::cache::tiered_cache::LruPolicy::eviction_candidate(&self, _tier: usize, entries: &rustc_hash::FxHashMap<u64, vyre_wgpu::runtime::cache::tiered_cache::CacheEntry>, tracker: &vyre_wgpu::runtime::cache::lru::AccessTracker) -> core::option::Option<u64>
+pub fn vyre_wgpu::runtime::cache::tiered_cache::LruPolicy::should_promote(&self, _key: u64, stats: &vyre_wgpu::runtime::cache::tiered_cache::AccessStats) -> bool
+impl core::marker::Freeze for vyre_wgpu::runtime::cache::tiered_cache::LruPolicy
+impl core::marker::Send for vyre_wgpu::runtime::cache::tiered_cache::LruPolicy
+impl core::marker::Sync for vyre_wgpu::runtime::cache::tiered_cache::LruPolicy
+impl core::marker::Unpin for vyre_wgpu::runtime::cache::tiered_cache::LruPolicy
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_wgpu::runtime::cache::tiered_cache::LruPolicy
+impl core::panic::unwind_safe::UnwindSafe for vyre_wgpu::runtime::cache::tiered_cache::LruPolicy
+pub trait vyre_wgpu::runtime::cache::tier::TierPolicy: core::marker::Send + core::marker::Sync
+pub fn vyre_wgpu::runtime::cache::tier::TierPolicy::eviction_candidate(&self, tier: usize, entries: &rustc_hash::FxHashMap<u64, vyre_wgpu::runtime::cache::tiered_cache::CacheEntry>, tracker: &vyre_wgpu::runtime::cache::lru::AccessTracker) -> core::option::Option<u64>
+pub fn vyre_wgpu::runtime::cache::tier::TierPolicy::should_promote(&self, key: u64, stats: &vyre_wgpu::runtime::cache::tiered_cache::AccessStats) -> bool
+impl vyre_wgpu::runtime::cache::tiered_cache::TierPolicy for vyre_wgpu::runtime::cache::tiered_cache::LruPolicy
+pub fn vyre_wgpu::runtime::cache::tiered_cache::LruPolicy::eviction_candidate(&self, _tier: usize, entries: &rustc_hash::FxHashMap<u64, vyre_wgpu::runtime::cache::tiered_cache::CacheEntry>, tracker: &vyre_wgpu::runtime::cache::lru::AccessTracker) -> core::option::Option<u64>
+pub fn vyre_wgpu::runtime::cache::tiered_cache::LruPolicy::should_promote(&self, _key: u64, stats: &vyre_wgpu::runtime::cache::tiered_cache::AccessStats) -> bool
+pub mod vyre_wgpu::runtime::cache::tiered_cache
+#[non_exhaustive] pub enum vyre_wgpu::runtime::cache::tiered_cache::CacheError
+pub vyre_wgpu::runtime::cache::tiered_cache::CacheError::EntryTooLarge
+pub vyre_wgpu::runtime::cache::tiered_cache::CacheError::KeyNotFound
+impl core::clone::Clone for vyre_wgpu::runtime::cache::tiered_cache::CacheError
+pub fn vyre_wgpu::runtime::cache::tiered_cache::CacheError::clone(&self) -> vyre_wgpu::runtime::cache::tiered_cache::CacheError
+impl core::cmp::Eq for vyre_wgpu::runtime::cache::tiered_cache::CacheError
+impl core::cmp::PartialEq for vyre_wgpu::runtime::cache::tiered_cache::CacheError
+pub fn vyre_wgpu::runtime::cache::tiered_cache::CacheError::eq(&self, other: &vyre_wgpu::runtime::cache::tiered_cache::CacheError) -> bool
+impl core::error::Error for vyre_wgpu::runtime::cache::tiered_cache::CacheError
+impl core::fmt::Debug for vyre_wgpu::runtime::cache::tiered_cache::CacheError
+pub fn vyre_wgpu::runtime::cache::tiered_cache::CacheError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for vyre_wgpu::runtime::cache::tiered_cache::CacheError
+pub fn vyre_wgpu::runtime::cache::tiered_cache::CacheError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for vyre_wgpu::runtime::cache::tiered_cache::CacheError
+impl core::marker::StructuralPartialEq for vyre_wgpu::runtime::cache::tiered_cache::CacheError
+impl core::marker::Freeze for vyre_wgpu::runtime::cache::tiered_cache::CacheError
+impl core::marker::Send for vyre_wgpu::runtime::cache::tiered_cache::CacheError
+impl core::marker::Sync for vyre_wgpu::runtime::cache::tiered_cache::CacheError
+impl core::marker::Unpin for vyre_wgpu::runtime::cache::tiered_cache::CacheError
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_wgpu::runtime::cache::tiered_cache::CacheError
+impl core::panic::unwind_safe::UnwindSafe for vyre_wgpu::runtime::cache::tiered_cache::CacheError
+#[non_exhaustive] pub struct vyre_wgpu::runtime::cache::tiered_cache::AccessStats
+pub vyre_wgpu::runtime::cache::tiered_cache::AccessStats::frequency: u32
+pub vyre_wgpu::runtime::cache::tiered_cache::AccessStats::recency_rank: usize
+pub vyre_wgpu::runtime::cache::tiered_cache::AccessStats::size: u64
+impl core::marker::Freeze for vyre_wgpu::runtime::cache::tiered_cache::AccessStats
+impl core::marker::Send for vyre_wgpu::runtime::cache::tiered_cache::AccessStats
+impl core::marker::Sync for vyre_wgpu::runtime::cache::tiered_cache::AccessStats
+impl core::marker::Unpin for vyre_wgpu::runtime::cache::tiered_cache::AccessStats
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_wgpu::runtime::cache::tiered_cache::AccessStats
+impl core::panic::unwind_safe::UnwindSafe for vyre_wgpu::runtime::cache::tiered_cache::AccessStats
+#[non_exhaustive] pub struct vyre_wgpu::runtime::cache::tiered_cache::CacheEntry
+pub vyre_wgpu::runtime::cache::tiered_cache::CacheEntry::key: u64
+pub vyre_wgpu::runtime::cache::tiered_cache::CacheEntry::size: u64
+pub vyre_wgpu::runtime::cache::tiered_cache::CacheEntry::tier: usize
+impl core::clone::Clone for vyre_wgpu::runtime::cache::tiered_cache::CacheEntry
+pub fn vyre_wgpu::runtime::cache::tiered_cache::CacheEntry::clone(&self) -> vyre_wgpu::runtime::cache::tiered_cache::CacheEntry
+impl core::cmp::Eq for vyre_wgpu::runtime::cache::tiered_cache::CacheEntry
+impl core::cmp::PartialEq for vyre_wgpu::runtime::cache::tiered_cache::CacheEntry
+pub fn vyre_wgpu::runtime::cache::tiered_cache::CacheEntry::eq(&self, other: &vyre_wgpu::runtime::cache::tiered_cache::CacheEntry) -> bool
+impl core::fmt::Debug for vyre_wgpu::runtime::cache::tiered_cache::CacheEntry
+pub fn vyre_wgpu::runtime::cache::tiered_cache::CacheEntry::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for vyre_wgpu::runtime::cache::tiered_cache::CacheEntry
+impl core::marker::StructuralPartialEq for vyre_wgpu::runtime::cache::tiered_cache::CacheEntry
+impl core::marker::Freeze for vyre_wgpu::runtime::cache::tiered_cache::CacheEntry
+impl core::marker::Send for vyre_wgpu::runtime::cache::tiered_cache::CacheEntry
+impl core::marker::Sync for vyre_wgpu::runtime::cache::tiered_cache::CacheEntry
+impl core::marker::Unpin for vyre_wgpu::runtime::cache::tiered_cache::CacheEntry
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_wgpu::runtime::cache::tiered_cache::CacheEntry
+impl core::panic::unwind_safe::UnwindSafe for vyre_wgpu::runtime::cache::tiered_cache::CacheEntry
+#[non_exhaustive] pub struct vyre_wgpu::runtime::cache::tiered_cache::CacheTier
+pub vyre_wgpu::runtime::cache::tiered_cache::CacheTier::capacity: u64
+pub vyre_wgpu::runtime::cache::tiered_cache::CacheTier::name: alloc::string::String
+pub vyre_wgpu::runtime::cache::tiered_cache::CacheTier::used: u64
+impl vyre_wgpu::runtime::cache::tiered_cache::CacheTier
+pub fn vyre_wgpu::runtime::cache::tiered_cache::CacheTier::new(name: impl core::convert::Into<alloc::string::String>, capacity: u64) -> Self
+impl core::marker::Freeze for vyre_wgpu::runtime::cache::tiered_cache::CacheTier
+impl core::marker::Send for vyre_wgpu::runtime::cache::tiered_cache::CacheTier
+impl core::marker::Sync for vyre_wgpu::runtime::cache::tiered_cache::CacheTier
+impl core::marker::Unpin for vyre_wgpu::runtime::cache::tiered_cache::CacheTier
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_wgpu::runtime::cache::tiered_cache::CacheTier
+impl core::panic::unwind_safe::UnwindSafe for vyre_wgpu::runtime::cache::tiered_cache::CacheTier
+#[non_exhaustive] pub struct vyre_wgpu::runtime::cache::tiered_cache::LruPolicy
+pub vyre_wgpu::runtime::cache::tiered_cache::LruPolicy::promote_threshold: u32
+impl vyre_wgpu::runtime::cache::tiered_cache::LruPolicy
+pub const vyre_wgpu::runtime::cache::tiered_cache::LruPolicy::DEFAULT_THRESHOLD: u32
+pub fn vyre_wgpu::runtime::cache::tiered_cache::LruPolicy::new(promote_threshold: u32) -> Self
+impl core::default::Default for vyre_wgpu::runtime::cache::tiered_cache::LruPolicy
+pub fn vyre_wgpu::runtime::cache::tiered_cache::LruPolicy::default() -> Self
+impl vyre_wgpu::runtime::cache::tiered_cache::TierPolicy for vyre_wgpu::runtime::cache::tiered_cache::LruPolicy
+pub fn vyre_wgpu::runtime::cache::tiered_cache::LruPolicy::eviction_candidate(&self, _tier: usize, entries: &rustc_hash::FxHashMap<u64, vyre_wgpu::runtime::cache::tiered_cache::CacheEntry>, tracker: &vyre_wgpu::runtime::cache::lru::AccessTracker) -> core::option::Option<u64>
+pub fn vyre_wgpu::runtime::cache::tiered_cache::LruPolicy::should_promote(&self, _key: u64, stats: &vyre_wgpu::runtime::cache::tiered_cache::AccessStats) -> bool
+impl core::marker::Freeze for vyre_wgpu::runtime::cache::tiered_cache::LruPolicy
+impl core::marker::Send for vyre_wgpu::runtime::cache::tiered_cache::LruPolicy
+impl core::marker::Sync for vyre_wgpu::runtime::cache::tiered_cache::LruPolicy
+impl core::marker::Unpin for vyre_wgpu::runtime::cache::tiered_cache::LruPolicy
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_wgpu::runtime::cache::tiered_cache::LruPolicy
+impl core::panic::unwind_safe::UnwindSafe for vyre_wgpu::runtime::cache::tiered_cache::LruPolicy
+#[non_exhaustive] pub struct vyre_wgpu::runtime::cache::tiered_cache::TieredCache<P: vyre_wgpu::runtime::cache::tiered_cache::TierPolicy>
+impl vyre_wgpu::runtime::cache::tiered_cache::TieredCache<vyre_wgpu::runtime::cache::tiered_cache::LruPolicy>
+pub fn vyre_wgpu::runtime::cache::tiered_cache::TieredCache<vyre_wgpu::runtime::cache::tiered_cache::LruPolicy>::new(tiers: alloc::vec::Vec<vyre_wgpu::runtime::cache::tiered_cache::CacheTier>) -> Self
+impl<P: vyre_wgpu::runtime::cache::tiered_cache::TierPolicy> vyre_wgpu::runtime::cache::tiered_cache::TieredCache<P>
+pub fn vyre_wgpu::runtime::cache::tiered_cache::TieredCache<P>::demote(&mut self, key: u64) -> core::result::Result<(), vyre_wgpu::runtime::cache::tiered_cache::CacheError>
+pub fn vyre_wgpu::runtime::cache::tiered_cache::TieredCache<P>::get(&self, key: u64) -> core::option::Option<&vyre_wgpu::runtime::cache::tiered_cache::CacheEntry>
+pub fn vyre_wgpu::runtime::cache::tiered_cache::TieredCache<P>::insert(&mut self, key: u64, size: u64) -> core::result::Result<(), vyre_wgpu::runtime::cache::tiered_cache::CacheError>
+pub fn vyre_wgpu::runtime::cache::tiered_cache::TieredCache<P>::promote(&mut self, key: u64) -> core::result::Result<(), vyre_wgpu::runtime::cache::tiered_cache::CacheError>
+pub fn vyre_wgpu::runtime::cache::tiered_cache::TieredCache<P>::record_access(&mut self, key: u64)
+pub fn vyre_wgpu::runtime::cache::tiered_cache::TieredCache<P>::with_policy(tiers: alloc::vec::Vec<vyre_wgpu::runtime::cache::tiered_cache::CacheTier>, policy: P) -> Self
+impl<P> core::marker::Freeze for vyre_wgpu::runtime::cache::tiered_cache::TieredCache<P> where P: core::marker::Freeze
+impl<P> core::marker::Send for vyre_wgpu::runtime::cache::tiered_cache::TieredCache<P>
+impl<P> core::marker::Sync for vyre_wgpu::runtime::cache::tiered_cache::TieredCache<P>
+impl<P> core::marker::Unpin for vyre_wgpu::runtime::cache::tiered_cache::TieredCache<P> where P: core::marker::Unpin
+impl<P> core::panic::unwind_safe::RefUnwindSafe for vyre_wgpu::runtime::cache::tiered_cache::TieredCache<P> where P: core::panic::unwind_safe::RefUnwindSafe
+impl<P> core::panic::unwind_safe::UnwindSafe for vyre_wgpu::runtime::cache::tiered_cache::TieredCache<P> where P: core::panic::unwind_safe::UnwindSafe
+pub trait vyre_wgpu::runtime::cache::tiered_cache::TierPolicy: core::marker::Send + core::marker::Sync
+pub fn vyre_wgpu::runtime::cache::tiered_cache::TierPolicy::eviction_candidate(&self, tier: usize, entries: &rustc_hash::FxHashMap<u64, vyre_wgpu::runtime::cache::tiered_cache::CacheEntry>, tracker: &vyre_wgpu::runtime::cache::lru::AccessTracker) -> core::option::Option<u64>
+pub fn vyre_wgpu::runtime::cache::tiered_cache::TierPolicy::should_promote(&self, key: u64, stats: &vyre_wgpu::runtime::cache::tiered_cache::AccessStats) -> bool
+impl vyre_wgpu::runtime::cache::tiered_cache::TierPolicy for vyre_wgpu::runtime::cache::tiered_cache::LruPolicy
+pub fn vyre_wgpu::runtime::cache::tiered_cache::LruPolicy::eviction_candidate(&self, _tier: usize, entries: &rustc_hash::FxHashMap<u64, vyre_wgpu::runtime::cache::tiered_cache::CacheEntry>, tracker: &vyre_wgpu::runtime::cache::lru::AccessTracker) -> core::option::Option<u64>
+pub fn vyre_wgpu::runtime::cache::tiered_cache::LruPolicy::should_promote(&self, _key: u64, stats: &vyre_wgpu::runtime::cache::tiered_cache::AccessStats) -> bool
+#[non_exhaustive] pub enum vyre_wgpu::runtime::cache::CacheError
+pub vyre_wgpu::runtime::cache::CacheError::EntryTooLarge
+pub vyre_wgpu::runtime::cache::CacheError::KeyNotFound
+impl core::clone::Clone for vyre_wgpu::runtime::cache::tiered_cache::CacheError
+pub fn vyre_wgpu::runtime::cache::tiered_cache::CacheError::clone(&self) -> vyre_wgpu::runtime::cache::tiered_cache::CacheError
+impl core::cmp::Eq for vyre_wgpu::runtime::cache::tiered_cache::CacheError
+impl core::cmp::PartialEq for vyre_wgpu::runtime::cache::tiered_cache::CacheError
+pub fn vyre_wgpu::runtime::cache::tiered_cache::CacheError::eq(&self, other: &vyre_wgpu::runtime::cache::tiered_cache::CacheError) -> bool
+impl core::error::Error for vyre_wgpu::runtime::cache::tiered_cache::CacheError
+impl core::fmt::Debug for vyre_wgpu::runtime::cache::tiered_cache::CacheError
+pub fn vyre_wgpu::runtime::cache::tiered_cache::CacheError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for vyre_wgpu::runtime::cache::tiered_cache::CacheError
+pub fn vyre_wgpu::runtime::cache::tiered_cache::CacheError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for vyre_wgpu::runtime::cache::tiered_cache::CacheError
+impl core::marker::StructuralPartialEq for vyre_wgpu::runtime::cache::tiered_cache::CacheError
+impl core::marker::Freeze for vyre_wgpu::runtime::cache::tiered_cache::CacheError
+impl core::marker::Send for vyre_wgpu::runtime::cache::tiered_cache::CacheError
+impl core::marker::Sync for vyre_wgpu::runtime::cache::tiered_cache::CacheError
+impl core::marker::Unpin for vyre_wgpu::runtime::cache::tiered_cache::CacheError
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_wgpu::runtime::cache::tiered_cache::CacheError
+impl core::panic::unwind_safe::UnwindSafe for vyre_wgpu::runtime::cache::tiered_cache::CacheError
+#[non_exhaustive] pub struct vyre_wgpu::runtime::cache::AccessStats
+pub vyre_wgpu::runtime::cache::AccessStats::frequency: u32
+pub vyre_wgpu::runtime::cache::AccessStats::recency_rank: usize
+pub vyre_wgpu::runtime::cache::AccessStats::size: u64
+impl core::marker::Freeze for vyre_wgpu::runtime::cache::tiered_cache::AccessStats
+impl core::marker::Send for vyre_wgpu::runtime::cache::tiered_cache::AccessStats
+impl core::marker::Sync for vyre_wgpu::runtime::cache::tiered_cache::AccessStats
+impl core::marker::Unpin for vyre_wgpu::runtime::cache::tiered_cache::AccessStats
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_wgpu::runtime::cache::tiered_cache::AccessStats
+impl core::panic::unwind_safe::UnwindSafe for vyre_wgpu::runtime::cache::tiered_cache::AccessStats
+#[non_exhaustive] pub struct vyre_wgpu::runtime::cache::AccessTracker
+impl vyre_wgpu::runtime::cache::lru::AccessTracker
+pub fn vyre_wgpu::runtime::cache::lru::AccessTracker::hot_set(&self, n: usize) -> alloc::vec::Vec<u64>
+pub fn vyre_wgpu::runtime::cache::lru::AccessTracker::new() -> Self
+pub fn vyre_wgpu::runtime::cache::lru::AccessTracker::record(&mut self, key: u64)
+pub fn vyre_wgpu::runtime::cache::lru::AccessTracker::stats(&self, key: u64) -> core::option::Option<vyre_wgpu::runtime::cache::tiered_cache::AccessStats>
+impl core::default::Default for vyre_wgpu::runtime::cache::lru::AccessTracker
+pub fn vyre_wgpu::runtime::cache::lru::AccessTracker::default() -> Self
+impl core::marker::Freeze for vyre_wgpu::runtime::cache::lru::AccessTracker
+impl core::marker::Send for vyre_wgpu::runtime::cache::lru::AccessTracker
+impl core::marker::Sync for vyre_wgpu::runtime::cache::lru::AccessTracker
+impl core::marker::Unpin for vyre_wgpu::runtime::cache::lru::AccessTracker
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_wgpu::runtime::cache::lru::AccessTracker
+impl core::panic::unwind_safe::UnwindSafe for vyre_wgpu::runtime::cache::lru::AccessTracker
+pub struct vyre_wgpu::runtime::cache::BufferPool
+impl vyre_wgpu::runtime::cache::buffer_pool::BufferPool
+pub fn vyre_wgpu::runtime::cache::buffer_pool::BufferPool::acquire(&self, device: &wgpu::api::device::Device, label: &str, size: u64, usage: wgpu_types::BufferUsages) -> vyre::error::Result<vyre_wgpu::runtime::cache::buffer_pool::PooledBuffer>
+pub fn vyre_wgpu::runtime::cache::buffer_pool::BufferPool::global() -> &'static Self
+pub fn vyre_wgpu::runtime::cache::buffer_pool::BufferPool::new() -> Self
+pub fn vyre_wgpu::runtime::cache::buffer_pool::BufferPool::release(&self, buffer: vyre_wgpu::runtime::cache::buffer_pool::PooledBuffer)
+pub fn vyre_wgpu::runtime::cache::buffer_pool::BufferPool::with_buffer<R>(&self, device: &wgpu::api::device::Device, label: &str, size: u64, usage: wgpu_types::BufferUsages, f: impl core::ops::function::FnOnce(&wgpu::api::buffer::Buffer) -> R) -> vyre::error::Result<R>
+impl core::clone::Clone for vyre_wgpu::runtime::cache::buffer_pool::BufferPool
+pub fn vyre_wgpu::runtime::cache::buffer_pool::BufferPool::clone(&self) -> vyre_wgpu::runtime::cache::buffer_pool::BufferPool
+impl core::default::Default for vyre_wgpu::runtime::cache::buffer_pool::BufferPool
+pub fn vyre_wgpu::runtime::cache::buffer_pool::BufferPool::default() -> vyre_wgpu::runtime::cache::buffer_pool::BufferPool
+impl core::marker::Freeze for vyre_wgpu::runtime::cache::buffer_pool::BufferPool
+impl core::marker::Send for vyre_wgpu::runtime::cache::buffer_pool::BufferPool
+impl core::marker::Sync for vyre_wgpu::runtime::cache::buffer_pool::BufferPool
+impl core::marker::Unpin for vyre_wgpu::runtime::cache::buffer_pool::BufferPool
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_wgpu::runtime::cache::buffer_pool::BufferPool
+impl core::panic::unwind_safe::UnwindSafe for vyre_wgpu::runtime::cache::buffer_pool::BufferPool
+#[non_exhaustive] pub struct vyre_wgpu::runtime::cache::CacheEntry
+pub vyre_wgpu::runtime::cache::CacheEntry::key: u64
+pub vyre_wgpu::runtime::cache::CacheEntry::size: u64
+pub vyre_wgpu::runtime::cache::CacheEntry::tier: usize
+impl core::clone::Clone for vyre_wgpu::runtime::cache::tiered_cache::CacheEntry
+pub fn vyre_wgpu::runtime::cache::tiered_cache::CacheEntry::clone(&self) -> vyre_wgpu::runtime::cache::tiered_cache::CacheEntry
+impl core::cmp::Eq for vyre_wgpu::runtime::cache::tiered_cache::CacheEntry
+impl core::cmp::PartialEq for vyre_wgpu::runtime::cache::tiered_cache::CacheEntry
+pub fn vyre_wgpu::runtime::cache::tiered_cache::CacheEntry::eq(&self, other: &vyre_wgpu::runtime::cache::tiered_cache::CacheEntry) -> bool
+impl core::fmt::Debug for vyre_wgpu::runtime::cache::tiered_cache::CacheEntry
+pub fn vyre_wgpu::runtime::cache::tiered_cache::CacheEntry::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for vyre_wgpu::runtime::cache::tiered_cache::CacheEntry
+impl core::marker::StructuralPartialEq for vyre_wgpu::runtime::cache::tiered_cache::CacheEntry
+impl core::marker::Freeze for vyre_wgpu::runtime::cache::tiered_cache::CacheEntry
+impl core::marker::Send for vyre_wgpu::runtime::cache::tiered_cache::CacheEntry
+impl core::marker::Sync for vyre_wgpu::runtime::cache::tiered_cache::CacheEntry
+impl core::marker::Unpin for vyre_wgpu::runtime::cache::tiered_cache::CacheEntry
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_wgpu::runtime::cache::tiered_cache::CacheEntry
+impl core::panic::unwind_safe::UnwindSafe for vyre_wgpu::runtime::cache::tiered_cache::CacheEntry
+#[non_exhaustive] pub struct vyre_wgpu::runtime::cache::CacheTier
+pub vyre_wgpu::runtime::cache::CacheTier::capacity: u64
+pub vyre_wgpu::runtime::cache::CacheTier::name: alloc::string::String
+pub vyre_wgpu::runtime::cache::CacheTier::used: u64
+impl vyre_wgpu::runtime::cache::tiered_cache::CacheTier
+pub fn vyre_wgpu::runtime::cache::tiered_cache::CacheTier::new(name: impl core::convert::Into<alloc::string::String>, capacity: u64) -> Self
+impl core::marker::Freeze for vyre_wgpu::runtime::cache::tiered_cache::CacheTier
+impl core::marker::Send for vyre_wgpu::runtime::cache::tiered_cache::CacheTier
+impl core::marker::Sync for vyre_wgpu::runtime::cache::tiered_cache::CacheTier
+impl core::marker::Unpin for vyre_wgpu::runtime::cache::tiered_cache::CacheTier
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_wgpu::runtime::cache::tiered_cache::CacheTier
+impl core::panic::unwind_safe::UnwindSafe for vyre_wgpu::runtime::cache::tiered_cache::CacheTier
+#[non_exhaustive] pub struct vyre_wgpu::runtime::cache::LruPolicy
+pub vyre_wgpu::runtime::cache::LruPolicy::promote_threshold: u32
+impl vyre_wgpu::runtime::cache::tiered_cache::LruPolicy
+pub const vyre_wgpu::runtime::cache::tiered_cache::LruPolicy::DEFAULT_THRESHOLD: u32
+pub fn vyre_wgpu::runtime::cache::tiered_cache::LruPolicy::new(promote_threshold: u32) -> Self
+impl core::default::Default for vyre_wgpu::runtime::cache::tiered_cache::LruPolicy
+pub fn vyre_wgpu::runtime::cache::tiered_cache::LruPolicy::default() -> Self
+impl vyre_wgpu::runtime::cache::tiered_cache::TierPolicy for vyre_wgpu::runtime::cache::tiered_cache::LruPolicy
+pub fn vyre_wgpu::runtime::cache::tiered_cache::LruPolicy::eviction_candidate(&self, _tier: usize, entries: &rustc_hash::FxHashMap<u64, vyre_wgpu::runtime::cache::tiered_cache::CacheEntry>, tracker: &vyre_wgpu::runtime::cache::lru::AccessTracker) -> core::option::Option<u64>
+pub fn vyre_wgpu::runtime::cache::tiered_cache::LruPolicy::should_promote(&self, _key: u64, stats: &vyre_wgpu::runtime::cache::tiered_cache::AccessStats) -> bool
+impl core::marker::Freeze for vyre_wgpu::runtime::cache::tiered_cache::LruPolicy
+impl core::marker::Send for vyre_wgpu::runtime::cache::tiered_cache::LruPolicy
+impl core::marker::Sync for vyre_wgpu::runtime::cache::tiered_cache::LruPolicy
+impl core::marker::Unpin for vyre_wgpu::runtime::cache::tiered_cache::LruPolicy
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_wgpu::runtime::cache::tiered_cache::LruPolicy
+impl core::panic::unwind_safe::UnwindSafe for vyre_wgpu::runtime::cache::tiered_cache::LruPolicy
+pub struct vyre_wgpu::runtime::cache::PooledBuffer
+impl vyre_wgpu::runtime::cache::buffer_pool::PooledBuffer
+pub fn vyre_wgpu::runtime::cache::buffer_pool::PooledBuffer::buffer(&self) -> &wgpu::api::buffer::Buffer
+pub fn vyre_wgpu::runtime::cache::buffer_pool::PooledBuffer::size(&self) -> u64
+impl core::ops::deref::Deref for vyre_wgpu::runtime::cache::buffer_pool::PooledBuffer
+pub type vyre_wgpu::runtime::cache::buffer_pool::PooledBuffer::Target = wgpu::api::buffer::Buffer
+pub fn vyre_wgpu::runtime::cache::buffer_pool::PooledBuffer::deref(&self) -> &Self::Target
+impl core::ops::drop::Drop for vyre_wgpu::runtime::cache::buffer_pool::PooledBuffer
+pub fn vyre_wgpu::runtime::cache::buffer_pool::PooledBuffer::drop(&mut self)
+impl core::marker::Freeze for vyre_wgpu::runtime::cache::buffer_pool::PooledBuffer
+impl core::marker::Send for vyre_wgpu::runtime::cache::buffer_pool::PooledBuffer
+impl core::marker::Sync for vyre_wgpu::runtime::cache::buffer_pool::PooledBuffer
+impl core::marker::Unpin for vyre_wgpu::runtime::cache::buffer_pool::PooledBuffer
+impl !core::panic::unwind_safe::RefUnwindSafe for vyre_wgpu::runtime::cache::buffer_pool::PooledBuffer
+impl !core::panic::unwind_safe::UnwindSafe for vyre_wgpu::runtime::cache::buffer_pool::PooledBuffer
+#[non_exhaustive] pub struct vyre_wgpu::runtime::cache::TieredCache<P: vyre_wgpu::runtime::cache::tiered_cache::TierPolicy>
+impl vyre_wgpu::runtime::cache::tiered_cache::TieredCache<vyre_wgpu::runtime::cache::tiered_cache::LruPolicy>
+pub fn vyre_wgpu::runtime::cache::tiered_cache::TieredCache<vyre_wgpu::runtime::cache::tiered_cache::LruPolicy>::new(tiers: alloc::vec::Vec<vyre_wgpu::runtime::cache::tiered_cache::CacheTier>) -> Self
+impl<P: vyre_wgpu::runtime::cache::tiered_cache::TierPolicy> vyre_wgpu::runtime::cache::tiered_cache::TieredCache<P>
+pub fn vyre_wgpu::runtime::cache::tiered_cache::TieredCache<P>::demote(&mut self, key: u64) -> core::result::Result<(), vyre_wgpu::runtime::cache::tiered_cache::CacheError>
+pub fn vyre_wgpu::runtime::cache::tiered_cache::TieredCache<P>::get(&self, key: u64) -> core::option::Option<&vyre_wgpu::runtime::cache::tiered_cache::CacheEntry>
+pub fn vyre_wgpu::runtime::cache::tiered_cache::TieredCache<P>::insert(&mut self, key: u64, size: u64) -> core::result::Result<(), vyre_wgpu::runtime::cache::tiered_cache::CacheError>
+pub fn vyre_wgpu::runtime::cache::tiered_cache::TieredCache<P>::promote(&mut self, key: u64) -> core::result::Result<(), vyre_wgpu::runtime::cache::tiered_cache::CacheError>
+pub fn vyre_wgpu::runtime::cache::tiered_cache::TieredCache<P>::record_access(&mut self, key: u64)
+pub fn vyre_wgpu::runtime::cache::tiered_cache::TieredCache<P>::with_policy(tiers: alloc::vec::Vec<vyre_wgpu::runtime::cache::tiered_cache::CacheTier>, policy: P) -> Self
+impl<P> core::marker::Freeze for vyre_wgpu::runtime::cache::tiered_cache::TieredCache<P> where P: core::marker::Freeze
+impl<P> core::marker::Send for vyre_wgpu::runtime::cache::tiered_cache::TieredCache<P>
+impl<P> core::marker::Sync for vyre_wgpu::runtime::cache::tiered_cache::TieredCache<P>
+impl<P> core::marker::Unpin for vyre_wgpu::runtime::cache::tiered_cache::TieredCache<P> where P: core::marker::Unpin
+impl<P> core::panic::unwind_safe::RefUnwindSafe for vyre_wgpu::runtime::cache::tiered_cache::TieredCache<P> where P: core::panic::unwind_safe::RefUnwindSafe
+impl<P> core::panic::unwind_safe::UnwindSafe for vyre_wgpu::runtime::cache::tiered_cache::TieredCache<P> where P: core::panic::unwind_safe::UnwindSafe
+pub trait vyre_wgpu::runtime::cache::TierPolicy: core::marker::Send + core::marker::Sync
+pub fn vyre_wgpu::runtime::cache::TierPolicy::eviction_candidate(&self, tier: usize, entries: &rustc_hash::FxHashMap<u64, vyre_wgpu::runtime::cache::tiered_cache::CacheEntry>, tracker: &vyre_wgpu::runtime::cache::lru::AccessTracker) -> core::option::Option<u64>
+pub fn vyre_wgpu::runtime::cache::TierPolicy::should_promote(&self, key: u64, stats: &vyre_wgpu::runtime::cache::tiered_cache::AccessStats) -> bool
+impl vyre_wgpu::runtime::cache::tiered_cache::TierPolicy for vyre_wgpu::runtime::cache::tiered_cache::LruPolicy
+pub fn vyre_wgpu::runtime::cache::tiered_cache::LruPolicy::eviction_candidate(&self, _tier: usize, entries: &rustc_hash::FxHashMap<u64, vyre_wgpu::runtime::cache::tiered_cache::CacheEntry>, tracker: &vyre_wgpu::runtime::cache::lru::AccessTracker) -> core::option::Option<u64>
+pub fn vyre_wgpu::runtime::cache::tiered_cache::LruPolicy::should_promote(&self, _key: u64, stats: &vyre_wgpu::runtime::cache::tiered_cache::AccessStats) -> bool
+pub mod vyre_wgpu::runtime::device
+pub mod vyre_wgpu::runtime::device::cached_device
+pub fn vyre_wgpu::runtime::device::cached_device::cached_device() -> vyre::error::Result<&'static (wgpu::api::device::Device, wgpu::api::queue::Queue)>
+pub mod vyre_wgpu::runtime::device::init_device
+pub fn vyre_wgpu::runtime::device::init_device::init_device() -> vyre::error::Result<(wgpu::api::device::Device, wgpu::api::queue::Queue)>
+pub async fn vyre_wgpu::runtime::device::acquire_gpu() -> vyre::error::Result<(wgpu::api::device::Device, wgpu::api::queue::Queue)>
+pub fn vyre_wgpu::runtime::device::cached_device() -> vyre::error::Result<&'static (wgpu::api::device::Device, wgpu::api::queue::Queue)>
+pub fn vyre_wgpu::runtime::device::init_device() -> vyre::error::Result<(wgpu::api::device::Device, wgpu::api::queue::Queue)>
+pub mod vyre_wgpu::runtime::serializer
+pub mod vyre_wgpu::runtime::serializer::decode_parts
+pub fn vyre_wgpu::runtime::serializer::decode_parts::decode_parts(bytes: &[u8]) -> vyre::error::Result<alloc::vec::Vec<&[u8]>>
+pub mod vyre_wgpu::runtime::serializer::encode_parts
+pub const vyre_wgpu::runtime::serializer::encode_parts::MAX_SERIALIZED_PART_BYTES: usize
+pub fn vyre_wgpu::runtime::serializer::encode_parts::encode_parts(parts: &[&[u8]]) -> vyre::error::Result<alloc::vec::Vec<u8>>
+pub const vyre_wgpu::runtime::serializer::MAX_SERIALIZED_PART_BYTES: usize
+pub fn vyre_wgpu::runtime::serializer::decode_parts(bytes: &[u8]) -> vyre::error::Result<alloc::vec::Vec<&[u8]>>
+pub fn vyre_wgpu::runtime::serializer::encode_parts(parts: &[&[u8]]) -> vyre::error::Result<alloc::vec::Vec<u8>>
+pub mod vyre_wgpu::runtime::shader
+pub mod vyre_wgpu::runtime::shader::cache_key
+pub fn vyre_wgpu::runtime::shader::cache_key::cache_key(wgsl_source: &str, entry_point: &str) -> alloc::string::String
+pub mod vyre_wgpu::runtime::shader::compile_compute_pipeline
+pub fn vyre_wgpu::runtime::shader::compile_compute_pipeline::compile_compute_pipeline(device: &wgpu::api::device::Device, label: &str, wgsl_source: &str, entry_point: &str) -> vyre::error::Result<wgpu::api::compute_pipeline::ComputePipeline>
+pub fn vyre_wgpu::runtime::shader::compile_compute_pipeline::compile_compute_pipeline_with_layout(device: &wgpu::api::device::Device, label: &str, wgsl_source: &str, entry_point: &str, layout: core::option::Option<&wgpu::api::pipeline_layout::PipelineLayout>) -> vyre::error::Result<wgpu::api::compute_pipeline::ComputePipeline>
+pub mod vyre_wgpu::runtime::shader::pipeline_cache
+pub const vyre_wgpu::runtime::shader::pipeline_cache::MAX_PIPELINE_CACHE_ENTRIES: usize
+pub fn vyre_wgpu::runtime::shader::pipeline_cache::cache_key(wgsl_source: &str, entry_point: &str) -> alloc::string::String
+pub const vyre_wgpu::runtime::shader::MAX_PIPELINE_CACHE_ENTRIES: usize
+pub mod vyre_wgpu::runtime::workgroup_size
+pub const vyre_wgpu::runtime::workgroup_size::WORKGROUP_SIZE: [u32; 3]
+#[non_exhaustive] pub enum vyre_wgpu::runtime::CacheError
+pub vyre_wgpu::runtime::CacheError::EntryTooLarge
+pub vyre_wgpu::runtime::CacheError::KeyNotFound
+impl core::clone::Clone for vyre_wgpu::runtime::cache::tiered_cache::CacheError
+pub fn vyre_wgpu::runtime::cache::tiered_cache::CacheError::clone(&self) -> vyre_wgpu::runtime::cache::tiered_cache::CacheError
+impl core::cmp::Eq for vyre_wgpu::runtime::cache::tiered_cache::CacheError
+impl core::cmp::PartialEq for vyre_wgpu::runtime::cache::tiered_cache::CacheError
+pub fn vyre_wgpu::runtime::cache::tiered_cache::CacheError::eq(&self, other: &vyre_wgpu::runtime::cache::tiered_cache::CacheError) -> bool
+impl core::error::Error for vyre_wgpu::runtime::cache::tiered_cache::CacheError
+impl core::fmt::Debug for vyre_wgpu::runtime::cache::tiered_cache::CacheError
+pub fn vyre_wgpu::runtime::cache::tiered_cache::CacheError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for vyre_wgpu::runtime::cache::tiered_cache::CacheError
+pub fn vyre_wgpu::runtime::cache::tiered_cache::CacheError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for vyre_wgpu::runtime::cache::tiered_cache::CacheError
+impl core::marker::StructuralPartialEq for vyre_wgpu::runtime::cache::tiered_cache::CacheError
+impl core::marker::Freeze for vyre_wgpu::runtime::cache::tiered_cache::CacheError
+impl core::marker::Send for vyre_wgpu::runtime::cache::tiered_cache::CacheError
+impl core::marker::Sync for vyre_wgpu::runtime::cache::tiered_cache::CacheError
+impl core::marker::Unpin for vyre_wgpu::runtime::cache::tiered_cache::CacheError
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_wgpu::runtime::cache::tiered_cache::CacheError
+impl core::panic::unwind_safe::UnwindSafe for vyre_wgpu::runtime::cache::tiered_cache::CacheError
+#[non_exhaustive] pub struct vyre_wgpu::runtime::AccessStats
+pub vyre_wgpu::runtime::AccessStats::frequency: u32
+pub vyre_wgpu::runtime::AccessStats::recency_rank: usize
+pub vyre_wgpu::runtime::AccessStats::size: u64
+impl core::marker::Freeze for vyre_wgpu::runtime::cache::tiered_cache::AccessStats
+impl core::marker::Send for vyre_wgpu::runtime::cache::tiered_cache::AccessStats
+impl core::marker::Sync for vyre_wgpu::runtime::cache::tiered_cache::AccessStats
+impl core::marker::Unpin for vyre_wgpu::runtime::cache::tiered_cache::AccessStats
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_wgpu::runtime::cache::tiered_cache::AccessStats
+impl core::panic::unwind_safe::UnwindSafe for vyre_wgpu::runtime::cache::tiered_cache::AccessStats
+#[non_exhaustive] pub struct vyre_wgpu::runtime::AccessTracker
+impl vyre_wgpu::runtime::cache::lru::AccessTracker
+pub fn vyre_wgpu::runtime::cache::lru::AccessTracker::hot_set(&self, n: usize) -> alloc::vec::Vec<u64>
+pub fn vyre_wgpu::runtime::cache::lru::AccessTracker::new() -> Self
+pub fn vyre_wgpu::runtime::cache::lru::AccessTracker::record(&mut self, key: u64)
+pub fn vyre_wgpu::runtime::cache::lru::AccessTracker::stats(&self, key: u64) -> core::option::Option<vyre_wgpu::runtime::cache::tiered_cache::AccessStats>
+impl core::default::Default for vyre_wgpu::runtime::cache::lru::AccessTracker
+pub fn vyre_wgpu::runtime::cache::lru::AccessTracker::default() -> Self
+impl core::marker::Freeze for vyre_wgpu::runtime::cache::lru::AccessTracker
+impl core::marker::Send for vyre_wgpu::runtime::cache::lru::AccessTracker
+impl core::marker::Sync for vyre_wgpu::runtime::cache::lru::AccessTracker
+impl core::marker::Unpin for vyre_wgpu::runtime::cache::lru::AccessTracker
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_wgpu::runtime::cache::lru::AccessTracker
+impl core::panic::unwind_safe::UnwindSafe for vyre_wgpu::runtime::cache::lru::AccessTracker
+#[non_exhaustive] pub struct vyre_wgpu::runtime::LruPolicy
+pub vyre_wgpu::runtime::LruPolicy::promote_threshold: u32
+impl vyre_wgpu::runtime::cache::tiered_cache::LruPolicy
+pub const vyre_wgpu::runtime::cache::tiered_cache::LruPolicy::DEFAULT_THRESHOLD: u32
+pub fn vyre_wgpu::runtime::cache::tiered_cache::LruPolicy::new(promote_threshold: u32) -> Self
+impl core::default::Default for vyre_wgpu::runtime::cache::tiered_cache::LruPolicy
+pub fn vyre_wgpu::runtime::cache::tiered_cache::LruPolicy::default() -> Self
+impl vyre_wgpu::runtime::cache::tiered_cache::TierPolicy for vyre_wgpu::runtime::cache::tiered_cache::LruPolicy
+pub fn vyre_wgpu::runtime::cache::tiered_cache::LruPolicy::eviction_candidate(&self, _tier: usize, entries: &rustc_hash::FxHashMap<u64, vyre_wgpu::runtime::cache::tiered_cache::CacheEntry>, tracker: &vyre_wgpu::runtime::cache::lru::AccessTracker) -> core::option::Option<u64>
+pub fn vyre_wgpu::runtime::cache::tiered_cache::LruPolicy::should_promote(&self, _key: u64, stats: &vyre_wgpu::runtime::cache::tiered_cache::AccessStats) -> bool
+impl core::marker::Freeze for vyre_wgpu::runtime::cache::tiered_cache::LruPolicy
+impl core::marker::Send for vyre_wgpu::runtime::cache::tiered_cache::LruPolicy
+impl core::marker::Sync for vyre_wgpu::runtime::cache::tiered_cache::LruPolicy
+impl core::marker::Unpin for vyre_wgpu::runtime::cache::tiered_cache::LruPolicy
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_wgpu::runtime::cache::tiered_cache::LruPolicy
+impl core::panic::unwind_safe::UnwindSafe for vyre_wgpu::runtime::cache::tiered_cache::LruPolicy
+pub const vyre_wgpu::runtime::WORKGROUP_SIZE: [u32; 3]
+pub trait vyre_wgpu::runtime::TierPolicy: core::marker::Send + core::marker::Sync
+pub fn vyre_wgpu::runtime::TierPolicy::eviction_candidate(&self, tier: usize, entries: &rustc_hash::FxHashMap<u64, vyre_wgpu::runtime::cache::tiered_cache::CacheEntry>, tracker: &vyre_wgpu::runtime::cache::lru::AccessTracker) -> core::option::Option<u64>
+pub fn vyre_wgpu::runtime::TierPolicy::should_promote(&self, key: u64, stats: &vyre_wgpu::runtime::cache::tiered_cache::AccessStats) -> bool
+impl vyre_wgpu::runtime::cache::tiered_cache::TierPolicy for vyre_wgpu::runtime::cache::tiered_cache::LruPolicy
+pub fn vyre_wgpu::runtime::cache::tiered_cache::LruPolicy::eviction_candidate(&self, _tier: usize, entries: &rustc_hash::FxHashMap<u64, vyre_wgpu::runtime::cache::tiered_cache::CacheEntry>, tracker: &vyre_wgpu::runtime::cache::lru::AccessTracker) -> core::option::Option<u64>
+pub fn vyre_wgpu::runtime::cache::tiered_cache::LruPolicy::should_promote(&self, _key: u64, stats: &vyre_wgpu::runtime::cache::tiered_cache::AccessStats) -> bool
+pub fn vyre_wgpu::runtime::bg_entry(binding: u32, buffer: &wgpu::api::buffer::Buffer) -> wgpu::api::bind_group::BindGroupEntry<'_>
+pub fn vyre_wgpu::runtime::cached_device() -> vyre::error::Result<&'static (wgpu::api::device::Device, wgpu::api::queue::Queue)>
+pub fn vyre_wgpu::runtime::compile_compute_pipeline(device: &wgpu::api::device::Device, label: &str, wgsl_source: &str, entry_point: &str) -> vyre::error::Result<wgpu::api::compute_pipeline::ComputePipeline>
+pub fn vyre_wgpu::runtime::compile_compute_pipeline_with_layout(device: &wgpu::api::device::Device, label: &str, wgsl_source: &str, entry_point: &str, layout: core::option::Option<&wgpu::api::pipeline_layout::PipelineLayout>) -> vyre::error::Result<wgpu::api::compute_pipeline::ComputePipeline>

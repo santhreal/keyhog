@@ -1,0 +1,31 @@
+# Docs: https://yandex.com/dev/translate/doc/dg/concepts/api-keys.html
+# Format: 39+ character string (e.g., trnsl.1.1.20190101T000000Z.12345678.abcdef1234567890abcdef)
+# Verify: GET /api/v1.5/tr.json/getLangs with key param
+# Prefix: trnsl
+
+[detector]
+id = "yandex-translate-api-key"
+name = "Yandex Translate API Key"
+service = "yandex-translate"
+severity = "high"
+keywords = ["YANDEX_TRANSLATE", "YANDEX_API_KEY", "trnsl", "yandex_translate_api_key"]
+
+[[detector.patterns]]
+regex = "trnsl\\.1\\.1\\.[0-9]{8}T[0-9]{6}Z\\.[0-9a-f]{8}\\.[0-9a-f]{24}"
+description = "Yandex Translate API key (trnsl format)"
+
+[[detector.patterns]]
+regex = "(?:YANDEX_TRANSLATE|YANDEX_API_KEY|YANDEX_TRANSLATION)[_\\s]?(?:API[_\\s]?KEY|KEY)?[=:\\s\"'']+(trnsl\\.1\\.1\\.[0-9]{8}T[0-9]{6}Z\\.[0-9a-f]{8}\\.[0-9a-f]{24})"
+description = "Yandex Translate API key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:YANDEX_TRANSLATE|YANDEX_API_KEY|YANDEX_TRANSLATION)[_\\s]?(?:API[_\\s]?KEY|KEY)?[=:\\s\"'']+([A-Za-z0-9_-]{39,})"
+description = "Yandex Translate API key (generic format)"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://translate.yandex.net/api/v1.5/tr.json/getLangs?key={{match}}"
+[detector.verify.success]
+status = 200

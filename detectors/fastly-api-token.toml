@@ -1,0 +1,37 @@
+# Docs: https://www.fastly.com/documentation/reference/api/
+# Format: 32-character string containing alphanumeric, underscore, dash, equals
+# Verify: GET /current_user with Fastly-Key header returns 200 if valid
+# Prefix: none (generic format, requires context anchoring)
+
+[detector]
+id = "fastly-api-token"
+name = "Fastly API Token"
+service = "fastly"
+severity = "critical"
+keywords = ["FASTLY", "fastly", "FASTLY_API_TOKEN", "fastly_api_token", "FASTLY_KEY", "Fastly-Key"]
+
+[[detector.patterns]]
+regex = "(?:FASTLY|fastly)(?:_API)?[_-]?(?:TOKEN|token|KEY|key)[=:\\s\"']+([a-zA-Z0-9_=-]{32})"
+description = "Fastly API token with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "Fastly-Key[=:\\s\"']+([a-zA-Z0-9_=-]{32})"
+description = "Fastly API token in header format"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://api.fastly.com/current_user"
+
+[detector.verify.auth]
+type = "header"
+name = "Fastly-Key"
+template = "{{match}}"
+
+[detector.verify.success]
+status = 200
+
+[[detector.verify.metadata]]
+name = "email"
+json_path = "email"

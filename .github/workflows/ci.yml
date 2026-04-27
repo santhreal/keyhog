@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install Vectorscan
+        run: sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config
+      - run: cargo test -p keyhog-core --lib
+      - run: cargo test -p keyhog-scanner --lib
+      - run: cargo test -p keyhog --lib
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Install Vectorscan
+        run: sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config
+      - run: cargo clippy -p keyhog-core -p keyhog-scanner -p keyhog -- -D warnings
+
+  fmt:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all -- --check
+
+  build:
+    name: Build Release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install Vectorscan
+        run: sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config
+      - run: cargo build --release -p keyhog
+      - name: Smoke test
+        run: |
+          set +e
+          echo 'API_KEY="sk_live_4eC39HqLyjWDarjtT1zdp7dc"' | ./target/release/keyhog scan --stdin --min-confidence 0.0
+          test $? -eq 1  # exit 1 = findings detected (expected)
+
+  publish:
+    name: Publish to crates.io
+    needs: [test, clippy, fmt, build]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Vectorscan
+        run: sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config
+
+      - name: Publish subcrates then CLI
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          set -e
+          for pkg in keyhog-core keyhog-scanner keyhog-verifier keyhog-sources keyhog; do
+            echo "Publishing $pkg..."
+            # --no-verify: already tested in the build job above
+            cargo publish -p "$pkg" --no-verify 2>&1 || true
+            # Wait for crates.io index propagation between dependent crates
+            sleep 30
+          done

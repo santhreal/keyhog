@@ -1,0 +1,6 @@
+op_id = "primitive.math.gcd"
+
+[[golden]]
+input = "3000000012000000"
+expected = "06000000"
+reason = "gcd(48, 18) = 6"

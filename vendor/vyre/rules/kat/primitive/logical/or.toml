@@ -1,0 +1,26 @@
+op_id = "primitive.logical.or"
+
+[[golden]]
+input = "0000000000000000"
+expected = "00000000"
+reason = "logical_or(0, 0) = 0"
+
+[[golden]]
+input = "0100000000000000"
+expected = "01000000"
+reason = "logical_or(1, 0) = 1"
+
+[[golden]]
+input = "0000000001000000"
+expected = "01000000"
+reason = "logical_or(0, 1) = 1"
+
+[[golden]]
+input = "0100000001000000"
+expected = "01000000"
+reason = "logical_or(1, 1) = 1"
+
+[[golden]]
+input = "000000002a000000"
+expected = "01000000"
+reason = "logical_or(0, 42) = 1"

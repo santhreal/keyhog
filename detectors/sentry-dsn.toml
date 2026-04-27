@@ -1,0 +1,19 @@
+# Docs: https://docs.sentry.io/concepts/key-terms/dsn-explainer/
+# Format: URL format: https://{public_key}@{host}/{project_id}
+# Verify: None (DSN contains public key only)
+# Prefix: https://
+
+[detector]
+id = "sentry-dsn"
+name = "Sentry DSN"
+service = "sentry"
+severity = "high"
+keywords = ["sentry.io", "sentry_dsn", "dsn", "o0.ingest", "o1.ingest"]
+
+[[detector.patterns]]
+regex = 'https://[a-f0-9]{32}@o[0-9]+\.ingest\.sentry\.io/[0-9]+'
+description = "Sentry DSN with organization ID"
+
+[[detector.patterns]]
+regex = 'https://[a-f0-9]{32}@[a-z0-9-]+\.ingest\.sentry\.io/[0-9]+'
+description = "Sentry DSN with custom organization subdomain"

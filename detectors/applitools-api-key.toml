@@ -1,0 +1,45 @@
+# Docs: https://applitools.com/docs/eyes/reference/server-api/authentication
+# Format: Alphanumeric string (typically 40+ characters), passed via X-Eyes-Api-Key header
+# Verify: GET /api/v1/auth/api-key-validation with X-Eyes-Api-Key header returns 200
+# Prefix: none (generic alphanumeric, requires context keyword)
+
+[detector]
+id = "applitools-api-key"
+name = "Applitools API Key"
+service = "applitools"
+severity = "critical"
+keywords = ["APPLITOOLS_API_KEY", "applitools_api_key", "X-Eyes-Api-Key", "applitools"]
+
+[[detector.patterns]]
+regex = "(?:APPLITOOLS_API_KEY|applitools[_-]?api[_-]?key)[=:\\s\"']+([a-zA-Z0-9_-]{40,})"
+description = "Applitools API key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "X-Eyes-Api-Key:\\s*([a-zA-Z0-9_-]{40,})"
+description = "Applitools API key in HTTP header"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://eyes.applitools.com/api/v1/auth/api-key-validation"
+
+[detector.verify.auth]
+type = "header"
+name = "X-Eyes-Api-Key"
+template = "{{match}}"
+
+[detector.verify.success]
+status = 200
+
+[[detector.verify.metadata]]
+name = "teamId"
+json_path = "$.teamId"
+
+[[detector.verify.metadata]]
+name = "user"
+json_path = "$.user"
+
+[[detector.verify.metadata]]
+name = "permissions"
+json_path = "$.permissions"

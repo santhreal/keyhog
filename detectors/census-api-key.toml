@@ -1,0 +1,32 @@
+# Docs: https://docs.getcensus.com/
+# Format: Census Organization API token or Personal Access Token
+# Verify: GET /api/v1/users with Bearer token returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "census-api-key"
+name = "Census API Key"
+service = "census"
+severity = "high"
+keywords = ["CENSUS", "census", "CENSUS_API_KEY", "CENSUS_TOKEN"]
+
+[[detector.patterns]]
+regex = "(?:CENSUS)[_.]?(?:API[._-]?KEY|TOKEN)[=:\\s\"'']+([a-zA-Z0-9]{32,})"
+description = "Census API key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:census)[_.]?(?:api[._-]?key|token)[=:\\s\"'']+([a-zA-Z0-9]{32,})"
+description = "Census API key lowercase context anchor"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://app.getcensus.com/api/v1/users"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[detector.verify.success]
+status = 200

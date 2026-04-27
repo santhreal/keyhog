@@ -1,0 +1,95 @@
+pub trait ExprVisitor {
+/// Break payload returned when traversal short-circuits.
+type Break;
+/// Integer literal (`u32`).
+fn visit_lit_u32(&mut self, expr: &Expr, value: u32) -> ControlFlow<Self::Break>;
+/// Integer literal (`i32`).
+fn visit_lit_i32(&mut self, expr: &Expr, value: i32) -> ControlFlow<Self::Break>;
+/// Float literal (`f32`).
+fn visit_lit_f32(&mut self, expr: &Expr, value: f32) -> ControlFlow<Self::Break>;
+/// Bool literal.
+fn visit_lit_bool(&mut self, expr: &Expr, value: bool) -> ControlFlow<Self::Break>;
+/// Variable reference.
+fn visit_var(&mut self, expr: &Expr, name: &Ident) -> ControlFlow<Self::Break>;
+/// Buffer load (`buffer[index]`).
+fn visit_load(&mut self, expr: &Expr, buffer: &Ident, index: &Expr)
+-> ControlFlow<Self::Break>;
+/// Buffer length.
+fn visit_buf_len(&mut self, expr: &Expr, buffer: &Ident) -> ControlFlow<Self::Break>;
+/// Invocation id axis (`gid.{x,y,z}`).
+fn visit_invocation_id(&mut self, expr: &Expr, axis: u32) -> ControlFlow<Self::Break>;
+/// Workgroup id axis.
+fn visit_workgroup_id(&mut self, expr: &Expr, axis: u32) -> ControlFlow<Self::Break>;
+/// Local id axis within the workgroup.
+fn visit_local_id(&mut self, expr: &Expr, axis: u32) -> ControlFlow<Self::Break>;
+/// Binary operation.
+fn visit_bin_op(
+&mut self,
+expr: &Expr,
+op: &BinOp,
+left: &Expr,
+right: &Expr,
+) -> ControlFlow<Self::Break>;
+/// Unary operation.
+fn visit_un_op(&mut self, expr: &Expr, op: &UnOp, operand: &Expr) -> ControlFlow<Self::Break>;
+/// Function call.
+fn visit_call(&mut self, expr: &Expr, op_id: &str, args: &[Expr]) -> ControlFlow<Self::Break>;
+/// Sequence-valued extension hook.
+///
+/// Core IR does not currently emit a dedicated `Expr::Sequence`
+/// variant, but downstream visitor implementations must still opt in
+/// explicitly so a future sequence node cannot compile behind a silent
+/// default body.
+fn visit_sequence(&mut self, parts: &[Expr]) -> ControlFlow<Self::Break>;
+/// Fused multiply-add (`a * b + c`).
+fn visit_fma(&mut self, expr: &Expr, a: &Expr, b: &Expr, c: &Expr) -> ControlFlow<Self::Break>;
+/// Ternary `select(cond, true_val, false_val)`.
+fn visit_select(
+&mut self,
+expr: &Expr,
+cond: &Expr,
+true_val: &Expr,
+false_val: &Expr,
+) -> ControlFlow<Self::Break>;
+/// Numeric cast.
+fn visit_cast(
+&mut self,
+expr: &Expr,
+target: &DataType,
+value: &Expr,
+) -> ControlFlow<Self::Break>;
+/// Atomic operation on a shared buffer.
+fn visit_atomic(
+&mut self,
+expr: &Expr,
+op: &AtomicOp,
+buffer: &Ident,
+index: &Expr,
+expected: Option<&Expr>,
+value: &Expr,
+) -> ControlFlow<Self::Break>;
+/// Subgroup ballot.
+fn visit_subgroup_ballot(&mut self, expr: &Expr, cond: &Expr) -> ControlFlow<Self::Break>;
+/// Subgroup shuffle.
+fn visit_subgroup_shuffle(
+&mut self,
+expr: &Expr,
+value: &Expr,
+lane: &Expr,
+) -> ControlFlow<Self::Break>;
+/// Subgroup add.
+fn visit_subgroup_add(&mut self, expr: &Expr, value: &Expr) -> ControlFlow<Self::Break>;
+/// Downstream opaque expression extension.
+fn visit_opaque_expr(
+&mut self,
+expr: &Expr,
+extension: &dyn ExprNode,
+) -> ControlFlow<Self::Break>;
+/// Recursively walk this expression's children using the requested order.
+fn walk_children_default(&mut self, expr: &Expr, order: VisitOrder) -> ControlFlow<Self::Break>
+where
+Self: Sized,
+{
+walk_expr_children_default(self, expr, order)
+}
+}

@@ -1,0 +1,21 @@
+# Docs: https://neon.com/docs/serverless/serverless-driver
+# Format: PostgreSQL connection string with neon.tech hostname containing password
+# Verify: no public verification endpoint (requires database connection)
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "neon-serverless-driver-token"
+name = "Neon Serverless Driver Token"
+service = "neon"
+severity = "critical"
+keywords = ["neon", "neon.tech", "DATABASE_URL", "POSTGRES_URL"]
+
+[[detector.patterns]]
+regex = "postgres(?:ql)?://[^\\s:@]+:([^\\s@]+)@[a-z0-9-]+\\.neon\\.tech(:\\d+)?/[^\\s\"'']*"
+description = "Neon PostgreSQL connection string with password"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:NEON[_-](?:DATABASE[_-]?URL|POSTGRES[_-]?URL|URL))[=:\\s\"'']+(postgres(?:ql)?://[^\\s\"'']+)"
+description = "Neon connection string with context anchor"
+group = 1

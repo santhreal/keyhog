@@ -1,0 +1,26 @@
+# Docs: https://developers.cloudflare.com/cloudflare-one/access-controls/service-credentials/service-tokens/
+# Format: Client ID is UUID-like with .access suffix, Client Secret is a long random string
+# Verify: POST to access application with CF-Access-Client-Id and CF-Access-Client-Secret headers
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "cloudflare-zero-trust-service-token"
+name = "Cloudflare Zero Trust Service Token"
+service = "cloudflare"
+severity = "high"
+keywords = ["CF-Access-Client-Id", "CF-Access-Client-Secret", "cloudflareaccess"]
+
+[[detector.patterns]]
+regex = "(?:CF-Access-Client-Id|CF.Access.Client.Id)[=:\\s\"'']+([a-f0-9]{32})\\.access"
+description = "Cloudflare Zero Trust service token Client ID"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:CF-Access-Client-Secret|CF.Access.Client.Secret)[=:\\s\"'']+([a-zA-Z0-9_-]{40,})"
+description = "Cloudflare Zero Trust service token Client Secret"
+group = 1
+
+[[detector.companions]]
+name = "client_secret"
+regex = "(?:CF-Access-Client-Secret|CF.Access.Client.Secret)[=:\\s\"'']+[a-zA-Z0-9_-]{40,}"
+within_lines = 3

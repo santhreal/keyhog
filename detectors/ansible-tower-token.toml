@@ -1,0 +1,24 @@
+# Docs: https://docs.ansible.com/ansible-tower/latest/html/towercli/authentication.html
+# Format: OAuth2.0 token - base64-encoded string, typically 40+ chars with specific structure
+# Verify: GET /api/v2/me/ with Bearer token returns 200 if valid
+# Note: Ansible Tower tokens don't have a fixed prefix - requires strict context anchoring
+
+[detector]
+id = "ansible-tower-token"
+name = "Ansible Tower/AWX API Token"
+service = "ansible-tower"
+severity = "high"
+keywords = ["TOWER_OAUTH_TOKEN", "AWX_TOKEN", "TOWER_TOKEN", "AWX_OAUTH_TOKEN"]
+
+[[detector.patterns]]
+regex = "(TOWER_OAUTH_TOKEN|AWX_TOKEN|TOWER_TOKEN|AWX_OAUTH_TOKEN)[=:\\s\"'']+([A-Za-z0-9+/]{40,}={0,2})"
+description = "Ansible Tower/AWX OAuth2.0 token with exact variable name anchor (base64 format)"
+group = 2
+
+[[detector.patterns]]
+regex = "(?:tower|awx)[._-]?(?:oauth|token)[=:\\s\"'']+([A-Za-z0-9+/]{40,}={0,2})"
+description = "Ansible Tower/AWX token with lowercase context anchor (base64 format)"
+group = 1
+
+# NOTE: live verification disabled. `{{instance}}` was undefined.
+# kimi-wave3 §1.

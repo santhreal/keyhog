@@ -1,0 +1,26 @@
+# Docs: https://docs.splunk.com/Documentation/Splunk/9.4.2/Data/UsetheHTTPEventCollector
+# Format: 32-36 character GUID (8-4-4-4-12 hex pattern with dashes, or 32 hex chars)
+# Verify: POST /services/collector/event with Authorization: Splunk <token> returns 200 if valid
+# Prefix: none (GUID format, requires keyword context)
+
+[detector]
+id = "splunk-hec-token"
+name = "Splunk HEC Token"
+service = "splunk"
+severity = "high"
+keywords = ["Splunk", "SPLUNK_HEC_TOKEN", "splunk_hec_token", "hec token", "HTTP Event Collector", "services/collector"]
+
+[[detector.patterns]]
+regex = "(?:Splunk|SPLUNK_HEC_TOKEN|splunk_hec_token)[=:\\s\"']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
+description = "Splunk HEC token (GUID format with dashes) with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "Authorization:\\s*Splunk\\s+([a-f0-9]{32})"
+description = "Splunk HEC token in Authorization header (32 hex chars)"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:splunk|hec)[._]?(?:token|key)[=:\\s\"']+([a-f0-9]{32})"
+description = "Splunk HEC token (32 hex chars) with context anchor"
+group = 1

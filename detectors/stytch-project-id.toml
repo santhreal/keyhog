@@ -1,0 +1,15 @@
+# Docs: https://stytch.com/docs/api-reference/b2b/api/overview
+# Format: project- followed by 36 alphanumeric characters (UUID format)
+# Verify: None (used with secret for Basic auth)
+# Prefix: project-
+
+[detector]
+id = "stytch-project-id"
+name = "Stytch Project ID"
+service = "stytch"
+severity = "medium"
+keywords = ["project-", "stytch"]
+
+[[detector.patterns]]
+regex = 'project-[a-zA-Z0-9]{36}'
+description = "Stytch project ID (project- prefix followed by UUID)"

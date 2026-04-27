@@ -1,0 +1,26 @@
+# Docs: https://docs.chef.io/automate/api/
+# Format: API token - alphanumeric string passed in api-token header
+# Verify: GET /apis/iam/v2/tokens with api-token header returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "chef-automate-token"
+name = "Chef Automate API Token"
+service = "chef-automate"
+severity = "critical"
+keywords = ["chef-automate", "api-token", "CHEF_AUTOMATE", "automate-token"]
+
+[[detector.patterns]]
+regex = "(?:CHEF[_-]AUTOMATE[_-]TOKEN|CHEF[_-]API[_-]TOKEN|AUTOMATE[_-]TOKEN)[=:\\s\"'']+([a-zA-Z0-9_-]{20,})"
+description = "Chef Automate API token with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "api-token[=:\\s\"'']+([a-zA-Z0-9_-]{20,})"
+description = "Chef Automate api-token header value"
+group = 1
+
+[[detector.patterns]]
+regex = "chef-automate.*auth.*token[=:\\s\"'']+([a-zA-Z0-9_-]{20,})"
+description = "Chef Automate authentication token"
+group = 1

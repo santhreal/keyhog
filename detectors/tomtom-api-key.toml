@@ -1,0 +1,28 @@
+# Docs: https://developer.tomtom.com/knowledgebase/platform/article/basic-information
+# Format: 32+ character alphanumeric API key (no unique prefix)
+# Verify: GET /search/2/geocode/{query}.json with key parameter
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "tomtom-api-key"
+name = "TomTom API Key"
+service = "tomtom"
+severity = "high"
+keywords = ["TOMTOM_API_KEY", "tomtom.api.key", "tomtom_api_key"]
+
+[[detector.patterns]]
+regex = "(?:TOMTOM[_-]?API[_-]?KEY|tomtom[_-]?api[_-]?key|tomtom\\.api\\.key)[=:\\s\"'']+([A-Za-z0-9]{32,})"
+description = "TomTom API key with context anchor"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://api.tomtom.com/search/2/geocode/test.json"
+
+[detector.verify.auth]
+type = "query"
+param = "key"
+field = "match"
+
+[detector.verify.success]
+status = 200

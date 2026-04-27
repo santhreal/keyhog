@@ -1,0 +1,24 @@
+# Docs: https://docs.microsoft.com/en-us/azure/iot-hub/iot-hub-devguide-security
+# Format: HostName=xxx;SharedAccessKeyName=xxx;SharedAccessKey=xxx
+# Verify: no public verification endpoint
+# Prefix: HostName=
+
+[detector]
+id = "azure-iot-connection-string"
+name = "Azure IoT Hub Connection String"
+service = "azure-iot-hub"
+severity = "critical"
+keywords = ["HostName", "SharedAccessKey", "azure-devices.net", "IOTHUB"]
+
+[[detector.patterns]]
+regex = "HostName=([a-zA-Z0-9_-]+\\.azure-devices\\.net);SharedAccessKeyName=([a-zA-Z0-9_-]+);SharedAccessKey=([a-zA-Z0-9+/=]{44})"
+description = "Azure IoT Hub connection string with SharedAccessKey"
+
+[[detector.patterns]]
+regex = "HostName=([a-zA-Z0-9_-]+\\.azure-devices\\.net);DeviceId=([a-zA-Z0-9_-]+);SharedAccessKey=([a-zA-Z0-9+/=]{44})"
+description = "Azure IoT Hub device connection string"
+
+[[detector.patterns]]
+regex = "(?:IOTHUB|iothub)[._-]?CONNECTION[_-]?STRING[=:\\s\"'']+(HostName=[^\"'']+azure-devices\\.net[^\"'']+)"
+description = "Azure IoT Hub connection string with context anchor"
+group = 1

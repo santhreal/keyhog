@@ -1,0 +1,11 @@
+op_id = "primitive.math.mod"
+
+[[golden]]
+input = "0a00000003000000"
+expected = "01000000"
+reason = "10 % 3 = 1"
+
+[[golden]]
+input = "0a00000000000000"
+expected = "00000000"
+reason = "10 % 0 = 0 (vyre mod-by-zero policy)"

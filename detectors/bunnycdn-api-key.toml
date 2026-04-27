@@ -1,0 +1,33 @@
+# Docs: https://docs.bunny.net/reference/bunnynet-api-overview
+# Format: Storage zone password or API key, typically 8-4-4 format with dashes (XXXX-XXXX-XXXX)
+# Verify: GET /api/billing with AccessKey header returns 200 if valid
+# Prefix: none (format is XXXX-XXXX-XXXX style)
+
+[detector]
+id = "bunnycdn-api-key"
+name = "BunnyCDN API Key"
+service = "bunnycdn"
+severity = "critical"
+keywords = ["BUNNYCDN", "bunnycdn", "BUNNY", "bunny", "AccessKey", "AccessKey"]
+
+[[detector.patterns]]
+regex = "(?:BUNNYCDN|bunnycdn|BUNNY|bunny)(?:_API)?[_-]?(?:KEY|key|TOKEN|token)[=:\\s\"']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
+description = "BunnyCDN API key with UUID format and context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "AccessKey[=:\\s\"']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
+description = "BunnyCDN AccessKey header format"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://bunnycdn.com/api/billing"
+
+[detector.verify.auth]
+type = "header"
+name = "AccessKey"
+template = "{{match}}"
+
+[detector.verify.success]
+status = 200

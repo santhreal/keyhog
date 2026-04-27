@@ -1,0 +1,20 @@
+pub mod vyre_sigstore
+pub use vyre_sigstore::Signature
+pub use vyre_sigstore::SigningKey
+pub use vyre_sigstore::VerifyingKey
+#[non_exhaustive] pub enum vyre_sigstore::VerifyError
+pub vyre_sigstore::VerifyError::BadSignature
+impl core::error::Error for vyre_sigstore::VerifyError
+impl core::fmt::Debug for vyre_sigstore::VerifyError
+pub fn vyre_sigstore::VerifyError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for vyre_sigstore::VerifyError
+pub fn vyre_sigstore::VerifyError::fmt(&self, __formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for vyre_sigstore::VerifyError
+impl core::marker::Send for vyre_sigstore::VerifyError
+impl core::marker::Sync for vyre_sigstore::VerifyError
+impl core::marker::Unpin for vyre_sigstore::VerifyError
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_sigstore::VerifyError
+impl core::panic::unwind_safe::UnwindSafe for vyre_sigstore::VerifyError
+pub fn vyre_sigstore::canonical_digest(cert_bytes: &[u8]) -> [u8; 32]
+pub fn vyre_sigstore::sign(cert_bytes: &[u8], key: &ed25519_dalek::signing::SigningKey) -> ed25519::Signature
+pub fn vyre_sigstore::verify(cert_bytes: &[u8], sig: &ed25519::Signature, pubkey: &ed25519_dalek::verifying::VerifyingKey) -> core::result::Result<(), vyre_sigstore::VerifyError>

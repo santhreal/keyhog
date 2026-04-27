@@ -1,0 +1,28 @@
+# Docs: https://www.geocod.io/docs/
+# Format: API key is a 40+ character alphanumeric string (no unique prefix)
+# Verify: GET /v1.7/geocode with api_key parameter
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "geocodio-api-key"
+name = "Geocodio API Key"
+service = "geocodio"
+severity = "medium"
+keywords = ["GEOCODIO_API_KEY", "geocodio.api.key", "geocodio_api_key"]
+
+[[detector.patterns]]
+regex = "(?:GEOCODIO[_-]?API[_-]?KEY|geocodio[_-]?api[_-]?key|geocodio\\.api\\.key)[=:\\s\"'']+([A-Za-z0-9]{40,})"
+description = "Geocodio API key with context anchor"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://api.geocod.io/v1.7/geocode"
+
+[detector.verify.auth]
+type = "query"
+param = "api_key"
+field = "match"
+
+[detector.verify.success]
+status = 200

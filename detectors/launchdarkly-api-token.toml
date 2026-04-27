@@ -1,0 +1,26 @@
+# Docs: https://docs.launchdarkly.com/home/account-security/api-access-tokens
+# Format: api- prefix followed by 8-4-4-4-12 UUID pattern
+# Verify: GET /api/v2/members with Authorization: Bearer token
+# Prefix: api-
+
+[detector]
+id = "launchdarkly-api-token"
+name = "LaunchDarkly API Token"
+service = "launchdarkly"
+severity = "critical"
+keywords = ["api-", "LD_API_KEY", "LAUNCHDARKLY_API"]
+
+[[detector.patterns]]
+regex = "api-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}"
+description = "LaunchDarkly API access token (api- prefix with UUID)"
+
+[detector.verify]
+method = "GET"
+url = "https://app.launchdarkly.com/api/v2/members"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[detector.verify.success]
+status = 200

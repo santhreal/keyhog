@@ -1,0 +1,15 @@
+# Docs: https://en.wikipedia.org/wiki/PKCS_8
+# Format: PEM-encoded private key block (-----BEGIN (RSA |EC |DSA |)PRIVATE KEY-----)
+# Verify: no verification endpoint (private keys are not API-callable)
+# Prefix: -----BEGIN
+
+[detector]
+id = "generic-private-key"
+name = "Private Key (PEM)"
+service = "crypto"
+severity = "critical"
+keywords = ["PRIVATE KEY", "BEGIN"]
+
+[[detector.patterns]]
+regex = 'PRIVATE KEY'
+description = "Private key marker"

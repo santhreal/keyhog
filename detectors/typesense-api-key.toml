@@ -1,0 +1,16 @@
+# Docs: https://typesense.org/docs/30.1/api/api-keys.html
+# Format: Alphanumeric string, typically auto-generated (no fixed prefix)
+# Verify: GET /health with X-Typesense-API-Key header returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "typesense-api-key"
+name = "Typesense API Key"
+service = "typesense"
+severity = "high"
+keywords = ["TYPESENSE_API_KEY", "typesense_api_key", "TYPESENSE_APIKEY", "typesenseApiKey"]
+
+[[detector.patterns]]
+regex = "(?:TYPESENSE[_-]?API[_-]?KEY|typesense[_-]?api[_-]?key)[=:\\s\"'']+([a-zA-Z0-9_-]{16,})"
+description = "Typesense API key with context anchor"
+group = 1

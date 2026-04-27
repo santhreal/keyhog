@@ -1,0 +1,33 @@
+# Docs: https://www.elastic.co/guide/en/cloud/current/ec-api-authentication.html
+# Format: id:key format (20+ alphanumeric, colon, 16+ alphanumeric) or base64
+# Verify: GET /api/v1/deployments with ApiKey authorization header
+# Prefix: none (id:key format, requires context anchoring)
+
+[detector]
+id = "elastic-cloud-api-key"
+name = "Elastic Cloud API Key"
+service = "elastic"
+severity = "critical"
+keywords = ["ELASTIC_CLOUD_API_KEY", "elastic-cloud", "api.elastic-cloud.com"]
+
+[[detector.patterns]]
+regex = "(?:ELASTIC_CLOUD_API_KEY|elastic_cloud_api_key)[=:\\s\"']+([A-Za-z0-9]{20,}:[A-Za-z0-9]{16,})"
+description = "Elastic Cloud API key in id:key format with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:ELASTIC_CLOUD_API_KEY|elastic_cloud_api_key)[=:\\s\"']+([A-Za-z0-9_-]{40,}==?)"
+description = "Elastic Cloud API key base64 encoded with context anchor"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://api.elastic-cloud.com/api/v1/deployments"
+
+[detector.verify.auth]
+type = "header"
+name = "Authorization"
+template = "ApiKey {{match}}"
+
+[detector.verify.success]
+status = 200

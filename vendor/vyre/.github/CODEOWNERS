@@ -1,0 +1,55 @@
+# vyre contributor boundary — maintainer-only paths
+# Any change to these files requires review from @santhsecurity/core-maintainers.
+# See coordination/contributor-boundary.md for the threat model.
+
+# The algebraic law enum, invariant catalog, V-rule numbering, and data types.
+# Leak defended: oracle poisoning, decorative laws.
+/spec/src/lib.rs @santhsecurity/core-maintainers
+
+# The entire vyre-spec crate.
+# Leak defended: monotonic weakening.
+/spec/ @santhsecurity/core-maintainers
+
+# The CPU reference interpreter (the oracle).
+# Leak defended: oracle poisoning, rigged tests.
+/conform/src/reference/ @santhsecurity/core-maintainers
+
+# The H1..H10 harnesses that drive conformance testing.
+# Leak defended: rigged tests, silent coverage holes.
+/conform/src/verify/harnesses/ @santhsecurity/core-maintainers
+
+# Law-checking infrastructure.
+# Leak defended: decorative laws, no proof for all inputs.
+/conform/src/algebra/laws/ @santhsecurity/core-maintainers
+
+# Future: mass-testing catalog. Protect on creation.
+# Leak defended: contributor-chosen inputs, no proof for all inputs.
+/test-infra/test_catalog.toml @santhsecurity/core-maintainers
+
+# CODEOWNERS itself — contributors must not be able to remove their own restrictions.
+# Leak defended: all seven leaks (meta-gate).
+/.github/CODEOWNERS @santhsecurity/core-maintainers
+
+# Branch protection application script — guards the meta-gate.
+# Leak defended: all seven leaks (meta-gate).
+/scripts/apply-branch-protection.sh @santhsecurity/core-maintainers
+
+# Future: mutation testing script. Protect on creation.
+# Leak defended: rigged tests, silent coverage holes.
+/scripts/mutants.sh @santhsecurity/core-maintainers
+
+# Future: append-only test enforcement script. Protect on creation.
+# Leak defended: rigged tests, silent coverage holes.
+/scripts/append-only.sh @santhsecurity/core-maintainers
+
+# GitHub Actions workflows — CI gates and permissions.
+# Leak defended: all seven leaks (meta-gate).
+/.github/workflows/ @santhsecurity/core-maintainers
+
+# This threat model document — append-only audit trail.
+# Leak defended: all seven leaks (meta-gate, T59 self-reference).
+/coordination/adversary-threat-model.md @santhsecurity/core-maintainers
+
+# Workspace root manifest — controls features, dependencies, and crate topology.
+# Leak defended: oracle poisoning, monotonic weakening.
+/Cargo.toml @santhsecurity/core-maintainers

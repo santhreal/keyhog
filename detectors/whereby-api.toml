@@ -1,0 +1,32 @@
+# Docs: https://docs.whereby.com/reference/authentication
+# Format: Whereby API key - starts with 'Bearer ' or passed as header
+# Verify: https://docs.whereby.com/reference/whereby-rest-api-reference
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "whereby-api"
+name = "Whereby API Key"
+service = "whereby"
+severity = "critical"
+keywords = ["whereby", "WHEREBY", "whereby.com"]
+
+[[detector.patterns]]
+regex = "(?:whereby)[_\\-\\s]?(?:api[_\\-\\s]?key|token)[\"\\'\\s]*[=:][\"\\'\\s]*([a-zA-Z0-9_\\-\\.]{40,})"
+description = "Whereby API key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:WHEREBY[_\\-\\s]?API[_\\-\\s]?KEY|WHEREBY[_\\-\\s]?TOKEN)[\"\\'\\s]*[=:][\"\\'\\s]*([a-zA-Z0-9_\\-\\.]{40,})"
+description = "Whereby API key in environment variable format"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://api.whereby.dev/v1/meetings"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[detector.verify.success]
+status = 200

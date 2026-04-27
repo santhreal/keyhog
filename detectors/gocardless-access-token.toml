@@ -1,0 +1,16 @@
+# Docs: https://developer.gocardless.com/api-reference/
+# Format: Access token is alphanumeric, typically starting with specific prefixes or containing 'live' or 'sandbox'
+# Verify: GET /creditors with Bearer token returns 200 if valid
+# Prefix: live_, sandbox_ (for publishable tokens)
+
+[detector]
+id = "gocardless-access-token"
+name = "GoCardless Access Token"
+service = "gocardless"
+severity = "critical"
+keywords = ["GOCARDLESS_ACCESS_TOKEN", "gocardless_token", "access_token"]
+
+[[detector.patterns]]
+regex = "(?:GOCARDLESS|gocardless)[._-]?(?:ACCESS|access)?[._-]?(?:TOKEN|token)[=:\\s\"'']+([a-zA-Z0-9_-]{30,60})"
+description = "GoCardless access token for API authentication"
+group = 1

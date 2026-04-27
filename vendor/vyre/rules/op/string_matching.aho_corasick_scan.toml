@@ -1,0 +1,9 @@
+op_id = "string_matching.aho_corasick_scan"
+cert_version = "0.5.0"
+wire_format_version = 1
+signature_blake3 = "TBD"
+witness_set_blake3 = "TBD"
+program_blake3 = "TBD"
+allowed_backends = ["wgpu"]
+laws = []
+notes = "Multi-string scanner emitting per-pattern hit_table. Patterns are compiled into a transition table external to the program; kernel is pure lookup."

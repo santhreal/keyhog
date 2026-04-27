@@ -1,0 +1,21 @@
+# Docs: https://developers.hubspot.com/docs/api/private-apps
+# Format: 32 hex characters followed by datacenter suffix like -us1, -eu1
+# Verify: none (legacy API keys deprecated, private apps use tokens now)
+# Prefix: none (hex string with datacenter suffix, requires keyword context)
+
+[detector]
+id = "hubspot-api-key"
+name = "HubSpot API Key"
+service = "hubspot"
+severity = "critical"
+keywords = ["HUBSPOT_API_KEY", "hubspot_api_key", "hapikey", "hubspot.com"]
+
+[[detector.patterns]]
+regex = "(?:HUBSPOT_API_KEY|hubspot_api_key|hapikey)[=:\\s\"']+([a-f0-9]{32}-(?:us|eu|uk)[0-9]{1,2})"
+description = "HubSpot legacy API key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:HUBSPOT|hubspot)[=:\\s\"']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
+description = "HubSpot OAuth token or app ID in UUID format"
+group = 1

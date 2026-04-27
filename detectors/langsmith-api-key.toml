@@ -1,0 +1,15 @@
+# Docs: https://docs.langchain.com/langsmith/create-account-api-key
+# Format: lsv2_ prefix followed by alphanumeric characters and underscores
+# Verify: no public verification endpoint
+# Prefix: lsv2_
+
+[detector]
+id = "langsmith-api-key"
+name = "LangSmith API Key"
+service = "langsmith"
+severity = "high"
+keywords = ["lsv2_", "LANGSMITH_API_KEY", "LANGCHAIN_API_KEY"]
+
+[[detector.patterns]]
+regex = 'lsv2_[a-zA-Z0-9_-]{40,}'
+description = "LangSmith API key (lsv2_ prefix)"

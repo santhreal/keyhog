@@ -1,0 +1,31 @@
+# Docs: https://apireference.getresponse.com/
+# Format: API key passed in X-Auth-Token header, alphanumeric string
+# Verify: GET /v3/accounts with X-Auth-Token header returns 200
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "getresponse-api-key"
+name = "GetResponse API Key"
+service = "getresponse"
+severity = "critical"
+keywords = ["getresponse", "GETRESPONSE", "X-Auth-Token", "api_key"]
+
+[[detector.patterns]]
+regex = '(?:GETRESPONSE|getresponse)[_-]*(?:API|api)?[_-]*(?:KEY|key|TOKEN|token)[=: ]+([a-zA-Z0-9_-]{20,})'
+description = "GetResponse API key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = '(?:X[_-]?Auth[_-]?Token|x[_-]?auth[_-]?token)[=: ]+(?:api[_-]?key )?([a-zA-Z0-9_-]{20,})'
+description = "GetResponse X-Auth-Token header value"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://api.getresponse.com/v3/accounts"
+[detector.verify.success]
+status = 200
+
+[[detector.verify.headers]]
+name = "X-Auth-Token"
+value = "api-key {{match}}"

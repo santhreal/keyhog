@@ -1,0 +1,33 @@
+# Docs: https://docs.medusajs.com/development/api/admin
+# Format: API token configured in medusa-config.js, typically 32+ character alphanumeric
+# Verify: GET /admin/users with x-medusa-access-token header returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "medusa-api-key"
+name = "Medusa API Key"
+service = "medusa"
+severity = "critical"
+keywords = ["medusa", "MEDUSA_API_KEY", "x-medusa-access-token", "MEDUSA_ADMIN"]
+
+[[detector.patterns]]
+regex = "(?:MEDUSA|medusa)[_\\s]?(?:API[_\\s]?KEY|ADMIN[_\\s]?API[_\\s]?KEY)[=:\\s\"']+([a-zA-Z0-9]{32,64})"
+description = "Medusa API key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "x-medusa-access-token[=:\\s\"']+([a-zA-Z0-9]{32,64})"
+description = "Medusa API key in header context"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://api.medusajs.com/admin/users"
+
+[detector.verify.auth]
+type = "header"
+name = "x-medusa-access-token"
+template = "{{match}}"
+
+[detector.verify.success]
+status = 200

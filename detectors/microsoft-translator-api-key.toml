@@ -1,0 +1,38 @@
+# Docs: https://learn.microsoft.com/en-us/azure/cognitive-services/translator/reference/v3-0-reference
+# Format: 32 hex characters (e.g., a1b2c3d4e5f6789012345678abcdefab)
+# Verify: POST /translate with Ocp-Apim-Subscription-Key header
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "microsoft-translator-api-key"
+name = "Microsoft Translator API Key"
+service = "microsoft-translator"
+severity = "high"
+keywords = ["MS_TRANSLATOR_KEY", "AZURE_TRANSLATOR_KEY", "Ocp-Apim-Subscription-Key", "MICROSOFT_TRANSLATOR", "cognitiveservices"]
+
+[[detector.patterns]]
+regex = "(?:MS_TRANSLATOR_KEY|AZURE_TRANSLATOR_KEY|MICROSOFT_TRANSLATOR_KEY|AZURE_COGNITIVE_KEY)[=:\\s\"'']+([a-f0-9]{32})"
+description = "Microsoft Translator API key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "Ocp-Apim-Subscription-Key[:\\s\"'']+([a-f0-9]{32})"
+description = "Microsoft Translator API key in header format"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:api\\.cognitive\\.microsofttranslator\\.com|cognitiveservices\\.azure\\.com).*[=:\\s\"'']+([a-f0-9]{32})"
+description = "Microsoft Translator API key with endpoint context"
+group = 1
+
+[detector.verify]
+method = "POST"
+url = "https://api.cognitive.microsofttranslator.com/translate?api-version=3.0&to=en"
+
+[detector.verify.auth]
+type = "header"
+name = "Ocp-Apim-Subscription-Key"
+template = "{{match}}"
+
+[detector.verify.success]
+status = 400

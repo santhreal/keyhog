@@ -1,0 +1,21 @@
+# Docs: https://docs.passbase.com/
+# Format: X-API-KEY header with Secret or Publishable API key
+# Verify: no public verification endpoint
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "passbase-api-key"
+name = "Passbase API Key"
+service = "passbase"
+severity = "high"
+keywords = ["passbase", "PASSBASE", "X-API-KEY"]
+
+[[detector.patterns]]
+regex = "(?:passbase|PASSBASE)[_\\s]*(api[_\\s]*key|secret[_\\s]*key)[=:;\\s\"'']+([a-zA-Z0-9_-]{20,})"
+description = "Passbase API key with context anchor"
+group = 2
+
+[[detector.patterns]]
+regex = "X-API-KEY[=:;\\s\"'']+([a-zA-Z0-9_-]{20,})"
+description = "X-API-KEY header value (Passbase)"
+group = 1

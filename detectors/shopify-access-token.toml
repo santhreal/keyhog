@@ -1,0 +1,27 @@
+# Docs: https://shopify.dev/docs/apps/build/authentication-authorization/access-tokens
+# Format: Prefix shpca_, shpat_, or shpss_ followed by 32 hex chars
+# Verify: API call to {{shop}}.myshopify.com/admin/api/{version}/shop.json
+# Prefix: shpca_, shpat_, shpss_
+
+[detector]
+id = "shopify-access-token"
+name = "Shopify Access Token"
+service = "shopify"
+severity = "critical"
+keywords = ["shpca_", "shpat_", "shpss_", "shopify"]
+
+[[detector.patterns]]
+regex = 'shpca_[a-f0-9]{32}'
+description = "Shopify custom app access token"
+
+[[detector.patterns]]
+regex = 'shpat_[a-f0-9]{32}'
+description = "Shopify admin API access token"
+
+[[detector.patterns]]
+regex = 'shpss_[a-f0-9]{32}'
+description = "Shopify storefront access token"
+
+# NOTE: live verification disabled. `{{shop}}` was never defined as a
+# capture group or companion. kimi-wave3 §1. To re-enable, add a
+# companion `shop` constrained to actual store handles.

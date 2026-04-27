@@ -1,0 +1,15 @@
+# Docs: https://docs.gitlab.com/ee/api/triggers.html
+# Format: glptt- prefix followed by alphanumeric characters and hyphens (20+ chars)
+# Verify: HTTP POST to /api/v4/projects/:id/trigger/pipeline with token parameter
+# Prefix: glptt-
+
+[detector]
+id = "gitlab-pipeline-trigger-token"
+name = "GitLab Pipeline Trigger Token"
+service = "gitlab"
+severity = "high"
+keywords = ["glptt-", "gitlab"]
+
+[[detector.patterns]]
+regex = 'glptt-[a-zA-Z0-9\-]{20,}'
+description = "GitLab pipeline trigger token (glptt- prefix)"

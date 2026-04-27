@@ -1,0 +1,27 @@
+# Docs: https://docs.portkey.ai/api-reference/inference-api/authentication
+# Format: pk- prefix followed by alphanumeric characters
+# Verify: POST /v1/chat/completions with x-portkey-api-key header
+# Prefix: pk-
+
+[detector]
+id = "portkey-api-key"
+name = "Portkey AI API Key"
+service = "portkey"
+severity = "critical"
+keywords = ["pk-", "PORTKEY_API_KEY", "x-portkey-api-key"]
+
+[[detector.patterns]]
+regex = 'pk-[a-zA-Z0-9]{20,}'
+description = "Portkey AI API key (pk- prefix)"
+
+[detector.verify]
+method = "POST"
+url = "https://api.portkey.ai/v1/chat/completions"
+
+[detector.verify.auth]
+type = "header"
+name = "x-portkey-api-key"
+template = "{{match}}"
+
+[detector.verify.success]
+status = 200

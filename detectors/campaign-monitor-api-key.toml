@@ -1,0 +1,21 @@
+# Docs: https://www.campaignmonitor.com/api/getting-started/
+# Format: 40-character hexadecimal API key used with HTTP Basic Auth
+# Verify: GET /api/v3.3/clients.json with Basic auth (username=api_key, password=x) returns 200
+# Prefix: none (requires context anchoring - hex pattern too generic)
+
+[detector]
+id = "campaign-monitor-api-key"
+name = "Campaign Monitor API Key"
+service = "campaignmonitor"
+severity = "critical"
+keywords = ["campaignmonitor", "CAMPAIGNMONITOR", "campaign_monitor", "createsend"]
+
+[[detector.patterns]]
+regex = '(?:CAMPAIGN[_]*MONITOR|campaign[_]*monitor|CREATE[_]*SEND|createsend)[_]*(?:API|api)?[_]*(?:KEY|key)[=: ]+([a-f0-9]{40})'
+description = "Campaign Monitor API key (40 hex chars) with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = '(?:CAMPAIGN[_]*MONITOR|campaign[_]*monitor)[_]*(?:CLIENT|client)?[_]*(?:ID|id)[=: ]+([a-f0-9]{32})'
+description = "Campaign Monitor Client ID"
+group = 1

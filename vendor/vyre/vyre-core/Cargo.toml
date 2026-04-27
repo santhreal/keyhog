@@ -1,0 +1,74 @@
+[package]
+name = "vyre"
+version = "0.6.0"
+edition.workspace = true
+rust-version.workspace = true
+description = "GPU compute intermediate representation with a standard operation library"
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/vyre"
+readme = "README.md"
+keywords = ["gpu", "ir", "compute", "wgsl", "conformance"]
+categories = ["algorithms", "compilers", "hardware-support"]
+
+[dependencies]
+vyre-driver.workspace = true
+vyre-foundation.workspace = true
+# VISION V1 forward-compat: expose ByteRange at the crate root so
+# new callers can adopt the neutral byte-range name without knowing
+# about the Tier-2.5 crate layout. `text` enables the vyre-foundation
+# dep gate inside vyre-primitives so the From<Match> bridges compile.
+vyre-primitives = { workspace = true, features = ["text"] }
+naga.workspace = true
+vyre-spec.workspace = true
+vyre-macros.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+bytemuck.workspace = true
+blake3.workspace = true
+pollster.workspace = true
+wgpu.workspace = true
+
+rustc-hash.workspace = true
+inventory.workspace = true
+smallvec.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
+tempfile.workspace = true
+proptest.workspace = true
+criterion.workspace = true
+stats_alloc.workspace = true
+
+[build-dependencies]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[features]
+default = []
+
+# V7-EXT-032: wgpu_subgroups removed — feature had zero cfg(feature = "wgpu_subgroups")
+# occurrences in source. Subgroup gating now lives under the
+# `subgroup-ops` feature in vyre-intrinsics/Cargo.toml where the
+# gated inventory submits actually live (per Migration 4).
+
+[lints]
+workspace = true
+
+# Removed 2026-04-21 by Migration 4 — test imports
+# `vyre_ops::logical::and::op::cpu_and`, a legacy
+# CPU-buffer API that does not exist under the renamed
+# vyre-intrinsics scope. The `and` op now lives in
+# `vyre-libs::logical::and` as a `fn(...) -> Program`
+# builder; the adversarial test needs to be rewritten against
+# that shape (tracked as a Phase F finding).
+# [[test]]
+# name = "test_and_max_value"
+# path = "../tests/adversarial/test_and_max_value.rs"

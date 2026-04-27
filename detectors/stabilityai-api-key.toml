@@ -1,0 +1,26 @@
+# Docs: https://platform.stability.ai/docs/api-reference
+# Format: sk- followed by 48 alphanumeric characters
+# Verify: GET to api.stability.ai/v1/user/balance with Bearer token
+# Prefix: sk-
+
+[detector]
+id = "stabilityai-api-key"
+name = "Stability AI API Key"
+service = "stabilityai"
+severity = "critical"
+keywords = ["sk-", "stability", "stabilityai"]
+
+[[detector.patterns]]
+regex = 'sk-[a-zA-Z0-9]{48}'
+description = "Stability AI API key (sk-)"
+
+[detector.verify]
+method = "GET"
+url = "https://api.stability.ai/v1/user/balance"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[detector.verify.success]
+status = 200

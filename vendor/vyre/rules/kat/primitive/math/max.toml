@@ -1,0 +1,6 @@
+op_id = "primitive.math.max"
+
+[[golden]]
+input = "0500000003000000"
+expected = "05000000"
+reason = "max(5, 3) = 5"

@@ -1,0 +1,470 @@
+<!DOCTYPE HTML>
+<html lang="en" class="rust sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Naming - The vyre Book</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="The GPU compute IR with a conformance prover">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../../favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="../../favicon-8114d1fc.png">
+        <link rel="stylesheet" href="../../css/variables-8adf115d.css">
+        <link rel="stylesheet" href="../../css/general-2459343d.css">
+        <link rel="stylesheet" href="../../css/chrome-ae938929.css">
+        <link rel="stylesheet" href="../../css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../../fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="../../highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="../../tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="../../ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "../../";
+            const default_light_theme = "rust";
+            const default_dark_theme = "navy";
+            window.path_to_searchindex_js = "../../searchindex-bc7bdb82.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="../../toc-16d598fb.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('rust')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="../../toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">The vyre Book</h1>
+
+                    <div class="right-buttons">
+                        <a href="../../print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/santhsecurity/vyre" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/santhsecurity/vyre/edit/main/core/docs/./testing/writing/naming.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                            <span class=fa-svg id="git-edit-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M421.7 220.3l-11.3 11.3-22.6 22.6-205 205c-6.6 6.6-14.8 11.5-23.8 14.1L30.8 511c-8.4 2.5-17.5 .2-23.7-6.1S-1.5 489.7 1 481.2L38.7 353.1c2.6-9 7.5-17.2 14.1-23.8l205-205 22.6-22.6 11.3-11.3 33.9 33.9 62.1 62.1 33.9 33.9zM96 353.9l-9.3 9.3c-.9 .9-1.6 2.1-2 3.4l-25.3 86 86-25.3c1.3-.4 2.5-1.1 3.4-2l9.3-9.3H112c-8.8 0-16-7.2-16-16V353.9zM453.3 19.3l39.4 39.4c25 25 25 65.5 0 90.5l-14.5 14.5-22.6 22.6-11.3 11.3-33.9-33.9-62.1-62.1L314.3 67.7l11.3-11.3 22.6-22.6 14.5-14.5c25-25 65.5-25 90.5 0z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="naming"><a class="header" href="#naming">Naming</a></h1>
+<h2 id="why-naming-matters-more-than-it-seems"><a class="header" href="#why-naming-matters-more-than-it-seems">Why naming matters more than it seems</a></h2>
+<p>When there are fifteen tests in a file, naming is a convenience.
+Contributors can scan the file visually and find what they need.
+When there are fifteen hundred, naming is infrastructure.
+Contributors rely on <code>cargo test &lt;substring&gt;</code> to filter, on
+directory listings to navigate, on failure output to understand
+what broke. A naming scheme that works for fifteen tests can
+fail silently for fifteen hundred, and vyre’s test suite is
+expected to grow past fifteen thousand.</p>
+<p>The naming convention in this chapter is not about aesthetics.
+It is about making the suite navigable at scale, making failures
+diagnosable from the test runner output, and making <code>cargo test</code>
+filtering predictable. Consistency across the whole suite is the
+point; any consistent convention would work, but vyre has picked
+one and this chapter describes it.</p>
+<h2 id="the-convention"><a class="header" href="#the-convention">The convention</a></h2>
+<p>Every test in vyre follows the pattern:</p>
+<pre><code>test_&lt;subject&gt;_&lt;property&gt;[_&lt;oracle&gt;]
+</code></pre>
+<ul>
+<li><code>test_</code> is the standard Rust prefix for test functions. Always
+present.</li>
+<li><code>&lt;subject&gt;</code> is what the test exercises: the op, the validator
+rule, the subsystem, the feature.</li>
+<li><code>&lt;property&gt;</code> is the specific claim being verified.</li>
+<li><code>&lt;oracle&gt;</code> is optional and, when present, names the oracle
+that provided the expected value.</li>
+</ul>
+<p>The parts are joined with underscores. The whole name is
+snake_case. Names are descriptive, not cute. Names are long
+enough to be unambiguous and short enough to type.</p>
+<h2 id="examples-by-category"><a class="header" href="#examples-by-category">Examples by category</a></h2>
+<h3 id="primitive-op-tests"><a class="header" href="#primitive-op-tests">Primitive op tests</a></h3>
+<pre><code>test_add_identity_zero_zero_spec_table
+test_add_right_identity_dead_beef_plus_zero
+test_add_overflow_u32_max_plus_one_wraps_to_zero
+test_add_commutative_dead_beef_cafe_babe
+test_add_associative_triple
+test_add_bit_pattern_alternation
+test_xor_self_inverse_produces_zero
+test_shl_by_thirty_two_masks_to_zero
+test_mul_zero_is_absorbing
+</code></pre>
+<p>The subject is always the op name. The property is the specific
+claim. The oracle is named when it is not obvious: <code>spec_table</code>
+for specific-input tests, implied law names for law tests.</p>
+<h3 id="validation-tests"><a class="header" href="#validation-tests">Validation tests</a></h3>
+<pre><code>test_v001_rejects_duplicate_buffer_name
+test_v001_accepts_distinct_buffer_names
+test_v010_rejects_barrier_under_if_branch
+test_v010_rejects_barrier_under_while_loop
+test_v010_accepts_barrier_in_uniform_block
+test_v017_rejects_program_with_ten_thousand_and_one_nodes
+test_v017_accepts_program_with_ten_thousand_nodes
+</code></pre>
+<p>The subject is always <code>v&lt;NNN&gt;</code> where NNN is the rule number.
+The property is always “rejects <scenario>” or “accepts
+<scenario>” — no exceptions. This makes the separability
+meta-test’s enumeration straightforward and the mental model
+uniform across the category.</scenario></scenario></p>
+<h3 id="lowering-tests"><a class="header" href="#lowering-tests">Lowering tests</a></h3>
+<pre><code>test_lowering_of_binop_add
+test_lowering_of_binop_sub
+test_lowering_of_atomic_add
+test_lowering_of_workgroup_buffer
+test_every_expr_variant_is_tested
+test_buffer_access_has_bounds_check
+test_shl_has_shift_mask
+</code></pre>
+<p>The subject is the construct being lowered. The property is the
+aspect of the lowering being verified. Meta-tests use descriptive
+names that hint at their meta nature (<code>every_expr_variant_is_tested</code>).</p>
+<h3 id="adversarial-tests"><a class="header" href="#adversarial-tests">Adversarial tests</a></h3>
+<pre><code>test_deeply_nested_program_does_not_panic
+test_truncated_wire_format_returns_error
+test_oom_during_validation_returns_error
+test_out_of_range_buffer_index_does_not_ub
+test_fuzz_corpus_entry_a3f2e1b_does_not_panic
+</code></pre>
+<p>Adversarial tests almost always contain the word <code>does_not_panic</code>
+or similar, which makes the intent obvious at a glance. Fuzz
+corpus replay tests include an identifier from the corpus file.</p>
+<h3 id="property-tests"><a class="header" href="#property-tests">Property tests</a></h3>
+<pre><code>fn wire_format_roundtrip_is_identity(program in arb_program()) { ... }
+fn validation_soundness_for_random_programs(program in arb_program()) { ... }
+fn determinism_across_runs(program in arb_program(), runs in 2..100usize) { ... }
+</code></pre>
+<p>Property test names are statements of the invariant. They omit
+the <code>test_</code> prefix because they are inside <code>proptest!</code> blocks
+and the macro adds its own infrastructure. The name reads as
+the invariant being asserted.</p>
+<h3 id="regression-tests"><a class="header" href="#regression-tests">Regression tests</a></h3>
+<pre><code>#[test]
+fn regression_shl_by_thirty_two_produces_zero() { ... }
+
+#[test]
+fn regression_wire_decode_empty_loop_does_not_panic() { ... }
+</code></pre>
+<p>Regression test functions are named <code>regression_&lt;short_description&gt;</code>
+and live in a file named <code>YYYY-MM-DD-&lt;short_description&gt;.rs</code>. The
+file name carries the date; the function name carries the short
+description. Together they make the regression searchable by
+date or by symptom.</p>
+<h3 id="backend-tests"><a class="header" href="#backend-tests">Backend tests</a></h3>
+<pre><code>test_add_cross_backend_reference_equivalence
+test_canonical_programs_are_deterministic_across_runs
+test_reference_interp_agrees_with_cpu_refs
+test_every_registered_backend_is_exercised
+</code></pre>
+<p>Backend test names mention the word <code>backend</code>, <code>cross_backend</code>,
+or <code>reference</code> to distinguish them from other categories that
+happen to exercise similar infrastructure.</p>
+<h3 id="benchmarks"><a class="header" href="#benchmarks">Benchmarks</a></h3>
+<pre><code>bench_dispatch_single_add
+bench_validate_one_thousand_node_program
+bench_wire_encode_canonical_program
+</code></pre>
+<p>Benchmarks use the prefix <code>bench_</code> instead of <code>test_</code> because
+criterion looks for that prefix. The <code>bench_&lt;subject&gt;_&lt;what&gt;</code>
+pattern mirrors the test convention.</p>
+<h2 id="what-names-must-do"><a class="header" href="#what-names-must-do">What names must do</a></h2>
+<p>A test name must:</p>
+<ul>
+<li><strong>Uniquely identify the test within its file.</strong> Two tests with
+the same name cannot coexist.</li>
+<li><strong>Identify the subject.</strong> A reader who sees the name knows
+what code is being exercised.</li>
+<li><strong>Identify the property.</strong> A reader who sees the name knows
+what claim is being verified.</li>
+<li><strong>Be matchable by <code>cargo test</code> substring filters.</strong> A reader
+who wants to run “all Add tests” types <code>cargo test test_add_</code>
+and the runner filters to the right set.</li>
+<li><strong>Be searchable in logs.</strong> When a test fails in CI, the name
+appears in the log, and a reader can grep for the name to
+find the test file.</li>
+</ul>
+<p>A test name must not:</p>
+<ul>
+<li><strong>Be ambiguous.</strong> <code>test_add</code> does not say what about Add is
+being tested. Always include a property.</li>
+<li><strong>Duplicate information from the filename.</strong> <code>test_add_something</code>
+in <code>add.rs</code> does not need to repeat <code>add</code> in every test name
+(but the convention says to include it anyway for
+consistency).</li>
+<li><strong>Encode implementation details.</strong> <code>test_add_uses_helper_x</code>
+names a helper, not a property. Implementation details change;
+properties do not.</li>
+<li><strong>Be cute.</strong> <code>test_add_works</code> is cute. <code>test_add_produces_expected_sum_on_specific_inputs</code>
+is not cute but it is clear.</li>
+</ul>
+<h2 id="length"><a class="header" href="#length">Length</a></h2>
+<p>Test names in vyre are long. <code>test_add_u32_max_plus_u32_max_wraps_to_max_minus_one</code>
+is not unusual. The length is the price of clarity, and vyre
+pays it because the alternative is test names that do not say
+what they test.</p>
+<p>The Rust test runner handles long names without truncation. The
+<code>cargo test &lt;substring&gt;</code> filter handles any substring, so the
+longer name is not harder to invoke. Editors and IDEs offer
+autocompletion for long names. The only cost is horizontal
+space in source files, which is negligible.</p>
+<p>A name longer than 80 characters is worth splitting into a
+shorter name plus a doc comment that expands on it. Most names
+fit in 60 characters, which is under any reasonable line-length
+limit.</p>
+<h2 id="consistency-within-a-file"><a class="header" href="#consistency-within-a-file">Consistency within a file</a></h2>
+<p>Tests in the same file should use consistent naming across
+related tests. If three tests verify variations on the same
+property, their names should differ in the varying part and
+agree on the rest:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// GOOD — consistent
+fn test_add_identity_zero_plus_zero() { ... }
+fn test_add_identity_dead_beef_plus_zero() { ... }
+fn test_add_identity_zero_plus_cafe_babe() { ... }
+
+// BAD — inconsistent
+fn test_add_zero_is_identity() { ... }
+fn test_add_identity_right() { ... }
+fn test_zero_left_of_add_preserves_value() { ... }
+<span class="boring">}</span></code></pre>
+<p>The good version makes it clear all three tests are identity
+tests with different operands. The bad version makes the reader
+do extra work to see the relationship.</p>
+<h2 id="naming-rules-for-specific-situations"><a class="header" href="#naming-rules-for-specific-situations">Naming rules for specific situations</a></h2>
+<p>Some situations call for specific naming conventions beyond the
+general pattern.</p>
+<h3 id="tests-using-hex-literals"><a class="header" href="#tests-using-hex-literals">Tests using hex literals</a></h3>
+<p>When the inputs are hex literals, the name should include a
+short description of the pattern rather than the full hex
+value. <code>test_add_dead_beef_plus_cafe_babe</code> is preferred to
+<code>test_add_0xDEADBEEF_plus_0xCAFEBABE</code> because underscores
+in hex constants make the name harder to read.</p>
+<h3 id="tests-covering-boundaries"><a class="header" href="#tests-covering-boundaries">Tests covering boundaries</a></h3>
+<p>Boundary tests include the boundary name in the test name:
+<code>test_add_u32_max_plus_one_wraps_to_zero</code>, <code>test_shl_by_thirty_two_masks_to_zero</code>.
+The boundary is what makes the test interesting, so the name
+highlights it.</p>
+<h3 id="tests-exercising-a-specific-mutation-class"><a class="header" href="#tests-exercising-a-specific-mutation-class">Tests exercising a specific mutation class</a></h3>
+<p>When a test was specifically written to kill a mutation class
+discovered by the mutation gate, the name should hint at the
+mutation: <code>test_add_distinguishes_from_sub_on_overflow</code>. The
+name makes the intent explicit so future contributors know why
+the test exists.</p>
+<h3 id="meta-tests"><a class="header" href="#meta-tests">Meta-tests</a></h3>
+<p>Meta-tests that iterate over enum variants or enumerate the
+suite for coverage use the prefix <code>test_every_</code> or
+<code>test_no_&lt;undesired_property&gt;</code>:</p>
+<pre><code>test_every_expr_variant_is_tested
+test_every_v_rule_has_a_must_reject_test
+test_no_test_uses_tautological_oracle
+</code></pre>
+<h2 id="renaming"><a class="header" href="#renaming">Renaming</a></h2>
+<p>If a test is named wrong, rename it. Renames are cheap in Rust:
+the compiler finds every reference, and there should be very
+few (tests are usually only referenced by their own file). A
+rename PR has a clear scope and is easy to review.</p>
+<p>What is not acceptable is leaving a misleading name “because it
+is already there.” Misleading names compound: future contributors
+follow the pattern of the existing names and introduce new tests
+that are also misleading. Fix names when you notice them.</p>
+<h2 id="summary"><a class="header" href="#summary">Summary</a></h2>
+<p>Tests in vyre follow <code>test_&lt;subject&gt;_&lt;property&gt;[_&lt;oracle&gt;]</code>.
+Names are descriptive, consistent within files, long enough to
+be unambiguous, and mechanically filterable. Naming is
+infrastructure, not aesthetics. The convention serves
+navigability at the scale vyre expects to reach.</p>
+<p>Next: <a href="support-utilities.html">Support utilities in writing</a> —
+how to build helpers that clarify rather than obscure.</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../../testing/writing/decision-tree.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="../../testing/writing/oracles-in-practice.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../../testing/writing/decision-tree.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="../../testing/writing/oracles-in-practice.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="../../elasticlunr-ef4e11c1.min.js"></script>
+        <script src="../../mark-09e88c2c.min.js"></script>
+        <script src="../../searcher-c2a407aa.js"></script>
+
+        <script src="../../clipboard-1626706a.min.js"></script>
+        <script src="../../highlight-abc7f01d.js"></script>
+        <script src="../../book-a0b12cfe.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+
+    </div>
+    </body>
+</html>

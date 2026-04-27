@@ -1,0 +1,26 @@
+# Docs: https://developers.cm.com/messaging/docs/channels-authentication
+# Format: Product Token (UUID with hyphens) or API Key for OAuth
+# Verify: POST /v1.0/message with X-CM-PRODUCTTOKEN header
+# Prefix: none (UUID format, requires context anchoring)
+
+[detector]
+id = "cmcom-api-key"
+name = "CM.com API Credentials"
+service = "cmcom"
+severity = "critical"
+keywords = ["cm.com", "CMCOM", "cmcom", "product_token", "X-CM-PRODUCTTOKEN"]
+
+[[detector.patterns]]
+regex = '''(?:cm|CM)[_.-]?(?:com|COM)?[_.-]?(?:product|PRODUCT)?[_.-]?(?:token|TOKEN)?[=:\s"\' ]+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})'''
+description = "CM.com Product Token (UUID format)"
+group = 1
+
+[[detector.patterns]]
+regex = '''X-CM-PRODUCTTOKEN[=:\s"\' ]+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})'''
+description = "CM.com Product Token in header"
+group = 1
+
+[[detector.patterns]]
+regex = '''(?:cm|CM)[_.-]?(?:com|COM)?[_.-]?(?:api|API)?[_.-]?(?:key|KEY)?[=:\s"\' ]+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})'''
+description = "CM.com API Key (UUID format)"
+group = 1

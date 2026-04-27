@@ -1,0 +1,32 @@
+# Docs: https://apidocs.polytomic.com/guides/obtaining-api-keys
+# Format: Polytomic API key, UUID format passed as Bearer token
+# Verify: GET /identity with Bearer token returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "polytomic-api-key"
+name = "Polytomic API Key"
+service = "polytomic"
+severity = "high"
+keywords = ["POLYTOMIC", "polytomic", "POLYTOMIC_API_KEY", "POLYTOMIC_TOKEN"]
+
+[[detector.patterns]]
+regex = "(?:POLYTOMIC)[_.]?(?:API[._-]?KEY|TOKEN)[=:\\s\"'']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
+description = "Polytomic API key UUID format with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:polytomic)[_.]?(?:api[._-]?key|token)[=:\\s\"'']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
+description = "Polytomic API key lowercase context anchor"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://app.polytomic.com/api/identity"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[detector.verify.success]
+status = 200

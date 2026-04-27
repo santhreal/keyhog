@@ -1,0 +1,36 @@
+# Docs: https://help.sap.com/docs/cloud-foundry/63f0b8af17584cbd99ddc2d1baa47600/e815ca26f4f34b259165956d37884f76.html
+# Format: OAuth2 client credentials or API key for SAP Cloud Platform
+# Verify: no public verification endpoint
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "sap-api-key"
+name = "SAP API Key"
+service = "sap"
+severity = "critical"
+keywords = ["sap", "SAP_CLIENT_ID", "SAP_CLIENT_SECRET", "SAP_API_KEY"]
+
+[[detector.patterns]]
+regex = "(?:sap)[._-]?(?:client[_-]?id)[=:\\s\"'']+([a-zA-Z0-9_-]{10,})"
+description = "SAP OAuth2 client ID with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:sap)[._-]?(?:client[_-]?secret)[=:\\s\"'']+([a-zA-Z0-9_-]{20,})"
+description = "SAP OAuth2 client secret with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:sap)[._-]?(?:api[_-]?key|token)[=:\\s\"'']+([a-zA-Z0-9_-]{20,})"
+description = "SAP API key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:sap)[._-]?(?:username|user)[=:\\s\"'']+([a-zA-Z0-9_-]+)"
+description = "SAP username with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:sap)[._-]?(?:password|pass|pwd)[=:\\s\"'']+([a-zA-Z0-9!@#$%^&*._-]{8,})"
+description = "SAP password with context anchor"
+group = 1

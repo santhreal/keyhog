@@ -1,0 +1,30 @@
+# Docs: https://developers.notion.com/reference/authentication
+# Format: secret_ prefix followed by 43 alphanumeric characters
+# Verify: Bearer token sent to api.notion.com/v1/search endpoint, returns 200 on success
+# Prefix: secret_
+
+[detector]
+id = "notion-api-key"
+name = "Notion API Key"
+service = "notion"
+severity = "high"
+keywords = ["secret_", "notion", "NOTION_API_KEY"]
+
+[[detector.patterns]]
+regex = 'secret_[a-zA-Z0-9]{43}'
+description = "Notion API key (secret_ prefix, 43 chars)"
+
+[detector.verify]
+method = "POST"
+url = "https://api.notion.com/v1/search"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[detector.verify.success]
+status = 200
+
+[[detector.verify.metadata]]
+name = "results"
+json_path = "results"

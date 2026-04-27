@@ -1,0 +1,15 @@
+# Docs: https://www.pubnub.com/docs/general/setup/connect-to-pubnub
+# Format: Publish key starting with 'pub-c-' followed by a UUID (8-4-4-4-12 hex pattern)
+# Verify: Must be paired with subscribe key; used for publishing messages to PubNub channels
+# Prefix: pub-c-
+
+[detector]
+id = "pubnub-publish-key"
+name = "PubNub Publish Key"
+service = "pubnub"
+severity = "medium"
+keywords = ["pub-c-"]
+
+[[detector.patterns]]
+regex = 'pub-c-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}'
+description = "PubNub publish key (UUID format with pub-c- prefix)"

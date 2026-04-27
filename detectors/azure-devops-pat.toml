@@ -1,0 +1,33 @@
+# Docs: https://docs.microsoft.com/en-us/azure/devops/organizations/accounts/use-personal-access-tokens-to-authenticate
+# Format: 52 character base64-like string (no unique prefix)
+# Verify: GET /_apis/connectionData with Basic auth (token as username)
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "azure-devops-pat"
+name = "Azure DevOps Personal Access Token"
+service = "azure-devops"
+severity = "critical"
+keywords = ["azure", "devops", "AZURE_DEVOPS", "ADO_PAT", "vsopenapi"]
+
+[[detector.patterns]]
+regex = "(?:azure[_-]?devops|AZURE[_-]?DEVOPS|ado[_-]?pat|ADO[_-]?PAT)[=:\\s\"'']+([a-zA-Z0-9]{52})"
+description = "Azure DevOps PAT with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:vsopenapi|VSOPENAPI)[=:\\s\"'']+([a-zA-Z0-9]{52})"
+description = "Azure DevOps PAT (vsopenapi context)"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://dev.azure.com/_apis/connectionData"
+
+[detector.verify.auth]
+type = "basic"
+username = "match"
+password = ""
+
+[detector.verify.success]
+status = 200

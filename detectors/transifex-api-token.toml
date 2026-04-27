@@ -1,0 +1,31 @@
+# Docs: https://developers.transifex.com/reference/api-authentication
+# Format: Bearer token or username:password (API token acts as password)
+# Verify: GET /api/3/ with Authorization header
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "transifex-api-token"
+name = "Transifex API Token"
+service = "transifex"
+severity = "high"
+keywords = ["TRANSIFEX", "TRANSIFEX_API_KEY", "TRANSIFEX_TOKEN", "transifex.com"]
+
+[[detector.patterns]]
+regex = "(?:TRANSIFEX|TRANSIFEX_API|TRANSIFEX_TOKEN)[_\\s]?(?:API[_\\s]?(?:KEY|TOKEN)|TOKEN|KEY)?[=:\\s\"'']+([a-zA-Z0-9_-]{40,})"
+description = "Transifex API token with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "transifex\\.com.*[=:\\s\"'']+([a-zA-Z0-9_-]{40,})"
+description = "Transifex API token with domain context"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:TRANSIFEX|TRANSIFEX_API)[_\\s]?USERNAME[=:\\s\"'']+([a-zA-Z0-9_-]+)"
+description = "Transifex username for API authentication"
+group = 1
+
+[[detector.companions]]
+name = "Transifex API Password/Token"
+regex = "(?:TRANSIFEX|TRANSIFEX_API)[_\\s]?PASSWORD[=:\\s\"'']+([a-zA-Z0-9_-]{40,})"
+within_lines = 5

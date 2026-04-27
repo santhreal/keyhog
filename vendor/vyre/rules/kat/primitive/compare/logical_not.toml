@@ -1,0 +1,11 @@
+op_id = "primitive.compare.logical_not"
+
+[[golden]]
+input = "00000000"
+expected = "01000000"
+reason = "logical_not(0) = 1 (zero is false, NOT false is true)"
+
+[[golden]]
+input = "2a000000"
+expected = "00000000"
+reason = "logical_not(42) = 0 (non-zero is true, NOT true is false)"

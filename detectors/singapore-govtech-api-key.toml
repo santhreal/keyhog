@@ -1,0 +1,26 @@
+# Docs: https://www.developer.tech.gov.sg/products/categories/government/ndaas/overview.html
+# Format: API key for Singapore Government Developer Portal services
+# Verify: No public verification endpoint (requires government account)
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "singapore-govtech-api-key"
+name = "Singapore GovTech API Key"
+service = "singapore-govtech"
+severity = "high"
+keywords = ["GOVTECH", "TECH.GOV.SG", "SG-API", "developer.tech.gov.sg"]
+
+[[detector.patterns]]
+regex = "(?:GOVTECH|SG|singapore)[_.-]?(?:API[_-]?KEY|api_key)[\\s\"''=:]+([a-zA-Z0-9]{32,64})"
+description = "Singapore GovTech API key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:developer\\.tech\\.gov\\.sg).{0,20}(?:key|token)[\\s\"''=:]+([a-zA-Z0-9]{32,64})"
+description = "Singapore Developer Portal API key"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:SG-API|SG_API|sg-api)[\\s\"''=:]+([a-zA-Z0-9]{32,48})"
+description = "Singapore Government API key"
+group = 1

@@ -1,0 +1,25 @@
+# Docs: https://octopus.com/docs/octopus-rest-api/getting-started
+# Format: API-XXXXXXXXXXXXXXXXXX - starts with "API-" prefix followed by alphanumeric
+# Verify: GET /api with X-Octopus-ApiKey header returns 200 if valid
+# Prefix: API-
+
+[detector]
+id = "octopus-deploy-api-key"
+name = "Octopus Deploy API Key"
+service = "octopus-deploy"
+severity = "critical"
+keywords = ["API-", "OCTOPUS_API_KEY", "X-Octopus-ApiKey"]
+
+[[detector.patterns]]
+regex = "API-[A-Z0-9]{16,}"
+description = "Octopus Deploy API key with API- prefix"
+
+[[detector.patterns]]
+regex = "(?:OCTOPUS[_-]API[_-]KEY|OCTOPUS[_-]KEY)[=:\\s\"'']+(API-[A-Z0-9]{16,})"
+description = "Octopus Deploy API key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "X-Octopus-ApiKey[=:\\s\"'']+(API-[A-Z0-9]{16,})"
+description = "Octopus Deploy X-Octopus-ApiKey header"
+group = 1

@@ -1,0 +1,28 @@
+# Docs: https://www.assemblyai.com/docs/api-reference/overview
+# Format: 32-character hexadecimal string with no unique prefix
+# Verify: GET /v2/transcript with Authorization header returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "assemblyai-api-key"
+name = "AssemblyAI API Key"
+service = "assemblyai"
+severity = "high"
+keywords = ["ASSEMBLYAI_API_KEY", "assemblyai"]
+
+[[detector.patterns]]
+regex = "(?:ASSEMBLYAI|assemblyai)[=:\\s\"'']+([a-f0-9]{32})"
+description = "AssemblyAI API key with context anchor"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://api.assemblyai.com/v2/transcript"
+
+[detector.verify.auth]
+type = "header"
+name = "Authorization"
+template = "{{match}}"
+
+[detector.verify.success]
+status = 200

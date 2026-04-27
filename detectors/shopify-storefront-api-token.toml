@@ -1,0 +1,17 @@
+# Docs: https://shopify.dev/docs/api/storefront
+# Format: shpss_ prefix followed by 32 hexadecimal characters
+# Verify: POST to {{shop}}.myshopify.com/api/2024-01/graphql.json with X-Shopify-Storefront-Access-Token header
+# Prefix: shpss_
+
+[detector]
+id = "shopify-storefront-api-token"
+name = "Shopify Storefront API Token"
+service = "shopify"
+severity = "critical"
+keywords = ["shpss_", "storefront", "SHOPIFY_STOREFRONT"]
+
+[[detector.patterns]]
+regex = 'shpss_[a-f0-9]{32}'
+description = "Shopify Storefront API access token (shpss_ prefix)"
+
+# NOTE: live verification disabled. `{{shop}}` was undefined. kimi-wave3 §1.

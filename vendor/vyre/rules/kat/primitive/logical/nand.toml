@@ -1,0 +1,15 @@
+op_id = "primitive.logical.nand"
+
+[[kat]]
+input = "0100000001000000"
+expected = "00000000"
+source = "hand-verified reference vector from Rust semantics"
+
+[[adversarial]]
+input = ""
+reason = "empty input exercises validation and boundary handling"
+
+[[golden]]
+input = "0100000001000000"
+expected = "00000000"
+reason = "nand(1,1)=0 on truthy bits"

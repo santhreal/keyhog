@@ -1,0 +1,21 @@
+# Docs: https://supabase.com/docs/guides/api/api-keys
+# Format: eyJ... JWT with HS256 header (service_role or anon key)
+# Verify: no public verification endpoint (requires Supabase instance)
+# Prefix: eyJ
+
+[detector]
+id = "supabase-service-key"
+name = "Supabase Service Key"
+service = "supabase"
+severity = "critical"
+keywords = ["supabase", "SUPABASE_SERVICE_KEY", "service_role", "SERVICE_ROLE"]
+
+[[detector.patterns]]
+regex = '(?:SUPABASE_SERVICE_KEY|service_role)[=:\s"]+(eyJ[a-zA-Z0-9_-]+\.eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+)'
+description = "Supabase service key JWT with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = '(?:supabase|SUPABASE)[_\s]*(?:service|SERVICE)[_\s]*(?:key|KEY)[=:\s"]+(eyJ[a-zA-Z0-9_-]+\.eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+)'
+description = "Supabase service key from environment variable"
+group = 1

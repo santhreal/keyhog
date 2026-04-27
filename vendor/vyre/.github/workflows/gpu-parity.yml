@@ -1,0 +1,86 @@
+name: GPU Parity + Determinism
+
+on:
+  pull_request:
+    paths:
+      - 'libs/performance/matching/vyre/**'
+  push:
+    branches: [main]
+    paths:
+      - 'libs/performance/matching/vyre/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: libs/performance/matching/vyre
+
+env:
+  CARGO_TERM_COLOR: always
+  WGPU_BACKEND: vulkan
+  VYRE_CONFORM_REQUIRE_GPU: "1"
+
+jobs:
+  gpu-adapter-probe:
+    name: Probe real GPU adapter
+    runs-on: [self-hosted, gpu-5090]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify NVIDIA GPU
+        run: |
+          if ! command -v nvidia-smi >/dev/null 2>&1; then
+            echo "::error::nvidia-smi is missing on a GPU-required runner."
+            exit 1
+          fi
+          nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader
+
+  driver-contracts:
+    name: WGPU backend contracts
+    needs: gpu-adapter-probe
+    runs-on: [self-hosted, gpu-5090]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: capability + async dispatch contracts
+        run: cargo test -p vyre-driver-wgpu --test capability_contract --test async_dispatch_contract -- --nocapture
+
+  composition-parity-gpu:
+    name: Composition parity on real GPU
+    needs: gpu-adapter-probe
+    runs-on: [self-hosted, gpu-5090]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Run composition parity
+        run: cargo test -p vyre-libs --release --features vyre_wgpu --test op_pairwise pairwise_composition_parity -- --nocapture
+
+  determinism-stress-gpu:
+    name: Determinism stress on real GPU
+    needs: gpu-adapter-probe
+    runs-on: [self-hosted, gpu-5090]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Run determinism stress
+        run: cargo test -p vyre-driver-wgpu --release --test gap_determinism_contract -- --nocapture
+
+  mandatory-gpu-enforcer:
+    name: Mandatory GPU enforcement
+    needs: gpu-adapter-probe
+    runs-on: [self-hosted, gpu-5090]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Run GPU mandatory tests
+        run: cargo test -p vyre-conform-runner --release --features gpu --test parity_matrix --test ulp_audit -- --nocapture

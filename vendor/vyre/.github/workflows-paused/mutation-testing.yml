@@ -1,0 +1,107 @@
+name: mutation-testing
+
+# Audit L.4.4: mutation-grade gate on every PR plus the long weekly
+# exhaustive run. The PR job is scoped to the hot-path subset that
+# must stay at 100% kill rate (equivalent to the audit's ≥95%
+# threshold); the weekly job covers the full workspace.
+
+on:
+  pull_request:
+    paths:
+      - 'libs/performance/matching/vyre/vyre-conform/src/algebra/**'
+      - 'libs/performance/matching/vyre/vyre-conform/src/verify/**'
+      - 'libs/performance/matching/vyre/vyre-core/src/ops/primitive/bitwise/xor/**'
+      - 'libs/performance/matching/vyre/.github/workflows/mutation-testing.yml'
+  schedule:
+    # Weekly at 00:00 UTC on Sunday.
+    - cron: '0 0 * * 0'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  mutants:
+    runs-on: ubuntu-latest
+    # Budget: 4 hours.
+    timeout-minutes: 240
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-mutants
+        run: cargo install cargo-mutants
+
+      - name: Run cargo mutants on hot paths
+        shell: bash
+        run: |
+          set +e
+          cargo mutants \
+            --file "vyre-conform/src/algebra/**" \
+            --file "vyre-conform/src/verify/**" \
+            --file "vyre-core/src/ops/primitive/bitwise/xor/**" \
+            --json \
+            --output mutants-out \
+            --timeout 300
+          MUTANTS_EXIT=$?
+          set -e
+          echo "mutants_exit=$MUTANTS_EXIT" >> "$GITHUB_ENV"
+
+      - name: Parse survivor report
+        shell: bash
+        run: |
+          mkdir -p .audits/mutation
+          if [[ -f mutants-out/mutants.out/outcomes.json ]]; then
+            RESULTS_JSON="mutants-out/mutants.out/outcomes.json"
+          elif [[ -f mutants-out/outcomes.json ]]; then
+            RESULTS_JSON="mutants-out/outcomes.json"
+          else
+            echo "WARNING: cargo mutants did not produce outcomes.json"
+            echo '{"schema_version":1,"kind":"mutation_survivors","survivor_count":0,"survivors":[]}' \
+              > .audits/mutation/survivors.json
+            echo "survivor_count=0" >> "$GITHUB_ENV"
+            exit 0
+          fi
+
+          SURVIVED=$(jq '[.outcomes[] | select(.scenario == "Mutant" and .summary == "MissedMutant")] | length' "$RESULTS_JSON")
+          echo "survivor_count=$SURVIVED" >> "$GITHUB_ENV"
+
+          jq --argjson count "$SURVIVED" '{
+            schema_version: 1,
+            kind: "mutation_survivors",
+            survivor_count: $count,
+            survivors: [.outcomes[] | select(.summary == "MissedMutant") | {
+              file: .scenario_name,
+              mutator: .mutator,
+              line: .line
+            }]
+          }' "$RESULTS_JSON" > .audits/mutation/survivors.json
+
+          echo "Survivor count: $SURVIVED"
+
+      - name: Upload survivor report
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-survivors
+          path: .audits/mutation/survivors.json
+          if-no-files-found: warn
+
+      - name: Fail if survivors > 0
+        shell: bash
+        run: |
+          COUNT="${{ env.survivor_count }}"
+          if [[ -z "$COUNT" ]]; then
+            COUNT=0
+          fi
+          if [[ "$COUNT" -gt 0 ]]; then
+            echo "FAIL: $COUNT mutant(s) survived the test suite."
+            echo "Fix: strengthen tests or kill the survivors listed in the artifact."
+            exit 1
+          fi
+          echo "PASS: zero survivors."

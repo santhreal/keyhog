@@ -1,0 +1,11 @@
+op_id = "primitive.bitwise.reverse_bits"
+
+[[golden]]
+input = "01000000"
+expected = "00000080"
+reason = "reverse_bits(1) = 0x80000000 (LSB becomes MSB)"
+
+[[golden]]
+input = "000000ff"
+expected = "ff000000"
+reason = "reverse_bits(0xFF000000) = 0x000000FF (high byte becomes low)"

@@ -1,0 +1,23 @@
+# Docs: https://docs.helicone.ai/helicone-headers/helicone-auth
+# Format: sk-* for read keys, pk-* for write keys, eu-* for EU region keys
+# Verify: no public verification endpoint
+# Prefix: sk-, pk-, or eu-
+
+[detector]
+id = "helicone-api-key"
+name = "Helicone API Key"
+service = "helicone"
+severity = "high"
+keywords = ["sk-", "pk-", "eu-", "HELICONE_API_KEY", "Helicone-Auth"]
+
+[[detector.patterns]]
+regex = 'sk-[a-zA-Z0-9]{20,}'
+description = "Helicone read API key (sk- prefix)"
+
+[[detector.patterns]]
+regex = 'pk-[a-zA-Z0-9]{20,}'
+description = "Helicone write API key (pk- prefix)"
+
+[[detector.patterns]]
+regex = 'eu-[a-zA-Z0-9]{20,}'
+description = "Helicone EU region API key (eu- prefix)"

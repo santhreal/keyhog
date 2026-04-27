@@ -1,0 +1,17 @@
+name: Append-Only
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  append-only:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Run append-only tripwire
+        run: bash scripts/append-only.sh origin/main

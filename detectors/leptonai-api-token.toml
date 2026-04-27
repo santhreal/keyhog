@@ -1,0 +1,21 @@
+# Docs: https://www.lepton.ai/docs/welcome/what_is_lepton
+# Format: Lepton workspace token or LEPTONAI_API_KEY
+# Verify: no public verification endpoint
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "leptonai-api-token"
+name = "Lepton AI API Token"
+service = "leptonai"
+severity = "high"
+keywords = ["LEPTONAI_API_KEY", "LEPTON_WORKSPACE_TOKEN", "lepton.ai", "lepton.run"]
+
+[[detector.patterns]]
+regex = "(?:LEPTONAI_API_KEY|LEPTON_WORKSPACE_TOKEN)[=:\\s\"\\']+([a-zA-Z0-9_-]{20,})"
+description = "Lepton AI API token from environment variable"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:lepton\\.(?:ai|run).{0,120}\\btoken|\\btoken.{0,120}lepton\\.(?:ai|run)|LEPTON(?:AI)?[_-]?(?:API[_-]?)?TOKEN)[=:\\s\"\\']+([a-zA-Z0-9_-]{20,})"
+description = "Lepton token with Lepton-specific domain or variable context"
+group = 1

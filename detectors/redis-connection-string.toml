@@ -1,0 +1,14 @@
+# Docs: https://redis.io/docs/connect/clients/
+# Format: redis://user:pass@host.domain:port
+# Prefix: redis
+
+[detector]
+id = "redis-connection-string"
+name = "Redis Connection String"
+service = "redis"
+severity = "high"
+keywords = ["redis", "REDIS_URL"]
+
+[[detector.patterns]]
+regex = 'rediss?://[^:]*:[^@\s]+@[a-zA-Z0-9._:-]+'
+description = "Redis connection string with credentials"

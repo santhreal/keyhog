@@ -1,0 +1,16 @@
+# Docs: https://mandrill.zendesk.com/hc/en-us/articles/20558216719003-About-API-keys
+# Format: 22 alphanumeric characters (mixed case)
+# Verify: POST /api/1.0/users/info.json with key in request body
+# Prefix: none (22 alphanumeric, requires keyword context)
+
+[detector]
+id = "mandrill-api-key"
+name = "Mandrill API Key"
+service = "mandrill"
+severity = "critical"
+keywords = ["MANDRILL_API_KEY", "mandrill_api_key", "mandrill", "MANDRILL_KEY"]
+
+[[detector.patterns]]
+regex = "(?:MANDRILL|mandrill)[_\\s]*(?:API|api)?[_\\s]*(?:KEY|key)?[=:\\s\"']+([a-zA-Z0-9]{22})"
+description = "Mandrill API key with context anchor"
+group = 1

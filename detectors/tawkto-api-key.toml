@@ -1,0 +1,26 @@
+# Docs: https://developer.tawk.to/webhooks/
+# Format: Property ID (24+ hex chars) and API key pair
+# Verify: no public verification endpoint
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "tawkto-api-key"
+name = "Tawk.to API Key"
+service = "tawkto"
+severity = "medium"
+keywords = ["TAWK", "tawk_to", "tawkto", "tawkto_api"]
+
+[[detector.patterns]]
+regex = "(?i)(?:TAWK|TAWKTO|TAWK_TO)[_\\s]?(?:API[_\\s]?KEY|KEY|TOKEN)[=:\\s\"'']+([a-f0-9]{32,64})"
+description = "Tawk.to API key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?i)(?:TAWK|TAWKTO|TAWK_TO)[_\\s]?(?:PROPERTY[_\\s]?ID|SITE[_\\s]?ID)[=:\\s\"'']+([a-f0-9]{24})"
+description = "Tawk.to property/site ID with context anchor"
+group = 1
+
+[[detector.companions]]
+name = "tawkto_credentials_pair"
+regex = "(?i)(?:TAWK|TAWKTO|TAWK_TO)[_\\s]?(?:api_key|key|token|property_id|site_id)[=:\\s\"'']+[a-f0-9]{20,}"
+within_lines = 5

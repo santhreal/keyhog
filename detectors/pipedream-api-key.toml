@@ -1,0 +1,15 @@
+# Docs: https://pipedream.com/docs/rest-api
+# Format: Bearer token - api_<40+ alphanumeric characters>
+# Verify: GET /v1/users/me with Bearer token
+# Prefix: api_
+
+[detector]
+id = "pipedream-api-key"
+name = "Pipedream API Key"
+service = "pipedream"
+severity = "critical"
+keywords = ["api_", "pipedream", "PIPEDREAM_API_KEY"]
+
+[[detector.patterns]]
+regex = 'api_[a-zA-Z0-9]{40,}'
+description = "Pipedream API key (api_ prefix)"

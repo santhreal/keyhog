@@ -1,0 +1,26 @@
+# Docs: https://docs.geteppo.com/sdks/
+# Format: eppo prefix followed by alphanumeric and special characters
+# Verify: GET /api/v1/definitions with Bearer auth
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "eppo-api-key"
+name = "Eppo API Key"
+service = "eppo"
+severity = "high"
+keywords = ["EPPO", "eppo", "EPPO_API_KEY"]
+
+[[detector.patterns]]
+regex = "(?:EPPO|eppo)[=:][\\s\"'']*([a-zA-Z0-9_-]{30,})"
+description = "Eppo SDK/API key with context anchor"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://eppo.cloud/api/v1/definitions"
+[detector.verify.success]
+status = 200
+
+[[detector.verify.headers]]
+name = "Authorization"
+value = "Bearer {{match}}"

@@ -1,0 +1,28 @@
+# Docs: https://pypi.org/help/#apitoken
+# Format: Token starting with 'pypi-' followed by 100+ alphanumeric characters, underscores, or hyphens (Base64 URL-safe)
+# Verify: Used as password with username '__token__' for Basic Auth to upload.pypi.org
+# Prefix: pypi-
+
+[detector]
+id = "pypi-api-token"
+name = "PyPI API Token"
+service = "pypi"
+severity = "critical"
+keywords = ["pypi-"]
+
+[[detector.patterns]]
+regex = 'pypi-[a-zA-Z0-9_-]{100,128}'
+description = "PyPI API token (100-128 chars after prefix)"
+
+[detector.verify]
+method = "GET"
+url = "https://upload.pypi.org/legacy/"
+
+[detector.verify.auth]
+type = "basic"
+username = "__token__"
+password = "match"
+
+[detector.verify.success]
+status_not = 403
+status = 200

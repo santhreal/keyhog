@@ -1,0 +1,30 @@
+[package]
+name = "{{crate_name}}"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+license = "MIT OR Apache-2.0"
+description = "Community Cat-A op dialect for vyre-libs"
+repository = "https://github.com/{{gh_org}}/{{crate_name}}"
+readme = "README.md"
+keywords = ["gpu", "vyre", "cat-a"]
+categories = ["algorithms"]
+
+[dependencies]
+vyre = "0.6"
+vyre-libs = { version = "0.6", default-features = false }
+vyre-foundation = "0.6"
+vyre-spec = "0.6"
+thiserror = "2"
+inventory = "0.3"
+
+[dev-dependencies]
+vyre-reference = "0.6"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"

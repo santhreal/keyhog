@@ -1,0 +1,16 @@
+# Docs: https://docs.split.io/reference/authentication
+# Format: SDK API keys are base64-encoded; Admin API keys have specific prefix patterns
+# Verify: Admin API uses Bearer token; SDK API uses different endpoints
+# Prefix: none (varies by key type)
+
+[detector]
+id = "splitio-api-key"
+name = "Split.io API Key"
+service = "splitio"
+severity = "high"
+keywords = ["splitio", "SPLITIO_API_KEY", "split_io", "SPLIT_SDK_KEY"]
+
+[[detector.patterns]]
+regex = "(?:splitio|split_io|SPLITIO|SPLIT)[_.]?(?:api|sdk)?[_.]?key[=:\\s\"']+([A-Za-z0-9+/]{20,}=?)"
+description = "Split.io API/SDK key (base64) with context anchor"
+group = 1

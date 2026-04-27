@@ -1,0 +1,32 @@
+# Docs: https://www.contentful.com/developers/docs/references/authentication/
+# Format: 43 character base64url string
+# Verify: GET /spaces/{space_id} with Authorization header
+# Prefix: none (43 char base64, requires context anchoring)
+
+[detector]
+id = "contentful-delivery-token"
+name = "Contentful Delivery Token"
+service = "contentful"
+severity = "medium"
+keywords = ["CONTENTFUL_DELIVERY_TOKEN", "CONTENTFUL_ACCESS_TOKEN", "contentful"]
+
+[[detector.patterns]]
+regex = "(?:CONTENTFUL_DELIVERY_TOKEN|CONTENTFUL_ACCESS_TOKEN|contentful)[=:\\s\"'']+([a-zA-Z0-9_-]{43})"
+description = "Contentful Delivery/Preview API token with context anchor"
+group = 1
+
+[[detector.companions]]
+name = "space_id"
+regex = "[a-z0-9]{12}"
+within_lines = 5
+[detector.verify]
+method = "GET"
+url = "https://cdn.contentful.com/spaces/{{companion.space_id}}"
+
+[detector.verify.auth]
+type = "header"
+name = "Authorization"
+template = "Bearer {{match}}"
+
+[detector.verify.success]
+status = 200

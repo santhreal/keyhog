@@ -1,0 +1,21 @@
+# Docs: https://fusionauth.io/docs/lifecycle/authenticate-users/oauth/
+# Format: UUID-like API key
+# Verify: GET /api/user with Authorization header
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "fusionauth-api-key"
+name = "FusionAuth API Key"
+service = "fusionauth"
+severity = "critical"
+keywords = ["FUSIONAUTH_API_KEY", "FUSIONAUTH_KEY", "fusionauth"]
+
+[[detector.patterns]]
+regex = "(?:FUSIONAUTH[_-]?API[_-]?KEY|FUSIONAUTH[_-]?KEY)[=:\\s\"'']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
+description = "FusionAuth API key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "Authorization:\\s*[A-Za-z]+\\s+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
+description = "FusionAuth API key in Authorization header"
+group = 1

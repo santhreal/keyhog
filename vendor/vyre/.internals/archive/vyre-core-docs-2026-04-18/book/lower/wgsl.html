@@ -1,0 +1,448 @@
+<!DOCTYPE HTML>
+<html lang="en" class="rust sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>WGSL Lowering - The vyre Book</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="The GPU compute IR with a conformance prover">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="../favicon-8114d1fc.png">
+        <link rel="stylesheet" href="../css/variables-8adf115d.css">
+        <link rel="stylesheet" href="../css/general-2459343d.css">
+        <link rel="stylesheet" href="../css/chrome-ae938929.css">
+        <link rel="stylesheet" href="../css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="../highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="../tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="../ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "../";
+            const default_light_theme = "rust";
+            const default_dark_theme = "navy";
+            window.path_to_searchindex_js = "../searchindex-bc7bdb82.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="../toc-16d598fb.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('rust')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="../toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">The vyre Book</h1>
+
+                    <div class="right-buttons">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/santhsecurity/vyre" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/santhsecurity/vyre/edit/main/core/docs/./lower/wgsl.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                            <span class=fa-svg id="git-edit-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M421.7 220.3l-11.3 11.3-22.6 22.6-205 205c-6.6 6.6-14.8 11.5-23.8 14.1L30.8 511c-8.4 2.5-17.5 .2-23.7-6.1S-1.5 489.7 1 481.2L38.7 353.1c2.6-9 7.5-17.2 14.1-23.8l205-205 22.6-22.6 11.3-11.3 33.9 33.9 62.1 62.1 33.9 33.9zM96 353.9l-9.3 9.3c-.9 .9-1.6 2.1-2 3.4l-25.3 86 86-25.3c1.3-.4 2.5-1.1 3.4-2l9.3-9.3H112c-8.8 0-16-7.2-16-16V353.9zM453.3 19.3l39.4 39.4c25 25 25 65.5 0 90.5l-14.5 14.5-22.6 22.6-11.3 11.3-33.9-33.9-62.1-62.1L314.3 67.7l11.3-11.3 22.6-22.6 14.5-14.5c25-25 65.5-25 90.5 0z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="wgsl-lowering"><a class="header" href="#wgsl-lowering">WGSL Lowering</a></h1>
+<h2 id="overview"><a class="header" href="#overview">Overview</a></h2>
+<p>WGSL is the reference lowering target for vyre IR. A conforming WGSL lowering
+turns one <code>ir::Program</code> into one complete WebGPU compute shader. The generated
+shader must preserve all vyre semantics:</p>
+<ul>
+<li>Wrapping integer arithmetic</li>
+<li>Div/Mod by zero returning zero</li>
+<li>Shift amounts masked to <code>b &amp; 31</code></li>
+<li>OOB loads returning zero, OOB stores no-oping</li>
+<li>Sequentially consistent atomics</li>
+<li><strong>Strict IEEE 754 for float ops</strong>: no FMA fusion, no reduction reordering,
+no subnormal flush, correctly-rounded transcendentals, declared tensor
+core accumulator precision preserved (see <code>types.md</code> → “Float Semantics”)</li>
+<li>No runtime dispatch or interpretation — every Program lowers to one
+specialized shader with all ops inlined (Category A+C rule, see
+<code>ir/categories.md</code>)</li>
+</ul>
+<h2 id="program-shape"><a class="header" href="#program-shape">Program Shape</a></h2>
+<p>A lowered program has this shape:</p>
+<pre><code class="language-wgsl">@group(0) @binding(0) var&lt;storage, read&gt; input: array&lt;u32&gt;;
+@group(0) @binding(1) var&lt;storage, read_write&gt; output: array&lt;u32&gt;;
+
+@compute @workgroup_size(64, 1, 1)
+fn main(
+    @builtin(global_invocation_id) global_invocation_id: vec3&lt;u32&gt;,
+    @builtin(workgroup_id) workgroup_id: vec3&lt;u32&gt;,
+    @builtin(local_invocation_id) local_invocation_id: vec3&lt;u32&gt;,
+) {
+    // lowered Node list
+}
+</code></pre>
+<p>All buffers are in <code>@group(0)</code>. <code>BufferDecl::binding</code> becomes <code>@binding(N)</code>.
+The entry point name is <code>main</code> unless a backend-specific wrapper chooses another
+stable name.</p>
+<h2 id="type-mapping"><a class="header" href="#type-mapping">Type Mapping</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>IR type</th><th>WGSL expression type</th><th>WGSL storage type</th></tr>
+</thead>
+<tbody>
+<tr><td><code>U32</code></td><td><code>u32</code></td><td><code>array&lt;u32&gt;</code></td></tr>
+<tr><td><code>I32</code></td><td><code>i32</code></td><td><code>array&lt;i32&gt;</code> or bit-identical <code>array&lt;u32&gt;</code> with casts</td></tr>
+<tr><td><code>U64</code></td><td><code>vec2&lt;u32&gt;</code></td><td><code>array&lt;vec2&lt;u32&gt;&gt;</code></td></tr>
+<tr><td><code>Vec2U32</code></td><td><code>vec2&lt;u32&gt;</code></td><td><code>array&lt;vec2&lt;u32&gt;&gt;</code></td></tr>
+<tr><td><code>Vec4U32</code></td><td><code>vec4&lt;u32&gt;</code></td><td><code>array&lt;vec4&lt;u32&gt;&gt;</code></td></tr>
+<tr><td><code>Bool</code></td><td><code>bool</code> in conditions, <code>u32</code> at buffer boundaries</td><td><code>array&lt;u32&gt;</code> with <code>0/1</code> encoding</td></tr>
+<tr><td><code>Bytes</code></td><td>byte extraction from <code>u32</code> words</td><td><code>array&lt;u32&gt;</code> packed little-endian</td></tr>
+</tbody>
+</table>
+</div>
+<p>Atomic buffers use <code>array&lt;atomic&lt;u32&gt;&gt;</code> for <code>U32</code> elements that are targeted by
+<code>Expr::Atomic</code>.</p>
+<h2 id="bufferdecl-mapping"><a class="header" href="#bufferdecl-mapping">BufferDecl Mapping</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>BufferAccess</th><th>WGSL declaration</th></tr>
+</thead>
+<tbody>
+<tr><td><code>ReadOnly</code></td><td><code>@group(0) @binding(N) var&lt;storage, read&gt; name: array&lt;T&gt;;</code></td></tr>
+<tr><td><code>ReadWrite</code></td><td><code>@group(0) @binding(N) var&lt;storage, read_write&gt; name: array&lt;T&gt;;</code></td></tr>
+<tr><td><code>Uniform</code></td><td><code>@group(0) @binding(N) var&lt;uniform&gt; name: T;</code> or a uniform struct/array wrapper</td></tr>
+<tr><td><code>Workgroup</code></td><td><code>var&lt;workgroup&gt; name: array&lt;T, N&gt;;</code></td></tr>
+</tbody>
+</table>
+</div>
+<p>Buffer names must be sanitized into valid WGSL identifiers. The mapping must be
+stable and collision-free.</p>
+<h2 id="node-mapping"><a class="header" href="#node-mapping">Node Mapping</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>IR node</th><th>WGSL construct</th></tr>
+</thead>
+<tbody>
+<tr><td><code>Node::Let { name, value }</code></td><td><code>let name = expr;</code> when immutable value is sufficient; <code>var name = expr;</code> when assigned by a later <code>Node::Assign</code>.</td></tr>
+<tr><td><code>Node::Assign { name, value }</code></td><td><code>name = expr;</code></td></tr>
+<tr><td><code>Node::Store { buffer, index, value }</code></td><td><code>if (idx &lt; arrayLength(&amp;buffer)) { buffer[idx] = value; }</code> unless robust no-op store is proven.</td></tr>
+<tr><td><code>Node::If { cond, then, otherwise }</code></td><td><code>if (bool(cond)) { lowered then nodes } else { lowered otherwise nodes }</code></td></tr>
+<tr><td><code>Node::Loop { var, from, to, body }</code></td><td><code>for (var i = from; i &lt; to; i = i + 1u) { lowered body nodes }</code></td></tr>
+<tr><td><code>Node::Return</code></td><td><code>return;</code></td></tr>
+<tr><td><code>Node::Block(nodes)</code></td><td><code>{ lowered block nodes }</code> preserving statement order.</td></tr>
+<tr><td><code>Node::Barrier</code></td><td><code>storageBarrier(); workgroupBarrier();</code> when storage visibility and workgroup rendezvous are both required.</td></tr>
+</tbody>
+</table>
+</div>
+<p><code>Let</code> may lower to <code>var</code> instead of <code>let</code> when the variable is assigned by a
+later <code>Node::Assign</code>.
+The observable semantics are unchanged.</p>
+<h2 id="expr-mapping"><a class="header" href="#expr-mapping">Expr Mapping</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>IR expression</th><th>WGSL construct</th></tr>
+</thead>
+<tbody>
+<tr><td><code>LitU32(v)</code></td><td><code>vu</code>, for example <code>42u</code>.</td></tr>
+<tr><td><code>LitI32(v)</code></td><td><code>vi</code>, for example <code>-7i</code>.</td></tr>
+<tr><td><code>LitBool(v)</code></td><td><code>true</code> or <code>false</code> in expression position; <code>1u</code> or <code>0u</code> at <code>u32</code> boundaries.</td></tr>
+<tr><td><code>Var(name)</code></td><td>sanitized local identifier.</td></tr>
+<tr><td><code>Load { buffer, index }</code></td><td><code>select(buffer[idx], zero(T), idx &gt;= arrayLength(&amp;buffer))</code> or direct robust load when guaranteed by WebGPU.</td></tr>
+<tr><td><code>BufLen { buffer }</code></td><td><code>arrayLength(&amp;buffer)</code> for runtime arrays.</td></tr>
+<tr><td><code>InvocationId { axis }</code></td><td><code>global_invocation_id.x/y/z</code>.</td></tr>
+<tr><td><code>WorkgroupId { axis }</code></td><td><code>workgroup_id.x/y/z</code>.</td></tr>
+<tr><td><code>LocalId { axis }</code></td><td><code>local_invocation_id.x/y/z</code>.</td></tr>
+<tr><td><code>BinOp { op, left, right }</code></td><td>operator or helper listed below.</td></tr>
+<tr><td><code>UnOp { op, operand }</code></td><td>operator or WGSL builtin listed below.</td></tr>
+<tr><td><code>Call { op_id, args }</code></td><td>inline-expanded callee expression or generated helper call after inlining.</td></tr>
+<tr><td><code>Select { cond, true_val, false_val }</code></td><td><code>select(false_val, true_val, bool(cond))</code>; both branch expressions are evaluated.</td></tr>
+<tr><td><code>Cast { target, value }</code></td><td>explicit constructor, bitcast, or helper according to <code>casts.md</code>.</td></tr>
+<tr><td><code>Atomic { op, buffer, index, expected, value }</code></td><td>WGSL atomic builtin with OOB guard; returns old value. <code>CompareExchange</code> passes <code>expected</code> and replacement <code>value</code> separately.</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="binary-operation-mapping"><a class="header" href="#binary-operation-mapping">Binary Operation Mapping</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>IR BinOp</th><th>WGSL lowering</th></tr>
+</thead>
+<tbody>
+<tr><td><code>Add</code></td><td><code>left + right</code></td></tr>
+<tr><td><code>Sub</code></td><td><code>left - right</code></td></tr>
+<tr><td><code>Mul</code></td><td><code>left * right</code></td></tr>
+<tr><td><code>Div</code></td><td><code>select(left / right, 0u, right == 0u)</code></td></tr>
+<tr><td><code>Mod</code></td><td><code>select(left % right, 0u, right == 0u)</code></td></tr>
+<tr><td><code>BitAnd</code></td><td><code>left &amp; right</code></td></tr>
+<tr><td><code>BitOr</code></td><td>`left</td></tr>
+<tr><td><code>BitXor</code></td><td><code>left ^ right</code></td></tr>
+<tr><td><code>Shl</code></td><td><code>left &lt;&lt; (right &amp; 31u)</code></td></tr>
+<tr><td><code>Shr</code></td><td><code>left &gt;&gt; (right &amp; 31u)</code></td></tr>
+<tr><td><code>Eq</code></td><td><code>select(0u, 1u, left == right)</code></td></tr>
+<tr><td><code>Ne</code></td><td><code>select(0u, 1u, left != right)</code></td></tr>
+<tr><td><code>Lt</code></td><td><code>select(0u, 1u, left &lt; right)</code></td></tr>
+<tr><td><code>Gt</code></td><td><code>select(0u, 1u, left &gt; right)</code></td></tr>
+<tr><td><code>Le</code></td><td><code>select(0u, 1u, left &lt;= right)</code></td></tr>
+<tr><td><code>Ge</code></td><td><code>select(0u, 1u, left &gt;= right)</code></td></tr>
+<tr><td><code>And</code></td><td><code>select(0u, 1u, bool(left) &amp;&amp; bool(right))</code></td></tr>
+<tr><td><code>Or</code></td><td>`select(0u, 1u, bool(left)</td></tr>
+</tbody>
+</table>
+</div>
+<p><code>bool(x)</code> means <code>x != 0u</code> for <code>u32</code> expressions and the value itself for Bool
+expressions.</p>
+<h2 id="unary-operation-mapping"><a class="header" href="#unary-operation-mapping">Unary Operation Mapping</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>IR UnOp</th><th>WGSL lowering</th></tr>
+</thead>
+<tbody>
+<tr><td><code>Negate</code></td><td><code>0u - operand</code> for <code>u32</code>, <code>-operand</code> for <code>i32</code>.</td></tr>
+<tr><td><code>BitNot</code></td><td><code>~operand</code></td></tr>
+<tr><td><code>LogicalNot</code></td><td><code>select(0u, 1u, operand == 0u)</code></td></tr>
+<tr><td><code>Popcount</code></td><td><code>countOneBits(operand)</code></td></tr>
+<tr><td><code>Clz</code></td><td><code>countLeadingZeros(operand)</code></td></tr>
+<tr><td><code>Ctz</code></td><td><code>countTrailingZeros(operand)</code></td></tr>
+<tr><td><code>ReverseBits</code></td><td><code>reverseBits(operand)</code></td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="atomic-mapping"><a class="header" href="#atomic-mapping">Atomic Mapping</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>IR AtomicOp</th><th>WGSL</th></tr>
+</thead>
+<tbody>
+<tr><td><code>Add</code></td><td><code>atomicAdd(&amp;buffer[idx], value)</code></td></tr>
+<tr><td><code>Or</code></td><td><code>atomicOr(&amp;buffer[idx], value)</code></td></tr>
+<tr><td><code>And</code></td><td><code>atomicAnd(&amp;buffer[idx], value)</code></td></tr>
+<tr><td><code>Xor</code></td><td><code>atomicXor(&amp;buffer[idx], value)</code></td></tr>
+<tr><td><code>Min</code></td><td><code>atomicMin(&amp;buffer[idx], value)</code></td></tr>
+<tr><td><code>Max</code></td><td><code>atomicMax(&amp;buffer[idx], value)</code></td></tr>
+<tr><td><code>Exchange</code></td><td><code>atomicExchange(&amp;buffer[idx], value)</code></td></tr>
+<tr><td><code>CompareExchange</code></td><td><code>atomicCompareExchangeWeak(&amp;buffer[idx], expected, value).old_value</code></td></tr>
+</tbody>
+</table>
+</div>
+<p>Every atomic must be guarded:</p>
+<pre><code class="language-wgsl">var old = 0u;
+if (idx &lt; arrayLength(&amp;buffer)) {
+    old = atomicAdd(&amp;buffer[idx], value);
+}
+</code></pre>
+<p>OOB atomics return zero and do not modify the buffer.</p>
+<h2 id="complete-shader-requirements"><a class="header" href="#complete-shader-requirements">Complete Shader Requirements</a></h2>
+<p>A complete WGSL shader must include:</p>
+<ol>
+<li>Declarations for every <code>BufferDecl</code>.</li>
+<li>Helper functions required for casts, byte loads, <code>U64</code> emulation, and safe
+access.</li>
+<li>One <code>@compute</code> entry point using the program workgroup size.</li>
+<li>Builtin parameters for every identity expression used by the program.</li>
+<li>Lowered entry statements in original order.</li>
+<li>No dead helper that changes observable behavior or masks validation errors.</li>
+</ol>
+<h2 id="validation-before-lowering"><a class="header" href="#validation-before-lowering">Validation Before Lowering</a></h2>
+<p>The WGSL lowerer expects valid IR. Validation must reject undeclared buffers,
+invalid axes, stores to read-only buffers, duplicate bindings, unknown calls,
+unsupported casts, and variables used before binding.</p>
+<p>The lowerer may still return structured errors for target limits or impossible
+WGSL generation. It must not panic.</p>
+<h2 id="permanence"><a class="header" href="#permanence">Permanence</a></h2>
+<p>WGSL is the reference backend. Other backends may lower differently internally,
+but their observable bytes must match the WGSL reference for every valid program.</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../lower/contract.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="../engine/overview.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../lower/contract.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="../engine/overview.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="../elasticlunr-ef4e11c1.min.js"></script>
+        <script src="../mark-09e88c2c.min.js"></script>
+        <script src="../searcher-c2a407aa.js"></script>
+
+        <script src="../clipboard-1626706a.min.js"></script>
+        <script src="../highlight-abc7f01d.js"></script>
+        <script src="../book-a0b12cfe.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+
+    </div>
+    </body>
+</html>

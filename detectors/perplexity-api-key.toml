@@ -1,0 +1,26 @@
+# Docs: https://docs.perplexity.ai/guides/getting-started
+# Format: pplx- prefix followed by alphanumeric characters (typically 64 chars)
+# Verify: POST /chat/completions with Bearer token returns 200 if valid
+# Prefix: pplx-
+
+[detector]
+id = "perplexity-api-key"
+name = "Perplexity API Key"
+service = "perplexity"
+severity = "critical"
+keywords = ["pplx-"]
+
+[[detector.patterns]]
+regex = 'pplx-[a-zA-Z0-9_-]{32,}'
+description = "Perplexity API key (pplx- prefix)"
+
+[detector.verify]
+method = "POST"
+url = "https://api.perplexity.ai/chat/completions"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[detector.verify.success]
+status = 200

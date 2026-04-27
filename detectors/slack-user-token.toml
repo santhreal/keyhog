@@ -1,0 +1,41 @@
+# Docs: https://api.slack.com/authentication/token-types
+# Format: xoxp-{10-13 digits}-{10-13 digits}-{10-13 digits}-{32 hex chars}
+# Verify: POST to slack.com/api/auth.test with Bearer token
+# Prefix: xoxp-
+
+[detector]
+id = "slack-user-token"
+name = "Slack User Token"
+service = "slack"
+severity = "critical"
+keywords = ["xoxp", "slack", "user"]
+
+[[detector.patterns]]
+regex = 'xoxp-[0-9]{10,13}-[0-9]{10,13}-[0-9]{10,13}-[a-f0-9]{32}'
+description = "Slack user token (xoxp-)"
+
+[[detector.patterns]]
+regex = 'xoxp-[0-9]{10,15}-[0-9]{10,15}-[a-zA-Z0-9]{24,34}'
+description = "Slack user token (3-segment variant)"
+
+
+[detector.verify]
+method = "POST"
+url = "https://slack.com/api/auth.test"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[detector.verify.success]
+status = 200
+json_path = "ok"
+equals = "true"
+
+[[detector.verify.metadata]]
+name = "team"
+json_path = "team"
+
+[[detector.verify.metadata]]
+name = "user"
+json_path = "user"

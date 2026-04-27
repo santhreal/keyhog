@@ -1,0 +1,29 @@
+# Docs: https://developer.paypal.com/braintree/docs/guides/authorization/tokenization-keys
+# Format: sandbox_ or production_ followed by alphanumeric string
+# Verify: POST to client token endpoint with proper credentials
+# Prefix: sandbox_, production_
+
+[detector]
+id = "braintree-sandbox-token"
+name = "Braintree Tokenization Key"
+service = "braintree"
+severity = "high"
+keywords = ["sandbox_", "production_", "tokenization_key", "BRAINTREE"]
+
+[[detector.patterns]]
+regex = "sandbox_[a-z0-9]{8}_[a-z0-9]{8}_[a-z0-9]{8}"
+description = "Braintree sandbox tokenization key"
+
+[[detector.patterns]]
+regex = "production_[a-z0-9]{8}_[a-z0-9]{8}_[a-z0-9]{8}"
+description = "Braintree production tokenization key"
+
+[[detector.patterns]]
+regex = "(?:BRAINTREE|braintree)[._-]?(?:TOKENIZATION|tokenization)?[._-]?(?:KEY|key)?[=:\\s\"'']+((?:sandbox|production)_[a-z0-9]{8}_[a-z0-9]{8}_[a-z0-9]{8})"
+description = "Braintree tokenization key with context anchor"
+group = 1
+
+[[detector.companions]]
+name = "braintree_private_key"
+regex = "[a-f0-9]{32,40}"
+within_lines = 10

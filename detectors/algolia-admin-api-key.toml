@@ -1,0 +1,36 @@
+# Docs: https://www.algolia.com/doc/guides/security/api-keys/
+# Format: 32 character hexadecimal string (admin key has full permissions)
+# Verify: none (requires paired application ID for verification)
+# Prefix: none (generic hex, requires keyword context)
+
+[detector]
+id = "algolia-admin-api-key"
+name = "Algolia Admin API Key"
+service = "algolia"
+severity = "critical"
+keywords = ["ALGOLIA_ADMIN_KEY", "algolia_admin_key", "admin_api_key", "ALGOLIA_API_KEY"]
+
+[[detector.patterns]]
+regex = "(?:ALGOLIA_ADMIN_KEY|algolia_admin_key|admin_api_key)[=:\\s\"']+([a-f0-9]{32})"
+description = "Algolia admin API key with context anchor"
+group = 1
+
+[[detector.companions]]
+name = "application_id"
+regex = "[A-Z0-9]{10}"
+within_lines = 5
+[detector.verify]
+method = "GET"
+url = "https://{{companion.application_id}}-dsn.algolia.net/1/indexes"
+
+[detector.verify.auth]
+type = "header"
+name = "X-Algolia-API-Key"
+template = "{{match}}"
+
+[[detector.verify.headers]]
+name = "X-Algolia-Application-Id"
+value = "{{companion.application_id}}"
+
+[detector.verify.success]
+status = 200

@@ -1,0 +1,23 @@
+# Docs: https://docs.trychroma.com/production/administration/auth
+# Format: Alphanumeric ASCII string (token auth) or basic auth credentials
+# Verify: GET /api/v1/collections with X-Chroma-Token header
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "chromadb-api-key"
+name = "ChromaDB API Key"
+service = "chromadb"
+severity = "high"
+keywords = ["CHROMA_AUTH_TOKEN", "CHROMA_SERVER_AUTHN_CREDENTIALS", "X-Chroma-Token", "chromadb"]
+
+[[detector.patterns]]
+regex = "(?:CHROMA_AUTH_TOKEN|CHROMA_SERVER_AUTHN_CREDENTIALS)[=: \\s\"'']+([a-zA-Z0-9_-]{8,})"
+description = "ChromaDB API token with environment variable context"
+group = 1
+
+[[detector.patterns]]
+regex = "X-Chroma-Token[=: \\s\"'']+([a-zA-Z0-9_-]{8,})"
+description = "ChromaDB API token with header context"
+group = 1
+
+# SKIP verify: ChromaDB is self-hosted, no public verification endpoint

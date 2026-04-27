@@ -1,0 +1,30 @@
+# Docs: https://learn.microsoft.com/en-us/azure/storage/common/storage-sas-overview
+# Format: Query string starting with ?sv= containing signature and expiry
+# Verify: GET request to blob URL with SAS token returns 200
+# Prefix: ?sv= (SAS version parameter)
+
+[detector]
+id = "azure-blob-sas-token"
+name = "Azure Blob SAS Token"
+service = "azure"
+severity = "high"
+keywords = ["sig=", "sv=", "se=", "sp=", "srt=", "blob.core.windows.net"]
+
+[[detector.patterns]]
+regex = "(\\?sv=\\d{4}-\\d{2}-\\d{2}&[^\\s\"'']*sig=[a-zA-Z0-9%]{20,})"
+description = "Azure Blob SAS token query string with signature"
+group = 1
+
+[[detector.patterns]]
+regex = "BlobEndpoint[=:\\s\"'']+https?://[^\\s\"'']+;[^\\s\"'']*SharedAccessSignature[=:\\s\"'']+([^\\s\"'']+)"
+description = "Azure Blob connection string with embedded SAS"
+group = 1
+
+[[detector.patterns]]
+regex = "AZURE_STORAGE_SAS_TOKEN[=:\\s\"'']+(\\?sv=[^\\s\"'']+)"
+description = "Azure Storage SAS token environment variable"
+group = 1
+
+# NOTE: live verification disabled. The match is a query string
+# (e.g. `?sv=...&sig=...`), so `https://{{match}}` produced a
+# malformed URL with no host. kimi-wave3 §1.

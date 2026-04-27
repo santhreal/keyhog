@@ -1,0 +1,17 @@
+name: Permission Lint
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  permission-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PyYAML
+        run: python3 -m pip install pyyaml
+      - name: Run workflow permission lint
+        run: bash scripts/lint-workflow-permissions.sh

@@ -1,0 +1,1342 @@
+pub const ALL_SAME_BYTE_ENTROPY: u32 = 0;
+pub const ALPHABET: &[u8; 32] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+pub const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+pub const ASCII_123456789_CRC32: u32 = 0xCBF4_3926;
+pub const BACKEND_FAMILY: &str = "workgroup";
+pub const BLOCK_BYTES: usize = 64;
+pub const BLOCK_COMPRESSED: u32 = 2;
+pub const BLOCK_RAW: u32 = 0;
+pub const BLOCK_RLE: u32 = 1;
+pub const BOOL_OUTPUTS: &[DataType] = &[DataType::Bool];
+pub const BYTE_BOUNDED_LAWS: &[AlgebraicLaw] = &[AlgebraicLaw::Bounded { lo: 0, hi: 255 }];
+pub const BYTES_TO_BYTES_INPUTS: &[DataType] = &[DataType::Bytes];
+pub const BYTES_TO_BYTES_OUTPUTS: &[DataType] = &[DataType::Bytes];
+pub const BYTES_TO_U32_OUTPUTS: &[DataType] = &[DataType::U32];
+pub const CATEGORY_A_WGSL_MARKER: &str = "decode.hex_decode_strict";
+pub const CATEGORY_A_WGSL_MARKER: &str = "encode.base64_encode";
+pub const CATEGORY_A_WGSL_MARKER: &str = "encode.hex_encode_lower";
+pub const CHUNK_END: u32 = 2;
+pub const CHUNK_START: u32 = 1;
+pub const CODE_ORDER: [usize; 19] = [
+pub const COMPRESSED_BLOCK_OP: &str = "compression.zstd.compressed_block";
+pub const CRC32_FINAL_XOR: u32 = 0xffff_ffff;
+pub const CRC32_INITIAL: u32 = 0xffff_ffff;
+pub const CRC32_POLY_REFLECTED: u32 = 0xEDB8_8320;
+pub const DEFAULT_GRAM: usize = 4;
+pub const DEFAULT_STACK_SLOTS: u32 = 2_048;
+pub const DEFAULT_WINDOW_SIZE: u32 = 4;
+pub const DIST_BASE: [u16; 30] = [
+pub const DIST_EXTRA: [u8; 30] = [
+pub const ELEMENT_SIZE: usize = core::mem::size_of::<u32>();
+pub const EMPTY_CRC32: u32 = 0;
+pub const EMPTY_HASH: u32 = FNV_OFFSET_BASIS;
+pub const EMPTY_KEY: u32 = u32::MAX;
+pub const EMPTY_VALUE: u32 = u32::MAX;
+pub const ENTROPY_SCALE: u32 = 1_000;
+pub const ENTRY_POINT_DECL: &str =
+pub const ENTRY_POINT: &str = "workgroup_hashmap_kernel";
+pub const ENTRY_POINT: &str = "workgroup_queue_fifo_kernel";
+pub const ENTRY_POINT: &str = "workgroup_queue_priority_kernel";
+pub const ENTRY_POINT: &str = "workgroup_stack_kernel";
+pub const ENTRY_POINT: &str = "workgroup_state_machine_kernel";
+pub const ENTRY_POINT: &str = "workgroup_string_interner_intern";
+pub const ENTRY_POINT: &str = "workgroup_typed_arena_alloc";
+pub const ENTRY_POINT: &str = "workgroup_union_find_kernel";
+pub const ENTRY_POINT: &str = "workgroup_visitor_visit";
+pub const ERR_INVALID_CAPACITY: u32 = 5;
+pub const ERR_NOT_FOUND: u32 = 2;
+pub const ERR_OVERFLOW: u32 = 1;
+pub const ERR_RESERVED_KEY: u32 = 4;
+pub const F32_F32_F32_INPUTS: &[DataType] = &[DataType::F32, DataType::F32, DataType::F32];
+pub const F32_F32_INPUTS: &[DataType] = &[DataType::F32, DataType::F32];
+pub const F32_INPUTS: &[DataType] = &[DataType::F32];
+pub const F32_OUTPUTS: &[DataType] = &[DataType::F32];
+pub const FCOMMENT: u8 = 0x10;
+pub const FEXTRA: u8 = 0x04;
+pub const FHCRC: u8 = 0x02;
+pub const FNAME: u8 = 0x08;
+pub const fn backend_family() -> &'static str {
+pub const fn byte_swap_u32(value: u32) -> u32 {
+pub const fn byte_swap_u64(value: u64) -> u64 {
+pub const fn byte_swap_u64_words(lo: u32, hi: u32) -> (u32, u32) {
+pub const fn code(self) -> u32 {
+pub const fn mix_hash(mut x: u32) -> u32 {
+pub const fn new(id: u32, start: u32, len: u32) -> Self {
+pub const fn new(segment_id: u32, pattern_id: u32, local_start: u32, local_end: u32) -> Self {
+pub const fn shader_source() -> &'static str {
+pub const fn single_byte_hash(byte: u32) -> u32 {
+pub const fn source() -> &'static str {
+pub const FNV_OFFSET_BASIS: u32 = 2_166_136_261;
+pub const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+pub const FNV_PRIME: u32 = 16_777_619;
+pub const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
+pub const H0: [u32; 5] = [
+pub const H0: [u32; 8] = [
+pub const H384: [u64; 8] = [
+pub const H512: [u64; 8] = [
+pub const HEX: &[u8; 16] = b"0123456789abcdef";
+pub const HEX: &[u8; 16] = b"0123456789ABCDEF";
+pub const HISTOGRAM_BUCKETS: u32 = 256;
+pub const I32_OUTPUTS: &[DataType] = &[DataType::I32];
+pub const INPUTS: &[DataType] = &[
+pub const INPUTS: &[DataType] = &[DataType::Bool];
+pub const INPUTS: &[DataType] = &[DataType::Bytes];
+pub const INPUTS: &[DataType] = &[DataType::Bytes, DataType::Bytes];
+pub const INPUTS: &[DataType] = &[DataType::Bytes, DataType::Bytes, DataType::U32];
+pub const INPUTS: &[DataType] = &[DataType::Bytes, DataType::U64];
+pub const INPUTS: &[DataType] = &[DataType::I32];
+pub const INPUTS: &[DataType] = &[DataType::U32, DataType::U32];
+pub const INPUTS: &[DataType] = &[DataType::U32, DataType::U32, DataType::U32];
+pub const IV32: [u32; 8] = [
+pub const IV64: [u64; 8] = [
+pub const IV: [u32; 8] = [
+pub const K: [u32; 64] = [
+pub const K: [u64; 80] = [
+pub const LAWS: &[AlgebraicLaw] = &[
+pub const LAWS: &[AlgebraicLaw] = &[];
+pub const LAWS: &[AlgebraicLaw] = &[AlgebraicLaw::Bounded {
+pub const LAWS: &[AlgebraicLaw] = &[AlgebraicLaw::Bounded { lo: 0, hi: 1 }];
+pub const LAWS: &[AlgebraicLaw] = &[AlgebraicLaw::Bounded { lo: 0, hi: 255 }];
+pub const LAWS: &[AlgebraicLaw] = &[AlgebraicLaw::Bounded { lo: 0, hi: 32 }];
+pub const LAWS: &[AlgebraicLaw] = &[AlgebraicLaw::Bounded { lo: 0, hi: 7 }];
+pub const LAWS: &[AlgebraicLaw] = &[AlgebraicLaw::Commutative];
+pub const LAWS: &[AlgebraicLaw] = &[AlgebraicLaw::Idempotent];
+pub const LAWS: &[AlgebraicLaw] = &[AlgebraicLaw::Involution];
+pub const LAWS: &[AlgebraicLaw] = &[AlgebraicLaw::RightIdentity {
+pub const LAWS: &[crate::AlgebraicLaw] = &[];
+pub const LEN_BASE: [u16; 29] = [
+pub const LEN_EXTRA: [u8; 29] = [
+pub const LOOP_LIMIT: u32 = 131_072;
+pub const LOOP_LIMIT: u32 = 65_536;
+pub const MAGIC_CLASS: u32 = 5;
+pub const MAGIC_ELF: u32 = 2;
+pub const MAGIC_GZIP: u32 = 7;
+pub const MAGIC_MACHO32: u32 = 3;
+pub const MAGIC_MACHO64: u32 = 4;
+pub const MAGIC_PDF: u32 = 9;
+pub const MAGIC_PE: u32 = 1;
+pub const MAGIC_PNG: u32 = 8;
+pub const MAGIC_ZIP: u32 = 6;
+pub const MAX_BFS_QUEUE: u32 = 8_192;
+pub const MAX_BITS: u8 = 15;
+pub const MAX_BROADCAST_COUNT: u32 =
+pub const MAX_DP_CELLS: usize = 16 * 1024 * 1024;
+pub const MAX_ELEMENTS: u32 = 256;
+pub const MAX_HAYSTACK_LEN: usize = 64 * 1024 * 1024;
+pub const MAX_INPUT_LEN: usize = 4 * 1024 * 1024;
+pub const MAX_INPUT_LEN: usize = 64 * 1024 * 1024;
+pub const MAX_MEMSET_LEN: u32 = 1_048_576;
+pub const MAX_NEEDLE_LEN: usize = 4 * 1024;
+pub const MAX_NGRAM_LEN: usize = 4096;
+pub const MAX_OUTPUT_BYTES: usize = 64 * 1024 * 1024;
+pub const MAX_OUTPUT_RATIO: u32 = 1024;
+pub const MAX_OUTPUT_RATIO: usize = 1024;
+pub const MAX_PATTERN_COUNT: usize = 4096;
+pub const MSG_PERMUTATION: [usize; 16] = [2, 6, 3, 10, 7, 0, 4, 13, 1, 11, 12, 5, 9, 14, 15, 8];
+pub const NO_MATCH: u32 = u32::MAX;
+pub const NOT_FOUND: u32 = u32::MAX;
+pub const OK: u32 = 0;
+pub const OP_ID: &str = "compression.lz4_decompress";
+pub const OP_ID: &str = "compression.zstd_decompress";
+pub const OP_ID: &str = "graph.bfs";
+pub const OP_ID: &str = "match.dfa_scan";
+pub const OP_ID: &str = "primitive.logical.and";
+pub const OP_ID: &str = "primitive.logical.nand";
+pub const OP_ID: &str = "primitive.logical.nor";
+pub const OP_ID: &str = "primitive.logical.or";
+pub const OP_ID: &str = "primitive.logical.xor";
+pub const OP_ID: &str = "primitive.math.avg_floor";
+pub const OP_ID: &str = "primitive.math.wrapping_neg";
+pub const OP_ID: &str = "rule.file_size_eq";
+pub const OP_ID: &str = "rule.file_size_gt";
+pub const OP_ID: &str = "rule.file_size_gte";
+pub const OP_ID: &str = "rule.file_size_lt";
+pub const OP_ID: &str = "rule.file_size_lte";
+pub const OP_ID: &str = "rule.file_size_ne";
+pub const OP_ID: &str = "rule.literal_false";
+pub const OP_ID: &str = "rule.literal_true";
+pub const OP_ID: &str = "rule.pattern_count_gt";
+pub const OP_ID: &str = "rule.pattern_count_gte";
+pub const OP_ID: &str = "rule.pattern_exists";
+pub const OUTPUTS: &[DataType] = &[const { DataType::U32 }; 4];
+pub const OUTPUTS: &[DataType] = &[const { DataType::U32 }; 5];
+pub const OUTPUTS: &[DataType] = &[const { DataType::U32 }; 8];
+pub const OUTPUTS: &[DataType] = &[const { DataType::U64 }; 6];
+pub const OUTPUTS: &[DataType] = &[const { DataType::U64 }; 8];
+pub const OUTPUTS: &[DataType] = &[DataType::Bool];
+pub const OUTPUTS: &[DataType] = &[DataType::Bytes];
+pub const OUTPUTS: &[DataType] = &[DataType::I32];
+pub const OUTPUTS: &[DataType] = &[DataType::U32];
+pub const OUTPUTS: &[DataType] = &[DataType::U32, DataType::U32];
+pub const OUTPUTS: &[DataType] = &[DataType::U32, DataType::U32, DataType::U32];
+pub const OUTPUTS: &[DataType] = &[DataType::U64];
+pub const P32_1: u64 = 0x9e37_79b1;
+pub const P32_2: u64 = 0x85eb_ca77;
+pub const P32_3: u64 = 0xc2b2_ae3d;
+pub const P64_1: u64 = 0x9e37_79b1_85eb_ca87;
+pub const P64_2: u64 = 0xc2b2_ae3d_27d4_eb4f;
+pub const P64_3: u64 = 0x1656_67b1_9e37_79f9;
+pub const P64_4: u64 = 0x85eb_ca77_c2b2_ae63;
+pub const P64_5: u64 = 0x27d4_eb2f_1656_67c5;
+pub const PARENT: u32 = 4;
+pub const PMX1: u64 = 0x1656_6791_9e37_79f9;
+pub const PMX2: u64 = 0x9fb2_1c65_1e98_df25;
+pub const PREDICATE_ASCII_ALPHA: u32 = 2;
+pub const PREDICATE_ASCII_DIGIT: u32 = 1;
+pub const PREDICATE_EVEN: u32 = 3;
+pub const PREDICATE_NONZERO: u32 = 0;
+pub const PREFIX_LIMIT: usize = 4;
+pub const PREFIX_SCALE: f32 = 0.1;
+pub const RC: [u64; 24] = [
+pub const REFERENCE_VECTORS_TOML: &str = r#"[[case]]
+pub const REPLACED: u32 = 3;
+pub const RHO: [[u32; 5]; 5] = [
+pub const RL: [usize; 80] = [
+pub const ROLLING_BASE: u32 = 257;
+pub const ROOT: u32 = 8;
+pub const RR: [usize; 80] = [
+pub const SECRET: [u8; 192] = [
+pub const SIGMA: [[usize; 16]; 12] = [
+pub const SIG: Signature = Signature {
+pub const SINGLE_BYTE_WINDOW_IDENTITY: u32 = 1;
+pub const SL: [u32; 80] = [
+pub const SR: [u32; 80] = [
+pub const STATUS_COMPRESSED_BLOCK_UNSUPPORTED: u32 = 3;
+pub const STATUS_INPUT_TRUNCATED: u32 = 1;
+pub const STATUS_INVALID_OFFSET: u32 = 3;
+pub const STATUS_LOOP_LIMIT_EXCEEDED: u32 = 4;
+pub const STATUS_LOOP_LIMIT_EXCEEDED: u32 = 5;
+pub const STATUS_OUTPUT_OVERFLOW: u32 = 2;
+pub const STATUS_RESERVED_BLOCK_TYPE: u32 = 4;
+pub const S: [u32; 64] = [
+pub const SUBGROUP_WIDTH: usize = 32;
+pub const TILE: usize = 16;
+pub const U32_INPUTS: &[DataType] = &[DataType::U32];
+pub const U32_OUTPUTS: &[DataType] = &[DataType::U32];
+pub const U32_U32_INPUTS: &[DataType] = &[DataType::U32, DataType::U32];
+pub const UNIFORM_BYTE_DISTRIBUTION_ENTROPY: u32 = 8 * ENTROPY_SCALE;
+pub const WGSL_SPELLING: &str = r"
+pub const WGSL: &str = "";
+pub const WGSL: &str = concat!(
+pub const WGSL: &str = concat!("", "\n", "",);
+pub const WGSL: &str = r#"const FIFO_CAPACITY: u32 = 256u;
+pub const WGSL: &str = r#"const HASHMAP_CAPACITY: u32 = 1024u;
+pub const WGSL: &str = r#"const HEAP_CAPACITY: u32 = 128u;
+pub const WGSL: &str = r#"const STACK_CAPACITY: u32 = 256u;
+pub const WGSL: &str = r#"const STATE_MACHINE_LANES: u32 = 64u;
+pub const WGSL: &str = r#"const UNION_FIND_CAPACITY: u32 = 1024u;
+pub const WGSL: &str = r##"@group(0) @binding(0) var<storage, read> input_words: array<u32>;
+pub const WGSL: &str = r#"// WGSL lowering for `workgroup.string_interner` — a bounded FNV-1a
+pub const WGSL: &str = r#"// WGSL lowering for `workgroup.typed_arena` — a bounded bump-allocated
+pub const WGSL: &str = r#"// WGSL lowering for `workgroup.visitor` — a workgroup-scoped mark
+pub const WORKGROUP_SIZE: u32 = 256;
+pub const WORKGROUP_SIZE: [u32; 3] = [1, 1, 1];
+pub const WORKGROUP_SIZE: [u32; 3] = [256, 1, 1];
+pub const WORKGROUP_SIZE: [u32; 3] = [64, 1, 1];
+pub enum ArenaError {
+pub enum DataMovementError {
+pub enum DecodeError {
+pub enum FifoError {
+pub enum FifoStatus {
+pub enum HashmapError {
+pub enum HashmapStatus {
+pub enum InternError {
+pub enum PriorityError {
+pub enum RuleCondition {
+pub enum RuleFormula {
+pub enum SegmentMapError {
+pub enum StackError {
+pub enum StackStatus {
+pub enum StateMachineError {
+pub enum StateMachineStatus {
+pub enum Token {
+pub enum TokenType {
+pub enum UnionFindError {
+pub enum UnionFindStatus {
+pub enum VisitError {
+pub enum VisitStatus {
+pub fn absorb_block(state: &mut [u64; 25], block: &[u8]) {
+pub fn accumulate(acc: &mut [u64; 8], stripe: &[u8], secret_offset: usize) {
+pub fn accumulate_block(acc: &mut [u64; 8], block: &[u8]) {
+pub fn actions(&self) -> &[u32] {
+pub fn active() -> Expr {
+pub fn add_hash(weights: &mut [i32; 64], hash: u64) {
+pub fn adler32(bytes: &[u8]) -> u32 {
+pub fn advance_while(input: &[u8], mut index: usize, pred: fn(u8) -> bool) -> usize {
+pub fn aho_corasick_scan(haystack: &[u8], patterns: &[&[u8]]) -> Result<Vec<Match>, MatchError> {
+pub fn aho_corasick_scan(_input: &[u8], output: &mut Vec<u8>) {
+pub fn all_flat_cpu(input: &[u8], output: &mut Vec<u8>) {
+pub fn alloc_beyond_capacity_reports_out_of_capacity_without_mutating_len() {
+pub fn alloc(&mut self, value: T) -> Result<ArenaHandle, ArenaError> {
+pub fn alloc_then_get_round_trips_the_payload() {
+pub fn all(predicates: [bool; SUBGROUP_WIDTH]) -> bool {
+pub fn alphabet_char(idx: Expr) -> Expr {
+pub fn and(left: Expr, right: Expr) -> Expr {
+pub fn and(left: Self, right: Self) -> Self {
+pub fn any_eq(byte: &Expr, values: &[u8]) -> Expr {
+pub fn any_flat_cpu(input: &[u8], output: &mut Vec<u8>) {
+pub fn any(predicates: [bool; SUBGROUP_WIDTH]) -> bool {
+pub fn argon2id(input: &[u8], output: &mut Vec<u8>) {
+pub fn argon2id(password: &[u8], salt: &[u8], params: Argon2idParams) -> Result<Vec<u8>, String> {
+pub fn arithmetic_mean_bits(input: &[u8]) -> u32 {
+pub fn arithmetic_mean(input: &[u8]) -> f32 {
+pub fn arithmetic_mean(input: &[u8], output: &mut Vec<u8>) {
+pub fn avalanche(mut x: u64) -> u64 {
+pub fn avalanche_xxh64(mut x: u64) -> u64 {
+pub fn ballot_flat_cpu(input: &[u8], output: &mut Vec<u8>) {
+pub fn ballot(predicates: [bool; SUBGROUP_WIDTH]) -> u32 {
+pub fn base32_decode(input: &[u8]) -> Result<Vec<u8>, DecodeError> {
+pub fn base32_encode(input: &[u8]) -> Vec<u8> {
+pub fn base32(input: &[u8], output: &mut Vec<u8>) {
+pub fn base32_value(byte: u8) -> Option<u8> {
+pub fn base64_encode(input: &[u8]) -> Vec<u8> {
+pub fn base64_run_offsets(input: &[u8], min_run_len: u32) -> Result<Vec<u32>, DetectionError> {
+pub fn base64url_decode(input: &[u8]) -> Result<Vec<u8>, DecodeError> {
+pub fn base64url(input: &[u8], output: &mut Vec<u8>) {
+pub fn base64url_value(byte: u8) -> Option<u8> {
+pub fn best_key(input: &[u8]) -> Option<(u8, i32)> {
+pub fn bfs_from_source(
+pub fn bitonic_sort_u32_reference(values: &mut [u32]) {
+pub fn blake2b(input: &[u8], output: &mut Vec<u8>) {
+pub fn blake2b(input: &[u8]) -> [u64; 8] {
+pub fn blake2b_long(input: &[u8], out_len: usize) -> Vec<u8> {
+pub fn blake2s(input: &[u8], output: &mut Vec<u8>) {
+pub fn blake2s(input: &[u8]) -> [u32; 8] {
+pub fn blake3_bytes(input: &[u8], out_len: usize) -> Vec<u8> {
+pub fn blake3(input: &[u8], output: &mut Vec<u8>) {
+pub fn blake3(input: &[u8]) -> [u32; 8] {
+pub fn boyer_moore_find(haystack: &[u8], needle: &[u8]) -> Result<u32, MatchError> {
+pub fn boyer_moore_find(input: &[u8], output: &mut Vec<u8>) {
+pub fn broadcast_u32(
+pub fn broadcast_u32_flat_cpu(input: &[u8], output: &mut Vec<u8>) {
+pub fn broadcast(value: u32, count: u32) -> Result<Vec<u8>, DataMovementError> {
+pub fn build_aho_corasick_scan_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_argon2id_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_arithmetic_mean_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_base32_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_base64url_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_blake2b_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_blake2s_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_blake3_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_boyer_moore_find_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_byte_count_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_bytes_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_byte_swap_u32_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_byte_swap_u64_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_csr(node_count: usize, edges: &[(u32, u32)]) -> Result<CsrGraph> {
+pub fn build_detect_base64_run_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_detect_command_injection_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_detect_email_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_detect_hex_run_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_detect_high_entropy_window_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_detect_ipv4_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_detect_ipv6_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_detect_jwt_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_detect_lfi_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_detect_obfuscated_js_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_detect_packed_binary_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_detect_path_traversal_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_detect_pem_block_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_detect_rfi_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_detect_sql_injection_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_detect_ssrf_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_detect_url_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_detect_uuid_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_detect_xor_single_byte_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_detect_xss_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_detect_xxe_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_file_magic_detect_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_glob_match_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_hamming_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_hashmap_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_hkdf_expand_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_hkdf_extract_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_hmac_md5_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_hmac_sha1_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_hmac_sha256_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_kernel_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_kmp_find_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_md5_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_memchr_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_memcmp_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_memcpy_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_memset_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_ngram_extract_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_ngram_histogram_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_pbkdf2_sha256_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_queue_fifo_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_queue_priority_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_ripemd160_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_rule_program(rules: &[(RuleFormula, u32)]) -> Program {
+pub fn build_sha1_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_sha256_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_sha3_256_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_sha3_512_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_sha384_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_sha3_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_sha512_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_simhash64_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_siphash13_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_sliding_entropy_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_stack_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_state_machine_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_std_dev_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_string_interner_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_substring_contains_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_substring_find_all_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_substring_find_first_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_typed_arena_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_union_find_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_url_percent_encode_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_url_percent_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_utf8_validate_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_variance_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_visitor_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_wildcard_match_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_xxhash3_64_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_xxhash64_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn build_xxhash_naga(_ctx: &LoweringCtx<'_>) -> Result<Module, vyre_driver::BackendError> {
+pub fn byte0() -> Expr {
+pub fn byte1() -> Expr {
+pub fn byte2() -> Expr {
+pub fn byte_capacity(&self) -> usize {
+pub fn byte_count(haystack: &[u8], needle_byte: u32) -> u32 {
+pub fn byte_count(input: &[u8], output: &mut Vec<u8>) {
+pub fn byte_exhaustion_reports_out_of_bytes() {
+pub fn byte_histogram(input: &[u8]) -> [u32; 256] {
+pub fn bytes_to_hex(bytes: &[u8]) -> String {
+pub fn byte_swap_u32(input: &[u8], output: &mut Vec<u8>) {
+pub fn byte_swap_u64(input: &[u8], output: &mut Vec<u8>) {
+pub fn capacity(&self) -> usize {
+pub fn chacha20_block(state: &[u8]) -> [u8; 64] {
+pub fn chacha20_state_from_key_nonce_counter(key: &[u8], nonce: &[u8], counter: u32) -> [u8; 64] {
+pub fn chaining_value(output: Output) -> [u32; 8] {
+pub fn chi_square_bits(input: &[u8]) -> u32 {
+pub fn chi_square(input: &[u8]) -> f32 {
+pub fn chunk_output(chunk: &[u8], chunk_counter: u64) -> Output {
+pub fn classify(byte: &Expr) -> Expr {
+pub fn committed_kats_match_cpu_reference() -> Result<(), String> {
+pub fn compact(data: &[u8], mask: &[bool]) -> Result<Vec<u8>, DataMovementError> {
+pub fn compact_mask_bytes(data: &[u8], mask: &[u8]) -> Result<Vec<u8>, DataMovementError> {
+pub fn compress(
+pub fn compress32(h: &mut [u32; 8], block: &[u8], count: u64, last: bool) {
+pub fn compress64(h: &mut [u64; 8], block: &[u8], count: u128, last: bool) {
+pub fn compress(state: &mut [u32; 4], block: &[u8]) {
+pub fn compress(state: &mut [u32; 5], block: &[u8]) {
+pub fn compress(state: &mut [u32; 8], block: &[u8]) {
+pub fn compress(state: &mut [u64; 8], block: &[u8]) {
+pub fn condition(condition: RuleCondition) -> Self {
+pub fn condition_expr(condition: &RuleCondition, _rule_id: u32) -> Expr {
+pub fn condition_program(compute: fn() -> Expr) -> Program {
+pub fn connected(&mut self, a: u32, b: u32) -> Result<bool, UnionFindError> {
+pub fn consume_tail(input: &[u8], mut index: usize, mut acc: u64) -> u64 {
+pub fn contains_ci(input: &[u8], needle: &[u8]) -> bool {
+pub fn contains(&self, key: u32) -> bool {
+pub fn copy_literals() -> Node {
+pub fn copy_match(
+pub fn copy_match() -> Node {
+pub fn cpu_and(input: &[u8], output: &mut Vec<u8>) {
+pub fn cpu_and(_i: &[u8], _o: &mut Vec<u8>) {}
+pub fn cpu_avg_floor(input: &[u8], output: &mut Vec<u8>) {
+pub fn cpu_avg_floor(_i: &[u8], _o: &mut Vec<u8>) {}
+pub fn cpu(input: &[u8], output: &mut Vec<u8>) {
+pub fn cpu_nand(input: &[u8], output: &mut Vec<u8>) {
+pub fn cpu_nand(_i: &[u8], _o: &mut Vec<u8>) {}
+pub fn cpu_nor(input: &[u8], output: &mut Vec<u8>) {
+pub fn cpu_nor(_i: &[u8], _o: &mut Vec<u8>) {}
+pub fn cpu_or(input: &[u8], output: &mut Vec<u8>) {
+pub fn cpu_or(_i: &[u8], _o: &mut Vec<u8>) {}
+pub fn cpu_wrapping_neg(input: &[u8], output: &mut Vec<u8>) {
+pub fn cpu_wrapping_neg(_i: &[u8], _o: &mut Vec<u8>) {}
+pub fn cpu_xor(input: &[u8], output: &mut Vec<u8>) {
+pub fn cpu_xor(_i: &[u8], _o: &mut Vec<u8>) {}
+pub fn crc32(bytes: &[u8]) -> u32 {
+pub fn crc32_program() -> Program {
+pub fn crc_bit_step() -> Expr {
+pub fn cv_pair_words(left: [u32; 8], right: [u32; 8]) -> [u32; 16] {
+pub fn damerau_levenshtein(a: &[u8], b: &[u8]) -> Result<u32, SimilarityError> {
+pub fn data_movement_broadcast_value(value: u32) -> u32 {
+pub fn data_movement_compact_keep(mask: u32) -> bool {
+pub fn data_movement_gather_byte(value: u32) -> u32 {
+pub fn data_movement_partition_nonzero(byte: u32) -> bool {
+pub fn decoded_escape(idx: Expr) -> Expr {
+pub fn decode_raw_block() -> Node {
+pub fn decode_rle_block() -> Node {
+pub fn decode_value(byte: Expr) -> Expr {
+pub fn decompress_bytes(input: &[u8]) -> Result<Vec<u8>, String> {
+pub fn decompress(input: &[u8], max_output: usize) -> Result<Vec<u8>, String> {
+pub fn dedupe(
+pub fn default_rolling_hash_program() -> Program {
+pub fn dequeue(&mut self) -> Result<T, FifoError> {
+pub fn detect_base64_run(@builtin(global_invocation_id) gid: vec3<u32>) {\n\
+pub fn detect_base64_run_config(config: &[u8]) -> Result<DetectBase64RunConfig, DetectionError> {
+pub fn detect_base64_run(input: &[u8], min_run_len: u32) -> Result<Vec<u32>, DetectionError> {
+pub fn detect_command_injection(input: &[u8]) -> Result<bool, DetectionError> {
+pub fn detect_email(input: &[u8]) -> Result<Vec<ByteSpan>, DetectionError> {
+pub fn detect_hex_run_config(config: &[u8]) -> Result<DetectHexRunConfig, DetectionError> {
+pub fn detect_hex_run(input: &[u8], min_run_len: u32) -> Result<Vec<u32>, DetectionError> {
+pub fn detect_high_entropy_window(
+pub fn detect_high_entropy_window_config(
+pub fn detect_ipv4(@builtin(global_invocation_id) gid: vec3<u32>) {\n\
+pub fn detect_ipv4(input: &[u8]) -> Result<Vec<ByteSpan>, DetectionError> {
+pub fn detect_ipv6(input: &[u8]) -> Result<Vec<ByteSpan>, DetectionError> {
+pub fn detect_jwt(input: &[u8]) -> Result<Vec<ByteSpan>, DetectionError> {
+pub fn detect_lfi(input: &[u8]) -> Result<bool, DetectionError> {
+pub fn detect_obfuscated_js(input: &[u8]) -> Result<bool, DetectionError> {
+pub fn detect_packed_binary(input: &[u8]) -> Result<bool, DetectionError> {
+pub fn detect_path_traversal(input: &[u8]) -> Result<bool, DetectionError> {
+pub fn detect_path_traversal() {\n\
+pub fn detect_pem_block(input: &[u8]) -> Result<Vec<ByteSpan>, DetectionError> {
+pub fn detect_rfi(input: &[u8]) -> Result<bool, DetectionError> {
+pub fn detect_sql_injection(input: &[u8]) -> Result<bool, DetectionError> {
+pub fn detect_ssrf(input: &[u8]) -> Result<bool, DetectionError> {
+pub fn detect_url(@builtin(global_invocation_id) gid: vec3<u32>) {\n\
+pub fn detect_url(input: &[u8]) -> Result<Vec<ByteSpan>, DetectionError> {
+pub fn detect_uuid(@builtin(global_invocation_id) gid: vec3<u32>) {\n\
+pub fn detect_uuid(input: &[u8]) -> Result<Vec<ByteSpan>, DetectionError> {
+pub fn detect_xor_single_byte(input: &[u8]) -> Result<Vec<XorSingleByteFinding>, DetectionError> {
+pub fn detect_xss(input: &[u8]) -> Result<bool, DetectionError> {
+pub fn detect_xxe(input: &[u8]) -> Result<bool, DetectionError> {
+pub fn digest(input: &[u8], mut state: [u64; 8]) -> [u64; 8] {
+pub fn distinct_bytes_produce_distinct_symbols() {
+pub fn dynamic_tables(reader: &mut BitReader<'_>) -> Result<(Huffman, Huffman), String> {
+pub fn element_bound_is_checked_before_slicing() -> Result<(), String> {
+pub fn email_spans(input: &[u8]) -> Result<Vec<ByteSpan>, DetectionError> {
+pub fn emission_preserves_first_visit_order() {
+pub fn emit_buffer_truncates_at_capacity() {
+pub fn emit_capacity(&self) -> usize {
+pub fn emitted(&self) -> &[u32] {
+pub fn empty_mask_drops_everything_even_for_nonempty_data() -> Result<(), DataMovementError> {
+pub fn english_score(input: &[u8], key: u8) -> i32 {
+pub fn enqueue(&mut self, value: T) -> Result<FifoStatus, FifoError> {
+pub fn ensure_room(current: usize, add: usize, max: usize) -> Result<(), String> {
+pub fn entropy_program() -> Program {
+pub fn exclusive_scan_flat_cpu(input: &[u8], output: &mut Vec<u8>) {
+pub fn exclusive_scan_u32(lanes: [u32; SUBGROUP_WIDTH]) -> [u32; SUBGROUP_WIDTH] {
+pub fn exposes_registered_entry_point() -> bool {
+pub fn extend_length(prefix: &'static str, len_var: &'static str, flag_var: &'static str) -> Node {
+pub fn f16_bits_to_f32(bits: u16) -> f32 {
+pub fn f32_to_f16_bits(value: f32) -> u16 {
+pub fn fail(code: u32) -> Node {
+pub fn file_magic_detect(input: &[u8]) -> Result<Vec<MagicFinding>, DetectionError> {
+pub fn file_magic_detect() {\n\
+pub fn file_size_cmp<F>(cmp_fn: F, threshold: u64, overflow_is_true: bool) -> Expr
+pub fn file_size() -> Expr {
+pub fn final_merge(acc: &[u64; 8], init: u64, secret_offset: usize) -> u64 {
+pub fn find_bytes(input: &[u8], needle: &[u8]) -> Option<usize> {
+pub fn find_ci(input: &[u8], needle: &[u8]) -> Option<usize> {
+pub fn find(&mut self, x: u32) -> Result<u32, UnionFindError> {
+pub fn finds_reachable_nodes_for_each_source() -> vyre_foundation::error::Result<()> {
+pub fn first_visit_emits_and_marks_visited() {
+pub fn fixed_dist() -> Result<Huffman, String> {
+pub fn fixed_litlen() -> Result<Huffman, String> {
+pub fn f(j: usize, x: u32, y: u32, z: u32) -> u32 {
+pub fn fnv1a64(input: &[u8]) -> u64 {
+pub fn fnv1a_program() -> Program {
+pub fn formula_expr(formula: &RuleFormula, rule_id: u32) -> Expr {
+pub fn g32(v: &mut [u32; 16], a: usize, b: usize, c: usize, d: usize, x: u32, y: u32) {
+pub fn g64(v: &mut [u64; 16], a: usize, b: usize, c: usize, d: usize, x: u64, y: u64) {
+pub fn gather(data: &[u8], indices_le: &[u8]) -> Result<Vec<u8>, DataMovementError> {
+pub fn gather_elements(
+pub fn get_beyond_watermark_reports_invalid_handle() {
+pub fn get(&self, handle: ArenaHandle) -> Result<T, ArenaError> {
+pub fn get(&self, key: u32) -> Result<u32, HashmapError> {
+pub fn glob_match(input: &[u8], output: &mut Vec<u8>) {
+pub fn glob_match(input: &[u8], pattern: &[u8]) -> Result<bool, MatchError> {
+pub fn g(v: &mut [u32; 16], a: usize, b: usize, c: usize, d: usize, x: u32, y: u32) {
+pub fn hamming(a: &[u8], b: &[u8]) -> Result<u32, SimilarityError> {
+pub fn hamming(input: &[u8], output: &mut Vec<u8>) {
+pub fn hash_kat_vectors() {
+pub fn has_input_byte(offset: u32) -> Expr {
+pub fn hex_bytes(hex: &str) -> Result<Vec<u8>, String> {
+pub fn hex_char(nibble: Expr) -> Expr {
+pub fn hex_decode_strict(input: &[u8]) -> Result<Vec<u8>, DecodeError> {
+pub fn hex_encode_lower(input: &[u8]) -> Vec<u8> {
+pub fn hex_nibble(byte: Expr) -> Expr {
+pub fn hex_nibble(byte: u8) -> Option<u8> {
+pub fn hex_nibble(byte: u8) -> Result<u8, String> {
+pub fn hex_pair(pos: Expr) -> Expr {
+pub fn hex_run_offsets(input: &[u8], min_run_len: u32) -> Result<Vec<u32>, DetectionError> {
+pub fn hex_to_bytes(hex: &str) -> Result<Vec<u8>, String> {
+pub fn hex_value(byte: u8) -> Option<u8> {
+pub fn high_entropy_offsets(
+pub fn high_entropy_spans(
+pub fn hkdf_expand(input: &[u8], output: &mut Vec<u8>) {
+pub fn hkdf_expand(prk: &[u8], info: &[u8], length: u32) -> Result<Vec<u8>, String> {
+pub fn hkdf_extract(input: &[u8], output: &mut Vec<u8>) {
+pub fn hkdf_extract(salt: &[u8], ikm: &[u8]) -> [u32; 8] {
+pub fn hmac<F>(key: &[u8], msg: &[u8], block_len: usize, digest_len: usize, hash: F) -> Vec<u8>
+pub fn hmac_md5(input: &[u8], output: &mut Vec<u8>) {
+pub fn hmac_md5(key: &[u8], msg: &[u8]) -> [u32; 4] {
+pub fn hmac_sha1(input: &[u8], output: &mut Vec<u8>) {
+pub fn hmac_sha1(key: &[u8], msg: &[u8]) -> [u32; 5] {
+pub fn hmac_sha256(input: &[u8], output: &mut Vec<u8>) {
+pub fn hmac_sha256(key: &[u8], msg: &[u8]) -> [u32; 8] {
+pub fn huffman_block(
+pub fn inclusive_scan_flat_cpu(input: &[u8], output: &mut Vec<u8>) {
+pub fn inclusive_scan_u32(lanes: [u32; SUBGROUP_WIDTH]) -> [u32; SUBGROUP_WIDTH] {
+pub fn input_byte() -> Expr {
+pub fn input_byte(index: Expr) -> Expr {
+pub fn input_len() -> Expr {
+pub fn in_range(value: Expr, low: u8, high: u8) -> Expr {
+pub fn insert(&mut self, key: u32, value: u32) -> Result<HashmapStatus, HashmapError> {
+pub fn intern_is_deterministic_and_idempotent() {
+pub fn intern(&mut self, bytes: &[u8]) -> Result<InternedSymbol, InternError> {
+pub fn ipv4_spans(input: &[u8]) -> Result<Vec<ByteSpan>, DetectionError> {
+pub fn ipv6_spans(input: &[u8]) -> Result<Vec<ByteSpan>, DetectionError> {
+pub fn is_alnum(byte: u8) -> bool {
+pub fn is_base64_char(byte: &u8) -> bool {
+pub fn is_base64url_char(byte: u8) -> bool {
+pub fn is_boundary(byte: Option<u8>) -> bool {
+pub fn is_digit(byte: Expr) -> Expr {
+pub fn is_email_domain(byte: u8) -> bool {
+pub fn is_email_local(byte: u8) -> bool {
+pub fn is_empty(&self) -> bool {
+pub fn is_hex_byte(byte: Expr) -> Expr {
+pub fn is_identifier(byte: Expr) -> Expr {
+pub fn is_lower_hex(byte: Expr) -> Expr {
+pub fn is_sanitizer(node_data: u32) -> bool {
+pub fn is_upper_hex(byte: Expr) -> Expr {
+pub fn is_uri_char(byte: u8) -> bool {
+pub fn is_visited(&self, node: u32) -> bool {
+pub fn jaro(a: &[u8], b: &[u8]) -> Result<f32, SimilarityError> {
+pub fn jaro_bits(a: &[u8], b: &[u8]) -> Result<u32, SimilarityError> {
+pub fn jaro_winkler(a: &[u8], b: &[u8]) -> Result<f32, SimilarityError> {
+pub fn jaro_winkler_bits(a: &[u8], b: &[u8]) -> Result<u32, SimilarityError> {
+pub fn jwt_spans(input: &[u8]) -> Result<Vec<ByteSpan>, DetectionError> {
+pub fn keccak_f(a: &mut [u64; 25]) {
+pub fn kl(j: usize) -> u32 {
+pub fn kmp_find(haystack: &[u8], needle: &[u8]) -> Result<u32, MatchError> {
+pub fn kmp_find(input: &[u8], output: &mut Vec<u8>) {
+pub fn kr(j: usize) -> u32 {
+pub fn lcs_length(a: &[u8], b: &[u8]) -> Result<u32, SimilarityError> {
+pub fn le(left: Expr, right: Expr) -> Expr {
+pub fn len(&self) -> usize {
+pub fn levenshtein(a: &[u8], b: &[u8]) -> Result<u32, SimilarityError> {
+pub fn load_f16_16x16(
+pub fn load_flat_cpu(input: &[u8], output: &mut Vec<u8>) {
+pub fn looks_like_plaintext(input: &[u8]) -> bool {
+pub fn lookup_round_trips_the_original_payload() {
+pub fn lookup(&self, symbol: InternedSymbol) -> Result<&[u8], InternError> {
+pub fn lookup_unknown_symbol_errors() {
+pub fn lower_ascii(byte: u8) -> u8 {
+pub fn lz4_decompress_program() -> Program {
+pub fn lz4_sequence_body() -> Vec<Node> {
+pub fn map_offsets_to_segments(
+pub fn mark_visited(source_idx: Expr, node: Expr) -> Node {
+pub fn matches_uuid(bytes: &[u8]) -> bool {
+pub fn match_tokens(tokens: &[Token], input: &[u8]) -> bool {
+pub fn max_allowed_len() -> Expr {
+pub fn max_output_for_input(input_len: usize) -> Result<usize, String> {
+pub fn max_output_len() -> Expr {
+pub fn md5(input: &[u8], output: &mut Vec<u8>) {
+pub fn md5(input: &[u8]) -> [u32; 4] {
+pub fn memchr(haystack: &[u8], needle_byte: u32) -> u32 {
+pub fn memchr(input: &[u8], output: &mut Vec<u8>) {
+pub fn memcmp(a: &[u8], b: &[u8]) -> bool {
+pub fn memcmp(input: &[u8], output: &mut Vec<u8>) {
+pub fn memcpy(input: &[u8], output: &mut Vec<u8>) {
+pub fn memcpy(input: &[u8]) -> Vec<u8> {
+pub fn memset(input: &[u8], output: &mut Vec<u8>) {
+pub fn memset(len: u32, value: u32) -> Result<Vec<u8>, String> {
+pub fn merge_acc(acc: u64, lane: u64) -> u64 {
+pub fn mix16(input: &[u8], offset: usize, secret_offset: usize) -> u64 {
+pub fn mul_add_f16_16x16(
+pub fn mul_add_flat_cpu(input: &[u8], output: &mut Vec<u8>) {
+pub fn naive_gemm_f32(a: &[f32], b: &[f32], n: usize) -> Vec<f32> {
+pub fn new(capacity: usize) -> Result<Self, HashmapError> {
+pub fn new(capacity: usize) -> Self {
+pub fn new(n: usize) -> Self {
+pub fn new(slot_capacity: usize, byte_capacity: usize) -> Self {
+pub fn new(transitions: Vec<Transition>, initial: u32) -> Result<Self, StateMachineError> {
+pub fn new(universe: usize, emit_capacity: usize) -> Self {
+pub fn ngram_extract(input: &[u8], n: u32) -> Result<Vec<Vec<u8>>, SimilarityError> {
+pub fn ngram_extract(input: &[u8], output: &mut Vec<u8>) {
+pub fn ngram_histogram(input: &[u8], n: u32) -> Result<Vec<(Vec<u8>, u32)>, SimilarityError> {
+pub fn ngram_histogram(input: &[u8], output: &mut Vec<u8>) {
+pub fn node_count() -> Expr {
+pub fn node_count(&self) -> usize {
+pub fn not_formula(formula: Self) -> Self {
+pub fn not(formula: Self) -> Self {
+pub fn not_visited(source_idx: Expr, node: Expr) -> Expr {
+pub fn nul_terminated_end(input: &[u8], start: usize, field: &str) -> Result<usize, String> {
+pub fn or(left: Expr, right: Expr) -> Expr {
+pub fn or(left: Self, right: Self) -> Self {
+pub fn output_len() -> Expr {
+pub fn overflow_does_not_drop_head() {
+pub fn overflow_is_reported_without_mutation() {
+pub fn overflow_preserves_existing_max() {
+pub fn parent_cv(left: [u32; 8], right: [u32; 8]) -> [u32; 8] {
+pub fn parent_output(left: [u32; 8], right: [u32; 8]) -> Output {
+pub fn parse_ipv4(input: &[u8]) -> Option<usize> {
+pub fn parse_ipv6(input: &[u8]) -> Option<usize> {
+pub fn parse_jwt(input: &[u8]) -> Option<usize> {
+pub fn parse_octet(input: &[u8]) -> Option<(u32, usize)> {
+pub fn parse(pattern: &[u8]) -> Vec<Token> {
+pub fn partition(data: &[u8], predicate_id: u32) -> Result<PartitionOutput, DataMovementError> {
+pub fn pattern_count() -> Expr {
+pub fn pattern_count(pattern_id: u32) -> Expr {
+pub fn pattern_state() -> Expr {
+pub fn pattern_state(pattern_id: u32) -> Expr {
+pub fn payload_start(input: &[u8], flags: u8) -> Result<usize, String> {
+pub fn pbkdf2_sha256(
+pub fn pbkdf2_sha256(input: &[u8], output: &mut Vec<u8>) {
+pub fn peek_max(&self) -> Result<PriorityItem<T>, PriorityError> {
+pub fn peek(&self) -> Result<T, StackError> {
+pub fn pem_spans(input: &[u8]) -> Result<Vec<ByteSpan>, DetectionError> {
+pub fn percent_decode_lower(input: &[u8]) -> Vec<u8> {
+pub fn permute(input: [u32; 16]) -> [u32; 16] {
+pub fn pop_max(&mut self) -> Result<PriorityItem<T>, PriorityError> {
+pub fn pop(&mut self) -> Result<T, StackError> {
+pub fn pops_highest_priority_first() {
+pub fn predicate_by_id(id: u32) -> Result<fn(u8) -> bool, DataMovementError> {
+pub fn prefix_brace_program() -> Program {
+pub fn prefix_table(needle: &[u8]) -> Vec<usize> {
+pub fn preserves_total_enqueue_order() {
+pub fn probability_bucket() -> Expr {
+pub fn program() -> Program {
+pub fn program_with_elements(n: u32) -> Program {
+pub fn program_with_queue_size(max_queue_slots: u32) -> Program {
+pub fn program_with_stack_size(max_stack_slots: u32) -> Program {
+pub fn push_if(
+pub fn push(&mut self, value: T, priority: u32) -> Result<(), PriorityError> {
+pub fn push(&mut self, value: T) -> Result<StackStatus, StackError> {
+pub fn push_run(
+pub fn push_then_pop_is_identity() {
+pub fn quarter_round(s: &mut [u32; 16], a: usize, b: usize, c: usize, d: usize) {
+pub fn rabin_karp_find(haystack: &[u8], needle: &[u8]) -> Result<u32, MatchError> {
+pub fn ranges_overlap(a_start: u32, a_len: u32, b_start: u32, b_len: u32) -> bool {
+pub fn reachable_nodes(
+pub fn read32(bytes: &[u8], offset: usize) -> u32 {
+pub fn read64(bytes: &[u8], offset: usize) -> u64 {
+pub fn read_byte(buffer: &'static str, pos: Expr) -> Expr {
+pub fn read_byte(pos: Expr) -> Expr {
+pub fn read_header() -> Node {
+pub fn read_match_offset() -> Node {
+pub fn read_secret32(offset: usize) -> u32 {
+pub fn read_secret64(offset: usize) -> u64 {
+pub fn read_u32_config(config: &[u8], field: &str) -> Result<u32, DetectionError> {
+pub fn reduce_add_flat_cpu(input: &[u8], output: &mut Vec<u8>) {
+pub fn reduce_add_scalar_u32(lanes: &[u32]) -> u32 {
+pub fn reduce_add_u32(lanes: [u32; SUBGROUP_WIDTH]) -> [u32; SUBGROUP_WIDTH] {
+pub fn reject_compressed_block() -> Node {
+pub fn reject_reserved_block() -> Node {
+pub fn rejects_count_above_oom_cap() -> Result<(), String> {
+pub fn rejects_invalid_edges_in_checked_api() {
+pub fn remove(&mut self, key: u32) -> Result<u32, HashmapError> {
+pub fn repeat_previous(
+pub fn repeat_value(
+pub fn repeat_zero(
+pub fn report_if_sink(start_node: Expr, node: Expr, depth: Expr, source_idx: Expr) -> Node {
+pub fn report_match(pattern_id: Expr, end_pos: Expr) -> Node {
+pub fn required_extension_buffers(&self) -> Vec<BufferDecl> {
+pub fn reset_clears_live_handles_but_preserves_capacity() {
+pub fn reset_clears_marks_and_emit_buffer() {
+pub fn reset_is_idempotent() {
+pub fn reset(&mut self) {
+pub fn reset(&mut self, state: u32) {
+pub fn respects_max_depth() -> vyre_foundation::error::Result<()> {
+pub fn reverse_bits(mut code: u16, len: u8) -> u16 {
+pub fn rewind_while(input: &[u8], mut index: usize, pred: fn(u8) -> bool) -> usize {
+pub fn ripemd160(input: &[u8], output: &mut Vec<u8>) {
+pub fn ripemd160(input: &[u8]) -> [u32; 5] {
+pub fn rle_fill_loop() -> Node {
+pub fn rolling_hash_program(window_size: u32) -> Program {
+pub fn root_output(input: &[u8]) -> Output {
+pub fn round(acc: u64, lane: u64) -> u64 {
+pub fn round(v: &mut [u32; 16], m: &[u32; 16]) {
+pub fn rule_buffers() -> Vec<BufferDecl> {
+pub fn rule_nodes(rules: &[(RuleFormula, u32)]) -> Vec<Node> {
+pub fn run_committed_kats<F>(toml_contents: &str, mut run_case: F) -> Result<(), String>
+pub fn run_offsets(
+pub fn scan_neighbors(
+pub fn scramble(acc: &mut [u64; 8]) {
+pub fn second_visit_is_already_visited_and_does_not_reemit() {
+pub fn serializes_edges_by_source_order() -> vyre_foundation::error::Result<()> {
+pub fn set_invalid_handle_reports_error_without_growing_arena() {
+pub fn set(&mut self, handle: ArenaHandle, value: T) -> Result<(), ArenaError> {
+pub fn set_updates_the_slot_and_preserves_other_handles() {
+pub fn sha1(input: &[u8], output: &mut Vec<u8>) {
+pub fn sha1(input: &[u8]) -> [u32; 5] {
+pub fn sha256_block_boundary_kat_vectors() {
+pub fn sha256(input: &[u8], output: &mut Vec<u8>) {
+pub fn sha256(input: &[u8]) -> [u32; 8] {
+pub fn sha3_256(input: &[u8], output: &mut Vec<u8>) {
+pub fn sha3_256(input: &[u8]) -> [u32; 8] {
+pub fn sha3_512(input: &[u8], output: &mut Vec<u8>) {
+pub fn sha3_512(input: &[u8]) -> [u64; 8] {
+pub fn sha384(input: &[u8], output: &mut Vec<u8>) {
+pub fn sha384(input: &[u8]) -> [u64; 6] {
+pub fn sha512(input: &[u8], output: &mut Vec<u8>) {
+pub fn sha512(input: &[u8]) -> [u64; 8] {
+pub fn shannon_bits(input: &[u8]) -> f32 {
+pub fn shuffle_down_u32_flat_cpu(input: &[u8], output: &mut Vec<u8>) {
+pub fn shuffle_down_u32(lanes: [u32; SUBGROUP_WIDTH], delta: u32) -> [u32; SUBGROUP_WIDTH] {
+pub fn shuffle_up_u32_flat_cpu(input: &[u8], output: &mut Vec<u8>) {
+pub fn shuffle_up_u32(lanes: [u32; SUBGROUP_WIDTH], delta: u32) -> [u32; SUBGROUP_WIDTH] {
+pub fn shuffle_xor_u32_flat_cpu(input: &[u8], output: &mut Vec<u8>) {
+pub fn shuffle_xor_u32(lanes: [u32; SUBGROUP_WIDTH], mask: u32) -> [u32; SUBGROUP_WIDTH] {
+pub fn sign_expr(value: Expr) -> Expr {
+pub fn simhash64(input: &[u8], output: &mut Vec<u8>) {
+pub fn simhash64(input: &[u8]) -> Result<u64, SimilarityError> {
+pub fn siphash13(input: &[u8], output: &mut Vec<u8>) {
+pub fn siphash13(msg: &[u8], key: u64) -> u64 {
+pub fn sip_round(v0: &mut u64, v1: &mut u64, v2: &mut u64, v3: &mut u64) {
+pub fn sliding_entropy_bits(input: &[u8], window: u32) -> Vec<u32> {
+pub fn sliding_entropy(input: &[u8], output: &mut Vec<u8>) {
+pub fn sliding_entropy(input: &[u8], window: u32) -> Vec<f32> {
+pub fn slot_capacity(&self) -> usize {
+pub fn slot_exhaustion_reports_out_of_slots() {
+pub fn span(offset: usize, len: usize) -> Result<ByteSpan, DetectionError> {
+pub fn sponge(input: &[u8], rate: usize, out_len: usize) -> Vec<u8> {
+pub fn star_question_match(pattern: &[u8], input: &[u8]) -> bool {
+pub fn starts_ci(input: &[u8], index: usize, needle: &[u8]) -> bool {
+pub fn state(&self) -> u32 {
+pub fn stats_chi_square_term(count: u32, expected: f32) -> f32 {
+pub fn std_dev_bits(input: &[u8]) -> u32 {
+pub fn std_dev(input: &[u8]) -> f32 {
+pub fn std_dev(input: &[u8], output: &mut Vec<u8>) {
+pub fn step(&mut self, event: u32) -> Result<StateMachineStatus, StateMachineError> {
+pub fn step_uniform(
+pub fn store_byte(buffer: &'static str, pos: Expr, byte: Expr) -> Node {
+pub fn stored_block(
+pub fn store_f32_16x16(
+pub fn store_flat_cpu(input: &[u8], output: &mut Vec<u8>) {
+pub fn substring_contains(haystack: &[u8], needle: &[u8]) -> Result<bool, MatchError> {
+pub fn substring_contains(input: &[u8], output: &mut Vec<u8>) {
+pub fn substring_find_all(haystack: &[u8], needle: &[u8]) -> Result<Vec<u32>, MatchError> {
+pub fn substring_find_all(input: &[u8], output: &mut Vec<u8>) {
+pub fn substring_find_first(haystack: &[u8], needle: &[u8]) -> Result<u32, MatchError> {
+pub fn substring_find_first(input: &[u8], output: &mut Vec<u8>) {
+pub fn symbols_are_allocated_in_interning_order() {
+pub fn threshold() -> Expr {
+pub fn to_csr(node_count: usize, edges: &[(u32, u32)]) -> Result<CsrGraph> {
+pub fn to_program(&self) -> Program {
+pub fn to_u32_offset(offset: usize) -> Result<u32, MatchError> {
+pub fn to_u32(value: usize, field: &str) -> Result<u32, DetectionError> {
+pub fn to_u32(value: usize, label: &str) -> Result<u32, SimilarityError> {
+pub fn transition(state: Expr, byte: Expr) -> Expr {
+pub fn try_new(capacity: usize) -> Option<Self> {
+pub fn try_new(transitions: Vec<Transition>, initial: u32) -> Option<Self> {
+pub fn try_to_csr(node_count: usize, edges: &[(u32, u32)]) -> Result<CsrGraph> {
+pub fn u32_words_to_hex(words: &[u32]) -> String {
+pub fn u64_to_hex(word: u64) -> String {
+pub fn u64_words_to_hex(words: &[u64]) -> String {
+pub fn union(&mut self, a: u32, b: u32) -> Result<UnionFindStatus, UnionFindError> {
+pub fn universe(&self) -> usize {
+pub fn url_percent_decode(input: &[u8]) -> Vec<u8> {
+pub fn url_percent_encode(input: &[u8], output: &mut Vec<u8>) {
+pub fn url_percent_encode(input: &[u8]) -> Vec<u8> {
+pub fn url_percent(input: &[u8], output: &mut Vec<u8>) {
+pub fn url_spans(input: &[u8]) -> Result<Vec<ByteSpan>, DetectionError> {
+pub fn utf8_validate(input: &[u8]) -> bool {
+pub fn utf8_validate(input: &[u8], output: &mut Vec<u8>) {
+pub fn uuid_spans(input: &[u8]) -> Result<Vec<ByteSpan>, DetectionError> {
+pub fn validate_csr_sizes(node_count: usize, edge_count: usize) -> Result<()> {
+pub fn validate_dp_product(a_len: usize, b_len: usize) -> Result<(), SimilarityError> {
+pub fn validate_edge_offsets(csr: &CsrGraph) -> Result<()> {
+pub fn validate_frontier_capacity(csr: &CsrGraph, sources: &[u32], max_depth: u32) -> Result<()> {
+pub fn validate_haystack(haystack: &[u8]) -> Result<(), MatchError> {
+pub fn validate_input(input: &[u8]) -> Result<(), DetectionError> {
+pub fn validate_input(name: &str, input: &[u8]) -> Result<(), SimilarityError> {
+pub fn validate_match_offset() -> Node {
+pub fn validate_needle(needle: &[u8]) -> Result<(), MatchError> {
+pub fn validate_ngram_len(n: u32) -> Result<usize, SimilarityError> {
+pub fn validate_pair(a: &[u8], b: &[u8]) -> Result<(), SimilarityError> {
+pub fn validate_patterns(patterns: &[&[u8]]) -> Result<(), MatchError> {
+pub fn validate_reachability_csr(csr: &CsrGraph, node_count: usize) -> Result<()> {
+pub fn validate_search_inputs(haystack: &[u8], needle: &[u8]) -> Result<(), MatchError> {
+pub fn validate(&self) -> Result<()> {
+pub fn validate_source_frontier(
+pub fn validate_stack_capacity(csr: &CsrGraph, sources: &[u32], max_depth: u32) -> Result<()> {
+pub fn valid_source_invocation(source_idx: Expr) -> Expr {
+pub fn valid_window(window_size: u32) -> Expr {
+pub fn variance_bits(input: &[u8]) -> u32 {
+pub fn variance(input: &[u8]) -> f32 {
+pub fn variance(input: &[u8], output: &mut Vec<u8>) {
+pub fn visit(&mut self, node: u32) -> Result<VisitStatus, VisitError> {
+pub fn visit_out_of_range_errors() {
+pub fn wave_b_hash_kat_vectors() {
+pub fn wave_b_hmac_and_kdf_kat_vectors() -> Result<(), String> {
+pub fn wave_b_kdf_bomb_defenses_are_actionable() {
+pub fn wgsl_byte_pool_updates_are_atomic() {
+pub fn wgsl_coop_matrix_available(backend: &crate::Backend) -> bool {
+pub fn wgsl_kernel_source_exposes_the_expected_entry_point() {
+pub fn wgsl_only(_backend: &Backend) -> bool {
+pub fn wgsl_only(backend: &Backend) -> bool {
+pub fn wildcard_match(input: &[u8], output: &mut Vec<u8>) {
+pub fn wildcard_match(input: &[u8], pattern: &[u8]) -> Result<bool, MatchError> {
+pub fn window_byte() -> Expr {
+pub fn words4(bytes: &[u8]) -> [u32; 4] {
+pub fn words5(bytes: &[u8]) -> [u32; 5] {
+pub fn words_per_source() -> Expr {
+pub fn xxh3_large(input: &[u8]) -> u64 {
+pub fn xxh3_len_129_to_240(input: &[u8]) -> u64 {
+pub fn xxh3_len_17_to_128(input: &[u8]) -> u64 {
+pub fn xxh3_len_1_to_3(input: &[u8]) -> u64 {
+pub fn xxh3_len_4_to_8(input: &[u8]) -> u64 {
+pub fn xxh3_len_9_to_16(input: &[u8]) -> u64 {
+pub fn xxhash3_64(input: &[u8], output: &mut Vec<u8>) {
+pub fn xxhash3_64(input: &[u8]) -> u64 {
+pub fn xxhash64(input: &[u8], output: &mut Vec<u8>) {
+pub fn xxhash64(input: &[u8]) -> u64 {
+pub fn zstd_block_body() -> Vec<Node> {
+pub fn zstd_decompress_program() -> Program {
+pub mod abs;
+pub mod abs_diff;
+pub mod add;
+pub mod add_sat;
+pub mod aho_corasick_scan;
+pub mod and;
+pub mod argmax_u32;
+pub mod argmin_u32;
+pub mod argon2id;
+pub mod arithmetic_mean;
+pub mod ast;
+pub mod attacks;
+pub mod avg_floor;
+pub mod base32;
+pub mod base32_encode;
+pub mod base64;
+pub mod base64_encode;
+pub mod base64url;
+pub mod bfs;
+pub mod binary_f32_program;
+pub mod binary_u32_program;
+pub mod bitonic_sort_u32;
+pub mod bitwise;
+pub mod blake2;
+pub mod blake2b;
+pub mod blake2s;
+pub mod blake3;
+pub mod boyer_moore_find;
+pub mod broadcast;
+pub mod builder;
+pub mod byte_count;
+pub mod byte_histogram;
+pub mod bytes;
+pub mod byte_swap_u32;
+pub mod byte_swap_u64;
+pub mod case;
+pub mod catalog;
+pub mod chacha20_block;
+pub mod chi_square;
+pub mod clamp;
+pub mod clz;
+pub mod codes {
+pub mod compact;
+pub mod compare;
+pub mod condition_op;
+pub mod constants;
+pub mod consts;
+pub mod cpu_ref;
+pub mod cpu_refs;
+pub mod crc32;
+pub mod csr;
+pub mod ctz;
+pub mod damerau_levenshtein;
+pub mod data_movement_error;
+pub mod decode;
+pub mod default_rolling_hash_program;
+pub mod deflate_core;
+pub mod deflate_decompress;
+pub mod detect_base64_run;
+pub mod detect_command_injection;
+pub mod detect_email;
+pub mod detect_hex_run;
+pub mod detect_high_entropy_window;
+pub mod detect_ipv4;
+pub mod detect_ipv6;
+pub mod detect_jwt;
+pub mod detect_lfi;
+pub mod detect_obfuscated_js;
+pub mod detector_support;
+pub mod detect_packed_binary;
+pub mod detect_path_traversal;
+pub mod detect_pem_block;
+pub mod detect_rfi;
+pub mod detect_sql_injection;
+pub mod detect_ssrf;
+pub mod detect_url;
+pub mod detect_uuid;
+pub mod detect_xor_single_byte;
+pub mod detect_xss;
+pub mod detect_xxe;
+pub mod dfa_scan;
+pub mod dfs;
+pub mod div;
+pub mod entropy;
+pub mod entropy_program;
+pub mod eq;
+pub mod extract_bits;
+pub mod f32_abs;
+pub mod f32_add;
+pub mod f32_ceil;
+pub mod f32_clamp;
+pub mod f32_cmp;
+pub mod f32_cos;
+pub mod f32_div;
+pub mod f32_eq;
+pub mod f32_floor;
+pub mod f32_fma;
+pub mod f32_is_finite;
+pub mod f32_is_inf;
+pub mod f32_is_nan;
+pub mod f32_le;
+pub mod f32_lt;
+pub mod f32_max;
+pub mod f32_min;
+pub mod f32_mul;
+pub mod f32_neg;
+pub mod f32_rem;
+pub mod f32_round;
+pub mod f32_sign;
+pub mod f32_sin;
+pub mod f32_sqrt;
+pub mod f32_sub;
+pub mod f32_trunc;
+pub mod file_magic_detect;
+pub mod file_size_eq;
+pub mod file_size_gt;
+pub mod file_size_gte;
+pub mod file_size_lt;
+pub mod file_size_lte;
+pub mod file_size_ne;
+pub mod float;
+pub mod fnv1a32;
+pub mod gather;
+pub mod gcd;
+pub mod ge;
+pub mod glob_match;
+pub mod gt;
+pub mod gzip_decompress;
+pub mod hamming;
+pub mod hashmap;
+pub mod hash_params;
+pub mod hex;
+pub mod hex_decode_strict;
+pub mod hex_encode_lower;
+pub mod hex_to_bytes;
+pub mod hkdf_expand;
+pub mod hkdf_extract;
+pub mod hmac;
+pub mod hmac_md5;
+pub mod hmac_sha1;
+pub mod hmac_sha256;
+pub mod implementation {
+pub mod implementation;
+pub mod input_byte;
+pub mod insert_bits;
+pub mod jaro;
+pub mod jaro_winkler;
+pub mod kdf;
+pub mod kernel {
+pub mod kernel;
+pub mod kmp_find;
+pub mod laws;
+pub mod lcm;
+pub mod lcs_length;
+pub mod le;
+pub mod levenshtein;
+pub mod literal_false;
+pub mod literal_true;
+pub mod load;
+pub mod logical_not;
+pub mod lowering {
+pub mod lowering;
+pub mod lt;
+pub mod lz4;
+pub mod magic;
+pub mod map_offsets_to_segments;
+pub mod match_tokens;
+pub mod math;
+pub mod max;
+pub mod max_bfs_queue;
+pub mod md5;
+pub mod memchr;
+pub mod memcmp;
+pub mod memcpy;
+pub mod memset;
+pub mod min;
+pub mod mod_op;
+pub mod mul;
+pub mod mul_add;
+pub mod nand;
+pub mod ne;
+pub mod neg;
+pub mod negate;
+pub mod ngram_extract;
+pub mod ngram_histogram;
+pub mod nor;
+pub mod not;
+pub mod op;
+pub mod or;
+pub mod parse;
+pub mod partition;
+pub mod pattern_count_gt;
+pub mod pattern_count_gte;
+pub mod pattern_exists;
+pub mod pbkdf2_sha256;
+pub mod popcount;
+pub mod popcount_sw;
+pub mod prefix_brace;
+pub mod prefix_sum_inclusive;
+pub mod prefix_table;
+pub mod primitives;
+pub mod probability_bucket;
+pub mod programs;
+pub mod push_hash;
+pub mod queue_fifo;
+pub mod queue_priority;
+pub mod rabin_karp_find;
+pub mod reachability;
+pub mod read_u32_words_le;
+pub mod reduce_all;
+pub mod reduce_any;
+pub mod reduce_count;
+pub mod reduce_max_u32;
+pub mod reduce_min_u32;
+pub mod reduce_sum_u32;
+pub mod reference;
+pub mod reverse_bits;
+pub mod ripemd160;
+pub mod roll_hash;
+pub mod rolling;
+pub mod rolling_hash_program;
+pub mod rotl;
+pub mod rotr;
+pub mod scatter;
+pub mod search_contract;
+pub mod select_op;
+pub mod sha1;
+pub mod sha256;
+pub mod sha3;
+pub mod sha3_256;
+pub mod sha3_512;
+pub mod sha384;
+pub mod sha512;
+pub mod shared;
+pub mod shl;
+pub mod shr;
+pub mod sign;
+pub mod signatures;
+pub mod simhash64;
+pub mod siphash;
+pub mod siphash13;
+pub mod sliding_entropy;
+pub mod spans;
+pub mod spec;
+pub mod stack;
+pub mod star_question_match;
+pub mod state_machine;
+pub mod std_dev;
+pub mod store;
+pub mod string_interner;
+pub mod sub;
+pub mod subgroup_ballot;
+pub mod subgroup_broadcast;
+pub mod subgroup_reduce;
+pub mod subgroup_scan;
+pub mod subgroup_shuffle;
+pub mod sub_sat;
+pub mod substring_contains;
+pub mod substring_find_all;
+pub mod substring_find_first;
+pub mod ternary_f32_program;
+pub mod test_harness;
+pub mod test_migration;
+pub mod tests;
+pub mod token;
+pub mod tokenize_gpu;
+pub mod typed_arena;
+pub mod unary_f32_program;
+pub mod unary_u32_program;
+pub mod unicode;
+pub mod uniform_byte_distribution_entropy;
+pub mod union_find;
+pub mod url;
+pub mod url_percent;
+pub mod url_percent_encode;
+pub mod utf8_validate;
+pub mod validation;
+pub mod valid_window;
+pub mod variance;
+pub mod visitor;
+pub mod wgsl {
+pub mod wgsl;
+pub mod wildcard_match;
+pub mod window_byte;
+pub mod wrapping_neg;
+pub mod xor;
+pub mod xxhash;
+pub mod xxhash3_64;
+pub mod xxhash64;
+pub mod zlib_decompress;
+pub mod zstd;
+pub struct Abs;
+pub struct AbsDiff;
+pub struct Add;
+pub struct AddSat;
+pub struct All;
+pub struct And;
+pub struct Any;
+pub struct ArenaHandle(pub u32);
+pub struct ArgmaxU32;
+pub struct ArgminU32;
+pub struct Argon2idParams {
+pub struct Automaton {
+pub struct Ballot;
+pub struct Base32Decode;
+pub struct Base32Encode;
+pub struct Base64Decode;
+pub struct Base64Encode;
+pub struct Base64UrlDecode;
+pub struct Bfs;
+pub struct BitonicSortU32;
+pub struct BitReader<'a> {
+pub struct Broadcast;
+pub struct ByteSpan {
+pub struct Case {
+pub struct Cases {
+pub struct Clamp;
+pub struct Clz;
+pub struct Compact;
+pub struct CoopMatrix<T: Copy, const ROWS: usize, const COLS: usize> {
+pub struct CsrGraph {
+pub struct Ctz;
+pub struct DeflateDecompress;
+pub struct DetectBase64RunConfig {
+pub struct DetectHexRunConfig {
+pub struct DetectHighEntropyWindowConfig {
+pub struct DfaScan;
+pub struct Dfs;
+pub struct Div;
+pub struct Eq;
+pub struct ExclusiveScan;
+pub struct ExtractBits;
+pub struct F32Abs;
+pub struct F32Add;
+pub struct F32Ceil;
+pub struct F32Clamp;
+pub struct F32Cmp;
+pub struct F32Cos;
+pub struct F32Div;
+pub struct F32Eq;
+pub struct F32Floor;
+pub struct F32Fma;
+pub struct F32IsFinite;
+pub struct F32IsInf;
+pub struct F32IsNan;
+pub struct F32Le;
+pub struct F32Lt;
+pub struct F32Max;
+pub struct F32Min;
+pub struct F32Mul;
+pub struct F32Neg;
+pub struct F32Rem;
+pub struct F32Round;
+pub struct F32Sign;
+pub struct F32Sin;
+pub struct F32Sqrt;
+pub struct F32Sub;
+pub struct F32Trunc;
+pub struct FileSizeEq;
+pub struct FileSizeGt;
+pub struct FileSizeGte;
+pub struct FileSizeLt;
+pub struct FileSizeLte;
+pub struct FileSizeNe;
+pub struct Gather;
+pub struct Gcd;
+pub struct Ge;
+pub struct Gt;
+pub struct GzipDecompress;
+pub struct HexDecode;
+pub struct HexDecodeStrict;
+pub struct HexEncodeLower;
+pub struct Huffman {
+pub struct InclusiveScan;
+pub struct InsertBits;
+pub struct InternedSymbol(pub u32);
+pub struct Lcm;
+pub struct Le;
+pub struct LiteralFalse;
+pub struct LiteralTrue;
+pub struct Load;
+pub struct LogicalNot;
+pub struct Lt;
+pub struct Lz4Decompress;
+pub struct MagicFinding {
+pub struct Match {
+pub struct Max;
+pub struct MigrationEntry {
+pub struct Min;
+pub struct Mod;
+pub struct Mul;
+pub struct MulAdd;
+pub struct Ne;
+pub struct Neg;
+pub struct Negate;
+pub struct Node {
+pub struct Not;
+pub struct Or;
+pub struct Output {
+pub struct Partition;
+pub struct PartitionOutput {
+pub struct PatternCountGt;
+pub struct PatternCountGte;
+pub struct PatternExists;
+pub struct Popcount;
+pub struct PopcountSw;
+pub struct PrefixSumInclusiveU32;
+pub struct PriorityItem<T> {
+pub struct ReachabilityOp;
+pub struct ReduceAdd;
+pub struct ReduceAll;
+pub struct ReduceAny;
+pub struct ReduceCount;
+pub struct ReduceMaxU32;
+pub struct ReduceMinU32;
+pub struct ReduceSumU32;
+pub struct ReverseBits;
+pub struct Rotl;
+pub struct Rotr;
+pub struct Scatter;
+pub struct Segment {
+pub struct SegmentedMatch {
+pub struct SelectOp;
+pub struct Shl;
+pub struct Shr;
+pub struct ShuffleDown;
+pub struct ShuffleUp;
+pub struct ShuffleXor;
+pub struct Sign;
+pub struct Slot {
+pub struct Store;
+pub struct Sub;
+pub struct SubSat;
+pub struct Tokenize;
+pub struct Transition {
+pub struct UnicodeDecode;
+pub struct UrlDecode;
+pub struct UrlPercentDecode;
+pub struct UrlPercentEncode;
+pub struct Utf8Validate;
+pub struct WorkgroupHashmap {
+pub struct WorkgroupPriorityQueue<T> {
+pub struct WorkgroupQueueFifo<T> {
+pub struct WorkgroupStack<T> {
+pub struct WorkgroupStateMachine {
+pub struct WorkgroupStringInterner {
+pub struct WorkgroupTypedArena<T: Copy + Default> {
+pub struct WorkgroupUnionFind {
+pub struct WorkgroupVisitor {
+pub struct Xor;
+pub struct XorSingleByteFinding {
+pub struct ZlibDecompress;
+pub struct ZstdDecompress;
+pub trait WgslOp {
+pub type DetectionError = String;
+pub type MatchError = String;
+pub type ReachableNode = (u32, u32, u32);
+pub type SimilarityError = String;

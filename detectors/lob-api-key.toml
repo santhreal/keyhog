@@ -1,0 +1,15 @@
+# Docs: https://docs.lob.com/
+# Format: test_ or live_ prefix followed by 40 hex characters (32 chars after underscore)
+# Verify: GET /v1/addresses with Basic auth returns 200 if valid
+# Prefix: test_ or live_
+
+[detector]
+id = "lob-api-key"
+name = "Lob API Key"
+service = "lob"
+severity = "high"
+keywords = ["test_", "live_", "LOB_API_KEY", "lob.com"]
+
+[[detector.patterns]]
+regex = '(?:test_|live_)[a-f0-9]{40}'
+description = "Lob API key with test_ or live_ prefix"

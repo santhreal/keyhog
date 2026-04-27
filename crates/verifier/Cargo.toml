@@ -1,0 +1,47 @@
+[package]
+name = "keyhog-verifier"
+description = "Async parallel credential verification engine"
+version = "0.2.1"
+edition = "2021"
+rust-version = "1.89"
+authors = ["Santh Project <contact@santh.dev>"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/santhsecurity/keyhog"
+homepage = "https://github.com/santhsecurity/keyhog"
+documentation = "https://docs.rs/keyhog-verifier"
+keywords = ["secret-scanner", "security", "credentials", "api-keys", "git"]
+categories = ["command-line-utilities", "development-tools"]
+readme = "README.md"
+
+[package.metadata.santh]
+status = "alpha"
+
+[features]
+default = ["live"]
+live = []
+
+[dependencies]
+keyhog-core = { workspace = true }
+reqwest = { workspace = true, features = ["blocking", "json", "stream"] }
+tokio = { workspace = true, features = ["full"] }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+percent-encoding = { workspace = true }
+sha2 = { workspace = true }
+hmac = { workspace = true }
+hex = { workspace = true }
+base64 = { workspace = true }
+futures-util = { workspace = true }
+codewalk = { workspace = true }
+lazy_static = { workspace = true }
+parking_lot = { workspace = true }
+dashmap = { workspace = true }
+url = { workspace = true }
+
+# AWS SigV4 signing for credential verification
+
+[dev-dependencies]
+rusty-fork = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
+toml = { workspace = true }

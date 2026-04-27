@@ -1,0 +1,26 @@
+# Docs: https://help.puppet.com/pe/2023.8/topics/rbac_token_auth_intro.htm
+# Format: RBAC token - alphanumeric string used with X-Authentication header
+# Verify: GET /rbac-api/v1/users with X-Authentication header returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "puppet-enterprise-token"
+name = "Puppet Enterprise RBAC Token"
+service = "puppet-enterprise"
+severity = "critical"
+keywords = ["puppet-access", "X-Authentication", "puppet.rbac", "PE_TOKEN"]
+
+[[detector.patterns]]
+regex = "(?:PE_TOKEN|PUPPET[_-]TOKEN|PUPPET[_-]RBAC[_-]TOKEN)[=:\\s\"'']+([a-zA-Z0-9_-]{20,})"
+description = "Puppet Enterprise RBAC token with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "X-Authentication[=:\\s\"'']+([a-zA-Z0-9_-]{20,})"
+description = "Puppet Enterprise X-Authentication header token"
+group = 1
+
+[[detector.patterns]]
+regex = "puppet-access\\s+login.*--service-url.*([a-zA-Z0-9_-]{20,})"
+description = "Puppet Enterprise token from puppet-access command"
+group = 1

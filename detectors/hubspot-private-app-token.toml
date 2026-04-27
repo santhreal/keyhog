@@ -1,0 +1,15 @@
+# Docs: https://developers.hubspot.com/docs/api/private-apps
+# Format: pat-(na1|eu1|na2)- followed by UUID format
+# Verify: GET request to HubSpot API /integrations/v1/me with Bearer authorization
+# Prefix: pat-
+
+[detector]
+id = "hubspot-private-app-token"
+name = "HubSpot Private App Token"
+service = "hubspot"
+severity = "critical"
+keywords = ["pat-"]
+
+[[detector.patterns]]
+regex = 'pat-(na1|eu1|na2)-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}'
+description = "HubSpot private app access token"

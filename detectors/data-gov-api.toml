@@ -1,0 +1,26 @@
+# Docs: https://data.gov/developers/apis/
+# Format: API key from api.data.gov, passed as x-api-key header or query parameter
+# Verify: no public verification endpoint
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "data-gov-api-key"
+name = "Data.gov API Key"
+service = "data-gov"
+severity = "medium"
+keywords = ["DATAGOV_API_KEY", "DATA_GOV", "CKAN_API_KEY", "data.gov", "api.data.gov", "ckan"]
+
+[[detector.patterns]]
+regex = "(?:DATAGOV|DATA_GOV|CKAN)_API_KEY[=:\\s\"'\\']+([a-zA-Z0-9_-]{20,50})"
+description = "Data.gov API key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "[Xx]-[Aa]pi-[Kk]ey[=:\\s\"'\\']+([a-zA-Z0-9_-]{20,50}).*(?:data\\.gov|api\\.data\\.gov)"
+description = "Data.gov API key in x-api-key header"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:data\\.gov|api\\.data\\.gov).*[?&]api_key=([a-zA-Z0-9_-]{20,50})"
+description = "Data.gov API key in URL query parameter"
+group = 1

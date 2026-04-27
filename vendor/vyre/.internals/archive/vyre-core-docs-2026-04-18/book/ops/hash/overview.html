@@ -1,0 +1,516 @@
+<!DOCTYPE HTML>
+<html lang="en" class="rust sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Hash - The vyre Book</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="The GPU compute IR with a conformance prover">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../../favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="../../favicon-8114d1fc.png">
+        <link rel="stylesheet" href="../../css/variables-8adf115d.css">
+        <link rel="stylesheet" href="../../css/general-2459343d.css">
+        <link rel="stylesheet" href="../../css/chrome-ae938929.css">
+        <link rel="stylesheet" href="../../css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../../fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="../../highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="../../tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="../../ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "../../";
+            const default_light_theme = "rust";
+            const default_dark_theme = "navy";
+            window.path_to_searchindex_js = "../../searchindex-bc7bdb82.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="../../toc-16d598fb.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('rust')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="../../toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">The vyre Book</h1>
+
+                    <div class="right-buttons">
+                        <a href="../../print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/santhsecurity/vyre" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/santhsecurity/vyre/edit/main/core/docs/./ops/hash/overview.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                            <span class=fa-svg id="git-edit-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M421.7 220.3l-11.3 11.3-22.6 22.6-205 205c-6.6 6.6-14.8 11.5-23.8 14.1L30.8 511c-8.4 2.5-17.5 .2-23.7-6.1S-1.5 489.7 1 481.2L38.7 353.1c2.6-9 7.5-17.2 14.1-23.8l205-205 22.6-22.6 11.3-11.3 33.9 33.9 62.1 62.1 33.9 33.9zM96 353.9l-9.3 9.3c-.9 .9-1.6 2.1-2 3.4l-25.3 86 86-25.3c1.3-.4 2.5-1.1 3.4-2l9.3-9.3H112c-8.8 0-16-7.2-16-16V353.9zM453.3 19.3l39.4 39.4c25 25 25 65.5 0 90.5l-14.5 14.5-22.6 22.6-11.3 11.3-33.9-33.9-62.1-62.1L314.3 67.7l11.3-11.3 22.6-22.6 14.5-14.5c25-25 65.5-25 90.5 0z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="hash-operations"><a class="header" href="#hash-operations">Hash Operations</a></h1>
+<p>Hash operations provide deterministic, composable hashing primitives used
+throughout vyre for O(1) lookup, deduplication, and fingerprinting. They are
+implemented as IR-first compound ops built entirely from Layer 1 primitives.</p>
+<h2 id="the-o1-lookup-that-makes-scanning-possible"><a class="header" href="#the-o1-lookup-that-makes-scanning-possible">The O(1) lookup that makes scanning possible</a></h2>
+<p>A security scanner carries thousands of signatures. Each signature
+describes a pattern, a condition, and a severity. When the scanner
+encounters a byte sequence in a file, it needs to know: does this
+sequence match any of my thousands of signatures? The naive approach
+— compare the sequence against each signature — is O(N) per lookup
+where N is the signature count. At 10,000 signatures and millions
+of byte sequences per file, that is tens of billions of comparisons.
+Even on a GPU, this is slow.</p>
+<p>Hashing makes it O(1). Hash the byte sequence. Look up the hash in
+a table. If the table has an entry, the sequence matches a
+signature (modulo collision handling). One hash computation per
+sequence, one table lookup per sequence, regardless of how many
+signatures are loaded. The signature count drops out of the
+per-sequence cost entirely.</p>
+<p>This is not a novel insight. Every serious scanning engine uses
+hash-based lookup. The insight that matters for vyre is that hashing
+is a <em>composable primitive</em> — it appears in DFA result processing
+(match hashing for deduplication), in decode result processing
+(hash decoded payloads for known-bad signature matching), in graph
+analysis (hash node labels for efficient comparison), in
+tokenization (hash identifier strings for keyword lookup), and in
+every other pipeline stage that needs to compare byte sequences
+against a known set.</p>
+<p>If every pipeline stage reimplements hashing, the implementations
+drift. Different hash functions, different seed handling, different
+collision behavior. A hash computed in the decode stage is not
+comparable to a hash computed in the match stage because they used
+different algorithms. The pipeline cannot compose.</p>
+<p>vyre provides hash operations as Layer 2 compound ops to eliminate
+this drift. One hash function, one implementation, one specification,
+used everywhere. A hash computed by <code>hash.fnv</code> in the decode stage
+is bit-identical to a hash computed by <code>hash.fnv</code> in the match stage
+for the same input bytes. The pipeline composes because the hashing
+is standardized.</p>
+<h2 id="why-hashing-is-the-ideal-first-ir-first-compound-op"><a class="header" href="#why-hashing-is-the-ideal-first-ir-first-compound-op">Why hashing is the ideal first IR-first compound op</a></h2>
+<p>Hash operations are pure compositions of Layer 1 primitives. FNV-1a
+is a loop containing one XOR and one multiply per byte. CRC32 is a
+loop containing one XOR and one table lookup per byte. Rolling hash
+is a loop containing one add, one subtract, and one multiply per
+byte. There are no buffer management complexities, no multi-binding
+layouts, no atomic coordination, no barriers.</p>
+<p>This makes hash ops the ideal candidates for proving the IR
+composition system works at the compound op level. If <code>hash.fnv</code>
+composes correctly — if a <code>Call("hash.fnv", [region])</code> inside
+another op’s <code>program()</code> inlines correctly and the lowered shader
+produces the same bytes as a hand-written FNV loop — then the
+composition system works for compound ops, and more complex ops
+(decode, graph, match) can follow the same pattern with confidence.</p>
+<h2 id="current-state"><a class="header" href="#current-state">Current state</a></h2>
+<p>The hash module (<code>ops/hash/mod.rs</code>) contains three implemented
+operations — <code>hash.fnv1a32</code>, <code>hash.crc32c</code>, and <code>hash.murmur3_32</code> —
+all implemented IR-first with conform specs, CPU references, and WGSL
+kernels. Additional hash algorithms (rolling hash, entropy bucketing)
+are planned and will follow the same IR-native pattern.</p>
+<h2 id="planned-operations"><a class="header" href="#planned-operations">Planned operations</a></h2>
+<h3 id="hashfnv"><a class="header" href="#hashfnv">hash.fnv</a></h3>
+<p><strong>Planned identifier:</strong> <code>hash.fnv</code></p>
+<p><strong>Planned signature:</strong> <code>(Bytes) -&gt; U32</code> for FNV-1a 32-bit</p>
+<p><strong>Specification:</strong> FNV-1a hash as defined by Fowler, Noll, and Vo.
+The algorithm processes input bytes one at a time:</p>
+<pre><code class="language-text">hash = 0x811c9dc5          (FNV offset basis for 32-bit)
+for each byte b in input:
+    hash = hash XOR b
+    hash = hash * 0x01000193    (FNV prime for 32-bit)
+return hash
+</code></pre>
+<p>The algorithm is deterministic, produces a 32-bit output for any
+input length, and has no configuration parameters. Two
+implementations that follow this specification produce identical
+output for identical input. This is the property vyre requires.</p>
+<p><strong>Why FNV-1a and not SHA-256, BLAKE3, xxHash, or MurmurHash:</strong></p>
+<p>FNV-1a has three properties that make it uniquely suitable for
+vyre’s requirements:</p>
+<ol>
+<li>
+<p><strong>Simplicity.</strong> The algorithm is three operations per byte: XOR,
+multiply, advance. It has no rounds, no mixing functions, no
+finalization steps. This means the IR composition is trivial —
+one <code>Node::Loop</code> containing one <code>BinOp::BitXor</code> and one
+<code>BinOp::Mul</code>. The lowered shader is indistinguishable from a
+hand-written loop. There is no abstraction overhead because there
+is almost no abstraction.</p>
+</li>
+<li>
+<p><strong>Integer-only.</strong> FNV-1a uses only XOR and wrapping multiply on
+<code>u32</code>. No floats, no 64-bit intermediates (for the 32-bit
+variant), no platform-dependent behavior. The GPU produces
+bit-identical results to the CPU for every input because both
+are doing the same modular arithmetic.</p>
+</li>
+<li>
+<p><strong>No seed or salt.</strong> The offset basis is a fixed constant. There
+is no randomization. The same input always produces the same
+hash on every machine, every run, every backend. This aligns
+with vyre’s determinism guarantee — there is no hidden state
+that could cause divergence.</p>
+</li>
+</ol>
+<p>FNV-1a is not cryptographically secure. It is not the fastest hash
+for large inputs. It does not have the best avalanche properties.
+None of these matter for vyre’s use case. vyre needs a hash that is
+deterministic, integer-only, simple to compose, and produces
+well-distributed values for the byte patterns encountered in
+security scanning (identifiers, URLs, file paths, hex strings).
+FNV-1a meets all four requirements.</p>
+<p>Cryptographic hashing (SHA-256, BLAKE3) may be added as separate
+ops if needed for integrity verification or signature matching.
+They would be separate identifiers with separate specifications.</p>
+<p><strong>IR composition:</strong></p>
+<pre><code class="language-text">Program {
+    buffers: [
+        input: binding 0, ReadOnly, U32 (Bytes layout),
+        output: binding 1, ReadWrite, U32,
+        params: binding 2, Uniform,   // params.x = byte_length
+    ],
+    workgroup_size: [64, 1, 1],
+    entry: [
+        Let("gid", InvocationId(0)),
+        If(Lt(Var("gid"), BufLen("output")), [
+            Let("hash", LitU32(0x811c9dc5)),
+            Loop("i", LitU32(0), Load(params, 0), [
+                Let("byte", extract_byte(Load(input, Div(Var("i"), 4)), Mod(Var("i"), 4))),
+                Assign("hash", Mul(BitXor(Var("hash"), Var("byte")), LitU32(0x01000193))),
+            ]),
+            Store("output", Var("gid"), Var("hash")),
+        ]),
+    ],
+}
+</code></pre>
+<p>Every operation in this program is a Layer 1 primitive. The
+composition is Category A: it inlines completely at lowering time.
+The generated WGSL is identical to a hand-written FNV-1a loop. The
+abstraction exists at IR construction time and vanishes at shader
+emission time.</p>
+<h3 id="hashrolling"><a class="header" href="#hashrolling">hash.rolling</a></h3>
+<p><strong>Planned identifier:</strong> <code>hash.rolling</code></p>
+<p><strong>Planned signature:</strong> <code>(Bytes) -&gt; U32[]</code> (one hash per byte
+position, for a given window size)</p>
+<p><strong>Specification:</strong> Rabin-Karp style rolling hash. For a window of
+size W, compute a hash for every contiguous W-byte substring:</p>
+<pre><code class="language-text">output[i] = hash(input[i .. i + W])
+</code></pre>
+<p>The rolling property means each hash can be computed from the
+previous hash in O(1) instead of recomputing from scratch:</p>
+<pre><code class="language-text">hash[i+1] = (hash[i] - input[i] * base^(W-1)) * base + input[i+W]
+</code></pre>
+<p>The base and modulus are fixed constants (specified in the op). The
+<code>base^(W-1)</code> value is precomputed and passed as a parameter.</p>
+<p><strong>Why rolling hash:</strong> Rolling hashes enable content-defined chunking
+(CDC) for deduplication, sliding-window pattern matching for
+approximate search, and efficient plagiarism/similarity detection.
+A taint analysis engine that needs to find “code that is similar to
+a known-vulnerable pattern” can use rolling hash to identify
+candidate regions without comparing every substring character by
+character.</p>
+<h3 id="hashcrc"><a class="header" href="#hashcrc">hash.crc</a></h3>
+<p><strong>Planned identifier:</strong> <code>hash.crc</code></p>
+<p><strong>Planned signature:</strong> <code>(Bytes) -&gt; U32</code></p>
+<p><strong>Specification:</strong> CRC32 using the standard polynomial <code>0xEDB88320</code>
+(reflected form of ISO 3309 / ITU-T V.42 / Ethernet CRC32). The
+algorithm uses a 256-entry lookup table:</p>
+<pre><code class="language-text">crc = 0xFFFFFFFF
+for each byte b in input:
+    crc = table[(crc XOR b) AND 0xFF] XOR (crc &gt;&gt; 8)
+return crc XOR 0xFFFFFFFF
+</code></pre>
+<p>The table contains precomputed CRC values for each byte value. The
+table is constant and is the same for every invocation.</p>
+<p><strong>Why CRC32:</strong> CRC32 appears in ZIP files (each entry has a CRC32
+for integrity verification), PNG chunks, Ethernet frames, and many
+binary formats. A scanner that verifies archive integrity uses CRC32
+to detect tampered or corrupt entries. A scanner that matches on
+file content hashes uses CRC32 as a fast first-pass filter before
+more expensive matching.</p>
+<p><strong>Calling convention:</strong> V2. The lookup table is the <code>lookup</code> buffer.</p>
+<h3 id="hashentropy"><a class="header" href="#hashentropy">hash.entropy</a></h3>
+<p><strong>Planned identifier:</strong> <code>hash.entropy</code></p>
+<p><strong>Planned signature:</strong> <code>(Bytes) -&gt; U32</code> (entropy bucket)</p>
+<p><strong>Specification:</strong> Shannon entropy of a byte buffer, quantized into
+integer buckets. The algorithm counts the frequency of each byte
+value (0–255), computes the Shannon entropy formula
+<code>H = -sum(p_i * log2(p_i))</code> using fixed-point arithmetic (no
+floats), and maps the result to a bucket index.</p>
+<p><strong>Why integer entropy, not float:</strong> GPU floats are nondeterministic
+across vendors. A float entropy value of <code>7.831</code> on NVIDIA might be
+<code>7.832</code> on AMD due to different rounding in the <code>log2</code>
+approximation. vyre cannot accept this because the entropy value
+feeds into rule conditions (<code>if entropy &gt; 7.5 then suspicious</code>),
+and a rule that fires on NVIDIA but not on AMD violates the
+determinism promise.</p>
+<p>Integer-bucketed entropy eliminates the problem. The bucket
+boundaries are fixed constants. A byte buffer either falls in
+bucket 7 or bucket 8, and both backends agree because the bucket
+assignment uses only integer arithmetic and comparison. The
+precision loss (bucket granularity instead of continuous entropy) is
+acceptable because security rules do not need sub-bit entropy
+precision — they need “is this region high-entropy (encrypted/
+compressed/random) or low-entropy (plaintext/code)?”</p>
+<p>The bucket boundaries are part of the op specification and are
+permanent once defined. They must produce identical bucket
+assignments across all backends for identical input bytes.</p>
+<p><code>hash.entropy</code> is consumed directly as an IR op — any pipeline
+that needs entropy bucketing builds it into a <code>Program</code> via
+<code>Expr::Call("hash.entropy", ...)</code>. There is no separate engine
+or runtime to invoke.</p>
+<h2 id="what-makes-hash-ops-different-from-other-compound-ops"><a class="header" href="#what-makes-hash-ops-different-from-other-compound-ops">What makes hash ops different from other compound ops</a></h2>
+<p>Hash ops are the simplest compound ops in vyre. They have:</p>
+<ul>
+<li><strong>One input buffer, one output buffer.</strong> No complex multi-binding
+layouts.</li>
+<li><strong>No atomics.</strong> Each invocation hashes one region and writes one
+output value. No cross-invocation coordination.</li>
+<li><strong>No barriers.</strong> No workgroup-level synchronization.</li>
+<li><strong>No workgroup memory.</strong> No shared state between invocations.</li>
+<li><strong>Deterministic by construction.</strong> Integer arithmetic only. No
+floats, no scheduling dependence, no reduction ordering.</li>
+<li><strong>Pure Category A composition.</strong> Every hash algorithm is a loop
+of Layer 1 primitives. Nothing to inline but the loop body.</li>
+</ul>
+<p>This simplicity is why hash ops are the ideal proving ground for
+IR-first compound op development. If the IR composition system
+works for hash ops — if <code>Call("hash.fnv", args)</code> inlines correctly,
+if the lowered shader matches the hand-written equivalent, if the
+parity harness passes — then the system works, and more complex
+compound ops can follow with confidence.</p>
+<h2 id="permanence"><a class="header" href="#permanence">Permanence</a></h2>
+<p>Operation identifiers listed in this chapter are planned, not yet
+permanent. They become permanent when the first conforming
+implementation is published and passes the conformance suite.</p>
+<p>Once published:</p>
+<ul>
+<li><code>hash.fnv</code>’s offset basis (<code>0x811c9dc5</code>) and prime (<code>0x01000193</code>)
+are permanent. The same input produces the same hash forever.</li>
+<li><code>hash.crc</code>’s polynomial (<code>0xEDB88320</code>) and initialization
+(<code>0xFFFFFFFF</code>) are permanent.</li>
+<li><code>hash.entropy</code>’s bucket boundaries are permanent.</li>
+<li><code>hash.rolling</code>’s base and modulus are permanent.</li>
+</ul>
+<p>These are mathematical constants. They do not have “versions.” They
+do not “evolve.” A hash function that changes its output for the
+same input is not a new version — it is a different function with a
+different identifier.</p>
+<h2 id="implemented-hash-operations"><a class="header" href="#implemented-hash-operations">Implemented hash operations</a></h2>
+<p>The following hash operations have conform specs with both CPU references
+and real WGSL kernels. They are registered in the conform registry and
+pass exhaustive u8 verification.</p>
+<h3 id="hashfnv1a32--fnv-1a-32-bit"><a class="header" href="#hashfnv1a32--fnv-1a-32-bit"><code>hash.fnv1a32</code> — FNV-1a 32-bit</a></h3>
+<p>The workhorse non-cryptographic hash. Offset basis <code>0x811c9dc5</code>, prime
+<code>0x01000193</code>. One byte at a time: XOR then multiply. Used by warpscan
+and keyhog for fast string hashing.</p>
+<p>WGSL kernel: processes <code>input.data[]</code> via word/byte extraction, pure u32
+arithmetic. No lookup tables needed.</p>
+<h3 id="hashcrc32c--crc32c-castagnoli"><a class="header" href="#hashcrc32c--crc32c-castagnoli"><code>hash.crc32c</code> — CRC32C (Castagnoli)</a></h3>
+<p>Polynomial <code>0x82F63B78</code> (reflected). Initialize <code>0xFFFFFFFF</code>, XOR each
+byte, 8-bit loop with <code>select()</code> for the polynomial conditional, finalize
+with <code>XOR 0xFFFFFFFF</code>. Used in iSCSI, SCTP, ext4, network protocols.</p>
+<p>WGSL kernel: bit-by-bit loop with <code>select(0u, poly, (crc &amp; 1u) != 0u)</code>
+— branchless on GPU.</p>
+<h3 id="hashmurmur3_32--murmurhash3-x86-32-bit"><a class="header" href="#hashmurmur3_32--murmurhash3-x86-32-bit"><code>hash.murmur3_32</code> — MurmurHash3 x86 32-bit</a></h3>
+<p>Body processes aligned 4-byte blocks via <code>input.data[i]</code> directly (no
+byte extraction needed for the body). Tail handles 1-3 remaining bytes.
+Finalization: <code>fmix32</code> with two multiply-shift rounds. Seed fixed at 0
+for deterministic conformance.</p>
+<p>WGSL kernel: handles body + tail + finalization. The tail uses the byte
+extraction pattern for unaligned bytes.</p>
+<h2 id="see-also"><a class="header" href="#see-also">See also</a></h2>
+<ul>
+<li><a href="../overview.html">Operations Overview</a></li>
+<li><a href="../primitive/overview.html">Primitive Overview</a></li>
+<li><a href="../trait.html">OpSpec Trait</a></li>
+</ul>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../../ops/decode/overview.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="../../ops/string/overview.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../../ops/decode/overview.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="../../ops/string/overview.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="../../elasticlunr-ef4e11c1.min.js"></script>
+        <script src="../../mark-09e88c2c.min.js"></script>
+        <script src="../../searcher-c2a407aa.js"></script>
+
+        <script src="../../clipboard-1626706a.min.js"></script>
+        <script src="../../highlight-abc7f01d.js"></script>
+        <script src="../../book-a0b12cfe.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+
+    </div>
+    </body>
+</html>

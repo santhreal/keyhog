@@ -1,0 +1,21 @@
+# Docs: https://gentrace.ai/docs/
+# Format: Bearer token format, typically 64+ hex characters
+# Verify: no public verification endpoint
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "gentrace-api-key"
+name = "Gentrace API Key"
+service = "gentrace"
+severity = "high"
+keywords = ["GENTRACE_API_KEY", "gentrace", "GENTRACE_PIPELINE_ID"]
+
+[[detector.patterns]]
+regex = "(?:GENTRACE_API_KEY|gentrace.api.key)[=:\\s\"'']+([a-zA-Z0-9]{40,})"
+description = "Gentrace API key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:Authorization)[=:\\s\"'']+(?:Bearer\\s+)?([a-zA-Z0-9]{40,})"
+description = "Potential Gentrace Bearer token"
+group = 1

@@ -1,0 +1,45 @@
+# Docs: https://developer.sketch.com/
+# Format: Personal Access Token for Sketch Cloud API
+# Verify: GET /v1/user with Authorization header
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "sketch-cloud-api-key"
+name = "Sketch Cloud API Key"
+service = "sketch"
+severity = "high"
+keywords = ["SKETCH", "sketch", "SKETCH_API_KEY", "sketchapp"]
+
+[[detector.patterns]]
+regex = "(?:SKETCH|sketch)[_=:\\s\"'']+(?:api[_-]?)?(?:key|token)[=:\\s\"'']+([a-zA-Z0-9_-]{20,50})"
+description = "Sketch Cloud API key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:sketch[_-]?cloud|SKETCH_CLOUD)[_=:\\s\"'']+(?:api[_-]?)?(?:key|token)[=:\\s\"'']+([a-zA-Z0-9_-]{20,50})"
+description = "Sketch Cloud API token"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://api.sketch.com/v1/user"
+
+[detector.verify.auth]
+type = "header"
+name = "Authorization"
+template = "Bearer {{match}}"
+
+[detector.verify.success]
+status = 200
+
+[[detector.verify.metadata]]
+name = "id"
+json_path = "id"
+
+[[detector.verify.metadata]]
+name = "name"
+json_path = "name"
+
+[[detector.verify.metadata]]
+name = "email"
+json_path = "email"

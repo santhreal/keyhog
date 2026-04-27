@@ -1,0 +1,25 @@
+# Docs: https://docs.aws.amazon.com/AmazonECR/latest/userguide/registry_auth.html
+# Format: Base64-encoded authorization token valid for 12 hours, or docker login password
+# Verify: none (safe verification requires the target registry/account/region and cannot be done with a generic HTTP bearer probe)
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "aws-ecr-token"
+name = "AWS ECR Authorization Token"
+service = "aws-ecr"
+severity = "high"
+keywords = ["AWS_ECR", "ecr.amazonaws.com", "get-login-password", "ECR_PASSWORD", "amazonaws"]
+
+[[detector.patterns]]
+regex = "(?:AWS_ECR|ECR|ecr)[\\w_]*(?:PASSWORD|TOKEN|auth)[=:\\s\"'']+([A-Za-z0-9+/=]{100,})"
+description = "AWS ECR authorization token (base64 encoded) with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:\\.dkr\\.ecr\\.[a-z0-9-]+\\.amazonaws\\.com).*?(?:password|token)[=:\\s\"'']+([A-Za-z0-9+/=]{50,})"
+description = "AWS ECR token associated with ECR registry URL"
+group = 1
+
+[[detector.patterns]]
+regex = "aws ecr get-login-password.*?\\|\\s*docker login.*?--password-stdin"
+description = "AWS ECR login command pattern indicating token usage"

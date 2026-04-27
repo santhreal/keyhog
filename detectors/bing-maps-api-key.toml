@@ -1,0 +1,28 @@
+# Docs: https://learn.microsoft.com/en-us/bingmaps/getting-started/bing-maps-dev-center-help/getting-a-bing-maps-key
+# Format: 64+ character alphanumeric string
+# Verify: GET /REST/v1/Locations with key query parameter
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "bing-maps-api-key"
+name = "Bing Maps API Key"
+service = "bing"
+severity = "high"
+keywords = ["BING_MAPS_KEY", "bing.maps.key", "bing_maps_key"]
+
+[[detector.patterns]]
+regex = "(?:BING[_-]?MAPS[_-]?KEY|bing[_-]?maps[_-]?key|bing\\.maps\\.key)[=:\\s\"'']+([A-Za-z0-9]{64,})"
+description = "Bing Maps API key with context anchor (64+ chars)"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://dev.virtualearth.net/REST/v1/Locations"
+
+[detector.verify.auth]
+type = "query"
+param = "key"
+field = "match"
+
+[detector.verify.success]
+status = 200

@@ -1,0 +1,21 @@
+# Docs: https://umami.is/docs/api/authentication
+# Format: UUID format (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx) for website IDs, JWT-like tokens for auth
+# Verify: GET /api/websites with Bearer token returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "umami-api-key"
+name = "Umami Analytics API Key"
+service = "umami"
+severity = "medium"
+keywords = ["UMAMI_API_KEY", "umami_api_key", "umami.is"]
+
+[[detector.patterns]]
+regex = "(?:UMAMI[_\\-\\s]?API[_\\-\\s]?KEY|umami[_\\-\\s]?api[_\\-\\s]?key)[=:\\s\"'']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
+description = "Umami API key (website ID) in UUID format with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:UMAMI[_\\-\\s]?WEBSITE[_\\-\\s]?ID|umami[_\\-\\s]?website)[=:\\s\"'']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
+description = "Umami website ID in UUID format"
+group = 1

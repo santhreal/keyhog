@@ -1,0 +1,28 @@
+# Docs: https://docs.ai21.com/docs/get-your-api-key
+# Format: 32-character hexadecimal string with no unique prefix
+# Verify: GET /studio/v1/models with Authorization header returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "ai21-api-key"
+name = "AI21 Labs API Key"
+service = "ai21"
+severity = "high"
+keywords = ["AI21_API_KEY", "ai21", "AI21"]
+
+[[detector.patterns]]
+regex = "(?:AI21|AI21_API_KEY|ai21)[=:\\s\"'']+([a-f0-9]{32})"
+description = "AI21 Labs API key with context anchor"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://api.ai21.com/studio/v1/models"
+
+[detector.verify.auth]
+type = "header"
+name = "Authorization"
+template = "Bearer {{match}}"
+
+[detector.verify.success]
+status = 200

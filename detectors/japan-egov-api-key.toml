@@ -1,0 +1,26 @@
+# Docs: https://www.e-stat.go.jp/en/developer
+# Format: e-Stat API key for Japanese government statistics (appId parameter)
+# Verify: GET /api/1.0/app/getStatsList with appId parameter
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "japan-egov-api-key"
+name = "Japan e-Gov e-Stat API Key"
+service = "japan-egov"
+severity = "medium"
+keywords = ["e-Stat", "ESTAT", "e_stat", "e-gov", "appId", "e-stat.go.jp"]
+
+[[detector.patterns]]
+regex = "(?:e-Stat|ESTAT|e_stat|e-gov)[_.-]?(?:APP[_-]?ID|appid|API[_-]?KEY|api_key)[\\s\"''=:]+([a-zA-Z0-9]{20,40})"
+description = "Japan e-Stat API application ID"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:e-stat\\.go\\.jp).{0,30}appId[\\s\"''=:]+([a-zA-Z0-9]{20,40})"
+description = "Japan e-Stat appId in URL or code"
+group = 1
+
+[[detector.patterns]]
+regex = "appId[\\s\"''=:]+([a-zA-Z0-9]{20,40}).{0,30}(?:e-stat|stat\\.go\\.jp)"
+description = "Japan e-Stat appId with trailing context"
+group = 1

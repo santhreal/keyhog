@@ -1,0 +1,26 @@
+# Docs: https://help.zscaler.com/zpa/api/api-developer-guide
+# Format: Client ID and Client Secret pair, or API token
+# Verify: POST /signin with client credentials to obtain bearer token
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "zscaler-api-key"
+name = "Zscaler API Key"
+service = "zscaler"
+severity = "critical"
+keywords = ["ZSCALER", "zscaler", "ZPA", "zpa", "ZIA"]
+
+[[detector.patterns]]
+regex = "(?:ZSCALER|zscaler|ZPA|zpa)[_\\s]*(?:CLIENT[_\\s]*)?ID[=:\\s\"'']+([a-zA-Z0-9_-]{24,36})"
+description = "Zscaler client ID with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:ZSCALER|zscaler|ZPA|zpa)[_\\s]*(?:CLIENT[_\\s]*)?(?:SECRET|KEY)[=:\\s\"'']+([a-zA-Z0-9_-]{32,64})"
+description = "Zscaler client secret with context anchor"
+group = 1
+
+[[detector.companions]]
+name = "zscaler_client_secret"
+regex = "(?:ZSCALER|zscaler|ZPA|zpa)[_\\s]*(?:CLIENT[_\\s]*)?(?:SECRET|KEY)[=:\\s\"'']+[a-zA-Z0-9_-]{32,64}"
+within_lines = 5

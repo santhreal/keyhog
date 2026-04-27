@@ -1,0 +1,21 @@
+# Docs: https://min.io/docs/minio/linux/administration/identity-access-management.html
+# Format: Access key 5-20+ chars, Secret key 8-100+ chars (configurable, often base64-like)
+# Verify: none (self-hosted S3-compatible, no standard verification endpoint)
+# Prefix: none (generic format, requires context anchoring)
+
+[detector]
+id = "minio-access-key"
+name = "MinIO Access Key"
+service = "minio"
+severity = "high"
+keywords = ["MINIO", "minioadmin", "MINIO_ROOT_USER", "MINIO_ACCESS_KEY", "MINIO_SECRET_KEY"]
+
+[[detector.patterns]]
+regex = "(?:MINIO|minio)[._-]?(?:ROOT[._-]?USER|ACCESS[._-]?KEY)[=:\\s\"']+([a-zA-Z0-9_-]{5,40})"
+description = "MinIO access key or root user with context anchor"
+group = 1
+
+[[detector.companions]]
+name = "secret_key"
+regex = "[a-zA-Z0-9+/=]{8,100}"
+within_lines = 5

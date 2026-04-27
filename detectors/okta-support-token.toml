@@ -1,0 +1,19 @@
+# Docs: https://developer.okta.com/docs/reference/api/
+# Format: 00xxxxx... (alphanumeric, 42 chars typical)
+# Verify: GET /api/v1/users/me with Authorization: SSWS <token> returns 200 if valid
+# Prefix: 00 (weak prefix — requires strong context anchoring)
+
+[detector]
+id = "okta-support-token"
+name = "Okta 2023 Support System Token"
+service = "okta"
+severity = "critical"
+keywords = ["okta", "OKTA", "SSWS"]
+
+[[detector.patterns]]
+regex = "(?i)(?:okta|SSWS)[_\\s=:\"']+00[a-zA-Z0-9]{38,50}"
+description = "Okta support token with context anchor"
+
+[[detector.patterns]]
+regex = "(?i)OKTA_(?:TOKEN|API_KEY|SESSION|SECRET)[=:\\s\"']+00[a-zA-Z0-9]{38,50}"
+description = "Okta environment variable with token"

@@ -1,0 +1,16 @@
+# Docs: https://pushover.net/api
+# Format: 30 alphanumeric characters, no unique prefix (requires context anchoring)
+# Verify: POST to api.pushover.net/1/users/validate.json returns 1 on success
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "pushover-api-token"
+name = "Pushover API Token"
+service = "pushover"
+severity = "medium"
+keywords = ["PUSHOVER", "pushover", "PUSHOVER_TOKEN", "PUSHOVER_KEY"]
+
+[[detector.patterns]]
+regex = '(?:PUSHOVER|pushover)[=:][\s"]*([a-z0-9]{30})'
+description = "Pushover API token with context anchor"
+group = 1

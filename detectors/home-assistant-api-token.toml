@@ -1,0 +1,21 @@
+# Docs: https://developers.home-assistant.io/docs/api/rest/
+# Format: Long-lived access token - long alphanumeric string
+# Verify: GET /api/ with Authorization: Bearer token header
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "home-assistant-api-token"
+name = "Home Assistant API Token"
+service = "home-assistant"
+severity = "high"
+keywords = ["home_assistant", "homeassistant", "long_lived_access_token", "api_token"]
+
+[[detector.patterns]]
+regex = "(?:home[_-]?assistant|HOME[_-]?ASSISTANT|hass|HASS)[._-]?(?:TOKEN|token|ACCESS[_-]?TOKEN|access[_-]?token|API[_-]?TOKEN|api[_-]?token)[=:\\s\"'']+([a-zA-Z0-9_\\-]{40,})"
+description = "Home Assistant long-lived access token"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:long[_-]?lived[_-]?access[_-]?token|LONG[_-]?LIVED[_-]?ACCESS[_-]?TOKEN)[=:\\s\"'']+([a-zA-Z0-9_\\-]{40,})"
+description = "Home Assistant long-lived access token by name"
+group = 1

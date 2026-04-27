@@ -1,0 +1,11 @@
+op_id = "primitive.bitwise.popcount_sw"
+
+[[golden]]
+input = "ff000000"
+expected = "08000000"
+reason = "popcount_sw(0xFF) = 8 (all low-byte bits set)"
+
+[[golden]]
+input = "ffffffff"
+expected = "20000000"
+reason = "popcount_sw(u32::MAX) = 32 (all bits set)"

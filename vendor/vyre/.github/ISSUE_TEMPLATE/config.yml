@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Documentation
+    url: https://github.com/santhsecurity/vyre/tree/main/vyre-core/docs
+    about: Read the vyre book first. Most questions are answered there.
+  - name: Contributing guide
+    url: https://github.com/santhsecurity/vyre/blob/main/CONTRIBUTING.md
+    about: Follow the contributor flows. One file per contribution.

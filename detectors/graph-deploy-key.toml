@@ -1,0 +1,16 @@
+# Docs: https://thegraph.com/docs/en/deploying/subgraph-studio/
+# Format: 32 character hexadecimal string (deploy key)
+# Verify: POST to cli.thegraph.com/deploy with Deploy-Key header
+# Prefix: none (32 char hex, requires context anchoring)
+
+[detector]
+id = "graph-deploy-key"
+name = "The Graph Deploy Key"
+service = "thegraph"
+severity = "high"
+keywords = ["graph", "deploy", "DEPLOY_KEY", "thegraph"]
+
+[[detector.patterns]]
+regex = "(?:GRAPH_DEPLOY_KEY|deploy.?key)[=:\\s\"'']+([a-f0-9]{32})"
+description = "The Graph deploy key with context anchor"
+group = 1

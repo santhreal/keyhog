@@ -1,0 +1,17 @@
+# Docs: https://shopify.dev/docs/apps/build/authentication-authorization/access-tokens
+# Format: Prefix shpat_ followed by 32 hexadecimal characters
+# Verify: API call to {{shop}}.myshopify.com/admin/api/{version}/shop.json
+# Prefix: shpat_
+
+[detector]
+id = "shopify-admin-api-token"
+name = "Shopify Admin API Token"
+service = "shopify"
+severity = "critical"
+keywords = ["shpat_", "shopify", "admin"]
+
+[[detector.patterns]]
+regex = 'shpat_[a-f0-9]{32}'
+description = "Shopify admin API access token"
+
+# NOTE: live verification disabled. `{{shop}}` was undefined. kimi-wave3 §1.

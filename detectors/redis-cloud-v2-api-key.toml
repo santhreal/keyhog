@@ -1,0 +1,28 @@
+# Docs: https://docs.redis.com/latest/rc/api/get-started/manage-api-keys/
+# Format: 40 character hex string (v2 API key format)
+# Verify: GET /v1/subscriptions with x-api-key header
+# Prefix: none (requires context anchoring for v2 format)
+
+[detector]
+id = "redis-cloud-v2-api-key"
+name = "Redis Cloud V2 API Key"
+service = "redis"
+severity = "critical"
+keywords = ["REDIS_CLOUD_V2", "REDIS_V2", "x-api-key", "redis_cloud_v2"]
+
+[[detector.patterns]]
+regex = "(?:REDIS_CLOUD_V2|REDIS_V2|redis_cloud_v2).{0,20}(?:API_KEY|api_key|api-key).{0,5}[=:\\s\"'']+([a-f0-9]{40})"
+description = "Redis Cloud v2 API key with context anchor (40 hex chars)"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://api.redislabs.com/v1/subscriptions"
+
+[detector.verify.auth]
+type = "header"
+name = "x-api-key"
+template = "{{match}}"
+
+[detector.verify.success]
+status = 200

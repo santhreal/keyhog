@@ -1,0 +1,33 @@
+# Docs: https://developer.helpscout.com/docs-api/
+# Format: 20-character alphanumeric API key
+# Verify: GET /v1/sites with Basic auth (key as username, X as password)
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "helpscout-api-key"
+name = "Help Scout API Key"
+service = "helpscout"
+severity = "high"
+keywords = ["HELPSCOUT", "help_scout", "helpscout_api", "docsapi"]
+
+[[detector.patterns]]
+regex = "(?i)(?:HELPSCOUT|HELP_SCOUT|helpscout)[_\\s]?(?:API[_\\s]?KEY|KEY)[=:\\s\"'']+([a-f0-9]{20})"
+description = "Help Scout Docs API key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?i)docsapi\\.helpscout\\.net.*[=:\\s\"'']+([a-f0-9]{20})"
+description = "Help Scout Docs API endpoint with embedded key"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://docsapi.helpscout.net/v1/sites"
+
+[detector.verify.auth]
+type = "basic"
+username = "match"
+password = "X"
+
+[detector.verify.success]
+status = 200

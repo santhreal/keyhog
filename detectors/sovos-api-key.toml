@@ -1,0 +1,26 @@
+# Docs: https://www.postman.com/sovos-compliance/sovos-developer-guide-public/
+# Format: API Key and Secret used for Basic authentication
+# Verify: POST /oauth/token with Basic auth (key:secret) to get access token
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "sovos-api-key"
+name = "Sovos API Key"
+service = "sovos"
+severity = "critical"
+keywords = ["SOVOS", "sovos", "api_key", "api_secret"]
+
+[[detector.patterns]]
+regex = "(?:SOVOS|sovos)[._]?(?:API|api)?[._]?(?:KEY|key)[=:\\s\"'']+([a-zA-Z0-9_-]{20,})"
+description = "Sovos API key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:SOVOS|sovos)[._]?(?:API|api)?[._]?(?:SECRET|secret)[=:\\s\"'']+([a-zA-Z0-9_-]{20,})"
+description = "Sovos API secret with context anchor"
+group = 1
+
+[[detector.companions]]
+name = "sovos_api_secret"
+regex = "(?:SOVOS|sovos)[._]?(?:API|api)?[._]?(?:SECRET|secret)[=:\\s\"'']+([a-zA-Z0-9_-]{20,})"
+within_lines = 5

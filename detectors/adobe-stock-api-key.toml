@@ -1,0 +1,37 @@
+# Docs: https://developer.adobe.com/stock/docs/getting-started/
+# Format: Client ID from Adobe Developer Console (32-40 char hex)
+# Verify: GET /Rest/Media/1/Search/Files with X-Product header returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "adobe-stock-api-key"
+name = "Adobe Stock API Key"
+service = "adobe-stock"
+severity = "high"
+keywords = ["ADOBE", "adobe", "STOCK", "stock"]
+
+[[detector.patterns]]
+regex = '(?:ADOBE|adobe)[._-]?(?:STOCK|stock)[._-]?(?:API|api)[._-]?(?:KEY|key)[=:\s""]+([a-f0-9]{32,40})'
+description = "Adobe Stock API key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = '(?:ADOBE|adobe)[._-]?(?:STOCK|stock)[._-]?(?:CLIENT|client)[._-]?(?:ID|id)[=:\s""]+([a-f0-9]{32,40})'
+description = "Adobe Stock Client ID with context anchor"
+group = 1
+
+[[detector.companions]]
+name = "adobe-stock-client-secret"
+regex = '(?:ADOBE|adobe)[._-]?(?:STOCK|stock)[._-]?(?:CLIENT|client)[._-]?(?:SECRET|secret)[=:\s""]+[a-f0-9]{32,48}'
+within_lines = 5
+[detector.verify]
+method = "GET"
+url = "https://stock.adobe.io/Rest/Media/1/Search/Files?search_parameters[words]=test"
+
+[detector.verify.auth]
+type = "header"
+name = "X-Product"
+template = "{{match}}"
+
+[detector.verify.success]
+status = 200

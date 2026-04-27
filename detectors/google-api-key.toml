@@ -1,0 +1,65 @@
+# Docs: https://developers.google.com/maps/documentation/javascript/get-api-key
+# Format: AIza + 35 alphanumeric characters (Base64-like)
+# Verify: GET request to Google APIs with key parameter
+# Prefix: AIza
+
+[detector]
+id = "google-api-key"
+name = "Google/YouTube API Key"
+service = "google"
+severity = "critical"
+keywords = ["AIza", "AIzaSy", "BLOGGER", "DRIVE_API_KEY", "GOOGLE_ADDRESS_VALIDATION", "GOOGLE_API_KEY", "GOOGLE_DRIVE", "GOOGLE_TRANSLATE_API_KEY", "PLACES_API_KEY", "YOUTUBE", "YOUTUBE_API_KEY", "addressvalidation.googleapis.com", "blogger", "cloudfunctions", "firebase", "google", "google_api_key", "googleapis", "googleapis.com/youtube", "places", "translation.googleapis.com", "youtube"]
+
+[[detector.patterns]]
+regex = 'AIza[0-9A-Za-z_-]{35}'
+description = "Google API Key (YouTube, Maps, etc.)"
+
+[[detector.patterns]]
+regex = "https://[a-z0-9-]+-[a-z0-9]+-uc\\.a\\.run\\.app.*[?&]key=(AIza[0-9A-Za-z_-]{35})"
+description = "Google Cloud Functions URL with API key in query string"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:CLOUDFUNCTIONS|cloudfunctions|CLOUD_FUNCTIONS|cloud_functions)[_\\-\\s]*(?:API|api)?[_\\-\\s]*(?:KEY|key)[=:\\s\"'\\']+(AIza[0-9A-Za-z_-]{35})"
+description = "Google Cloud Functions API key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "AIza[0-9A-Za-z_-]{35}"
+description = "Google Cloud Translation API key (AIza prefix)"
+
+[[detector.patterns]]
+regex = "(?:GOOGLE_TRANSLATE_API_KEY|GOOGLE_CLOUD_TRANSLATION_API_KEY|GOOGLE_API_KEY)[=:\\s\"'']+(AIza[0-9A-Za-z_-]{35})"
+description = "Google Cloud Translation API key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "translation\\.googleapis\\.com.*key[=:](AIza[0-9A-Za-z_-]{35})"
+description = "Google Cloud Translation API key in URL"
+group = 1
+
+[[detector.patterns]]
+regex = '''(?:DRIVE|GOOGLE_DRIVE)[._-]?API[._-]?KEY[=:\s"']+([a-zA-Z0-9_-]{30,})'''
+description = "Google Drive API key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = 'AIzaSy[A-Za-z0-9_-]{33}'
+description = "Google Places API key (AIzaSy prefix)"
+
+[[detector.patterns]]
+regex = "(?:youtube|YOUTUBE)[_\\s]?(?:api_key|API_KEY|key)[=:\\s\"'']+(AIza[0-9A-Za-z_-]{35})"
+description = "YouTube API key with context anchor"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://www.googleapis.com/drive/v3/about?fields=user&key={{match}}"
+
+[detector.verify.auth]
+type = "query"
+param = "key"
+field = "match"
+
+[detector.verify.success]
+status = 200

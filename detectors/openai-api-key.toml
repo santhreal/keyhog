@@ -1,0 +1,30 @@
+# Docs: https://platform.openai.com/docs/quickstart/step-2-set-up-your-api-key
+# Format: Project keys start with 'sk-proj-' plus 100+ chars; Legacy keys start with 'sk-' plus 48 alphanumeric chars
+# Verify: Bearer token sent to api.openai.com/v1/models, returns 200 on success
+# Prefix: sk-proj-, sk-
+
+[detector]
+id = "openai-api-key"
+name = "OpenAI API Key"
+service = "openai"
+severity = "critical"
+keywords = ["sk-proj-", "sk-"]
+
+[[detector.patterns]]
+regex = 'sk-proj-[a-zA-Z0-9_-]{40,164}'
+description = "OpenAI project API key (sk-proj-)"
+
+[[detector.patterns]]
+regex = 'sk-[a-zA-Z0-9]{48}'
+description = "OpenAI legacy API key (exactly 48 chars after sk-)"
+
+[detector.verify]
+method = "GET"
+url = "https://api.openai.com/v1/models"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[detector.verify.success]
+status = 200

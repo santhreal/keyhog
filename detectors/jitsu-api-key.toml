@@ -1,0 +1,33 @@
+# Docs: https://docs.gojitsu.com/docs/jitsu/68a341c676710-jitsu-rest-api
+# Format: API key for Jitsu, passed as Authorization: Token header
+# Verify: GET /api/v1/events with Token header returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "jitsu-api-key"
+name = "Jitsu API Key"
+service = "jitsu"
+severity = "high"
+keywords = ["JITSU", "jitsu", "JITSU_API_KEY", "JITSU_TOKEN"]
+
+[[detector.patterns]]
+regex = "(?:JITSU)[_.]?(?:API[._-]?KEY|TOKEN)[=:\\s\"'']+([a-zA-Z0-9]{16,})"
+description = "Jitsu API key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:jitsu)[_.]?(?:api[._-]?key|token)[=:\\s\"'']+([a-zA-Z0-9]{16,})"
+description = "Jitsu API key lowercase context anchor"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://app.jitsu.com/api/v1/events"
+
+[detector.verify.auth]
+type = "header"
+name = "Authorization"
+template = "Token {{match}}"
+
+[detector.verify.success]
+status = 200

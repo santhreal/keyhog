@@ -1,0 +1,16 @@
+# Docs: https://www.twilio.com/docs/flex/end-user-authentication
+# Format: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9... JWT token for Flex WebChat
+# Verify: no public verification endpoint
+# Prefix: eyJ (JWT header, requires context anchoring)
+
+[detector]
+id = "twilio-flex-token"
+name = "Twilio Flex Token"
+service = "twilio"
+severity = "high"
+keywords = ["flex", "twilio_flex", "TWILIO_FLEX"]
+
+[[detector.patterns]]
+regex = "(?i)(?:flex|twilio.?flex)[=:\\s\"'']+(eyJ[a-zA-Z0-9_-]*\\.eyJ[a-zA-Z0-9_-]*\\.[a-zA-Z0-9_-]*)"
+description = "Twilio Flex JWT token with context anchor"
+group = 1

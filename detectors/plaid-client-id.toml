@@ -1,0 +1,21 @@
+# Docs: https://plaid.com/docs/api/
+# Format: 24-character hexadecimal string
+# Verify: POST /item/public_token/exchange with PLAID-CLIENT-ID header
+# Prefix: none (generic hex, requires keyword context)
+
+[detector]
+id = "plaid-client-id"
+name = "Plaid Client ID"
+service = "plaid"
+severity = "high"
+keywords = ["PLAID_CLIENT_ID", "plaid_client_id", "PLAID-CLIENT-ID", "client_id"]
+
+[[detector.patterns]]
+regex = "(?:PLAID|plaid)[._-]?(?:CLIENT|client)?[._-]?(?:ID|id)?[=:\\s\"']+([a-f0-9]{24})"
+description = "Plaid API client ID with context anchor"
+group = 1
+
+[[detector.companions]]
+name = "plaid_secret"
+regex = "(?:PLAID|plaid)[._-]?(?:SECRET|secret)[=:\\s\"']+([a-f0-9]{30,40})"
+within_lines = 5

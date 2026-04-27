@@ -1,0 +1,31 @@
+# Docs: https://api.smugmug.com/api/v2/doc
+# Format: OAuth Consumer Key (alphanumeric, ~8-32 chars)
+# Verify: no public verification endpoint (requires OAuth 1.0a flow)
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "smugmug-api-key"
+name = "SmugMug API Key"
+service = "smugmug"
+severity = "medium"
+keywords = ["SMUGMUG", "smugmug", "SMUG_MUG", "smug_mug"]
+
+[[detector.patterns]]
+regex = '(?:SMUGMUG|smugmug|SMUG.MUG|smug.mug)[._-]?(?:API|api)[._-]?(?:KEY|key)[=:\s""]+([a-zA-Z0-9]{8,32})'
+description = "SmugMug API key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = '(?:SMUGMUG|smugmug|SMUG.MUG|smug.mug)[._-]?(?:CONSUMER|consumer)[._-]?(?:KEY|key)[=:\s""]+([a-zA-Z0-9]{8,32})'
+description = "SmugMug consumer key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = 'oauth_consumer_key[=:\s""]+([a-zA-Z0-9]{8,32})'
+description = "OAuth consumer key (potentially SmugMug)"
+group = 1
+
+[[detector.companions]]
+name = "smugmug-oauth-secret"
+regex = '(?:SMUGMUG|smugmug|SMUG.MUG|smug.mug)?[._-]?(?:OAUTH|oauth)?[._-]?(?:SECRET|secret)[=:\s""]+[a-zA-Z0-9]{16,48}'
+within_lines = 5

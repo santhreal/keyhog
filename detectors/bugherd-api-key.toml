@@ -1,0 +1,33 @@
+# Docs: https://www.bugherd.com/api_v2
+# Format: API key used as username in HTTP Basic Auth with 'x' as password
+# Verify: GET /api_v2/organization.json with Basic auth
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "bugherd-api-key"
+name = "BugHerd API Key"
+service = "bugherd"
+severity = "medium"
+keywords = ["BUGHERD_API_KEY", "bugherd_api_key", "bugherd.com", "api_v2"]
+
+[[detector.patterns]]
+regex = "(?:BUGHERD[_.-]?API[_.-]?KEY|bugherd[_.-]?api[_.-]?key)[=:\\s\"'']+([a-zA-Z0-9]{20,})"
+description = "BugHerd API key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "bugherd\\.com/api_v2[^\\n]{0,100}Authorization[^\\n]{0,50}Basic[^\\n]{0,50}([a-zA-Z0-9+/=]{20,})"
+description = "BugHerd API basic auth header"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://www.bugherd.com/api_v2/organization.json"
+
+[detector.verify.auth]
+type = "basic"
+username = "match"
+password = "x"
+
+[detector.verify.success]
+status = 200

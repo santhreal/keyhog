@@ -1,0 +1,218 @@
+[package]
+name = "vyre-primitives"
+version = "0.6.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Compositional primitives for vyre — marker types (always on) + Tier 2.5 LEGO substrate (feature-gated per domain)."
+readme = "README.md"
+keywords = ["gpu", "ir", "primitive", "vyre", "lego"]
+categories = ["algorithms", "api-bindings"]
+documentation = "https://docs.rs/vyre-primitives"
+
+[features]
+# Default: marker-types only, zero IR-builder deps. Consumers that
+# need a Tier 2.5 builder enable the matching domain flag.
+default = []
+
+# Internal marker feature — ON whenever any domain feature pulls
+# vyre-foundation. Keeps `#[cfg]` expressions terse (one gate
+# instead of `any(feature = "text", feature = "matching", …)`).
+# AUDIT_2026-04-24 F-RANGE-03: replaces the previous dead
+# `cfg(feature = "vyre-foundation")` which matched nothing.
+vyre-foundation = ["dep:vyre-foundation"]
+
+# Per-domain Tier 2.5 feature flags. See docs/primitives-tier.md.
+# Every domain pulls vyre-foundation — every primitive ships CPU
+# reference + GPU `fn(...) -> Program` builder together.
+text = ["vyre-foundation"]
+matching = ["vyre-foundation"]
+decode = ["vyre-foundation"]
+# Subgroup-cooperative NFA step (G1). Composes bitset + matching.
+nfa = ["vyre-foundation", "bitset", "matching"]
+math = ["vyre-foundation"]
+nn = ["vyre-foundation", "math"]
+hash = ["vyre-foundation"]
+parsing = ["vyre-foundation", "text", "matching"]
+graph = ["vyre-foundation", "bitset", "reduce"]
+bitset = ["vyre-foundation"]
+reduce = ["vyre-foundation"]
+label = ["vyre-foundation", "bitset"]
+predicate = ["vyre-foundation", "graph", "bitset"]
+fixpoint = ["vyre-foundation", "bitset"]
+
+# Convenience aggregate — enable the entire Tier 2.5 substrate.
+all-lego = [
+    "text", "matching", "math", "nn", "hash", "parsing",
+    "graph", "bitset", "reduce", "label", "predicate", "fixpoint", "decode",
+    "nfa",
+]
+
+# Enable the `inventory::submit!(OpEntry { ... })` registrations so the
+# universal conform harness + `cargo xtask print-composition` see every
+# registered primitive. Off by default to keep default-build dep-free.
+inventory-registry = ["dep:inventory", "vyre-foundation"]
+
+[dependencies]
+vyre-foundation = { workspace = true, optional = true }
+inventory = { workspace = true, optional = true }
+
+[dev-dependencies]
+vyre-reference = { path = "../vyre-reference" }
+proptest.workspace = true
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[lints]
+workspace = true
+
+# Master plan: integration smoke needs hash builders + inventory walk.
+[[test]]
+name = "integration"
+path = "tests/integration.rs"
+required-features = ["hash", "inventory-registry"]
+
+
+
+
+
+
+[[test]]
+name = "adversarial_bitset_and"
+path = "tests/adversarial_bitset_and.rs"
+required-features = ["bitset"]
+
+[[test]]
+name = "bitset_word_contracts"
+path = "tests/bitset_word_contracts.rs"
+required-features = ["bitset"]
+
+[[test]]
+name = "adversarial_bitset_any"
+path = "tests/adversarial_bitset_any.rs"
+required-features = ["bitset"]
+
+[[test]]
+name = "adversarial_bitset_contains"
+path = "tests/adversarial_bitset_contains.rs"
+required-features = ["bitset"]
+
+[[test]]
+name = "adversarial_bitset_not"
+path = "tests/adversarial_bitset_not.rs"
+required-features = ["bitset"]
+
+[[test]]
+name = "adversarial_bitset_or"
+path = "tests/adversarial_bitset_or.rs"
+required-features = ["bitset"]
+
+[[test]]
+name = "adversarial_bitset_popcount"
+path = "tests/adversarial_bitset_popcount.rs"
+required-features = ["bitset"]
+
+[[test]]
+name = "adversarial_bitset_xor"
+path = "tests/adversarial_bitset_xor.rs"
+required-features = ["bitset"]
+
+[[test]]
+name = "adversarial_reduce_all"
+path = "tests/adversarial_reduce_all.rs"
+required-features = ["reduce"]
+
+[[test]]
+name = "adversarial_reduce_any"
+path = "tests/adversarial_reduce_any.rs"
+required-features = ["reduce"]
+
+[[test]]
+name = "adversarial_reduce_count"
+path = "tests/adversarial_reduce_count.rs"
+required-features = ["reduce"]
+
+[[test]]
+name = "adversarial_reduce_count_non_zero"
+path = "tests/adversarial_reduce_count_non_zero.rs"
+required-features = ["reduce"]
+
+[[test]]
+name = "adversarial_reduce_gather"
+path = "tests/adversarial_reduce_gather.rs"
+required-features = ["reduce"]
+
+[[test]]
+name = "adversarial_reduce_histogram"
+path = "tests/adversarial_reduce_histogram.rs"
+required-features = ["reduce"]
+
+[[test]]
+name = "adversarial_reduce_max"
+path = "tests/adversarial_reduce_max.rs"
+required-features = ["reduce"]
+
+[[test]]
+name = "adversarial_reduce_min"
+path = "tests/adversarial_reduce_min.rs"
+required-features = ["reduce"]
+
+[[test]]
+name = "adversarial_reduce_radix_sort"
+path = "tests/adversarial_reduce_radix_sort.rs"
+required-features = ["reduce"]
+
+[[test]]
+name = "adversarial_reduce_scatter"
+path = "tests/adversarial_reduce_scatter.rs"
+required-features = ["reduce"]
+
+[[test]]
+name = "adversarial_reduce_segment_reduce"
+path = "tests/adversarial_reduce_segment_reduce.rs"
+required-features = ["reduce"]
+
+[[test]]
+name = "adversarial_reduce_sum"
+path = "tests/adversarial_reduce_sum.rs"
+required-features = ["reduce"]
+
+[[test]]
+name = "adversarial_text_char_class"
+path = "tests/adversarial_text_char_class.rs"
+required-features = ["text"]
+
+[[test]]
+name = "adversarial_text_line_index"
+path = "tests/adversarial_text_line_index.rs"
+required-features = ["text"]
+
+[[test]]
+name = "adversarial_text_utf8_validate"
+path = "tests/adversarial_text_utf8_validate.rs"
+required-features = ["text"]
+
+[[test]]
+name = "adversarial_graph_reachability_fixpoint"
+path = "tests/adversarial_graph_reachability_fixpoint.rs"
+required-features = ["graph", "fixpoint", "math"]
+
+[[test]]
+name = "adversarial_graph_csr_validation_contracts"
+path = "tests/adversarial_graph_csr_validation_contracts.rs"
+required-features = ["graph"]
+
+[[test]]
+name = "adversarial_boolean_packing_four_russians_readiness"
+path = "tests/adversarial_boolean_packing_four_russians_readiness.rs"
+required-features = ["bitset"]
+
+[[test]]
+name = "region_adversarial"
+path = "tests/region_adversarial.rs"
+required-features = ["matching"]

@@ -1,0 +1,10 @@
+pub trait LowerableOp: Send + Sync + 'static {
+/// Attempt to lower the operation targeting Naga.
+fn lower_naga(&self, _ctx: &mut dyn NagaGenCtx, _program: &Program) -> Result<(), String> {
+Err("Not implemented for Naga".into())
+}
+/// Attempt to lower the operation targeting SPIR-V.
+fn lower_spirv(&self, _ctx: &mut (), _program: &Program) -> Result<(), String> {
+Err("Not implemented for SPIR-V".into())
+}
+}

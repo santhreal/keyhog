@@ -1,0 +1,24 @@
+# Docs: https://cloud.google.com/artifact-registry/docs/docker/authentication
+# Format: Service account JSON key file with type: service_account field
+# Verify: gcloud auth activate-service-account with JSON key
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "google-artifact-registry-key"
+name = "Google Artifact Registry Service Account Key"
+service = "google-artifact-registry"
+severity = "critical"
+keywords = ["_json_key", "artifactregistry", "googleusercontent.com", "service_account"]
+
+[[detector.patterns]]
+regex = "\"type\"\\s*:\\s*\"service_account\"[^}]*\"private_key\"\\s*:\\s*\"-----BEGIN PRIVATE KEY-----"
+description = "Google service account JSON key with private key (Artifact Registry authentication)"
+
+[[detector.patterns]]
+regex = "(?:_json_key|GAR|GOOGLE_ARTIFACT)[\\w_]*(?:PASSWORD|KEY)[=:\\s\"'']+(\\{[^}]*\"type\"\\s*:\\s*\"service_account\"[^}]*\\})"
+description = "Google Artifact Registry JSON key in environment variable with context"
+group = 1
+
+[[detector.patterns]]
+regex = "\"client_email\"\\s*:\\s*\"[a-z0-9-]+@[a-z0-9-]+\\.iam\\.gserviceaccount\\.com\"[^}]*\"private_key_id\""
+description = "Google service account email pattern with private key ID for GAR auth"

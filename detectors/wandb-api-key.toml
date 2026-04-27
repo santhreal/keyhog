@@ -1,0 +1,26 @@
+# Docs: https://docs.wandb.ai/quickstart
+# Format: 40-character hexadecimal string (no unique prefix)
+# Verify: GET /viewer with Bearer auth
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "wandb-api-key"
+name = "Weights & Biases API Key"
+service = "wandb"
+severity = "high"
+keywords = ["WANDB_API_KEY", "wandb"]
+
+[[detector.patterns]]
+regex = "(?:WANDB_API_KEY|wandb.api.key)[=: \\s\"'']+([a-f0-9]{40})"
+description = "Weights & Biases API key with context anchor"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://api.wandb.ai/viewer"
+[detector.verify.success]
+status = 200
+
+[[detector.verify.headers]]
+name = "Authorization"
+value = "Bearer {{match}}"

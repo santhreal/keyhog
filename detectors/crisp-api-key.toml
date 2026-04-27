@@ -1,0 +1,26 @@
+# Docs: https://docs.crisp.chat/guides/rest-api/authentication/
+# Format: identifier:key pair (UUID:secret key format)
+# Verify: GET /v1/website/{website_id} with Basic auth
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "crisp-api-key"
+name = "Crisp API Key"
+service = "crisp"
+severity = "high"
+keywords = ["CRISP", "crisp_api", "crisp_website", "X-Crisp-Tier"]
+
+[[detector.patterns]]
+regex = "(?i)(?:CRISP|crisp)[_\\s]?(?:API[_\\s]?KEY|TOKEN|IDENTIFIER|KEY)[=:\\s\"'']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
+description = "Crisp API identifier (UUID format) with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?i)(?:CRISP|crisp)[_\\s]?(?:SECRET|API[_\\s]?SECRET)[=:\\s\"'']+([a-f0-9a-zA-Z]{32,64})"
+description = "Crisp API secret key with context anchor"
+group = 1
+
+[[detector.companions]]
+name = "crisp_secret"
+regex = "(?i)(?:CRISP|crisp)[_\\s]?(?:SECRET|API[_\\s]?SECRET)[=:\\s\"'']+([a-f0-9a-zA-Z]{32,64})"
+within_lines = 5

@@ -1,0 +1,30 @@
+# Docs: https://docs.npmjs.com/about-access-tokens
+# Format: Token starting with 'npm_' followed by 36 alphanumeric characters (Base64 URL-safe)
+# Verify: Bearer token sent to registry.npmjs.org/-/whoami endpoint, returns 200 with username
+# Prefix: npm_
+
+[detector]
+id = "npm-access-token"
+name = "npm Access Token"
+service = "npm"
+severity = "critical"
+keywords = ["npm_"]
+
+[[detector.patterns]]
+regex = 'npm_[a-zA-Z0-9]{36}'
+description = "npm automation or publish token (exactly 36 chars after npm_)"
+
+[detector.verify]
+method = "GET"
+url = "https://registry.npmjs.org/-/whoami"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[detector.verify.success]
+status = 200
+
+[[detector.verify.metadata]]
+name = "username"
+json_path = "username"

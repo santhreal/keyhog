@@ -1,0 +1,9 @@
+op_id = "compression.lz4_decompress"
+cert_version = "0.5.0"
+wire_format_version = 1
+signature_blake3 = "TBD"
+witness_set_blake3 = "TBD"
+program_blake3 = "TBD"
+allowed_backends = ["wgpu"]
+laws = []
+notes = "Bytes-producing bounded-output decompression; caller supplies max_output_size attribute. Bytes buffers must opt into bytes_extraction."

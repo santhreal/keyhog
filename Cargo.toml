@@ -1,0 +1,178 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/core",
+    "crates/scanner",
+    "crates/verifier",
+    "crates/sources",
+    "crates/cli",
+]
+exclude = ["vendor/vyre", "vendor/shared"]
+default-members = ["crates/cli"]
+
+[workspace.package]
+version = "0.2.1"
+edition = "2021"
+rust-version = "1.89"
+license = "MIT OR Apache-2.0"
+description = "keyhog detects leaked credentials in source trees, git history, archives, and remote sources"
+readme = "README.md"
+repository = "https://github.com/santhsecurity/keyhog"
+homepage = "https://github.com/santhsecurity/keyhog"
+documentation = "https://docs.rs/keyhog"
+keywords = ["secret-scanner", "security", "credentials", "api-keys", "git"]
+categories = ["command-line-utilities", "development-tools"]
+authors = ["Santh Project <contact@santh.dev>"]
+
+[workspace.dependencies]
+keyhog-core = { version = "=0.2.1", path = "crates/core" }
+keyhog-scanner = { version = "=0.2.1", path = "crates/scanner", default-features = false }
+keyhog-verifier = { version = "=0.2.1", path = "crates/verifier" }
+keyhog-sources = { version = "=0.2.1", path = "crates/sources" }
+
+# Serialization
+serde = { version = "=1.0.228", features = ["derive"] }
+serde_json = "=1.0.149"
+serde_with = "=3.18.0"
+serde_yaml = "=0.9.34"
+toml = "=0.8.23"
+
+# Async
+tokio = { version = "=1.51.1", features = ["full"] }
+futures-util = "=0.3.32"
+async-trait = "=0.1.89"
+
+# Pattern matching
+aho-corasick = "=1.1.4"
+regex = "=1.12.3"
+regex-syntax = "=0.8.10"
+
+# HTTP
+reqwest = { version = "=0.12.28", features = ["json", "stream", "cookies", "multipart", "blocking"] }
+
+# Error handling
+thiserror = "=1.0.69"
+anyhow = "=1.0.102"
+
+# CLI
+clap = { version = "=4.6.0", features = ["derive"] }
+clap_complete = "=4.6.0"
+dirs = "=6.0.0"
+indicatif = "=0.17.11"
+
+# Logging
+tracing = "=0.1.44"
+tracing-subscriber = { version = "=0.3.23", features = ["env-filter"] }
+
+# File system
+codewalk = "=0.2.4"
+base64 = "=0.22.1"
+unicode-normalization = "=0.1.25"
+tempfile = "=3.27.0"
+memmap2 = "=0.9.9"
+glob = "=0.3.3"
+wait-timeout = "=0.2.1"
+tar = "=0.4.45"
+
+# Git
+gix = { version = "=0.70.0", default-features = false, features = ["max-performance-safe"] }
+
+# Benchmarking
+criterion = { version = "=0.5.1", features = ["html_reports"] }
+
+# Parallelism
+rayon = "=1.11.0"
+memchr = "=2.8.0"
+parking_lot = "=0.12.5"
+dashmap = "6.1.0"
+indexmap = "=2.7.1"
+notify = "=8.0.0"
+
+# Performance libraries
+simdsieve = "=0.1.1"
+vyre = { version = "=0.6.0", path = "vendor/vyre/vyre-core" }
+vyre_libs = { package = "vyre-libs", version = "=0.6.0", path = "vendor/vyre/vyre-libs" }
+vyre-driver-wgpu = { package = "vyre-driver-wgpu", version = "=0.6.0", path = "vendor/vyre/vyre-driver-wgpu" }
+wgpu = "=24.0.5"
+pollster = "=0.4.0"
+bytemuck = { version = "=1.25.0", features = ["derive"] }
+hyperscan = "=0.3.2"
+lru = "=0.12.5"
+
+# Crypto and encodings
+sha2 = "=0.10.9"
+blake3 = "=1.8.4"
+hmac = "=0.12.1"
+hex = "=0.4.3"
+percent-encoding = "=2.3.2"
+url = "=2.5.8"
+urlencoding = "=2.1.3"
+chrono = "=0.4.44"
+
+# Archive and binary analysis
+ziftsieve = "=0.1.0"
+openpack = "=0.2.2"
+goblin = "=0.10.5"
+quick-xml = { version = "=0.37.5", features = ["serialize"] }
+libc = "=0.2.184"
+io-uring = "=0.7.11"
+
+# Test support
+proptest = "=1.11.0"
+proptest-derive = "=0.8.0"
+httpmock = "=0.8.3"
+rusty-fork = "=0.3.1"
+
+# Runtime initialization
+once_cell = "=1.21.4"
+lazy_static = "=1.5.0"
+
+# Security: zero-on-drop credentials, memory-protection helpers
+zeroize = { version = "=1.8.2", features = ["derive"] }
+
+[workspace.metadata.santh]
+status = "alpha"
+
+# Build Profiles
+# cargo build --release                          → default (ML + entropy + decode + multiline)
+# cargo build --release -F fast                  → regex only, ~2MB, 200+ MB/s
+# cargo build --release -F gpu                   → wgpu compute shader batch MoE inference
+# cargo build --release -F binary                → Ghidra decompiler + printable string extraction
+# cargo build --release -F full                  → all scanner features + live verification
+# cargo build --release --no-default-features    → bare minimum (Aho-Corasick + regex only)
+#
+# Features are independently toggleable. Combine freely:
+#   cargo build --release -F gpu,binary,full     → everything
+#   cargo build --release -F binary              → add Ghidra to default build
+
+# ── Release profile: max-perf single-binary deploys ────────────────────
+# - opt-level = 3            full compiler optimization (loop vec, inlining)
+# - lto = "fat"              cross-crate inlining; ~10-20% throughput on hot paths
+# - codegen-units = 1        worse compile times, better runtime (consistent
+#                            with Hyperscan + ICU + serde_json being heavy)
+# - panic = "abort"          smaller binary, no unwinding overhead in hot paths
+# - strip = "symbols"        smaller binary on disk; backtraces unchanged at
+#                            runtime (panic_abort + Rust std lookups)
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
+debug = false
+incremental = false
+
+# ── Release-fast: CI builds where you want -O3 but not multi-minute LTO.
+# Use with `cargo build --profile release-fast`.
+[profile.release-fast]
+inherits = "release"
+lto = "thin"
+codegen-units = 16
+strip = "none"
+
+# ── Bench profile: same as release but with debug symbols so flamegraphs
+# attribute samples to functions. Use with `cargo bench` automatically.
+[profile.bench]
+inherits = "release"
+debug = "line-tables-only"
+strip = "none"

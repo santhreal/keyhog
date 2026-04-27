@@ -1,0 +1,11 @@
+op_id = "primitive.math.abs"
+
+[[golden]]
+input = "ffffffff"
+expected = "01000000"
+reason = "abs(-1) = 1"
+
+[[golden]]
+input = "00000080"
+expected = "00000080"
+reason = "abs(i32::MIN) = 0x80000000 (wrapping abs, matches Rust)"

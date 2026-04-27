@@ -1,0 +1,27 @@
+# Docs: https://developer.typeform.com/get-started/
+# Format: 40 character hex string (OAuth2 access token)
+# Verify: GET /forms with Bearer token returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "typeform-api-token"
+name = "Typeform API Token"
+service = "typeform"
+severity = "high"
+keywords = ["typeform", "TYPEFORM_API_TOKEN", "typeform_token"]
+
+[[detector.patterns]]
+regex = "(?:typeform|TYPEFORM)[_.\\s]*(?:api[_\\s]*token|api[_\\s]*key|token|TOKEN)[\\s\"''']+([a-f0-9]{40})"
+description = "Typeform API token with context anchor"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://api.typeform.com/forms"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[detector.verify.success]
+status = 200

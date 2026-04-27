@@ -1,0 +1,28 @@
+# Docs: https://support.squadcast.com/rest-api-1/api-integration
+# Format: 32 hex characters with no distinct prefix
+# Verify: GET /v3/incidents with Authorization header
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "squadcast-api-key"
+name = "Squadcast API Key"
+service = "squadcast"
+severity = "critical"
+keywords = ["SQUADCAST_API_KEY", "squadcast", "squadcast_api"]
+
+[[detector.patterns]]
+regex = "(?:SQUADCAST_API_KEY|squadcast.api.key)[=:\\s\"\\']+([a-f0-9]{32})"
+description = "Squadcast API key with context anchor"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://api.squadcast.com/v3/incidents"
+
+[detector.verify.auth]
+type = "header"
+name = "Authorization"
+template = "Bearer {{match}}"
+
+[detector.verify.success]
+status = 200

@@ -1,0 +1,21 @@
+# Docs: https://docs.threatconnect.com/en/latest/rest_api/quick_start.html
+# Format: Access ID (20 digits) and Secret Key (base64 HMAC) or API token
+# Verify: GET /v3/indicators with Authorization header
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "threatconnect-api-key"
+name = "ThreatConnect API Key"
+service = "threatconnect"
+severity = "critical"
+keywords = ["threatconnect", "THREATCONNECT", "TC_TOKEN", "Access ID", "Secret Key"]
+
+[[detector.patterns]]
+regex = "(?:threatconnect|THREATCONNECT)[\\s_-]*(?:api[_-]?key|token|access[_-]?id)[=:\\s\"'']+(\\d{20})"
+description = "ThreatConnect Access ID with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:threatconnect|THREATCONNECT)[\\s_-]*secret[=:\\s\"'']+([A-Za-z0-9+/]{40,80}=?)"
+description = "ThreatConnect Secret Key with context anchor"
+group = 1

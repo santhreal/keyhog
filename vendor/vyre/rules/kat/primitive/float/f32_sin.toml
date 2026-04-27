@@ -1,0 +1,6 @@
+op_id = "primitive.float.f32_sin"
+
+[[golden]]
+input = "00000000"
+expected = "00000000"
+reason = "sin(0.0) = 0.0"

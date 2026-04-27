@@ -1,0 +1,21 @@
+# Docs: https://docs.plasmic.app/learn/plasmic-cms-api-reference/
+# Format: Project token for CMS or Loader API (public or secret)
+# Verify: GET /api/v1/loader/projects with x-plasmic-api-project-tokens header
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "plasmic-api-key"
+name = "Plasmic API Key"
+service = "plasmic"
+severity = "high"
+keywords = ["PLASMIC", "plasmic", "PLASMIC_API_TOKEN"]
+
+[[detector.patterns]]
+regex = "(?:PLASMIC|plasmic)[_=:\\s\"'']+(?:api[_-]?)?(?:key|token|project[_-]?token)[=:\\s\"'']+([a-zA-Z0-9_-]{20,50})"
+description = "Plasmic API token with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "x-plasmic-api-(?:project-tokens|cms-tokens)[=:\\s\"'']+([a-zA-Z0-9_-]{20,50})"
+description = "Plasmic API token in header format"
+group = 1

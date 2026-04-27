@@ -1,0 +1,16 @@
+# Docs: https://docs.recurly.com/recurly-subscriptions/docs/api-keys
+# Format: 32-character hexadecimal private API key
+# Verify: GET /v2/accounts with basic auth returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "recurly-api-key"
+name = "Recurly API Key"
+service = "recurly"
+severity = "critical"
+keywords = ["RECURLY", "recurly", "RECURLY_API_KEY"]
+
+[[detector.patterns]]
+regex = "(?:RECURLY[_\\s]*API[_\\s]*KEY|recurly[_\\s]*api[_\\s]*key)[=:\\s\"'']+([a-f0-9]{32})"
+description = "Recurly private API key with context anchor"
+group = 1

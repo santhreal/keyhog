@@ -1,0 +1,659 @@
+pub mod vyre_spec
+pub enum vyre_spec::AlgebraicLaw
+pub vyre_spec::AlgebraicLaw::Absorbing
+pub vyre_spec::AlgebraicLaw::Absorbing::element: u32
+pub vyre_spec::AlgebraicLaw::Associative
+pub vyre_spec::AlgebraicLaw::Bounded
+pub vyre_spec::AlgebraicLaw::Bounded::hi: u32
+pub vyre_spec::AlgebraicLaw::Bounded::lo: u32
+pub vyre_spec::AlgebraicLaw::Commutative
+pub vyre_spec::AlgebraicLaw::Complement
+pub vyre_spec::AlgebraicLaw::Complement::complement_op: &'static str
+pub vyre_spec::AlgebraicLaw::Complement::universe: u32
+pub vyre_spec::AlgebraicLaw::Custom
+pub vyre_spec::AlgebraicLaw::Custom::arity: usize
+pub vyre_spec::AlgebraicLaw::Custom::check: vyre_spec::LawCheckFn
+pub vyre_spec::AlgebraicLaw::Custom::description: &'static str
+pub vyre_spec::AlgebraicLaw::Custom::name: &'static str
+pub vyre_spec::AlgebraicLaw::DeMorgan
+pub vyre_spec::AlgebraicLaw::DeMorgan::dual_op: &'static str
+pub vyre_spec::AlgebraicLaw::DeMorgan::inner_op: &'static str
+pub vyre_spec::AlgebraicLaw::DistributiveOver
+pub vyre_spec::AlgebraicLaw::DistributiveOver::over_op: &'static str
+pub vyre_spec::AlgebraicLaw::Idempotent
+pub vyre_spec::AlgebraicLaw::Identity
+pub vyre_spec::AlgebraicLaw::Identity::element: u32
+pub vyre_spec::AlgebraicLaw::InverseOf
+pub vyre_spec::AlgebraicLaw::InverseOf::op: &'static str
+pub vyre_spec::AlgebraicLaw::Involution
+pub vyre_spec::AlgebraicLaw::LatticeAbsorption
+pub vyre_spec::AlgebraicLaw::LatticeAbsorption::dual_op: &'static str
+pub vyre_spec::AlgebraicLaw::LeftAbsorbing
+pub vyre_spec::AlgebraicLaw::LeftAbsorbing::element: u32
+pub vyre_spec::AlgebraicLaw::LeftIdentity
+pub vyre_spec::AlgebraicLaw::LeftIdentity::element: u32
+pub vyre_spec::AlgebraicLaw::Monotone
+pub vyre_spec::AlgebraicLaw::Monotonic
+pub vyre_spec::AlgebraicLaw::Monotonic::direction: vyre_spec::MonotonicDirection
+pub vyre_spec::AlgebraicLaw::RightAbsorbing
+pub vyre_spec::AlgebraicLaw::RightAbsorbing::element: u32
+pub vyre_spec::AlgebraicLaw::RightIdentity
+pub vyre_spec::AlgebraicLaw::RightIdentity::element: u32
+pub vyre_spec::AlgebraicLaw::SelfInverse
+pub vyre_spec::AlgebraicLaw::SelfInverse::result: u32
+pub vyre_spec::AlgebraicLaw::Trichotomy
+pub vyre_spec::AlgebraicLaw::Trichotomy::equal_op: &'static str
+pub vyre_spec::AlgebraicLaw::Trichotomy::greater_op: &'static str
+pub vyre_spec::AlgebraicLaw::Trichotomy::less_op: &'static str
+pub vyre_spec::AlgebraicLaw::ZeroProduct
+pub vyre_spec::AlgebraicLaw::ZeroProduct::holds: bool
+impl vyre_spec::AlgebraicLaw
+pub fn vyre_spec::AlgebraicLaw::is_binary(&self) -> bool
+pub fn vyre_spec::AlgebraicLaw::is_unary(&self) -> bool
+pub fn vyre_spec::AlgebraicLaw::name(&self) -> &str
+impl core::clone::Clone for vyre_spec::AlgebraicLaw
+pub fn vyre_spec::AlgebraicLaw::clone(&self) -> vyre_spec::AlgebraicLaw
+impl core::cmp::PartialEq for vyre_spec::AlgebraicLaw
+pub fn vyre_spec::AlgebraicLaw::eq(&self, other: &Self) -> bool
+impl core::fmt::Debug for vyre_spec::AlgebraicLaw
+pub fn vyre_spec::AlgebraicLaw::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for vyre_spec::AlgebraicLaw
+impl core::marker::Send for vyre_spec::AlgebraicLaw
+impl core::marker::Sync for vyre_spec::AlgebraicLaw
+impl core::marker::Unpin for vyre_spec::AlgebraicLaw
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::AlgebraicLaw
+impl core::panic::unwind_safe::UnwindSafe for vyre_spec::AlgebraicLaw
+pub enum vyre_spec::AtomicOp
+pub vyre_spec::AtomicOp::Add
+pub vyre_spec::AtomicOp::And
+pub vyre_spec::AtomicOp::CompareExchange
+pub vyre_spec::AtomicOp::Exchange
+pub vyre_spec::AtomicOp::Max
+pub vyre_spec::AtomicOp::Min
+pub vyre_spec::AtomicOp::Or
+pub vyre_spec::AtomicOp::Xor
+impl core::clone::Clone for vyre_spec::AtomicOp
+pub fn vyre_spec::AtomicOp::clone(&self) -> vyre_spec::AtomicOp
+impl core::cmp::Eq for vyre_spec::AtomicOp
+impl core::cmp::PartialEq for vyre_spec::AtomicOp
+pub fn vyre_spec::AtomicOp::eq(&self, other: &vyre_spec::AtomicOp) -> bool
+impl core::fmt::Debug for vyre_spec::AtomicOp
+pub fn vyre_spec::AtomicOp::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for vyre_spec::AtomicOp
+pub fn vyre_spec::AtomicOp::hash<__H: core::hash::Hasher>(&self, state: &mut __H)
+impl core::marker::StructuralPartialEq for vyre_spec::AtomicOp
+impl serde_core::ser::Serialize for vyre_spec::AtomicOp
+pub fn vyre_spec::AtomicOp::serialize<__S>(&self, __serializer: __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for vyre_spec::AtomicOp
+pub fn vyre_spec::AtomicOp::deserialize<__D>(__deserializer: __D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for vyre_spec::AtomicOp
+impl core::marker::Send for vyre_spec::AtomicOp
+impl core::marker::Sync for vyre_spec::AtomicOp
+impl core::marker::Unpin for vyre_spec::AtomicOp
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::AtomicOp
+impl core::panic::unwind_safe::UnwindSafe for vyre_spec::AtomicOp
+pub enum vyre_spec::BinOp
+pub vyre_spec::BinOp::AbsDiff
+pub vyre_spec::BinOp::Add
+pub vyre_spec::BinOp::And
+pub vyre_spec::BinOp::BitAnd
+pub vyre_spec::BinOp::BitOr
+pub vyre_spec::BinOp::BitXor
+pub vyre_spec::BinOp::Div
+pub vyre_spec::BinOp::Eq
+pub vyre_spec::BinOp::Ge
+pub vyre_spec::BinOp::Gt
+pub vyre_spec::BinOp::Le
+pub vyre_spec::BinOp::Lt
+pub vyre_spec::BinOp::Max
+pub vyre_spec::BinOp::Min
+pub vyre_spec::BinOp::Mod
+pub vyre_spec::BinOp::Mul
+pub vyre_spec::BinOp::Ne
+pub vyre_spec::BinOp::Or
+pub vyre_spec::BinOp::Shl
+pub vyre_spec::BinOp::Shr
+pub vyre_spec::BinOp::Sub
+impl core::clone::Clone for vyre_spec::BinOp
+pub fn vyre_spec::BinOp::clone(&self) -> vyre_spec::BinOp
+impl core::cmp::Eq for vyre_spec::BinOp
+impl core::cmp::PartialEq for vyre_spec::BinOp
+pub fn vyre_spec::BinOp::eq(&self, other: &vyre_spec::BinOp) -> bool
+impl core::fmt::Debug for vyre_spec::BinOp
+pub fn vyre_spec::BinOp::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for vyre_spec::BinOp
+pub fn vyre_spec::BinOp::hash<__H: core::hash::Hasher>(&self, state: &mut __H)
+impl core::marker::StructuralPartialEq for vyre_spec::BinOp
+impl serde_core::ser::Serialize for vyre_spec::BinOp
+pub fn vyre_spec::BinOp::serialize<__S>(&self, __serializer: __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for vyre_spec::BinOp
+pub fn vyre_spec::BinOp::deserialize<__D>(__deserializer: __D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for vyre_spec::BinOp
+impl core::marker::Send for vyre_spec::BinOp
+impl core::marker::Sync for vyre_spec::BinOp
+impl core::marker::Unpin for vyre_spec::BinOp
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::BinOp
+impl core::panic::unwind_safe::UnwindSafe for vyre_spec::BinOp
+pub enum vyre_spec::BufferAccess
+pub vyre_spec::BufferAccess::ReadOnly
+pub vyre_spec::BufferAccess::ReadWrite
+pub vyre_spec::BufferAccess::Uniform
+pub vyre_spec::BufferAccess::Workgroup
+impl core::clone::Clone for vyre_spec::BufferAccess
+pub fn vyre_spec::BufferAccess::clone(&self) -> vyre_spec::BufferAccess
+impl core::cmp::Eq for vyre_spec::BufferAccess
+impl core::cmp::PartialEq for vyre_spec::BufferAccess
+pub fn vyre_spec::BufferAccess::eq(&self, other: &vyre_spec::BufferAccess) -> bool
+impl core::fmt::Debug for vyre_spec::BufferAccess
+pub fn vyre_spec::BufferAccess::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for vyre_spec::BufferAccess
+pub fn vyre_spec::BufferAccess::hash<__H: core::hash::Hasher>(&self, state: &mut __H)
+impl core::marker::StructuralPartialEq for vyre_spec::BufferAccess
+impl serde_core::ser::Serialize for vyre_spec::BufferAccess
+pub fn vyre_spec::BufferAccess::serialize<__S>(&self, __serializer: __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for vyre_spec::BufferAccess
+pub fn vyre_spec::BufferAccess::deserialize<__D>(__deserializer: __D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for vyre_spec::BufferAccess
+impl core::marker::Send for vyre_spec::BufferAccess
+impl core::marker::Sync for vyre_spec::BufferAccess
+impl core::marker::Unpin for vyre_spec::BufferAccess
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::BufferAccess
+impl core::panic::unwind_safe::UnwindSafe for vyre_spec::BufferAccess
+pub enum vyre_spec::Category
+pub vyre_spec::Category::A
+pub vyre_spec::Category::A::composition_of: alloc::vec::Vec<&'static str>
+pub vyre_spec::Category::C
+pub vyre_spec::Category::C::backend_availability: vyre_spec::BackendAvailabilityPredicate
+pub vyre_spec::Category::C::hardware: &'static str
+impl vyre_spec::Category
+pub fn vyre_spec::Category::is_unclassified(&self) -> bool
+pub fn vyre_spec::Category::unclassified() -> Self
+impl core::clone::Clone for vyre_spec::Category
+pub fn vyre_spec::Category::clone(&self) -> vyre_spec::Category
+impl core::cmp::Eq for vyre_spec::Category
+impl core::cmp::PartialEq for vyre_spec::Category
+pub fn vyre_spec::Category::eq(&self, other: &Self) -> bool
+impl core::fmt::Debug for vyre_spec::Category
+pub fn vyre_spec::Category::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for vyre_spec::Category
+impl core::marker::Send for vyre_spec::Category
+impl core::marker::Sync for vyre_spec::Category
+impl core::marker::Unpin for vyre_spec::Category
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::Category
+impl core::panic::unwind_safe::UnwindSafe for vyre_spec::Category
+pub enum vyre_spec::Convention
+pub vyre_spec::Convention::V1
+pub vyre_spec::Convention::V2
+pub vyre_spec::Convention::V2::lookup_binding: u32
+impl core::clone::Clone for vyre_spec::Convention
+pub fn vyre_spec::Convention::clone(&self) -> vyre_spec::Convention
+impl core::cmp::Eq for vyre_spec::Convention
+impl core::cmp::PartialEq for vyre_spec::Convention
+pub fn vyre_spec::Convention::eq(&self, other: &vyre_spec::Convention) -> bool
+impl core::default::Default for vyre_spec::Convention
+pub fn vyre_spec::Convention::default() -> vyre_spec::Convention
+impl core::fmt::Debug for vyre_spec::Convention
+pub fn vyre_spec::Convention::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for vyre_spec::Convention
+pub fn vyre_spec::Convention::hash<__H: core::hash::Hasher>(&self, state: &mut __H)
+impl core::marker::StructuralPartialEq for vyre_spec::Convention
+impl serde_core::ser::Serialize for vyre_spec::Convention
+pub fn vyre_spec::Convention::serialize<__S>(&self, __serializer: __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for vyre_spec::Convention
+pub fn vyre_spec::Convention::deserialize<__D>(__deserializer: __D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for vyre_spec::Convention
+impl core::marker::Send for vyre_spec::Convention
+impl core::marker::Sync for vyre_spec::Convention
+impl core::marker::Unpin for vyre_spec::Convention
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::Convention
+impl core::panic::unwind_safe::UnwindSafe for vyre_spec::Convention
+pub enum vyre_spec::DataType
+pub vyre_spec::DataType::Bool
+pub vyre_spec::DataType::Bytes
+pub vyre_spec::DataType::F32
+pub vyre_spec::DataType::I32
+pub vyre_spec::DataType::U32
+pub vyre_spec::DataType::U64
+pub vyre_spec::DataType::Vec2U32
+pub vyre_spec::DataType::Vec4U32
+impl vyre_spec::DataType
+pub const fn vyre_spec::DataType::min_bytes(&self) -> usize
+impl core::clone::Clone for vyre_spec::DataType
+pub fn vyre_spec::DataType::clone(&self) -> vyre_spec::DataType
+impl core::cmp::Eq for vyre_spec::DataType
+impl core::cmp::PartialEq for vyre_spec::DataType
+pub fn vyre_spec::DataType::eq(&self, other: &vyre_spec::DataType) -> bool
+impl core::fmt::Debug for vyre_spec::DataType
+pub fn vyre_spec::DataType::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for vyre_spec::DataType
+pub fn vyre_spec::DataType::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for vyre_spec::DataType
+pub fn vyre_spec::DataType::hash<__H: core::hash::Hasher>(&self, state: &mut __H)
+impl core::marker::StructuralPartialEq for vyre_spec::DataType
+impl serde_core::ser::Serialize for vyre_spec::DataType
+pub fn vyre_spec::DataType::serialize<__S>(&self, __serializer: __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for vyre_spec::DataType
+pub fn vyre_spec::DataType::deserialize<__D>(__deserializer: __D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for vyre_spec::DataType
+impl core::marker::Send for vyre_spec::DataType
+impl core::marker::Sync for vyre_spec::DataType
+impl core::marker::Unpin for vyre_spec::DataType
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::DataType
+impl core::panic::unwind_safe::UnwindSafe for vyre_spec::DataType
+pub enum vyre_spec::EngineInvariant
+pub vyre_spec::EngineInvariant::I1 = 1
+pub vyre_spec::EngineInvariant::I10 = 10
+pub vyre_spec::EngineInvariant::I11 = 11
+pub vyre_spec::EngineInvariant::I12 = 12
+pub vyre_spec::EngineInvariant::I13 = 13
+pub vyre_spec::EngineInvariant::I14 = 14
+pub vyre_spec::EngineInvariant::I15 = 15
+pub vyre_spec::EngineInvariant::I2 = 2
+pub vyre_spec::EngineInvariant::I3 = 3
+pub vyre_spec::EngineInvariant::I4 = 4
+pub vyre_spec::EngineInvariant::I5 = 5
+pub vyre_spec::EngineInvariant::I6 = 6
+pub vyre_spec::EngineInvariant::I7 = 7
+pub vyre_spec::EngineInvariant::I8 = 8
+pub vyre_spec::EngineInvariant::I9 = 9
+impl vyre_spec::EngineInvariant
+pub fn vyre_spec::EngineInvariant::iter() -> impl core::iter::traits::iterator::Iterator<Item = Self>
+pub const fn vyre_spec::EngineInvariant::ordinal(&self) -> u8
+impl core::clone::Clone for vyre_spec::EngineInvariant
+pub fn vyre_spec::EngineInvariant::clone(&self) -> vyre_spec::EngineInvariant
+impl core::cmp::Eq for vyre_spec::EngineInvariant
+impl core::cmp::Ord for vyre_spec::EngineInvariant
+pub fn vyre_spec::EngineInvariant::cmp(&self, other: &vyre_spec::EngineInvariant) -> core::cmp::Ordering
+impl core::cmp::PartialEq for vyre_spec::EngineInvariant
+pub fn vyre_spec::EngineInvariant::eq(&self, other: &vyre_spec::EngineInvariant) -> bool
+impl core::cmp::PartialOrd for vyre_spec::EngineInvariant
+pub fn vyre_spec::EngineInvariant::partial_cmp(&self, other: &vyre_spec::EngineInvariant) -> core::option::Option<core::cmp::Ordering>
+impl core::fmt::Debug for vyre_spec::EngineInvariant
+pub fn vyre_spec::EngineInvariant::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for vyre_spec::EngineInvariant
+pub fn vyre_spec::EngineInvariant::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for vyre_spec::EngineInvariant
+pub fn vyre_spec::EngineInvariant::hash<__H: core::hash::Hasher>(&self, state: &mut __H)
+impl core::marker::StructuralPartialEq for vyre_spec::EngineInvariant
+impl core::marker::Freeze for vyre_spec::EngineInvariant
+impl core::marker::Send for vyre_spec::EngineInvariant
+impl core::marker::Sync for vyre_spec::EngineInvariant
+impl core::marker::Unpin for vyre_spec::EngineInvariant
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::EngineInvariant
+impl core::panic::unwind_safe::UnwindSafe for vyre_spec::EngineInvariant
+pub enum vyre_spec::FloatType
+pub vyre_spec::FloatType::BF16
+pub vyre_spec::FloatType::F16
+pub vyre_spec::FloatType::F32
+impl core::clone::Clone for vyre_spec::FloatType
+pub fn vyre_spec::FloatType::clone(&self) -> vyre_spec::FloatType
+impl core::cmp::Eq for vyre_spec::FloatType
+impl core::cmp::PartialEq for vyre_spec::FloatType
+pub fn vyre_spec::FloatType::eq(&self, other: &vyre_spec::FloatType) -> bool
+impl core::fmt::Debug for vyre_spec::FloatType
+pub fn vyre_spec::FloatType::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for vyre_spec::FloatType
+impl core::marker::Freeze for vyre_spec::FloatType
+impl core::marker::Send for vyre_spec::FloatType
+impl core::marker::Sync for vyre_spec::FloatType
+impl core::marker::Unpin for vyre_spec::FloatType
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::FloatType
+impl core::panic::unwind_safe::UnwindSafe for vyre_spec::FloatType
+pub enum vyre_spec::InvariantCategory
+pub vyre_spec::InvariantCategory::Algebra
+pub vyre_spec::InvariantCategory::Execution
+pub vyre_spec::InvariantCategory::Resource
+pub vyre_spec::InvariantCategory::Stability
+impl core::clone::Clone for vyre_spec::InvariantCategory
+pub fn vyre_spec::InvariantCategory::clone(&self) -> vyre_spec::InvariantCategory
+impl core::cmp::Eq for vyre_spec::InvariantCategory
+impl core::cmp::PartialEq for vyre_spec::InvariantCategory
+pub fn vyre_spec::InvariantCategory::eq(&self, other: &vyre_spec::InvariantCategory) -> bool
+impl core::fmt::Debug for vyre_spec::InvariantCategory
+pub fn vyre_spec::InvariantCategory::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for vyre_spec::InvariantCategory
+pub fn vyre_spec::InvariantCategory::hash<__H: core::hash::Hasher>(&self, state: &mut __H)
+impl core::marker::Copy for vyre_spec::InvariantCategory
+impl core::marker::StructuralPartialEq for vyre_spec::InvariantCategory
+impl core::marker::Freeze for vyre_spec::InvariantCategory
+impl core::marker::Send for vyre_spec::InvariantCategory
+impl core::marker::Sync for vyre_spec::InvariantCategory
+impl core::marker::Unpin for vyre_spec::InvariantCategory
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::InvariantCategory
+impl core::panic::unwind_safe::UnwindSafe for vyre_spec::InvariantCategory
+pub enum vyre_spec::Layer
+pub vyre_spec::Layer::L0
+pub vyre_spec::Layer::L1
+pub vyre_spec::Layer::L2
+pub vyre_spec::Layer::L3
+pub vyre_spec::Layer::L4
+pub vyre_spec::Layer::L5
+impl vyre_spec::Layer
+pub const fn vyre_spec::Layer::id(&self) -> &'static str
+pub const fn vyre_spec::Layer::layer_description(&self) -> &'static str
+impl core::clone::Clone for vyre_spec::Layer
+pub fn vyre_spec::Layer::clone(&self) -> vyre_spec::Layer
+impl core::cmp::Eq for vyre_spec::Layer
+impl core::cmp::PartialEq for vyre_spec::Layer
+pub fn vyre_spec::Layer::eq(&self, other: &vyre_spec::Layer) -> bool
+impl core::fmt::Debug for vyre_spec::Layer
+pub fn vyre_spec::Layer::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for vyre_spec::Layer
+pub fn vyre_spec::Layer::hash<__H: core::hash::Hasher>(&self, state: &mut __H)
+impl core::marker::StructuralPartialEq for vyre_spec::Layer
+impl serde_core::ser::Serialize for vyre_spec::Layer
+pub fn vyre_spec::Layer::serialize<__S>(&self, __serializer: __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for vyre_spec::Layer
+pub fn vyre_spec::Layer::deserialize<__D>(__deserializer: __D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for vyre_spec::Layer
+impl core::marker::Send for vyre_spec::Layer
+impl core::marker::Sync for vyre_spec::Layer
+impl core::marker::Unpin for vyre_spec::Layer
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::Layer
+impl core::panic::unwind_safe::UnwindSafe for vyre_spec::Layer
+pub enum vyre_spec::MetadataCategory
+pub vyre_spec::MetadataCategory::A
+pub vyre_spec::MetadataCategory::B
+pub vyre_spec::MetadataCategory::C
+pub vyre_spec::MetadataCategory::Unclassified
+impl vyre_spec::MetadataCategory
+pub const fn vyre_spec::MetadataCategory::category_id(&self) -> &'static str
+impl core::clone::Clone for vyre_spec::MetadataCategory
+pub fn vyre_spec::MetadataCategory::clone(&self) -> vyre_spec::MetadataCategory
+impl core::cmp::Eq for vyre_spec::MetadataCategory
+impl core::cmp::PartialEq for vyre_spec::MetadataCategory
+pub fn vyre_spec::MetadataCategory::eq(&self, other: &vyre_spec::MetadataCategory) -> bool
+impl core::fmt::Debug for vyre_spec::MetadataCategory
+pub fn vyre_spec::MetadataCategory::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for vyre_spec::MetadataCategory
+pub fn vyre_spec::MetadataCategory::hash<__H: core::hash::Hasher>(&self, state: &mut __H)
+impl core::marker::StructuralPartialEq for vyre_spec::MetadataCategory
+impl serde_core::ser::Serialize for vyre_spec::MetadataCategory
+pub fn vyre_spec::MetadataCategory::serialize<__S>(&self, __serializer: __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for vyre_spec::MetadataCategory
+pub fn vyre_spec::MetadataCategory::deserialize<__D>(__deserializer: __D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for vyre_spec::MetadataCategory
+impl core::marker::Send for vyre_spec::MetadataCategory
+impl core::marker::Sync for vyre_spec::MetadataCategory
+impl core::marker::Unpin for vyre_spec::MetadataCategory
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::MetadataCategory
+impl core::panic::unwind_safe::UnwindSafe for vyre_spec::MetadataCategory
+pub enum vyre_spec::MonotonicDirection
+pub vyre_spec::MonotonicDirection::NonDecreasing
+pub vyre_spec::MonotonicDirection::NonIncreasing
+impl core::clone::Clone for vyre_spec::MonotonicDirection
+pub fn vyre_spec::MonotonicDirection::clone(&self) -> vyre_spec::MonotonicDirection
+impl core::cmp::Eq for vyre_spec::MonotonicDirection
+impl core::cmp::PartialEq for vyre_spec::MonotonicDirection
+pub fn vyre_spec::MonotonicDirection::eq(&self, other: &vyre_spec::MonotonicDirection) -> bool
+impl core::fmt::Debug for vyre_spec::MonotonicDirection
+pub fn vyre_spec::MonotonicDirection::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for vyre_spec::MonotonicDirection
+impl core::marker::StructuralPartialEq for vyre_spec::MonotonicDirection
+impl core::marker::Freeze for vyre_spec::MonotonicDirection
+impl core::marker::Send for vyre_spec::MonotonicDirection
+impl core::marker::Sync for vyre_spec::MonotonicDirection
+impl core::marker::Unpin for vyre_spec::MonotonicDirection
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::MonotonicDirection
+impl core::panic::unwind_safe::UnwindSafe for vyre_spec::MonotonicDirection
+pub enum vyre_spec::UnOp
+pub vyre_spec::UnOp::Abs
+pub vyre_spec::UnOp::BitNot
+pub vyre_spec::UnOp::Ceil
+pub vyre_spec::UnOp::Clz
+pub vyre_spec::UnOp::Cos
+pub vyre_spec::UnOp::Ctz
+pub vyre_spec::UnOp::Floor
+pub vyre_spec::UnOp::IsFinite
+pub vyre_spec::UnOp::IsInf
+pub vyre_spec::UnOp::IsNan
+pub vyre_spec::UnOp::LogicalNot
+pub vyre_spec::UnOp::Negate
+pub vyre_spec::UnOp::Popcount
+pub vyre_spec::UnOp::ReverseBits
+pub vyre_spec::UnOp::Round
+pub vyre_spec::UnOp::Sign
+pub vyre_spec::UnOp::Sin
+pub vyre_spec::UnOp::Sqrt
+pub vyre_spec::UnOp::Trunc
+impl core::clone::Clone for vyre_spec::UnOp
+pub fn vyre_spec::UnOp::clone(&self) -> vyre_spec::UnOp
+impl core::cmp::Eq for vyre_spec::UnOp
+impl core::cmp::PartialEq for vyre_spec::UnOp
+pub fn vyre_spec::UnOp::eq(&self, other: &vyre_spec::UnOp) -> bool
+impl core::fmt::Debug for vyre_spec::UnOp
+pub fn vyre_spec::UnOp::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for vyre_spec::UnOp
+pub fn vyre_spec::UnOp::hash<__H: core::hash::Hasher>(&self, state: &mut __H)
+impl core::marker::StructuralPartialEq for vyre_spec::UnOp
+impl serde_core::ser::Serialize for vyre_spec::UnOp
+pub fn vyre_spec::UnOp::serialize<__S>(&self, __serializer: __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for vyre_spec::UnOp
+pub fn vyre_spec::UnOp::deserialize<__D>(__deserializer: __D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for vyre_spec::UnOp
+impl core::marker::Send for vyre_spec::UnOp
+impl core::marker::Sync for vyre_spec::UnOp
+impl core::marker::Unpin for vyre_spec::UnOp
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::UnOp
+impl core::panic::unwind_safe::UnwindSafe for vyre_spec::UnOp
+pub enum vyre_spec::Verification
+pub vyre_spec::Verification::ExhaustiveFloat
+pub vyre_spec::Verification::ExhaustiveFloat::typ: vyre_spec::FloatType
+pub vyre_spec::Verification::ExhaustiveU16
+pub vyre_spec::Verification::ExhaustiveU8
+pub vyre_spec::Verification::WitnessedU32
+pub vyre_spec::Verification::WitnessedU32::count: u64
+pub vyre_spec::Verification::WitnessedU32::seed: u64
+impl vyre_spec::Verification
+pub fn vyre_spec::Verification::witness_count(&self) -> core::option::Option<u64>
+impl core::clone::Clone for vyre_spec::Verification
+pub fn vyre_spec::Verification::clone(&self) -> vyre_spec::Verification
+impl core::cmp::Eq for vyre_spec::Verification
+impl core::cmp::PartialEq for vyre_spec::Verification
+pub fn vyre_spec::Verification::eq(&self, other: &vyre_spec::Verification) -> bool
+impl core::fmt::Debug for vyre_spec::Verification
+pub fn vyre_spec::Verification::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for vyre_spec::Verification
+impl core::marker::Freeze for vyre_spec::Verification
+impl core::marker::Send for vyre_spec::Verification
+impl core::marker::Sync for vyre_spec::Verification
+impl core::marker::Unpin for vyre_spec::Verification
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::Verification
+impl core::panic::unwind_safe::UnwindSafe for vyre_spec::Verification
+pub struct vyre_spec::AdversarialInput
+pub vyre_spec::AdversarialInput::input: &'static [u8]
+pub vyre_spec::AdversarialInput::reason: &'static str
+impl core::clone::Clone for vyre_spec::AdversarialInput
+pub fn vyre_spec::AdversarialInput::clone(&self) -> vyre_spec::AdversarialInput
+impl core::cmp::Eq for vyre_spec::AdversarialInput
+impl core::cmp::PartialEq for vyre_spec::AdversarialInput
+pub fn vyre_spec::AdversarialInput::eq(&self, other: &vyre_spec::AdversarialInput) -> bool
+impl core::fmt::Debug for vyre_spec::AdversarialInput
+pub fn vyre_spec::AdversarialInput::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for vyre_spec::AdversarialInput
+pub fn vyre_spec::AdversarialInput::hash<__H: core::hash::Hasher>(&self, state: &mut __H)
+impl core::marker::StructuralPartialEq for vyre_spec::AdversarialInput
+impl core::marker::Freeze for vyre_spec::AdversarialInput
+impl core::marker::Send for vyre_spec::AdversarialInput
+impl core::marker::Sync for vyre_spec::AdversarialInput
+impl core::marker::Unpin for vyre_spec::AdversarialInput
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::AdversarialInput
+impl core::panic::unwind_safe::UnwindSafe for vyre_spec::AdversarialInput
+pub struct vyre_spec::BackendAvailabilityPredicate
+impl vyre_spec::BackendAvailabilityPredicate
+pub fn vyre_spec::BackendAvailabilityPredicate::available(&self, op: &str) -> bool
+pub const fn vyre_spec::BackendAvailabilityPredicate::new(predicate: fn(&str) -> bool) -> Self
+impl core::clone::Clone for vyre_spec::BackendAvailabilityPredicate
+pub fn vyre_spec::BackendAvailabilityPredicate::clone(&self) -> vyre_spec::BackendAvailabilityPredicate
+impl core::fmt::Debug for vyre_spec::BackendAvailabilityPredicate
+pub fn vyre_spec::BackendAvailabilityPredicate::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for vyre_spec::BackendAvailabilityPredicate
+impl vyre_spec::BackendAvailability for vyre_spec::BackendAvailabilityPredicate
+pub fn vyre_spec::BackendAvailabilityPredicate::available(&self, op: &str) -> bool
+impl core::marker::Freeze for vyre_spec::BackendAvailabilityPredicate
+impl core::marker::Send for vyre_spec::BackendAvailabilityPredicate
+impl core::marker::Sync for vyre_spec::BackendAvailabilityPredicate
+impl core::marker::Unpin for vyre_spec::BackendAvailabilityPredicate
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::BackendAvailabilityPredicate
+impl core::panic::unwind_safe::UnwindSafe for vyre_spec::BackendAvailabilityPredicate
+pub struct vyre_spec::GoldenSample
+pub vyre_spec::GoldenSample::expected: &'static [u8]
+pub vyre_spec::GoldenSample::input: &'static [u8]
+pub vyre_spec::GoldenSample::op_id: &'static str
+pub vyre_spec::GoldenSample::reason: &'static str
+impl core::clone::Clone for vyre_spec::GoldenSample
+pub fn vyre_spec::GoldenSample::clone(&self) -> vyre_spec::GoldenSample
+impl core::cmp::Eq for vyre_spec::GoldenSample
+impl core::cmp::PartialEq for vyre_spec::GoldenSample
+pub fn vyre_spec::GoldenSample::eq(&self, other: &vyre_spec::GoldenSample) -> bool
+impl core::fmt::Debug for vyre_spec::GoldenSample
+pub fn vyre_spec::GoldenSample::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for vyre_spec::GoldenSample
+pub fn vyre_spec::GoldenSample::hash<__H: core::hash::Hasher>(&self, state: &mut __H)
+impl core::marker::StructuralPartialEq for vyre_spec::GoldenSample
+impl core::marker::Freeze for vyre_spec::GoldenSample
+impl core::marker::Send for vyre_spec::GoldenSample
+impl core::marker::Sync for vyre_spec::GoldenSample
+impl core::marker::Unpin for vyre_spec::GoldenSample
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::GoldenSample
+impl core::panic::unwind_safe::UnwindSafe for vyre_spec::GoldenSample
+pub struct vyre_spec::IntrinsicTable
+pub vyre_spec::IntrinsicTable::cuda: core::option::Option<&'static str>
+pub vyre_spec::IntrinsicTable::metal: core::option::Option<&'static str>
+pub vyre_spec::IntrinsicTable::spirv: core::option::Option<&'static str>
+pub vyre_spec::IntrinsicTable::wgsl: core::option::Option<&'static str>
+impl vyre_spec::IntrinsicTable
+pub fn vyre_spec::IntrinsicTable::missing_backends(&self) -> impl core::iter::traits::iterator::Iterator<Item = &'static str> + '_
+impl core::clone::Clone for vyre_spec::IntrinsicTable
+pub fn vyre_spec::IntrinsicTable::clone(&self) -> vyre_spec::IntrinsicTable
+impl core::cmp::Eq for vyre_spec::IntrinsicTable
+impl core::cmp::PartialEq for vyre_spec::IntrinsicTable
+pub fn vyre_spec::IntrinsicTable::eq(&self, other: &vyre_spec::IntrinsicTable) -> bool
+impl core::default::Default for vyre_spec::IntrinsicTable
+pub fn vyre_spec::IntrinsicTable::default() -> vyre_spec::IntrinsicTable
+impl core::fmt::Debug for vyre_spec::IntrinsicTable
+pub fn vyre_spec::IntrinsicTable::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for vyre_spec::IntrinsicTable
+impl core::marker::Freeze for vyre_spec::IntrinsicTable
+impl core::marker::Send for vyre_spec::IntrinsicTable
+impl core::marker::Sync for vyre_spec::IntrinsicTable
+impl core::marker::Unpin for vyre_spec::IntrinsicTable
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::IntrinsicTable
+impl core::panic::unwind_safe::UnwindSafe for vyre_spec::IntrinsicTable
+pub struct vyre_spec::Invariant
+pub vyre_spec::Invariant::category: vyre_spec::InvariantCategory
+pub vyre_spec::Invariant::description: &'static str
+pub vyre_spec::Invariant::id: vyre_spec::InvariantId
+pub vyre_spec::Invariant::name: &'static str
+pub vyre_spec::Invariant::test_family: fn() -> &'static [vyre_spec::TestDescriptor]
+impl core::clone::Clone for vyre_spec::Invariant
+pub fn vyre_spec::Invariant::clone(&self) -> vyre_spec::Invariant
+impl core::fmt::Debug for vyre_spec::Invariant
+pub fn vyre_spec::Invariant::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for vyre_spec::Invariant
+impl core::marker::Send for vyre_spec::Invariant
+impl core::marker::Sync for vyre_spec::Invariant
+impl core::marker::Unpin for vyre_spec::Invariant
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::Invariant
+impl core::panic::unwind_safe::UnwindSafe for vyre_spec::Invariant
+pub struct vyre_spec::KatVector
+pub vyre_spec::KatVector::expected: &'static [u8]
+pub vyre_spec::KatVector::input: &'static [u8]
+pub vyre_spec::KatVector::source: &'static str
+impl core::clone::Clone for vyre_spec::KatVector
+pub fn vyre_spec::KatVector::clone(&self) -> vyre_spec::KatVector
+impl core::cmp::Eq for vyre_spec::KatVector
+impl core::cmp::PartialEq for vyre_spec::KatVector
+pub fn vyre_spec::KatVector::eq(&self, other: &vyre_spec::KatVector) -> bool
+impl core::fmt::Debug for vyre_spec::KatVector
+pub fn vyre_spec::KatVector::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for vyre_spec::KatVector
+pub fn vyre_spec::KatVector::hash<__H: core::hash::Hasher>(&self, state: &mut __H)
+impl core::marker::StructuralPartialEq for vyre_spec::KatVector
+impl core::marker::Freeze for vyre_spec::KatVector
+impl core::marker::Send for vyre_spec::KatVector
+impl core::marker::Sync for vyre_spec::KatVector
+impl core::marker::Unpin for vyre_spec::KatVector
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::KatVector
+impl core::panic::unwind_safe::UnwindSafe for vyre_spec::KatVector
+pub struct vyre_spec::OpMetadata
+pub vyre_spec::OpMetadata::archetype_signature: &'static str
+pub vyre_spec::OpMetadata::category: vyre_spec::MetadataCategory
+pub vyre_spec::OpMetadata::description: &'static str
+pub vyre_spec::OpMetadata::id: &'static str
+pub vyre_spec::OpMetadata::layer: vyre_spec::Layer
+pub vyre_spec::OpMetadata::signature: &'static str
+pub vyre_spec::OpMetadata::strictness: &'static str
+pub vyre_spec::OpMetadata::version: u32
+impl core::clone::Clone for vyre_spec::OpMetadata
+pub fn vyre_spec::OpMetadata::clone(&self) -> vyre_spec::OpMetadata
+impl core::cmp::Eq for vyre_spec::OpMetadata
+impl core::cmp::PartialEq for vyre_spec::OpMetadata
+pub fn vyre_spec::OpMetadata::eq(&self, other: &vyre_spec::OpMetadata) -> bool
+impl core::fmt::Debug for vyre_spec::OpMetadata
+pub fn vyre_spec::OpMetadata::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for vyre_spec::OpMetadata
+impl core::marker::Freeze for vyre_spec::OpMetadata
+impl core::marker::Send for vyre_spec::OpMetadata
+impl core::marker::Sync for vyre_spec::OpMetadata
+impl core::marker::Unpin for vyre_spec::OpMetadata
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::OpMetadata
+impl core::panic::unwind_safe::UnwindSafe for vyre_spec::OpMetadata
+pub struct vyre_spec::OpSignature
+pub vyre_spec::OpSignature::inputs: alloc::vec::Vec<vyre_spec::DataType>
+pub vyre_spec::OpSignature::output: vyre_spec::DataType
+impl vyre_spec::OpSignature
+pub fn vyre_spec::OpSignature::min_input_bytes(&self) -> usize
+impl core::clone::Clone for vyre_spec::OpSignature
+pub fn vyre_spec::OpSignature::clone(&self) -> vyre_spec::OpSignature
+impl core::cmp::Eq for vyre_spec::OpSignature
+impl core::cmp::PartialEq for vyre_spec::OpSignature
+pub fn vyre_spec::OpSignature::eq(&self, other: &vyre_spec::OpSignature) -> bool
+impl core::fmt::Debug for vyre_spec::OpSignature
+pub fn vyre_spec::OpSignature::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for vyre_spec::OpSignature
+pub fn vyre_spec::OpSignature::hash<__H: core::hash::Hasher>(&self, state: &mut __H)
+impl core::marker::StructuralPartialEq for vyre_spec::OpSignature
+impl serde_core::ser::Serialize for vyre_spec::OpSignature
+pub fn vyre_spec::OpSignature::serialize<__S>(&self, __serializer: __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for vyre_spec::OpSignature
+pub fn vyre_spec::OpSignature::deserialize<__D>(__deserializer: __D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for vyre_spec::OpSignature
+impl core::marker::Send for vyre_spec::OpSignature
+impl core::marker::Sync for vyre_spec::OpSignature
+impl core::marker::Unpin for vyre_spec::OpSignature
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::OpSignature
+impl core::panic::unwind_safe::UnwindSafe for vyre_spec::OpSignature
+pub struct vyre_spec::TestDescriptor
+pub vyre_spec::TestDescriptor::invariant: vyre_spec::InvariantId
+pub vyre_spec::TestDescriptor::name: &'static str
+pub vyre_spec::TestDescriptor::purpose: &'static str
+impl core::clone::Clone for vyre_spec::TestDescriptor
+pub fn vyre_spec::TestDescriptor::clone(&self) -> vyre_spec::TestDescriptor
+impl core::cmp::Eq for vyre_spec::TestDescriptor
+impl core::cmp::PartialEq for vyre_spec::TestDescriptor
+pub fn vyre_spec::TestDescriptor::eq(&self, other: &vyre_spec::TestDescriptor) -> bool
+impl core::fmt::Debug for vyre_spec::TestDescriptor
+pub fn vyre_spec::TestDescriptor::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for vyre_spec::TestDescriptor
+impl core::marker::Freeze for vyre_spec::TestDescriptor
+impl core::marker::Send for vyre_spec::TestDescriptor
+impl core::marker::Sync for vyre_spec::TestDescriptor
+impl core::marker::Unpin for vyre_spec::TestDescriptor
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_spec::TestDescriptor
+impl core::panic::unwind_safe::UnwindSafe for vyre_spec::TestDescriptor
+pub trait vyre_spec::BackendAvailability: core::marker::Send + core::marker::Sync
+pub fn vyre_spec::BackendAvailability::available(&self, op: &str) -> bool
+impl vyre_spec::BackendAvailability for fn(&str) -> bool
+pub fn fn(&str) -> bool::available(&self, op: &str) -> bool
+impl vyre_spec::BackendAvailability for vyre_spec::BackendAvailabilityPredicate
+pub fn vyre_spec::BackendAvailabilityPredicate::available(&self, op: &str) -> bool
+pub fn vyre_spec::all_algebraic_laws() -> &'static [vyre_spec::AlgebraicLaw]
+pub fn vyre_spec::by_category(category: vyre_spec::InvariantCategory) -> impl core::iter::traits::iterator::Iterator<Item = &'static vyre_spec::Invariant>
+pub fn vyre_spec::by_id(id: vyre_spec::InvariantId) -> core::option::Option<&'static vyre_spec::Invariant>
+pub fn vyre_spec::catalog_is_complete() -> bool
+pub fn vyre_spec::empty_test_family() -> &'static [vyre_spec::TestDescriptor]
+pub fn vyre_spec::invariants() -> &'static [vyre_spec::Invariant]
+pub fn vyre_spec::law_catalog() -> &'static [&'static str]
+pub type vyre_spec::InvariantId = vyre_spec::EngineInvariant
+pub type vyre_spec::LawCheckFn = fn(fn(&[u8]) -> alloc::vec::Vec<u8>, &[u32]) -> bool

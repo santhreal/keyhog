@@ -1,0 +1,32 @@
+# Docs: https://docs.developer.yelp.com/reference/authentication
+# Format: 128-character alphanumeric string with no prefix
+# Verify: GET /v3/businesses/search with Authorization Bearer header returns 200
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "yelp-api-key"
+name = "Yelp Fusion API Key"
+service = "yelp"
+severity = "medium"
+keywords = ["YELP_API_KEY", "yelp", "fusion"]
+
+[[detector.patterns]]
+regex = "(?:YELP_API_KEY|yelp[_-]?api[_-]?key)[=:\\s\"'']+([a-zA-Z0-9_-]{100,})"
+description = "Yelp Fusion API key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:YELP|yelp)[=:\\s\"'']+([a-zA-Z0-9_-]{100,})"
+description = "Yelp API key generic context"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://api.yelp.com/v3/businesses/search?limit=1"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[detector.verify.success]
+status = 200

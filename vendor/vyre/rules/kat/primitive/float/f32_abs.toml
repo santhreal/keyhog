@@ -1,0 +1,6 @@
+op_id = "primitive.float.f32_abs"
+
+[[golden]]
+input = "000080bf"
+expected = "0000803f"
+reason = "abs(-1.0) = 1.0"

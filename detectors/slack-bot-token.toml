@@ -1,0 +1,50 @@
+# Docs: https://api.slack.com/authentication/token-types
+# Format: xoxb-{10-13 digits}-{10-13 digits}-{24-34 alphanumeric}
+# Verify: POST to slack.com/api/auth.test with Bearer token
+# Prefix: xoxb-
+
+[detector]
+id = "slack-bot-token"
+name = "Slack Bot Token"
+service = "slack"
+severity = "critical"
+keywords = ["xoxb", "slack", "bot"]
+
+[[detector.patterns]]
+regex = 'xoxb-[0-9]{10,13}-[0-9]{10,13}-[a-zA-Z0-9]{24,32}'
+description = "Slack bot token (3-segment)"
+
+[[detector.patterns]]
+regex = 'xoxb-[0-9]{10,13}-[0-9A-Za-z]{15,36}'
+description = "Slack bot token (2-segment or mixed)"
+
+[detector.verify]
+method = "POST"
+url = "https://slack.com/api/auth.test"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[detector.verify.success]
+status = 200
+json_path = "ok"
+equals = "true"
+
+[[detector.verify.metadata]]
+name = "team"
+json_path = "team"
+
+[[detector.verify.metadata]]
+name = "user"
+json_path = "user"
+
+[[detector.verify.metadata]]
+name = "team_id"
+json_path = "team_id"
+
+
+
+[[detector.tests]]
+test_positive = "xoxb-1234567890-1234567890-AbCdEfGhIjKlMnOpQrStUvWx"
+test_negative = "NOT_A_SECRET=totally_benign_example_12345"

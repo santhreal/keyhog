@@ -1,0 +1,31 @@
+name: miri
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: miri-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  miri:
+    runs-on: ubuntu-latest
+    env:
+      # Miri cannot run wgpu (host GPU unavailable, native calls). Scope to
+      # pure-Rust crates with no FFI.
+      MIRIFLAGS: -Zmiri-disable-isolation
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: miri
+      - name: Run miri
+        working-directory: libs/performance/matching/vyre
+        run: |
+          cargo miri setup
+          cargo miri test -p vyre-spec --lib
+          cargo miri test -p vyre-foundation --lib
+          cargo miri test -p vyre -p vyre-reference --lib --no-default-features

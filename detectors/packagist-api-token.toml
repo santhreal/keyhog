@@ -1,0 +1,21 @@
+# Docs: https://packagist.com/docs/api
+# Format: API key and secret pair (HMAC-SHA256) or simple token for auth.json
+# Verify: GET /api/packages with api-key header returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "packagist-api-token"
+name = "Packagist API Token"
+service = "packagist"
+severity = "high"
+keywords = ["PACKAGIST", "packagist.com", "auth.json", "composer"]
+
+[[detector.patterns]]
+regex = "(?:PACKAGIST|packagist)[_\\s]*(?:API[_\\s]*KEY|TOKEN|token)[=:\\s\"'']+([a-f0-9]{32,64})"
+description = "Packagist API key/token in configuration"
+group = 1
+
+[[detector.patterns]]
+regex = "\"packagist\\.com\":\\s*\\{\\s*\"http-basic\":\\s*\\{\\s*\"[^\"]+\":\\s*\"[^\"]+\",\\s*\"password\":\\s*\"([a-f0-9]{32,64})\""
+description = "Packagist auth.json credentials"
+group = 1

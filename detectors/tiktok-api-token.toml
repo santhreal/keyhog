@@ -1,0 +1,21 @@
+# Docs: https://ads.tiktok.com/marketing_api/docs?id=1701890905779201
+# Format: Access token for TikTok Marketing API (alphanumeric, 40+ characters)
+# Verify: GET /open_api/v1.3/user/info with Access-Token header
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "tiktok-api-token"
+name = "TikTok Marketing API Token"
+service = "tiktok"
+severity = "high"
+keywords = ["tiktok", "TIKTOK", "tik_tok", "TikTok", "access_token"]
+
+[[detector.patterns]]
+regex = "(?:tiktok|TIKTOK)[_\\-\\s]*(?:access[_\\-\\s]*token|ACCESS[_\\-\\s]*TOKEN)[=: \\s\"'']+([a-zA-Z0-9]{40,})"
+description = "TikTok Marketing API access token with context anchor"
+group = 1
+
+[[detector.companions]]
+name = "app_id"
+regex = "[0-9]{10,}"
+within_lines = 3

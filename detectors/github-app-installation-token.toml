@@ -1,0 +1,30 @@
+# Docs: https://docs.github.com/en/developers/apps/building-github-apps/authenticating-with-github-apps
+# Format: ghs_ prefix followed by 36 alphanumeric characters (server-to-server token)
+# Verify: GET /installation/repositories with Bearer token returns 200 if valid
+# Prefix: ghs_
+
+[detector]
+id = "github-app-installation-token"
+name = "GitHub App Installation Token"
+service = "github"
+severity = "critical"
+keywords = ["ghs_", "github_app", "installation_token"]
+
+[[detector.patterns]]
+regex = 'ghs_[a-zA-Z0-9]{36}'
+description = "GitHub App installation access token (ghs_ prefix)"
+
+[detector.verify]
+method = "GET"
+url = "https://api.github.com/installation/repositories"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[[detector.verify.headers]]
+name = "User-Agent"
+value = "keyhog-secret-scanner/{{version}}"
+
+[detector.verify.success]
+status = 200

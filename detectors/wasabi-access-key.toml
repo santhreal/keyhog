@@ -1,0 +1,32 @@
+# Docs: https://docs.wasabi.com/docs/access-keys-1
+# Format: Access Key ID is 20 alphanumeric chars (often starts with A or J), Secret is 40 base64 chars
+# Verify: https://docs.wasabi.com/docs/using-the-wasabi-api
+# Prefix: none (generic format, requires context anchoring)
+
+[detector]
+id = "wasabi-access-key"
+name = "Wasabi Access Key"
+service = "wasabi"
+severity = "high"
+keywords = ["WASABI", "wasabi_access_key", "WASABI_ACCESS_KEY", "wasabi-access-key"]
+
+[[detector.patterns]]
+regex = "(?:WASABI|wasabi)[._-]?(?:ACCESS[._-]?)?(?:KEY|key)[=:\\s\"']+([A-Z0-9]{20})"
+description = "Wasabi Access Key ID with context anchor"
+group = 1
+
+[[detector.companions]]
+name = "secret_access_key"
+regex = "[A-Za-z0-9/+=]{40}"
+within_lines = 5
+[detector.verify]
+method = "GET"
+url = "https://s3.wasabisys.com/"
+
+[detector.verify.auth]
+type = "header"
+name = "Authorization"
+template = "AWS {{match}}:{{companion.secret_access_key}}"
+
+[detector.verify.success]
+status = 200

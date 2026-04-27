@@ -1,0 +1,21 @@
+# Docs: https://developers.docusign.com/platform/auth/
+# Format: GUID format - 32 hexadecimal characters with 4 hyphens (36 chars total)
+# Verify: GET /oauth/userinfo with access token obtained via JWT Grant
+# Prefix: none (GUID format)
+
+[detector]
+id = "docusign-api-key"
+name = "Docusign Integration Key"
+service = "docusign"
+severity = "critical"
+keywords = ["DOCUSIGN", "INTEGRATION_KEY", "ds_integration_key"]
+
+[[detector.patterns]]
+regex = '''(?:DOCUSIGN|docusign)[._-]?(?:INTEGRATION|integration)[._-]?(?:KEY|key)[=:\s"']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})'''
+description = "Docusign Integration Key with context anchor (GUID format)"
+group = 1
+
+[[detector.patterns]]
+regex = '''(?:DOCUSIGN|docusign)[._-]?(?:CLIENT|client)[._-]?(?:ID|id)[=:\s"']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})'''
+description = "Docusign Client ID with context anchor (GUID format)"
+group = 1

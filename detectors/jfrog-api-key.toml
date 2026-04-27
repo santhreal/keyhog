@@ -1,0 +1,18 @@
+# Docs: https://jfrog.com/help/r/jfrog-platform-administration-documentation/access-tokens
+# Format: AKCp8 prefix followed by 32+ alphanumeric characters
+# Verify: GET request to JFrog Artifactory API with X-JFrog-Art-Api header
+# Prefix: AKCp8
+
+[detector]
+id = "jfrog-api-key"
+name = "JFrog/Artifactory API Key"
+service = "jfrog"
+severity = "critical"
+keywords = ["AKCp8"]
+
+[[detector.patterns]]
+regex = 'AKCp8[a-zA-Z0-9]{32,}'
+description = "JFrog/Artifactory API key (AKCp8)"
+
+# NOTE: live verification disabled. `{instance}` was single-brace and
+# never resolved. kimi-wave3 §1.

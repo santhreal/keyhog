@@ -1,0 +1,11 @@
+op_id = "primitive.bitwise.clz"
+
+[[golden]]
+input = "01000000"
+expected = "1f000000"
+reason = "clz(1) = 31 (only LSB set)"
+
+[[golden]]
+input = "00000000"
+expected = "20000000"
+reason = "clz(0) = 32 (all zeros)"

@@ -1,0 +1,16 @@
+# Docs: https://developer.nexmo.com/concepts/guides/authentication
+# Format: API Key is 8 hex characters (no unique prefix)
+# Verify: https://developer.nexmo.com/api/account#getBalance
+# Prefix: none (8 char hex, requires keyword context)
+
+[detector]
+id = "vonage-api-key"
+name = "Vonage/Nexmo API Key"
+service = "vonage"
+severity = "critical"
+keywords = ["vonage", "VONAGE", "nexmo", "NEXMO", "api_key", "API_KEY"]
+
+[[detector.patterns]]
+regex = "(?:vonage|VONAGE|nexmo|NEXMO)[_\\-\\s]*(?:api[_\\-\\s]*key|API[_\\-\\s]*KEY)[=:\\s\\\"']+([a-f0-9]{8})"
+description = "Vonage/Nexmo API Key with context anchor"
+group = 1

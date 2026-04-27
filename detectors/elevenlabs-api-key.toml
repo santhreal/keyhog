@@ -1,0 +1,27 @@
+# Docs: https://elevenlabs.io/docs/quickstart
+# Format: sk_ prefix followed by 32 alphanumeric characters
+# Verify: GET /v1/user with xi-api-key header returns 200 if valid
+# Prefix: sk_
+
+[detector]
+id = "elevenlabs-api-key"
+name = "ElevenLabs API Key"
+service = "elevenlabs"
+severity = "high"
+keywords = ["sk_", "ELEVENLABS"]
+
+[[detector.patterns]]
+regex = 'sk_[a-f0-9]{32}'
+description = "ElevenLabs API key (sk_ prefix)"
+
+[detector.verify]
+method = "GET"
+url = "https://api.elevenlabs.io/v1/user"
+
+[detector.verify.auth]
+type = "header"
+name = "xi-api-key"
+template = "{{match}}"
+
+[detector.verify.success]
+status = 200

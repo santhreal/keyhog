@@ -1,0 +1,11 @@
+op_id = "primitive.bitwise.extract_bits"
+
+[[golden]]
+input = "00ff00ff08010000"
+expected = "ff000000"
+reason = "extract 8 bits at offset 8 from 0xFF00FF00 = 0xFF"
+
+[[golden]]
+input = "efbeadde00000000"
+expected = "00000000"
+reason = "extract 0 bits â always 0"

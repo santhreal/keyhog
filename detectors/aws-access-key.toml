@@ -1,0 +1,41 @@
+# Docs: https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_identifiers.html
+# Format: AKIA or ASIA prefix followed by 16 uppercase alphanumeric characters
+# Verify: GET /?Action=GetCallerIdentity with AWS Signature V4
+# Prefix: AKIA or ASIA
+
+[detector]
+id = "aws-access-key"
+name = "AWS Access Key"
+service = "aws"
+severity = "critical"
+keywords = ["AKIA", "ASIA"]
+
+[[detector.patterns]]
+regex = "(AKIA|ASIA)[0-9A-Z]{16}"
+description = "AWS access key ID"
+
+[[detector.companions]]
+regex = "(?:AWS[_-]?SECRET[_-]?ACCESS[_-]?KEY|SECRET[_-]?KEY|AWS[_-]?SECRET(?:[_-]?KEY)?|aws[_-]?secret(?:[_-]?key)?)[=:\\s\"'']+([0-9a-zA-Z/+=]{40})"
+within_lines = 5
+name = "secret_key"
+required = true
+
+[[detector.companions]]
+regex = "(?:AWS[_-]?SESSION[_-]?TOKEN|aws[_-]?session[_-]?token|X-Amz-Security-Token)[=:\\s\"'']+([A-Za-z0-9/+=]{80,})"
+within_lines = 5
+name = "session_token"
+
+[detector.verify]
+method = "GET"
+url = "https://sts.amazonaws.com/?Action=GetCallerIdentity&Version=2011-06-15"
+
+[detector.verify.auth]
+type = "aws_v4"
+access_key = "match"
+secret_key = "companion.secret_key"
+session_token = "companion.session_token"
+region = "us-east-1"
+service = "sts"
+
+[detector.verify.success]
+status = 200

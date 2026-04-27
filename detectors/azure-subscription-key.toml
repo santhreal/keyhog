@@ -1,0 +1,33 @@
+# Docs: https://learn.microsoft.com/en-us/azure/api-management/api-management-subscriptions
+# Format: 32 character hexadecimal string
+# Verify: GET /subscriptions with Ocp-Apim-Subscription-Key header returns 200 if valid
+# Prefix: none (generic hex, requires keyword context)
+
+[detector]
+id = "azure-subscription-key"
+name = "Azure Subscription Key"
+service = "azure"
+severity = "high"
+keywords = ["Ocp-Apim-Subscription-Key", "azure_subscription_key", "subscription-key"]
+
+[[detector.patterns]]
+regex = "(?:Ocp-Apim-Subscription-Key|azure_subscription_key|subscription_key)[=:\\s\"']+([a-f0-9]{32})"
+description = "Azure subscription key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "Ocp-Apim-Subscription-Key\\s*[:=]\\s*([a-f0-9]{32})"
+description = "Azure subscription key in HTTP header format"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://management.azure.com/subscriptions?api-version=2020-01-01"
+
+[detector.verify.auth]
+type = "header"
+name = "Ocp-Apim-Subscription-Key"
+template = "{{match}}"
+
+[detector.verify.success]
+status = 200

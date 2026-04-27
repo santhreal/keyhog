@@ -1,0 +1,21 @@
+# Docs: https://api.count.ly/reference/authentication
+# Format: 32-character hexadecimal string for App Key
+# Verify: GET /o/analytics/dashboard with api_key parameter returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "countly-api-key"
+name = "Countly API Key"
+service = "countly"
+severity = "high"
+keywords = ["COUNTLY_API_KEY", "COUNTLY_APP_KEY", "countly"]
+
+[[detector.patterns]]
+regex = "(?:COUNTLY[_\\-\\s]?(?:API|APP)[_\\-\\s]?KEY|countly[_\\-\\s]?(?:api|app)[_\\-\\s]?key)[=:\\s\"'']+([a-f0-9]{32})"
+description = "Countly API/App key - 32 hex characters with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "Countly\\.init.*app_key[=:\\s\"'']+([a-f0-9]{32})"
+description = "Countly SDK initialization with app_key"
+group = 1

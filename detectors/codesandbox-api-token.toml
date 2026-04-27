@@ -1,0 +1,29 @@
+# Docs: https://codesandbox.io/docs/learn/sandboxes/deployment
+# Format: CodeSandbox API token with csb_ or csb_api_ prefix
+# Verify: GET /api/v1/users/current with Bearer token
+# Prefix: csb_, csb_api_
+
+[detector]
+id = "codesandbox-api-token"
+name = "CodeSandbox API Token"
+service = "codesandbox"
+severity = "high"
+keywords = ["csb_", "csb_api", "CODESANDBOX", "codesandbox"]
+
+[[detector.patterns]]
+regex = 'csb_api_[a-zA-Z0-9_-]{20,}'
+description = "CodeSandbox API token with csb_api_ prefix"
+
+[[detector.patterns]]
+regex = 'csb_[a-zA-Z0-9_-]{20,}'
+description = "CodeSandbox token with csb_ prefix"
+
+[detector.verify]
+method = "GET"
+url = "https://codesandbox.io/api/v1/users/current"
+[detector.verify.success]
+status = 200
+
+[[detector.verify.headers]]
+name = "Authorization"
+value = "Bearer {{match}}"

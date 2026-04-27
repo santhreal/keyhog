@@ -1,0 +1,21 @@
+# Docs: https://developers.heap.io/docs/api-reference
+# Format: App ID for heap.load() initialization - numeric string
+# Verify: no public verification endpoint
+# Prefix: heap.load(
+
+[detector]
+id = "heap-analytics-key"
+name = "Heap Analytics App ID"
+service = "heapanalytics"
+severity = "low"
+keywords = ["heap.load", "HEAP_APP_ID", "heap_id", "heapAnalytics"]
+
+[[detector.patterns]]
+regex = "heap\\.load\\([\"'']?(\\d{3,})[\"'']?"
+description = "Heap Analytics app ID in heap.load() call"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:HEAP[_.-]?APP[_.-]?ID|heap[_.-]?app[_.-]?id)[=:\\s\"'']+(\\d{3,})"
+description = "Heap Analytics app ID with context anchor"
+group = 1

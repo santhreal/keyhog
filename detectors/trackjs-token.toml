@@ -1,0 +1,21 @@
+# Docs: https://docs.trackjs.com/QuickStart/
+# Format: Base64-like string with specific TrackJS token format (32 chars + 24 chars separated by colon)
+# Verify: none (no simple validation endpoint without customer ID)
+# Prefix: none (unique TrackJS token format)
+
+[detector]
+id = "trackjs-token"
+name = "TrackJS Token"
+service = "trackjs"
+severity = "medium"
+keywords = ["TrackJS", "trackJs", "trackjs", "TRACKJS", "token", "YOUR_TOKEN"]
+
+[[detector.patterns]]
+regex = "(?:TrackJS|trackJs|trackjs|TRACKJS)[=:\\s\\\"']*\\{[^}]*token[=:\\s\\\"']+([A-Za-z0-9+/]{32}:[A-Za-z0-9+/]{24})"
+description = "TrackJS account token in install configuration"
+group = 1
+
+[[detector.patterns]]
+regex = "trackjs.*token[=:\\s\\\"']+([A-Za-z0-9+/]{32}:[A-Za-z0-9+/]{24})"
+description = "TrackJS token with context"
+group = 1

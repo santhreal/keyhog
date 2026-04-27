@@ -1,0 +1,26 @@
+# Docs: https://www.comet.com/docs/v2/api-and-sdk/python-sdk/reference/Experiment/
+# Format: Alphanumeric string (no unique prefix)
+# Verify: GET /api/rest/v2/account-details with Authorization header
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "comet-ml-api-key"
+name = "Comet ML API Key"
+service = "comet"
+severity = "high"
+keywords = ["COMET_API_KEY", "COMET_REST_API_KEY", "comet"]
+
+[[detector.patterns]]
+regex = "(?:COMET_API_KEY|COMET_REST_API_KEY)[=: \\s\"'']+([A-Za-z0-9]{32,})"
+description = "Comet ML API key with context anchor"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://www.comet.com/api/rest/v2/account-details"
+[detector.verify.success]
+status = 200
+
+[[detector.verify.headers]]
+name = "Authorization"
+value = "{{match}}"

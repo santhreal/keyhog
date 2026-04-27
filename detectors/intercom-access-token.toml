@@ -1,0 +1,26 @@
+# Docs: https://developers.intercom.com/docs/build-an-integration/learn-more/authentication
+# Format: Base64 encoded string starting with dG9r (token prefix)
+# Verify: GET request to Intercom API /me endpoint with Bearer authorization
+# Prefix: dG9r
+
+[detector]
+id = "intercom-access-token"
+name = "Intercom Access Token"
+service = "intercom"
+severity = "critical"
+keywords = ["dG9r"]
+
+[[detector.patterns]]
+regex = 'dG9r[a-zA-Z0-9+/]{100,}={0,2}'
+description = "Intercom access token (base64 encoded)"
+
+[detector.verify]
+method = "GET"
+url = "https://api.intercom.io/me"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[detector.verify.success]
+status = 200

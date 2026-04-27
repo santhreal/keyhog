@@ -1,0 +1,33 @@
+# Docs: https://www.datocms.com/docs/content-delivery-api
+# Format: CDA (read-only) and CMA (full-access) tokens are 30+ character alphanumeric
+# Verify: GET /site with Authorization header returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "datocms-api-token"
+name = "DatoCMS API Token"
+service = "datocms"
+severity = "high"
+keywords = ["datocms", "DATOCMS_API_TOKEN", "DATOCMS_READWRITE_TOKEN", "dato"]
+
+[[detector.patterns]]
+regex = "(?:DATOCMS|datocms)[_\\s]?(?:API[_\\s]?TOKEN|READWRITE[_\\s]?TOKEN|READONLY[_\\s]?TOKEN)[=:\\s\"']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}|[a-zA-Z0-9_-]{30,50})"
+description = "DatoCMS API token with context anchor (UUID or alphanumeric format)"
+group = 1
+
+[[detector.patterns]]
+regex = "Authorization[=:\\s\"']+Bearer\\s+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}|[a-zA-Z0-9_-]{30,50})[^\\n]*dato"
+description = "DatoCMS bearer token with context"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://site-api.datocms.com/site"
+
+[detector.verify.auth]
+type = "header"
+name = "Authorization"
+template = "Bearer {{match}}"
+
+[detector.verify.success]
+status = 200

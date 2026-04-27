@@ -1,0 +1,36 @@
+# Docs: https://docs.confluent.io/cloud/current/security/authenticate/workload-identities/service-accounts/api-keys/overview.html
+# Format: API key ID (16 alphanumeric) and API secret (cflt- prefix + 60 chars for new format, or 64 chars for legacy)
+# Verify: Basic auth with API key ID as username and secret as password to Confluent Cloud API
+# Prefix: cflt (for secrets only)
+
+[detector]
+id = "confluent-cloud-api-key"
+name = "Confluent Cloud API Key"
+service = "confluent-cloud"
+severity = "critical"
+keywords = ["cflt", "CONFLUENT", "confluent"]
+
+[[detector.patterns]]
+regex = "cflt[A-Za-z0-9+/]{60}"
+description = "Confluent Cloud API secret (new format with cflt prefix)"
+
+[[detector.patterns]]
+regex = "(?:CONFLUENT|CONFLUENT_CLOUD|confluent|confluent_cloud)[_\\s]*(?:API[_\\s]*)?(?:KEY[_\\s]*ID|KEY)[=:\\s\"'']+([a-zA-Z0-9]{16})"
+description = "Confluent Cloud API key ID with context anchor"
+group = 1
+
+[[detector.companions]]
+name = "confluent_api_secret"
+regex = "(?:CONFLUENT|CONFLUENT_CLOUD|confluent|confluent_cloud)[_\\s]*(?:API[_\\s]*)?(?:SECRET|PASSWORD)[=:\\s\"'']+([a-zA-Z0-9+/]{64}|cflt[A-Za-z0-9+/]{60})"
+within_lines = 5
+[detector.verify]
+method = "GET"
+url = "https://api.confluent.cloud/org/v2/organizations"
+
+[detector.verify.auth]
+type = "basic"
+username = "match"
+password = "companion"
+
+[detector.verify.success]
+status = 200

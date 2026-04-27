@@ -1,0 +1,26 @@
+# Docs: https://jwt.io/introduction
+# Format: base64url-encoded header.payload.signature (3 dot-separated segments)
+# Verify: Decode header to check algorithm, decode payload to check claims
+# Prefix: eyJ (base64url of '{"')
+
+[detector]
+id = "jwt-token"
+name = "JSON Web Token"
+service = "jwt"
+severity = "high"
+keywords = ["eyJhbGci", "bearer", "authorization", "jwt"]
+
+[[detector.patterns]]
+regex = "eyJhbGci[a-zA-Z0-9_-]{5,256}\\.eyJ[a-zA-Z0-9_-]{10,1000}\\.[a-zA-Z0-9_-]{10,512}"
+description = "JWT with standard alg header (eyJhbGci = base64url of {\"alg\":)"
+
+[detector.verify]
+method = "GET"
+url = "https://jwt.io/api/v1/verify"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[detector.verify.success]
+status = 200

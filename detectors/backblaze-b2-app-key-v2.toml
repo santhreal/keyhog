@@ -1,0 +1,21 @@
+# Docs: https://www.backblaze.com/docs/cloud-storage-application-keys
+# Format: K00M prefix followed by 25+ alphanumeric/base64 characters for v2 keys
+# Verify: POST /b2api/v2/b2_authorize_account with Basic auth - no simple public verification
+# Prefix: K00M
+
+[detector]
+id = "backblaze-b2-app-key-v2"
+name = "Backblaze B2 Application Key (v2)"
+service = "backblaze"
+severity = "high"
+keywords = ["K00M", "K00N", "b2_app_key", "B2_APP_KEY", "backblaze_v2"]
+
+[[detector.patterns]]
+regex = 'K00[MN][a-zA-Z0-9_-]{20,}'
+description = "Backblaze B2 v2 application key (K00M/K00N prefix)"
+
+# Companion: Application Key ID (needed alongside the application key)
+[[detector.companions]]
+name = "application_key_id"
+regex = '[0-9a-f]{20,24}'
+within_lines = 5

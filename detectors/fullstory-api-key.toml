@@ -1,0 +1,31 @@
+# Docs: https://developer.fullstory.com/server/v1/getting-started/
+# Format: Data center prefix (na1, eu1) followed by token, e.g., "na1.xxxxx"
+# Verify: GET /me with Basic Authorization header
+# Prefix: na1., eu1.
+
+[detector]
+id = "fullstory-api-key"
+name = "FullStory API Key"
+service = "fullstory"
+severity = "high"
+keywords = ["FULLSTORY_API_KEY", "fullstory_api_key", "na1.", "eu1.", "fs_api_key"]
+
+[[detector.patterns]]
+regex = "(?:FULLSTORY[_.-]?API[_.-]?KEY|fullstory[_.-]?api[_.-]?key)[=:\\s\"'']+((?:na1|eu1)\\.[a-zA-Z0-9_-]{20,})"
+description = "FullStory API key with datacenter prefix"
+group = 1
+
+[[detector.patterns]]
+regex = "[^\\w]((na1|eu1)\\.[a-zA-Z0-9_-]{32,})"
+description = "FullStory API key with datacenter prefix (standalone)"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://api.fullstory.com/me"
+[detector.verify.success]
+status = 200
+
+[[detector.verify.headers]]
+name = "Authorization"
+value = "Basic {{match}}"

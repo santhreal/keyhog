@@ -1,0 +1,23 @@
+# Docs: https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-envvars.html
+# Format: Session token emitted with temporary AWS credentials; typically long base64-like text
+# Verify: none (a session token is not safely verifiable without the matching access key ID and secret key)
+# Prefix: none (requires AWS-specific env/header/query anchors)
+
+[detector]
+id = "aws-session-token"
+name = "AWS Session Token"
+service = "aws"
+severity = "high"
+keywords = ["AWS_SESSION_TOKEN", "aws_session_token", "X-Amz-Security-Token"]
+
+[[detector.patterns]]
+regex = "AWS_SESSION_TOKEN[ =:]+[A-Za-z0-9/+=]{80,}"
+description = "AWS session token with uppercase environment variable anchor"
+
+[[detector.patterns]]
+regex = "aws_session_token[ =:]+[A-Za-z0-9/+=]{80,}"
+description = "AWS session token with lowercase environment variable anchor"
+
+[[detector.patterns]]
+regex = "X-Amz-Security-Token[ =:]+[A-Za-z0-9%/+_=-]{80,}"
+description = "AWS session token with SigV4 header anchor"

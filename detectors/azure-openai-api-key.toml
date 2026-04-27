@@ -1,0 +1,31 @@
+# Docs: https://learn.microsoft.com/en-us/azure/ai-services/openai/reference
+# Format: 32 hex characters used in api-key header or AZURE_OPENAI_API_KEY
+# Verify: no public verification endpoint
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "azure-openai-api-key"
+name = "Azure OpenAI API Key"
+service = "azure-openai"
+severity = "critical"
+keywords = ["AZURE_OPENAI_API_KEY", "AZURE_OPENAI_ENDPOINT", "azure-openai", "api-key"]
+
+[[detector.patterns]]
+regex = "(?:AZURE_OPENAI_API_KEY|azure-openai|azure_openai)[=:\\s\"\\']+([a-f0-9]{32})"
+description = "Azure OpenAI API key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:api-key|api_key)[=:\\s\"\\']+([a-f0-9]{32}).*\\.openai\\.azure\\.com"
+description = "Azure OpenAI api-key header with endpoint context"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://eastus.api.cognitive.microsoft.com/openai/models?api-version=2024-02-01"
+[detector.verify.success]
+status = 200
+
+[[detector.verify.headers]]
+name = "api-key"
+value = "{{match}}"

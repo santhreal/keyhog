@@ -1,0 +1,21 @@
+# Docs: https://developers.line.biz/en/docs/messaging-api/overview/
+# Format: Channel access token - long-lived tokens start with specific patterns
+# Verify: GET /v2/bot/info with Authorization: Bearer header
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "line-api-token"
+name = "LINE Messaging API Token"
+service = "line"
+severity = "high"
+keywords = ["line", "LINE", "channel_access_token", "CHANNEL_ACCESS_TOKEN", "line-bot"]
+
+[[detector.patterns]]
+regex = "(?:line|LINE)[_\\-\\s]*(?:channel[_\\-\\s]*access[_\\-\\s]*token|CHANNEL[_\\-\\s]*ACCESS[_\\-\\s]*TOKEN)[=: \\s\"'']+([a-zA-Z0-9/+]{100,200}={0,2})"
+description = "LINE channel access token (Base64) with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:line|LINE)[_\\-\\s]*(?:channel[_\\-\\s]*secret|CHANNEL[_\\-\\s]*SECRET)[=: \\s\"'']+([a-f0-9]{32})"
+description = "LINE channel secret with context anchor"
+group = 1

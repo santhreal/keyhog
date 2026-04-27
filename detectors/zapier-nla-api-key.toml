@@ -1,0 +1,15 @@
+# Docs: https://platform.zapier.com/docs/nla
+# Format: sk_ac_<32+ alphanumeric characters>
+# Verify: no public verification endpoint
+# Prefix: sk_ac_
+
+[detector]
+id = "zapier-nla-api-key"
+name = "Zapier Natural Language Actions API Key"
+service = "zapier"
+severity = "critical"
+keywords = ["sk_ac_", "zapier_api_key", "ZAPIER_API_KEY"]
+
+[[detector.patterns]]
+regex = 'sk_ac_[a-zA-Z0-9]{32,}'
+description = "Zapier NLA API key (sk_ac_ prefix)"

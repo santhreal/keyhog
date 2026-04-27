@@ -1,0 +1,16 @@
+# Docs: https://www.gitpod.io/docs/introduction/getting-started#access-tokens
+# Format: Bearer token with no unique prefix, typically 40+ hex characters
+# Verify: GET /api/users with Authorization header returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "gitpod-api-token"
+name = "Gitpod API Token"
+service = "gitpod"
+severity = "high"
+keywords = ["GITPOD_TOKEN", "gitpod_token", "GITPOD_API", "gitpod_api"]
+
+[[detector.patterns]]
+regex = "(?:GITPOD_TOKEN|GITPOD_API|gitpod_token|gitpod_api)[=:\\s\"'']+([a-f0-9]{40})"
+description = "Gitpod API token with context anchor"
+group = 1

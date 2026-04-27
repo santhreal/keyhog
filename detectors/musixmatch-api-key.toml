@@ -1,0 +1,16 @@
+# Docs: https://developer.musixmatch.com/documentation
+# Format: 32 character hex API key
+# Verify: GET /ws/1.1/chart.artists.get with apikey param returns 200
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "musixmatch-api-key"
+name = "Musixmatch API Key"
+service = "musixmatch"
+severity = "medium"
+keywords = ["MUSIXMATCH", "musixmatch", "MUSIXMATCH_API_KEY", "musixmatch_api_key"]
+
+[[detector.patterns]]
+regex = "(?:MUSIXMATCH|musixmatch)[\\\\s_-]?(?:API|api)?[\\\\s_-]?(?:KEY|key)?[=:\\s\"'']+([a-f0-9]{32})"
+description = "Musixmatch API key with context anchor"
+group = 1

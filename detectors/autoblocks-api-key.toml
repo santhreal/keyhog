@@ -1,0 +1,30 @@
+# Docs: https://docs.autoblocks.ai/
+# Format: AB- prefix followed by alphanumeric characters
+# Verify: GET /prompts/types with Bearer auth
+# Prefix: AB-
+
+[detector]
+id = "autoblocks-api-key"
+name = "Autoblocks API Key"
+service = "autoblocks"
+severity = "high"
+keywords = ["AB-", "AUTOBLOCKS_V2_API_KEY", "AUTOBLOCKS_API_KEY", "autoblocks"]
+
+[[detector.patterns]]
+regex = "AB-[a-zA-Z0-9_-]{20,}"
+description = "Autoblocks API key (AB- prefix)"
+
+[[detector.patterns]]
+regex = "(?:AUTOBLOCKS_V2_API_KEY|AUTOBLOCKS_API_KEY)[=:\\s\"'']+([a-zA-Z0-9_-]{20,})"
+description = "Autoblocks API key with context anchor"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://api-v2.autoblocks.ai/prompts/types"
+[detector.verify.success]
+status = 200
+
+[[detector.verify.headers]]
+name = "Authorization"
+value = "Bearer {{match}}"

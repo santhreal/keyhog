@@ -1,0 +1,33 @@
+# Docs: https://www.scrapingbee.com/documentation/
+# Format: 32-character alphanumeric string with no unique prefix
+# Verify: GET /v1/?url=...&api_key=... returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "scrapingbee-api-key"
+name = "ScrapingBee API Key"
+service = "scrapingbee"
+severity = "high"
+keywords = ["scrapingbee", "SCRAPINGBEE_API_KEY", "scraping_bee"]
+
+[[detector.patterns]]
+regex = "(?:scrapingbee|SCRAPINGBEE)[=:\\s\"'']+([a-zA-Z0-9]{32})"
+description = "ScrapingBee API key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:api_key|apikey)[=:\\s\"'']+([a-zA-Z0-9]{32}).{0,30}(?:scrapingbee)"
+description = "ScrapingBee API key with api_key prefix and scrapingbee context"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://app.scrapingbee.com/api/v1/"
+
+[detector.verify.auth]
+type = "query"
+param = "api_key"
+field = "match"
+
+[detector.verify.success]
+status = 200

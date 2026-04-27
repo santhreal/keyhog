@@ -1,0 +1,16 @@
+# Docs: https://docs.sentry.io/api/auth/
+# Format: 32 hexadecimal characters (legacy API key format, now deprecated)
+# Verify: none (legacy keys are deprecated and have no validation endpoint)
+# Prefix: none (32 hex characters, requires keyword context)
+
+[detector]
+id = "sentry-api-key-legacy"
+name = "Sentry Legacy API Key"
+service = "sentry"
+severity = "high"
+keywords = ["SENTRY_API_KEY", "sentry_api_key", "SENTRY-API-KEY", "auth.api_key"]
+
+[[detector.patterns]]
+regex = "(?:SENTRY[_\\-]?API[_\\-]?KEY|sentry[_\\-]?api[_\\-]?key|auth\\.api_key)[=:\\s\\\"']+([a-f0-9]{32})"
+description = "Sentry legacy API key (32 hex chars with context anchor)"
+group = 1

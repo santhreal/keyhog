@@ -1,0 +1,616 @@
+<!DOCTYPE HTML>
+<html lang="en" class="rust sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Support - The vyre Book</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="The GPU compute IR with a conformance prover">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../../favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="../../favicon-8114d1fc.png">
+        <link rel="stylesheet" href="../../css/variables-8adf115d.css">
+        <link rel="stylesheet" href="../../css/general-2459343d.css">
+        <link rel="stylesheet" href="../../css/chrome-ae938929.css">
+        <link rel="stylesheet" href="../../css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../../fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="../../highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="../../tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="../../ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "../../";
+            const default_light_theme = "rust";
+            const default_dark_theme = "navy";
+            window.path_to_searchindex_js = "../../searchindex-bc7bdb82.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="../../toc-16d598fb.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('rust')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="../../toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">The vyre Book</h1>
+
+                    <div class="right-buttons">
+                        <a href="../../print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/santhsecurity/vyre" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/santhsecurity/vyre/edit/main/core/docs/./testing/categories/support.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                            <span class=fa-svg id="git-edit-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M421.7 220.3l-11.3 11.3-22.6 22.6-205 205c-6.6 6.6-14.8 11.5-23.8 14.1L30.8 511c-8.4 2.5-17.5 .2-23.7-6.1S-1.5 489.7 1 481.2L38.7 353.1c2.6-9 7.5-17.2 14.1-23.8l205-205 22.6-22.6 11.3-11.3 33.9 33.9 62.1 62.1 33.9 33.9zM96 353.9l-9.3 9.3c-.9 .9-1.6 2.1-2 3.4l-25.3 86 86-25.3c1.3-.4 2.5-1.1 3.4-2l9.3-9.3H112c-8.8 0-16-7.2-16-16V353.9zM453.3 19.3l39.4 39.4c25 25 25 65.5 0 90.5l-14.5 14.5-22.6 22.6-11.3 11.3-33.9-33.9-62.1-62.1L314.3 67.7l11.3-11.3 22.6-22.6 14.5-14.5c25-25 65.5-25 90.5 0z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="support-utilities"><a class="header" href="#support-utilities">Support utilities</a></h1>
+<h2 id="the-directory-that-helps-without-hiding"><a class="header" href="#the-directory-that-helps-without-hiding">The directory that helps without hiding</a></h2>
+<p>Every non-trivial test suite builds up helper functions that
+reduce repetition. Factory functions for common test inputs.
+Wrappers around pipeline invocation. Assertion helpers that
+compare complex values. Without helpers, every test re-implements
+the same setup boilerplate, and the suite becomes a wall of
+noise that obscures what each test is actually verifying. With
+helpers, tests become readable statements of intent: “build this
+program, run it on the default backend, assert the result is
+this value.”</p>
+<p>Helpers also introduce a risk. A helper that hides too much
+becomes a black box — the reader cannot tell what the test is
+doing without tracing through three levels of indirection. When
+that happens, the helper is worse than the boilerplate it
+replaced, because the boilerplate was legible and the helper is
+not.</p>
+<p>vyre’s <code>tests/support/</code> directory holds the test utility code
+and is governed by one rule: helpers exist to reduce boilerplate,
+not to obscure test intent. This chapter explains what that rule
+means in practice.</p>
+<h2 id="the-structure"><a class="header" href="#the-structure">The structure</a></h2>
+<pre><code>tests/support/
+├── mod.rs          Top-level module with re-exports
+├── programs.rs     Factory functions for ir::Program values
+├── backends.rs     Backend harness wrappers
+├── oracles.rs      Oracle helpers (spec table lookup, law assertions)
+└── fixtures.rs     Static test data (corpus entries, common values)
+</code></pre>
+<p><code>mod.rs</code> re-exports the most commonly used items from the
+submodules so tests can import <code>crate::support::*</code> and get what
+they need. Submodules split helpers by concern: program
+construction in <code>programs.rs</code>, backend interaction in
+<code>backends.rs</code>, oracle lookups in <code>oracles.rs</code>, and static data
+in <code>fixtures.rs</code>.</p>
+<h2 id="programsrs--the-factory"><a class="header" href="#programsrs--the-factory">programs.rs — the factory</a></h2>
+<p><code>programs.rs</code> contains factory functions that construct common
+<code>ir::Program</code> shapes. Factories reduce the boilerplate of
+building a Program for a test that only cares about one or two
+specific details.</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>/// Build the smallest legal Program for a binary op.
+///
+/// The Program has:
+/// - Two input buffers named "a" and "b", each a single u32.
+/// - One output buffer named "out", a single u32.
+/// - An entry node that loads from a and b, applies the op,
+///   and stores to out.
+///
+/// This is the canonical one-op Program used by primitive op
+/// tests.
+pub fn build_single_binop(op: BinOp, a: u32, b: u32) -&gt; Program {
+    let mut program = Program::empty();
+    program.buffers.push(BufferDecl::new("a", DataType::U32, 1));
+    program.buffers.push(BufferDecl::new("b", DataType::U32, 1));
+    program.buffers.push(BufferDecl::new("out", DataType::U32, 1));
+    program.buffers[0].initial = Some(vec![Value::U32(a)]);
+    program.buffers[1].initial = Some(vec![Value::U32(b)]);
+    program.entry = Node::Store {
+        buffer: BufferRef::Named("out".into()),
+        index: Expr::Const(Value::U32(0)),
+        value: Expr::BinOp {
+            op,
+            lhs: Box::new(Expr::Load {
+                buffer: BufferRef::Named("a".into()),
+                index: Box::new(Expr::Const(Value::U32(0))),
+            }),
+            rhs: Box::new(Expr::Load {
+                buffer: BufferRef::Named("b".into()),
+                index: Box::new(Expr::Const(Value::U32(0))),
+            }),
+        },
+    };
+    program
+}
+
+/// Build a Program with an empty buffer.
+///
+/// Used by S15 archetype tests.
+pub fn build_empty_buffer_program() -&gt; Program {
+    let mut program = Program::empty();
+    program.buffers.push(BufferDecl::new("empty", DataType::U32, 0));
+    program.entry = Node::Return;
+    program
+}
+
+/// Build a Program with the maximum allowed node count.
+///
+/// Used by V017 boundary tests.
+pub fn build_max_nodes_program() -&gt; Program {
+    // ... builds a chain of MAX_NODES operations
+}
+<span class="boring">}</span></code></pre>
+<p>Each factory has a doc comment stating what it builds, what the
+resulting Program looks like, and what tests use it. A reader
+who sees <code>build_single_binop(BinOp::Add, 1u32, 2u32)</code> in a test
+knows exactly what shape the Program has without leaving the
+test file.</p>
+<p>The factories are named descriptively: <code>build_single_binop</code>,
+<code>build_empty_buffer_program</code>, <code>build_max_nodes_program</code>. The
+name is the entire contract; the doc comment is the detail. A
+factory name like <code>build_test_program()</code> or
+<code>build_standard_program()</code> is too vague and is rejected at
+review — the reader cannot tell what shape the Program has
+without opening the factory.</p>
+<h2 id="backendsrs--the-runner"><a class="header" href="#backendsrs--the-runner">backends.rs — the runner</a></h2>
+<p><code>backends.rs</code> contains helpers for running Programs on backends
+and observing the results:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>/// Run a Program on the default backend and return the output.
+///
+/// The default backend is whatever vyre::runtime::default_backend()
+/// returns, typically wgpu if the `gpu` feature is enabled or
+/// the reference interpreter otherwise.
+pub fn run_on_default_backend(program: &amp;Program) -&gt; Result&lt;Vec&lt;u8&gt;, RuntimeError&gt; {
+    let backend = vyre::runtime::default_backend();
+    backend.run(program, &amp;[])
+}
+
+/// Run a Program on every registered backend and return the
+/// results keyed by backend name.
+pub fn run_on_every_backend(program: &amp;Program)
+    -&gt; Vec&lt;(String, Result&lt;Vec&lt;u8&gt;, RuntimeError&gt;)&gt;
+{
+    vyre::runtime::registered_backends()
+        .iter()
+        .map(|b| (b.name().to_string(), b.run(program, &amp;[])))
+        .collect()
+}
+
+/// Assert that a WGSL shader compiles on wgpu.
+pub fn assert_shader_compiles(shader: &amp;str) {
+    // ... creates a wgpu device and attempts to compile the shader
+}
+<span class="boring">}</span></code></pre>
+<p>Each helper wraps a common pattern. <code>run_on_default_backend</code> is
+the most common: it dispatches a Program on whatever backend is
+default and returns the output bytes. <code>run_on_every_backend</code> is
+used by cross-backend tests. <code>assert_shader_compiles</code> is used by
+lowering tests.</p>
+<p>The helpers do not hide what is happening. They abbreviate.
+<code>run_on_default_backend(&amp;program)</code> is clearly “run this program,”
+and nothing is obscured about what backend is being used or
+what the result type is. The reader can guess the full
+implementation without looking at it.</p>
+<h2 id="oraclesrs--the-comparisons"><a class="header" href="#oraclesrs--the-comparisons">oracles.rs — the comparisons</a></h2>
+<p><code>oracles.rs</code> contains helpers for oracle-based assertions. The
+helpers make it easier to use strong oracles without
+re-implementing the comparison logic in every test.</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>/// Look up the expected value for an op on specific inputs from
+/// the specification table.
+///
+/// Panics if no spec table row matches — which is the right
+/// failure mode, because the test is asserting the inputs are
+/// in the table.
+pub fn spec_table_lookup(op: BinOp, inputs: &amp;[Value]) -&gt; Value {
+    let table = vyre_conform::spec::tables::get(op);
+    for row in table {
+        if row.inputs == inputs {
+            return row.expected.clone();
+        }
+    }
+    panic!(
+        "no spec table row for op {:?} with inputs {:?}",
+        op, inputs,
+    );
+}
+
+/// Assert that an op satisfies a declared law on specific inputs.
+///
+/// Uses the law checker from vyre-conform.
+pub fn assert_law(law: Law, op: BinOp, inputs: &amp;[Value]) {
+    let result = vyre_conform::algebra::checker::verify(law, op, inputs);
+    assert!(
+        result.is_ok(),
+        "op {:?} violated law {:?} on inputs {:?}: {:?}",
+        op, law, inputs, result,
+    );
+}
+
+/// Assert that a Program's output agrees with the reference
+/// interpreter byte-for-byte.
+pub fn assert_agrees_with_reference(program: &amp;Program) {
+    let observed = run_on_default_backend(program).expect("dispatch");
+    let expected = vyre_conform::reference::run(program, &amp;[])
+        .expect("reference interpreter");
+    assert_eq!(
+        observed, expected,
+        "default backend disagreed with reference interpreter",
+    );
+}
+<span class="boring">}</span></code></pre>
+<p>These helpers are load-bearing for the oracle discipline. A test
+that uses <code>spec_table_lookup(op, inputs)</code> as its expected value
+is provably using the spec table oracle — the reviewer can
+verify this at a glance. A test that uses <code>assert_law</code> is
+provably using the law oracle. Without the helpers, each test
+would inline the oracle logic, and inconsistencies would creep
+in.</p>
+<p>The helpers are also the way the oracle hierarchy is mechanically
+enforced. A reviewer can scan a test file for the helper names
+and know which oracles are in use. A test that uses
+<code>assert_eq!(result, 5)</code> without going through an oracle helper
+is suspicious: where did the <code>5</code> come from? Was it derived from
+the code? The helpers make the oracle explicit, and explicit
+oracles are reviewable.</p>
+<h2 id="fixturesrs--the-static-data"><a class="header" href="#fixturesrs--the-static-data">fixtures.rs — the static data</a></h2>
+<p><code>fixtures.rs</code> contains static test data that multiple tests
+share:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>/// Canonical test Programs used across the suite.
+pub fn canonical_test_programs() -&gt; Vec&lt;Program&gt; {
+    vec![
+        build_single_binop(BinOp::Add, 1u32, 2u32),
+        build_single_binop(BinOp::Mul, 3u32, 5u32),
+        build_loop_with_counter(10),
+        build_diamond_dataflow(),
+        // ... more
+    ]
+}
+
+/// Known bit patterns used as adversarial inputs.
+pub const BIT_PATTERNS: &amp;[u32] = &amp;[
+    0x00000000, 0xFFFFFFFF, 0x55555555, 0xAAAAAAAA,
+    0xF0F0F0F0, 0x0F0F0F0F, 0xDEADBEEF, 0xCAFEBABE,
+    0x80000000, 0x7FFFFFFF,
+];
+
+/// Known overflow pairs for u32 addition.
+pub const ADD_OVERFLOW_PAIRS: &amp;[(u32, u32, u32)] = &amp;[
+    (u32::MAX, 1, 0),
+    (u32::MAX, u32::MAX, u32::MAX - 1),
+    (0x80000000, 0x80000000, 0),
+    // ... more
+];
+<span class="boring">}</span></code></pre>
+<p>The fixtures are constants or simple factory functions. They
+exist to avoid repeating the same values in every test. When a
+new test needs a canonical Program, it uses
+<code>canonical_test_programs()</code> rather than building one from
+scratch.</p>
+<p>Fixtures should be small. A fixture that spans many files and
+many layers of indirection is a symptom of over-engineering —
+the test setup has grown into its own subsystem. The rule of
+thumb: a fixture function is at most 50 lines. A fixture module
+is at most 300 lines. Beyond that, the fixtures are doing too
+much and need to be refactored into multiple narrower fixtures.</p>
+<h2 id="the-rule-helpers-clarify-do-not-obscure"><a class="header" href="#the-rule-helpers-clarify-do-not-obscure">The rule: helpers clarify, do not obscure</a></h2>
+<p>The governing rule of the <code>support/</code> directory is that helpers
+exist to reduce boilerplate, not to obscure test intent. This is
+easy to state and easy to violate. The pattern that violates it
+is usually well-intentioned: a contributor sees repeated code
+across tests, extracts a helper that captures the pattern, and
+discovers that the helper hides details the tests were relying
+on.</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// BAD — helper hides critical details
+pub fn run_test_case(case: &amp;TestCase) -&gt; TestResult {
+    let program = case.build_program();
+    let backend = case.select_backend();
+    let result = backend.run(&amp;program);
+    case.validate_result(result)
+}
+
+#[test]
+fn test_add() {
+    let case = TestCase::new()
+        .with_op(BinOp::Add)
+        .with_inputs(1u32, 2u32);
+    let result = run_test_case(&amp;case);
+    assert!(result.passed);
+}
+<span class="boring">}</span></code></pre>
+<p>This test reads as “construct a test case, run it, assert it
+passed.” Nothing about the actual op, the actual inputs, the
+actual expected output, or the actual comparison is visible in
+the test body. The reader has to open <code>TestCase</code>,
+<code>build_program</code>, <code>select_backend</code>, <code>run</code>, <code>validate_result</code>, and
+<code>TestResult::passed</code> to figure out what is happening. The helper
+has obscured everything.</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// GOOD — helpers abbreviate, test intent is visible
+#[test]
+fn test_add_one_plus_two_equals_three() {
+    let program = build_single_binop(BinOp::Add, 1u32, 2u32);
+    let result = run_on_default_backend(&amp;program).expect("dispatch");
+    assert_eq!(result, 3u32);
+}
+<span class="boring">}</span></code></pre>
+<p>The second test uses the same <code>build_single_binop</code> helper, but
+the op, inputs, backend invocation, and expected value are all
+visible in the test body. The reader sees <code>BinOp::Add</code>, <code>1u32</code>,
+<code>2u32</code>, <code>3u32</code> inline. The helper is reducing boilerplate (not
+every test has to write out the full <code>Program</code> construction) but
+it is not hiding what the test is checking.</p>
+<p>The difference between the two forms is not the number of helper
+calls — both have helper calls. The difference is whether the
+test’s subject, inputs, and expected output are visible at the
+call site. Good helpers keep all three visible. Bad helpers hide
+them behind configuration objects.</p>
+<h2 id="when-a-helper-is-wrong"><a class="header" href="#when-a-helper-is-wrong">When a helper is wrong</a></h2>
+<p>Signs that a helper is in the wrong shape:</p>
+<ul>
+<li><strong>The helper takes a “config” or “options” struct.</strong> These
+hide the inputs behind a second layer of indirection. The
+reader has to know what fields the config has and what values
+the test is setting. Factor the helper into smaller helpers
+that take specific arguments.</li>
+<li><strong>The helper returns a “result” or “outcome” that must be
+introspected.</strong> The reader cannot tell what the test is
+asserting because the assertion is on an opaque result type.
+Move the assertion into the test body using specific values.</li>
+<li><strong>The helper’s name is generic.</strong> <code>run_test</code>, <code>check_result</code>,
+<code>build_case</code> — names like these tell the reader nothing
+about what the helper does. Rename to something specific.</li>
+<li><strong>The helper has many parameters.</strong> A helper with more than
+three or four parameters is hiding complexity. Split it into
+smaller helpers with fewer parameters each.</li>
+<li><strong>The helper has default parameters or builder methods.</strong>
+Builders are for production code, not test helpers. A test
+that relies on builder defaults is fragile: a change to the
+defaults silently changes what the test exercises.</li>
+</ul>
+<p>When any of these signs appear, the helper is rejected at
+review. The reviewer asks the contributor to rewrite the helper
+so the test’s intent is visible at the call site.</p>
+<h2 id="when-a-helper-is-right"><a class="header" href="#when-a-helper-is-right">When a helper is right</a></h2>
+<p>A good helper:</p>
+<ul>
+<li><strong>Has a descriptive name that tells the reader what it does.</strong>
+<code>build_single_binop</code> is good. <code>create_test</code> is not.</li>
+<li><strong>Takes specific arguments, not configuration objects.</strong></li>
+<li><strong>Returns a concrete type, not a wrapped opaque result.</strong></li>
+<li><strong>Is small — under 30 lines is typical, under 50 is the
+exception.</strong></li>
+<li><strong>Has a doc comment stating what it produces and how.</strong></li>
+<li><strong>Is used by many tests.</strong> A helper used by one test is not
+reducing boilerplate; it is adding indirection.</li>
+</ul>
+<h2 id="what-does-not-belong-in-support"><a class="header" href="#what-does-not-belong-in-support">What does not belong in support/</a></h2>
+<p>The <code>support/</code> directory is for test utilities. It is not for:</p>
+<ul>
+<li><strong>Implementation code that should live in vyre itself.</strong> If
+the helper is useful to non-test code, move it to vyre’s
+source tree and re-export it.</li>
+<li><strong>Mocks and fakes.</strong> vyre uses real backends and real
+reference interpreters, not mocks. If a test needs a fake
+backend, the fake goes in a dedicated file with a clear name,
+not in <code>support/</code>.</li>
+<li><strong>Trait implementations that only exist for tests.</strong> These
+are usually a sign that the public API is missing a
+capability that tests happen to need; extend the public API
+instead.</li>
+</ul>
+<h2 id="summary"><a class="header" href="#summary">Summary</a></h2>
+<p>The <code>support/</code> directory holds the test utility code that
+reduces boilerplate across tests. It has four files (<code>programs</code>,
+<code>backends</code>, <code>oracles</code>, <code>fixtures</code>), each with a single concern.
+Helpers exist to reduce repetition, not to hide test intent.
+Tests using helpers should read as statements of intent with the
+subject, inputs, and expected output visible at the call site.
+Helpers that obscure intent are rejected at review. This is how
+vyre keeps its test suite readable even as the suite grows.</p>
+<p>This concludes Part III. Every category has now been covered in
+depth.</p>
+<p>Next: Part IV, the worked example. Five chapters walking through
+the complete test set for <code>BinOp::Add</code> end to end. This is the
+part of the book you will copy when you add your first primitive
+op.</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../../testing/categories/wire_format.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="../../testing/writing/decision-tree.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../../testing/categories/wire_format.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="../../testing/writing/decision-tree.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="../../elasticlunr-ef4e11c1.min.js"></script>
+        <script src="../../mark-09e88c2c.min.js"></script>
+        <script src="../../searcher-c2a407aa.js"></script>
+
+        <script src="../../clipboard-1626706a.min.js"></script>
+        <script src="../../highlight-abc7f01d.js"></script>
+        <script src="../../book-a0b12cfe.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+
+    </div>
+    </body>
+</html>

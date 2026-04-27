@@ -1,0 +1,25 @@
+# Docs: https://docs.turso.tech/sdk/rust/quickstart
+# Format: TURSO_DATABASE_URL (libsql://*.turso.io) and TURSO_AUTH_TOKEN (JWT-like or alphanumeric)
+# Verify: GET /v2/pipeline with Authorization header returns 200 if valid
+# Prefix: libsql://
+
+[detector]
+id = "turso-embedded-replica-token"
+name = "Turso Embedded Replica Token"
+service = "turso"
+severity = "high"
+keywords = ["TURSO_AUTH_TOKEN", "TURSO_DATABASE_URL", "libsql://", "embedded replica"]
+
+[[detector.patterns]]
+regex = "libsql://[a-zA-Z0-9_-]+\\.turso\\.io"
+description = "Turso database URL (libsql:// prefix)"
+
+[[detector.patterns]]
+regex = "(?:TURSO[_-]DATABASE[_-]?URL)[=:\\s\"'']+(libsql://[^\\s\"'']+)"
+description = "Turso database URL with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:TURSO[_-]AUTH[_-]?TOKEN)[=:\\s\"'']+([a-zA-Z0-9_-]{20,})"
+description = "Turso auth token with context anchor"
+group = 1

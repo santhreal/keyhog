@@ -1,0 +1,409 @@
+pub const DEFAULT_INTRUSIVE_LRU_CAPACITY: usize = 65_536;
+pub const DEFAULT_MAX_LITERAL_MATCHES: u32 = 65_536;
+pub const DEFAULT_MAX_MATCHES: u32 = 65_536;
+pub const DEFAULT_REGION_EXPANSION: usize = 256;
+pub const DEFAULT_THRESHOLD: u32 = 3;
+pub const fn rtx_5090() -> Self {
+pub const fn supported(max_worker_count: u32) -> Self {
+pub const fn unsupported() -> Self {
+pub const INDIRECT_ARGS_BYTES: u64 = 12;
+pub const MAX_DECODE_INPUT_BYTES: usize = 64 * 1024 * 1024;
+pub const MAX_DECODE_REGIONS: u32 = 1_000_000;
+pub const MAX_DECOMPRESS_OUTPUT_BYTES: usize = 256 * 1024 * 1024;
+pub const MAX_DFA_MATCHES: u32 = 1_000_000;
+pub const MAX_FINDINGS: usize = 1_000_000;
+pub const MAX_INPUT_BYTES: usize = 64 * 1024 * 1024;
+pub const MAX_LITERAL_MATCHES: u32 = 1_000_000;
+pub const MAX_PIPELINE_CACHE_ENTRIES: usize = 1024;
+pub const MAX_SERIALIZED_PART_BYTES: usize = 256 * 1024 * 1024;
+pub const MAX_WINDOW_SIZE: usize = 256;
+pub const REGION_META_SIZE: u64 = 16;
+pub const SPIRV_BACKEND_ID: &str = "spirv";
+pub const WORKGROUP_SIZE: [u32; 3] = [64, 1, 1];
+pub const WORKGROUP_SIZE: u32 = 64;
+pub enum CacheError {
+pub enum DecodeError {
+pub enum DecodeFormat {
+pub enum EntropyError {
+pub enum FusionDecision {
+pub enum Mode {
+pub enum Override<'a> {
+pub enum Reason {
+pub enum SlotState {
+pub enum SpecValue {
+pub enum SubgroupOp {
+pub fn acquire(
+pub fn acquire() -> Result<Self, vyre::BackendError> {
+pub fn adapter_index_from_env() -> Option<usize> {
+pub fn adapter_info(&self) -> &wgpu::AdapterInfo {
+pub fn alloc(
+pub fn allocation_len(&self) -> u64 {
+pub fn all() -> &'static [SubgroupOp] {
+pub fn as_f64(self) -> f64 {
+pub fn async_load<F>(&mut self, tag: impl Into<String>, copy: F) -> Result<(), BackendError>
+pub fn async_wait(&mut self, tag: &str) -> Result<(), BackendError> {
+pub fn atomic_add(buffer: &str, index: Expr, value: Expr) -> Expr {
+pub fn b64_value_stmts(byte: Expr, out_var: &str) -> Vec<Node> {
+pub fn backend_fingerprint() -> String {
+pub fn base64_program() -> Program {
+pub fn begin_dispatch(&mut self, byte_len: u64) -> BeginResult {
+pub fn bfs_queue_slots_for_device(device: &wgpu::Device, toml_override: Option<u32>) -> u32 {
+pub fn bfs_reachability(
+pub fn bfs_reachability_cached(
+pub fn bfs_reachability_immediate(
+pub fn bfs_reachability_record(
+pub fn bg_entry(binding: u32, buffer: &wgpu::Buffer) -> wgpu::BindGroupEntry<'_> {
+pub fn bind_group_cache_stats(&self) -> BindGroupCacheStats {
+pub fn buffer_arc(&self) -> Arc<wgpu::Buffer> {
+pub fn buffer_id(&self) -> u64 {
+pub fn buffer(&self) -> std::result::Result<&wgpu::Buffer, BufferPoolError> {
+pub fn buffer(&self) -> &wgpu::Buffer {
+pub fn byte_len(&self) -> u64 {
+pub fn cached_adapter_info() -> Result<&'static wgpu::AdapterInfo> {
+pub fn cached_device() -> Result<Arc<(wgpu::Device, wgpu::Queue)>> {
+pub fn cache_dir() -> PathBuf {
+pub fn cache_hash(&self) -> u64 {
+pub fn cache_hash(self) -> u64 {
+pub fn cache_key(spec_hash: &str, backend_fingerprint: &str) -> String {
+pub fn cache_key(wgsl_source: &str, entry_point: &str) -> String {
+pub fn cache_path_for_adapter(adapter_fp: &str) -> PathBuf {
+pub fn candidates_for(&self, max_invocations: u32) -> Vec<u32> {
+pub fn common_program(body: Vec<Node>) -> Program {
+pub fn compile(
+pub fn compile_compute_pipeline(
+pub fn compile_compute_pipeline_with_layout(
+pub fn compile(device: &wgpu::Device, patterns: &[&[u8]]) -> Result<Self> {
+pub fn compile(program: &Program) -> Result<Self, BackendError> {
+pub fn compile_streaming(
+pub fn compile_with_config(
+pub fn compile_with_max_matches(
+pub fn complete_slot(&mut self, slot_index: usize) {
+pub fn decide(
+pub fn decode_base64(input: &[u8]) -> Result<Vec<u8>> {
+pub fn decode_bytes(input: &[u8], format: DecodeFormat) -> Result<Vec<u8>> {
+pub fn decode_file(file_bytes: &[u8]) -> Result<Vec<DecodedRegion>> {
+pub fn decode_file_with_rules(
+pub fn decode_frontier<F>(
+pub fn decode_hex(input: &[u8]) -> Result<Vec<u8>> {
+pub fn decode_parts(mut bytes: &[u8]) -> Result<Vec<&[u8]>> {
+pub fn decode_recursive_gpu(file_bytes: &[u8], rules: &DecodeRules) -> Result<Vec<DecodedRegion>> {
+pub fn decode_recursive(&self, file_bytes: &[u8]) -> Result<Vec<DecodedRegion>> {
+pub fn decode_recursive_with_rules(
+pub fn decode_regions(
+pub fn decode_unicode(input: &[u8]) -> Result<Vec<u8>> {
+pub fn decode_url(input: &[u8]) -> Result<Vec<u8>> {
+pub fn default_flags() -> WriterFlags {
+pub fn default_root() -> PathBuf {
+pub fn default_workgroup_size() -> [u32; 3] {
+pub fn demote(&mut self, key: u64) -> Result<(), CacheError> {
+pub fn device_limits(&self) -> &wgpu::Limits {
+pub fn device(&self) -> &wgpu::Device {
+pub fn dispatch_coalesced(
+pub fn dispatch_compound(
+pub fn dispatch_decode(
+pub fn dispatch_decode_immediate(
+pub fn dispatch_decode_record(
+pub fn dispatch_decompression_kernel(
+pub fn dispatch_decompression_kernel_immediate(
+pub fn dispatch_decompression_kernel_record(
+pub fn dispatch_indirect<'a>(pass: &mut wgpu::ComputePass<'a>, args: &'a IndirectArgs) {
+pub fn dispatch_lz4(
+pub fn dispatch_persistent(
+pub fn dispatch_persistent_batched(
+pub fn dispatch(&self, config: &DispatchConfig) -> Result<Vec<Vec<Vec<u8>>>, BackendError> {
+pub fn dispatch_zstd(
+pub fn element_count(&self) -> usize {
+pub fn emit_module(
+pub fn emit(module: &naga::Module, entry: &str) -> Result<Vec<u32>, String> {
+pub fn emit_region(
+pub fn emit_shuffle_xor(value: &str, mask: &str) -> String {
+pub fn emit_sram_scan_fallback(op: SubgroupOp, arg: &str, shared_var: &str) -> String {
+pub fn emit_wgsl_for(op: SubgroupOp, arg: &str) -> String {
+pub fn encode_parts(parts: &[&[u8]]) -> Result<Vec<u8>> {
+pub fn ensure(&mut self, key: K) -> &mut V {
+pub fn entropy_map_cpu(
+pub fn enumerate_adapters() -> Vec<wgpu::AdapterInfo> {
+pub fn enumerate_by_precedence() -> Vec<&'static BackendRegistration> {
+pub fn find_high_entropy_regions(entropy: &[f32], threshold: f32) -> Vec<(usize, usize)> {
+pub fn find_high_entropy_regions_with_window(
+pub fn finish(&mut self) -> Result<Option<Vec<Vec<u8>>>, BackendError> {
+pub fn fold_into(&self, mut digest: [u8; 32]) -> [u8; 32] {
+pub fn from_adapter(adapter: &wgpu::Adapter) -> Self {
+pub fn from_env() -> Self {
+pub fn from_handle(handle: &GpuBufferHandle, offset: u64) -> Result<Self, BackendError> {
+pub fn from_program(
+pub fn from_runner<F>(runner: F, config: DispatchConfig) -> Self
+pub fn from_toml(toml_source: &str) -> Result<Self> {
+pub fn get(&self, key: &K) -> Option<&V> {
+pub fn get(&self, key: u64) -> Option<&CacheEntry> {
+pub fn get(&self, program_fp: &str) -> Option<[u32; 3]> {
+pub fn global() -> &'static Self {
+pub fn hex_program() -> Program {
+pub fn hex_value_stmts(byte: Expr, out_var: &str) -> Vec<Node> {
+pub fn high_performance() -> Self {
+pub fn hot_set(&self, n: usize) -> Vec<u64> {
+pub fn hottest(&self, n: usize) -> Vec<K> {
+pub fn id(&self) -> u64 {
+pub fn init_device_for_adapter(
+pub fn init_device() -> Result<((wgpu::Device, wgpu::Queue), wgpu::AdapterInfo)> {
+pub fn insert(&mut self, key: u64, size: u64) -> Result<(), CacheError> {
+pub fn insert(&mut self, name: impl Into<String>, value: SpecValue) {
+pub fn is_empty(&self) -> bool {
+pub fn iter_coldest(&self) -> impl Iterator<Item = (&K, &V)> + '_ {
+pub fn iter_hottest(&self) -> impl Iterator<Item = (&K, &V)> + '_ {
+pub fn iter(&self) -> impl Iterator<Item = (&str, SpecValue)> {
+pub fn launch_accounting(op_count: usize) -> LaunchAccounting {
+pub fn len(&self) -> usize {
+pub fn load_or_compile(program: &Program, fingerprint: &str) -> Result<AotArtifact, BackendError> {
+pub fn load_or_compile_with_config(
+pub fn load(path: &std::path::Path) -> Result<Self, String> {
+pub fn lower(program: &vyre::Program) -> Result<String, LoweringError> {
+pub fn lower_with_config(
+pub fn low_power() -> Self {
+pub fn lz4_labels() -> DecompressionKernelLabels {
+pub fn map_readback_region_meta(
+pub fn map_readback_u32(
+pub fn max_matches(&self) -> u32 {
+pub fn mode(&self) -> Mode {
+pub fn new(
+pub fn new(adapter_fp: &str, mode: Mode) -> Self {
+pub fn new(device: wgpu::Device, queue: wgpu::Queue, config: &DispatchConfig) -> Self {
+pub fn new(name: impl Into<String>, capacity: u64) -> Self {
+pub fn new(offset: usize, length: usize, decoded_bytes: Vec<u8>) -> Self {
+pub fn new() -> Option<Self> {
+pub fn new(pipeline: WgpuPipeline, config: DispatchConfig) -> Self {
+pub fn new(promote_threshold: u32) -> Self {
+pub fn new() -> Result<Self> {
+pub fn new() -> Self {
+pub fn new(size: usize) -> Self {
+pub fn new(tiers: Vec<CacheTier>) -> Self {
+pub fn next_slot_index(&self) -> usize {
+pub fn open(root: impl Into<PathBuf>) -> io::Result<Self> {
+pub fn output_layout_from_program(program: &Program) -> Result<OutputLayout, BackendError> {
+pub fn overlap_copy_compute<C, G>(
+pub fn params_input_len() -> Expr {
+pub fn params_max_regions() -> Expr {
+pub fn params_min_run() -> Expr {
+pub fn params_output_size() -> Expr {
+pub fn partition_work_stealing(
+pub fn path_for(&self, program_blake3: [u8; 32], fp: DeviceFingerprint) -> PathBuf {
+pub fn pattern_lengths(&self) -> &[u32] {
+pub fn persist(&self) -> Result<(), String> {
+pub fn pick(&self, program: &Program) -> Result<RouterDecision, BackendError> {
+pub fn pick_with_override(
+pub fn prerecord_borrowed_dispatch(
+pub fn prerecord_persistent_dispatch(
+pub fn probe(adapter: &wgpu::Adapter) -> AdapterCaps {
+pub fn promote(&mut self, key: u64) -> Result<(), CacheError> {
+pub fn push_chunk(
+pub fn push_chunk(&mut self, bytes: Vec<u8>) -> Result<Option<Vec<Vec<u8>>>, BackendError> {
+pub fn push(&mut self, item: WorkItem) {
+pub fn push(&mut self, pipeline: WgpuPipeline, input: Vec<u8>) {
+pub fn push_region(
+pub fn queue(&self) -> &wgpu::Queue {
+pub fn read(
+pub fn readback(
+pub fn readback_buffer(
+pub fn readback_regions(
+pub fn read_byte(offset: Expr) -> Expr {
+pub fn read_extended_len(
+pub fn read_finding_count(
+pub fn read_finding_rows(
+pub fn read_output(&self, index: usize) -> Result<Vec<u8>, BackendError> {
+pub fn record_access(&mut self, key: u64) {
+pub fn record_decision(&mut self, program_fp: impl Into<String>, size: [u32; 3]) {
+pub fn record_dispatch(&self) -> u64 {
+pub fn record(&mut self, key: u64) {
+pub fn record_stall(&self) {
+pub fn reduction_factor(self) -> usize {
+pub fn release(&self, buffer: PooledBuffer) {
+pub fn release(&self, handle: GpuBufferHandle) {
+pub fn release_slot(&mut self, slot_index: usize) {
+pub fn remove(&mut self, key: &K) {
+pub fn replay(&self, queue: &wgpu::Queue) -> Result<wgpu::SubmissionIndex, BackendError> {
+pub fn resolve(&self, program_fp: &str) -> [u32; 3] {
+pub fn ring_size_from_env() -> usize {
+pub fn root(&self) -> &Path {
+pub fn run_persistent_kernel<F>(
+pub fn save(&self, path: &std::path::Path) -> Result<(), String> {
+pub fn scan(
+pub fn scan_immediate(
+pub fn scan_record(
+pub fn scan_shared(&self, haystack: &[u8]) -> Result<Vec<vyre::Match>> {
+pub fn scan_shared(&self, input: &[u8]) -> Result<Vec<vyre::Match>> {
+pub fn select_adapter(criteria: &AdapterCriteria) -> Result<(usize, wgpu::AdapterInfo)> {
+pub fn set(&mut self, program_fp: impl Into<String>, size: [u32; 3]) {
+pub fn shannon_entropy(bytes: &[u8]) -> f32 {
+pub fn size(&self) -> u64 {
+pub fn size(&self) -> usize {
+pub fn slot(&self, idx: usize) -> Option<&Slot> {
+pub fn snapshot(&self) -> RingStatsSnapshot {
+pub fn stable_hash(bytes: &[u8]) -> u64 {
+pub fn state_count(&self) -> u32 {
+pub fn stats(&self) -> Arc<RingStats> {
+pub fn stats(&self) -> BufferPoolStats {
+pub fn stats(&self, key: u64) -> Option<crate::runtime::cache::AccessStats> {
+pub fn touch(&mut self, key: K) {
+pub fn to_wgpu_constants(&self) -> std::collections::HashMap<String, f64> {
+pub fn try_new() -> Result<Self> {
+pub fn unicode_program() -> Program {
+pub fn update_peak(&self, current: u64) {
+pub fn upload(
+pub fn url_program() -> Program {
+pub fn usage(&self) -> wgpu::BufferUsages {
+pub fn validate_gpu_sizes(device: &wgpu::Device, input_len: u32, input_size: usize) -> Result<()> {
+pub fn validate_output_ratio(
+pub fn validate(&self) -> Result<(), BackendError> {
+pub fn validate(&self) -> std::result::Result<(), DecodeError> {
+pub fn wgsl_name(self) -> &'static str {
+pub fn with_buffer<R>(
+pub fn with_capacity(capacity: usize) -> Self {
+pub fn with_policy(tiers: Vec<CacheTier>, policy: P) -> Self {
+pub fn with_values(min_base64_run: u32, min_hex_run: u32, max_passes: u32) -> Self {
+pub fn write(
+pub fn zeroed_storage(device: &wgpu::Device, label: &str, bytes: usize) -> Result<PooledBuffer> {
+pub fn zstd_labels() -> DecompressionKernelLabels {
+pub mod adapter_caps_probe;
+pub mod aot;
+pub mod ast;
+pub mod async_copy;
+pub mod bfs_queue_slots_for_device;
+pub mod buffer;
+pub mod buffer_pool;
+pub mod cache;
+pub mod cached_device {
+pub mod cache_entry {
+pub mod cache_key {
+pub mod cache_tier {
+pub mod codec;
+pub mod compile_compute_pipeline;
+pub mod dataflow;
+pub mod decode;
+pub mod decode_parts;
+pub mod decoder;
+pub mod decompress;
+pub mod device;
+pub mod dfa;
+pub mod disk;
+pub mod dispatch;
+pub mod dispatch_kernel;
+pub mod encode_parts;
+pub mod engine;
+pub mod ext;
+pub mod format;
+pub mod formats;
+pub mod fusion;
+pub mod gpu;
+pub mod graph;
+pub mod indirect;
+pub mod init_device {
+pub mod lowering;
+pub mod lru;
+pub mod lz4;
+pub mod megakernel;
+pub mod multi_gpu;
+pub mod naga_emit;
+pub mod persistent;
+pub mod pipeline;
+pub mod pipeline_cache;
+pub mod prerecorded;
+pub mod readback_ring;
+pub mod router;
+pub mod runtime;
+pub mod serializer;
+pub mod shader;
+pub mod specialization;
+pub mod spirv_backend;
+pub mod streaming;
+pub mod string_matching;
+pub mod subgroup_intrinsics;
+pub mod tests;
+pub mod tier {
+pub mod tiered_cache;
+pub mod tuner;
+pub mod unit;
+pub mod workgroup_size;
+pub mod zstd;
+pub struct AccessMeta {
+pub struct AccessStats {
+pub struct AccessTracker {
+pub struct AdapterCriteria {
+pub struct AotArtifact {
+pub struct AsyncCopyStreams {
+pub struct BackendRouter;
+pub struct BeginResult {
+pub struct BindGroupCacheStats {
+pub struct BufferPool {
+pub struct BufferPoolError {
+pub struct BufferPoolStats {
+pub struct CacheEntry {
+pub struct CacheTier {
+pub struct DecodedRegion {
+pub struct DecodeRules {
+pub struct DecompressionKernelInputs<'a> {
+pub struct DecompressionKernelLabels {
+pub struct DecompressLimits {
+pub struct DeviceFingerprint {
+pub struct DeviceLoad {
+pub struct DiskPipelineCache {
+pub struct DispatchArena {
+pub struct DispatchItem<'a> {
+pub struct DispatchOutput {
+pub struct DispatchShape {
+pub struct FrontierState<'a> {
+pub struct FusionCaps {
+pub struct FusionPass;
+pub struct GpuBufferHandle {
+pub struct GpuDecoder;
+pub struct GpuDfa {
+pub struct GpuDispatchGraph {
+pub struct GpuLiteralSet {
+pub struct IndirectArgs {
+pub struct IndirectDispatch {
+pub struct IntrusiveLru<K, V> {
+pub struct LaunchAccounting {
+pub struct LruPolicy {
+pub struct Lz4DispatchArgs<'a> {
+pub struct Lz4Uniforms {
+pub struct MegakernelCaps {
+pub struct MegakernelConfig {
+pub struct MegakernelReport {
+pub struct OutputLayout {
+pub struct Params {
+pub struct Partition {
+pub struct PersistentKernelReport {
+pub struct PersistentQueue {
+pub struct PooledBuffer {
+pub struct PrerecordedDispatch {
+pub struct ReadbackRing {
+pub struct RecordedDataflowReadback {
+pub struct RecordedDecodeReadback {
+pub struct RecordedDecompressionReadback {
+pub struct RecordedDfaReadback {
+pub struct RegionMeta {
+pub struct RingStats {
+pub struct RingStatsSnapshot {
+pub struct RouterDecision {
+pub struct Slot {
+pub struct SpecCacheKey {
+pub struct SpecMap {
+pub struct SpirvEmitter;
+pub struct StreamingDispatch {
+pub struct SubgroupCaps {
+pub struct TieredCache<P: TierPolicy = LruPolicy> {
+pub struct Tuner {
+pub struct TunerCache {
+pub struct WgpuBackend {
+pub struct WgpuBackendConfig {
+pub struct WgpuBindingAssignment {
+pub struct WgpuDispatchGeometry {
+pub struct WgpuIR {
+pub struct WgpuPipeline {
+pub struct WgpuProgram {
+pub struct WorkItem {
+pub struct WorkResult {
+pub struct ZstdDispatchArgs<'a> {
+pub struct ZstdUniforms {
+pub trait MegakernelDispatch {
+pub trait TierPolicy: Send + Sync {
+pub trait WgslDispatchExt {

@@ -1,0 +1,21 @@
+# Docs: https://docs.simpleanalytics.com/api
+# Format: UUID format (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)
+# Verify: GET /api/websites with Authorization header returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "simpleanalytics-api-key"
+name = "SimpleAnalytics API Key"
+service = "simpleanalytics"
+severity = "medium"
+keywords = ["SA_API_KEY", "SIMPLE_ANALYTICS_KEY", "simpleanalytics"]
+
+[[detector.patterns]]
+regex = "(?:SA[_\\-\\s]?API[_\\-\\s]?KEY|SIMPLE[_\\-\\s]?ANALYTICS[_\\-\\s]?API[_\\-\\s]?KEY|simpleanalytics[_\\-\\s]?key)[=:\\s\"'']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
+description = "SimpleAnalytics API key in UUID format with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:SA[_\\-\\s]?USER[_\\-\\s]?ID|simpleanalytics[_\\-\\s]?user)[=:\\s\"'']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
+description = "SimpleAnalytics user ID in UUID format"
+group = 1

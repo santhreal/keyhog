@@ -1,0 +1,41 @@
+# Docs: https://www.123formbuilder.com/docs/apidocumentation/
+# Format: 35 characters with hyphen separator (alphanumeric)
+# Verify: GET /v2/users with Bearer token returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "123formbuilder-api-key"
+name = "123FormBuilder API Key"
+service = "123formbuilder"
+severity = "medium"
+keywords = ["123formbuilder", "123FORMBUILDER", "formbuilder_api"]
+
+[[detector.patterns]]
+regex = "(?:123[_\\s]*form[_\\s]*builder|123FORMBUILDER)[_.\\s]*(?:api[_\\s]*key|API[_\\s]*KEY)[\\s\"'']+([a-zA-Z0-9]+-[a-zA-Z0-9]+)"
+description = "123FormBuilder API key with context anchor (35 chars with hyphen)"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:api[_\\s]*key|API[_\\s]*KEY)[\\s\"'']+([a-zA-Z0-9]{5,10}-[a-zA-Z0-9]{20,30})"
+description = "123FormBuilder API key pattern (hyphenated format)"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://api.123formbuilder.com/v2/users"
+
+[detector.verify.auth]
+type = "header"
+name = "Authorization"
+template = "Bearer {{match}}"
+
+[detector.verify.success]
+status = 200
+
+[[detector.verify.metadata]]
+name = "name"
+json_path = "data.name"
+
+[[detector.verify.metadata]]
+name = "email"
+json_path = "data.email"

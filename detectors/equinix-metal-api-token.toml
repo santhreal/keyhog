@@ -1,0 +1,28 @@
+# Docs: https://deploy.equinix.com/developers/docs/metal/identity-access-management/api-keys/
+# Format: UUID format (8-4-4-4-12 hex characters)
+# Verify: GET /metal/v1/user/api-keys with X-Auth-Token header returns 200 if valid
+# Prefix: none (UUID format, requires context anchoring)
+
+[detector]
+id = "equinix-metal-api-token"
+name = "Equinix Metal API Token"
+service = "equinix"
+severity = "critical"
+keywords = ["METAL_AUTH_TOKEN", "EQUINIX_METAL_TOKEN", "EQUINIX_API_TOKEN", "equinix"]
+
+[[detector.patterns]]
+regex = "(?:METAL_AUTH_TOKEN|EQUINIX_METAL_TOKEN|EQUINIX_API_TOKEN|equinix_token)[=:\\s\"'']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
+description = "Equinix Metal API token (UUID format) with context anchor"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://api.equinix.com/metal/v1/user/api-keys"
+
+[detector.verify.auth]
+type = "header"
+name = "X-Auth-Token"
+template = "{{match}}"
+
+[detector.verify.success]
+status = 200

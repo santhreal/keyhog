@@ -1,0 +1,40 @@
+# Docs: https://www.twilio.com/docs/iam/api-keys/key-resource-v1
+# Format: SK prefix followed by 32 hex characters
+# Verify: GET /2010-04-01/Accounts/{SID}.json with Basic auth returns 200 if valid
+# Prefix: SK
+
+[detector]
+id = "twilio-api-key"
+name = "Twilio API Key"
+service = "twilio"
+severity = "high"
+keywords = ["SK", "twilio", "TWILIO"]
+
+[[detector.patterns]]
+regex = "SK[a-f0-9]{32}"
+description = "Twilio API key SID (SK prefix + exactly 32 hex chars)"
+
+[[detector.companions]]
+name = "secret"
+regex = "(?:TWILIO[_-]?API[_-]?SECRET|twilio[_-]?api[_-]?secret|SECRET|secret)[=:\\s\"'']+([a-zA-Z0-9]{32})"
+within_lines = 3
+required = true
+[detector.verify]
+method = "GET"
+url = "https://api.twilio.com/2010-04-01/Accounts/{{match}}.json"
+
+[detector.verify.auth]
+type = "basic"
+username = "match"
+password = "companion.secret"
+
+[detector.verify.success]
+status = 200
+
+[[detector.verify.metadata]]
+name = "friendly_name"
+json_path = "friendly_name"
+
+[[detector.verify.metadata]]
+name = "status"
+json_path = "status"

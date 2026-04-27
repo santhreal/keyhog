@@ -1,0 +1,26 @@
+# Docs: https://developer.adobe.com/developer-console/docs/guides/authentication/
+# Format: Hexadecimal string, typically 32-40 characters
+# Verify: POST /ims/token/v3 for OAuth Server-to-Server
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "adobe-api-key"
+name = "Adobe API Key (Client ID)"
+service = "adobe"
+severity = "high"
+keywords = ["ADOBE", "CLIENT_ID", "adobe_io"]
+
+[[detector.patterns]]
+regex = '''(?:ADOBE|adobe)[._-]?(?:CLIENT|client)[._-]?(?:ID|id)[=:\s"']+([a-f0-9]{32,40})'''
+description = "Adobe Client ID with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = '''(?:ADOBE|adobe)[._-]?(?:API|api)[._-]?(?:KEY|key)[=:\s"']+([a-f0-9]{32,40})'''
+description = "Adobe API Key with context anchor"
+group = 1
+
+[[detector.companions]]
+name = "adobe-client-secret"
+regex = '''(?:ADOBE|adobe)[._-]?(?:CLIENT|client)[._-]?(?:SECRET|secret)[=:\s"']+[a-f0-9]{32,48}'''
+within_lines = 5

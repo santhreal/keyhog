@@ -1,0 +1,6 @@
+op_id = "primitive.bitwise.insert_bits"
+
+[[golden]]
+input = "00fd030000000000"
+expected = "ff000000"
+reason = "insert 0xFF into bits [0..8] of 0 = 0xFF"

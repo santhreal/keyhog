@@ -1,0 +1,25 @@
+# Docs: https://docs.anyscale.com/auth/api-keys
+# Format: anyscale_ prefix followed by alphanumeric characters
+# Verify: GET /v1/models with Bearer auth
+# Prefix: anyscale_
+
+[detector]
+id = "anyscale-api-key"
+name = "Anyscale API Key"
+service = "anyscale"
+severity = "high"
+keywords = ["anyscale_", "ANYSCALE_API_KEY", "ANYSCALE_CLI_TOKEN", "ANYSCALE_BASE_URL"]
+
+[[detector.patterns]]
+regex = 'anyscale_[a-zA-Z0-9_-]{30,}'
+description = "Anyscale API key with anyscale_ prefix"
+
+[detector.verify]
+method = "GET"
+url = "https://api.endpoints.anyscale.com/v1/models"
+[detector.verify.success]
+status = 200
+
+[[detector.verify.headers]]
+name = "Authorization"
+value = "Bearer {{match}}"

@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths: ["libs/performance/matching/vyre/**"]
+  pull_request:
+    paths: ["libs/performance/matching/vyre/**"]
+
+defaults:
+  run:
+    working-directory: libs/performance/matching/vyre
+
+jobs:
+  matrix:
+    name: ${{ matrix.os }} / ${{ matrix.rust-toolchain }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        rust-toolchain: [stable, nightly]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        shell: bash
+        run: |
+          rustup toolchain install "${{ matrix.rust-toolchain }}" \
+            --profile minimal \
+            --component clippy \
+            --component rustfmt
+          rustup default "${{ matrix.rust-toolchain }}"
+
+      - name: cargo fmt
+        shell: bash
+        run: cargo fmt --check
+
+      - name: abstraction gate
+        shell: bash
+        run: cargo xtask abstraction-gate
+
+      - name: cargo clippy
+        shell: bash
+        run: cargo clippy --workspace -- -D warnings
+
+      - name: cargo test
+        shell: bash
+        run: cargo test --workspace
+
+      - name: cargo doc
+        shell: bash
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --workspace

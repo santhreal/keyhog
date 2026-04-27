@@ -1,0 +1,16 @@
+op_id = "primitive.bitwise.or"
+
+[[golden]]
+input = "f00000000f000000"
+expected = "ff000000"
+reason = "0xF0 | 0x0F = 0xFF (complementary nibbles)"
+
+[[golden]]
+input = "ffffffff00000000"
+expected = "ffffffff"
+reason = "L.1.32: u32::MAX OR 0 = u32::MAX (identity at full width)"
+
+[[golden]]
+input = "ffffffffffffffff"
+expected = "ffffffff"
+reason = "L.1.32: u32::MAX OR u32::MAX = u32::MAX (idempotence)"

@@ -1,0 +1,16 @@
+# Docs: https://docs.genius.com/
+# Format: Client access token with no unique prefix (alphanumeric string)
+# Verify: GET /api/accounts/me with Bearer token returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "genius-api-token"
+name = "Genius API Token"
+service = "genius"
+severity = "medium"
+keywords = ["GENIUS", "genius", "GENIUS_ACCESS_TOKEN", "genius_access_token", "GENIUS_API_TOKEN"]
+
+[[detector.patterns]]
+regex = "(?:GENIUS|genius)[\\\\s_-]?(?:ACCESS|access)?[\\\\s_-]?(?:TOKEN|token|API|api)?[=:\\s\"'']+([a-zA-Z0-9_-]{20,40})"
+description = "Genius API access token with context anchor"
+group = 1

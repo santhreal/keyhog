@@ -1,0 +1,34 @@
+# Docs: https://docs.digitalocean.com/reference/api/create-personal-access-token/
+# Format: dop_v1_ prefix followed by 64 hexadecimal characters
+# Verify: HTTP GET to /v2/account with Bearer token authentication
+# Prefix: dop_v1_
+
+[detector]
+id = "digitalocean-pat"
+name = "DigitalOcean Personal Access Token"
+service = "digitalocean"
+severity = "critical"
+keywords = ["dop_v1_", "digitalocean"]
+
+[[detector.patterns]]
+regex = 'dop_v1_[a-f0-9]{64}'
+description = "DigitalOcean personal access token (v1)"
+
+[detector.verify]
+method = "GET"
+url = "https://api.digitalocean.com/v2/account"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[detector.verify.success]
+status = 200
+
+[[detector.verify.metadata]]
+name = "email"
+json_path = "account.email"
+
+[[detector.verify.metadata]]
+name = "uuid"
+json_path = "account.uuid"

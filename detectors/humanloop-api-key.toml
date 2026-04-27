@@ -1,0 +1,16 @@
+# Docs: https://docs.humanloop.com/docs/use-your-own-model-provider
+# Format: 32-character hex string, no unique prefix
+# Verify: no public verification endpoint
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "humanloop-api-key"
+name = "Humanloop API Key"
+service = "humanloop"
+severity = "high"
+keywords = ["HUMANLOOP_API_KEY", "Humanloop", "humanloop"]
+
+[[detector.patterns]]
+regex = "(?:HUMANLOOP_API_KEY|humanloop.api.key)[=:\\s\"'']+([a-f0-9]{32})"
+description = "Humanloop API key with context anchor"
+group = 1

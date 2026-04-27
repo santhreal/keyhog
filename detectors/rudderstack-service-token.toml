@@ -1,0 +1,33 @@
+# Docs: https://www.rudderstack.com/docs/api/http-api/
+# Format: Workspace-level Service Access Token, alphanumeric string
+# Verify: POST to /v1/event with Basic auth (empty username, token as password)
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "rudderstack-service-token"
+name = "RudderStack Service Access Token"
+service = "rudderstack"
+severity = "critical"
+keywords = ["RUDDERSTACK", "rudderstack", "RUDDER_TOKEN", "RUDDERSTACK_TOKEN"]
+
+[[detector.patterns]]
+regex = "(?:RUDDERSTACK|RUDDER)[_.]?(?:TOKEN|API[._-]?KEY)[=:\\s\"'']+([a-zA-Z0-9]{20,})"
+description = "RudderStack token with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:rudderstack|rudder)[_.]?(?:token|api[._-]?key)[=:\\s\"'']+([a-zA-Z0-9]{20,})"
+description = "RudderStack token lowercase context anchor"
+group = 1
+
+[detector.verify]
+method = "POST"
+url = "https://api.rudderstack.com/v1/event"
+
+[detector.verify.auth]
+type = "basic"
+username = ""
+password = "match"
+
+[detector.verify.success]
+status = 200

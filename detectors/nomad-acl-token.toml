@@ -1,0 +1,26 @@
+# Docs: https://developer.hashicorp.com/nomad/api-docs/acl/tokens
+# Format: UUID format (e.g., b780e702-98ce-521f-2e5f-c6b87de05b24) - Secret ID is the token value
+# Verify: GET /v1/acl/token/self with X-Nomad-Token header returns 200 if valid
+# Prefix: none (requires context anchoring with UUID format)
+
+[detector]
+id = "nomad-acl-token"
+name = "HashiCorp Nomad ACL Token"
+service = "nomad"
+severity = "critical"
+keywords = ["NOMAD_TOKEN", "nomad_token", "SecretID", "bootstrap_token"]
+
+[[detector.patterns]]
+regex = "(?:NOMAD_TOKEN|nomad_token)[=:\\s\"'']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
+description = "Nomad ACL token in environment variable (UUID format)"
+group = 1
+
+[[detector.patterns]]
+regex = "SecretID:\\s+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
+description = "Nomad Secret ID from CLI output"
+group = 1
+
+[[detector.patterns]]
+regex = "\"SecretID\":\\s*\"([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})\""
+description = "Nomad Secret ID in JSON response"
+group = 1

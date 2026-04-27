@@ -1,0 +1,26 @@
+# Docs: https://docs.greynoise.io/reference/get_v3-community_ip
+# Format: Alphanumeric string
+# Verify: GET /v3/community/8.8.8.8 with key query param returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "greynoise-api-key"
+name = "GreyNoise API Key"
+service = "greynoise"
+severity = "medium"
+keywords = ["GREYNOISE_API_KEY", "greynoise", "GREYNOISE_KEY"]
+
+[[detector.patterns]]
+regex = "(?:GREYNOISE|greynoise)(?:_API)?(?:_KEY)?[=:\\s\"'']+([a-zA-Z0-9_-]{20,})"
+description = "GreyNoise API key with context anchor"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://api.greynoise.io/v3/community/8.8.8.8?key={{match}}"
+
+[detector.verify.auth]
+type = "none"
+
+[detector.verify.success]
+status = 200

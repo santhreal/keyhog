@@ -1,0 +1,26 @@
+# Docs: https://docs.lemonsqueezy.com/help/developer-tools/api-keys
+# Format: lmsq_ prefix followed by alphanumeric characters (test or live mode)
+# Verify: GET /v1/stores with Authorization header returns 200 if valid
+# Prefix: lmsq_
+
+[detector]
+id = "lemon-squeezy-api-key"
+name = "Lemon Squeezy API Key"
+service = "lemon-squeezy"
+severity = "critical"
+keywords = ["lmsq_", "LEMON_SQUEEZY_API_KEY", "lemonsqueezy"]
+
+[[detector.patterns]]
+regex = 'lmsq_[a-zA-Z0-9]{30,}'
+description = "Lemon Squeezy API key (lmsq_ prefix)"
+
+[detector.verify]
+method = "GET"
+url = "https://api.lemonsqueezy.com/v1/stores"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[detector.verify.success]
+status = 200

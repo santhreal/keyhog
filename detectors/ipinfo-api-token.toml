@@ -1,0 +1,28 @@
+# Docs: https://ipinfo.io/developers
+# Format: Alphanumeric string, often starting with specific patterns
+# Verify: GET /me with Authorization header returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "ipinfo-api-token"
+name = "IPinfo API Token"
+service = "ipinfo"
+severity = "medium"
+keywords = ["IPINFO_TOKEN", "IPINFO_API_TOKEN", "ipinfo"]
+
+[[detector.patterns]]
+regex = "(?:IPINFO|ipinfo)(?:_API)?(?:_TOKEN)?[=:\\s\"'']+([a-zA-Z0-9]{10,})"
+description = "IPinfo API token with context anchor"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://ipinfo.io/me"
+
+[detector.verify.auth]
+type = "header"
+name = "Authorization"
+template = "Bearer {{match}}"
+
+[detector.verify.success]
+status = 200

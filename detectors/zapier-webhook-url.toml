@@ -1,0 +1,15 @@
+# Docs: https://platform.zapier.com/docs/webhooks
+# Format: https://hooks.zapier.com/hooks/catch/<account_id>/<hook_id>/
+# Verify: POST to webhook URL with test payload, expects 200/201
+# Prefix: hooks.zapier.com
+
+[detector]
+id = "zapier-webhook-url"
+name = "Zapier Webhook URL"
+service = "zapier"
+severity = "high"
+keywords = ["hooks.zapier.com", "zapier.com/hooks"]
+
+[[detector.patterns]]
+regex = 'https://hooks\.zapier\.com/hooks/catch/\d+/[a-zA-Z0-9]+/'
+description = "Zapier webhook catch URL with account and hook ID"

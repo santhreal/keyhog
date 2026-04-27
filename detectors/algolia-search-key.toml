@@ -1,0 +1,36 @@
+# Docs: https://www.algolia.com/doc/guides/security/api-keys/
+# Format: 32-character hex string (search-only keys have no unique prefix)
+# Verify: POST /1/indexes/*/queries with X-Algolia-API-Key header returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "algolia-search-key"
+name = "Algolia Search-Only API Key"
+service = "algolia"
+severity = "medium"
+keywords = ["ALGOLIA_SEARCH_KEY", "algolia_search_key", "search_only_api_key", "ALGOLIA_API_KEY", "algoliaApiKey"]
+
+[[detector.patterns]]
+regex = "(?:ALGOLIA_SEARCH_KEY|ALGOLIA_API_KEY|algolia[_-]?search[_-]?key|algolia[_-]?api[_-]?key|search_only_api_key)[=:\\s\"'']+([a-f0-9]{32})"
+description = "Algolia search-only API key with context anchor"
+group = 1
+
+[[detector.companions]]
+name = "application_id"
+regex = "[A-Z0-9]{10}"
+within_lines = 5
+[detector.verify]
+method = "GET"
+url = "https://{{companion.application_id}}-dsn.algolia.net/1/indexes"
+
+[detector.verify.auth]
+type = "header"
+name = "X-Algolia-API-Key"
+template = "{{match}}"
+
+[[detector.verify.headers]]
+name = "X-Algolia-Application-Id"
+value = "{{companion.application_id}}"
+
+[detector.verify.success]
+status = 200

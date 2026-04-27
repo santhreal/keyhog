@@ -1,0 +1,16 @@
+# Docs: https://betterstack.com/docs/logs/logging-start/
+# Format: 32+ character alphanumeric string (context-anchored detection)
+# Verify: no public verification endpoint
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "betterstack-source-token"
+name = "Better Stack Source Token"
+service = "betterstack"
+severity = "medium"
+keywords = ["betterstack", "logtail", "LOGTAIL_SOURCE_TOKEN", "sourceToken"]
+
+[[detector.patterns]]
+regex = "(?:betterstack|logtail|LOGTAIL)[._-]?(?:source[._-]?token|token)[=:\\s\"'']+([a-zA-Z0-9]{32,})"
+description = "Better Stack (Logtail) source token with context anchor"
+group = 1

@@ -1,0 +1,31 @@
+# Docs: https://docs.env0.com/docs/api-keys
+# Format: API Key ID (UUID-like) and API Secret pair used with Basic Auth
+# Verify: GET /api/keys with Basic Auth (api_key_id as username, api_secret as password)
+# Prefix: none (UUID format for key ID)
+
+[detector]
+id = "env0-api-key"
+name = "env0 API Key"
+service = "env0"
+severity = "critical"
+keywords = ["ENV0_API_KEY", "ENV0_API_SECRET", "env0_api_key", "env0_api_secret", "apiKeyType"]
+
+[[detector.patterns]]
+regex = "(?:ENV0_API_KEY|env0_api_key)[=:\\s\"'']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
+description = "env0 API Key ID in environment variable"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:ENV0_API_SECRET|env0_api_secret)[=:\\s\"'']+([a-zA-Z0-9]{40,})"
+description = "env0 API Secret in environment variable"
+group = 1
+
+[[detector.patterns]]
+regex = "--apiKey[=:\\s\"'']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
+description = "env0 API Key in CLI"
+group = 1
+
+[[detector.companions]]
+name = "env0_api_secret"
+regex = "(?:ENV0_API_SECRET|env0_api_secret)[=:\\s\"'']+([a-zA-Z0-9]{40,})"
+within_lines = 5

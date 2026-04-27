@@ -1,0 +1,35 @@
+# Docs: https://developer.paypal.com/braintree/articles/control-panel/important-gateway-credentials
+# Format: 8 lowercase alphanumeric characters, underscore, 8 chars, underscore, 8 chars
+# Verify: none (requires paired private key and merchant ID)
+# Prefix: none (structured format but needs context)
+
+[detector]
+id = "braintree-api-key"
+name = "Braintree Public API Key"
+service = "braintree"
+severity = "critical"
+keywords = ["braintree", "BRAINTREE", "public_key"]
+
+[[detector.patterns]]
+regex = "(?:braintree|BRAINTREE)[_\\s]?(?:public_key|PUBLIC_KEY)[=:\\s\"']+([a-z0-9]{8}_[a-z0-9]{8}_[a-z0-9]{8})"
+description = "Braintree public API key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:public_key)[=:\\s\"']+([a-z0-9]{8}_[a-z0-9]{8}_[a-z0-9]{8})"
+description = "Braintree public key with assignment context"
+group = 1
+
+[[detector.companions]]
+name = "braintree_private_key"
+regex = "[a-f0-9]{32,40}"
+within_lines = 10
+[detector.verify]
+method = "GET"
+url = "https://api.braintreegateway.com/"
+[detector.verify.success]
+status = 200
+
+[[detector.verify.headers]]
+name = "Authorization"
+value = "{{match}}"

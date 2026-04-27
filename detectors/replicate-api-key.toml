@@ -1,0 +1,26 @@
+# Docs: https://replicate.com/docs/reference/http#authentication
+# Format: API token starting with 'r8_' followed by 37 alphanumeric characters
+# Verify: Bearer token sent to api.replicate.com/v1/models, returns 200 on success
+# Prefix: r8_
+
+[detector]
+id = "replicate-api-key"
+name = "Replicate API Key"
+service = "replicate"
+severity = "critical"
+keywords = ["r8_"]
+
+[[detector.patterns]]
+regex = 'r8_[a-zA-Z0-9]{37}'
+description = "Replicate API token (r8_)"
+
+[detector.verify]
+method = "GET"
+url = "https://api.replicate.com/v1/models"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[detector.verify.success]
+status = 200

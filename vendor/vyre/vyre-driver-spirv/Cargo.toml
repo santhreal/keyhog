@@ -1,0 +1,38 @@
+[package]
+name = "vyre-driver-spirv"
+version = "0.6.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "SPIR-V backend for vyre — second compute-capable substrate alongside vyre-wgpu."
+readme = "README.md"
+keywords = ["gpu", "compute", "spirv", "vulkan", "vyre"]
+categories = ["hardware-support", "rendering::graphics-api"]
+documentation = "https://docs.rs/vyre-driver-spirv"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[dependencies]
+vyre-driver = { workspace = true }
+vyre-foundation = { workspace = true }
+vyre-spec = { workspace = true }
+naga = { workspace = true, features = ["spv-out"] }
+inventory.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+vyre.workspace = true
+vyre-driver-wgpu.workspace = true
+vyre-libs = { workspace = true, features = [
+    "math-linalg", "math-scan", "math-broadcast",
+    "nn-activation", "nn-linear", "nn-norm", "nn-attention",
+    "matching-substring", "matching-dfa",
+    "crypto-fnv", "crypto-blake3",
+] }
+vyre-intrinsics = { version = "0.6.0", path = "../vyre-intrinsics", features = ["hardware"] }
+vyre-primitives = { version = "0.6.0", path = "../vyre-primitives", features = ["text", "matching", "math", "nn", "hash", "parsing", "graph", "bitset", "reduce", "label", "predicate", "fixpoint", "inventory-registry"] }

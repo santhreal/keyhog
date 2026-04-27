@@ -1,0 +1,6 @@
+op_id = "primitive.math.neg"
+
+[[golden]]
+input = "01000000"
+expected = "ffffffff"
+reason = "signed negation maps 1 to -1"

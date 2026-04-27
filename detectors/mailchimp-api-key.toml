@@ -1,0 +1,31 @@
+# Docs: https://mailchimp.com/developer/marketing/docs/fundamentals/#api-structure
+# Format: 32 hex characters followed by datacenter code (e.g., -us1, -us2, -eu1)
+# Verify: GET /3.0/ with Basic auth (username=any, password=key) returns 200
+# Prefix: none (hex with datacenter suffix is distinctive but needs context)
+
+[detector]
+id = "mailchimp-api-key"
+name = "Mailchimp API Key"
+service = "mailchimp"
+severity = "critical"
+keywords = ["MAILCHIMP_API_KEY", "mailchimp_api_key", "mailchimp", "-us", "-eu", "-uk"]
+
+[[detector.patterns]]
+regex = "(?:MAILCHIMP|mailchimp)[_\\s]*(?:API|api)?[_\\s]*(?:KEY|key)?[=:\\s\"'']+([a-f0-9]{32}-(?:us|eu|uk)[0-9]{1,2})"
+description = "Mailchimp API key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "([a-f0-9]{32}-us[0-9]{1,2})"
+description = "Mailchimp API key with US datacenter"
+group = 1
+
+[[detector.patterns]]
+regex = "([a-f0-9]{32}-eu[0-9]{1,2})"
+description = "Mailchimp API key with EU datacenter"
+group = 1
+
+[[detector.patterns]]
+regex = "([a-f0-9]{32}-uk[0-9]{1,2})"
+description = "Mailchimp API key with UK datacenter"
+group = 1

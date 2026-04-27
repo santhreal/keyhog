@@ -1,0 +1,20 @@
+# Docs: https://docs.replit.com/replit-cloud-services/cloud-api
+# Format: Replit token with replit_token_ prefix or Replit connect tokens
+# Verify: no public verification endpoint
+# Prefix: replit_
+
+[detector]
+id = "replit-api-token"
+name = "Replit API Token"
+service = "replit"
+severity = "high"
+keywords = ["replit_token", "REPLIT_TOKEN", "replit_api", "REPLIT_API"]
+
+[[detector.patterns]]
+regex = "(?:REPLIT_TOKEN|replit_token|REPLIT_API|replit_api)[=:\\s\"'']+([a-zA-Z0-9_-]{30,})"
+description = "Replit API token with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "replit_token_[a-zA-Z0-9_-]{30,}"
+description = "Replit token with replit_token_ prefix"

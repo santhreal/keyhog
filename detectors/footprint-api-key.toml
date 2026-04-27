@@ -1,0 +1,16 @@
+# Docs: https://docs.footprint.network/
+# Format: 32 character alphanumeric string
+# Verify: no public verification endpoint
+# Prefix: none (32 char alphanumeric, requires context anchoring)
+
+[detector]
+id = "footprint-api-key"
+name = "Footprint Analytics API Key"
+service = "footprint"
+severity = "medium"
+keywords = ["footprint", "FOOTPRINT", "api_key", "apikey"]
+
+[[detector.patterns]]
+regex = "(?:FOOTPRINT|footprint)[_a-zA-Z0-9]*[=:\\s\"'']+([a-zA-Z0-9]{32})"
+description = "Footprint Analytics API key with context anchor"
+group = 1

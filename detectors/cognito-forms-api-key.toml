@@ -1,0 +1,27 @@
+# Docs: https://www.cognitoforms.com/support/475/data-integration/cognito-forms-api
+# Format: Bearer token with consistent first 30 characters (alphanumeric with dashes)
+# Verify: GET /api/forms with Bearer token returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "cognito-forms-api-key"
+name = "Cognito Forms API Key"
+service = "cognitoforms"
+severity = "high"
+keywords = ["cognitoforms", "COGNITO_FORMS", "cognito_forms"]
+
+[[detector.patterns]]
+regex = "(?:cognito[_\\s]*forms?|COGNITO[_\\s]*FORMS)[_.\\s]*(?:api[_\\s]*key|api[_\\s]*token|access[_\\s]*token)[\\s\"'']+([A-Za-z0-9_-]{40,})"
+description = "Cognito Forms API key with context anchor"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://www.cognitoforms.com/api/forms"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[detector.verify.success]
+status = 200

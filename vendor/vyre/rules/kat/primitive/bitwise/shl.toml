@@ -1,0 +1,16 @@
+op_id = "primitive.bitwise.shl"
+
+[[golden]]
+input = "0100000008000000"
+expected = "00010000"
+reason = "1 << 8 = 256 (0x100 LE)"
+
+[[golden]]
+input = "0100000020000000"
+expected = "00000000"
+reason = "1 << 32 = 0 (vyre policy: shift >= 32 returns 0)"
+
+[[golden]]
+input = "ffffffff01000000"
+expected = "feffffff"
+reason = "L.1.32: shl(u32::MAX, 1) drops the MSB leaving 0xFFFFFFFE"

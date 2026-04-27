@@ -1,0 +1,29 @@
+# Docs: https://docs.goshippo.com/docs/guides_general/authentication
+# Format: shippo_live_ or shippo_test_ prefix followed by 32 hex characters
+# Verify: GET /shipments/ with ShippoToken auth header returns 200 if valid
+# Prefix: shippo_live_ or shippo_test_
+
+[detector]
+id = "shippo-api-token"
+name = "Shippo API Token"
+service = "shippo"
+severity = "high"
+keywords = ["shippo_live_", "shippo_test_", "SHIPPO_TOKEN", "api.goshippo.com"]
+
+[[detector.patterns]]
+regex = "shippo_live_[a-f0-9]{32}"
+description = "Shippo Live API token (shippo_live_ prefix)"
+
+[[detector.patterns]]
+regex = "shippo_test_[a-f0-9]{32}"
+description = "Shippo Test API token (shippo_test_ prefix)"
+
+[[detector.patterns]]
+regex = "(?:SHIPPO|shippo)[._](?:API|api)?[._]?(?:TOKEN|token|KEY|key)?[=:\\s\"'']+(shippo_(?:live|test)_[a-f0-9]{32})"
+description = "Shippo API token with context"
+group = 1
+
+[[detector.patterns]]
+regex = "ShippoToken[=:\\s\"'']+(shippo_[a-f0-9_]+)"
+description = "ShippoToken header value"
+group = 1

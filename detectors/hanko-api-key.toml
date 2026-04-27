@@ -1,0 +1,21 @@
+# Docs: https://docs.hanko.io/api-reference/public/status
+# Format: API key for tenant-specific endpoints
+# Verify: GET to tenant-specific status endpoint
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "hanko-api-key"
+name = "Hanko API Key"
+service = "hanko"
+severity = "high"
+keywords = ["HANKO_API_KEY", "HANKO_KEY", "hanko"]
+
+[[detector.patterns]]
+regex = "(?:HANKO[_-]?API[_-]?KEY|HANKO[_-]?KEY)[=:\\s\"'']+([a-zA-Z0-9_-]{20,})"
+description = "Hanko API key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:hanko\\.io|hanko\\.cloud).*[=:\\s\"'']+([a-zA-Z0-9_-]{20,})"
+description = "Hanko API key with URL context"
+group = 1

@@ -1,0 +1,32 @@
+# Docs: https://developers.pandadoc.com/reference/authentication
+# Format: API key - 64 character hexadecimal string
+# Verify: GET https://api.pandadoc.com/public/v1/documents with Authorization header
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "pandadoc-api-key"
+name = "PandaDoc API Key"
+service = "pandadoc"
+severity = "critical"
+keywords = ["PANDADOC_API_KEY", "PANDADOC_KEY", "pandadoc_api_key", "Authorization: API-Key"]
+
+[[detector.patterns]]
+regex = "(?:PANDADOC|pandadoc)[_\\s]?(?:API[_\\s]?KEY|KEY)[=:\\s\"'']+([a-f0-9]{64})"
+description = "PandaDoc API key (64 hex characters)"
+group = 1
+
+[[detector.patterns]]
+regex = "API-Key [a-f0-9]{64}"
+description = "PandaDoc API key in Authorization header"
+
+[detector.verify]
+method = "GET"
+url = "https://api.pandadoc.com/public/v1/documents"
+
+[detector.verify.auth]
+type = "header"
+name = "Authorization"
+template = "API-Key {{match}}"
+
+[detector.verify.success]
+status = 200

@@ -1,0 +1,28 @@
+# Docs: https://docs.airbrake.io/docs/devops-tools/api/
+# Format: 32 hexadecimal characters (project key) or base64 string (user token)
+# Verify: GET /api/v4/projects with key query param
+# Prefix: none (generic hex, requires keyword context)
+
+[detector]
+id = "airbrake-api-key"
+name = "Airbrake API Key"
+service = "airbrake"
+severity = "high"
+keywords = ["AIRBRAKE_API_KEY", "airbrake_api_key", "AIRBRAKE-API-KEY", "AIRBRAKE_PROJECT_KEY", "project_key"]
+
+[[detector.patterns]]
+regex = "(?:AIRBRAKE[_\\-]?API[_\\-]?KEY|airbrake[_\\-]?api[_\\-]?key|AIRBRAKE[_\\-]?PROJECT[_\\-]?KEY|project_key)[=:\\s\\\"']+([a-f0-9]{32})"
+description = "Airbrake project API key (32 hex chars with context anchor)"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://api.airbrake.io/api/v4/projects"
+
+[detector.verify.auth]
+type = "query"
+param = "key"
+field = "match"
+
+[detector.verify.success]
+status = 200

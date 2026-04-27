@@ -1,0 +1,36 @@
+# Docs: https://docs.railway.com/integrations/github-actions
+# Format: RAILWAY_TOKEN environment variable with UUID v4 format
+# Verify: POST /graphql/v2 with Authorization: Bearer token returns 200 with me { id }
+# Prefix: none (UUID format, requires keyword context)
+
+[detector]
+id = "railway-deploy-token"
+name = "Railway Deploy Token"
+service = "railway"
+severity = "critical"
+keywords = ["RAILWAY_TOKEN", "railway_token", "RAILWAY", "railway"]
+
+[[detector.patterns]]
+regex = "(?:RAILWAY|railway)[_\\-\\s]*(?:DEPLOY|deploy)?[_\\-\\s]*(?:TOKEN|token)[=:\\s\"'\\']+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"
+description = "Railway deploy token with context anchor (UUID v4 format)"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:RAILWAY_TOKEN|railway_token)[=:\\s\"'\\']+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"
+description = "Railway deploy token from environment variable"
+group = 1
+
+[detector.verify]
+method = "POST"
+url = "https://backboard.railway.app/graphql/v2"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[detector.verify.success]
+status = 200
+
+[[detector.verify.metadata]]
+name = "user_id"
+json_path = "data.me.id"

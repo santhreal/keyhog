@@ -1,0 +1,28 @@
+# Docs: https://postmarkapp.com/developer/api/server-api
+# Format: UUID (8-4-4-4-12 hex segments) used as server token
+# Verify: GET /server with X-Postmark-Server-Token header returns 200
+# Prefix: none (UUID format, requires keyword context)
+
+[detector]
+id = "postmark-server-token"
+name = "Postmark Server API Token"
+service = "postmark"
+severity = "critical"
+keywords = ["POSTMARK", "postmark", "X-Postmark-Server-Token", "server_token", "POSTMARK_SERVER_TOKEN"]
+
+[[detector.patterns]]
+regex = "(?:POSTMARK|postmark)[._-]?(?:SERVER|server)?[._-]?(?:TOKEN|token)?[=:\\s\"']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
+description = "Postmark server API token with context anchor (UUID format)"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://api.postmarkapp.com/server"
+
+[detector.verify.auth]
+type = "header"
+name = "X-Postmark-Server-Token"
+template = "{{match}}"
+
+[detector.verify.success]
+status = 200

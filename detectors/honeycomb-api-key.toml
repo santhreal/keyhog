@@ -1,0 +1,15 @@
+# Docs: https://docs.honeycomb.io/send-data/opentelemetry/#using-the-honeycomb-opentelemetry-endpoint
+# Format: hcai_ prefix followed by 22 alphanumeric characters
+# Verify: no public verification endpoint
+# Prefix: hcai_
+
+[detector]
+id = "honeycomb-api-key"
+name = "Honeycomb API Key"
+service = "honeycomb"
+severity = "high"
+keywords = ["hcai_", "honeycomb", "x-honeycomb-team"]
+
+[[detector.patterns]]
+regex = 'hcai_[a-zA-Z0-9]{22}'
+description = "Honeycomb Ingest API Key (hcai_ prefix)"

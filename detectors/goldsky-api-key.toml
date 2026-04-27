@@ -1,0 +1,16 @@
+# Docs: https://docs.goldsky.com/
+# Format: 32 character hexadecimal string
+# Verify: no public verification endpoint
+# Prefix: none (32 char hex, requires context anchoring)
+
+[detector]
+id = "goldsky-api-key"
+name = "Goldsky API Key"
+service = "goldsky"
+severity = "high"
+keywords = ["goldsky", "GOLDSKY", "api_key", "apikey"]
+
+[[detector.patterns]]
+regex = "(?:GOLDSKY|goldsky)[_a-zA-Z0-9]*[=:\\s\"'']+([a-f0-9]{32})"
+description = "Goldsky API key with context anchor"
+group = 1

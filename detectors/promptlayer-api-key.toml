@@ -1,0 +1,15 @@
+# Docs: https://docs.promptlayer.com/languages/python
+# Format: pl_ prefix followed by alphanumeric characters
+# Verify: no public verification endpoint
+# Prefix: pl_
+
+[detector]
+id = "promptlayer-api-key"
+name = "PromptLayer API Key"
+service = "promptlayer"
+severity = "high"
+keywords = ["pl_", "PROMPTLAYER_API_KEY", "promptlayer"]
+
+[[detector.patterns]]
+regex = 'pl_[a-zA-Z0-9]{20,}'
+description = "PromptLayer API key (pl_ prefix)"

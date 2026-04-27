@@ -1,0 +1,11 @@
+op_id = "primitive.bitwise.popcount"
+
+[[golden]]
+input = "ffffffff"
+expected = "20000000"
+reason = "popcount(u32::MAX) = 32"
+
+[[golden]]
+input = "00000000"
+expected = "00000000"
+reason = "popcount(0) = 0"

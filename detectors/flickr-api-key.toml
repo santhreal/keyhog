@@ -1,0 +1,31 @@
+# Docs: https://www.flickr.com/services/api/
+# Format: 32 character alphanumeric string
+# Verify: GET /services/rest/?method=flickr.test.echo with api_key returns 200
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "flickr-api-key"
+name = "Flickr API Key"
+service = "flickr"
+severity = "medium"
+keywords = ["FLICKR", "flickr", "api_key"]
+
+[[detector.patterns]]
+regex = '(?:FLICKR|flickr)[._-]?(?:API|api)[._-]?(?:KEY|key)[=:\s""]+([a-f0-9]{32})'
+description = "Flickr API key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = 'api_key=([a-f0-9]{32})'
+description = "Flickr API key in URL parameter"
+group = 1
+
+[[detector.companions]]
+name = "flickr-api-secret"
+regex = '(?:FLICKR|flickr)[._-]?(?:API|api)[._-]?(?:SECRET|secret)[=:\s""]+[a-f0-9]{16,32}'
+within_lines = 5
+[detector.verify]
+method = "GET"
+url = "https://api.flickr.com/services/rest/?method=flickr.test.echo&api_key={{match}}"
+[detector.verify.success]
+status = 200

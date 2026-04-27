@@ -1,0 +1,32 @@
+# Docs: https://hightouch.com/docs/developer-tools/api-guide
+# Format: Hightouch API key, alphanumeric string displayed once on creation
+# Verify: GET /api/v1/syncs with Bearer token returns 200 if valid
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "hightouch-api-key"
+name = "Hightouch API Key"
+service = "hightouch"
+severity = "critical"
+keywords = ["HIGHTOUCH", "hightouch", "HIGHTOUCH_API_KEY", "HIGHTOUCH_TOKEN"]
+
+[[detector.patterns]]
+regex = "(?:HIGHTOUCH)[_.]?(?:API[._-]?KEY|TOKEN)[=:\\s\"'']+([a-zA-Z0-9]{32,})"
+description = "Hightouch API key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "(?:hightouch)[_.]?(?:api[._-]?key|token)[=:\\s\"'']+([a-zA-Z0-9]{32,})"
+description = "Hightouch API key lowercase context anchor"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://api.hightouch.com/api/v1/syncs"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[detector.verify.success]
+status = 200

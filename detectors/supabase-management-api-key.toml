@@ -1,0 +1,31 @@
+# Docs: https://supabase.com/docs/guides/api/api-keys
+# Format: Management API key with sb_publishable_ or sb_secret_ prefix followed by 22 chars and 8-char checksum
+# Verify: GET /v1/projects with Authorization header returns 200 if valid
+# Prefix: sb_publishable_, sb_secret_
+
+[detector]
+id = "supabase-management-api-key"
+name = "Supabase Management API Key"
+service = "supabase"
+severity = "critical"
+keywords = ["sb_publishable_", "sb_secret_", "SUPABASE_MANAGEMENT", "supabase.co"]
+
+[[detector.patterns]]
+regex = "sb_(?:publishable|secret)_[a-zA-Z0-9]{22}_[a-zA-Z0-9]{8}"
+description = "Supabase management API key (sb_publishable or sb_secret prefix)"
+
+[[detector.patterns]]
+regex = "(?:SUPABASE|supabase)[_\\s]?(?:MANAGEMENT|management)[_\\s]?KEY[=:\\s\"'']+(sb_(?:publishable|secret)_[a-zA-Z0-9]{22}_[a-zA-Z0-9]{8})"
+description = "Supabase management API key with context anchor"
+group = 1
+
+[detector.verify]
+method = "GET"
+url = "https://api.supabase.com/v1/projects"
+
+[detector.verify.auth]
+type = "bearer"
+field = "match"
+
+[detector.verify.success]
+status = 200

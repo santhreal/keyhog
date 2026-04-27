@@ -1,0 +1,24 @@
+# Docs: https://docs.gitlab.com/ee/user/packages/
+# Format: GitLab Deploy Token (gldt-) or CI Job Token (glcbt-), or Personal Access Token
+# Verify: GET /api/v4/packages with job token header returns 200 if valid
+# Prefix: gldt- or glcbt- or glpat-
+
+[detector]
+id = "gitlab-package-registry-token"
+name = "GitLab Package Registry Token"
+service = "gitlab-package-registry"
+severity = "high"
+keywords = ["gldt-", "glcbt-", "CI_JOB_TOKEN", "CI_DEPLOY_TOKEN"]
+
+[[detector.patterns]]
+regex = "gldt-[a-zA-Z0-9_-]{20,}"
+description = "GitLab Deploy Token for Package Registry"
+
+[[detector.patterns]]
+regex = "glcbt-[a-zA-Z0-9_-]{20,}"
+description = "GitLab CI Job Token for Package Registry"
+
+[[detector.patterns]]
+regex = "(?:CI_JOB_TOKEN|CI_DEPLOY_TOKEN|GITLAB_DEPLOY_TOKEN)[=:\\s\"'']+(gldt-[a-zA-Z0-9_-]{20,}|glcbt-[a-zA-Z0-9_-]{20,})"
+description = "GitLab Package Registry token in environment variable"
+group = 1

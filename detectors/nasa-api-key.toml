@@ -1,0 +1,21 @@
+# Docs: https://api.nasa.gov/
+# Format: 40-character alphanumeric string, passed as "api_key" query parameter
+# Verify: GET request to api.nasa.gov with api_key parameter
+# Prefix: none (requires context anchoring)
+
+[detector]
+id = "nasa-api-key"
+name = "NASA API Key"
+service = "nasa"
+severity = "medium"
+keywords = ["NASA_API_KEY", "nasa", "api.nasa.gov"]
+
+[[detector.patterns]]
+regex = "(?:NASA_API_KEY|nasa_api_key)[=:\\s\"'\\']+([a-zA-Z0-9]{40})"
+description = "NASA API key (40 alphanumeric chars) with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "api[_-]?key[=:\\s\"'\\']+([a-zA-Z0-9]{40}).*api\\.nasa\\.gov"
+description = "NASA API key in URL with api.nasa.gov domain"
+group = 1

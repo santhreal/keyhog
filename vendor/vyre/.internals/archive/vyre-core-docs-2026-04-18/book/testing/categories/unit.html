@@ -1,0 +1,530 @@
+<!DOCTYPE HTML>
+<html lang="en" class="rust sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Unit - The vyre Book</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="The GPU compute IR with a conformance prover">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../../favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="../../favicon-8114d1fc.png">
+        <link rel="stylesheet" href="../../css/variables-8adf115d.css">
+        <link rel="stylesheet" href="../../css/general-2459343d.css">
+        <link rel="stylesheet" href="../../css/chrome-ae938929.css">
+        <link rel="stylesheet" href="../../css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../../fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="../../highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="../../tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="../../ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "../../";
+            const default_light_theme = "rust";
+            const default_dark_theme = "navy";
+            window.path_to_searchindex_js = "../../searchindex-bc7bdb82.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="../../toc-16d598fb.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('rust')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="../../toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">The vyre Book</h1>
+
+                    <div class="right-buttons">
+                        <a href="../../print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/santhsecurity/vyre" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/santhsecurity/vyre/edit/main/core/docs/./testing/categories/unit.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                            <span class=fa-svg id="git-edit-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M421.7 220.3l-11.3 11.3-22.6 22.6-205 205c-6.6 6.6-14.8 11.5-23.8 14.1L30.8 511c-8.4 2.5-17.5 .2-23.7-6.1S-1.5 489.7 1 481.2L38.7 353.1c2.6-9 7.5-17.2 14.1-23.8l205-205 22.6-22.6 11.3-11.3 33.9 33.9 62.1 62.1 33.9 33.9zM96 353.9l-9.3 9.3c-.9 .9-1.6 2.1-2 3.4l-25.3 86 86-25.3c1.3-.4 2.5-1.1 3.4-2l9.3-9.3H112c-8.8 0-16-7.2-16-16V353.9zM453.3 19.3l39.4 39.4c25 25 25 65.5 0 90.5l-14.5 14.5-22.6 22.6-11.3 11.3-33.9-33.9-62.1-62.1L314.3 67.7l11.3-11.3 22.6-22.6 14.5-14.5c25-25 65.5-25 90.5 0z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="unit-tests"><a class="header" href="#unit-tests">Unit tests</a></h1>
+<h2 id="what-a-unit-test-is-in-vyre"><a class="header" href="#what-a-unit-test-is-in-vyre">What a unit test is in vyre</a></h2>
+<p>A unit test exercises a single function or a single data structure
+in isolation, with no cross-module dependencies, no pipeline
+invocation, and no Program construction. Unit tests are the
+smallest, fastest, most narrowly scoped tests in vyre’s suite.
+They run in milliseconds, catch bugs that are too localized for
+integration tests to notice, and exist to answer one question: does
+this single function do what its signature claims it does?</p>
+<p>Unit tests are not the main defense for any of vyre’s invariants.
+The invariants are all about system-level behavior — determinism,
+backend equivalence, validation soundness, lowering fidelity —
+and no single function, taken alone, can prove a system-level
+invariant. Unit tests support the rest of the suite by ensuring
+that when an integration test fails, the failure is not because
+some trivial helper function was broken in a way the integration
+test’s oracle could not pinpoint.</p>
+<p>The distinction matters because it determines how much work unit
+tests should do and where they should live. A unit test that tries
+to prove a system invariant is in the wrong place; that work
+belongs to an integration test or a property test. A unit test
+that just calls a function and asserts it returned <code>Some(_)</code>
+without checking the inner value is too weak to justify its
+existence. The useful unit test is the one that catches a specific
+local bug that the larger suite would not otherwise notice.</p>
+<h2 id="the-preferred-location"><a class="header" href="#the-preferred-location">The preferred location</a></h2>
+<p>vyre’s convention is that unit tests live inline with the code
+they test, in a <code>#[cfg(test)] mod tests { ... }</code> block at the
+bottom of the source file. The source file owns the function; the
+test module is the function’s companion.</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// src/ir/wire/tag.rs
+
+pub fn parse(byte: u8) -&gt; Option&lt;WireTag&gt; {
+    match byte {
+        0x00 =&gt; Some(WireTag::Program),
+        0x01 =&gt; Some(WireTag::BufferDecl),
+        0x02 =&gt; Some(WireTag::Node),
+        _    =&gt; None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_known_byte_returns_some() {
+        assert_eq!(parse(0x00), Some(WireTag::Program));
+        assert_eq!(parse(0x01), Some(WireTag::BufferDecl));
+    }
+
+    #[test]
+    fn parse_unknown_byte_returns_none() {
+        assert_eq!(parse(0xFF), None);
+    }
+}
+<span class="boring">}</span></code></pre>
+<p>The inline module is the default. It keeps the test next to the
+code, which is where a reader looks first when the test fails. It
+has access to private items through <code>use super::*;</code>, which means
+the test does not need to push helpers out of the private API just
+to be testable. It compiles as part of the same crate, which means
+the test-only code does not leak into consumers.</p>
+<p>The <code>tests/unit/</code> directory exists as a fallback for the small
+number of cases where the inline module is the wrong answer:</p>
+<ul>
+<li>Tests that need to observe behavior only visible across a crate
+boundary (for example, tests that need <code>extern crate vyre</code> to
+prove the public API compiles in isolation).</li>
+<li>Tests that need a separate target directory for some reason
+(for example, tests that interact with a feature-gated
+allocator without polluting the main compile).</li>
+<li>Tests that need to run as a standalone binary (rare; usually a
+sign the test actually belongs elsewhere).</li>
+</ul>
+<p>When in doubt, use the inline module. The <code>tests/unit/</code> directory
+should remain sparse. If it grows beyond a handful of files, that
+is a signal that tests are being pushed there for organizational
+reasons that would be better served by inline modules.</p>
+<h2 id="what-belongs-in-a-unit-test"><a class="header" href="#what-belongs-in-a-unit-test">What belongs in a unit test</a></h2>
+<p>A unit test is the right choice when every one of these is true:</p>
+<ul>
+<li>The subject is a single function or a single trait method or a
+single data-structure operation.</li>
+<li>The test can construct its inputs directly, without building an
+<code>ir::Program</code> or instantiating anything large.</li>
+<li>The oracle is obvious and local: the function’s signature, a
+hand-written expected value, a parse-then-re-serialize round-trip
+on a small input.</li>
+<li>The assertion fits in a few lines.</li>
+</ul>
+<p>Concrete examples that belong in unit tests:</p>
+<ul>
+<li>A test for <code>WireTag::parse(byte) -&gt; Option&lt;WireTag&gt;</code> that verifies
+known bytes return the expected tags and unknown bytes return
+<code>None</code>. The function, the inputs, the expected outputs are all
+small and local.</li>
+<li>A test for <code>BufferAccess::is_read_only()</code> that constructs each
+<code>BufferAccess</code> variant and asserts the getter returns the
+expected boolean. No pipeline. No Program. Just the getter.</li>
+<li>A test for <code>ValidationError::display()</code> that constructs an error
+value directly, formats it, and asserts the string contains the
+expected elements. No validation run. Just the formatter.</li>
+<li>A test for a small pure helper in the wire format module that
+encodes a single field and verifies the byte layout.</li>
+</ul>
+<h2 id="what-does-not-belong"><a class="header" href="#what-does-not-belong">What does not belong</a></h2>
+<p>The easiest way to write a bad unit test is to let the subject
+creep outward. A test that starts as “does this helper work”
+drifts into “does this helper work when called from the real
+code path, with real inputs, through the full pipeline” — and
+suddenly the test is an integration test wearing a unit test’s
+clothes.</p>
+<p>Reject any of these shapes from the unit category:</p>
+<ul>
+<li><strong>Tests that construct <code>ir::Program</code> values.</strong> A Program is by
+definition bigger than a unit. If you are building a Program,
+your test belongs in <code>tests/integration/</code>.</li>
+<li><strong>Tests that call <code>lower::wgsl::lower()</code>.</strong> Lowering is a
+pipeline stage; testing it involves at least a Program, which
+moves the test out of the unit category.</li>
+<li><strong>Tests that instantiate a backend.</strong> Backends are heavyweight;
+tests that touch them are backend tests or integration tests.</li>
+<li><strong>Tests that exercise a function through a public API but could
+exercise it directly.</strong> If the direct exercise is possible and
+the result is the same, use the direct exercise — it is more
+local, faster, and more obviously a unit test.</li>
+<li><strong>Tests that use <code>proptest!</code>.</strong> Property tests belong in
+<code>tests/property/</code>, where the seed discipline and regression
+corpus rules apply. A random-input unit test in an inline
+module will eventually produce a failing seed that nobody
+commits, and the test will become a flake.</li>
+</ul>
+<h2 id="the-size-of-a-unit-test"><a class="header" href="#the-size-of-a-unit-test">The size of a unit test</a></h2>
+<p>Unit tests are small. A well-written unit test is under ten lines
+of body, often under five. If a unit test is growing long, it is
+usually because the subject function is doing too much and the
+test is trying to cover every branch with one function. The fix is
+to split the test, not to add helpers that hide the branches.</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// WRONG — one test covering too many branches
+#[test]
+fn parse_all_bytes() {
+    assert_eq!(parse(0x00), Some(WireTag::Program));
+    assert_eq!(parse(0x01), Some(WireTag::BufferDecl));
+    assert_eq!(parse(0x02), Some(WireTag::Node));
+    assert_eq!(parse(0xFF), None);
+    assert_eq!(parse(0xAA), None);
+    assert_eq!(parse(0x7F), None);
+}
+
+// RIGHT — one test per property
+#[test]
+fn parse_program_byte_returns_program_tag() {
+    assert_eq!(parse(0x00), Some(WireTag::Program));
+}
+
+#[test]
+fn parse_buffer_decl_byte_returns_buffer_decl_tag() {
+    assert_eq!(parse(0x01), Some(WireTag::BufferDecl));
+}
+
+#[test]
+fn parse_unknown_bytes_return_none() {
+    for byte in [0xFF, 0xAA, 0x7F] {
+        assert_eq!(parse(byte), None);
+    }
+}
+<span class="boring">}</span></code></pre>
+<p>The split version has three tests where the kitchen-sink version
+had one. When the split version fails, you see exactly which
+property broke. When the kitchen-sink version fails, you see only
+“parse_all_bytes failed” and have to read the output to figure out
+which assertion inside the function tripped.</p>
+<p>The last test uses a small loop because the property being
+verified (“unknown bytes return None”) covers a family of inputs,
+and enumerating each in its own test would be noise. The rule of
+thumb: when the property genuinely covers a family and the failure
+mode is uniform across the family, a loop is fine. When each
+element of the family is its own property with its own
+consequences, split.</p>
+<h2 id="oracles-in-unit-tests"><a class="header" href="#oracles-in-unit-tests">Oracles in unit tests</a></h2>
+<p>Unit tests typically use one of two oracle kinds from the
+<a href="../oracles.html">hierarchy</a>:</p>
+<ul>
+<li><strong>Hand-written expected values</strong> (a degenerate case of
+Oracle 2, specification table, where the “table” is one row
+inline in the test). This is the most common oracle in unit
+tests: the author looked at the function, decided what the
+expected value should be, wrote it in the test.</li>
+<li><strong>CPU reference function</strong> (Oracle 4). Rare in unit tests
+because unit tests usually exercise a function that has no
+separate reference. When they do — for example, when testing a
+helper that should agree with a standard library function —
+the standard library call serves as the reference.</li>
+</ul>
+<p>The oracle must always be independent of the subject. The
+simplest way to make a unit test fail its oracle rule is to copy
+the function under test into the test module, rename it, and use
+it to generate the expected value. That is a tautology and the
+review checklist rejects it.</p>
+<h2 id="naming"><a class="header" href="#naming">Naming</a></h2>
+<p>Unit tests follow the same naming convention as the rest of the
+suite: <code>test_&lt;subject&gt;_&lt;property&gt;</code>. Inside an inline module, the
+subject is often omitted since it is implicit from the module
+location. <code>fn parse_known_byte_returns_some</code> is equivalent to
+<code>fn test_parse_known_byte_returns_some</code> when the module is
+dedicated to the parser; the <code>test_</code> prefix is optional for inline
+modules but required for files in <code>tests/unit/</code>.</p>
+<p>See <a href="../writing/naming.html">Naming</a> for the full convention.</p>
+<h2 id="failure-messages"><a class="header" href="#failure-messages">Failure messages</a></h2>
+<p>A unit test that fails should tell the reader what failed without
+requiring them to read the test body. The easiest way to achieve
+this is to include context in the assertion message:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>#[test]
+fn parse_every_known_byte_has_a_variant() {
+    for (byte, expected) in KNOWN_BYTES {
+        assert_eq!(
+            parse(byte),
+            Some(*expected),
+            "parse({:#x}) should return Some({:?})",
+            byte,
+            expected,
+        );
+    }
+}
+<span class="boring">}</span></code></pre>
+<p>The message turns a failing assertion into a useful diagnostic.
+Without it, the reader sees <code>left: None, right: Some(Nop)</code> and has
+to trace back to which iteration of the loop produced the failure.
+With it, the reader sees the exact byte and expected variant.</p>
+<p>Not every assertion needs a custom message. Single-assertion tests
+can rely on the test name and the default message. Assertions
+inside loops, inside helpers, or in contexts where the default
+message would be ambiguous benefit from explicit messages.</p>
+<h2 id="performance-expectations"><a class="header" href="#performance-expectations">Performance expectations</a></h2>
+<p>Unit tests are expected to complete in milliseconds, ideally under
+a millisecond each. A unit test that takes measurable time
+suggests the subject is doing something the unit scope does not
+cover: I/O, allocation on large inputs, pipeline invocation. Move
+the test to the appropriate category.</p>
+<p>The full unit suite should run in a few seconds at most. If it
+does not, the suite has started to absorb tests that should have
+been elsewhere, and the fix is to move them out.</p>
+<h2 id="the-contribution-of-unit-tests-to-the-suite"><a class="header" href="#the-contribution-of-unit-tests-to-the-suite">The contribution of unit tests to the suite</a></h2>
+<p>Unit tests catch a specific class of bug: local mistakes in
+individual functions that would otherwise propagate to integration
+tests with unhelpful failure messages. When a helper function
+silently returns the wrong value, an integration test for the
+system that uses that helper fails — but the failure points to
+the integration, not to the helper. A unit test for the helper
+fails instead, and points directly at the helper.</p>
+<p>Without unit tests, debugging integration failures is harder: you
+start with “the pipeline produced the wrong bytes” and have to
+work backward through layers of abstraction to find the root
+cause. With unit tests, the failure is localized to the helper
+before you ever run the integration test, and you fix it in
+place.</p>
+<p>This is the quiet value of unit tests. They do not prove
+invariants. They do not catch cross-module bugs. They make the
+rest of the suite easier to debug when it fails, and they catch
+trivial bugs before the rest of the suite ever has to.</p>
+<h2 id="when-unit-tests-are-not-enough"><a class="header" href="#when-unit-tests-are-not-enough">When unit tests are not enough</a></h2>
+<p>A subject tested only by unit tests is under-tested. Unit tests
+verify that a function does what its signature claims; they do not
+verify that the function is used correctly by the code that calls
+it, or that the interaction between the function and the rest of
+the system produces the expected outcome. Every unit-tested
+subject of any importance should also appear in an integration
+test that exercises it through the pipeline with a stronger
+oracle.</p>
+<p>If you find yourself writing only unit tests for a function — no
+integration tests, no property tests — pause and ask: is the
+function too small to matter, or is the function too important to
+test only at the unit level? If the former, fine. If the latter,
+the unit tests are a warmup, not a finish line.</p>
+<h2 id="summary"><a class="header" href="#summary">Summary</a></h2>
+<p>Unit tests are small, fast, isolated. They live inline with the
+code they test. They catch local mistakes. They do not prove
+invariants, and they are not a substitute for integration or
+property tests. Use them where they fit; escalate to larger
+categories when the subject grows.</p>
+<p>Next: <a href="integration.html">Integration tests</a> — the category where the
+<code>ir::Program</code> pipeline lives and most hand-written correctness
+coverage is built.</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../../testing/architecture.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="../../testing/categories/integration.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../../testing/architecture.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="../../testing/categories/integration.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="../../elasticlunr-ef4e11c1.min.js"></script>
+        <script src="../../mark-09e88c2c.min.js"></script>
+        <script src="../../searcher-c2a407aa.js"></script>
+
+        <script src="../../clipboard-1626706a.min.js"></script>
+        <script src="../../highlight-abc7f01d.js"></script>
+        <script src="../../book-a0b12cfe.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+
+    </div>
+    </body>
+</html>

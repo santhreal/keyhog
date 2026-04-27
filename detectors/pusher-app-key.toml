@@ -1,0 +1,21 @@
+# Docs: https://pusher.com/docs/channels/getting_started/javascript
+# Format: 20-character hexadecimal string
+# Verify: WebSocket connection to wss://ws-{cluster}.pusher.com/app/{key}
+# Prefix: none (generic hex, requires keyword context)
+
+[detector]
+id = "pusher-app-key"
+name = "Pusher App Key"
+service = "pusher"
+severity = "high"
+keywords = ["PUSHER", "pusher", "PUSHER_APP_KEY", "pusher_app_key", "app_key"]
+
+[[detector.patterns]]
+regex = "(?:PUSHER|pusher)[._]?(?:APP|app)?[._]?(?:KEY|key)?[=:\\s\"']+([a-f0-9]{20})"
+description = "Pusher Channels app key with context anchor"
+group = 1
+
+[[detector.companions]]
+name = "app_secret"
+regex = "(?:PUSHER|pusher)[._]?(?:APP|app)?[._]?(?:SECRET|secret)[=:\\s\"']+([a-f0-9]{32})"
+within_lines = 5
