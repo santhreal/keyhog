@@ -197,7 +197,26 @@ fn malformed_toml_files_emit_warnings_and_keep_valid_detectors() {
 #[test]
 fn no_detector_uses_singular_companion_table() {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
-    let detectors_dir = std::path::Path::new(&manifest_dir).join("detectors");
+    // The in-crate `detectors` is a Unix symlink to `../../detectors`. On
+    // Windows checkouts without core.symlinks the symlink lands as a plain
+    // file holding the link target, so prefer the workspace-root path and
+    // fall back to the in-crate path. Mirrors `crates/core/build.rs`.
+    let manifest_path = std::path::Path::new(&manifest_dir);
+    let workspace_detectors = manifest_path
+        .parent()
+        .and_then(|p| p.parent())
+        .map(|p| p.join("detectors"))
+        .filter(|p| p.is_dir());
+    let in_crate = manifest_path.join("detectors");
+    let detectors_dir = workspace_detectors
+        .or_else(|| {
+            if in_crate.is_dir() {
+                Some(in_crate.clone())
+            } else {
+                None
+            }
+        })
+        .unwrap_or(in_crate);
 
     let mut violations = Vec::new();
     for entry in std::fs::read_dir(&detectors_dir).expect("failed to read detectors dir") {

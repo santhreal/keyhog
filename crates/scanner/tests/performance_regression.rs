@@ -124,9 +124,12 @@ fn cpu_fallback_completes_under_2s_on_4mib_corpus() {
         while data.len() < 128 * 1024 {
             data.push_str("// no secret here, just realistic-shaped code\n");
         }
-        data.push_str(&format!(
-            "export const KEY_{i} = \"ghp_ABCDEF1234567890ABCDEF1234567890AB\";\n"
-        ));
+        // Use AKIA-shape: 20 char total, no checksum gate, no EXAMPLE
+        // suppression, matches the production aws-access-key detector.
+        // Vary the body per chunk so the post-scan dedupe (which collapses
+        // identical credentials across chunks) doesn't reduce 32 → 1.
+        let suffix = format!("XK4P9MQ2W{i:07}");
+        data.push_str(&format!("export const KEY_{i} = \"AKIA{suffix}\";\n"));
         chunks.push(Chunk {
             data: data.into(),
             metadata: ChunkMetadata {

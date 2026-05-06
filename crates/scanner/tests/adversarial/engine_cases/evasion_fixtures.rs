@@ -127,6 +127,10 @@ fn evasion_split_across_lines_reassembles_at_all() {
 /// the production scanner suppresses `AKIAIOSFODNN7EXAMPLE` by design as a
 /// well-known dummy credential.
 #[test]
+// Cross-fragment reassembly is wired through the multiline preprocessor; a
+// build without `multiline` has no concat-resolver pass, so the synthetic
+// `key_head + key_tail` literals never coalesce.
+#[cfg(feature = "multiline")]
 fn engine_reassembles_two_fragment_aws_without_shared_prefix() {
     // The trailing concat-on-quoted-string line trips the
     // `has_concatenation_indicators` gate (`"' +"`). The first three lines
@@ -206,6 +210,9 @@ fn evasion_embedded_in_binary_extracts_strings() {
 }
 
 #[test]
+// ReverseDecoder lives behind the `decode` feature; without it the reversed
+// fixtures can't be unwound and the AWS/GitHub assertion has nothing to fire on.
+#[cfg(feature = "decode")]
 fn evasion_reversed_strings_finds_forward_literals() {
     // The reversed_strings.py fixture contains both reversed credentials
     // and forward literal halves. Three guarantees:

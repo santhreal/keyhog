@@ -3,6 +3,7 @@
 use std::time::Duration;
 
 /// Typical HTTP(S) request timeout (web fetch, Slack API, S3 REST).
+#[cfg(any(feature = "web", feature = "slack", feature = "s3", feature = "github"))]
 pub const HTTP_REQUEST: Duration = Duration::from_secs(30);
 
 /// Shallow `git clone` for org scans (and other long-running subprocess work).

@@ -2,6 +2,40 @@
 
 All notable changes to KeyHog. Versions follow [Semantic Versioning](https://semver.org/).
 
+## v0.6.1 — 2026-05-06
+
+Perfection pass on top of v0.6.0.
+
+### Fixed
+
+- `crates/sources/src/binary/{mod,sections}.rs`: 5 type errors (the
+  `extract_printable_strings` wrapper claimed `Vec<String>` while the
+  underlying call returned `Vec<SensitiveString>`). Any build with
+  `--features binary` previously failed to compile.
+- `aws-access-key.toml`: dropped `required = true` from the `secret_key`
+  companion. A leaked AKIA on its own is still a reportable finding;
+  verification correctly downgrades to "unverified" when no co-located
+  secret is found instead of silently dropping the match.
+- `crates/core/tests/unit/spec.rs`: the `no_detector_uses_singular_companion_table`
+  test now mirrors `crates/core/build.rs`'s symlink fallback so it works
+  on Windows checkouts where `crates/core/detectors` lands as a literal
+  file containing the link target.
+- `crates/scanner/tests/performance_regression.rs`: replaced the
+  CRC32-invalid `ghp_ABCDEF…` synthetic with an AKIA-shape fixture so the
+  test exercises the no-default-features build (where checksum validation
+  fails closed).
+- 3 adversarial tests gated behind the features they exercise (`ml`,
+  `multiline`, `decode`); previously they ran under `--no-default-features`
+  and asserted behavior that requires those features.
+
+### Hygiene
+
+- `cargo clippy --workspace --no-default-features --all-targets` clean
+  (zero warnings) under both `--no-default-features` and the
+  default-minus-simd matrix.
+- `cargo fmt --check` clean.
+- 596/596 tests pass under both feature configurations.
+
 ## v0.6.0 — 2026-05-06
 
 Out-of-band callback verification + broad robustness/detector fixes.

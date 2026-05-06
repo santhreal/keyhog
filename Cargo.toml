@@ -11,7 +11,7 @@ exclude = ["vendor/vyre", "vendor/shared"]
 default-members = ["crates/cli"]
 
 [workspace.package]
-version = "0.6.0"
+version = "0.6.1"
 edition = "2021"
 rust-version = "1.89"
 license = "MIT OR Apache-2.0"
@@ -25,10 +25,10 @@ categories = ["command-line-utilities", "development-tools"]
 authors = ["Santh Project <contact@santh.dev>"]
 
 [workspace.dependencies]
-keyhog-core = { version = "=0.6.0", path = "crates/core" }
-keyhog-scanner = { version = "=0.6.0", path = "crates/scanner", default-features = false }
-keyhog-verifier = { version = "=0.6.0", path = "crates/verifier" }
-keyhog-sources = { version = "=0.6.0", path = "crates/sources" }
+keyhog-core = { version = "=0.6.1", path = "crates/core" }
+keyhog-scanner = { version = "=0.6.1", path = "crates/scanner", default-features = false }
+keyhog-verifier = { version = "=0.6.1", path = "crates/verifier" }
+keyhog-sources = { version = "=0.6.1", path = "crates/sources" }
 
 # Serialization
 serde = { version = "=1.0.228", features = ["derive"] }

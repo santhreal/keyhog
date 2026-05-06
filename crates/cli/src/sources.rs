@@ -1,6 +1,8 @@
 //! Source factory for the KeyHog CLI.
 
 use crate::args::ScanArgs;
+#[cfg(feature = "git")]
+use anyhow::Context;
 use anyhow::Result;
 use keyhog_core::Source;
 #[cfg(feature = "git")]

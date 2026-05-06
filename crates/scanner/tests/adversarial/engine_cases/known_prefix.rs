@@ -86,6 +86,11 @@ fn resolution_prefers_specific_detector_over_generic_for_known_prefix() {
     );
 }
 
+// Validates the post-ML confidence-floor logic; meaningful only with the `ml`
+// feature on. Under `--no-default-features` the matcher's checksum gate fires
+// first and rejects the synthetic CRC32-invalid `ghp_aaaa…` credential before
+// any ML/penalty path runs, so the assertion has no test surface to evaluate.
+#[cfg(feature = "ml")]
 #[test]
 fn known_prefix_survives_ml_and_context_penalties() {
     // Simulate a credential that would normally be crushed by post-ML penalties

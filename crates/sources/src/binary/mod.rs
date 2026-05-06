@@ -228,7 +228,7 @@ impl BinarySource {
         let strings = extract_printable_strings(&bytes, MIN_STRING_LEN);
         if !strings.is_empty() {
             chunks.push(Chunk {
-                data: keyhog_core::SensitiveString::join(&strings, "\n").into(),
+                data: keyhog_core::SensitiveString::join(&strings, "\n"),
                 metadata: ChunkMetadata {
                     base_offset: 0,
                     source_type: "binary:strings".to_string(),
@@ -266,7 +266,10 @@ impl Source for BinarySource {
     }
 }
 
-pub(crate) fn extract_printable_strings(bytes: &[u8], min_len: usize) -> Vec<String> {
+pub(crate) fn extract_printable_strings(
+    bytes: &[u8],
+    min_len: usize,
+) -> Vec<keyhog_core::SensitiveString> {
     crate::strings::extract_printable_strings(bytes, min_len)
 }
 

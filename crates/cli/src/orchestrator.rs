@@ -18,6 +18,8 @@ use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 
 use std::sync::Arc;
+#[cfg(feature = "verify")]
+use std::time::Duration;
 use std::time::Instant;
 
 const EXIT_LIVE_CREDENTIALS: u8 = 10;
