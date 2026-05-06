@@ -1,6 +1,8 @@
 //! Detector loading pipeline: read TOML files, run the quality gate, and inject
 //! small compatibility shims for legacy token formats when needed.
 
+#![allow(clippy::result_large_err)] // SpecError carries a 128-byte toml::de::Error; boxing it would be a breaking API change.
+
 use std::io;
 use std::path::{Path, PathBuf};
 

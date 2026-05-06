@@ -51,7 +51,7 @@ struct SlackResponse<T> {
     ok: bool,
     error: Option<String>,
     #[serde(flatten)]
-    data: T.into(),
+    data: T,
 }
 
 #[derive(Deserialize)]
@@ -112,7 +112,7 @@ impl SlackSource {
                             channel_chunks.push(Chunk {
                                 data: std::mem::take(&mut channel_buffer).into(),
                                 metadata: ChunkMetadata {
-                    base_offset: 0,
+                                    base_offset: 0,
                                     source_type: "slack".into(),
                                     path: Some(format!("slack://#{}", channel.name)),
                                     ..Default::default()
@@ -124,7 +124,7 @@ impl SlackSource {
                         channel_chunks.push(Chunk {
                             data: channel_buffer.into(),
                             metadata: ChunkMetadata {
-                    base_offset: 0,
+                                base_offset: 0,
                                 source_type: "slack".into(),
                                 path: Some(format!("slack://#{}", channel.name)),
                                 ..Default::default()

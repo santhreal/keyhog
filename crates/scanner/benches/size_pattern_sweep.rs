@@ -78,9 +78,9 @@ function authenticate(req, res) {
 
 fn make_chunk(payload: &str) -> Chunk {
     Chunk {
-        data: payload.to_string(),
+        data: payload.to_string().into(),
         metadata: ChunkMetadata {
-                    base_offset: 0,
+            base_offset: 0,
             source_type: "file".into(),
             path: Some("synthetic.txt".into()),
             ..Default::default()

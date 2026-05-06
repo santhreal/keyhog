@@ -28,7 +28,11 @@ impl CompiledScanner {
         unsafe {
             // Senior Audit §Phase 7.4: Prevent GPU buffers from leaking into core dumps.
             // Best-effort; ignore errors on non-page-aligned buffers.
-            libc::madvise(buffer.as_ptr() as *mut libc::c_void, buffer.len(), libc::MADV_DONTDUMP);
+            libc::madvise(
+                buffer.as_ptr() as *mut libc::c_void,
+                buffer.len(),
+                libc::MADV_DONTDUMP,
+            );
         }
 
         // Adaptive match cap: hardcoding 10_000 capped large batches.

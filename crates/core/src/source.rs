@@ -1,7 +1,7 @@
 //! Source trait and chunk types: the abstraction for pluggable input backends.
 
-use serde::Serialize;
 use crate::SensitiveString;
+use serde::Serialize;
 use thiserror::Error;
 
 /// A scannable chunk of text with metadata about where it came from.
@@ -14,7 +14,6 @@ use thiserror::Error;
 /// let chunk = Chunk {
 ///     data: "API_KEY=sk_live_example".into(),
 ///     metadata: ChunkMetadata {
-                    
 ///         source_type: "filesystem".into(),
 ///         path: Some("app.env".into()),
 ///         base_offset: 0,
@@ -42,7 +41,6 @@ pub struct Chunk {
 /// use keyhog_core::ChunkMetadata;
 ///
 /// let metadata = ChunkMetadata {
-                    
 ///     source_type: "git-diff".into(),
 ///     path: Some("src/lib.rs".into()),
 ///     base_offset: 0,
@@ -55,7 +53,6 @@ pub struct Chunk {
 /// ```
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct ChunkMetadata {
-                    
     pub source_type: String,
     pub path: Option<String>,
     pub commit: Option<String>,
@@ -83,7 +80,6 @@ pub struct ChunkMetadata {
 ///         Box::new(std::iter::once(Ok(Chunk {
 ///             data: "TOKEN=value".into(),
 ///             metadata: ChunkMetadata {
-                    
 ///                 source_type: "static".into(),
 ///                 path: None,
 ///                 base_offset: 0,

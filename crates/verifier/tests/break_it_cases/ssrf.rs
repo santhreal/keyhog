@@ -23,6 +23,7 @@ async fn test_ssrf_integer_ips() {
             timeout_ms: None,
             steps: vec![],
             allowed_domains: vec!["127.0.0.1".into(), "localhost".into()],
+            oob: None,
         }),
         ..Default::default()
     };
@@ -99,6 +100,7 @@ async fn test_ssrf_integer_ips() {
                 timeout_ms: None,
                 steps: vec![],
                 allowed_domains: vec!["127.0.0.1".into(), "localhost".into()],
+            oob: None,
             }),
             ..Default::default()
         };
@@ -184,6 +186,7 @@ async fn test_ssrf_malformed_urls() {
                 timeout_ms: None,
                 steps: vec![],
                 allowed_domains: vec!["127.0.0.1".into(), "localhost".into()],
+            oob: None,
             }),
             ..Default::default()
         };

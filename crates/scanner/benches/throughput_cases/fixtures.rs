@@ -203,7 +203,7 @@ fn generate_single_line_secret() -> String {
 
 fn make_chunk(data: &str, path: Option<&str>) -> Chunk {
     Chunk {
-        data: data.to_string(),
+        data: data.to_string().into(),
         metadata: ChunkMetadata {
                     base_offset: 0,
             source_type: "benchmark".into(),

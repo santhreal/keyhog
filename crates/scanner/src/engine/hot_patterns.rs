@@ -1,4 +1,6 @@
+#[cfg(feature = "simdsieve")]
 use super::*;
+#[cfg(feature = "simdsieve")]
 use std::collections::HashMap;
 
 #[cfg(feature = "simdsieve")]

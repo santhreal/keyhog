@@ -1,8 +1,10 @@
+#[cfg(feature = "entropy")]
 use super::*;
+#[cfg(feature = "entropy")]
 use std::collections::HashMap;
 
+#[cfg(feature = "entropy")]
 impl CompiledScanner {
-    #[cfg(feature = "entropy")]
     pub(crate) fn scan_entropy_fallback(
         &self,
         preprocessed: &ScannerPreprocessedText,

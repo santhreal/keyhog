@@ -58,6 +58,7 @@ async fn test_verify_large_payload() {
             timeout_ms: None,
             steps: vec![],
             allowed_domains: vec!["127.0.0.1".into(), "localhost".into()],
+            oob: None,
         }),
         ..Default::default()
     };
@@ -138,6 +139,7 @@ async fn test_verify_malformed_response() {
             timeout_ms: None,
             steps: vec![],
             allowed_domains: vec!["127.0.0.1".into(), "localhost".into()],
+            oob: None,
         }),
         ..Default::default()
     };
@@ -208,6 +210,7 @@ async fn test_verify_zero_concurrency() {
             timeout_ms: None,
             steps: vec![],
             allowed_domains: vec!["127.0.0.1".into(), "localhost".into()],
+            oob: None,
         }),
         ..Default::default()
     };
@@ -274,6 +277,7 @@ async fn test_verify_inflight_deadlock_on_duplicates() {
             timeout_ms: None,
             steps: vec![],
             allowed_domains: vec!["127.0.0.1".into(), "localhost".into()],
+            oob: None,
         }),
         ..Default::default()
     };
@@ -347,6 +351,7 @@ async fn test_verify_slow_loris_timeout() {
             service: "test".to_string(),
             steps: vec![],
             allowed_domains: vec!["127.0.0.1".into(), "localhost".into()],
+            oob: None,
         }),
         ..Default::default()
     };

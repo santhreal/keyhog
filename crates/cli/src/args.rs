@@ -323,7 +323,12 @@ pub struct ScanArgs {
     /// ignoring it (the prior behavior gave false confidence that an
     /// override had been applied).
     #[cfg(feature = "verify")]
-    #[arg(long, default_value = "oast.fun", value_name = "HOST", requires = "verify_oob")]
+    #[arg(
+        long,
+        default_value = "oast.fun",
+        value_name = "HOST",
+        requires = "verify_oob"
+    )]
     pub oob_server: String,
 
     /// Per-finding OOB wait timeout in seconds. Detector specs may set their
@@ -331,7 +336,12 @@ pub struct ScanArgs {
     /// bound. Lower = faster scans, higher = catches services with delayed
     /// webhooks (e.g., queued mail delivery). Requires `--verify-oob`.
     #[cfg(feature = "verify")]
-    #[arg(long, default_value = "30", value_name = "SECS", requires = "verify_oob")]
+    #[arg(
+        long,
+        default_value = "30",
+        value_name = "SECS",
+        requires = "verify_oob"
+    )]
     pub oob_timeout: u64,
 
     /// Show full credentials (default: redacted)

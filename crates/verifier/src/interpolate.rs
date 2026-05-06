@@ -163,20 +163,13 @@ mod oob_tests {
     fn interactsh_bare_substitutes_host() {
         let c = oob_companions();
         let out = interpolate("https://{{interactsh}}/x", "credential", &c);
-        assert_eq!(
-            out,
-            "https://abc123def456ghi789jkl0mnopqrstuv1.oast.fun/x"
-        );
+        assert_eq!(out, "https://abc123def456ghi789jkl0mnopqrstuv1.oast.fun/x");
     }
 
     #[test]
     fn interactsh_url_substitutes_full_url() {
         let c = oob_companions();
-        let out = interpolate(
-            "{\"callback\":\"{{interactsh.url}}\"}",
-            "credential",
-            &c,
-        );
+        let out = interpolate("{\"callback\":\"{{interactsh.url}}\"}", "credential", &c);
         assert!(out.contains("https://abc123def456ghi789jkl0mnopqrstuv1.oast.fun"));
         assert!(!out.contains("{{interactsh"));
     }

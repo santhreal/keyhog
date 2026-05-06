@@ -243,11 +243,8 @@ fn validate_verify_spec(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
 /// templates would resolve to surprising values. Reject the names so a
 /// future detector author gets a clear error instead of a debugging
 /// nightmare.
-const RESERVED_COMPANION_NAMES: &[&str] = &[
-    "__keyhog_oob_url",
-    "__keyhog_oob_host",
-    "__keyhog_oob_id",
-];
+const RESERVED_COMPANION_NAMES: &[&str] =
+    &["__keyhog_oob_url", "__keyhog_oob_host", "__keyhog_oob_id"];
 
 fn check_reserved_companion_names(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
     for (i, c) in spec.companions.iter().enumerate() {
@@ -696,8 +693,9 @@ body = '{"target":"https://{{interactsh}}/x"}'
 "#;
         let errs = errors_for(toml_src);
         assert!(
-            errs.iter()
-                .any(|e| e.contains("token is referenced") && e.contains("no [detector.verify.oob]")),
+            errs.iter().any(
+                |e| e.contains("token is referenced") && e.contains("no [detector.verify.oob]")
+            ),
             "expected token-without-oob error; got {errs:?}"
         );
     }
@@ -728,7 +726,10 @@ protocol = "http"
             .iter()
             .filter(|e| e.contains("oob") || e.contains("interactsh"))
             .collect();
-        assert!(oob_related.is_empty(), "unexpected OOB errors: {oob_related:?}");
+        assert!(
+            oob_related.is_empty(),
+            "unexpected OOB errors: {oob_related:?}"
+        );
     }
 
     #[test]
@@ -776,9 +777,13 @@ within_lines = 5
         use crate::spec::load_detectors_from_str;
         let mut suspicious = Vec::new();
         for (filename, toml_src) in crate::embedded_detector_tomls() {
-            let Ok(detectors) = load_detectors_from_str(toml_src) else { continue };
+            let Ok(detectors) = load_detectors_from_str(toml_src) else {
+                continue;
+            };
             for d in &detectors {
-                let Some(verify) = d.verify.as_ref() else { continue };
+                let Some(verify) = d.verify.as_ref() else {
+                    continue;
+                };
                 // Build the set of companion names referenced via
                 // `{{companion.X}}` in any verify template.
                 let mut substituted: std::collections::HashSet<String> =
@@ -795,21 +800,29 @@ within_lines = 5
                         }
                     }
                 };
-                if let Some(ref u) = verify.url { scan(u); }
-                if let Some(ref b) = verify.body { scan(b); }
-                for h in &verify.headers { scan(&h.value); }
+                if let Some(ref u) = verify.url {
+                    scan(u);
+                }
+                if let Some(ref b) = verify.body {
+                    scan(b);
+                }
+                for h in &verify.headers {
+                    scan(&h.value);
+                }
                 for step in &verify.steps {
                     scan(&step.url);
-                    if let Some(ref b) = step.body { scan(b); }
-                    for h in &step.headers { scan(&h.value); }
+                    if let Some(ref b) = step.body {
+                        scan(b);
+                    }
+                    for h in &step.headers {
+                        scan(&h.value);
+                    }
                     if let crate::AuthSpec::Header { template, .. } = &step.auth {
                         scan(template);
                     }
                 }
-                if let Some(ref auth) = verify.auth {
-                    if let crate::AuthSpec::Header { template, .. } = auth {
-                        scan(template);
-                    }
+                if let Some(crate::AuthSpec::Header { template, .. }) = &verify.auth {
+                    scan(template);
                 }
 
                 for c in &d.companions {
@@ -860,11 +873,21 @@ within_lines = 5
         let mut escape = false;
         while i < bytes.len() {
             let b = bytes[i];
-            if escape { escape = false; i += 1; continue; }
+            if escape {
+                escape = false;
+                i += 1;
+                continue;
+            }
             match b {
-                b'\\' => { escape = true; }
-                b'[' if !in_class => { in_class = true; }
-                b']' if in_class => { in_class = false; }
+                b'\\' => {
+                    escape = true;
+                }
+                b'[' if !in_class => {
+                    in_class = true;
+                }
+                b']' if in_class => {
+                    in_class = false;
+                }
                 b'(' if !in_class => {
                     // Distinguish (?: / (?i: / (?P<name>...) / (?<name>...) / (...)
                     if i + 1 < bytes.len() && bytes[i + 1] == b'?' {
@@ -923,11 +946,21 @@ within_lines = 5
         let mut escape = false;
         while i < bytes.len() {
             let b = bytes[i];
-            if escape { escape = false; i += 1; continue; }
+            if escape {
+                escape = false;
+                i += 1;
+                continue;
+            }
             match b {
-                b'\\' => { escape = true; }
-                b'[' if !in_class => { in_class = true; }
-                b']' if in_class => { in_class = false; }
+                b'\\' => {
+                    escape = true;
+                }
+                b'[' if !in_class => {
+                    in_class = true;
+                }
+                b']' if in_class => {
+                    in_class = false;
+                }
                 b'=' if !in_class => return true,
                 _ => {}
             }
@@ -958,13 +991,12 @@ within_lines = 5
 
         let mut errors: Vec<String> = Vec::new();
         for (filename, toml_src) in crate::embedded_detector_tomls() {
-            let Ok(detectors) = load_detectors_from_str(toml_src) else { continue };
+            let Ok(detectors) = load_detectors_from_str(toml_src) else {
+                continue;
+            };
             for d in &detectors {
-                let companion_names: std::collections::HashSet<&str> = d
-                    .companions
-                    .iter()
-                    .map(|c| c.name.as_str())
-                    .collect();
+                let companion_names: std::collections::HashSet<&str> =
+                    d.companions.iter().map(|c| c.name.as_str()).collect();
 
                 let check = |label: &str, field: &str| -> Option<String> {
                     if field.contains("{{") {
@@ -1012,15 +1044,26 @@ within_lines = 5
                                     errors.push(e);
                                 }
                             }
-                            AuthSpec::AwsV4 { access_key, secret_key, session_token, .. } => {
-                                if let Some(e) = check(&format!("{ctx} awsv4.access_key"), access_key) {
+                            AuthSpec::AwsV4 {
+                                access_key,
+                                secret_key,
+                                session_token,
+                                ..
+                            } => {
+                                if let Some(e) =
+                                    check(&format!("{ctx} awsv4.access_key"), access_key)
+                                {
                                     errors.push(e);
                                 }
-                                if let Some(e) = check(&format!("{ctx} awsv4.secret_key"), secret_key) {
+                                if let Some(e) =
+                                    check(&format!("{ctx} awsv4.secret_key"), secret_key)
+                                {
                                     errors.push(e);
                                 }
                                 if let Some(tok) = session_token {
-                                    if let Some(e) = check(&format!("{ctx} awsv4.session_token"), tok) {
+                                    if let Some(e) =
+                                        check(&format!("{ctx} awsv4.session_token"), tok)
+                                    {
                                         errors.push(e);
                                     }
                                 }
@@ -1078,7 +1121,9 @@ protocol = "http"
             .iter()
             .filter(|e| e.contains("oob") || e.contains("interactsh"))
             .collect();
-        assert!(oob_related.is_empty(), "header-token detection failed: {oob_related:?}");
+        assert!(
+            oob_related.is_empty(),
+            "header-token detection failed: {oob_related:?}"
+        );
     }
 }
-

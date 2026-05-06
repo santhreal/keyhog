@@ -9,6 +9,7 @@ pub mod fragment_cache;
 mod preprocessor;
 mod structural;
 
+#[allow(unused_imports)]
 pub(crate) use config::has_concatenation_indicators;
 pub use config::{LineMapping, MultilineConfig, PreprocessedText};
 pub(crate) use preprocessor::extract_prefix;

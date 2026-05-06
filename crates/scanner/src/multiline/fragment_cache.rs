@@ -86,7 +86,7 @@ impl FragmentCache {
             }
         }
 
-// Senior Audit §Phase 8: Proximity-Aware Reassembly (God-Mode Taint)
+        // Senior Audit §Phase 8: Proximity-Aware Reassembly (God-Mode Taint)
         // Brute-force O(N^2) join is replaced with proximity gating.
         // Only join fragments that are physically near each other (<100 lines)
         // or logically related. This eliminates combinatorial explosion.
@@ -94,7 +94,9 @@ impl FragmentCache {
             let mut candidates = Vec::new();
             for i in 0..cluster.len() {
                 for j in 0..cluster.len() {
-                    if i == j { continue; }
+                    if i == j {
+                        continue;
+                    }
                     let f1 = &cluster[i];
                     let f2 = &cluster[j];
 
@@ -103,7 +105,7 @@ impl FragmentCache {
                     } else {
                         // For cross-file, only join if they share the same directory scope
                         // (already handled by scoped_key usually, but we check again)
-                        true 
+                        true
                     };
 
                     if near {

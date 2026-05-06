@@ -61,7 +61,7 @@ fn chunk(data: &str) -> Chunk {
     Chunk {
         data: data.to_string(),
         metadata: ChunkMetadata {
-                    base_offset: 0,
+            base_offset: 0,
             source_type: "test".into(),
             path: Some("demo.conf".into()),
             commit: None,

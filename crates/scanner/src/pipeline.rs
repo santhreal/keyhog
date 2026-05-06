@@ -408,9 +408,7 @@ pub fn find_companion(
     // cleanly instead of panicking on a `&str[..]` slice — a single
     // bogus companion lookup must never crash a worker.
     let haystack = preprocessed.text.get(window_start..window_end)?;
-    let group = companion
-        .capture_group
-        .unwrap_or(FIRST_CAPTURE_GROUP_INDEX);
+    let group = companion.capture_group.unwrap_or(FIRST_CAPTURE_GROUP_INDEX);
     let line_range = (start + FIRST_LINE_NUMBER)..=end;
 
     // Capture-group fast path: when the regex has no groups, `find_iter` is

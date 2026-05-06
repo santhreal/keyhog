@@ -41,10 +41,11 @@ impl CompiledScanner {
     /// Architecture:
     ///   Phase 1: Parallel HS prefilter on raw bytes (no prep, no alloc)
     ///   Phase 2: Full extraction only on hit files (~5% of total)
+    #[allow(clippy::needless_return)] // return needed under non-simd cfg branch
     pub fn scan_coalesced(&self, chunks: &[keyhog_core::Chunk]) -> Vec<Vec<keyhog_core::RawMatch>> {
-        use rayon::prelude::*;
         #[cfg(feature = "simd")]
         use crate::hw_probe::ScanBackend;
+        use rayon::prelude::*;
 
         #[cfg(not(feature = "simd"))]
         {

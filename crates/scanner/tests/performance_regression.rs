@@ -18,7 +18,7 @@ fn make_chunk(data: &str) -> Chunk {
     Chunk {
         data: data.into(),
         metadata: ChunkMetadata {
-                    base_offset: 0,
+            base_offset: 0,
             source_type: "test".into(),
             path: Some("perf_test.txt".into()),
             commit: None,
@@ -130,7 +130,7 @@ fn cpu_fallback_completes_under_2s_on_4mib_corpus() {
         chunks.push(Chunk {
             data: data.into(),
             metadata: ChunkMetadata {
-                    base_offset: 0,
+                base_offset: 0,
                 source_type: "test/perf".into(),
                 ..Default::default()
             },

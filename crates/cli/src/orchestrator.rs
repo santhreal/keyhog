@@ -18,7 +18,7 @@ use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 const EXIT_LIVE_CREDENTIALS: u8 = 10;
 
@@ -79,9 +79,14 @@ impl ScanOrchestrator {
                 .with_config(scanner_config),
         );
 
-        let signatures: std::collections::HashSet<Arc<str>> = detectors.iter()
+        let signatures: std::collections::HashSet<Arc<str>> = detectors
+            .iter()
             .flat_map(|d| d.patterns.iter().map(|p| Arc::from(p.regex.as_str())))
-            .chain(detectors.iter().flat_map(|d| d.companions.iter().map(|c| Arc::from(c.regex.as_str()))))
+            .chain(
+                detectors
+                    .iter()
+                    .flat_map(|d| d.companions.iter().map(|c| Arc::from(c.regex.as_str()))),
+            )
             .collect();
 
         Ok(Self {
@@ -473,12 +478,11 @@ impl ScanOrchestrator {
         findings
     }
 
-    fn filter_and_resolve(&self,
+    fn filter_and_resolve(
+        &self,
         matches: Vec<RawMatch>,
         allowlist: &keyhog_core::allowlist::Allowlist,
     ) -> Vec<RawMatch> {
-        
-        
         let mut filtered = matches
             .into_iter()
             .filter(|m| {
@@ -504,24 +508,38 @@ impl ScanOrchestrator {
                 {
                     return false;
                 }
-                
-                if low_path.ends_with("/keyhog") || low_path == "keyhog" || low_path.contains("/detectors/") {
+
+                if low_path.ends_with("/keyhog")
+                    || low_path == "keyhog"
+                    || low_path.contains("/detectors/")
+                {
                     return false;
                 }
 
-                if low_path.contains("/tests/") || low_path.contains("/fixtures/") || low_path.contains("/benches/") {
+                if low_path.contains("/tests/")
+                    || low_path.contains("/fixtures/")
+                    || low_path.contains("/benches/")
+                {
                     return false;
                 }
 
                 if let Some(path) = m.location.file_path.as_deref() {
-                    if allowlist.is_path_ignored(path) { return false; }
+                    if allowlist.is_path_ignored(path) {
+                        return false;
+                    }
                 }
-                if allowlist.is_raw_hash_ignored(&m.credential_hash) { return false; }
+                if allowlist.is_raw_hash_ignored(&m.credential_hash) {
+                    return false;
+                }
                 if let Some(conf) = m.confidence {
-                    if !self.args.no_ml && conf < self.args.min_confidence.unwrap_or(0.3) { return false; }
+                    if !self.args.no_ml && conf < self.args.min_confidence.unwrap_or(0.3) {
+                        return false;
+                    }
                 }
                 if let Some(min_severity) = &self.args.severity {
-                    if m.severity < min_severity.to_severity() { return false; }
+                    if m.severity < min_severity.to_severity() {
+                        return false;
+                    }
                 }
                 true
             })

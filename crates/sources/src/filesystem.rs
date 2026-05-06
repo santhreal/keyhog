@@ -4,8 +4,8 @@
 use codewalk::{CodeWalker, WalkConfig};
 use keyhog_core::{Chunk, ChunkMetadata, Source, SourceError};
 use std::collections::HashSet;
-use std::path::{Path, PathBuf};
 use std::io::{Read, Seek, SeekFrom};
+use std::path::{Path, PathBuf};
 
 mod read;
 
@@ -268,7 +268,7 @@ impl Source for FilesystemSource {
                                         crate::strings::extract_printable_strings(&content, 8);
                                     if !strings.is_empty() {
                                         archive_chunks.push(Ok(Chunk {
-                                            data: keyhog_core::SensitiveString::join(&strings, "\n").into(),
+                                            data: keyhog_core::SensitiveString::join(&strings, "\n"),
                                             metadata: ChunkMetadata {
                                                 source_type: "filesystem/archive-binary".into(),
                                                 path: Some(format!(
@@ -347,7 +347,7 @@ if file_size > WINDOW_SIZE as u64 {
             };
 
             vec![Ok(Chunk {
-                data: content.into(),
+                data: content,
                 metadata: ChunkMetadata {
                     source_type: source_type.to_string(),
                     path: Some(path.display().to_string()),

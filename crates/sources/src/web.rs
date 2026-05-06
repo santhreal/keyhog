@@ -165,7 +165,7 @@ fn handle_js(resp: reqwest::blocking::Response, url: &str) -> Vec<Result<Chunk, 
         Ok(body) => vec![Ok(Chunk {
             data: body.into(),
             metadata: ChunkMetadata {
-                    base_offset: 0,
+                base_offset: 0,
                 source_type: "web:js".to_string(),
                 path: Some(url.to_string()),
                 commit: None,
@@ -249,7 +249,7 @@ fn handle_sourcemap(
         chunks.push(Ok(Chunk {
             data: body.into(),
             metadata: ChunkMetadata {
-                    base_offset: 0,
+                base_offset: 0,
                 source_type: "web:sourcemap:raw".to_string(),
                 path: Some(url.to_string()),
                 commit: None,
@@ -281,9 +281,9 @@ fn handle_wasm(resp: reqwest::blocking::Response, url: &str) -> Vec<Result<Chunk
     }
 
     vec![Ok(Chunk {
-        data: keyhog_core::SensitiveString::join(&strings, "\n").into(),
+        data: keyhog_core::SensitiveString::join(&strings, "\n"),
         metadata: ChunkMetadata {
-                    base_offset: 0,
+            base_offset: 0,
             source_type: "web:wasm".to_string(),
             path: Some(url.to_string()),
             commit: None,

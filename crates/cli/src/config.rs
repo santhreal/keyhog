@@ -216,10 +216,10 @@ pub fn apply_config_file(args: &mut ScanArgs) {
         }
     }
 
-    if let Some(verify) = config.verify {
+    if let Some(_verify) = config.verify {
         #[cfg(feature = "verify")]
         if !args.verify {
-            args.verify = verify;
+            args.verify = _verify;
         }
     }
 
@@ -235,10 +235,10 @@ pub fn apply_config_file(args: &mut ScanArgs) {
         }
     }
 
-    if let Some(max_commits) = config.max_commits {
+    if let Some(_max_commits) = config.max_commits {
         #[cfg(feature = "git")]
         if args.max_commits == 1000 {
-            args.max_commits = max_commits;
+            args.max_commits = _max_commits;
         }
     }
 

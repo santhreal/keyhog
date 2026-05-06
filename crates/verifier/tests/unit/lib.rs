@@ -56,6 +56,7 @@ async fn test_verify_all_logic() {
             // its target. Production paths use the per-service builtin
             // map and never need this.
             allowed_domains: vec!["127.0.0.1".into()],
+            oob: None,
         }),
         keywords: vec![],
         ..Default::default()

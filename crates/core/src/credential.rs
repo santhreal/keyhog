@@ -374,13 +374,17 @@ pub struct SensitiveString {
 
 impl SensitiveString {
     pub fn new(s: String) -> Self {
-        Self { inner: Arc::new(Zeroizing::new(s)) }
+        Self {
+            inner: Arc::new(Zeroizing::new(s)),
+        }
     }
 
     pub fn join(parts: &[SensitiveString], sep: &str) -> Self {
         let mut s = String::new();
         for (i, p) in parts.iter().enumerate() {
-            if i > 0 { s.push_str(sep); }
+            if i > 0 {
+                s.push_str(sep);
+            }
             s.push_str(p.as_str());
         }
         Self::new(s)

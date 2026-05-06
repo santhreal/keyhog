@@ -310,7 +310,7 @@ fn collect_tree_blobs_to_vec(
         chunks.push(Chunk {
             data: file_text.into(),
             metadata: ChunkMetadata {
-                    base_offset: 0,
+                base_offset: 0,
                 source_type: if in_head { "git/head" } else { "git/history" }.into(),
                 path: Some(path),
                 commit: Some(commit_id.to_string()),

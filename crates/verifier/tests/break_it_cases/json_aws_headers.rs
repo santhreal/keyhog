@@ -52,6 +52,7 @@ async fn test_verify_json_path_exhaustion() {
             timeout_ms: None,
             steps: vec![],
             allowed_domains: vec!["127.0.0.1".into(), "localhost".into()],
+            oob: None,
         }),
         ..Default::default()
     };
@@ -125,6 +126,7 @@ async fn test_verify_aws_sigv4_empty_keys() {
             timeout_ms: None,
             steps: vec![],
             allowed_domains: vec!["127.0.0.1".into(), "localhost".into()],
+            oob: None,
         }),
         ..Default::default()
     };
@@ -197,6 +199,7 @@ async fn test_verify_aws_sigv4_null_bytes() {
             timeout_ms: None,
             steps: vec![],
             allowed_domains: vec!["127.0.0.1".into(), "localhost".into()],
+            oob: None,
         }),
         ..Default::default()
     };
@@ -269,6 +272,7 @@ async fn test_verify_bad_header_templates() {
             timeout_ms: None,
             steps: vec![],
             allowed_domains: vec!["127.0.0.1".into(), "localhost".into()],
+            oob: None,
         }),
         ..Default::default()
     };

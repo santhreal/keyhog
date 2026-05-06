@@ -307,10 +307,7 @@ async fn combine_oob(
         .wait_for(&ctx.unique_id, ctx.spec.protocol.into(), timeout)
         .await;
 
-    metadata.insert(
-        "oob_unique_id".to_string(),
-        ctx.unique_id.clone(),
-    );
+    metadata.insert("oob_unique_id".to_string(), ctx.unique_id.clone());
     let observed = matches!(observation, OobObservation::Observed { .. });
     metadata.insert(
         "oob_observed".to_string(),

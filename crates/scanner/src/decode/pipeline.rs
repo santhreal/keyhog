@@ -174,7 +174,7 @@ pub(super) fn push_decoded_text_chunk(
     decoded_chunks.push(Chunk {
         data: text.into(),
         metadata: ChunkMetadata {
-                    base_offset: 0,
+            base_offset: 0,
             source_type: format!("{}/{}", chunk.metadata.source_type, decoder_name),
             path: chunk.metadata.path.clone(),
             commit: chunk.metadata.commit.clone(),

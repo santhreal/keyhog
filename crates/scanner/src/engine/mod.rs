@@ -565,7 +565,11 @@ impl CompiledScanner {
                     var_name: var_name_match.as_str().to_string(),
                     value: zeroize::Zeroizing::new(value_match.as_str().to_string()),
                     line: fragment_line,
-                    path: chunk.metadata.path.as_ref().map(|p| std::sync::Arc::from(p.as_str())),
+                    path: chunk
+                        .metadata
+                        .path
+                        .as_ref()
+                        .map(|p| std::sync::Arc::from(p.as_str())),
                 };
 
                 let candidates = self.fragment_cache.record_and_reassemble(fragment);

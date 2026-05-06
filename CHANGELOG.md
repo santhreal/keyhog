@@ -2,6 +2,68 @@
 
 All notable changes to KeyHog. Versions follow [Semantic Versioning](https://semver.org/).
 
+## v0.6.0 — 2026-05-06
+
+Out-of-band callback verification + broad robustness/detector fixes.
+
+### Added
+
+- **OOB verification** (`--verify-oob`): RSA-2048 + AES-256-CFB interactsh
+  client (`oast.fun` by default; `--oob-server HOST` to self-host). Detector
+  TOML gains an `[detector.verify.oob]` block with `protocol={dns,http,smtp,
+  any}`, `policy={oob_and_http,oob_only,oob_optional}`, and
+  `accept={dns,http,smtp,any}`. Probe payloads can interpolate
+  `{{interactsh_url}}`, `{{interactsh_host}}`, and `{{interactsh_id}}` to
+  embed a unique callback URL per probe; the session waits for a matching
+  hit before declaring the credential live. Documented in `docs/OOB.md`.
+- `keyhog_core::spec::validate` now audits companion-substitution capture
+  groups, reserved companion names (`__keyhog_oob_*`), and that every
+  `{{companion.X}}` / auth-field reference resolves to a declared companion.
+
+### Fixed
+
+- `extract_grouped_matches` (scanner): zero-width regex hits no longer
+  infinite-loop the matcher; capture-group walk reuses a single
+  `CaptureLocations` and aligns to UTF-8 boundaries; out-of-range detector
+  index now fails closed instead of panicking.
+- Required companions (`required = true`) actually short-circuit: prior
+  `unwrap_or_default()` swallowed the "missing required companion" signal
+  and shipped the finding anyway.
+- `OobSession::wait_for` race: registers the `Notified` waiter via
+  `Notified::enable()` before checking observations, so notifications fired
+  between the check and the await no longer get lost.
+- 8 detector verify specs that referenced undeclared companions or used
+  template strings in the auth-field slot would 401 every probe (Twilio
+  IoT, Akoya, Razorpay, Braintree sandbox, etc.). Each now declares the
+  companion it references.
+- Look-behind regex assertions (`(?<=`, `(?<!`) are no longer
+  misclassified as named capture groups by the spec validator.
+- `crates/sources/src/slack.rs`: `data: T.into()` syntax error in
+  `SlackResponse<T>` would have failed any build that exercised the slack
+  feature.
+
+### Performance
+
+- Aho-Corasick prefilter for `has_secret_keyword_fast` and
+  `has_generic_assignment_keyword` (single-pass).
+- `extract_inner_literals` AST walker promotes inner literals into the
+  prefilter alphabet (corpus coverage test pins ≥3 patterns promoted).
+- `find_companion` splits into a capture-group-free fast path
+  (`find_iter`) and a grouped path that reuses `CaptureLocations`.
+- Active-fallback bitmap precomputed at scanner construction; per-chunk
+  thread-local `ACTIVE_PATTERNS_POOL` avoids reallocation.
+- Filesystem reader: two-sided `looks_binary` early exit, streaming
+  UTF-16 decode, valid-UTF-8 fast path.
+- Slack source fetches per-channel history concurrently (rayon, 8 threads).
+
+### Hardening
+
+- `looks_binary` short-circuit verified against full-scan baseline across
+  page-boundary cases.
+- `open_file_safe` rejects symlinks on Windows (Unix already enforced).
+- Self-suppression list rewritten with `concat!()` to keep example
+  credentials out of the repo's literal string table.
+
 ## v0.3.0 — 2026-05-01
 
 The "legendary" wave: 18 Tier-A perf wins + 12 Tier-B moat innovations from the

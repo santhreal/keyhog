@@ -161,7 +161,7 @@ fn collect_chunks(
     chunks.push(Chunk {
         data: data.into(),
         metadata: ChunkMetadata {
-                    base_offset: 0,
+            base_offset: 0,
             source_type: "filesystem".into(),
             path: Some(path.display().to_string()),
             commit: None,

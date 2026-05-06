@@ -42,6 +42,7 @@ async fn test_verify_long_unicode_surrogates() {
             timeout_ms: None,
             steps: vec![],
             allowed_domains: vec!["127.0.0.1".into(), "localhost".into()],
+            oob: None,
         }),
         ..Default::default()
     };
@@ -114,6 +115,7 @@ fn test_verify_deeply_nested_interpolations_inner() {
                     timeout_ms: None,
                     steps: vec![],
                     allowed_domains: vec!["127.0.0.1".into(), "localhost".into()],
+            oob: None,
                 }),
             ..Default::default()
             };
@@ -166,6 +168,7 @@ async fn test_verify_duplicate_entries_same_key() {
             timeout_ms: None,
             steps: vec![],
             allowed_domains: vec!["127.0.0.1".into(), "localhost".into()],
+            oob: None,
         }),
         ..Default::default()
     };

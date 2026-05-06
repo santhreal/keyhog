@@ -136,7 +136,7 @@ fn stream_git_history_chunks(
                             return Some(Ok(Chunk {
                                 data: current_content.trim().to_string().into(),
                                 metadata: ChunkMetadata {
-                    base_offset: 0,
+                                    base_offset: 0,
                                     source_type: "git-history".into(),
                                     path: Some(path.clone()),
                                     commit: Some(commit.clone()),
@@ -169,7 +169,7 @@ fn stream_git_history_chunks(
                         Some(Chunk {
                             data: current_content.trim().to_string().into(),
                             metadata: ChunkMetadata {
-                    base_offset: 0,
+                                base_offset: 0,
                                 source_type: "git-history".into(),
                                 path: Some(path.clone()),
                                 commit: Some(commit.clone()),
@@ -218,7 +218,7 @@ fn stream_git_history_chunks(
                         Some(Chunk {
                             data: current_content.trim().to_string().into(),
                             metadata: ChunkMetadata {
-                    base_offset: 0,
+                                base_offset: 0,
                                 source_type: "git-history".into(),
                                 path: Some(path.clone()),
                                 commit: Some(commit.clone()),
@@ -281,7 +281,7 @@ fn stream_git_history_chunks(
                     return Some(Ok(Chunk {
                         data: chunk_content.into(),
                         metadata: ChunkMetadata {
-                    base_offset: 0,
+                            base_offset: 0,
                             source_type: "git-history".into(),
                             path: Some(path.clone()),
                             commit: Some(commit.clone()),

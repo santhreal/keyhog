@@ -320,8 +320,8 @@ mod tests {
     #[test]
     fn looks_binary_dense_controls_is_binary() {
         let mut bytes = vec![b'a'; 1024];
-        for i in 0..200 {
-            bytes[i] = 0x03; // ETX, well over the 5% threshold
+        for b in bytes.iter_mut().take(200) {
+            *b = 0x03; // ETX, well over the 5% threshold
         }
         assert!(looks_binary(&bytes));
     }
@@ -331,8 +331,8 @@ mod tests {
         // Below threshold — exactly 5% would equal `suspicious * 20 == total`,
         // which is `>` test → still text.
         let mut bytes = vec![b'a'; 1000];
-        for i in 0..50 {
-            bytes[i] = 0x03;
+        for b in bytes.iter_mut().take(50) {
+            *b = 0x03;
         }
         assert!(!looks_binary(&bytes));
     }
@@ -346,7 +346,8 @@ mod tests {
         for size in [1, 100, 4095, 4096, 4097, 8192, 16384, 100_000] {
             for density in [0u8, 1, 4, 5, 6, 50] {
                 let mut bytes = vec![b'.'; size];
-                for i in (0..size).step_by(100usize.saturating_div(density.max(1) as usize).max(1))
+                for i in (0..size)
+                    .step_by(100usize.saturating_div(density.max(1) as usize).max(1))
                     .take((size * density as usize) / 100)
                 {
                     bytes[i] = 0x03;
@@ -447,8 +448,8 @@ mod tests {
         // Valid UTF-8 but with >5% C0 controls in the first 4 KiB —
         // should hit the looks_binary_header_check path.
         let mut bytes = vec![b'a'; 4096];
-        for i in 0..400 {
-            bytes[i] = 0x01;
+        for b in bytes.iter_mut().take(400) {
+            *b = 0x01;
         }
         assert!(decode_text_file(&bytes).is_none());
     }

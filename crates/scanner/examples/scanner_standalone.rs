@@ -20,7 +20,7 @@ fn main() -> Result<(), keyhog_scanner::ScanError> {
     let matches = scanner.scan(&Chunk {
         data: "TOKEN=demo_ABC12345".into(),
         metadata: ChunkMetadata {
-                    base_offset: 0,
+            base_offset: 0,
             source_type: "example".into(),
             path: Some("example.env".into()),
             commit: None,

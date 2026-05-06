@@ -14,12 +14,7 @@ mod timeouts;
 /// that wasn't compiled in, which fails resolution on stable rustc
 /// (especially on Windows where `--no-default-features` is the
 /// release profile we ship for the no-Hyperscan build).
-#[cfg(any(
-    feature = "web",
-    feature = "github",
-    feature = "slack",
-    feature = "s3"
-))]
+#[cfg(any(feature = "web", feature = "github", feature = "slack", feature = "s3"))]
 pub mod reqwest {
     pub use ::reqwest::*;
 }

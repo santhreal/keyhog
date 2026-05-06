@@ -325,6 +325,7 @@ pub struct DetectorFile {
 
 /// Errors returned while loading or validating detector specifications.
 #[derive(Debug, Error)]
+#[allow(clippy::result_large_err)] // SpecError variants include 128-byte toml::de::Error; boxing would be a breaking API change.
 pub enum SpecError {
     #[error(
         "failed to read detector file {path}: {source}. Fix: check the detector path exists and that the file is readable TOML"

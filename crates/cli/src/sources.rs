@@ -1,8 +1,9 @@
 //! Source factory for the KeyHog CLI.
 
 use crate::args::ScanArgs;
-use anyhow::{Context, Result};
+use anyhow::Result;
 use keyhog_core::Source;
+#[cfg(feature = "git")]
 use std::path::PathBuf;
 use std::sync::Arc;
 

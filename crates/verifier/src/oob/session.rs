@@ -28,7 +28,7 @@ use tokio::sync::Notify;
 use tokio::task::JoinHandle;
 use tracing::{debug, info, warn};
 
-use super::client::{InteractshClient, Interaction, InteractionProtocol};
+use super::client::{Interaction, InteractionProtocol, InteractshClient};
 
 /// Runtime configuration for the OOB session. Surfaced through the CLI as
 /// `--verify-oob`, `--oob-server`, `--oob-timeout`.
@@ -102,7 +102,10 @@ impl OobSession {
     /// Boot the session: register with the collector and spawn the poller.
     /// Errors here are surface-level — caller logs and continues with OOB
     /// disabled rather than aborting the scan.
-    pub async fn start(http: Client, config: OobConfig) -> Result<Arc<Self>, super::InteractshError> {
+    pub async fn start(
+        http: Client,
+        config: OobConfig,
+    ) -> Result<Arc<Self>, super::InteractshError> {
         let client = InteractshClient::register(http, &config.server).await?;
         let client = Arc::new(client);
         info!(
@@ -360,13 +363,13 @@ pub enum OobAccept {
 
 impl OobAccept {
     fn matches(self, p: InteractionProtocol) -> bool {
-        match (self, p) {
-            (Self::Any, _) => true,
-            (Self::Dns, InteractionProtocol::Dns) => true,
-            (Self::Http, InteractionProtocol::Http) => true,
-            (Self::Smtp, InteractionProtocol::Smtp) => true,
-            _ => false,
-        }
+        matches!(
+            (self, p),
+            (Self::Any, _)
+                | (Self::Dns, InteractionProtocol::Dns)
+                | (Self::Http, InteractionProtocol::Http)
+                | (Self::Smtp, InteractionProtocol::Smtp)
+        )
     }
 }
 
@@ -458,7 +461,10 @@ mod tests {
         OobSession::for_test(client, config)
     }
 
-    fn fake_interaction(unique_id: &str, protocol: InteractionProtocol) -> super::super::client::Interaction {
+    fn fake_interaction(
+        unique_id: &str,
+        protocol: InteractionProtocol,
+    ) -> super::super::client::Interaction {
         super::super::client::Interaction {
             unique_id: unique_id.to_string(),
             protocol,
@@ -479,7 +485,8 @@ mod tests {
         let s = Arc::clone(&session);
         let id_clone = id.to_string();
         let task = tokio::spawn(async move {
-            s.wait_for(&id_clone, OobAccept::Http, Duration::from_secs(2)).await
+            s.wait_for(&id_clone, OobAccept::Http, Duration::from_secs(2))
+                .await
         });
         tokio::time::sleep(Duration::from_millis(50)).await;
         // Now store + notify. With the old code (no enable() before peek)
@@ -525,7 +532,8 @@ mod tests {
         // doesn't satisfy the OobAccept::Http filter.
         let s = Arc::clone(&session);
         let task = tokio::spawn(async move {
-            s.wait_for(id, OobAccept::Http, Duration::from_millis(500)).await
+            s.wait_for(id, OobAccept::Http, Duration::from_millis(500))
+                .await
         });
         tokio::time::sleep(Duration::from_millis(50)).await;
         // wait_for is parked. Verdict: NotObserved within the 500ms timeout
@@ -545,7 +553,8 @@ mod tests {
         let id = "shutdownidshutdownidshutdownidshu";
         let s = Arc::clone(&session);
         let task = tokio::spawn(async move {
-            s.wait_for(id, OobAccept::Http, Duration::from_secs(60)).await
+            s.wait_for(id, OobAccept::Http, Duration::from_secs(60))
+                .await
         });
         tokio::time::sleep(Duration::from_millis(50)).await;
         let start = Instant::now();
@@ -555,7 +564,10 @@ mod tests {
         // shutdown raced with a spurious wakeup-with-empty-DashMap. Both
         // are acceptable; what's NOT acceptable is a 60-second wait.
         assert!(
-            matches!(obs, OobObservation::Disabled(_) | OobObservation::NotObserved),
+            matches!(
+                obs,
+                OobObservation::Disabled(_) | OobObservation::NotObserved
+            ),
             "expected Disabled or NotObserved post-shutdown; got {obs:?}"
         );
         assert!(

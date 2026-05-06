@@ -6,6 +6,7 @@ use std::time::Duration;
 pub const HTTP_REQUEST: Duration = Duration::from_secs(30);
 
 /// Shallow `git clone` for org scans (and other long-running subprocess work).
+#[cfg(feature = "github")]
 pub const GIT_CLONE: Duration = Duration::from_secs(300);
 
 /// Ghidra `analyzeHeadless` wall-clock budget.

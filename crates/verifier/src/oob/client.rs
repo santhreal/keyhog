@@ -113,8 +113,7 @@ impl InteractshClient {
     /// fixtures still see consistent crypto material.
     #[cfg(test)]
     pub(crate) fn for_test(server: &str) -> Self {
-        let private_key = RsaPrivateKey::new(&mut OsRng, 1024)
-            .expect("test RSA key generates");
+        let private_key = RsaPrivateKey::new(&mut OsRng, 1024).expect("test RSA key generates");
         Self {
             http: Client::new(),
             server: normalize_server(server),
@@ -234,8 +233,7 @@ impl InteractshClient {
         // RSA-2048 keygen happens on a blocking thread — it's CPU-bound for
         // ~100ms and would otherwise stall the runtime.
         let private_key = tokio::task::spawn_blocking(|| {
-            RsaPrivateKey::new(&mut OsRng, 2048)
-                .map_err(|e| InteractshError::KeyGen(e.to_string()))
+            RsaPrivateKey::new(&mut OsRng, 2048).map_err(|e| InteractshError::KeyGen(e.to_string()))
         })
         .await
         .map_err(|e| InteractshError::KeyGen(format!("join error: {e}")))??;
@@ -306,7 +304,11 @@ impl InteractshClient {
         let unique_id = format!("{}{}", self.correlation_id, suffix);
         let host = format!("{}.{}", unique_id, self.server_host());
         let url = format!("https://{host}");
-        MintedUrl { unique_id, host, url }
+        MintedUrl {
+            unique_id,
+            host,
+            url,
+        }
     }
 
     /// Poll once. Returns every interaction the collector has buffered for
@@ -353,7 +355,9 @@ impl InteractshClient {
             match decrypt_entry(&aes_key, &entry) {
                 Ok(Some(interaction)) => out.push(interaction),
                 Ok(None) => {} // unparseable JSON — skip, don't fail the batch
-                Err(e) => warn!(target: "keyhog::oob", error = %e, "interactsh entry decrypt failed; skipping"),
+                Err(e) => {
+                    warn!(target: "keyhog::oob", error = %e, "interactsh entry decrypt failed; skipping")
+                }
             }
         }
         Ok(out)
@@ -503,8 +507,14 @@ mod tests {
     #[test]
     fn protocol_parse_is_case_insensitive() {
         assert_eq!(InteractionProtocol::parse("DNS"), InteractionProtocol::Dns);
-        assert_eq!(InteractionProtocol::parse("Http"), InteractionProtocol::Http);
-        assert_eq!(InteractionProtocol::parse("smtp-mail"), InteractionProtocol::Smtp);
+        assert_eq!(
+            InteractionProtocol::parse("Http"),
+            InteractionProtocol::Http
+        );
+        assert_eq!(
+            InteractionProtocol::parse("smtp-mail"),
+            InteractionProtocol::Smtp
+        );
         assert_eq!(
             InteractionProtocol::parse("websocket"),
             InteractionProtocol::Other
@@ -532,7 +542,9 @@ mod tests {
         })
         .to_string();
         let mut buf = payload.as_bytes().to_vec();
-        Enc::new_from_slices(&aes_key, &iv).unwrap().encrypt(&mut buf);
+        Enc::new_from_slices(&aes_key, &iv)
+            .unwrap()
+            .encrypt(&mut buf);
 
         let mut wire = Vec::with_capacity(16 + buf.len());
         wire.extend_from_slice(&iv);
@@ -567,7 +579,9 @@ mod tests {
         use aes::Aes256;
         use cfb_mode::cipher::{AsyncStreamCipher, KeyIvInit};
         type Enc = cfb_mode::Encryptor<Aes256>;
-        Enc::new_from_slices(&aes_key, &iv).unwrap().encrypt(&mut buf);
+        Enc::new_from_slices(&aes_key, &iv)
+            .unwrap()
+            .encrypt(&mut buf);
         let mut wire = iv.to_vec();
         wire.extend_from_slice(&buf);
         let b64 = B64.encode(&wire);

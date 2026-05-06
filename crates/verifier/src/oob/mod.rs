@@ -42,5 +42,5 @@
 mod client;
 mod session;
 
-pub use client::{InteractshClient, InteractshError, Interaction, InteractionProtocol};
+pub use client::{Interaction, InteractionProtocol, InteractshClient, InteractshError};
 pub use session::{OobConfig, OobObservation, OobSession};
