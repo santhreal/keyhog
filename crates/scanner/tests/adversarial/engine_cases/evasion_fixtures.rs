@@ -53,8 +53,9 @@ fn scan_fixture(rel: &str) -> Vec<keyhog_core::RawMatch> {
     let data = std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("read {} failed: {e}", path.display()));
     let chunk = Chunk {
-        data,
+        data: data.into(),
         metadata: ChunkMetadata {
+                    base_offset: 0,
             source_type: "test/evasion-fixture".into(),
             path: Some(path.display().to_string()),
             commit: None,
@@ -140,6 +141,7 @@ unrelated = 'foo' + 'bar'\n\
     let chunk = Chunk {
         data: synthetic.into(),
         metadata: ChunkMetadata {
+                    base_offset: 0,
             source_type: "test/synthetic".into(),
             path: Some("synthetic.py".into()),
             commit: None,

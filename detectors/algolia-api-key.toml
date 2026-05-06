@@ -22,6 +22,8 @@ within_lines = 5
 [detector.verify]
 method = "GET"
 url = "https://{{companion.application_id}}-dsn.algolia.net/1/indexes"
+# `{{companion.application_id}}` fills the subdomain only; pin the apex.
+allowed_domains = ["algolia.net"]
 
 [detector.verify.auth]
 type = "header"

@@ -1,6 +1,6 @@
 [package]
 name = "keyhog"
-description = "keyhog scans source trees, git history, Docker images, and S3 buckets for leaked credentials"
+description = "keyhog — detects leaked credentials in source trees, git history, and cloud storage"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -36,7 +36,8 @@ default = [
     "docker",                   # Docker image scanning
     "verify",                   # Live credential verification
 ]
-fast = []  # Override: pattern matching only, no ML/decode. For pre-commit hooks.
+# Unused Cargo flag — use `keyhog scan --fast` at runtime for pre-commit speed.
+fast = []
 full = [
     "keyhog-scanner/ml",
     "keyhog-scanner/entropy",

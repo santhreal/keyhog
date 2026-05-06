@@ -22,11 +22,20 @@ group = 1
 
 [[detector.companions]]
 name = "vonage_api_secret"
+# Original anchored form: capture group is auto-detected by the scanner
+# (compiler.rs:369), so `{{companion.vonage_api_secret}}` resolves to just
+# the 16-hex secret value, not the surrounding `VONAGE_API_SECRET=...`
+# declaration. Without the anchor we'd false-fire on every random 16-hex
+# string in scope.
 regex = "(?:VONAGE_API_SECRET|vonage_api_secret)[\"\\'\\s]*[=:]\\s*[\"\\']?([a-f0-9]{16})[\"\\']?"
 within_lines = 5
 [detector.verify]
 method = "GET"
-url = "https://api.opentok.com/v2/project/{match}/archive"
+# Earlier this used single-brace `{match}` which interpolate.rs ignored;
+# the URL went out as a literal `{match}` segment. `{{match}}` is the
+# correct token.
+url = "https://api.opentok.com/v2/project/{{match}}/archive"
+allowed_domains = ["opentok.com"]
 
 [detector.verify.auth]
 type = "basic"

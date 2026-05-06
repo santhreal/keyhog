@@ -97,12 +97,23 @@ pub fn anomalies_to_metadata(analysis: &JwtAnalysis) -> Option<BTreeMap<String, 
 /// Returns `true` when `s` looks like a JWT (three base64url segments).
 /// Cheap shape check — does NOT decode.
 pub fn looks_like_jwt(s: &str) -> bool {
+    const MAX_JWT_SEGMENT_LEN: usize = 16 * 1024; // 16KB limit per segment
+
     let mut parts = s.split('.');
     let (Some(h), Some(p), Some(sig), None) =
         (parts.next(), parts.next(), parts.next(), parts.next())
     else {
         return false;
     };
+
+    // Length gate to prevent quadratic DoS on pathological inputs (millions of dots)
+    if h.len() > MAX_JWT_SEGMENT_LEN
+        || p.len() > MAX_JWT_SEGMENT_LEN
+        || sig.len() > MAX_JWT_SEGMENT_LEN
+    {
+        return false;
+    }
+
     !h.is_empty()
         && !p.is_empty()
         && !sig.is_empty()

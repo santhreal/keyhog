@@ -187,7 +187,6 @@ pub fn apply_config_file(args: &mut ScanArgs) {
     }
 
     if let Some(_no_entropy) = config.no_entropy {
-        #[cfg(feature = "full")]
         if !args.no_entropy {
             args.no_entropy = _no_entropy;
         }
@@ -264,14 +263,12 @@ pub fn apply_config_file(args: &mut ScanArgs) {
     }
 
     if let Some(_entropy_source) = config.entropy_source_files {
-        #[cfg(feature = "full")]
         if !args.entropy_source_files {
             args.entropy_source_files = _entropy_source;
         }
     }
 
     if let Some(_entropy_threshold) = config.entropy_threshold {
-        #[cfg(feature = "full")]
         if args.entropy_threshold.is_none() {
             args.entropy_threshold = Some(_entropy_threshold);
         }

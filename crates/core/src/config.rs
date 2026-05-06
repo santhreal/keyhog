@@ -69,7 +69,8 @@ impl Default for ScanConfig {
             // through, drowning real findings in noise. Detector
             // configs that want the looser bar can opt back in.
             min_confidence: 0.5,
-            max_decode_depth: 3,
+            // Aligned with CLI / scanner defaults (`ScannerConfig` derives from this).
+            max_decode_depth: 10,
             entropy_enabled: true,
             entropy_in_source_files: false,
             entropy_threshold: 4.5,
@@ -79,12 +80,54 @@ impl Default for ScanConfig {
             ml_enabled: true,
             ml_weight: 0.5,
             unicode_normalization: true,
-            decode_size_limit: 64 * 1024 * 1024,
+            // Per-chunk decode-through ceiling (conservative vs multi‑MiB blobs).
+            decode_size_limit: 512 * 1024,
             max_matches_per_chunk: 1000,
             known_prefixes: vec!["AKIA".into(), "ASIA".into(), "ghp_".into(), "sk_".into()],
-            secret_keywords: vec!["password".into(), "secret".into(), "key".into()],
-            test_keywords: vec!["test".into(), "dummy".into(), "mock".into()],
-            placeholder_keywords: vec!["example".into(), "your_".into(), "placeholder".into()],
+            secret_keywords: vec![
+                "password".into(),
+                "passwd".into(),
+                "pwd".into(),
+                "secret".into(),
+                "token".into(),
+                "api_key".into(),
+                "apikey".into(),
+                "api-key".into(),
+                "access_key".into(),
+                "auth_token".into(),
+                "auth_key".into(),
+                "private_key".into(),
+                "client_secret".into(),
+                "encryption_key".into(),
+                "signing_key".into(),
+                "bearer".into(),
+                "credential".into(),
+                "license_key".into(),
+            ],
+            test_keywords: vec![
+                "test".into(),
+                "mock".into(),
+                "fake".into(),
+                "dummy".into(),
+                "stub".into(),
+                "fixture".into(),
+                "example".into(),
+                "sample".into(),
+                "sandbox".into(),
+                "staging".into(),
+            ],
+            placeholder_keywords: vec![
+                "change_me".into(),
+                "changeme".into(),
+                "replace_me".into(),
+                "todo".into(),
+                "fixme".into(),
+                "your_".into(),
+                "insert_".into(),
+                "put_your".into(),
+                "fill_in".into(),
+                "<your".into(),
+            ],
         }
     }
 }
@@ -135,6 +178,7 @@ impl ScanConfig {
 }
 
 /// List of filenames that typically contain secrets (e.g. .env, config.json).
+/// Return a list of filenames that typically contain secrets (e.g., .env, id_rsa).
 pub fn secret_filenames() -> Vec<String> {
     vec![
         ".env",

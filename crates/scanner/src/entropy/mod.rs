@@ -23,7 +23,14 @@ pub const SENSITIVE_FILE_VERY_HIGH_ENTROPY_THRESHOLD: f64 = 5.5;
 /// credential strings. The cache eliminates redundant entropy computations
 /// using a fast hash of the input as key. Cache is bounded to prevent
 /// unbounded memory growth on adversarial input.
+/// Compute the Shannon entropy of a byte slice.
 pub fn shannon_entropy(data: &[u8]) -> f64 {
+    // Length gate: don't cache entropy for massive buffers (e.g. minified JS)
+    // that won't repeat exactly. Just calculate directly.
+    if data.len() > 1024 {
+        return shannon_entropy_uncached(data);
+    }
+
     use std::cell::RefCell;
     use std::collections::HashMap;
 
@@ -59,6 +66,7 @@ fn shannon_entropy_uncached(data: &[u8]) -> f64 {
 }
 
 /// Compute entropy normalized to the range `0.0..=1.0`.
+/// Compute entropy normalized to the range 0.0..=1.0.
 pub fn normalized_entropy(data: &[u8]) -> f64 {
     if data.is_empty() {
         return 0.0;
@@ -100,6 +108,7 @@ pub struct EntropyMatch {
 }
 
 /// Decide whether entropy scanning should run for the given path.
+/// Check if entropy analysis is appropriate for a given file path.
 pub fn is_entropy_appropriate(path: Option<&str>, allow_source_files: bool) -> bool {
     let Some(path) = path else { return true };
     let lower = path.to_lowercase();

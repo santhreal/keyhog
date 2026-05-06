@@ -159,8 +159,9 @@ fn collect_chunks(
     };
     *loaded_lines += data.bytes().filter(|byte| *byte == b'\n').count();
     chunks.push(Chunk {
-        data,
+        data: data.into(),
         metadata: ChunkMetadata {
+                    base_offset: 0,
             source_type: "filesystem".into(),
             path: Some(path.display().to_string()),
             commit: None,

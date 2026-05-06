@@ -27,11 +27,19 @@ group = 1
 
 [[detector.companions]]
 name = "workspace_url"
+# Anchored to a `DATABRICKS_HOST=` / `databricks_workspace=` declaration so a
+# stray cloud.databricks.com URL in a comment doesn't qualify; the auto-
+# detected capture group makes `{{companion.workspace_url}}` resolve to
+# just the URL portion. (CompiledCompanion picks group 1 whenever the
+# regex has any capture group — see scanner/compiler.rs:369.)
 regex = "(?:DATABRICKS|databricks)[._-]?(?:host|workspace)[=:\\s\"'']+(https?://[a-z0-9-]+\\.cloud\\.databricks\\.com)"
 within_lines = 5
 [detector.verify]
 method = "GET"
 url = "{{companion.workspace_url}}/api/2.0/token/get"
+# Companion regex pins the host to *.cloud.databricks.com, but the
+# allowlist makes that explicit and authoritative.
+allowed_domains = ["cloud.databricks.com"]
 
 [detector.verify.auth]
 type = "header"

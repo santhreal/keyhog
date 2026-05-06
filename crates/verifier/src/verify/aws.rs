@@ -174,6 +174,13 @@ async fn build_sigv4_request(
         .await
         .map_err(|e| format!("{:?}", e.result))?;
 
+    if resp_body.contains("RequestTimeTooSkewed") || resp_body.contains("SignatureDoesNotMatch") {
+        tracing::warn!(
+            status,
+            "AWS verification failure indicates clock skew or invalid signature. Check system time."
+        );
+    }
+
     if status == 200 {
         let mut metadata = HashMap::new();
         if let Ok(json) = serde_json::from_str::<serde_json::Value>(&resp_body) {

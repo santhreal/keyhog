@@ -14,9 +14,20 @@ keywords = ["xau_", "XATA_API_KEY", "xata.io"]
 regex = 'xau_[a-zA-Z0-9_-]{40,}'
 description = "Xata API key (xau_ prefix)"
 
+# Each Xata workspace lives under `<workspace>-<region>.xata.sh`. The
+# previous verify spec used single-brace `{workspace}.{region}` template
+# syntax that the interpolator never honored — every verification hit a
+# literal `{workspace}.{region}.xata.sh` and 4xx'd. Capture the workspace
+# URL via a companion and template the actual host into the verify URL.
+[[detector.companions]]
+name = "xata_workspace_url"
+regex = 'https://[a-z0-9-]+\.xata\.sh'
+within_lines = 5
+
 [detector.verify]
 method = "GET"
-url = "https://{workspace}.{region}.xata.sh/db"
+url = "{{companion.xata_workspace_url}}/db"
+allowed_domains = ["xata.sh"]
 
 [detector.verify.auth]
 type = "bearer"

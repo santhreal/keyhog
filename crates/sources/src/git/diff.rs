@@ -146,8 +146,9 @@ fn stream_added_lines(
                     if let Some(ref path) = current_path {
                         if !current_content.trim().is_empty() {
                             return Some(Ok(Chunk {
-                                data: current_content.trim().to_string(),
+                                data: current_content.trim().to_string().into(),
                                 metadata: ChunkMetadata {
+                    base_offset: 0,
                                     source_type: "git-diff".into(),
                                     path: Some(path.clone()),
                                     commit: Some(head_commit.clone()),
@@ -170,8 +171,9 @@ fn stream_added_lines(
                 if let Some(path) = prev_path {
                     if !prev_content.trim().is_empty() {
                         return Some(Ok(Chunk {
-                            data: prev_content.trim().to_string(),
+                            data: prev_content.trim().to_string().into(),
                             metadata: ChunkMetadata {
+                    base_offset: 0,
                                 source_type: "git-diff".into(),
                                 path: Some(path),
                                 commit: Some(head_commit.clone()),
@@ -217,8 +219,9 @@ fn stream_added_lines(
                         let chunk_content = current_content.trim().to_string();
                         current_content = String::new();
                         return Some(Ok(Chunk {
-                            data: chunk_content,
+                            data: chunk_content.into(),
                             metadata: ChunkMetadata {
+                    base_offset: 0,
                                 source_type: "git-diff".into(),
                                 path: Some(path.clone()),
                                 commit: Some(head_commit.clone()),

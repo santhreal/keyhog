@@ -43,7 +43,7 @@ pub fn build_raw_match(
                 .as_ref()
                 .map(|p| scan_state.intern_metadata(p)),
             line: Some(line),
-            offset,
+            offset: offset + chunk.metadata.base_offset,
             commit: chunk
                 .metadata
                 .commit
@@ -75,6 +75,7 @@ pub fn local_context_window(text: &str, line: usize, radius: usize) -> String {
     lines[start..end].join("\n")
 }
 
+/// Compute the byte offsets for every line in a string.
 pub fn compute_line_offsets(text: &str) -> Vec<usize> {
     let mut offsets = vec![0];
     for (idx, _) in text.match_indices('\n') {
@@ -100,7 +101,7 @@ pub fn normalize_scannable_chunk<'a>(chunk: &'a Chunk, owned: &'a mut Option<Chu
     let normalized = crate::normalize_chunk_data(&chunk.data);
     if let Cow::Owned(data) = normalized {
         *owned = Some(Chunk {
-            data,
+            data: data.into(),
             metadata: chunk.metadata.clone(),
         });
         owned.as_ref().unwrap_or(chunk)
@@ -117,6 +118,7 @@ fn upper_contains_token(upper: &str, token: &str) -> bool {
     })
 }
 
+/// Check if a credential should be suppressed (e.g., if it is a known example token).
 pub fn should_suppress_known_example_credential(
     credential: &str,
     path: Option<&str>,
@@ -406,20 +408,69 @@ pub fn find_companion(
     // cleanly instead of panicking on a `&str[..]` slice — a single
     // bogus companion lookup must never crash a worker.
     let haystack = preprocessed.text.get(window_start..window_end)?;
+    let group = companion
+        .capture_group
+        .unwrap_or(FIRST_CAPTURE_GROUP_INDEX);
+    let line_range = (start + FIRST_LINE_NUMBER)..=end;
 
-    for captures in companion.regex.captures_iter(haystack) {
-        let Some(m) = captures.get(companion.capture_group.unwrap_or(FIRST_CAPTURE_GROUP_INDEX))
-        else {
-            continue;
-        };
-        if m.len() > 4096 {
-            continue; // Prevent memory issues from excessively long companion matches
-        }
-        if let Some(line) = preprocessed.line_for_offset(window_start + m.start()) {
-            if (start + FIRST_LINE_NUMBER..=end).contains(&line) {
-                return Some(m.as_str().to_string());
+    // Capture-group fast path: when the regex has no groups, `find_iter` is
+    // strictly cheaper than `captures_iter` — `find` allocates no
+    // `Captures` object per iteration. The previous unconditional
+    // `captures_iter` paid for that allocation on every match across every
+    // companion lookup in every scan.
+    if companion.capture_group.is_none() {
+        for m in companion.regex.find_iter(haystack) {
+            if m.len() > 4096 {
+                continue;
+            }
+            if let Some(line) = preprocessed.line_for_offset(window_start + m.start()) {
+                if line_range.contains(&line) {
+                    return Some(m.as_str().to_string());
+                }
             }
         }
+        return None;
+    }
+
+    // Capture-group path: reuse one `CaptureLocations` buffer across every
+    // iter tick. `captures_iter` allocates a fresh `Captures` per match;
+    // `captures_read_at` writes into the borrowed buffer instead.
+    let mut locs = companion.regex.capture_locations();
+    let mut cursor = 0usize;
+    let bytes_total = haystack.len();
+    while cursor <= bytes_total {
+        let Some(whole) = companion
+            .regex
+            .captures_read_at(&mut locs, haystack, cursor)
+        else {
+            break;
+        };
+        // Advance the cursor before any branch that might `continue`, to
+        // keep the loop monotonic. Zero-width matches bump by one byte
+        // and we then align onto a UTF-8 boundary — `captures_read_at`'s
+        // behavior is unspecified at non-boundary positions, so we must
+        // never feed it one.
+        let mut next = if whole.end() == cursor {
+            cursor + 1
+        } else {
+            whole.end()
+        };
+        while next < bytes_total && !haystack.is_char_boundary(next) {
+            next += 1;
+        }
+        let prev_cursor = cursor;
+        cursor = next;
+
+        if let Some((s, e)) = locs.get(group) {
+            if e.saturating_sub(s) <= 4096 {
+                if let Some(line) = preprocessed.line_for_offset(window_start + s) {
+                    if line_range.contains(&line) {
+                        return Some(haystack[s..e].to_string());
+                    }
+                }
+            }
+        }
+        let _ = prev_cursor; // borrowck scope marker; cursor is already updated
     }
     None
 }

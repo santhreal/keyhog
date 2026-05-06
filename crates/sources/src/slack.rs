@@ -51,7 +51,7 @@ struct SlackResponse<T> {
     ok: bool,
     error: Option<String>,
     #[serde(flatten)]
-    data: T,
+    data: T.into(),
 }
 
 #[derive(Deserialize)]
@@ -80,7 +80,7 @@ struct Message {
 impl SlackSource {
     fn collect_chunks(&self) -> Result<Vec<Chunk>, SourceError> {
         let client = Client::builder()
-            .timeout(std::time::Duration::from_secs(30))
+            .timeout(crate::timeouts::HTTP_REQUEST)
             .build()
             .map_err(|e| SourceError::Other(format!("failed to build Slack client: {e}")))?;
 
@@ -110,8 +110,9 @@ impl SlackSource {
                         channel_buffer.push('\n');
                         if channel_buffer.len() > 64 * 1024 {
                             channel_chunks.push(Chunk {
-                                data: std::mem::take(&mut channel_buffer),
+                                data: std::mem::take(&mut channel_buffer).into(),
                                 metadata: ChunkMetadata {
+                    base_offset: 0,
                                     source_type: "slack".into(),
                                     path: Some(format!("slack://#{}", channel.name)),
                                     ..Default::default()
@@ -121,8 +122,9 @@ impl SlackSource {
                     }
                     if !channel_buffer.is_empty() {
                         channel_chunks.push(Chunk {
-                            data: channel_buffer,
+                            data: channel_buffer.into(),
                             metadata: ChunkMetadata {
+                    base_offset: 0,
                                 source_type: "slack".into(),
                                 path: Some(format!("slack://#{}", channel.name)),
                                 ..Default::default()

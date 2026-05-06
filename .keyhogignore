@@ -1,14 +1,14 @@
 
-benchmark-harness/
+path:benchmark-harness/
 # Build artifacts
-crates/cli/tests/fixtures/
-debug.log
-deno/
-detectors/
+path:crates/cli/tests/fixtures/
+path:debug.log
+path:deno/
+path:detectors/
 # Exclude massive datasets and external projects from self-scans
 # External projects / Corpuses
-findings.json
-go/
+path:findings.json
+path:go/
 hash:00bfcdacfbb7386c7aee8678d9d706de2df12d5ecb2609d530647a91359faa95
 hash:041c26b3dc46c8617d59c0dfd6979bda82679725dd14f3e903609f7f23b0154e
 hash:053ce87c3513cd550baa61e13439208ea9c4a815a5073338f79cd5349666fd47
@@ -140,24 +140,24 @@ hash:fa0711ddc31e9c34d754f8326fb7e11847690b1ea680cb1f8ee312ba55b1c220
 hash:faaa7b43e631a9e9a3242da86d987ec050a9f0db84884dbddce714774b2f761c
 hash:fcf0fd485a95ba44c73b7cbccce86d9ab49ee55d3065c38ff0fcb4385a4f9cdf
 hash:fe41e95195306260b2f87b35d6ee8eb410f878f6da2f45ce28292874a647cab6
-.keyhog-cache.json
+path:.keyhog-cache.json
 # KeyHog Ignore File
-laravel/
-linux/
-ml/
-output.json
-react/
-ruff/
-run_decoder
-scripts/
-tailwind/
-target/
-test_extract
+path:laravel/
+path:linux/
+path:ml/
+path:output.json
+path:react/
+path:ruff/
+path:run_decoder
+path:scripts/
+path:tailwind/
+path:target/
+path:test_extract
 # Test fixtures and data
-test_prefix
-test_regex_multiline
-tests/data/
-tests/fixtures/
-test_walk
-test_walk.rs
+path:test_prefix
+path:test_regex_multiline
+path:tests/data/
+path:tests/fixtures/
+path:test_walk
+path:test_walk.rs
 # Tooling

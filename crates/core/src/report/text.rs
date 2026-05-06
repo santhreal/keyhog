@@ -350,10 +350,20 @@ fn format_verification(result: &VerificationResult, color: bool) -> String {
 
 fn format_location(location: &MatchLocation) -> String {
     match (&location.file_path, location.line) {
-        (Some(path), Some(line)) => format!("{}:{}", path, line),
-        (Some(path), None) => path.to_string(),
+        (Some(path), Some(line)) => format!("{}:{}", strip_unc_prefix(path), line),
+        (Some(path), None) => strip_unc_prefix(path).to_string(),
         _ => location.source.to_string(),
     }
+}
+
+/// Strip the Windows extended-length path prefix `\\?\` from a
+/// display string. Paths that start with `\\?\` come from
+/// canonicalize() on Windows and look like `\\?\C:\Users\...` —
+/// technically valid but ugly in CLI output. The prefix is purely
+/// a Win32 escape hatch for >260-char paths; for display, stripping
+/// it gives the user the path they actually typed.
+fn strip_unc_prefix(path: &str) -> &str {
+    path.strip_prefix(r"\\?\").unwrap_or(path)
 }
 
 fn highlight(text: &str, color: bool) -> String {

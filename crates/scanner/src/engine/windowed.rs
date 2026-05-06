@@ -69,7 +69,7 @@ pub fn next_window_offset(text: &str, current_end: usize, overlap: usize) -> usi
 
 pub fn window_chunk(chunk: &Chunk, start: usize, end: usize) -> Chunk {
     Chunk {
-        data: chunk.data[start..end].to_string(),
+        data: chunk.data.as_str()[start..end].to_string().into(),
         metadata: chunk.metadata.clone(),
     }
 }

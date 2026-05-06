@@ -7,30 +7,41 @@
 
 /// Credential/path allowlist parsing and matching.
 pub mod allowlist;
+/// ANSI-colored CLI startup banner with detector counts.
 pub mod banner;
 /// Configuration system for KeyHog scanning options.
 pub mod config;
+/// Secure credential storage and redaction.
 pub mod credential;
 mod dedup;
+/// Shared standard Base64 decode (wire / K8s), bounded for DoS safety.
+pub mod encoding;
 mod finding;
+/// Security hardening: memory zeroization and process isolation helpers.
 pub mod hardening;
+/// Structured reporting (JSON, SARIF, Text).
 pub mod report;
+/// Safe absolute-path resolution for external binaries.
 pub mod safe_bin;
 mod source;
 mod spec;
 use std::borrow::Cow;
 
+/// Global registry for sources and verifiers.
 pub mod registry;
 
 pub use allowlist::*;
 pub use config::*;
-pub use credential::Credential;
+pub use credential::{Credential, SensitiveString};
 pub use dedup::*;
 pub use finding::*;
 pub use report::*;
 pub use source::*;
+/// Auto-fix suggestion logic for SARIF output.
 pub mod auto_fix;
+/// Bayesian confidence calibration for detectors.
 pub mod calibration;
+/// Incremental scan state via BLAKE3 Merkle index.
 pub mod merkle_index;
 pub use spec::*;
 
@@ -44,6 +55,12 @@ mod embedded {
 /// Returns detector TOML strings that can be parsed by the spec loader.
 pub fn embedded_detector_tomls() -> &'static [(&'static str, &'static str)] {
     embedded::EMBEDDED_DETECTORS
+}
+
+/// Number of embedded detector specs (authoritative for banners and tests).
+#[inline]
+pub fn embedded_detector_count() -> usize {
+    embedded_detector_tomls().len()
 }
 
 /// Redact a sensitive credential string for safe display.

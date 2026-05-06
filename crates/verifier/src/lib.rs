@@ -14,6 +14,7 @@ pub mod reqwest {
 pub mod cache;
 pub mod domain_allowlist;
 pub mod interpolate;
+pub mod oob;
 pub mod rate_limit;
 mod ssrf;
 mod verify;
@@ -67,6 +68,11 @@ pub struct VerificationEngine {
     pub(crate) max_inflight_keys: usize,
     pub(crate) danger_allow_private_ips: bool,
     pub(crate) danger_allow_http: bool,
+    /// Optional OOB session. When `Some`, detectors with `[detector.verify.oob]`
+    /// receive a per-finding callback URL and the engine waits for the
+    /// service to call back. When `None`, those detectors fall through to
+    /// HTTP-only success criteria. Set via [`VerificationEngine::enable_oob`].
+    pub(crate) oob_session: Option<Arc<oob::OobSession>>,
 }
 
 /// Runtime configuration for live verification.

@@ -99,11 +99,23 @@ fn print_version_info() {
     );
     let hw = keyhog_scanner::hw_probe::probe_hardware();
     if hw.gpu_available {
+        // The number `hw.gpu_vram_mb` returns is `limits.max_buffer_size`,
+        // NOT actual VRAM — wgpu/WebGPU has no portable VRAM query, and
+        // NVIDIA drivers routinely return the wgpu cap (256 GB) here.
+        // Calling that "VRAM" is misleading on every laptop GPU we've
+        // shipped to. Show the accurate label so an 8 GB RTX 3000 Ada
+        // doesn't look like a 256 GB card.
         println!(
-            "GPU Acceleration: {} ({})",
+            "GPU Acceleration: {}{}",
             hw.gpu_name.as_deref().unwrap_or("available"),
             hw.gpu_vram_mb
-                .map(|mb| format!("{mb} MB VRAM"))
+                .map(|mb| {
+                    if mb >= 1024 {
+                        format!(" (max buffer {} GB)", mb / 1024)
+                    } else {
+                        format!(" (max buffer {mb} MB)")
+                    }
+                })
                 .unwrap_or_default()
         );
     } else {

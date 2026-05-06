@@ -133,9 +133,17 @@ pub fn decode_chunk(
                     if decoded_chunks.len() >= MAX_DECODED_CHUNKS_PER_ROOT
                         || total_bytes > MAX_DECODED_TOTAL_BYTES
                     {
-                        tracing::warn!(
+                        // Demoted from `warn!` — hitting the recursive
+                        // decode limit is a benign cap, not an error.
+                        // Files with dense nested encoding (audit logs,
+                        // sealed blobs, base64-of-base64-of-zlib...)
+                        // trip it routinely on every scan, which made
+                        // routine output (e.g. `keyhog scan ~/.config`)
+                        // look like the scanner was failing. Real
+                        // scanner failures use `warn!`/`error!`.
+                        tracing::debug!(
                             path = ?chunk.metadata.path,
-                            "Recursive decoding limit reached. Fix: reduce decode depth or decode size limits"
+                            "decode depth/size cap reached — chunk truncated to limit"
                         );
                         return decoded_chunks;
                     }
@@ -164,8 +172,9 @@ pub(super) fn push_decoded_text_chunk(
     }
 
     decoded_chunks.push(Chunk {
-        data: text,
+        data: text.into(),
         metadata: ChunkMetadata {
+                    base_offset: 0,
             source_type: format!("{}/{}", chunk.metadata.source_type, decoder_name),
             path: chunk.metadata.path.clone(),
             commit: chunk.metadata.commit.clone(),

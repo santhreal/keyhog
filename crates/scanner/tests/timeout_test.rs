@@ -27,7 +27,7 @@ fn test_scan_timeout_respects_deadline() {
     data.push('!'); // Break the match to force backtracking if the engine was naive
 
     let chunk = Chunk {
-        data,
+        data: data.into(),
         metadata: ChunkMetadata::default(),
     };
 

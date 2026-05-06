@@ -7,36 +7,58 @@
 #![allow(clippy::too_many_arguments)]
 
 // ── Public API ──────────────────────────────────────────────────────
+/// Service-specific credential checksum validation (GitHub, npm, Slack, etc.).
 pub mod checksum;
+/// Detector compilation into high-performance matching structures.
 pub mod compiler;
+/// Heuristic and ML-based confidence scoring for candidate matches.
 pub mod confidence;
+/// Code context analysis (comments, assignments, test files).
 pub mod context;
+/// Decode-through pipeline for nested encodings (base64, hex, URL, etc.).
 pub mod decode;
+/// Core scan execution engine.
 pub mod engine;
+/// Shannon entropy analysis for secret detection.
 pub mod entropy;
+/// Specialized error types for the scanner.
 pub mod error;
+/// GPU-accelerated matching via wgpu.
 pub mod gpu;
+/// Hardware capability detection and backend selection.
 pub mod hw_probe;
+/// Machine learning inference for secret scoring.
 pub mod ml_scorer;
+/// Multiline secret reassembly logic.
 pub mod multiline;
+/// Match resolution and deduplication.
 pub mod resolution;
+/// Shared types for the scanner engine.
 pub mod types;
 
 // Internal modules.
+/// SIMD-accelerated alphabet pre-filtering.
 pub mod alphabet_filter;
+/// Bigram bloom filter for fast chunk gating.
 pub mod bigram_bloom;
-pub mod entropy_avx512;
+/// AVX-512 optimized entropy calculation.
+pub(crate) mod entropy_avx512;
+/// Fast scalar entropy calculation.
 pub mod entropy_fast;
+/// JWT structural validation and anomaly detection.
 pub mod jwt;
 // `fragment_cache` lives under `multiline/` (its only call sites are there);
 // re-exported at the crate root so existing `keyhog_scanner::fragment_cache`
 // paths and the Tier-C audit cleanup don't churn the public API.
 pub use multiline::fragment_cache;
 pub(crate) mod homoglyph;
+/// Internal scan pipeline orchestration.
 pub mod pipeline;
+/// Prefix trie for efficient keyword propagation.
 pub mod prefix_trie;
 pub(crate) mod probabilistic_gate;
 pub(crate) mod structured;
+/// Unicode normalization and homoglyph defense.
 pub mod unicode_hardening;
 
 pub(crate) fn sha256_hash(s: &str) -> String {

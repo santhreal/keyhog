@@ -33,6 +33,7 @@
 ///   docker         → DOCKER_PASSWORD
 ///   datadog        → DATADOG_API_KEY
 ///   snowflake      → SNOWFLAKE_PASSWORD
+/// Derive a canonical environment variable name for a service (e.g., "stripe" -> "STRIPE_KEY").
 pub fn env_var_name_for_service(service: &str) -> String {
     let lower = service.to_lowercase();
     let curated = match lower.as_str() {
@@ -75,6 +76,7 @@ fn service_to_screaming_snake(service: &str) -> String {
 
 /// Render the `${ENV_VAR_NAME}` shell-interpolation replacement string for
 /// a detector. Reporters embed this in their `fixes[]` output.
+/// Return the recommended replacement text for a leaked credential (e.g., "${STRIPE_KEY}").
 pub fn fix_replacement_text(service: &str) -> String {
     format!("${{{}}}", env_var_name_for_service(service))
 }

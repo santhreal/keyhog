@@ -5,8 +5,9 @@ pub use std::collections::HashMap;
 /// Build a chunk with the given data and default metadata.
 pub fn make_chunk(data: &str) -> Chunk {
     Chunk {
-        data: data.to_string(),
+        data: data.into(),
         metadata: ChunkMetadata {
+                    base_offset: 0,
             source_type: "test".into(),
             path: None,
             commit: None,

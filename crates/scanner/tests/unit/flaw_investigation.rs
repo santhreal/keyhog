@@ -42,6 +42,7 @@ fn test_nested_base64_decoding_gating() {
     let chunk = Chunk {
         data: format!("data = \"{}\"", b64_2),
         metadata: ChunkMetadata {
+                    base_offset: 0,
             source_type: "test".into(),
             ..Default::default()
         },

@@ -22,11 +22,26 @@ group = 1
 
 [[detector.companions]]
 name = "carbon_black_api_id"
+# Anchored to the `CB_API_ID=` declaration; auto-detected capture group
+# resolves `{{companion.carbon_black_api_id}}` to just the numeric id.
 regex = "(?:CARBON[_\\s]*BLACK|carbon[_\\s]*black|CB)[_\\s]*(?:API[_\\s]*)?ID[=:\\s\"'']+([0-9]+)"
 within_lines = 5
+
+# Org key companion. Anchored to the `CB_ORG_KEY=` declaration so a stray
+# 8-16 char uppercase token doesn't qualify; the capture group resolves
+# `{{companion.org_key}}` to the key value alone.
+[[detector.companions]]
+name = "org_key"
+regex = "(?:CARBON[_\\s]*BLACK|carbon[_\\s]*black|CB)[_\\s]*ORG[_\\s]*KEY[=:\\s\"'']+([A-Z0-9]{8,16})"
+within_lines = 5
+
 [detector.verify]
 method = "GET"
-url = "https://defense.conferdeploy.net/appservices/v6/orgs/{org_key}/devices"
+# `{{companion.org_key}}` substitutes the matched org key. Earlier this used
+# single-brace `{org_key}` which the interpolator never resolved — every
+# verify hit a literal `{org_key}` segment in the URL path.
+url = "https://defense.conferdeploy.net/appservices/v6/orgs/{{companion.org_key}}/devices"
+allowed_domains = ["conferdeploy.net"]
 
 [detector.verify.auth]
 type = "header"

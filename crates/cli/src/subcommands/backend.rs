@@ -43,8 +43,16 @@ pub fn run(args: BackendArgs) -> Result<()> {
             ""
         }
     );
-    if let Some(vram) = hw.gpu_vram_mb {
-        println!("  gpu_vram:          {vram} MB");
+    if let Some(buf) = hw.gpu_vram_mb {
+        // `gpu_vram_mb` is actually `wgpu::Limits::max_buffer_size`,
+        // not VRAM (wgpu has no portable VRAM query). Display under
+        // the accurate label so this report doesn't claim an 8 GB
+        // laptop GPU has 256 GB of memory.
+        if buf >= 1024 {
+            println!("  gpu_max_buffer:    {} GB", buf / 1024);
+        } else {
+            println!("  gpu_max_buffer:    {buf} MB");
+        }
     }
     if let Some(mem) = hw.total_memory_mb {
         println!("  total_memory:      {mem} MB");

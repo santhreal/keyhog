@@ -30,6 +30,7 @@ impl SourceRegistry {
 
 pub static SOURCE_REGISTRY: OnceLock<SourceRegistry> = OnceLock::new();
 
+/// Return the global registry of scannable source backends.
 pub fn get_source_registry() -> &'static SourceRegistry {
     SOURCE_REGISTRY.get_or_init(|| SourceRegistry {
         sources: RwLock::new(HashMap::new()),
@@ -67,6 +68,7 @@ impl VerifierRegistry {
 
 pub static VERIFIER_REGISTRY: OnceLock<VerifierRegistry> = OnceLock::new();
 
+/// Return the global registry of credential verifiers.
 pub fn get_verifier_registry() -> &'static VerifierRegistry {
     VERIFIER_REGISTRY.get_or_init(|| VerifierRegistry {
         verifiers: RwLock::new(HashMap::new()),

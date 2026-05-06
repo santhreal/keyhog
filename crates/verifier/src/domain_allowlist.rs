@@ -222,16 +222,8 @@ mod tests {
     fn spec_with(service: &str, allowed: Vec<String>) -> VerifySpec {
         VerifySpec {
             service: service.to_string(),
-            method: None,
-            url: None,
-            auth: None,
-            headers: vec![],
-            body: None,
-            success: None,
-            metadata: vec![],
-            timeout_ms: None,
-            steps: vec![],
             allowed_domains: allowed,
+            ..VerifySpec::default()
         }
     }
 

@@ -1,50 +1,61 @@
 /// Fast check for secret-related keywords in file content.
 /// Used to gate the multiline fallback — only files that mention
 /// secret/key/token/password are worth reassembling.
+///
+/// Only the Hyperscan-prefilter path of `scan_coalesced` calls this,
+/// so gate it on `simd` to avoid a dead-code warning in the
+/// no-Hyperscan Windows build.
+///
+/// Single-pass Aho-Corasick over all distinctive prefixes — replaces the
+/// previous loop of N independent `memmem` scans (each O(n)) which traversed
+/// the chunk N times. With the AC automaton the scan is O(n) total, with
+/// one memory walk and shared cache lines.
+#[cfg(feature = "simd")]
 pub(super) fn has_secret_keyword_fast(data: &[u8]) -> bool {
-    // Only check for prefixes that are BOTH (a) distinctive enough to be real
-    // secrets and (b) commonly split across lines in source code.
-    // Avoid short prefixes like AKIA/eyJ that appear in test fixtures.
-    const KEYWORDS: &[&[u8]] = &[b"sk-proj-", b"sk_live_", b"ghp_", b"xoxb-", b"xoxp-"];
-    for kw in KEYWORDS {
-        if memchr::memmem::find(data, kw).is_some() {
-            return true;
-        }
-    }
-    false
+    use aho_corasick::AhoCorasick;
+    use once_cell::sync::Lazy;
+    static AC: Lazy<AhoCorasick> = Lazy::new(|| {
+        // Distinctive enough to be real secrets AND commonly split across
+        // lines in source code. Avoid short prefixes like AKIA/eyJ that
+        // appear in test fixtures.
+        AhoCorasick::new(["sk-proj-", "sk_live_", "ghp_", "xoxb-", "xoxp-"])
+            .expect("static keyword set compiles")
+    });
+    AC.find(data).is_some()
 }
 
 /// Check for generic `secret=`, `password:`, `token=` etc. keywords.
 /// Broader than `has_secret_keyword_fast` (which is for multiline only).
+///
+/// Same single-pass AC strategy as `has_secret_keyword_fast`, but with the
+/// case-insensitive variants folded into one automaton — `aho-corasick`'s
+/// `ascii_case_insensitive` builder option matches both `secret` and
+/// `SECRET` from a single literal at scan-time, halving the pattern count.
+///
+/// Same simd gate as [`has_secret_keyword_fast`] — only the
+/// Hyperscan-prefilter path consumes it.
+#[cfg(feature = "simd")]
 pub(super) fn has_generic_assignment_keyword(data: &[u8]) -> bool {
-    const KEYWORDS: &[&[u8]] = &[
-        b"secret",
-        b"SECRET",
-        b"password",
-        b"PASSWORD",
-        b"passwd",
-        b"PASSWD",
-        b"token",
-        b"TOKEN",
-        b"api_key",
-        b"API_KEY",
-        b"apikey",
-        b"APIKEY",
-        b"auth_token",
-        b"AUTH_TOKEN",
-        b"private_key",
-        b"PRIVATE_KEY",
-        b"client_secret",
-        b"CLIENT_SECRET",
-        b"access_key",
-        b"ACCESS_KEY",
-    ];
-    for kw in KEYWORDS {
-        if memchr::memmem::find(data, kw).is_some() {
-            return true;
-        }
-    }
-    false
+    use aho_corasick::AhoCorasick;
+    use once_cell::sync::Lazy;
+    static AC: Lazy<AhoCorasick> = Lazy::new(|| {
+        AhoCorasick::builder()
+            .ascii_case_insensitive(true)
+            .build([
+                "secret",
+                "password",
+                "passwd",
+                "token",
+                "api_key",
+                "apikey",
+                "auth_token",
+                "private_key",
+                "client_secret",
+                "access_key",
+            ])
+            .expect("static keyword set compiles")
+    });
+    AC.find(data).is_some()
 }
 
 /// Per-detector minimum entropy threshold for generic detectors.

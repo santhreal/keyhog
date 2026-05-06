@@ -21,6 +21,7 @@ pub struct ExtractedPair {
 /// Detect format by path and/or content, parse it, and build a preprocessed text.
 /// Returns `None` when the file is not a recognised structured format, when it
 /// exceeds the size limit, or when no pairs could be extracted.
+/// Pre-process structured configuration files to extract key-value pairs.
 pub fn preprocess(text: &str, path: Option<&str>) -> Option<ScannerPreprocessedText> {
     if text.len() > MAX_STRUCTURED_PARSE_BYTES {
         return None;

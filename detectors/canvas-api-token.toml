@@ -29,7 +29,12 @@ regex = "https?://[a-zA-Z0-9_-]+\\.instructure\\.com"
 within_lines = 5
 [detector.verify]
 method = "GET"
-url = "https://{{companion.canvas_domain}}/api/v1/users/self"
+# Companion captures the full `https?://<host>.instructure.com` URL, so we
+# don't prepend a scheme — doing so produced `https://https://...` and
+# every verification 400'd. The runtime allowlist below catches any future
+# regex drift that would let a non-Instructure host slip in.
+url = "{{companion.canvas_domain}}/api/v1/users/self"
+allowed_domains = ["instructure.com"]
 
 [detector.verify.auth]
 type = "header"

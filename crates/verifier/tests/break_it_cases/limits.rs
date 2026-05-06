@@ -83,8 +83,13 @@ async fn test_verify_long_unicode_surrogates() {
     // As long as it doesn't crash on invalid string operations or templating
 }
 
+// Windows process-spawn + tokio-runtime warm-up can exceed the
+// original 5s timeout on a cold runner (the test forks a child
+// process and that child rebuilds the tokio scheduler from scratch).
+// Bumping to 30s gives the same protection against runaway loops
+// while not flaking on Windows CI.
 rusty_fork::rusty_fork_test! {
-#![rusty_fork(timeout_ms = 5000)]
+#![rusty_fork(timeout_ms = 30000)]
 #[test]
 fn test_verify_deeply_nested_interpolations_inner() {
     let rt = tokio::runtime::Runtime::new().unwrap();

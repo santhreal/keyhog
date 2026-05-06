@@ -14,8 +14,6 @@ use serde::Deserialize;
 
 use crate::FilesystemSource;
 
-const GIT_CLONE_TIMEOUT: Duration = Duration::from_secs(300);
-
 /// Scans all repositories in a GitHub organization by shallow-cloning them to a temp directory.
 ///
 /// # Examples
@@ -233,18 +231,14 @@ fn clone_repo(repo: &GitHubRepo, token: &str, clone_path: &Path) -> Result<(), S
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("GIT_ASKPASS", &auth_material.askpass_path)
         .env("SSH_ASKPASS", &auth_material.askpass_path)
-        .args([
-            "clone",
-            "--depth",
-            "1",
-            "--quiet",
-            &repo.clone_url,
-            clone_target,
-        ])
+        .args(["clone", "--depth", "1", "--quiet"])
+        .arg("--end-of-options")
+        .arg(&repo.clone_url)
+        .arg(clone_target)
         .spawn()
         .map_err(SourceError::Io)?;
 
-    let output = wait_for_command_with_timeout(child, GIT_CLONE_TIMEOUT)
+    let output = wait_for_command_with_timeout(child, crate::timeouts::GIT_CLONE)
         .map_err(|err| SourceError::Git(format!("failed to clone {}: {}", repo.name, err)))?;
 
     if !output.status.success() {
@@ -368,6 +362,7 @@ fn rewrite_chunk_path(mut chunk: Chunk, org: &str, repo_name: &str, clone_path: 
         .and_then(|path| make_relative_path(path, clone_path));
 
     chunk.metadata = ChunkMetadata {
+                    base_offset: 0,
         source_type: "github-org".into(),
         path: relative_path.map(|relative| format!("{org}/{repo_name}/{relative}")),
         commit: None,

@@ -1,11 +1,11 @@
 [package]
 name = "keyhog-verifier"
-description = "Async parallel credential verification engine"
-version = "0.2.1"
-edition = "2021"
-rust-version = "1.89"
+description = "keyhog-verifier — parallel async credential verification framework"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
 authors = ["Santh Project <contact@santh.dev>"]
-license = "MIT OR Apache-2.0"
+license.workspace = true
 repository = "https://github.com/santhsecurity/keyhog"
 homepage = "https://github.com/santhsecurity/keyhog"
 documentation = "https://docs.rs/keyhog-verifier"
@@ -38,6 +38,14 @@ lazy_static = { workspace = true }
 parking_lot = { workspace = true }
 dashmap = { workspace = true }
 url = { workspace = true }
+
+# OOB verification — embedded interactsh client (gated behind --verify-oob).
+rsa = { workspace = true }
+aes = { workspace = true }
+cfb-mode = { workspace = true }
+rand = { workspace = true }
+uuid = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
 
 # AWS SigV4 signing for credential verification
 

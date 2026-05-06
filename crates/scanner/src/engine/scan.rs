@@ -1,9 +1,16 @@
 use super::*;
+#[cfg(feature = "simd")]
 use std::cell::RefCell;
 use std::collections::HashMap;
 
 use super::scan_filters::*;
 
+// The trigger-buffer pool is only used in the Hyperscan-prefilter
+// path of `scan_coalesced` (gated `#[cfg(feature = "simd")]`).
+// Without `simd`, both the pool and the helper become dead code,
+// so gate them too — otherwise `cargo build --no-default-features`
+// (the no-Hyperscan Windows build) emits dead-code warnings.
+#[cfg(feature = "simd")]
 thread_local! {
     /// Per-thread pool of trigger-bitmask vectors. Phase-1 of `scan_coalesced`
     /// allocates one `Vec<u64>` of size `ac_len.div_ceil(64)` per chunk. On a
@@ -13,6 +20,7 @@ thread_local! {
     static TRIGGER_POOL: RefCell<Vec<u64>> = const { RefCell::new(Vec::new()) };
 }
 
+#[cfg(feature = "simd")]
 #[inline]
 fn with_trigger_buffer<R>(words_needed: usize, f: impl FnOnce(&mut [u64]) -> R) -> R {
     TRIGGER_POOL.with(|cell| {
@@ -34,8 +42,9 @@ impl CompiledScanner {
     ///   Phase 1: Parallel HS prefilter on raw bytes (no prep, no alloc)
     ///   Phase 2: Full extraction only on hit files (~5% of total)
     pub fn scan_coalesced(&self, chunks: &[keyhog_core::Chunk]) -> Vec<Vec<keyhog_core::RawMatch>> {
-        use crate::hw_probe::ScanBackend;
         use rayon::prelude::*;
+        #[cfg(feature = "simd")]
+        use crate::hw_probe::ScanBackend;
 
         #[cfg(not(feature = "simd"))]
         {
@@ -145,7 +154,7 @@ impl CompiledScanner {
                                     var_name: m.detector_name.to_string(),
                                     value: zeroize::Zeroizing::new(m.credential.to_string()),
                                     line: m.location.line.unwrap_or(0),
-                                    path: Some(path.to_string()),
+                                    path: Some(std::sync::Arc::from(path.to_string())),
                                 };
                                 let reassembled =
                                     self.fragment_cache.record_and_reassemble(fragment);
@@ -171,7 +180,7 @@ impl CompiledScanner {
                             dummy_data.push_str(candidate.as_str());
                             dummy_data.push('"');
                             let dummy_chunk = Chunk {
-                                data: dummy_data,
+                                data: dummy_data.into(),
                                 metadata: chunk.metadata.clone(),
                             };
                             let backend =
@@ -179,20 +188,7 @@ impl CompiledScanner {
                             let mut reassembled_matches =
                                 self.scan_inner(&dummy_chunk, backend, None);
                             matches.append(&mut reassembled_matches);
-                            // Defense-in-depth: scrub the dummy chunk's
-                            // bytes before drop. Without this, the
-                            // allocator could hand the page to another
-                            // process that reads pre-zeroed memory.
-                            let mut data = dummy_chunk.data;
-                            let bytes = unsafe { data.as_bytes_mut() };
-                            // SAFETY: writing zeros over an owned String
-                            // — invariant (valid UTF-8 between mutations)
-                            // is restored before any further read; we
-                            // immediately drop after this line.
-                            for b in bytes.iter_mut() {
-                                *b = 0;
-                            }
-                            drop(data);
+                            // Zeroized automatically (SensitiveString)
                         }
                         if !matches.is_empty() {
                             return matches;
@@ -229,7 +225,19 @@ impl CompiledScanner {
         base_line: usize,
         base_offset: usize,
     ) {
-        let detector = &self.detectors[entry.detector_index];
+        // Resilient lookup: a malformed `entry.detector_index` would otherwise
+        // panic mid-scan and abort the whole rayon worker. The compiler should
+        // never produce out-of-range indices, but this is the kind of
+        // invariant whose violation should degrade one finding gracefully
+        // rather than crash an entire repository scan.
+        let Some(detector) = self.detectors.get(entry.detector_index) else {
+            tracing::warn!(
+                detector_index = entry.detector_index,
+                detectors_len = self.detectors.len(),
+                "extract_matches: detector_index out of range; skipping pattern"
+            );
+            return;
+        };
         if let Some(group) = entry.group {
             self.extract_grouped_matches(
                 entry,
@@ -276,24 +284,60 @@ impl CompiledScanner {
         base_offset: usize,
     ) {
         let search_text = &preprocessed.text;
-        for caps in entry.regex.captures_iter(search_text) {
-            let Some(full_match) = caps.get(FULL_MATCH_INDEX) else {
-                continue;
+        // Reuse one CaptureLocations buffer across every iter tick instead of
+        // allocating a fresh `Captures` per match. For a 100k-file scan
+        // hitting 10k matches across a handful of hot patterns, that's tens
+        // of thousands of avoided allocations per scan.
+        let mut locs = entry.regex.capture_locations();
+        let groups_total = locs.len();
+        let mut cursor = 0usize;
+        let bytes_total = search_text.len();
+        while cursor <= bytes_total {
+            let Some(whole) = entry.regex.captures_read_at(&mut locs, search_text, cursor) else {
+                break;
             };
-            let mut credential = caps
-                .get(group)
-                .map(|capture| capture.as_str())
-                .unwrap_or_else(|| full_match.as_str());
+            let full_start = whole.start();
+            let full_end = whole.end();
+            // Advance the cursor up front so any `continue` below keeps the
+            // loop progressing. Zero-width matches bump by one byte (and
+            // align onto a UTF-8 boundary) to avoid an infinite loop.
+            let mut next = if full_end == cursor {
+                full_end + 1
+            } else {
+                full_end
+            };
+            while next < bytes_total && !search_text.is_char_boundary(next) {
+                next += 1;
+            }
+            cursor = next;
 
-            // If the captured group looks like a variable name rather than a value,
-            // try to find a better capture group that contains the actual value.
-            if looks_like_variable_name(credential) && caps.len() > 2 {
-                for g in 1..caps.len() {
+            // Skip zero-width matches without surfacing them. The previous
+            // `captures_iter`-based implementation never emitted these — its
+            // internal iter advanced past them silently — so any downstream
+            // logic (entropy, ML scoring, dedup) was never asked to grade
+            // an empty credential. Replicating that semantics avoids a
+            // behavior change disguised as a perf optimization.
+            if full_end == full_start {
+                continue;
+            }
+
+            // Resolve the configured capture group, falling back to the full
+            // match when the group didn't participate (e.g. a top-level
+            // alternation where one branch lacks the inner group).
+            let credential_range = locs.get(group).unwrap_or((full_start, full_end));
+            let mut credential = &search_text[credential_range.0..credential_range.1];
+
+            // Variable-name heuristic: if the captured group looks like a
+            // variable name rather than a secret, scan the other groups for
+            // a value-shaped candidate. Same semantics as before, just
+            // reading from CaptureLocations directly.
+            if looks_like_variable_name(credential) && groups_total > 2 {
+                for g in 1..groups_total {
                     if g == group {
                         continue;
                     }
-                    if let Some(candidate) = caps.get(g) {
-                        let candidate_str = candidate.as_str();
+                    if let Some((s, e)) = locs.get(g) {
+                        let candidate_str = &search_text[s..e];
                         if !looks_like_variable_name(candidate_str) && candidate_str.len() >= 8 {
                             credential = candidate_str;
                             break;
@@ -313,8 +357,8 @@ impl CompiledScanner {
                 chunk,
                 scan_state,
                 credential,
-                full_match.start(),
-                full_match.end(),
+                full_start,
+                full_end,
                 base_line,
                 base_offset,
             );
@@ -417,11 +461,19 @@ impl CompiledScanner {
             return;
         }
 
-        let companions = if !self.companions.is_empty() {
-            self.match_companions(entry, preprocessed, line)
-                .unwrap_or_default()
-        } else {
+        // `match_companions` returns `None` when a `required = true`
+        // companion isn't found within the search radius — that is a
+        // hard skip signal, not "no companions found." The previous
+        // `.unwrap_or_default()` swallowed it and let the match fire
+        // anyway, silently nullifying the `required` field on every
+        // detector that uses it (notably `twilio-auth-token`).
+        let companions = if self.companions.is_empty() {
             HashMap::new()
+        } else {
+            match self.match_companions(entry, preprocessed, line) {
+                Some(c) => c,
+                None => return,
+            }
         };
         let entropy = match_entropy(credential.as_bytes());
 

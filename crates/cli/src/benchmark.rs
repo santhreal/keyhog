@@ -92,8 +92,9 @@ fn build_benchmark_corpus() -> Vec<Chunk> {
         data.push_str(&suffix);
 
         chunks.push(Chunk {
-            data,
+            data: data.into(),
             metadata: ChunkMetadata {
+                    base_offset: 0,
                 source_type: "benchmark".to_string(),
                 path: Some(format!("benchmark/corpus-{index}.txt")),
                 commit: None,

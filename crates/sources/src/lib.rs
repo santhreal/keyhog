@@ -6,9 +6,22 @@
 
 #![allow(clippy::too_many_arguments)]
 
-/// Local HTTP compatibility shim backed by reqwest..
+mod timeouts;
+
+/// Local HTTP compatibility shim backed by reqwest. Only present when
+/// at least one feature that pulls in `reqwest` is enabled —
+/// otherwise this module would `pub use reqwest::*` against a crate
+/// that wasn't compiled in, which fails resolution on stable rustc
+/// (especially on Windows where `--no-default-features` is the
+/// release profile we ship for the no-Hyperscan build).
+#[cfg(any(
+    feature = "web",
+    feature = "github",
+    feature = "slack",
+    feature = "s3"
+))]
 pub mod reqwest {
-    pub use reqwest::*;
+    pub use ::reqwest::*;
 }
 
 #[cfg(feature = "binary")]

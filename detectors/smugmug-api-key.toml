@@ -27,5 +27,12 @@ group = 1
 
 [[detector.companions]]
 name = "smugmug-oauth-secret"
-regex = '(?:SMUGMUG|smugmug|SMUG.MUG|smug.mug)?[._-]?(?:OAUTH|oauth)?[._-]?(?:SECRET|secret)[=:\s""]+[a-zA-Z0-9]{16,48}'
+# Earlier alternation `SMUGMUG|smugmug|SMUG.MUG|smug.mug` overlapped: the
+# `.` in `SMUG.MUG` matches the empty separator that `SMUGMUG` already
+# covers, which the validator caught as `has_quantified_overlapping_
+# alternation`. Collapse to a single case-insensitive branch with an
+# explicit optional separator — same set of accepted spellings, no
+# alternation overlap, and the literal anchors `oauth`/`secret` keep
+# false-positive rate bounded.
+regex = '(?i:smug[._-]?mug)?[._-]?(?:oauth)?[._-]?secret[=:\s""]+[a-zA-Z0-9]{16,48}'
 within_lines = 5

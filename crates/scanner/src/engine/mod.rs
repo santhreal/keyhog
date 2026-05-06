@@ -165,6 +165,12 @@ pub struct CompiledScanner {
     pub(crate) same_prefix_patterns: Vec<Vec<usize>>,
     pub(crate) fallback_keyword_ac: Option<AhoCorasick>,
     pub(crate) fallback_keyword_to_patterns: Vec<Vec<usize>>,
+    /// Pre-computed: index `i` is `true` iff fallback pattern `i`'s keywords
+    /// are all <4 chars (so it can't be filtered by the keyword AC and must
+    /// be considered active on every chunk). Computed once at scanner
+    /// construction; avoids the `O(F × K)` walk the previous
+    /// `populate_active_fallback` performed per chunk.
+    pub(crate) fallback_always_active: Vec<bool>,
     #[cfg(feature = "simd")]
     pub(crate) simd_prefilter: Option<crate::simd::backend::HsScanner>,
     /// HS pattern ID → original ac_map indices.
@@ -213,6 +219,14 @@ impl CompiledScanner {
         let detector_to_patterns = build_detector_to_patterns(&state.ac_map, detectors.len());
         let (fallback_keyword_ac, fallback_keyword_to_patterns) =
             build_fallback_keyword_ac(&state.fallback);
+        // Precompute the per-pattern "always-active" bitmap so the per-chunk
+        // hot path avoids walking every pattern's keyword list. See the
+        // doc comment on the field for rationale.
+        let fallback_always_active: Vec<bool> = state
+            .fallback
+            .iter()
+            .map(|(_, keywords)| !keywords.iter().any(|k| k.len() >= 4))
+            .collect();
 
         log_quality_warnings(&state.quality_warnings);
 
@@ -258,6 +272,7 @@ impl CompiledScanner {
             same_prefix_patterns,
             fallback_keyword_ac,
             fallback_keyword_to_patterns,
+            fallback_always_active,
             #[cfg(feature = "simd")]
             simd_prefilter,
             #[cfg(feature = "simd")]
@@ -544,12 +559,13 @@ impl CompiledScanner {
                     continue;
                 };
 
+                let fragment_line = line_idx + 1;
                 let fragment = crate::fragment_cache::SecretFragment {
                     prefix: crate::multiline::extract_prefix(var_name_match.as_str()),
                     var_name: var_name_match.as_str().to_string(),
                     value: zeroize::Zeroizing::new(value_match.as_str().to_string()),
-                    line: line_idx + 1,
-                    path: chunk.metadata.path.clone(),
+                    line: fragment_line,
+                    path: chunk.metadata.path.as_ref().map(|p| std::sync::Arc::from(p.as_str())),
                 };
 
                 let candidates = self.fragment_cache.record_and_reassemble(fragment);
@@ -565,7 +581,7 @@ impl CompiledScanner {
                     dummy_data.push_str(candidate.as_str());
                     dummy_data.push('"');
                     let dummy_chunk = Chunk {
-                        data: dummy_data,
+                        data: dummy_data.into(),
                         metadata: chunk.metadata.clone(),
                     };
 
@@ -573,18 +589,12 @@ impl CompiledScanner {
                     let mut reassembled_matches = self.scan_inner(&dummy_chunk, backend, deadline);
                     for m in &mut reassembled_matches {
                         m.detector_id = format!("{}:reassembled", m.detector_id).into();
+                        // FIX: Point the finding to the line where the trigger fragment was found.
+                        // Better than pointing to line 1 of a virtual chunk.
+                        m.location.line = Some(fragment_line);
                     }
                     matches.append(&mut reassembled_matches);
-                    // Defense-in-depth: zero the dummy chunk's bytes before drop.
-                    let mut data = dummy_chunk.data;
-                    // SAFETY: writing zeros over an owned String we are
-                    // about to drop. Invariant (valid UTF-8) is not
-                    // observed after this block.
-                    let bytes = unsafe { data.as_bytes_mut() };
-                    for b in bytes.iter_mut() {
-                        *b = 0;
-                    }
-                    drop(data);
+                    // Zeroized automatically on drop (SensitiveString)
                 }
             }
         }
@@ -669,6 +679,16 @@ impl CompiledScanner {
     #[cfg(feature = "ml")]
     fn apply_ml_batch_scores(&self, scan_state: &mut ScanState) {
         if scan_state.ml_pending.is_empty() {
+            return;
+        }
+
+        if !self.config.ml_enabled {
+            let pending = scan_state.ml_pending.drain(..).collect::<Vec<_>>();
+            for p in pending {
+                let mut raw_match = p.raw_match;
+                raw_match.confidence = Some(p.heuristic_conf);
+                scan_state.push_match(raw_match, self.config.max_matches_per_chunk);
+            }
             return;
         }
 

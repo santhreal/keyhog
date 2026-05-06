@@ -34,9 +34,39 @@ impl CompiledScanner {
             lines.into_iter().collect()
         };
 
+        const KEYWORDS: &[&str] = &[
+            "secret",
+            "password",
+            "passwd",
+            "pwd",
+            "token",
+            "api",
+            "auth",
+            "credential",
+            "private",
+            "signing",
+            "encryption",
+            "access",
+            "client",
+            "app",
+            "master",
+            "license",
+        ];
+
         for (line_idx, line) in code_lines.iter().enumerate() {
             let line_num = line_idx + 1;
             if covered_lines.contains(&line_num) {
+                continue;
+            }
+
+            // High-performance keyword pre-filter before heavy regex execution.
+            // Avoids backtracking in the regex engine for non-matching lines.
+            // FIX: Use case-insensitive search without allocating a new String.
+            if !KEYWORDS.iter().any(|&k| {
+                line.as_bytes()
+                    .windows(k.len())
+                    .any(|window| window.eq_ignore_ascii_case(k.as_bytes()))
+            }) {
                 continue;
             }
 

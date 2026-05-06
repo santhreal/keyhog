@@ -8,7 +8,9 @@ use regex::Regex;
 
 #[path = "compiler_prefix.rs"]
 mod compiler_prefix;
-pub use compiler_prefix::{extract_literal_prefix, extract_literal_prefixes, is_escaped_literal};
+pub use compiler_prefix::{
+    extract_inner_literals, extract_literal_prefix, extract_literal_prefixes, is_escaped_literal,
+};
 
 pub struct CompileState {
     pub ac_literals: Vec<String>,
@@ -100,13 +102,27 @@ pub fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileState> {
                     ac_map.push(compiled.clone());
                 }
             } else {
-                if detector.keywords.is_empty() {
-                    quality_warnings.push(format!(
-                        "Detector {} pattern {pattern_index} has no literal prefix and no keywords.",
-                        detector.id
-                    ));
+                // Prefix extraction failed — try the AST-walking inner-literal
+                // extractor before falling back. Patterns like
+                // `[a-zA-Z0-9]{20}_AKIA[A-Z0-9]{16}` have no leading literal
+                // but contain `_AKIA` mid-pattern; pulling that into the AC
+                // moves the detector out of the O(m × n) fallback loop and
+                // into the O(n) prefilter path.
+                let inner = extract_inner_literals(&pattern.regex);
+                if !inner.is_empty() {
+                    for lit in inner {
+                        ac_literals.push(lit);
+                        ac_map.push(compiled.clone());
+                    }
+                } else {
+                    if detector.keywords.is_empty() {
+                        quality_warnings.push(format!(
+                            "Detector {} pattern {pattern_index} has no literal prefix and no keywords.",
+                            detector.id
+                        ));
+                    }
+                    fallback.push((compiled, detector.keywords.clone()));
                 }
-                fallback.push((compiled, detector.keywords.clone()));
             }
         }
     }

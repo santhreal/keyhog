@@ -22,6 +22,9 @@ within_lines = 5
 [detector.verify]
 method = "GET"
 url = "https://{{companion.application_id}}-dsn.algolia.net/1/indexes"
+# `{{companion.application_id}}` only fills the subdomain; pin the apex so a
+# malicious capture can't redirect the X-Algolia-API-Key elsewhere.
+allowed_domains = ["algolia.net"]
 
 [detector.verify.auth]
 type = "header"

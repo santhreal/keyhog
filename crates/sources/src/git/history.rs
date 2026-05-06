@@ -2,7 +2,6 @@
 //! that may have been committed and later removed.
 
 use keyhog_core::{Chunk, ChunkMetadata, Source, SourceError};
-use std::io::BufRead;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -90,6 +89,7 @@ fn stream_git_history_chunks(
         "--date=iso-strict",
         "--format=commit %H%nAuthor: %an <%ae>%nDate: %aI",
         "-p",
+        "-m",
     ]);
 
     if let Some(limit) = max_commits {
@@ -105,7 +105,7 @@ fn stream_git_history_chunks(
         .stdout
         .take()
         .ok_or_else(|| SourceError::Io(std::io::Error::other("missing stdout")))?;
-    let mut reader = std::io::BufReader::new(stdout).lines();
+    let mut reader = std::io::BufReader::new(stdout);
 
     let mut current_commit: Option<String> = None;
     let mut current_author: Option<String> = None;
@@ -114,6 +114,7 @@ fn stream_git_history_chunks(
     let mut current_content = String::new();
     let mut in_hunk = false;
     let mut done = false;
+    let mut line_buf = Vec::new();
 
     Ok(std::iter::from_fn(move || {
         if done {
@@ -121,13 +122,9 @@ fn stream_git_history_chunks(
         }
 
         loop {
-            let line = match reader.next() {
-                Some(Ok(l)) => l,
-                Some(Err(e)) => {
-                    done = true;
-                    return Some(Err(SourceError::Io(e)));
-                }
-                None => {
+            line_buf.clear();
+            let line = match std::io::BufRead::read_until(&mut reader, b'\n', &mut line_buf) {
+                Ok(0) => {
                     done = true;
                     if let (Some(commit), Some(author), Some(date), Some(path)) = (
                         &current_commit,
@@ -137,8 +134,9 @@ fn stream_git_history_chunks(
                     ) {
                         if !current_content.trim().is_empty() {
                             return Some(Ok(Chunk {
-                                data: current_content.trim().to_string(),
+                                data: current_content.trim().to_string().into(),
                                 metadata: ChunkMetadata {
+                    base_offset: 0,
                                     source_type: "git-history".into(),
                                     path: Some(path.clone()),
                                     commit: Some(commit.clone()),
@@ -149,6 +147,14 @@ fn stream_git_history_chunks(
                         }
                     }
                     return None;
+                }
+                Ok(_) => {
+                    let l = String::from_utf8_lossy(&line_buf);
+                    l.trim_end_matches('\n').trim_end_matches('\r').to_string()
+                }
+                Err(e) => {
+                    done = true;
+                    return Some(Err(SourceError::Io(e)));
                 }
             };
 
@@ -161,8 +167,9 @@ fn stream_git_history_chunks(
                 ) {
                     if !current_content.trim().is_empty() {
                         Some(Chunk {
-                            data: current_content.trim().to_string(),
+                            data: current_content.trim().to_string().into(),
                             metadata: ChunkMetadata {
+                    base_offset: 0,
                                 source_type: "git-history".into(),
                                 path: Some(path.clone()),
                                 commit: Some(commit.clone()),
@@ -209,8 +216,9 @@ fn stream_git_history_chunks(
                 ) {
                     if !current_content.trim().is_empty() {
                         Some(Chunk {
-                            data: current_content.trim().to_string(),
+                            data: current_content.trim().to_string().into(),
                             metadata: ChunkMetadata {
+                    base_offset: 0,
                                 source_type: "git-history".into(),
                                 path: Some(path.clone()),
                                 commit: Some(commit.clone()),
@@ -271,8 +279,9 @@ fn stream_git_history_chunks(
                     let chunk_content = current_content.trim().to_string();
                     current_content.clear();
                     return Some(Ok(Chunk {
-                        data: chunk_content,
+                        data: chunk_content.into(),
                         metadata: ChunkMetadata {
+                    base_offset: 0,
                             source_type: "git-history".into(),
                             path: Some(path.clone()),
                             commit: Some(commit.clone()),

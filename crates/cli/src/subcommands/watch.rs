@@ -92,8 +92,9 @@ fn scan_file(scanner: &CompiledScanner, path: &std::path::Path) {
         return;
     }
     let chunk = Chunk {
-        data,
+        data: data.into(),
         metadata: ChunkMetadata {
+                    base_offset: 0,
             source_type: "filesystem/watch".into(),
             path: Some(path.display().to_string()),
             commit: None,

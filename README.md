@@ -21,7 +21,7 @@ KeyHog scans source trees, git history, Docker images, S3 buckets, and web asset
 Selection is automatic. On startup:
 
 ```
-KeyHog v0.3.0 | 16 cores | SIMD: AVX-512 | Hyperscan | 888 detectors (1509 patterns)
+KeyHog v0.5.0 | 16 cores | SIMD: AVX-512 | Hyperscan | 888 detectors (1509 patterns)
 ```
 
 ## Performance
@@ -302,10 +302,50 @@ The scanner compiles all 896 detector regexes into a single Hyperscan database (
 ```yaml
 repos:
   - repo: https://github.com/santhsecurity/keyhog
-    rev: v0.2.0
+    rev: v0.5.0
     hooks:
       - id: keyhog
 ```
+
+## Roadmap
+
+Where keyhog is going next. Feedback / PRs welcome — file an issue to argue scope.
+
+- **Hyperscan on Windows out of the box.** Today the `simd` feature is opt-in
+  on Windows because `hyperscan-sys` requires a vcpkg/MSVC build of the
+  upstream Hyperscan/Vectorscan C library (Linux/macOS users get it for free
+  via system packages). The fallback AVX2 regex engine is correct but ~5–10x
+  slower per pattern. Next: ship a vendored Hyperscan build profile in CI so
+  `cargo install keyhog` on Windows lands the SIMD path automatically.
+- **Real VRAM probe.** `wgpu` has no portable VRAM query, so the GPU report
+  shows `max buffer size` (the per-buffer allocation cap, capped at 256 GB by
+  the wgpu spec). Next: backend-specific probes — DXGI on Windows, NVML for
+  NVIDIA, IOKit on macOS — to display the actual installed VRAM.
+- **Cross-chunk secret reassembly at file-window boundaries.** Secrets that
+  straddle the 64 MiB scan-window boundary aren't reassembled (the
+  `test_window_boundary_detection` regression in `crates/scanner/tests/`
+  is currently `#[ignore]`-marked). The Phase-2 reassembly pipeline only
+  considers within-chunk fragments today; expanding it to a sliding window
+  across chunk boundaries is the fix.
+- **Detector-quality auto-fix.** ~21 of the 888 embedded detectors fail the
+  internal validator (URL templates with `{var}` instead of `{{var}}`, missing
+  `allowed_domains` for templated verifier hosts). They still SCAN correctly;
+  they just can't auto-VERIFY. Next: a `keyhog detectors --fix` pass that
+  rewrites the templates and adds the missing allowlists, so the scan +
+  verify pipelines run on the full 888 set.
+- **Streaming results.** Today `keyhog scan` collects all findings before
+  printing. For huge trees / scan-system runs that's a multi-second wait
+  before the user sees anything. Next: emit findings progressively as Phase-2
+  extraction completes, with a final summary tail.
+- **Native Apple-silicon / aarch64 binaries** in the GitHub release artifact
+  matrix (currently x86_64-only). The code already compiles cleanly on
+  aarch64 (NEON path tested in CI); the gap is the release pipeline.
+- **Live verifier rate-limit hardening.** `keyhog scan --verify` hits the
+  upstream provider once per finding. For a repo with hundreds of legitimate
+  findings (e.g., test fixtures, documentation), that bursts past most
+  providers' rate limits. Next: per-provider token-bucket caps + an opt-in
+  `--verify-batch` mode that uses `GetCallerIdentity`-style introspection
+  endpoints when available.
 
 ## License
 

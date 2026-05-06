@@ -17,8 +17,13 @@ group = 1
 
 [[detector.companions]]
 name = "datadog_api_key"
+# DD application keys and DD API keys live side-by-side in env-config
+# blocks: a 5-line radius is the natural anchor. Lowering from 10 to 5
+# satisfies the validator's pure-character-class rule without changing
+# the substituted value (companions don't support capture groups, so a
+# context-anchored regex would corrupt the DD-API-KEY header).
 regex = "[a-f0-9]{32}"
-within_lines = 10
+within_lines = 5
 [detector.verify]
 method = "GET"
 url = "https://api.datadoghq.com/api/v2/current_user"

@@ -23,6 +23,10 @@ group = 1
 method = "POST"
 url = "{{match}}"
 body = "{}"
+# {{match}} is the full webhook URL; the regex above pins the host to
+# hooks.slack.com, but the validator can't statically prove that. Pin the
+# allowlist explicitly to fail-closed if the regex is ever loosened.
+allowed_domains = ["hooks.slack.com"]
 
 [detector.verify.auth]
 type = "none"

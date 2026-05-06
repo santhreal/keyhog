@@ -24,6 +24,13 @@ impl CompiledScanner {
 
         let (entries, buffer) = coalesce_chunks(chunks);
 
+        #[cfg(target_os = "linux")]
+        unsafe {
+            // Senior Audit §Phase 7.4: Prevent GPU buffers from leaking into core dumps.
+            // Best-effort; ignore errors on non-page-aligned buffers.
+            libc::madvise(buffer.as_ptr() as *mut libc::c_void, buffer.len(), libc::MADV_DONTDUMP);
+        }
+
         // Adaptive match cap: hardcoding 10_000 capped large batches.
         // Allow up to (chunks * max_matches_per_chunk) with a hard ceiling.
         // Most chunks have <50 matches; assume worst case is 256/chunk before

@@ -3,7 +3,6 @@
 
 use std::io::Read;
 use std::path::Path;
-use std::time::Duration;
 
 use keyhog_core::{Chunk, ChunkMetadata, Source, SourceError};
 use reqwest::blocking::Client;
@@ -15,7 +14,6 @@ use auth::AwsSigV4Config;
 use listing::{encode_s3_key_path, parse_s3_listing};
 
 const DEFAULT_S3_HOST_SUFFIX: &str = "s3.amazonaws.com";
-const S3_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 const DEFAULT_MAX_OBJECTS: usize = 100_000;
 const MAX_S3_OBJECT_BYTES: u64 = 10 * 1024 * 1024;
 
@@ -136,7 +134,7 @@ fn collect_s3_chunks(
 ) -> Result<Vec<Chunk>, SourceError> {
     let bucket = validate_bucket_name(bucket)?;
     let client = Client::builder()
-        .timeout(S3_REQUEST_TIMEOUT)
+        .timeout(crate::timeouts::HTTP_REQUEST)
         .build()
         .map_err(|e| SourceError::Other(format!("failed to build S3 client: {e}")))?;
     let base_url = build_base_url(&bucket, endpoint)?;
@@ -315,8 +313,9 @@ fn fetch_object_chunk(
     };
 
     Ok(Some(Chunk {
-        data: object_text,
+        data: object_text.into(),
         metadata: ChunkMetadata {
+                    base_offset: 0,
             source_type: "s3".into(),
             path: Some(format!("{bucket}/{key}")),
             commit: None,

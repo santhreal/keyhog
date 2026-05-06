@@ -17,7 +17,11 @@ group = 1
 
 [[detector.companions]]
 name = "cloudflare_email"
-regex = "[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}"
+# Anchored to a `X-Auth-Email:` / `CLOUDFLARE_EMAIL=` declaration so a stray
+# email address in a comment doesn't qualify; auto-detected capture group
+# resolves `{{companion.cloudflare_email}}` to just the email value.
+# Validator previously flagged the bare email regex as too broad.
+regex = "(?:X-Auth-Email|CLOUDFLARE_EMAIL|cloudflare_email)[=:\\s\"'']+([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,})"
 within_lines = 5
 [detector.verify]
 method = "GET"

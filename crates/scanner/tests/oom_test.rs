@@ -9,7 +9,7 @@ fn test_large_chunk_skip() {
     let data = "a".repeat(513 * 1024 * 1024);
 
     let chunk = Chunk {
-        data,
+        data: data.into(),
         metadata: ChunkMetadata::default(),
     };
 

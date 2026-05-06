@@ -5,12 +5,15 @@ use codewalk::{CodeWalker, WalkConfig};
 use keyhog_core::{Chunk, ChunkMetadata, Source, SourceError};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::io::{Read, Seek, SeekFrom};
 
 mod read;
 
 /// Minimum file size to use memory mapping. Above 1 MB the mmap overhead is
 /// amortized; below it we use buffered reads.
 const MMAP_THRESHOLD: u64 = 1024 * 1024;
+const WINDOW_SIZE: usize = 64 * 1024 * 1024;
+const WINDOW_OVERLAP: usize = 4 * 1024;
 
 /// Scans files in a directory tree.
 pub struct FilesystemSource {
@@ -249,7 +252,7 @@ impl Source for FilesystemSource {
                             if let Ok(content) = pack.read_entry(&archive_entry.name) {
                                 if let Ok(s) = String::from_utf8(content.clone()) {
                                     archive_chunks.push(Ok(Chunk {
-                                        data: s,
+                                        data: s.into(),
                                         metadata: ChunkMetadata {
                                             source_type: "filesystem/archive".into(),
                                             path: Some(format!(
@@ -265,7 +268,7 @@ impl Source for FilesystemSource {
                                         crate::strings::extract_printable_strings(&content, 8);
                                     if !strings.is_empty() {
                                         archive_chunks.push(Ok(Chunk {
-                                            data: strings.join("\n"),
+                                            data: keyhog_core::SensitiveString::join(&strings, "\n").into(),
                                             metadata: ChunkMetadata {
                                                 source_type: "filesystem/archive-binary".into(),
                                                 path: Some(format!(
@@ -298,13 +301,29 @@ impl Source for FilesystemSource {
                 return vec![];
             }
 
-            if file_size > max_size {
-                return vec![Err(SourceError::Other(format!(
-                    "skipping {}: file size {} exceeds {} byte limit",
-                    path.display(),
-                    file_size,
-                    max_size
-                )))];
+if file_size > WINDOW_SIZE as u64 {
+                let mut window_chunks = Vec::new();
+                if let Ok(mut file) = std::fs::File::open(&path) {
+                    let mut current_offset = 0;
+                    let mut buffer = vec![0u8; WINDOW_SIZE];
+                    while let Ok(n) = file.read(&mut buffer) {
+                        if n == 0 { break; }
+                        let data = String::from_utf8_lossy(&buffer[..n]).into_owned();
+                        window_chunks.push(Ok(Chunk {
+                            data: data.into(),
+                            metadata: ChunkMetadata {
+                                source_type: "filesystem/windowed".to_string(),
+                                path: Some(path.display().to_string()),
+                                base_offset: current_offset,
+                                ..Default::default()
+                            },
+                        }));
+                        if n < WINDOW_SIZE { break; }
+                        let _ = file.seek(SeekFrom::Current(-(WINDOW_OVERLAP as i64)));
+                        current_offset += n - WINDOW_OVERLAP;
+                    }
+                }
+                return window_chunks;
             }
             let file_text = if file_size >= MMAP_THRESHOLD {
                 read::read_file_mmap(&path)
@@ -313,14 +332,14 @@ impl Source for FilesystemSource {
             };
 
             let (content, source_type) = match file_text {
-                Some(text) if !text.is_empty() => (text, "filesystem"),
+                Some(text) if !text.is_empty() => (text.into(), "filesystem"),
                 _ => {
                     if let Ok(bytes) = read::read_file_safe(&path) {
                         let strings = crate::strings::extract_printable_strings(&bytes, 8);
                         if strings.is_empty() {
                             return vec![];
                         }
-                        (strings.join("\n"), "filesystem:binary-strings")
+                        (keyhog_core::SensitiveString::join(&strings, "\n"), "filesystem:binary-strings")
                     } else {
                         return vec![];
                     }
@@ -328,7 +347,7 @@ impl Source for FilesystemSource {
             };
 
             vec![Ok(Chunk {
-                data: content,
+                data: content.into(),
                 metadata: ChunkMetadata {
                     source_type: source_type.to_string(),
                     path: Some(path.display().to_string()),
@@ -392,7 +411,7 @@ fn extract_compressed_chunks(path: &Path, max_size: u64) -> Vec<Result<Chunk, So
 
             if current_chunk_literals.len() > 8 * 1024 * 1024 {
                 chunks.push(Ok(Chunk {
-                    data: std::mem::take(&mut current_chunk_literals),
+                    data: std::mem::take(&mut current_chunk_literals).into(),
                     metadata: ChunkMetadata {
                         source_type: "filesystem/compressed".into(),
                         path: Some(path.display().to_string()),
@@ -403,7 +422,7 @@ fn extract_compressed_chunks(path: &Path, max_size: u64) -> Vec<Result<Chunk, So
         }
         if !current_chunk_literals.is_empty() {
             chunks.push(Ok(Chunk {
-                data: current_chunk_literals,
+                data: current_chunk_literals.into(),
                 metadata: ChunkMetadata {
                     source_type: "filesystem/compressed".into(),
                     path: Some(path.display().to_string()),

@@ -30,8 +30,9 @@ impl Source for StdinSource {
 
         Box::new(std::iter::once(match stdin_read {
             Ok(data) => Ok(Chunk {
-                data,
+                data: data.into(),
                 metadata: ChunkMetadata {
+                    base_offset: 0,
                     source_type: "stdin".into(),
                     path: None,
                     commit: None,

@@ -113,7 +113,13 @@ pub(crate) mod backend {
                     }
                     #[cfg(unix)]
                     {
-                        use std::os::unix::fs::PermissionsExt;
+                        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+                        let uid = unsafe { libc::geteuid() };
+                        if meta.uid() != uid {
+                            return Err(
+                                "Fix: Cache directory is not owned by the current user".into()
+                            );
+                        }
                         if meta.permissions().mode() & 0o777 != 0o700 {
                             std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700))
                                 .map_err(|e| {

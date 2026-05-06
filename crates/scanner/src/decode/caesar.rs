@@ -122,15 +122,16 @@ mod tests {
         // BLJBRS4EFGHIJKLM2345. Decoder runs all 25 non-trivial shifts;
         // shift 25 (== inverse +1) recovers the original.
         let chunk = Chunk {
-            data: "k = \"BLJBRS4EFGHIJKLM2345\";".to_string(),
+            data: "k = \"BLJBRS4EFGHIJKLM2345\";".into(),
             metadata: ChunkMetadata {
+                    base_offset: 0,
                 source_type: "test".into(),
                 ..Default::default()
             },
         };
         let decoded = CaesarDecoder.decode_chunk(&chunk);
         assert!(
-            decoded.iter().any(|c| c.data == "AKIAQR4DEFGHIJKL2345"),
+            decoded.iter().any(|c| c.data.as_str() == "AKIAQR4DEFGHIJKL2345"),
             "Caesar decoder did not surface the round-trip plaintext among {} variants. \
              Got: {:?}",
             decoded.len(),

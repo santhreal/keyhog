@@ -1,6 +1,6 @@
 //! Detector quality gate validation rules used while loading TOML specs.
 
-use super::DetectorSpec;
+use super::{DetectorSpec, VerifySpec};
 use regex_syntax::ast::{self, Ast};
 use serde::Serialize;
 
@@ -232,6 +232,90 @@ fn validate_verify_spec(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
                 "verify spec has no steps and no default URL".into(),
             ));
         }
+        check_oob_consistency(verify, issues);
+    }
+    check_reserved_companion_names(spec, issues);
+}
+
+/// Reserved synthetic companion-map keys used by the OOB interpolator. A
+/// detector that names a companion `__keyhog_oob_*` would either be
+/// shadowed by the OOB injector or shadow it — either way, the verify
+/// templates would resolve to surprising values. Reject the names so a
+/// future detector author gets a clear error instead of a debugging
+/// nightmare.
+const RESERVED_COMPANION_NAMES: &[&str] = &[
+    "__keyhog_oob_url",
+    "__keyhog_oob_host",
+    "__keyhog_oob_id",
+];
+
+fn check_reserved_companion_names(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
+    for (i, c) in spec.companions.iter().enumerate() {
+        if RESERVED_COMPANION_NAMES.contains(&c.name.as_str()) {
+            issues.push(QualityIssue::Error(format!(
+                "companion {} name '{}' is reserved for the OOB interpolator. \
+                 Pick a different name; this collision would corrupt verify templates.",
+                i, c.name,
+            )));
+        }
+    }
+}
+
+/// Check that `[detector.verify.oob]` and `{{interactsh}}` template tokens
+/// are configured consistently:
+///
+/// - `oob` set but no `{{interactsh*}}` token anywhere in the verify
+///   templates → the wait_for parks for nothing; the probe never embeds
+///   the callback URL so the service can't reach our collector.
+/// - `{{interactsh*}}` token present but `oob` unset → the token resolves
+///   to an empty string at runtime, sending malformed requests (e.g.
+///   `https:///x` or a JSON body with `"target":""`).
+///
+/// Both are misconfigurations that load successfully but produce
+/// silently-wrong verify behavior. Fail-closed at the validator instead.
+fn check_oob_consistency(verify: &VerifySpec, issues: &mut Vec<QualityIssue>) {
+    let mut interactsh_referenced = false;
+    let mut scan = |s: &str| {
+        if s.contains("{{interactsh") {
+            interactsh_referenced = true;
+        }
+    };
+    if let Some(ref url) = verify.url {
+        scan(url);
+    }
+    if let Some(ref body) = verify.body {
+        scan(body);
+    }
+    for h in &verify.headers {
+        scan(&h.value);
+    }
+    for step in &verify.steps {
+        scan(&step.url);
+        if let Some(ref body) = step.body {
+            scan(body);
+        }
+        for h in &step.headers {
+            scan(&h.value);
+        }
+    }
+    let oob_configured = verify.oob.is_some();
+    match (oob_configured, interactsh_referenced) {
+        (true, false) => issues.push(QualityIssue::Error(
+            "verify.oob is set but no `{{interactsh}}` / `{{interactsh.host}}` / \
+             `{{interactsh.url}}` / `{{interactsh.id}}` token appears in any verify \
+             template — the OOB callback URL has nowhere to land, so the wait_for \
+             would always time out. Either embed an interactsh token in the body, \
+             URL, or a header — or remove the [detector.verify.oob] block."
+                .into(),
+        )),
+        (false, true) => issues.push(QualityIssue::Error(
+            "an `{{interactsh*}}` token is referenced in a verify template but no \
+             [detector.verify.oob] block is set — the token will resolve to an empty \
+             string at runtime and ship a malformed request to the service. Either \
+             add a [detector.verify.oob] block or remove the token."
+                .into(),
+        )),
+        _ => {}
     }
 }
 
@@ -545,3 +629,456 @@ fn update_repeat_bound(kind: &ast::RepetitionKind, stats: &mut RegexComplexitySt
     };
     stats.max_repeat_bound = stats.max_repeat_bound.max(bound);
 }
+
+#[cfg(test)]
+mod oob_validation_tests {
+    use super::*;
+    use crate::spec::load_detectors_from_str;
+
+    fn errors_for(toml_src: &str) -> Vec<String> {
+        let detectors = load_detectors_from_str(toml_src).expect("toml parses");
+        let mut errs = Vec::new();
+        for d in &detectors {
+            for issue in validate_detector(d) {
+                if let QualityIssue::Error(msg) = issue {
+                    errs.push(msg);
+                }
+            }
+        }
+        errs
+    }
+
+    #[test]
+    fn oob_block_without_interactsh_token_is_error() {
+        let toml_src = r#"
+[detector]
+id = "oob-no-token"
+name = "OOB without token"
+service = "github"
+severity = "high"
+keywords = ["GHTOKEN"]
+
+[[detector.patterns]]
+regex = "GHTOKEN_[A-Z0-9]{16}"
+
+[detector.verify]
+method = "POST"
+url = "https://api.github.com/probe"
+body = '{"static":"payload"}'
+
+[detector.verify.oob]
+protocol = "http"
+"#;
+        let errs = errors_for(toml_src);
+        assert!(
+            errs.iter().any(|e| e.contains("verify.oob is set but no")),
+            "expected oob-without-token error; got {errs:?}"
+        );
+    }
+
+    #[test]
+    fn interactsh_token_without_oob_block_is_error() {
+        let toml_src = r#"
+[detector]
+id = "token-no-oob"
+name = "Token without OOB"
+service = "github"
+severity = "high"
+keywords = ["GHTOKEN"]
+
+[[detector.patterns]]
+regex = "GHTOKEN_[A-Z0-9]{16}"
+
+[detector.verify]
+method = "POST"
+url = "https://api.github.com/probe"
+body = '{"target":"https://{{interactsh}}/x"}'
+"#;
+        let errs = errors_for(toml_src);
+        assert!(
+            errs.iter()
+                .any(|e| e.contains("token is referenced") && e.contains("no [detector.verify.oob]")),
+            "expected token-without-oob error; got {errs:?}"
+        );
+    }
+
+    #[test]
+    fn oob_with_interactsh_token_passes() {
+        let toml_src = r#"
+[detector]
+id = "oob-good"
+name = "OOB with token"
+service = "github"
+severity = "high"
+keywords = ["GHTOKEN"]
+
+[[detector.patterns]]
+regex = "GHTOKEN_[A-Z0-9]{16}"
+
+[detector.verify]
+method = "POST"
+url = "https://api.github.com/probe"
+body = '{"target":"https://{{interactsh}}/x"}'
+
+[detector.verify.oob]
+protocol = "http"
+"#;
+        let errs = errors_for(toml_src);
+        let oob_related: Vec<_> = errs
+            .iter()
+            .filter(|e| e.contains("oob") || e.contains("interactsh"))
+            .collect();
+        assert!(oob_related.is_empty(), "unexpected OOB errors: {oob_related:?}");
+    }
+
+    #[test]
+    fn reserved_companion_name_is_error() {
+        let toml_src = r#"
+[detector]
+id = "reserved-name"
+name = "Reserved name collision"
+service = "github"
+severity = "high"
+keywords = ["GHTOKEN"]
+
+[[detector.patterns]]
+regex = "GHTOKEN_[A-Z0-9]{16}"
+
+[[detector.companions]]
+name = "__keyhog_oob_url"
+regex = "(?:URL=)([a-z]{4,})"
+within_lines = 5
+"#;
+        let errs = errors_for(toml_src);
+        assert!(
+            errs.iter()
+                .any(|e| e.contains("__keyhog_oob_url") && e.contains("reserved")),
+            "expected reserved-name error; got {errs:?}"
+        );
+    }
+
+    /// Companions that are referenced via `{{companion.X}}` in a verify
+    /// template (URL / body / header / step) but whose regex contains a
+    /// context anchor (`KEY=value` style) with NO parenthesized capture
+    /// group will substitute the FULL anchor + value into the verify
+    /// template — typically corrupting the resulting request.
+    ///
+    /// `CompiledCompanion` auto-detects the first capture group when the
+    /// regex has any (`compiler.rs:369`); without a group, the whole
+    /// match is the value. So `(?:KEY=)([a-z]+)` is fine (group resolves
+    /// to `[a-z]+`), but `KEY=[a-z]+` substitutes the literal `KEY=` too.
+    ///
+    /// This audit walks the embedded corpus, identifies suspicious
+    /// companions, and asserts none exist. Any new detector whose
+    /// companion is anchored-but-not-grouped will trip this test.
+    #[test]
+    fn audit_companion_substitutions_have_capture_groups() {
+        use crate::spec::load_detectors_from_str;
+        let mut suspicious = Vec::new();
+        for (filename, toml_src) in crate::embedded_detector_tomls() {
+            let Ok(detectors) = load_detectors_from_str(toml_src) else { continue };
+            for d in &detectors {
+                let Some(verify) = d.verify.as_ref() else { continue };
+                // Build the set of companion names referenced via
+                // `{{companion.X}}` in any verify template.
+                let mut substituted: std::collections::HashSet<String> =
+                    std::collections::HashSet::new();
+                let mut scan = |s: &str| {
+                    let mut rest = s;
+                    while let Some(start) = rest.find("{{companion.") {
+                        let after = &rest[start + "{{companion.".len()..];
+                        if let Some(end) = after.find("}}") {
+                            substituted.insert(after[..end].to_string());
+                            rest = &after[end + 2..];
+                        } else {
+                            break;
+                        }
+                    }
+                };
+                if let Some(ref u) = verify.url { scan(u); }
+                if let Some(ref b) = verify.body { scan(b); }
+                for h in &verify.headers { scan(&h.value); }
+                for step in &verify.steps {
+                    scan(&step.url);
+                    if let Some(ref b) = step.body { scan(b); }
+                    for h in &step.headers { scan(&h.value); }
+                    if let crate::AuthSpec::Header { template, .. } = &step.auth {
+                        scan(template);
+                    }
+                }
+                if let Some(ref auth) = verify.auth {
+                    if let crate::AuthSpec::Header { template, .. } = auth {
+                        scan(template);
+                    }
+                }
+
+                for c in &d.companions {
+                    if !substituted.contains(&c.name) {
+                        continue;
+                    }
+                    // The companion's value will be substituted somewhere.
+                    // If the regex has any unescaped `(`, regex auto-detects
+                    // a capture group → fine. Otherwise check that the
+                    // regex doesn't contain a context anchor that would
+                    // bleed into the substitution.
+                    let has_group = regex_has_capture_group(&c.regex);
+                    if has_group {
+                        continue;
+                    }
+                    // No group → entire match substitutes. Look for assignment
+                    // markers `=` or `:` outside character classes — these
+                    // indicate the regex anchors on `KEY=value` and the
+                    // substitution would include the prefix.
+                    if regex_likely_includes_anchor_prefix(&c.regex) {
+                        suspicious.push(format!(
+                            "{} (companion {} regex {:?})",
+                            filename, c.name, c.regex
+                        ));
+                    }
+                }
+            }
+        }
+        assert!(
+            suspicious.is_empty(),
+            "companions referenced in verify substitutions but lacking a capture group \
+             on a context-anchored regex (would substitute `KEY=value` instead of just \
+             `value`):\n  {}",
+            suspicious.join("\n  ")
+        );
+    }
+
+    /// Cheap heuristic: returns true if the regex has any unescaped `(`
+    /// outside a character class. Matches both capturing `(...)` and
+    /// non-capturing `(?:...)` — but the auto-detect on the scanner side
+    /// (`regex.captures_len() > 1`) only fires for capturing groups, so
+    /// we want to be more precise. This walker tracks `(?:` / `(?i:` /
+    /// `(?P<...>` etc. and only counts groups that produce a capture.
+    fn regex_has_capture_group(pattern: &str) -> bool {
+        let bytes = pattern.as_bytes();
+        let mut i = 0;
+        let mut in_class = false;
+        let mut escape = false;
+        while i < bytes.len() {
+            let b = bytes[i];
+            if escape { escape = false; i += 1; continue; }
+            match b {
+                b'\\' => { escape = true; }
+                b'[' if !in_class => { in_class = true; }
+                b']' if in_class => { in_class = false; }
+                b'(' if !in_class => {
+                    // Distinguish (?: / (?i: / (?P<name>...) / (?<name>...) / (...)
+                    if i + 1 < bytes.len() && bytes[i + 1] == b'?' {
+                        // (?...) — non-capturing OR named group OR
+                        // look-around assertion. Distinguish them:
+                        //   (?P<name>...)  capturing (Rust + RE2 style)
+                        //   (?<name>...)   capturing (PCRE + .NET style),
+                        //                  but `(?<=` and `(?<!` are
+                        //                  zero-width look-behinds — NOT
+                        //                  capturing.
+                        //   (?:...)        non-capturing
+                        //   (?i:...) etc.  non-capturing flag groups
+                        //   (?=...) (?!...) zero-width look-around
+                        let after = &bytes[i + 2..];
+                        if after.starts_with(b"P<") {
+                            return true;
+                        }
+                        if after.starts_with(b"<") {
+                            // Disambiguate look-behind from named group.
+                            // `(?<=...)` and `(?<!...)` start with `<=`/`<!`;
+                            // anything else after `<` is a name.
+                            if after.starts_with(b"<=") || after.starts_with(b"<!") {
+                                // look-behind, non-capturing
+                            } else {
+                                return true;
+                            }
+                        }
+                        // Otherwise `(?:`, `(?i:)`, `(?=...)`, `(?!...)`,
+                        // bare flags `(?i)`, etc. — all non-capturing.
+                    } else {
+                        return true; // Plain `(` = capturing group
+                    }
+                }
+                _ => {}
+            }
+            i += 1;
+        }
+        false
+    }
+
+    /// Returns true if the regex has an assignment marker `=` outside any
+    /// character class. URL companions (the common no-capture-group case
+    /// that's actually fine) typically don't contain `=` — only their
+    /// query strings would, and matching query-string values via
+    /// companion is rare. `=` outside character classes is a strong
+    /// signal that the regex anchors on `KEY=value` and would bleed the
+    /// `KEY=` prefix into the substitution.
+    ///
+    /// `:` is intentionally NOT flagged: it appears in URL schemes
+    /// (`https://`) and would generate false positives on every URL-
+    /// shaped companion regex.
+    fn regex_likely_includes_anchor_prefix(pattern: &str) -> bool {
+        let bytes = pattern.as_bytes();
+        let mut i = 0;
+        let mut in_class = false;
+        let mut escape = false;
+        while i < bytes.len() {
+            let b = bytes[i];
+            if escape { escape = false; i += 1; continue; }
+            match b {
+                b'\\' => { escape = true; }
+                b'[' if !in_class => { in_class = true; }
+                b']' if in_class => { in_class = false; }
+                b'=' if !in_class => return true,
+                _ => {}
+            }
+            i += 1;
+        }
+        false
+    }
+
+    /// Audit every detector's auth-field references (Bearer.field,
+    /// Basic.username, Basic.password, Query.field, AwsV4.access_key/
+    /// secret_key/session_token) and assert each one resolves to either:
+    ///   - a literal value (anything that isn't `match`, `companion`, or
+    ///     `{{...}}`),
+    ///   - the special `match` token,
+    ///   - or `companion.<name>` where `<name>` actually exists in the
+    ///     detector's companions list.
+    ///
+    /// The `resolve_field` helper falls through to "literal string" for
+    /// anything that doesn't match those exact shapes, so a typo like
+    /// `companion` (no `.name`), `companion.<typo>`, or `{{match}}`
+    /// (template syntax in a field-style slot) used to silently produce
+    /// a request that authenticated as the literal string. This audit
+    /// rejects those at validation time.
+    #[test]
+    fn audit_auth_field_references_resolve() {
+        use crate::spec::load_detectors_from_str;
+        use crate::AuthSpec;
+
+        let mut errors: Vec<String> = Vec::new();
+        for (filename, toml_src) in crate::embedded_detector_tomls() {
+            let Ok(detectors) = load_detectors_from_str(toml_src) else { continue };
+            for d in &detectors {
+                let companion_names: std::collections::HashSet<&str> = d
+                    .companions
+                    .iter()
+                    .map(|c| c.name.as_str())
+                    .collect();
+
+                let check = |label: &str, field: &str| -> Option<String> {
+                    if field.contains("{{") {
+                        return Some(format!(
+                            "{filename}: {label} field {field:?} contains `{{...}}` template — \
+                             field-style slots use `match`/`companion.<name>`/literal, NOT `{{...}}`. \
+                             It silently resolves to the literal string."
+                        ));
+                    }
+                    if field == "companion" {
+                        return Some(format!(
+                            "{filename}: {label} field is bare `\"companion\"` with no \
+                             `.<name>` — silently resolves to the literal string \"companion\"."
+                        ));
+                    }
+                    if let Some(name) = field.strip_prefix("companion.") {
+                        if !companion_names.contains(name) {
+                            return Some(format!(
+                                "{filename}: {label} field {field:?} references companion \
+                                 {name:?} which is not declared on this detector."
+                            ));
+                        }
+                    }
+                    None
+                };
+
+                if let Some(verify) = d.verify.as_ref() {
+                    let mut audit_auth = |auth: &AuthSpec, ctx: &str| {
+                        match auth {
+                            AuthSpec::Bearer { field } => {
+                                if let Some(e) = check(&format!("{ctx} bearer.field"), field) {
+                                    errors.push(e);
+                                }
+                            }
+                            AuthSpec::Basic { username, password } => {
+                                if let Some(e) = check(&format!("{ctx} basic.username"), username) {
+                                    errors.push(e);
+                                }
+                                if let Some(e) = check(&format!("{ctx} basic.password"), password) {
+                                    errors.push(e);
+                                }
+                            }
+                            AuthSpec::Query { field, .. } => {
+                                if let Some(e) = check(&format!("{ctx} query.field"), field) {
+                                    errors.push(e);
+                                }
+                            }
+                            AuthSpec::AwsV4 { access_key, secret_key, session_token, .. } => {
+                                if let Some(e) = check(&format!("{ctx} awsv4.access_key"), access_key) {
+                                    errors.push(e);
+                                }
+                                if let Some(e) = check(&format!("{ctx} awsv4.secret_key"), secret_key) {
+                                    errors.push(e);
+                                }
+                                if let Some(tok) = session_token {
+                                    if let Some(e) = check(&format!("{ctx} awsv4.session_token"), tok) {
+                                        errors.push(e);
+                                    }
+                                }
+                            }
+                            // Header.template is a TEMPLATE (uses interpolate
+                            // which honors `{{match}}` / `{{companion.X}}`),
+                            // not a field — different validation path.
+                            AuthSpec::Header { .. } | AuthSpec::None | AuthSpec::Script { .. } => {}
+                        }
+                    };
+                    if let Some(ref auth) = verify.auth {
+                        audit_auth(auth, "verify.auth");
+                    }
+                    for (i, step) in verify.steps.iter().enumerate() {
+                        audit_auth(&step.auth, &format!("verify.steps[{i}].auth"));
+                    }
+                }
+            }
+        }
+        assert!(
+            errors.is_empty(),
+            "auth field reference audit found broken detectors:\n  {}",
+            errors.join("\n  ")
+        );
+    }
+
+    #[test]
+    fn interactsh_token_in_header_value_counts() {
+        // The token can live in the body, URL, OR a header value — any one
+        // satisfies the "interactsh referenced" check.
+        let toml_src = r#"
+[detector]
+id = "header-oob"
+name = "OOB via header"
+service = "github"
+severity = "high"
+keywords = ["GHTOKEN"]
+
+[[detector.patterns]]
+regex = "GHTOKEN_[A-Z0-9]{16}"
+
+[detector.verify]
+method = "POST"
+url = "https://api.github.com/probe"
+
+[[detector.verify.headers]]
+name = "X-Callback"
+value = "https://{{interactsh}}/x"
+
+[detector.verify.oob]
+protocol = "http"
+"#;
+        let errs = errors_for(toml_src);
+        let oob_related: Vec<_> = errs
+            .iter()
+            .filter(|e| e.contains("oob") || e.contains("interactsh"))
+            .collect();
+        assert!(oob_related.is_empty(), "header-token detection failed: {oob_related:?}");
+    }
+}
+

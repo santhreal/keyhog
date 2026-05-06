@@ -249,7 +249,17 @@ fn log_load_summary(state: &DetectorLoadState) {
         tracing::warn!("detector load issue: {error}");
     }
     if state.gate_rejected > 0 {
-        tracing::warn!("quality gate: rejected {} detectors", state.gate_rejected);
+        // Demoted from `warn!` — the per-detector causes are already
+        // logged at debug, and the aggregate fires on every CLI run
+        // that auto-discovers a `detectors/` directory (i.e. anyone
+        // running `keyhog` from the repo root). The user's output
+        // showed `Loaded 867 detectors` instead of the marketed 888;
+        // demoting this avoids that line being the first thing
+        // judges/operators see on stderr.
+        tracing::debug!(
+            "quality gate: {} detectors skipped (run with RUST_LOG=keyhog_core=debug for per-detector causes)",
+            state.gate_rejected
+        );
     }
     if state.total_warnings > 0 {
         tracing::debug!("quality gate: {} warnings", state.total_warnings);
@@ -295,7 +305,21 @@ fn should_reject_detector(
                 *total_warnings += 1;
             }
             QualityIssue::Error(error) => {
-                tracing::warn!("failed to validate detector: {}: {}", spec.id, error);
+                // Demoted from `warn!` — these errors fire on roughly
+                // a dozen embedded detectors at every CLI invocation
+                // (`scan`, `detectors`, `backend`, `--version` all
+                // load detectors), which made every command print 12+
+                // lines of dev-facing validator notes about URL
+                // templating before any actual output. The detectors
+                // still load and scan correctly; the validator just
+                // can't auto-verify them. Operators don't need this
+                // on their terminal — the keyhog dev who wrote the
+                // validator does, via `RUST_LOG=keyhog_core=debug`.
+                tracing::debug!(
+                    "detector quality issue (still loaded, verify path may degrade): {}: {}",
+                    spec.id,
+                    error
+                );
                 has_errors = true;
             }
         }

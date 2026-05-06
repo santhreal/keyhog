@@ -1,11 +1,11 @@
 [package]
 name = "keyhog-core"
-description = "Core types, traits, and detector specs for the secret scanner"
-version = "0.2.1"
-edition = "2021"
-rust-version = "1.89"
+description = "keyhog-core — shared data model and detector specifications for the KeyHog secret scanner"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
 authors = ["Santh Project <contact@santh.dev>"]
-license = "MIT OR Apache-2.0"
+license.workspace = true
 repository = "https://github.com/santhsecurity/keyhog"
 homepage = "https://github.com/santhsecurity/keyhog"
 documentation = "https://docs.rs/keyhog-core"
@@ -39,16 +39,6 @@ anyhow.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }
-
-[features]
-default = []
-# Hardened mode for security-critical deployments (e.g. embedded inside
-# EnvSeal). Enables: process-isolated scan worker, mlock on credential
-# buffers, no on-disk caches, no live verifier, refuse to run if core
-# dumps are enabled, refuse signed-corpus mismatches. Always-on
-# protections (zeroize-on-drop, redacted Debug, HTTPS-only, hash-only
-# allowlist) are unconditional and live outside this gate.
-lockdown = []
 
 [dev-dependencies]
 proptest = { workspace = true }

@@ -2,7 +2,7 @@
 
 All notable changes to KeyHog. Versions follow [Semantic Versioning](https://semver.org/).
 
-## Unreleased — v0.3.0-dev
+## v0.3.0 — 2026-05-01
 
 The "legendary" wave: 18 Tier-A perf wins + 12 Tier-B moat innovations from the
 2026-04-26 deep audits, plus a perfection pass that hardened GPU/CPU

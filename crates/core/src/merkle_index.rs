@@ -13,7 +13,9 @@
 //! repo) and JSON keeps the on-disk format trivial to debug, diff, and
 //! version-control if a team wants to.
 
+use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 
 use parking_lot::Mutex;
@@ -32,23 +34,33 @@ struct OnDisk {
 
 const SCHEMA_VERSION: u32 = 1;
 
+/// Shard count: spreads concurrent `record` / `unchanged` calls across
+/// independent locks so tiny-file storms don't serialize all rayon workers.
+const MERKLE_SHARDS: usize = 64;
+
+fn shard_index(path: &Path) -> usize {
+    let mut h = DefaultHasher::new();
+    path.hash(&mut h);
+    (h.finish() as usize) % MERKLE_SHARDS
+}
+
 /// In-memory file-hash index loaded from / saved to a JSON cache file.
 ///
 /// Concurrency model: the orchestrator holds an `Arc<MerkleIndex>` and
-/// records new entries as chunks arrive from rayon-parallel sources. Both
-/// `lookup` and `record` are O(1) hashmap ops behind a `parking_lot::Mutex`
-/// shard. We don't use `DashMap` here because the contention surface is low
-/// (one record per file) and the simpler primitive is easier to reason
-/// about for a persisted on-disk artifact.
+/// records new entries as chunks arrive from rayon-parallel sources.
+/// Paths are sharded across [`MERKLE_SHARDS`] mutex-protected maps so
+/// concurrent updates rarely contend.
 #[derive(Debug)]
 pub struct MerkleIndex {
-    inner: Mutex<HashMap<PathBuf, [u8; 32]>>,
+    shards: Vec<Mutex<HashMap<PathBuf, [u8; 32]>>>,
 }
 
 impl MerkleIndex {
     pub fn empty() -> Self {
         Self {
-            inner: Mutex::new(HashMap::new()),
+            shards: (0..MERKLE_SHARDS)
+                .map(|_| Mutex::new(HashMap::new()))
+                .collect(),
         }
     }
 
@@ -90,17 +102,21 @@ impl MerkleIndex {
             count = entries.len(),
             "merkle index loaded"
         );
-        Self {
-            inner: Mutex::new(entries),
+        let idx = Self::empty();
+        for (p, h) in entries {
+            idx.record(p, h);
         }
+        idx
     }
 
     /// Persist the index to `path`, atomically (write to a tmp file in the
     /// same dir, then rename).
     pub fn save(&self, path: &Path) -> std::io::Result<()> {
-        let entries: HashMap<String, String> = self
-            .inner
-            .lock()
+        let mut merged = HashMap::<PathBuf, [u8; 32]>::new();
+        for shard in &self.shards {
+            merged.extend(shard.lock().iter().map(|(p, h)| (p.clone(), *h)));
+        }
+        let entries: HashMap<String, String> = merged
             .iter()
             .map(|(p, h)| (p.display().to_string(), hex_encode(h)))
             .collect();
@@ -129,7 +145,8 @@ impl MerkleIndex {
     /// intention: callers compute the hash of the in-memory chunk and ask
     /// "have I seen this exact byte sequence at this exact path before?"
     pub fn unchanged(&self, path: &Path, content_hash: &[u8; 32]) -> bool {
-        self.inner
+        let i = shard_index(path);
+        self.shards[i]
             .lock()
             .get(path)
             .is_some_and(|prev| prev == content_hash)
@@ -137,16 +154,17 @@ impl MerkleIndex {
 
     /// Record a file's hash. Overwrites a previous entry at the same path.
     pub fn record(&self, path: PathBuf, content_hash: [u8; 32]) {
-        self.inner.lock().insert(path, content_hash);
+        let i = shard_index(&path);
+        self.shards[i].lock().insert(path, content_hash);
     }
 
     /// Number of indexed entries.
     pub fn len(&self) -> usize {
-        self.inner.lock().len()
+        self.shards.iter().map(|s| s.lock().len()).sum()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.inner.lock().is_empty()
+        self.shards.iter().all(|s| s.lock().is_empty())
     }
 }
 

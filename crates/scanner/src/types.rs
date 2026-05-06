@@ -178,79 +178,8 @@ pub struct ScannerConfig {
 
 impl Default for ScannerConfig {
     fn default() -> Self {
-        Self {
-            max_decode_depth: 10,
-            validate_decode: true,
-            entropy_enabled: true,
-            entropy_threshold: 4.0,
-            entropy_in_source_files: false,
-            ml_enabled: true,
-            ml_weight: 0.6,
-            min_confidence: 0.5,
-            unicode_normalization: true,
-            max_decode_bytes: 512 * 1024, // 512KB — k8s manifests, CI configs, minified JS
-            max_matches_per_chunk: 1000,
-            multiline: crate::multiline::MultilineConfig::default(),
-            known_prefixes: Vec::new(),
-            secret_keywords: default_secret_keywords(),
-            test_keywords: default_test_keywords(),
-            placeholder_keywords: default_placeholder_keywords(),
-        }
+        keyhog_core::config::ScanConfig::default().into()
     }
-}
-
-fn default_secret_keywords() -> Vec<String> {
-    [
-        "password",
-        "passwd",
-        "pwd",
-        "secret",
-        "token",
-        "api_key",
-        "apikey",
-        "api-key",
-        "access_key",
-        "auth_token",
-        "auth_key",
-        "private_key",
-        "client_secret",
-        "encryption_key",
-        "signing_key",
-        "bearer",
-        "credential",
-        "license_key",
-    ]
-    .iter()
-    .map(|s| s.to_string())
-    .collect()
-}
-
-fn default_test_keywords() -> Vec<String> {
-    [
-        "test", "mock", "fake", "dummy", "stub", "fixture", "example", "sample", "sandbox",
-        "staging",
-    ]
-    .iter()
-    .map(|s| s.to_string())
-    .collect()
-}
-
-fn default_placeholder_keywords() -> Vec<String> {
-    [
-        "change_me",
-        "changeme",
-        "replace_me",
-        "todo",
-        "fixme",
-        "your_",
-        "insert_",
-        "put_your",
-        "fill_in",
-        "<your",
-    ]
-    .iter()
-    .map(|s| s.to_string())
-    .collect()
 }
 
 impl ScannerConfig {

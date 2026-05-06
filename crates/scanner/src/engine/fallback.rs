@@ -1,5 +1,17 @@
 use super::*;
+use std::cell::RefCell;
 use std::collections::HashMap;
+
+thread_local! {
+    /// Per-thread pool for the `active_fallback_patterns` bitmap.
+    ///
+    /// Every fallback scan previously did `vec![false; self.fallback.len()]` —
+    /// a fresh allocation per chunk. With ~1000 fallback patterns and a
+    /// 100k-file scan, that's a million tiny allocations hammering the
+    /// global allocator across rayon workers. Pool one buffer per worker;
+    /// it's resized once and resliced thereafter.
+    static ACTIVE_PATTERNS_POOL: RefCell<Vec<bool>> = const { RefCell::new(Vec::new()) };
+}
 
 impl CompiledScanner {
     #[allow(clippy::too_many_arguments, dead_code)]
@@ -31,39 +43,60 @@ impl CompiledScanner {
             );
             return;
         }
-        let active_patterns = self.active_fallback_patterns(&chunk.data);
-
-        for (index, (entry, _keywords)) in self.fallback.iter().enumerate() {
-            if !active_patterns[index] {
-                continue;
-            }
-            if let Some(deadline) = deadline {
-                if index.is_multiple_of(16) && std::time::Instant::now() >= deadline {
-                    break;
+        self.with_active_fallback_patterns(&chunk.data, |this, active_patterns| {
+            for (index, (entry, _keywords)) in this.fallback.iter().enumerate() {
+                if !active_patterns[index] {
+                    continue;
                 }
+                if let Some(deadline) = deadline {
+                    if index.is_multiple_of(16) && std::time::Instant::now() >= deadline {
+                        break;
+                    }
+                }
+                this.extract_matches(
+                    entry,
+                    preprocessed,
+                    line_offsets,
+                    code_lines,
+                    documentation_lines,
+                    chunk,
+                    scan_state,
+                    0,
+                    0,
+                );
             }
-            self.extract_matches(
-                entry,
-                preprocessed,
-                line_offsets,
-                code_lines,
-                documentation_lines,
-                chunk,
-                scan_state,
-                0,
-                0,
-            );
-        }
+        });
     }
 
-    fn active_fallback_patterns(&self, data: &str) -> Vec<bool> {
+    /// Compute the active-fallback bitmap into the thread-local pool, run the
+    /// caller's closure with a borrow, and return whatever the closure
+    /// returns. The bitmap is reset (not freed) on exit, so the next chunk
+    /// the same worker handles reuses the allocation.
+    fn with_active_fallback_patterns<R>(
+        &self,
+        data: &str,
+        f: impl FnOnce(&Self, &[bool]) -> R,
+    ) -> R {
+        ACTIVE_PATTERNS_POOL.with(|cell| {
+            let mut buf = cell.borrow_mut();
+            buf.clear();
+            buf.resize(self.fallback.len(), false);
+            self.populate_active_fallback(data, &mut buf);
+            f(self, &buf)
+        })
+    }
+
+    fn populate_active_fallback(&self, data: &str, active: &mut [bool]) {
+        debug_assert_eq!(active.len(), self.fallback.len());
         if let Some(keyword_ac) = &self.fallback_keyword_ac {
-            let mut active = vec![false; self.fallback.len()];
-            for (index, (_pattern, keywords)) in self.fallback.iter().enumerate() {
-                if !keywords.iter().any(|keyword| keyword.len() >= 4) {
-                    active[index] = true;
-                }
-            }
+            // Seed the bitmap from the precomputed `fallback_always_active`
+            // table — this collapses the previous `O(F × K)` per-chunk loop
+            // (walking each pattern's keywords looking for any ≥4-char
+            // entry) into one `copy_from_slice`. The table is built once
+            // at scanner construction.
+            let always = &self.fallback_always_active;
+            debug_assert_eq!(always.len(), active.len());
+            active.copy_from_slice(always);
             for mat in keyword_ac.find_iter(data) {
                 let keyword_idx = mat.pattern().as_usize();
                 if keyword_idx < self.fallback_keyword_to_patterns.len() {
@@ -74,9 +107,10 @@ impl CompiledScanner {
                     }
                 }
             }
-            active
         } else {
-            vec![true; self.fallback.len()]
+            // No keyword prefilter compiled — every fallback pattern is
+            // considered active. `slice::fill` lowers to a memset.
+            active.fill(true);
         }
     }
 
@@ -91,37 +125,34 @@ impl CompiledScanner {
         scan_state: &mut ScanState,
         deadline: Option<std::time::Instant>,
     ) {
-        let active_set = self.active_fallback_patterns(&chunk.data);
-        let active_fallback: Vec<&CompiledPattern> = self
-            .fallback
-            .iter()
-            .enumerate()
-            .filter(|(index, _)| active_set[*index])
-            .map(|(_, (entry, _))| entry)
-            .collect();
-
-        if active_fallback.is_empty() {
-            return;
-        }
-
-        for (index, entry) in active_fallback.iter().enumerate() {
-            if let Some(deadline) = deadline {
-                if index.is_multiple_of(16) && std::time::Instant::now() >= deadline {
-                    break;
+        self.with_active_fallback_patterns(&chunk.data, |this, active_set| {
+            // Walk in fallback-index order without the prior `Vec<&CompiledPattern>`
+            // collect step — the bitmap already encodes which entries are
+            // active and we don't need a second allocation just to filter.
+            let mut tested: usize = 0;
+            for (index, (entry, _)) in this.fallback.iter().enumerate() {
+                if !active_set[index] {
+                    continue;
                 }
+                if let Some(deadline) = deadline {
+                    if tested.is_multiple_of(16) && std::time::Instant::now() >= deadline {
+                        break;
+                    }
+                }
+                this.extract_matches(
+                    entry,
+                    preprocessed,
+                    line_offsets,
+                    code_lines,
+                    documentation_lines,
+                    chunk,
+                    scan_state,
+                    0,
+                    0,
+                );
+                tested += 1;
             }
-            self.extract_matches(
-                entry,
-                preprocessed,
-                line_offsets,
-                code_lines,
-                documentation_lines,
-                chunk,
-                scan_state,
-                0,
-                0,
-            );
-        }
+        });
     }
 
     pub(crate) fn match_companions(
@@ -235,6 +266,10 @@ impl CompiledScanner {
 
         #[cfg(feature = "ml")]
         {
+            if !self.config.ml_enabled {
+                return Some(MlScoreResult::Final(heuristic_conf));
+            }
+
             if !crate::probabilistic_gate::ProbabilisticGate::looks_promising(credential) {
                 return Some(MlScoreResult::Final(0.1));
             }

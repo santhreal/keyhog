@@ -72,6 +72,7 @@ fn is_private_ipv4(ip: Ipv4Addr) -> bool {
         || ip.is_multicast()
         || ip.is_broadcast()
         || ip == Ipv4Addr::new(0, 0, 0, 0)
+        || (ip.octets()[0] == 100 && (ip.octets()[1] & 0xc0) == 64) // CGNAT
 }
 
 fn is_private_ipv6(ip: Ipv6Addr) -> bool {
@@ -81,6 +82,7 @@ fn is_private_ipv6(ip: Ipv6Addr) -> bool {
         || ip.is_multicast()
         || ip == Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0)
         || is_ipv6_embedding_private_ipv4(&ip)
+        || ip.segments()[0] == 0x2002 // 6to4
 }
 
 /// Catches ALL IPv6 addresses that embed a private IPv4:
@@ -124,6 +126,18 @@ fn is_ipv6_embedding_private_ipv4(ip: &Ipv6Addr) -> bool {
             return true;
         }
     }
+
+    // Aggressive fallback: block ANY IPv6 address ending in a private IPv4 address
+    let ipv4_suffix = Ipv4Addr::new(
+        (segs[6] >> 8) as u8,
+        segs[6] as u8,
+        (segs[7] >> 8) as u8,
+        segs[7] as u8,
+    );
+    if is_private_ipv4(ipv4_suffix) {
+        return true;
+    }
+
     false
 }
 

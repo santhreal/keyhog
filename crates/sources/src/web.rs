@@ -37,9 +37,6 @@ const MIN_WASM_STRING_LEN: usize = 8;
 /// Maximum response body size to prevent OOM on malicious targets (10 MB).
 const MAX_RESPONSE_BYTES: usize = 10 * 1024 * 1024;
 
-/// HTTP request timeout in seconds.
-const REQUEST_TIMEOUT_SECS: u64 = 30;
-
 /// WASM magic bytes: `\0asm`.
 const WASM_MAGIC: &[u8; 4] = b"\x00asm";
 
@@ -95,7 +92,7 @@ impl WebSource {
         // bodies to completion before we can check size, opening a gzip-bomb
         // DoS. Decompression is opt-in per call where we explicitly want it.
         let client = reqwest::blocking::Client::builder()
-            .timeout(std::time::Duration::from_secs(REQUEST_TIMEOUT_SECS))
+            .timeout(crate::timeouts::HTTP_REQUEST)
             .danger_accept_invalid_certs(false)
             .redirect(reqwest::redirect::Policy::limited(5))
             .user_agent("keyhog-web/0.1")
@@ -166,8 +163,9 @@ fn fetch_url(client: &reqwest::blocking::Client, url: &str) -> Vec<Result<Chunk,
 fn handle_js(resp: reqwest::blocking::Response, url: &str) -> Vec<Result<Chunk, SourceError>> {
     match read_text_response(resp) {
         Ok(body) => vec![Ok(Chunk {
-            data: body,
+            data: body.into(),
             metadata: ChunkMetadata {
+                    base_offset: 0,
                 source_type: "web:js".to_string(),
                 path: Some(url.to_string()),
                 commit: None,
@@ -196,8 +194,9 @@ fn handle_sourcemap(
             tracing::warn!(url, err = %e, "failed to parse source map JSON");
             // Fall back to treating it as plain JS text
             return vec![Ok(Chunk {
-                data: body,
+                data: body.into(),
                 metadata: ChunkMetadata {
+                    base_offset: 0,
                     source_type: "web:sourcemap:raw".to_string(),
                     path: Some(url.to_string()),
                     commit: None,
@@ -232,8 +231,9 @@ fn handle_sourcemap(
                 .cloned()
                 .unwrap_or_else(|| format!("source_{i}"));
             chunks.push(Ok(Chunk {
-                data: code.clone(),
+                data: code.clone().into(),
                 metadata: ChunkMetadata {
+                    base_offset: 0,
                     source_type: "web:sourcemap".to_string(),
                     path: Some(format!("{url}!{source_name}")),
                     commit: None,
@@ -247,8 +247,9 @@ fn handle_sourcemap(
     // If no sourcesContent, treat the raw map as scannable text
     if chunks.is_empty() {
         chunks.push(Ok(Chunk {
-            data: body,
+            data: body.into(),
             metadata: ChunkMetadata {
+                    base_offset: 0,
                 source_type: "web:sourcemap:raw".to_string(),
                 path: Some(url.to_string()),
                 commit: None,
@@ -280,8 +281,9 @@ fn handle_wasm(resp: reqwest::blocking::Response, url: &str) -> Vec<Result<Chunk
     }
 
     vec![Ok(Chunk {
-        data: strings.join("\n"),
+        data: keyhog_core::SensitiveString::join(&strings, "\n").into(),
         metadata: ChunkMetadata {
+                    base_offset: 0,
             source_type: "web:wasm".to_string(),
             path: Some(url.to_string()),
             commit: None,

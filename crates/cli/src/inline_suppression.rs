@@ -31,8 +31,8 @@ pub fn filter_inline_suppressions(matches: Vec<RawMatch>) -> Vec<RawMatch> {
         file_matches.sort_by_key(|m| m.location.line.unwrap_or(0));
 
         if let Ok(file) = std::fs::File::open(&path) {
-            let reader = std::io::BufReader::new(file);
-            let mut lines = reader.lines();
+            let mut reader = std::io::BufReader::new(file);
+            let mut line_buf = String::new();
             let mut current_line_num = 1;
             let mut prev_line = String::new();
             let mut current_line = String::new();
@@ -44,7 +44,10 @@ pub fn filter_inline_suppressions(matches: Vec<RawMatch>) -> Vec<RawMatch> {
                 };
 
                 while current_line_num <= target_line {
-                    if let Some(Ok(line)) = lines.next() {
+                    line_buf.clear();
+                    if reader.read_line(&mut line_buf).unwrap_or(0) > 0 {
+                        // Trim trailing newline for the directive check
+                        let line = line_buf.trim_end_matches(['\n', '\r']).to_string();
                         prev_line = std::mem::replace(&mut current_line, line);
                         current_line_num += 1;
                     } else {
@@ -104,11 +107,5 @@ fn extract_directive_from_comment(comment: &str) -> Option<String> {
         return None;
     }
     let directive = &comment[directive_index..];
-    let token_end = directive
-        .find(char::is_whitespace)
-        .map_or(directive.len(), |index| index);
-    if &directive[..token_end] != INLINE_SUPPRESSION_DIRECTIVE {
-        return None;
-    }
     Some(directive.to_string())
 }

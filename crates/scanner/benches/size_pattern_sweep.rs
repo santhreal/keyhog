@@ -80,6 +80,7 @@ fn make_chunk(payload: &str) -> Chunk {
     Chunk {
         data: payload.to_string(),
         metadata: ChunkMetadata {
+                    base_offset: 0,
             source_type: "file".into(),
             path: Some("synthetic.txt".into()),
             ..Default::default()

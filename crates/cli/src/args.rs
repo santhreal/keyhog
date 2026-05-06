@@ -305,6 +305,35 @@ pub struct ScanArgs {
     #[arg(long)]
     pub verify: bool,
 
+    /// Enable out-of-band callback verification via an embedded interactsh
+    /// client. For webhook- and callback-shaped credentials, OOB verification
+    /// proves the credential is exfil-capable: we mint a per-finding
+    /// subdomain on the configured collector, embed it in the verification
+    /// probe, and confirm the service actually called back. Off by default.
+    /// See docs/OOB.md for the threat model and self-hosting guidance.
+    #[cfg(feature = "verify")]
+    #[arg(long, requires = "verify")]
+    pub verify_oob: bool,
+
+    /// Interactsh server for OOB verification. Defaults to projectdiscovery's
+    /// public collector at `oast.fun`. Use a self-hosted server for sensitive
+    /// scans — the collector sees correlation IDs and the IPs of services
+    /// that call back, never the credential itself. Only meaningful with
+    /// `--verify-oob`; clap rejects the flag without it instead of silently
+    /// ignoring it (the prior behavior gave false confidence that an
+    /// override had been applied).
+    #[cfg(feature = "verify")]
+    #[arg(long, default_value = "oast.fun", value_name = "HOST", requires = "verify_oob")]
+    pub oob_server: String,
+
+    /// Per-finding OOB wait timeout in seconds. Detector specs may set their
+    /// own `timeout_secs`; this value is the global default and the upper
+    /// bound. Lower = faster scans, higher = catches services with delayed
+    /// webhooks (e.g., queued mail delivery). Requires `--verify-oob`.
+    #[cfg(feature = "verify")]
+    #[arg(long, default_value = "30", value_name = "SECS", requires = "verify_oob")]
+    pub oob_timeout: u64,
+
     /// Show full credentials (default: redacted)
     #[arg(long)]
     pub show_secrets: bool,
@@ -354,13 +383,11 @@ pub struct ScanArgs {
     pub source: Option<Vec<String>>,
 
     /// Fast mode: pattern matching only. No decode, no entropy. Maximum speed.
-    #[cfg_attr(feature = "full", arg(long, conflicts_with_all = ["deep", "no_decode", "no_entropy"]))]
-    #[cfg_attr(not(feature = "full"), arg(long, conflicts_with_all = ["deep", "no_decode"]))]
+    #[arg(long, conflicts_with_all = ["deep", "no_decode", "no_entropy"])]
     pub fast: bool,
 
     /// Deep mode: all features enabled.
-    #[cfg_attr(feature = "full", arg(long, conflicts_with_all = ["fast", "no_decode", "no_entropy"]))]
-    #[cfg_attr(not(feature = "full"), arg(long, conflicts_with_all = ["fast", "no_decode"]))]
+    #[arg(long, conflicts_with_all = ["fast", "no_decode", "no_entropy"])]
     pub deep: bool,
 
     /// Lockdown mode: maximum security at the cost of throughput. Enables
@@ -378,12 +405,10 @@ pub struct ScanArgs {
     pub no_decode: bool,
 
     /// Disable entropy-based detection
-    #[cfg(feature = "full")]
     #[arg(long)]
     pub no_entropy: bool,
 
     /// Minimum ML confidence score for generic entropy secrets (0.0 to 1.0)
-    #[cfg(feature = "full")]
     #[arg(long, default_value = "0.5", value_name = "THRESHOLD")]
     pub ml_threshold: f64,
 
@@ -424,7 +449,6 @@ pub struct ScanArgs {
     pub decode_size_limit: Option<usize>,
 
     /// Enable entropy scanning in source code files.
-    #[cfg(feature = "full")]
     #[arg(long)]
     pub entropy_source_files: bool,
 
@@ -437,7 +461,6 @@ pub struct ScanArgs {
     pub exclude_paths: Option<Vec<String>>,
 
     /// Entropy threshold in bits per byte (default: 4.5).
-    #[cfg(feature = "full")]
     #[arg(long, value_name = "BITS")]
     pub entropy_threshold: Option<f64>,
 

@@ -49,6 +49,7 @@ const EXE_SUFFIXES: &[&str] = &[".exe", ".com", ".bat", ".cmd"];
 /// Resolve `name` to an absolute path inside one of the trusted system
 /// binary directories. Returns `None` if not found in any trusted dir
 /// (do NOT fall back to `Command::new(name)` — that's exactly the bug).
+/// Resolve a binary name to an absolute path, defending against PATH injection.
 pub fn resolve_safe_bin(name: &str) -> Option<PathBuf> {
     if name.contains('/') || name.contains('\\') {
         // Caller already passed a path; only accept if it's absolute and

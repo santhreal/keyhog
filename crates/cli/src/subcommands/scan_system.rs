@@ -163,14 +163,22 @@ pub fn run(args: ScanSystemArgs) -> Result<()> {
 
 /// Enumerate mounted filesystems on the current OS, filtering pseudo-FS
 /// and (optionally) network mounts. Returns root paths.
-fn enumerate_mounts(include_network: bool) -> Result<Vec<PathBuf>> {
+///
+/// `include_network` is honored on Linux and macOS where we walk
+/// `/proc/mounts` / `getmntinfo` and can filter NFS/SMB. Windows drive
+/// enumeration via `GetLogicalDrives` doesn't distinguish network from
+/// local at the API level (the user already chose to include them by
+/// running `scan-system` with the flag), so the parameter is unused on
+/// Windows — silenced with a leading underscore rather than a stray
+/// `let _ =` for symmetry with the other platform paths.
+fn enumerate_mounts(_include_network: bool) -> Result<Vec<PathBuf>> {
     #[cfg(target_os = "linux")]
     {
-        linux_mounts(include_network)
+        linux_mounts(_include_network)
     }
     #[cfg(target_os = "macos")]
     {
-        macos_mounts(include_network)
+        macos_mounts(_include_network)
     }
     #[cfg(target_os = "windows")]
     {
@@ -278,6 +286,11 @@ fn linux_mounts(include_network: bool) -> Result<Vec<PathBuf>> {
     Ok(deduped)
 }
 
+/// Linux `/proc/mounts` emits spaces and special characters as `\040`,
+/// `\011`, etc. — POSIX octal escapes. Only the `linux_mounts` parser
+/// consumes this, so gate the helper to `target_os = "linux"` to avoid
+/// a dead-code warning on Windows / macOS where the parser isn't built.
+#[cfg(target_os = "linux")]
 fn decode_octal_escapes(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let mut chars = s.chars().peekable();
@@ -360,37 +373,25 @@ fn windows_drives() -> Result<Vec<PathBuf>> {
 fn discover_git_repos(root: &Path, out: &mut Vec<PathBuf>, _space_cap: u64) {
     use std::collections::HashSet;
     use std::fs;
-    let Ok(entries) = fs::read_dir(root) else {
-        return;
-    };
     let mut visited: HashSet<PathBuf> = HashSet::new();
-    let mut stack: Vec<PathBuf> = entries
-        .flatten()
-        .filter(|e| e.file_type().map(|t| t.is_dir()).unwrap_or(false))
-        .map(|e| e.path())
-        .collect();
+    let mut stack: Vec<PathBuf> = Vec::new();
+
+    if let Ok(canon) = fs::canonicalize(root) {
+        stack.push(canon);
+    } else {
+        return;
+    }
 
     while let Some(dir) = stack.pop() {
-        // Canonicalize to detect symlink cycles. `canonicalize` resolves
-        // `..` and follows symlinks; if two stack entries point to the
-        // same physical directory we only walk it once.
-        let canonical = match fs::canonicalize(&dir) {
-            Ok(c) => c,
-            Err(_) => continue,
-        };
-        if !visited.insert(canonical) {
+        if !visited.insert(dir.clone()) {
             continue;
         }
-        // Worktree: dir contains `.git` (file or directory)
+
         let dot_git = dir.join(".git");
         if dot_git.exists() {
             out.push(dir.clone());
-            // Don't recurse into a discovered repo's tree — git history
-            // covers it. (Submodules with their own .git inside will still
-            // be discovered relative to the parent's worktree iteration.)
             continue;
         }
-        // Bare repo: dir itself ends with `.git` and contains HEAD + objects/
         if dir
             .file_name()
             .and_then(|n| n.to_str())
@@ -398,10 +399,9 @@ fn discover_git_repos(root: &Path, out: &mut Vec<PathBuf>, _space_cap: u64) {
             && dir.join("HEAD").exists()
             && dir.join("objects").exists()
         {
-            out.push(dir);
+            out.push(dir.clone());
             continue;
         }
-        // Otherwise recurse, but skip well-known noise dirs.
         if let Some(name) = dir.file_name().and_then(|n| n.to_str()) {
             if matches!(
                 name,
@@ -420,7 +420,11 @@ fn discover_git_repos(root: &Path, out: &mut Vec<PathBuf>, _space_cap: u64) {
         if let Ok(entries) = fs::read_dir(&dir) {
             for entry in entries.flatten() {
                 if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
-                    stack.push(entry.path());
+                    if let Ok(canon) = fs::canonicalize(entry.path()) {
+                        if !visited.contains(&canon) {
+                            stack.push(canon);
+                        }
+                    }
                 }
             }
         }

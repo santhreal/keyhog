@@ -150,30 +150,27 @@ pub(crate) fn build_scanner_config(args: &ScanArgs) -> ScannerConfig {
         config.min_confidence = conf;
     }
 
-    #[cfg(feature = "full")]
-    {
-        config.entropy_enabled = !args.no_entropy;
-        if let Some(threshold) = args.entropy_threshold {
-            config.entropy_threshold = threshold;
-        }
-        config.entropy_in_source_files = args.entropy_source_files;
-        config.ml_enabled = !args.no_ml;
-        if let Some(weight) = args.ml_weight {
-            config.ml_weight = weight;
-        }
-        config.unicode_normalization = !args.no_unicode_norm;
-        if !args.known_prefixes.is_empty() {
-            config.known_prefixes = args.known_prefixes.clone();
-        }
-        if !args.secret_keywords.is_empty() {
-            config.secret_keywords = args.secret_keywords.clone();
-        }
-        if !args.test_keywords.is_empty() {
-            config.test_keywords = args.test_keywords.clone();
-        }
-        if !args.placeholder_keywords.is_empty() {
-            config.placeholder_keywords = args.placeholder_keywords.clone();
-        }
+    config.entropy_enabled = !args.no_entropy;
+    if let Some(threshold) = args.entropy_threshold {
+        config.entropy_threshold = threshold;
+    }
+    config.entropy_in_source_files = args.entropy_source_files;
+    config.ml_enabled = !args.no_ml;
+    if let Some(weight) = args.ml_weight {
+        config.ml_weight = weight;
+    }
+    config.unicode_normalization = !args.no_unicode_norm;
+    if !args.known_prefixes.is_empty() {
+        config.known_prefixes = args.known_prefixes.clone();
+    }
+    if !args.secret_keywords.is_empty() {
+        config.secret_keywords = args.secret_keywords.clone();
+    }
+    if !args.test_keywords.is_empty() {
+        config.test_keywords = args.test_keywords.clone();
+    }
+    if !args.placeholder_keywords.is_empty() {
+        config.placeholder_keywords = args.placeholder_keywords.clone();
     }
     config
 }

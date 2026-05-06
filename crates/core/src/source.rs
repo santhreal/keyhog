@@ -1,6 +1,7 @@
 //! Source trait and chunk types: the abstraction for pluggable input backends.
 
 use serde::Serialize;
+use crate::SensitiveString;
 use thiserror::Error;
 
 /// A scannable chunk of text with metadata about where it came from.
@@ -13,8 +14,10 @@ use thiserror::Error;
 /// let chunk = Chunk {
 ///     data: "API_KEY=sk_live_example".into(),
 ///     metadata: ChunkMetadata {
+                    
 ///         source_type: "filesystem".into(),
 ///         path: Some("app.env".into()),
+///         base_offset: 0,
 ///         commit: None,
 ///         author: None,
 ///         date: None,
@@ -26,7 +29,7 @@ use thiserror::Error;
 #[derive(Debug, Clone, Serialize)]
 pub struct Chunk {
     /// UTF-8 text content to scan.
-    pub data: String,
+    pub data: SensitiveString,
     /// Provenance details used in findings and reporters.
     pub metadata: ChunkMetadata,
 }
@@ -39,8 +42,10 @@ pub struct Chunk {
 /// use keyhog_core::ChunkMetadata;
 ///
 /// let metadata = ChunkMetadata {
+                    
 ///     source_type: "git-diff".into(),
 ///     path: Some("src/lib.rs".into()),
+///     base_offset: 0,
 ///     commit: Some("abc123".into()),
 ///     author: Some("Dev".into()),
 ///     date: Some("2026-03-26T00:00:00Z".into()),
@@ -50,20 +55,13 @@ pub struct Chunk {
 /// ```
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct ChunkMetadata {
-    /// Logical source backend, such as `filesystem` or `git`.
+                    
     pub source_type: String,
-    /// Best-effort file path or object key.
-    ///
-    /// Paths stored here must be valid UTF-8. Callers that originate from
-    /// non-UTF-8 paths should preserve them using an escaped representation
-    /// before constructing [`ChunkMetadata`].
     pub path: Option<String>,
-    /// Commit identifier for git-derived chunks.
     pub commit: Option<String>,
-    /// Author name when available from history sources.
     pub author: Option<String>,
-    /// Source timestamp when available from history sources.
     pub date: Option<String>,
+    pub base_offset: usize,
 }
 
 /// Produces chunks of text for the scanner to process.
@@ -85,8 +83,10 @@ pub struct ChunkMetadata {
 ///         Box::new(std::iter::once(Ok(Chunk {
 ///             data: "TOKEN=value".into(),
 ///             metadata: ChunkMetadata {
+                    
 ///                 source_type: "static".into(),
 ///                 path: None,
+///                 base_offset: 0,
 ///                 commit: None,
 ///                 author: None,
 ///                 date: None,

@@ -1,11 +1,11 @@
 [package]
 name = "keyhog-scanner"
-description = "Secret detection engine with literal matching, regex fallback, entropy scoring, and decode-through scanning"
-version = "0.2.1"
-edition = "2021"
-rust-version = "1.89"
+description = "keyhog-scanner — high-performance SIMD-accelerated secret detection engine"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
 authors = ["Santh Project <contact@santh.dev>"]
-license = "MIT OR Apache-2.0"
+license.workspace = true
 repository = "https://github.com/santhsecurity/keyhog"
 homepage = "https://github.com/santhsecurity/keyhog"
 documentation = "https://docs.rs/keyhog-scanner"
@@ -40,6 +40,8 @@ pollster = { workspace = true }
 bytemuck = { workspace = true }
 aho-corasick = { workspace = true }
 regex = { workspace = true }
+# AST-walking literal extraction (compiler_prefix.rs).
+regex-syntax = { workspace = true }
 base64 = { workspace = true }
 unicode-normalization = { workspace = true }
 thiserror = { workspace = true }

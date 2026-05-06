@@ -220,7 +220,8 @@ impl<'de> Deserialize<'de> for Credential {
                 text: None,
                 b64: Some(b),
             } => {
-                let bytes = base64_decode(&b).map_err(serde::de::Error::custom)?;
+                let bytes = crate::encoding::decode_standard_base64(&b)
+                    .map_err(serde::de::Error::custom)?;
                 Ok(Credential::from_bytes(&bytes))
             }
             Wire::Tagged { .. } => Err(serde::de::Error::custom(
@@ -228,7 +229,8 @@ impl<'de> Deserialize<'de> for Credential {
             )),
             Wire::Legacy(s) => {
                 if let Some(rest) = s.strip_prefix("b64:") {
-                    let bytes = base64_decode(rest).map_err(serde::de::Error::custom)?;
+                    let bytes = crate::encoding::decode_standard_base64(rest)
+                        .map_err(serde::de::Error::custom)?;
                     Ok(Credential::from_bytes(&bytes))
                 } else {
                     Ok(Credential::from_text(&s))
@@ -238,9 +240,7 @@ impl<'de> Deserialize<'de> for Credential {
     }
 }
 
-/// Minimal base64 encoder/decoder so this module doesn't need a crate dep.
-/// Used only on the rare non-UTF-8 credential path; performance is not
-/// critical.
+/// Minimal base64 encoder so this module doesn't need a `base64` crate dep.
 fn base64_encode(input: &[u8]) -> String {
     const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::with_capacity(input.len().div_ceil(3) * 4);
@@ -262,36 +262,6 @@ fn base64_encode(input: &[u8]) -> String {
         }
     }
     out
-}
-
-fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
-    fn val(c: u8) -> Result<u8, String> {
-        match c {
-            b'A'..=b'Z' => Ok(c - b'A'),
-            b'a'..=b'z' => Ok(c - b'a' + 26),
-            b'0'..=b'9' => Ok(c - b'0' + 52),
-            b'+' => Ok(62),
-            b'/' => Ok(63),
-            _ => Err(format!("invalid base64 char: {c:#x}")),
-        }
-    }
-    let bytes = input.as_bytes();
-    let stripped: Vec<u8> = bytes.iter().copied().take_while(|&c| c != b'=').collect();
-    let mut out = Vec::with_capacity(stripped.len() * 3 / 4);
-    for chunk in stripped.chunks(4) {
-        let v0 = val(chunk[0])?;
-        let v1 = val(*chunk.get(1).ok_or("truncated base64")?)?;
-        out.push((v0 << 2) | (v1 >> 4));
-        if let Some(&c2) = chunk.get(2) {
-            let v2 = val(c2)?;
-            out.push(((v1 & 0x0F) << 4) | (v2 >> 2));
-            if let Some(&c3) = chunk.get(3) {
-                let v3 = val(c3)?;
-                out.push(((v2 & 0x03) << 6) | v3);
-            }
-        }
-    }
-    Ok(out)
 }
 
 #[cfg(test)]
@@ -393,5 +363,97 @@ mod tests {
             a.expose_secret().as_ptr(),
             b.expose_secret().as_ptr()
         ));
+    }
+}
+
+/// A heap-allocated string that is zeroized on drop.
+#[derive(Clone, Default)]
+pub struct SensitiveString {
+    inner: Arc<Zeroizing<String>>,
+}
+
+impl SensitiveString {
+    pub fn new(s: String) -> Self {
+        Self { inner: Arc::new(Zeroizing::new(s)) }
+    }
+
+    pub fn join(parts: &[SensitiveString], sep: &str) -> Self {
+        let mut s = String::new();
+        for (i, p) in parts.iter().enumerate() {
+            if i > 0 { s.push_str(sep); }
+            s.push_str(p.as_str());
+        }
+        Self::new(s)
+    }
+
+    pub fn as_str(&self) -> &str {
+        self.inner.as_str()
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        self.inner.as_bytes()
+    }
+
+    pub fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
+}
+
+impl std::ops::Deref for SensitiveString {
+    type Target = str;
+    fn deref(&self) -> &Self::Target {
+        self.as_str()
+    }
+}
+
+impl AsRef<str> for SensitiveString {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl From<String> for SensitiveString {
+    fn from(s: String) -> Self {
+        Self::new(s)
+    }
+}
+
+impl From<&str> for SensitiveString {
+    fn from(s: &str) -> Self {
+        Self::new(s.to_string())
+    }
+}
+
+impl From<&String> for SensitiveString {
+    fn from(s: &String) -> Self {
+        Self::new(s.clone())
+    }
+}
+
+impl std::fmt::Display for SensitiveString {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
+impl std::fmt::Debug for SensitiveString {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "SensitiveString({:?})", self.as_str())
+    }
+}
+
+impl Serialize for SensitiveString {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.as_str().serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for SensitiveString {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        String::deserialize(deserializer).map(Self::new)
     }
 }

@@ -20,9 +20,6 @@ use wait_timeout::ChildExt;
 /// Minimum printable string length for strings-mode extraction.
 pub(crate) const MIN_STRING_LEN: usize = 8;
 
-/// Maximum Ghidra analysis time before we kill the process.
-const GHIDRA_TIMEOUT_SECS: u64 = 300;
-
 /// Maximum decompiled output size we'll process (50 MB).
 const MAX_DECOMPILED_SIZE: u64 = 50 * 1024 * 1024;
 
@@ -118,7 +115,7 @@ impl BinarySource {
             .stderr(std::process::Stdio::null())
             .spawn()
             .and_then(|mut child| {
-                let timeout = std::time::Duration::from_secs(GHIDRA_TIMEOUT_SECS);
+                let timeout = crate::timeouts::GHIDRA_ANALYSIS;
                 match child.wait_timeout(timeout).map_err(std::io::Error::other)? {
                     Some(status) => Ok(status),
                     None => {
@@ -126,7 +123,7 @@ impl BinarySource {
                         let _ = child.wait();
                         Err(std::io::Error::new(
                             std::io::ErrorKind::TimedOut,
-                            format!("Ghidra analysis timed out after {GHIDRA_TIMEOUT_SECS}s"),
+                            format!("Ghidra analysis timed out after {}s", timeout.as_secs()),
                         ))
                     }
                 }
@@ -176,8 +173,9 @@ impl BinarySource {
         // Chunk 1: full decompiled output (for pattern matching on variable names, etc.)
         if !decompiled_text.is_empty() {
             chunks.push(Chunk {
-                data: decompiled_text,
+                data: decompiled_text.into(),
                 metadata: ChunkMetadata {
+                    base_offset: 0,
                     source_type: "binary:ghidra:decompiled".to_string(),
                     path: Some(self.path.display().to_string()),
                     commit: None,
@@ -190,8 +188,9 @@ impl BinarySource {
         // Chunk 2: extracted string literals (higher signal, less noise)
         if !string_literals.is_empty() {
             chunks.push(Chunk {
-                data: string_literals.join("\n"),
+                data: string_literals.join("\n").into(),
                 metadata: ChunkMetadata {
+                    base_offset: 0,
                     source_type: "binary:ghidra:strings".to_string(),
                     path: Some(self.path.display().to_string()),
                     commit: None,
@@ -229,8 +228,9 @@ impl BinarySource {
         let strings = extract_printable_strings(&bytes, MIN_STRING_LEN);
         if !strings.is_empty() {
             chunks.push(Chunk {
-                data: strings.join("\n"),
+                data: keyhog_core::SensitiveString::join(&strings, "\n").into(),
                 metadata: ChunkMetadata {
+                    base_offset: 0,
                     source_type: "binary:strings".to_string(),
                     path: Some(path_str),
                     commit: None,

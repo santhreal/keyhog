@@ -51,6 +51,7 @@ struct VerifyTaskShared {
     max_inflight_keys: usize,
     danger_allow_private_ips: bool,
     danger_allow_http: bool,
+    oob_session: Option<Arc<crate::oob::OobSession>>,
 }
 
 struct InflightGuard {
@@ -158,6 +159,7 @@ async fn verify_group_task(shared: VerifyTaskShared, group: DedupedMatch) -> Ver
                         timeout,
                         shared.danger_allow_private_ips,
                         shared.danger_allow_http,
+                        shared.oob_session.as_ref(),
                     )
                     .await
                 }
@@ -212,11 +214,12 @@ impl VerificationEngine {
             service_semaphores: Arc::new(service_semaphores),
             global_semaphore: Arc::new(Semaphore::new(config.max_concurrent_global.max(1))),
             timeout: config.timeout,
-            cache: Arc::new(cache::VerificationCache::new(Duration::from_secs(3600))), // 1h TTL
+            cache: Arc::new(cache::VerificationCache::default_ttl()),
             inflight: Arc::new(DashMap::new()),
             max_inflight_keys: config.max_inflight_keys.max(1),
             danger_allow_private_ips: config.danger_allow_private_ips,
             danger_allow_http: config.danger_allow_http,
+            oob_session: None,
         })
     }
 
@@ -235,6 +238,7 @@ impl VerificationEngine {
             max_inflight_keys: self.max_inflight_keys,
             danger_allow_private_ips: self.danger_allow_private_ips,
             danger_allow_http: self.danger_allow_http,
+            oob_session: self.oob_session.clone(),
         };
         let mut pending = groups.into_iter();
         let mut join_set = JoinSet::new();
@@ -258,5 +262,52 @@ impl VerificationEngine {
             }
         }
         findings
+    }
+
+    /// Enable out-of-band callback verification for detectors with
+    /// `[detector.verify.oob]`. Registers a fresh interactsh session against
+    /// the configured collector and starts the polling loop. Subsequent
+    /// `verify_all` calls will mint per-finding callback URLs and combine
+    /// HTTP success criteria with OOB observations per the detector's policy.
+    ///
+    /// Idempotent: a second call replaces the previous session (the old one
+    /// is shut down). Errors here do *not* abort the engine — call sites
+    /// log + continue with OOB disabled rather than failing the whole scan.
+    pub async fn enable_oob(
+        &mut self,
+        config: crate::oob::OobConfig,
+    ) -> Result<(), crate::oob::InteractshError> {
+        if let Some(old) = self.oob_session.take() {
+            old.shutdown().await;
+        }
+        let session = crate::oob::OobSession::start(self.client.clone(), config).await?;
+        self.oob_session = Some(session);
+        Ok(())
+    }
+
+    /// Tear down the OOB session if one is active. Idempotent. Call before
+    /// dropping the engine to deregister cleanly with the collector.
+    pub async fn shutdown_oob(&mut self) {
+        if let Some(session) = self.oob_session.take() {
+            session.shutdown().await;
+        }
+    }
+}
+
+impl Drop for VerificationEngine {
+    fn drop(&mut self) {
+        // Best-effort safety net: if the caller forgot to `shutdown_oob().await`
+        // before dropping the engine, we still need to stop the background
+        // poller — otherwise it keeps polling the collector indefinitely
+        // even after the scan that produced it is gone, leaking a tokio
+        // task and a network connection.
+        //
+        // We can't block on async cleanup in `Drop`, so we abort the
+        // poller's join handle synchronously. The deregister POST is
+        // skipped (the collector prunes inactive sessions on its own
+        // retention timer), but the poller stops immediately.
+        if let Some(session) = self.oob_session.take() {
+            session.abort_poller_for_drop();
+        }
     }
 }

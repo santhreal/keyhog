@@ -17,7 +17,12 @@ group = 1
 
 [[detector.companions]]
 name = "account_sid"
-regex = "AC[a-fA-F0-9]{32}"
+# Anchored to a `TWILIO_ACCOUNT_SID=` / `accountSid:` declaration so an
+# arbitrary `AC` followed by 32 hex chars (a 2-char literal isn't enough
+# to discriminate; validator previously flagged this) doesn't qualify.
+# Auto-detected capture group resolves `{{companion.account_sid}}` to
+# just the AC... value used as the Basic-auth username.
+regex = "(?:TWILIO|twilio|Twilio)[_\\s-]*(?:ACCOUNT|account|Account)[_\\s-]*(?:SID|sid|Sid)\\s*[=:]\\s*[\"']?(AC[a-fA-F0-9]{32})[\"']?"
 within_lines = 5
 required = true
 

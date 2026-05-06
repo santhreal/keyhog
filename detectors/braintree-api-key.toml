@@ -22,7 +22,11 @@ group = 1
 
 [[detector.companions]]
 name = "braintree_private_key"
-regex = "[a-f0-9]{32,40}"
+# Anchored to a private-key declaration so a wide search radius doesn't
+# false-fire on every random 32-hex hash in the file. The validator
+# previously flagged the bare `[a-f0-9]{32,40}` as too broad at
+# within_lines=10.
+regex = "(?:braintree[._-]?private[._-]?key|BRAINTREE_PRIVATE_KEY|private_key)[=:\\s\"']+[a-f0-9]{32,40}"
 within_lines = 10
 [detector.verify]
 method = "GET"

@@ -20,9 +20,25 @@ regex = "(?:prisma|twistlock|PRISMA|TWISTLOCK)[_\\s]*(?:CONSOLE[_\\s]*)?(?:URL|A
 description = "Prisma Cloud console URL with context anchor"
 group = 1
 
+# Console URL companion: needed to template the verify host. Pin to the
+# documented Prisma Cloud Compute SaaS hosts; self-hosted Twistlock
+# deployments live on customer-chosen hosts and aren't safely verifiable
+# without an explicit per-customer URL — those will fall to Unverifiable.
+[[detector.companions]]
+name = "prisma_console"
+regex = 'https?://[a-zA-Z0-9-]+\.(?:prismacloud\.io|paloaltonetworks\.com|twistlock\.com)'
+within_lines = 5
+
 [detector.verify]
 method = "GET"
-url = "{console}/api/v1/policies/runtime/container"
+# Earlier this used single-brace `{console}` which interpolate.rs ignored;
+# the URL went out as a literal `{console}/api/...` segment.
+url = "{{companion.prisma_console}}/api/v1/policies/runtime/container"
+allowed_domains = [
+    "prismacloud.io",
+    "paloaltonetworks.com",
+    "twistlock.com",
+]
 
 [detector.verify.auth]
 type = "bearer"

@@ -22,7 +22,7 @@ fn demo_scanner() -> CompiledScanner {
 
 fn chunk(data: &str) -> Chunk {
     Chunk {
-        data: data.to_string(),
+        data: data.into(),
         metadata: ChunkMetadata::default(),
     }
 }

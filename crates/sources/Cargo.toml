@@ -1,6 +1,6 @@
 [package]
 name = "keyhog-sources"
-description = "Pluggable input sources: filesystem, git history, stdin, s3"
+description = "keyhog-sources — pluggable input backends for KeyHog (git, S3, Docker, Web)"
 version.workspace = true
 authors = ["Santh Project <contact@santh.dev>"]
 edition.workspace = true
@@ -58,20 +58,64 @@ libc = { workspace = true }
 [target.'cfg(target_os = "linux")'.dependencies]
 io-uring = { workspace = true }
 
-# GitHub feature dependencies
-reqwest = { workspace = true, optional = true, features = ["blocking"] }
-base64 = { workspace = true, optional = true }
-serde = { workspace = true, optional = true }
-serde_json = { workspace = true, optional = true }
-tempfile = { workspace = true, optional = true }
-quick-xml = { workspace = true, optional = true }
-tar = { workspace = true, optional = true }
-urlencoding = { workspace = true, optional = true }
-unicode-normalization = { workspace = true }
-hmac = { workspace = true, optional = true }
-sha2 = { workspace = true, optional = true }
-hex = { workspace = true, optional = true }
-chrono = { workspace = true, default-features = true, optional = true }
+# Feature-gated optional deps. Previously declared inside the
+# `[target.cfg(target_os = "linux")]` block, which silently scoped
+# them to Linux only — every `web` / `github` / `s3` / `docker` /
+# `binary` build on Windows or macOS failed with `unresolved
+# import reqwest`. They need to be declared at workspace scope so
+# all OSes that activate the corresponding feature can resolve them.
+[dependencies.reqwest]
+workspace = true
+optional = true
+features = ["blocking"]
+
+[dependencies.base64]
+workspace = true
+optional = true
+
+[dependencies.serde]
+workspace = true
+optional = true
+
+[dependencies.serde_json]
+workspace = true
+optional = true
+
+[dependencies.tempfile]
+workspace = true
+optional = true
+
+[dependencies.quick-xml]
+workspace = true
+optional = true
+
+[dependencies.tar]
+workspace = true
+optional = true
+
+[dependencies.urlencoding]
+workspace = true
+optional = true
+
+[dependencies.unicode-normalization]
+workspace = true
+
+[dependencies.hmac]
+workspace = true
+optional = true
+
+[dependencies.sha2]
+workspace = true
+optional = true
+
+[dependencies.hex]
+workspace = true
+optional = true
+
+[dependencies.chrono]
+workspace = true
+default-features = true
+optional = true
 
 [dev-dependencies]
 httpmock = { workspace = true }

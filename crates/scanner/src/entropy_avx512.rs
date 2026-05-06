@@ -25,39 +25,14 @@ use core::arch::x86_64::*;
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx512f,avx512bw")]
 #[allow(unsafe_op_in_unsafe_fn)]
-pub unsafe fn calculate_shannon_entropy(chunk: &[u8]) -> f64 {
+pub(crate) unsafe fn calculate_shannon_entropy(chunk: &[u8]) -> f64 {
     let len = chunk.len();
     if len == 0 {
         return 0.0;
     }
 
-    let mut remaining = chunk;
     let mut counts = [0u32; 256];
-
-    // Read full 64-byte blocks
-    while remaining.len() >= 64 {
-        let v = _mm512_loadu_si512(remaining.as_ptr() as *const __m512i);
-
-        let mut local_rem = 64; // Track inner reduction
-
-        // Fast path for identical sequences in chunk
-        for byte_val in 0..=255u8 {
-            let target = _mm512_set1_epi8(byte_val as i8);
-            let mask = _mm512_cmpeq_epi8_mask(v, target);
-            if mask != 0 {
-                let count = mask.count_ones();
-                counts[byte_val as usize] += count;
-                local_rem -= count as usize;
-                if local_rem == 0 {
-                    break; // All characters identified in this 64-byte block
-                }
-            }
-        }
-        remaining = &remaining[64..];
-    }
-
-    // Scalar fallback for tail
-    for &b in remaining {
+    for &b in chunk {
         counts[b as usize] += 1;
     }
 

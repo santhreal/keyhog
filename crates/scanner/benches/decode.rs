@@ -6,6 +6,7 @@ fn make_chunk(data: &str) -> Chunk {
     Chunk {
         data: data.to_string(),
         metadata: ChunkMetadata {
+                    base_offset: 0,
             source_type: "benchmark".into(),
             path: Some("bench.txt".into()),
             commit: None,

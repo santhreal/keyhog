@@ -20,9 +20,21 @@ regex = '(?:API-TOKEN|Api-Token|api-token)[=: ]+([a-zA-Z0-9]{32,})'
 description = "ActiveCampaign Api-Token header value"
 group = 1
 
+# Each ActiveCampaign tenant lives at `<account>.api-us1.com` (and similar
+# regional variants). Capture the account URL when the user has declared
+# it in a companion line; pin the allowlist to the documented hostnames.
+[[detector.companions]]
+name = "activecampaign_url"
+regex = 'https://[a-z0-9-]+\.(?:api-us[0-9]+\.com|activehosted\.com)'
+within_lines = 5
+
 [detector.verify]
 method = "GET"
-url = "https://{account_name}.api-us1.com/api/3/account"
+url = "{{companion.activecampaign_url}}/api/3/account"
+allowed_domains = [
+    "api-us1.com", "api-us2.com", "api-us3.com",
+    "api-us4.com", "api-us5.com", "activehosted.com",
+]
 
 [detector.verify.auth]
 type = "header"

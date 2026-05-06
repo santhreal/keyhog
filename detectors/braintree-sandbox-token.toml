@@ -25,5 +25,7 @@ group = 1
 
 [[detector.companions]]
 name = "braintree_private_key"
-regex = "[a-f0-9]{32,40}"
+# Context-anchored so a wide search radius doesn't false-fire on every
+# random hex hash in the file (validator previously flagged this).
+regex = "(?:braintree[._-]?private[._-]?key|BRAINTREE_PRIVATE_KEY|private_key)[=:\\s\"']+[a-f0-9]{32,40}"
 within_lines = 10

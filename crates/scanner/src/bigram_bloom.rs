@@ -70,7 +70,7 @@ impl BigramBloom {
             bloom.insert_all(bytes);
             // Extension: terminal byte may be followed by anything in a
             // real secret. Add `last || any`.
-            let last = *bytes.last().unwrap();
+            let last = *bytes.last().expect("bytes checked to have length >= 2");
             for second in 0u8..=255 {
                 bloom.insert(last, second);
             }

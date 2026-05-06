@@ -108,6 +108,72 @@ pub struct VerifySpec {
     /// finding 4.1 + wave3 §1.
     #[serde(default)]
     pub allowed_domains: Vec<String>,
+    /// Optional out-of-band verification probe. When set, the verifier mints a
+    /// per-finding correlation URL via the configured interactsh server,
+    /// substitutes `{{interactsh}}` (and `{{interactsh.host}}` /
+    /// `{{interactsh.url}}`) into the request template, and waits for the
+    /// service to call back. OOB verification proves a leaked credential is
+    /// **exfil-capable**, not just live: a webhook URL that returns 200 OK to
+    /// every probe still has to actually fetch our collector to confirm it
+    /// will deliver attacker-controlled traffic.
+    ///
+    /// Gated behind the runtime `--verify-oob` flag — never default. When the
+    /// flag is off, `oob` is ignored and verification falls back to the
+    /// HTTP success criteria alone.
+    pub oob: Option<OobSpec>,
+}
+
+/// Out-of-band callback verification configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OobSpec {
+    /// Callback protocol the verifier waits for. The service may also touch
+    /// other protocols on the same correlation id; only the listed ones count
+    /// toward `Verified`.
+    pub protocol: OobProtocol,
+    /// How long to wait for the callback after the HTTP request returns.
+    /// Defaults to 30 seconds when omitted; capped at the engine's
+    /// `oob_timeout_max` to bound scan time.
+    #[serde(default)]
+    pub timeout_secs: Option<u64>,
+    /// Verification policy:
+    /// - `OobAndHttp` (default): both HTTP success criteria *and* OOB
+    ///   callback must hold. This is the strict mode for webhook-style
+    ///   detectors where 200 OK is necessary but not sufficient.
+    /// - `OobOnly`: ignore HTTP success, trust the OOB callback. For
+    ///   detectors where the API has no useful HTTP response shape but
+    ///   provably triggers an outbound request (e.g., one-way push tokens).
+    /// - `OobOptional`: HTTP success alone verifies; OOB just enriches
+    ///   metadata with `oob_observed=true|false` for the report.
+    #[serde(default)]
+    pub policy: OobPolicy,
+}
+
+/// Out-of-band callback protocol expected from a successful exfil.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum OobProtocol {
+    /// Any DNS resolution against `{{interactsh}}.host`. Cheapest signal —
+    /// many services resolve a webhook URL even before fetching it.
+    Dns,
+    /// HTTP or HTTPS request to the interactsh URL. The strongest signal;
+    /// proves the service made an outbound HTTP request with the credential.
+    Http,
+    /// SMTP delivery attempt to `<random>@{{interactsh.host}}`. For mail
+    /// detectors (Mailgun, SendGrid, …) where exfil = sending mail.
+    Smtp,
+    /// Any of the above. Use sparingly — a chatty CDN doing DNS prefetch
+    /// can cause false positives.
+    Any,
+}
+
+/// How OOB observation combines with HTTP success criteria.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum OobPolicy {
+    #[default]
+    OobAndHttp,
+    OobOnly,
+    OobOptional,
 }
 
 /// A single step in a multi-step verification flow.

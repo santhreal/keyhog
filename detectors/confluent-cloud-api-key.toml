@@ -29,8 +29,11 @@ url = "https://api.confluent.cloud/org/v2/organizations"
 
 [detector.verify.auth]
 type = "basic"
+# `password = "companion"` resolved to the literal "companion" via the
+# resolve_field fallthrough — basic_auth would have shipped the wrong
+# password. Reference the companion by name.
 username = "match"
-password = "companion"
+password = "companion.confluent_api_secret"
 
 [detector.verify.success]
 status = 200

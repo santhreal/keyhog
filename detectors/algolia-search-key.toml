@@ -22,6 +22,7 @@ within_lines = 5
 [detector.verify]
 method = "GET"
 url = "https://{{companion.application_id}}-dsn.algolia.net/1/indexes"
+allowed_domains = ["algolia.net"]
 
 [detector.verify.auth]
 type = "header"

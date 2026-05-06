@@ -1,5 +1,4 @@
 use super::ExtractedPair;
-use base64::Engine;
 
 /// Parse KEY=VALUE lines from an .env file.
 pub fn parse_env(text: &str) -> Vec<ExtractedPair> {
@@ -53,7 +52,7 @@ pub fn parse_k8s_secret(text: &str) -> Vec<ExtractedPair> {
             if key.is_empty() || encoded.is_empty() {
                 continue;
             }
-            let decoded = match base64::engine::general_purpose::STANDARD.decode(encoded) {
+            let decoded = match keyhog_core::encoding::decode_standard_base64(encoded) {
                 Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
                 Err(_) => continue,
             };

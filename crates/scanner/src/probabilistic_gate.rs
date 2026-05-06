@@ -14,15 +14,12 @@ impl ProbabilisticGate {
             return true; // Too short for reliable gating
         }
 
-        let mut unique_chars = 0u128;
         let mut count = 0;
+        let mut seen = [false; 256];
         for b in s.bytes() {
-            if b < 128 {
-                let bit = 1u128 << b;
-                if unique_chars & bit == 0 {
-                    unique_chars |= bit;
-                    count += 1;
-                }
+            if !seen[b as usize] {
+                seen[b as usize] = true;
+                count += 1;
             }
         }
 

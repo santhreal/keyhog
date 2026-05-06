@@ -191,6 +191,19 @@ fn validate_extracted_tree<R: std::io::Read>(
         // Security boundary: every extracted member must stay relative to the
         // extraction root. Reject absolute paths, prefixes, and any `..`
         // traversal before `tar` writes to disk.
+        //
+        // Also reject symlinks and hardlinks in Docker layers. These are
+        // frequently used in "link-swap" attacks to write outside the
+        // extraction root. Secret scanning doesn't need to resolve links
+        // inside the layer — we scan the raw file content anyway.
+        let file_type = entry.header().entry_type();
+        if file_type.is_symlink() || file_type.is_hard_link() {
+            return Err(SourceError::Other(format!(
+                "docker archive contains forbidden link '{}'",
+                path.display()
+            )));
+        }
+
         if path.is_absolute()
             || path.components().any(|component| {
                 matches!(
@@ -253,6 +266,7 @@ fn rewrite_chunk(mut chunk: Chunk, image: &str, layer_root: &Path, layer_name: &
         .map(|path| path.display().to_string());
 
     chunk.metadata = ChunkMetadata {
+                    base_offset: 0,
         source_type: "docker".into(),
         path: relative_path.map(|path| format!("{image}:{layer_name}:{path}")),
         commit: None,
