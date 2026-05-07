@@ -614,6 +614,20 @@ impl CompiledScanner {
     }
 
     fn expand_triggered_patterns(&self, triggered_patterns: &[u64]) -> Vec<u64> {
+        // Propagate ONLY via `same_prefix_patterns`: when AC matches a
+        // literal prefix shared by patterns X and Y, both X and Y need
+        // to be evaluated since they're different regexes that happen
+        // to share the same fixed prefix.
+        //
+        // The previous flow ALSO propagated via `detector_to_patterns`,
+        // expanding to every other pattern of the same detector. That
+        // was wasted work: each pattern is in `ac_map` *because* it has
+        // a literal AC prefix, and if Y's prefix was not matched in
+        // this chunk, Y's regex (which starts with that prefix) can't
+        // match either. The expansion forced full-text regex passes on
+        // patterns that were guaranteed to return no matches — the
+        // dominant cost of the per-detector regex pass on chunks that
+        // trigger multiple AC patterns of multi-pattern detectors.
         let mut expanded = triggered_patterns.to_vec();
         for (word_idx, &word) in triggered_patterns.iter().enumerate() {
             if word == 0 {
@@ -627,10 +641,6 @@ impl CompiledScanner {
                     break;
                 }
                 for &other_idx in &self.same_prefix_patterns[pat_idx] {
-                    expanded[other_idx / 64] |= 1 << (other_idx % 64);
-                }
-                let det_idx = self.ac_map[pat_idx].detector_index;
-                for &other_idx in &self.detector_to_patterns[det_idx] {
                     expanded[other_idx / 64] |= 1 << (other_idx % 64);
                 }
                 bits &= bits - 1; // clear lowest set bit
