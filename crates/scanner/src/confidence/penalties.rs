@@ -135,19 +135,18 @@ pub fn apply_calibration_multiplier(score: f64, detector_id: &str) -> f64 {
 /// Apply path-based confidence penalties for matches in test, example, or dummy directories.
 pub fn apply_path_confidence_penalties(score: f64, path: Option<&str>) -> f64 {
     let Some(path) = path else { return score };
-    let lower = path.to_lowercase();
-    let mut adjusted = score;
-
-    let is_test_like = lower.split(['/', '\\']).any(|component| {
-        matches!(
-            component,
-            "test" | "tests" | "example" | "examples" | "sample" | "samples" | "dummy"
-        )
+    // Per-segment ASCII-case-insensitive compare — no full-path
+    // lowercase allocation per match.
+    let is_test_like = path.split(['/', '\\']).any(|component| {
+        component.eq_ignore_ascii_case("test")
+            || component.eq_ignore_ascii_case("tests")
+            || component.eq_ignore_ascii_case("example")
+            || component.eq_ignore_ascii_case("examples")
+            || component.eq_ignore_ascii_case("sample")
+            || component.eq_ignore_ascii_case("samples")
+            || component.eq_ignore_ascii_case("dummy")
     });
 
-    if is_test_like {
-        adjusted *= 0.5;
-    }
-
+    let adjusted = if is_test_like { score * 0.5 } else { score };
     adjusted.clamp(CONFIDENCE_MIN, CONFIDENCE_MAX)
 }

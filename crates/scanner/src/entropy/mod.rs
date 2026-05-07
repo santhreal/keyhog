@@ -111,14 +111,20 @@ pub struct EntropyMatch {
 /// Check if entropy analysis is appropriate for a given file path.
 pub fn is_entropy_appropriate(path: Option<&str>, allow_source_files: bool) -> bool {
     let Some(path) = path else { return true };
-    let lower = path.to_lowercase();
+    // ASCII case-insensitive byte comparison — no whole-path lowercase
+    // allocation per call. Hot path on every chunk during a scan.
+    let bytes = path.as_bytes();
+    let ends_ci = |suffix: &[u8]| -> bool {
+        bytes.len() >= suffix.len()
+            && bytes[bytes.len() - suffix.len()..].eq_ignore_ascii_case(suffix)
+    };
 
-    for extension in [".json", ".lock", ".map"] {
-        if lower.ends_with(extension) {
+    for extension in [b".json".as_slice(), b".lock", b".map"] {
+        if ends_ci(extension) {
             return false;
         }
     }
-    if lower.ends_with(".min.js") || lower.ends_with(".min.css") {
+    if ends_ci(b".min.js") || ends_ci(b".min.css") {
         return false;
     }
     if allow_source_files {
@@ -126,38 +132,47 @@ pub fn is_entropy_appropriate(path: Option<&str>, allow_source_files: bool) -> b
     }
 
     for extension in [
-        ".env",
-        ".yaml",
-        ".yml",
-        ".toml",
-        ".properties",
-        ".cfg",
-        ".conf",
-        ".ini",
-        ".config",
-        ".secrets",
-        ".pem",
-        ".key",
-        ".tfvars",
-        ".hcl",
+        b".env".as_slice(),
+        b".yaml",
+        b".yml",
+        b".toml",
+        b".properties",
+        b".cfg",
+        b".conf",
+        b".ini",
+        b".config",
+        b".secrets",
+        b".pem",
+        b".key",
+        b".tfvars",
+        b".hcl",
     ] {
-        if lower.ends_with(extension) {
+        if ends_ci(extension) {
             return true;
         }
     }
 
-    let filename = lower.rsplit(['/', '\\']).next().unwrap_or(&lower);
+    // Last segment after `/` or `\` — index into bytes, no alloc.
+    let last_sep = bytes
+        .iter()
+        .rposition(|&b| b == b'/' || b == b'\\')
+        .map(|i| i + 1)
+        .unwrap_or(0);
+    let filename = &bytes[last_sep..];
     for name in [
-        ".env",
-        "credentials",
-        "secrets",
-        "apikeys",
-        "docker-compose",
-        ".npmrc",
-        ".pypirc",
-        ".netrc",
+        b".env".as_slice(),
+        b"credentials",
+        b"secrets",
+        b"apikeys",
+        b"docker-compose",
+        b".npmrc",
+        b".pypirc",
+        b".netrc",
     ] {
-        if filename.starts_with(name) || filename == name {
+        let starts_ci =
+            filename.len() >= name.len() && filename[..name.len()].eq_ignore_ascii_case(name);
+        let eq_ci = filename.eq_ignore_ascii_case(name);
+        if starts_ci || eq_ci {
             return true;
         }
     }

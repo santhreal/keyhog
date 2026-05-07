@@ -11,12 +11,23 @@ const KEYWORD_FREE_LABEL: &str = "none (high-entropy)";
 /// Determine whether a file path represents a clearly sensitive file.
 pub fn is_sensitive_file(path: Option<&str>) -> bool {
     let Some(path) = path else { return false };
-    let lower = path.to_lowercase();
-    [
-        ".env", ".pem", ".key", ".secrets", ".tfvars", ".p12", ".pkcs12", ".jks",
-    ]
-    .iter()
-    .any(|ext| lower.ends_with(ext))
+    // Case-insensitive suffix check without allocating a lowercased
+    // copy of the entire path on every call. Compares the trailing
+    // bytes of `path` against the literal extension byte-for-byte.
+    const EXTS: &[&[u8]] = &[
+        b".env",
+        b".pem",
+        b".key",
+        b".secrets",
+        b".tfvars",
+        b".p12",
+        b".pkcs12",
+        b".jks",
+    ];
+    let bytes = path.as_bytes();
+    EXTS.iter().any(|ext| {
+        bytes.len() >= ext.len() && bytes[bytes.len() - ext.len()..].eq_ignore_ascii_case(ext)
+    })
 }
 
 /// Find secret-like tokens using entropy heuristics near likely credential context.
@@ -240,15 +251,28 @@ fn keyword_context(
         "-secret",
     ];
 
-    let lowered = keyword_line.to_lowercase();
+    // ASCII case-insensitive substring search — avoids the
+    // per-call `keyword_line.to_lowercase()` and per-keyword
+    // `keyword.to_lowercase()` allocations the previous flow did
+    // on every entropy candidate. Mirrors `is_keyword_assignment_line`
+    // which already uses `eq_ignore_ascii_case` over byte windows.
+    let line_bytes = keyword_line.as_bytes();
+    fn contains_ci(haystack: &[u8], needle: &[u8]) -> bool {
+        if needle.is_empty() || needle.len() > haystack.len() {
+            return false;
+        }
+        haystack
+            .windows(needle.len())
+            .any(|w| w.eq_ignore_ascii_case(needle))
+    }
     let keyword = secret_keywords
         .iter()
-        .find(|keyword| lowered.contains(&keyword.to_lowercase()))
+        .find(|keyword| contains_ci(line_bytes, keyword.as_bytes()))
         .map(|keyword| keyword.as_str())
         .unwrap_or("unknown");
     let is_credential_context = CREDENTIAL_KEYWORDS
         .iter()
-        .any(|credential_keyword| lowered.contains(credential_keyword));
+        .any(|credential_keyword| contains_ci(line_bytes, credential_keyword.as_bytes()));
 
     let base_threshold = entropy_threshold.min(LOW_ENTROPY_THRESHOLD);
 

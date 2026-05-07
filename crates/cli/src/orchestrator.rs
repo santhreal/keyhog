@@ -489,8 +489,6 @@ impl ScanOrchestrator {
             .into_iter()
             .filter(|m| {
                 let cred = m.credential.as_ref();
-                let file_path = m.location.file_path.as_deref().unwrap_or("");
-                let low_path = file_path.to_lowercase();
 
                 // Self-suppression of well-known public test fixtures that
                 // routinely show up in repos. The literals are split via
@@ -511,18 +509,27 @@ impl ScanOrchestrator {
                     return false;
                 }
 
-                if low_path.ends_with("/keyhog")
-                    || low_path == "keyhog"
-                    || low_path.contains("/detectors/")
-                {
-                    return false;
-                }
-
-                if low_path.contains("/tests/")
-                    || low_path.contains("/fixtures/")
-                    || low_path.contains("/benches/")
-                {
-                    return false;
+                // Path-based self-suppression. Splits on both `/` and
+                // `\` so Windows paths get the same treatment as POSIX —
+                // the previous flow did `path.to_lowercase()` and ran
+                // `.contains("/tests/")` checks, which (a) silently
+                // failed to suppress `\tests\` matches on Windows and
+                // (b) burned an allocation per match even when the path
+                // was empty. ASCII case-insensitive segment compare is
+                // alloc-free: `eq_ignore_ascii_case` does the work in
+                // place against literals.
+                if let Some(file_path) = m.location.file_path.as_deref() {
+                    let mut segs = file_path.split(['/', '\\']);
+                    let suppressed = segs.any(|seg| {
+                        seg.eq_ignore_ascii_case("keyhog")
+                            || seg.eq_ignore_ascii_case("detectors")
+                            || seg.eq_ignore_ascii_case("tests")
+                            || seg.eq_ignore_ascii_case("fixtures")
+                            || seg.eq_ignore_ascii_case("benches")
+                    });
+                    if suppressed {
+                        return false;
+                    }
                 }
 
                 if let Some(path) = m.location.file_path.as_deref() {
