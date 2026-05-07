@@ -49,8 +49,7 @@ fn detect_and_parse(text: &str, path: Option<&str>) -> Option<Vec<ExtractedPair>
         .unwrap_or(0);
     let file_bytes = &path_bytes[last_sep..];
     let file_starts_ci = |prefix: &[u8]| -> bool {
-        file_bytes.len() >= prefix.len()
-            && file_bytes[..prefix.len()].eq_ignore_ascii_case(prefix)
+        file_bytes.len() >= prefix.len() && file_bytes[..prefix.len()].eq_ignore_ascii_case(prefix)
     };
     let file_ends_ci = |suffix: &[u8]| -> bool {
         file_bytes.len() >= suffix.len()

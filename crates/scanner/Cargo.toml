@@ -89,3 +89,7 @@ harness = false
 [[bench]]
 name = "size_pattern_sweep"
 harness = false
+
+[[bench]]
+name = "adversarial"
+harness = false
