@@ -13,8 +13,8 @@
 #[cfg(feature = "simd")]
 pub(super) fn has_secret_keyword_fast(data: &[u8]) -> bool {
     use aho_corasick::AhoCorasick;
-    use once_cell::sync::Lazy;
-    static AC: Lazy<AhoCorasick> = Lazy::new(|| {
+    use std::sync::LazyLock;
+    static AC: LazyLock<AhoCorasick> = LazyLock::new(|| {
         // Distinctive enough to be real secrets AND commonly split across
         // lines in source code. Avoid short prefixes like AKIA/eyJ that
         // appear in test fixtures.
@@ -37,8 +37,8 @@ pub(super) fn has_secret_keyword_fast(data: &[u8]) -> bool {
 #[cfg(feature = "simd")]
 pub(super) fn has_generic_assignment_keyword(data: &[u8]) -> bool {
     use aho_corasick::AhoCorasick;
-    use once_cell::sync::Lazy;
-    static AC: Lazy<AhoCorasick> = Lazy::new(|| {
+    use std::sync::LazyLock;
+    static AC: LazyLock<AhoCorasick> = LazyLock::new(|| {
         AhoCorasick::builder()
             .ascii_case_insensitive(true)
             .build([
