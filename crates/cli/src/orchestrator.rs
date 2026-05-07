@@ -423,30 +423,22 @@ impl ScanOrchestrator {
             for chunk_result in source.chunks() {
                 match chunk_result {
                     Ok(c) if c.data.len() <= 512 * 1024 * 1024 => {
-                        // Incremental skip: compute the chunk's BLAKE3 hash,
-                        // compare with the cached index, drop the chunk
-                        // entirely on a hit. Only meaningful for chunks
-                        // that have a stable file_path (skip stdin/web/git-
-                        // history streaming chunks where the path doesn't
-                        // identify a deterministic content unit).
-                        let chunk_hash =
-                            keyhog_core::merkle_index::MerkleIndex::hash_content(c.data.as_bytes());
+                        // Incremental skip: hash + lookup ONLY when an index
+                        // is actually loaded. The previous flow blake3'd
+                        // every chunk even with --incremental off, burning
+                        // CPU on the hot path for no gain.
                         if let (Some(idx), Some(path_str)) =
                             (merkle.as_ref(), c.metadata.path.as_deref())
                         {
+                            let chunk_hash = keyhog_core::merkle_index::MerkleIndex::hash_content(
+                                c.data.as_bytes(),
+                            );
                             let path = std::path::PathBuf::from(path_str);
                             if idx.unchanged(&path, &chunk_hash) {
                                 skipped_unchanged += 1;
                                 continue;
                             }
-                        }
-                        // Always update the in-memory index for the next
-                        // save() — even cold-start scans build the index
-                        // for subsequent runs.
-                        if let (Some(idx), Some(path_str)) =
-                            (merkle.as_ref(), c.metadata.path.as_deref())
-                        {
-                            idx.record(std::path::PathBuf::from(path_str), chunk_hash);
+                            idx.record(path, chunk_hash);
                         }
 
                         let len = c.data.len();
@@ -457,7 +449,15 @@ impl ScanOrchestrator {
                             flush(&mut batch, &mut batch_bytes, &mut findings);
                         }
                     }
-                    Ok(_) => {}
+                    Ok(c) => {
+                        let mb = c.data.len() / (1024 * 1024);
+                        let path = c.metadata.path.as_deref().unwrap_or("<unknown>");
+                        tracing::warn!(
+                            path = %path,
+                            size_mb = mb,
+                            "skipping chunk over 512 MiB scan ceiling"
+                        );
+                    }
                     Err(e) => tracing::warn!("source: {e}"),
                 }
             }

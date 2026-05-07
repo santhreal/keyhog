@@ -80,7 +80,11 @@ async fn main() -> ExitCode {
     match command_outcome {
         Ok(outcome) => outcome,
         Err(error) => {
-            eprintln!("{error:?}");
+            // {:#} prints the chained user-facing message
+            // (`anyhow!("loading detectors").context("…").context("…")`
+            // → "loading detectors: <inner>: <root>") instead of the
+            // {:?} debug dump that includes Backtrace internals.
+            eprintln!("error: {error:#}");
             ExitCode::from(EXIT_RUNTIME_ERROR)
         }
     }

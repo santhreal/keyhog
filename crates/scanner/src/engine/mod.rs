@@ -23,9 +23,9 @@ use crate::pipeline::*;
 use crate::types::*;
 use crate::unicode_hardening;
 use aho_corasick::AhoCorasick;
-use keyhog_core::{Chunk, DetectorSpec, RawMatch};
 #[cfg(feature = "entropy")]
 use keyhog_core::MatchLocation;
+use keyhog_core::{Chunk, DetectorSpec, RawMatch};
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::OnceLock;
