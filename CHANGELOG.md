@@ -2,6 +2,33 @@
 
 All notable changes to KeyHog. Versions follow [Semantic Versioning](https://semver.org/).
 
+## v0.5.2 — 2026-05-06
+
+Reconciliation pass against the parallel `Legendary Hardening` line
+(v0.3.0 → v0.4.0 → v0.5.0) that lived only on the work-linux clone
+and was never pushed. Both lines diverged at `013257e` (CI fmt scope)
+and independently arrived at near-identical scanner/sources state.
+
+Reviewed every file the work-linux line touched; no salvageable code
+was missing from this branch:
+
+- `SensitiveString` migration, `MADV_DONTDUMP` zero-leak buffers,
+  proximity-aware multiline reassembly, hardened ratelimiter, AC
+  prefilter for `has_secret_keyword_fast` — already present here,
+  fmt-clean, with the no-default-features feature gates the v0.6.x
+  pass added.
+- The 6 secret-laden boundary-test fixtures (`test.txt`,
+  `boundary_test.txt`, etc.) accidentally committed in work-linux's
+  v0.4.0-finalize commit are intentionally **not** brought in: they
+  trip GitHub push-protection and the boundary test that needed them
+  was rewritten to use a synthetic `XX_FAKE_*` shape in v0.6.1.
+- `crates/sources/src/slack.rs:54` `data: T.into()` syntax bug that
+  still exists on the work-linux line was already fixed here in v0.6.0.
+
+Net new: version bump only. No code regressions, no losses.
+
+vendor/vyre is untouched — separate project with its own versioning.
+
 ## v0.6.1 — 2026-05-06
 
 Perfection pass on top of v0.6.0.

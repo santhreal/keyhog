@@ -39,3 +39,4 @@ ruff/
 tailwind/
 react/
 benchmark-harness/
+.work-linux.bundle
