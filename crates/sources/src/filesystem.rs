@@ -436,59 +436,85 @@ fn extract_compressed_chunks(path: &Path, max_size: u64) -> Vec<Result<Chunk, So
 
 /// Check if a path matches the built-in default exclusion patterns.
 /// Mirrors the patterns in `crates/cli/src/sources.rs`.
+///
+/// ASCII case-insensitive byte comparisons; splits on both `/` and
+/// `\` so Windows paths get the same treatment as POSIX. The previous
+/// flow built a fully-lowercased copy of the entire path and ran
+/// POSIX-only `.contains("/x/")` checks, which (a) allocated per
+/// file on the walker hot path and (b) silently failed to exclude
+/// `\node_modules\`, `\vendor\`, etc. on Windows checkouts.
 fn is_default_excluded(path: &str) -> bool {
-    let lower = path.to_lowercase();
+    let bytes = path.as_bytes();
+    let ends_ci = |suffix: &[u8]| -> bool {
+        bytes.len() >= suffix.len()
+            && bytes[bytes.len() - suffix.len()..].eq_ignore_ascii_case(suffix)
+    };
 
     // File suffixes
-    if lower.ends_with(".min.js")
-        || lower.ends_with(".min.css")
-        || lower.ends_with(".bak")
-        || lower.ends_with(".swp")
-        || lower.ends_with(".tmp")
-        || lower.ends_with(".map")
-        || lower.ends_with(".cache")
-    {
+    const SUFFIXES: &[&[u8]] = &[
+        b".min.js",
+        b".min.css",
+        b".bak",
+        b".swp",
+        b".tmp",
+        b".map",
+        b".cache",
+    ];
+    if SUFFIXES.iter().any(|s| ends_ci(s)) {
         return true;
     }
 
-    // Directory contents
-    if lower.contains("/node_modules/")
-        || lower.contains("/.git/")
-        || lower.contains("/__pycache__/")
-        || lower.contains("/vendor/")
-        || lower.contains("/dist/")
-        || lower.contains("/build/")
-        || lower.contains("/out/")
-    {
-        return true;
+    // Directory contents — segment-walk catches both separators.
+    const SKIP_SEGMENTS: &[&[u8]] = &[
+        b"node_modules",
+        b".git",
+        b"__pycache__",
+        b"vendor",
+        b"dist",
+        b"build",
+        b"out",
+    ];
+    let mut filename: &[u8] = bytes;
+    for segment in path.split(['/', '\\']) {
+        let seg_bytes = segment.as_bytes();
+        if SKIP_SEGMENTS
+            .iter()
+            .any(|skip| seg_bytes.eq_ignore_ascii_case(skip))
+        {
+            return true;
+        }
+        if !seg_bytes.is_empty() {
+            filename = seg_bytes;
+        }
     }
 
-    // Specific filenames / patterns
-    if lower.contains("/package-lock.json")
-        || lower.ends_with("package-lock.json")
-        || lower.ends_with("/yarn.lock")
-        || lower == "yarn.lock"
-        || lower.ends_with("/pnpm-lock.yaml")
-        || lower == "pnpm-lock.yaml"
-        || lower.ends_with("/cache.json")
-        || lower == "cache.json"
-        || lower.ends_with("/cargo.lock")
-        || lower == "cargo.lock"
-        || lower.ends_with("/go.sum")
-        || lower == "go.sum"
-        || lower.ends_with("/gemfile.lock")
-        || lower == "gemfile.lock"
-        || lower.ends_with("/angular.json")
-        || lower == "angular.json"
+    // Specific filename matches (the trailing component only —
+    // intermediate-dir matches were already handled above).
+    const FILENAMES: &[&[u8]] = &[
+        b"package-lock.json",
+        b"yarn.lock",
+        b"pnpm-lock.yaml",
+        b"cache.json",
+        b"cargo.lock",
+        b"go.sum",
+        b"gemfile.lock",
+        b"angular.json",
+    ];
+    if FILENAMES
+        .iter()
+        .any(|name| filename.eq_ignore_ascii_case(name))
     {
         return true;
     }
 
     // tsconfig*.json
-    if let Some(filename) = lower.rsplit(['/', '\\']).next() {
-        if filename.starts_with("tsconfig") && filename.ends_with(".json") {
-            return true;
-        }
+    let tsc = b"tsconfig";
+    let json = b".json";
+    if filename.len() >= tsc.len() + json.len()
+        && filename[..tsc.len()].eq_ignore_ascii_case(tsc)
+        && filename[filename.len() - json.len()..].eq_ignore_ascii_case(json)
+    {
+        return true;
     }
 
     false

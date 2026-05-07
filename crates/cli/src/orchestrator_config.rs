@@ -66,7 +66,7 @@ pub(crate) fn auto_discover_detectors(path: &Path) -> Result<PathBuf> {
         ];
         for dir in default_dirs.into_iter().flatten() {
             if dir.exists() && dir.is_dir() {
-                eprintln!("Auto-detected: using detectors directory {}", dir.display());
+                tracing::info!(detectors_dir = %dir.display(), "auto-detected detectors directory");
                 return Ok(dir);
             }
         }
@@ -101,9 +101,9 @@ pub(crate) fn load_detectors_no_cache(path: &Path) -> Result<Vec<DetectorSpec>> 
 fn load_detectors_embedded_or_fail(path: &Path) -> Result<Vec<DetectorSpec>> {
     let embedded = keyhog_core::embedded_detector_tomls();
     if !embedded.is_empty() {
-        eprintln!(
-            "Using {} embedded detectors (no external detectors directory found)",
-            embedded.len()
+        tracing::info!(
+            embedded_count = embedded.len(),
+            "using embedded detectors (no external detectors directory found)"
         );
         let mut detectors = Vec::new();
         for (name, toml_content) in embedded {
