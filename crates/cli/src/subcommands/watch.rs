@@ -22,7 +22,6 @@ use anyhow::{Context, Result};
 use keyhog_core::{Chunk, ChunkMetadata, DetectorFile};
 use keyhog_scanner::CompiledScanner;
 use notify::{Event, EventKind, RecursiveMode, Watcher};
-use std::path::PathBuf;
 use std::sync::mpsc::channel;
 
 pub fn run(args: WatchArgs) -> Result<()> {
@@ -122,24 +121,35 @@ fn scan_file(scanner: &CompiledScanner, path: &std::path::Path) {
 }
 
 fn should_skip(path: &std::path::Path) -> bool {
-    let lower = path.to_string_lossy().to_lowercase();
-    const SKIP: &[&str] = &[
-        "/.git/",
-        "/.svn/",
-        "/.hg/",
-        "/node_modules/",
-        "/target/",
-        "/.cargo/",
-        "/.cache/",
-        "/.venv/",
-        "/venv/",
-        "/__pycache__/",
-        "/.next/",
-        "/.turbo/",
-        "/dist/",
-        "/build/",
+    // Walk path components — handles both `/` and `\` natively and
+    // doesn't allocate a lowercased copy of the entire path on every
+    // watch event. The previous flow (a) didn't skip Windows paths
+    // because the SKIP literals were POSIX-only and (b) burned a
+    // String per event in the inotify hot loop.
+    const SKIP_NAMES: &[&str] = &[
+        ".git",
+        ".svn",
+        ".hg",
+        "node_modules",
+        "target",
+        ".cargo",
+        ".cache",
+        ".venv",
+        "venv",
+        "__pycache__",
+        ".next",
+        ".turbo",
+        "dist",
+        "build",
     ];
-    SKIP.iter().any(|s| lower.contains(s))
+    path.components().any(|c| {
+        if let std::path::Component::Normal(os) = c {
+            if let Some(s) = os.to_str() {
+                return SKIP_NAMES.iter().any(|skip| s.eq_ignore_ascii_case(skip));
+            }
+        }
+        false
+    })
 }
 
 fn load_detectors(path: &std::path::Path) -> Result<Vec<keyhog_core::DetectorSpec>> {
@@ -160,6 +170,5 @@ fn load_detectors(path: &std::path::Path) -> Result<Vec<keyhog_core::DetectorSpe
             Err(e) => eprintln!("warning: failed to parse embedded detector {name}: {e}"),
         }
     }
-    let _ = PathBuf::new();
     Ok(out)
 }

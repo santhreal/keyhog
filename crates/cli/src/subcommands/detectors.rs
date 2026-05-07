@@ -33,23 +33,35 @@ pub fn run(args: DetectorArgs) -> Result<()> {
     // Apply --search filter case-insensitively against the four most useful
     // fields. The 888-strong corpus is otherwise hard to navigate by eye —
     // `keyhog detectors --search aws` should beat `grep -r aws detectors/`.
-    let needle = args.search.as_ref().map(|s| s.to_ascii_lowercase());
+    //
+    // Byte-level case-insensitive substring search. The previous flow
+    // allocated ~5 lowercased Strings per detector (id + name + service
+    // + per-keyword) on every search; with 888 detectors that's
+    // thousands of throwaway allocations per `--search`.
+    fn contains_ci(haystack: &str, needle: &[u8]) -> bool {
+        if needle.is_empty() || needle.len() > haystack.len() {
+            return needle.is_empty();
+        }
+        haystack
+            .as_bytes()
+            .windows(needle.len())
+            .any(|w| w.eq_ignore_ascii_case(needle))
+    }
+    let needle: Option<Vec<u8>> = args.search.as_ref().map(|s| s.as_bytes().to_vec());
     let filtered: Vec<&keyhog_core::DetectorSpec> = detectors
         .iter()
         .filter(|d| match needle.as_deref() {
             None => true,
             Some(q) => {
-                d.id.to_ascii_lowercase().contains(q)
-                    || d.name.to_ascii_lowercase().contains(q)
-                    || d.service.to_ascii_lowercase().contains(q)
-                    || d.keywords
-                        .iter()
-                        .any(|k| k.to_ascii_lowercase().contains(q))
+                contains_ci(&d.id, q)
+                    || contains_ci(&d.name, q)
+                    || contains_ci(&d.service, q)
+                    || d.keywords.iter().any(|k| contains_ci(k, q))
             }
         })
         .collect();
 
-    if let Some(q) = needle.as_deref() {
+    if let Some(q) = args.search.as_deref() {
         println!(
             "Loaded {} detectors ({source}); {} match '{q}':",
             detectors.len(),
