@@ -282,12 +282,15 @@ pub fn should_suppress_known_example_credential_with_source(
 
     // ── 8. Path-based heuristic ──
     if let Some(path) = path {
-        let lower_path = path.to_lowercase();
-        let is_example_path = lower_path.split(['/', '\\']).any(|component| {
-            matches!(
-                component,
-                "example" | "examples" | "test" | "tests" | "fixture" | "fixtures"
-            )
+        // ASCII case-insensitive segment compare — no per-call lowercase
+        // alloc of the full path. Hot path during placeholder rejection.
+        let is_example_path = path.split(['/', '\\']).any(|component| {
+            component.eq_ignore_ascii_case("example")
+                || component.eq_ignore_ascii_case("examples")
+                || component.eq_ignore_ascii_case("test")
+                || component.eq_ignore_ascii_case("tests")
+                || component.eq_ignore_ascii_case("fixture")
+                || component.eq_ignore_ascii_case("fixtures")
         });
         if is_example_path && upper_contains_token(&upper, "EXAMPLE") {
             return true;

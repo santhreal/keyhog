@@ -34,30 +34,56 @@ pub fn preprocess(text: &str, path: Option<&str>) -> Option<ScannerPreprocessedT
 }
 
 fn detect_and_parse(text: &str, path: Option<&str>) -> Option<Vec<ExtractedPair>> {
-    let lower_path = path.map(|p| p.to_lowercase()).unwrap_or_default();
-    let file_name = lower_path.rsplit(['/', '\\']).next().unwrap_or(&lower_path);
+    // ASCII case-insensitive byte compares — every chunk runs through this
+    // detector to decide whether a structured parser applies. The previous
+    // flow built a fully-lowercased copy of the path on every call.
+    let path_bytes = path.map(str::as_bytes).unwrap_or(&[]);
+    let ends_ci = |suffix: &[u8]| -> bool {
+        path_bytes.len() >= suffix.len()
+            && path_bytes[path_bytes.len() - suffix.len()..].eq_ignore_ascii_case(suffix)
+    };
+    let last_sep = path_bytes
+        .iter()
+        .rposition(|&b| b == b'/' || b == b'\\')
+        .map(|i| i + 1)
+        .unwrap_or(0);
+    let file_bytes = &path_bytes[last_sep..];
+    let file_starts_ci = |prefix: &[u8]| -> bool {
+        file_bytes.len() >= prefix.len()
+            && file_bytes[..prefix.len()].eq_ignore_ascii_case(prefix)
+    };
+    let file_ends_ci = |suffix: &[u8]| -> bool {
+        file_bytes.len() >= suffix.len()
+            && file_bytes[file_bytes.len() - suffix.len()..].eq_ignore_ascii_case(suffix)
+    };
+    let file_contains_ci = |needle: &[u8]| -> bool {
+        if needle.is_empty() || needle.len() > file_bytes.len() {
+            return false;
+        }
+        file_bytes
+            .windows(needle.len())
+            .any(|w| w.eq_ignore_ascii_case(needle))
+    };
 
-    if file_name.starts_with(".env") || file_name.ends_with(".env") {
+    if file_starts_ci(b".env") || file_ends_ci(b".env") {
         return Some(parsers::parse_env(text));
     }
 
-    if (lower_path.ends_with(".yaml") || lower_path.ends_with(".yml"))
-        && text.contains("kind: Secret")
-    {
+    if (ends_ci(b".yaml") || ends_ci(b".yml")) && text.contains("kind: Secret") {
         return Some(parsers::parse_k8s_secret(text));
     }
 
-    if (file_name.contains("docker-compose") || file_name.contains("compose"))
-        && (lower_path.ends_with(".yaml") || lower_path.ends_with(".yml"))
+    if (file_contains_ci(b"docker-compose") || file_contains_ci(b"compose"))
+        && (ends_ci(b".yaml") || ends_ci(b".yml"))
     {
         return Some(parsers::parse_docker_compose(text));
     }
 
-    if lower_path.ends_with(".tfstate") {
+    if ends_ci(b".tfstate") {
         return Some(parsers::parse_tfstate(text));
     }
 
-    if lower_path.ends_with(".ipynb") {
+    if ends_ci(b".ipynb") {
         return Some(parsers::parse_jupyter(text));
     }
 
