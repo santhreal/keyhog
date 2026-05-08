@@ -128,6 +128,139 @@ pub(super) fn read_file_mmap(path: &Path) -> Option<String> {
     result
 }
 
+/// One scanning window over a large file: an absolute byte offset into
+/// the original file plus the lossy-UTF-8 view of those bytes. The
+/// orchestrator's match locations are translated through `offset` so
+/// findings reference the right place in the source even though we
+/// scanned a slice.
+pub(super) struct FileWindow {
+    pub offset: usize,
+    pub text: String,
+}
+
+/// Memory-map `path` and slice it into overlapping `window_size`-byte
+/// windows with `overlap` bytes shared between consecutive windows. The
+/// previous flow allocated a 64 MiB heap working buffer per big file
+/// and re-read the overlap region through `seek+read`; mmap slices
+/// the same region zero-copy at the kernel level and lets `madvise`
+/// drive aggressive read-ahead.
+///
+/// Returns `None` when:
+///   * the file cannot be opened safely (symlink guard, permission),
+///   * an advisory shared lock cannot be taken on Unix (a writer holds
+///     it; we don't want to scan a torn write),
+///   * the mmap call itself fails (typically a 0-byte file or a
+///     filesystem that refuses mmap — falls through to the caller's
+///     non-mmap windowed path).
+pub(super) fn read_file_windowed_mmap(
+    path: &Path,
+    window_size: usize,
+    overlap: usize,
+) -> Option<Vec<FileWindow>> {
+    debug_assert!(window_size > overlap, "window must exceed overlap");
+    let file = open_file_safe(path).ok()?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::io::AsRawFd;
+        let fd = file.as_raw_fd();
+        // SAFETY: Simple advisory lock FFI call. A failure means
+        // someone else holds an exclusive lock — back out so the
+        // caller can take the buffered fallback (or just skip).
+        if unsafe { libc::flock(fd, libc::LOCK_SH | libc::LOCK_NB) } != 0 {
+            return None;
+        }
+    }
+
+    // SAFETY: the mapping is read-only, the `File` lives through the
+    // mapping call, and we drop the mmap before this function returns
+    // (the windows we hand back are owned `String` copies).
+    let mmap = match unsafe { MmapOptions::new().map(&file) } {
+        Ok(m) => m,
+        Err(_) => {
+            #[cfg(unix)]
+            {
+                use std::os::unix::io::AsRawFd;
+                unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_UN) };
+            }
+            return None;
+        }
+    };
+
+    #[cfg(unix)]
+    {
+        // SAFETY: madvise on a valid mmap range; ignored if the kernel
+        // doesn't honor the hint. SEQUENTIAL doubles readahead and
+        // disables LRU protection on already-read pages — we walk
+        // front-to-back and never revisit, so eviction is correct.
+        unsafe {
+            libc::madvise(
+                mmap.as_ptr() as *mut libc::c_void,
+                mmap.len(),
+                libc::MADV_SEQUENTIAL,
+            );
+        }
+    }
+
+    let windows = slice_into_windows(&mmap, window_size, overlap);
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::io::AsRawFd;
+        // SAFETY: Simple advisory unlock FFI call.
+        unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_UN) };
+    }
+    Some(windows)
+}
+
+/// Pure helper: split `bytes` into `window_size`-byte windows that
+/// share `overlap` bytes with the next window. Each window is decoded
+/// lossily as UTF-8 and tagged with its starting byte offset in
+/// `bytes`. Extracted so we can unit-test the boundary arithmetic
+/// without conjuring 64 MiB+ files on the test runner.
+///
+/// Invariants:
+///   * window N starts at offset `N * (window_size - overlap)`,
+///   * the last window may be shorter than `window_size`,
+///   * for `bytes.len() <= window_size` the function returns exactly
+///     one window covering the whole input,
+///   * for `bytes.is_empty()` the function returns an empty `Vec`,
+///   * consecutive windows always share exactly `overlap` bytes (the
+///     reason: a secret straddling the cut would otherwise be missed).
+pub(super) fn slice_into_windows(
+    bytes: &[u8],
+    window_size: usize,
+    overlap: usize,
+) -> Vec<FileWindow> {
+    assert!(window_size > overlap, "window must exceed overlap");
+    if bytes.is_empty() {
+        return Vec::new();
+    }
+    let stride = window_size - overlap;
+    let total = bytes.len();
+    let mut out = Vec::with_capacity(total.div_ceil(stride));
+    let mut offset = 0usize;
+    while offset < total {
+        let end = (offset + window_size).min(total);
+        let slice = &bytes[offset..end];
+        // `from_utf8_lossy` returns Cow::Borrowed when the slice is
+        // valid UTF-8; we still own the result via `into_owned` because
+        // SensitiveString needs ownership. The lossy fallback is what
+        // makes us robust to partial multi-byte sequences at window
+        // boundaries (an emoji split across two windows survives via
+        // `U+FFFD` rather than failing the decode).
+        let text = String::from_utf8_lossy(slice).into_owned();
+        out.push(FileWindow { offset, text });
+        // Stop once we've reached the tail; stride-from-here would
+        // start past EOF.
+        if end >= total {
+            break;
+        }
+        offset += stride;
+    }
+    out
+}
+
 fn decode_text_file(bytes: &[u8]) -> Option<String> {
     // Cheap O(1) header rejects first — no full pass needed to know a PDF or
     // ZIP isn't a text file.
@@ -452,5 +585,183 @@ mod tests {
             *b = 0x01;
         }
         assert!(decode_text_file(&bytes).is_none());
+    }
+
+    // ----- slice_into_windows: pure-function boundary behavior -----
+
+    #[test]
+    fn slice_into_windows_empty_input_returns_empty() {
+        assert!(slice_into_windows(&[], 64, 8).is_empty());
+    }
+
+    #[test]
+    fn slice_into_windows_smaller_than_window_yields_one_window() {
+        let bytes = b"hello, world";
+        let ws = slice_into_windows(bytes, 64, 8);
+        assert_eq!(ws.len(), 1);
+        assert_eq!(ws[0].offset, 0);
+        assert_eq!(ws[0].text, "hello, world");
+    }
+
+    #[test]
+    fn slice_into_windows_exactly_one_window_size() {
+        let bytes = vec![b'a'; 64];
+        let ws = slice_into_windows(&bytes, 64, 8);
+        assert_eq!(ws.len(), 1);
+        assert_eq!(ws[0].offset, 0);
+        assert_eq!(ws[0].text.len(), 64);
+    }
+
+    #[test]
+    fn slice_into_windows_one_byte_over_window_emits_two_windows() {
+        // A 65-byte input with window=64, overlap=8 — stride is 56,
+        // so window 1 starts at offset 56 and runs 56..65 = 9 bytes.
+        let bytes: Vec<u8> = (0..65u8).collect();
+        let ws = slice_into_windows(&bytes, 64, 8);
+        assert_eq!(ws.len(), 2);
+        assert_eq!(ws[0].offset, 0);
+        assert_eq!(ws[0].text.len(), 64);
+        assert_eq!(ws[1].offset, 56);
+        assert_eq!(ws[1].text.len(), 9);
+    }
+
+    #[test]
+    fn slice_into_windows_overlap_bytes_match_between_neighbours() {
+        // The whole point of overlap: a secret straddling the cut
+        // appears in both windows. Use ASCII-only input so lossy
+        // decode is a no-op and byte length is preserved across
+        // the String round-trip — otherwise U+FFFD substitution
+        // makes the post-decode lengths drift from the raw slice.
+        let bytes: Vec<u8> = b"0123456789abcdefghijklmnopqrstuvwxyz".iter().copied().cycle().take(200).collect();
+        let ws = slice_into_windows(&bytes, 100, 16);
+        assert!(ws.len() >= 2);
+        for pair in ws.windows(2) {
+            let prev = &pair[0];
+            let next = &pair[1];
+            let prev_tail = &prev.text.as_bytes()[prev.text.len() - 16..];
+            let next_head = &next.text.as_bytes()[..16];
+            assert_eq!(prev_tail, next_head, "overlap mismatch at {}", next.offset);
+            assert_eq!(next.offset - prev.offset, 100 - 16);
+        }
+    }
+
+    #[test]
+    fn slice_into_windows_offsets_cover_the_whole_input() {
+        // Coverage check requires that decoded text length equals raw
+        // slice length, so use ASCII-only bytes and assert that
+        // every byte offset is touched by at least one window.
+        let bytes: Vec<u8> = (b'a'..=b'z').cycle().take(10_000).collect();
+        let ws = slice_into_windows(&bytes, 256, 32);
+        let mut covered = vec![false; bytes.len()];
+        for w in &ws {
+            assert_eq!(
+                w.text.len(),
+                (w.offset + w.text.len()).min(bytes.len()) - w.offset,
+                "ASCII input → text len equals slice len"
+            );
+            for i in w.offset..(w.offset + w.text.len()).min(bytes.len()) {
+                covered[i] = true;
+            }
+        }
+        assert!(
+            covered.iter().all(|&c| c),
+            "every byte must be covered by some window"
+        );
+    }
+
+    #[test]
+    fn slice_into_windows_secret_straddling_cut_present_in_both_windows() {
+        // Motivating case. window=128, overlap=32 → stride=96.
+        // For exactly 2 windows we need len in (128, 128+96] = (128, 224].
+        // Pick 200; windows are [0..128) and [96..200). The secret at
+        // offset 100..120 sits in both — so the scanner can't miss it.
+        let mut bytes = vec![b'.'; 200];
+        let secret = b"AKIAIOSFODNN7EXAMPLE";
+        bytes[100..100 + secret.len()].copy_from_slice(secret);
+        let ws = slice_into_windows(&bytes, 128, 32);
+        assert_eq!(ws.len(), 2, "expected exactly 2 windows for len=200, ws=128, ov=32");
+        let s = std::str::from_utf8(secret).unwrap();
+        assert!(ws[0].text.contains(s), "window 0 must carry the straddling secret");
+        assert!(ws[1].text.contains(s), "window 1 must carry the straddling secret");
+    }
+
+    #[test]
+    fn slice_into_windows_invalid_utf8_at_boundary_decodes_lossy() {
+        // A multi-byte UTF-8 sequence cut by the window edge must not
+        // panic — it becomes U+FFFD on the side that has the partial
+        // bytes, and decodes correctly on the side that has the full
+        // sequence. Use the snowman (☃, 0xE2 0x98 0x83) split at the
+        // cut between window 0 (ends at byte 64) and window 1
+        // (starts at byte 56). Picked len=120 for exactly 2 windows
+        // given window=64, overlap=8 → stride=56 (max len for 2 wins
+        // is 64+56=120).
+        let mut bytes = vec![b'a'; 120];
+        bytes[63] = 0xE2;
+        bytes[64] = 0x98;
+        bytes[65] = 0x83;
+        let ws = slice_into_windows(&bytes, 64, 8);
+        assert_eq!(ws.len(), 2, "expected 2 windows for len=120, ws=64, ov=8");
+        // Window 0 covers 0..64 → only 0xE2 of the sequence is present.
+        // Lossy decode replaces the dangling lead byte with U+FFFD.
+        assert!(ws[0].text.ends_with('\u{FFFD}'));
+        // Window 1 covers 56..120 → full snowman at relative 7..10.
+        assert!(ws[1].text.contains('☃'));
+    }
+
+    #[test]
+    fn slice_into_windows_large_input_window_count_matches_formula() {
+        // len = 4096, window = 1024, overlap = 64 → stride = 960.
+        // Windows: starts at 0, 960, 1920, 2880, 3840 — 5 windows
+        // (the last one ending exactly at 4096).
+        let bytes = vec![b'x'; 4096];
+        let ws = slice_into_windows(&bytes, 1024, 64);
+        assert_eq!(ws.len(), 5);
+        assert_eq!(ws[0].offset, 0);
+        assert_eq!(ws[1].offset, 960);
+        assert_eq!(ws[2].offset, 1920);
+        assert_eq!(ws[3].offset, 2880);
+        assert_eq!(ws[4].offset, 3840);
+        assert_eq!(ws[4].text.len(), 256);
+    }
+
+    #[test]
+    #[should_panic(expected = "window must exceed overlap")]
+    fn slice_into_windows_panics_when_overlap_geq_window() {
+        // Same-as-window overlap means stride == 0 → infinite loop.
+        // Catch it as a programming error at the API surface.
+        slice_into_windows(b"abc", 16, 16);
+    }
+
+    #[test]
+    fn read_file_windowed_mmap_roundtrip_matches_pure_helper() {
+        // The mmap path is just slice_into_windows over the mmap'd
+        // bytes. Write a small file, run both, assert identical.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("big.txt");
+        let bytes: Vec<u8> = (0..u8::MAX).cycle().take(8192).collect();
+        std::fs::write(&path, &bytes).unwrap();
+
+        let pure = slice_into_windows(&bytes, 1024, 32);
+        let mapped = read_file_windowed_mmap(&path, 1024, 32).expect("mmap windows");
+        assert_eq!(pure.len(), mapped.len());
+        for (a, b) in pure.iter().zip(mapped.iter()) {
+            assert_eq!(a.offset, b.offset);
+            assert_eq!(a.text, b.text);
+        }
+    }
+
+    #[test]
+    fn read_file_windowed_mmap_handles_empty_file() {
+        // Zero-byte mmap is a corner case some platforms reject. The
+        // helper must return either Some(empty vec) or None — never
+        // panic. Either way the caller won't emit chunks.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("empty.txt");
+        std::fs::write(&path, b"").unwrap();
+        let result = read_file_windowed_mmap(&path, 1024, 32);
+        match result {
+            Some(v) => assert!(v.is_empty()),
+            None => {} // acceptable: mmap of zero-length refused
+        }
     }
 }

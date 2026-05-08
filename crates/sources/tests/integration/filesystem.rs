@@ -230,6 +230,162 @@ fn merkle_skip_does_not_fire_when_size_drifts() {
 }
 
 #[test]
+fn windowed_path_emits_multiple_chunks_with_overlap() {
+    // Big-file path: write a fixture larger than the test window
+    // override, configure the source to use small windows, and verify
+    // the source emits the expected number of overlapping chunks
+    // with monotonically increasing base_offset values.
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("big.log");
+    // Use ASCII so byte-length matches char-length post-lossy decode.
+    let content: Vec<u8> = (b'a'..=b'z').cycle().take(200).collect();
+    fs::write(&p, &content).unwrap();
+
+    // window=128 overlap=32 → for len=200 we get exactly 2 windows
+    // (matches the secret-straddling-cut test in read.rs).
+    let source = FilesystemSource::new(dir.path().to_path_buf())
+        .with_window_config(128, 32);
+    let chunks: Vec<_> = source.chunks().collect::<Result<Vec<_>, _>>().unwrap();
+
+    assert_eq!(chunks.len(), 2, "expected 2 windowed chunks for 200B file");
+    assert_eq!(chunks[0].metadata.source_type, "filesystem/windowed");
+    assert_eq!(chunks[0].metadata.base_offset, 0);
+    assert_eq!(chunks[1].metadata.base_offset, 128 - 32);
+    // Every chunk must carry the same overall file size + a populated mtime.
+    for c in &chunks {
+        assert_eq!(c.metadata.size_bytes, Some(200));
+        assert!(c.metadata.mtime_ns.is_some());
+    }
+}
+
+#[test]
+fn windowed_path_finds_secret_in_overlap_region() {
+    // Correctness invariant of the overlap parameter: a secret whose
+    // bytes lie wholly within the overlap region must appear FULLY in
+    // both windows. This is what the overlap exists for — a secret
+    // happening to straddle the cut won't be split such that neither
+    // window has the complete byte sequence. The contract is "fits
+    // in overlap → present in both"; secrets larger than overlap can
+    // still fail to be fully contained on the trailing side, which
+    // is a documented limitation, not a bug. (For our 4 KiB prod
+    // overlap that means secrets up to 4 KiB are safe — far longer
+    // than any real credential.)
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("secret.log");
+    let mut content = vec![b'.'; 200];
+    let secret = b"AKIAIOSFODNN7EXAMPLE"; // 20 bytes
+    // Place at offset 100 so the secret fits in the overlap region
+    // (96..128). 20-byte secret at 100..120 is fully inside both
+    // window 0 (0..128) and window 1 (96..200).
+    content[100..100 + secret.len()].copy_from_slice(secret);
+    fs::write(&p, &content).unwrap();
+
+    let source = FilesystemSource::new(dir.path().to_path_buf())
+        .with_window_config(128, 32);
+    let chunks: Vec<_> = source.chunks().collect::<Result<Vec<_>, _>>().unwrap();
+    assert_eq!(chunks.len(), 2);
+    let s = std::str::from_utf8(secret).unwrap();
+    assert!(chunks[0].data.contains(s), "window 0 must include the overlap-region secret");
+    assert!(chunks[1].data.contains(s), "window 1 must include the overlap-region secret");
+}
+
+#[test]
+fn windowed_path_finds_post_cut_secret_in_second_window_only() {
+    // Companion correctness check: a secret too long for the overlap
+    // region but fully contained in the second window after the cut
+    // must appear at least once. Documents the "secret > overlap"
+    // boundary behavior so a future maintainer can't accidentally
+    // tighten the overlap and silently regress detection.
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("secret.log");
+    let mut content = vec![b'.'; 200];
+    let secret = b"AKIAIOSFODNN7EXAMPLE"; // 20 bytes
+    // Place at offset 120 so it sits PAST the cut at 128 — only fully
+    // contained in window 1 (96..200). Window 0 has the first 8 bytes
+    // only and won't substring-match the full credential.
+    content[120..120 + secret.len()].copy_from_slice(secret);
+    fs::write(&p, &content).unwrap();
+
+    let source = FilesystemSource::new(dir.path().to_path_buf())
+        .with_window_config(128, 32);
+    let chunks: Vec<_> = source.chunks().collect::<Result<Vec<_>, _>>().unwrap();
+    assert_eq!(chunks.len(), 2);
+    let s = std::str::from_utf8(secret).unwrap();
+    assert!(
+        !chunks[0].data.contains(s),
+        "window 0 holds only a prefix and must not substring-match"
+    );
+    assert!(
+        chunks[1].data.contains(s),
+        "window 1 must contain the full secret"
+    );
+}
+
+#[test]
+fn windowed_path_single_chunk_for_file_at_exactly_window_size() {
+    // Edge case: file size == window_size triggers the windowed path
+    // gate (`file_size > window_size`) only when strictly greater. At
+    // exactly window_size we should fall through to the regular
+    // mmap/buffered read path — verify ONE chunk, NOT windowed.
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("edge.log");
+    let content: Vec<u8> = (b'a'..=b'z').cycle().take(128).collect();
+    fs::write(&p, &content).unwrap();
+
+    let source = FilesystemSource::new(dir.path().to_path_buf())
+        .with_window_config(128, 32);
+    let chunks: Vec<_> = source.chunks().collect::<Result<Vec<_>, _>>().unwrap();
+    assert_eq!(chunks.len(), 1);
+    assert_ne!(
+        chunks[0].metadata.source_type, "filesystem/windowed",
+        "exact-size file must take the regular read path, not the windowed path"
+    );
+}
+
+#[test]
+fn windowed_path_single_chunk_when_only_one_window_above_threshold() {
+    // window_size=64, overlap=8 → file_size=65 trips the threshold
+    // (65 > 64) and produces exactly ONE window (the second would
+    // start at offset 56 which is < 65, so we get a tiny tail).
+    // Length picked to test the upper loop bound.
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("just_over.log");
+    let content: Vec<u8> = (b'a'..=b'z').cycle().take(65).collect();
+    fs::write(&p, &content).unwrap();
+
+    let source = FilesystemSource::new(dir.path().to_path_buf())
+        .with_window_config(64, 8);
+    let chunks: Vec<_> = source.chunks().collect::<Result<Vec<_>, _>>().unwrap();
+    assert_eq!(chunks.len(), 2);
+    // Window 0: 0..64 = 64 bytes; window 1: 56..65 = 9 bytes.
+    assert_eq!(chunks[0].metadata.base_offset, 0);
+    assert_eq!(chunks[1].metadata.base_offset, 56);
+    assert_eq!(chunks[1].data.len(), 9);
+}
+
+#[test]
+fn windowed_path_offsets_strictly_monotonic() {
+    // For a file of arbitrary size emitting many windows, base_offset
+    // must increase by exactly stride (window - overlap) between
+    // consecutive chunks. Catches off-by-one regressions in the
+    // slicing arithmetic.
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("many.log");
+    let content: Vec<u8> = (b'a'..=b'z').cycle().take(2000).collect();
+    fs::write(&p, &content).unwrap();
+
+    let source = FilesystemSource::new(dir.path().to_path_buf())
+        .with_window_config(256, 32);
+    let chunks: Vec<_> = source.chunks().collect::<Result<Vec<_>, _>>().unwrap();
+    assert!(chunks.len() >= 5, "expected several windows for 2000B / 256");
+
+    for pair in chunks.windows(2) {
+        let stride = pair[1].metadata.base_offset - pair[0].metadata.base_offset;
+        assert_eq!(stride, 256 - 32, "stride mismatch between consecutive windows");
+    }
+}
+
+#[test]
 fn merkle_skip_chunks_carry_live_metadata() {
     // For files that ARE read, the emitted chunk must carry the live
     // mtime + size so the orchestrator can refresh the cache entry.

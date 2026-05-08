@@ -15,8 +15,13 @@ mod read;
 /// Minimum file size to use memory mapping. Above 1 MB the mmap overhead is
 /// amortized; below it we use buffered reads.
 const MMAP_THRESHOLD: u64 = 1024 * 1024;
-const WINDOW_SIZE: usize = 64 * 1024 * 1024;
-const WINDOW_OVERLAP: usize = 4 * 1024;
+/// Default window size for the >64 MiB scanning path. Overridable on a
+/// per-source basis (see `with_window_config`) so tests can exercise
+/// the windowed flow without writing 64 MiB+ fixtures.
+const DEFAULT_WINDOW_SIZE: usize = 64 * 1024 * 1024;
+/// Default overlap between consecutive windows. 4 KiB matches the
+/// longest plausible secret span we want to catch across the cut.
+const DEFAULT_WINDOW_OVERLAP: usize = 4 * 1024;
 
 /// Scans files in a directory tree.
 pub struct FilesystemSource {
@@ -41,6 +46,12 @@ pub struct FilesystemSource {
     /// The orchestrator reads it after the scan to log how much I/O the
     /// cache saved. Atomic so rayon-driven walkers don't have to lock.
     skipped: Arc<AtomicUsize>,
+    /// Window size for the big-file scan path. Tests override this via
+    /// `with_window_config` to exercise the windowed flow without
+    /// writing the 64 MiB fixtures the production threshold requires.
+    window_size: usize,
+    /// Bytes of overlap between consecutive windows. Same rationale.
+    window_overlap: usize,
 }
 
 impl FilesystemSource {
@@ -57,7 +68,20 @@ impl FilesystemSource {
             respect_gitignore: true,
             merkle: None,
             skipped: Arc::new(AtomicUsize::new(0)),
+            window_size: DEFAULT_WINDOW_SIZE,
+            window_overlap: DEFAULT_WINDOW_OVERLAP,
         }
+    }
+
+    /// Override the windowed-scan parameters. Production callers stick
+    /// with the defaults (64 MiB / 4 KiB); tests use this to exercise
+    /// the multi-window path on tiny fixtures. `window_size` must
+    /// strictly exceed `overlap` (the underlying slicer asserts this).
+    pub fn with_window_config(mut self, window_size: usize, overlap: usize) -> Self {
+        assert!(window_size > overlap, "window must exceed overlap");
+        self.window_size = window_size;
+        self.window_overlap = overlap;
+        self
     }
 
     /// Wire the source up to a merkle index so `(path, mtime, size)`
@@ -239,6 +263,8 @@ impl Source for FilesystemSource {
 
         let merkle = self.merkle.clone();
         let skipped = self.skipped.clone();
+        let window_size = self.window_size;
+        let window_overlap = self.window_overlap;
 
         Box::new(entries.into_iter().flat_map(move |entry| {
             let path = entry.path;
@@ -351,11 +377,40 @@ impl Source for FilesystemSource {
                 return vec![];
             }
 
-if file_size > WINDOW_SIZE as u64 {
+            if file_size > window_size as u64 {
+                // Fast path: mmap once and slice zero-copy into
+                // overlapping `window_size` views with `window_overlap`
+                // shared bytes between neighbours. Replaces a 64 MiB
+                // heap buffer + per-window `seek-back+re-read`
+                // round-trip with a single mmap + madvise(SEQUENTIAL).
+                if let Some(windows) =
+                    read::read_file_windowed_mmap(&path, window_size, window_overlap)
+                {
+                    return windows
+                        .into_iter()
+                        .map(|w| {
+                            Ok(Chunk {
+                                data: w.text.into(),
+                                metadata: ChunkMetadata {
+                                    source_type: "filesystem/windowed".to_string(),
+                                    path: Some(path.display().to_string()),
+                                    base_offset: w.offset,
+                                    mtime_ns: live_mtime_ns,
+                                    size_bytes: Some(file_size),
+                                    ..Default::default()
+                                },
+                            })
+                        })
+                        .collect();
+                }
+                // Buffered fallback: mmap refused (locked writer,
+                // unsupported filesystem). Same semantics as before —
+                // working buffer + seek-back overlap. Sized to the
+                // configured window so test overrides apply here too.
                 let mut window_chunks = Vec::new();
                 if let Ok(mut file) = std::fs::File::open(&path) {
                     let mut current_offset = 0;
-                    let mut buffer = vec![0u8; WINDOW_SIZE];
+                    let mut buffer = vec![0u8; window_size];
                     while let Ok(n) = file.read(&mut buffer) {
                         if n == 0 { break; }
                         let data = String::from_utf8_lossy(&buffer[..n]).into_owned();
@@ -370,9 +425,9 @@ if file_size > WINDOW_SIZE as u64 {
                                 ..Default::default()
                             },
                         }));
-                        if n < WINDOW_SIZE { break; }
-                        let _ = file.seek(SeekFrom::Current(-(WINDOW_OVERLAP as i64)));
-                        current_offset += n - WINDOW_OVERLAP;
+                        if n < window_size { break; }
+                        let _ = file.seek(SeekFrom::Current(-(window_overlap as i64)));
+                        current_offset += n - window_overlap;
                     }
                 }
                 return window_chunks;
