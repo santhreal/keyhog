@@ -196,13 +196,6 @@ impl CompiledScanner {
         // an Aho-Corasick scan over the path.
         keyword_nearby: bool,
         sensitive_file: bool,
-        // `code_lines` is already produced once per chunk by
-        // `scan_prepared_with_triggered`. Threading it through here
-        // lets `calculate_final_score`'s ML-context window pull a
-        // slice without re-running `text.lines().collect()` per
-        // ML-pending match (was the dominant cost on chunks where
-        // many matches passed the probabilistic gate).
-        code_lines: &[&str],
         scan_state: &mut ScanState,
     ) -> Option<MlScoreResult> {
         let raw_conf =
@@ -226,7 +219,6 @@ impl CompiledScanner {
             data,
             line,
             chunk,
-            code_lines,
             scan_state,
         )?;
 
@@ -259,18 +251,16 @@ impl CompiledScanner {
         data: &str,
         line: usize,
         chunk: &Chunk,
-        code_lines: &[&str],
         _scan_state: &mut ScanState,
     ) -> Option<MlScoreResult> {
         #[cfg(not(feature = "ml"))]
         {
-            let _ = (context, credential, data, line, chunk, code_lines);
+            let _ = (context, credential, data, line, chunk);
             Some(MlScoreResult::Final(heuristic_conf))
         }
 
         #[cfg(feature = "ml")]
         {
-            let _ = data;
             if !self.config.ml_enabled {
                 return Some(MlScoreResult::Final(heuristic_conf));
             }
@@ -279,13 +269,7 @@ impl CompiledScanner {
                 return Some(MlScoreResult::Final(0.1));
             }
 
-            // Pull from the pre-split `code_lines` slice instead of
-            // re-running `data.lines().collect()` per match.
-            let text_context = crate::pipeline::local_context_window_from_lines(
-                code_lines,
-                line,
-                ML_CONTEXT_RADIUS_LINES,
-            );
+            let text_context = local_context_window(data, line, ML_CONTEXT_RADIUS_LINES);
             let ml_context = match chunk.metadata.path.as_deref() {
                 Some(path) => format!("file:{path}\n{text_context}"),
                 None => text_context,
