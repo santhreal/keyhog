@@ -262,14 +262,25 @@ impl ScanOrchestrator {
         }
 
         let allowlist = load_allowlist(self.args.path.as_deref());
-        let sources = crate::sources::build_sources(&self.args, allowlist.ignored_paths.clone())?;
+
+        // Build the (optional) merkle index up here so it can be passed
+        // into the filesystem source — that's where the perf win lives.
+        // The orchestrator decides whether to load it at all (lockdown +
+        // --incremental gating); sources just consume the Arc.
+        let merkle = self.build_merkle_index();
+
+        let sources = crate::sources::build_sources(
+            &self.args,
+            allowlist.ignored_paths.clone(),
+            merkle.clone(),
+        )?;
         if sources.is_empty() {
             anyhow::bail!(
                 "no input source specified — use --path, --stdin, --git, --git-diff, --git-history, --github-org, --s3-bucket, or --docker-image"
             );
         }
 
-        let all_matches = self.scan_sources(sources, show_progress);
+        let all_matches = self.scan_sources(sources, show_progress, merkle);
         let filtered = self.filter_and_resolve(all_matches, &allowlist);
         let findings = self.finalize(filtered).await?;
 
@@ -345,39 +356,59 @@ impl ScanOrchestrator {
         })
     }
 
+    /// Compute the merkle-index destination path (resolving CLI override
+    /// and default-cache fallback) iff `--incremental` is on AND lockdown
+    /// is not engaged. `None` means "do not persist a cache this run."
+    fn incremental_cache_path(&self) -> Option<std::path::PathBuf> {
+        if !self.args.incremental {
+            return None;
+        }
+        if self.args.lockdown {
+            tracing::warn!("lockdown mode: --incremental disabled (cache writes refused)");
+            return None;
+        }
+        self.args
+            .incremental_cache
+            .clone()
+            .or_else(keyhog_core::merkle_index::default_cache_path)
+    }
+
+    /// Build the (optional) shared merkle index. Returns the Arc the
+    /// orchestrator and every source share. The index is loaded with the
+    /// detector spec hash gate so adding a detector forces a clean
+    /// re-scan of every previously-cached file.
+    fn build_merkle_index(
+        &self,
+    ) -> Option<Arc<keyhog_core::merkle_index::MerkleIndex>> {
+        let path = self.incremental_cache_path()?;
+        let spec_hash = keyhog_core::merkle_index::compute_spec_hash(&self.detectors);
+        let idx = keyhog_core::merkle_index::MerkleIndex::load_with_spec(&path, &spec_hash);
+        tracing::info!(
+            indexed = idx.len(),
+            "incremental scan: loaded merkle index"
+        );
+        Some(Arc::new(idx))
+    }
+
     pub(crate) fn scan_sources(
         &self,
         sources: Vec<Box<dyn Source>>,
         _show_progress: bool,
+        merkle: Option<Arc<keyhog_core::merkle_index::MerkleIndex>>,
     ) -> Vec<RawMatch> {
         use std::sync::atomic::Ordering;
 
         // Incremental scan via merkle index (Tier-B #3 from
-        // legendary-2026-04-26). When --incremental is set, files whose
-        // BLAKE3 content hash matches the cached index are skipped — they
-        // can't possibly contain a new secret. After the scan, the index is
-        // overwritten with the current hashes so the NEXT run benefits.
+        // legendary-2026-04-26). FilesystemSource handles the
+        // pre-read metadata fast-path skip. The orchestrator still
+        // does a content-hash check post-read for sources that don't
+        // surface mtime (git diffs, stdin, archive entries) so those
+        // benefit from the scan-skip even without the I/O skip.
         //
         // LOCKDOWN: incremental cache is a credential-leak vector (it stores
         // hashes of sensitive content paths) so lockdown mode refuses to
-        // load OR write it.
-        let incremental_path = if self.args.incremental && !self.args.lockdown {
-            self.args
-                .incremental_cache
-                .clone()
-                .or_else(keyhog_core::merkle_index::default_cache_path)
-        } else {
-            if self.args.lockdown && self.args.incremental {
-                tracing::warn!("lockdown mode: --incremental disabled (cache writes refused)");
-            }
-            None
-        };
-        let merkle = incremental_path
-            .as_deref()
-            .map(keyhog_core::merkle_index::MerkleIndex::load);
-        if let Some(idx) = merkle.as_ref() {
-            tracing::info!(indexed = idx.len(), "incremental scan: loaded merkle index");
-        }
+        // load OR write it. `build_merkle_index` returns `None` then.
+        let incremental_path = self.incremental_cache_path();
 
         // Streaming-batched orchestrator. The previous version collected
         // every Chunk from every source into one Vec before scanning — peak
@@ -423,10 +454,17 @@ impl ScanOrchestrator {
             for chunk_result in source.chunks() {
                 match chunk_result {
                     Ok(c) if c.data.len() <= 512 * 1024 * 1024 => {
-                        // Incremental skip: hash + lookup ONLY when an index
-                        // is actually loaded. The previous flow blake3'd
-                        // every chunk even with --incremental off, burning
-                        // CPU on the hot path for no gain.
+                        // Incremental skip: BLAKE3 + lookup ONLY when an
+                        // index is actually loaded. FilesystemSource has
+                        // already pre-skipped any file whose
+                        // `(mtime, size)` matched a stored entry — so
+                        // the chunks reaching this point either belong
+                        // to a source without metadata (git, stdin,
+                        // archive entries) or to a file whose metadata
+                        // changed but content might still be identical
+                        // (touch-after-rebase, file copy). Hash the
+                        // chunk content; on hash match we can still
+                        // skip the scan, just not the read.
                         if let (Some(idx), Some(path_str)) =
                             (merkle.as_ref(), c.metadata.path.as_deref())
                         {
@@ -435,10 +473,27 @@ impl ScanOrchestrator {
                             );
                             let path = std::path::PathBuf::from(path_str);
                             if idx.unchanged(&path, &chunk_hash) {
+                                // Refresh the (mtime, size) for the
+                                // next run so the cheap fast-path can
+                                // win next time too — without this,
+                                // touched-but-unchanged files would
+                                // pay the read+hash cost on every
+                                // scan, defeating the optimisation.
+                                idx.record_with_metadata(
+                                    path,
+                                    c.metadata.mtime_ns.unwrap_or(0),
+                                    c.metadata.size_bytes.unwrap_or(0),
+                                    chunk_hash,
+                                );
                                 skipped_unchanged += 1;
                                 continue;
                             }
-                            idx.record(path, chunk_hash);
+                            idx.record_with_metadata(
+                                path,
+                                c.metadata.mtime_ns.unwrap_or(0),
+                                c.metadata.size_bytes.unwrap_or(0),
+                                chunk_hash,
+                            );
                         }
 
                         let len = c.data.len();
@@ -472,7 +527,13 @@ impl ScanOrchestrator {
             );
         }
         if let (Some(idx), Some(path)) = (merkle.as_ref(), incremental_path.as_deref()) {
-            if let Err(e) = idx.save(path) {
+            // Persist the spec hash alongside the entries so the next
+            // run rejects this cache the moment a detector is added,
+            // removed, or modified — that's the only way to keep
+            // metadata-skip safe under detector drift.
+            let spec_hash =
+                keyhog_core::merkle_index::compute_spec_hash(&self.detectors);
+            if let Err(e) = idx.save_with_spec(path, &spec_hash) {
                 tracing::warn!(error = %e, "failed to persist merkle index");
             }
         }

@@ -47,6 +47,8 @@ pub(crate) fn extract_sections(bytes: &[u8], path: &str) -> Option<Vec<Chunk>> {
                                     commit: None,
                                     author: None,
                                     date: None,
+                                    mtime_ns: None,
+                                    size_bytes: None,
                                 },
                             });
                         }
@@ -78,6 +80,8 @@ pub(crate) fn extract_sections(bytes: &[u8], path: &str) -> Option<Vec<Chunk>> {
                                     commit: None,
                                     author: None,
                                     date: None,
+                                    mtime_ns: None,
+                                    size_bytes: None,
                                 },
                             });
                         }
@@ -108,6 +112,8 @@ pub(crate) fn extract_sections(bytes: &[u8], path: &str) -> Option<Vec<Chunk>> {
                                         commit: None,
                                         author: None,
                                         date: None,
+                                        mtime_ns: None,
+                                        size_bytes: None,
                                     },
                                 });
                             }

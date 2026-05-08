@@ -1,6 +1,18 @@
+use keyhog_core::merkle_index::MerkleIndex;
 use keyhog_core::Source;
 use keyhog_sources::FilesystemSource;
 use std::fs;
+use std::sync::atomic::Ordering;
+use std::sync::Arc;
+
+/// Helper: read mtime_ns the same way FilesystemSource does so the test
+/// stores a value the source's fast-path will actually match.
+fn mtime_ns(path: &std::path::Path) -> u64 {
+    let m = fs::metadata(path).unwrap().modified().unwrap();
+    let d = m.duration_since(std::time::UNIX_EPOCH).unwrap();
+    u64::try_from(d.as_secs() as u128 * 1_000_000_000 + d.subsec_nanos() as u128)
+        .unwrap_or(u64::MAX)
+}
 
 #[test]
 fn scan_temp_directory() {
@@ -168,4 +180,69 @@ fn default_excludes_skip_build_and_dependency_dirs() {
 
     assert_eq!(chunks.len(), 1);
     assert!(chunks[0].data.contains("found_it"));
+}
+
+#[test]
+fn merkle_skip_avoids_reading_unchanged_files() {
+    // Pre-populate the index with the live (mtime, size) of a file. On
+    // the next walk, the metadata fast-path must skip the file BEFORE
+    // it is read — observable as zero emitted chunks plus a non-zero
+    // skip counter.
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("env.txt");
+    fs::write(&p, "AWS_KEY=AKIAIOSFODNN7EXAMPLE").unwrap();
+    let canonical = p.canonicalize().unwrap();
+    let size = fs::metadata(&canonical).unwrap().len();
+    let m = mtime_ns(&canonical);
+
+    let idx = Arc::new(MerkleIndex::empty());
+    idx.record_with_metadata(canonical.clone(), m, size, [0u8; 32]);
+
+    let source = FilesystemSource::new(dir.path().to_path_buf())
+        .with_merkle_skip(idx.clone());
+    let counter = source.skipped_counter();
+    let chunks: Vec<_> = source.chunks().collect::<Result<Vec<_>, _>>().unwrap();
+
+    assert!(chunks.is_empty(), "unchanged file should not yield a chunk");
+    assert_eq!(counter.load(Ordering::Relaxed), 1);
+}
+
+#[test]
+fn merkle_skip_does_not_fire_when_size_drifts() {
+    // Same path, same mtime, different recorded size — must NOT skip.
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("env.txt");
+    fs::write(&p, "AWS_KEY=AKIAIOSFODNN7EXAMPLE").unwrap();
+    let canonical = p.canonicalize().unwrap();
+    let m = mtime_ns(&canonical);
+
+    let idx = Arc::new(MerkleIndex::empty());
+    // Record with a deliberately wrong size so the fast-path must miss.
+    idx.record_with_metadata(canonical, m, /*size=*/ 1, [0u8; 32]);
+
+    let source = FilesystemSource::new(dir.path().to_path_buf())
+        .with_merkle_skip(idx);
+    let counter = source.skipped_counter();
+    let chunks: Vec<_> = source.chunks().collect::<Result<Vec<_>, _>>().unwrap();
+
+    assert_eq!(chunks.len(), 1, "size mismatch must force a re-read");
+    assert_eq!(counter.load(Ordering::Relaxed), 0);
+}
+
+#[test]
+fn merkle_skip_chunks_carry_live_metadata() {
+    // For files that ARE read, the emitted chunk must carry the live
+    // mtime + size so the orchestrator can refresh the cache entry.
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("env.txt");
+    fs::write(&p, "AWS_KEY=AKIAIOSFODNN7EXAMPLE").unwrap();
+    let canonical = p.canonicalize().unwrap();
+    let size = fs::metadata(&canonical).unwrap().len();
+
+    let source = FilesystemSource::new(dir.path().to_path_buf());
+    let chunks: Vec<_> = source.chunks().collect::<Result<Vec<_>, _>>().unwrap();
+    assert_eq!(chunks.len(), 1);
+    let meta = &chunks[0].metadata;
+    assert!(meta.mtime_ns.is_some(), "mtime_ns should be populated by FilesystemSource");
+    assert_eq!(meta.size_bytes, Some(size));
 }

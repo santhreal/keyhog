@@ -99,6 +99,8 @@ fn scan_file(scanner: &CompiledScanner, path: &std::path::Path) {
             commit: None,
             author: None,
             date: None,
+            mtime_ns: None,
+            size_bytes: None,
         },
     };
     let matches = scanner.scan(&chunk);

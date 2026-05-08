@@ -180,6 +180,11 @@ pub(super) fn push_decoded_text_chunk(
             commit: chunk.metadata.commit.clone(),
             author: chunk.metadata.author.clone(),
             date: chunk.metadata.date.clone(),
+            // Decoded chunks inherit the parent's metadata; mtime/size
+            // are deliberately copied so the orchestrator's cache key
+            // tracks the underlying file even after a decode pass.
+            mtime_ns: chunk.metadata.mtime_ns,
+            size_bytes: chunk.metadata.size_bytes,
         },
     });
 }

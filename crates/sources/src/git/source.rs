@@ -316,6 +316,8 @@ fn collect_tree_blobs_to_vec(
                 commit: Some(commit_id.to_string()),
                 author: Some(author.to_string()),
                 date: None,
+                mtime_ns: None,
+                size_bytes: None,
             },
         });
     }

@@ -181,7 +181,9 @@ impl BinarySource {
                     commit: None,
                     author: None,
                     date: None,
-                },
+                                    mtime_ns: None,
+                    size_bytes: None,
+},
             });
         }
 
@@ -196,7 +198,9 @@ impl BinarySource {
                     commit: None,
                     author: None,
                     date: None,
-                },
+                                    mtime_ns: None,
+                    size_bytes: None,
+},
             });
         }
 
@@ -236,7 +240,9 @@ impl BinarySource {
                     commit: None,
                     author: None,
                     date: None,
-                },
+                                    mtime_ns: None,
+                    size_bytes: None,
+},
             });
         }
 

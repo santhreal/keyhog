@@ -4,6 +4,7 @@ use crate::args::ScanArgs;
 #[cfg(feature = "git")]
 use anyhow::Context;
 use anyhow::Result;
+use keyhog_core::merkle_index::MerkleIndex;
 use keyhog_core::Source;
 #[cfg(feature = "git")]
 use std::path::PathBuf;
@@ -37,7 +38,11 @@ const DEFAULT_EXCLUDE_PATTERNS: &[&str] = &[
     "**/tsconfig*.json",
 ];
 
-pub fn build_sources(args: &ScanArgs, ignore_paths: Vec<String>) -> Result<Vec<Box<dyn Source>>> {
+pub fn build_sources(
+    args: &ScanArgs,
+    ignore_paths: Vec<String>,
+    merkle: Option<Arc<MerkleIndex>>,
+) -> Result<Vec<Box<dyn Source>>> {
     let mut sources: Vec<Box<dyn Source>> = Vec::new();
 
     #[cfg(feature = "git")]
@@ -63,6 +68,9 @@ pub fn build_sources(args: &ScanArgs, ignore_paths: Vec<String>) -> Result<Vec<B
             .with_ignore_paths(merged_ignore_paths);
         if let Some(limit) = args.max_file_size {
             fs_source = fs_source.with_max_file_size(limit as u64);
+        }
+        if let Some(idx) = merkle.as_ref() {
+            fs_source = fs_source.with_merkle_skip(idx.clone());
         }
         #[cfg(feature = "git")]
         if args.git_staged && !staged_files.is_empty() {

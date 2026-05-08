@@ -1,17 +1,40 @@
 //! Incremental scan support via a persisted file-content index.
 //!
-//! On a fresh scan we compute the BLAKE3 hash of every input chunk and store
-//! the `path → hash` mapping. On the next run, files whose hash matches the
-//! stored value can be skipped — they cannot have leaked any new secret.
+//! ## What it does
 //!
-//! Tier-B moat innovation #3 from audits/legendary-2026-04-26: "10-100×
+//! On a fresh scan we compute, for every input chunk, a metadata tuple
+//! `(mtime_ns, size, BLAKE3(content))` and store it under the file's
+//! canonical path. On the next run, files whose `(mtime, size)` match
+//! the stored values can be skipped *without re-reading the bytes* —
+//! they almost certainly haven't changed (rsync-style trust). When
+//! `(mtime, size)` differ but BLAKE3 matches we record the new mtime
+//! and still skip — same content, different stat (touched, copied).
+//!
+//! Tier-B moat innovation #3 from audits/legendary-2026-04-26: "10–100×
 //! speedup on CI re-runs" by skipping the 99% of files that didn't change.
 //!
-//! The index is a flat `HashMap<PathBuf, [u8; 32]>` serialized as JSON for
-//! human-inspectability. We deliberately don't use a sqlite/sled-style
-//! database — the dataset is one row per scanned file (≤ ~1M for any sane
-//! repo) and JSON keeps the on-disk format trivial to debug, diff, and
-//! version-control if a team wants to.
+//! ## Schema versions
+//!
+//! - **v1 (legacy)** — `path → BLAKE3 hex` only. Loadable but lacks the
+//!   metadata short-circuit; treated as cold-start to avoid mixing schemas.
+//! - **v2 (current)** — `path → (mtime_ns, size, BLAKE3 hex)` plus a
+//!   top-level `spec_hash` derived from the loaded detector set. A
+//!   spec-hash mismatch invalidates the entire cache; this is the
+//!   correctness fix for "added a detector but unchanged files were
+//!   silently skipped, missing the new detection forever."
+//!
+//! ## Serialization
+//!
+//! JSON, on purpose. The dataset is one row per scanned file (≤ ~1M for
+//! any sane repo) and JSON keeps the on-disk format trivial to debug,
+//! diff, and version-control if a team wants to.
+//!
+//! ## Threat model
+//!
+//! Cached entries do NOT contain credentials. Storing a `(mtime, size,
+//! content_hash)` tuple per scanned path leaks that the path *exists*
+//! and what its content fingerprint is, which is why `--lockdown`
+//! refuses to load or write the cache at all.
 
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
@@ -21,18 +44,40 @@ use std::path::{Path, PathBuf};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
-/// On-disk format. The version field gates breaking schema changes; any
-/// future `record` that needs new fields must bump this and add a migrator.
+use crate::spec::DetectorSpec;
+
+/// On-disk per-entry record (v2). The `mtime_ns` + `size` pair is the
+/// fast-path key: a successful match short-circuits the BLAKE3 read
+/// entirely. `hash` remains as a paranoid-mode verifier and as the
+/// authoritative content fingerprint when mtime alone changed.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct EntryV2 {
+    /// `mtime` in nanoseconds since UNIX epoch. Stored as `u64` so we
+    /// don't lose ext4/NTFS sub-second precision; older filesystems
+    /// (FAT32 with 2-second resolution) just round-trip the rounded value.
+    mtime_ns: u64,
+    /// File size in bytes from `fs::metadata`.
+    size: u64,
+    /// BLAKE3 hex digest of the chunk content.
+    hash: String,
+}
+
+/// Top-level on-disk schema.
 #[derive(Debug, Serialize, Deserialize)]
 struct OnDisk {
     /// Schema version. Bumped on incompatible changes.
     version: u32,
-    /// `path → hex BLAKE3 hash`. Stored as hex strings (not raw bytes) so a
-    /// human can `git diff` the file and see which entries changed.
-    entries: HashMap<String, String>,
+    /// Hex BLAKE3 of the canonical detector-spec digest. Optional for
+    /// schemas written before spec hashing was added; loaders treating
+    /// `None` as "trust the cache" stay back-compatible.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    spec_hash: Option<String>,
+    /// `path → entry`. Stored as hex strings (not raw bytes) so a human
+    /// can `git diff` the file and see which entries changed.
+    entries: HashMap<String, EntryV2>,
 }
 
-const SCHEMA_VERSION: u32 = 1;
+const SCHEMA_VERSION: u32 = 2;
 
 /// Shard count: spreads concurrent `record` / `unchanged` calls across
 /// independent locks so tiny-file storms don't serialize all rayon workers.
@@ -44,6 +89,16 @@ fn shard_index(path: &Path) -> usize {
     (h.finish() as usize) % MERKLE_SHARDS
 }
 
+/// In-memory per-entry record. Mirrors [`EntryV2`] but holds the hash as
+/// a fixed-size array — saves the per-lookup hex-decode cost on the
+/// `unchanged` hot path.
+#[derive(Debug, Clone, Copy)]
+struct CacheEntry {
+    mtime_ns: u64,
+    size: u64,
+    hash: [u8; 32],
+}
+
 /// In-memory file-hash index loaded from / saved to a JSON cache file.
 ///
 /// Concurrency model: the orchestrator holds an `Arc<MerkleIndex>` and
@@ -52,7 +107,7 @@ fn shard_index(path: &Path) -> usize {
 /// concurrent updates rarely contend.
 #[derive(Debug)]
 pub struct MerkleIndex {
-    shards: Vec<Mutex<HashMap<PathBuf, [u8; 32]>>>,
+    shards: Vec<Mutex<HashMap<PathBuf, CacheEntry>>>,
 }
 
 impl MerkleIndex {
@@ -64,20 +119,35 @@ impl MerkleIndex {
         }
     }
 
-    /// Load the index from `path`. Returns an empty index when the file
-    /// doesn't exist (first run) or fails to parse (treat as cold start —
-    /// safer than poisoning the cache from a corrupted artifact).
+    /// Load the index from `path` without spec-hash gating. Returns an
+    /// empty index when the file doesn't exist (first run) or fails to
+    /// parse (treat as cold start — safer than poisoning the cache from
+    /// a corrupted artifact). v1 caches are intentionally rejected as
+    /// cold-start because they lack metadata fields.
     pub fn load(path: &Path) -> Self {
+        Self::load_with_spec_inner(path, None)
+    }
+
+    /// Load the index, gated on a matching detector-spec hash. When the
+    /// stored `spec_hash` differs from `expected_spec_hash`, the cache is
+    /// treated as cold-start. This is the correctness gate that prevents
+    /// "added a detector → unchanged file silently skipped → new
+    /// detector never runs against it" from ever happening.
+    pub fn load_with_spec(path: &Path, expected_spec_hash: &[u8; 32]) -> Self {
+        Self::load_with_spec_inner(path, Some(expected_spec_hash))
+    }
+
+    fn load_with_spec_inner(path: &Path, expected_spec_hash: Option<&[u8; 32]>) -> Self {
         let bytes = match std::fs::read(path) {
             Ok(b) => b,
             Err(_) => return Self::empty(),
         };
         let on_disk: OnDisk = match serde_json::from_slice(&bytes) {
             Ok(d) => d,
-            Err(e) => {
+            Err(error) => {
                 tracing::warn!(
                     cache = %path.display(),
-                    error = %e,
+                    %error,
                     "merkle index parse failed; treating as cold start"
                 );
                 return Self::empty();
@@ -92,10 +162,35 @@ impl MerkleIndex {
             );
             return Self::empty();
         }
-        let entries: HashMap<PathBuf, [u8; 32]> = on_disk
+        if let Some(expected) = expected_spec_hash {
+            let stored_match = on_disk
+                .spec_hash
+                .as_deref()
+                .and_then(hex_to_array)
+                .is_some_and(|stored| &stored == expected);
+            if !stored_match {
+                tracing::info!(
+                    cache = %path.display(),
+                    "detector spec changed since last scan; cache invalidated"
+                );
+                return Self::empty();
+            }
+        }
+        let entries: HashMap<PathBuf, CacheEntry> = on_disk
             .entries
             .into_iter()
-            .filter_map(|(p, h)| hex_to_array(&h).map(|a| (PathBuf::from(p), a)))
+            .filter_map(|(p, e)| {
+                hex_to_array(&e.hash).map(|hash| {
+                    (
+                        PathBuf::from(p),
+                        CacheEntry {
+                            mtime_ns: e.mtime_ns,
+                            size: e.size,
+                            hash,
+                        },
+                    )
+                })
+            })
             .collect();
         tracing::info!(
             cache = %path.display(),
@@ -103,25 +198,51 @@ impl MerkleIndex {
             "merkle index loaded"
         );
         let idx = Self::empty();
-        for (p, h) in entries {
-            idx.record(p, h);
+        for (p, e) in entries {
+            let i = shard_index(&p);
+            idx.shards[i].lock().insert(p, e);
         }
         idx
     }
 
-    /// Persist the index to `path`, atomically (write to a tmp file in the
-    /// same dir, then rename).
+    /// Persist the index without binding it to a detector-spec hash. Old
+    /// callers stay on this path; the next-cycle load won't enforce a
+    /// spec match. Use [`Self::save_with_spec`] for the safe modern path.
     pub fn save(&self, path: &Path) -> std::io::Result<()> {
-        let mut merged = HashMap::<PathBuf, [u8; 32]>::new();
+        self.save_inner(path, None)
+    }
+
+    /// Persist the index *with* the given detector-spec hash so a future
+    /// load can detect detector drift and invalidate cleanly.
+    pub fn save_with_spec(
+        &self,
+        path: &Path,
+        spec_hash: &[u8; 32],
+    ) -> std::io::Result<()> {
+        self.save_inner(path, Some(spec_hash))
+    }
+
+    fn save_inner(&self, path: &Path, spec_hash: Option<&[u8; 32]>) -> std::io::Result<()> {
+        let mut merged = HashMap::<PathBuf, CacheEntry>::new();
         for shard in &self.shards {
-            merged.extend(shard.lock().iter().map(|(p, h)| (p.clone(), *h)));
+            merged.extend(shard.lock().iter().map(|(p, e)| (p.clone(), *e)));
         }
-        let entries: HashMap<String, String> = merged
+        let entries: HashMap<String, EntryV2> = merged
             .iter()
-            .map(|(p, h)| (p.display().to_string(), hex_encode(h)))
+            .map(|(p, e)| {
+                (
+                    p.display().to_string(),
+                    EntryV2 {
+                        mtime_ns: e.mtime_ns,
+                        size: e.size,
+                        hash: hex_encode(&e.hash),
+                    },
+                )
+            })
             .collect();
         let on_disk = OnDisk {
             version: SCHEMA_VERSION,
+            spec_hash: spec_hash.map(hex_encode),
             entries,
         };
         let serialized = serde_json::to_vec_pretty(&on_disk)
@@ -141,21 +262,69 @@ impl MerkleIndex {
     }
 
     /// Returns `true` when `path` was previously indexed with the SAME
-    /// content hash and the orchestrator should skip rescanning it. The
-    /// intention: callers compute the hash of the in-memory chunk and ask
-    /// "have I seen this exact byte sequence at this exact path before?"
+    /// content hash. Kept for callers that already have the hash in hand
+    /// (e.g. the orchestrator's chunk-level skip path).
     pub fn unchanged(&self, path: &Path, content_hash: &[u8; 32]) -> bool {
         let i = shard_index(path);
         self.shards[i]
             .lock()
             .get(path)
-            .is_some_and(|prev| prev == content_hash)
+            .is_some_and(|prev| &prev.hash == content_hash)
     }
 
-    /// Record a file's hash. Overwrites a previous entry at the same path.
+    /// Returns `true` when `(path, mtime_ns, size)` exactly matches a
+    /// stored entry. This is the **fast-path skip** — it avoids reading
+    /// the file at all, which is the dominant cost on cold-cache disk.
+    /// A `false` return means "either we've never seen this path, or
+    /// metadata differs — caller must read + hash to decide."
+    pub fn metadata_unchanged(&self, path: &Path, mtime_ns: u64, size: u64) -> bool {
+        let i = shard_index(path);
+        self.shards[i]
+            .lock()
+            .get(path)
+            .is_some_and(|prev| prev.mtime_ns == mtime_ns && prev.size == size)
+    }
+
+    /// Returns the stored `(mtime_ns, size, content_hash)` for `path`,
+    /// or `None` if the index hasn't seen it. Used by paranoid-mode
+    /// verifiers that want to confirm content didn't change even when
+    /// metadata happens to match.
+    pub fn lookup(&self, path: &Path) -> Option<(u64, u64, [u8; 32])> {
+        let i = shard_index(path);
+        self.shards[i]
+            .lock()
+            .get(path)
+            .map(|e| (e.mtime_ns, e.size, e.hash))
+    }
+
+    /// Record a file's content hash. Back-compat shim that drops to a
+    /// zero-metadata entry — calls into [`Self::record_with_metadata`]
+    /// with `mtime_ns = 0` and `size = 0` so existing callers keep
+    /// working but won't benefit from the metadata fast-path.
     pub fn record(&self, path: PathBuf, content_hash: [u8; 32]) {
+        self.record_with_metadata(path, 0, 0, content_hash);
+    }
+
+    /// Record a file's metadata + content hash. Overwrites any prior
+    /// entry at the same path. The path-shard mutex is held for the
+    /// duration of the insert only; concurrent recordings against
+    /// different shards never contend.
+    pub fn record_with_metadata(
+        &self,
+        path: PathBuf,
+        mtime_ns: u64,
+        size: u64,
+        content_hash: [u8; 32],
+    ) {
         let i = shard_index(&path);
-        self.shards[i].lock().insert(path, content_hash);
+        self.shards[i].lock().insert(
+            path,
+            CacheEntry {
+                mtime_ns,
+                size,
+                hash: content_hash,
+            },
+        );
     }
 
     /// Number of indexed entries.
@@ -181,6 +350,38 @@ pub fn default_cache_path() -> Option<PathBuf> {
     dirs::cache_dir().map(|d| d.join("keyhog").join("merkle.idx"))
 }
 
+/// Compute a stable BLAKE3 digest over the canonical detector set so a
+/// later scan can detect that detectors changed. Hashes a sorted list of
+/// `id|regex|companion` strings — order-independent, comment-independent,
+/// resilient to TOML key reordering.
+pub fn compute_spec_hash(detectors: &[DetectorSpec]) -> [u8; 32] {
+    let mut keys: Vec<String> = detectors
+        .iter()
+        .flat_map(|d| {
+            let mut entries = Vec::with_capacity(1 + d.patterns.len() + d.companions.len());
+            entries.push(format!("id:{}", d.id));
+            for p in &d.patterns {
+                entries.push(format!(
+                    "p:{}|g:{}",
+                    p.regex,
+                    p.group.map(|g| g.to_string()).unwrap_or_default()
+                ));
+            }
+            for c in &d.companions {
+                entries.push(format!("c:{}|{}|w:{}|r:{}", c.name, c.regex, c.within_lines, c.required));
+            }
+            entries
+        })
+        .collect();
+    keys.sort();
+    let mut hasher = blake3::Hasher::new();
+    for k in keys {
+        hasher.update(k.as_bytes());
+        hasher.update(b"\n");
+    }
+    *hasher.finalize().as_bytes()
+}
+
 fn hex_encode(bytes: &[u8; 32]) -> String {
     let mut out = String::with_capacity(64);
     for b in bytes {
@@ -204,23 +405,51 @@ fn hex_to_array(hex: &str) -> Option<[u8; 32]> {
 mod tests {
     use super::*;
 
+    fn sample_hash(s: &[u8]) -> [u8; 32] {
+        MerkleIndex::hash_content(s)
+    }
+
     #[test]
     fn record_and_unchanged_roundtrip() {
         let idx = MerkleIndex::empty();
         let p = PathBuf::from("/tmp/example.env");
-        let h = MerkleIndex::hash_content(b"DB_PASS=secret123");
+        let h = sample_hash(b"DB_PASS=secret123");
         idx.record(p.clone(), h);
         assert!(idx.unchanged(&p, &h));
 
-        let h2 = MerkleIndex::hash_content(b"DB_PASS=changed");
+        let h2 = sample_hash(b"DB_PASS=changed");
         assert!(!idx.unchanged(&p, &h2));
+    }
+
+    #[test]
+    fn metadata_unchanged_matches_only_on_exact_pair() {
+        let idx = MerkleIndex::empty();
+        let p = PathBuf::from("/tmp/file");
+        idx.record_with_metadata(p.clone(), 1_700_000_000_000_000_000, 4096, sample_hash(b"x"));
+        assert!(idx.metadata_unchanged(&p, 1_700_000_000_000_000_000, 4096));
+        // mtime drift
+        assert!(!idx.metadata_unchanged(&p, 1_700_000_000_000_000_001, 4096));
+        // size drift
+        assert!(!idx.metadata_unchanged(&p, 1_700_000_000_000_000_000, 4097));
+        // unknown path
+        assert!(!idx.metadata_unchanged(Path::new("/never/seen"), 0, 0));
+    }
+
+    #[test]
+    fn lookup_returns_full_tuple() {
+        let idx = MerkleIndex::empty();
+        let p = PathBuf::from("/tmp/file");
+        let h = sample_hash(b"abc");
+        idx.record_with_metadata(p.clone(), 42, 99, h);
+        assert_eq!(idx.lookup(&p), Some((42, 99, h)));
+        assert_eq!(idx.lookup(Path::new("/missing")), None);
     }
 
     #[test]
     fn unknown_path_is_changed() {
         let idx = MerkleIndex::empty();
-        let h = MerkleIndex::hash_content(b"x");
-        assert!(!idx.unchanged(&PathBuf::from("/never/seen"), &h));
+        let h = sample_hash(b"x");
+        assert!(!idx.unchanged(Path::new("/never/seen"), &h));
     }
 
     #[test]
@@ -230,13 +459,14 @@ mod tests {
 
         let idx = MerkleIndex::empty();
         let p = PathBuf::from("/tmp/secrets.env");
-        let h = MerkleIndex::hash_content(b"hello world");
-        idx.record(p.clone(), h);
+        let h = sample_hash(b"hello world");
+        idx.record_with_metadata(p.clone(), 12345, 11, h);
         idx.save(&cache_path).expect("save");
 
         let loaded = MerkleIndex::load(&cache_path);
         assert_eq!(loaded.len(), 1);
         assert!(loaded.unchanged(&p, &h));
+        assert!(loaded.metadata_unchanged(&p, 12345, 11));
     }
 
     #[test]
@@ -258,13 +488,98 @@ mod tests {
     fn schema_version_mismatch_treated_as_cold_start() {
         let dir = tempfile::tempdir().unwrap();
         let cache_path = dir.path().join("merkle.idx");
-        // Forge a JSON with a future schema version.
         let bad = serde_json::json!({
             "version": 99,
-            "entries": { "/foo": "00".repeat(32) }
+            "entries": { "/foo": { "mtime_ns": 0, "size": 0, "hash": "00".repeat(32) } }
         });
         std::fs::write(&cache_path, serde_json::to_vec(&bad).unwrap()).unwrap();
         let loaded = MerkleIndex::load(&cache_path);
         assert!(loaded.is_empty());
+    }
+
+    #[test]
+    fn v1_legacy_format_treated_as_cold_start() {
+        // v1 stored `entries: HashMap<String, String>` (path → hex hash).
+        // Loaders must reject it cleanly so we don't conjure zero-metadata
+        // fast-path skips on entries that never had real metadata.
+        let dir = tempfile::tempdir().unwrap();
+        let cache_path = dir.path().join("merkle.idx");
+        let v1 = serde_json::json!({
+            "version": 1,
+            "entries": { "/foo": "ab".repeat(32) }
+        });
+        std::fs::write(&cache_path, serde_json::to_vec(&v1).unwrap()).unwrap();
+        assert!(MerkleIndex::load(&cache_path).is_empty());
+    }
+
+    #[test]
+    fn save_with_spec_then_load_with_matching_spec_keeps_entries() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache_path = dir.path().join("merkle.idx");
+        let idx = MerkleIndex::empty();
+        let p = PathBuf::from("/tmp/x");
+        let h = sample_hash(b"x");
+        idx.record_with_metadata(p.clone(), 7, 1, h);
+        let spec = [42u8; 32];
+        idx.save_with_spec(&cache_path, &spec).unwrap();
+        let loaded = MerkleIndex::load_with_spec(&cache_path, &spec);
+        assert_eq!(loaded.len(), 1);
+        assert!(loaded.metadata_unchanged(&p, 7, 1));
+    }
+
+    #[test]
+    fn load_with_mismatched_spec_invalidates_cache() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache_path = dir.path().join("merkle.idx");
+        let idx = MerkleIndex::empty();
+        idx.record_with_metadata(PathBuf::from("/tmp/x"), 7, 1, sample_hash(b"x"));
+        idx.save_with_spec(&cache_path, &[42u8; 32]).unwrap();
+        // Different spec hash → empty cache.
+        let loaded = MerkleIndex::load_with_spec(&cache_path, &[7u8; 32]);
+        assert!(loaded.is_empty());
+    }
+
+    #[test]
+    fn load_with_spec_when_disk_has_no_spec_invalidates() {
+        // Old save() (no spec) must NOT satisfy a load_with_spec gate —
+        // missing means "we don't know which detector set wrote this,"
+        // so treat as cold-start under the strict path.
+        let dir = tempfile::tempdir().unwrap();
+        let cache_path = dir.path().join("merkle.idx");
+        let idx = MerkleIndex::empty();
+        idx.record_with_metadata(PathBuf::from("/tmp/x"), 1, 1, sample_hash(b"x"));
+        idx.save(&cache_path).unwrap();
+        let loaded = MerkleIndex::load_with_spec(&cache_path, &[1u8; 32]);
+        assert!(loaded.is_empty());
+    }
+
+    #[test]
+    fn compute_spec_hash_is_stable_under_reordering() {
+        use crate::spec::{CompanionSpec, DetectorSpec, PatternSpec, Severity};
+        let make = |id: &str| DetectorSpec {
+            id: id.to_string(),
+            name: id.to_string(),
+            service: id.to_string(),
+            severity: Severity::Medium,
+            keywords: vec![],
+            patterns: vec![PatternSpec {
+                regex: format!("{id}-[A-Z]+"),
+                description: None,
+                group: None,
+            }],
+            companions: vec![CompanionSpec {
+                name: "k".into(),
+                regex: "v=([A-Z]+)".into(),
+                within_lines: 3,
+                required: false,
+            }],
+            verify: None,
+        };
+        let a = compute_spec_hash(&[make("alpha"), make("beta")]);
+        let b = compute_spec_hash(&[make("beta"), make("alpha")]);
+        assert_eq!(a, b, "spec hash must be order-invariant");
+
+        let c = compute_spec_hash(&[make("alpha"), make("gamma")]);
+        assert_ne!(a, c, "different detectors must produce different hashes");
     }
 }

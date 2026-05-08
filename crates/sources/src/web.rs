@@ -171,7 +171,9 @@ fn handle_js(resp: reqwest::blocking::Response, url: &str) -> Vec<Result<Chunk, 
                 commit: None,
                 author: None,
                 date: None,
-            },
+                            mtime_ns: None,
+                size_bytes: None,
+},
         })],
         Err(e) => vec![Err(e)],
     }
@@ -202,7 +204,9 @@ fn handle_sourcemap(
                     commit: None,
                     author: None,
                     date: None,
-                },
+                                    mtime_ns: None,
+                    size_bytes: None,
+},
             })];
         }
     };
@@ -239,6 +243,8 @@ fn handle_sourcemap(
                     commit: None,
                     author: None,
                     date: None,
+                    mtime_ns: None,
+                    size_bytes: None,
                 },
             }));
         }
@@ -255,7 +261,9 @@ fn handle_sourcemap(
                 commit: None,
                 author: None,
                 date: None,
-            },
+                            mtime_ns: None,
+                size_bytes: None,
+},
         }));
     }
 
@@ -289,7 +297,9 @@ fn handle_wasm(resp: reqwest::blocking::Response, url: &str) -> Vec<Result<Chunk
             commit: None,
             author: None,
             date: None,
-        },
+                    mtime_ns: None,
+            size_bytes: None,
+},
     })]
 }
 

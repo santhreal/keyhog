@@ -59,6 +59,16 @@ pub struct ChunkMetadata {
     pub author: Option<String>,
     pub date: Option<String>,
     pub base_offset: usize,
+    /// File mtime in nanoseconds since UNIX epoch, when the source can
+    /// surface it cheaply (filesystem walks). Optional because non-fs
+    /// sources (stdin, http, git diffs) don't have a meaningful mtime.
+    /// Populated to drive the merkle-index metadata fast-path.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mtime_ns: Option<u64>,
+    /// File size in bytes, when known cheaply at chunk-production time.
+    /// Same shape and rationale as `mtime_ns`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size_bytes: Option<u64>,
 }
 
 /// Produces chunks of text for the scanner to process.

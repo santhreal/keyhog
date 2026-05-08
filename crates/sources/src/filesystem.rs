@@ -2,10 +2,13 @@
 //! respects `.gitignore`, and yields chunks for scanning.
 
 use codewalk::{CodeWalker, WalkConfig};
+use keyhog_core::merkle_index::MerkleIndex;
 use keyhog_core::{Chunk, ChunkMetadata, Source, SourceError};
 use std::collections::HashSet;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 
 mod read;
 
@@ -26,6 +29,18 @@ pub struct FilesystemSource {
     /// flips this to `false` because an attacker stashing a leaked key
     /// inside a project would `.gitignore` it.
     respect_gitignore: bool,
+    /// Optional merkle-index handle. When set, the iterator consults the
+    /// index per file BEFORE reading: if `(path, mtime_ns, size)` matches
+    /// a stored entry the file is skipped without an open() / read() —
+    /// the dominant cost on cold-cache disk. Doubles as an output sink:
+    /// when `record_metadata` is true, the source records the live
+    /// `(mtime, size)` of every chunk it does emit so the orchestrator
+    /// only has to attach the BLAKE3 hash post-scan.
+    merkle: Option<Arc<MerkleIndex>>,
+    /// Counter incremented for every file the metadata fast-path skips.
+    /// The orchestrator reads it after the scan to log how much I/O the
+    /// cache saved. Atomic so rayon-driven walkers don't have to lock.
+    skipped: Arc<AtomicUsize>,
 }
 
 impl FilesystemSource {
@@ -40,7 +55,26 @@ impl FilesystemSource {
             ignore_paths: Vec::new(),
             include_paths: Vec::new(),
             respect_gitignore: true,
+            merkle: None,
+            skipped: Arc::new(AtomicUsize::new(0)),
         }
+    }
+
+    /// Wire the source up to a merkle index so `(path, mtime, size)`
+    /// matches skip the file *before* it is read. The cache contents
+    /// themselves are loaded by the orchestrator (which also handles
+    /// detector-spec-hash invalidation) and shared via `Arc` so multiple
+    /// sources can consult one index.
+    pub fn with_merkle_skip(mut self, merkle: Arc<MerkleIndex>) -> Self {
+        self.merkle = Some(merkle);
+        self
+    }
+
+    /// Returns a counter that the source increments every time the
+    /// metadata fast-path skips a file. Cloned `Arc<AtomicUsize>`, safe
+    /// to read after the iterator drains.
+    pub fn skipped_counter(&self) -> Arc<AtomicUsize> {
+        self.skipped.clone()
     }
 
     /// Only include files whose paths match one of the given paths.
@@ -203,6 +237,9 @@ impl Source for FilesystemSource {
             });
         }
 
+        let merkle = self.merkle.clone();
+        let skipped = self.skipped.clone();
+
         Box::new(entries.into_iter().flat_map(move |entry| {
             let path = entry.path;
             let file_size = entry.size;
@@ -215,6 +252,19 @@ impl Source for FilesystemSource {
 
             if SKIP_EXTENSIONS.contains(&ext.as_str()) {
                 return vec![];
+            }
+
+            // Fast-path skip: stat the file once, ask the cache "have I
+            // seen this exact (path, mtime, size) tuple?" If yes, never
+            // open() or read() — the dominant cost on cold-cache disk.
+            // Stored alongside the chunk so the orchestrator can refresh
+            // the index entry post-scan without a second stat.
+            let live_mtime_ns = file_mtime_ns(&path);
+            if let (Some(idx), Some(mtime_ns)) = (merkle.as_ref(), live_mtime_ns) {
+                if idx.metadata_unchanged(&path, mtime_ns, file_size) {
+                    skipped.fetch_add(1, Ordering::Relaxed);
+                    return vec![];
+                }
             }
 
             if ext == "zip" || ext == "apk" || ext == "ipa" || ext == "crx" || ext == "jar" {
@@ -315,6 +365,8 @@ if file_size > WINDOW_SIZE as u64 {
                                 source_type: "filesystem/windowed".to_string(),
                                 path: Some(path.display().to_string()),
                                 base_offset: current_offset,
+                                mtime_ns: live_mtime_ns,
+                                size_bytes: Some(file_size),
                                 ..Default::default()
                             },
                         }));
@@ -351,6 +403,8 @@ if file_size > WINDOW_SIZE as u64 {
                 metadata: ChunkMetadata {
                     source_type: source_type.to_string(),
                     path: Some(path.display().to_string()),
+                    mtime_ns: live_mtime_ns,
+                    size_bytes: Some(file_size),
                     ..Default::default()
                 },
             })]
@@ -518,6 +572,23 @@ fn is_default_excluded(path: &str) -> bool {
     }
 
     false
+}
+
+/// Read the mtime as nanoseconds-since-UNIX-epoch via a single `stat`.
+/// Returns `None` when the platform/filesystem doesn't expose a usable
+/// modified time — in that case the cache fast-path simply doesn't fire,
+/// which is strictly better than a false skip.
+fn file_mtime_ns(path: &Path) -> Option<u64> {
+    let meta = std::fs::metadata(path).ok()?;
+    let modified = meta.modified().ok()?;
+    let dur = modified
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?;
+    // Cap nanos at u64::MAX for the (unrealistic) far-future case so the
+    // numeric key stays stable. ~584 years from epoch fits in u64 ns
+    // comfortably; the real concern is filesystems returning weird values.
+    let nanos = dur.as_secs() as u128 * 1_000_000_000 + dur.subsec_nanos() as u128;
+    Some(u64::try_from(nanos).unwrap_or(u64::MAX))
 }
 
 fn walker_config(max_file_size: u64, ignore_paths: &[String]) -> WalkConfig {

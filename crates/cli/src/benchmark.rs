@@ -100,6 +100,8 @@ fn build_benchmark_corpus() -> Vec<Chunk> {
                 commit: None,
                 author: None,
                 date: None,
+                mtime_ns: None,
+                size_bytes: None,
             },
         });
     }

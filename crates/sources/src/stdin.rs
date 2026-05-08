@@ -38,6 +38,8 @@ impl Source for StdinSource {
                     commit: None,
                     author: None,
                     date: None,
+                    mtime_ns: None,
+                    size_bytes: None,
                 },
             }),
             Err(e) => Err(SourceError::Io(e)),

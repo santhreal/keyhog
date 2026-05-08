@@ -272,6 +272,8 @@ fn rewrite_chunk(mut chunk: Chunk, image: &str, layer_root: &Path, layer_name: &
         commit: None,
         author: None,
         date: None,
+        mtime_ns: None,
+        size_bytes: None,
     };
     chunk
 }
