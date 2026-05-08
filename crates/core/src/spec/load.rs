@@ -56,7 +56,19 @@ pub fn save_detector_cache(
         version: DETECTOR_CACHE_VERSION,
         detectors: detectors.to_vec(),
     })?;
-    std::fs::write(cache_path, json)
+    // Atomic rename via NamedTempFile — same pattern as merkle index
+    // and baseline. A mid-write crash used to leave a corrupt
+    // `.keyhog-cache.json` that the next run would `tracing::warn!`
+    // on and silently fall back to TOML-load (unbounded slowdown).
+    // tempfile::Drop reaps the tmp on panic; persist atomic-renames
+    // on success.
+    let parent = cache_path.parent().unwrap_or_else(|| Path::new("."));
+    std::fs::create_dir_all(parent)?;
+    let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
+    std::io::Write::write_all(&mut tmp, &json)?;
+    tmp.as_file().sync_all()?;
+    tmp.persist(cache_path).map_err(|e| e.error)?;
+    Ok(())
 }
 
 /// Load detectors from a JSON cache file. Returns None if cache is stale or missing.
