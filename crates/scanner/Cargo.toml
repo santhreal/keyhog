@@ -68,6 +68,10 @@ serde_yaml = { workspace = true }
 tokio = { workspace = true, features = ["rt", "time"] }
 base64-simd = "0.8.0"
 hex-simd = "0.8.0"
+# Used for atomic-rename of the Hyperscan database cache via
+# `NamedTempFile::persist()` — see `simd.rs::HsScanner::compile`.
+# The Drop impl deletes the tmp on panic between create and rename.
+tempfile = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 io-uring = { workspace = true }

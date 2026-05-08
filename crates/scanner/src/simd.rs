@@ -210,16 +210,25 @@ pub(crate) mod backend {
                 let db = Self::compile_hs_db(&hs_pats, &mut unsupported, &pattern_map)?;
                 // Task 1b: Atomic write with magic + version
                 if let Ok(ser) = db.serialize() {
-                    let pid = std::process::id();
-                    let tmp_path = cache_path.with_extension(format!("tmp.{}", pid));
-
                     let mut data = Vec::with_capacity(ser.as_ref().len() + 8);
                     data.extend_from_slice(CACHE_MAGIC);
                     data.extend_from_slice(&CACHE_VERSION.to_le_bytes());
                     data.extend_from_slice(ser.as_ref());
 
-                    if std::fs::write(&tmp_path, &data).is_ok() {
-                        let _ = std::fs::rename(&tmp_path, &cache_path);
+                    // NamedTempFile + persist for atomic write — same
+                    // rationale as `merkle_index::save`. The previous
+                    // pid-suffixed tmp leaked on panic between write
+                    // and rename; the Drop impl on NamedTempFile
+                    // cleans it up automatically.
+                    let parent = cache_path
+                        .parent()
+                        .unwrap_or_else(|| std::path::Path::new("."));
+                    if let Ok(mut tmp) = tempfile::NamedTempFile::new_in(parent) {
+                        if std::io::Write::write_all(&mut tmp, &data).is_ok()
+                            && tmp.as_file().sync_all().is_ok()
+                        {
+                            let _ = tmp.persist(&cache_path);
+                        }
                     }
                     tracing::info!(cache = %cache_path.display(), "HS cached");
                 }

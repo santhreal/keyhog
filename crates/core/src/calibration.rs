@@ -123,12 +123,14 @@ impl Calibration {
         };
         let serialized = serde_json::to_vec_pretty(&on_disk)
             .map_err(|e| std::io::Error::other(format!("calibration encode: {e}")))?;
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        let tmp = path.with_extension(format!("tmp.{}", std::process::id()));
-        std::fs::write(&tmp, &serialized)?;
-        std::fs::rename(&tmp, path)?;
+        let parent = path.parent().unwrap_or_else(|| std::path::Path::new("."));
+        std::fs::create_dir_all(parent)?;
+        // Same atomic-write-via-NamedTempFile pattern used by
+        // `merkle_index::save` — see that file's note for rationale.
+        let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
+        std::io::Write::write_all(&mut tmp, &serialized)?;
+        tmp.as_file().sync_all()?;
+        tmp.persist(path).map_err(|e| e.error)?;
         Ok(())
     }
 

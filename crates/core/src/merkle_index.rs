@@ -282,12 +282,21 @@ impl MerkleIndex {
         };
         let serialized = serde_json::to_vec_pretty(&on_disk)
             .map_err(|e| std::io::Error::other(format!("merkle index encode: {e}")))?;
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        let tmp = path.with_extension(format!("tmp.{}", std::process::id()));
-        std::fs::write(&tmp, &serialized)?;
-        std::fs::rename(&tmp, path)?;
+        let parent = path.parent().unwrap_or_else(|| std::path::Path::new("."));
+        std::fs::create_dir_all(parent)?;
+        // `NamedTempFile::new_in` creates a randomly-named file in
+        // the same directory as the final target, then `persist`
+        // atomic-renames it. If we panic between create and persist,
+        // NamedTempFile's Drop deletes the tmp file — earlier code
+        // used `path.with_extension(format!("tmp.{pid}"))` and
+        // leaked the tmp on panic. A SIGTERM/SIGKILL still leaks
+        // (Drop doesn't run); the only complete fix for that is a
+        // startup-time stale-tmp sweep, which we accept as a
+        // smaller residual hygiene issue.
+        let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
+        std::io::Write::write_all(&mut tmp, &serialized)?;
+        tmp.as_file().sync_all()?;
+        tmp.persist(path).map_err(|e| e.error)?;
         Ok(())
     }
 
