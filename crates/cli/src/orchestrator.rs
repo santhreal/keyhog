@@ -26,6 +26,16 @@ const EXIT_LIVE_CREDENTIALS: u8 = 10;
 /// Set when the scanner worker thread panicked mid-scan. Surfaced as
 /// a distinct exit code so a CI pipeline can tell "scan completed
 /// clean" from "scanner crashed and we don't know if it was clean."
+///
+/// The panic-to-exit-code path is correct by inspection rather than by
+/// integration test: writing a test that actually crashes
+/// `scan_coalesced` would either need a production-binary-polluting
+/// `#[cfg(test)]` panic-injection knob, or a malicious-input chunk
+/// that panics the regex engine (fragile and detector-dependent). The
+/// path itself — `scanner_thread.join()` returning `Err` →
+/// `SCANNER_PANICKED.store(true)` → `EXIT_SCANNER_PANIC` here — is
+/// linear and exercised by every `pipeline_tests::*` run (which
+/// observe the flag stays `false` on successful joins).
 const EXIT_SCANNER_PANIC: u8 = 11;
 
 pub struct ScanOrchestrator {
