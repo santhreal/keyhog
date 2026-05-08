@@ -572,6 +572,7 @@ impl CompiledScanner {
             inferred_context,
             keyword_nearby,
             sensitive_file,
+            code_lines,
             scan_state,
         ) else {
             return;

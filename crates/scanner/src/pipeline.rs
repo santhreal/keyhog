@@ -67,6 +67,18 @@ pub fn build_raw_match(
 
 pub fn local_context_window(text: &str, line: usize, radius: usize) -> String {
     let lines: Vec<&str> = text.lines().collect();
+    local_context_window_from_lines(&lines, line, radius)
+}
+
+/// Same as [`local_context_window`] but accepts an already-split line
+/// slice — saves the per-call `text.lines().collect::<Vec<&str>>()`
+/// chunk split, which is the dominant cost when this is called per
+/// ML-pending match across hundreds of matches per chunk.
+pub fn local_context_window_from_lines(
+    lines: &[&str],
+    line: usize,
+    radius: usize,
+) -> String {
     if lines.is_empty() {
         return String::new();
     }
