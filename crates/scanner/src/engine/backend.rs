@@ -177,33 +177,31 @@ impl CompiledScanner {
         );
 
         let expanded_patterns = self.expand_triggered_patterns(&triggered_patterns);
-        let confirmed_patterns: Vec<usize> = (0..self.ac_map.len())
-            .filter(|&i| (expanded_patterns[i / 64] & (1 << (i % 64))) != 0)
-            .collect();
+        // No-trigger fast path: when no AC pattern fired, the entire
+        // confirmed-pattern extraction pipeline is dead work. Skip
+        // building the `confirmed_patterns: Vec<usize>` (allocation
+        // saved), the per-line `documentation_line_flags` scan
+        // (~6 µs saved on profile), and the `extract_confirmed_patterns`
+        // call. The downstream fallbacks (`scan_generic_assignments`,
+        // `scan_entropy_fallback`, `apply_ml_batch_scores`) run
+        // unchanged since they have their own input shapes.
+        if expanded_patterns.iter().any(|&w| w != 0) {
+            let confirmed_patterns: Vec<usize> = (0..self.ac_map.len())
+                .filter(|&i| (expanded_patterns[i / 64] & (1 << (i % 64))) != 0)
+                .collect();
+            let documentation_lines = context::documentation_line_flags(&code_lines);
 
-        // `documentation_lines` is consumed only by
-        // `extract_confirmed_patterns` (and the fallback path called
-        // from scan, not from here). Compute it ONLY when we have
-        // confirmed patterns to extract — empty confirmed = empty
-        // doc_lines = ~6 µs/chunk saved on the no-trigger common case.
-        // Profile data showed this was the next-largest avoidable
-        // unconditional cost after `scan_generic_assignments`.
-        let documentation_lines = if confirmed_patterns.is_empty() {
-            Vec::new()
-        } else {
-            context::documentation_line_flags(&code_lines)
-        };
-
-        self.extract_confirmed_patterns(
-            &confirmed_patterns,
-            &prepared.preprocessed,
-            &line_offsets,
-            &code_lines,
-            &documentation_lines,
-            &prepared.chunk,
-            &mut scan_state,
-            deadline,
-        );
+            self.extract_confirmed_patterns(
+                &confirmed_patterns,
+                &prepared.preprocessed,
+                &line_offsets,
+                &code_lines,
+                &documentation_lines,
+                &prepared.chunk,
+                &mut scan_state,
+                deadline,
+            );
+        }
 
         // The chunk-level `has_generic_assignment_keyword` gate that
         // a profiling pass added here was net-negative on the
