@@ -223,7 +223,42 @@ impl MerkleIndex {
     }
 
     fn save_inner(&self, path: &Path, spec_hash: Option<&[u8; 32]>) -> std::io::Result<()> {
+        // Concurrency note: two `keyhog scan --incremental` processes
+        // running against overlapping paths will both want to write
+        // `merkle.idx`. The tmp-file uses `std::process::id()` so
+        // there's no tmp-name collision, but the final `rename` is
+        // last-writer-wins.
+        //
+        // To minimise data loss on concurrent saves, READ the
+        // current on-disk entries first and merge our in-memory
+        // state on top — entries in memory take precedence (we just
+        // observed those files in this scan), but disk entries that
+        // we DIDN'T touch are preserved. This narrows the data-loss
+        // window from "entire scan" to "between read-and-rename"
+        // (~milliseconds) instead of "between scan-start and save".
+        //
+        // A truly race-free solution needs an OS-level file lock
+        // (`fcntl(F_SETLK)` / `LockFileEx`); that would block the
+        // second writer entirely. We accept the small remaining
+        // race as a correctness/perf trade — losing a few entries
+        // means an extra rescan, not a missed leak.
         let mut merged = HashMap::<PathBuf, CacheEntry>::new();
+        // Read existing on-disk entries first. Use the SAME spec
+        // hash we're about to write — if disk was written under a
+        // different spec, those entries are stale (a future load
+        // would invalidate them) and we drop them now. If spec
+        // matches (or this is the no-spec save path), preserve.
+        // Format-mismatch / corrupted-file paths already log inside
+        // `load`; ignore the error here so a bad on-disk state
+        // doesn't stop us writing a fresh one.
+        let on_disk_now = match spec_hash {
+            Some(hash) => Self::load_with_spec(path, hash),
+            None => Self::load(path),
+        };
+        for shard in &on_disk_now.shards {
+            merged.extend(shard.lock().iter().map(|(p, e)| (p.clone(), *e)));
+        }
+        // In-memory entries layer on top — last-write-wins by path.
         for shard in &self.shards {
             merged.extend(shard.lock().iter().map(|(p, e)| (p.clone(), *e)));
         }
@@ -581,5 +616,118 @@ mod tests {
 
         let c = compute_spec_hash(&[make("alpha"), make("gamma")]);
         assert_ne!(a, c, "different detectors must produce different hashes");
+    }
+
+    #[test]
+    fn save_merges_with_existing_disk_entries() {
+        // Simulates two concurrent `keyhog scan --incremental`
+        // processes scanning different subsets. The save path now
+        // does read-modify-write so process B's save doesn't blow
+        // away process A's entries when their target path sets
+        // don't overlap.
+        let dir = tempfile::tempdir().unwrap();
+        let cache_path = dir.path().join("merkle.idx");
+        let spec = [42u8; 32];
+
+        // Process A scans path /a/file and saves.
+        let idx_a = MerkleIndex::empty();
+        idx_a.record_with_metadata(
+            PathBuf::from("/a/file"),
+            100,
+            10,
+            sample_hash(b"a contents"),
+        );
+        idx_a.save_with_spec(&cache_path, &spec).unwrap();
+
+        // Process B (separate handle, fresh memory) scans /b/file and
+        // saves. Without read-modify-write, /a/file's entry would be
+        // gone after this save.
+        let idx_b = MerkleIndex::empty();
+        idx_b.record_with_metadata(
+            PathBuf::from("/b/file"),
+            200,
+            20,
+            sample_hash(b"b contents"),
+        );
+        idx_b.save_with_spec(&cache_path, &spec).unwrap();
+
+        // Reload with the same spec. BOTH /a/file AND /b/file must
+        // be present — process A's entry survived process B's save.
+        let loaded = MerkleIndex::load_with_spec(&cache_path, &spec);
+        assert_eq!(loaded.len(), 2);
+        assert!(loaded.metadata_unchanged(Path::new("/a/file"), 100, 10));
+        assert!(loaded.metadata_unchanged(Path::new("/b/file"), 200, 20));
+    }
+
+    #[test]
+    fn save_overwrites_disk_entry_for_same_path() {
+        // The merge is "in-memory wins" — if both disk and memory
+        // hold a record for the same path, the freshly-saved one
+        // (memory) takes precedence. Otherwise a stale disk entry
+        // could "resurrect" itself across saves and never get
+        // updated.
+        let dir = tempfile::tempdir().unwrap();
+        let cache_path = dir.path().join("merkle.idx");
+        let spec = [42u8; 32];
+
+        let idx_old = MerkleIndex::empty();
+        idx_old.record_with_metadata(
+            PathBuf::from("/x"),
+            100,
+            10,
+            sample_hash(b"old"),
+        );
+        idx_old.save_with_spec(&cache_path, &spec).unwrap();
+
+        let idx_new = MerkleIndex::empty();
+        idx_new.record_with_metadata(
+            PathBuf::from("/x"),
+            200,
+            20,
+            sample_hash(b"new"),
+        );
+        idx_new.save_with_spec(&cache_path, &spec).unwrap();
+
+        let loaded = MerkleIndex::load_with_spec(&cache_path, &spec);
+        assert_eq!(loaded.len(), 1);
+        // The mtime/size from idx_new must be the surviving copy.
+        assert!(loaded.metadata_unchanged(Path::new("/x"), 200, 20));
+        assert!(!loaded.metadata_unchanged(Path::new("/x"), 100, 10));
+    }
+
+    #[test]
+    fn save_drops_stale_spec_entries_on_disk() {
+        // If the on-disk file was written with a DIFFERENT detector
+        // spec, those entries are stale (a future load_with_spec
+        // would invalidate them anyway). The save path uses
+        // load_with_spec internally, so spec-mismatched disk entries
+        // are NOT merged in — only the current process's in-memory
+        // entries get written.
+        let dir = tempfile::tempdir().unwrap();
+        let cache_path = dir.path().join("merkle.idx");
+
+        let idx_old = MerkleIndex::empty();
+        idx_old.record_with_metadata(
+            PathBuf::from("/from-old-spec"),
+            1,
+            1,
+            sample_hash(b"x"),
+        );
+        idx_old.save_with_spec(&cache_path, &[1u8; 32]).unwrap();
+
+        let idx_new = MerkleIndex::empty();
+        idx_new.record_with_metadata(
+            PathBuf::from("/from-new-spec"),
+            2,
+            2,
+            sample_hash(b"y"),
+        );
+        idx_new.save_with_spec(&cache_path, &[2u8; 32]).unwrap();
+
+        // After saving with the new spec, only the new-spec entry
+        // is present. The old-spec entry was dropped at save time.
+        let loaded = MerkleIndex::load_with_spec(&cache_path, &[2u8; 32]);
+        assert_eq!(loaded.len(), 1);
+        assert!(loaded.metadata_unchanged(Path::new("/from-new-spec"), 2, 2));
     }
 }
