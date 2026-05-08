@@ -770,9 +770,8 @@ mod tests {
                 (w.offset + w.text.len()).min(bytes.len()) - w.offset,
                 "ASCII input → text len equals slice len"
             );
-            for i in w.offset..(w.offset + w.text.len()).min(bytes.len()) {
-                covered[i] = true;
-            }
+            let end = (w.offset + w.text.len()).min(bytes.len());
+            covered[w.offset..end].fill(true);
         }
         assert!(
             covered.iter().all(|&c| c),
@@ -932,10 +931,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("empty.txt");
         std::fs::write(&path, b"").unwrap();
-        let result = read_file_windowed_mmap(&path, 1024, 32);
-        match result {
-            Some(v) => assert!(v.is_empty()),
-            None => {} // acceptable: mmap of zero-length refused
+        // `None` is also acceptable: mmap of zero-length is refused
+        // on some platforms. Either way the caller won't emit chunks.
+        if let Some(v) = read_file_windowed_mmap(&path, 1024, 32) {
+            assert!(v.is_empty());
         }
     }
 }

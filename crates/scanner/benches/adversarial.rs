@@ -96,7 +96,7 @@ fn entropy_noise(target: usize) -> String {
             '.'
         };
         s.push(ch);
-        if s.len() % 80 == 0 {
+        if s.len().is_multiple_of(80) {
             s.push('\n');
         }
     }
@@ -160,7 +160,8 @@ fn bench_adversarial(c: &mut Criterion) {
     group.warm_up_time(Duration::from_secs(1));
     group.measurement_time(Duration::from_secs(3));
 
-    let cases: &[(&str, fn(usize) -> String, usize)] = &[
+    type AdversarialCase = (&'static str, fn(usize) -> String, usize);
+    let cases: &[AdversarialCase] = &[
         ("false_prefix_storm/1MiB", false_prefix_storm, 1024 * 1024),
         ("entropy_noise/1MiB", entropy_noise, 1024 * 1024),
         ("long_lines/64KiB", long_lines, 64 * 1024),

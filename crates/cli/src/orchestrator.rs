@@ -809,6 +809,20 @@ fn allowlist_root(path: &Path) -> PathBuf {
     }
 }
 
+fn report_completion_summary(count: usize, elapsed: f64) {
+    if count == 0 {
+        eprintln!(
+            "\n✨ Scan complete! Found \x1b[1;32m0\x1b[0m secrets in \x1b[33m{:.2}s\x1b[0m. You are secure!",
+            elapsed
+        );
+    } else {
+        eprintln!(
+            "\n✨ Scan complete! Found \x1b[1;31m{}\x1b[0m secrets in \x1b[33m{:.2}s\x1b[0m.",
+            count, elapsed
+        );
+    }
+}
+
 #[cfg(test)]
 mod pipeline_tests {
     //! Tests for the producer/scanner pipeline introduced in Stage C.
@@ -1022,18 +1036,70 @@ mod pipeline_tests {
         let findings = orch.scan_sources(sources, false, None);
         assert!(findings.is_empty());
     }
-}
 
-fn report_completion_summary(count: usize, elapsed: f64) {
-    if count == 0 {
-        eprintln!(
-            "\n✨ Scan complete! Found \x1b[1;32m0\x1b[0m secrets in \x1b[33m{:.2}s\x1b[0m. You are secure!",
-            elapsed
+    #[test]
+    fn pipeline_with_merkle_records_metadata_for_chunks_seen() {
+        // Stage A + Stage C interaction: when the pipeline runs with a
+        // shared `Arc<MerkleIndex>`, every chunk that arrives at the
+        // scanner gets its `(path, mtime, size, hash)` recorded so the
+        // next run's metadata fast-path can skip it. The orchestrator
+        // owns this side-effect; verify it actually fires under the
+        // threaded handoff (regression test for "scanner thread eats
+        // chunks → no records left for next run").
+        let orch = make_orchestrator(vec![make_detector()]);
+        let mut chunk = make_chunk("STATIC_SECRET_42424242 here", "x.rs");
+        // Plant non-default metadata so the recording path has
+        // something concrete to round-trip — proves we don't lose it
+        // crossing the channel.
+        chunk.metadata.mtime_ns = Some(1_700_000_000_000_000_000);
+        chunk.metadata.size_bytes = Some(123);
+
+        let merkle = Arc::new(keyhog_core::merkle_index::MerkleIndex::empty());
+        let sources: Vec<Box<dyn Source>> =
+            vec![Box::new(StaticSource { chunks: vec![chunk] })];
+        let findings = orch.scan_sources(sources, false, Some(merkle.clone()));
+
+        // Scanner still produced the finding even though merkle is
+        // wired in — merkle doesn't suppress non-cached entries.
+        assert_eq!(findings.len(), 1);
+        // The orchestrator recorded the chunk's metadata so a future
+        // metadata_unchanged check would hit.
+        assert!(
+            merkle.metadata_unchanged(
+                std::path::Path::new("x.rs"),
+                1_700_000_000_000_000_000,
+                123,
+            ),
+            "merkle should now contain the chunk's (path, mtime, size) entry"
         );
-    } else {
-        eprintln!(
-            "\n✨ Scan complete! Found \x1b[1;31m{}\x1b[0m secrets in \x1b[33m{:.2}s\x1b[0m.",
-            count, elapsed
+    }
+
+    #[test]
+    fn pipeline_with_merkle_skips_already_cached_chunks() {
+        // Pre-populate the merkle index with an entry whose hash
+        // matches the chunk content. The orchestrator's BLAKE3
+        // post-read check should fire on this path (synthetic
+        // sources don't surface live mtime, so the FilesystemSource
+        // pre-read fast-path is bypassed; this exercises the
+        // *content-hash* fallback inside scan_sources). Result: zero
+        // findings emitted, even though the regex would have matched.
+        let orch = make_orchestrator(vec![make_detector()]);
+        let text = "STATIC_SECRET_42424242 here";
+        let chunk = make_chunk(text, "y.rs");
+
+        let merkle = Arc::new(keyhog_core::merkle_index::MerkleIndex::empty());
+        let known_hash =
+            keyhog_core::merkle_index::MerkleIndex::hash_content(text.as_bytes());
+        merkle.record(std::path::PathBuf::from("y.rs"), known_hash);
+
+        let sources: Vec<Box<dyn Source>> =
+            vec![Box::new(StaticSource { chunks: vec![chunk] })];
+        let findings = orch.scan_sources(sources, false, Some(merkle));
+
+        assert!(
+            findings.is_empty(),
+            "merkle hash hit must skip the scan; got {} finding(s)",
+            findings.len()
         );
     }
 }
