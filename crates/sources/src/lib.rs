@@ -59,7 +59,12 @@ pub use stdin::StdinSource;
 pub use web::WebSource;
 
 use keyhog_core::registry::get_source_registry;
-#[cfg(any(feature = "slack", feature = "docker", feature = "s3"))]
+// Arc is used by the registry-registration plugins below. The cfg
+// match has to track the *actual* `Arc::new(...)` call sites, not
+// every feature flag the file references — gating broader than this
+// triggers `unused_imports` on builds that include only Docker
+// (which doesn't go through the registry).
+#[cfg(any(feature = "slack", feature = "s3"))]
 use std::sync::Arc;
 
 /// Create a source instance from a name and optional parameters.

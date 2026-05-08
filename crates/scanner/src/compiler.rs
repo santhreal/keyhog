@@ -165,17 +165,6 @@ pub fn build_gpu_literals(ac_literals: &[String]) -> Option<std::sync::Arc<Vec<V
     }
 }
 
-pub fn build_detector_to_patterns(
-    ac_map: &[CompiledPattern],
-    detector_count: usize,
-) -> Vec<Vec<usize>> {
-    let mut map = vec![Vec::new(); detector_count];
-    for (pat_idx, entry) in ac_map.iter().enumerate() {
-        map[entry.detector_index].push(pat_idx);
-    }
-    map
-}
-
 pub fn build_same_prefix_patterns(literals: &[String]) -> Vec<Vec<usize>> {
     let mut groups: std::collections::HashMap<&str, Vec<usize>> = std::collections::HashMap::new();
     for (i, lit) in literals.iter().enumerate() {

@@ -2,6 +2,73 @@
 
 All notable changes to KeyHog. Versions follow [Semantic Versioning](https://semver.org/).
 
+## v0.5.3 — 2026-05-07
+
+I/O perfection pass — five staged perf + correctness landings on the
+filesystem source path, plus one latent-bug fix surfaced by the new
+test coverage.
+
+**Stage A — content cache (perf + correctness).** Merkle index schema
+v2: each entry now carries `(mtime_ns, size, BLAKE3)` and the file
+gets a top-level `spec_hash` derived from the canonical detector set.
+`metadata_unchanged(path, mtime, size)` short-circuits the file read
+entirely when stat metadata matches a stored entry — the dominant
+cost on cold-cache disk for `--incremental` re-runs.
+`load_with_spec(path, expected_spec_hash)` invalidates the cache the
+moment any detector regex, group, or companion changes, fixing a
+latent correctness bug where an added detector would silently miss
+unchanged files forever.
+
+**Stage B — mmap big-file scan.** Replaced the read+seek loop in
+FilesystemSource's >64 MiB path with a single mmap + zero-copy slice
+into `window_size`-byte windows with `window_overlap` shared bytes
+between neighbours. Drops the 64 MiB heap working buffer and the
+per-window `seek+re-read` overlap round-trip; `madvise(SEQUENTIAL)`
+drives kernel readahead. Falls back cleanly to the buffered loop
+when mmap is refused (locked writer, exotic filesystem).
+
+**Stage C — I/O ↔ scan pipeline.** `scan_sources` spawns the scanner
+in a dedicated thread holding `Arc<CompiledScanner>`. The producer
+(main thread) iterates sources and builds batches; the scanner pulls
+completed batches off a `sync_channel(1)` and runs `scan_coalesced`.
+While the scanner is busy on regex, the producer is busy on disk
+I/O, so total wall time approaches `max(read, scan)` instead of
+`read + scan`. Channel capacity 1 keeps memory bounded to one
+in-flight batch.
+
+**Stage D — mmap compressed reads.** ziftsieve only takes a
+contiguous `&[u8]` so streaming decompression isn't on the menu, but
+mmap'ing the compressed file lets us hand it the whole input without
+a corresponding heap allocation. A 1 GiB `.zst` previously manifested
+as a 1 GiB `Vec<u8>` before decompression began. New `FileBytes` enum
+(`Mmap` | `Owned`) with size-cap gating; falls back to `fs::read`
+only on mmap refusal.
+
+**Stage E — per-platform mmap threshold.** Lowered to 64 KiB on Unix
+where `mmap` setup is sub-microsecond and avoids the page cache →
+userland buffer copy. Held at 1 MiB on Windows where `MapViewOfFile`
+carries section-object + security-token costs that buffered
+`ReadFile` doesn't pay.
+
+**Latent bug fixed alongside Stage D.** `gz` and `zst` were in
+`SKIP_EXTENSIONS`, so the `extract_compressed_chunks` dispatch arm in
+the FilesystemSource iterator was actually unreachable — compressed
+files were silently being skipped on every scan. Removed those
+entries (the gz/zst handler now actually runs).
+
+**Tests.** ~55 new tests covering: 13 merkle_index v2 unit, 12
+window-slicing pure-helper unit, 4 FileBytes/mmap-or-bytes unit, 6
+pipeline orchestrator unit (including a 6000-chunk recall floor that
+proves the threading doesn't drop batches), 9 FilesystemSource
+integration covering the windowed path, merkle skip, and gz
+end-to-end. Existing 53 scanner lib + 31 sources read unit + 20
+filesystem integration all still green on both Windows and Linux.
+
+**Code cleanup.** Removed dead `detector_to_patterns` field + helper
+from the scanner (unused since the v0.5.2 perf trim). Tightened the
+`Arc` import gate in `crates/sources/src/lib.rs` so docker-only
+builds no longer warn about unused imports.
+
 ## v0.5.2 — 2026-05-06
 
 Reconciliation pass against the parallel `Legendary Hardening` line

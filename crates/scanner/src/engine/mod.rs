@@ -161,7 +161,6 @@ pub struct CompiledScanner {
     pub(crate) fallback: Vec<(CompiledPattern, Vec<String>)>,
     pub(crate) companions: Vec<Vec<CompiledCompanion>>,
     pub(crate) detectors: Vec<DetectorSpec>,
-    pub(crate) detector_to_patterns: Vec<Vec<usize>>,
     pub(crate) same_prefix_patterns: Vec<Vec<usize>>,
     pub(crate) fallback_keyword_ac: Option<AhoCorasick>,
     pub(crate) fallback_keyword_to_patterns: Vec<Vec<usize>>,
@@ -216,7 +215,6 @@ impl CompiledScanner {
         };
         let prefix_propagation = build_prefix_propagation(&state.ac_literals);
         let same_prefix_patterns = build_same_prefix_patterns(&state.ac_literals);
-        let detector_to_patterns = build_detector_to_patterns(&state.ac_map, detectors.len());
         let (fallback_keyword_ac, fallback_keyword_to_patterns) =
             build_fallback_keyword_ac(&state.fallback);
         // Precompute the per-pattern "always-active" bitmap so the per-chunk
@@ -268,7 +266,6 @@ impl CompiledScanner {
             fallback: state.fallback,
             companions: state.companions,
             detectors,
-            detector_to_patterns,
             same_prefix_patterns,
             fallback_keyword_ac,
             fallback_keyword_to_patterns,

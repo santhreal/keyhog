@@ -321,6 +321,8 @@ fn fetch_object_chunk(
             commit: None,
             author: None,
             date: None,
+            mtime_ns: None,
+            size_bytes: None,
         },
     }))
 }

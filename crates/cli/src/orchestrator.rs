@@ -547,13 +547,12 @@ impl ScanOrchestrator {
         // Drop the sender so the scanner's `for batch in rx` exits
         // cleanly once the in-flight batch is processed.
         drop(tx);
-        let mut findings = scanner_thread
+        let findings = scanner_thread
             .join()
             .unwrap_or_else(|_| {
                 tracing::error!("scanner thread panicked; producing empty findings");
                 Vec::new()
             });
-        let _ = &mut findings; // silence unused-mut on early-return paths
 
         if skipped_unchanged > 0 {
             tracing::info!(
