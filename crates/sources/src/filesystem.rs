@@ -257,12 +257,28 @@ impl Source for FilesystemSource {
         if !self.respect_gitignore {
             config = config.respect_gitignore(false);
         }
-        let mut entries = match CodeWalker::new(&self.root, config).walk() {
-            Ok(entries) => entries,
-            Err(error) => {
-                return Box::new(std::iter::once(Err(SourceError::Other(error.to_string()))));
-            }
-        };
+        // Use walk_iter (NOT walk()) so per-entry errors don't
+        // collapse the entire scan. `walk()` collects into a Vec
+        // via `.collect()` on a Result iterator — a single
+        // permission-denied (chmod 000 sub-tree, EACCES on a
+        // sibling) short-circuits the whole walk and the user
+        // gets ZERO findings. Production-grade behaviour is to
+        // log+skip the failed entry and keep walking everything
+        // else.
+        let walker = CodeWalker::new(&self.root, config);
+        let mut entries: Vec<codewalk::FileEntry> = walker
+            .walk_iter()
+            .filter_map(|result| match result {
+                Ok(entry) => Some(entry),
+                Err(error) => {
+                    tracing::warn!(
+                        %error,
+                        "skipping unreadable filesystem entry; scan continues"
+                    );
+                    None
+                }
+            })
+            .collect();
 
         if !self.include_paths.is_empty() {
             // Canonicalize both sides for consistent comparison
