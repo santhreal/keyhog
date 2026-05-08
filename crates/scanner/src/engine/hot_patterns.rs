@@ -18,8 +18,11 @@ impl CompiledScanner {
         use simdsieve::SimdSieve;
 
         let text_bytes = text.as_bytes();
-        let patterns_ref: Vec<&[u8]> = HOT_PATTERNS.to_vec();
-        let Ok(sieve) = SimdSieve::new(text_bytes, &patterns_ref) else {
+        // SimdSieve takes `&[&[u8]]`; HOT_PATTERNS is already exactly
+        // that, so pass it through. The previous flow built a fresh
+        // `Vec<&[u8]>` per chunk via `.to_vec()` — wasted on every
+        // file in a 100k-file scan.
+        let Ok(sieve) = SimdSieve::new(text_bytes, HOT_PATTERNS) else {
             return;
         };
 
@@ -59,12 +62,13 @@ impl CompiledScanner {
                     continue;
                 }
 
+                // Same partition_point binary-search idiom as
+                // `match_line_number` — `line_offsets` is sorted
+                // ascending, so the first offset > `offset` IS the
+                // 1-based line number directly.
                 let line = line_offsets
-                    .iter()
-                    .position(|&line_offset| line_offset > offset)
-                    .unwrap_or(line_offsets.len())
-                    .saturating_sub(1)
-                    + 1;
+                    .partition_point(|&lo| lo <= offset)
+                    .max(1);
 
                 let detector_id_value = format!("hot-{}", HOT_PATTERN_NAMES[pattern_idx]);
                 let detector_name_value =

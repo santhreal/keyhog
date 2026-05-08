@@ -25,11 +25,26 @@ pub struct PreprocessedText {
 
 impl PreprocessedText {
     /// Map a byte offset in preprocessed text back to an original line number.
+    ///
+    /// Mappings are stored in `start_offset`-sorted, contiguous order
+    /// (the preprocessor appends them as it walks the input), so a
+    /// `partition_point` binary search resolves the lookup in
+    /// `O(log L)` instead of the prior `O(L)` linear scan. On a
+    /// 10 000-line file with ~100 matches that's 10 000 × 100 = 1 M
+    /// pointer compares cut to ~1 400.
     pub fn line_for_offset(&self, offset: usize) -> Option<usize> {
-        self.mappings
-            .iter()
-            .find(|mapping| offset >= mapping.start_offset && offset < mapping.end_offset)
-            .map(|mapping| mapping.line_number)
+        let idx = self
+            .mappings
+            .partition_point(|m| m.start_offset <= offset);
+        if idx == 0 {
+            return None;
+        }
+        let m = &self.mappings[idx - 1];
+        if offset < m.end_offset {
+            Some(m.line_number)
+        } else {
+            None
+        }
     }
 
     /// Build a preprocessed representation with a one-line identity mapping.

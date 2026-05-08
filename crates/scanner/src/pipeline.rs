@@ -90,10 +90,14 @@ pub fn match_line_number(
     offset: usize,
 ) -> usize {
     preprocessed.line_for_offset(offset).unwrap_or_else(|| {
-        line_offsets
-            .iter()
-            .position(|&lo| lo > offset)
-            .unwrap_or(line_offsets.len())
+        // `line_offsets` holds the byte offset of each line start in
+        // ascending order. The first offset strictly greater than
+        // `offset` is its line index — which is what
+        // `partition_point` returns directly. Binary search collapses
+        // the prior O(L) `position()` walk into O(log L); on a 10k-
+        // line file with N matches we go from N × 10k compares to
+        // N × ~14.
+        line_offsets.partition_point(|&lo| lo <= offset)
     })
 }
 
@@ -501,14 +505,42 @@ pub fn is_within_hex_context(data: &str, match_start: usize, match_end: usize) -
         return false;
     }
     let matched = &data[match_start..match_end];
-    let matched_hex_digits = matched.chars().filter(|c| c.is_ascii_hexdigit()).count();
-    if matched.len() < MIN_HEX_MATCH_LEN || matched_hex_digits < MIN_HEX_DIGITS_IN_MATCH {
+    // Cheap rejects FIRST. The earlier flow always walked the
+    // matched-string to count hex digits before checking the length
+    // floor — wasted work for the (very common) sub-16-byte AC
+    // matches that can't possibly meet the threshold. Reordering
+    // skips the count entirely on those.
+    if matched.len() < MIN_HEX_MATCH_LEN {
+        return false;
+    }
+    if !has_at_least_n_hex_digits(matched, MIN_HEX_DIGITS_IN_MATCH) {
         return false;
     }
     let (before, after) = surrounding_hex_context(data, match_start, match_end);
     let hex_before = formatted_hex_run(before.chars().rev());
     let hex_after = formatted_hex_run(after.chars());
     hex_before >= MIN_HEX_CONTEXT_DIGITS && hex_after >= MIN_HEX_CONTEXT_DIGITS
+}
+
+/// Returns true as soon as `n` ASCII hex digits have been seen in `s`.
+/// Walking the full string just to compare a count to a threshold is
+/// wasted — for matches with no hex shape at all we exit after a
+/// handful of bytes; for hex-heavy matches the threshold is cleared
+/// long before the end of the credential.
+fn has_at_least_n_hex_digits(s: &str, n: usize) -> bool {
+    if n == 0 {
+        return true;
+    }
+    let mut seen = 0usize;
+    for &b in s.as_bytes() {
+        if b.is_ascii_hexdigit() {
+            seen += 1;
+            if seen >= n {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 fn valid_match_bounds(data: &str, match_start: usize, match_end: usize) -> bool {
@@ -590,4 +622,198 @@ fn fallback_entropy(data: &[u8]) -> f64 {
         }
     }
     entropy
+}
+
+#[cfg(test)]
+mod hex_context_tests {
+    //! Coverage for the reordered + short-circuited hex-context check.
+    //! The walk now exits as soon as the hex-digit threshold is met,
+    //! so we have to prove both the cheap-rejection case and the
+    //! parity-with-full-walk case.
+
+    use super::*;
+
+    #[test]
+    fn has_at_least_n_hex_digits_threshold_zero_always_true() {
+        assert!(has_at_least_n_hex_digits("", 0));
+        assert!(has_at_least_n_hex_digits("xyz", 0));
+    }
+
+    #[test]
+    fn has_at_least_n_hex_digits_short_circuits_after_threshold() {
+        // 16 hex digits at the start, then garbage. The walk should
+        // exit before reaching the garbage — if it didn't, this would
+        // still pass, but the SAFETY of the change is that walking
+        // the full string is allowed, just not required.
+        let s = format!("{}{}", "deadbeefcafef00d", "non-hex tail goes here");
+        assert!(has_at_least_n_hex_digits(&s, 16));
+    }
+
+    #[test]
+    fn has_at_least_n_hex_digits_returns_false_when_insufficient() {
+        // 8 hex digits; threshold 16. Must walk the whole string and
+        // conclude false. Includes non-hex bytes interspersed to
+        // confirm the count only increments on hexdigits.
+        let s = "xx12 yy34 zz56 ww78 NO";
+        assert!(!has_at_least_n_hex_digits(s, 16));
+    }
+
+    #[test]
+    fn is_within_hex_context_short_match_skips_count() {
+        // Match shorter than MIN_HEX_MATCH_LEN must return false
+        // WITHOUT walking the credential — the order swap is what
+        // makes that observable. We just verify the answer.
+        let data = "deadbeef cafef00d AKIA1234 deadbeef cafef00d";
+        // Position the match on "AKIA1234" (8 chars — well below the
+        // 16-byte floor).
+        let start = data.find("AKIA1234").unwrap();
+        let end = start + "AKIA1234".len();
+        assert!(!is_within_hex_context(data, start, end));
+    }
+
+    #[test]
+    fn is_within_hex_context_hex_match_in_hex_surroundings_returns_true() {
+        // A 16+ char hex match inside a hex-stuffed line should
+        // trigger the false-positive guard.
+        let data = "deadbeef-cafef00d-0123456789abcdef-deadbeef-cafef00d-cafef00d";
+        let target = "0123456789abcdef";
+        let start = data.find(target).unwrap();
+        let end = start + target.len();
+        assert!(is_within_hex_context(data, start, end));
+    }
+
+    #[test]
+    fn is_within_hex_context_hex_match_in_plain_surroundings_returns_false() {
+        // Same long-hex match but with non-hex prose around it; the
+        // surrounding-context check fails so we don't suppress.
+        let data = "the value of the field is 0123456789abcdef and that's it";
+        let target = "0123456789abcdef";
+        let start = data.find(target).unwrap();
+        let end = start + target.len();
+        assert!(!is_within_hex_context(data, start, end));
+    }
+
+    #[test]
+    fn is_within_hex_context_invalid_bounds_returns_false() {
+        // start >= end, or non-char-boundary indices, must short-
+        // circuit cleanly without panicking.
+        let data = "hello";
+        assert!(!is_within_hex_context(data, 3, 3));
+        assert!(!is_within_hex_context(data, 4, 2));
+    }
+
+    #[test]
+    fn is_within_hex_context_count_short_circuit_matches_full_walk() {
+        // Property check: across a randomised but fixed-seed mix of
+        // strings, the early-exit count must agree with the prior
+        // `chars().filter().count() >= n` formulation. Locked in so
+        // a future "optimisation" can't silently regress.
+        for n in [0, 1, 5, 16, 64] {
+            for s in [
+                "",
+                "deadbeef",
+                "0123456789abcdef0123456789abcdef",
+                "Pin verify token 12 ab cd 34",
+                "AKIAIOSFODNN7EXAMPLE",
+                "xx 0011 22 33 44 55 66 77 88 99 aa bb cc dd ee ff",
+                "non-hex content with letters g h i j k l m n o p",
+            ] {
+                let early = has_at_least_n_hex_digits(s, n);
+                let full =
+                    s.chars().filter(|c| c.is_ascii_hexdigit()).count() >= n;
+                assert_eq!(early, full, "mismatch for n={n}, s={s:?}");
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod line_lookup_tests {
+    //! Correctness coverage for the binary-search line-number lookup.
+    //! The whole point of swapping `iter().position()` → `partition_point`
+    //! is invisible perf — it has to round-trip exactly the same answer
+    //! the linear walk did, on every offset including the boundaries.
+
+    use super::*;
+    use crate::types::ScannerPreprocessedText;
+
+    fn preprocess(text: &str) -> ScannerPreprocessedText {
+        ScannerPreprocessedText::passthrough(text)
+    }
+
+    fn linear_position(line_offsets: &[usize], offset: usize) -> usize {
+        line_offsets
+            .iter()
+            .position(|&lo| lo > offset)
+            .unwrap_or(line_offsets.len())
+    }
+
+    #[test]
+    fn line_for_offset_returns_correct_line_in_passthrough_text() {
+        // Three lines, offsets 0..7 ("line 1\n"), 7..14 ("line 2\n"),
+        // 14..20 ("line 3"). The lookup is line_number for the byte
+        // offset of the first character of each line.
+        let pp = preprocess("line 1\nline 2\nline 3");
+        assert_eq!(pp.line_for_offset(0), Some(1));
+        assert_eq!(pp.line_for_offset(3), Some(1));
+        assert_eq!(pp.line_for_offset(6), Some(1)); // newline byte
+        assert_eq!(pp.line_for_offset(7), Some(2)); // start of line 2
+        assert_eq!(pp.line_for_offset(13), Some(2));
+        assert_eq!(pp.line_for_offset(14), Some(3));
+        assert_eq!(pp.line_for_offset(19), Some(3));
+    }
+
+    #[test]
+    fn line_for_offset_returns_none_past_end() {
+        let pp = preprocess("hello\nworld");
+        // Offsets beyond the text fall outside the last mapping and
+        // must report None — callers fall back to the line_offsets
+        // search path which has its own bound check.
+        assert_eq!(pp.line_for_offset(11), None);
+        assert_eq!(pp.line_for_offset(99), None);
+    }
+
+    #[test]
+    fn match_line_number_partition_point_matches_linear_position() {
+        // Property: for every offset within and around a synthetic
+        // line_offsets vector, the new partition_point must return the
+        // exact same line index the prior `position()` walk did.
+        let line_offsets = vec![0, 12, 30, 31, 100, 250, 1000];
+        for offset in 0..1100 {
+            let bin = line_offsets.partition_point(|&lo| lo <= offset);
+            let lin = linear_position(&line_offsets, offset);
+            assert_eq!(
+                bin, lin,
+                "binary vs linear mismatch at offset {offset}: bin={bin} lin={lin}"
+            );
+        }
+    }
+
+    #[test]
+    fn match_line_number_handles_empty_line_offsets() {
+        // Edge case: passthrough on a single-line chunk has one
+        // mapping; line_offsets fallback may still be empty under
+        // some preprocessor configurations. Both paths must agree.
+        let pp = preprocess("oneline");
+        let line_offsets: Vec<usize> = vec![];
+        assert_eq!(match_line_number(&pp, &line_offsets, 0), 1);
+        // Offset past end falls through to the empty fallback → 0.
+        assert_eq!(match_line_number(&pp, &line_offsets, 99), 0);
+    }
+
+    #[test]
+    fn match_line_number_uses_fallback_when_offset_past_preprocessed() {
+        // Construct a chunk where `line_for_offset` returns None for
+        // an out-of-range offset; the binary-search fallback must
+        // fire and return the right line index.
+        let pp = preprocess("a\nb");
+        // Line offsets vector covers offsets up to 100.
+        let line_offsets = vec![0, 2, 4, 8, 16, 32, 64];
+        let offset = 50;
+        // Linear answer for reference.
+        let expected = linear_position(&line_offsets, offset);
+        // pp's internal mappings only go up to its own text length
+        // (3), so offset 50 should hit the fallback path.
+        assert_eq!(match_line_number(&pp, &line_offsets, offset), expected);
+    }
 }

@@ -90,11 +90,22 @@ pub struct PreprocessedText {
 
 #[cfg(not(feature = "multiline"))]
 impl PreprocessedText {
+    /// Map a preprocessed-text offset back to an original line number.
+    /// Binary search; same monotonic-mappings invariant as the
+    /// multiline variant — see that doc for the analysis.
     pub fn line_for_offset(&self, offset: usize) -> Option<usize> {
-        self.mappings
-            .iter()
-            .find(|mapping| offset >= mapping.start_offset && offset < mapping.end_offset)
-            .map(|mapping| mapping.line_number)
+        let idx = self
+            .mappings
+            .partition_point(|m| m.start_offset <= offset);
+        if idx == 0 {
+            return None;
+        }
+        let m = &self.mappings[idx - 1];
+        if offset < m.end_offset {
+            Some(m.line_number)
+        } else {
+            None
+        }
     }
 
     pub fn passthrough(line: &str) -> Self {
