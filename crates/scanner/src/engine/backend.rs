@@ -164,11 +164,21 @@ impl CompiledScanner {
         triggered_patterns: Vec<u64>,
         deadline: Option<std::time::Instant>,
     ) -> Vec<RawMatch> {
+        let phase_start = std::time::Instant::now();
         let line_offsets = compute_line_offsets(&prepared.preprocessed.text);
+        let t_line_offsets = phase_start.elapsed();
+
+        let phase_start = std::time::Instant::now();
         let code_lines: Vec<&str> = prepared.chunk.data.lines().collect();
+        let t_code_lines = phase_start.elapsed();
+
+        let phase_start = std::time::Instant::now();
         let documentation_lines = context::documentation_line_flags(&code_lines);
+        let t_doc_lines = phase_start.elapsed();
+
         let mut scan_state = ScanState::default();
 
+        let phase_start = std::time::Instant::now();
         #[cfg(feature = "simdsieve")]
         self.scan_hot_patterns_fast(
             &prepared.preprocessed.text,
@@ -176,12 +186,16 @@ impl CompiledScanner {
             &prepared.chunk,
             &mut scan_state,
         );
+        let t_hot_patterns = phase_start.elapsed();
 
+        let phase_start = std::time::Instant::now();
         let expanded_patterns = self.expand_triggered_patterns(&triggered_patterns);
         let confirmed_patterns: Vec<usize> = (0..self.ac_map.len())
             .filter(|&i| (expanded_patterns[i / 64] & (1 << (i % 64))) != 0)
             .collect();
+        let t_expand = phase_start.elapsed();
 
+        let phase_start = std::time::Instant::now();
         self.extract_confirmed_patterns(
             &confirmed_patterns,
             &prepared.preprocessed,
@@ -192,9 +206,13 @@ impl CompiledScanner {
             &mut scan_state,
             deadline,
         );
+        let t_extract = phase_start.elapsed();
 
+        let phase_start = std::time::Instant::now();
         self.scan_generic_assignments(&code_lines, &prepared.chunk, &mut scan_state);
+        let t_generic = phase_start.elapsed();
 
+        let phase_start = std::time::Instant::now();
         #[cfg(feature = "entropy")]
         self.scan_entropy_fallback(
             &prepared.preprocessed,
@@ -202,9 +220,28 @@ impl CompiledScanner {
             &prepared.chunk,
             &mut scan_state,
         );
+        let t_entropy = phase_start.elapsed();
 
+        let phase_start = std::time::Instant::now();
         #[cfg(feature = "ml")]
         self.apply_ml_batch_scores(&mut scan_state);
+        let t_ml = phase_start.elapsed();
+
+        // Throwaway profiling — remove after measuring.
+        tracing::info!(
+            line_offsets_ns = t_line_offsets.as_nanos(),
+            code_lines_ns = t_code_lines.as_nanos(),
+            doc_lines_ns = t_doc_lines.as_nanos(),
+            hot_patterns_ns = t_hot_patterns.as_nanos(),
+            expand_ns = t_expand.as_nanos(),
+            extract_ns = t_extract.as_nanos(),
+            generic_ns = t_generic.as_nanos(),
+            entropy_ns = t_entropy.as_nanos(),
+            ml_ns = t_ml.as_nanos(),
+            confirmed_count = confirmed_patterns.len(),
+            chunk_bytes = prepared.preprocessed.text.len(),
+            "phase timings"
+        );
 
         scan_state.into_matches()
     }
