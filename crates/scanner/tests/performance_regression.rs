@@ -138,8 +138,6 @@ fn cpu_fallback_completes_under_2s_on_4mib_corpus() {
                 base_offset: 0,
                 source_type: "test/perf".into(),
                 ..Default::default()
-                            mtime_ns: None,
-                size_bytes: None,
 },
         });
     }

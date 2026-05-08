@@ -45,8 +45,6 @@ fn test_nested_base64_decoding_gating() {
                     base_offset: 0,
             source_type: "test".into(),
             ..Default::default()
-                    mtime_ns: None,
-            size_bytes: None,
 },
     };
 

@@ -29,8 +29,6 @@ fn test_window_boundary_detection() {
             path: Some("test.txt".to_string()),
             base_offset: 0,
             ..Default::default()
-                    mtime_ns: None,
-            size_bytes: None,
 },
     };
 
@@ -44,8 +42,6 @@ fn test_window_boundary_detection() {
             path: Some("test.txt".to_string()),
             base_offset: 64 * 1024 * 1024 - 10,
             ..Default::default()
-                    mtime_ns: None,
-            size_bytes: None,
 },
     };
 
