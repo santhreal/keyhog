@@ -244,53 +244,40 @@ impl CompiledScanner {
     fn collect_triggered_patterns_simd(&self, text: &str) -> Vec<u64> {
         #[cfg(feature = "simd")]
         if let Some(scanner) = &self.simd_prefilter {
-            return crate::engine::scan::build_trigger_bitmap_via_pool(
-                self.ac_map.len().div_ceil(64),
-                |triggered_patterns| {
-                    for (hs_id, _start, _end) in scanner.scan(text.as_bytes()) {
-                        let Some((_detector_index, dedup_id, _has_group)) =
-                            scanner.pattern_info(hs_id)
-                        else {
-                            continue;
-                        };
-                        if let Some(original_indices) = self.hs_index_map.get(dedup_id) {
-                            for &pattern_index in original_indices {
-                                self.mark_triggered_pattern(triggered_patterns, pattern_index);
-                            }
-                        }
+            let mut triggered_patterns = vec![0u64; self.ac_map.len().div_ceil(64)];
+            for (hs_id, _start, _end) in scanner.scan(text.as_bytes()) {
+                let Some((_detector_index, dedup_id, _has_group)) = scanner.pattern_info(hs_id)
+                else {
+                    continue;
+                };
+                if let Some(original_indices) = self.hs_index_map.get(dedup_id) {
+                    for &pattern_index in original_indices {
+                        self.mark_triggered_pattern(&mut triggered_patterns, pattern_index);
                     }
-                },
-            );
+                }
+            }
+            return triggered_patterns;
         }
 
         self.collect_triggered_patterns_cpu(text)
     }
 
     fn collect_triggered_patterns_cpu(&self, text: &str) -> Vec<u64> {
-        crate::engine::scan::build_trigger_bitmap_via_pool(
-            self.ac_map.len().div_ceil(64),
-            |triggered_patterns| {
-                if let Some(ac) = &self.ac {
-                    for ac_match in ac.find_iter(text.as_bytes()) {
-                        self.mark_triggered_pattern(
-                            triggered_patterns,
-                            ac_match.pattern().as_usize(),
-                        );
-                    }
-                }
-            },
-        )
+        let mut triggered_patterns = vec![0u64; self.ac_map.len().div_ceil(64)];
+        if let Some(ac) = &self.ac {
+            for ac_match in ac.find_iter(text.as_bytes()) {
+                self.mark_triggered_pattern(&mut triggered_patterns, ac_match.pattern().as_usize());
+            }
+        }
+        triggered_patterns
     }
 
     fn triggered_patterns_from_gpu_matches(&self, matches: &[LiteralMatch]) -> Vec<u64> {
-        crate::engine::scan::build_trigger_bitmap_via_pool(
-            self.ac_map.len().div_ceil(64),
-            |triggered| {
-                for matched in matches {
-                    self.mark_triggered_pattern(triggered, matched.pattern_id as usize);
-                }
-            },
-        )
+        let mut triggered = vec![0u64; self.ac_map.len().div_ceil(64)];
+        for matched in matches {
+            self.mark_triggered_pattern(&mut triggered, matched.pattern_id as usize);
+        }
+        triggered
     }
 
     fn mark_triggered_pattern(&self, triggered_patterns: &mut [u64], pattern_index: usize) {

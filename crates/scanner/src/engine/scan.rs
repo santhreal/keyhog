@@ -1,27 +1,32 @@
 use super::*;
+#[cfg(feature = "simd")]
 use std::cell::RefCell;
 use std::collections::HashMap;
 
 use super::scan_filters::*;
 
+// The trigger-buffer pool is only used in the Hyperscan-prefilter
+// scratch path of `scan_coalesced` (gated `#[cfg(feature = "simd")]`).
+// Without `simd`, both the pool and the helper become dead code,
+// so gate them too — otherwise `cargo build --no-default-features`
+// (the no-Hyperscan Windows build) emits dead-code warnings.
+//
+// Note: a previous attempt extended this pool to the per-chunk
+// `collect_triggered_patterns_*` builders. That regressed the
+// long-lines bench by ~12% because those builders return
+// `Vec<u64>` to their callers — the pool can't save the
+// allocation, only adds the thread_local + RefCell overhead.
+// The pool's win is reuse of buffers that stay inside the pool.
+#[cfg(feature = "simd")]
 thread_local! {
-    /// Per-thread pool of trigger-bitmask vectors. Each chunk allocates
-    /// a `Vec<u64>` of size `ac_len.div_ceil(64)` to mark which AC
-    /// patterns to evaluate. On a 100k-file scan with 1500 patterns
-    /// that's ~2.4M tiny allocations hammering the global allocator.
-    /// With this pool, each rayon worker reuses a single buffer across
-    /// every chunk it processes — used by `scan_coalesced`'s hot
-    /// scratch path AND by the per-chunk `collect_triggered_patterns_*`
-    /// builders that hand a freshly-zeroed `Vec<u64>` back to the
-    /// caller.
+    /// Per-thread pool of trigger-bitmask vectors. Phase-1 of `scan_coalesced`
+    /// allocates one `Vec<u64>` of size `ac_len.div_ceil(64)` per chunk. On a
+    /// 100k-file scan with 1500 patterns that's ~2.4M tiny allocations
+    /// hammering the global allocator. With this pool, each rayon worker
+    /// reuses a single buffer across all the chunks it processes.
     static TRIGGER_POOL: RefCell<Vec<u64>> = const { RefCell::new(Vec::new()) };
 }
 
-/// Borrow a freshly-zeroed slice of `words_needed` `u64`s from the
-/// thread-local pool, run the caller's closure, and return whatever it
-/// produced. The slice's storage stays in the pool for the next chunk
-/// the same worker handles. Used by `scan_coalesced`'s scratch step
-/// where the buffer is consumed inside the closure.
 #[cfg(feature = "simd")]
 #[inline]
 fn with_trigger_buffer<R>(words_needed: usize, f: impl FnOnce(&mut [u64]) -> R) -> R {
@@ -33,28 +38,6 @@ fn with_trigger_buffer<R>(words_needed: usize, f: impl FnOnce(&mut [u64]) -> R) 
         let slice = &mut buf[..words_needed];
         slice.fill(0);
         f(slice)
-    })
-}
-
-/// Build a trigger bitmap of the given word count using the pool, then
-/// hand the caller an OWNED `Vec<u64>` so it can be passed across the
-/// scan API. The 14-word-ish copy is dwarfed by what the caller pays
-/// for a fresh `vec![0u64; …]` (alloc + zero-init), and the pool's
-/// reuse covers the per-chunk allocator pressure that fresh allocs
-/// caused. Used by `collect_triggered_patterns_simd / _cpu / _gpu`.
-pub(super) fn build_trigger_bitmap_via_pool(
-    words_needed: usize,
-    fill: impl FnOnce(&mut [u64]),
-) -> Vec<u64> {
-    TRIGGER_POOL.with(|cell| {
-        let mut buf = cell.borrow_mut();
-        if buf.len() < words_needed {
-            buf.resize(words_needed, 0);
-        }
-        let slice = &mut buf[..words_needed];
-        slice.fill(0);
-        fill(slice);
-        slice.to_vec()
     })
 }
 
