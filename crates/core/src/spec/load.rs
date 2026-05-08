@@ -277,8 +277,18 @@ fn read_detector_file(path: &Path) -> ReadDetectorOutcome {
     let contents = match std::fs::read_to_string(path) {
         Ok(contents) => contents,
         Err(error) => {
+            // Bumped from `debug!` to `warn!`. A user with a broken
+            // permission/typoed-path detector deserves to see the
+            // reason at default log level — not "all detectors
+            // appeared to load" silently. The path is included so
+            // operators can grep for it.
             let message = format!("failed to read {}: {}", path.display(), error);
-            tracing::debug!("{message}");
+            tracing::warn!(
+                detector_path = %path.display(),
+                error = %error,
+                "skipping detector — fix the file's permissions or path \
+                 (run `keyhog detectors list` for the full skip list)"
+            );
             return ReadDetectorOutcome::Skipped { message };
         }
     };
@@ -286,8 +296,19 @@ fn read_detector_file(path: &Path) -> ReadDetectorOutcome {
     match toml::from_str::<DetectorFile>(&contents) {
         Ok(file) => ReadDetectorOutcome::Loaded(Box::new(file.detector)),
         Err(error) => {
+            // Same rationale: a TOML parse error (line + column
+            // included by the toml crate's Display impl) needs to
+            // surface to the user. Default `debug!` hid these
+            // entirely under the keyhog=warn filter, so a single
+            // mistyped field would silently drop one detector
+            // from the corpus and never tell the user.
             let message = format!("failed to parse {}: {}", path.display(), error);
-            tracing::debug!("{message}");
+            tracing::warn!(
+                detector_path = %path.display(),
+                error = %error,
+                "skipping detector — TOML parse failed, fix the syntax \
+                 in the file at the indicated line/column"
+            );
             ReadDetectorOutcome::Skipped { message }
         }
     }

@@ -184,7 +184,11 @@ pub(crate) fn load_detectors_no_cache(path: &Path) -> Result<Vec<DetectorSpec>> 
 /// against zero patterns, finds nothing, and exits SUCCESS — the
 /// user (or their CI) reads "no findings" and assumes the code
 /// is clean. That's the definition of a silent-data-loss bug.
-fn require_non_empty_detectors(
+///
+/// `pub(crate)` so subcommands (`watch`, `scan-system`, `explain`)
+/// share the gate. They all have their own `load_detectors`
+/// helpers that historically bypassed this check.
+pub(crate) fn require_non_empty_detectors(
     detectors: &[DetectorSpec],
     detectors_path: &Path,
 ) -> Result<()> {

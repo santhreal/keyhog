@@ -129,7 +129,10 @@ fn rotation_guide(service: &str) -> Option<&'static str> {
 
 fn load_detectors(path: &std::path::Path) -> Result<Vec<DetectorSpec>> {
     if path.exists() && path.is_dir() {
-        return keyhog_core::load_detectors(path).context("loading detectors from directory");
+        let loaded =
+            keyhog_core::load_detectors(path).context("loading detectors from directory")?;
+        crate::orchestrator_config::require_non_empty_detectors(&loaded, path)?;
+        return Ok(loaded);
     }
     let embedded = keyhog_core::embedded_detector_tomls();
     if embedded.is_empty() {
@@ -145,5 +148,6 @@ fn load_detectors(path: &std::path::Path) -> Result<Vec<DetectorSpec>> {
             Err(e) => eprintln!("warning: failed to parse embedded detector {name}: {e}"),
         }
     }
+    crate::orchestrator_config::require_non_empty_detectors(&out, path)?;
     Ok(out)
 }

@@ -493,7 +493,9 @@ fn scan_git_history(
 
 fn load_detectors(path: &Path) -> Result<Vec<keyhog_core::DetectorSpec>> {
     if path.exists() && path.is_dir() {
-        return keyhog_core::load_detectors(path).context("load detectors");
+        let loaded = keyhog_core::load_detectors(path).context("load detectors")?;
+        crate::orchestrator_config::require_non_empty_detectors(&loaded, path)?;
+        return Ok(loaded);
     }
     let embedded = keyhog_core::embedded_detector_tomls();
     let mut out = Vec::with_capacity(embedded.len());
@@ -503,6 +505,7 @@ fn load_detectors(path: &Path) -> Result<Vec<keyhog_core::DetectorSpec>> {
             Err(e) => tracing::warn!("embedded detector {name}: {e}"),
         }
     }
+    crate::orchestrator_config::require_non_empty_detectors(&out, path)?;
     Ok(out)
 }
 
