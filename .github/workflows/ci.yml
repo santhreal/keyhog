@@ -22,6 +22,24 @@ jobs:
       - run: cargo test -p keyhog-scanner --lib
       - run: cargo test -p keyhog --lib
 
+  macos-build:
+    name: macOS Build
+    runs-on: macos-latest
+    # macOS lacks Vectorscan/Hyperscan in its package repos — vendoring
+    # it would balloon CI minutes for marginal value. We instead run
+    # the no-default-features build path which is the production
+    # configuration on machines without Hyperscan available. The lib
+    # tests here cover the same code paths the Windows/Linux jobs do
+    # except for the simd-feature-gated Hyperscan path.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build -p keyhog-core -p keyhog-scanner --no-default-features
+      - run: cargo test -p keyhog-core --lib
+      - run: cargo test -p keyhog-scanner --lib --no-default-features --features "entropy,multiline,ml"
+      - run: cargo test -p keyhog-sources --lib
+
   clippy:
     name: Clippy
     runs-on: ubuntu-latest

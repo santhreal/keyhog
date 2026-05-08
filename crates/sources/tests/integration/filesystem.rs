@@ -126,6 +126,81 @@ fn deep_recursive_symlinks_do_not_crash() {
 
 #[test]
 #[cfg(unix)]
+fn unreadable_subtree_does_not_abort_full_scan() {
+    // Production-robustness: a hostile or misconfigured filesystem
+    // can have directories the scanner cannot read (chmod 000,
+    // EACCES). The walker MUST continue past the unreadable
+    // entries and surface the readable ones. Without this, a
+    // single mode-bit on /etc/shadow would silently break a
+    // whole-system scan.
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempfile::tempdir().unwrap();
+    // Readable file at the root.
+    fs::write(
+        dir.path().join("readable.env"),
+        "PUBLIC_KEY=AKIAIOSFODNN7READABLE",
+    )
+    .unwrap();
+
+    // Subdirectory we'll lock down.
+    let locked = dir.path().join("locked");
+    fs::create_dir_all(&locked).unwrap();
+    fs::write(
+        locked.join("hidden.env"),
+        "HIDDEN_KEY=AKIAIOSFODNN7HIDDEN",
+    )
+    .unwrap();
+    // chmod 000 — no read, no exec, no list.
+    let mut perms = fs::metadata(&locked).unwrap().permissions();
+    perms.set_mode(0o000);
+    fs::set_permissions(&locked, perms).unwrap();
+
+    // Another readable subtree alongside the locked one.
+    let elsewhere = dir.path().join("elsewhere");
+    fs::create_dir_all(&elsewhere).unwrap();
+    fs::write(
+        elsewhere.join("config.env"),
+        "OTHER_KEY=AKIAIOSFODNN7OTHER12",
+    )
+    .unwrap();
+
+    let source = FilesystemSource::new(dir.path().to_path_buf());
+    let chunks: Vec<_> = source
+        .chunks()
+        .filter_map(|r| r.ok())
+        .collect();
+
+    // Restore perms BEFORE assertions so tempdir cleanup works
+    // even if the test fails.
+    let mut perms = fs::metadata(&locked).unwrap().permissions();
+    perms.set_mode(0o755);
+    let _ = fs::set_permissions(&locked, perms);
+
+    // The two readable files MUST be discovered. The locked one
+    // CANNOT be (codewalk treats it as inaccessible and skips).
+    let combined: String = chunks.iter().map(|c| c.data.to_string()).collect();
+    assert!(
+        combined.contains("AKIAIOSFODNN7READABLE"),
+        "root-level readable file was lost: scan aborted on the locked sibling"
+    );
+    assert!(
+        combined.contains("AKIAIOSFODNN7OTHER12"),
+        "sibling-subdirectory readable file was lost: scan aborted on the locked sibling"
+    );
+    // The hidden one must NOT appear (we couldn't read it). This
+    // is informational — confirms the chmod actually took effect
+    // (otherwise this test reduces to "files discovered" which
+    // misses the production point).
+    assert!(
+        !combined.contains("AKIAIOSFODNN7HIDDEN"),
+        "the locked file was somehow read — chmod 000 didn't take effect, \
+         test isn't actually exercising the permission-error path"
+    );
+}
+
+#[test]
+#[cfg(unix)]
 fn symlink_loop_terminates_within_time_bound() {
     // Hostile-input robustness: a self-referential symlink must
     // not just "eventually" terminate (existing test) — it must
