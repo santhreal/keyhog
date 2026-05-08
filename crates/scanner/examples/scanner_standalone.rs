@@ -26,7 +26,9 @@ fn main() -> Result<(), keyhog_scanner::ScanError> {
             commit: None,
             author: None,
             date: None,
-        },
+                    mtime_ns: None,
+            size_bytes: None,
+},
     });
 
     println!(

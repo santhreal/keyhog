@@ -29,7 +29,9 @@ fn test_window_boundary_detection() {
             path: Some("test.txt".to_string()),
             base_offset: 0,
             ..Default::default()
-        },
+                    mtime_ns: None,
+            size_bytes: None,
+},
     };
 
     let mut data2 = secret.to_string();
@@ -42,7 +44,9 @@ fn test_window_boundary_detection() {
             path: Some("test.txt".to_string()),
             base_offset: 64 * 1024 * 1024 - 10,
             ..Default::default()
-        },
+                    mtime_ns: None,
+            size_bytes: None,
+},
     };
 
     let results = scanner.scan_coalesced(&[chunk1, chunk2]);

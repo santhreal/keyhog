@@ -61,7 +61,9 @@ fn scan_fixture(rel: &str) -> Vec<keyhog_core::RawMatch> {
             commit: None,
             author: None,
             date: None,
-        },
+                    mtime_ns: None,
+            size_bytes: None,
+},
     };
     production_scanner().scan(&chunk)
 }
@@ -151,7 +153,9 @@ unrelated = 'foo' + 'bar'\n\
             commit: None,
             author: None,
             date: None,
-        },
+                    mtime_ns: None,
+            size_bytes: None,
+},
     };
     let matches = production_scanner().scan(&chunk);
     let aws_hit = matches
