@@ -74,15 +74,30 @@ impl Baseline {
     }
 
     /// Save the baseline to a JSON file (pretty-printed).
+    ///
+    /// Atomic write: serialise to a `NamedTempFile` in the target
+    /// directory, fsync, then atomic-rename onto the final path. If
+    /// keyhog crashes (panic, SIGTERM, OOM-kill) before the rename
+    /// completes, the user's existing baseline is intact and the
+    /// tmp file is reaped by `NamedTempFile`'s Drop. Without this
+    /// pattern a mid-write `--update-baseline` could leave a half-
+    /// written JSON that the next run can't parse.
     pub fn save(&self, path: &Path) -> Result<()> {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        let file = std::fs::File::create(path)
-            .with_context(|| format!("creating baseline file {}", path.display()))?;
-        let writer = std::io::BufWriter::new(file);
-        serde_json::to_writer_pretty(writer, self)
-            .with_context(|| format!("writing baseline file {}", path.display()))?;
+        let parent = path.parent().unwrap_or_else(|| Path::new("."));
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("creating baseline parent dir {}", parent.display()))?;
+        let serialized = serde_json::to_vec_pretty(self)
+            .with_context(|| format!("serializing baseline for {}", path.display()))?;
+        let mut tmp = tempfile::NamedTempFile::new_in(parent)
+            .with_context(|| format!("creating baseline tmp in {}", parent.display()))?;
+        std::io::Write::write_all(&mut tmp, &serialized)
+            .with_context(|| format!("writing baseline tmp for {}", path.display()))?;
+        tmp.as_file().sync_all().with_context(|| {
+            format!("fsyncing baseline tmp for {}", path.display())
+        })?;
+        tmp.persist(path)
+            .map_err(|e| e.error)
+            .with_context(|| format!("renaming baseline tmp onto {}", path.display()))?;
         Ok(())
     }
 

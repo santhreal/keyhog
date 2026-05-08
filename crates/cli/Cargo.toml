@@ -75,6 +75,11 @@ serde_json = { workspace = true }
 chrono = { workspace = true }
 dirs = { workspace = true }
 notify = { workspace = true }
+# Used by `baseline.rs::save` for atomic-rename writes via
+# `NamedTempFile::persist()` — same pattern used by merkle and
+# calibration. A mid-write crash on `--update-baseline` would
+# otherwise leave a corrupt JSON the next run can't parse.
+tempfile = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
 # Used only by `reset_sigpipe()` in main.rs to restore the default
