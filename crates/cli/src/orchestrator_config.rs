@@ -4,23 +4,40 @@ use keyhog_core::{load_detectors, DetectorSpec};
 use keyhog_scanner::ScannerConfig;
 use std::path::{Path, PathBuf};
 
+/// Hard ceiling on the parallel thread count. Above this, thread
+/// creation overhead + scheduler contention dominates any throughput
+/// gain on CPU-bound work. Matches the cap the rayon docs recommend
+/// for general-purpose pools and protects against `--threads 9999999`
+/// misconfiguration that would either OOM-on-spawn or thrash the
+/// scheduler on a 4-core box.
+const MAX_THREADS_CAP: usize = 256;
+
 pub(crate) fn configure_threads(threads: Option<usize>, physical_cores: usize) {
     // Resolution order: --threads CLI arg > KEYHOG_THREADS env > physical core
     // count. Physical (not logical) is the right default for CPU-bound regex
     // — SMT/Hyperthreading siblings share execution units, so 2× the threads
     // yields ~1.1× the throughput while doubling cache pressure.
+    //
+    // Each source is sanitised through `sanitise_thread_count`, which:
+    //   * rejects 0 (rayon would silently use its own default — confusing)
+    //   * caps at `MAX_THREADS_CAP` (avoids spawn failures + scheduler thrash)
+    // Both paths log a warning so an operator who fat-fingered the value
+    // sees what was actually used.
     let (n, source) = if let Some(t) = threads {
-        (t, "cli-arg")
+        (sanitise_thread_count(t, physical_cores, "cli-arg"), "cli-arg")
     } else if let Ok(env) = std::env::var("KEYHOG_THREADS") {
         match env.parse::<usize>() {
-            Ok(t) if t > 0 => (t, "env:KEYHOG_THREADS"),
-            _ => {
+            Ok(t) => (
+                sanitise_thread_count(t, physical_cores, "env:KEYHOG_THREADS"),
+                "env:KEYHOG_THREADS",
+            ),
+            Err(_) => {
                 tracing::warn!(value = %env, "ignoring invalid KEYHOG_THREADS value");
-                (physical_cores, "physical-cores")
+                (physical_cores.max(1), "physical-cores")
             }
         }
     } else {
-        (physical_cores, "physical-cores")
+        (physical_cores.max(1), "physical-cores")
     };
 
     let builder = rayon::ThreadPoolBuilder::new()
@@ -44,6 +61,63 @@ pub(crate) fn configure_threads(threads: Option<usize>, physical_cores: usize) {
             physical_cores,
             "rayon thread pool configured"
         );
+    }
+}
+
+/// Clamp a user-supplied thread count to a sane range. Logs a
+/// warning when the value was outside the accepted bounds so an
+/// operator who passed `--threads 0` or `--threads 999999` sees what
+/// the scanner actually used.
+fn sanitise_thread_count(requested: usize, physical_cores: usize, source: &'static str) -> usize {
+    let safe_default = physical_cores.max(1);
+    if requested == 0 {
+        tracing::warn!(
+            source,
+            requested = 0,
+            using = safe_default,
+            "thread count of 0 is not meaningful; falling back to physical-cores"
+        );
+        return safe_default;
+    }
+    if requested > MAX_THREADS_CAP {
+        tracing::warn!(
+            source,
+            requested,
+            cap = MAX_THREADS_CAP,
+            "requested thread count exceeds cap; clamping"
+        );
+        return MAX_THREADS_CAP;
+    }
+    requested
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sanitise_thread_count_rejects_zero() {
+        assert_eq!(sanitise_thread_count(0, 8, "test"), 8);
+        // physical_cores=0 is itself pathological (probe failure);
+        // the .max(1) floor keeps us at least single-threaded.
+        assert_eq!(sanitise_thread_count(0, 0, "test"), 1);
+    }
+
+    #[test]
+    fn sanitise_thread_count_caps_pathological_values() {
+        assert_eq!(sanitise_thread_count(999_999, 8, "test"), MAX_THREADS_CAP);
+        assert_eq!(
+            sanitise_thread_count(MAX_THREADS_CAP + 1, 8, "test"),
+            MAX_THREADS_CAP
+        );
+    }
+
+    #[test]
+    fn sanitise_thread_count_passes_through_sane_values() {
+        assert_eq!(sanitise_thread_count(1, 8, "test"), 1);
+        assert_eq!(sanitise_thread_count(8, 8, "test"), 8);
+        assert_eq!(sanitise_thread_count(64, 8, "test"), 64);
+        assert_eq!(sanitise_thread_count(MAX_THREADS_CAP, 8, "test"), MAX_THREADS_CAP);
     }
 }
 

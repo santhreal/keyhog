@@ -125,6 +125,49 @@ fn deep_recursive_symlinks_do_not_crash() {
 }
 
 #[test]
+#[cfg(unix)]
+fn symlink_loop_terminates_within_time_bound() {
+    // Hostile-input robustness: a self-referential symlink must
+    // not just "eventually" terminate (existing test) — it must
+    // terminate in BOUNDED time. Without an explicit time cap an
+    // attacker could DoS keyhog with a 1M-deep symlink chain even
+    // if the walker eventually breaks the cycle. The walker is
+    // configured with `follow_symlinks(false)` in keyhog's
+    // `walker_config`, so the loop should never even be entered;
+    // 5s is a generous cap that covers cold filesystem + workspace
+    // initialization.
+    use std::os::unix::fs::symlink;
+    use std::time::{Duration, Instant};
+
+    let dir = tempfile::tempdir().unwrap();
+    let nested = dir.path().join("nested");
+    fs::create_dir_all(&nested).unwrap();
+    fs::write(nested.join("real.env"), "REAL_FILE=present").unwrap();
+    // Self-loop: nested/loop → dir, which contains nested.
+    symlink(dir.path(), nested.join("loop")).unwrap();
+    // Plus a wider loop: nested/loop2/loop3 → dir.
+    let l2 = nested.join("loop2");
+    fs::create_dir_all(&l2).unwrap();
+    symlink(dir.path(), l2.join("back")).unwrap();
+
+    let started = Instant::now();
+    let source = FilesystemSource::new(dir.path().to_path_buf());
+    let chunks: Vec<_> = source.chunks().collect::<Result<Vec<_>, _>>().unwrap();
+    let elapsed = started.elapsed();
+
+    assert!(
+        elapsed < Duration::from_secs(5),
+        "symlink loop walk took {:?}; should be sub-second under follow_symlinks(false)",
+        elapsed
+    );
+    // The real file under nested/ must still be discovered.
+    assert!(
+        chunks.iter().any(|c| c.data.contains("REAL_FILE=present")),
+        "the non-symlink file under nested/ was not discovered"
+    );
+}
+
+#[test]
 fn default_excludes_skip_lock_and_cache_files() {
     let dir = tempfile::tempdir().unwrap();
     fs::write(

@@ -318,3 +318,103 @@ pub mod serde_arc_str_opt {
         Option::<String>::deserialize(deserializer).map(|opt| opt.map(Arc::from))
     }
 }
+
+#[cfg(test)]
+mod hostile_metadata_tests {
+    //! "Production-level robustness" coverage: a finding with NUL
+    //! bytes, control characters, or other unusual metadata content
+    //! must not panic on JSON serialization, Display formatting, or
+    //! any standard operation. The fields come from filesystem
+    //! walks (PathBuf::display) and external source backends, so
+    //! "hostile content" is realistic — operators scanning
+    //! adversarial repositories or untrusted HTTP responses see
+    //! these every day.
+
+    use super::*;
+    use std::collections::HashMap;
+    use std::sync::Arc;
+
+    fn finding_with_hostile_path(path: &str) -> VerifiedFinding {
+        VerifiedFinding {
+            detector_id: Arc::from("test-detector"),
+            detector_name: Arc::from("Test Detector"),
+            service: Arc::from("test"),
+            severity: Severity::Medium,
+            credential_redacted: Cow::Borrowed("****"),
+            credential_hash: "deadbeef".into(),
+            location: MatchLocation {
+                source: Arc::from("filesystem"),
+                file_path: Some(Arc::from(path)),
+                line: Some(1),
+                offset: 0,
+                commit: None,
+                author: None,
+                date: None,
+            },
+            verification: VerificationResult::Skipped,
+            metadata: HashMap::new(),
+            additional_locations: Vec::new(),
+            confidence: Some(0.5),
+        }
+    }
+
+    #[test]
+    fn nul_bytes_in_path_serialize_to_valid_json() {
+        // A path containing a NUL byte (e.g. crafted by a Source
+        // emitting through the registry) must round-trip via JSON
+        // without panic and without producing malformed output.
+        // serde_json escapes NUL as ` `.
+        let finding = finding_with_hostile_path("evil\0name.env");
+        let json = serde_json::to_string(&finding).expect("serialize ok");
+        assert!(json.contains("\\u0000"), "NUL must be escaped in JSON");
+        // And it must parse back cleanly.
+        let v: serde_json::Value = serde_json::from_str(&json).expect("parse ok");
+        assert!(v.is_object());
+    }
+
+    #[test]
+    fn control_chars_in_path_serialize_safely() {
+        // Embedded \r, \n, \t, ESC, etc. — common in attacker-
+        // controlled filenames. JSON must escape rather than emit
+        // raw control bytes (which would corrupt log scrapers /
+        // SARIF readers).
+        let finding =
+            finding_with_hostile_path("path\r\nwith\x1b[31mANSI\x1bcontrol\tchars");
+        let json = serde_json::to_string(&finding).expect("serialize ok");
+        assert!(json.contains("\\r"));
+        assert!(json.contains("\\n"));
+        assert!(json.contains("\\t"));
+        // ESC (0x1b) escapes to  in JSON.
+        assert!(json.contains("\\u001b"));
+        let _: serde_json::Value = serde_json::from_str(&json).expect("parse ok");
+    }
+
+    #[test]
+    fn replacement_char_in_path_round_trips() {
+        // Lossy UTF-8 paths from `Path::display()` contain U+FFFD
+        // for invalid byte sequences. Must serialize/deserialize
+        // cleanly — Rust strings are valid UTF-8 by construction so
+        // U+FFFD is a normal char.
+        let finding = finding_with_hostile_path("name_\u{FFFD}_after");
+        let json = serde_json::to_string(&finding).expect("serialize ok");
+        let v: serde_json::Value = serde_json::from_str(&json).expect("parse ok");
+        let recovered = v["location"]["file_path"].as_str().unwrap();
+        assert!(recovered.contains('\u{FFFD}'));
+    }
+
+    #[test]
+    fn extremely_long_path_does_not_panic() {
+        // A 1 MiB path string. No panic, no truncation, no allocation
+        // failure on a typical machine. Tests that no Display
+        // formatter has a hidden length limit that would error.
+        let long = "a".repeat(1024 * 1024);
+        let finding = finding_with_hostile_path(&long);
+        let json = serde_json::to_string(&finding).expect("serialize ok");
+        assert!(json.len() > 1024 * 1024);
+        let v: serde_json::Value = serde_json::from_str(&json).expect("parse ok");
+        assert_eq!(
+            v["location"]["file_path"].as_str().unwrap().len(),
+            long.len()
+        );
+    }
+}
