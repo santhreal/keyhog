@@ -12,6 +12,7 @@ impl CompiledScanner {
     pub(crate) fn scan_generic_assignments(
         &self,
         code_lines: &[&str],
+        line_offsets: &[usize],
         chunk: &Chunk,
         scan_state: &mut ScanState,
     ) {
@@ -65,18 +66,45 @@ impl CompiledScanner {
                 .expect("static keyword set compiles")
         });
 
-        for (line_idx, line) in code_lines.iter().enumerate() {
+        // ONE chunk-level AC scan instead of N per-line scans.
+        // Profile showed scan_generic_assignments at ~500 µs/chunk —
+        // dominant non-ML cost — and most of that was the per-line
+        // KEYWORD_AC.find overhead (per-call AC setup × N lines).
+        // One contiguous find_iter over the whole chunk is the same
+        // total bytes scanned but with a single overhead point and
+        // way better cache behavior. Map each match offset back to
+        // its line via the existing `line_offsets` binary search;
+        // dedup so we visit each line once even if multiple
+        // keywords land on it.
+        let chunk_bytes = chunk.data.as_bytes();
+        let mut lines_with_keyword: Vec<usize> = Vec::new();
+        let mut last_line_idx: Option<usize> = None;
+        for mat in KEYWORD_AC.find_iter(chunk_bytes) {
+            // `partition_point` returns the 1-based line number;
+            // subtract 1 for the 0-based code_lines index. Same
+            // idiom as `match_line_number`.
+            let line_num_1b = line_offsets.partition_point(|&lo| lo <= mat.start());
+            let line_idx = line_num_1b.saturating_sub(1);
+            if Some(line_idx) == last_line_idx {
+                continue;
+            }
+            last_line_idx = Some(line_idx);
+            lines_with_keyword.push(line_idx);
+        }
+        if lines_with_keyword.is_empty() {
+            return;
+        }
+
+        for line_idx in lines_with_keyword {
             let line_num = line_idx + 1;
             if covered_lines.contains(&line_num) {
                 continue;
             }
-
-            // AC pre-filter before heavy regex execution. Avoids backtracking
-            // in the regex engine for the 99% of lines that contain no
-            // secret-related keyword at all.
-            if KEYWORD_AC.find(line.as_bytes()).is_none() {
+            let Some(line) = code_lines.get(line_idx) else {
                 continue;
-            }
+            };
+            // The chunk-level AC told us this line has a keyword;
+            // proceed straight to the heavy regex extraction.
 
             for caps in generic_re.captures_iter(line) {
                 let Some(value_match) = caps.get(1) else {

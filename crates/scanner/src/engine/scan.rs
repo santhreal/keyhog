@@ -166,8 +166,14 @@ impl CompiledScanner {
                         && has_generic_assignment_keyword(chunk.data.as_bytes())
                     {
                         let code_lines: Vec<&str> = chunk.data.lines().collect();
+                        let line_offsets = crate::pipeline::compute_line_offsets(&chunk.data);
                         let mut scan_state = crate::types::ScanState::default();
-                        self.scan_generic_assignments(&code_lines, chunk, &mut scan_state);
+                        self.scan_generic_assignments(
+                            &code_lines,
+                            &line_offsets,
+                            chunk,
+                            &mut scan_state,
+                        );
                         let mut matches = scan_state.into_matches();
                         // Record fragments for cross-file secret reassembly.
                         // When scanning a monorepo, secrets are often split across

@@ -203,15 +203,7 @@ impl CompiledScanner {
             );
         }
 
-        // The chunk-level `has_generic_assignment_keyword` gate that
-        // a profiling pass added here was net-negative on the
-        // adversarial benches: it adds O(chunk) AC overhead for
-        // chunks WITH keywords (which the bench corpora are biased
-        // toward) and only saves on chunks WITHOUT keywords (which
-        // the benches don't really exercise). Reverted — the
-        // function's own per-line AC pre-check inside the loop
-        // remains, doing the same dedup at finer granularity.
-        self.scan_generic_assignments(&code_lines, &prepared.chunk, &mut scan_state);
+        self.scan_generic_assignments(&code_lines, &line_offsets, &prepared.chunk, &mut scan_state);
 
         #[cfg(feature = "entropy")]
         self.scan_entropy_fallback(
