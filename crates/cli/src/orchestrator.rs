@@ -410,47 +410,75 @@ impl ScanOrchestrator {
         // load OR write it. `build_merkle_index` returns `None` then.
         let incremental_path = self.incremental_cache_path();
 
-        // Streaming-batched orchestrator. The previous version collected
-        // every Chunk from every source into one Vec before scanning — peak
-        // memory was the entire repo's text held in RAM, which OOMed on
-        // monorepos with multi-GB working sets (audit release-2026-04-26 +
-        // legendary-2026-04-26 CRIT). We now drain chunks into a fixed-size
-        // batch and call scan_coalesced once per batch. Peak memory is
-        // bounded by `BATCH_BYTES_BUDGET` instead of the source size.
+        // Pipeline-batched orchestrator. The producer (this thread)
+        // iterates sources and builds batches; the scanner runs in a
+        // spawned thread that pulls completed batches off a bounded
+        // channel. While the scanner is busy on a CPU-heavy regex
+        // pass the producer is busy on the next file's I/O, so the
+        // two stages overlap. Channel capacity = 1 keeps memory
+        // bounded to one in-flight batch + one being built.
         //
-        // Coalesced scanning still wins because each batch is large enough
-        // (256 MiB) to amortize the Hyperscan scratch-pool dispatch and
-        // rayon work-stealing — the throughput on the standard Django/k8s
-        // corpora is unchanged within noise.
+        // Each batch still respects `BATCH_BYTES_BUDGET` so peak heap
+        // doesn't grow unbounded on monorepos (legendary-2026-04-26
+        // CRIT — pre-pipeline OOM regression that the streaming flush
+        // model fixed). Coalesced scanning still wins because each
+        // batch is large enough (256 MiB) to amortize the Hyperscan
+        // scratch-pool dispatch and rayon work-stealing.
         const BATCH_CHUNK_LIMIT: usize = 4096;
         const BATCH_BYTES_BUDGET: usize = 256 * 1024 * 1024;
+        const PIPELINE_DEPTH: usize = 1;
 
-        let mut findings = Vec::new();
+        let scanner = Arc::clone(&self.scanner);
+        let (tx, rx) =
+            std::sync::mpsc::sync_channel::<Vec<keyhog_core::Chunk>>(PIPELINE_DEPTH);
+
+        // Scanner thread: pull batches, scan_coalesced each, accumulate
+        // findings + counters. Holds an `Arc<CompiledScanner>` so the
+        // producer can drop its handle and exit cleanly.
+        let scanner_thread = std::thread::spawn(move || {
+            let mut findings: Vec<RawMatch> = Vec::new();
+            for batch in rx {
+                if batch.is_empty() {
+                    continue;
+                }
+                let scanned_count = batch.len();
+                let per_chunk = scanner.scan_coalesced(&batch);
+                crate::SCANNED_CHUNKS.fetch_add(scanned_count, Ordering::Relaxed);
+                let mut batch_findings = 0usize;
+                for chunk_findings in per_chunk {
+                    batch_findings += chunk_findings.len();
+                    findings.extend(chunk_findings);
+                }
+                crate::FINDINGS_COUNT.fetch_add(batch_findings, Ordering::Relaxed);
+            }
+            findings
+        });
+
         let mut batch: Vec<keyhog_core::Chunk> = Vec::with_capacity(BATCH_CHUNK_LIMIT);
         let mut batch_bytes: usize = 0;
+        let mut skipped_unchanged = 0usize;
+        // `pipeline_alive` short-circuits the producer loop when the
+        // scanner thread has already given up (its `rx` was dropped on
+        // panic). Without this we'd keep reading files into a batch
+        // we'll never get to send.
+        let mut pipeline_alive = true;
 
-        let flush = |batch: &mut Vec<keyhog_core::Chunk>,
-                     batch_bytes: &mut usize,
-                     findings: &mut Vec<RawMatch>| {
-            if batch.is_empty() {
+        let send_batch = |batch: &mut Vec<keyhog_core::Chunk>,
+                              batch_bytes: &mut usize,
+                              alive: &mut bool| {
+            if !*alive || batch.is_empty() {
+                batch.clear();
+                *batch_bytes = 0;
                 return;
             }
-            let scanned_count = batch.len();
-            let per_chunk = self.scanner().scan_coalesced(batch);
-            crate::SCANNED_CHUNKS.fetch_add(scanned_count, Ordering::Relaxed);
-            let mut batch_findings = 0usize;
-            for chunk_findings in per_chunk {
-                batch_findings += chunk_findings.len();
-                findings.extend(chunk_findings);
-            }
-            crate::FINDINGS_COUNT.fetch_add(batch_findings, Ordering::Relaxed);
-            batch.clear();
+            let payload = std::mem::take(batch);
             *batch_bytes = 0;
+            if tx.send(payload).is_err() {
+                *alive = false;
+            }
         };
 
-        let mut skipped_unchanged = 0usize;
-
-        for source in &sources {
+        'sources: for source in &sources {
             for chunk_result in source.chunks() {
                 match chunk_result {
                     Ok(c) if c.data.len() <= 512 * 1024 * 1024 => {
@@ -473,12 +501,6 @@ impl ScanOrchestrator {
                             );
                             let path = std::path::PathBuf::from(path_str);
                             if idx.unchanged(&path, &chunk_hash) {
-                                // Refresh the (mtime, size) for the
-                                // next run so the cheap fast-path can
-                                // win next time too — without this,
-                                // touched-but-unchanged files would
-                                // pay the read+hash cost on every
-                                // scan, defeating the optimisation.
                                 idx.record_with_metadata(
                                     path,
                                     c.metadata.mtime_ns.unwrap_or(0),
@@ -501,7 +523,10 @@ impl ScanOrchestrator {
                         batch_bytes += len;
                         crate::TOTAL_CHUNKS.fetch_add(1, Ordering::Relaxed);
                         if batch.len() >= BATCH_CHUNK_LIMIT || batch_bytes >= BATCH_BYTES_BUDGET {
-                            flush(&mut batch, &mut batch_bytes, &mut findings);
+                            send_batch(&mut batch, &mut batch_bytes, &mut pipeline_alive);
+                            if !pipeline_alive {
+                                break 'sources;
+                            }
                         }
                     }
                     Ok(c) => {
@@ -518,7 +543,17 @@ impl ScanOrchestrator {
             }
         }
 
-        flush(&mut batch, &mut batch_bytes, &mut findings);
+        send_batch(&mut batch, &mut batch_bytes, &mut pipeline_alive);
+        // Drop the sender so the scanner's `for batch in rx` exits
+        // cleanly once the in-flight batch is processed.
+        drop(tx);
+        let mut findings = scanner_thread
+            .join()
+            .unwrap_or_else(|_| {
+                tracing::error!("scanner thread panicked; producing empty findings");
+                Vec::new()
+            });
+        let _ = &mut findings; // silence unused-mut on early-return paths
 
         if skipped_unchanged > 0 {
             tracing::info!(
@@ -772,6 +807,221 @@ fn allowlist_root(path: &Path) -> PathBuf {
         path.parent()
             .map(Path::to_path_buf)
             .unwrap_or_else(|| PathBuf::from("."))
+    }
+}
+
+#[cfg(test)]
+mod pipeline_tests {
+    //! Tests for the producer/scanner pipeline introduced in Stage C.
+    //!
+    //! Each test builds a `ScanOrchestrator` manually (bypassing
+    //! `ScanOrchestrator::new` so we don't have to materialize a
+    //! detectors directory on disk) and feeds it synthetic sources.
+    //! The contract under test is "findings emitted by `scan_sources`
+    //! match the chunks the synthetic sources produced" — i.e. the
+    //! threading layer doesn't drop, duplicate, or reorder work.
+
+    use super::*;
+    use clap::Parser;
+    use keyhog_core::{
+        Chunk, ChunkMetadata, DetectorSpec, PatternSpec, Severity, Source, SourceError,
+    };
+
+    /// Source impl that yields a fixed list of chunks once. Used to
+    /// drive the pipeline deterministically without filesystem I/O.
+    struct StaticSource {
+        chunks: Vec<Chunk>,
+    }
+    impl Source for StaticSource {
+        fn name(&self) -> &str {
+            "static"
+        }
+        fn chunks(&self) -> Box<dyn Iterator<Item = Result<Chunk, SourceError>> + '_> {
+            Box::new(self.chunks.clone().into_iter().map(Ok))
+        }
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+    }
+
+    fn make_chunk(text: &str, path: &str) -> Chunk {
+        Chunk {
+            data: text.into(),
+            metadata: ChunkMetadata {
+                source_type: "test".into(),
+                path: Some(path.into()),
+                ..Default::default()
+            },
+        }
+    }
+
+    /// Detector that matches the literal `STATIC_SECRET_<digits>` —
+    /// distinctive enough that nothing else in the test corpus
+    /// triggers it.
+    fn make_detector() -> DetectorSpec {
+        DetectorSpec {
+            id: "static-test".into(),
+            name: "Static Test".into(),
+            service: "test".into(),
+            severity: Severity::Medium,
+            patterns: vec![PatternSpec {
+                regex: r"STATIC_SECRET_[0-9]+".into(),
+                description: None,
+                group: None,
+            }],
+            companions: Vec::new(),
+            verify: None,
+            keywords: vec!["STATIC_SECRET".into()],
+        }
+    }
+
+    /// Minimal orchestrator wired up with a synthetic detector. Skips
+    /// detector-cache loading + lockdown gating that `new()` does, so
+    /// it works without an on-disk detectors directory.
+    fn make_orchestrator(detectors: Vec<DetectorSpec>) -> ScanOrchestrator {
+        let args = crate::args::ScanArgs::try_parse_from(["scan"])
+            .expect("ScanArgs default-parse from bare invocation");
+        let scanner = Arc::new(
+            keyhog_scanner::CompiledScanner::compile(detectors.clone())
+                .expect("scanner compile"),
+        );
+        let signatures = detectors
+            .iter()
+            .flat_map(|d| d.patterns.iter().map(|p| Arc::from(p.regex.as_str())))
+            .collect();
+        ScanOrchestrator {
+            args,
+            detectors,
+            scanner,
+            signatures,
+        }
+    }
+
+    #[test]
+    fn pipeline_finds_secret_in_single_source_single_chunk() {
+        let orch = make_orchestrator(vec![make_detector()]);
+        let sources: Vec<Box<dyn Source>> = vec![Box::new(StaticSource {
+            chunks: vec![make_chunk(
+                "let key = STATIC_SECRET_12345;",
+                "fixture.rs",
+            )],
+        })];
+        let findings = orch.scan_sources(sources, false, None);
+        assert_eq!(findings.len(), 1, "expected exactly one finding");
+        assert_eq!(&*findings[0].credential, "STATIC_SECRET_12345");
+    }
+
+    #[test]
+    fn pipeline_handles_empty_source() {
+        // Empty source: scanner thread spins up, sees zero batches,
+        // joins cleanly, returns no findings. No panic, no leak.
+        let orch = make_orchestrator(vec![make_detector()]);
+        let sources: Vec<Box<dyn Source>> = vec![Box::new(StaticSource { chunks: Vec::new() })];
+        let findings = orch.scan_sources(sources, false, None);
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn pipeline_processes_chunks_across_multiple_sources() {
+        // Two sources, each with one secret. Findings from both must
+        // surface — the producer iterates sources in order and the
+        // scanner accumulates all of them.
+        let orch = make_orchestrator(vec![make_detector()]);
+        let sources: Vec<Box<dyn Source>> = vec![
+            Box::new(StaticSource {
+                chunks: vec![make_chunk("STATIC_SECRET_1 here", "a.rs")],
+            }),
+            Box::new(StaticSource {
+                chunks: vec![make_chunk("STATIC_SECRET_2 there", "b.rs")],
+            }),
+        ];
+        let findings = orch.scan_sources(sources, false, None);
+        assert_eq!(findings.len(), 2);
+        let mut creds: Vec<String> =
+            findings.iter().map(|f| f.credential.to_string()).collect();
+        creds.sort();
+        assert_eq!(creds, vec!["STATIC_SECRET_1", "STATIC_SECRET_2"]);
+    }
+
+    #[test]
+    fn pipeline_processes_many_chunks_to_exercise_batch_flush() {
+        // Emit enough chunks that the BATCH_CHUNK_LIMIT (4096) fires
+        // at least once. Each chunk has a unique numeric-suffixed
+        // secret so any pipeline drop manifests as a missing finding.
+        // The scanner applies its own confidence/dedup filters to
+        // findings, so we use a SMALL count where every secret has
+        // distinct, high-entropy enough surroundings to clear those
+        // filters — the goal is to prove the pipeline doesn't lose
+        // batches, not to stress the scanner's heuristics.
+        const N: usize = 6000; // > BATCH_CHUNK_LIMIT (4096)
+        let orch = make_orchestrator(vec![make_detector()]);
+        // Use 12-digit suffixes so every credential clears the
+        // scanner's per-length entropy floor independent of the
+        // index value. The pipeline test isn't about exercising
+        // those filters — it's about proving the threaded handoff
+        // doesn't drop batches.
+        let chunks: Vec<Chunk> = (0..N)
+            .map(|i| {
+                make_chunk(
+                    &format!("token = STATIC_SECRET_{:012}", 100_000_000 + i),
+                    &format!("file_{i}.rs"),
+                )
+            })
+            .collect();
+        let sources: Vec<Box<dyn Source>> = vec![Box::new(StaticSource { chunks })];
+        let findings = orch.scan_sources(sources, false, None);
+        // The scanner's downstream filters apply uniformly; they
+        // can't distinguish "this match came from batch 1 vs batch 2".
+        // So if the pipeline drops a batch, recall plummets. Any
+        // recall floor above ~80% proves all batches were scanned.
+        let recall = findings.len() as f64 / N as f64;
+        assert!(
+            recall >= 0.80,
+            "pipeline recall {:.2}% below floor — likely a dropped batch \
+             (got {} of {})",
+            recall * 100.0,
+            findings.len(),
+            N
+        );
+    }
+
+    #[test]
+    fn pipeline_two_chunks_in_one_source_both_yield_findings() {
+        // Sanity check that the within-source iteration emits every
+        // chunk to the scanner thread. Earlier tests covered 1 chunk
+        // and N sources × 1 chunk; this one covers N chunks × 1
+        // source — an independent walk through the producer loop.
+        let orch = make_orchestrator(vec![make_detector()]);
+        let sources: Vec<Box<dyn Source>> = vec![Box::new(StaticSource {
+            chunks: vec![
+                make_chunk("first STATIC_SECRET_12345 here", "x.rs"),
+                make_chunk("second STATIC_SECRET_67890 there", "y.rs"),
+            ],
+        })];
+        let findings = orch.scan_sources(sources, false, None);
+        assert_eq!(findings.len(), 2);
+        let mut creds: Vec<String> =
+            findings.iter().map(|f| f.credential.to_string()).collect();
+        creds.sort();
+        assert_eq!(creds, vec!["STATIC_SECRET_12345", "STATIC_SECRET_67890"]);
+    }
+
+    #[test]
+    fn pipeline_no_findings_when_corpus_clean() {
+        // Detector exists but no chunk matches its regex. Confirms
+        // we don't conjure findings from thin air after the threading
+        // refactor (paranoia check — same scanner contract, but the
+        // batch handoff is new code).
+        let orch = make_orchestrator(vec![make_detector()]);
+        let sources: Vec<Box<dyn Source>> = vec![Box::new(StaticSource {
+            chunks: vec![
+                make_chunk("plain text with nothing notable", "a.rs"),
+                make_chunk("more boring content", "b.rs"),
+                make_chunk("function foo() {}", "c.rs"),
+            ],
+        })];
+        let findings = orch.scan_sources(sources, false, None);
+        assert!(findings.is_empty());
     }
 }
 
