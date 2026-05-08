@@ -802,6 +802,74 @@ mod line_lookup_tests {
     }
 
     #[test]
+    fn line_counting_is_consistent_across_line_endings() {
+        // Cross-platform robustness: a file with CRLF (Windows-authored)
+        // line endings must produce the same line count + line-for-offset
+        // mapping as the same content with LF-only endings. `str::lines()`
+        // recognises both \n and \r\n, and `match_indices('\n')` catches
+        // the \n half of every \r\n — so the two stay consistent. Lock
+        // it in with a regression test so a future refactor that switches
+        // to a different separator detector can't silently break it.
+
+        let lf_text = "line one\nline two\nline three";
+        let crlf_text = "line one\r\nline two\r\nline three";
+
+        // Same number of lines either way.
+        let lf_lines: Vec<&str> = lf_text.lines().collect();
+        let crlf_lines: Vec<&str> = crlf_text.lines().collect();
+        assert_eq!(lf_lines.len(), 3);
+        assert_eq!(crlf_lines.len(), 3);
+        // Decoded lines are identical (the \r is stripped by str::lines).
+        assert_eq!(lf_lines, crlf_lines);
+
+        // line_offsets count is the same (both have 3 line starts: the
+        // first byte + after each \n).
+        assert_eq!(compute_line_offsets(lf_text).len(), 3);
+        assert_eq!(compute_line_offsets(crlf_text).len(), 3);
+
+        // For a match in line 2: the byte offset depends on encoding,
+        // but the LINE NUMBER must be 2 in both cases.
+        let lf_offsets = compute_line_offsets(lf_text);
+        let crlf_offsets = compute_line_offsets(crlf_text);
+        let lf_line2_start = lf_offsets[1];
+        let crlf_line2_start = crlf_offsets[1];
+        let pp_lf = ScannerPreprocessedText::passthrough(lf_text);
+        let pp_crlf = ScannerPreprocessedText::passthrough(crlf_text);
+        assert_eq!(match_line_number(&pp_lf, &lf_offsets, lf_line2_start), 2);
+        assert_eq!(match_line_number(&pp_crlf, &crlf_offsets, crlf_line2_start), 2);
+    }
+
+    #[test]
+    fn line_counting_handles_no_trailing_newline() {
+        // Single-line files with no terminator at all — common for
+        // programmatically-generated configs and test fixtures.
+        let text = "AKIAIOSFODNN7EXAMPLE";
+        let offsets = compute_line_offsets(text);
+        assert_eq!(offsets, vec![0]);
+        let pp = ScannerPreprocessedText::passthrough(text);
+        // Any byte offset within the line resolves to line 1.
+        for offset in [0, 1, 5, text.len() - 1] {
+            assert_eq!(match_line_number(&pp, &offsets, offset), 1);
+        }
+    }
+
+    #[test]
+    fn line_counting_handles_empty_text() {
+        // Defensive: empty text → no offsets but the function must not
+        // panic. `passthrough` builds a one-mapping (start=0, end=0)
+        // entry; partition_point on `[0]` for offset 0 returns 1, but
+        // `line_for_offset` returns None for an empty range, so the
+        // fallback fires and yields 1 (zero-indexed line 0 + 1).
+        let text = "";
+        let offsets = compute_line_offsets(text);
+        assert_eq!(offsets, vec![0]);
+        let pp = ScannerPreprocessedText::passthrough(text);
+        // Result is 1 (the fallback's partition_point on [0] for offset 0).
+        // We don't care exactly what — just that it doesn't panic.
+        let _ = match_line_number(&pp, &offsets, 0);
+    }
+
+    #[test]
     fn match_line_number_uses_fallback_when_offset_past_preprocessed() {
         // Construct a chunk where `line_for_offset` returns None for
         // an out-of-range offset; the binary-search fallback must

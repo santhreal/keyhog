@@ -25,9 +25,13 @@ impl CompiledScanner {
         let (entries, buffer) = coalesce_chunks(chunks);
 
         #[cfg(target_os = "linux")]
+        // SAFETY: `buffer` is a live `Vec<u8>` whose `as_ptr()` and
+        // `len()` describe a valid memory range owned by this scope.
+        // `madvise` is advisory — the kernel may ignore it on
+        // non-page-aligned ranges; we treat the call as best-effort
+        // and don't check the return value.
         unsafe {
             // Senior Audit §Phase 7.4: Prevent GPU buffers from leaking into core dumps.
-            // Best-effort; ignore errors on non-page-aligned buffers.
             libc::madvise(
                 buffer.as_ptr() as *mut libc::c_void,
                 buffer.len(),

@@ -23,6 +23,10 @@ use std::time::Duration;
 use std::time::Instant;
 
 const EXIT_LIVE_CREDENTIALS: u8 = 10;
+/// Set when the scanner worker thread panicked mid-scan. Surfaced as
+/// a distinct exit code so a CI pipeline can tell "scan completed
+/// clean" from "scanner crashed and we don't know if it was clean."
+const EXIT_SCANNER_PANIC: u8 = 11;
 
 pub struct ScanOrchestrator {
     args: ScanArgs,
@@ -347,8 +351,16 @@ impl ScanOrchestrator {
             report_findings.len()
         );
 
+        // Scanner-thread panic: exit non-zero even when no findings
+        // were produced. The user MUST see the failure rather than
+        // assume clean. Live-credentials still wins (more urgent),
+        // then panic (reliability signal), then new entries.
+        let scanner_panicked =
+            crate::SCANNER_PANICKED.load(std::sync::atomic::Ordering::Relaxed);
         Ok(if has_live_credentials {
             std::process::ExitCode::from(EXIT_LIVE_CREDENTIALS)
+        } else if scanner_panicked {
+            std::process::ExitCode::from(EXIT_SCANNER_PANIC)
         } else if has_new_entries {
             std::process::ExitCode::from(1)
         } else {
@@ -547,12 +559,15 @@ impl ScanOrchestrator {
         // Drop the sender so the scanner's `for batch in rx` exits
         // cleanly once the in-flight batch is processed.
         drop(tx);
-        let findings = scanner_thread
-            .join()
-            .unwrap_or_else(|_| {
-                tracing::error!("scanner thread panicked; producing empty findings");
-                Vec::new()
-            });
+        let findings = scanner_thread.join().unwrap_or_else(|_| {
+            tracing::error!(
+                "scanner thread panicked mid-scan; results are incomplete"
+            );
+            // Surface the failure to `run()` so the process exits with
+            // a non-zero code instead of silently reporting clean.
+            crate::SCANNER_PANICKED.store(true, std::sync::atomic::Ordering::Relaxed);
+            Vec::new()
+        });
 
         if skipped_unchanged > 0 {
             tracing::info!(

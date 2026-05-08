@@ -114,6 +114,10 @@ pub(crate) mod backend {
                     #[cfg(unix)]
                     {
                         use std::os::unix::fs::{MetadataExt, PermissionsExt};
+                        // SAFETY: `geteuid` is a thread-safe read-only
+                        // syscall that takes no arguments and cannot
+                        // fail. The Rust binding is `unsafe` only
+                        // because it crosses an FFI boundary.
                         let uid = unsafe { libc::geteuid() };
                         if meta.uid() != uid {
                             return Err(

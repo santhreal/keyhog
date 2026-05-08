@@ -223,7 +223,10 @@ pub(super) fn read_file_for_compressed_input(
                     );
                 }
                 use std::os::unix::io::AsRawFd;
-                // Release the advisory lock; the mmap stays valid.
+                // SAFETY: `file` is a valid open `File`; `LOCK_UN`
+                // releases the advisory shared lock taken above.
+                // The mmap was created from this file but kernel
+                // mappings outlive the underlying flock.
                 unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_UN) };
             }
             Some(FileBytes::Mmap(mmap))
@@ -232,6 +235,9 @@ pub(super) fn read_file_for_compressed_input(
             #[cfg(unix)]
             {
                 use std::os::unix::io::AsRawFd;
+                // SAFETY: `file` is still a valid open `File` (mmap
+                // failed but the fd is intact); `LOCK_UN` releases
+                // the advisory shared lock taken above.
                 unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_UN) };
             }
             std::fs::read(path).ok().map(FileBytes::Owned)
@@ -292,6 +298,9 @@ pub(super) fn read_file_windowed_mmap(
             #[cfg(unix)]
             {
                 use std::os::unix::io::AsRawFd;
+                // SAFETY: `file` is still a valid open `File`;
+                // `LOCK_UN` releases the advisory shared lock taken
+                // above before bailing out of the windowed-mmap path.
                 unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_UN) };
             }
             return None;
