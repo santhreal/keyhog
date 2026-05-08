@@ -1,0 +1,27 @@
+# cargo-audit configuration for keyhog.
+#
+# `cargo audit` reads this file from the workspace root. Each advisory
+# in the ignore list has a corresponding rationale block in
+# SECURITY.md under "RustSec Advisory Assessment (v0.5.3)" — touching
+# this list without updating that document will silently weaken our
+# security posture.
+#
+# Two real vulnerabilities (`gix-date` and `gix-features`) are NOT
+# ignored — they show up as exit-code-non-zero from `cargo audit` and
+# are tracked for the v0.6.0 gix upgrade. Operators running keyhog
+# against untrusted repositories should read SECURITY.md before
+# adopting v0.5.3 in production-credential environments.
+
+[advisories]
+ignore = [
+    # Marvin attack on PKCS#1 v1.5 RSA. keyhog uses OAEP only.
+    "RUSTSEC-2023-0071",
+    # `paste` is a proc-macro, no runtime presence.
+    "RUSTSEC-2024-0436",
+    # `lru::LruCache::iter_mut()` Stacked Borrows violation. Not called
+    # by keyhog.
+    "RUSTSEC-2026-0002",
+    # `rand::rng()` data race with custom logger. keyhog never replaces
+    # the global rng.
+    "RUSTSEC-2026-0097",
+]
