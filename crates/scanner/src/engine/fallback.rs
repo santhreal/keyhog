@@ -177,7 +177,6 @@ impl CompiledScanner {
     pub(crate) fn match_confidence(
         &self,
         entry: &CompiledPattern,
-        detector: &DetectorSpec,
         chunk: &Chunk,
         credential: &str,
         data: &str,
@@ -186,11 +185,17 @@ impl CompiledScanner {
         has_companion: bool,
         // The context is computed once in `process_match` (where the
         // suppression checks already need it) and threaded through —
-        // dropping the duplicate `infer_context_with_documentation`
-        // call here. With many matches per chunk this halves the
-        // context-inference work; on the adversarial false-prefix
-        // storm corpus that's a measurable win.
+        // halves the per-match context-inference work.
         context: context::CodeContext,
+        // `keyword_nearby` and `sensitive_file` are constant across
+        // every match of a single (chunk, pattern) pair: keyword_nearby
+        // depends only on the detector + chunk text, sensitive_file
+        // only on the chunk's path. Hoisted to `extract_matches`'s
+        // pre-loop preamble so the inner per-match path doesn't keep
+        // re-running an O(K) substring scan over the whole chunk +
+        // an Aho-Corasick scan over the path.
+        keyword_nearby: bool,
+        sensitive_file: bool,
         scan_state: &mut ScanState,
     ) -> Option<MlScoreResult> {
         let raw_conf =
@@ -198,16 +203,8 @@ impl CompiledScanner {
                 has_literal_prefix: extract_literal_prefix(entry.regex.as_str()).is_some(),
                 has_context_anchor: entry.group.is_some(),
                 entropy,
-                keyword_nearby: detector
-                    .keywords
-                    .iter()
-                    .any(|keyword| chunk.data.contains(keyword.as_str())),
-                sensitive_file: chunk
-                    .metadata
-                    .path
-                    .as_deref()
-                    .map(crate::confidence::is_sensitive_path)
-                    .unwrap_or(false),
+                keyword_nearby,
+                sensitive_file,
                 match_length: credential.len(),
                 has_companion,
             });

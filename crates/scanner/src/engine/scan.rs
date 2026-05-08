@@ -246,6 +246,25 @@ impl CompiledScanner {
             );
             return;
         };
+
+        // PRE-LOOP: signals that don't change across this pattern's
+        // matches. `keyword_nearby` is `O(K × |chunk|)` (one
+        // substring scan per detector keyword); `sensitive_file` is
+        // `O(|path|)` via Aho-Corasick over the path. Computing them
+        // once here saves an N-multiplier on every iteration of the
+        // per-match loop below — for a 100-match chunk that's 99
+        // copies of the same answer.
+        let keyword_nearby = detector
+            .keywords
+            .iter()
+            .any(|keyword| chunk.data.contains(keyword.as_str()));
+        let sensitive_file = chunk
+            .metadata
+            .path
+            .as_deref()
+            .map(crate::confidence::is_sensitive_path)
+            .unwrap_or(false);
+
         if let Some(group) = entry.group {
             self.extract_grouped_matches(
                 entry,
@@ -259,6 +278,8 @@ impl CompiledScanner {
                 scan_state,
                 base_line,
                 base_offset,
+                keyword_nearby,
+                sensitive_file,
             );
             return;
         }
@@ -273,6 +294,8 @@ impl CompiledScanner {
             scan_state,
             base_line,
             base_offset,
+            keyword_nearby,
+            sensitive_file,
         );
     }
 
@@ -290,6 +313,8 @@ impl CompiledScanner {
         scan_state: &mut ScanState,
         base_line: usize,
         base_offset: usize,
+        keyword_nearby: bool,
+        sensitive_file: bool,
     ) {
         let search_text = &preprocessed.text;
         // Reuse one CaptureLocations buffer across every iter tick instead of
@@ -369,6 +394,8 @@ impl CompiledScanner {
                 full_end,
                 base_line,
                 base_offset,
+                keyword_nearby,
+                sensitive_file,
             );
         }
     }
@@ -386,6 +413,8 @@ impl CompiledScanner {
         scan_state: &mut ScanState,
         base_line: usize,
         base_offset: usize,
+        keyword_nearby: bool,
+        sensitive_file: bool,
     ) {
         let search_text = &preprocessed.text;
         for matched in entry.regex.find_iter(search_text) {
@@ -404,6 +433,8 @@ impl CompiledScanner {
                 matched.end(),
                 base_line,
                 base_offset,
+                keyword_nearby,
+                sensitive_file,
             );
         }
     }
@@ -425,6 +456,8 @@ impl CompiledScanner {
         match_end: usize,
         base_line: usize,
         base_offset: usize,
+        keyword_nearby: bool,
+        sensitive_file: bool,
     ) {
         let (credential, match_end) =
             extend_known_prefix_credential(data, credential, match_start, match_end);
@@ -514,7 +547,6 @@ impl CompiledScanner {
 
         let Some(score_result) = self.match_confidence(
             entry,
-            detector,
             chunk,
             credential,
             data,
@@ -522,6 +554,8 @@ impl CompiledScanner {
             entropy,
             !companions.is_empty(),
             inferred_context,
+            keyword_nearby,
+            sensitive_file,
             scan_state,
         ) else {
             return;

@@ -1,10 +1,15 @@
 use super::*;
 use crate::hw_probe::ScanBackend;
 use keyhog_core::Chunk;
-use std::sync::Arc;
 
 pub(crate) struct PreparedChunk {
-    pub(crate) chunk: Arc<Chunk>,
+    /// Owned copy of the (possibly-normalized) chunk we're about to
+    /// scan. Was `Arc<Chunk>` historically, but every consumer of
+    /// `PreparedChunk` only ever borrows via `&prepared.chunk` —
+    /// the Arc never shared ownership across threads, it just paid
+    /// for a heap header on every chunk. Plain owned `Chunk` drops
+    /// one allocation per chunk.
+    pub(crate) chunk: Chunk,
     pub(crate) preprocessed: ScannerPreprocessedText,
 }
 
@@ -147,7 +152,7 @@ impl CompiledScanner {
         };
 
         PreparedChunk {
-            chunk: Arc::new(chunk.clone()),
+            chunk: chunk.clone(),
             preprocessed,
         }
     }
