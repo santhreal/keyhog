@@ -136,62 +136,55 @@ fn unreadable_subtree_does_not_abort_full_scan() {
     use std::os::unix::fs::PermissionsExt;
 
     let dir = tempfile::tempdir().unwrap();
-    // Readable file at the root.
+    // Use plain .txt extensions — codewalk's default skip-list /
+    // hidden-file rules can swallow `.env` files on some
+    // configurations, masking what we're actually testing.
     fs::write(
-        dir.path().join("readable.env"),
+        dir.path().join("readable.txt"),
         "PUBLIC_KEY=AKIAIOSFODNN7READABLE",
     )
     .unwrap();
 
-    // Subdirectory we'll lock down.
     let locked = dir.path().join("locked");
     fs::create_dir_all(&locked).unwrap();
     fs::write(
-        locked.join("hidden.env"),
+        locked.join("hidden.txt"),
         "HIDDEN_KEY=AKIAIOSFODNN7HIDDEN",
     )
     .unwrap();
-    // chmod 000 — no read, no exec, no list.
     let mut perms = fs::metadata(&locked).unwrap().permissions();
     perms.set_mode(0o000);
     fs::set_permissions(&locked, perms).unwrap();
 
-    // Another readable subtree alongside the locked one.
     let elsewhere = dir.path().join("elsewhere");
     fs::create_dir_all(&elsewhere).unwrap();
     fs::write(
-        elsewhere.join("config.env"),
+        elsewhere.join("config.txt"),
         "OTHER_KEY=AKIAIOSFODNN7OTHER12",
     )
     .unwrap();
 
     let source = FilesystemSource::new(dir.path().to_path_buf());
-    let chunks: Vec<_> = source
-        .chunks()
-        .filter_map(|r| r.ok())
-        .collect();
+    let chunks: Vec<_> = source.chunks().filter_map(|r| r.ok()).collect();
 
     // Restore perms BEFORE assertions so tempdir cleanup works
-    // even if the test fails.
+    // even on assertion failure.
     let mut perms = fs::metadata(&locked).unwrap().permissions();
     perms.set_mode(0o755);
     let _ = fs::set_permissions(&locked, perms);
 
-    // The two readable files MUST be discovered. The locked one
-    // CANNOT be (codewalk treats it as inaccessible and skips).
     let combined: String = chunks.iter().map(|c| c.data.to_string()).collect();
     assert!(
         combined.contains("AKIAIOSFODNN7READABLE"),
-        "root-level readable file was lost: scan aborted on the locked sibling"
+        "root-level readable file was lost: scan aborted on the locked sibling.\n\
+         emitted {} chunks: {:?}",
+        chunks.len(),
+        chunks.iter().map(|c| c.metadata.path.as_deref()).collect::<Vec<_>>()
     );
     assert!(
         combined.contains("AKIAIOSFODNN7OTHER12"),
         "sibling-subdirectory readable file was lost: scan aborted on the locked sibling"
     );
-    // The hidden one must NOT appear (we couldn't read it). This
-    // is informational — confirms the chmod actually took effect
-    // (otherwise this test reduces to "files discovered" which
-    // misses the production point).
     assert!(
         !combined.contains("AKIAIOSFODNN7HIDDEN"),
         "the locked file was somehow read — chmod 000 didn't take effect, \
