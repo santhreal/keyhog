@@ -311,8 +311,17 @@ impl CompiledScanner {
         base_offset: usize,
     ) {
         let search_text = &preprocessed.text;
-        let detector_count = self.detectors.len();
-        let detector_index = entry.detector_index;
+        // Lazy per-pattern dedup of two signals that are constant
+        // across this pattern's matches but expensive to compute:
+        //   `keyword_nearby` = `O(K × |chunk|)` substring scans.
+        //   `sensitive_file` = Aho-Corasick scan over the file path.
+        // Computing eagerly at `extract_matches` level regressed the
+        // entropy_noise bench by -36% — many patterns trigger via
+        // AC but produce zero matches, paying for compute they
+        // never use. The OnceCell here keeps: zero-match patterns
+        // pay nothing; first-match populates; subsequent matches
+        // reuse the cached value.
+        let signals = std::cell::OnceCell::<(bool, bool)>::new();
         // Reuse one CaptureLocations buffer across every iter tick instead of
         // allocating a fresh `Captures` per match. For a 100k-file scan
         // hitting 10k matches across a handful of hot patterns, that's tens
@@ -375,11 +384,8 @@ impl CompiledScanner {
                 }
             }
 
-            let (keyword_nearby, sensitive_file) = scan_state.detector_signals_cached(
-                detector_index,
-                detector_count,
-                || compute_pattern_signals(detector, chunk),
-            );
+            let &(keyword_nearby, sensitive_file) =
+                signals.get_or_init(|| compute_pattern_signals(detector, chunk));
             self.process_match(
                 entry,
                 detector,
@@ -416,14 +422,12 @@ impl CompiledScanner {
         base_offset: usize,
     ) {
         let search_text = &preprocessed.text;
-        let detector_count = self.detectors.len();
-        let detector_index = entry.detector_index;
+        // Same lazy-on-first-match dedup as `extract_grouped_matches`;
+        // see that function's doc-comment for the rationale.
+        let signals = std::cell::OnceCell::<(bool, bool)>::new();
         for matched in entry.regex.find_iter(search_text) {
-            let (keyword_nearby, sensitive_file) = scan_state.detector_signals_cached(
-                detector_index,
-                detector_count,
-                || compute_pattern_signals(detector, chunk),
-            );
+            let &(keyword_nearby, sensitive_file) =
+                signals.get_or_init(|| compute_pattern_signals(detector, chunk));
             self.process_match(
                 entry,
                 detector,
