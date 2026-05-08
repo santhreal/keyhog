@@ -275,6 +275,16 @@ pub struct ScanState {
     /// twice for what's a single dedup slot. `HashSet::get(&s)` works
     /// via `Arc<str>: Borrow<str>`, no allocation on hits.
     pub metadata_interner: HashSet<Arc<str>>,
+    /// Per-detector lazy cache of `(keyword_nearby, sensitive_file)`
+    /// — both signals are constant across every match and every
+    /// pattern of a given detector inside the same chunk. With 888
+    /// detectors averaging multiple patterns each, doing the
+    /// `O(K × |chunk|)` keyword scan once per detector instead of
+    /// once per pattern saves real work on chunks where one
+    /// detector contributes several patterns. Indexed by
+    /// `detector_index`; resized lazily on first use to match the
+    /// loaded detector count.
+    pub detector_signal_cache: Vec<Option<(bool, bool)>>,
     #[cfg(feature = "ml")]
     pub ml_score_cache: HashMap<(String, String), f64>,
     #[cfg(feature = "ml")]
@@ -306,6 +316,36 @@ impl ScanState {
         let shared: Arc<str> = Arc::from(s);
         self.metadata_interner.insert(shared.clone());
         shared
+    }
+
+    /// Look up (or compute and cache) the `(keyword_nearby,
+    /// sensitive_file)` pair for a detector. Resizes the cache to
+    /// `detector_count` on first use; subsequent calls are an
+    /// indexed slot read.
+    pub fn detector_signals_cached<F>(
+        &mut self,
+        detector_index: usize,
+        detector_count: usize,
+        compute: F,
+    ) -> (bool, bool)
+    where
+        F: FnOnce() -> (bool, bool),
+    {
+        if self.detector_signal_cache.len() < detector_count {
+            self.detector_signal_cache.resize(detector_count, None);
+        }
+        if let Some(slot) = self.detector_signal_cache.get_mut(detector_index) {
+            if let Some(cached) = *slot {
+                return cached;
+            }
+            let computed = compute();
+            *slot = Some(computed);
+            return computed;
+        }
+        // detector_index out of bounds for the resize target — fall
+        // back to direct compute. Should never happen, but cheap
+        // defensive return is preferable to a panic mid-scan.
+        compute()
     }
 
     /// Push a match to the state, maintaining priority and capacity.
