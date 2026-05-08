@@ -118,6 +118,7 @@ default-features = true
 optional = true
 
 [dev-dependencies]
+flate2 = "1"
 httpmock = { workspace = true }
 proptest = { workspace = true }
 proptest-derive = { workspace = true }

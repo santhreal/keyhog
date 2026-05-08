@@ -12,8 +12,22 @@ use std::sync::Arc;
 
 mod read;
 
-/// Minimum file size to use memory mapping. Above 1 MB the mmap overhead is
-/// amortized; below it we use buffered reads.
+/// Minimum file size to use memory mapping. The crossover point is
+/// platform-specific:
+///
+///   * Linux / macOS: mmap setup is sub-microsecond and avoids the
+///     `read(2)` copy from kernel page cache to userland buffer. Worth
+///     it as soon as the file is at least one page (4 KiB) — pick
+///     64 KiB to keep tiny-config-file scans on the buffered path
+///     where the syscall floor dominates either way.
+///   * Windows: `MapViewOfFile` has more setup cost (security tokens,
+///     section-object routing) and the `ReadFile` path is already
+///     well-optimised by the OS for buffered I/O. Keep the historical
+///     1 MiB threshold here to avoid regressing typical source-tree
+///     scans.
+#[cfg(unix)]
+const MMAP_THRESHOLD: u64 = 64 * 1024;
+#[cfg(not(unix))]
 const MMAP_THRESHOLD: u64 = 1024 * 1024;
 /// Default window size for the >64 MiB scanning path. Overridable on a
 /// per-source basis (see `with_window_config`) so tests can exercise
@@ -154,14 +168,16 @@ const SKIP_EXTENSIONS: &[&str] = &[
     "webm",
     // Archives (binary — secrets inside are caught by archive source, not filesystem)
     "tar",
-    "gz",
+    // gz / zst / lz4 / sz are handled by `extract_compressed_chunks`
+    // below, NOT skipped — earlier versions had them in this list,
+    // which silently bypassed the streaming-decompression path. See
+    // the dispatch on line ~340 for the actual decoder routing.
     "tgz",
     "bz2",
     "xz",
     "rar",
     "7z",
     "zip",
-    "zst",
     // Native binaries
     "exe",
     "dll",
@@ -484,12 +500,23 @@ fn extract_compressed_chunks(path: &Path, max_size: u64) -> Vec<Result<Chunk, So
         _ => ziftsieve::CompressionFormat::Snappy,
     };
 
-    // Read the entire compressed file so that ziftsieve receives a complete
-    // stream. Passing chunked buffers breaks stateful formats like gzip.
-    let bytes = match std::fs::read(path) {
-        Ok(b) => b,
-        Err(e) => return vec![Err(SourceError::Io(e))],
+    // mmap the compressed file when possible — ziftsieve only takes a
+    // contiguous `&[u8]`, so a streaming decoder isn't on the menu, but
+    // mmap lets us hand it the whole file without a corresponding heap
+    // allocation. A 1 GiB `.zst` previously turned into a 1 GiB
+    // `Vec<u8>` before decompression even started; now it sits in the
+    // page cache backed by the file. Falls back to a buffered read
+    // when mmap is refused (locked writer, unsupported filesystem) so
+    // behaviour is identical to the prior implementation in that case.
+    //
+    // The per-source `max_size` doubles as the compressed-input cap:
+    // anything bigger is refused before mapping. The decompressed
+    // budget gate (4× max_size) still applies inside the loop below.
+    let file_bytes = match read::read_file_for_compressed_input(path, max_size) {
+        Some(b) => b,
+        None => return Vec::new(),
     };
+    let bytes = file_bytes.as_slice();
 
     // Decompression-bomb cap: a 4x compression-ratio multiplier on the
     // per-file size budget bounds total expanded bytes. A 1 MB gzip bomb
@@ -499,7 +526,7 @@ fn extract_compressed_chunks(path: &Path, max_size: u64) -> Vec<Result<Chunk, So
 
     let mut chunks = Vec::new();
 
-    if let Ok(blocks) = ziftsieve::extract_from_bytes(format, &bytes) {
+    if let Ok(blocks) = ziftsieve::extract_from_bytes(format, bytes) {
         let mut current_chunk_literals = String::new();
         let mut total_decompressed: usize = 0;
         for block in blocks {

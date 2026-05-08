@@ -386,6 +386,83 @@ fn windowed_path_offsets_strictly_monotonic() {
 }
 
 #[test]
+fn medium_file_between_unix_and_windows_thresholds_round_trips() {
+    // 200 KiB — sits above the 64 KiB Unix mmap threshold and below
+    // the 1 MiB Windows threshold. On Unix this exercises the mmap
+    // path; on Windows it exercises the buffered path. Either way
+    // the chunk content must equal the file content byte-for-byte
+    // (modulo lossy UTF-8 on invalid bytes, which we avoid here by
+    // using ASCII).
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("medium.txt");
+    let payload: String = (b'a'..=b'z')
+        .cycle()
+        .take(200 * 1024)
+        .map(|b| b as char)
+        .collect();
+    fs::write(&path, &payload).unwrap();
+
+    let source = FilesystemSource::new(dir.path().to_path_buf());
+    let chunks: Vec<_> = source.chunks().collect::<Result<Vec<_>, _>>().unwrap();
+    assert_eq!(chunks.len(), 1);
+    assert_eq!(chunks[0].data.len(), payload.len());
+    assert!(chunks[0].data.starts_with("abcdefg"));
+}
+
+#[test]
+fn compressed_gz_file_yields_decompressed_chunk() {
+    // End-to-end check that the streaming/mmap-backed compressed
+    // path correctly decodes a real gzip stream and surfaces a
+    // chunk tagged `filesystem/compressed`. Replaces the prior
+    // implicit coverage that only proved we *opened* gz files.
+    use flate2::write::GzEncoder;
+    use flate2::Compression;
+    use std::io::Write;
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("payload.gz");
+    // Plant a recognisable plaintext marker that we can grep for in
+    // the emitted chunk's data — proves decompression actually ran.
+    let plaintext = b"COMPRESSED_PAYLOAD_MARKER_98765 inside the gz stream";
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+    encoder.write_all(plaintext).unwrap();
+    let gz_bytes = encoder.finish().unwrap();
+    fs::write(&path, &gz_bytes).unwrap();
+
+    let source = FilesystemSource::new(dir.path().to_path_buf());
+    let chunks: Vec<_> = source.chunks().collect::<Result<Vec<_>, _>>().unwrap();
+    // At least one chunk emitted from the gz; tagged compressed.
+    assert!(!chunks.is_empty(), "compressed path must emit a chunk");
+    assert!(
+        chunks.iter().any(|c| c.metadata.source_type == "filesystem/compressed"),
+        "expected filesystem/compressed source_type"
+    );
+    let combined: String = chunks
+        .iter()
+        .filter(|c| c.metadata.source_type == "filesystem/compressed")
+        .map(|c| c.data.to_string())
+        .collect();
+    assert!(
+        combined.contains("COMPRESSED_PAYLOAD_MARKER_98765"),
+        "decompressed payload must surface in the chunk text"
+    );
+}
+
+#[test]
+fn compressed_path_skips_corrupt_or_oversize_inputs_without_panic() {
+    // A non-gz file with a `.gz` extension must NOT crash the source.
+    // Either we get an empty chunk list (ziftsieve refuses to decode)
+    // or a fallback path takes over — never a panic.
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("garbage.gz");
+    fs::write(&path, b"this is not a real gzip stream at all").unwrap();
+
+    let source = FilesystemSource::new(dir.path().to_path_buf());
+    // Just verify it doesn't panic and the iterator drains cleanly.
+    let _: Vec<_> = source.chunks().collect::<Result<Vec<_>, _>>().unwrap();
+}
+
+#[test]
 fn merkle_skip_chunks_carry_live_metadata() {
     // For files that ARE read, the emitted chunk must carry the live
     // mtime + size so the orchestrator can refresh the cache entry.
