@@ -74,7 +74,7 @@ wait-timeout = "=0.2.1"
 tar = "=0.4.45"
 
 # Git
-gix = { version = "0.74.0", default-features = false, features = ["max-performance-safe"] }
+gix = { version = "0.77.0", default-features = false, features = ["max-performance-safe"] }
 
 # Benchmarking
 criterion = { version = "=0.5.1", features = ["html_reports"] }
