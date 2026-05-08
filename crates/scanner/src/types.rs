@@ -219,11 +219,58 @@ impl ScannerConfig {
         self.min_confidence = min_confidence;
         self
     }
+
+    /// Clamp every float field into its valid range and replace any
+    /// NaN with a safe default. A user-supplied
+    /// `--min-confidence=-5.0` or a corrupt config TOML feeding
+    /// `min_confidence = nan` would otherwise NaN-infect the
+    /// confidence-comparison path and silently drop every finding
+    /// (NaN comparisons are always false, so `conf < min_confidence`
+    /// is `false`, but `conf >= min_confidence` is also `false`,
+    /// behaviour-dependent on the call site).
+    ///
+    /// Idempotent — sanitising an already-sane config is a no-op.
+    /// Called inside `From<ScanConfig>` so any path that constructs
+    /// a ScannerConfig from a user-influenced source pays this
+    /// once at config-build time.
+    pub fn sanitise(&mut self) {
+        // Probabilities: clamp to [0.0, 1.0], NaN → default.
+        if !self.ml_weight.is_finite() {
+            self.ml_weight = 0.6;
+        } else {
+            self.ml_weight = self.ml_weight.clamp(0.0, 1.0);
+        }
+        if !self.min_confidence.is_finite() {
+            self.min_confidence = 0.3;
+        } else {
+            self.min_confidence = self.min_confidence.clamp(0.0, 1.0);
+        }
+        // Shannon entropy: 8.0 is the upper bound for byte-level
+        // entropy. NaN / negative → conservative default.
+        if !self.entropy_threshold.is_finite() || self.entropy_threshold < 0.0 {
+            self.entropy_threshold = 4.5;
+        } else if self.entropy_threshold > 8.0 {
+            self.entropy_threshold = 8.0;
+        }
+        // Recursion-depth + chunk-size caps. Production-bound the
+        // worst case: max_decode_depth > 32 risks stack overflow on
+        // pathological nested base64. max_matches_per_chunk has no
+        // theoretical upper bound but a billion is misconfiguration.
+        if self.max_decode_depth > 32 {
+            self.max_decode_depth = 32;
+        }
+        if self.max_matches_per_chunk > 1_000_000 {
+            self.max_matches_per_chunk = 1_000_000;
+        }
+        if self.max_matches_per_chunk == 0 {
+            self.max_matches_per_chunk = 1000;
+        }
+    }
 }
 
 impl From<keyhog_core::config::ScanConfig> for ScannerConfig {
     fn from(config: keyhog_core::config::ScanConfig) -> Self {
-        Self {
+        let mut out = Self {
             max_decode_depth: config.max_decode_depth,
             validate_decode: true,
             entropy_enabled: config.entropy_enabled,
@@ -240,7 +287,12 @@ impl From<keyhog_core::config::ScanConfig> for ScannerConfig {
             secret_keywords: config.secret_keywords,
             test_keywords: config.test_keywords,
             placeholder_keywords: config.placeholder_keywords,
-        }
+        };
+        // Defensive clamp + NaN scrub on every user-influenced
+        // numeric field. Idempotent. See `ScannerConfig::sanitise`
+        // for rationale.
+        out.sanitise();
+        out
     }
 }
 
@@ -326,5 +378,114 @@ impl ScanState {
         // Sort descending by confidence for final output
         matches.sort_by(|a, b| b.cmp(a));
         matches
+    }
+}
+
+#[cfg(test)]
+mod sanitise_tests {
+    //! Production-robustness coverage for `ScannerConfig::sanitise`.
+    //! Hostile or buggy callers can feed NaN, negative, or wildly
+    //! out-of-range values via TOML or `--min-confidence`. None of
+    //! those should NaN-infect the comparison path or trigger
+    //! pathological behavior.
+
+    use super::*;
+
+    fn baseline_config() -> ScannerConfig {
+        ScannerConfig {
+            max_decode_depth: 5,
+            validate_decode: true,
+            entropy_enabled: true,
+            entropy_threshold: 4.5,
+            entropy_in_source_files: false,
+            ml_enabled: false,
+            ml_weight: 0.6,
+            min_confidence: 0.3,
+            unicode_normalization: true,
+            max_decode_bytes: 65_536,
+            max_matches_per_chunk: 1000,
+            multiline: crate::multiline::MultilineConfig::default(),
+            known_prefixes: vec![],
+            secret_keywords: vec![],
+            test_keywords: vec![],
+            placeholder_keywords: vec![],
+        }
+    }
+
+    #[test]
+    fn sanitise_clamps_negative_min_confidence() {
+        let mut c = baseline_config();
+        c.min_confidence = -5.0;
+        c.sanitise();
+        assert_eq!(c.min_confidence, 0.0);
+    }
+
+    #[test]
+    fn sanitise_clamps_supra_unit_ml_weight() {
+        let mut c = baseline_config();
+        c.ml_weight = 99.0;
+        c.sanitise();
+        assert_eq!(c.ml_weight, 1.0);
+    }
+
+    #[test]
+    fn sanitise_replaces_nan_min_confidence() {
+        let mut c = baseline_config();
+        c.min_confidence = f64::NAN;
+        c.sanitise();
+        assert!(c.min_confidence.is_finite(), "NaN must be replaced");
+        assert!((0.0..=1.0).contains(&c.min_confidence));
+    }
+
+    #[test]
+    fn sanitise_replaces_infinite_entropy_threshold() {
+        let mut c = baseline_config();
+        c.entropy_threshold = f64::INFINITY;
+        c.sanitise();
+        assert!(c.entropy_threshold.is_finite());
+        assert!(c.entropy_threshold <= 8.0);
+
+        c.entropy_threshold = f64::NEG_INFINITY;
+        c.sanitise();
+        assert!(c.entropy_threshold.is_finite());
+        assert!(c.entropy_threshold >= 0.0);
+    }
+
+    #[test]
+    fn sanitise_caps_pathological_max_decode_depth() {
+        let mut c = baseline_config();
+        c.max_decode_depth = 9999;
+        c.sanitise();
+        assert!(
+            c.max_decode_depth <= 32,
+            "deep recursion risks stack overflow on nested base64"
+        );
+    }
+
+    #[test]
+    fn sanitise_caps_pathological_max_matches_per_chunk() {
+        let mut c = baseline_config();
+        c.max_matches_per_chunk = 1_000_000_000;
+        c.sanitise();
+        assert!(c.max_matches_per_chunk <= 1_000_000);
+
+        c.max_matches_per_chunk = 0;
+        c.sanitise();
+        assert!(
+            c.max_matches_per_chunk > 0,
+            "zero would silently disable all matching"
+        );
+    }
+
+    #[test]
+    fn sanitise_is_idempotent_on_sane_config() {
+        let original = baseline_config();
+        let mut c = baseline_config();
+        c.sanitise();
+        assert_eq!(c.min_confidence, original.min_confidence);
+        assert_eq!(c.ml_weight, original.ml_weight);
+        assert_eq!(c.entropy_threshold, original.entropy_threshold);
+        assert_eq!(c.max_decode_depth, original.max_decode_depth);
+        assert_eq!(c.max_matches_per_chunk, original.max_matches_per_chunk);
     }
 }

@@ -152,9 +152,11 @@ pub(crate) fn load_detectors_with_cache(path: &Path) -> Result<Vec<DetectorSpec>
     if path.exists() && path.is_dir() {
         let cache_path = path.join(".keyhog-cache.json");
         if let Some(cached) = keyhog_core::load_detector_cache(&cache_path, path) {
+            require_non_empty_detectors(&cached, path)?;
             return Ok(cached);
         }
         let loaded = load_detectors(path)?;
+        require_non_empty_detectors(&loaded, path)?;
         let _ = keyhog_core::save_detector_cache(&loaded, &cache_path);
         return Ok(loaded);
     }
@@ -167,9 +169,38 @@ pub(crate) fn load_detectors_with_cache(path: &Path) -> Result<Vec<DetectorSpec>
 /// exists, matching `load_detectors_with_cache`'s behaviour.
 pub(crate) fn load_detectors_no_cache(path: &Path) -> Result<Vec<DetectorSpec>> {
     if path.exists() && path.is_dir() {
-        return load_detectors(path).map_err(anyhow::Error::from);
+        let loaded = load_detectors(path).map_err(anyhow::Error::from)?;
+        require_non_empty_detectors(&loaded, path)?;
+        return Ok(loaded);
     }
     load_detectors_embedded_or_fail(path)
+}
+
+/// Hard-fail when detector loading produces zero specs. The
+/// `load_detectors` path returns `Ok(Vec::new())` for an empty
+/// directory, a directory full of malformed TOMLs that all get
+/// quality-gate rejected, or a typo'd `--detectors` path that
+/// happens to be a directory. Without this gate the scan runs
+/// against zero patterns, finds nothing, and exits SUCCESS — the
+/// user (or their CI) reads "no findings" and assumes the code
+/// is clean. That's the definition of a silent-data-loss bug.
+fn require_non_empty_detectors(
+    detectors: &[DetectorSpec],
+    detectors_path: &Path,
+) -> Result<()> {
+    if detectors.is_empty() {
+        anyhow::bail!(
+            "loaded zero detectors from {}. \
+             Fix: verify the directory contains valid `*.toml` detector \
+             specs (run `keyhog detectors list --detectors {}` to see \
+             which TOMLs were rejected, if any). Refusing to scan with \
+             no detectors loaded — that would silently report `no \
+             findings` regardless of what's in the source.",
+            detectors_path.display(),
+            detectors_path.display(),
+        );
+    }
+    Ok(())
 }
 
 fn load_detectors_embedded_or_fail(path: &Path) -> Result<Vec<DetectorSpec>> {
