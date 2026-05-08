@@ -41,6 +41,24 @@ fn with_trigger_buffer<R>(words_needed: usize, f: impl FnOnce(&mut [u64]) -> R) 
     })
 }
 
+/// Compute the two per-pattern-constant confidence signals.
+/// Extracted so both `extract_grouped_matches` and
+/// `extract_plain_matches` share the same lazy `OnceCell` init
+/// closure body (Rust can't `impl FnOnce<>` to share inline).
+fn compute_pattern_signals(detector: &DetectorSpec, chunk: &Chunk) -> (bool, bool) {
+    let kw = detector
+        .keywords
+        .iter()
+        .any(|keyword| chunk.data.contains(keyword.as_str()));
+    let sf = chunk
+        .metadata
+        .path
+        .as_deref()
+        .map(crate::confidence::is_sensitive_path)
+        .unwrap_or(false);
+    (kw, sf)
+}
+
 impl CompiledScanner {
     /// High-throughput coalesced scan: all files scanned in parallel,
     /// zero overhead for non-hit files.
@@ -247,24 +265,6 @@ impl CompiledScanner {
             return;
         };
 
-        // PRE-LOOP: signals that don't change across this pattern's
-        // matches. `keyword_nearby` is `O(K × |chunk|)` (one
-        // substring scan per detector keyword); `sensitive_file` is
-        // `O(|path|)` via Aho-Corasick over the path. Computing them
-        // once here saves an N-multiplier on every iteration of the
-        // per-match loop below — for a 100-match chunk that's 99
-        // copies of the same answer.
-        let keyword_nearby = detector
-            .keywords
-            .iter()
-            .any(|keyword| chunk.data.contains(keyword.as_str()));
-        let sensitive_file = chunk
-            .metadata
-            .path
-            .as_deref()
-            .map(crate::confidence::is_sensitive_path)
-            .unwrap_or(false);
-
         if let Some(group) = entry.group {
             self.extract_grouped_matches(
                 entry,
@@ -278,8 +278,6 @@ impl CompiledScanner {
                 scan_state,
                 base_line,
                 base_offset,
-                keyword_nearby,
-                sensitive_file,
             );
             return;
         }
@@ -294,8 +292,6 @@ impl CompiledScanner {
             scan_state,
             base_line,
             base_offset,
-            keyword_nearby,
-            sensitive_file,
         );
     }
 
@@ -313,10 +309,19 @@ impl CompiledScanner {
         scan_state: &mut ScanState,
         base_line: usize,
         base_offset: usize,
-        keyword_nearby: bool,
-        sensitive_file: bool,
     ) {
         let search_text = &preprocessed.text;
+        // Lazy per-pattern dedup of two signals that are constant
+        // across this pattern's matches but expensive to compute:
+        //   `keyword_nearby` = `O(K × |chunk|)` substring scans.
+        //   `sensitive_file` = Aho-Corasick scan over the file path.
+        // Computing eagerly at `extract_matches` level regressed the
+        // entropy_noise bench by -36% — many patterns trigger via
+        // AC but produce zero matches, paying for compute they
+        // never use. The OnceCell here keeps: zero-match patterns
+        // pay nothing; first-match populates; subsequent matches
+        // reuse the cached value.
+        let signals = std::cell::OnceCell::<(bool, bool)>::new();
         // Reuse one CaptureLocations buffer across every iter tick instead of
         // allocating a fresh `Captures` per match. For a 100k-file scan
         // hitting 10k matches across a handful of hot patterns, that's tens
@@ -379,6 +384,8 @@ impl CompiledScanner {
                 }
             }
 
+            let &(keyword_nearby, sensitive_file) =
+                signals.get_or_init(|| compute_pattern_signals(detector, chunk));
             self.process_match(
                 entry,
                 detector,
@@ -413,11 +420,14 @@ impl CompiledScanner {
         scan_state: &mut ScanState,
         base_line: usize,
         base_offset: usize,
-        keyword_nearby: bool,
-        sensitive_file: bool,
     ) {
         let search_text = &preprocessed.text;
+        // Same lazy-on-first-match dedup as `extract_grouped_matches`;
+        // see that function's doc-comment for the rationale.
+        let signals = std::cell::OnceCell::<(bool, bool)>::new();
         for matched in entry.regex.find_iter(search_text) {
+            let &(keyword_nearby, sensitive_file) =
+                signals.get_or_init(|| compute_pattern_signals(detector, chunk));
             self.process_match(
                 entry,
                 detector,
