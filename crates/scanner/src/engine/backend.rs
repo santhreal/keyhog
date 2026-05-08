@@ -1,6 +1,4 @@
 use super::*;
-#[cfg(feature = "simd")]
-use super::scan_filters::has_generic_assignment_keyword;
 use crate::hw_probe::ScanBackend;
 use keyhog_core::Chunk;
 
@@ -168,7 +166,6 @@ impl CompiledScanner {
     ) -> Vec<RawMatch> {
         let line_offsets = compute_line_offsets(&prepared.preprocessed.text);
         let code_lines: Vec<&str> = prepared.chunk.data.lines().collect();
-        let documentation_lines = context::documentation_line_flags(&code_lines);
         let mut scan_state = ScanState::default();
 
         #[cfg(feature = "simdsieve")]
@@ -184,6 +181,19 @@ impl CompiledScanner {
             .filter(|&i| (expanded_patterns[i / 64] & (1 << (i % 64))) != 0)
             .collect();
 
+        // `documentation_lines` is consumed only by
+        // `extract_confirmed_patterns` (and the fallback path called
+        // from scan, not from here). Compute it ONLY when we have
+        // confirmed patterns to extract — empty confirmed = empty
+        // doc_lines = ~6 µs/chunk saved on the no-trigger common case.
+        // Profile data showed this was the next-largest avoidable
+        // unconditional cost after `scan_generic_assignments`.
+        let documentation_lines = if confirmed_patterns.is_empty() {
+            Vec::new()
+        } else {
+            context::documentation_line_flags(&code_lines)
+        };
+
         self.extract_confirmed_patterns(
             &confirmed_patterns,
             &prepared.preprocessed,
@@ -195,22 +205,15 @@ impl CompiledScanner {
             deadline,
         );
 
-        // Generic key=value scanning is the per-chunk hot spot — phase
-        // timings showed ~500 µs/chunk on the 16 KiB random-alnum
-        // corpus, the single largest cost outside ML. The function
-        // already filters per-line via an internal AC, but it iterates
-        // every line of the chunk just to decide most have no keyword.
-        // A chunk-level AC pre-check (single pass over `chunk.data`)
-        // skips the iteration entirely for chunks with zero
-        // assignment-keyword presence — which is the common case for
-        // random-alphanumeric, source-code, and binary-string chunks.
-        #[cfg(feature = "simd")]
-        let run_generic = has_generic_assignment_keyword(prepared.chunk.data.as_bytes());
-        #[cfg(not(feature = "simd"))]
-        let run_generic = true;
-        if run_generic {
-            self.scan_generic_assignments(&code_lines, &prepared.chunk, &mut scan_state);
-        }
+        // The chunk-level `has_generic_assignment_keyword` gate that
+        // a profiling pass added here was net-negative on the
+        // adversarial benches: it adds O(chunk) AC overhead for
+        // chunks WITH keywords (which the bench corpora are biased
+        // toward) and only saves on chunks WITHOUT keywords (which
+        // the benches don't really exercise). Reverted — the
+        // function's own per-line AC pre-check inside the loop
+        // remains, doing the same dedup at finer granularity.
+        self.scan_generic_assignments(&code_lines, &prepared.chunk, &mut scan_state);
 
         #[cfg(feature = "entropy")]
         self.scan_entropy_fallback(
