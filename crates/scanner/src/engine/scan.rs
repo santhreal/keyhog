@@ -256,6 +256,11 @@ impl CompiledScanner {
         scan_state: &mut ScanState,
         base_line: usize,
         base_offset: usize,
+        // Per-pattern deadline. Inner regex loops can produce many
+        // matches on adversarial inputs (false_prefix_storm); without
+        // a deadline-check inside those loops, --timeout is a lie for
+        // those chunks. Threaded down to the inner loops below.
+        deadline: Option<std::time::Instant>,
     ) {
         // Resilient lookup: a malformed `entry.detector_index` would otherwise
         // panic mid-scan and abort the whole rayon worker. The compiler should
@@ -284,6 +289,7 @@ impl CompiledScanner {
                 scan_state,
                 base_line,
                 base_offset,
+                deadline,
             );
             return;
         }
@@ -298,6 +304,7 @@ impl CompiledScanner {
             scan_state,
             base_line,
             base_offset,
+            deadline,
         );
     }
 
@@ -315,6 +322,7 @@ impl CompiledScanner {
         scan_state: &mut ScanState,
         base_line: usize,
         base_offset: usize,
+        deadline: Option<std::time::Instant>,
     ) {
         let search_text = &preprocessed.text;
         // Lazy per-pattern dedup of two signals that are constant
@@ -336,7 +344,24 @@ impl CompiledScanner {
         let groups_total = locs.len();
         let mut cursor = 0usize;
         let bytes_total = search_text.len();
+        // Inner-loop deadline check counter. Same `is_multiple_of(64)`
+        // cadence as `scan_fallback_patterns` — frequent enough that
+        // a hung pattern aborts within a few ms, infrequent enough
+        // that the `Instant::now()` syscall isn't a hot-path tax.
+        // Without this, a single regex producing 100k+ matches on an
+        // adversarial chunk (false_prefix_storm, regex catastrophic
+        // backtracking) would run unboundedly even with --timeout.
+        let mut match_count: usize = 0;
         while cursor <= bytes_total {
+            if let Some(deadline) = deadline {
+                if match_count.is_multiple_of(64)
+                    && match_count > 0
+                    && std::time::Instant::now() >= deadline
+                {
+                    break;
+                }
+            }
+            match_count += 1;
             let Some(whole) = entry.regex.captures_read_at(&mut locs, search_text, cursor) else {
                 break;
             };
@@ -426,12 +451,26 @@ impl CompiledScanner {
         scan_state: &mut ScanState,
         base_line: usize,
         base_offset: usize,
+        deadline: Option<std::time::Instant>,
     ) {
         let search_text = &preprocessed.text;
         // Same lazy-on-first-match dedup as `extract_grouped_matches`;
         // see that function's doc-comment for the rationale.
         let signals = std::cell::OnceCell::<(bool, bool)>::new();
+        // Inner-loop deadline counter — same `is_multiple_of(64)`
+        // cadence as the grouped path so --timeout aborts cleanly
+        // even on patterns that fire 100k+ matches per chunk.
+        let mut match_count: usize = 0;
         for matched in entry.regex.find_iter(search_text) {
+            if let Some(deadline) = deadline {
+                if match_count.is_multiple_of(64)
+                    && match_count > 0
+                    && std::time::Instant::now() >= deadline
+                {
+                    break;
+                }
+            }
+            match_count += 1;
             let &(keyword_nearby, sensitive_file) =
                 signals.get_or_init(|| compute_pattern_signals(detector, chunk));
             self.process_match(

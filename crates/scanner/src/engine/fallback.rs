@@ -63,6 +63,7 @@ impl CompiledScanner {
                     scan_state,
                     0,
                     0,
+                    deadline,
                 );
             }
         });
@@ -149,6 +150,7 @@ impl CompiledScanner {
                     scan_state,
                     0,
                     0,
+                    deadline,
                 );
                 tested += 1;
             }

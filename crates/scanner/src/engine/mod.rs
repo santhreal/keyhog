@@ -683,6 +683,7 @@ impl CompiledScanner {
                 scan_state,
                 0,
                 0,
+                deadline,
             );
         }
     }
