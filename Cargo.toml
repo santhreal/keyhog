@@ -68,13 +68,13 @@ codewalk = "=0.2.5"
 base64 = "=0.22.1"
 unicode-normalization = "=0.1.25"
 tempfile = "=3.27.0"
-memmap2 = "=0.9.9"
+memmap2 = "=0.9.10"
 glob = "=0.3.3"
 wait-timeout = "=0.2.1"
 tar = "=0.4.45"
 
 # Git
-gix = { version = "0.71.0", default-features = false, features = ["max-performance-safe"] }
+gix = { version = "0.74.0", default-features = false, features = ["max-performance-safe"] }
 
 # Benchmarking
 criterion = { version = "=0.5.1", features = ["html_reports"] }

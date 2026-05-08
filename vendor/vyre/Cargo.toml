@@ -115,7 +115,7 @@ criterion = { version = "=0.5.1", features = ["html_reports"] }
 bumpalo = "=3.20.2"
 inventory = "=0.3.17"
 quote = "=1.0.45"
-smallvec = { version = "=1.14.0", features = ["serde"] }
+smallvec = { version = "=1.15.1", features = ["serde"] }
 crossbeam-channel = "0.5.14"
 libm = "=0.2.15"
 dashmap = "6.1.0"
