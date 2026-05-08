@@ -1,6 +1,8 @@
 #[cfg(feature = "simdsieve")]
 use super::*;
 #[cfg(feature = "simdsieve")]
+use keyhog_core::{MatchLocation, RawMatch, Severity};
+#[cfg(feature = "simdsieve")]
 use std::collections::HashMap;
 
 #[cfg(feature = "simdsieve")]
