@@ -16,10 +16,7 @@ use thiserror::Error;
 ///     metadata: ChunkMetadata {
 ///         source_type: "filesystem".into(),
 ///         path: Some("app.env".into()),
-///         base_offset: 0,
-///         commit: None,
-///         author: None,
-///         date: None,
+///         ..Default::default()
 ///     },
 /// };
 ///
@@ -43,10 +40,10 @@ pub struct Chunk {
 /// let metadata = ChunkMetadata {
 ///     source_type: "git-diff".into(),
 ///     path: Some("src/lib.rs".into()),
-///     base_offset: 0,
 ///     commit: Some("abc123".into()),
 ///     author: Some("Dev".into()),
 ///     date: Some("2026-03-26T00:00:00Z".into()),
+///     ..Default::default()
 /// };
 ///
 /// assert_eq!(metadata.source_type, "git-diff");
@@ -91,11 +88,7 @@ pub struct ChunkMetadata {
 ///             data: "TOKEN=value".into(),
 ///             metadata: ChunkMetadata {
 ///                 source_type: "static".into(),
-///                 path: None,
-///                 base_offset: 0,
-///                 commit: None,
-///                 author: None,
-///                 date: None,
+///                 ..Default::default()
 ///             },
 ///         })))
 ///     }
