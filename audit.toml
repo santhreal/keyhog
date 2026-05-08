@@ -1,16 +1,16 @@
 # cargo-audit configuration for keyhog.
 #
-# `cargo audit` reads this file from the workspace root. Each advisory
-# in the ignore list has a corresponding rationale block in
-# SECURITY.md under "RustSec Advisory Assessment (v0.5.3)" — touching
+# Each advisory in the ignore list has a corresponding rationale
+# block in SECURITY.md under "RustSec Advisory Assessment" — touching
 # this list without updating that document will silently weaken our
-# security posture.
+# security posture. The matching `--ignore` flags on the
+# `cargo audit` invocation in `.github/workflows/ci.yml` need to
+# stay in sync.
 #
-# Two real vulnerabilities (`gix-date` and `gix-features`) are NOT
-# ignored — they show up as exit-code-non-zero from `cargo audit` and
-# are tracked for the v0.6.0 gix upgrade. Operators running keyhog
-# against untrusted repositories should read SECURITY.md before
-# adopting v0.5.3 in production-credential environments.
+# As of v0.5.3, `cargo audit` exits zero with these four ignores:
+# the two gix-* CVEs that the v0.5.2 audit flagged were addressed
+# by bumping gix to 0.77 (commit history under "security: bump
+# gix").
 
 [advisories]
 ignore = [

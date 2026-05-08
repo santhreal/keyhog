@@ -52,12 +52,6 @@ jobs:
   audit:
     name: Security Audit
     runs-on: ubuntu-latest
-    # Non-blocking until the gix bump for RUSTSEC-2025-0140 +
-    # RUSTSEC-2025-0021 lands in v0.6.0. The job still RUNS so the
-    # exit code shows up in the PR check list — operators see the
-    # outstanding advisories, just don't block merges on them while
-    # we plan the dep update.
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
