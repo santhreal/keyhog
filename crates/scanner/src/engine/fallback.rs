@@ -178,14 +178,19 @@ impl CompiledScanner {
         &self,
         entry: &CompiledPattern,
         detector: &DetectorSpec,
-        code_lines: &[&str],
-        documentation_lines: &[bool],
         chunk: &Chunk,
         credential: &str,
         data: &str,
         line: usize,
         entropy: f64,
         has_companion: bool,
+        // The context is computed once in `process_match` (where the
+        // suppression checks already need it) and threaded through —
+        // dropping the duplicate `infer_context_with_documentation`
+        // call here. With many matches per chunk this halves the
+        // context-inference work; on the adversarial false-prefix
+        // storm corpus that's a measurable win.
+        context: context::CodeContext,
         scan_state: &mut ScanState,
     ) -> Option<MlScoreResult> {
         let raw_conf =
@@ -209,13 +214,6 @@ impl CompiledScanner {
 
         // Checksum validation is handled in process_match (early reject for Invalid,
         // confidence floor for Valid). No need to re-validate here.
-
-        let context = context::infer_context_with_documentation(
-            code_lines,
-            line.saturating_sub(PREVIOUS_LINE_DISTANCE),
-            chunk.metadata.path.as_deref(),
-            documentation_lines,
-        );
         let heuristic_conf = raw_conf * context.confidence_multiplier();
         let score_result = self.calculate_final_score(
             heuristic_conf,

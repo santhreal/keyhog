@@ -3,8 +3,10 @@
 use regex::Regex;
 use std::cmp::Reverse;
 #[cfg(feature = "ml")]
+use std::collections::HashMap;
+#[cfg(feature = "ml")]
 use std::collections::VecDeque;
-use std::collections::{BinaryHeap, HashMap, HashSet};
+use std::collections::{BinaryHeap, HashSet};
 use std::sync::Arc;
 
 // Fallback regex-only scanning switches to per-line mode once a chunk grows
@@ -266,8 +268,13 @@ pub struct ScanState {
     pub matches: BinaryHeap<Reverse<keyhog_core::RawMatch>>,
     /// Interner for credentials found in this chunk to save memory on duplicates.
     pub credential_interner: HashSet<Arc<str>>,
-    /// Static string cache for detector metadata.
-    pub metadata_interner: HashMap<String, Arc<str>>,
+    /// Static string cache for detector metadata. Uses
+    /// `HashSet<Arc<str>>` (not `HashMap<String, Arc<str>>`) so a
+    /// cache miss allocates ONLY the `Arc<str>` — the prior shape
+    /// also allocated a `String` to serve as the HashMap key, paying
+    /// twice for what's a single dedup slot. `HashSet::get(&s)` works
+    /// via `Arc<str>: Borrow<str>`, no allocation on hits.
+    pub metadata_interner: HashSet<Arc<str>>,
     #[cfg(feature = "ml")]
     pub ml_score_cache: HashMap<(String, String), f64>,
     #[cfg(feature = "ml")]
@@ -294,12 +301,11 @@ impl ScanState {
     /// Intern a metadata string (detector_id, name, service).
     pub fn intern_metadata(&mut self, s: &str) -> Arc<str> {
         if let Some(existing) = self.metadata_interner.get(s) {
-            existing.clone()
-        } else {
-            let shared: Arc<str> = Arc::from(s);
-            self.metadata_interner.insert(s.to_string(), shared.clone());
-            shared
+            return existing.clone();
         }
+        let shared: Arc<str> = Arc::from(s);
+        self.metadata_interner.insert(shared.clone());
+        shared
     }
 
     /// Push a match to the state, maintaining priority and capacity.
