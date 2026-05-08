@@ -76,6 +76,13 @@ chrono = { workspace = true }
 dirs = { workspace = true }
 notify = { workspace = true }
 
+[target.'cfg(unix)'.dependencies]
+# Used only by `reset_sigpipe()` in main.rs to restore the default
+# SIGPIPE handler. Without this, `keyhog scan | head` produces a
+# spurious BrokenPipe error instead of exiting cleanly when the
+# downstream consumer closes its end of the pipe.
+libc = { workspace = true }
+
 [dev-dependencies]
 keyhog-core = { workspace = true }
 keyhog-scanner = { workspace = true, default-features = false }

@@ -2653,6 +2653,7 @@ dependencies = [
  "keyhog-scanner",
  "keyhog-sources",
  "keyhog-verifier",
+ "libc",
  "notify",
  "rayon",
  "regex",

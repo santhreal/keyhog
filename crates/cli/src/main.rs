@@ -12,8 +12,38 @@ use std::process::ExitCode;
 
 const EXIT_RUNTIME_ERROR: u8 = 2;
 
+/// Restore the default SIGPIPE handler so Unix piping works.
+///
+/// Rust installs `SIG_IGN` for SIGPIPE at startup so a write to a
+/// closed pipe surfaces as `Err(BrokenPipe)` instead of killing the
+/// process. That's good for libraries — but for a CLI, the standard
+/// expectation is `keyhog scan ... | head -1` exits cleanly when
+/// `head` closes the pipe (kernel kills with 128+13=141, no error
+/// printed). Without this, the user sees an error on stderr and a
+/// non-zero exit code from a perfectly normal pipe interaction.
+///
+/// POSIX-only — Windows has no SIGPIPE.
+#[cfg(unix)]
+fn reset_sigpipe() {
+    // SAFETY: Setting a process-wide signal handler before any
+    // worker threads or async runtime are spawned. The default
+    // handler (`SIG_DFL`) terminates the process — exactly the
+    // behavior we want for a CLI piped into `head`. No memory or
+    // resource invariants depend on Rust's `SIG_IGN` default
+    // because every fallible write path in the codebase already
+    // uses `?` or explicit error handling.
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
+}
+
+#[cfg(not(unix))]
+fn reset_sigpipe() {}
+
 #[tokio::main]
 async fn main() -> ExitCode {
+    reset_sigpipe();
+
     tokio::spawn(async move {
         if let Ok(()) = tokio::signal::ctrl_c().await {
             let scanned = SCANNED_CHUNKS.load(std::sync::atomic::Ordering::SeqCst);
