@@ -49,6 +49,34 @@ jobs:
       # fails on missing files. vyre's own CI formats vyre.
       - run: cargo fmt -p keyhog-core -p keyhog-scanner -p keyhog -p keyhog-verifier -p keyhog-sources -- --check
 
+  audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    # Non-blocking until the gix bump for RUSTSEC-2025-0140 +
+    # RUSTSEC-2025-0021 lands in v0.6.0. The job still RUNS so the
+    # exit code shows up in the PR check list — operators see the
+    # outstanding advisories, just don't block merges on them while
+    # we plan the dep update.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-audit
+        run: cargo install --locked cargo-audit
+      # The four `--ignore` flags below match the four
+      # accept-with-rationale advisories in `audit.toml` (the workspace
+      # root file that documents the security review). Adding a fifth
+      # ignore without a corresponding SECURITY.md rationale block is
+      # a CI failure waiting to happen — please update both files.
+      - name: Run cargo audit
+        run: |
+          cargo audit \
+            --ignore RUSTSEC-2023-0071 \
+            --ignore RUSTSEC-2024-0436 \
+            --ignore RUSTSEC-2026-0002 \
+            --ignore RUSTSEC-2026-0097
+
   build:
     name: Build Release
     runs-on: ubuntu-latest
