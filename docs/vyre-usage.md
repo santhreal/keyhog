@@ -252,6 +252,80 @@ Derive + attribute macros: `define_op`, `vyre_ast_registry`,
 `derive_algebraic_laws`, `vyre_pass`, `skip_builder`. Used internally
 by primitive authors.
 
+## v0.5.5 status — everything wired so far
+
+| Wire                                 | Status      | Where                                                  |
+| ------------------------------------ | ----------- | ------------------------------------------------------ |
+| `intern::perfect_hash`               | ✅ shipped  | `crates/scanner/src/static_intern.rs` + `engine/mod.rs` |
+| Tier-aware GPU routing (2 MiB)       | ✅ shipped  | `crates/scanner/src/hw_probe.rs`                       |
+| GPU dispatch sharding                | ✅ shipped  | `engine/scan_gpu.rs::scan_coalesced_gpu`               |
+| `rule` CPU evaluator + `FieldInSet`  | ✅ shipped  | upstream `vyre_libs::rule::cpu_eval` + `ast.rs`        |
+| `.keyhogignore.toml` rule engine     | ✅ shipped  | `crates/core/src/rule_filter.rs` + `orchestrator.rs`   |
+| Megakernel scaffold (gated)          | ⏳ partial  | `engine/megakernel_dispatch.rs` (needs vyre per-pattern hits) |
+| `cooperative_dfa` alt literal engine | ⏳ pending  | needs keyhog GPU dispatch infrastructure (entry below) |
+| `fuse_programs` decode+scan          | ⏳ pending  | needs source/scanner restructure (entry below)         |
+| `nn::moe` replacing gpu.rs MoE       | ⏳ pending  | parity work against existing weights (entry below)     |
+| `GpuMappedBuffer` zero-copy I/O      | ⏳ pending  | Linux-only + lifetime work (entry below)               |
+| Vyre HEAD upgrade                    | ❌ blocked  | API restructure broke `BatchDispatcher` API surface   |
+
+## Pending-wire entry points (concrete)
+
+Each remaining wire's API surface in vyre + the keyhog hook where
+the integration lands. The unblocker for each is real engineering,
+not new research — anyone picking up the work has the contract.
+
+### `cooperative_dfa`
+
+- Vyre API: `vyre_libs::matching::cooperative_dfa::cooperative_dfa_scan(input, transitions, accept_mask, matches, input_len, state_count, subgroup_size) -> vyre::ir::Program`
+- Build DFA tables via `vyre_libs::matching::dfa::dfa_compile(&[&[u8]]) -> CompiledDfa`
+- Compile Program once at scanner construction via vyre `pipeline::compile`
+- Per-batch dispatch: upload input/transitions/accept, allocate matches, call `pipeline.dispatch_borrowed(...)`, read back
+- Wire as a new `ScanBackend::CooperativeDfa` variant alongside `Gpu` and `MegaScan`. Route via `select_backend` once benchmarked vs literal-set.
+- Effort: 2-3 days. Mostly the dispatch infrastructure (which is the same as megakernel scaffolding — would unblock both).
+
+### `fuse_programs` for decode + scan
+
+- Vyre API: `vyre_foundation::execution_plan::fusion::fuse_programs(&[Program]) -> Result<Program, FusionError>`
+- Build a decode Program: `vyre_libs::decode::inflate(...)` for `.zst` / `.gz` inputs
+- Build a scan Program: `vyre_libs::matching::cooperative_dfa::cooperative_dfa_scan(...)`
+- `fuse_programs(&[decode_prog, scan_prog])` produces one Program; vyre auto-resolves shared buffer names (decode's output buffer should be named the same as scan's input buffer).
+- Source-side: `crates/sources/src/filesystem/read.rs` currently CPU-decompresses via `ziftsieve` then hands plaintext to `scan_coalesced`. Switch `.zst` / `.gz` inputs to keep compressed bytes + dispatch fused program.
+- Effort: 3 days. Mostly the source/scanner boundary refactor.
+- Payoff: ~50% wall-time reduction on `.zst`-heavy corpora (npm, Docker image layers); zero effect on regular source trees.
+
+### `nn::moe` replacing `gpu.rs` MoE
+
+- Vyre API: `vyre_libs::nn::moe::moe_gate`, `vyre_libs::nn::moe::top_k`,
+  `vyre_libs::nn::linear`, `vyre_libs::nn::activation`, `vyre_libs::nn::norm` —
+  compose the same MoE shape `gpu.rs` hand-rolls.
+- Existing `gpu.rs` is ~620 LoC of bespoke wgpu+WGSL implementing
+  Linear(41→6) gate + 6 experts × Linear(41→32)+ReLU →
+  Linear(32→16)+ReLU → Linear(16→1) + sigmoid weighted sum.
+- Bit-equal validation against `ml_scorer.rs`'s CPU MoE outputs on
+  the existing weight set. The weights load path stays the same;
+  only the dispatch path swaps.
+- Effort: 3 days + correctness validation. Risky — replacing
+  working code; needs a parity test harness that compares MoE
+  outputs across CPU / current-GPU / new-vyre-GPU paths.
+- Payoff: ~600 LoC deleted, automatic benefit from vyre kernel
+  improvements, identical compute semantics.
+
+### `GpuMappedBuffer` zero-copy filesystem reads
+
+- Vyre API: `vyre_runtime::uring::GpuMappedBuffer` (Linux-only,
+  io_uring-backed; gated behind a vyre-runtime feature)
+- Source-side: `crates/sources/src/filesystem/read.rs` currently
+  reads file content into `Vec<u8>` then copies to GPU buffer.
+  `GpuMappedBuffer` io_urings the file directly into a GPU-mapped
+  region.
+- Lifetime work: `GpuStream<'a>` ties the buffer to the dispatch
+  scope; keyhog needs to thread the lifetime through `Source`,
+  `Chunk`, and the scanner's per-chunk extraction phase.
+- Effort: 3 days. Linux-only — Windows / macOS keep the
+  read-then-copy path.
+- Payoff: eliminates a 256 MiB heap → GPU memcpy per batch on
+  big-file scans.
+
 ## Performance benchmark snapshot (RTX 5090, v0.5.4 + tier routing)
 
 After landing tier-aware routing + GPU dispatch sharding, the embedded
