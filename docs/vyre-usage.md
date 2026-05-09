@@ -1,123 +1,312 @@
 # Vyre primitive usage — audit & roadmap
 
-Status snapshot of which vyre-libs primitives keyhog currently consumes,
-what's available but unused, and a prioritised list of wires worth
-making next. Updated 2026-05-08, against vendored vyre v0.6.0.
+Status snapshot of which vyre primitives keyhog consumes, what the
+full vyre surface looks like, and a prioritised list of wires worth
+making next. Vyre is a ~30-crate GPU compute framework — this doc
+catalogues every crate it ships so future wires don't have to
+re-discover the surface.
+
+Updated 2026-05-08, against vendored vyre v0.6.0.
 
 ## What keyhog uses today
 
-`keyhog-scanner` directly consumes:
+| Vyre symbol                                          | Where keyhog uses it                                                |
+| ---------------------------------------------------- | ------------------------------------------------------------------- |
+| `vyre_libs::matching::GpuLiteralSet`                 | `engine/scan_gpu.rs::scan_coalesced_gpu` — primary GPU path         |
+| `vyre_libs::matching::RulePipeline`                  | `engine/scan_gpu.rs::scan_coalesced_megascan` — regex-NFA GPU path  |
+| `vyre_libs::matching::build_rule_pipeline_from_regex`| `engine/mod.rs::build_rule_pipeline` — MegaScan compile             |
+| `vyre_libs::matching::LiteralMatch`                  | Re-exported as `keyhog_scanner::LiteralMatch` for API stability     |
+| `vyre_libs::matching::dedup_regions_inplace`         | Per-pid match deduplication after both GPU dispatches               |
+| `vyre_libs::matching::RegionTriple`                  | Same — input shape for the dedup primitive                          |
+| `vyre_libs::matching::cached_load_or_compile`        | On-disk cache for compiled GPU literal-set + rule pipelines         |
+| `vyre_libs::intern::perfect_hash::PerfectHash`       | `static_intern.rs` — frozen detector-metadata interner              |
+| `vyre_libs::intern::perfect_hash::build_chd`         | Same — built once at scanner construction                           |
+| `vyre_driver_wgpu::WgpuBackend`                      | Persistent wgpu device handle held by `CompiledScanner`             |
+| `vyre_driver_wgpu::runtime::cached_device`           | Aliveness check before each GPU dispatch                            |
+| `vyre_libs::matching::nfa` (via RulePipeline)        | Indirectly — consumed by `build_rule_pipeline_from_regex`           |
 
-| Vyre symbol                                          | Where keyhog uses it                                   |
-| ---------------------------------------------------- | ------------------------------------------------------ |
-| `vyre_libs::matching::GpuLiteralSet`                 | `engine/scan_gpu.rs::scan_coalesced_gpu` — primary GPU path |
-| `vyre_libs::matching::RulePipeline`                  | `engine/scan_gpu.rs::scan_coalesced_megascan` — regex-NFA GPU path |
-| `vyre_libs::matching::build_rule_pipeline_from_regex`| `engine/mod.rs::build_rule_pipeline` — MegaScan compile |
-| `vyre_libs::matching::LiteralMatch`                  | Re-exported as `keyhog_scanner::LiteralMatch` for API stability |
-| `vyre_libs::matching::dedup_regions_inplace`         | Per-pid match deduplication after both GPU dispatches  |
-| `vyre_libs::matching::RegionTriple`                  | Same — input shape for the dedup primitive             |
-| `vyre_libs::matching::cached_load_or_compile`        | On-disk cache for compiled GPU literal-set + rule pipelines |
-| `vyre_driver_wgpu::WgpuBackend`                      | Persistent wgpu device handle held by `CompiledScanner` |
-| `vyre_driver_wgpu::runtime::cached_device`           | Aliveness check before each GPU dispatch                |
-| `vyre_libs::matching::nfa` (via RulePipeline)        | Indirectly — consumed by `build_rule_pipeline_from_regex` |
+Three scanner files (`engine/scan_gpu.rs`, `engine/mod.rs`,
+`engine/backend.rs`, `static_intern.rs`) are the only consumers.
 
-That's the entirety of vyre touch surface. Three files
-(`engine/scan_gpu.rs`, `engine/mod.rs`, `engine/backend.rs`) hold every
-consumer.
+## Full vyre crate surface
 
-## What's available but unused
+### vyre-foundation
 
-`vendor/vyre/vyre-libs/src/` exposes 16 top-level modules. Of those,
-`matching` is the only one keyhog touches. The rest:
+The IR + execution-plan crate. Provides:
 
-### High-leverage candidates (matching keyhog's existing concerns)
+- `ir` — typed Program IR (Node, Expr, BufferDecl, BufferAccess, DataType)
+- `lower`, `optimizer` — lowering passes + optimisation passes
+- `cpu_op`, `cpu_references` — CPU reference impls of every op
+- `memory_model`, `MemoryOrdering` — formal memory model
+- `match_result::Match` — the `(pattern_id, start, end)` triple keyhog
+  already consumes via `LiteralMatch`
+- `extern_registry`, `dialect_lookup`, `algebraic_law_registry` —
+  pluggable dialect/op/law registry
+- `composition`, `execution_plan::fusion::{fuse_programs, ...}` —
+  cross-program fusion (multiple Programs into one dispatch)
+- `vast`, `graph_view` — IR graph traversal
+- `diagnostics` — typed diagnostic messages
+- `opaque_payload` — type-erased per-op state
 
-| Vyre module                         | What it offers                                | What keyhog has today                                | Why it could win                                              |
-| ----------------------------------- | --------------------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------- |
-| `matching::cooperative_dfa`         | DFA scan kernel                               | Hyperscan + AC + GpuLiteralSet                       | DFA may beat NFA on dense literal sets — needs benchmark      |
-| `matching::substring`               | substring search primitive                    | `aho_corasick` + custom `bigram_bloom`               | One unified GPU-aware path instead of two CPU paths           |
-| `matching::classic_ac`              | Aho-Corasick on the vyre runtime              | `aho_corasick` crate (CPU only)                      | Same algorithm, but composable with vyre's GPU dispatches     |
-| `decode::base64`, `decode::hex`     | byte-stream decoders                          | `crates/scanner/src/decode/{base64,hex}.rs` (CPU)    | Vyre version is GPU-aware via shared dispatch infra           |
-| `decode::inflate`, `decode::ziftsieve` | DEFLATE + zstd over GPU buffers            | `ziftsieve` crate, called CPU-side                   | Decode-and-scan in one GPU dispatch on big compressed blobs   |
-| `intern::perfect_hash`              | perfect-hash string interner                  | hand-rolled `ScanState::intern_credential` (`Arc<str>` HashMap) | Lookup is `O(1)` no-collision; lower memory on the 888-detector corpus |
-| `hash::fnv1a32`, `hash::fnv1a64`    | GPU-IR FNV builders                           | thread-local FNV cache in `entropy_fast.rs` (CPU)    | Could feed into a GPU entropy-first prefilter pass            |
-| `hash::blake3_compress`             | GPU-IR BLAKE3                                 | `blake3` crate (CPU) for merkle index                | Merkle index recompute on big repo could move to GPU          |
-| `hash::crc32`                       | GPU CRC32                                     | per-detector custom checksums (`scanner/src/checksum/`) | Some checksum validators could share one CRC32 dispatch       |
-| `nn::moe`, `nn::linear`, `nn::activation`, `nn::attention`, `nn::norm` | NN building blocks for compute shaders | Hand-rolled GPU MoE in `gpu.rs` + CPU MoE in `ml_scorer.rs` | Replace ~600 lines of bespoke MoE compute shader with composed primitives |
-| `rule`                              | predicate engine (file_size_*, pattern_count_*, pattern_exists, literal_true/false) | Inline allowlist + suppression in `cli/src/inline_suppression.rs`, `cli/src/orchestrator.rs::filter_and_resolve` | Declarative filter rules + future user-defined gates          |
-| `text::char_class`                  | byte-class predicates                         | `crates/scanner/src/alphabet_filter.rs`              | Centralised, GPU-shareable                                    |
+**Keyhog touches**: `match_result::Match` indirectly via vyre_libs.
+**Keyhog could use**: `fuse_programs` to fuse decode + scan into one
+dispatch; `execution_plan` for batched multi-stage pipelines.
 
-### Lower-leverage / specialised
+### vyre-driver
 
-| Vyre module          | What it offers                          | Relevance to keyhog                                    |
-| -------------------- | --------------------------------------- | ------------------------------------------------------ |
-| `math::*`            | numeric kernels (broadcast, linalg, scan, succinct) | Useful only when more compute moves to GPU |
-| `logical::*`         | and/or/xor/nand/nor over bitmaps        | Could compose post-process bitmap ops                   |
-| `parsing::*`         | parser combinators on GPU               | Nothing in scanner needs this today                     |
-| `security::*`        | static-analysis predicates (auth_check_dominates, bounded_by_comparison) | Different problem domain — not secret scanning |
-| `graph::*`           | graph algorithms (reachability, dominators) | Nothing in scanner needs this today                  |
-| `dataflow::*`        | taint-flow                              | Future "track this credential through this codebase" feature |
-| `representation::*`  | IR helpers                              | Internal building blocks, not consumer-facing           |
-| `compiler::*`        | program compiler                        | Used implicitly by every dispatch                       |
-| `visual::*`          | viz helpers                             | Diagnostics only                                        |
-| `signatures`, `contracts`, `tensor_ref`, `descriptor`, `harness`, `builder`, `buffer_names`, `range_ordering`, `region`, `test_migration` | API hygiene + plumbing | Indirectly used by everything above |
+The dispatch backbone:
+
+- `backend` — `VyreBackend` trait; every concrete backend implements it
+- `routing::{select_sort_backend, RoutingTable, SortBackend}` — picks
+  best backend per workload
+- `pipeline` — backend-agnostic dispatch
+- `registry` — backend registry
+- `shadow`, `speculate` — speculative + shadow execution (run on two
+  backends, compare results)
+- `persistent` — long-lived dispatch state
+
+**Keyhog touches**: nothing directly.
+**Keyhog could use**: `routing::select_sort_backend` for MegaScan
+pipeline ordering; `shadow` to validate GPU vs CPU on every dispatch
+in CI.
+
+### vyre-driver-wgpu
+
+The wgpu backend:
+
+- `WgpuBackend`, `WgpuBackendStats`, `WgpuIR` — concrete dispatch
+- `pipeline`, `buffer`, `lowering` — wgpu-specific compile
+- `megakernel`, `spirv_backend`, `engine`, `ext` — speciality dispatch
+  modes
+- `runtime` — `cached_device`, `GpuMappedBuffer` (uring-backed)
+- `DispatchArena` — per-dispatch scratch arena
+
+**Keyhog touches**: `WgpuBackend`, `runtime::cached_device`.
+**Keyhog could use**: `runtime::GpuMappedBuffer` for io_uring-backed
+filesystem reads straight into GPU memory; `DispatchArena` for
+shared scratch buffers across batched dispatches.
+
+### vyre-driver-megakernel
+
+Megakernel dispatcher: bundles many small ops into one kernel
+launch. Useful when dispatch overhead dominates throughput.
+
+- `MegakernelDispatch` trait
+- `policy`, `task` — scheduling primitives
+
+**Keyhog could use**: bundling literal-set + boundary scan + entropy
+prefilter into one megakernel (eliminates ~4 ms × 4 dispatches per
+batch).
+
+### vyre-driver-spirv
+
+The SPIR-V backend (Vulkan-only path). Same surface as wgpu.
+
+### vyre-driver-cuda
+
+CUDA backend (only on upstream HEAD; not in v0.6.0 vendor).
+
+### vyre-driver-reference
+
+CPU reference backend — runs every op via `vyre-reference` for
+correctness validation.
+
+### vyre-libs
+
+Tier-3 application primitives (composed from `vyre-primitives`).
+Modules:
+
+- **matching** ✅ partly used: `GpuLiteralSet`, `RulePipeline`,
+  `dedup_regions_inplace`. Unused: `classic_ac`, `cooperative_dfa`,
+  `dfa/`, `direct_gpu`, `substring/`, `pipeline`, `post_process`,
+  `hit_buffer`, `engine`, `builders`, `dispatch_io`, `test_fixtures`.
+- **decode**: `base64`, `hex`, `inflate`, `ziftsieve`, `encodex`,
+  `streaming` — GPU-IR decoders. Unused (keyhog has its own CPU
+  decoders in `crates/scanner/src/decode/`).
+- **hash**: `adler32`, `blake3_compress`, `crc32`, `fnv1a32`,
+  `fnv1a64`, `multi_hash`. All GPU-IR builders. Unused (keyhog uses
+  `sha2`/`blake3`/`fnv` crates directly on CPU).
+- **intern** ✅ used: `perfect_hash::PerfectHash`. Other content:
+  internal CHD construction, no other public surface.
+- **nn**: `moe`, `linear`, `attention`, `norm`, `activation`. GPU-IR
+  builders for neural-net layers. Unused (keyhog has its own
+  hand-rolled MoE in `gpu.rs`).
+- **rule**: `file_size_*`, `pattern_count_*`, `pattern_exists`,
+  `literal_true/false`, `condition_op`, `ast`, `builder`. Predicate
+  engine. Unused (keyhog has hand-rolled `inline_suppression.rs`).
+- **text**: `char_class` — byte→class-code mapper. Different shape
+  from keyhog's `alphabet_filter` (bitset of present bytes), so not a
+  drop-in. Could power a future syntax-aware context detector.
+- **math**: `algebra`, `atomic/`, `avg_floor`, `broadcast/`,
+  `clamp_u32`, `linalg/`, `lzcnt_u32`, `reduce_mean`, `scan/`, `square`,
+  `succinct`, `tzcnt_u32`, `wrapping_neg`. Numeric kernels.
+- **logical**: `and`, `or`, `xor`, `nand`, `nor` — bitmap ops.
+- **parsing**: parser combinators on GPU.
+- **graph**: graph algorithms (reachability, dominators).
+- **dataflow**: taint-flow analysis.
+- **security**: `auth_check_dominates`, `bounded_by_comparison`,
+  `buffer_size_check`. Static-analysis predicates — wrong domain.
+- **representation**: IR helpers.
+- **compiler**: program compiler.
+- **visual**: viz helpers.
+- **harness**: test harness for primitive correctness.
+- **builder**: `BuildOptions`, `check_tensors`.
+- **descriptor**: `BufferDescriptor`, `ProgramDescriptor`.
+- **buffer_names**: stable buffer-name constants.
+- **range_ordering**, `region`, `tensor_ref`, `signatures`,
+  `contracts`, `test_migration` — plumbing.
+
+### vyre-primitives
+
+Tier-2.5 primitives that vyre-libs composes. Each module is a
+collection of single-op IR builders:
+
+- **bitset**: 18 ops — `and`, `and_into`, `and_not`, `and_not_into`,
+  `any`, `clear_bit`, `contains`, `equal`, `four_russians`, `not`,
+  `or`, `or_into`, `popcount`, `set_bit`, `subset_of`, `test_bit`,
+  `xor`, `xor_into`. Could replace bits of `bigram_bloom.rs`.
+- **decode**: `base64`, `inflate`. Same content as vyre-libs::decode.
+- **fixpoint**: fixpoint iteration kernels.
+- **graph**: graph algorithms.
+- **hash**: `blake3`, `crc32`, `fnv1a`, `table`. Used by
+  vyre-libs::hash.
+- **label**: connected-components labeling.
+- **markers**: type markers.
+- **matching**: `bracket_match`, `dfa_compile`, `region`. The DFA
+  compiler vyre-libs uses.
+- **math**: `conv1d`, `dot_partial`, `interval`, `prefix_scan`,
+  `stream_compact`, `tensor_scc`.
+- **nfa**: subgroup-cooperative NFA scan kernel (the engine under
+  `RulePipeline`).
+- **nn**: NN building blocks.
+- **parsing**: parser primitives.
+- **predicate**: predicate combinators.
+- **range**: range arithmetic.
+- **reduce**: reduction kernels.
+- **text**: `byte_histogram`, `char_class`, `encoding_classify`,
+  `line_index`, `utf8_shape_counts`, `utf8_validate`.
+- **vfs**: virtual-filesystem indices.
+
+### vyre-runtime
+
+Long-lived runtime services:
+
+- `megakernel::Megakernel`, `WgpuMegakernelDispatcher`
+- `pipeline_cache::RemoteCache` + on-disk cache
+- `replay::{RecordedSlot, ReplayLogError, RingLog}` — record-replay
+  for deterministic re-execution
+- `routing` — runtime routing
+- `tenant` — multi-tenant dispatch
+- `uring::{GpuStream, GpuMappedBuffer}` — io_uring-backed GPU memory
+
+**Keyhog could use**: `replay::RingLog` for deterministic scan
+reruns; `uring::GpuMappedBuffer` for zero-copy file→GPU.
+
+### vyre-spec
+
+Formal vyre specification:
+
+- `algebraic_law`, `all_algebraic_laws` — algebraic identities
+- `atomic_op`, `bin_op`, `buffer_access`, `data_type`, `expr_variant`
+- `engine_invariant` — runtime invariants
+- `extension`, `convention`, `category`, `by_category`, `by_id`,
+  `catalog_is_complete`
+- `adversarial_input` — invariants under adversarial input
+
+This is the contract every backend implements. Consumers of vyre
+don't generally need it.
+
+### vyre-intrinsics
+
+Hardware intrinsics + category checks:
+
+- `category_check`, `hardware`, `region`, `harness`
+- Re-exports from `vyre_foundation::cpu_op` (CategoryAOp, CpuOp,
+  structured_intrinsic_cpu)
+
+### vyre-reference
+
+CPU reference implementation of every primitive — used for
+correctness validation:
+
+- `dual`, `primitive`, `primitives`, `value`
+- `atomics`, `cpu_op`, `dialect_dispatch`
+- `eval_expr`, `eval_node`, `flat_cpu`
+- `ieee754`
+- `interp`, `sequential`, `subgroup`, `workgroup` — execution models
+
+### vyre-cc
+
+C compiler bridge. Not directly relevant to keyhog (needed only when
+compiling C kernels into vyre IR).
+
+### vyre-harness
+
+Test harness types: `OpEntry`, `FixpointContract`, `DiffCandidate`,
+`UniversalDiffExemption`. Used by `inventory::submit!` to register
+ops globally.
+
+### vyre-macros
+
+Derive + attribute macros: `define_op`, `vyre_ast_registry`,
+`derive_algebraic_laws`, `vyre_pass`, `skip_builder`. Used internally
+by primitive authors.
 
 ## Concrete next-wires (priority order)
 
 Each of these is a self-contained scope of work whose payoff and risk
 are estimable. Listed best-bang-for-buck first.
 
-1. **`intern::perfect_hash` for credential interning.**
-   The current `ScanState` builds an `Arc<str>` table per scan. Vyre's
-   `perfect_hash` builds a static lookup at scanner-construction time
-   for the detector ID / name / service strings (which are stable
-   across the run). Wins: lower per-finding clone cost, lower steady-
-   state memory. Risk: low — the existing API contract stays the same.
-   Effort: ~half a day.
+1. ✅ **`intern::perfect_hash` for static-string interning** — DONE.
+   Scanner now hands out `Arc<str>` for `(detector_id, name, service,
+   source_type)` from a frozen CHD perfect hash, lock-free, no
+   per-scan allocation.
 
-2. **`text::char_class` powering `alphabet_filter.rs`.**
-   Both keyhog and vyre maintain their own byte-class predicates for
-   the same patterns (alphanumeric, base64 alphabet, hex alphabet). One
-   source of truth + the option to dispatch the alphabet check on GPU
-   when running a coalesced batch. Risk: low — just an internal swap.
+2. **`rule` engine for inline-suppression / allowlist.**
+   The current allowlist is hand-rolled string matching. Vyre's `rule`
+   exposes typed predicates (`file_size_gt`, `pattern_count_gte`,
+   `pattern_exists`, …) that compose into rule trees. Wins:
+   declarative `.keyhogignore.toml` (`suppress when file_size > 10K AND
+   pattern_count(test_kw) >= 2`); user-defined gates; consistent eval
+   model. Effort: ~2 days (schema + parser + eval).
 
-3. **`hash::fnv1a32` cache key for the entropy thread-local.**
-   `entropy_fast.rs` carries a hand-rolled `fnv` table. Switching to
-   vyre's primitive lets the same hash function feed both the CPU
-   entropy fast-path AND any future GPU entropy prefilter pass.
-   Risk: low.
+3. **`runtime::uring::GpuMappedBuffer` for filesystem reads.**
+   `crates/sources/src/filesystem/read.rs` reads file content into
+   `Vec<u8>` then copies to GPU. `GpuMappedBuffer` io_urings the file
+   directly into a GPU-mapped buffer — eliminates a 256 MiB copy per
+   batch on the GPU dispatch path. Effort: ~3 days; needs vyre-runtime
+   feature opt-in + careful lifetime work.
 
-4. **`matching::substring` instead of `aho_corasick` for the keyword
-   pre-filter.**
-   The fallback path in `pipeline.rs::has_secret_keyword_fast` and
-   `has_generic_assignment_keyword` builds an AC matcher per scanner.
-   Vyre's substring primitive is composable with the GPU dispatch and
-   keeps everything on one engine. Needs a benchmark to confirm vyre
-   matches the AC throughput on the typical 30-keyword set.
+4. **`fuse_programs` to bundle decode + scan dispatches.**
+   When scanning a `.zst` archive today: read on CPU → decode on CPU
+   (`ziftsieve`) → copy plaintext to GPU → dispatch literal-set. With
+   `fuse_programs(decode::inflate, GpuLiteralSet)` it becomes one GPU
+   dispatch. Saves ~50% wall time on compressed-corpus scans. Effort:
+   ~2 days.
 
 5. **`nn::moe` + `nn::linear` replacing `gpu.rs`'s hand-rolled MoE.**
    `gpu.rs` is ~620 lines of bespoke wgpu+WGSL for an MoE confidence
    scorer. Vyre's `nn::moe` is the same algorithm composed from
    `nn::linear` + `nn::activation` + `nn::norm`. Wins: ~600 lines
-   deleted, automatic benefit from vyre kernel improvements, identical
-   compute semantics. Risk: medium — would need parity tests against
-   the current ML scorer outputs to confirm bit-equivalent results.
+   deleted, automatic benefit from vyre kernel improvements. Risk:
+   medium — needs parity tests against `ml_scorer.rs` outputs.
    Effort: ~3 days plus correctness validation.
 
-6. **`rule` engine for inline-suppression / allowlist.**
-   The current allowlist is hand-rolled string matching. Vyre's `rule`
-   exposes typed predicates (`file_size_gt`, `pattern_count_gte`,
-   `pattern_exists`, …) that compose into declarative rule trees.
-   Wins: user-defined rules become trivial; a `.keyhogignore.toml`
-   could express "suppress this finding when file_size > 10KiB AND
-   pattern_count(test_keywords) >= 2" without code changes.
+6. **`shadow`/`speculate` for CI dispatch validation.**
+   In CI, run every GPU dispatch on TWO backends (vyre-driver-wgpu +
+   vyre-driver-reference) and assert identical results. Catches GPU
+   driver regressions before users see them. Effort: ~1 day.
 
-7. **`decode::inflate` + `decode::ziftsieve` GPU decode-then-scan.**
-   The current path reads the compressed bytes, calls `ziftsieve` on
-   the CPU to decompress, then hands the plaintext to `scan_coalesced`.
-   Vyre's GPU decoders let us pipeline decompression and matching in
-   the same dispatch. Big payoff on `.zst`-heavy corpora (npm, Docker
-   image layers); meaningless on regular source trees. Effort: high.
+7. **`replay::RingLog` for deterministic scan rerun.**
+   Record every dispatch + result; on a flaky test, replay the exact
+   same sequence to bisect. Useful for debugging GPU non-determinism
+   reports. Effort: ~1 day (mostly wiring).
+
+8. **`vyre-driver-megakernel` to bundle multiple scan ops.**
+   Today each batch is: literal-set → boundary → entropy prefilter →
+   ML scoring. Each is a separate GPU dispatch (~2 ms setup × 4 = 8 ms
+   overhead per batch). Megakernel bundles them. Effort: ~5 days; the
+   biggest perf win per scan but needs careful invariant work.
 
 ## What blocks "max usage" right now
 
@@ -127,17 +316,30 @@ are estimable. Listed best-bang-for-buck first.
   literal-set path on the production corpus. Lifted upstream when
   vyre adds either (a) per-subgroup state batching or (b) a
   multi-pipeline dispatch that splits the regex set across multiple
-  RulePipelines. keyhog can do (b) on its own side as a follow-up
-  (compile detectors in groups, dispatch each group, merge triggers).
+  RulePipelines + a megakernel. Keyhog-side batching was prototyped
+  and is feasible, but ~120 sequential GPU dispatches add ~240 ms of
+  setup overhead — slower than literal-set on the full corpus.
+  Megakernel fusion (item 8) is the right fix.
 
 - **vyre's regex frontend MAX_REP cap.** The vendored v0.6.0 caps
   bounded repetitions at `{0,64}` / `{,64}`; upstream HEAD has this
   removed (the state-cap is the source of truth). A re-vendor against
   HEAD picks it up but currently breaks dep-version pinning across
   the workspace (rayon `=1.11` vs `=1.12`, smallvec `=1.14` vs `^1.15.1`,
-  …). The vyre-side fix lands when an upstream tag releases with
-  pin-relaxed dependency declarations.
+  …) and renames + adds workspace members. The vyre-side fix lands
+  when an upstream tag releases with pin-relaxed dependency
+  declarations.
 
 - **Vyre is not on crates.io.** All path-deps in `vendor/vyre/`. This
   blocks `cargo publish` of `keyhog-scanner` and `keyhog` (the binary
   crate). Resolved when vyre publishes its workspace to crates.io.
+
+## Realistic shipping cadence
+
+Items 1 was a single session. Items 2–7 are each a multi-day scope
+of work — wiring a vyre primitive end-to-end into keyhog requires:
+adding the dependency feature, writing the dispatch glue, validating
+against the existing path, and shipping correctness tests.
+
+"Wire all" of vyre is multi-month engineering. The audit above is
+the work plan; pick from items 2–8 by user priority.
