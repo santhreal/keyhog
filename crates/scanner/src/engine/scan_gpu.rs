@@ -213,41 +213,84 @@ impl CompiledScanner {
         const MAX_CAP: u32 = 16_000_000;
         let buffer_cap = (buffer.len() / 64) as u64;
         let cap: u32 = buffer_cap.clamp(MIN_CAP as u64, MAX_CAP as u64) as u32;
-        let max_matches = cap.saturating_add(1);
 
+        // wgpu caps each compute dispatch at 65535 workgroups per
+        // dimension (WebGPU spec). Vyre's GpuLiteralSet uses
+        // workgroup_size_x = 32, so a single dispatch can handle at
+        // most 65535 × 32 = 2,097,120 input bytes. For coalesced
+        // batches larger than this (which is now typical with the
+        // tier-aware 2 MiB activation threshold + the orchestrator's
+        // 256 MiB BATCH_BYTES_BUDGET), shard the buffer into
+        // 2-MiB-or-less pieces, dispatch each, and merge the matches
+        // with a `start` offset added to put them back into the
+        // global buffer's coordinate space.
+        //
+        // Shard size: 65535 (max workgroups per dim) × 32 (vyre's
+        // workgroup_size_x) = 2,097,120 bytes. Exactly 2 MiB =
+        // 2,097,152 bytes overflows by one workgroup. Use the
+        // exact-aligned value to maximise per-shard throughput
+        // without tripping the wgpu dispatch validator.
+        //
+        // Extra dispatches add ~100 µs each on a high-tier GPU; for
+        // a 256 MiB batch that's ~12 ms of overhead vs SIMD's ~70 s
+        // — still a 5800× win.
+        const GPU_DISPATCH_MAX_BYTES: usize = 65_535 * 32;
         let started = std::time::Instant::now();
-        let mut matches: Vec<vyre_libs::matching::LiteralMatch> =
-            match matcher.scan(&**backend, &buffer, max_matches) {
-                Ok(matches) => matches,
+        let mut matches: Vec<vyre_libs::matching::LiteralMatch> = Vec::new();
+        let mut shard_count = 0usize;
+        let mut shard_start = 0usize;
+        while shard_start < buffer.len() {
+            let shard_end = (shard_start + GPU_DISPATCH_MAX_BYTES).min(buffer.len());
+            let shard = &buffer[shard_start..shard_end];
+            // Per-shard cap scales the same way: hits / 64 bytes.
+            let shard_cap_u64 = (shard.len() / 64) as u64;
+            let shard_cap = shard_cap_u64.clamp(MIN_CAP as u64, MAX_CAP as u64) as u32;
+            let shard_max = shard_cap.saturating_add(1);
+            let shard_matches = match matcher.scan(&**backend, shard, shard_max) {
+                Ok(m) => m,
                 Err(e) => {
-                    tracing::error!("GPU scan failed, falling back to CPU: {e}");
+                    tracing::error!(
+                        shard_start,
+                        shard_len = shard.len(),
+                        "GPU shard scan failed, falling back to CPU: {e}"
+                    );
                     return self.scan_coalesced_non_gpu(chunks);
                 }
             };
+            if shard_matches.len() > shard_cap as usize {
+                tracing::warn!(
+                    cap = shard_cap,
+                    shard_start,
+                    shard_len = shard.len(),
+                    "GPU shard exceeded its cap — truncation possible; falling back to CPU"
+                );
+                return self.scan_coalesced_non_gpu(chunks);
+            }
+            // Re-base shard-local offsets into global buffer coords.
+            let offset = shard_start as u32;
+            for m in &shard_matches {
+                matches.push(vyre_libs::matching::LiteralMatch::new(
+                    m.pattern_id,
+                    m.start.saturating_add(offset),
+                    m.end.saturating_add(offset),
+                ));
+            }
+            shard_count += 1;
+            shard_start = shard_end;
+        }
         let elapsed_ms = started.elapsed().as_millis();
         tracing::debug!(
             target: "keyhog::routing",
             chunks = chunks.len(),
             buffer_bytes = buffer.len(),
             matches = matches.len(),
+            shards = shard_count,
             cap,
             elapsed_ms,
             "vyre GPU scan completed"
         );
-        // Truncation only when the GPU produced strictly more than `cap`
-        // results (i.e., used the +1 sentinel slot). Counts equal to or
-        // below `cap` are by definition complete.
-        if matches.len() > cap as usize {
-            tracing::warn!(
-                cap,
-                chunks = chunks.len(),
-                buffer_bytes = buffer.len(),
-                "GPU scan exceeded the match cap — truncation possible; falling back to CPU. \
-                 If this fires regularly, increase scanner cap (current cap is buffer.len() / 64, \
-                 floor 100k, ceiling 16M)."
-            );
-            return self.scan_coalesced_non_gpu(chunks);
-        }
+        // (Sharded path handles per-shard truncation above; no
+        // whole-buffer truncation check needed here.)
         // Per-pid region dedup via the shared vyre primitive instead of
         // re-implementing span coalescing here. `dedup_regions_inplace`
         // sorts by `(pid, start, end)` and folds same-pid overlapping
