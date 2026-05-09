@@ -58,6 +58,7 @@ hyperscan = { workspace = true, optional = true }
 vyre = { workspace = true }
 vyre_libs = { workspace = true, features = ["vyre_driver_wgpu", "matching-nfa", "matching-regex", "intern"] }
 vyre-driver-wgpu = { workspace = true }
+vyre-runtime = { workspace = true, features = ["megakernel-batch"] }
 
 simdsieve = { workspace = true, optional = true }
 parking_lot = { workspace = true }

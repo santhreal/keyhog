@@ -92,6 +92,7 @@ simdsieve = "=0.1.1"
 vyre = { version = "=0.6.0", path = "vendor/vyre/vyre-core" }
 vyre_libs = { package = "vyre-libs", version = "=0.6.0", path = "vendor/vyre/vyre-libs" }
 vyre-driver-wgpu = { package = "vyre-driver-wgpu", version = "=0.6.0", path = "vendor/vyre/vyre-driver-wgpu" }
+vyre-runtime = { version = "=0.6.0", path = "vendor/vyre/vyre-runtime" }
 wgpu = "=24.0.5"
 pollster = "=0.4.0"
 bytemuck = { version = "=1.25.0", features = ["derive"] }

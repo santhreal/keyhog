@@ -2736,6 +2736,7 @@ dependencies = [
  "vyre",
  "vyre-driver-wgpu",
  "vyre-libs",
+ "vyre-runtime",
  "wgpu",
  "zeroize",
 ]
@@ -5194,6 +5195,21 @@ version = "0.6.0"
 dependencies = [
  "inventory",
  "vyre-foundation",
+]
+
+[[package]]
+name = "vyre-runtime"
+version = "0.6.0"
+dependencies = [
+ "blake3",
+ "bytemuck",
+ "libc",
+ "thiserror 2.0.18",
+ "vyre-driver",
+ "vyre-driver-megakernel",
+ "vyre-driver-wgpu",
+ "vyre-foundation",
+ "wgpu",
 ]
 
 [[package]]

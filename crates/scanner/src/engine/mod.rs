@@ -3,6 +3,10 @@
 mod backend;
 mod boundary;
 mod fallback;
+/// Megakernel-batched GPU dispatch via vyre-runtime.
+/// Status: scaffolding (compilation works); dispatch loop wired in
+/// follow-up work. See `megakernel_dispatch.rs` doc-comment.
+pub mod megakernel_dispatch;
 mod fallback_entropy;
 mod fallback_generic;
 mod hot_patterns;

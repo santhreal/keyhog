@@ -120,6 +120,14 @@ pub mod uring;
 pub struct GpuStream<'a> {
     #[cfg(target_os = "linux")]
     uring: Option<uring::AsyncUringStream<'a>>,
+    /// Phantom binding so the `'a` lifetime is always used even on
+    /// non-Linux platforms where the `uring` field is cfg'd out.
+    /// Without this the lib fails to compile on Windows / macOS with
+    /// `unused lifetime parameter`. (vyre-side fix candidate; until
+    /// upstream lands a cross-platform structural change we keep this
+    /// PhantomData here in the vendored copy.)
+    #[cfg(not(target_os = "linux"))]
+    _marker: std::marker::PhantomData<&'a ()>,
     shutdown_requested: bool,
 }
 
@@ -146,6 +154,8 @@ impl<'a> GpuStream<'a> {
         Self {
             #[cfg(target_os = "linux")]
             uring: None,
+            #[cfg(not(target_os = "linux"))]
+            _marker: std::marker::PhantomData,
             shutdown_requested: false,
         }
     }
