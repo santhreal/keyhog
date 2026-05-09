@@ -156,6 +156,64 @@ impl CompiledScanner {
         results
     }
 
+    /// GPU coalesced scan via the vyre megakernel `BatchDispatcher`.
+    /// Single persistent kernel launch handles every chunk × every
+    /// detector literal, replacing the N-shard `GpuLiteralSet::scan`
+    /// loop in `scan_coalesced_gpu`. Per-chunk extraction phase still
+    /// runs CPU-side after the trigger bitmask is decoded — the
+    /// architectural step that moves extraction onto GPU is a
+    /// separate megakernel opcode handler set, tracked in
+    /// `docs/vyre-usage.md` next-wires #8 step 7.
+    ///
+    /// Falls back to `scan_coalesced_gpu` when the megakernel can't
+    /// be initialised (no adapter, no literals, dispatcher init
+    /// failure, dispatch error mid-batch).
+    pub fn scan_coalesced_megakernel(
+        &self,
+        chunks: &[keyhog_core::Chunk],
+    ) -> Vec<Vec<keyhog_core::RawMatch>> {
+        use crate::hw_probe::ScanBackend;
+
+        let Some(megakernel) = self.megakernel_scanner() else {
+            tracing::debug!(
+                "Megakernel: not initialised, falling back to literal-set GPU"
+            );
+            return self.scan_coalesced_gpu(chunks);
+        };
+
+        let triggers_opt = {
+            let mut guard = megakernel.lock();
+            guard.dispatch_triggers(chunks)
+        };
+        let Some(per_chunk_triggers) = triggers_opt else {
+            return self.scan_coalesced_gpu(chunks);
+        };
+
+        // Same per-chunk extraction phase as scan_coalesced_gpu: rayon
+        // par_iter over (chunk, triggers), prepare_chunk,
+        // scan_prepared_with_triggered, post_process_matches, then
+        // boundary reassembly across contiguous chunks.
+        use rayon::prelude::*;
+        let mut results: Vec<Vec<keyhog_core::RawMatch>> = chunks
+            .par_iter()
+            .zip(per_chunk_triggers.into_par_iter())
+            .map(|(chunk, triggered)| {
+                let prepared = self.prepare_chunk(chunk);
+                let mut matches = self.scan_prepared_with_triggered(
+                    prepared,
+                    ScanBackend::Gpu,
+                    triggered,
+                    None,
+                );
+                self.post_process_matches(chunk, &mut matches, None);
+                matches
+            })
+            .collect();
+
+        super::boundary::scan_chunk_boundaries(self, chunks, &mut results);
+        results
+    }
+
     /// GPU coalesced scan via one Vyre literal-set dispatch.
     pub fn scan_coalesced_gpu(
         &self,

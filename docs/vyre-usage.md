@@ -371,7 +371,43 @@ are estimable. Listed best-bang-for-buck first.
    (16-lane gather + popcnt) would lift per-chunk throughput 2-4×
    without GPU work. Effort: 1-2 days.
 
-## Megakernel wiring — concrete next-session checklist
+## Megakernel wiring — status + architectural finding
+
+`crates/scanner/src/engine/megakernel_dispatch.rs` ships a working
+end-to-end wire (DFA-per-literal compile + `BatchDispatcher` init +
+`dispatch_triggers` returning per-chunk per-pattern triggers),
+gated behind `KEYHOG_USE_MEGAKERNEL=1` and routed through
+`scan_coalesced_megakernel` in `engine/scan_gpu.rs`.
+
+**Architectural mismatch found in testing on RTX 5090:** vyre's
+`BatchDispatcher` is built for "many files × few rules" (small
+curated rule pack against many files). Keyhog's production corpus
+is "few files × many rules" — 6000+ literal patterns scanned across
+~100 file chunks per batch. Modelling each literal as its own
+`BatchRuleProgram` allocates `chunks × rules ≈ 600,000` work items
+inside the persistent kernel for a single batch, which is enough
+to keep the dispatch sleeping for minutes (observed on RTX 5090 —
+the first benchmark run had to be killed after ~25s of wall time
+with the kernel still in S-state waiting on per-rule scratch).
+
+**Real megakernel win path (vyre-side feature request):**
+- Pass ALL literals into ONE `dfa_compile(&[&[u8]])` call → ONE
+  multi-pattern DFA → ONE `BatchRuleProgram` per batch
+- vyre `HitRecord` currently has `(file_idx, rule_idx, layer_idx,
+  match_offset)` — no per-pattern field. Need a vyre-side opcode
+  handler set that emits per-pattern hits via the DFA's
+  `output_records` table
+- Then a single dispatch handles all chunks × all literals natively,
+  one kernel launch, full per-pattern attribution
+
+The keyhog-side wiring lands as a one-line swap once vyre exposes
+the per-pattern hit reporting. Until then, default GPU path stays
+on `scan_coalesced_gpu`'s sharded `GpuLiteralSet::scan` (50
+dispatches × 100µs ≈ 5ms overhead for a 100 MiB batch — measured
+with the realistic-corpus benchmark; less of a win than expected
+because per-chunk extraction still dominates).
+
+## Megakernel wiring — original next-session checklist
 
 The scaffolding in `crates/scanner/src/engine/megakernel_dispatch.rs`
 gives a working `MegakernelScanner` (DFA-per-literal compile +

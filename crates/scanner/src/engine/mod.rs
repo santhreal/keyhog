@@ -193,6 +193,16 @@ pub struct CompiledScanner {
     /// Literal prefixes supplied to Vyre's GPU Aho-Corasick engine.
     pub(crate) gpu_literals: Option<Arc<Vec<Vec<u8>>>>,
     pub(crate) gpu_matcher: OnceLock<Option<vyre_libs::matching::GpuLiteralSet>>,
+    /// Lazily-compiled megakernel batch dispatcher. `Some` once the
+    /// vyre `BatchDispatcher` plus per-literal `BatchRuleProgram`
+    /// table have been built; `None` if compile failed (no GPU
+    /// adapter, vyre dispatcher init error, no literals). Wrapped in
+    /// `Mutex` because `BatchDispatcher::dispatch` takes `&mut self`
+    /// to advance per-call state (rule-buffer cache invalidation,
+    /// pipeline submission).
+    pub(crate) megakernel_scanner: OnceLock<
+        Option<Arc<parking_lot::Mutex<crate::engine::megakernel_dispatch::MegakernelScanner>>>,
+    >,
     /// Frozen static-string interner built from detector metadata at
     /// scanner construction. Hands out shared `Arc<str>` for every
     /// `(detector_id, detector_name, service, source_type)` value
@@ -324,6 +334,7 @@ impl CompiledScanner {
             wgpu_backend,
             gpu_literals,
             gpu_matcher: OnceLock::new(),
+            megakernel_scanner: OnceLock::new(),
             rule_pipeline: OnceLock::new(),
             static_intern,
             ac_map: state.ac_map,
@@ -393,6 +404,29 @@ impl CompiledScanner {
                     "GpuLiteralSet ready (warm cache or compiled)"
                 );
                 Some(matcher)
+            })
+            .as_ref()
+    }
+
+    /// Lazily compile the megakernel-batched `BatchDispatcher` on
+    /// first call. Returns `None` once the OnceLock has fired when the
+    /// dispatcher couldn't be constructed (no GPU adapter, no
+    /// `gpu_literals`, vyre runtime error). When `Some`, callers can
+    /// dispatch one persistent kernel per batch via
+    /// `MegakernelScanner::dispatch_triggers` instead of the
+    /// `GpuLiteralSet::scan` per-shard loop.
+    pub fn megakernel_scanner(
+        &self,
+    ) -> Option<&Arc<parking_lot::Mutex<crate::engine::megakernel_dispatch::MegakernelScanner>>>
+    {
+        self.megakernel_scanner
+            .get_or_init(|| {
+                let backend = self.wgpu_backend.clone()?;
+                let literals = self.gpu_literals.clone()?;
+                crate::engine::megakernel_dispatch::MegakernelScanner::try_compile(
+                    backend, &literals,
+                )
+                .map(|m| Arc::new(parking_lot::Mutex::new(m)))
             })
             .as_ref()
     }

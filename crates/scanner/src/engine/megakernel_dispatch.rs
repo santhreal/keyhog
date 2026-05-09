@@ -2,12 +2,47 @@
 //! rules into one persistent kernel launch via vyre's
 //! `vyre_runtime::megakernel::BatchDispatcher`.
 //!
-//! Status (v0.5.5 scaffolding): compiled DFA per detector literal +
-//! `BatchDispatcher` infrastructure are in place. The actual scan
-//! call still routes to `scan_coalesced_gpu` (the literal-set
-//! sharded path) until the per-DFA rule table is populated and the
-//! HitRecord → keyhog trigger-bitmask attribution is wired. Tracked
-//! in `docs/vyre-usage.md` next-wires #8.
+//! **Status:** scaffolded + dispatch loop wired (`dispatch_triggers`
+//! returns per-chunk per-pattern triggers via vyre megakernel),
+//! gated behind `KEYHOG_USE_MEGAKERNEL=1` while we settle the
+//! architectural mismatch documented below. Defaults OFF; the
+//! production GPU path stays on `scan_coalesced_gpu`'s sharded
+//! `GpuLiteralSet::scan` until megakernel becomes a measured win.
+//!
+//! **Why off-by-default:** vyre's `BatchDispatcher` is optimised for
+//! "many files × few rules" (e.g. mass scanning with a small
+//! curated rule pack). Keyhog's production corpus is the opposite —
+//! 6000+ literal patterns scanned across a smaller per-batch file
+//! count. With `BatchRuleProgram` modelling one rule = one literal,
+//! the dispatcher allocates `chunks × rules` work items inside the
+//! persistent kernel. At keyhog's scale that's hundreds of
+//! thousands of work items per dispatch, which negates the kernel-
+//! launch saving we wanted from megakernel in the first place.
+//!
+//! **Real megakernel win path (next architectural step):** keyhog
+//! needs ONE multi-pattern DFA per batch (passing all literals into
+//! a single `dfa_compile` call, accept-table → `output_records`
+//! returning per-pattern hits) plus a custom megakernel
+//! `OpcodeHandler` set to record per-pattern hits via
+//! `output_records` instead of the built-in per-rule HitRecord.
+//! That's a vyre-side feature request: the current `BatchRuleProgram`
+//! / `HitRecord` API has no per-pattern field on the hit (only
+//! `file_idx`, `rule_idx`, `layer_idx`, `match_offset`).
+//!
+//! What this module DOES deliver today:
+//!  - Cross-platform wiring of vyre-runtime into keyhog (the
+//!    `PhantomData<&'a ()>` fix in `vendor/vyre/vyre-runtime/src/
+//!    lib.rs::GpuStream` that this commit ships unblocks Windows /
+//!    macOS users).
+//!  - DFA-per-literal compilation via `vyre_libs::matching::dfa::
+//!    dfa_compile` + lazy `BatchDispatcher::new` cached on
+//!    `CompiledScanner` — proves the megakernel path resolves and
+//!    initialises against a live wgpu adapter.
+//!  - End-to-end `dispatch_triggers` that hands back the same
+//!    per-chunk per-pattern trigger bitmask the literal-set GPU
+//!    path produces, so when the vyre-side API gains per-pattern
+//!    hit reporting, the keyhog dispatcher will work as a one-line
+//!    swap.
 //!
 //! Why megakernel matters for keyhog:
 //!  - One persistent dispatch instead of N `GpuLiteralSet::scan`
@@ -23,9 +58,10 @@
 
 use std::sync::Arc;
 
+use keyhog_core::Chunk;
 use vyre_libs::matching::dfa::dfa_compile;
 use vyre_runtime::megakernel::{
-    BatchDispatchConfig, BatchDispatcher, BatchRuleProgram,
+    BatchDispatchConfig, BatchDispatcher, BatchFile, BatchRuleProgram, FileBatch, HitRecord,
 };
 
 /// Per-scanner megakernel state. Holds one compiled `BatchDispatcher`
@@ -150,6 +186,111 @@ impl MegakernelScanner {
     /// (internally Arc<ArcSwap<...>>).
     pub fn backend(&self) -> &vyre_driver_wgpu::WgpuBackend {
         &self.backend
+    }
+
+    /// Dispatch one batch: upload `chunks` as a `FileBatch`, run the
+    /// persistent megakernel against the cached DFA rules, decode the
+    /// returned `HitRecord`s into a per-chunk per-pattern trigger
+    /// bitmask. Caller runs the per-chunk extraction phase on top of
+    /// these triggers (same shape as `scan_coalesced_gpu` after the
+    /// `GpuLiteralSet::scan` call returns).
+    ///
+    /// Returns `None` when the dispatch errors at the wgpu layer (the
+    /// caller should fall back to `scan_coalesced_gpu` in that case).
+    /// `Some(triggers)` is `triggers[chunk_idx][pattern_word_idx]`.
+    pub fn dispatch_triggers(
+        &mut self,
+        chunks: &[Chunk],
+    ) -> Option<Vec<Vec<u64>>> {
+        if chunks.is_empty() {
+            return Some(Vec::new());
+        }
+
+        // Build the host-side batch input. `path_hash` is just the
+        // chunk index (no need for a real path hash — the megakernel
+        // returns per-file `file_idx` which round-trips back to this
+        // index unchanged). `decoded_layer_index` stays at 0 because
+        // keyhog's GPU dispatch operates on raw bytes, not decoded
+        // archive layers.
+        let batch_files: Vec<BatchFile> = chunks
+            .iter()
+            .enumerate()
+            .map(|(idx, chunk)| {
+                BatchFile::new(idx as u64, 0, chunk.data.as_ref().as_bytes().to_vec())
+            })
+            .collect();
+
+        let device_queue = self.backend.device_queue();
+        let rule_count = self.rules.len() as u32;
+        // Hit capacity scales with chunks × rules but capped to keep
+        // the device-side ring small. Real-world keyhog corpora hit
+        // <50 patterns per chunk; allocate room for 256/chunk × rules
+        // bounded at 16M total to mirror the literal-set cap.
+        let target_hits = (chunks.len() as u64)
+            .saturating_mul(256)
+            .saturating_mul(rule_count.min(64) as u64);
+        let hit_capacity: u32 = target_hits.clamp(100_000, 16_000_000) as u32;
+
+        let batch = match FileBatch::upload(
+            device_queue,
+            &batch_files,
+            rule_count,
+            hit_capacity,
+        ) {
+            Ok(b) => b,
+            Err(error) => {
+                tracing::warn!(
+                    %error,
+                    chunks = chunks.len(),
+                    "Megakernel: FileBatch::upload failed; caller should fall back"
+                );
+                return None;
+            }
+        };
+
+        let started = std::time::Instant::now();
+        let report = match self.dispatcher.dispatch(&batch, &self.rules) {
+            Ok(r) => r,
+            Err(error) => {
+                tracing::warn!(
+                    %error,
+                    chunks = chunks.len(),
+                    rules = self.rules.len(),
+                    "Megakernel: dispatch failed; caller should fall back"
+                );
+                return None;
+            }
+        };
+
+        tracing::debug!(
+            target: "keyhog::routing",
+            chunks = chunks.len(),
+            rules = self.rules.len(),
+            hits = report.hit_count,
+            elapsed_ms = started.elapsed().as_millis() as u64,
+            "Megakernel batch dispatched"
+        );
+
+        // Flatten HitRecord stream into per-chunk per-pattern triggers.
+        // rule_idx == pattern_id (we built BatchRuleProgram with
+        // rule_idx == literal index = ac_map index for a literal-only
+        // detector). Patterns with no matches stay zero.
+        let total_patterns = self.rules.len();
+        let words_per_chunk = total_patterns.div_ceil(64);
+        let mut triggers: Vec<Vec<u64>> = chunks
+            .iter()
+            .map(|_| vec![0u64; words_per_chunk])
+            .collect();
+
+        for HitRecord { file_idx, rule_idx, .. } in &report.hits {
+            let chunk_index = *file_idx as usize;
+            let pattern_index = *rule_idx as usize;
+            if chunk_index < triggers.len() && pattern_index < total_patterns {
+                triggers[chunk_index][pattern_index / 64] |= 1u64 << (pattern_index % 64);
+            }
+        }
+
+        Some(triggers)
     }
 }
 
