@@ -336,8 +336,9 @@ are estimable. Listed best-bang-for-buck first.
    same sequence to bisect. Useful for debugging GPU non-determinism
    reports. Effort: ~1 day (mostly wiring).
 
-8. **`vyre-driver-megakernel` to bundle the per-chunk extraction
-   onto GPU** — THE NEXT MAJOR PERF WIN. Today the GPU only runs
+8. ⏳ **`vyre-driver-megakernel` to bundle the per-chunk extraction
+   onto GPU** — IN PROGRESS (scaffolding committed, dispatch loop
+   in follow-up). Today the GPU only runs
    the literal-prefilter; per-chunk regex matching, entropy
    scoring, ML inference all run CPU-side after the prefilter
    returns triggers. The benchmark above shows this serial CPU
@@ -369,6 +370,96 @@ are estimable. Listed best-bang-for-buck first.
    has thread-local FNV cache; widening the byte histogram to AVX-512
    (16-lane gather + popcnt) would lift per-chunk throughput 2-4×
    without GPU work. Effort: 1-2 days.
+
+## Megakernel wiring — concrete next-session checklist
+
+The scaffolding in `crates/scanner/src/engine/megakernel_dispatch.rs`
+gives a working `MegakernelScanner` (DFA-per-literal compile +
+`BatchDispatcher` init). To complete the wiring:
+
+1. **Build `FileBatch` from chunks** at scan time. API:
+   `FileBatch::upload(device_queue, &[BatchFile], rule_count, hit_capacity)`.
+   Each `BatchFile::new(path_hash, decoded_layer_index, bytes)` wraps
+   one chunk's bytes. `path_hash` can be the chunk index hashed via
+   FNV; `decoded_layer_index = 0` for non-decoded scans.
+2. **Dispatch via `BatchDispatcher::dispatch(&batch, &rules)`**. Returns
+   `BatchDispatchReport { hits: Vec<HitRecord { file_idx, rule_idx,
+   layer_idx, match_offset }>, ... }`.
+3. **Map `HitRecord` → keyhog trigger bitmask**:
+   `per_chunk_triggers[hit.file_idx as usize][hit.rule_idx as usize / 64]
+   |= 1 << (hit.rule_idx % 64)`. Same shape as the existing
+   `scan_coalesced_gpu` post-process.
+4. **Per-chunk extraction phase**: identical to `scan_coalesced_gpu`
+   from line ~277 onwards (par_iter, prepare_chunk,
+   scan_prepared_with_triggered, post_process_matches, boundary scan).
+5. **Wire as a new `ScanBackend` variant or replace `Gpu`'s underlying
+   impl**. Recommend: cache `MegakernelScanner` on `CompiledScanner`
+   via `OnceLock<Option<MegakernelScanner>>` (mirrors `gpu_matcher`
+   and `rule_pipeline`); add `try_with_megakernel()` getter; route
+   `scan_chunks_with_backend_internal` to it when active.
+6. **Parity test against `scan_coalesced_gpu`** — same fixture as
+   `tests/gpu_parity.rs`, assert equal credential sets between
+   sharded GpuLiteralSet and BatchDispatcher paths.
+
+Expected wins on RTX 5090: ~5 ms saved per 100 MiB batch (50 sharded
+dispatches × 100 µs collapsed into 1). Not a 10× win on its own — the
+real prize is step 7, moving per-chunk extraction onto the same
+megakernel via `OpcodeHandler`s for entropy + regex eval.
+
+## Other unfinished wires (deferred from this session)
+
+- **`shadow`/`speculate` for CI dispatch validation.** vyre's shadow
+  module is for validating ops against multiple backends inside vyre;
+  not directly applicable to keyhog. The keyhog-side equivalent is
+  `tests/gpu_parity.rs` which already runs every CI build. A
+  `--validate-backend` CLI flag for runtime opt-in dual dispatch
+  was prototyped but reverted: cleanly hijacking `scan_sources` to
+  re-run with a forced backend needs source iterator re-creation,
+  which is more invasive than a session-end commit warrants.
+  Future-work: add the flag with a proper `Sources::reify()` helper
+  that lets the orchestrator replay the same logical input twice.
+
+- **`matching::substring` as keyword pre-filter.** vyre's
+  `substring_search(haystack, needle)` is a single-needle GPU
+  primitive; keyhog's `has_secret_keyword_fast` checks an N-keyword
+  set. Wrong shape for direct replacement. The vyre-side equivalent
+  would be `matching::classic_ac` or `matching::cooperative_dfa`
+  for multi-pattern; both are GPU IR builders that need a custom
+  dispatch wrapper to use.
+
+- **`matching::cooperative_dfa` as alternative literal engine.**
+  Real candidate but adds a third backend variant alongside
+  `Gpu` (literal-set) and `MegaScan` (regex-NFA). Defer until we
+  can benchmark vs the megakernel literal-DFA path landing in
+  the next session.
+
+- **`fuse_programs` for decode + scan.** Need to pre-compose
+  `decode::inflate` (or `decode::ziftsieve`) with `GpuLiteralSet` /
+  `RulePipeline` programs into one dispatch via
+  `vyre_foundation::execution_plan::fusion::fuse_programs`. Modest
+  perf win on `.zst`-heavy corpora (npm, Docker layers) but no
+  effect on regular source trees. ~2 days.
+
+- **`nn::moe` replacing the hand-rolled MoE in `gpu.rs`.** ~620 LoC
+  of bespoke wgpu+WGSL gone, composed from `vyre_libs::nn::{moe,
+  linear, activation, norm}`. Risky parity work — needs bit-equal
+  output validation against `ml_scorer.rs` on the existing weight
+  set. ~3 days.
+
+- **`runtime::uring::GpuMappedBuffer` for filesystem reads.**
+  Eliminates a 256 MiB heap → GPU memcpy per batch on big files.
+  Linux-only (io_uring); needs vyre-runtime `uring` feature opt-in
+  + careful `GpuStream<'a>` lifetime work in `sources/filesystem/
+  read.rs`. ~3 days.
+
+- **vyre `rule` engine for declarative `.keyhogignore.toml`.**
+  Vyre's `RuleCondition` AST (PatternExists, PatternCountGte,
+  FileSizeGt, RegexMatch, SubstringMatch, RangeMatch,
+  SetMembership, PrefixMatch, SuffixMatch + And/Or/Not) is a
+  superset of keyhog's current line-based `.keyhogignore`. UX win,
+  not perf. The conditions need a CPU evaluator since vyre's
+  built-in evaluator is GPU-IR based — ~50 LoC plus a TOML schema.
+  ~1 day.
 
 ## What blocks "max usage" right now
 
