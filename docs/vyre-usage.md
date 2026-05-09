@@ -252,6 +252,32 @@ Derive + attribute macros: `define_op`, `vyre_ast_registry`,
 `derive_algebraic_laws`, `vyre_pass`, `skip_builder`. Used internally
 by primitive authors.
 
+## Performance benchmark snapshot (RTX 5090, v0.5.4 + tier routing)
+
+After landing tier-aware routing + GPU dispatch sharding, the embedded
+`keyhog scan --benchmark` corpus (100 × 1 MiB chunks of realistic
+source-code shape with a known-secret suffix per chunk) reports:
+
+```
+cpu-fallback : 130 MiB/s  (302168 findings)
+simd-regex   : 136 MiB/s  (304128 findings)
+gpu-zero-copy:  34 MiB/s  (303554 findings)
+```
+
+Recall is now correct across all three backends (the prior `121×
+speedup` number on the entropy-trap fixture was lying — GPU was
+dispatch-erroring and returning 2304 of the 304128 true findings).
+
+GPU loses on this density of triggered chunks because every chunk
+triggers the full per-chunk extraction (entropy + regex + ML
+scoring), and that pipeline runs CPU-side after the GPU prefilter.
+The prefilter speedup amortises across 50 shards (100 MiB / 2 MiB
+max-dispatch-bytes) but the post-process serial cost dominates.
+
+**The architectural fix is megakernel fusion of the extraction
+pipeline onto the GPU** (item 8 below). Until then, the tier-aware
+router correctly stays on SIMD for this finding density.
+
 ## Concrete next-wires (priority order)
 
 Each of these is a self-contained scope of work whose payoff and risk
@@ -261,6 +287,14 @@ are estimable. Listed best-bang-for-buck first.
    Scanner now hands out `Arc<str>` for `(detector_id, name, service,
    source_type)` from a frozen CHD perfect hash, lock-free, no
    per-scan allocation.
+
+1.5. ✅ **Tier-aware GPU routing + dispatch sharding** — DONE.
+   `select_backend` classifies the active GPU into High/Mid/Low and
+   uses tier-specific thresholds (2 MiB / 16 MiB / 64 MiB).
+   Per-tier pattern-count breakeven (100 / 500 / 2000). GPU dispatch
+   now shards at 65535 × 32 = ~2 MiB per dispatch to respect the
+   wgpu workgroup-per-dimension cap. `keyhog backend` reports the
+   active tier and effective thresholds.
 
 2. **`rule` engine for inline-suppression / allowlist.**
    The current allowlist is hand-rolled string matching. Vyre's `rule`
@@ -302,11 +336,39 @@ are estimable. Listed best-bang-for-buck first.
    same sequence to bisect. Useful for debugging GPU non-determinism
    reports. Effort: ~1 day (mostly wiring).
 
-8. **`vyre-driver-megakernel` to bundle multiple scan ops.**
-   Today each batch is: literal-set → boundary → entropy prefilter →
-   ML scoring. Each is a separate GPU dispatch (~2 ms setup × 4 = 8 ms
-   overhead per batch). Megakernel bundles them. Effort: ~5 days; the
-   biggest perf win per scan but needs careful invariant work.
+8. **`vyre-driver-megakernel` to bundle the per-chunk extraction
+   onto GPU** — THE NEXT MAJOR PERF WIN. Today the GPU only runs
+   the literal-prefilter; per-chunk regex matching, entropy
+   scoring, ML inference all run CPU-side after the prefilter
+   returns triggers. The benchmark above shows this serial CPU
+   work caps the throughput at ~135 MB/s regardless of how fast
+   the prefilter is.
+
+   Vyre exposes a complete megakernel API at
+   `vyre-runtime::megakernel`:
+   - `BatchDispatcher::new(backend, config)` — compile once
+   - `BatchDispatcher::dispatch(batch, rules)` — one GPU launch
+     handles many files × many DFA rules
+   - `FileBatch` — offsets/metadata/work_queue/haystack/hit_ring
+   - `BatchRuleProgram::new(rule_idx, transitions, accept,
+     state_count)` — wraps a DFA per detector
+
+   Wiring entry points in keyhog:
+   - `crates/scanner/src/engine/scan_gpu.rs::scan_coalesced_gpu` —
+     replace per-chunk `scan_prepared_with_triggered` loop with one
+     `BatchDispatcher::dispatch` call
+   - Detector regex → DFA: `vyre_libs::matching::dfa::dfa_compile`
+   - Build `FileBatch` from `chunks` + per-chunk offset attribution
+     in scan_gpu.rs's existing `entries` walk
+
+   Effort: 3-5 days. Biggest single perf win available.
+
+9. **CPU-side entropy-fast SIMD-isation.**
+   The benchmark shows per-chunk extraction is the bottleneck even
+   without megakernel. `crates/scanner/src/entropy_fast.rs` already
+   has thread-local FNV cache; widening the byte histogram to AVX-512
+   (16-lane gather + popcnt) would lift per-chunk throughput 2-4×
+   without GPU work. Effort: 1-2 days.
 
 ## What blocks "max usage" right now
 
