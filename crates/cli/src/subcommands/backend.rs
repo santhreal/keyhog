@@ -10,7 +10,10 @@
 
 use crate::args::BackendArgs;
 use anyhow::Result;
-use keyhog_scanner::hw_probe::{probe_hardware, select_backend, thresholds, ScanBackend};
+use keyhog_scanner::hw_probe::{
+    classify_gpu_tier, gpu_min_bytes_for_tier, gpu_solo_bytes_for_tier, probe_hardware,
+    select_backend, thresholds, GpuTier, ScanBackend,
+};
 use std::process::ExitCode;
 
 /// Exit code for `backend --self-test` when one of the GPU dispatch
@@ -97,20 +100,23 @@ fn print_backend_report(args: &BackendArgs) -> Result<()> {
     let pat = args.patterns;
     println!();
     println!("## routing decision matrix (pattern_count = {pat})");
+    // Tier-aware: pull the active GPU's actual thresholds so the
+    // matrix reflects what THIS box would route to, not the legacy
+    // low-tier defaults that didn't apply to RTX 40/50-class adapters.
+    let active_tier = classify_gpu_tier(hw.gpu_name.as_deref());
+    let active_min = gpu_min_bytes_for_tier(active_tier);
+    let active_solo = gpu_solo_bytes_for_tier(active_tier);
     let scenarios: &[(u64, &str)] = &[
         (0, "idle (size=0)"),
         (4 * 1024, "4 KiB single chunk"),
+        (1024 * 1024, "1 MiB chunk"),
+        (2 * 1024 * 1024, "2 MiB chunk (high-tier min)"),
         (4 * 1024 * 1024, "4 MiB chunk"),
-        (thresholds::GPU_MIN_BYTES - 1, "just under GPU_MIN_BYTES"),
-        (thresholds::GPU_MIN_BYTES, "GPU_MIN_BYTES exactly"),
-        (
-            thresholds::GPU_BYTES_BREAKEVEN_SOLO - 1,
-            "just under GPU_BYTES_BREAKEVEN_SOLO",
-        ),
-        (
-            thresholds::GPU_BYTES_BREAKEVEN_SOLO,
-            "GPU_BYTES_BREAKEVEN_SOLO exactly",
-        ),
+        (16 * 1024 * 1024, "16 MiB chunk (high-tier solo / mid-tier min)"),
+        (active_min.saturating_sub(1), "just under tier min_bytes"),
+        (active_min, "tier min_bytes exactly"),
+        (active_solo.saturating_sub(1), "just under tier solo cap"),
+        (active_solo, "tier solo cap exactly"),
         (1024 * 1024 * 1024, "1 GiB single chunk"),
     ];
     for (bytes, label) in scenarios {
@@ -126,17 +132,43 @@ fn print_backend_report(args: &BackendArgs) -> Result<()> {
     }
 
     println!();
-    println!("## thresholds");
+    println!("## gpu tier (heuristic from adapter name)");
+    let tier = classify_gpu_tier(hw.gpu_name.as_deref());
+    let tier_label = match tier {
+        GpuTier::High => "High (RTX 40/50, A100/H100, M-Max)",
+        GpuTier::Mid => "Mid (RTX 20/30, GTX 16, Arc, M-Pro/base)",
+        GpuTier::Low => "Low / unknown",
+    };
+    println!("  classified:                {tier_label}");
     println!(
-        "  GPU_MIN_BYTES                = {}",
-        fmt_bytes(thresholds::GPU_MIN_BYTES)
+        "  effective min bytes:       {} (tier {:?})",
+        fmt_bytes(gpu_min_bytes_for_tier(tier)),
+        tier
     );
     println!(
-        "  GPU_BYTES_BREAKEVEN_SOLO     = {}",
+        "  effective solo cap:        {}",
+        fmt_bytes(gpu_solo_bytes_for_tier(tier))
+    );
+
+    println!();
+    println!("## thresholds (per-tier table)");
+    println!(
+        "  high tier  min/solo       = {} / {}",
+        fmt_bytes(thresholds::GPU_MIN_BYTES_HIGH_TIER),
+        fmt_bytes(thresholds::GPU_BYTES_BREAKEVEN_SOLO_HIGH_TIER)
+    );
+    println!(
+        "  mid tier   min/solo       = {} / {}",
+        fmt_bytes(thresholds::GPU_MIN_BYTES_MID_TIER),
+        fmt_bytes(thresholds::GPU_BYTES_BREAKEVEN_SOLO_MID_TIER)
+    );
+    println!(
+        "  low tier   min/solo       = {} / {}",
+        fmt_bytes(thresholds::GPU_MIN_BYTES),
         fmt_bytes(thresholds::GPU_BYTES_BREAKEVEN_SOLO)
     );
     println!(
-        "  GPU_PATTERN_BREAKEVEN        = {} patterns",
+        "  GPU_PATTERN_BREAKEVEN     = {} patterns",
         thresholds::GPU_PATTERN_BREAKEVEN
     );
 

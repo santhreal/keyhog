@@ -132,20 +132,165 @@ pub fn probe_hardware() -> &'static HardwareCaps {
 
 /// Routing crossover thresholds. Public so benchmarks and the
 /// `keyhog backend` debug subcommand can reference the same numbers.
+///
+/// Thresholds are now **GPU-tier-aware** instead of one-size-fits-all.
+/// The legacy single-value `GPU_MIN_BYTES` / `GPU_BYTES_BREAKEVEN_SOLO`
+/// constants are kept as the conservative (low-tier) defaults; the
+/// router consults [`gpu_min_bytes_for_tier`] / [`gpu_solo_bytes_for_tier`]
+/// to pick the right breakeven for the actual adapter.
+///
+/// The tier→threshold map is calibrated against the published dispatch
+/// latency of each GPU class:
+///
+/// | Tier   | Adapter examples                | Dispatch latency | GPU activates at |
+/// |--------|---------------------------------|------------------|-------------------|
+/// | High   | RTX 40/50, A100, H100, M-series Max | 100-300 µs   | **2 MiB**         |
+/// | Mid    | RTX 20/30, GTX 16, Arc, M-series base | 600-1500 µs | 16 MiB            |
+/// | Low    | iGPU (UHD/Iris), Vega, older cards   | 2-5 ms         | 64 MiB            |
+///
+/// At Hyperscan's typical 3 GB/s, breakeven workload = dispatch_latency × 3 GB/s.
+/// 100 µs × 3000 bytes/µs ≈ 300 KB (round up to 2 MiB for safety margin
+/// + per-batch parallel-CPU contention).
 pub mod thresholds {
-    /// Minimum total scan-buffer size before we'll dispatch to GPU.
-    /// Below this, device-dispatch overhead (≈3-8 ms) exceeds Hyperscan's
-    /// lead on a single CPU core. Tuned against Django + kubernetes
-    /// corpora.
+    /// **Conservative** (low-tier) minimum total scan-buffer size before
+    /// we'll dispatch to GPU. Top-tier GPUs (RTX 40/50, A100/H100,
+    /// M-series Max) get the much lower [`GPU_MIN_BYTES_HIGH_TIER`]
+    /// threshold instead.
     pub const GPU_MIN_BYTES: u64 = 64 * 1024 * 1024;
+    /// Mid-tier (RTX 20/30, GTX 16, Intel Arc, M-series base): 16 MiB.
+    pub const GPU_MIN_BYTES_MID_TIER: u64 = 16 * 1024 * 1024;
+    /// High-tier (RTX 40/50, A100/H100, M-series Max): 2 MiB.
+    /// At ~100 µs dispatch latency on these GPUs vs Hyperscan's
+    /// 3 GB/s, breakeven workload is ~300 KB; 2 MiB gives headroom
+    /// for the per-batch parallel-CPU contention that Hyperscan
+    /// benefits from.
+    pub const GPU_MIN_BYTES_HIGH_TIER: u64 = 2 * 1024 * 1024;
     /// Pattern count above which GPU literal matching becomes worthwhile
     /// regardless of buffer size — many patterns saturate Hyperscan's
-    /// scratch space and serial AC.
+    /// scratch space and serial AC. Conservative (low-tier) default;
+    /// see [`gpu_pattern_breakeven_for_tier`] for the tier-aware value.
     pub const GPU_PATTERN_BREAKEVEN: usize = 2_000;
+    /// High-tier GPUs (RTX 40/50, A100/H100, M-Max) win on as few as
+    /// 100 patterns once dispatch overhead is sub-millisecond.
+    pub const GPU_PATTERN_BREAKEVEN_HIGH_TIER: usize = 100;
+    /// Mid-tier crossover: 500 patterns.
+    pub const GPU_PATTERN_BREAKEVEN_MID_TIER: usize = 500;
     /// Single-file size that justifies GPU even at low pattern counts.
     /// One device dispatch beats saturating one CPU core with Hyperscan
     /// when the file alone is this big.
     pub const GPU_BYTES_BREAKEVEN_SOLO: u64 = 256 * 1024 * 1024;
+    /// High-tier solo cap: 16 MiB single file already justifies GPU
+    /// dispatch on a 5090-class adapter.
+    pub const GPU_BYTES_BREAKEVEN_SOLO_HIGH_TIER: u64 = 16 * 1024 * 1024;
+    /// Mid-tier solo cap: 64 MiB.
+    pub const GPU_BYTES_BREAKEVEN_SOLO_MID_TIER: u64 = 64 * 1024 * 1024;
+}
+
+/// GPU performance tier inferred from the adapter name. Coarse but
+/// matches measured dispatch latency well enough to drive routing.
+/// `Unknown` keeps the legacy conservative thresholds, so an unfamiliar
+/// adapter is never wrongly routed to the lower-threshold path.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GpuTier {
+    /// RTX 40/50-series, A100/H100, M-series Max/Ultra, RX 7900 XTX.
+    /// Sub-300µs dispatch latency.
+    High,
+    /// RTX 20/30-series, GTX 16, Intel Arc, M-series base/Pro,
+    /// RX 6000-series. ~600-1500µs dispatch latency.
+    Mid,
+    /// iGPU, older discrete cards, anything we can't classify.
+    /// Multi-millisecond dispatch latency assumed.
+    Low,
+}
+
+/// Classify a GPU adapter name into a performance tier. Pure
+/// substring heuristics — bumped only when a new high-volume part
+/// ships (or the user reports a misclassification).
+#[must_use]
+pub fn classify_gpu_tier(adapter_name: Option<&str>) -> GpuTier {
+    let Some(name) = adapter_name else {
+        return GpuTier::Low;
+    };
+    let lower = name.to_ascii_lowercase();
+
+    // High-tier discretes.
+    if lower.contains("rtx 40")
+        || lower.contains("rtx 50")
+        || lower.contains("rtx 4090")
+        || lower.contains("rtx 4080")
+        || lower.contains("rtx 4070")
+        || lower.contains("rtx 5090")
+        || lower.contains("rtx 5080")
+        || lower.contains("rtx 5070")
+        || lower.contains("a100")
+        || lower.contains("h100")
+        || lower.contains("h200")
+        || lower.contains("rx 7900 xtx")
+        || lower.contains("rx 7900 xt")
+        || lower.contains("m4 max")
+        || lower.contains("m3 max")
+        || lower.contains("m2 max")
+        || lower.contains("m1 max")
+        || lower.contains("m4 ultra")
+        || lower.contains("m3 ultra")
+        || lower.contains("m2 ultra")
+        || lower.contains("m1 ultra")
+    {
+        return GpuTier::High;
+    }
+
+    // Mid-tier discretes.
+    if lower.contains("rtx 20")
+        || lower.contains("rtx 30")
+        || lower.contains("gtx 16")
+        || lower.contains("arc")
+        || lower.contains("rx 6")
+        || lower.contains("rx 7")
+        || lower.contains("apple m1")
+        || lower.contains("apple m2")
+        || lower.contains("apple m3")
+        || lower.contains("apple m4")
+        || lower.contains("m1 pro")
+        || lower.contains("m2 pro")
+        || lower.contains("m3 pro")
+        || lower.contains("m4 pro")
+    {
+        return GpuTier::Mid;
+    }
+
+    GpuTier::Low
+}
+
+/// GPU minimum-bytes routing threshold for the given tier.
+#[must_use]
+pub fn gpu_min_bytes_for_tier(tier: GpuTier) -> u64 {
+    match tier {
+        GpuTier::High => thresholds::GPU_MIN_BYTES_HIGH_TIER,
+        GpuTier::Mid => thresholds::GPU_MIN_BYTES_MID_TIER,
+        GpuTier::Low => thresholds::GPU_MIN_BYTES,
+    }
+}
+
+/// GPU single-file solo-breakeven threshold for the given tier.
+#[must_use]
+pub fn gpu_solo_bytes_for_tier(tier: GpuTier) -> u64 {
+    match tier {
+        GpuTier::High => thresholds::GPU_BYTES_BREAKEVEN_SOLO_HIGH_TIER,
+        GpuTier::Mid => thresholds::GPU_BYTES_BREAKEVEN_SOLO_MID_TIER,
+        GpuTier::Low => thresholds::GPU_BYTES_BREAKEVEN_SOLO,
+    }
+}
+
+/// Pattern-count threshold for the given tier. Below this and below
+/// the solo-cap, GPU dispatch costs more than Hyperscan saves —
+/// stay on SIMD.
+#[must_use]
+pub fn gpu_pattern_breakeven_for_tier(tier: GpuTier) -> usize {
+    match tier {
+        GpuTier::High => thresholds::GPU_PATTERN_BREAKEVEN_HIGH_TIER,
+        GpuTier::Mid => thresholds::GPU_PATTERN_BREAKEVEN_MID_TIER,
+        GpuTier::Low => thresholds::GPU_PATTERN_BREAKEVEN,
+    }
 }
 
 /// Auto-route a scan to the best backend for this hardware + workload.
@@ -178,13 +323,16 @@ pub fn select_backend(
         return forced;
     }
 
-    if caps.gpu_available
-        && !caps.gpu_is_software
-        && (workload_bytes >= thresholds::GPU_BYTES_BREAKEVEN_SOLO
-            || (workload_bytes >= thresholds::GPU_MIN_BYTES
-                && pattern_count >= thresholds::GPU_PATTERN_BREAKEVEN))
-    {
-        return ScanBackend::Gpu;
+    if caps.gpu_available && !caps.gpu_is_software {
+        let tier = classify_gpu_tier(caps.gpu_name.as_deref());
+        let solo = gpu_solo_bytes_for_tier(tier);
+        let min = gpu_min_bytes_for_tier(tier);
+        let pattern_floor = gpu_pattern_breakeven_for_tier(tier);
+        if workload_bytes >= solo
+            || (workload_bytes >= min && pattern_count >= pattern_floor)
+        {
+            return ScanBackend::Gpu;
+        }
     }
 
     if caps.hyperscan_available {
@@ -649,5 +797,140 @@ mod tests {
         }
         // SAFETY: ENV_GUARD held above.
         unsafe { std::env::remove_var("KEYHOG_BACKEND") };
+    }
+
+    fn caps_with_named_gpu(name: &str) -> HardwareCaps {
+        HardwareCaps {
+            physical_cores: 8,
+            logical_cores: 16,
+            has_avx2: true,
+            has_avx512: false,
+            has_neon: false,
+            gpu_available: true,
+            gpu_name: Some(name.to_string()),
+            gpu_vram_mb: Some(8192),
+            gpu_is_software: false,
+            total_memory_mb: Some(32_768),
+            io_uring_available: false,
+            hyperscan_available: true,
+        }
+    }
+
+    #[test]
+    fn classify_high_tier_gpus() {
+        for name in [
+            "NVIDIA GeForce RTX 5090",
+            "NVIDIA GeForce RTX 4090",
+            "NVIDIA H100 PCIe",
+            "NVIDIA A100-SXM4-80GB",
+            "Apple M3 Max",
+            "AMD Radeon RX 7900 XTX",
+        ] {
+            assert_eq!(
+                classify_gpu_tier(Some(name)),
+                GpuTier::High,
+                "expected High tier for {name:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn classify_mid_tier_gpus() {
+        for name in [
+            "NVIDIA GeForce RTX 3060",
+            "NVIDIA GeForce RTX 2080 Ti",
+            "NVIDIA GeForce GTX 1660",
+            "Intel(R) Arc(TM) A770 Graphics",
+            "Apple M1 Pro",
+        ] {
+            assert_eq!(
+                classify_gpu_tier(Some(name)),
+                GpuTier::Mid,
+                "expected Mid tier for {name:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn classify_low_tier_gpus() {
+        for name in [
+            "Intel(R) UHD Graphics 620",
+            "Intel(R) Iris Xe Graphics",
+            "AMD Radeon Vega 8",
+            "Mystery GPU 9000",
+        ] {
+            assert_eq!(
+                classify_gpu_tier(Some(name)),
+                GpuTier::Low,
+                "expected Low tier for {name:?}"
+            );
+        }
+        assert_eq!(classify_gpu_tier(None), GpuTier::Low);
+    }
+
+    #[test]
+    fn high_tier_gpu_activates_at_2mib() {
+        let _g = ENV_GUARD.lock().unwrap();
+        clear_env();
+        let caps = caps_with_named_gpu("NVIDIA GeForce RTX 5090");
+        // 2 MiB workload + 2K patterns → GPU on RTX 5090.
+        assert_eq!(
+            select_backend(&caps, 2 * 1024 * 1024, thresholds::GPU_PATTERN_BREAKEVEN),
+            ScanBackend::Gpu
+        );
+        // 2 MiB single file (no pattern threshold needed) shouldn't
+        // hit the solo cap (16 MiB on high tier), so falls back to SIMD
+        // when pattern count is low.
+        assert_eq!(
+            select_backend(&caps, 2 * 1024 * 1024, 50),
+            ScanBackend::SimdCpu
+        );
+        // 16 MiB single file → solo cap on high tier → GPU.
+        assert_eq!(
+            select_backend(&caps, 16 * 1024 * 1024, 50),
+            ScanBackend::Gpu
+        );
+    }
+
+    #[test]
+    fn mid_tier_gpu_activates_at_16mib() {
+        let _g = ENV_GUARD.lock().unwrap();
+        clear_env();
+        let caps = caps_with_named_gpu("NVIDIA GeForce RTX 3070");
+        // 2 MiB on mid-tier is too small — SIMD wins.
+        assert_eq!(
+            select_backend(&caps, 2 * 1024 * 1024, thresholds::GPU_PATTERN_BREAKEVEN),
+            ScanBackend::SimdCpu
+        );
+        // 16 MiB + 2K patterns → GPU.
+        assert_eq!(
+            select_backend(
+                &caps,
+                thresholds::GPU_MIN_BYTES_MID_TIER,
+                thresholds::GPU_PATTERN_BREAKEVEN
+            ),
+            ScanBackend::Gpu
+        );
+    }
+
+    #[test]
+    fn low_tier_gpu_keeps_legacy_64mib_threshold() {
+        let _g = ENV_GUARD.lock().unwrap();
+        clear_env();
+        // Unknown adapter name → Low tier → original 64 MiB threshold.
+        let caps = caps_with_named_gpu("Mystery GPU");
+        // 16 MiB even with many patterns → SIMD (Low tier needs 64 MiB).
+        assert_eq!(
+            select_backend(&caps, 16 * 1024 * 1024, 5_000),
+            ScanBackend::SimdCpu
+        );
+        assert_eq!(
+            select_backend(
+                &caps,
+                thresholds::GPU_MIN_BYTES,
+                thresholds::GPU_PATTERN_BREAKEVEN
+            ),
+            ScanBackend::Gpu
+        );
     }
 }
