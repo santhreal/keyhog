@@ -79,13 +79,35 @@ fn build_benchmark_corpus() -> Vec<Chunk> {
     let mut chunks = Vec::with_capacity(BENCHMARK_CHUNKS);
     for index in 0..BENCHMARK_CHUNKS {
         let mut data = String::with_capacity(BENCHMARK_CHUNK_BYTES + 512);
+        // Realistic source-code shape: short tokens, natural language
+        // comments, low-entropy variable names. The previous fixture
+        // used 36-char alphanumeric filler which triggered the entropy
+        // detector on every line, making the benchmark dominated by
+        // per-chunk extraction cost rather than the
+        // literal-set-vs-Hyperscan crossover this is meant to measure.
+        // The ~70-char average line below mirrors the line-length
+        // distribution of typical TypeScript/Go/Rust source.
+        let template = concat!(
+            "// process inbound webhook from upstream provider\n",
+            "fn handle_request(req: &Request) -> Result<Response, Error> {\n",
+            "    let payload = serde_json::from_slice(&req.body)?;\n",
+            "    log::info!(\"received webhook for tenant: {}\", payload.tenant_id);\n",
+            "    let user = users.lookup(payload.user_id).await?;\n",
+            "    if !user.has_capability(Capability::Webhook) {\n",
+            "        return Ok(Response::forbidden());\n",
+            "    }\n",
+            "    let normalized = normalize(payload.event)?;\n",
+            "    queue.publish(normalized).await?;\n",
+            "    Ok(Response::ok())\n",
+            "}\n\n",
+        );
         while data.len() < BENCHMARK_CHUNK_BYTES {
-            data.push_str("const filler = \"abcdefghijklmnopqrstuvwxyz0123456789\";\n");
-            data.push_str("let config_value = \"no_secret_here_but_realistic_code_shape\";\n");
+            data.push_str(template);
         }
 
         let suffix = format!(
-            "export const GITHUB_TOKEN_{index} = \"ghp_ABCDEF1234567890ABCDEF1234567890AB\";\n\
+            "// configuration constants\n\
+             export const GITHUB_TOKEN_{index} = \"ghp_ABCDEF1234567890ABCDEF1234567890AB\";\n\
              export const STRIPE_SECRET_{index} = \"sk_live_1234567890abcdefghijklmnopqrstuv\";\n\
              export const AWS_KEY_{index} = \"AKIA1234567890ABCD\";\n"
         );
