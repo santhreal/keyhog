@@ -93,7 +93,7 @@ async fn main() -> ExitCode {
             subcommands::completion::run(args);
             return ExitCode::SUCCESS;
         }
-        Some(Command::Backend(args)) => subcommands::backend::run(args).map(|()| ExitCode::SUCCESS),
+        Some(Command::Backend(args)) => subcommands::backend::run(args),
         Some(Command::ScanSystem(args)) => {
             subcommands::scan_system::run(args).map(|()| ExitCode::SUCCESS)
         }

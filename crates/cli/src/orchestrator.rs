@@ -125,6 +125,22 @@ impl ScanOrchestrator {
         let start = Instant::now();
         let show_progress = std::io::stderr().is_terminal();
 
+        // `--backend <name>` is sugar for `KEYHOG_BACKEND=<name>`. Setting
+        // the env var here is safe even though the scanner was already
+        // built — `select_backend` reads the var on every routing
+        // decision, not at scanner-construction time. CLI flag wins over
+        // env var so a developer who sets both gets the explicit one.
+        if let Some(backend) = self.args.backend.as_deref() {
+            // SAFETY: `set_var` is a process-wide mutation. We're early in
+            // `run()`, before any worker thread has been spawned via
+            // `configure_threads`/rayon, so no concurrent reader exists.
+            // `KEYHOG_BACKEND` is owned by this binary; nothing else
+            // observes it.
+            unsafe {
+                std::env::set_var("KEYHOG_BACKEND", backend);
+            }
+        }
+
         // Apply always-on hardening (free) before anything else touches
         // the filesystem or memory. Sets PR_SET_DUMPABLE=0 on Linux,
         // PT_DENY_ATTACH on macOS — no perf cost, just disables debugger
@@ -239,6 +255,25 @@ impl ScanOrchestrator {
                 )
             );
         }
+
+        // Pre-warm the steady-state backend so the first scanned batch
+        // doesn't pay the cold-start cost of compiling the GPU literal
+        // matcher (≈100-300 ms on the 1500-detector corpus). Was lazy
+        // inside `gpu_matcher()` — we already know which backend will
+        // run, so do it now while the user is still reading the banner.
+        // Best-effort: if warm fails we just take the cost on the first
+        // batch as before.
+        let preferred = self.scanner.select_backend_for_file(0);
+        let warm_started = Instant::now();
+        let warmed = self.scanner.warm_backend(preferred);
+        let warm_ms = warm_started.elapsed().as_millis();
+        tracing::debug!(
+            target: "keyhog::routing",
+            backend = preferred.label(),
+            warmed,
+            elapsed_ms = warm_ms as u64,
+            "backend warmed"
+        );
 
         if self.args.benchmark {
             let results = crate::benchmark::run_benchmark(&self)?;

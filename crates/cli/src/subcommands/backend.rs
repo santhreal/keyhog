@@ -11,8 +11,22 @@
 use crate::args::BackendArgs;
 use anyhow::Result;
 use keyhog_scanner::hw_probe::{probe_hardware, select_backend, thresholds, ScanBackend};
+use std::process::ExitCode;
 
-pub fn run(args: BackendArgs) -> Result<()> {
+/// Exit code for `backend --self-test` when one of the GPU dispatch
+/// proofs fails. Distinct from the scan-side exit codes so a CI
+/// release gate can fail closed on real GPU breakage.
+const EXIT_SELF_TEST_FAILED: u8 = 4;
+
+pub fn run(args: BackendArgs) -> Result<ExitCode> {
+    if args.self_test {
+        return run_self_test();
+    }
+    print_backend_report(&args)?;
+    Ok(ExitCode::SUCCESS)
+}
+
+fn print_backend_report(args: &BackendArgs) -> Result<()> {
     let hw = probe_hardware();
 
     println!("## hardware");
@@ -128,9 +142,65 @@ pub fn run(args: BackendArgs) -> Result<()> {
 
     println!();
     let cur = ScanBackend::Gpu.label();
-    println!("Force a backend with: KEYHOG_BACKEND={{gpu|simd|cpu}}");
+    println!("Force a backend with: KEYHOG_BACKEND={{gpu|simd|cpu}}  (or `keyhog scan --backend ...`)");
     let _ = cur;
     Ok(())
+}
+
+fn run_self_test() -> Result<ExitCode> {
+    println!("## GPU self-test");
+    let hw = probe_hardware();
+
+    if !hw.gpu_available || hw.gpu_is_software {
+        let reason = if !hw.gpu_available {
+            "no GPU adapter detected"
+        } else {
+            "only software adapter (llvmpipe/lavapipe/swiftshader) — won't be used for scans"
+        };
+        println!("  \x1b[33mSKIP\x1b[0m: {reason}");
+        // Skip is not a failure — gracefully exit 0 so CI on a headless
+        // runner without a GPU doesn't block the release.
+        return Ok(ExitCode::SUCCESS);
+    }
+
+    let mut all_ok = true;
+
+    // Test 1: keyhog's MoE compute dispatch.
+    print!("  moe_kernel       ... ");
+    match keyhog_scanner::gpu::gpu_self_test() {
+        Ok(report) => println!(
+            "\x1b[32mPASS\x1b[0m  ({}, scores={}, max_buffer={} MB)",
+            report.adapter_name,
+            report.scores,
+            report.vram_mb.unwrap_or(0)
+        ),
+        Err(error) => {
+            println!("\x1b[31mFAIL\x1b[0m  {error}");
+            all_ok = false;
+        }
+    }
+
+    // Test 2: vyre literal-set GPU dispatch — the actual scan path.
+    print!("  vyre_literal_set ... ");
+    match keyhog_scanner::gpu::vyre_gpu_self_test() {
+        Ok(report) => println!(
+            "\x1b[32mPASS\x1b[0m  (direct={}, coalesced={})",
+            report.direct_matches, report.coalesced_matches
+        ),
+        Err(error) => {
+            println!("\x1b[31mFAIL\x1b[0m  {error}");
+            all_ok = false;
+        }
+    }
+
+    println!();
+    if all_ok {
+        println!("\x1b[32m✓ GPU self-test passed\x1b[0m — scans on this box can route to GPU.");
+        Ok(ExitCode::SUCCESS)
+    } else {
+        eprintln!("\x1b[31m✗ GPU self-test failed\x1b[0m — keyhog will fall back to SIMD/CPU on this box.");
+        Ok(ExitCode::from(EXIT_SELF_TEST_FAILED))
+    }
 }
 
 fn fmt_bytes(n: u64) -> String {

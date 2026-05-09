@@ -75,11 +75,10 @@ impl CompiledScanner {
         chunks: &[Chunk],
         backend: ScanBackend,
     ) -> Vec<Vec<RawMatch>> {
-        // MegaScan currently shares the literal-set GPU dispatch path —
-        // full regex-NFA wiring lands with #105 (PostProcess + GPU
-        // region dedup). Until then, route both GPU variants through
-        // `scan_coalesced_gpu` so KEYHOG_BACKEND=mega-scan exercises
-        // the GPU code path instead of silently falling back to CPU.
+        // GPU paths: literal-set (Gpu) and regex-NFA (MegaScan). Both
+        // require a working GPU adapter + compiled matchers; the lazy
+        // compile is gated below so a missing GPU silently degrades to
+        // SIMD via `scan_with_backend` per chunk.
         let gpu_path = matches!(backend, ScanBackend::Gpu | ScanBackend::MegaScan);
         if !gpu_path || chunks.is_empty() {
             // Parallel CPU path: rayon's global pool is configured by the
@@ -111,7 +110,10 @@ impl CompiledScanner {
                 .map(|chunk| self.scan_with_backend(chunk, fallback_backend))
                 .collect();
         }
-        self.scan_coalesced_gpu(chunks)
+        match backend {
+            ScanBackend::MegaScan => self.scan_coalesced_megascan(chunks),
+            _ => self.scan_coalesced_gpu(chunks),
+        }
     }
 
     pub(crate) fn prepare_chunk(&self, chunk: &Chunk) -> PreparedChunk {

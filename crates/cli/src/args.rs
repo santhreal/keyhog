@@ -152,6 +152,13 @@ pub struct BackendArgs {
     /// (current corpus). Use this to test threshold behavior.
     #[arg(long, default_value_t = 1509)]
     pub patterns: usize,
+
+    /// Run the GPU self-tests (MoE compute kernel + vyre literal-set
+    /// dispatch). Prints PASS/FAIL with adapter info and exits with
+    /// code 4 on failure so CI can gate a release on real GPU
+    /// functionality. No-op on systems without a non-software adapter.
+    #[arg(long)]
+    pub self_test: bool,
 }
 
 #[derive(Parser)]
@@ -378,6 +385,14 @@ pub struct ScanArgs {
     /// long-running runs (large monorepos, scan-system, GitHub orgs).
     #[arg(long)]
     pub stream: bool,
+
+    /// Force a specific scan backend instead of letting the auto-router
+    /// choose. Same effect as `KEYHOG_BACKEND=<value>` but visible in
+    /// the CLI and harder to forget. Values: `gpu`, `mega-scan`, `simd`,
+    /// `cpu`. The CLI flag takes precedence over the env var when both
+    /// are set.
+    #[arg(long, value_name = "BACKEND")]
+    pub backend: Option<String>,
 
     /// Write findings to file
     #[arg(short, long)]

@@ -33,17 +33,27 @@ use std::sync::OnceLock;
 
 pub use vyre_libs::matching::LiteralMatch;
 
-/// Compile a `RulePipeline` (vyre's regex multimatch / mega_scan path)
-/// for the given detector regex sources, sized for `input_len` bytes.
-/// This is the regex-multimatch counterpart of [`GpuLiteralSet`] and
-/// uses the same `vyre-driver-wgpu` backend keyhog already wires.
+/// Compile a `RulePipeline` (vyre's regex multimatch path) for the
+/// given detector regex sources, sized for `input_len` bytes. Uses
+/// vyre's `regex_compile::build_rule_pipeline_from_regex` so each
+/// pattern is parsed via `regex_syntax` (with `unicode(false)` /
+/// `utf8(false)` — ASCII byte automaton) and lowered to the same
+/// transition + epsilon tables `RulePipeline::scan` expects.
 ///
-/// `RulePipeline` accepts arbitrary regex (NFA-based), unlike
-/// `GpuLiteralSet` which is literal-only. Wiring keyhog onto this path
-/// is what unlocks the "GPU > Hyperscan at internet scale" story for
-/// the regex-completion fraction of the detector corpus.
-pub fn build_rule_pipeline(patterns: &[&str], input_len: u32) -> vyre_libs::matching::RulePipeline {
-    vyre_libs::matching::build_rule_pipeline(patterns, "input", "hits", input_len)
+/// Returns `Err` when the combined NFA exceeds vyre's per-subgroup
+/// state cap (`LANES * 32`), or when any pattern uses regex features
+/// (Unicode classes, lookbehind/lookahead, backreferences) the
+/// byte-NFA frontend can't represent. Caller decides whether to fall
+/// back to the literal-set GPU dispatch (which always works but only
+/// matches literals) or to skip MegaScan altogether for this corpus.
+pub fn build_rule_pipeline(
+    patterns: &[&str],
+    input_len: u32,
+) -> std::result::Result<
+    vyre_libs::matching::RulePipeline,
+    vyre_libs::matching::RegexCompileError,
+> {
+    vyre_libs::matching::build_rule_pipeline_from_regex(patterns, "input", "hits", input_len)
 }
 
 /// Persistent cache for `RulePipeline`. Mirrors the GpuLiteralSet
@@ -76,22 +86,37 @@ fn pipeline_cache_key(patterns: &[&str], input_len: u32) -> String {
 }
 
 /// Compile-or-load a `RulePipeline` for the given regex set. First call
-/// hits the on-disk cache; misses recompile and re-cache. Same lazy
-/// pattern as `gpu_matcher`, just for regex multimatch instead of
-/// literal multimatch — both go through `cached_load_or_compile` so
-/// the cache contract is identical across engine types.
+/// hits the on-disk cache; misses recompile and re-cache. Returns
+/// `Err` when the regex compile itself fails (state-cap overflow or
+/// unsupported regex syntax) — the caller is expected to log + fall
+/// back to the literal-set GPU dispatch in that case.
+///
+/// The on-disk cache is keyed by the (patterns, input_len, vyre wire
+/// version) tuple so a vyre IR bump or a detector change automatically
+/// invalidates the cache instead of loading a stale pipeline.
 pub fn rule_pipeline_cached(
     patterns: &[&str],
     input_len: u32,
-) -> vyre_libs::matching::RulePipeline {
+) -> std::result::Result<
+    vyre_libs::matching::RulePipeline,
+    vyre_libs::matching::RegexCompileError,
+> {
+    let started = std::time::Instant::now();
     let Some(cache_dir) = gpu_matcher_cache_dir() else {
         return build_rule_pipeline(patterns, input_len);
     };
+    // The vyre `cached_load_or_compile` API expects an infallible
+    // builder closure (it has no way to bubble compile errors out).
+    // We work around that by trying the regex compile UPFRONT — if
+    // that succeeds, we know the cache builder will succeed too, so
+    // hand it the same pipeline shape. If it fails, surface the
+    // typed error to the caller.
+    let pipe = build_rule_pipeline(patterns, input_len)?;
     let cache_key = format!("pipe-{}", pipeline_cache_key(patterns, input_len));
-    let started = std::time::Instant::now();
-    let pipe = vyre_libs::matching::cached_load_or_compile(&cache_dir, &cache_key, || {
-        build_rule_pipeline(patterns, input_len)
-    });
+    // Cache lookup/store is best-effort: a stale or unwritable cache
+    // is degraded behavior, not a correctness problem. We still hand
+    // back the freshly-compiled pipeline above either way.
+    let cached = vyre_libs::matching::cached_load_or_compile(&cache_dir, &cache_key, || pipe.clone());
     tracing::debug!(
         target: "keyhog::routing",
         patterns = patterns.len(),
@@ -99,8 +124,15 @@ pub fn rule_pipeline_cached(
         elapsed_ms = started.elapsed().as_millis() as u64,
         "RulePipeline ready (warm cache or compiled)"
     );
-    pipe
+    Ok(cached)
 }
+
+/// Maximum input buffer length the MegaScan `RulePipeline` is
+/// pre-compiled for. Chosen to match the orchestrator's
+/// `BATCH_BYTES_BUDGET` (256 MiB) so any normal coalesced batch fits
+/// the pre-built pipeline without needing recompile-per-batch.
+/// Batches larger than this fall back to the literal-set path.
+pub const MEGASCAN_INPUT_LEN: usize = 256 * 1024 * 1024;
 
 /// On-disk cache for `GpuLiteralSet`. The compiled matcher is keyed by a
 /// SHA-256 of the literal set + the vyre wire version (which is bumped
@@ -157,6 +189,12 @@ pub struct CompiledScanner {
     /// Literal prefixes supplied to Vyre's GPU Aho-Corasick engine.
     pub(crate) gpu_literals: Option<Arc<Vec<Vec<u8>>>>,
     pub(crate) gpu_matcher: OnceLock<Option<vyre_libs::matching::GpuLiteralSet>>,
+    /// Lazily-compiled regex-NFA pipeline for the MegaScan backend.
+    /// `None` once the OnceLock fires means the regex compile failed
+    /// (typically vyre's per-subgroup state cap or an unsupported
+    /// regex feature) — MegaScan auto-degrades to the literal-set
+    /// path when that happens.
+    pub(crate) rule_pipeline: OnceLock<Option<vyre_libs::matching::RulePipeline>>,
     pub(crate) ac_map: Vec<CompiledPattern>,
     pub(crate) prefix_propagation: Vec<Vec<usize>>,
     pub(crate) fallback: Vec<(CompiledPattern, Vec<String>)>,
@@ -262,6 +300,7 @@ impl CompiledScanner {
             wgpu_backend,
             gpu_literals,
             gpu_matcher: OnceLock::new(),
+            rule_pipeline: OnceLock::new(),
             ac_map: state.ac_map,
             prefix_propagation,
             fallback: state.fallback,
@@ -333,6 +372,59 @@ impl CompiledScanner {
             .as_ref()
     }
 
+    /// Lazily compile the regex-NFA `RulePipeline` on first call.
+    /// Returns `None` once the OnceLock has fired when the regex
+    /// compile failed — typically because the combined NFA exceeds
+    /// vyre's per-subgroup state cap (`LANES * 32`) or because one
+    /// of the detector regexes uses a feature the byte-NFA frontend
+    /// can't represent (Unicode classes, lookaround, backrefs).
+    /// Callers should fall back to the literal-set GPU dispatch on
+    /// `None`.
+    ///
+    /// Pipeline is sized for [`MEGASCAN_INPUT_LEN`] bytes; batches
+    /// larger than that must take a different path. The orchestrator
+    /// caps batches at 256 MiB which is the chosen size, so this
+    /// matches normal scan flow.
+    pub fn rule_pipeline(&self) -> Option<&vyre_libs::matching::RulePipeline> {
+        self.rule_pipeline
+            .get_or_init(|| {
+                let pattern_strs: Vec<&str> = self
+                    .ac_map
+                    .iter()
+                    .map(|p| p.regex.as_str())
+                    .chain(self.fallback.iter().map(|(p, _)| p.regex.as_str()))
+                    .collect();
+                if pattern_strs.is_empty() {
+                    return None;
+                }
+                let started = std::time::Instant::now();
+                match rule_pipeline_cached(&pattern_strs, MEGASCAN_INPUT_LEN as u32) {
+                    Ok(pipe) => {
+                        tracing::info!(
+                            target: "keyhog::routing",
+                            patterns = pattern_strs.len(),
+                            input_len = MEGASCAN_INPUT_LEN,
+                            elapsed_ms = started.elapsed().as_millis() as u64,
+                            "MegaScan RulePipeline compiled"
+                        );
+                        Some(pipe)
+                    }
+                    Err(error) => {
+                        tracing::warn!(
+                            patterns = pattern_strs.len(),
+                            error = %format!("{error:?}"),
+                            "MegaScan RulePipeline compile failed — falling back to literal-set GPU dispatch. \
+                             Common causes: regex set exceeds vyre's per-subgroup state cap, or one or more \
+                             patterns use Unicode classes / lookaround / backrefs that the byte-NFA frontend \
+                             can't represent."
+                        );
+                        None
+                    }
+                }
+            })
+            .as_ref()
+    }
+
     /// Number of loaded detectors.
     pub fn detector_count(&self) -> usize {
         self.detectors.len()
@@ -362,7 +454,13 @@ impl CompiledScanner {
     /// Warm backend resources that are initialized lazily during scanning.
     pub fn warm_backend(&self, backend: crate::hw_probe::ScanBackend) -> bool {
         match backend {
-            crate::hw_probe::ScanBackend::Gpu | crate::hw_probe::ScanBackend::MegaScan => {
+            crate::hw_probe::ScanBackend::Gpu => self.gpu_matcher().is_some(),
+            crate::hw_probe::ScanBackend::MegaScan => {
+                // Warm the regex-NFA pipeline AND the literal-set
+                // matcher: when the regex compile fails (state-cap
+                // overflow), MegaScan dispatch silently degrades to
+                // the literal-set path, so both need to be ready.
+                let _ = self.rule_pipeline();
                 self.gpu_matcher().is_some()
             }
             crate::hw_probe::ScanBackend::SimdCpu | crate::hw_probe::ScanBackend::CpuFallback => {
