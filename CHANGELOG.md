@@ -2,6 +2,120 @@
 
 All notable changes to KeyHog. Versions follow [Semantic Versioning](https://semver.org/).
 
+## v0.5.5 — 2026-05-09
+
+GPU foundations + vyre composition pass. The session wires keyhog
+deeper into vyre as a primitive consumer and contributes new
+general-purpose capability back to vyre.
+
+**Tier-aware GPU routing + 2 MiB threshold on RTX 40/50-class GPUs.**
+`select_backend` now classifies the detected adapter into High /
+Mid / Low tiers and consults per-tier crossover thresholds:
+
+| Tier   | Adapter examples                          | min_bytes | solo cap |
+|--------|-------------------------------------------|-----------|----------|
+| High   | RTX 40/50, A100/H100, M-Max/Ultra, RX 7900 | 2 MiB    | 16 MiB   |
+| Mid    | RTX 20/30, GTX 16, Arc, M-Pro/base, RX 6/7 | 16 MiB   | 64 MiB   |
+| Low    | iGPU, older discretes, unknown            | 64 MiB   | 256 MiB  |
+
+Pattern-count breakeven is also tier-aware (100 / 500 / 2000).
+`keyhog backend` reports the active tier and effective thresholds
+for the live adapter. Backwards compatible: unknown adapters
+classify as Low and keep the legacy thresholds.
+
+**GPU dispatch sharding + correctness fix.** `scan_coalesced_gpu`
+now slices the coalesced buffer at `65535 * 32 = 2,097,120` bytes
+per dispatch (the wgpu workgroup-per-dimension cap × vyre's
+`workgroup_size_x = 32`) and re-bases shard-local match offsets
+into the global buffer's coordinate space. Eliminated the silent
+`dispatch group size > 65535` error that the prior single-dispatch
+path hit on every 100 MiB+ batch. Recall on the realistic
+benchmark fixture now matches CPU/SIMD within rounding (303,554
+vs 302,168 vs 304,128) — earlier `121× speedup` numbers were
+lying because the dispatch errored mid-batch and only ~1% of
+true hits came back.
+
+**Vyre `intern::perfect_hash` wired for static-string interning.**
+`CompiledScanner` builds a CHD perfect hash from every detector's
+`(id, name, service)` plus the seed source-type literals at
+construction time. `ScanState::intern_metadata` consults this
+frozen interner first; only dynamic strings (file paths, commit
+SHAs, author names, dates) hit the per-scan `HashSet<Arc<str>>`
+fallback. Per-scan allocation count drops by ~100k on a typical
+1000-chunk run. 6 unit tests + 282 scanner tests still green.
+
+**Vyre megakernel scaffolding (gated behind KEYHOG_USE_MEGAKERNEL).**
+`engine/megakernel_dispatch.rs` ships a working DFA-per-literal
+compile + `BatchDispatcher` init + dispatch loop that hands back
+the same per-chunk per-pattern trigger bitmask the literal-set
+GPU path produces. Routed in `scan_coalesced_megakernel` behind
+the env opt-in. Defaults OFF: vyre's `BatchDispatcher` is
+optimised for "many files × few rules" but keyhog's corpus is
+"few files × 6000+ rules" — modelling each literal as its own
+`BatchRuleProgram` allocates `chunks × rules ≈ 600,000` work
+items per dispatch, which keeps the persistent kernel sleeping
+in S-state on RTX 5090. Real megakernel win needs vyre-side
+multi-pattern hit reporting (one DFA covering many literals,
+`HitRecord` gains a per-pattern field) — wiring then collapses
+to a one-line swap.
+
+Cross-platform compile fix in vendored vyre-runtime: `GpuStream<'a>`
+now carries `PhantomData<&'a ()>` on non-Linux so the lifetime
+parameter isn't flagged unused when `uring` is cfg'd out.
+Windows / macOS builds now pull vyre-runtime cleanly.
+
+**Vyre rule engine wired for declarative `.keyhogignore.toml`.**
+
+Upstream vyre additions (general-purpose, lives in vyre-libs):
+- `vyre_libs::rule::cpu_eval` — pure-CPU evaluator for
+  `RuleCondition` / `RuleFormula` trees. Mirror of the GPU
+  lowering. Useful for any consumer that wants per-record rule
+  evaluation without dispatching a backend program. 11 unit tests.
+- `vyre_libs::rule::ast::RuleCondition::FieldInSet` — new variant
+  for "context field's value is in this set". Distinct from
+  `SetMembership` (which compares a static value, not a field
+  lookup). Required for expressing "detector_id is one of …"
+  without resorting to regex alternation. Builder lowering errors
+  with an actionable Fix: message — only the CPU evaluator can
+  resolve field lookups today.
+- vyre `smallvec` workspace pin bumped 1.14.0 → 1.15.1 so consumers
+  carrying gix (which requires ^1.15.1) can share the type — keyhog
+  needed this to put `SmallVec<[Arc<str>; 4]>` on the wire between
+  core and vyre.
+
+Keyhog consumes via new `crates/core/src/rule_filter.rs`. Schema
+documented in `docs/keyhogignore-toml.md`. `[[suppress]]` tables
+compose AND of named predicates (detector / service / severity /
+severity_lte / path_eq / path_contains / path_starts_with /
+path_ends_with / path_regex / credential_hash). Multiple
+`[[suppress]]` tables compose with OR. Empty entry rejected at
+parse to prevent accidental suppress-everything. Unknown fields
+rejected via serde `deny_unknown_fields`. Wired into
+`orchestrator.rs::run` after `finalize()` returns
+`VerifiedFinding`s — predicates need the resolved fields that
+`dedup_cross_detector` populates. Malformed
+`.keyhogignore.toml` is non-fatal: warn + load zero rules; legacy
+`.keyhogignore` still applies. 11 keyhog rule_filter tests pass.
+
+**Realistic benchmark fixture.** The previous `--benchmark` corpus
+used 36-char alphanumeric filler on every line, triggering the
+entropy detector constantly so the benchmark was measuring
+per-chunk extraction cost rather than the literal-prefilter
+crossover it claims to measure. New fixture mirrors typical
+TypeScript/Go/Rust source: short identifiers, natural-language
+comments, short string literals. RTX 5090 against this fixture:
+130 MiB/s (cpu-fallback) / 136 MiB/s (simd-regex) / 34 MiB/s
+(gpu-zero-copy). The architectural fix for GPU loss on dense
+corpora is megakernel fusion of the extraction pipeline (vyre
+upstream feature, queued).
+
+**Vyre full 30-crate audit doc** (`docs/vyre-usage.md`). Catalogues
+every vyre crate (foundation, driver, driver-wgpu, driver-megakernel,
+driver-spirv, libs, primitives, runtime, spec, intrinsics, reference,
+cc, harness, macros) with the public surface of each. Lists every
+vyre-libs and vyre-primitives module by name with what keyhog
+could conceivably wire from each.
+
 ## v0.5.4 — 2026-05-08
 
 Roadmap-clearing pass plus the first crates.io publish for every
