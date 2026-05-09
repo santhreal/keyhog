@@ -48,7 +48,7 @@ crypto = ["crypto-fnv", "crypto-blake3"]
 decode = []
 logical = []
 hardware = []
-rule = []
+rule = ["dep:regex"]
 composite = []
 vyre_wgpu = ["dep:vyre-driver-wgpu"]
 vyre_driver_wgpu = ["dep:vyre-driver-wgpu"]
@@ -103,6 +103,10 @@ tracing.workspace = true
 # (matching::regex_compile). Off by default; only consumers that opt
 # into the `matching-regex` feature pay the dep.
 regex-syntax = { workspace = true, optional = true }
+# Full `regex` crate is consumed by `rule::cpu_eval::RegexMatch` for
+# host-side rule evaluation. Optional since GPU-only consumers don't
+# need it; gated behind the `rule` feature.
+regex = { workspace = true, optional = true }
 # `weir` is the standalone GPU-resident dataflow crate (libs/dataflow/weir).
 # vyre-libs/security/* tags primitives with weir's Soundness markers; the
 # rest of vyre-libs does not depend on weir. This is a workspace path dep,

@@ -2687,12 +2687,14 @@ dependencies = [
  "serde_json",
  "serde_with",
  "sha2",
+ "smallvec",
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
  "toml",
  "tracing",
  "tracing-subscriber",
+ "vyre-libs",
  "zeroize",
 ]
 
@@ -5167,13 +5169,13 @@ name = "vyre-libs"
 version = "0.6.0"
 dependencies = [
  "inventory",
+ "regex",
  "regex-syntax",
  "smallvec",
  "thiserror 2.0.18",
  "tracing",
  "vyre",
  "vyre-driver",
- "vyre-driver-wgpu",
  "vyre-foundation",
  "vyre-harness",
  "vyre-primitives",

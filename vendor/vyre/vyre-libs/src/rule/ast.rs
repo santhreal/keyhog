@@ -113,6 +113,18 @@ pub enum RuleCondition {
         /// Accepted set members.
         set: smallvec::SmallVec<[Arc<str>; 4]>,
     },
+    /// True when the value of context field `field` is present in
+    /// `set`. Differs from [`Self::SetMembership`]: this variant
+    /// dereferences `field` against the evaluation context, while
+    /// `SetMembership` compares a static `value` payload.
+    /// Lets a rule express "detector_id is one of …" without
+    /// emulating it via a regex alternation.
+    FieldInSet {
+        /// Context field name to look up (e.g. `"detector_id"`).
+        field: Arc<str>,
+        /// Accepted set members.
+        set: smallvec::SmallVec<[Arc<str>; 4]>,
+    },
     /// Extension-declared rule condition.
     ///
     /// Downstream crates supply an `Arc<dyn RuleConditionExt>` with its
@@ -219,6 +231,16 @@ impl PartialEq for RuleCondition {
                     set: bset,
                 },
             ) => av == bv && aset == bset,
+            (
+                Self::FieldInSet {
+                    field: af,
+                    set: aset,
+                },
+                Self::FieldInSet {
+                    field: bf,
+                    set: bset,
+                },
+            ) => af == bf && aset == bset,
             (Self::Opaque(a), Self::Opaque(b)) => a.extension_id() == b.extension_id(),
             _ => false,
         }

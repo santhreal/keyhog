@@ -29,6 +29,12 @@ pub mod pattern_count_gt;
 pub mod pattern_count_gte;
 /// Cat-A op: pattern-existence rule predicate.
 pub mod pattern_exists;
+/// Pure-CPU evaluator for `RuleCondition` / `RuleFormula` trees.
+/// Mirror of the GPU lowering for consumers that want to evaluate
+/// rules per-record without dispatching a backend program (allowlist
+/// filters, CI gates, host-side unit tests).
+pub mod cpu_eval;
 
 pub use ast::{RuleCondition, RuleFormula};
 pub use builder::build_rule_program;
+pub use cpu_eval::{evaluate_condition, evaluate_formula, RuleEvaluationContext};

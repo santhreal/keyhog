@@ -43,6 +43,12 @@ pub mod auto_fix;
 pub mod calibration;
 /// Incremental scan state via BLAKE3 Merkle index.
 pub mod merkle_index;
+/// Declarative `.keyhogignore.toml` rule-based finding suppression.
+/// Wraps vyre's CPU rule evaluator with a TOML schema scoped to
+/// keyhog's finding shape (detector / service / severity / path /
+/// credential_hash predicates).
+pub mod rule_filter;
+pub use rule_filter::{RuleSuppressor, RuleSuppressorError};
 pub use spec::*;
 
 // Embedded detectors compiled into the binary at build time.

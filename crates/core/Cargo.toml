@@ -46,6 +46,12 @@ anyhow.workspace = true
 # panic between create and rename, so a partial save doesn't leak a
 # stale `tmp.NNN` next to the real cache file.
 tempfile = { workspace = true }
+# `vyre_libs::rule` for the declarative `.keyhogignore.toml` engine
+# (see `crates/core/src/rule_filter.rs`). Pulls in the `rule`
+# feature which compiles the CPU evaluator + the `regex` dep used
+# by `RuleCondition::RegexMatch`.
+vyre_libs = { workspace = true, features = ["rule"] }
+smallvec = { version = "=1.15.1" }
 
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }

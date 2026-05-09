@@ -331,7 +331,30 @@ impl ScanOrchestrator {
 
         let all_matches = self.scan_sources(sources, show_progress, merkle);
         let filtered = self.filter_and_resolve(all_matches, &allowlist);
-        let findings = self.finalize(filtered).await?;
+        let findings_pre_rules = self.finalize(filtered).await?;
+
+        // Apply declarative `.keyhogignore.toml` rule suppression.
+        // Loaded alongside the line-based `.keyhogignore` (which already
+        // ran inside `filter_and_resolve` against raw matches). The
+        // rule engine sits on the post-finalize `VerifiedFinding` list
+        // because some predicates (severity_lte, service) need the
+        // resolved fields that `dedup_cross_detector` populates.
+        let rule_suppressor = load_rule_suppressor(self.args.path.as_deref());
+        let pre_rule_count = findings_pre_rules.len();
+        let findings: Vec<VerifiedFinding> = findings_pre_rules
+            .into_iter()
+            .filter(|f| !rule_suppressor.matches(f))
+            .collect();
+        if show_progress && !rule_suppressor.is_empty() {
+            let dropped = pre_rule_count - findings.len();
+            if dropped > 0 {
+                eprintln!(
+                    "\n  Suppressed {} finding(s) via .keyhogignore.toml ({} rule(s) loaded)",
+                    dropped,
+                    rule_suppressor.len()
+                );
+            }
+        }
 
         // Baseline handling: create, update, or filter
         if let Some(ref path) = self.args.create_baseline {
@@ -891,6 +914,40 @@ fn load_allowlist(scan_path: Option<&Path>) -> keyhog_core::allowlist::Allowlist
             .unwrap_or_else(|_| keyhog_core::allowlist::Allowlist::empty())
     } else {
         keyhog_core::allowlist::Allowlist::empty()
+    }
+}
+
+/// Load the declarative `.keyhogignore.toml` rule suppressor (vyre
+/// rule engine via CPU evaluator) alongside the legacy line-based
+/// allowlist. Returns an empty suppressor when the file is missing
+/// or fails to parse — a malformed rules file shouldn't stop the
+/// scan; the parse error is surfaced via `tracing::warn!` so the
+/// operator still notices.
+fn load_rule_suppressor(scan_path: Option<&Path>) -> keyhog_core::RuleSuppressor {
+    let base_path = scan_path
+        .map(allowlist_root)
+        .unwrap_or_else(|| PathBuf::from("."));
+    let toml_path = base_path.join(".keyhogignore.toml");
+    match keyhog_core::RuleSuppressor::load(&toml_path) {
+        Ok(s) => {
+            if !s.is_empty() {
+                tracing::info!(
+                    rules = s.len(),
+                    file = %toml_path.display(),
+                    "loaded declarative suppression rules"
+                );
+            }
+            s
+        }
+        Err(e) => {
+            tracing::warn!(
+                file = %toml_path.display(),
+                error = %e,
+                "failed to load .keyhogignore.toml; ignoring rules. \
+                 Fix: validate the TOML schema (see docs/keyhogignore-toml.md)."
+            );
+            keyhog_core::RuleSuppressor::empty()
+        }
     }
 }
 
