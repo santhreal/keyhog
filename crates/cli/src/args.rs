@@ -368,6 +368,17 @@ pub struct ScanArgs {
     #[arg(long)]
     pub progress: bool,
 
+    /// Stream findings to stderr as they're discovered, instead of
+    /// waiting for the full scan + verify pipeline to finish before
+    /// printing anything. Each line is a single redacted preview
+    /// (`SEVERITY  SERVICE/DETECTOR  PATH:LINE`). The final
+    /// formatted report (text/json/sarif/jsonl) still lands on stdout
+    /// or `--output` after dedup + verification complete — the stream
+    /// is purely a UX hint that the scanner is making progress on
+    /// long-running runs (large monorepos, scan-system, GitHub orgs).
+    #[arg(long)]
+    pub stream: bool,
+
     /// Write findings to file
     #[arg(short, long)]
     pub output: Option<PathBuf>,
@@ -379,6 +390,27 @@ pub struct ScanArgs {
     /// Max concurrent verification requests per service
     #[arg(long, default_value = "5")]
     pub rate: usize,
+
+    /// Steady-state cap for verification calls *per service*, in
+    /// requests-per-second. Default 5.0. Drop this to be polite to
+    /// upstream APIs when scanning a tree with hundreds of legitimate
+    /// findings (test fixtures, examples) — every finding produces a
+    /// live verify call and most public APIs throttle aggressively.
+    /// The limiter applies even with `--verify-batch` (which adds
+    /// per-service serialisation on top).
+    #[cfg(feature = "verify")]
+    #[arg(long, value_name = "RPS", default_value = "5.0")]
+    pub verify_rate: f64,
+
+    /// Conservative verify mode: serialises live verifications per
+    /// service (max-concurrent-per-service = 1) on top of the
+    /// `--verify-rate` cap. Use for repos with lots of legitimate
+    /// findings (test fixtures, vendored examples) where bursting a
+    /// provider's auth endpoint would get the scan IP rate-limited
+    /// or blocked. Implies `--verify`.
+    #[cfg(feature = "verify")]
+    #[arg(long, requires = "verify")]
+    pub verify_batch: bool,
 
     /// Min severity to report: info, low, medium, high, critical
     #[arg(short, long, value_enum)]
@@ -518,6 +550,25 @@ pub struct DetectorArgs {
     /// the grouped service summary. Pairs naturally with `--search`.
     #[arg(short, long, default_value_t = false)]
     pub verbose: bool,
+    /// Audit detectors against the quality gate (`keyhog_core::validate_detector`).
+    /// Prints every issue grouped by detector and exits non-zero (3) if any
+    /// `Error`-severity issue was found. Warnings are reported but do not
+    /// fail the run. Pairs with `--detectors <DIR>` for CI gating.
+    #[arg(long, conflicts_with = "fix")]
+    pub audit: bool,
+    /// Apply safe automated fixes to the detector TOMLs in `--detectors`.
+    /// Currently rewrites single-brace template references (`{name}`) to
+    /// the double-brace form (`{{name}}`) within `[detector.verify*]`
+    /// blocks — the one fix the interpolator's contract makes safe to
+    /// perform mechanically. Other validator findings are left alone
+    /// (they need human judgement). Use `--dry-run` to preview rewrites
+    /// without touching the filesystem.
+    #[arg(long, conflicts_with = "audit")]
+    pub fix: bool,
+    /// Show the rewrites `--fix` *would* make without writing them. No-op
+    /// unless `--fix` is also set.
+    #[arg(long, requires = "fix")]
+    pub dry_run: bool,
 }
 
 #[derive(Clone, ValueEnum)]

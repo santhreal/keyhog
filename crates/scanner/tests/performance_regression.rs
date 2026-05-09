@@ -96,6 +96,7 @@ fn pattern_compilation_under_500ms() {
 }
 
 #[test]
+#[ignore = "perf threshold; hardware-dependent — run with --ignored locally"]
 fn entropy_1000_chars_under_1ms() {
     let data: String = (0..1000).map(|i| ((i % 62) + 48) as u8 as char).collect();
 

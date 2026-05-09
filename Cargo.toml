@@ -11,10 +11,10 @@ exclude = ["vendor/vyre", "vendor/shared"]
 default-members = ["crates/cli"]
 
 [workspace.package]
-version = "0.5.3"
+version = "0.5.4"
 edition = "2021"
 rust-version = "1.89"
-license = "MIT OR Apache-2.0"
+license = "MIT"
 description = "keyhog detects leaked credentials in source trees, git history, archives, and remote sources"
 readme = "README.md"
 repository = "https://github.com/santhsecurity/keyhog"
@@ -25,10 +25,10 @@ categories = ["command-line-utilities", "development-tools"]
 authors = ["Santh Project <contact@santh.dev>"]
 
 [workspace.dependencies]
-keyhog-core = { version = "=0.5.3", path = "crates/core" }
-keyhog-scanner = { version = "=0.5.3", path = "crates/scanner", default-features = false }
-keyhog-verifier = { version = "=0.5.3", path = "crates/verifier" }
-keyhog-sources = { version = "=0.5.3", path = "crates/sources" }
+keyhog-core = { version = "=0.5.4", path = "crates/core" }
+keyhog-scanner = { version = "=0.5.4", path = "crates/scanner", default-features = false }
+keyhog-verifier = { version = "=0.5.4", path = "crates/verifier" }
+keyhog-sources = { version = "=0.5.4", path = "crates/sources" }
 
 # Serialization
 serde = { version = "=1.0.228", features = ["derive"] }

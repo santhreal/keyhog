@@ -82,9 +82,7 @@ async fn main() -> ExitCode {
     let command_outcome = match cli.command {
         Some(Command::Scan(args)) => subcommands::scan::run(*args).await,
         Some(Command::Hook { command }) => subcommands::hook::run(command),
-        Some(Command::Detectors(args)) => {
-            subcommands::detectors::run(args).map(|()| ExitCode::SUCCESS)
-        }
+        Some(Command::Detectors(args)) => subcommands::detectors::run(args),
         Some(Command::Explain(args)) => subcommands::explain::run(args).map(|()| ExitCode::SUCCESS),
         Some(Command::Diff(args)) => subcommands::diff::run(args),
         Some(Command::Calibrate(args)) => {

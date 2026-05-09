@@ -396,7 +396,7 @@ mod tests {
     }
 
     fn fingerprint(out: &[DedupedMatch]) -> String {
-        let mut parts: Vec<String> = out
+        let parts: Vec<String> = out
             .iter()
             .map(|m| format!("{}|{}|{:?}", m.detector_id, m.credential, m.confidence))
             .collect();

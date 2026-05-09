@@ -1,5 +1,9 @@
 target/
 scripts/logs/
+
+# ── Generated detector parse cache (created at runtime by load_detectors_with_cache) ──
+detectors/.keyhog-cache.json
+
 *.pyc
 __pycache__/
 *.log

@@ -1,6 +1,7 @@
 //! Core scanning engine implementation.
 
 mod backend;
+mod boundary;
 mod fallback;
 mod fallback_entropy;
 mod fallback_generic;

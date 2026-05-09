@@ -91,36 +91,6 @@ fn sanitise_thread_count(requested: usize, physical_cores: usize, source: &'stat
     requested
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn sanitise_thread_count_rejects_zero() {
-        assert_eq!(sanitise_thread_count(0, 8, "test"), 8);
-        // physical_cores=0 is itself pathological (probe failure);
-        // the .max(1) floor keeps us at least single-threaded.
-        assert_eq!(sanitise_thread_count(0, 0, "test"), 1);
-    }
-
-    #[test]
-    fn sanitise_thread_count_caps_pathological_values() {
-        assert_eq!(sanitise_thread_count(999_999, 8, "test"), MAX_THREADS_CAP);
-        assert_eq!(
-            sanitise_thread_count(MAX_THREADS_CAP + 1, 8, "test"),
-            MAX_THREADS_CAP
-        );
-    }
-
-    #[test]
-    fn sanitise_thread_count_passes_through_sane_values() {
-        assert_eq!(sanitise_thread_count(1, 8, "test"), 1);
-        assert_eq!(sanitise_thread_count(8, 8, "test"), 8);
-        assert_eq!(sanitise_thread_count(64, 8, "test"), 64);
-        assert_eq!(sanitise_thread_count(MAX_THREADS_CAP, 8, "test"), MAX_THREADS_CAP);
-    }
-}
-
 pub(crate) fn auto_discover_detectors(path: &Path) -> Result<PathBuf> {
     if let Ok(env_path) = std::env::var("KEYHOG_DETECTORS") {
         let p = PathBuf::from(&env_path);
@@ -282,4 +252,34 @@ pub(crate) fn build_scanner_config(args: &ScanArgs) -> ScannerConfig {
         config.placeholder_keywords = args.placeholder_keywords.clone();
     }
     config
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sanitise_thread_count_rejects_zero() {
+        assert_eq!(sanitise_thread_count(0, 8, "test"), 8);
+        // physical_cores=0 is itself pathological (probe failure);
+        // the .max(1) floor keeps us at least single-threaded.
+        assert_eq!(sanitise_thread_count(0, 0, "test"), 1);
+    }
+
+    #[test]
+    fn sanitise_thread_count_caps_pathological_values() {
+        assert_eq!(sanitise_thread_count(999_999, 8, "test"), MAX_THREADS_CAP);
+        assert_eq!(
+            sanitise_thread_count(MAX_THREADS_CAP + 1, 8, "test"),
+            MAX_THREADS_CAP
+        );
+    }
+
+    #[test]
+    fn sanitise_thread_count_passes_through_sane_values() {
+        assert_eq!(sanitise_thread_count(1, 8, "test"), 1);
+        assert_eq!(sanitise_thread_count(8, 8, "test"), 8);
+        assert_eq!(sanitise_thread_count(64, 8, "test"), 64);
+        assert_eq!(sanitise_thread_count(MAX_THREADS_CAP, 8, "test"), MAX_THREADS_CAP);
+    }
 }

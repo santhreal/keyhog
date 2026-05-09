@@ -454,11 +454,25 @@ impl ScanOrchestrator {
         let (tx, rx) =
             std::sync::mpsc::sync_channel::<Vec<keyhog_core::Chunk>>(PIPELINE_DEPTH);
 
+        // `--stream`: print a one-line redacted preview to stderr as
+        // each finding lands. Captured into the worker thread closure
+        // so the moved `Arc<CompiledScanner>` can stay tightly scoped.
+        let stream = self.args.stream;
+
         // Scanner thread: pull batches, scan_coalesced each, accumulate
         // findings + counters. Holds an `Arc<CompiledScanner>` so the
         // producer can drop its handle and exit cleanly.
         let scanner_thread = std::thread::spawn(move || {
             let mut findings: Vec<RawMatch> = Vec::new();
+            // Buffer stderr writes so the preview lines land atomically
+            // even when the scanner produces them on multiple rayon
+            // workers; one `LineWriter` per scanner thread is enough
+            // since we only enter this loop on this single OS thread.
+            let mut stderr_writer = if stream {
+                Some(std::io::LineWriter::new(std::io::stderr()))
+            } else {
+                None
+            };
             for batch in rx {
                 if batch.is_empty() {
                     continue;
@@ -469,6 +483,11 @@ impl ScanOrchestrator {
                 let mut batch_findings = 0usize;
                 for chunk_findings in per_chunk {
                     batch_findings += chunk_findings.len();
+                    if let Some(w) = stderr_writer.as_mut() {
+                        for m in &chunk_findings {
+                            stream_finding_preview(w, m);
+                        }
+                    }
                     findings.extend(chunk_findings);
                 }
                 crate::FINDINGS_COUNT.fetch_add(batch_findings, Ordering::Relaxed);
@@ -756,11 +775,27 @@ impl ScanOrchestrator {
             );
         }
 
+        // Apply the user's per-service rate cap to the global token-bucket
+        // limiter BEFORE the engine starts dispatching verifies. The
+        // limiter is a process-wide OnceLock so this needs to land before
+        // the first `wait()` call inside `verify_with_retry`.
+        keyhog_verifier::rate_limit::set_global_default_rps(self.args.verify_rate);
+
+        // `--verify-batch`: serialize live verifications per service on
+        // top of the rate cap. Useful when the scanned tree has hundreds
+        // of fixture findings that would otherwise burst past the
+        // upstream's auth endpoint.
+        let per_service_concurrency = if self.args.verify_batch {
+            1
+        } else {
+            self.args.rate
+        };
+
         let mut verifier = VerificationEngine::new(
             &self.detectors,
             VerifyConfig {
                 timeout: Duration::from_secs(self.args.timeout),
-                max_concurrent_per_service: self.args.rate,
+                max_concurrent_per_service: per_service_concurrency,
                 ..Default::default()
             },
         )
@@ -832,6 +867,35 @@ fn allowlist_root(path: &Path) -> PathBuf {
             .map(Path::to_path_buf)
             .unwrap_or_else(|| PathBuf::from("."))
     }
+}
+
+/// Emit one redacted preview line per finding for `--stream` mode.
+/// Format is intentionally short and grep-friendly; the full report
+/// (with companions, confidence, full credential under `--show-secrets`)
+/// still lands at the end. Keeps the stderr feed readable on terminals
+/// while a 100k-file scan is in flight.
+fn stream_finding_preview<W: std::io::Write>(w: &mut W, m: &RawMatch) {
+    let path = m
+        .location
+        .file_path
+        .as_deref()
+        .unwrap_or("<stdin>");
+    let line = m
+        .location
+        .line
+        .map(|n| n.to_string())
+        .unwrap_or_else(|| "?".into());
+    let redacted = keyhog_core::redact(&m.credential);
+    let _ = writeln!(
+        w,
+        "[stream] {sev:<8} {service}/{detector}  {path}:{line}  {redacted}",
+        sev = format!("{:?}", m.severity).to_uppercase(),
+        service = m.service,
+        detector = m.detector_id,
+        path = path,
+        line = line,
+        redacted = redacted,
+    );
 }
 
 fn report_completion_summary(count: usize, elapsed: f64) {

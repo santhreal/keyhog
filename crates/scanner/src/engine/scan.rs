@@ -76,7 +76,10 @@ impl CompiledScanner {
         {
             // Parallel CPU dispatch — same reasoning as scan_chunks_with_backend:
             // the per-chunk scan is independent and CPU-bound.
-            return chunks.par_iter().map(|c| self.scan(c)).collect();
+            let mut results: Vec<Vec<keyhog_core::RawMatch>> =
+                chunks.par_iter().map(|c| self.scan(c)).collect();
+            super::boundary::scan_chunk_boundaries(self, chunks, &mut results);
+            return results;
         }
 
         #[cfg(feature = "simd")]
@@ -136,7 +139,7 @@ impl CompiledScanner {
             );
 
             // Phase 2: Full extraction on hit files + multiline fallback (parallel).
-            chunks
+            let mut results: Vec<Vec<keyhog_core::RawMatch>> = chunks
                 .par_iter()
                 .zip(triggers.into_par_iter())
                 .map(|(chunk, triggered_opt)| {
@@ -229,7 +232,15 @@ impl CompiledScanner {
 
                     Vec::new()
                 })
-                .collect()
+                .collect();
+
+            // Cross-chunk reassembly: synthesize a thin boundary buffer
+            // from the tail of each chunk + head of its right neighbour
+            // (same file, gapless) and scan it. Catches secrets split
+            // across the 64 MiB scan-window boundary that in-chunk scan
+            // can't see.
+            super::boundary::scan_chunk_boundaries(self, chunks, &mut results);
+            results
         } // #[cfg(feature = "simd")] block
     } // scan_coalesced
 
@@ -438,7 +449,7 @@ impl CompiledScanner {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments, clippy::explicit_counter_loop)]
     fn extract_plain_matches(
         &self,
         entry: &CompiledPattern,
@@ -460,6 +471,10 @@ impl CompiledScanner {
         // Inner-loop deadline counter — same `is_multiple_of(64)`
         // cadence as the grouped path so --timeout aborts cleanly
         // even on patterns that fire 100k+ matches per chunk.
+        // `match_count` is named for readability (it represents an
+        // iteration index used for deadline gating, not a generic
+        // enumerator); the function-level `clippy::explicit_counter_loop`
+        // allow keeps that clearer naming.
         let mut match_count: usize = 0;
         for matched in entry.regex.find_iter(search_text) {
             if let Some(deadline) = deadline {

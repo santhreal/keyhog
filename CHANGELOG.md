@@ -2,6 +2,104 @@
 
 All notable changes to KeyHog. Versions follow [Semantic Versioning](https://semver.org/).
 
+## v0.5.4 — 2026-05-08
+
+Roadmap-clearing pass plus the first crates.io publish for every
+workspace crate. The README's "Roadmap" section drops four items and
+a long-standing ignored regression test goes green.
+
+**Cross-chunk window-boundary reassembly (roadmap #3).** New
+`crates/scanner/src/engine/boundary.rs` splices the tail of each
+large-file scan window to the head of the next and rescans the seam,
+catching secrets that physically straddle the 64 MiB scan-window
+boundary. Wired into `scan_coalesced` after Phase 2 in both the SIMD
+and no-SIMD paths. Bounded to 1 KiB per side (2 KiB per pair), so
+cost is independent of chunk size: a 64 GiB file sliced into 1000
+chunks pays ~2 MiB of total boundary work — negligible next to the
+per-chunk regex pass. Six unit tests + the previously-`#[ignore]`-
+marked `test_window_boundary_detection` integration test now pass;
+the test itself was rewritten to use an AKIA-shaped secret (the
+original `XX_FAKE_*` shape was unconditionally suppressed by the
+placeholder filter, so the test would have stayed red even with
+reassembly).
+
+**`keyhog detectors --audit` and `keyhog detectors --fix`
+(roadmap #4).** `detectors --audit` runs every detector through
+`keyhog_core::validate_detector`, prints issues grouped by detector
+ID, and exits with code 3 when any `Error`-severity issue surfaces —
+drop it into CI to gate detector PRs. `detectors --fix` scans the
+on-disk TOML corpus for the one validator finding that's safe to
+repair mechanically — single-brace template references (`{shop}`)
+inside `[detector.verify*]` blocks — and rewrites them to the
+double-brace form (`{{shop}}`) the interpolator actually honours.
+Rewrites are scoped to verify blocks only (regex quantifiers like
+`[A-Z]{4,6}` in pattern blocks stay untouched), atomic-written via
+NamedTempFile, and re-validated post-rewrite so a corrupted result
+backs off rather than overwriting the original. `--dry-run` previews
+without writing. The 888-detector embedded corpus shows zero errors
+today (the v0.4.x detector cleanup wave already cleared them) — the
+subcommand is the regression net for the next batch of contributions.
+Seven unit tests cover the rewriter's edge cases.
+
+**Streaming finding previews (roadmap #5).** New `--stream` flag emits
+a one-line redacted preview to stderr per finding as the scanner
+produces it, instead of waiting for dedup + verification before
+printing anything. Format is grep-friendly:
+`[stream] CRITICAL aws/aws-access-key  src/foo.rs:42  AKIA...XYZ_a`.
+The full report (text/json/sarif/jsonl) still lands on stdout/`--output`
+at the end — the stream is purely a UX hint that the scanner is
+making progress on long-running runs (large monorepos, scan-system,
+GitHub-org walks). Implemented inside the existing scanner thread via
+`io::LineWriter` so per-line writes land atomically across rayon
+workers.
+
+**`--verify-rate` + `--verify-batch` (roadmap #7).** The per-service
+token-bucket rate limiter (`crates/verifier/src/rate_limit.rs`) is now
+hot-swappable via a new `set_default_rps()` (atomic-backed nanosecond
+interval) so the CLI's `--verify-rate <RPS>` flag can take effect
+after the global limiter has lazily initialised. Default stays at
+5 rps; existing per-service overrides via `update_limit` are
+preserved. `--verify-batch` adds per-service serialisation
+(`max_concurrent_per_service = 1`) on top of the rate cap — use it
+for repos with hundreds of fixture findings where bursting an
+upstream auth endpoint would get the scan IP throttled. Three new
+unit tests cover the rps→nanos clamp behaviour and the atomic update
+path.
+
+**Robustness sweep.**
+- `entropy_1000_chars_under_1ms` was unconditionally failing under
+  `cargo test` on debug builds (2.5 ms vs the 1 ms threshold). Marked
+  `#[ignore]` matching the two sibling perf-threshold tests; rerun
+  locally with `cargo test -- --ignored` against a release build.
+- `crates/cli/src/scan_runtime.rs` was a 0-byte dead module with no
+  references anywhere in the workspace. Deleted.
+- Workspace `license` field downgraded from `MIT OR Apache-2.0` to
+  `MIT` — the only license file shipped in the repo is the MIT one.
+  Honesty over ecosystem convention.
+- `cargo clippy --workspace --all-targets` now clean (was 4 warnings:
+  unused-mut in `dedup.rs`, items-after-test-module in
+  `orchestrator_config.rs`, an unnecessary `as_ref()` in the new
+  streaming preview, and an explicit-counter loop in
+  `extract_plain_matches` that's intentional for deadline-cadence
+  gating and now carries an explanatory `#[allow]`).
+- `detectors/.keyhog-cache.json` (runtime parse cache) is now
+  gitignored AND `keyhog-core/Cargo.toml` carries an explicit
+  `exclude` so a stale cache file can't sneak into the published
+  tarball.
+- `scripts/audit.sh` wraps `cargo audit` with the four
+  accept-with-rationale `--ignore` flags so local audits exit clean
+  the way CI does (cargo-audit 0.22 doesn't auto-load `audit.toml`).
+
+**Crates.io publish setup.** Workspace package metadata
+(description/license/repo/homepage/docs/keywords/categories/readme)
+audited end-to-end across all five crates; package contents verified
+via `cargo package --list` for each crate before publish (no stray
+fixtures, no .work-linux.bundle, no target tree). Path-dep version
+pins on the four library crates bumped in lockstep with the
+workspace version (`=0.5.4` everywhere) — the `=` pin guarantees a
+downstream `cargo install keyhog 0.5.4` resolves to a self-consistent
+set.
+
 ## v0.5.3 — 2026-05-07
 
 I/O perfection pass — five staged perf + correctness landings on the

@@ -12,6 +12,11 @@ documentation = "https://docs.rs/keyhog-core"
 keywords = ["secret-scanner", "security", "credentials", "api-keys", "git"]
 categories = ["command-line-utilities", "development-tools"]
 readme = "README.md"
+# Defensive: exclude the runtime-generated parse cache so a developer
+# who forgot to `git clean` between scans can't ship a stale cache to
+# crates.io. The .gitignore covers this for committed state; this
+# covers `cargo package`.
+exclude = ["detectors/.keyhog-cache.json"]
 
 [package.metadata.santh]
 status = "alpha"
