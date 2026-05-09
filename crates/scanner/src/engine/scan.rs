@@ -170,7 +170,8 @@ impl CompiledScanner {
                     {
                         let code_lines: Vec<&str> = chunk.data.lines().collect();
                         let line_offsets = crate::pipeline::compute_line_offsets(&chunk.data);
-                        let mut scan_state = crate::types::ScanState::default();
+                        let mut scan_state =
+                            crate::types::ScanState::with_static_intern(self.static_intern.clone());
                         self.scan_generic_assignments(
                             &code_lines,
                             &line_offsets,

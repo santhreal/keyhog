@@ -168,7 +168,7 @@ impl CompiledScanner {
     ) -> Vec<RawMatch> {
         let line_offsets = compute_line_offsets(&prepared.preprocessed.text);
         let code_lines: Vec<&str> = prepared.chunk.data.lines().collect();
-        let mut scan_state = ScanState::default();
+        let mut scan_state = ScanState::with_static_intern(self.static_intern.clone());
 
         #[cfg(feature = "simdsieve")]
         self.scan_hot_patterns_fast(

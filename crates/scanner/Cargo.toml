@@ -56,7 +56,7 @@ libc = { workspace = true }
 zeroize = { workspace = true }
 hyperscan = { workspace = true, optional = true }
 vyre = { workspace = true }
-vyre_libs = { workspace = true, features = ["vyre_driver_wgpu", "matching-nfa", "matching-regex"] }
+vyre_libs = { workspace = true, features = ["vyre_driver_wgpu", "matching-nfa", "matching-regex", "intern"] }
 vyre-driver-wgpu = { workspace = true }
 
 simdsieve = { workspace = true, optional = true }

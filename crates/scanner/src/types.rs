@@ -326,7 +326,18 @@ pub struct ScanState {
     /// also allocated a `String` to serve as the HashMap key, paying
     /// twice for what's a single dedup slot. `HashSet::get(&s)` works
     /// via `Arc<str>: Borrow<str>`, no allocation on hits.
+    ///
+    /// Hit ONLY by dynamic strings now: the scanner-wide
+    /// `StaticInterner` (vyre CHD perfect hash) handles every
+    /// `(detector_id, detector_name, service, source_type)` lookup
+    /// without per-scan allocation.
     pub metadata_interner: HashSet<Arc<str>>,
+    /// Optional reference to the scanner's frozen static-string
+    /// interner. When `Some`, `intern_metadata` checks here first
+    /// before falling through to the per-scan `metadata_interner`.
+    /// Lock-free on read so concurrent rayon workers share one
+    /// instance without contention.
+    pub static_intern: Option<Arc<crate::static_intern::StaticInterner>>,
     #[cfg(feature = "ml")]
     pub ml_score_cache: HashMap<(String, String), f64>,
     #[cfg(feature = "ml")]
@@ -350,14 +361,37 @@ impl ScanState {
         }
     }
 
-    /// Intern a metadata string (detector_id, name, service).
+    /// Intern a metadata string (detector_id, name, service, source_type, ...).
+    ///
+    /// Lookup order:
+    ///   1. Scanner-wide `StaticInterner` (vyre CHD perfect hash) for
+    ///      detector metadata that's frozen at scanner construction —
+    ///      O(1), no allocation, no lock contention.
+    ///   2. Per-scan `metadata_interner` `HashSet` for dynamic strings
+    ///      (file paths, commit SHAs, author names, dates).
     pub fn intern_metadata(&mut self, s: &str) -> Arc<str> {
+        if let Some(intern) = self.static_intern.as_ref() {
+            if let Some(arc) = intern.lookup(s) {
+                return arc;
+            }
+        }
         if let Some(existing) = self.metadata_interner.get(s) {
             return existing.clone();
         }
         let shared: Arc<str> = Arc::from(s);
         self.metadata_interner.insert(shared.clone());
         shared
+    }
+
+    /// Construct a `ScanState` that consults the scanner-wide static
+    /// interner first. Use this from any path that has a
+    /// `&CompiledScanner` in scope; falls back to `default()` for
+    /// stand-alone unit tests.
+    pub fn with_static_intern(intern: Arc<crate::static_intern::StaticInterner>) -> Self {
+        Self {
+            static_intern: Some(intern),
+            ..Self::default()
+        }
     }
 
     /// Push a match to the state, maintaining priority and capacity.

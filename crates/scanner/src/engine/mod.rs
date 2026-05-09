@@ -189,6 +189,12 @@ pub struct CompiledScanner {
     /// Literal prefixes supplied to Vyre's GPU Aho-Corasick engine.
     pub(crate) gpu_literals: Option<Arc<Vec<Vec<u8>>>>,
     pub(crate) gpu_matcher: OnceLock<Option<vyre_libs::matching::GpuLiteralSet>>,
+    /// Frozen static-string interner built from detector metadata at
+    /// scanner construction. Hands out shared `Arc<str>` for every
+    /// `(detector_id, detector_name, service, source_type)` value
+    /// without per-scan allocation. Lock-free on read so all rayon
+    /// workers can consult it concurrently. See `static_intern.rs`.
+    pub(crate) static_intern: Arc<crate::static_intern::StaticInterner>,
     /// Lazily-compiled regex-NFA pipeline for the MegaScan backend.
     /// `None` once the OnceLock fires means the regex compile failed
     /// (typically vyre's per-subgroup state cap or an unsupported
@@ -295,12 +301,27 @@ impl CompiledScanner {
             "bigram bloom built (4096 bits, lower popcount = stronger filter)"
         );
 
+        // Pre-intern detector metadata strings into a CHD perfect
+        // hash so per-scan `intern_metadata` calls hand out shared
+        // `Arc<str>` without touching the global allocator. Built
+        // once per scanner; lock-free on read.
+        let static_intern_strings: Vec<&str> = detectors
+            .iter()
+            .flat_map(|d| {
+                [d.id.as_str(), d.name.as_str(), d.service.as_str()].into_iter()
+            })
+            .collect();
+        let static_intern = Arc::new(
+            crate::static_intern::StaticInterner::from_detector_strings(static_intern_strings),
+        );
+
         Ok(Self {
             ac,
             wgpu_backend,
             gpu_literals,
             gpu_matcher: OnceLock::new(),
             rule_pipeline: OnceLock::new(),
+            static_intern,
             ac_map: state.ac_map,
             prefix_propagation,
             fallback: state.fallback,
