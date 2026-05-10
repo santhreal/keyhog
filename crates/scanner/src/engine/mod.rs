@@ -3,13 +3,13 @@
 mod backend;
 mod boundary;
 mod fallback;
+mod fallback_entropy;
+mod fallback_generic;
+mod hot_patterns;
 /// Megakernel-batched GPU dispatch via vyre-runtime.
 /// Status: scaffolding (compilation works); dispatch loop wired in
 /// follow-up work. See `megakernel_dispatch.rs` doc-comment.
 pub mod megakernel_dispatch;
-mod fallback_entropy;
-mod fallback_generic;
-mod hot_patterns;
 mod scan;
 mod scan_filters;
 mod scan_gpu;
@@ -53,10 +53,8 @@ pub use vyre_libs::matching::LiteralMatch;
 pub fn build_rule_pipeline(
     patterns: &[&str],
     input_len: u32,
-) -> std::result::Result<
-    vyre_libs::matching::RulePipeline,
-    vyre_libs::matching::RegexCompileError,
-> {
+) -> std::result::Result<vyre_libs::matching::RulePipeline, vyre_libs::matching::RegexCompileError>
+{
     vyre_libs::matching::build_rule_pipeline_from_regex(patterns, "input", "hits", input_len)
 }
 
@@ -101,10 +99,8 @@ fn pipeline_cache_key(patterns: &[&str], input_len: u32) -> String {
 pub fn rule_pipeline_cached(
     patterns: &[&str],
     input_len: u32,
-) -> std::result::Result<
-    vyre_libs::matching::RulePipeline,
-    vyre_libs::matching::RegexCompileError,
-> {
+) -> std::result::Result<vyre_libs::matching::RulePipeline, vyre_libs::matching::RegexCompileError>
+{
     let started = std::time::Instant::now();
     let Some(cache_dir) = gpu_matcher_cache_dir() else {
         return build_rule_pipeline(patterns, input_len);
@@ -120,7 +116,8 @@ pub fn rule_pipeline_cached(
     // Cache lookup/store is best-effort: a stale or unwritable cache
     // is degraded behavior, not a correctness problem. We still hand
     // back the freshly-compiled pipeline above either way.
-    let cached = vyre_libs::matching::cached_load_or_compile(&cache_dir, &cache_key, || pipe.clone());
+    let cached =
+        vyre_libs::matching::cached_load_or_compile(&cache_dir, &cache_key, || pipe.clone());
     tracing::debug!(
         target: "keyhog::routing",
         patterns = patterns.len(),
@@ -321,13 +318,11 @@ impl CompiledScanner {
         // once per scanner; lock-free on read.
         let static_intern_strings: Vec<&str> = detectors
             .iter()
-            .flat_map(|d| {
-                [d.id.as_str(), d.name.as_str(), d.service.as_str()].into_iter()
-            })
+            .flat_map(|d| [d.id.as_str(), d.name.as_str(), d.service.as_str()].into_iter())
             .collect();
-        let static_intern = Arc::new(
-            crate::static_intern::StaticInterner::from_detector_strings(static_intern_strings),
-        );
+        let static_intern = Arc::new(crate::static_intern::StaticInterner::from_detector_strings(
+            static_intern_strings,
+        ));
 
         Ok(Self {
             ac,
@@ -630,6 +625,15 @@ impl CompiledScanner {
     }
 
     pub(crate) fn post_process_matches(
+        &self,
+        chunk: &Chunk,
+        matches: &mut Vec<RawMatch>,
+        deadline: Option<std::time::Instant>,
+    ) {
+        self.post_process_matches_inner(chunk, matches, deadline);
+    }
+
+    pub(crate) fn post_process_matches_inner(
         &self,
         chunk: &Chunk,
         matches: &mut Vec<RawMatch>,

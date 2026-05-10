@@ -96,9 +96,7 @@ impl PreprocessedText {
     /// Binary search; same monotonic-mappings invariant as the
     /// multiline variant — see that doc for the analysis.
     pub fn line_for_offset(&self, offset: usize) -> Option<usize> {
-        let idx = self
-            .mappings
-            .partition_point(|m| m.start_offset <= offset);
+        let idx = self.mappings.partition_point(|m| m.start_offset <= offset);
         if idx == 0 {
             return None;
         }
@@ -396,6 +394,7 @@ impl ScanState {
 
     /// Push a match to the state, maintaining priority and capacity.
     /// High-confidence secrets will displace lower-confidence findings.
+
     pub fn push_match(&mut self, m: keyhog_core::RawMatch, limit: usize) {
         if self.matches.len() < limit {
             self.matches.push(Reverse(m));
