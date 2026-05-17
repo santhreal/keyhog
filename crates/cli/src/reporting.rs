@@ -54,7 +54,16 @@ fn report_with<W: std::io::Write + 'static + Send>(
     findings: &[VerifiedFinding],
 ) -> Result<()> {
     match format {
-        OutputFormat::Text => finish_reporter(TextReporter::with_color(w, color), findings),
+        OutputFormat::Text => {
+            // Pass the example-suppression count so the empty-findings
+            // summary distinguishes "no matches at all" from
+            // "matched + suppressed N as known examples". Structured
+            // formats (JSON/JSONL/SARIF) don't render prose, so the
+            // count goes via --dogfood for those callers.
+            let mut reporter = TextReporter::with_color(w, color);
+            reporter.set_example_suppressions(keyhog_scanner::telemetry::example_suppression_count());
+            finish_reporter(reporter, findings)
+        }
         OutputFormat::Json => finish_reporter(JsonReporter::new(w)?, findings),
         OutputFormat::Jsonl => finish_reporter(JsonlReporter::new(w), findings),
         OutputFormat::Sarif => finish_reporter(SarifReporter::new(w), findings),

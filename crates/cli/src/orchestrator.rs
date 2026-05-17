@@ -981,24 +981,15 @@ fn stream_finding_preview<W: std::io::Write>(w: &mut W, m: &RawMatch) {
 }
 
 fn report_completion_summary(count: usize, elapsed: f64) {
-    let suppressed_examples = keyhog_scanner::telemetry::example_suppression_count();
+    // Suppression-count messaging is owned by the text reporter (see
+    // TextReporter::set_example_suppressions). This summary just states
+    // the timing + real-finding count; structured formats (JSON/SARIF)
+    // get the suppression info via --dogfood.
     if count == 0 {
-        if suppressed_examples > 0 {
-            // The user just got "No secrets found" but we DID match credentials
-            // and silenced them as known examples/placeholders. Tell them — this
-            // is the difference between "your code is clean" and "your code has
-            // demo keys you might or might not have meant to ship".
-            let plural = if suppressed_examples == 1 { "" } else { "s" };
-            eprintln!(
-                "\n✨ Scan complete in \x1b[33m{:.2}s\x1b[0m — \x1b[1;32m0\x1b[0m real secrets, \x1b[33m{}\x1b[0m example/test key{} suppressed (pass --dogfood to see them).",
-                elapsed, suppressed_examples, plural
-            );
-        } else {
-            eprintln!(
-                "\n✨ Scan complete! Found \x1b[1;32m0\x1b[0m secrets in \x1b[33m{:.2}s\x1b[0m. You are secure!",
-                elapsed
-            );
-        }
+        eprintln!(
+            "\n✨ Scan complete! Found \x1b[1;32m0\x1b[0m secrets in \x1b[33m{:.2}s\x1b[0m.",
+            elapsed
+        );
     } else {
         eprintln!(
             "\n✨ Scan complete! Found \x1b[1;31m{}\x1b[0m secrets in \x1b[33m{:.2}s\x1b[0m.",

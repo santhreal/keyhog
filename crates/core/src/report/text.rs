@@ -23,6 +23,12 @@ pub struct TextReporter<W: Write + Send> {
     color: bool,
     live_count: usize,
     dead_count: usize,
+    /// Number of credentials matched and then suppressed as known
+    /// examples/test/placeholder values. Surfaced in the empty-findings
+    /// summary so "0 secrets" doesn't get conflated with "0 matches at
+    /// all". Set by the caller before `finish()`; default 0 keeps the
+    /// original behavior for callers that don't track it.
+    example_suppressions: usize,
 }
 
 impl<W: Write + Send> TextReporter<W> {
@@ -57,7 +63,17 @@ impl<W: Write + Send> TextReporter<W> {
             color,
             live_count: 0,
             dead_count: 0,
+            example_suppressions: 0,
         }
+    }
+
+    /// Tell the reporter how many credentials were matched and silently
+    /// suppressed as known example/test/placeholder values. The reporter
+    /// uses this only to phrase the empty-findings summary honestly
+    /// (e.g. demo-secret.env's `AKIAIOSFODNN7EXAMPLE` shouldn't render
+    /// as "Your code is clean"). Idempotent; later calls replace.
+    pub fn set_example_suppressions(&mut self, n: usize) {
+        self.example_suppressions = n;
     }
 
     fn print_header(&mut self) -> Result<(), ReportError> {
@@ -245,11 +261,20 @@ impl<W: Write + Send> Reporter for TextReporter<W> {
     fn finish(&mut self) -> Result<(), ReportError> {
         if self.count == 0 {
             self.print_header()?;
-            writeln!(
-                self.writer,
-                "  {}\n",
-                colorize("No secrets found. Your code is clean.", "1;32", self.color),
-            )?;
+            if self.example_suppressions > 0 {
+                let plural = if self.example_suppressions == 1 { "" } else { "s" };
+                let msg = format!(
+                    "No real secrets — but {} example/test key{} suppressed. Pass --dogfood to see them.",
+                    self.example_suppressions, plural
+                );
+                writeln!(self.writer, "  {}\n", colorize(&msg, "1;33", self.color))?;
+            } else {
+                writeln!(
+                    self.writer,
+                    "  {}\n",
+                    colorize("No secrets found. Your code is clean.", "1;32", self.color),
+                )?;
+            }
         } else {
             let summary_border = colorize(
                 "━━━ Results ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
@@ -379,5 +404,52 @@ fn colorize(text: &str, ansi: &str, color: bool) -> String {
         format!("\x1b[{ansi}m{text}\x1b[0m")
     } else {
         text.to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Regression for TODO 2026-05-17 #2 (smoke-test gap). Scanning
+    /// `demo-secret.env` reported "Your code is clean" even when the
+    /// scanner had matched AKIAIOSFODNN7EXAMPLE and silenced it. The
+    /// empty-findings summary must now distinguish those two cases.
+    #[test]
+    fn empty_with_zero_suppressions_says_clean() {
+        let mut buf = Vec::new();
+        let mut r = TextReporter::with_color(&mut buf, false);
+        r.finish().unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        assert!(s.contains("Your code is clean"), "got: {s}");
+        assert!(!s.contains("example/test"), "must not mention suppressions when there were none: {s}");
+    }
+
+    #[test]
+    fn empty_with_suppressions_says_examples_were_silenced() {
+        let mut buf = Vec::new();
+        let mut r = TextReporter::with_color(&mut buf, false);
+        r.set_example_suppressions(6);
+        r.finish().unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        assert!(
+            s.contains("6 example/test keys suppressed"),
+            "summary must surface the suppression count: {s}"
+        );
+        assert!(s.contains("--dogfood"), "summary should point at --dogfood: {s}");
+        assert!(
+            !s.contains("Your code is clean"),
+            "must not claim cleanliness when matches were silenced: {s}"
+        );
+    }
+
+    #[test]
+    fn empty_with_one_suppression_uses_singular() {
+        let mut buf = Vec::new();
+        let mut r = TextReporter::with_color(&mut buf, false);
+        r.set_example_suppressions(1);
+        r.finish().unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        assert!(s.contains("1 example/test key suppressed"), "got: {s}");
     }
 }
