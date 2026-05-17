@@ -5,7 +5,7 @@
 //! table with linear probing and a shared byte pool, both living in
 //! workgroup-local SRAM.  The id-0 sentinel is reserved for the empty string.
 //! The CPU reference uses the exact same FNV-1a hash, probe sequence, and
-//! capacity limits as the WGSL kernel, so conform can prove the tables are
+//! capacity limits as the target-text kernel, so conform can prove the tables are
 //! byte-identical across host and device.
 
 use crate::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
@@ -14,10 +14,10 @@ use rustc_hash::FxHashMap;
 use thiserror::Error;
 use vyre_spec::AlgebraicLaw;
 
-/// Portable WGSL source for the string interner primitive.
+/// Registered device source for the string interner primitive.
 #[must_use]
-pub const fn source() -> &'static str {
-    include_str!("wgsl/string_interner.wgsl")
+pub fn source() -> Option<&'static str> {
+    crate::transform::compiler::shader_provider::source("string_interner")
 }
 
 /// Sentinel in the output buffer when the input byte length is zero.
@@ -119,7 +119,7 @@ pub struct Entry {
     pub(crate) id: u32,
 }
 
-/// FNV-1a 32-bit hash used by CPU and WGSL references.
+/// FNV-1a 32-bit hash used by CPU and target-text references.
 #[must_use]
 pub fn fnv1a32(bytes: &[u8]) -> u32 {
     let mut hash = 0x811c_9dc5u32;
@@ -227,7 +227,7 @@ impl StringInternerOp {}
 /// Intern all byte strings into a fresh fixed-capacity table.
 ///
 /// Byte capacity is derived as `slot_capacity * 64` which is the
-/// default upper bound assumed by the WGSL kernel's workgroup SRAM
+/// default upper bound assumed by the target-text kernel's workgroup SRAM
 /// layout. Callers that need a different budget should instantiate
 /// `StringInterner::new(slot_capacity, byte_capacity)` directly.
 ///
@@ -251,7 +251,7 @@ pub const LAWS: &[AlgebraicLaw] = &[AlgebraicLaw::Bounded {
 ///
 /// Models a workgroup-SRAM interner that holds up to `slot_capacity`
 /// unique strings sharing a bounded byte storage pool of
-/// `byte_capacity` bytes. This exactly matches the WGSL lowering which
+/// `byte_capacity` bytes. This exactly matches the target-text lowering which
 /// allocates a fixed slot table and a fixed byte arena. The id-0
 /// sentinel is reserved for "empty string" so callers can map missing
 /// entries to a well-known value.
@@ -291,7 +291,7 @@ pub enum StringInternerError {
 #[derive(Debug, Default, Clone, Copy)]
 pub struct StringInternerOp;
 
-/// Workgroup size used by the reference WGSL lowering.
+/// Workgroup size used by the reference target-text lowering.
 pub const WORKGROUP_SIZE: [u32; 3] = [64, 1, 1];
 
 #[cfg(test)]
@@ -311,8 +311,11 @@ mod ir_program_tests {
     #[test]
     fn fnv1a_program_wire_round_trips() {
         let prog = fnv1a_program("input", "out", 16);
-        let bytes = prog.to_wire().expect("serialize");
-        let decoded = Program::from_wire(&bytes).expect("decode");
+        let bytes = prog
+            .to_wire()
+            .expect("Fix: serialize; restore this invariant before continuing.");
+        let decoded = Program::from_wire(&bytes)
+            .expect("Fix: decode; restore this invariant before continuing.");
         assert_eq!(decoded.buffers().len(), 2);
         assert_eq!(decoded.workgroup_size(), [1, 1, 1]);
     }

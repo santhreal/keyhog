@@ -53,7 +53,7 @@ pub struct Program {
     pub buffers: Arc<[BufferDecl]>,
     /// Sidecar index for O(1) buffer lookup by name.
     pub(crate) buffer_index: Arc<FxHashMap<Arc<str>, usize>>,
-    /// Workgroup size: `[x, y, z]`. Controls `@workgroup_size` in WGSL.
+    /// Workgroup size: `[x, y, z]`. Controls `@workgroup_size` in target-text.
     pub workgroup_size: [u32; 3],
     /// Entry point body. Executes once per invocation.
     pub entry: Arc<Vec<Node>>,
@@ -110,23 +110,33 @@ impl Clone for Program {
             non_composable_with_self: self.non_composable_with_self,
         };
         if let Some(hash) = self.hash.get() {
-            let _ = cloned.hash.set(*hash);
+            cloned.hash.set(*hash).expect("cloned Program hash cache is empty");
         }
         if let Some(fingerprint) = self.fingerprint.get() {
-            let _ = cloned.fingerprint.set(*fingerprint);
+            cloned
+                .fingerprint
+                .set(*fingerprint)
+                .expect("cloned Program fingerprint cache is empty");
         }
         if let Some(output_buffer_index) = self.output_buffer_index.get() {
             // Arc::clone = refcount bump, no Vec<u32> copy.
-            let _ = cloned
+            cloned
                 .output_buffer_index
-                .set(Arc::clone(output_buffer_index));
+                .set(Arc::clone(output_buffer_index))
+                .expect("cloned Program output buffer index cache is empty");
         }
         if let Some(has_indirect_dispatch) = self.has_indirect_dispatch.get() {
-            let _ = cloned.has_indirect_dispatch.set(*has_indirect_dispatch);
+            cloned
+                .has_indirect_dispatch
+                .set(*has_indirect_dispatch)
+                .expect("cloned Program indirect-dispatch cache is empty");
         }
         if let Some(stats) = self.stats.get() {
             // Arc::clone = refcount bump, no ProgramStats copy.
-            let _ = cloned.stats.set(Arc::clone(stats));
+            cloned
+                .stats
+                .set(Arc::clone(stats))
+                .expect("cloned Program stats cache is empty");
         }
         cloned
     }

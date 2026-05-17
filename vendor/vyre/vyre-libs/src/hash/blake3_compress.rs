@@ -12,8 +12,8 @@
 //! - `chaining_out`: ReadWrite, 8 u32. Output chaining value.
 //!
 //! Single-invocation dispatch: one workgroup of [1, 1, 1] runs the
-//! 7-round permutation in-place on 16 local state words. A parallel
-//! tree-hash variant is future work.
+//! 7-round permutation in-place on 16 local state words. Parallel
+//! tree hashing composes this compression primitive over chunk states.
 //!
 //! Migration 3 moved this op from `vyre-libs::crypto::blake3_compress`
 //! to `vyre-libs::hash::blake3_compress`.
@@ -167,11 +167,11 @@ inventory::submit! {
                 0, 0, 0, 0, 0, 0, 0, 0,
             ];
             let params: [u32; 4] = [0, 0, 64, 0b0000_1011]; // CHUNK_START | CHUNK_END | ROOT
-            let u32_bytes = |words: &[u32]| words.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<u8>>();
+
             vec![vec![
-                u32_bytes(&iv),
-                u32_bytes(&msg),
-                u32_bytes(&params),
+                crate::test_support::byte_pack::u32_bytes(&iv),
+                crate::test_support::byte_pack::u32_bytes(&msg),
+                crate::test_support::byte_pack::u32_bytes(&params),
                 vec![0u8; 8 * 4],
             ]]
         }),

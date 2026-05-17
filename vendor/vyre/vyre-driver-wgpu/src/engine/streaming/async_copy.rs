@@ -19,24 +19,33 @@
 //! — was considered and rejected because most vyre callers already run under
 //! tokio and pulling rayon in for this one concern adds a second global pool.
 
-use std::collections::HashMap;
+use std::sync::mpsc;
 
+use rustc_hash::FxHashMap;
 use vyre_driver::BackendError;
 
-/// Handle to the work backing an in-flight tag. Stored in the scheduler
-/// until the matching `async_wait` call. Allows the scheduler to sit on
-/// top of either `std::thread` (when tokio is absent) or
-/// `tokio::task::spawn_blocking` (when a runtime is active) without
-/// forcing every caller into async code.
+/// Completion reported by a tokio blocking worker.
+enum TokioBlockingCompletion {
+    Returned(Result<(), BackendError>),
+    Panicked(String),
+}
+
+/// Handle to the work backing an in-flight tag. Stored in the scheduler until
+/// the matching `async_wait` call. The tokio variant carries a plain blocking
+/// receiver so `async_wait` never has to construct an emergency runtime just to
+/// join a task after the caller's runtime moved or shut down.
 enum InFlight {
     Thread(std::thread::JoinHandle<Result<(), BackendError>>),
-    TokioBlocking(tokio::task::JoinHandle<Result<(), BackendError>>),
+    TokioBlocking {
+        completion: mpsc::Receiver<TokioBlockingCompletion>,
+        task: tokio::task::JoinHandle<()>,
+    },
 }
 
 /// Async copy scheduler keyed by IR stream tags.
 #[derive(Default)]
 pub struct AsyncCopyStreams {
-    in_flight: HashMap<String, InFlight>,
+    in_flight: FxHashMap<String, InFlight>,
 }
 
 impl AsyncCopyStreams {
@@ -68,7 +77,27 @@ impl AsyncCopyStreams {
             )));
         }
         let handle = match tokio::runtime::Handle::try_current() {
-            Ok(rt) => InFlight::TokioBlocking(rt.spawn_blocking(copy)),
+            Ok(rt) => {
+                let (completion_tx, completion_rx) = mpsc::sync_channel(1);
+                let task = rt.spawn_blocking(move || {
+                    let completion =
+                        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(copy)) {
+                            Ok(result) => TokioBlockingCompletion::Returned(result),
+                            Err(payload) => {
+                                TokioBlockingCompletion::Panicked(panic_payload(&*payload).into())
+                            }
+                        };
+                    if completion_tx.send(completion).is_err() {
+                        eprintln!(
+                            "Fix: async-copy completion receiver was dropped before the blocking copy reported completion."
+                        );
+                    }
+                });
+                InFlight::TokioBlocking {
+                    completion: completion_rx,
+                    task,
+                }
+            }
             Err(_) => InFlight::Thread(std::thread::spawn(copy)),
         };
         self.in_flight.insert(tag, handle);
@@ -93,32 +122,21 @@ impl AsyncCopyStreams {
                     "async copy worker for `{tag}` panicked. Fix: inspect staging buffer ownership and copy closure invariants."
                 ))
             })?,
-            InFlight::TokioBlocking(join) => {
-                let result = if let Ok(rt) = tokio::runtime::Handle::try_current() {
-                    // Safe blocking join from inside an async context: use
-                    // `block_in_place` so we do not starve the runtime.
-                    tokio::task::block_in_place(|| rt.block_on(join))
-                } else {
-                    // Spin up a single-threaded runtime just long enough to
-                    // join. Rare path (the task was spawned while a runtime
-                    // was present and we lost it since); documented so the
-                    // fallback is explicit rather than silently returning
-                    // an error.
-                    let rt = tokio::runtime::Builder::new_current_thread()
-                        .enable_all()
-                        .build()
-                        .map_err(|e| {
-                            BackendError::new(format!(
-                                "failed to build fallback tokio runtime for async-copy join: {e}. Fix: keep a tokio runtime alive while AsyncWait is pending."
-                            ))
-                        })?;
-                    rt.block_on(join)
-                };
-                result.map_err(|e| {
+            InFlight::TokioBlocking { completion, task } => {
+                let completion = completion.recv().map_err(|_| {
                     BackendError::new(format!(
-                        "async copy worker for `{tag}` failed: {e}. Fix: inspect staging buffer ownership and copy closure invariants."
+                        "async copy worker for `{tag}` exited without publishing completion. Fix: inspect staging buffer ownership and copy closure invariants."
                     ))
-                })?
+                })?;
+                drop(task);
+                match completion {
+                    TokioBlockingCompletion::Returned(result) => result,
+                    TokioBlockingCompletion::Panicked(payload) => Err(BackendError::new(
+                        format!(
+                            "async copy worker for `{tag}` panicked: {payload}. Fix: inspect staging buffer ownership and copy closure invariants."
+                        ),
+                    )),
+                }
             }
         }
     }
@@ -157,12 +175,12 @@ impl Drop for AsyncCopyStreams {
                         );
                     }
                 }
-                InFlight::TokioBlocking(join) => {
-                    // tokio::task::JoinHandle drops clean when the task has
-                    // already finished; aborting guarantees outstanding
-                    // tasks do not keep holding staging buffers after the
-                    // scheduler itself is gone.
-                    join.abort();
+                InFlight::TokioBlocking { task, .. } => {
+                    // Abort if the blocking task has not started. If it is
+                    // already running, tokio lets it finish; the completion
+                    // channel is dropped so the task cannot retain scheduler
+                    // state after completion.
+                    task.abort();
                 }
             }
         }
@@ -180,38 +198,56 @@ fn panic_payload<'a>(payload: &'a (dyn std::any::Any + Send + 'static)) -> &'a s
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::{Duration, Instant};
+    use std::time::Duration;
 
     #[test]
-    fn async_copy_overlaps_compute() {
-        let copy_time = Duration::from_millis(70);
-        let compute_time = Duration::from_millis(70);
-
-        let sequential_start = Instant::now();
-        std::thread::sleep(copy_time);
-        std::thread::sleep(compute_time);
-        let sequential = sequential_start.elapsed();
-
+    fn async_copy_compute_overlap_is_synchronized_without_sleep() {
+        let (copy_started_tx, copy_started_rx) = mpsc::sync_channel(1);
+        let (release_copy_tx, release_copy_rx) = mpsc::sync_channel(1);
         let mut streams = AsyncCopyStreams::new();
-        let overlap_start = Instant::now();
         streams
             .overlap_copy_compute(
                 "stage-0",
                 move || {
-                    std::thread::sleep(copy_time);
+                    copy_started_tx
+                        .send(())
+                        .expect("Fix: compute side must stay alive until copy starts");
+                    release_copy_rx
+                        .recv()
+                        .expect("Fix: compute side must release copy before wait");
                     Ok(())
                 },
                 move || {
-                    std::thread::sleep(compute_time);
+                    copy_started_rx
+                        .recv_timeout(Duration::from_secs(5))
+                        .expect("Fix: copy work must start before compute can release it");
+                    release_copy_tx
+                        .send(())
+                        .expect("Fix: copy side must stay alive until compute releases it");
                     Ok(())
                 },
             )
             .expect("Fix: async copy and compute should complete");
-        let overlapped = overlap_start.elapsed();
+    }
 
-        assert!(
-            overlapped + Duration::from_millis(25) < sequential,
-            "copy and compute did not overlap enough: sequential={sequential:?}, overlapped={overlapped:?}"
-        );
+    #[test]
+    fn tokio_blocking_wait_does_not_need_live_runtime() {
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(1)
+            .enable_all()
+            .build()
+            .expect("Fix: tokio runtime must build for async copy test");
+        let mut streams = AsyncCopyStreams::new();
+        {
+            let _guard = runtime.enter();
+            streams
+                .async_load("stage-0", || Ok(()))
+                .expect("Fix: async load must enqueue on active tokio runtime");
+        }
+        drop(runtime);
+
+        streams
+            .async_wait("stage-0")
+            .expect("Fix: async wait must join through completion channel without a live runtime");
     }
 }

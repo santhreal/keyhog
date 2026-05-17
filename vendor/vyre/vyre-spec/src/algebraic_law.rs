@@ -255,6 +255,18 @@ pub enum AlgebraicLaw {
         /// Predicate function that returns true when the law holds.
         check: LawCheckFn,
     },
+    /// Categorical-IR contract law: the operation participates as an
+    /// arrow in the dispatch-graph monoidal category. Composition with
+    /// the identity arrow on either side leaves the operation
+    /// unchanged (`f ∘ id = id ∘ f = f`). P-SPEC-1: vyre-spec
+    /// invariants reflect the categorical-IR contract; conformance
+    /// engines verify this law for every op tagged as a category
+    /// arrow.
+    CategoricalIdentity,
+    /// Categorical-IR contract law: the operation composes
+    /// associatively as a category arrow (`(h ∘ g) ∘ f = h ∘ (g ∘ f)`).
+    /// P-SPEC-1.
+    CategoricalAssociative,
 }
 
 impl AlgebraicLaw {
@@ -283,6 +295,8 @@ impl AlgebraicLaw {
             Self::InverseOf { .. } => "inverse-of",
             Self::Trichotomy { .. } => "trichotomy",
             Self::ZeroProduct { .. } => "zero-product",
+            Self::CategoricalIdentity => "categorical-identity",
+            Self::CategoricalAssociative => "categorical-associative",
             Self::Custom { name, .. } => name,
         }
     }
@@ -336,7 +350,9 @@ impl PartialEq for AlgebraicLaw {
             | (Self::Associative, Self::Associative)
             | (Self::Idempotent, Self::Idempotent)
             | (Self::Involution, Self::Involution)
-            | (Self::Monotone, Self::Monotone) => true,
+            | (Self::Monotone, Self::Monotone)
+            | (Self::CategoricalIdentity, Self::CategoricalIdentity)
+            | (Self::CategoricalAssociative, Self::CategoricalAssociative) => true,
             (Self::Identity { element: left }, Self::Identity { element: right })
             | (Self::LeftIdentity { element: left }, Self::LeftIdentity { element: right })
             | (Self::RightIdentity { element: left }, Self::RightIdentity { element: right })

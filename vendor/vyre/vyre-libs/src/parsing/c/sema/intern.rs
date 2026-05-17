@@ -11,7 +11,10 @@ pub fn emit_identifier_intern(
     vec![
         Node::let_bind("identifier_intern_id", Expr::u32(0)),
         Node::if_then(
-            Expr::eq(Expr::var("tok_type"), Expr::u32(TOK_IDENTIFIER)),
+            Expr::and(
+                Expr::eq(Expr::var("tok_type"), Expr::u32(TOK_IDENTIFIER)),
+                Expr::gt(Expr::load(tok_lens, node_idx.clone()), Expr::u32(0)),
+            ),
             vec![
                 Node::let_bind("start", Expr::load(tok_starts, node_idx.clone())),
                 Node::let_bind("len", Expr::load(tok_lens, node_idx)),

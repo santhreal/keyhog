@@ -1,12 +1,13 @@
 //! DFA rule catalog packing for batched megakernel dispatch.
 
 use crate::PipelineError;
+use rustc_hash::FxHashMap;
 
 /// Dense byte alphabet used by the DFA transition table.
-pub(crate) const ALPHABET_SIZE: u32 = 256;
+pub const ALPHABET_SIZE: u32 = 256;
 
 /// Number of `u32` words per rule metadata entry.
-pub(crate) const RULE_META_WORDS: usize = 3;
+pub const RULE_META_WORDS: usize = 3;
 
 /// One compiled DFA-backed rule program consumed by the batch dispatcher.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -44,12 +45,16 @@ impl BatchRuleProgram {
     }
 }
 
+/// Packed metadata for one dense DFA rule entry.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, bytemuck::Pod, bytemuck::Zeroable)]
-pub(crate) struct RuleMeta {
-    pub(crate) transition_base: u32,
-    pub(crate) accept_base: u32,
-    pub(crate) state_count: u32,
+pub struct RuleMeta {
+    /// Word offset into the flattened transition table.
+    pub transition_base: u32,
+    /// Word offset into the flattened accept table.
+    pub accept_base: u32,
+    /// DFA state count for this rule.
+    pub state_count: u32,
 }
 
 /// One rule rejected from a megakernel batch while other rules still ran.
@@ -62,20 +67,24 @@ pub struct BatchRuleRejection {
 }
 
 /// Packed rule catalog uploaded to device storage buffers.
-pub(crate) struct PackedRuleCatalog {
-    pub(crate) rule_meta: Vec<RuleMeta>,
-    pub(crate) transitions: Vec<u32>,
-    pub(crate) accept: Vec<u32>,
-    pub(crate) rejected_rules: Vec<BatchRuleRejection>,
+pub struct PackedRuleCatalog {
+    /// Dense per-rule metadata table.
+    pub rule_meta: Vec<RuleMeta>,
+    /// Deduplicated flattened DFA transition storage.
+    pub transitions: Vec<u32>,
+    /// Deduplicated flattened DFA accept storage.
+    pub accept: Vec<u32>,
+    /// Rules rejected during validation or dense-slot assignment.
+    pub rejected_rules: Vec<BatchRuleRejection>,
 }
 
 /// Fingerprints for the valid dense catalog entries.
 #[must_use]
-pub(crate) fn accepted_rule_fingerprints(
+pub fn accepted_rule_fingerprints(
     rules: &[BatchRuleProgram],
 ) -> (Vec<[u8; 32]>, Vec<BatchRuleRejection>) {
     let mut fingerprints = vec![None; rules.len()];
-    let mut rejections = Vec::new();
+    let mut rejections = Vec::with_capacity(rules.len());
     let mut slots = DenseSlotTracker::new(rules.len());
 
     for rule in rules {
@@ -97,26 +106,27 @@ pub(crate) fn accepted_rule_fingerprints(
         }
     }
 
-    rejections.extend(slots.missing_rejections());
-    (
-        fingerprints
-            .into_iter()
-            .flatten()
-            .collect::<Vec<[u8; 32]>>(),
-        rejections,
-    )
+    slots.extend_missing_rejections(&mut rejections);
+    let mut accepted = Vec::with_capacity(fingerprints.len().saturating_sub(rejections.len()));
+    accepted.extend(fingerprints.into_iter().flatten());
+    (accepted, rejections)
 }
 
 /// Pack valid DFA rules into compact shared device tables.
 ///
 /// Rules with identical `(transitions, accept, state_count)` share backing
 /// transition and accept storage while retaining distinct dense metadata slots.
-pub(crate) fn pack_rule_catalog(
-    rules: &[BatchRuleProgram],
-) -> Result<PackedRuleCatalog, PipelineError> {
-    let mut unique = std::collections::BTreeMap::<[u8; 32], (u32, u32, u32)>::new();
+pub fn pack_rule_catalog(rules: &[BatchRuleProgram]) -> Result<PackedRuleCatalog, PipelineError> {
+    let mut unique = FxHashMap::<[u8; 32], (u32, u32, u32)>::default();
+    unique.reserve(rules.len());
     let mut transitions = vec![0; ALPHABET_SIZE as usize];
+    transitions.reserve(saturating_total_len(
+        rules.iter().map(|rule| rule.transitions.len()),
+    ));
     let mut accept = vec![0];
+    accept.reserve(saturating_total_len(
+        rules.iter().map(|rule| rule.accept.len()),
+    ));
     let mut rule_meta = vec![
         RuleMeta {
             transition_base: 0,
@@ -125,7 +135,7 @@ pub(crate) fn pack_rule_catalog(
         };
         rules.len()
     ];
-    let mut rejections = Vec::new();
+    let mut rejections = Vec::with_capacity(rules.len());
     let mut slots = DenseSlotTracker::new(rules.len());
 
     for rule in rules {
@@ -151,8 +161,9 @@ pub(crate) fn pack_rule_catalog(
             }
         };
 
+        let storage_fingerprint = dfa_storage_fingerprint(rule);
         let (transition_base, accept_base, state_count) = if let Some(layout) =
-            unique.get(&dfa_storage_fingerprint(rule))
+            unique.get(&storage_fingerprint)
         {
             *layout
         } else {
@@ -168,7 +179,7 @@ pub(crate) fn pack_rule_catalog(
             transitions.extend_from_slice(&rule.transitions);
             accept.extend_from_slice(&rule.accept);
             unique.insert(
-                dfa_storage_fingerprint(rule),
+                storage_fingerprint,
                 (transition_base, accept_base, rule.state_count),
             );
             (transition_base, accept_base, rule.state_count)
@@ -180,13 +191,17 @@ pub(crate) fn pack_rule_catalog(
         };
     }
 
-    rejections.extend(slots.missing_rejections());
+    slots.extend_missing_rejections(&mut rejections);
     Ok(PackedRuleCatalog {
         rule_meta,
         transitions,
         accept,
         rejected_rules: rejections,
     })
+}
+
+fn saturating_total_len(lengths: impl Iterator<Item = usize>) -> usize {
+    lengths.fold(0usize, usize::saturating_add)
 }
 
 fn validate_rule_shape(
@@ -288,19 +303,22 @@ impl DenseSlotTracker {
         Ok(meta_index)
     }
 
-    fn missing_rejections(self) -> Vec<BatchRuleRejection> {
-        self.occupied
-            .into_iter()
-            .zip(self.addressed)
+    fn extend_missing_rejections(&self, out: &mut Vec<BatchRuleRejection>) {
+        out.reserve(self.occupied.len());
+        out.extend(
+            self.occupied
+                .iter()
+                .copied()
+                .zip(self.addressed.iter().copied())
             .enumerate()
             .filter(|(_, (occupied, addressed))| !occupied && !addressed)
             .map(|(rule_idx, _)| BatchRuleRejection {
-                    rule_idx: Some(rule_idx as u32),
-                    reason: format!(
-                        "rule_idx {rule_idx} has no valid catalog entry. Fix: provide a well-formed DFA for every dense rule slot before batch dispatch"
-                    ),
-            })
-            .collect()
+                rule_idx: Some(rule_idx as u32),
+                reason: format!(
+                    "rule_idx {rule_idx} has no valid catalog entry. Fix: provide a well-formed DFA for every dense rule slot before batch dispatch"
+                ),
+            }),
+        );
     }
 }
 

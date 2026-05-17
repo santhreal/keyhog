@@ -20,7 +20,7 @@ impl PatternCountGt {
 }
 
 /// Stable operation id for strict pattern count checks.
-pub const OP_ID: &str = "rule.pattern_count_gt";
+pub const OP_ID: &str = "vyre-libs::rule::pattern_count_gt";
 
 /// Pattern count greater-than condition operation.
 #[derive(Debug, Clone, Copy, Default)]

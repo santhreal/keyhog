@@ -5,17 +5,8 @@ use std::fs::OpenOptions;
 use std::io::{ErrorKind, Write};
 use std::path::PathBuf;
 
-pub use pipeline_cache::MAX_PIPELINE_CACHE_ENTRIES;
-
 /// Compute shader compilation.
 pub mod compile_compute_pipeline;
-/// In-memory compute pipeline cache.
-pub mod pipeline_cache;
-
-/// Backwards-compatible shader cache key path.
-pub mod cache_key {
-    pub use super::pipeline_cache::cache_key;
-}
 
 /// Dump WGSL source when `VYRE_DUMP_WGSL` is set.
 ///
@@ -33,7 +24,7 @@ pub(crate) fn dump_wgsl_if_requested(label: &str, wgsl_source: &str) -> std::io:
         make_private_dir(&dir)?;
     }
 
-    let hash = blake3::hash(wgsl_source.as_bytes()).to_hex().to_string();
+    let hash = blake3::hash(wgsl_source.as_bytes());
     let label = sanitize_label(label);
     let path = dir.join(format!("{label}-{hash}.wgsl"));
     let mut options = OpenOptions::new();

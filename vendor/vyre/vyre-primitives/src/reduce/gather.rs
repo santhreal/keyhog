@@ -31,13 +31,17 @@ pub const OP_ID: &str = "vyre-primitives::reduce::gather";
 /// Build a Program: `dst[i] = src[indices[i]]` for every `i < count`
 /// where `indices[i] < count`.
 ///
-/// # Panics
-///
-/// Panics if `count == 0` — a zero-element gather has no valid output
-/// buffer and would make every dispatch a no-op.
+/// Invalid `count == 0` lowers to an explicit trap program.
 #[must_use]
 pub fn gather(src: &str, indices: &str, dst: &str, count: u32) -> Program {
-    assert!(count > 0, "Fix: gather requires count > 0, got {count}.");
+    if count == 0 {
+        return crate::invalid_output_program(
+            OP_ID,
+            dst,
+            DataType::U32,
+            format!("Fix: gather requires count > 0, got {count}."),
+        );
+    }
 
     let t = Expr::InvocationId { axis: 0 };
 
@@ -74,23 +78,23 @@ pub fn gather(src: &str, indices: &str, dst: &str, count: u32) -> Program {
 
 /// CPU reference.
 ///
-/// Returns a `Vec<u32>` of length `indices.len()`.  Out-of-range
-/// indices **panic** so that conformance tests with invalid data fail
-/// loudly rather than silently producing wrong results.
+/// Returns a `Vec<u32>` of length `indices.len()`. Out-of-range
+/// indices produce zero, matching the guarded GPU load contract.
 #[must_use]
 pub fn cpu_ref(src: &[u32], indices: &[u32]) -> Vec<u32> {
-    indices
-        .iter()
-        .map(|&idx| {
-            let i = idx as usize;
-            assert!(
-                i < src.len(),
-                "Fix: gather index {idx} out of bounds for src length {}.",
-                src.len()
-            );
-            src[i]
-        })
-        .collect()
+    let mut out = Vec::new();
+    cpu_ref_into(src, indices, &mut out);
+    out
+}
+
+/// CPU reference into caller-owned storage.
+pub fn cpu_ref_into(src: &[u32], indices: &[u32], out: &mut Vec<u32>) {
+    out.clear();
+    out.reserve(indices.len());
+    for &idx in indices {
+        let i = idx as usize;
+        out.push(src.get(i).copied().unwrap_or(0));
+    }
 }
 
 #[cfg(feature = "inventory-registry")]
@@ -153,19 +157,17 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "out of bounds")]
-    fn cpu_ref_panics_on_out_of_bounds() {
+    fn cpu_ref_zeroes_out_of_bounds() {
         let src = &[1u32, 2, 3];
         let indices = &[0u32, 5]; // 5 is out of bounds
-        let _ = cpu_ref(src, indices);
+        assert_eq!(cpu_ref(src, indices), vec![1, 0]);
     }
 
     #[test]
-    #[should_panic(expected = "out of bounds")]
-    fn cpu_ref_panics_on_max_u32_index() {
+    fn cpu_ref_zeroes_max_u32_index() {
         let src = &[1u32, 2, 3];
         let indices = &[u32::MAX];
-        let _ = cpu_ref(src, indices);
+        assert_eq!(cpu_ref(src, indices), vec![0]);
     }
 
     #[test]
@@ -185,9 +187,9 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "count > 0")]
-    fn zero_count_panics() {
-        let _ = gather("src", "indices", "dst", 0);
+    fn zero_count_traps() {
+        let p = gather("src", "indices", "dst", 0);
+        assert!(p.stats().trap());
     }
 
     #[test]

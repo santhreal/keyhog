@@ -1,14 +1,8 @@
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::manual_assert
-)]
 //! Build-time category-classification gate (F-IR-34).
 //!
-//! Scans `OpDefRegistration` source blocks across the workspace and panics
-//! if any op claims `Category::Composite` (Category A) while also carrying a
-//! `naga_wgsl: Some(...)` lowering arm.  That shape is the classification
+//! Scans `OpDefRegistration` source blocks across the workspace and fails
+//! the build if any op claims `Category::Composite` (Category A) while also carrying a
+//! `primary_text: Some(...)` lowering arm.  That shape is the classification
 //! drift this gate exists to prevent: a pure-IR composition that secretly
 //! requires a dedicated Naga emitter arm breaks on any backend that lacks
 //! that arm.
@@ -21,9 +15,16 @@
 use std::fs;
 use std::path::Path;
 
+fn fail(message: impl std::fmt::Display) -> ! {
+    eprintln!("Fix: {message}");
+    std::process::exit(1);
+}
+
 fn main() {
     let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let workspace = manifest.parent().unwrap();
+    let workspace = manifest.parent().unwrap_or_else(|| {
+        fail("vyre-intrinsics must live under the vyre workspace root; restore this invariant before continuing.")
+    });
 
     let files = [
         workspace.join("vyre-driver/src/registry/core_indirect.rs"),
@@ -44,7 +45,7 @@ fn main() {
             continue;
         }
         let src = fs::read_to_string(path)
-            .unwrap_or_else(|e| panic!("cannot read {} for category scan: {e}", path.display()));
+            .unwrap_or_else(|e| fail(format!("cannot read {} for category scan: {e}", path.display())));
         check_file(path, &src);
     }
 }
@@ -66,13 +67,13 @@ fn check_file(path: &Path, src: &str) {
         let block = &src[opdef_start..opdef_start + opdef_len];
 
         let is_composite = block.contains("category: Category::Composite");
-        let has_naga_some = block.contains("naga_wgsl: Some(");
+        let has_naga_some = block.contains("primary_text: Some(");
 
         if is_composite && has_naga_some {
-            panic!(
-                "category classification mismatch for op in `{}`: declared Composite (Category A) but lowering table has naga_wgsl: Some(...). Fix: Category A ops must be pure IR composition with no dedicated Naga arm.",
+            fail(format!(
+                "category classification mismatch for op in `{}`: declared Composite (Category A) but lowering table has primary_text: Some(...). Fix: Category A ops must be pure IR composition with no dedicated Naga arm.",
                 path.display()
-            );
+            ));
         }
 
         cursor = opdef_start + opdef_len;

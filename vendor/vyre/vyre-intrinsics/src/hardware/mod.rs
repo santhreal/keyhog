@@ -1,5 +1,5 @@
 //! Cat-C hardware intrinsics — each ships a builder, CPU reference
-//! (in `vyre-reference`), and dedicated Naga emitter arm. Backends
+//! (in `vyre-reference`), and dedicated target builder emitter arm. Backends
 //! that cannot lower return `UnsupportedByBackend` rather than
 //! falling back to slow CPU paths.
 
@@ -15,11 +15,11 @@ pub mod inverse_sqrt_f32;
 pub mod popcount_u32;
 /// `storage_barrier` — cross-workgroup storage-buffer memory fence.
 pub mod storage_barrier;
-/// `subgroup_add` — wave-level reduction over the subgroup (feature-gated on `subgroup-ops`).
+/// `subgroup_add` — wave-level reduction over the subgroup.
 pub mod subgroup_add;
-/// `subgroup_ballot` — wave-level predicate ballot bitmask (feature-gated on `subgroup-ops`).
+/// `subgroup_ballot` — wave-level predicate ballot bitmask.
 pub mod subgroup_ballot;
-/// `subgroup_shuffle` — wave-level lane-to-lane value shuffle (feature-gated on `subgroup-ops`).
+/// `subgroup_shuffle` — wave-level lane-to-lane value shuffle.
 pub mod subgroup_shuffle;
 /// `workgroup_barrier` — intra-workgroup shared-memory fence.
 pub mod workgroup_barrier;
@@ -98,7 +98,7 @@ pub(crate) fn run_program(program: &Program, inputs: Vec<Vec<u8>>) -> Vec<Vec<u8
     use vyre_reference::value::Value;
     let values: Vec<Value> = inputs.into_iter().map(|b| Value::Bytes(b.into())).collect();
     vyre_reference::reference_eval(program, &values)
-        .expect("intrinsic must execute")
+        .expect("Fix: intrinsic must execute; restore this invariant before continuing.")
         .into_iter()
         .map(|v| v.to_bytes())
         .collect()

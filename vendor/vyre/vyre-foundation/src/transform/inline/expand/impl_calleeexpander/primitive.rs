@@ -1,6 +1,6 @@
 use super::super::CalleeExpander;
 use crate::error::Result;
-use crate::ir::{AtomicOp, BinOp, Expr, Node, UnOp};
+use crate::ir::{AtomicOp, BinOp, Expr, Ident, Node, UnOp};
 
 impl CalleeExpander<'_> {
     #[inline]
@@ -8,10 +8,10 @@ impl CalleeExpander<'_> {
         match expr {
             Expr::Var(name) => Ok((Vec::new(), Expr::var(self.rename_use(name)))),
             Expr::Load { buffer, index } => self.load(buffer, index),
-            Expr::BufLen { buffer } if self.output_name == buffer.as_str() => {
+            Expr::BufLen { buffer } if self.output_name == *buffer => {
                 Ok((Vec::new(), Expr::u32(1)))
             }
-            Expr::BufLen { buffer } if self.input_args.contains_key(buffer.as_str()) => {
+            Expr::BufLen { buffer } if self.input_args.contains_key(buffer) => {
                 Ok((Vec::new(), Expr::u32(1)))
             }
             Expr::Call { .. } => {
@@ -50,10 +50,11 @@ impl CalleeExpander<'_> {
                 index,
                 expected,
                 value,
-            } => self.atomic(*op, buffer, index, expected.as_deref(), value),
+                ordering,
+            } => self.atomic(*op, buffer, index, expected.as_deref(), value, *ordering),
             &Expr::SubgroupBallot { .. } | &Expr::SubgroupShuffle { .. } | &Expr::SubgroupAdd { .. } => {
                 Err(crate::error::Error::lowering(
-                    "inliner cannot expand subgroup intrinsics; RFC 0004 gates this on Naga 25+. Fix: avoid inlining across subgroup-op boundaries for now.".to_string(),
+                    "inliner cannot expand subgroup intrinsics; RFC 0004 gates this on target builder 25+. Fix: avoid inlining across subgroup-op boundaries.".to_string(),
                 ))
             }
         Expr::Opaque(extension) => Err(crate::error::Error::lowering(format!(
@@ -65,7 +66,7 @@ impl CalleeExpander<'_> {
     }
 
     #[inline]
-    pub(crate) fn load(&mut self, buffer: &str, index: &Expr) -> Result<(Vec<Node>, Expr)> {
+    pub(crate) fn load(&mut self, buffer: &Ident, index: &Expr) -> Result<(Vec<Node>, Expr)> {
         if let Some(arg) = self.input_args.get(buffer) {
             return Ok((Vec::new(), arg.clone()));
         }
@@ -154,10 +155,11 @@ impl CalleeExpander<'_> {
     pub(crate) fn atomic(
         &mut self,
         op: AtomicOp,
-        buffer: &str,
+        buffer: &Ident,
         index: &Expr,
         expected: Option<&Expr>,
         value: &Expr,
+        ordering: crate::memory_model::MemoryOrdering,
     ) -> Result<(Vec<Node>, Expr)> {
         let (mut prefix, index) = self.expr(index)?;
         let (expected_prefix, expected) = match expected {
@@ -178,6 +180,7 @@ impl CalleeExpander<'_> {
                 index: Box::new(index),
                 expected,
                 value: Box::new(value),
+                ordering,
             },
         ))
     }

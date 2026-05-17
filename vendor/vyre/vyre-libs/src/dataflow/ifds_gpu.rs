@@ -15,32 +15,42 @@
 //!
 //! # Entry points
 //!
-//! - [`solve_cpu`] — in-process CPU reference. Conformance tests
+//! - `solve_cpu` — in-process CPU reference. Conformance tests
 //!   run this against the GPU output bit-for-bit.
-//! - [`ifds_gpu_step`] — one BFS step over the exploded supergraph
-//!   as a GPU [`Program`]. Caller dispatches this in a loop over
+//! - `ifds_gpu_step` — one BFS step over the exploded supergraph
+//!   as a GPU `Program`. Caller dispatches this in a loop over
 //!   `(frontier_in, frontier_out)` until the frontier stops
 //!   growing (classic BFS-to-fixpoint). Allocates the exploded
 //!   supergraph's `ProgramGraph` buffers internally — the caller
 //!   only provides the two frontier buffer names.
 
-use vyre_foundation::ir::Program;
+use vyre_foundation::ir::{DataType, Program};
 use vyre_primitives::graph::csr_forward_traverse::csr_forward_traverse;
 use vyre_primitives::graph::exploded::{
     build_cpu_reference, dense_to_encoded, MAX_BLOCK_ID, MAX_FACT_ID, MAX_PROC_ID,
 };
 use vyre_primitives::graph::program_graph::ProgramGraphShape;
+use vyre_primitives::predicate::edge_kind;
+
+const IFDS_EXPLODED_EDGE_MASK: u32 = edge_kind::ASSIGNMENT
+    | edge_kind::CALL_ARG
+    | edge_kind::RETURN
+    | edge_kind::PHI
+    | edge_kind::ALIAS
+    | edge_kind::MEM_STORE
+    | edge_kind::MEM_LOAD
+    | edge_kind::MUT_REF;
 
 /// CPU-reference IFDS solver. Constructs the exploded supergraph
 /// on the CPU and runs **BFS** from `seed_facts` to convergence.
 /// Returns the full set of reached `(proc, block, fact)` node ids
-/// in the packed [`encode_node`] form, sorted ascending.
+/// in the packed `encode_node` form, sorted ascending.
 ///
 /// PHASE6_DATAFLOW HIGH: previous implementation called
-/// [`bfs_dense`], which used `Vec::pop()` — that is **DFS** order,
+/// `bfs_dense`, which used `Vec::pop()` — that is **DFS** order,
 /// not BFS. The reached set is identical, but the runtime profile
-/// and the function name lied. Now uses a real `VecDeque` queue
-/// with `pop_front()`.
+/// and the function name lied. Now uses a flat FIFO queue with an
+/// index cursor.
 ///
 /// Matches the GPU solver bit-for-bit on every input.
 #[must_use]
@@ -54,10 +64,15 @@ pub fn solve_cpu(
     flow_kill: &[(u32, u32, u32)],
     seed_facts: &[(u32, u32, u32)],
 ) -> Vec<u32> {
-    assert!(
-        num_procs.saturating_sub(1) <= MAX_PROC_ID,
-        "num_procs exceeds encoding budget"
-    );
+    if num_procs == 0
+        || blocks_per_proc == 0
+        || facts_per_proc == 0
+        || num_procs.saturating_sub(1) > MAX_PROC_ID
+        || blocks_per_proc.saturating_sub(1) > MAX_BLOCK_ID
+        || facts_per_proc.saturating_sub(1) > MAX_FACT_ID
+    {
+        return Vec::new();
+    }
     let (row_ptr, col_idx) = build_cpu_reference(
         num_procs,
         blocks_per_proc,
@@ -76,7 +91,7 @@ pub fn solve_cpu(
     );
     let mut out: Vec<u32> = dense
         .into_iter()
-        .map(|d| dense_to_encoded(d, blocks_per_proc, facts_per_proc))
+        .filter_map(|d| dense_to_encoded(d, blocks_per_proc, facts_per_proc))
         .collect();
     out.sort_unstable();
     out
@@ -93,31 +108,30 @@ fn bfs_dense_queue(
     blocks_per_proc: u32,
     facts_per_proc: u32,
 ) -> Vec<u32> {
-    use std::collections::VecDeque;
-
     let total_nodes = row_ptr.len().saturating_sub(1);
     let mut visited = vec![false; total_nodes];
-    let mut queue: VecDeque<u32> = seed_facts
-        .iter()
-        .map(|&(p, b, f)| dense_idx(p, b, f, blocks_per_proc, facts_per_proc))
-        .collect();
-    for &n in &queue {
-        if (n as usize) < total_nodes {
-            visited[n as usize] = true;
+    let mut queue = Vec::with_capacity(seed_facts.len());
+    let mut result = Vec::with_capacity(seed_facts.len());
+    for &(p, b, f) in seed_facts {
+        let n = dense_idx(p, b, f, blocks_per_proc, facts_per_proc);
+        let idx = n as usize;
+        if idx < total_nodes && !visited[idx] {
+            visited[idx] = true;
+            queue.push(n);
+            result.push(n);
         }
     }
-    let mut result: Vec<u32> = queue.iter().copied().collect();
-    while let Some(node) = queue.pop_front() {
-        if (node as usize) >= total_nodes {
-            continue;
-        }
+    let mut head = 0usize;
+    while head < queue.len() {
+        let node = queue[head];
+        head += 1;
         let start = row_ptr[node as usize] as usize;
         let end = row_ptr[node as usize + 1] as usize;
         for &neighbour in &col_idx[start..end] {
             let idx = neighbour as usize;
             if idx < total_nodes && !visited[idx] {
                 visited[idx] = true;
-                queue.push_back(neighbour);
+                queue.push(neighbour);
                 result.push(neighbour);
             }
         }
@@ -192,21 +206,48 @@ impl IfdsShape {
 /// alternating the two frontier buffers; when a dispatch produces
 /// no new bits, fixpoint is reached.
 ///
-/// `allow_mask = u32::MAX` accepts every edge kind — the exploded
-/// supergraph does not differentiate edge kinds, so that is the
-/// right choice.
+/// The exploded supergraph accepts semantic data/call/memory edges.
+/// Raw control and dominance edges are excluded because IFDS
+/// reachability is not CFG reachability; legal control transfers
+/// must be encoded as explicit exploded-graph transfer edges.
 #[must_use]
 pub fn ifds_gpu_step(shape: IfdsShape, frontier_in: &str, frontier_out: &str) -> Program {
-    assert!(
-        shape.fits(),
-        "Fix: ifds_gpu_step dimensions exceed 32-bit exploded-node encoding. \
-         procs={} blocks={} facts={}",
-        shape.num_procs,
-        shape.blocks_per_proc,
-        shape.facts_per_proc,
-    );
+    try_ifds_gpu_step(shape, frontier_in, frontier_out).unwrap_or_else(|error| {
+        crate::builder::invalid_output_program(
+            "vyre-libs::dataflow::ifds_gpu_step",
+            frontier_out,
+            DataType::U32,
+            format!("Fix: {error}"),
+        )
+    })
+}
+
+/// Fallible GPU BFS-step builder for IFDS exploded graphs.
+///
+/// # Errors
+///
+/// Returns an error when the shape cannot be encoded in the 32-bit
+/// exploded-node id layout.
+pub fn try_ifds_gpu_step(
+    shape: IfdsShape,
+    frontier_in: &str,
+    frontier_out: &str,
+) -> Result<Program, String> {
+    if !shape.fits() {
+        return Err(format!(
+            "ifds_gpu_step dimensions exceed 32-bit exploded-node encoding. \
+             Fix: reduce shard dimensions or split the IFDS problem. \
+             procs={} blocks={} facts={}",
+            shape.num_procs, shape.blocks_per_proc, shape.facts_per_proc
+        ));
+    }
     let pg_shape = ProgramGraphShape::new(shape.node_count(), shape.edge_count);
-    csr_forward_traverse(pg_shape, frontier_in, frontier_out, u32::MAX)
+    Ok(csr_forward_traverse(
+        pg_shape,
+        frontier_in,
+        frontier_out,
+        IFDS_EXPLODED_EDGE_MASK,
+    ))
 }
 
 /// Backwards-compatible three-string shim over [`ifds_gpu_step`].
@@ -262,7 +303,7 @@ mod tests {
     #[test]
     fn seed_only_reaches_itself_on_disconnected_graph() {
         let got = solve_cpu(1, 4, 4, &[], &[], &[], &[], &[(0, 0, 1)]);
-        assert_eq!(got, vec![encode_node(0, 0, 1)]);
+        assert_eq!(got, vec![encode_node(0, 0, 1).unwrap()]);
     }
 
     #[test]
@@ -443,15 +484,19 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "exceed 32-bit exploded-node encoding")]
-    fn ifds_gpu_step_rejects_oversized_dimensions() {
+    fn try_ifds_gpu_step_rejects_oversized_dimensions_with_result_error() {
         let shape = IfdsShape {
             num_procs: MAX_PROC_ID + 2,
             blocks_per_proc: 1,
             facts_per_proc: 1,
             edge_count: 0,
         };
-        let _ = ifds_gpu_step(shape, "fin", "fout");
+        let error = try_ifds_gpu_step(shape, "fin", "fout")
+            .expect_err("Fix: oversized IFDS shape must return an error contract");
+        assert!(
+            error.contains("32-bit exploded-node encoding") && error.contains("split"),
+            "Fix: IFDS shape error must name the encoding limit and remedy: {error}"
+        );
     }
 
     #[test]

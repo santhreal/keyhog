@@ -61,6 +61,12 @@ pub fn from_wire(bytes: &[u8]) -> Result<Program, String> {
             MAX_PROGRAM_BYTES,
         ));
     }
+    let mut header_reader = Reader {
+        bytes,
+        pos: 0,
+        depth: 0,
+    };
+    header_reader.expect_magic()?;
     if bytes.len() < MAGIC.len() || &bytes[..MAGIC.len()] != MAGIC {
         let found = bytes.get(..bytes.len().min(MAGIC.len())).unwrap_or(bytes);
         return Err(format!(
@@ -111,7 +117,7 @@ pub fn from_wire(bytes: &[u8]) -> Result<Program, String> {
     };
     let (entry_op_id, workgroup_size, mut metadata) = read_nodes(&mut reader)?;
     read_memory_regions(&mut reader, &mut metadata)?;
-    read_output_set(&mut reader)?;
+    let output_set = read_output_set(&mut reader, &metadata)?;
     if reader.pos != reader.bytes.len() {
         return Err(
             "TruncatedPayload: trailing bytes after OutputSet. Fix: provide exactly one canonical VYRE Program blob."
@@ -135,32 +141,51 @@ pub fn from_wire(bytes: &[u8]) -> Result<Program, String> {
             output_byte_range: buffer.output_byte_range,
             hints: buffer.hints,
             bytes_extraction: buffer.bytes_extraction,
+            // Wire v1 carries no linear_type tag, so decoded buffers default
+            // to Unrestricted. New wire versions must map their own tag before
+            // constructing BufferDecl.
+            linear_type: crate::ir_inner::model::program::LinearType::default(),
+            // Wire v1 carries no shape predicates; decoded historical blobs
+            // have no static shape refinement.
+            shape_predicate: None,
         })
         .collect();
-    Ok(Program::new_raw(buffers, workgroup_size, metadata.entry)
+    let program = Program::new_raw(buffers, workgroup_size, metadata.entry)
         .with_optional_entry_op_id(entry_op_id)
-        .with_non_composable_with_self(non_composable_with_self))
+        .with_non_composable_with_self(non_composable_with_self);
+    program
+        .output_buffer_index
+        .set(Arc::new(output_set.into_vec()))
+        .expect("decoded Program output buffer index is initialized exactly once");
+    Ok(program)
 }
 
 #[derive(Default)]
-struct DecodedMetadata {
-    entry: Vec<crate::ir::Node>,
-    buffers: Vec<DecodedBuffer>,
-    non_composable_with_self: bool,
+pub(crate) struct DecodedMetadata {
+    pub(crate) entry: Vec<crate::ir::Node>,
+    pub(crate) buffers: Vec<DecodedBuffer>,
+    pub(crate) non_composable_with_self: bool,
 }
 
-struct DecodedBuffer {
-    name: String,
-    binding: u32,
-    access: BufferAccess,
-    kind: MemoryKind,
-    element: DataType,
-    count: u32,
-    is_output: bool,
-    pipeline_live_out: bool,
-    output_byte_range: Option<Range<usize>>,
-    hints: MemoryHints,
-    bytes_extraction: bool,
+pub(crate) struct DecodedBuffer {
+    pub(crate) name: String,
+    pub(crate) binding: u32,
+    pub(crate) access: BufferAccess,
+    pub(crate) kind: MemoryKind,
+    pub(crate) element: DataType,
+    pub(crate) count: u32,
+    pub(crate) is_output: bool,
+    pub(crate) pipeline_live_out: bool,
+    pub(crate) output_byte_range: Option<Range<usize>>,
+    pub(crate) hints: MemoryHints,
+    pub(crate) bytes_extraction: bool,
+}
+
+fn read_output_set(
+    reader: &mut Reader<'_>,
+    metadata: &DecodedMetadata,
+) -> Result<crate::serial::output_set::OutputSet, String> {
+    crate::serial::output_set::OutputSet::decode_from(reader, metadata)
 }
 
 fn read_nodes(
@@ -440,14 +465,6 @@ fn read_memory_regions(
     Ok(())
 }
 
-fn read_output_set(reader: &mut Reader<'_>) -> Result<(), String> {
-    let count = reader.leb_len(MAX_NODES, "output set count")?;
-    for _ in 0..count {
-        let _ = reader.leb_u32()?;
-    }
-    Ok(())
-}
-
 fn read_hints(reader: &mut Reader<'_>) -> Result<MemoryHints, String> {
     let coalesce_axis = match reader.u8()? {
         0 => None,
@@ -530,7 +547,7 @@ fn hex32(bytes: &[u8; 32]) -> String {
     out
 }
 
-trait LebReader {
+pub(crate) trait LebReader {
     fn leb_u64(&mut self) -> Result<u64, String>;
     fn leb_u32(&mut self) -> Result<u32, String>;
     fn leb_len(&mut self, max: usize, label: &str) -> Result<usize, String>;

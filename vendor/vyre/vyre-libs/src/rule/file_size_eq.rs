@@ -24,4 +24,4 @@ impl FileSizeEq {
 }
 
 /// Stable operation id for file size equality checks.
-pub const OP_ID: &str = "rule.file_size_eq";
+pub const OP_ID: &str = "vyre-libs::rule::file_size_eq";

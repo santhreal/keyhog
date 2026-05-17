@@ -24,4 +24,4 @@ impl FileSizeLt {
 }
 
 /// Stable operation id for strict upper file size checks.
-pub const OP_ID: &str = "rule.file_size_lt";
+pub const OP_ID: &str = "vyre-libs::rule::file_size_lt";

@@ -4,24 +4,30 @@
 //! - **Interpreted** (`build_program_sharded`) — If-tree opcode dispatch.
 //! - **JIT** (`build_program_jit`) — payload processor fused directly.
 
+use std::sync::Arc;
+
 use vyre_foundation::ir::{BufferDecl, DataType, Expr, Node, Program};
 
+#[cfg(feature = "c-frontend-adapter")]
 use super::c_frontend::{
     c_frontend_phase_dispatch_nodes, c_frontend_phase_machine_guard_nodes,
     c_frontend_workspace_bootstrap_nodes, CFrontendPhaseHandler, CFrontendWorkspaceManifest,
 };
-use super::handlers::{claimed_slot_body, OpcodeHandler};
+use super::handlers::{claimed_slot_bindings, claimed_slot_body, OpcodeHandler};
 use super::io::{
     io_word, IO_DESTINATION_CAPABILITY_TABLE, IO_QUEUE_DMA_TAG, IO_SLOT_COUNT, IO_SLOT_WORDS,
     IO_SOURCE_CAPABILITY_TABLE,
 };
+use super::ir_util::atomic_load_relaxed;
 use super::protocol::*;
-
-/// Emits a Relaxed atomic load.
-/// WGSL atomics are implicitly Relaxed; explicit Acquire/Release requires memory barriers.
-fn atomic_load_relaxed(buffer: &str, index: Expr) -> Expr {
-    Expr::atomic_add(buffer, index, Expr::u32(0))
-}
+mod cache;
+mod jit;
+mod priority;
+pub use jit::{build_program_jit, build_program_jit_slots, persistent_body_jit};
+pub use priority::{
+    build_program_priority, build_program_priority_slots, persistent_body_priority,
+    persistent_body_priority_slots,
+};
 
 /// Build the default megakernel IR (256 lanes × 1 workgroup, no custom opcodes).
 #[must_use]
@@ -33,7 +39,7 @@ pub fn build_program() -> Program {
 /// custom opcodes.
 ///
 /// Buffers are declared with concrete `with_count(...)` sizes so the
-/// wgpu readback layer allocates the right static staging size — a
+/// backend readback layer allocates the right static staging size — a
 /// `count=0` default reads back 4 bytes regardless of how much the
 /// kernel wrote.
 #[must_use]
@@ -55,6 +61,27 @@ pub fn build_program_sharded_slots(
     build_program_sharded_slots_with_io(workgroup_size_x, slot_count, opcodes, false)
 }
 
+/// Build the sharded megakernel IR as a shared immutable template.
+///
+/// Empty opcode sets use the thread-local template cache directly, allowing
+/// compile paths to avoid cloning the cached Program before wrapping it in
+/// `Arc` again.
+#[must_use]
+pub fn build_program_sharded_slots_shared(
+    workgroup_size_x: u32,
+    slot_count: u32,
+    opcodes: &[OpcodeHandler],
+) -> Arc<Program> {
+    if opcodes.is_empty() {
+        return cache::cached_empty_sharded_program_shared(workgroup_size_x, slot_count, false);
+    }
+    Arc::new(build_program_sharded_slots(
+        workgroup_size_x,
+        slot_count,
+        opcodes,
+    ))
+}
+
 /// Build the sharded megakernel IR with a resident C frontend workspace ABI.
 ///
 /// This declares the parser workspace buffer that a self-orchestrating C
@@ -62,6 +89,7 @@ pub fn build_program_sharded_slots(
 /// semantics; language work must be implemented as megakernel IR against the
 /// resident workspace.
 #[must_use]
+#[cfg(feature = "c-frontend-adapter")]
 pub fn build_program_sharded_with_c_frontend_workspace(
     workgroup_size_x: u32,
     slot_count: u32,
@@ -83,6 +111,7 @@ pub fn build_program_sharded_with_c_frontend_workspace(
 /// the CPU declares the resident workspace and launches the megakernel; parser
 /// phases are explicit GPU IR handlers selected from manifest phase words.
 #[must_use]
+#[cfg(feature = "c-frontend-adapter")]
 pub fn build_program_sharded_with_c_frontend_workspace_phases(
     workgroup_size_x: u32,
     slot_count: u32,
@@ -109,6 +138,9 @@ pub fn build_program_sharded_once_slots(
     slot_count: u32,
     opcodes: &[OpcodeHandler],
 ) -> Program {
+    if opcodes.is_empty() {
+        return cache::cached_empty_sharded_once_program(workgroup_size_x, slot_count);
+    }
     wrap_megakernel_program(
         workgroup_size_x,
         slot_count,
@@ -116,9 +148,51 @@ pub fn build_program_sharded_once_slots(
     )
 }
 
+/// Shared-Arc variant of [`build_program_sharded_once_slots`] for hot runtime
+/// dispatchers that must not clone the megakernel template every launch.
+#[must_use]
+pub fn build_program_sharded_once_slots_shared(
+    workgroup_size_x: u32,
+    slot_count: u32,
+    opcodes: &[OpcodeHandler],
+) -> Arc<Program> {
+    if opcodes.is_empty() {
+        return cache::cached_empty_sharded_once_program_shared(workgroup_size_x, slot_count);
+    }
+    Arc::new(build_program_sharded_once_slots(
+        workgroup_size_x,
+        slot_count,
+        opcodes,
+    ))
+}
+
+/// Build a finite one-pass megakernel that reports completion through the
+/// control buffer only.
+///
+/// Ring, debug, and IO buffers remain read-write device buffers, but their
+/// host readback ranges are empty. This is the hot dispatcher path: completion
+/// is already accumulated into control, so reading back the full ring/debug/IO
+/// surfaces is redundant launch latency.
+#[must_use]
+pub fn build_program_sharded_once_slots_control_report_shared(
+    workgroup_size_x: u32,
+    slot_count: u32,
+    opcodes: &[OpcodeHandler],
+) -> Arc<Program> {
+    let mut buffers = default_buffers(slot_count);
+    for buffer in buffers.iter_mut().skip(1) {
+        *buffer = buffer.clone().with_output_byte_range(0..0);
+    }
+    Arc::new(optimize_megakernel_program(Program::wrapped(
+        buffers,
+        [workgroup_size_x, 1, 1],
+        persistent_body_with_io(workgroup_size_x, opcodes, false),
+    )))
+}
+
 /// Build the megakernel IR without the IO polling sidecar.
 ///
-/// This is the dispatch path for host-provided [`vyre_driver_megakernel::WorkItem`]
+/// This is the dispatch path for host-provided [`super::MegakernelWorkItem`]
 /// queues. It keeps the executable kernel free of `AsyncLoad` nodes until the
 /// runtime scheduler owns a concrete async-lowering pass.
 #[must_use]
@@ -129,7 +203,7 @@ pub fn build_program_sharded_no_io(workgroup_size_x: u32, opcodes: &[OpcodeHandl
 /// Build the megakernel IR with the experimental IO polling sidecar.
 ///
 /// The returned Program contains `AsyncLoad` nodes and must be lowered through
-/// a runtime scheduler pass before reaching the wgpu code generator.
+/// a runtime scheduler pass before reaching a concrete backend lowering path.
 #[must_use]
 pub fn build_program_sharded_with_io_polling(
     workgroup_size_x: u32,
@@ -144,30 +218,17 @@ fn build_program_sharded_slots_with_io(
     opcodes: &[OpcodeHandler],
     include_io_polling: bool,
 ) -> Program {
+    if opcodes.is_empty() {
+        return cache::cached_empty_sharded_program(
+            workgroup_size_x,
+            slot_count,
+            include_io_polling,
+        );
+    }
     wrap_persistent_megakernel_program(
         workgroup_size_x,
         slot_count,
         persistent_body_with_io(workgroup_size_x, opcodes, include_io_polling),
-    )
-}
-
-/// Build the JIT Megakernel IR where payload processor logic is fused into the body stream.
-#[must_use]
-pub fn build_program_jit(workgroup_size_x: u32, payload_processor: &[Node]) -> Program {
-    build_program_jit_slots(workgroup_size_x, workgroup_size_x.max(1), payload_processor)
-}
-
-/// Build the JIT megakernel IR for an explicit number of ring slots.
-#[must_use]
-pub fn build_program_jit_slots(
-    workgroup_size_x: u32,
-    slot_count: u32,
-    payload_processor: &[Node],
-) -> Program {
-    wrap_persistent_megakernel_program(
-        workgroup_size_x,
-        slot_count,
-        persistent_body_jit(workgroup_size_x, payload_processor),
     )
 }
 
@@ -179,20 +240,34 @@ fn wrap_persistent_megakernel_program(
     wrap_megakernel_program(workgroup_size_x, slot_count, vec![Node::forever(body)])
 }
 
+#[cfg(feature = "c-frontend-adapter")]
 fn wrap_persistent_megakernel_program_with_buffers(
     buffers: Vec<BufferDecl>,
     workgroup_size_x: u32,
     body: Vec<Node>,
 ) -> Program {
-    Program::wrapped(buffers, [workgroup_size_x, 1, 1], vec![Node::forever(body)])
+    optimize_megakernel_program(Program::wrapped(
+        buffers,
+        [workgroup_size_x, 1, 1],
+        vec![Node::forever(body)],
+    ))
 }
 
 fn wrap_megakernel_program(workgroup_size_x: u32, slot_count: u32, body: Vec<Node>) -> Program {
-    Program::wrapped(default_buffers(slot_count), [workgroup_size_x, 1, 1], body)
+    optimize_megakernel_program(Program::wrapped(
+        default_buffers(slot_count),
+        [workgroup_size_x, 1, 1],
+        body,
+    ))
+}
+
+fn optimize_megakernel_program(program: Program) -> Program {
+    let (program, _) = super::planner::elide_value_flow_barriers(program);
+    vyre_foundation::optimizer::pre_lowering::optimize(program)
 }
 
 /// Reserve sizes for the megakernel's four host-visible buffers. All
-/// four go through wgpu's static-readback path so every buffer needs
+/// four go through the static-readback path so every buffer needs
 /// a concrete `count` (u32 elements). The numbers mirror the wire
 /// layout in `protocol.rs`:
 ///
@@ -215,6 +290,7 @@ fn default_buffers(slot_count: u32) -> Vec<BufferDecl> {
     vec![control, ring_buffer, debug_log, io_queue]
 }
 
+#[cfg(feature = "c-frontend-adapter")]
 fn default_buffers_with_c_frontend_workspace(
     slot_count: u32,
     manifest: &CFrontendWorkspaceManifest,
@@ -236,8 +312,18 @@ fn persistent_body_with_io(
     opcodes: &[OpcodeHandler],
     include_io_polling: bool,
 ) -> Vec<Node> {
-    let mut body = vec![
-        // -- Exit fast on shutdown. ------------------------------------
+    let mut body = persistent_lane_prologue(workgroup_size_x);
+    body.reserve_exact(if include_io_polling { 3 } else { 2 });
+    body.push(direct_slot_base_binding());
+    body.push(Node::Block(execute_slot_body(opcodes)));
+    if include_io_polling {
+        body.push(Node::Block(process_io_requests()));
+    }
+    body
+}
+
+fn persistent_lane_prologue(workgroup_size_x: u32) -> Vec<Node> {
+    vec![
         Node::let_bind(
             "shutdown_flag",
             atomic_load_relaxed("control", Expr::u32(control::SHUTDOWN)),
@@ -246,26 +332,27 @@ fn persistent_body_with_io(
             Expr::ne(Expr::var("shutdown_flag"), Expr::u32(0)),
             vec![Node::Return],
         ),
-        // -- Compute this lane's global slot index. --------------------
-        Node::let_bind(
-            "lane_id",
-            Expr::add(
-                Expr::mul(Expr::workgroup_x(), Expr::u32(workgroup_size_x)),
-                Expr::local_x(),
-            ),
-        ),
-        Node::let_bind(
-            "slot_base",
-            Expr::mul(Expr::var("lane_id"), Expr::u32(SLOT_WORDS)),
-        ),
-        // -- Tenant check. ------
-        Node::let_bind(
-            "tenant_id",
-            Expr::load(
-                "ring_buffer",
-                Expr::add(Expr::var("slot_base"), Expr::u32(TENANT_WORD)),
-            ),
-        ),
+        Node::let_bind("lane_id", lane_id_expr(workgroup_size_x)),
+    ]
+}
+
+fn direct_slot_base_binding() -> Node {
+    Node::let_bind(
+        "slot_base",
+        Expr::mul(Expr::var("lane_id"), Expr::u32(SLOT_WORDS)),
+    )
+}
+
+fn slot_tenant_id_load() -> Expr {
+    Expr::load(
+        "ring_buffer",
+        Expr::add(Expr::var("slot_base"), Expr::u32(TENANT_WORD)),
+    )
+}
+
+fn tenant_authorized_body(tenant_id: Expr, authorized_body: Vec<Node>) -> Vec<Node> {
+    vec![
+        Node::let_bind("tenant_id", tenant_id),
         Node::let_bind(
             "tenant_base",
             atomic_load_relaxed("control", Expr::u32(control::TENANT_BASE)),
@@ -279,14 +366,19 @@ fn persistent_body_with_io(
         ),
         Node::if_then(
             Expr::ne(Expr::var("tenant_mask"), Expr::u32(0)),
-            tenant_body(opcodes, include_io_polling),
+            authorized_body,
         ),
-    ];
-
-    body.reserve(0);
-    body
+    ]
 }
 
+fn lane_id_expr(workgroup_size_x: u32) -> Expr {
+    Expr::add(
+        Expr::mul(Expr::workgroup_x(), Expr::u32(workgroup_size_x)),
+        Expr::local_x(),
+    )
+}
+
+#[cfg(feature = "c-frontend-adapter")]
 fn persistent_body_with_c_frontend(
     workgroup_size_x: u32,
     opcodes: &[OpcodeHandler],
@@ -297,14 +389,6 @@ fn persistent_body_with_c_frontend(
     body.extend(c_frontend_phase_machine_guard_nodes());
     body.extend(c_frontend_phase_dispatch_nodes(c_frontend_handlers));
     body.extend(persistent_body_with_io(workgroup_size_x, opcodes, false));
-    body
-}
-
-fn tenant_body(opcodes: &[OpcodeHandler], include_io_polling: bool) -> Vec<Node> {
-    let mut body = vec![Node::Block(execute_slot_body(opcodes))];
-    if include_io_polling {
-        body.push(Node::Block(process_io_requests()));
-    }
     body
 }
 
@@ -382,251 +466,49 @@ fn execute_slot_body(opcodes: &[OpcodeHandler]) -> Vec<Node> {
             "status_index",
             Expr::add(Expr::var("slot_base"), Expr::u32(STATUS_WORD)),
         ),
-        // CAS PUBLISHED -> CLAIMED.
         Node::let_bind(
-            "prev_status",
-            Expr::atomic_compare_exchange(
-                "ring_buffer",
-                Expr::var("status_index"),
-                Expr::u32(slot::PUBLISHED),
-                Expr::u32(slot::CLAIMED),
-            ),
+            "observed_status",
+            atomic_load_relaxed("ring_buffer", Expr::var("status_index")),
         ),
         Node::if_then(
-            Expr::eq(Expr::var("prev_status"), Expr::u32(slot::PUBLISHED)),
-            claimed_slot_body(opcodes),
+            Expr::eq(Expr::var("observed_status"), Expr::u32(slot::PUBLISHED)),
+            tenant_authorized_claim_body(slot_tenant_id_load(), claimed_slot_body(opcodes)),
         ),
     ]
 }
 
-// ---- JIT variant ----
-
-/// The JIT body that runs once per iteration per lane.
-#[must_use]
-pub fn persistent_body_jit(workgroup_size_x: u32, payload_processor: &[Node]) -> Vec<Node> {
-    let mut body = vec![
-        Node::let_bind(
-            "shutdown_flag",
-            atomic_load_relaxed("control", Expr::u32(control::SHUTDOWN)),
-        ),
-        Node::if_then(
-            Expr::ne(Expr::var("shutdown_flag"), Expr::u32(0)),
-            vec![Node::Return],
-        ),
-        Node::let_bind(
-            "lane_id",
-            Expr::add(
-                Expr::mul(Expr::workgroup_x(), Expr::u32(workgroup_size_x)),
-                Expr::local_x(),
+fn tenant_authorized_claim_body(tenant_id: Expr, claimed_body: Vec<Node>) -> Vec<Node> {
+    tenant_authorized_body(
+        tenant_id,
+        vec![
+            // CAS PUBLISHED -> CLAIMED after authorization. This keeps
+            // disabled tenants visible to the host instead of converting
+            // their slots into stuck CLAIMED work.
+            Node::let_bind(
+                "prev_status",
+                Expr::atomic_compare_exchange(
+                    "ring_buffer",
+                    Expr::var("status_index"),
+                    Expr::u32(slot::PUBLISHED),
+                    Expr::u32(slot::CLAIMED),
+                ),
             ),
-        ),
-        Node::let_bind(
-            "slot_base",
-            Expr::mul(Expr::var("lane_id"), Expr::u32(SLOT_WORDS)),
-        ),
-        Node::let_bind(
-            "tenant_id",
-            Expr::load(
-                "ring_buffer",
-                Expr::add(Expr::var("slot_base"), Expr::u32(TENANT_WORD)),
+            Node::if_then(
+                Expr::eq(Expr::var("prev_status"), Expr::u32(slot::PUBLISHED)),
+                claimed_body,
             ),
-        ),
-        Node::let_bind(
-            "tenant_base",
-            atomic_load_relaxed("control", Expr::u32(control::TENANT_BASE)),
-        ),
-        Node::let_bind(
-            "tenant_mask",
-            atomic_load_relaxed(
-                "control",
-                Expr::add(Expr::var("tenant_base"), Expr::var("tenant_id")),
-            ),
-        ),
-        Node::if_then(
-            Expr::ne(Expr::var("tenant_mask"), Expr::u32(0)),
-            vec![
-                Node::Block(execute_slot_body_jit(payload_processor)),
-                Node::Block(process_io_requests()),
-            ],
-        ),
-    ];
-    body.reserve(0);
-    body
-}
-
-fn execute_slot_body_jit(payload_processor: &[Node]) -> Vec<Node> {
-    vec![
-        Node::let_bind(
-            "status_index",
-            Expr::add(Expr::var("slot_base"), Expr::u32(STATUS_WORD)),
-        ),
-        Node::let_bind(
-            "prev_status",
-            Expr::atomic_compare_exchange(
-                "ring_buffer",
-                Expr::var("status_index"),
-                Expr::u32(slot::PUBLISHED),
-                Expr::u32(slot::CLAIMED),
-            ),
-        ),
-        Node::if_then(
-            Expr::eq(Expr::var("prev_status"), Expr::u32(slot::PUBLISHED)),
-            claimed_slot_body_jit(payload_processor),
-        ),
-    ]
-}
-
-fn claimed_slot_body_jit(payload_processor: &[Node]) -> Vec<Node> {
-    let mut nodes = Vec::new();
-
-    // Wire the statically JIT-compiled rule/payload evaluation graph.
-    nodes.extend(payload_processor.iter().cloned());
-
-    nodes.push(Node::let_bind(
-        "done_prev",
-        Expr::atomic_add("control", Expr::u32(control::DONE_COUNT), Expr::u32(1)),
-    ));
-    nodes.push(Node::store(
-        "ring_buffer",
-        Expr::var("status_index"),
-        Expr::u32(slot::DONE),
-    ));
-    nodes
-}
-
-// ---- Priority-aware variant ----
-
-/// Build a priority-aware megakernel IR.
-///
-/// Unlike `build_program_sharded` where each lane owns exactly one slot,
-/// the priority variant has workers scan across priority-partitioned ring
-/// regions, claiming the highest-priority PUBLISHED slot available. This
-/// ensures latency-sensitive work (CRITICAL, HIGH) is processed before
-/// background tasks (LOW, IDLE).
-///
-/// The control buffer is extended with `PRIORITY_OFFSETS_BASE..+6` words
-/// that the host sets to define partition boundaries. The host can
-/// dynamically resize partitions by updating these offsets between batches.
-#[must_use]
-pub fn build_program_priority(workgroup_size_x: u32, opcodes: &[OpcodeHandler]) -> Program {
-    wrap_persistent_megakernel_program(
-        workgroup_size_x,
-        workgroup_size_x.max(1),
-        persistent_body_priority(workgroup_size_x, opcodes),
+        ],
     )
 }
 
-/// Priority-aware loop body. Replaces the per-lane 1:1 slot mapping
-/// with the scheduler's priority scan.
-#[must_use]
-pub fn persistent_body_priority(workgroup_size_x: u32, opcodes: &[OpcodeHandler]) -> Vec<Node> {
-    use super::scheduler;
-
-    let lane_count = workgroup_size_x.max(1);
-    let mut body = vec![
-        // -- Exit fast on shutdown. ------------------------------------
-        Node::let_bind(
-            "shutdown_flag",
-            atomic_load_relaxed("control", Expr::u32(control::SHUTDOWN)),
-        ),
-        Node::if_then(
-            Expr::ne(Expr::var("shutdown_flag"), Expr::u32(0)),
-            vec![Node::Return],
-        ),
-    ];
-
-    // -- Priority scan: find and claim the best available slot. --------
-    body.extend(scheduler::priority_scan_body(lane_count));
-
-    // -- If claimed, execute the slot. ---------------------------------
-    body.push(Node::if_then(
-        Expr::ne(Expr::var("claimed_slot_base"), Expr::u32(u32::MAX)),
-        {
-            // Rebind `slot_base` to the claimed slot so downstream
-            // handler code works unchanged.
-            let mut exec = vec![Node::let_bind("slot_base", Expr::var("claimed_slot_base"))];
-
-            // Tenant check on the claimed slot
-            exec.extend(vec![
-                Node::let_bind(
-                    "status_index",
-                    Expr::add(Expr::var("slot_base"), Expr::u32(STATUS_WORD)),
-                ),
-                Node::let_bind(
-                    "tenant_id",
-                    Expr::load(
-                        "ring_buffer",
-                        Expr::add(Expr::var("slot_base"), Expr::u32(TENANT_WORD)),
-                    ),
-                ),
-                Node::let_bind(
-                    "tenant_base",
-                    atomic_load_relaxed("control", Expr::u32(control::TENANT_BASE)),
-                ),
-                Node::let_bind(
-                    "tenant_mask",
-                    atomic_load_relaxed(
-                        "control",
-                        Expr::add(Expr::var("tenant_base"), Expr::var("tenant_id")),
-                    ),
-                ),
-                Node::if_then(
-                    Expr::ne(Expr::var("tenant_mask"), Expr::u32(0)),
-                    claimed_slot_body(opcodes),
-                ),
-            ]);
-
-            exec
-        },
-    ));
-
-    // -- IO poll (same as base variant). --------------------------------
-    body.push(Node::Block(process_io_requests()));
-
+fn execute_already_claimed_slot_body(tenant_id: Expr, claimed_body: Vec<Node>) -> Vec<Node> {
+    let mut body = vec![Node::let_bind(
+        "status_index",
+        Expr::add(Expr::var("slot_base"), Expr::u32(STATUS_WORD)),
+    )];
+    body.extend(tenant_authorized_body(tenant_id, claimed_body));
     body
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn async_load_bindings(nodes: &[Node], out: &mut Vec<(String, String, String)>) {
-        for node in nodes {
-            match node {
-                Node::AsyncLoad {
-                    source,
-                    destination,
-                    tag,
-                    ..
-                } => out.push((
-                    source.as_str().to_string(),
-                    destination.as_str().to_string(),
-                    tag.as_str().to_string(),
-                )),
-                Node::If {
-                    then, otherwise, ..
-                } => {
-                    async_load_bindings(then, out);
-                    async_load_bindings(otherwise, out);
-                }
-                Node::Loop { body, .. } | Node::Block(body) => async_load_bindings(body, out),
-                Node::Region { body, .. } => async_load_bindings(body, out),
-                _ => {}
-            }
-        }
-    }
-
-    #[test]
-    fn io_polling_uses_capability_tables_not_fake_resource_names() {
-        let program = build_program_sharded_with_io_polling(64, &[]);
-        let mut bindings = Vec::new();
-        async_load_bindings(&program.entry, &mut bindings);
-        assert_eq!(bindings.len(), 1);
-        let (source, destination, tag) = &bindings[0];
-        assert_eq!(source, "io_source_capability_table");
-        assert_eq!(destination, "io_destination_capability_table");
-        assert_eq!(tag, "io_queue_dma");
-        assert_ne!(source, "ssd_weights");
-        assert_ne!(destination, "vram_cache");
-    }
-}
+mod tests;

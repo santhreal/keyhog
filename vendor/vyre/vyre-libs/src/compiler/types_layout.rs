@@ -68,20 +68,25 @@ inventory::submit! {
     crate::harness::OpEntry {
         id: "vyre-libs::parsing::c11_compute_alignments",
         build: || c11_compute_alignments("types", "sizes", "aligns", Expr::u32(4)),
-        // Zero-filled inputs (4 u32 slots). type_kind=0 for every
-        // entry hits the default 4-byte word branch, so sizes and
-        // alignments both fill with 4.
         test_inputs: Some(|| vec![vec![
-            vec![0u8; 4 * 4],
+            [
+                C_ABI_CHAR,
+                C_ABI_POINTER,
+                C_ABI_LONG,
+                0,
+            ]
+            .into_iter()
+            .flat_map(u32::to_le_bytes)
+            .collect(),
             vec![0u8; 4 * 4],
             vec![0u8; 4 * 4],
         ]]),
         expected_output: Some(|| {
             let mut sizes = Vec::with_capacity(16);
             let mut aligns = Vec::with_capacity(16);
-            for _ in 0..4 {
-                sizes.extend_from_slice(&4u32.to_le_bytes());
-                aligns.extend_from_slice(&4u32.to_le_bytes());
+            for value in [1u32, 8, 8, 4] {
+                sizes.extend_from_slice(&value.to_le_bytes());
+                aligns.extend_from_slice(&value.to_le_bytes());
             }
             vec![vec![sizes, aligns]]
         }),

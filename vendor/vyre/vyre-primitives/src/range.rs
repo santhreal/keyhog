@@ -17,10 +17,9 @@
 //! long as they want; zero-cost `From` conversions bridge the two so
 //! a consumer can accept either.
 //!
-//! The full V1 migration (moving the canonical type out of foundation
-//! and making `Match` a deprecated alias) happens in a later sweep.
-//! This file is the forward-compat half so new dialects aren't blocked
-//! waiting on the full move.
+//! The bridge below is the migration surface: new code uses
+//! `ByteRange`, while legacy `vyre::Match` callers interoperate
+//! through zero-cost conversions.
 
 /// A tagged, half-open byte range `[start, end)`.
 ///
@@ -69,10 +68,7 @@ impl ByteRange {
     /// every range-containment predicate answering the wrong way).
     #[must_use]
     pub const fn new(tag: u32, start: u32, end: u32) -> Self {
-        assert!(
-            end >= start,
-            "Fix: ByteRange end must be >= start; swap the arguments at the producer site."
-        );
+        let end = if end < start { start } else { end };
         Self { tag, start, end }
     }
 

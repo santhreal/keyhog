@@ -87,6 +87,8 @@ pub mod float_type;
 /// Specification element.
 /// Specification element.
 pub mod golden_sample;
+/// Canonical semiring selector for dataflow and algebraic kernels.
+pub mod semiring;
 /// Table of hardware intrinsics exposed by vyre-intrinsics.
 /// Specification element.
 /// Specification element.
@@ -225,7 +227,7 @@ pub use golden_sample::GoldenSample;
 /// See [`intrinsic_table::IntrinsicTable`].
 /// Specification element.
 /// Specification element.
-pub use intrinsic_table::IntrinsicTable;
+pub use intrinsic_table::{IntrinsicLowering, IntrinsicTable};
 /// See [`invariant::Invariant`].
 /// Specification element.
 /// Specification element.
@@ -270,6 +272,8 @@ pub use op_metadata::OpMetadata;
 /// Specification element.
 /// Specification element.
 pub use op_signature::OpSignature;
+/// See [`semiring::Semiring`].
+pub use semiring::Semiring;
 /// See [`pg_node_kind::PgNodeKind`].
 /// Specification element.
 /// Specification element.
@@ -296,6 +300,4 @@ pub use verification::Verification;
 /// Specification element.
 pub mod intrinsic_descriptor;
 /// See [`intrinsic_descriptor::IntrinsicDescriptor`] and its identifying types.
-pub use intrinsic_descriptor::{
-    Backend, BackendId, BackendKind, CpuFn, ExtensionBackend, IntrinsicDescriptor,
-};
+pub use intrinsic_descriptor::{Backend, BackendId, CpuFn, IntrinsicDescriptor};

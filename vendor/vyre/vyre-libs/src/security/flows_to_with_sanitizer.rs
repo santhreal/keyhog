@@ -27,6 +27,7 @@
 
 use vyre::ir::Program;
 use vyre_primitives::graph::program_graph::ProgramGraphShape;
+use vyre_primitives::predicate::edge_kind;
 
 use crate::security::flow_composition::{sanitized_dataflow_hit, sanitized_dataflow_hit_program};
 
@@ -89,6 +90,45 @@ pub fn cpu_ref(
         sink,
         sanitizer,
     )
+}
+
+inventory::submit! {
+    crate::harness::OpEntry {
+        id: OP_ID,
+        build: || flows_to_with_sanitizer(ProgramGraphShape::new(4, 3), "source", "sink", "sanitizer", "clean", "reach", "alive", "hits", "out_scalar"),
+        test_inputs: Some(|| {
+            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            vec![vec![
+                to_bytes(&[0b0001]),              // source = {0}
+                to_bytes(&[0b0000]),              // sanitizer = {}
+                to_bytes(&[0b0001]),              // clean = {0}
+                to_bytes(&[0, 0, 0, 0]),          // pg_nodes
+                to_bytes(&[0, 1, 2, 3, 3]),       // pg_edge_offsets
+                to_bytes(&[1, 2, 3]),             // pg_edge_targets
+                to_bytes(&[
+                    edge_kind::ASSIGNMENT,
+                    edge_kind::ASSIGNMENT,
+                    edge_kind::ASSIGNMENT,
+                ]),                               // pg_edge_kind_mask
+                to_bytes(&[0, 0, 0, 0]),          // pg_node_tags
+                to_bytes(&[0b0001]),              // reach = {0}
+                to_bytes(&[0b0000]),              // alive
+                to_bytes(&[0b0010]),              // sink = {1}
+                to_bytes(&[0b0000]),              // hits
+                to_bytes(&[0b0000]),              // out_scalar
+            ]]
+        }),
+        expected_output: Some(|| {
+            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            vec![vec![
+                to_bytes(&[0b0001]),              // clean = {0}
+                to_bytes(&[0b0011]),              // reach = {0,1}
+                to_bytes(&[0b0011]),              // alive = {0,1}
+                to_bytes(&[0b0010]),              // hits = {1}
+                to_bytes(&[0b0001]),              // out_scalar = 1
+            ]]
+        }),
+    }
 }
 
 #[cfg(test)]

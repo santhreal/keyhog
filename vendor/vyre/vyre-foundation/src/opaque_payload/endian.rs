@@ -4,7 +4,7 @@
 //! dialect that issued the node. The wire framing is byte-identical across
 //! architectures, so extension authors MUST NOT use `to_ne_bytes` or any
 //! host-endian serialization — a Program encoded on one host and decoded on
-//! another must reproduce the same [`crate::ir::Program::hash`] and the same
+//! another must reproduce the same `crate::ir::Program::hash` and the same
 //! IR. Using `to_le_bytes` everywhere is the only way to honour that
 //! contract.
 //!

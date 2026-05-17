@@ -1,6 +1,7 @@
 //! Sequence encoder for IR node lists.
 
 use super::put_node;
+use crate::serial::wire::encode::WireEncodeErr;
 use crate::serial::wire::framing::put_len_u32;
 use crate::serial::wire::Node;
 
@@ -38,7 +39,7 @@ use crate::serial::wire::Node;
 ///   propagated upward unchanged.
 #[inline]
 #[must_use]
-pub fn put_nodes(out: &mut Vec<u8>, nodes: &[Node]) -> Result<(), String> {
+pub fn put_nodes(out: &mut Vec<u8>, nodes: &[Node]) -> Result<(), WireEncodeErr> {
     put_len_u32(out, nodes.len(), "node count")?;
     for node in nodes {
         put_node(out, node)?;

@@ -1,5 +1,9 @@
 //! Inventory-backed OpEntry registry for the intrinsic-differential harness.
 //!
+//! **Registry Layering**: This file defines the `OpEntry` registry for Tier-2 hardware intrinsics.
+//! It operates in parallel with the Cat-A registry (`vyre-harness::OpEntry`) and the Tier-2.5 primitives registry (`vyre-primitives::harness::OpEntry`).
+//! For an architectural overview of this three-registry split, see `vyre-harness/README.md`.
+//!
 //! Every Cat-C intrinsic registers one `OpEntry` via `inventory::submit!`.
 //! The test `tests/hardware_conform.rs` iterates the inventory and
 //! asserts each op's CPU reference matches the declared

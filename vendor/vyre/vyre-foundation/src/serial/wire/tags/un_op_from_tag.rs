@@ -57,6 +57,7 @@ pub(crate) fn un_op_from_tag(tag: u8) -> Result<UnOp, String> {
         0x21 => Ok(UnOp::Unpack4High),
         0x22 => Ok(UnOp::Unpack8Low),
         0x23 => Ok(UnOp::Unpack8High),
+        0x24 => Ok(UnOp::Reciprocal),
         _ => Err(format!(
             "Fix: unknown unary op tag {tag}; use a compatible IR serializer."
         )),

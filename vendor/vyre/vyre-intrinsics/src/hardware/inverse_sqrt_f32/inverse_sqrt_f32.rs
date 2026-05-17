@@ -1,11 +1,12 @@
-//! Cat-C `inverse_sqrt_f32` — `1 / sqrt(x)` per f32 lane.
-//! CPU reference: `1.0 / f32::sqrt(x)` bit-exact (that exact expression).
+//! Cat-C `inverse_sqrt_f32` — finite-domain `1 / sqrt(x)` per f32 lane.
+//! Inputs that are non-finite, negative, zero, or subnormal are clamped to
+//! `f32::MIN_POSITIVE` before the reciprocal square root.
 
 use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 
 use crate::hardware::{pack_f32, MAP_WORKGROUP};
 
-/// Build a Program that computes `out[i] = 1.0 / sqrt(input[i])` over `n` f32 lanes.
+/// Build a Program that computes finite-domain `out[i] = 1.0 / sqrt(input[i])`.
 #[must_use]
 pub fn inverse_sqrt_f32(input: &str, out: &str, n: u32) -> Program {
     let body = vec![crate::region::wrap_anonymous(
@@ -14,11 +15,25 @@ pub fn inverse_sqrt_f32(input: &str, out: &str, n: u32) -> Program {
             Node::let_bind("idx", Expr::InvocationId { axis: 0 }),
             Node::if_then(
                 Expr::lt(Expr::var("idx"), Expr::buf_len(out)),
-                vec![Node::store(
-                    out,
-                    Expr::var("idx"),
-                    Expr::inverse_sqrt(Expr::load(input, Expr::var("idx"))),
-                )],
+                vec![
+                    Node::let_bind("x", Expr::load(input, Expr::var("idx"))),
+                    Node::let_bind(
+                        "safe_x",
+                        Expr::select(
+                            Expr::and(
+                                Expr::is_finite(Expr::var("x")),
+                                Expr::gt(Expr::var("x"), Expr::f32(f32::MIN_POSITIVE)),
+                            ),
+                            Expr::var("x"),
+                            Expr::f32(f32::MIN_POSITIVE),
+                        ),
+                    ),
+                    Node::store(
+                        out,
+                        Expr::var("idx"),
+                        Expr::inverse_sqrt(Expr::var("safe_x")),
+                    ),
+                ],
             ),
         ],
     )];
@@ -33,7 +48,19 @@ pub fn inverse_sqrt_f32(input: &str, out: &str, n: u32) -> Program {
 }
 
 fn cpu_ref(input: &[f32]) -> Vec<u8> {
-    pack_f32(&input.iter().map(|&x| 1.0 / x.sqrt()).collect::<Vec<_>>())
+    pack_f32(
+        &input
+            .iter()
+            .map(|&x| {
+                let safe_x = if x.is_finite() && x > f32::MIN_POSITIVE {
+                    x
+                } else {
+                    f32::MIN_POSITIVE
+                };
+                1.0 / safe_x.sqrt()
+            })
+            .collect::<Vec<_>>(),
+    )
 }
 
 fn test_inputs() -> Vec<Vec<Vec<u8>>> {
@@ -83,11 +110,23 @@ mod tests {
 
     #[test]
     fn random_sixty_four() {
-        // Positive values only — `1/sqrt(negative)` is NaN.
         let input: Vec<f32> = lcg_f32(0x0F1A_A005, 64)
             .into_iter()
             .map(|v| v.abs() + 0.01)
             .collect();
         assert_case(&input);
+    }
+
+    #[test]
+    fn clamps_non_finite_and_tiny_inputs() {
+        assert_case(&[
+            f32::NAN,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+            -1.0,
+            0.0,
+            f32::from_bits(1),
+            f32::MIN_POSITIVE,
+        ]);
     }
 }

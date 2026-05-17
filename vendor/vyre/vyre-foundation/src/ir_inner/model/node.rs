@@ -40,7 +40,7 @@ pub trait NodeExtension: fmt::Debug + Send + Sync + 'static {
     /// `to_ne_bytes` are forbidden because the wire format must stay
     /// byte-identical across architectures: a Program encoded on a
     /// little-endian host and decoded on a big-endian host must produce
-    /// the same [`crate::ir::Program::hash`] and the same IR.
+    /// the same `crate::ir::Program::hash` and the same IR.
     ///
     /// Extension authors are recommended (but not required, for API
     /// compatibility) to use [`crate::opaque_payload::LeBytesWriter`] when
@@ -69,7 +69,7 @@ pub fn node_op_id(node: &Node) -> &'static str {
         Node::Loop { .. } => "vyre.node.loop",
         Node::Return => "vyre.node.return",
         Node::Block(_) => "vyre.node.block",
-        Node::Barrier => "vyre.node.barrier",
+        Node::Barrier { .. } => "vyre.node.barrier",
         Node::Region { .. } => "vyre.node.region",
         Node::IndirectDispatch { .. } => "vyre.node.indirect_dispatch",
         Node::AsyncLoad { .. } => "vyre.node.async_load",

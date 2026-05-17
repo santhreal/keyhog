@@ -1,19 +1,61 @@
-//! `vyre-libs::parsing::bracket_match` — Tier 3 wrapper over the
+//! Bracket matching — Tier 3 wrapper over the
 //! Tier 2.5 [`vyre_primitives::matching::bracket_match::bracket_match`] primitive.
 //!
 //! Migrated per `docs/primitives-tier.md` Step 2 +
-//! `docs/lego-block-rule.md`. The op id stays
-//! `vyre-libs::parsing::bracket_match` so existing consumers don't
-//! break; the IR-builder + CPU reference all live in
-//! `vyre-primitives-matching`. Future parser dialects (`parse-c`,
-//! `parse-rust`, `parse-go`, `parse-python` for f-strings) consume
-//! the exact same scanner.
+//! `docs/lego-block-rule.md`. The IR-builder + CPU reference live in
+//! `vyre-primitives-matching`.
+//! Parser dialects (`parse-c`, `parse-rust`, `parse-go`,
+//! `parse-python` for f-strings) consume the exact same scanner.
 
+use vyre::ir::Program;
+
+use crate::region::tag_program;
+use vyre_primitives::matching::bracket_match::bracket_match as primitive_bracket_match;
 pub use vyre_primitives::matching::bracket_match::{
-    bracket_match, cpu_ref, pack_u32, CLOSE_BRACE, MATCH_NONE, OPEN_BRACE, OP_ID, OTHER,
+    cpu_ref, pack_u32, CLOSE_BRACE, MATCH_NONE, OPEN_BRACE, OTHER,
 };
+use vyre_primitives::parsing::core_delimiter_match as primitive_core_delimiter;
 
-const CORE_DELIMITER_GENERATOR: &str = "vyre-libs::parsing::core_delimiter_match";
+/// Tier-3 parser-facing bracket-match op id.
+pub const OP_ID: &str = "vyre-libs::parsing::bracket_match";
+/// Tier-3 parser-facing generic delimiter-depth op id.
+pub const CORE_DELIMITER_OP_ID: &str = "vyre-libs::parsing::core_delimiter_match";
+
+/// Parser-facing bracket matcher composed from the Tier 2.5 primitive.
+#[must_use]
+pub fn bracket_match(
+    kinds: &str,
+    stack: &str,
+    match_pairs: &str,
+    n: u32,
+    max_depth: u32,
+) -> Program {
+    tag_program(
+        OP_ID,
+        primitive_bracket_match(kinds, stack, match_pairs, n, max_depth),
+    )
+}
+
+/// Parser-facing delimiter-depth scanner composed from the Tier 2.5 primitive.
+#[must_use]
+pub fn core_delimiter_match(
+    tok_types: &str,
+    tok_depths: &str,
+    tok_count: u32,
+    open_tok_id: u32,
+    close_tok_id: u32,
+) -> Program {
+    tag_program(
+        CORE_DELIMITER_OP_ID,
+        primitive_core_delimiter::core_delimiter_match(
+            tok_types,
+            tok_depths,
+            tok_count,
+            open_tok_id,
+            close_tok_id,
+        ),
+    )
+}
 
 fn fixture_inputs() -> Vec<Vec<Vec<u8>>> {
     vec![vec![
@@ -48,88 +90,12 @@ inventory::submit! {
     }
 }
 
-use crate::region::wrap_anonymous;
-use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
-use vyre_foundation::composition::mark_self_exclusive_region;
-
-/// Generic delimiter matching logic for arbitrary token streams.
-///
-/// Implements a subgroup parallel scan algorithm to trace depth
-/// transitions natively without warp divergence. Valid token depths
-/// are recorded alongside each symbol for the AST constructor boundary map.
-#[must_use]
-pub fn core_delimiter_match(
-    tok_types: &str,
-    tok_depths: &str,
-    tok_count: u32,
-    open_tok_id: u32,
-    close_tok_id: u32,
-) -> Program {
-    let t = Expr::InvocationId { axis: 0 };
-
-    // Each lane computes its own inclusive prefix sum over `tok_types[0..=t]`
-    // by walking the prefix serially. Correct on every backend; a real
-    // parallel subgroup scan lands as a follow-up once the Tier-2.5
-    // `prefix_scan_u32` primitive ships (currently there's only one Tier-3
-    // caller — not enough for promotion per the LEGO rule). Underflow on
-    // close > open in the prefix wraps via two's complement, matching the
-    // documented behaviour of the previous subgroup_inclusive_add path.
-    let transform_logic = vec![
-        Node::let_bind("running_depth", Expr::u32(0)),
-        Node::loop_for(
-            "k",
-            Expr::u32(0),
-            Expr::add(t.clone(), Expr::u32(1)),
-            vec![
-                Node::let_bind("kth_tok", Expr::load(tok_types, Expr::var("k"))),
-                Node::if_then(
-                    Expr::eq(Expr::var("kth_tok"), Expr::u32(open_tok_id)),
-                    vec![Node::assign(
-                        "running_depth",
-                        Expr::add(Expr::var("running_depth"), Expr::u32(1)),
-                    )],
-                ),
-                Node::if_then(
-                    Expr::eq(Expr::var("kth_tok"), Expr::u32(close_tok_id)),
-                    vec![Node::assign(
-                        "running_depth",
-                        Expr::sub(Expr::var("running_depth"), Expr::u32(1)),
-                    )],
-                ),
-            ],
-        ),
-        Node::store(tok_depths, t.clone(), Expr::var("running_depth")),
-    ];
-
-    Program::wrapped(
-        vec![
-            BufferDecl::storage(tok_types, 0, BufferAccess::ReadOnly, DataType::U32)
-                .with_count(tok_count),
-            BufferDecl::storage(tok_depths, 1, BufferAccess::ReadWrite, DataType::U32)
-                .with_count(tok_count),
-        ],
-        [256, 1, 1],
-        vec![wrap_anonymous(
-            &mark_self_exclusive_region(CORE_DELIMITER_GENERATOR),
-            vec![Node::if_then(
-                Expr::lt(t.clone(), Expr::u32(tok_count)),
-                transform_logic,
-            )],
-        )],
-    )
-    .with_entry_op_id(CORE_DELIMITER_GENERATOR)
-    .with_non_composable_with_self(true)
-}
-
 inventory::submit! {
     crate::harness::OpEntry {
-        id: "vyre-libs::parsing::core_delimiter_match",
+        id: CORE_DELIMITER_OP_ID,
         build: || {
             core_delimiter_match("tok_types", "tok_depths", 8, 12, 13)
         },
-        // 8-token input with LBRACE(12) / RBRACE(13) pairs at
-        // indices {0,1,5,6}. Expected inclusive-prefix depth at each
-        // position: 1, 2, 2, 2, 2, 1, 0, 0.
         test_inputs: Some(|| {
             let tokens: [u32; 8] = [12, 12, 0, 0, 0, 13, 13, 0];
             let bytes = tokens
@@ -162,8 +128,8 @@ mod tests {
             Value::Bytes(vec![0u8; (max_depth as usize) * 4].into()),
             Value::Bytes(pack_u32(&vec![MATCH_NONE; n as usize]).into()),
         ];
-        let outputs =
-            vyre_reference::reference_eval(&program, &inputs).expect("bracket_match must run");
+        let outputs = vyre_reference::reference_eval(&program, &inputs)
+            .expect("Fix: bracket_match must run; restore this invariant before continuing.");
         outputs[1]
             .to_bytes()
             .chunks_exact(4)

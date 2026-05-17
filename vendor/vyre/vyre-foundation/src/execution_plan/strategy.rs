@@ -158,3 +158,205 @@ impl StrategyPlan {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn baseline_fusion() -> FusionPlan {
+        FusionPlan {
+            entry_op_id: None,
+            top_level_regions: 0,
+            node_count: 10,
+            batch_fusion_candidate: false,
+        }
+    }
+
+    fn baseline_memory() -> MemoryPlan {
+        MemoryPlan {
+            buffers: Vec::new(),
+            static_bytes: 256,
+            dynamic_buffers: 0,
+            visible_readback_bytes: 256,
+            avoided_readback_bytes: 0,
+        }
+    }
+
+    fn baseline_provenance() -> ProvenancePlan {
+        ProvenancePlan {
+            top_level_region_wrapped: false,
+            region_count: 0,
+            emit_region_trace: false,
+        }
+    }
+
+    fn baseline_accuracy() -> AccuracyPlan {
+        AccuracyPlan {
+            shadow_reference_recommended: false,
+            reason: "baseline",
+        }
+    }
+
+    fn baseline_autotune() -> AutotunePlan {
+        AutotunePlan {
+            recommended: false,
+            parallel_region_size: [1, 1, 1],
+            recommended_workgroup_size: [1, 1, 1],
+            recommended_tile: [1, 1, 1],
+            recommended_vector_pack_bits: 32,
+            recommended_unroll_depth: 1,
+            reason: "none",
+        }
+    }
+
+    fn baseline_strategy() -> StrategyPlan {
+        StrategyPlan::from_parts(
+            &baseline_fusion(),
+            &baseline_memory(),
+            &baseline_provenance(),
+            &baseline_accuracy(),
+            &baseline_autotune(),
+        )
+    }
+
+    #[test]
+    fn baseline_uses_persistent_dispatch() {
+        // 10 nodes <= 64 → PersistentRuntime
+        assert_eq!(
+            baseline_strategy().dispatch,
+            DispatchStrategy::PersistentRuntime
+        );
+    }
+
+    #[test]
+    fn large_program_uses_compiled_pipeline() {
+        let mut fusion = baseline_fusion();
+        fusion.node_count = 200; // > 64
+        let s = StrategyPlan::from_parts(
+            &fusion,
+            &baseline_memory(),
+            &baseline_provenance(),
+            &baseline_accuracy(),
+            &baseline_autotune(),
+        );
+        assert_eq!(s.dispatch, DispatchStrategy::CompiledPipeline);
+    }
+
+    #[test]
+    fn fusion_candidate_enables_fusion_strategy() {
+        let mut fusion = baseline_fusion();
+        fusion.batch_fusion_candidate = true;
+        let s = StrategyPlan::from_parts(
+            &fusion,
+            &baseline_memory(),
+            &baseline_provenance(),
+            &baseline_accuracy(),
+            &baseline_autotune(),
+        );
+        assert_eq!(s.fusion, FusionStrategy::Candidate);
+    }
+
+    #[test]
+    fn shadow_reference_triggers_accuracy_strategy() {
+        let mut accuracy = baseline_accuracy();
+        accuracy.shadow_reference_recommended = true;
+        let s = StrategyPlan::from_parts(
+            &baseline_fusion(),
+            &baseline_memory(),
+            &baseline_provenance(),
+            &accuracy,
+            &baseline_autotune(),
+        );
+        assert_eq!(s.accuracy, AccuracyStrategy::ShadowReference);
+    }
+
+    #[test]
+    fn autotune_recommended_triggers_measure_variants() {
+        let mut autotune = baseline_autotune();
+        autotune.recommended = true;
+        let s = StrategyPlan::from_parts(
+            &baseline_fusion(),
+            &baseline_memory(),
+            &baseline_provenance(),
+            &baseline_accuracy(),
+            &autotune,
+        );
+        assert_eq!(s.autotune, AutotuneStrategy::MeasureVariants);
+    }
+
+    #[test]
+    fn region_trace_triggers_gpu_provenance() {
+        let mut provenance = baseline_provenance();
+        provenance.emit_region_trace = true;
+        let s = StrategyPlan::from_parts(
+            &baseline_fusion(),
+            &baseline_memory(),
+            &provenance,
+            &baseline_accuracy(),
+            &baseline_autotune(),
+        );
+        assert_eq!(s.provenance, ProvenanceStrategy::GpuTrace);
+    }
+
+    #[test]
+    fn dynamic_buffers_set_dynamic_layout() {
+        let mut memory = baseline_memory();
+        memory.dynamic_buffers = 1;
+        let s = StrategyPlan::from_parts(
+            &baseline_fusion(),
+            &memory,
+            &baseline_provenance(),
+            &baseline_accuracy(),
+            &baseline_autotune(),
+        );
+        assert_eq!(s.layout, LayoutStrategy::Dynamic);
+    }
+
+    #[test]
+    fn zero_bytes_sets_empty_layout() {
+        let mut memory = baseline_memory();
+        memory.static_bytes = 0;
+        memory.dynamic_buffers = 0;
+        let s = StrategyPlan::from_parts(
+            &baseline_fusion(),
+            &memory,
+            &baseline_provenance(),
+            &baseline_accuracy(),
+            &baseline_autotune(),
+        );
+        assert_eq!(s.layout, LayoutStrategy::Empty);
+    }
+
+    #[test]
+    fn trimmed_readback_activates_when_bytes_avoided() {
+        let mut memory = baseline_memory();
+        memory.avoided_readback_bytes = 100;
+        memory.visible_readback_bytes = 156;
+        let s = StrategyPlan::from_parts(
+            &baseline_fusion(),
+            &memory,
+            &baseline_provenance(),
+            &baseline_accuracy(),
+            &baseline_autotune(),
+        );
+        assert!(matches!(
+            s.readback,
+            ReadbackStrategy::Trimmed {
+                visible_bytes: 156,
+                avoided_bytes: 100,
+            }
+        ));
+    }
+
+    #[test]
+    fn readback_visible_bytes_works_for_both_variants() {
+        let full = ReadbackStrategy::Full { bytes: 1024 };
+        assert_eq!(full.visible_bytes(), 1024);
+
+        let trimmed = ReadbackStrategy::Trimmed {
+            visible_bytes: 512,
+            avoided_bytes: 512,
+        };
+        assert_eq!(trimmed.visible_bytes(), 512);
+    }
+}

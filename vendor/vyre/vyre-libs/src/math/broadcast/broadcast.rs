@@ -12,8 +12,16 @@ use crate::region::wrap_anonymous;
 /// element count — `dst` receives `n × sizeof(U32)` bytes.
 #[must_use]
 pub fn broadcast(src: &str, dst: &str, n: u32) -> Program {
+    if n == 0 {
+        return crate::builder::invalid_output_program(
+            "vyre-libs::math::broadcast",
+            dst,
+            DataType::U32,
+            "Fix: broadcast requires n > 0.".to_string(),
+        );
+    }
     let output = BufferDecl::output(dst, 1, DataType::U32)
-        .with_count(n.max(1))
+        .with_count(n)
         .with_output_byte_range(0..(n as usize).saturating_mul(4));
     let body = vec![
         Node::let_bind("idx", Expr::InvocationId { axis: 0 }),
@@ -42,11 +50,59 @@ inventory::submit! {
         build: || broadcast("src", "dst", 4),
         test_inputs: Some(|| vec![vec![
             42u32.to_le_bytes().to_vec(),                       // src: scalar 42
-            vec![0u8; 4 * 4],                                   // dst: 4 zeroed slots
+            vec![0u8; 4 * 4],                                   // dst: 4 initial slots
         ]]),
         expected_output: Some(|| vec![vec![
             // Only ReadWrite buffer: dst filled with 42
             [42u32, 42, 42, 42].iter().flat_map(|v| v.to_le_bytes()).collect(),
         ]]),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use vyre_reference::value::Value;
+
+    fn u32_bytes(values: &[u32]) -> Vec<u8> {
+        values.iter().flat_map(|v| v.to_le_bytes()).collect()
+    }
+
+    fn decode_u32_words(bytes: &[u8]) -> Vec<u32> {
+        bytes
+            .chunks_exact(4)
+            .map(|c| u32::from_le_bytes(c.try_into().unwrap()))
+            .collect()
+    }
+
+    #[test]
+    fn broadcast_single_element() {
+        let program = broadcast("src", "dst", 1);
+        let outputs = vyre_reference::reference_eval(
+            &program,
+            &[
+                Value::from(u32_bytes(&[99u32])),
+                Value::from(vec![0u8; 4]),
+            ],
+        )
+        .expect("broadcast n=1 must execute");
+        let actual = decode_u32_words(&outputs[0].to_bytes());
+        assert_eq!(actual, vec![99u32]);
+    }
+
+    #[test]
+    fn broadcast_zero_elements_should_trap_or_be_consistent() {
+        let program = broadcast("src", "dst", 0);
+        let result = vyre_reference::reference_eval(
+            &program,
+            &[
+                Value::from(u32_bytes(&[99u32])),
+                Value::from(vec![0u8; 0]),
+            ],
+        );
+        assert!(
+            result.is_err(),
+            "broadcast n=0 must trap instead of succeeding"
+        );
     }
 }

@@ -1,5 +1,6 @@
 //! Open statement IR model.
 
+use crate::ir_eval::canonical_f32;
 use crate::ir_inner::model::types::{BinOp, UnOp};
 use std::collections::HashMap;
 use std::fmt;
@@ -217,14 +218,14 @@ fn interpret_bin_op(op: &BinOp, left: Value, right: Value) -> Result<Value, Eval
             BinOp::Mul => Ok(Value::U32(left.wrapping_mul(right))),
             BinOp::Div => {
                 if right == 0 {
-                    Err(EvalError::new("division by zero in u32 binary operation. Fix: guard the divisor or use a checked primitive."))
+                    Ok(Value::U32(u32::MAX))
                 } else {
                     Ok(Value::U32(left / right))
                 }
             }
             BinOp::Mod => {
                 if right == 0 {
-                    Err(EvalError::new("modulo by zero in u32 binary operation. Fix: guard the divisor or use a checked primitive."))
+                    Ok(Value::U32(0))
                 } else {
                     Ok(Value::U32(left % right))
                 }
@@ -248,6 +249,7 @@ fn interpret_bin_op(op: &BinOp, left: Value, right: Value) -> Result<Value, Eval
             BinOp::AbsDiff => Ok(Value::U32(left.abs_diff(right))),
             BinOp::RotateLeft => Ok(Value::U32(left.rotate_left(right & 31))),
             BinOp::RotateRight => Ok(Value::U32(left.rotate_right(right & 31))),
+            BinOp::MulHigh => Ok(Value::U32(((left as u64).wrapping_mul(right as u64) >> 32) as u32)),
             BinOp::And => Ok(Value::Bool(left != 0 && right != 0)),
             BinOp::Or => Ok(Value::Bool(left != 0 || right != 0)),
             _ => Err(EvalError::new(format!(
@@ -263,41 +265,43 @@ fn interpret_bin_op(op: &BinOp, left: Value, right: Value) -> Result<Value, Eval
                 "unsupported bool binary operation {op:?}. Fix: add interpreter semantics before registering this operation."
             ))),
         },
-        (Value::F32(left), Value::F32(right)) => match op {
-            BinOp::Add => Ok(Value::F32(left + right)),
-            BinOp::Sub => Ok(Value::F32(left - right)),
-            BinOp::Mul => Ok(Value::F32(left * right)),
-            BinOp::Div => Ok(Value::F32(left / right)),
-            BinOp::Eq => Ok(Value::Bool(left.to_bits() == right.to_bits())),
-            BinOp::Ne => Ok(Value::Bool(left.to_bits() != right.to_bits())),
-            BinOp::Lt => Ok(Value::Bool(left < right)),
-            BinOp::Le => Ok(Value::Bool(left <= right)),
-            BinOp::Gt => Ok(Value::Bool(left > right)),
-            BinOp::Ge => Ok(Value::Bool(left >= right)),
-            BinOp::Min => Ok(Value::F32(left.min(right))),
-            BinOp::Max => Ok(Value::F32(left.max(right))),
-            _ => Err(EvalError::new(format!(
-                "unsupported f32 binary operation {op:?}. Fix: add interpreter semantics before registering this operation."
-            ))),
+        (Value::F32(left), Value::F32(right)) => {
+            let left = canonical_f32(left);
+            let right = canonical_f32(right);
+            match op {
+                BinOp::Add => Ok(Value::F32(canonical_f32(left + right))),
+                BinOp::Sub => Ok(Value::F32(canonical_f32(left - right))),
+                BinOp::Mul => Ok(Value::F32(canonical_f32(left * right))),
+                BinOp::Div => Ok(Value::F32(canonical_f32(left / right))),
+                BinOp::Eq => Ok(Value::Bool(left == right)),
+                BinOp::Ne => Ok(Value::Bool(left != right)),
+                BinOp::Lt => Ok(Value::Bool(left < right)),
+                BinOp::Le => Ok(Value::Bool(left <= right)),
+                BinOp::Gt => Ok(Value::Bool(left > right)),
+                BinOp::Ge => Ok(Value::Bool(left >= right)),
+                BinOp::Min => Ok(Value::F32(canonical_f32(left.min(right)))),
+                BinOp::Max => Ok(Value::F32(canonical_f32(left.max(right)))),
+                _ => Err(EvalError::new(format!(
+                    "unsupported f32 binary operation {op:?}. Fix: add interpreter semantics before registering this operation."
+                ))),
+            }
         },
-        // GAP-2 fix: I32 binary operations — previously missing, causing
-        // every `i32 + i32`, `i32 < i32`, etc. to hit the catch-all error.
         (Value::I32(left), Value::I32(right)) => match op {
             BinOp::Add => Ok(Value::I32(left.wrapping_add(right))),
             BinOp::Sub => Ok(Value::I32(left.wrapping_sub(right))),
             BinOp::Mul => Ok(Value::I32(left.wrapping_mul(right))),
             BinOp::Div => {
-                if right == 0 {
-                    Err(EvalError::new("division by zero in i32 binary operation. Fix: guard the divisor or use a checked primitive."))
+                if right == 0 || (left == i32::MIN && right == -1) {
+                    Err(undefined_i32_division("division", left, right))
                 } else {
-                    Ok(Value::I32(left.wrapping_div(right)))
+                    Ok(Value::I32(left / right))
                 }
             }
             BinOp::Mod => {
-                if right == 0 {
-                    Err(EvalError::new("modulo by zero in i32 binary operation. Fix: guard the divisor or use a checked primitive."))
+                if right == 0 || (left == i32::MIN && right == -1) {
+                    Err(undefined_i32_division("remainder", left, right))
                 } else {
-                    Ok(Value::I32(left.wrapping_rem(right)))
+                    Ok(Value::I32(left % right))
                 }
             }
             BinOp::BitAnd => Ok(Value::I32(left & right)),
@@ -326,6 +330,12 @@ fn interpret_bin_op(op: &BinOp, left: Value, right: Value) -> Result<Value, Eval
     }
 }
 
+fn undefined_i32_division(kind: &str, left: i32, right: i32) -> EvalError {
+    EvalError::new(format!(
+        "i32 {kind} `{left} / {right}` has undefined target-text semantics. Fix: guard the signed divisor/overflow case before interpretation, or use unsigned operands when zero-divisor semantics must be total."
+    ))
+}
+
 fn interpret_un_op(op: &UnOp, operand: Value) -> Result<Value, EvalError> {
     match operand {
         Value::U32(value) => match op {
@@ -346,8 +356,15 @@ fn interpret_un_op(op: &UnOp, operand: Value) -> Result<Value, EvalError> {
             ))),
         },
         Value::F32(value) => match op {
-            UnOp::Negate => Ok(Value::F32(-value)),
-            UnOp::InverseSqrt => Ok(Value::F32(1.0 / value.sqrt())),
+            UnOp::Negate => Ok(Value::F32(canonical_f32(-canonical_f32(value)))),
+            UnOp::InverseSqrt => {
+                let value = canonical_f32(value);
+                Ok(Value::F32(canonical_f32(1.0 / value.sqrt())))
+            }
+            UnOp::Reciprocal => {
+                let value = canonical_f32(value);
+                Ok(Value::F32(canonical_f32(1.0 / value)))
+            }
             _ => Err(EvalError::new(format!(
                 "unsupported f32 unary operation {op:?}. Fix: add interpreter semantics before registering this operation."
             ))),
@@ -358,8 +375,6 @@ fn interpret_un_op(op: &UnOp, operand: Value) -> Result<Value, EvalError> {
                 "unsupported i32 unary operation {op:?}. Fix: add interpreter semantics before registering this operation."
             ))),
         },
-        // GAP-10 fix: U64 unary ops — the validator accepts U64 for all
-        // five bitwise unary ops but the interpreter had zero support.
         Value::U64(value) => match op {
             UnOp::BitNot => Ok(Value::U64(!value)),
             UnOp::Popcount => Ok(Value::U64(value.count_ones() as u64)),
@@ -370,5 +385,59 @@ fn interpret_un_op(op: &UnOp, operand: Value) -> Result<Value, EvalError> {
                 "unsupported u64 unary operation {op:?}. Fix: register explicit u64 semantics before interpreting this operation."
             ))),
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn eval_binary(op: BinOp, left: Value, right: Value) -> Result<Value, EvalError> {
+        let mut ctx = InterpCtx::default();
+        ctx.set(NodeId(0), left);
+        ctx.set(NodeId(1), right);
+        NodeStorage::BinOp {
+            op,
+            left: NodeId(0),
+            right: NodeId(1),
+        }
+        .interpret(&mut ctx)
+    }
+
+    #[test]
+    fn unsigned_zero_division_matches_reference_total_contract() {
+        assert_eq!(
+            eval_binary(BinOp::Div, Value::U32(9), Value::U32(0)).unwrap(),
+            Value::U32(u32::MAX)
+        );
+        assert_eq!(
+            eval_binary(BinOp::Mod, Value::U32(9), Value::U32(0)).unwrap(),
+            Value::U32(0)
+        );
+    }
+
+    #[test]
+    fn signed_undefined_division_returns_errors() {
+        for (op, left, right) in [
+            (BinOp::Div, i32::MIN, -1),
+            (BinOp::Mod, i32::MIN, -1),
+            (BinOp::Div, 1, 0),
+            (BinOp::Mod, 1, 0),
+        ] {
+            let error = eval_binary(op, Value::I32(left), Value::I32(right))
+                .unwrap_err()
+                .to_string();
+            assert!(
+                error.contains("undefined target-text semantics"),
+                "unexpected error for {op:?}({left}, {right}): {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn f32_subnormal_results_are_canonicalized() {
+        let result =
+            eval_binary(BinOp::Div, Value::F32(f32::MIN_POSITIVE), Value::F32(2.0)).unwrap();
+        assert!(matches!(result, Value::F32(value) if value.to_bits() == 0.0f32.to_bits()));
     }
 }

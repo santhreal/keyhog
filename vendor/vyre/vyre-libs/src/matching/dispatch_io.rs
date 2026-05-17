@@ -143,23 +143,40 @@ pub fn candidate_start_dispatch_config(haystack_len: u32) -> DispatchConfig {
 /// shared between `GpuLiteralSet` and `RulePipeline`; only the *position*
 /// of the buffer in the dispatch outputs differs.
 ///
-/// `triples_bytes` must hold at least `count * 12` bytes; bytes past
-/// that point are ignored. Returns the matches sorted by their natural
-/// `(start, end, pid)` order.
+/// Decodes at most `count` triples and never reads past a complete 12-byte
+/// record, so the returned length is
+/// `min(count, triples_bytes.len() / 12)`. Extra bytes after the last full
+/// triple are ignored. Using a `usize` lane index keeps `i * 12` inside
+/// buffer-derived bounds and avoids `(i as usize) * 12` wrapping on 32-bit
+/// targets when `count` is large but the buffer is short.
 #[must_use]
 pub fn unpack_match_triples(
     triples_bytes: &[u8],
     count: u32,
 ) -> Vec<vyre_foundation::match_result::Match> {
-    let mut results = Vec::with_capacity(count as usize);
-    for i in 0..count {
-        let off = (i as usize) * 12;
-        if triples_bytes.len() < off + 12 {
-            break;
-        }
-        let pid = u32::from_le_bytes(triples_bytes[off..off + 4].try_into().unwrap());
-        let start = u32::from_le_bytes(triples_bytes[off + 4..off + 8].try_into().unwrap());
-        let end = u32::from_le_bytes(triples_bytes[off + 8..off + 12].try_into().unwrap());
+    let max_complete = triples_bytes.len() / 12;
+    let n = (count as usize).min(max_complete);
+    let mut results = Vec::with_capacity(n);
+    for i in 0..n {
+        let off = i * 12;
+        let pid = u32::from_le_bytes([
+            triples_bytes[off],
+            triples_bytes[off + 1],
+            triples_bytes[off + 2],
+            triples_bytes[off + 3],
+        ]);
+        let start = u32::from_le_bytes([
+            triples_bytes[off + 4],
+            triples_bytes[off + 5],
+            triples_bytes[off + 6],
+            triples_bytes[off + 7],
+        ]);
+        let end = u32::from_le_bytes([
+            triples_bytes[off + 8],
+            triples_bytes[off + 9],
+            triples_bytes[off + 10],
+            triples_bytes[off + 11],
+        ]);
         results.push(vyre_foundation::match_result::Match::new(pid, start, end));
     }
     results.sort_unstable();
@@ -273,5 +290,25 @@ mod tests {
         assert_eq!(matches.len(), 2);
         // sort_unstable orders by (start, end, pid) via Match's Ord impl.
         assert!(matches[0].start <= matches[1].start);
+    }
+
+    /// Adversarial / regression: a bogus or truncated readback may pair a
+    /// huge `count` (e.g. `u32::MAX`) with a short buffer. The decoder must
+    /// only walk full 12-byte triples so we never form `off` from a wrapped
+    /// `u32_index * 12` on 32-bit `usize` before comparing to `len`, and we
+    /// return exactly the complete records present (not a silent under-filled
+    /// long vec).
+    #[test]
+    fn unpack_match_triples_huge_count_short_buffer_stays_in_bounds() {
+        let bytes = [
+            7u8, 0, 0, 0, // pid
+            1, 0, 0, 0, // start
+            3, 0, 0, 0, // end
+        ];
+        let matches = unpack_match_triples(&bytes, u32::MAX);
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].pattern_id, 7);
+        assert_eq!(matches[0].start, 1);
+        assert_eq!(matches[0].end, 3);
     }
 }

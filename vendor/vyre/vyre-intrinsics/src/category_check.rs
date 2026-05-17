@@ -5,23 +5,23 @@
 //! A/B/C invariant.
 //!
 //! Invariant (machine-checked):
-//! * `Category::Composite` (A) **must** have `lowerings.naga_wgsl == None`.
-//! * `Category::Intrinsic` (B/C) may have `naga_wgsl` present or absent.
-//! * `naga_wgsl: Some(...)` **must not** appear on a `Category::Composite` op.
+//! * `Category::Composite` (A) **must** have `lowerings.primary_text == None`.
+//! * `Category::Intrinsic` (B/C) may have `primary_text` present or absent.
+//! * `primary_text: Some(...)` **must not** appear on a `Category::Composite` op.
 
 use vyre_driver::registry::{Category, OpDefRegistration};
-use vyre_foundation::dialect_lookup::NagaBuilder;
+use vyre_foundation::dialect_lookup::PrimaryTextBuilder;
 
 /// Assert that a single op's declared category matches its lowering table.
 ///
 /// # Panics
 ///
 /// Panics with an actionable `Fix:` message when a Category-A op carries a
-/// dedicated Naga arm — the exact drift shape that F-IR-34 exists to catch.
-pub fn check_opdef(id: &str, category: Category, naga_wgsl: Option<NagaBuilder>) {
-    if category == Category::Composite && naga_wgsl.is_some() {
+/// dedicated target builder arm — the exact drift shape that F-IR-34 exists to catch.
+pub fn check_opdef(id: &str, category: Category, primary_text: Option<PrimaryTextBuilder>) {
+    if category == Category::Composite && primary_text.is_some() {
         panic!(
-            "category classification mismatch for op `{id}`: declared Composite (Category A) but lowering table says Some(NagaBuilder). Fix: Category A ops must be pure IR composition with no dedicated Naga arm."
+            "category classification mismatch for op `{id}`: declared Composite (Category A) but lowering table says Some(PrimaryTextBuilder). Fix: Category A ops must be pure IR composition with no dedicated target builder arm."
         );
     }
 }
@@ -34,7 +34,7 @@ pub fn check_opdef(id: &str, category: Category, naga_wgsl: Option<NagaBuilder>)
 pub fn check_all_inventory_opdefs() {
     for reg in inventory::iter::<OpDefRegistration>() {
         let def = (reg.op)();
-        check_opdef(def.id, def.category, def.lowerings.naga_wgsl);
+        check_opdef(def.id, def.category, def.lowerings.primary_text);
     }
 }
 
@@ -43,38 +43,48 @@ mod tests {
     use super::*;
     use vyre_driver::registry::Category;
 
-    fn dummy_naga(_: &vyre_foundation::dialect_lookup::LoweringCtx<'_>) -> Result<(), String> {
+    fn dummy_primary_text(
+        _: &vyre_foundation::dialect_lookup::LoweringCtx<'_>,
+    ) -> Result<(), String> {
         Ok(())
     }
 
     #[test]
-    fn composite_without_naga_passes() {
-        // Category A, pure IR composition — no Naga arm.  This is the
+    fn composite_without_primary_text_passes() {
+        // Category A, pure IR composition — no target builder arm.  This is the
         // canonical correct shape.
         check_opdef("test.cat_a_ok", Category::Composite, None);
     }
 
     #[test]
-    fn intrinsic_without_naga_passes() {
+    fn intrinsic_without_primary_text_passes() {
         // Category C runtime-only op (e.g. core.indirect_dispatch) —
-        // Intrinsic category but no WGSL arm yet.
+        // Intrinsic category but no target-text arm yet.
         check_opdef("test.cat_c_ok", Category::Intrinsic, None);
     }
 
     #[test]
-    fn intrinsic_with_naga_passes() {
-        // Category B op with a dedicated Naga arm.
-        check_opdef("test.cat_b_ok", Category::Intrinsic, Some(dummy_naga));
+    fn intrinsic_with_primary_text_passes() {
+        // Category B op with a dedicated target builder arm.
+        check_opdef(
+            "test.cat_b_ok",
+            Category::Intrinsic,
+            Some(dummy_primary_text),
+        );
     }
 
     #[test]
     #[should_panic(
-        expected = "category classification mismatch for op `test.cat_a_bad`: declared Composite (Category A) but lowering table says Some(NagaBuilder). Fix: Category A ops must be pure IR composition with no dedicated Naga arm."
+        expected = "category classification mismatch for op `test.cat_a_bad`: declared Composite (Category A) but lowering table says Some(PrimaryTextBuilder). Fix: Category A ops must be pure IR composition with no dedicated target builder arm."
     )]
-    fn composite_with_naga_panics() {
+    fn composite_with_primary_text_panics() {
         // This is the drift shape: an op claims to be pure composition but
-        // secretly requires a backend-specific Naga arm.
-        check_opdef("test.cat_a_bad", Category::Composite, Some(dummy_naga));
+        // secretly requires a backend-specific target builder arm.
+        check_opdef(
+            "test.cat_a_bad",
+            Category::Composite,
+            Some(dummy_primary_text),
+        );
     }
 
     #[test]

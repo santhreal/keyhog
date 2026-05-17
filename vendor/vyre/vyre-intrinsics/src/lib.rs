@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 #![allow(
     clippy::ptr_arg,
     clippy::should_implement_trait,
@@ -18,12 +19,12 @@
 //! ## Current surface (9 intrinsics)
 //!
 //! - `subgroup_add`, `subgroup_ballot`, `subgroup_shuffle` — wave-level
-//!   ops (feature-gated behind `subgroup-ops` pending Naga 25+).
+//!   ops backed by target builder 25+ subgroup lowering.
 //! - `workgroup_barrier`, `storage_barrier` — concurrency fences.
 //! - `bit_reverse_u32`, `popcount_u32` — bit intrinsics mapping 1:1
 //!   to hardware instructions (`reverseBits`, `countOneBits`).
 //! - `fma_f32` — fused multiply-add (byte-identical to `f32::mul_add`).
-//! - `inverse_sqrt_f32` — maps to hardware `inverseSqrt()` via naga.
+//! - `inverse_sqrt_f32` — maps to hardware `inverseSqrt()` via target builder.
 //!
 //! Everything else that used to live here (atomics, lzcnt/tzcnt,
 //! clamp_u32, hashes) moved to `vyre-libs` in Migration 2–3.

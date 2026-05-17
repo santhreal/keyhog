@@ -227,7 +227,12 @@ mod tests {
         assert!(
             nodes
                 .iter()
-                .filter(|node| matches!(node, Node::Barrier))
+                .filter(|node| matches!(
+                    node,
+                    Node::Barrier {
+                        ordering: vyre::memory_model::MemoryOrdering::SeqCst
+                    }
+                ))
                 .count()
                 >= 2,
             "prefix composition must synchronize scratch-table stages"

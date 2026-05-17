@@ -5,8 +5,8 @@ GPU compute intermediate representation with a proven standard operation library
 ## What this crate does
 
 vyre is the compiler stack for GPU compute. Construct `ir::Program` values with
-the IR builder, compose operations from the standard library, validate and lower
-the result to WGSL, and dispatch the shader on a GPU backend.
+the IR builder, compose operations from the standard library, validate, and
+dispatch through a registered backend.
 
 ## Install
 
@@ -16,14 +16,12 @@ cargo add vyre
 
 ## Quick example
 
-The snippet below builds a small program, validates it, lowers it to WGSL, and
-dispatches it on the GPU via `wgpu`. It also requires `bytemuck` and `wgpu` in
-`Cargo.toml`.
+The snippet below builds a small program and validates it. Dispatch lives behind
+the `vyre-driver` registry; `vyre` itself stays substrate-neutral and does not
+depend on any concrete GPU runtime.
 
 ```rust
 use vyre::ir::*;
-use vyre::runtime::{cached_device, compile_compute_pipeline, bg_entry};
-use wgpu::util::DeviceExt;
 
 let program = Program::wrapped(
     vec![
@@ -45,36 +43,40 @@ let program = Program::wrapped(
     ],
 );
 assert!(vyre::validate(&program).is_empty());
-
-let wgsl = vyre::lower::wgsl::lower(&program).unwrap();
-let (device, queue) = cached_device().unwrap();
-let pipeline = compile_compute_pipeline(device, "xor", &wgsl, "main").unwrap();
-
-let a = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-    label: Some("a"), contents: bytemuck::cast_slice(&[0xAAAAAAAAu32; 64]), usage: wgpu::BufferUsages::STORAGE,
-});
-let b = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-    label: Some("b"), contents: bytemuck::cast_slice(&[0x55555555u32; 64]), usage: wgpu::BufferUsages::STORAGE,
-});
-let out = device.create_buffer(&wgpu::BufferDescriptor {
-    label: Some("out"), size: 256, usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC, mapped_at_creation: false,
-});
-
-let bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
-    label: Some("bg"), layout: &pipeline.get_bind_group_layout(0), entries: &[bg_entry(0, &a), bg_entry(1, &b), bg_entry(2, &out)],
-});
-let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("enc") });
-{
-    let mut pass = enc.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("pass"), timestamp_writes: None });
-    pass.set_pipeline(&pipeline);
-    pass.set_bind_group(0, &bg, &[]);
-    pass.dispatch_workgroups(1, 1, 1);
-}
-queue.submit(std::iter::once(enc.finish()));
 ```
 
-Buffer readback and a complete runnable version are in
-`examples/02_xor_gpu_dispatch.rs`.
+GPU dispatch and backend-specific readback examples belong in the concrete
+driver crates that own those runtimes.
+
+## Public facade — what `vyre::*` exports
+
+`vyre` is the single user-facing import path. Reaching for `vyre_core::*`,
+`vyre_foundation::*`, `vyre_driver::*`, or any backend crate from a
+consumer is a smell — the gate
+`scripts/check_examples_public_facade.sh` enforces this for every
+example under `examples/`.
+
+| Module                  | Source crate          | Purpose                                              |
+|-------------------------|-----------------------|------------------------------------------------------|
+| `vyre::ir::*`           | `vyre-foundation`     | `Program`, `BufferDecl`, `Node`, `Expr`, `validate`. |
+| `vyre::lower`           | `vyre-foundation`     | IR-to-target lowering used by backends.              |
+| `vyre::optimizer`       | `vyre-foundation`     | Pass scheduler + reference passes.                   |
+| `vyre::cpu_op`          | `vyre-foundation`     | Wire-format CPU-reference byte ABI.                  |
+| `vyre::cpu_references`  | `vyre-foundation`     | CPU reference implementations.                       |
+| `vyre::memory_model`    | `vyre-foundation`     | Substrate-neutral memory ordering model.             |
+| `vyre::execution_plan`  | `vyre-foundation`     | Performance/accuracy execution planning.             |
+| `vyre::routing`         | `vyre-driver`         | Distribution-aware runtime algorithm selection.      |
+| `vyre::error`           | `vyre-driver`         | Unified error types.                                 |
+| `vyre::diagnostics`     | `vyre-driver`         | Structured machine-readable diagnostics.             |
+| `vyre::backend`         | `vyre-driver`         | `VyreBackend`, `Executable`, dispatch config types.  |
+| `vyre::match_result`    | `vyre-foundation`     | `Match` and `ByteRange` byte-range types.            |
+| `vyre::pipeline`        | `vyre-driver`         | Pipeline-mode (compile-once-dispatch-many) API.      |
+| `vyre::ByteRange`       | `vyre-foundation`     | Domain-neutral byte-range type.                      |
+
+Top-level re-exports also include `BackendError`, `BackendRegistration`,
+`CompiledPipeline`, `DispatchConfig`, `Error`, `Executable`, `Memory`,
+`MemoryRef`, `OutputBuffers`, `TypedDispatchExt`, `VyreBackend` —
+everything a consumer needs without reaching beyond `vyre`.
 
 ## Why vyre
 

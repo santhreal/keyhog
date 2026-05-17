@@ -1,32 +1,52 @@
 //! Frozen backend intrinsic-name tables for Category C operations.
 
+use crate::BackendId;
+
+/// One backend-specific intrinsic spelling.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IntrinsicLowering {
+    /// Opaque backend id owned by a concrete driver crate.
+    pub backend: BackendId,
+    /// Intrinsic or instruction spelling used by that backend.
+    pub name: &'static str,
+}
+
+impl IntrinsicLowering {
+    /// Construct a backend intrinsic spelling row.
+    #[must_use]
+    pub fn new(backend: impl Into<BackendId>, name: &'static str) -> Self {
+        Self {
+            backend: backend.into(),
+            name,
+        }
+    }
+}
+
 /// Backend intrinsic names for a Category C operation in the frozen contract.
-///
-/// Example: a bit-count operation can record `countOneBits` for WGSL and
-/// `popc` for CUDA while leaving missing backends detectable.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct IntrinsicTable {
-    /// WGSL intrinsic or built-in spelling.
-    pub wgsl: Option<&'static str>,
-    /// CUDA intrinsic or PTX instruction spelling.
-    pub cuda: Option<&'static str>,
-    /// Metal Shading Language intrinsic spelling.
-    pub metal: Option<&'static str>,
-    /// SPIR-V extended instruction or opcode spelling.
-    pub spirv: Option<&'static str>,
+    /// Backend-specific spellings registered by concrete driver crates.
+    pub lowerings: Vec<IntrinsicLowering>,
 }
 
 impl IntrinsicTable {
-    /// Return the missing backend names required by Category C.
-    pub fn missing_backends(&self) -> impl Iterator<Item = &'static str> + '_ {
-        [
-            ("wgsl", self.wgsl),
-            ("cuda", self.cuda),
-            ("metal", self.metal),
-            ("spirv", self.spirv),
-        ]
-        .into_iter()
-        .filter_map(|(backend, name)| intrinsic_name_is_empty(name).then_some(backend))
+    /// Return whether `backend` has a non-empty intrinsic spelling.
+    #[must_use]
+    pub fn has_backend(&self, backend: &BackendId) -> bool {
+        self.lowerings
+            .iter()
+            .any(|row| row.backend == *backend && !intrinsic_name_is_empty(Some(row.name)))
+    }
+
+    /// Return the missing backend ids from a caller-supplied required set.
+    pub fn missing_backends<'a>(
+        &'a self,
+        required: &'a [BackendId],
+    ) -> impl Iterator<Item = &'a str> + 'a {
+        required
+            .iter()
+            .filter(|backend| !self.has_backend(backend))
+            .map(BackendId::as_str)
     }
 }
 

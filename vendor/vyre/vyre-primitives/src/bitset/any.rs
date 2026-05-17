@@ -110,4 +110,300 @@ mod tests {
     fn any_false_when_all_zero() {
         assert_eq!(cpu_ref(&[0, 0]), 0);
     }
+
+    /// GPU parity tests for bitset_any — exercise every word boundary
+    /// to expose the word-1+ bitset read bug.
+    #[cfg(feature = "gpu")]
+    mod gpu_tests {
+        use super::*;
+        use vyre_driver::DispatchConfig;
+        use vyre_driver_cuda::CudaBackend;
+
+        fn u32_bytes(values: &[u32]) -> Vec<u8> {
+            values.iter().flat_map(|v| v.to_le_bytes()).collect()
+        }
+
+        fn bytes_to_u32(bytes: &[u8]) -> Vec<u32> {
+            bytes
+                .chunks_exact(4)
+                .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+                .collect()
+        }
+
+        fn run_gpu_any(input: &[u32]) -> u32 {
+            let words = input.len() as u32;
+            let program = bitset_any("input", "out", words);
+            let backend = CudaBackend::acquire().expect(
+                "Fix: CUDA backend acquisition failed. \
+                 Configuration error: no CUDA-capable GPU or driver available on this host.",
+            );
+            let outputs = backend
+                .dispatch(
+                    &program,
+                    &[u32_bytes(input), u32_bytes(&[0])],
+                    &DispatchConfig::default(),
+                )
+                .expect(
+                    "Fix: CUDA dispatch failed for bitset_any. \
+                     Configuration error: GPU present but kernel launch or readback failed.",
+                );
+            assert_eq!(
+                outputs.len(),
+                1,
+                "Fix: bitset_any must return exactly one output buffer, got {}.",
+                outputs.len()
+            );
+            let result = bytes_to_u32(&outputs[0]);
+            assert_eq!(
+                result.len(),
+                1,
+                "Fix: bitset_any output buffer must contain exactly one u32 word, got {}.",
+                result.len()
+            );
+            result[0]
+        }
+
+        // ---- Word-boundary positive cases (one per word 0..7) ----
+
+        #[test]
+        fn gpu_any_true_only_word_0_bit_0() {
+            let input = vec![1, 0, 0, 0, 0, 0, 0, 0];
+            assert_eq!(
+                run_gpu_any(&input),
+                cpu_ref(&input),
+                "FINDING-GPU-BITSET-ANY-W0B0: GPU output mismatch when only word-0 bit-0 is set"
+            );
+        }
+
+        #[test]
+        fn gpu_any_true_only_word_1_bit_0() {
+            let input = vec![0, 1, 0, 0, 0, 0, 0, 0];
+            assert_eq!(
+                run_gpu_any(&input),
+                cpu_ref(&input),
+                "FINDING-GPU-BITSET-ANY-W1B0: GPU output mismatch when only word-1 is set"
+            );
+        }
+
+        #[test]
+        fn gpu_any_true_only_word_2_bit_0() {
+            let input = vec![0, 0, 1, 0, 0, 0, 0, 0];
+            assert_eq!(
+                run_gpu_any(&input),
+                cpu_ref(&input),
+                "FINDING-GPU-BITSET-ANY-W2B0: GPU output mismatch when only word-2 is set"
+            );
+        }
+
+        #[test]
+        fn gpu_any_true_only_word_3_bit_0() {
+            let input = vec![0, 0, 0, 1, 0, 0, 0, 0];
+            assert_eq!(
+                run_gpu_any(&input),
+                cpu_ref(&input),
+                "FINDING-GPU-BITSET-ANY-W3B0: GPU output mismatch when only word-3 is set"
+            );
+        }
+
+        #[test]
+        fn gpu_any_true_only_word_4_bit_0() {
+            let input = vec![0, 0, 0, 0, 1, 0, 0, 0];
+            assert_eq!(
+                run_gpu_any(&input),
+                cpu_ref(&input),
+                "FINDING-GPU-BITSET-ANY-W4B0: GPU output mismatch when only word-4 is set"
+            );
+        }
+
+        #[test]
+        fn gpu_any_true_only_word_5_bit_0() {
+            let input = vec![0, 0, 0, 0, 0, 1, 0, 0];
+            assert_eq!(
+                run_gpu_any(&input),
+                cpu_ref(&input),
+                "FINDING-GPU-BITSET-ANY-W5B0: GPU output mismatch when only word-5 is set"
+            );
+        }
+
+        #[test]
+        fn gpu_any_true_only_word_6_bit_0() {
+            let input = vec![0, 0, 0, 0, 0, 0, 1, 0];
+            assert_eq!(
+                run_gpu_any(&input),
+                cpu_ref(&input),
+                "FINDING-GPU-BITSET-ANY-W6B0: GPU output mismatch when only word-6 is set"
+            );
+        }
+
+        #[test]
+        fn gpu_any_true_only_word_7_bit_0() {
+            let input = vec![0, 0, 0, 0, 0, 0, 0, 1];
+            assert_eq!(
+                run_gpu_any(&input),
+                cpu_ref(&input),
+                "FINDING-GPU-BITSET-ANY-W7B0: GPU output mismatch when only word-7 is set"
+            );
+        }
+
+        // ---- Adversarial corner cases at 32-bit word boundaries ----
+
+        #[test]
+        fn gpu_any_true_word_0_bit_31_boundary() {
+            let input = vec![0x8000_0000, 0, 0, 0, 0, 0, 0, 0];
+            assert_eq!(
+                run_gpu_any(&input),
+                cpu_ref(&input),
+                "FINDING-GPU-BITSET-ANY-W0B31: GPU output mismatch at bit-31 boundary"
+            );
+        }
+
+        #[test]
+        fn gpu_any_true_word_1_bit_32_boundary() {
+            let input = vec![0, 0x0000_0001, 0, 0, 0, 0, 0, 0];
+            assert_eq!(
+                run_gpu_any(&input),
+                cpu_ref(&input),
+                "FINDING-GPU-BITSET-ANY-W1B0-BIT32: GPU output mismatch at bit-32 boundary"
+            );
+        }
+
+        #[test]
+        fn gpu_any_true_word_1_bit_39_like_node_39() {
+            let input = vec![0, 1 << 7, 0, 0, 0, 0, 0, 0];
+            assert_eq!(
+                run_gpu_any(&input),
+                cpu_ref(&input),
+                "FINDING-GPU-BITSET-ANY-W1B7: GPU output mismatch at bit-39 (word-1 bit-7)"
+            );
+        }
+
+        #[test]
+        fn gpu_any_true_word_1_bit_63_boundary() {
+            let input = vec![0, 0x8000_0000, 0, 0, 0, 0, 0, 0];
+            assert_eq!(
+                run_gpu_any(&input),
+                cpu_ref(&input),
+                "FINDING-GPU-BITSET-ANY-W1B31-BIT63: GPU output mismatch at bit-63 boundary"
+            );
+        }
+
+        #[test]
+        fn gpu_any_true_word_2_bit_64_boundary() {
+            let input = vec![0, 0, 0x0000_0001, 0, 0, 0, 0, 0];
+            assert_eq!(
+                run_gpu_any(&input),
+                cpu_ref(&input),
+                "FINDING-GPU-BITSET-ANY-W2B0-BIT64: GPU output mismatch at bit-64 boundary"
+            );
+        }
+
+        #[test]
+        fn gpu_any_true_word_2_bit_65_like_node_65() {
+            let input = vec![0, 0, 1 << 1, 0, 0, 0, 0, 0];
+            assert_eq!(
+                run_gpu_any(&input),
+                cpu_ref(&input),
+                "FINDING-GPU-BITSET-ANY-W2B1: GPU output mismatch at bit-65 (word-2 bit-1)"
+            );
+        }
+
+        #[test]
+        fn gpu_any_true_word_3_bit_96_boundary() {
+            let input = vec![0, 0, 0, 0x0000_0001, 0, 0, 0, 0];
+            assert_eq!(
+                run_gpu_any(&input),
+                cpu_ref(&input),
+                "FINDING-GPU-BITSET-ANY-W3B0-BIT96: GPU output mismatch at bit-96 boundary"
+            );
+        }
+
+        #[test]
+        fn gpu_any_true_word_4_bit_128_boundary() {
+            let input = vec![0, 0, 0, 0, 0x0000_0001, 0, 0, 0];
+            assert_eq!(
+                run_gpu_any(&input),
+                cpu_ref(&input),
+                "FINDING-GPU-BITSET-ANY-W4B0-BIT128: GPU output mismatch at bit-128 boundary"
+            );
+        }
+
+        #[test]
+        fn gpu_any_true_word_5_bit_160_boundary() {
+            let input = vec![0, 0, 0, 0, 0, 0x0000_0001, 0, 0];
+            assert_eq!(
+                run_gpu_any(&input),
+                cpu_ref(&input),
+                "FINDING-GPU-BITSET-ANY-W5B0-BIT160: GPU output mismatch at bit-160 boundary"
+            );
+        }
+
+        #[test]
+        fn gpu_any_true_word_6_bit_192_boundary() {
+            let input = vec![0, 0, 0, 0, 0, 0, 0x0000_0001, 0];
+            assert_eq!(
+                run_gpu_any(&input),
+                cpu_ref(&input),
+                "FINDING-GPU-BITSET-ANY-W6B0-BIT192: GPU output mismatch at bit-192 boundary"
+            );
+        }
+
+        #[test]
+        fn gpu_any_true_word_7_bit_224_boundary() {
+            let input = vec![0, 0, 0, 0, 0, 0, 0, 0x0000_0001];
+            assert_eq!(
+                run_gpu_any(&input),
+                cpu_ref(&input),
+                "FINDING-GPU-BITSET-ANY-W7B0-BIT224: GPU output mismatch at bit-224 boundary"
+            );
+        }
+
+        #[test]
+        fn gpu_any_true_word_7_bit_255_last_bit() {
+            let input = vec![0, 0, 0, 0, 0, 0, 0, 0x8000_0000];
+            assert_eq!(
+                run_gpu_any(&input),
+                cpu_ref(&input),
+                "FINDING-GPU-BITSET-ANY-W7B31-BIT255: GPU output mismatch at last bit-255"
+            );
+        }
+
+        #[test]
+        fn gpu_any_false_all_zero_8_words() {
+            let input = vec![0u32; 8];
+            assert_eq!(
+                run_gpu_any(&input),
+                cpu_ref(&input),
+                "FINDING-GPU-BITSET-ANY-ALLZERO: GPU output mismatch for all-zero bitset"
+            );
+        }
+
+        #[test]
+        fn gpu_any_true_all_ones_8_words() {
+            let input = vec![0xffff_ffff; 8];
+            assert_eq!(
+                run_gpu_any(&input),
+                cpu_ref(&input),
+                "FINDING-GPU-BITSET-ANY-ALLONE: GPU output mismatch for all-ones bitset"
+            );
+        }
+
+        // ---- Property test: random bitsets over 256 nodes ----
+
+        use proptest::prelude::*;
+
+        proptest! {
+            #![proptest_config(ProptestConfig::with_cases(1000))]
+
+            #[test]
+            fn gpu_any_matches_cpu_oracle_random_256(input in proptest::collection::vec(any::<u32>(), 8)) {
+                let gpu = run_gpu_any(&input);
+                let cpu = cpu_ref(&input);
+                prop_assert_eq!(
+                    gpu, cpu,
+                    "FINDING-GPU-BITSET-ANY-PROP: GPU any({:?}) = {}, CPU oracle = {}",
+                    input, gpu, cpu
+                );
+            }
+        }
+    }
 }

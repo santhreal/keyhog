@@ -24,22 +24,16 @@
 //!   - Character classes `[abc]`, `[a-z]`, `[^abc]`
 //!   - Builtin escapes `\d \D \w \W \s \S` (ASCII semantics)
 //!   - Bounded repetition `*`, `+`, `?`, `{n}`, `{n,m}`
+//!   - Text anchors `^` and `$`
 //!   - Escape literals `\.`, `\\`, `\(`, `\[`
 //!
 //! Explicitly NOT supported (returns `RegexCompileError::Unsupported`):
 //!
-//!   - Anchors `^` / `$` / `\b` (NFA always scans full haystack)
 //!   - Backreferences `\1` (NFA cannot represent)
-//!   - Lookarounds `(?=...)` (CPU regex-rs handles those)
+//!   - Word-boundary and line-boundary lookarounds
 //!   - Unicode character classes outside the ASCII range
-//!
-//! Consumers facing one of the unsupported features should keep the
-//! relevant detector on the CPU regex backend — the cost of doing so
-//! is well under the GPU roundtrip overhead anyway.
 
-use std::collections::HashSet;
-
-use regex_syntax::hir::{Class, Hir, HirKind, Repetition};
+use regex_syntax::hir::{Class, Hir, HirKind, Look, Repetition};
 
 use crate::matching::nfa::NfaPlan;
 
@@ -134,6 +128,8 @@ pub fn compile_regex_set(patterns: &[&str]) -> Result<CompiledRegexSet, RegexCom
     let mut builder = NfaBuilder::new();
     let mut accept_states = Vec::with_capacity(patterns.len());
     let mut accept_state_ids = Vec::with_capacity(patterns.len());
+    let mut accept_start_anchored = Vec::with_capacity(patterns.len());
+    let mut accept_end_anchored = Vec::with_capacity(patterns.len());
     let entry = builder.fresh_state(); // shared entry state 0
 
     // Use the byte-oriented parser configuration: `unicode(false)` +
@@ -150,11 +146,13 @@ pub fn compile_regex_set(patterns: &[&str]) -> Result<CompiledRegexSet, RegexCom
             pattern_index: pid,
             message: format!("{e}"),
         })?;
-        let frag = build_hir(&mut builder, &hir, pid)?;
+        let (frag, anchors) = build_pattern_hir(&mut builder, &hir, pid)?;
         // Connect the shared entry to this pattern's start via epsilon.
         builder.add_epsilon(entry, frag.start);
         accept_states.push((pid as u32, frag.match_len as u32));
         accept_state_ids.push(frag.end);
+        accept_start_anchored.push(anchors.start);
+        accept_end_anchored.push(anchors.end);
     }
 
     if builder.state_count() > STATE_CAP {
@@ -169,6 +167,8 @@ pub fn compile_regex_set(patterns: &[&str]) -> Result<CompiledRegexSet, RegexCom
         input_len: 0,
         accept_states,
         accept_state_ids,
+        accept_start_anchored,
+        accept_end_anchored,
     };
     let (transition_table, epsilon_table) = builder.emit_lane_major_tables();
     Ok(CompiledRegexSet {
@@ -192,9 +192,18 @@ pub fn build_rule_pipeline_from_regex(
     input_len: u32,
 ) -> Result<crate::matching::RulePipeline, RegexCompileError> {
     let compiled = compile_regex_set(patterns)?;
-    // Reuse the literal nfa_scan Program shape — the buffer contracts
-    // and lane-major table layouts are identical.
-    let program = crate::matching::nfa::nfa_scan(patterns, input_buf, hit_buf, input_len);
+    let has_epsilon = compiled.epsilon_table.iter().any(|word| *word != 0);
+    let program = crate::matching::nfa::nfa_scan_with_plan(
+        &compiled.plan,
+        has_epsilon,
+        input_buf,
+        hit_buf,
+        input_len,
+    )
+    .map_err(|_| RegexCompileError::TooManyStates {
+        states: compiled.plan.num_states as usize,
+        cap: STATE_CAP,
+    })?;
     Ok(crate::matching::RulePipeline {
         program,
         transition_table: compiled.transition_table,
@@ -207,10 +216,19 @@ pub fn build_rule_pipeline_from_regex(
 
 #[derive(Debug)]
 struct NfaBuilder {
-    /// Per-state byte→[next-state-list] transitions.
-    transitions: Vec<Vec<(ByteSet, u32)>>,
-    /// Per-state list of epsilon (free) successors.
-    epsilons: Vec<Vec<u32>>,
+    state_count: usize,
+    /// Flat byte transitions. Emission consumes the stream directly,
+    /// so construction does not need one allocation per NFA state.
+    transitions: Vec<ByteTransition>,
+    /// Flat epsilon (free) transitions.
+    epsilons: Vec<(u32, u32)>,
+}
+
+#[derive(Debug, Clone)]
+struct ByteTransition {
+    src: u32,
+    set: ByteSet,
+    dst: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -237,8 +255,15 @@ impl ByteSet {
         }
         s
     }
-    fn contains(&self, b: u8) -> bool {
-        (self.bits[(b / 64) as usize] >> (b % 64)) & 1 == 1
+    fn for_each_set_byte(&self, mut f: impl FnMut(u8)) {
+        for (word_idx, &word) in self.bits.iter().enumerate() {
+            let mut bits = word;
+            while bits != 0 {
+                let bit = bits.trailing_zeros() as usize;
+                f((word_idx * 64 + bit) as u8);
+                bits &= bits - 1;
+            }
+        }
     }
 }
 
@@ -251,30 +276,37 @@ struct Fragment {
     match_len: usize,
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+struct PatternAnchors {
+    start: bool,
+    end: bool,
+}
+
 impl NfaBuilder {
     fn new() -> Self {
         Self {
+            state_count: 0,
             transitions: Vec::new(),
             epsilons: Vec::new(),
         }
     }
 
     fn state_count(&self) -> usize {
-        self.transitions.len()
+        self.state_count
     }
 
     fn fresh_state(&mut self) -> u32 {
-        self.transitions.push(Vec::new());
-        self.epsilons.push(Vec::new());
-        (self.transitions.len() - 1) as u32
+        let state = self.state_count as u32;
+        self.state_count += 1;
+        state
     }
 
     fn add_byte_transition(&mut self, src: u32, set: ByteSet, dst: u32) {
-        self.transitions[src as usize].push((set, dst));
+        self.transitions.push(ByteTransition { src, set, dst });
     }
 
     fn add_epsilon(&mut self, src: u32, dst: u32) {
-        self.epsilons[src as usize].push(dst);
+        self.epsilons.push((src, dst));
     }
 
     /// Lane-major emission, matching the contract of
@@ -284,40 +316,106 @@ impl NfaBuilder {
         let mut transitions = vec![0u32; n * 256 * LANES];
         let mut epsilons = vec![0u32; n * LANES];
 
-        for (src, edges) in self.transitions.iter().enumerate() {
-            for (set, dst) in edges {
-                let dst_lane = (*dst / 32) as usize;
-                let dst_bit = 1u32 << (*dst % 32);
-                for b in 0..=255u8 {
-                    if set.contains(b) {
-                        let idx = src * 256 * LANES + (b as usize) * LANES + dst_lane;
-                        transitions[idx] |= dst_bit;
-                    }
-                }
-            }
+        for edge in &self.transitions {
+            let src = edge.src as usize;
+            let dst_lane = (edge.dst / 32) as usize;
+            let dst_bit = 1u32 << (edge.dst % 32);
+            edge.set.for_each_set_byte(|byte| {
+                let idx = src * 256 * LANES + (byte as usize) * LANES + dst_lane;
+                transitions[idx] |= dst_bit;
+            });
         }
-        for (src, eps) in self.epsilons.iter().enumerate() {
-            for dst in eps {
-                let dst_lane = (*dst / 32) as usize;
-                let dst_bit = 1u32 << (*dst % 32);
-                let idx = src * LANES + dst_lane;
-                epsilons[idx] |= dst_bit;
-            }
+        for &(src, dst) in &self.epsilons {
+            let dst_lane = (dst / 32) as usize;
+            let dst_bit = 1u32 << (dst % 32);
+            let idx = src as usize * LANES + dst_lane;
+            epsilons[idx] |= dst_bit;
         }
         (transitions, epsilons)
     }
 }
 
+fn empty_fragment(b: &mut NfaBuilder) -> Fragment {
+    let s = b.fresh_state();
+    Fragment {
+        start: s,
+        end: s,
+        match_len: 0,
+    }
+}
+
+fn build_pattern_hir(
+    b: &mut NfaBuilder,
+    hir: &Hir,
+    pid: usize,
+) -> Result<(Fragment, PatternAnchors), RegexCompileError> {
+    match hir.kind() {
+        HirKind::Look(Look::Start) => Ok((
+            empty_fragment(b),
+            PatternAnchors {
+                start: true,
+                end: false,
+            },
+        )),
+        HirKind::Look(Look::End) => Ok((
+            empty_fragment(b),
+            PatternAnchors {
+                start: false,
+                end: true,
+            },
+        )),
+        HirKind::Concat(parts) => {
+            let mut first = 0usize;
+            let mut last = parts.len();
+            let mut anchors = PatternAnchors::default();
+
+            if first < last && is_text_start_look(&parts[first]) {
+                anchors.start = true;
+                first += 1;
+            }
+            if first < last && is_text_end_look(&parts[last - 1]) {
+                anchors.end = true;
+                last -= 1;
+            }
+
+            Ok((build_hir_slice(b, &parts[first..last], pid)?, anchors))
+        }
+        _ => Ok((build_hir(b, hir, pid)?, PatternAnchors::default())),
+    }
+}
+
+fn is_text_start_look(hir: &Hir) -> bool {
+    matches!(hir.kind(), HirKind::Look(Look::Start))
+}
+
+fn is_text_end_look(hir: &Hir) -> bool {
+    matches!(hir.kind(), HirKind::Look(Look::End))
+}
+
+fn build_hir_slice(
+    b: &mut NfaBuilder,
+    parts: &[Hir],
+    pid: usize,
+) -> Result<Fragment, RegexCompileError> {
+    let Some(first_part) = parts.first() else {
+        return Ok(empty_fragment(b));
+    };
+    let mut acc = build_hir(b, first_part, pid)?;
+    for child in &parts[1..] {
+        let next = build_hir(b, child, pid)?;
+        b.add_epsilon(acc.end, next.start);
+        acc = Fragment {
+            start: acc.start,
+            end: next.end,
+            match_len: acc.match_len + next.match_len,
+        };
+    }
+    Ok(acc)
+}
+
 fn build_hir(b: &mut NfaBuilder, hir: &Hir, pid: usize) -> Result<Fragment, RegexCompileError> {
     match hir.kind() {
-        HirKind::Empty => {
-            let s = b.fresh_state();
-            Ok(Fragment {
-                start: s,
-                end: s,
-                match_len: 0,
-            })
-        }
+        HirKind::Empty => Ok(empty_fragment(b)),
         HirKind::Literal(lit) => {
             // Each literal byte gets its own state.
             let start = b.fresh_state();
@@ -345,29 +443,7 @@ fn build_hir(b: &mut NfaBuilder, hir: &Hir, pid: usize) -> Result<Fragment, Rege
             })
         }
         HirKind::Repetition(rep) => build_repetition(b, rep, pid),
-        HirKind::Concat(parts) => {
-            if parts.is_empty() {
-                let s = b.fresh_state();
-                return Ok(Fragment {
-                    start: s,
-                    end: s,
-                    match_len: 0,
-                });
-            }
-            let mut iter = parts.iter();
-            let first = build_hir(b, iter.next().unwrap(), pid)?;
-            let mut acc = first;
-            for child in iter {
-                let next = build_hir(b, child, pid)?;
-                b.add_epsilon(acc.end, next.start);
-                acc = Fragment {
-                    start: acc.start,
-                    end: next.end,
-                    match_len: acc.match_len + next.match_len,
-                };
-            }
-            Ok(acc)
-        }
+        HirKind::Concat(parts) => build_hir_slice(b, parts, pid),
         HirKind::Alternation(alts) => {
             // Diamond: shared fork → each branch → shared join.
             let fork = b.fresh_state();
@@ -389,7 +465,7 @@ fn build_hir(b: &mut NfaBuilder, hir: &Hir, pid: usize) -> Result<Fragment, Rege
         }
         HirKind::Look(_) => Err(RegexCompileError::Unsupported {
             pattern_index: pid,
-            feature: "anchors / lookarounds",
+            feature: "non-edge lookaround assertion",
         }),
         HirKind::Capture(c) => {
             // We don't expose capture groups (NFA scan is multimatch,
@@ -407,22 +483,21 @@ fn build_repetition(
     let min = rep.min;
     let max = rep.max;
 
-    // Hard cap on `max` so a `{0,1000000}` doesn't blow up the state
-    // table. The cap is conservative — bigger detectors fall back to
-    // CPU regex.
-    const MAX_REP: u32 = 64;
+    // Keep pathological repetitions from materializing a giant transient NFA.
+    // The final state cap is the source of truth, so oversized repetitions
+    // report TooManyStates instead of pretending the syntax is unsupported.
     if let Some(m) = max {
-        if m > MAX_REP {
-            return Err(RegexCompileError::Unsupported {
-                pattern_index: pid,
-                feature: "repetition with upper bound > 64",
+        if m as usize > STATE_CAP {
+            return Err(RegexCompileError::TooManyStates {
+                states: m as usize,
+                cap: STATE_CAP,
             });
         }
     }
-    if min > MAX_REP {
-        return Err(RegexCompileError::Unsupported {
-            pattern_index: pid,
-            feature: "repetition with min > 64",
+    if min as usize > STATE_CAP {
+        return Err(RegexCompileError::TooManyStates {
+            states: min as usize,
+            cap: STATE_CAP,
         });
     }
 
@@ -502,7 +577,6 @@ fn byte_set_from_class(cls: &Class, pid: usize) -> Result<ByteSet, RegexCompileE
             }
         }
     }
-    let _ = HashSet::<u8>::new(); // suppress unused-import warning if any
     Ok(out)
 }
 
@@ -540,15 +614,38 @@ mod tests {
     }
 
     #[test]
-    fn rejects_anchor() {
-        let err = compile_regex_set(&["^foo"]).unwrap_err();
-        assert!(matches!(err, RegexCompileError::Unsupported { .. }));
+    fn text_anchors_compile_to_accept_flags() {
+        let r = compile_regex_set(&["^foo$"]).unwrap();
+        assert_eq!(r.plan.accept_start_anchored, vec![true]);
+        assert_eq!(r.plan.accept_end_anchored, vec![true]);
     }
 
     #[test]
-    fn rejects_unbounded_max_rep() {
-        let err = compile_regex_set(&["a{0,128}"]).unwrap_err();
-        assert!(matches!(err, RegexCompileError::Unsupported { .. }));
+    fn bounded_repetition_above_old_cap_compiles_under_state_cap() {
+        let r = compile_regex_set(&["a{0,128}"]).unwrap();
+        assert!(r.plan.num_states > 64);
+        assert!(r.plan.num_states <= STATE_CAP as u32);
+    }
+
+    #[test]
+    fn regex_pipeline_uses_compiled_plan_instead_of_literal_source_plan() {
+        let compiled = compile_regex_set(&["a|bc"]).unwrap();
+        let pipeline = build_rule_pipeline_from_regex(&["a|bc"], "input", "hits", 64).unwrap();
+
+        assert_eq!(pipeline.plan.num_states, compiled.plan.num_states);
+        assert_eq!(
+            pipeline.plan.accept_state_ids,
+            compiled.plan.accept_state_ids
+        );
+        assert_eq!(
+            pipeline.epsilon_table.iter().any(|word| *word != 0),
+            compiled.epsilon_table.iter().any(|word| *word != 0)
+        );
+        assert_ne!(
+            pipeline.plan.num_states,
+            crate::matching::nfa::compile(&["a|bc"]).num_states,
+            "regex pipeline must not rebuild the scan program from literal regex source bytes"
+        );
     }
 
     #[test]

@@ -1,4 +1,6 @@
-use rustc_hash::FxHashMap;
+use std::hash::BuildHasherDefault;
+
+use rustc_hash::{FxHashMap, FxHasher};
 
 /// Default maximum number of live nodes retained by an [`IntrusiveLru`].
 pub const DEFAULT_INTRUSIVE_LRU_CAPACITY: usize = 65_536;
@@ -36,18 +38,20 @@ where
 
     /// Create an LRU with a fixed live-node capacity.
     ///
-    /// # Panics
-    ///
-    /// Panics if `capacity` is zero.
+    /// A zero capacity is clamped to one so externally-derived
+    /// capacity budgets cannot disable the LRU by accident.
     #[inline]
     pub fn with_capacity(capacity: usize) -> Self {
         // Defensive: a capacity of 0 would make the LRU unusable; clamp to 1
         // so callers that compute capacity from external config never panic.
         let capacity = capacity.max(1);
         Self {
-            nodes: Vec::with_capacity(capacity.min(1024)),
-            indices: FxHashMap::default(),
-            free: Vec::new(),
+            nodes: Vec::with_capacity(capacity),
+            indices: FxHashMap::with_capacity_and_hasher(
+                capacity,
+                BuildHasherDefault::<FxHasher>::default(),
+            ),
+            free: Vec::with_capacity(capacity),
             head: None,
             tail: None,
             capacity,
@@ -61,6 +65,19 @@ where
             return &mut self.nodes[index].value;
         }
         let index = self.alloc_node(key);
+        &mut self.nodes[index].value
+    }
+
+    /// Ensure a node exists for `key`, move it to the hot end, and
+    /// return a mutable value reference.
+    #[inline]
+    pub fn ensure_front(&mut self, key: K) -> &mut V {
+        let index = if let Some(&index) = self.indices.get(&key) {
+            self.move_to_front(index);
+            index
+        } else {
+            self.alloc_node(key)
+        };
         &mut self.nodes[index].value
     }
 
@@ -153,6 +170,19 @@ where
         index
     }
 
+    /// Return backing-store capacities for cache diagnostics.
+    ///
+    /// This is intentionally public rather than test-only so structure
+    /// contracts do not need inline test-only hooks in production modules.
+    #[doc(hidden)]
+    pub fn reserved_capacity_for_diagnostics(&self) -> (usize, usize, usize) {
+        (
+            self.nodes.capacity(),
+            self.indices.capacity(),
+            self.free.capacity(),
+        )
+    }
+
     fn move_to_front(&mut self, index: usize) {
         if self.head == Some(index) {
             return;
@@ -232,10 +262,9 @@ impl AccessTracker {
     #[inline]
     pub fn record(&mut self, key: u64) {
         self.tick = self.tick.saturating_add(1);
-        let meta = self.lru.ensure(key);
+        let meta = self.lru.ensure_front(key);
         meta.frequency = meta.frequency.saturating_add(1);
         meta.last_access = self.tick;
-        self.lru.touch(key);
     }
 
     /// Return the `n` hottest keys in most-recent-first order.

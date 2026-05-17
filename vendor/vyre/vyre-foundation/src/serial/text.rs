@@ -222,7 +222,7 @@ impl Program {
     /// produced by a successful `Program::new` because every field
     /// of `Program` is a valid wire input by construction; the
     /// error path exists only for programs synthesized through
-    /// unsafe means or a future wire-format breaking change.
+    /// unsafe means or a wire-format breaking change.
     #[inline]
     #[must_use]
     pub fn to_text(&self) -> Result<String, TextParseError> {

@@ -1,16 +1,11 @@
 //! **Tier 3 — named C11 GPU pipeline stages** (no CLI, no filesystem).
 //!
-//! Drivers (`vyrec`, `vyre-cc`) orchestrate dispatches; embedders can import only the
+//! Drivers (`vyrec`, `vyre-frontend-c`) orchestrate dispatches; embedders can import only the
 //! stages they need. Buffer layouts are defined by each `Program`’s `BufferDecl`
 //! (`with_count`, read/write); see each builder’s module for harness fixtures.
 //!
 //! Full roadmap: `docs/COMPILER_E2E_PLAN.md`.
 
-pub use crate::compiler::cfg::c11_build_cfg_and_gotos;
-pub use crate::compiler::object_writer::opt_lower_elf;
-pub use crate::compiler::regalloc::opt_x86_64_register_allocation;
-pub use crate::compiler::stack_layout::opt_stack_layout_generation;
-pub use crate::compiler::types_layout::c11_compute_alignments;
 pub use crate::parsing::c::lex::diagnostics::{
     first_c11_lexer_diagnostic, C11LexerDiagnostic, C11LexerDiagnosticKind,
 };
@@ -46,6 +41,10 @@ pub use crate::parsing::c::preprocess::synthesis::{
 pub use crate::parsing::c::preprocess::{c_translation_phase_line_splice, CLineSplicedSource};
 pub use crate::parsing::c::sema::registry::c_sema_scope;
 pub use crate::parsing::core::ast::shunting::ast_shunting_yard;
+pub use crate::{
+    c11_build_cfg_and_gotos, c11_compute_alignments, opt_lower_elf, opt_stack_layout_generation,
+    opt_x86_64_register_allocation,
+};
 
 /// Upper bound on token stream length for `ast_shunting_yard` / padded tok buffers.
 /// Must match `vyre-libs` `ast_shunting_yard` implementation.

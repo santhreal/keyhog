@@ -23,11 +23,15 @@
 
 use std::collections::{HashMap, HashSet};
 
+use rustc_hash::{FxHashMap, FxHashSet};
+
 use vyre::ir::Program;
 use vyre_primitives::graph::csr_forward_traverse::csr_forward_traverse;
 use vyre_primitives::graph::program_graph::ProgramGraphShape;
+use vyre_primitives::predicate::edge_kind;
 
 pub(crate) const OP_ID: &str = "vyre-libs::dataflow::ssa";
+const DOMINANCE_FRONTIER_MASK: u32 = edge_kind::DOMINANCE;
 
 /// Build one dominance-frontier propagation step for SSA phi
 /// placement.
@@ -55,7 +59,10 @@ pub fn ssa_phi_placement_step(
     frontier_in: &str,
     frontier_out: &str,
 ) -> Program {
-    csr_forward_traverse(shape, frontier_in, frontier_out, 0xFFFF_FFFF)
+    crate::region::tag_program(
+        OP_ID,
+        csr_forward_traverse(shape, frontier_in, frontier_out, DOMINANCE_FRONTIER_MASK),
+    )
 }
 
 inventory::submit! {
@@ -72,7 +79,12 @@ inventory::submit! {
                 to_bytes(&[0, 0, 0, 0]),          // pg_nodes
                 to_bytes(&[0, 2, 3, 4, 4]),       // pg_edge_offsets
                 to_bytes(&[1, 2, 3, 3]),          // pg_edge_targets
-                to_bytes(&[1, 1, 1, 1]),          // pg_edge_kind_mask
+                to_bytes(&[
+                    DOMINANCE_FRONTIER_MASK,
+                    DOMINANCE_FRONTIER_MASK,
+                    DOMINANCE_FRONTIER_MASK,
+                    DOMINANCE_FRONTIER_MASK,
+                ]),                               // pg_edge_kind_mask
                 to_bytes(&[0, 0, 0, 0]),          // pg_node_tags
                 to_bytes(&[0b0001]),              // fin = {var 0 def at block 0}
                 to_bytes(&[0b0001]),              // fout seed
@@ -139,8 +151,8 @@ pub fn compute_dominators(cfg: &Cfg) -> Result<HashMap<u32, u32>, &'static str> 
     doms.insert(cfg.entry, cfg.entry);
 
     let mut post_order = Vec::new();
-    let mut visited = HashSet::new();
-    fn dfs(u: u32, cfg: &Cfg, visited: &mut HashSet<u32>, post_order: &mut Vec<u32>) {
+    let mut visited = FxHashSet::default();
+    fn dfs(u: u32, cfg: &Cfg, visited: &mut FxHashSet<u32>, post_order: &mut Vec<u32>) {
         visited.insert(u);
         if let Some(block) = cfg.blocks.get(&u) {
             for &v in &block.succs {
@@ -156,7 +168,7 @@ pub fn compute_dominators(cfg: &Cfg) -> Result<HashMap<u32, u32>, &'static str> 
     // Reverse post order to start
     post_order.reverse();
 
-    let mut post_order_idx = HashMap::new();
+    let mut post_order_idx = FxHashMap::default();
     for (i, &u) in post_order.iter().enumerate() {
         post_order_idx.insert(u, i);
     }
@@ -243,8 +255,8 @@ pub fn place_phi_nodes(cfg: &Cfg, df: &HashMap<u32, HashSet<u32>>) -> HashMap<u3
     let mut phi_nodes: HashMap<u32, Vec<u32>> = HashMap::new();
 
     // Map of variable to blocks where it is defined
-    let mut defs: HashMap<u32, HashSet<u32>> = HashMap::new();
-    let mut vars: HashSet<u32> = HashSet::new();
+    let mut defs: FxHashMap<u32, FxHashSet<u32>> = FxHashMap::default();
+    let mut vars: FxHashSet<u32> = FxHashSet::default();
 
     for (&b, block) in &cfg.blocks {
         for &v in &block.defs {
@@ -254,9 +266,12 @@ pub fn place_phi_nodes(cfg: &Cfg, df: &HashMap<u32, HashSet<u32>>) -> HashMap<u3
     }
 
     for &v in &vars {
-        let mut worklist: Vec<u32> = defs.get(&v).unwrap().iter().copied().collect();
-        let mut in_worklist: HashSet<u32> = defs.get(&v).unwrap().clone();
-        let mut inserted_phi: HashSet<u32> = HashSet::new();
+        let Some(var_defs) = defs.get(&v) else {
+            continue;
+        };
+        let mut worklist: Vec<u32> = var_defs.iter().copied().collect();
+        let mut in_worklist: FxHashSet<u32> = var_defs.clone();
+        let mut inserted_phi: FxHashSet<u32> = FxHashSet::default();
 
         while let Some(x) = worklist.pop() {
             if let Some(frontier) = df.get(&x) {
@@ -284,14 +299,14 @@ pub fn rename_variables(
     phi_nodes: &HashMap<u32, Vec<u32>>,
 ) -> SsaForm {
     // Determine the variable ids by aggregating all defs
-    let mut vars: HashSet<u32> = HashSet::new();
+    let mut vars: FxHashSet<u32> = FxHashSet::default();
     for block in cfg.blocks.values() {
         vars.extend(&block.defs);
         vars.extend(&block.uses);
     }
 
-    let mut count: HashMap<u32, u32> = HashMap::new();
-    let mut stack: HashMap<u32, Vec<u32>> = HashMap::new();
+    let mut count: FxHashMap<u32, u32> = FxHashMap::default();
+    let mut stack: FxHashMap<u32, Vec<u32>> = FxHashMap::default();
 
     for &v in &vars {
         count.insert(v, 0);
@@ -299,7 +314,7 @@ pub fn rename_variables(
     }
 
     // We need the dominator tree (children of each node)
-    let mut dom_tree: HashMap<u32, Vec<u32>> = HashMap::new();
+    let mut dom_tree: FxHashMap<u32, Vec<u32>> = FxHashMap::default();
     for (&node, &idom) in doms {
         if node != idom {
             dom_tree.entry(idom).or_default().push(node);
@@ -310,42 +325,43 @@ pub fn rename_variables(
     // The generic block summary has variable ids rather than statement-local node ids, so this
     // pass tracks version numbers and leaves concrete node-id mapping to the AST walker.
 
-    // For now we simulate renaming DFS purely to show Cooper-Harvey-Kennedy compliance.
+    // Summary-level SSA maps each `(block, variable)` pair into a stable
+    // synthetic node id; AST-local node ids are owned by the VAST walker.
     let mut def_use_chains: HashMap<u32, Vec<u32>> = HashMap::new();
 
     fn rename_dfs(
         u: u32,
         cfg: &Cfg,
-        dom_tree: &HashMap<u32, Vec<u32>>,
+        dom_tree: &FxHashMap<u32, Vec<u32>>,
         phi_nodes: &HashMap<u32, Vec<u32>>,
-        count: &mut HashMap<u32, u32>,
-        stack: &mut HashMap<u32, Vec<u32>>,
+        count: &mut FxHashMap<u32, u32>,
+        stack: &mut FxHashMap<u32, Vec<u32>>,
         renamed_usages: &mut HashMap<u32, u32>,
         def_use_chains: &mut HashMap<u32, Vec<u32>>,
     ) {
         // Generate phi definition versions for this block.
         if let Some(phis) = phi_nodes.get(&u) {
             for &v in phis {
-                let c = *count.get(&v).unwrap();
+                let c = *count.entry(v).or_insert(0);
                 count.insert(v, c + 1);
-                stack.get_mut(&v).unwrap().push(c + 1);
+                stack.entry(v).or_insert_with(|| vec![0]).push(c + 1);
             }
         }
 
         if let Some(block) = cfg.blocks.get(&u) {
             for &v in &block.defs {
-                let c = *count.get(&v).unwrap();
+                let c = *count.entry(v).or_insert(0);
                 count.insert(v, c + 1);
-                stack.get_mut(&v).unwrap().push(c + 1);
+                stack.entry(v).or_insert_with(|| vec![0]).push(c + 1);
                 // track use
-                renamed_usages.insert(u * 1000 + v, c + 1); // Mock node_id mapping
+                renamed_usages.insert(u * 1000 + v, c + 1); // Summary-level synthetic node id.
                 def_use_chains.insert(c + 1, vec![]);
             }
 
             for &v in &block.uses {
                 if let Some(top) = stack.get(&v).and_then(|s| s.last()) {
                     renamed_usages.insert(u * 1000 + v, *top);
-                    def_use_chains.entry(*top).or_default().push(u); // Mock usage
+                    def_use_chains.entry(*top).or_default().push(u); // Block-level use summary.
                 }
             }
         }
@@ -368,12 +384,16 @@ pub fn rename_variables(
         // Pop stack
         if let Some(phis) = phi_nodes.get(&u) {
             for &v in phis {
-                stack.get_mut(&v).unwrap().pop();
+                if let Some(versions) = stack.get_mut(&v) {
+                    versions.pop();
+                }
             }
         }
         if let Some(block) = cfg.blocks.get(&u) {
             for &v in &block.defs {
-                stack.get_mut(&v).unwrap().pop();
+                if let Some(versions) = stack.get_mut(&v) {
+                    versions.pop();
+                }
             }
         }
     }
@@ -397,5 +417,6 @@ pub fn rename_variables(
 }
 
 #[cfg(test)]
-#[path = "tests/test_ssa.rs"]
-mod test_ssa;
+    mod test_ssa {
+        include!("tests/test_ssa.rs");
+    }

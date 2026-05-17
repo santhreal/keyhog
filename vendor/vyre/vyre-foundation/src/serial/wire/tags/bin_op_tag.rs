@@ -1,11 +1,12 @@
 use crate::ir::BinOp;
+use crate::serial::wire::encode::WireEncodeErr;
 
 /// Encode a [`BinOp`] into its stable VIR0 wire-format tag byte.
 ///
 /// # Preconditions
 ///
 /// `value` must be a variant known to the VIR0 encoder. Because `BinOp` is
-/// `#[non_exhaustive]`, future spec additions must receive a tag here before
+/// `#[non_exhaustive]`, spec additions must receive a tag here before
 /// they can round-trip through the wire format.
 ///
 /// # Returns
@@ -23,7 +24,7 @@ use crate::ir::BinOp;
 /// breaking `Program::from_wire(Program::to_wire(p))` for any program that
 /// legitimately declared a Min/Max BinOp. They now map to `19` and `20`.
 #[inline]
-pub(crate) fn bin_op_tag(value: BinOp) -> Result<u8, String> {
+pub(crate) fn bin_op_tag(value: BinOp) -> Result<u8, WireEncodeErr> {
     match value {
         BinOp::Add => Ok(0x01),
         BinOp::Sub => Ok(0x02),
@@ -60,6 +61,7 @@ pub(crate) fn bin_op_tag(value: BinOp) -> Result<u8, String> {
         BinOp::RotateRight => Ok(0x1E),
         BinOp::WrappingAdd => Ok(0x1F),
         BinOp::WrappingSub => Ok(0x20),
-        _ => Err("unknown BinOp variant".to_string()),
+        BinOp::MulHigh => Ok(0x21),
+        _ => Err(WireEncodeErr::static_msg("unknown BinOp variant")),
     }
 }

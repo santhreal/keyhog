@@ -6,11 +6,14 @@
 
 use crate::{BackendError, DispatchConfig, VyreBackend};
 use serde::{Deserialize, Serialize};
+use smallvec::SmallVec;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 use vyre_foundation::ir::Program;
+
+const MAX_PGO_TABLE_BYTES: u64 = 4 * 1024 * 1024;
 
 /// One backend latency observation for a certified operation.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -49,6 +52,27 @@ impl PgoTable {
         op_id: impl Into<String>,
         program: &Program,
         inputs: &[Vec<u8>],
+        config: &DispatchConfig,
+        backends: &[&dyn VyreBackend],
+    ) -> Result<&RouteDecision, BackendError> {
+        let borrowed: SmallVec<[&[u8]; 8]> = inputs.iter().map(Vec::as_slice).collect();
+        self.certify_op_borrowed(op_id, program, &borrowed, config, backends)
+    }
+
+    /// Borrowed-input variant of [`Self::certify_op`].
+    ///
+    /// Use this in hot certification loops so large sample buffers are not
+    /// copied just to satisfy the legacy owned-input trait method.
+    ///
+    /// # Errors
+    ///
+    /// Returns a backend error if no backend is supplied, dispatch fails, or
+    /// the measurements cannot be represented.
+    pub fn certify_op_borrowed(
+        &mut self,
+        op_id: impl Into<String>,
+        program: &Program,
+        inputs: &[&[u8]],
         config: &DispatchConfig,
         backends: &[&dyn VyreBackend],
     ) -> Result<&RouteDecision, BackendError> {
@@ -102,7 +126,7 @@ impl PgoTable {
     /// Returns a string with `Fix:` guidance when the TOML cannot be read or
     /// decoded.
     pub fn load(path: &Path) -> Result<Self, String> {
-        match fs::read_to_string(path) {
+        match read_pgo_table_bounded(path) {
             Ok(text) => toml::from_str(&text).map_err(|error| {
                 format!(
                     "failed to parse PGO table `{}`: {error}. Fix: regenerate it with the cert gate.",
@@ -157,23 +181,45 @@ pub fn default_pgo_path() -> PathBuf {
     config_base.join("vyre").join("pgo.toml")
 }
 
+fn read_pgo_table_bounded(path: &Path) -> std::io::Result<String> {
+    use std::io::Read as _;
+
+    let mut file = fs::File::open(path)?;
+    let metadata = file.metadata()?;
+    if metadata.len() > MAX_PGO_TABLE_BYTES {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("PGO table exceeds {MAX_PGO_TABLE_BYTES} byte limit"),
+        ));
+    }
+    let mut text = String::with_capacity(metadata.len() as usize);
+    file.by_ref().take(MAX_PGO_TABLE_BYTES + 1).read_to_string(&mut text)?;
+    if text.len() as u64 > MAX_PGO_TABLE_BYTES {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "PGO table exceeded bounded read limit",
+        ));
+    }
+    Ok(text)
+}
+
 /// Number of timed iterations per backend after warmup.
 const PGO_TIMED_ITERS: usize = 3;
 
 fn measure_backend(
     backend: &dyn VyreBackend,
     program: &Program,
-    inputs: &[Vec<u8>],
+    inputs: &[&[u8]],
     config: &DispatchConfig,
 ) -> Result<Duration, BackendError> {
     // Warmup: one cold dispatch to populate driver caches.
-    backend.dispatch(program, inputs, config)?;
-    // Timed: collect PGO_TIMED_ITERS samples and return the median.
-    let mut samples = Vec::with_capacity(PGO_TIMED_ITERS);
-    for _ in 0..PGO_TIMED_ITERS {
+    backend.dispatch_borrowed(program, inputs, config)?;
+    // Timed: collect the fixed sample set on the stack and return the median.
+    let mut samples = [Duration::ZERO; PGO_TIMED_ITERS];
+    for sample in &mut samples {
         let start = Instant::now();
-        backend.dispatch(program, inputs, config)?;
-        samples.push(start.elapsed());
+        backend.dispatch_borrowed(program, inputs, config)?;
+        *sample = start.elapsed();
     }
     samples.sort();
     Ok(samples[samples.len() / 2])
@@ -183,6 +229,7 @@ fn measure_backend(
 mod tests {
     use super::*;
     use crate::{BackendError, DispatchConfig};
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     struct TimedBackend {
         id: &'static str,
@@ -233,5 +280,64 @@ mod tests {
             .expect("Fix: PGO certification must measure both backends");
         assert_eq!(decision.backend, "fast");
         assert_eq!(table.fastest_backend("primitive.test.pgo"), Some("fast"));
+    }
+
+    struct BorrowCountingBackend {
+        borrowed_calls: AtomicUsize,
+        owned_calls: AtomicUsize,
+    }
+
+    impl crate::backend::private::Sealed for BorrowCountingBackend {}
+
+    impl VyreBackend for BorrowCountingBackend {
+        fn id(&self) -> &'static str {
+            "borrow-counting"
+        }
+
+        fn dispatch(
+            &self,
+            _program: &Program,
+            _inputs: &[Vec<u8>],
+            _config: &DispatchConfig,
+        ) -> Result<Vec<Vec<u8>>, BackendError> {
+            self.owned_calls.fetch_add(1, Ordering::Relaxed);
+            Ok(Vec::new())
+        }
+
+        fn dispatch_borrowed(
+            &self,
+            _program: &Program,
+            _inputs: &[&[u8]],
+            _config: &DispatchConfig,
+        ) -> Result<Vec<Vec<u8>>, BackendError> {
+            self.borrowed_calls.fetch_add(1, Ordering::Relaxed);
+            Ok(Vec::new())
+        }
+    }
+
+    #[test]
+    fn cert_gate_uses_borrowed_dispatch_path() {
+        let backend = BorrowCountingBackend {
+            borrowed_calls: AtomicUsize::new(0),
+            owned_calls: AtomicUsize::new(0),
+        };
+        let mut table = PgoTable::default();
+        let input = [1u8, 2, 3, 4];
+        table
+            .certify_op_borrowed(
+                "primitive.test.borrowed_pgo",
+                &Program::empty(),
+                &[input.as_slice()],
+                &DispatchConfig::default(),
+                &[&backend],
+            )
+            .expect("Fix: borrowed PGO certification must succeed");
+
+        assert_eq!(backend.owned_calls.load(Ordering::Relaxed), 0);
+        assert_eq!(
+            backend.borrowed_calls.load(Ordering::Relaxed),
+            PGO_TIMED_ITERS + 1,
+            "Fix: PGO must measure through dispatch_borrowed to avoid input copies"
+        );
     }
 }

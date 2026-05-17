@@ -1,6 +1,7 @@
+use crate::dialect_lookup::{dialect_lookup, OpDef};
 use crate::ir_inner::model::expr::Expr;
-use crate::ir_inner::model::program::{BufferDecl, Program};
-use crate::ir_inner::model::types::{BufferAccess, DataType};
+use crate::ir_inner::model::program::BufferDecl;
+use crate::ir_inner::model::types::DataType;
 use crate::validate::atomic_rules;
 use crate::validate::bytes_rejection;
 use crate::validate::cast::{cast_is_narrowing, cast_is_valid};
@@ -15,7 +16,7 @@ use rustc_hash::FxHashMap;
 pub(crate) fn validate_expr(
     expr: &Expr,
     buffers: &FxHashMap<&str, &BufferDecl>,
-    scope: &FxHashMap<String, Binding>,
+    scope: &FxHashMap<crate::ir::Ident, Binding>,
     options: ValidationOptions<'_>,
     report: &mut ValidationReport,
     depth_level: usize,
@@ -59,21 +60,24 @@ pub(crate) fn validate_expr(
             validate_expr(operand, buffers, scope, options, report, depth_level + 1);
             typecheck::validate_unop_operand(op, operand, buffers, scope, &mut report.errors);
         }
-        Expr::Call { op_id: _, args } => {
-            // Foundation validation cannot resolve op ids without a dialect
-            // registry (foundation does not own one). Drivers run a second
-            // registry-aware validation pass that emits V016/V020/V021/V022
-            // with full context; here we only recurse into arguments so
-            // their expression structure is still validated.
+        Expr::Call { op_id, args } => {
             for arg in args {
                 validate_expr(arg, buffers, scope, options, report, depth_level + 1);
             }
+            validate_call(
+                op_id.as_str(),
+                args,
+                buffers,
+                scope,
+                options,
+                &mut report.errors,
+            );
         }
         Expr::Fma { a, b, c } => {
             validate_expr(a, buffers, scope, options, report, depth_level + 1);
             validate_expr(b, buffers, scope, options, report, depth_level + 1);
             validate_expr(c, buffers, scope, options, report, depth_level + 1);
-            // VAL-002: Fma requires f32 operands on every input. WGSL `fma`
+            // VAL-002: Fma requires f32 operands on every input. target-text `fma`
             // (and the reference interpreter's Fma path) are defined for
             // floats; integer operands silently become (a * b + c) via
             // u32 arithmetic today, which is NOT what the node promises.
@@ -119,7 +123,7 @@ pub(crate) fn validate_expr(
             if let Some(src) = expr_type(value, buffers, scope) {
                 if target == &DataType::Bytes && src != DataType::Bytes {
                     report.errors.push(err(
-                        "V023: cast to Bytes is unsupported in WGSL lowering. Fix: use buffer load/store directly for byte data."
+                        "V023: cast to Bytes is unsupported in target-text lowering. Fix: use buffer load/store directly for byte data."
                             .to_string(),
                     ));
                 } else if !cast_is_valid(&src, target) {
@@ -141,6 +145,7 @@ pub(crate) fn validate_expr(
             index,
             expected,
             value,
+            ordering,
         } => {
             atomic_rules::validate_atomic(
                 op,
@@ -148,6 +153,7 @@ pub(crate) fn validate_expr(
                 index,
                 expected.as_deref(),
                 value,
+                *ordering,
                 buffers,
                 scope,
                 &mut report.errors,
@@ -227,6 +233,88 @@ fn validate_subgroup_expr_support(
     }
 }
 
+fn validate_call(
+    op_id: &str,
+    args: &[Expr],
+    buffers: &FxHashMap<&str, &BufferDecl>,
+    scope: &FxHashMap<crate::ir::Ident, Binding>,
+    options: ValidationOptions<'_>,
+    errors: &mut Vec<ValidationError>,
+) {
+    let lookup = if let Some(lookup) = options.dialect_lookup {
+        lookup
+    } else if let Some(lookup) = dialect_lookup() {
+        lookup
+    } else {
+        return;
+    };
+    let interned = lookup.intern_op(op_id);
+    let Some(def) = lookup.lookup(interned) else {
+        errors.push(err(format!(
+            "V016: call references unknown op `{op_id}`. Fix: register the dialect that owns `{op_id}` before validation, or inline/remove this call."
+        )));
+        return;
+    };
+    validate_call_signature(op_id, def, args, buffers, scope, errors);
+}
+
+fn validate_call_signature(
+    op_id: &str,
+    def: &OpDef,
+    args: &[Expr],
+    buffers: &FxHashMap<&str, &BufferDecl>,
+    scope: &FxHashMap<crate::ir::Ident, Binding>,
+    errors: &mut Vec<ValidationError>,
+) {
+    let expected = def.signature.inputs.len();
+    if args.len() != expected {
+        errors.push(err(format!(
+            "V020: call `{op_id}` has {} arguments but signature expects {expected}. Fix: pass exactly {expected} arguments in the order declared by the op signature.",
+            args.len()
+        )));
+        return;
+    }
+
+    for (index, (arg, param)) in args.iter().zip(def.signature.inputs.iter()).enumerate() {
+        let Some(expected_ty) = data_type_from_signature_spelling(param.ty) else {
+            errors.push(err(format!(
+                "V021: call `{op_id}` signature input `{}` uses unknown type spelling `{}`. Fix: register a foundation-known scalar/vector type spelling for this parameter or validate it in the dialect layer.",
+                param.name,
+                param.ty
+            )));
+            continue;
+        };
+        let Some(actual_ty) = expr_type(arg, buffers, scope) else {
+            continue;
+        };
+        if actual_ty != expected_ty {
+            errors.push(err(format!(
+                "V022: call `{op_id}` argument {index} (`{}`) has type `{actual_ty}` but signature expects `{expected_ty}`. Fix: cast or rewrite the argument to match the registered op signature.",
+                param.name
+            )));
+        }
+    }
+}
+
+fn data_type_from_signature_spelling(spelling: &str) -> Option<DataType> {
+    match spelling {
+        "u8" | "U8" => Some(DataType::U8),
+        "u16" | "U16" => Some(DataType::U16),
+        "u32" | "U32" => Some(DataType::U32),
+        "u64" | "U64" => Some(DataType::U64),
+        "i8" | "I8" => Some(DataType::I8),
+        "i16" | "I16" => Some(DataType::I16),
+        "i32" | "I32" => Some(DataType::I32),
+        "i64" | "I64" => Some(DataType::I64),
+        "f32" | "F32" => Some(DataType::F32),
+        "bool" | "Bool" => Some(DataType::Bool),
+        "bytes" | "Bytes" => Some(DataType::Bytes),
+        "vec2<u32>" | "Vec2U32" => Some(DataType::Vec2U32),
+        "vec4<u32>" | "Vec4U32" => Some(DataType::Vec4U32),
+        _ => None,
+    }
+}
+
 fn validate_expr_extension(
     extension: &dyn crate::ir_inner::model::expr::ExprNode,
     errors: &mut Vec<ValidationError>,
@@ -274,24 +362,19 @@ pub(crate) fn output_marker_count(buffers: &[BufferDecl]) -> usize {
     buffers.iter().filter(|buf| buf.is_output()).count()
 }
 
-#[inline]
-#[must_use]
-pub(crate) fn call_input_count(program: &Program) -> usize {
-    program
-        .buffers
-        .iter()
-        .filter(|buf| matches!(buf.access, BufferAccess::ReadOnly | BufferAccess::Uniform))
-        .count()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dialect_lookup::{
+        intern_string, private::Sealed, Category, DialectLookup, InternedOpId, LoweringTable,
+        OpDef, Signature, TypedParam,
+    };
     use crate::ir_inner::model::expr::{ExprNode, Ident};
     use crate::validate::BackendValidationCapabilities;
     use rustc_hash::FxHashMap;
     use std::any::Any;
     use std::sync::Arc;
+    use std::sync::OnceLock;
 
     #[derive(Debug)]
     struct SubgroupBackend {
@@ -318,6 +401,45 @@ mod tests {
         let scope = FxHashMap::default();
         validate_expr(&expr, &buffers, &scope, options, &mut report, 0);
         report
+    }
+
+    struct CallLookup;
+
+    impl Sealed for CallLookup {}
+
+    impl DialectLookup for CallLookup {
+        fn provider_id(&self) -> &'static str {
+            "validate.expr_rules.call_lookup"
+        }
+
+        fn intern_op(&self, name: &str) -> InternedOpId {
+            intern_string(name)
+        }
+
+        fn lookup(&self, id: InternedOpId) -> Option<&'static OpDef> {
+            (id == intern_string("test.call.u32")).then(call_op_def)
+        }
+    }
+
+    fn call_op_def() -> &'static OpDef {
+        static DEF: OnceLock<OpDef> = OnceLock::new();
+        DEF.get_or_init(|| OpDef {
+            id: "test.call.u32",
+            dialect: "test",
+            category: Category::Intrinsic,
+            signature: Signature {
+                inputs: &[TypedParam {
+                    name: "x",
+                    ty: "u32",
+                }],
+                outputs: &[],
+                attrs: &[],
+                bytes_extraction: false,
+            },
+            lowerings: LoweringTable::empty(),
+            laws: &[],
+            compose: None,
+        })
     }
 
     #[derive(Debug)]
@@ -432,6 +554,7 @@ mod tests {
                 index: Box::new(Expr::LitU32(0)),
                 expected: None,
                 value: Box::new(Expr::LitU32(1)),
+                ordering: crate::memory_model::MemoryOrdering::SeqCst,
             },
             Expr::SubgroupBallot {
                 cond: Box::new(Expr::bool(true)),
@@ -483,6 +606,40 @@ mod tests {
         assert!(
             report.errors.is_empty(),
             "supported subgroup backend must allow validation, got {:?}",
+            report.errors
+        );
+    }
+
+    #[test]
+    fn call_resolution_uses_supplied_lookup() {
+        let lookup = CallLookup;
+        let report = validate_subgroup_expr(
+            Expr::call("missing.call", vec![Expr::u32(1)]),
+            ValidationOptions::default().with_dialect_lookup(&lookup),
+        );
+        assert!(
+            report
+                .errors
+                .iter()
+                .any(|error| error.message().contains("V016")),
+            "unknown call must be resolved and rejected when lookup is supplied: {:?}",
+            report.errors
+        );
+    }
+
+    #[test]
+    fn call_signature_mismatch_uses_supplied_lookup() {
+        let lookup = CallLookup;
+        let report = validate_subgroup_expr(
+            Expr::call("test.call.u32", vec![Expr::bool(true)]),
+            ValidationOptions::default().with_dialect_lookup(&lookup),
+        );
+        assert!(
+            report
+                .errors
+                .iter()
+                .any(|error| error.message().contains("V022")),
+            "typed call mismatch must be rejected from supplied lookup: {:?}",
             report.errors
         );
     }

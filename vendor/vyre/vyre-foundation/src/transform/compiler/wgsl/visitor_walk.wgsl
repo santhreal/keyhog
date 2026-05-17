@@ -1,59 +1,50 @@
-struct Params {
-    node_count: u32,
-    root: u32,
-    max_stack: u32,
-};
+// Visitor walk — bounded post-order tree traversal primitive.
+//
+// Op id: vyre_foundation::transform::compiler::visitor_walk.
+// Soundness: Exact — explicit-stack iterative post-order walk over
+// a CSR child table; the GPU pop order matches the CPU reference
+// byte-for-byte so conform can prove identical post_order output.
+//
+// Buffers:
+//   stack          [0] = top-of-stack index, [1..] = contents
+//   child_offsets  CSR offsets into `children`
+//   children       flat child list
+//   post_order     popped nodes, in pop order
+//   post_count     [0] = number of entries written to post_order
 
-@group(0) @binding(0) var<storage, read> child_offsets: array<u32>;
-@group(0) @binding(1) var<storage, read> children: array<u32>;
-@group(0) @binding(2) var<storage, read_write> output: array<u32>;
-@group(0) @binding(3) var<storage, read_write> output_count: array<atomic<u32>>;
-@group(0) @binding(4) var<storage, read_write> status: array<atomic<u32>>;
-@group(0) @binding(5) var<uniform> params: Params;
+@group(0) @binding(0) var<storage, read>       child_offsets: array<u32>;
+@group(0) @binding(1) var<storage, read>       children:      array<u32>;
+@group(0) @binding(2) var<storage, read_write> stack:         array<u32>;
+@group(0) @binding(3) var<storage, read_write> post_order:    array<u32>;
+@group(0) @binding(4) var<storage, read_write> post_count:    array<u32>;
 
-var<workgroup> stack_node: array<u32, 256>;
-var<workgroup> stack_expanded: array<u32, 256>;
+const VISIT_STACK_EMPTY: u32 = 0xFFFFFFFFu;
 
 @compute @workgroup_size(1)
-fn compiler_primitives_visitor_walk() {
-    var sp = 1u;
-    stack_node[0] = params.root;
-    stack_expanded[0] = 0u;
-    atomicStore(&output_count[0], 0u);
-    loop {
-        if (sp == 0u) { break; }
-        sp = sp - 1u;
-        let node = stack_node[sp];
-        let expanded = stack_expanded[sp];
-        if (node >= params.node_count) {
-            atomicStore(&status[0], 1u);
-            return;
-        }
-        if (expanded == 1u) {
-            let out = atomicAdd(&output_count[0], 1u);
-            output[out] = node;
-        } else {
-            if (sp + 1u >= params.max_stack || sp + 1u >= 256u) {
-                atomicStore(&status[0], 2u);
-                return;
-            }
-            stack_node[sp] = node;
-            stack_expanded[sp] = 1u;
-            sp = sp + 1u;
-            var child = child_offsets[node + 1u];
-            let start = child_offsets[node];
-            loop {
-                if (child <= start) { break; }
-                child = child - 1u;
-                if (sp + 1u >= params.max_stack || sp + 1u >= 256u) {
-                    atomicStore(&status[0], 2u);
-                    return;
-                }
-                stack_node[sp] = children[child];
-                stack_expanded[sp] = 0u;
-                sp = sp + 1u;
-            }
-        }
+fn main() {
+    let top = stack[0u];
+    if (top == 0u) {
+        return;
     }
-    atomicStore(&status[0], 0u);
+    let node = stack[top];
+    let new_top = top - 1u;
+    stack[0u] = new_top;
+
+    let count = post_count[0u];
+    post_order[count] = node;
+    post_count[0u] = count + 1u;
+
+    let begin = child_offsets[node];
+    let end = child_offsets[node + 1u];
+    var cursor = end;
+    var write_top = new_top;
+    loop {
+        if (cursor <= begin) {
+            break;
+        }
+        cursor = cursor - 1u;
+        write_top = write_top + 1u;
+        stack[write_top] = children[cursor];
+    }
+    stack[0u] = write_top;
 }

@@ -1,9 +1,8 @@
 //! Cat-C `storage_barrier` — per-lane identity store followed by a
-//! storage-scope barrier. Since `Node::Barrier` carries no scope tag
+//! storage-scope barrier. Since `Node::Barrier { ordering: vyre::memory_model::MemoryOrdering::SeqCst }` carries no scope tag
 //! in the 0.6 IR, the distinction from `workgroup_barrier` is encoded
-//! in the op id. Backends lower to `storageBarrier` (WGSL) /
-//! `OpMemoryBarrier StorageBuffer` (SPIR-V); portable fallback emits
-//! the strongest available fence. CPU ref is a no-op on the serial
+//! in the op id. Backends lower to their target-native storage-scope
+//! fence; portable fallback emits the strongest available fence. CPU ref is a no-op on the serial
 //! interpreter.
 
 use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};

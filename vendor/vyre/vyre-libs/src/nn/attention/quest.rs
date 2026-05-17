@@ -19,7 +19,7 @@ use vyre_primitives::nn::quest_paging_passes::{
 
 const OP_ID: &str = "vyre-libs::nn::attention::quest_paging";
 
-// Naga / WGSL rejects `inf` and NaN literals, so the argmax sentinel
+// target builder / target-text rejects `inf` and NaN literals, so the argmax sentinel
 // must be a large-magnitude finite value. `f32::MIN` is the most
 // negative finite f32 — strictly less than every reachable dot-product
 // score when `query` and `page_metadata` are finite inputs.
@@ -117,8 +117,7 @@ inventory::submit! {
         expected_output: Some(|| {
             let to_f32_bytes =
                 |w: &[f32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
-            let to_u32_bytes =
-                |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+
             // scores after selection: only slots that were picked
             // (indices 2 and 1) are overwritten with SCORE_SENTINEL.
             // Indices 0 and 3 retain their pass-1 dot-product scores.
@@ -126,7 +125,107 @@ inventory::submit! {
             // io_queue[0..2] = [2, 1] (top-2 in descending score).
             // io_queue[2..4] = [0, 0] (zero-filled on pass 1).
             let io_queue = [2u32, 1, 0, 0];
-            vec![vec![to_f32_bytes(&scores), to_u32_bytes(&io_queue)]]
+            vec![vec![to_f32_bytes(&scores), crate::test_support::byte_pack::u32_bytes(&io_queue)]]
         }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use vyre_reference::value::Value;
+
+    fn f32_bytes(values: &[f32]) -> Vec<u8> {
+        values.iter().flat_map(|v| v.to_le_bytes()).collect()
+    }
+
+    fn decode_f32(bytes: &[u8]) -> Vec<f32> {
+        bytes
+            .chunks_exact(4)
+            .map(|c| f32::from_le_bytes(c.try_into().unwrap()))
+            .collect()
+    }
+
+    fn decode_u32(bytes: &[u8]) -> Vec<u32> {
+        bytes
+            .chunks_exact(4)
+            .map(|c| u32::from_le_bytes(c.try_into().unwrap()))
+            .collect()
+    }
+
+    #[test]
+    fn quest_paging_nan_in_query_produces_nan_scores() {
+        let query = [f32::NAN, 0.0];
+        let meta = [0.0f32, 0.0, 1.0, 0.0];
+        let program = quest_paging("q", "meta", "scores", "io", 2, 1, 2);
+        let outputs = vyre_reference::reference_eval(
+            &program,
+            &[
+                Value::from(f32_bytes(&query)),
+                Value::from(f32_bytes(&meta)),
+                Value::from(vec![0u8; 8]),
+                Value::from(vec![0u8; 8]),
+            ],
+        )
+        .expect("Fix: quest_paging must not panic on NaN query");
+        let scores = decode_f32(&outputs[0].to_bytes());
+        assert!(scores.iter().any(|v| v.is_nan()), "quest_paging NaN query must produce at least one NaN score");
+    }
+
+    #[test]
+    fn quest_paging_zero_pages() {
+        let query = [1.0f32, 0.0];
+        let meta = [];
+        let program = quest_paging("q", "meta", "scores", "io", 0, 0, 2);
+        let outputs = vyre_reference::reference_eval(
+            &program,
+            &[
+                Value::from(f32_bytes(&query)),
+                Value::from(vec![]),
+                Value::from(vec![]),
+                Value::from(vec![]),
+            ],
+        )
+        .expect("Fix: quest_paging num_pages=0 must not panic");
+        assert!(outputs[0].to_bytes().is_empty());
+        assert!(outputs[1].to_bytes().is_empty());
+    }
+
+    #[test]
+    fn quest_paging_single_page() {
+        let query = [1.0f32, 0.0];
+        let meta = [2.0f32, 0.0];
+        let program = quest_paging("q", "meta", "scores", "io", 1, 1, 2);
+        let outputs = vyre_reference::reference_eval(
+            &program,
+            &[
+                Value::from(f32_bytes(&query)),
+                Value::from(f32_bytes(&meta)),
+                Value::from(vec![0u8; 4]),
+                Value::from(vec![0u8; 4]),
+            ],
+        )
+        .expect("Fix: quest_paging single page must execute");
+        let io_queue = decode_u32(&outputs[1].to_bytes());
+        assert_eq!(io_queue[0], 0, "single page top-1 must be index 0");
+    }
+
+    #[test]
+    fn quest_paging_k_zero() {
+        let query = [1.0f32, 0.0];
+        let meta = [1.0f32, 0.0, 2.0, 0.0];
+        let program = quest_paging("q", "meta", "scores", "io", 2, 0, 2);
+        let outputs = vyre_reference::reference_eval(
+            &program,
+            &[
+                Value::from(f32_bytes(&query)),
+                Value::from(f32_bytes(&meta)),
+                Value::from(vec![0u8; 8]),
+                Value::from(vec![0u8; 8]),
+            ],
+        )
+        .expect("Fix: quest_paging k=0 must not panic");
+        let io_queue = decode_u32(&outputs[1].to_bytes());
+        assert_eq!(io_queue, vec![0, 0], "k=0 must zero-fill io_queue");
     }
 }

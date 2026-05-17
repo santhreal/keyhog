@@ -6,19 +6,8 @@
 
 use vyre_foundation::ir::{Expr, Node};
 
+use super::ir_util::{atomic_load_relaxed, atomic_store_relaxed};
 use super::protocol::{control, debug, opcode, ARGS_PER_SLOT};
-
-/// Emits a Relaxed atomic load.
-/// WGSL atomics are implicitly Relaxed; explicit Acquire/Release requires memory barriers.
-fn atomic_load_relaxed(buffer: &str, index: Expr) -> Expr {
-    Expr::atomic_add(buffer, index, Expr::u32(0))
-}
-
-/// Emits a Relaxed atomic store.
-/// WGSL atomics are implicitly Relaxed; explicit Acquire/Release requires memory barriers.
-fn atomic_store_relaxed(name: &str, buffer: &str, index: Expr, value: Expr) -> Node {
-    Node::let_bind(name, Expr::atomic_exchange(buffer, index, value))
-}
 
 /// Caller-supplied opcode extension wired into the megakernel at
 /// bootstrap. The `body` executes when `opcode` matches; within the
@@ -334,8 +323,8 @@ pub(crate) fn packed_slot_body(opcodes: &[OpcodeHandler]) -> Vec<Node> {
 }
 
 /// Build the claimed-slot dispatch body (opcode If-tree + custom handlers).
-pub(crate) fn claimed_slot_body(opcodes: &[OpcodeHandler]) -> Vec<Node> {
-    let mut nodes = vec![
+pub(crate) fn claimed_slot_bindings() -> Vec<Node> {
+    vec![
         Node::let_bind(
             "opcode",
             Expr::load(
@@ -376,9 +365,14 @@ pub(crate) fn claimed_slot_body(opcodes: &[OpcodeHandler]) -> Vec<Node> {
                 ),
             ),
         ),
-        Node::block(dispatch_opcode_body(opcodes)),
-        opcode_if(opcode::PACKED_SLOT, packed_slot_body(opcodes)),
-    ];
+    ]
+}
+
+/// Build the claimed-slot dispatch body (opcode If-tree + custom handlers).
+pub(crate) fn claimed_slot_body(opcodes: &[OpcodeHandler]) -> Vec<Node> {
+    let mut nodes = claimed_slot_bindings();
+    nodes.push(Node::block(dispatch_opcode_body(opcodes)));
+    nodes.push(opcode_if(opcode::PACKED_SLOT, packed_slot_body(opcodes)));
 
     // Tally progress so the host can observe done_count.
     nodes.push(Node::let_bind(
@@ -395,3 +389,6 @@ pub(crate) fn claimed_slot_body(opcodes: &[OpcodeHandler]) -> Vec<Node> {
 
     nodes
 }
+
+#[cfg(test)]
+mod tests;

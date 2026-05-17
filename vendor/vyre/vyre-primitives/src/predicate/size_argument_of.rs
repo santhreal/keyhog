@@ -1,8 +1,9 @@
-//! `size_argument_of` — arg_of, but restricted to argument nodes
-//! whose `NodeKind == Literal`.
+//! `size_argument_of` — reverse CallArg traversal for size argument
+//! candidates.
 //!
-//! One reverse CallArg traversal fused with the Literal node-kind
-//! filter so the primitive name and runtime contract stay identical.
+//! The primitive marks argument nodes whose callee is in the input
+//! frontier. Rule-level predicates own any additional node-kind
+//! filtering.
 
 use std::sync::Arc;
 
@@ -11,32 +12,23 @@ use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Progra
 
 use crate::graph::csr_backward_traverse::{BINDING_FRONTIER_IN, BINDING_FRONTIER_OUT};
 use crate::graph::csr_forward_traverse::bitset_words;
-use crate::graph::program_graph::{ProgramGraphShape, NAME_NODES};
+use crate::graph::program_graph::ProgramGraphShape;
 use crate::graph::program_graph::{NAME_EDGE_KIND_MASK, NAME_EDGE_OFFSETS, NAME_EDGE_TARGETS};
 use crate::predicate::edge_kind;
+#[cfg(feature = "inventory-registry")]
 use crate::predicate::node_kind;
 
 /// Canonical op id.
 pub const OP_ID: &str = "vyre-primitives::predicate::size_argument_of";
 
-/// Build a Program that reverse-traverses CallArg edges. Surgec
-/// chains this with `node_kind_eq(Literal)` to filter to size-argument
-/// nodes only; keeping the steps separate preserves the ≤4 loop /
-/// ≤200 node budget from Gate 1.
+/// Build a Program that reverse-traverses CallArg edges and marks
+/// argument nodes whose callees are in `frontier_in`.
 ///
-/// AUDIT_2026-04-24 F-SAO-01 (deferred): the present IR fuses the
-/// backward CallArg traversal with the `NodeKind == Literal` filter
-/// into a single kernel. That violates extend-don't-hack because
-/// a future refinement to either half forces touching both. The
-/// intended composition is `csr_backward_traverse(CALL_ARG)` →
-/// `bitset_and` with `node_kind_eq(LITERAL)`. That composition
-/// requires an intermediate bitset buffer and an extra dispatch,
-/// which vyre's current dispatcher cannot yet chain without
-/// copy-out; unwinding the fusion is tracked as a follow-up after
-/// the dispatcher learns persistent-bitset chaining. The `cpu_ref`
-/// below models the composed form so the semantic contract is
-/// documented even while the IR remains fused. See also the audit
-/// line in vyre-primitives/AUDIT_2026-04-24.md (F-SAO-01).
+/// Surgec rules own any additional node-kind predicates at the rule
+/// layer. This primitive deliberately avoids a baked-in Literal filter:
+/// allocator size arguments are often computed expressions, and
+/// filtering here would erase realistic vulnerability witnesses before
+/// rule-specific predicates can inspect them.
 #[must_use]
 pub fn size_argument_of(
     shape: ProgramGraphShape,
@@ -127,9 +119,6 @@ pub fn size_argument_of(
             ],
         ),
     ];
-    let _ = NAME_NODES; // referenced only by the removed kind filter
-    let _ = node_kind::LITERAL;
-
     let mut buffers = shape.read_only_buffers();
     buffers.push(
         BufferDecl::storage(
@@ -164,35 +153,25 @@ pub fn size_argument_of(
     )
 }
 
-/// CPU reference: reverse-traverse CallArg edges, then keep only
-/// arguments whose NodeKind is Literal.
+/// CPU reference: reverse-traverse CallArg edges and mark every caller
+/// argument whose callee bit is present in `frontier_in`.
 #[must_use]
 pub fn cpu_ref(
     node_count: u32,
-    nodes: &[u32],
+    _nodes: &[u32],
     edge_offsets: &[u32],
     edge_targets: &[u32],
     edge_kind_mask: &[u32],
     frontier_in: &[u32],
 ) -> Vec<u32> {
-    let mut args = crate::graph::csr_backward_traverse::cpu_ref(
+    crate::graph::csr_backward_traverse::cpu_ref(
         node_count,
         edge_offsets,
         edge_targets,
         edge_kind_mask,
         frontier_in,
         edge_kind::CALL_ARG,
-    );
-    for (v, kind) in nodes.iter().enumerate() {
-        if *kind != node_kind::LITERAL {
-            let word = v / 32;
-            let bit = 1u32 << (v % 32);
-            if word < args.len() {
-                args[word] &= !bit;
-            }
-        }
-    }
-    args
+    )
 }
 
 #[cfg(feature = "inventory-registry")]

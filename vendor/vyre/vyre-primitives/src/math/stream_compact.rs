@@ -31,10 +31,14 @@ pub fn stream_compact(
     live_count: &str,
     count: u32,
 ) -> Program {
-    assert!(
-        count > 0,
-        "Fix: stream_compact requires count > 0 so live_count can be derived from the final lane."
-    );
+    if count == 0 {
+        return crate::invalid_output_program(
+            OP_ID,
+            compacted,
+            DataType::U32,
+            "Fix: stream_compact requires count > 0 so live_count can be derived from the final lane.".to_string(),
+        );
+    }
     let t = Expr::InvocationId { axis: 0 };
 
     let body = vec![
@@ -82,19 +86,27 @@ pub fn stream_compact(
 /// CPU reference for stream compaction.
 #[must_use]
 pub fn cpu_ref(payloads: &[u32], flags: &[u32]) -> (Vec<u32>, u32) {
-    assert_eq!(
-        payloads.len(),
-        flags.len(),
-        "Fix: stream_compact payload and flag lengths must match."
+    let mut compacted = Vec::new();
+    let live_count = cpu_ref_into(payloads, flags, &mut compacted);
+    (compacted, live_count)
+}
+
+/// CPU reference using a caller-owned compaction buffer.
+pub fn cpu_ref_into(payloads: &[u32], flags: &[u32], compacted: &mut Vec<u32>) -> u32 {
+    compacted.clear();
+    compacted.reserve(
+        payloads
+            .iter()
+            .zip(flags.iter())
+            .filter(|(_, &flag)| flag != 0)
+            .count(),
     );
-    let live = flags.iter().filter(|&&flag| flag != 0).count();
-    let mut compacted = Vec::with_capacity(live);
     for (&payload, &flag) in payloads.iter().zip(flags.iter()) {
         if flag != 0 {
             compacted.push(payload);
         }
     }
-    (compacted, live as u32)
+    compacted.len() as u32
 }
 
 #[cfg(test)]
@@ -109,6 +121,23 @@ mod tests {
     }
 
     #[test]
+    fn cpu_ref_into_reuses_compaction_buffer() {
+        let mut compacted = Vec::with_capacity(8);
+        let ptr = compacted.as_ptr();
+        let live = cpu_ref_into(&[10, 20, 30, 40, 50], &[0, 1, 1, 0, 1], &mut compacted);
+        assert_eq!(compacted, vec![20, 30, 50]);
+        assert_eq!(live, 3);
+        assert_eq!(compacted.as_ptr(), ptr);
+    }
+
+    #[test]
+    fn cpu_ref_truncates_to_shorter_input() {
+        let (compacted, live_count) = cpu_ref(&[10, 20, 30], &[1, 0]);
+        assert_eq!(compacted, vec![10]);
+        assert_eq!(live_count, 1);
+    }
+
+    #[test]
     fn program_has_bounded_buffers_and_live_count() {
         let p = stream_compact("payloads", "flags", "offsets", "out", "live", 64);
         assert_eq!(p.workgroup_size, [256, 1, 1]);
@@ -119,8 +148,8 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "count > 0")]
-    fn zero_count_panics() {
-        let _ = stream_compact("payloads", "flags", "offsets", "out", "live", 0);
+    fn zero_count_traps() {
+        let p = stream_compact("payloads", "flags", "offsets", "out", "live", 0);
+        assert!(p.stats().trap());
     }
 }

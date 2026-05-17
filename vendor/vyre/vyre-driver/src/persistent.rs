@@ -3,7 +3,7 @@
 //! # What this is
 //!
 //! A single long-lived GPU dispatch owns a chunk of the device.
-//! Host workers push `WorkItem`s into a device-visible ring buffer
+//! Host workers push `PersistentWorkItem`s into a device-visible ring buffer
 //! via an atomic head counter; the device's persistent threads
 //! poll a tail counter and pick up items. The host waits on
 //! per-item completion markers to gather results.
@@ -17,10 +17,9 @@
 //! This module owns the **host-side ring buffer** — the atomic
 //! head/tail pair, the lock-free claim protocol, and exhaustive
 //! tests. The actual persistent GPU kernel that consumes the queue
-//! lives behind the `persistent` cargo feature and talks raw
-//! Vulkan async-compute (WGSL lacks device-side launch). The host
-//! queue is proven correct in isolation so GPU integration only
-//! worries about the shader side.
+//! lives behind the `persistent` cargo feature and talks to the owning
+//! backend's native queue API. The host queue is proven correct in isolation
+//! so device integration only worries about the kernel side.
 //!
 //! # Memory ordering
 //!
@@ -33,7 +32,19 @@
 //!   guarantees visibility across the weakest memory models we
 //!   need to support (x86, ARM, RISC-V GPU consumers).
 
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+
+/// Caller-controlled persistent-thread dispatch policy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PersistentThreadMode {
+    /// Use the persistent path when the backend advertises support.
+    #[default]
+    Auto,
+    /// Require the persistent path; fail loudly if unavailable.
+    Force,
+    /// Never use the persistent path.
+    Disable,
+}
 
 /// One scan-unit descriptor.
 ///
@@ -41,7 +52,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 /// identically on host and device.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(C)]
-pub struct WorkItem {
+pub struct PersistentWorkItem {
     /// Byte offset into the persistent input buffer.
     pub input_offset: u32,
     /// Number of bytes in this scan unit.
@@ -58,9 +69,13 @@ pub struct WorkItem {
 #[derive(Debug)]
 pub struct RingAtomics {
     /// Monotonically increasing next-slot-to-claim by a producer.
-    pub head: AtomicU32,
+    pub head: AtomicU64,
     /// Monotonically increasing next-slot-to-claim by a consumer.
-    pub tail: AtomicU32,
+    pub tail: AtomicU64,
+    /// Per-slot publication sequence. A producer writes the slot payload first
+    /// and then publishes `head + 1` here with `Release`; consumers wait for
+    /// that exact sequence before reading the packed payload.
+    pub ready: Vec<AtomicU64>,
     /// Per-slot completion marker (1 = done).
     pub done: Vec<AtomicU32>,
 }
@@ -68,10 +83,56 @@ pub struct RingAtomics {
 impl RingAtomics {
     fn new(ring_size: u32) -> Self {
         Self {
-            head: AtomicU32::new(0),
-            tail: AtomicU32::new(0),
+            head: AtomicU64::new(0),
+            tail: AtomicU64::new(0),
+            ready: (0..ring_size).map(|_| AtomicU64::new(0)).collect(),
             done: (0..ring_size).map(|_| AtomicU32::new(0)).collect(),
         }
+    }
+}
+
+#[derive(Debug)]
+struct WorkSlot {
+    lo: AtomicU64,
+    hi: AtomicU64,
+}
+
+impl WorkSlot {
+    fn new(item: PersistentWorkItem) -> Self {
+        let (lo, hi) = pack_work_item(item);
+        Self {
+            lo: AtomicU64::new(lo),
+            hi: AtomicU64::new(hi),
+        }
+    }
+
+    fn store(&self, item: PersistentWorkItem) {
+        let (lo, hi) = pack_work_item(item);
+        self.lo.store(lo, Ordering::Relaxed);
+        self.hi.store(hi, Ordering::Relaxed);
+    }
+
+    fn load(&self) -> PersistentWorkItem {
+        unpack_work_item(
+            self.lo.load(Ordering::Relaxed),
+            self.hi.load(Ordering::Relaxed),
+        )
+    }
+}
+
+fn pack_work_item(item: PersistentWorkItem) -> (u64, u64) {
+    (
+        u64::from(item.input_offset) | (u64::from(item.input_len) << 32),
+        u64::from(item.rule_set_id) | (u64::from(item.correlation) << 32),
+    )
+}
+
+fn unpack_work_item(lo: u64, hi: u64) -> PersistentWorkItem {
+    PersistentWorkItem {
+        input_offset: lo as u32,
+        input_len: (lo >> 32) as u32,
+        rule_set_id: hi as u32,
+        correlation: (hi >> 32) as u32,
     }
 }
 
@@ -80,7 +141,7 @@ impl RingAtomics {
 /// the `persistent` cargo feature.
 #[derive(Debug)]
 pub struct PersistentEngine {
-    slots: Vec<std::sync::RwLock<WorkItem>>,
+    slots: Vec<WorkSlot>,
     atomics: RingAtomics,
     ring_size: u32,
 }
@@ -90,19 +151,33 @@ impl PersistentEngine {
     /// slots. Must be a nonzero power of two so
     /// `index = slot & (cap-1)` is correct.
     pub fn new(ring_size: u32) -> Self {
-        assert!(
-            ring_size.is_power_of_two() && ring_size > 0,
-            "ring_size must be a nonzero power of two (got {ring_size})",
-        );
-        let zero = WorkItem {
+        let ring_size = ring_size
+            .checked_next_power_of_two()
+            .filter(|&size| size > 0)
+            .unwrap_or(1);
+        Self::with_valid_ring_size(ring_size)
+    }
+
+    /// Construct an engine only when the ring capacity already satisfies
+    /// the persistent-ring indexing contract.
+    pub fn try_new(ring_size: u32) -> Result<Self, String> {
+        if ring_size.is_power_of_two() && ring_size > 0 {
+            Ok(Self::with_valid_ring_size(ring_size))
+        } else {
+            Err(format!(
+                "Fix: ring_size must be a nonzero power of two, got {ring_size}."
+            ))
+        }
+    }
+
+    fn with_valid_ring_size(ring_size: u32) -> Self {
+        let zero = PersistentWorkItem {
             input_offset: 0,
             input_len: 0,
             rule_set_id: 0,
             correlation: 0,
         };
-        let slots = (0..ring_size)
-            .map(|_| std::sync::RwLock::new(zero))
-            .collect();
+        let slots = (0..ring_size).map(|_| WorkSlot::new(zero)).collect();
         Self {
             slots,
             atomics: RingAtomics::new(ring_size),
@@ -115,14 +190,14 @@ impl PersistentEngine {
         self.ring_size
     }
 
-    /// Enqueue a WorkItem. Returns `Ok(slot_index)` on success, or
+    /// Enqueue a PersistentWorkItem. Returns `Ok(slot_index)` on success, or
     /// `Err(QueueFull)` if the ring is full. Thread-safe under
     /// concurrent producers (lock-free CAS on `head`).
-    pub fn enqueue(&self, item: WorkItem) -> Result<u32, QueueFull> {
+    pub fn enqueue(&self, item: PersistentWorkItem) -> Result<u32, QueueFull> {
         loop {
             let head = self.atomics.head.load(Ordering::Acquire);
             let tail = self.atomics.tail.load(Ordering::Acquire);
-            if head.wrapping_sub(tail) >= self.ring_size {
+            if head.wrapping_sub(tail) >= u64::from(self.ring_size) {
                 return Err(QueueFull);
             }
             match self.atomics.head.compare_exchange(
@@ -132,15 +207,14 @@ impl PersistentEngine {
                 Ordering::Acquire,
             ) {
                 Ok(_) => {
-                    let slot_idx = head & (self.ring_size - 1);
-                    let Some(slot) = self.slots.get(slot_idx as usize) else {
+                    let slot_idx = (head as u32) & (self.ring_size - 1);
+                    let slot_offset = slot_idx as usize;
+                    let Some(slot) = self.slots.get(slot_offset) else {
                         return Err(QueueFull);
                     };
-                    let Ok(mut guard) = slot.write() else {
-                        return Err(QueueFull);
-                    };
-                    *guard = item;
-                    std::sync::atomic::fence(Ordering::Release);
+                    slot.store(item);
+                    self.atomics.done[slot_offset].store(0, Ordering::Release);
+                    self.atomics.ready[slot_offset].store(head.wrapping_add(1), Ordering::Release);
                     return Ok(slot_idx);
                 }
                 Err(_) => continue,
@@ -151,7 +225,7 @@ impl PersistentEngine {
     /// Consumer-side claim. Returns the next available item or
     /// `None` if the queue is empty. Thread-safe under concurrent
     /// consumers.
-    pub fn claim(&self) -> Option<WorkItem> {
+    pub fn claim(&self) -> Option<PersistentWorkItem> {
         loop {
             let head = self.atomics.head.load(Ordering::Acquire);
             let tail = self.atomics.tail.load(Ordering::Acquire);
@@ -165,11 +239,14 @@ impl PersistentEngine {
                 Ordering::Acquire,
             ) {
                 Ok(_) => {
-                    std::sync::atomic::fence(Ordering::Acquire);
-                    let slot_idx = tail & (self.ring_size - 1);
-                    let slot = self.slots.get(slot_idx as usize)?;
-                    let guard = slot.read().ok()?;
-                    return Some(*guard);
+                    let slot_idx = (tail as u32) & (self.ring_size - 1);
+                    let slot_offset = slot_idx as usize;
+                    let published = tail.wrapping_add(1);
+                    while self.atomics.ready[slot_offset].load(Ordering::Acquire) != published {
+                        std::hint::spin_loop();
+                    }
+                    let slot = self.slots.get(slot_offset)?;
+                    return Some(slot.load());
                 }
                 Err(_) => continue,
             }
@@ -186,22 +263,23 @@ impl PersistentEngine {
         self.atomics.done[slot_idx as usize].load(Ordering::Acquire) != 0
     }
 
-    /// Number of items queued but not yet claimed.
+    /// Number of items queued and pending claim.
     pub fn in_flight(&self) -> u32 {
         self.atomics
             .head
             .load(Ordering::Acquire)
             .wrapping_sub(self.atomics.tail.load(Ordering::Acquire))
+            .min(u64::from(u32::MAX)) as u32
     }
 
     /// Monotonic head counter (modulo `ring_size` = slot index).
     pub fn head(&self) -> u32 {
-        self.atomics.head.load(Ordering::Acquire)
+        self.atomics.head.load(Ordering::Acquire) as u32
     }
 
     /// Monotonic tail counter.
     pub fn tail(&self) -> u32 {
-        self.atomics.tail.load(Ordering::Acquire)
+        self.atomics.tail.load(Ordering::Acquire) as u32
     }
 }
 
@@ -223,8 +301,8 @@ mod tests {
     use std::sync::Arc;
     use std::thread;
 
-    fn item(i: u32) -> WorkItem {
-        WorkItem {
+    fn item(i: u32) -> PersistentWorkItem {
+        PersistentWorkItem {
             input_offset: i * 1024,
             input_len: 1024,
             rule_set_id: 0,
@@ -233,15 +311,16 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "power of two")]
-    fn non_power_of_two_ring_size_panics() {
-        let _ = PersistentEngine::new(7);
+    fn invalid_ring_size_has_explicit_error_api() {
+        let err = PersistentEngine::try_new(7).unwrap_err();
+        assert!(err.contains("Fix:"));
+        assert!(PersistentEngine::try_new(0).is_err());
     }
 
     #[test]
-    #[should_panic(expected = "power of two")]
-    fn zero_ring_size_panics() {
-        let _ = PersistentEngine::new(0);
+    fn infallible_constructor_normalizes_ring_size() {
+        assert_eq!(PersistentEngine::new(7).ring_size(), 8);
+        assert_eq!(PersistentEngine::new(0).ring_size(), 1);
     }
 
     #[test]
@@ -272,7 +351,8 @@ mod tests {
             eng.enqueue(item(i)).unwrap();
         }
         assert!(eng.enqueue(item(99)).is_err());
-        let _ = eng.claim().unwrap();
+        let claimed = eng.claim().unwrap();
+        assert_eq!(claimed.correlation, 0);
         assert!(eng.enqueue(item(99)).is_ok());
     }
 
@@ -294,7 +374,8 @@ mod tests {
         let eng = PersistentEngine::new(4);
         let slot = eng.enqueue(item(1)).unwrap();
         assert!(!eng.is_done(slot));
-        let _ = eng.claim().unwrap();
+        let claimed = eng.claim().unwrap();
+        assert_eq!(claimed.correlation, 1);
         eng.mark_done(slot);
         assert!(eng.is_done(slot));
     }

@@ -17,15 +17,15 @@
 //!    source bitset restricted to the `EDGE_KIND_FFI` mask. The
 //!    output ("post-cross") is exactly the set of callee-side nodes
 //!    reachable through a single cross-language edge.
-//! 2. **Free-form continuation.** Run `bitset_fixpoint`-driven BFS
-//!    from "post-cross" over the full edge mask. The fixpoint output
-//!    is the set of nodes the source can reach AFTER crossing the
-//!    language boundary at least once.
+//! 2. **Semantic continuation.** Run `bitset_fixpoint`-driven BFS
+//!    from "post-cross" over data/call/memory edges. The fixpoint
+//!    output is the set of nodes the source can reach AFTER crossing
+//!    the language boundary at least once.
 //! 3. **Sink intersection.** AND the reach with the sink bitset; the
 //!    output is non-empty iff some source reaches some sink across a
 //!    language boundary.
 //!
-//! Soundness: [`MayOver`](super::soundness::Soundness::MayOver). The
+//! Soundness: [`MayOver`](crate::dataflow::soundness::Soundness::MayOver). The
 //! BFS over-approximates calls (we model every FFI edge as
 //! reachable, even when feature flags / arch gates would prune the
 //! call site). Rules that need precision must compose with a
@@ -33,8 +33,10 @@
 
 use vyre::ir::Program;
 use vyre_foundation::execution_plan::fusion::fuse_programs;
+use vyre_foundation::ir::DataType;
 use vyre_primitives::bitset::and::bitset_and;
-use vyre_primitives::fixpoint::bitset_fixpoint::bitset_fixpoint_warm_start;
+use vyre_primitives::bitset::or::bitset_or;
+use vyre_primitives::fixpoint::bitset_fixpoint::bitset_fixpoint;
 use vyre_primitives::graph::csr_forward_traverse::{bitset_words, csr_forward_traverse};
 use vyre_primitives::graph::program_graph::ProgramGraphShape;
 #[allow(dead_code)]
@@ -42,14 +44,20 @@ pub(crate) const OP_ID: &str = "vyre-libs::dataflow::cross_language";
 
 /// Edge-kind mask reserved for FFI / cross-language CALL_ARG edges.
 /// Aligns with the `vyre_primitives::predicate::edge_kind` namespace
-/// — `0x10000` is the bit `surge_source::pipeline::merge_polyglot`
-/// stamps onto every edge produced by the FFI binding tables.
-pub const EDGE_KIND_FFI: u32 = 0x0001_0000;
+/// — this uses bit 25, outside the canonical call-argument slot and
+/// size-argument bits used by `vyre_primitives::predicate::edge_kind`.
+pub const EDGE_KIND_FFI: u32 = 1 << 25;
 
-/// Edge-kind mask covering "everything" (post-crossing flow uses any
-/// edge). The exact value mirrors `csr_forward_traverse`'s "all"
-/// dispatch convention.
-pub const EDGE_KIND_ALL: u32 = 0xFFFF_FFFF;
+const CROSS_LANGUAGE_CONTINUATION_MASK: u32 = EDGE_KIND_FFI
+    | vyre_primitives::predicate::edge_kind::ASSIGNMENT
+    | vyre_primitives::predicate::edge_kind::CALL_ARG
+    | vyre_primitives::predicate::edge_kind::RETURN
+    | vyre_primitives::predicate::edge_kind::PHI
+    | vyre_primitives::predicate::edge_kind::ALIAS
+    | vyre_primitives::predicate::edge_kind::MEM_STORE
+    | vyre_primitives::predicate::edge_kind::MEM_LOAD
+    | vyre_primitives::predicate::edge_kind::MUT_REF
+    | vyre_primitives::predicate::edge_kind::SIZE_ARG;
 
 /// Build the cross-language reach Program.
 ///
@@ -80,21 +88,39 @@ pub fn cross_language(
     // Stage 1: one BFS step from `source`, restricted to FFI edges.
     let stage_1 = csr_forward_traverse(shape, source, post_cross, EDGE_KIND_FFI);
 
-    // Stage 2: free-form BFS-to-fixpoint from `post_cross`. The seed
-    // buffer is `post_cross`; the fixpoint expands it via the warm-
-    // start primitive over any edge kind.
-    let stage_2 = bitset_fixpoint_warm_start(current, next, changed, post_cross, words);
+    // Stage 2: one semantic BFS step from the post-cross frontier.
+    // The host fixpoint driver repeats this fused Program until
+    // `changed` stays zero.
+    let stage_2_seed = bitset_or(current, post_cross, seed, words);
+    let stage_2_traverse =
+        csr_forward_traverse(shape, seed, next, CROSS_LANGUAGE_CONTINUATION_MASK);
+    let stage_2_accumulate = bitset_or(seed, next, next, words);
+    let stage_2_changed = bitset_fixpoint(current, next, changed, words);
 
     // Stage 3: intersect `current` (the converged reach) with the
     // sink bitset to produce the final answer.
-    let stage_3 = bitset_and(current, sink, out, words);
+    let stage_3 = bitset_and(next, sink, out, words);
 
-    let _ = seed; // contract slot; warm_start uses the dedicated seed.
-    crate::region::tag_program(
-        OP_ID,
-        fuse_programs(&[stage_1, stage_2, stage_3])
-            .expect("cross_language: csr+fixpoint+and fuse cleanly"),
-    )
+    let fused = match fuse_programs(&[
+        stage_1,
+        stage_2_seed,
+        stage_2_traverse,
+        stage_2_accumulate,
+        stage_2_changed,
+        stage_3,
+    ]) {
+        Ok(fused) => fused,
+        Err(error) => {
+            return crate::builder::invalid_output_program(
+                OP_ID,
+                out,
+                DataType::U32,
+                format!("Fix: cross_language failed to fuse csr + fixpoint + bitset_and: {error}"),
+            );
+        }
+    };
+
+    crate::region::tag_program(OP_ID, fused)
 }
 
 /// CPU oracle: forward reach that requires at least one FFI edge in
@@ -111,6 +137,41 @@ pub fn cpu_ref(
     source: &[u32],
     sink: &[u32],
 ) -> Vec<u32> {
+    let mut post_cross = Vec::new();
+    let mut reach = Vec::new();
+    let mut out = Vec::new();
+    cpu_ref_into(
+        node_count,
+        edge_offsets,
+        edge_targets,
+        edge_kind_mask,
+        edge_is_ffi,
+        source,
+        sink,
+        &mut post_cross,
+        &mut reach,
+        &mut out,
+    );
+    out
+}
+
+/// Caller-owned variant of [`cpu_ref`].
+///
+/// Reuses the three bitset buffers across graph queries and avoids
+/// allocating/cloning reachability state on every rule evaluation.
+#[allow(clippy::too_many_arguments)]
+pub fn cpu_ref_into(
+    node_count: u32,
+    edge_offsets: &[u32],
+    edge_targets: &[u32],
+    edge_kind_mask: &[u32],
+    edge_is_ffi: &[u32],
+    source: &[u32],
+    sink: &[u32],
+    post_cross: &mut Vec<u32>,
+    reach: &mut Vec<u32>,
+    out: &mut Vec<u32>,
+) {
     let words = ((node_count + 31) / 32) as usize;
     let test = |bs: &[u32], n: u32| -> bool {
         let w = n as usize / 32;
@@ -128,7 +189,8 @@ pub fn cpu_ref(
 
     // Stage 1: post_cross = nodes reachable from source via exactly
     // one FFI edge.
-    let mut post_cross = vec![0u32; words];
+    post_cross.clear();
+    post_cross.resize(words, 0);
     for n in 0..node_count {
         if !test(source, n) {
             continue;
@@ -140,26 +202,32 @@ pub fn cpu_ref(
             let is_ffi = edge_is_ffi.get(i).copied().unwrap_or(0);
             if (kind & EDGE_KIND_FFI) != 0 || is_ffi != 0 {
                 if let Some(&t) = edge_targets.get(i) {
-                    set(&mut post_cross, t);
+                    set(post_cross, t);
                 }
             }
         }
     }
 
     // Stage 2: BFS to fixpoint from post_cross via any edge.
-    let mut reach = post_cross.clone();
+    reach.clear();
+    reach.extend_from_slice(post_cross);
     loop {
         let mut changed = false;
         for n in 0..node_count {
-            if !test(&reach, n) {
+            if !test(reach, n) {
                 continue;
             }
             let start = edge_offsets.get(n as usize).copied().unwrap_or(0) as usize;
             let end = edge_offsets.get(n as usize + 1).copied().unwrap_or(0) as usize;
             for i in start..end {
+                let kind = edge_kind_mask.get(i).copied().unwrap_or(0);
+                let is_ffi = edge_is_ffi.get(i).copied().unwrap_or(0) != 0;
+                if (kind & CROSS_LANGUAGE_CONTINUATION_MASK) == 0 && !is_ffi {
+                    continue;
+                }
                 if let Some(&t) = edge_targets.get(i) {
-                    if !test(&reach, t) {
-                        set(&mut reach, t);
+                    if !test(reach, t) {
+                        set(reach, t);
                         changed = true;
                     }
                 }
@@ -171,11 +239,11 @@ pub fn cpu_ref(
     }
 
     // Stage 3: reach ∩ sink.
-    let mut out = vec![0u32; words];
+    out.clear();
+    out.resize(words, 0);
     for w in 0..words {
         out[w] = reach.get(w).copied().unwrap_or(0) & sink.get(w).copied().unwrap_or(0);
     }
-    out
 }
 
 /// Soundness marker for [`cross_language`].
@@ -218,6 +286,26 @@ mod tests {
             &sink,
         );
         assert!(out[0] & (1 << 2) != 0, "sink should be reached: {out:?}");
+    }
+
+    #[test]
+    fn call_arg_slot_zero_is_not_ffi() {
+        let edge_offsets = vec![0, 1, 1];
+        let edge_targets = vec![1u32];
+        let edge_kind_mask = vec![vyre_primitives::predicate::edge_kind::CALL_ARG_0];
+        let edge_is_ffi = vec![0u32];
+        let source = one(0);
+        let sink = one(1);
+        let out = cpu_ref(
+            2,
+            &edge_offsets,
+            &edge_targets,
+            &edge_kind_mask,
+            &edge_is_ffi,
+            &source,
+            &sink,
+        );
+        assert_eq!(out, vec![0u32], "CALL_ARG_0 must not collide with FFI");
     }
 
     #[test]
@@ -306,6 +394,40 @@ mod tests {
             &sink,
         );
         assert!(out[0] & (1 << 3) != 0, "distant sink reachable: {out:?}");
+    }
+
+    #[test]
+    fn cpu_ref_into_reuses_reachability_buffers() {
+        let edge_offsets = vec![0, 1, 2, 2];
+        let edge_targets = vec![1u32, 2];
+        let edge_kind_mask = vec![EDGE_KIND_FFI, 0x1];
+        let edge_is_ffi = vec![1u32, 0];
+        let source = one(0);
+        let sink = one(2);
+        let mut post_cross = Vec::with_capacity(8);
+        let post_ptr = post_cross.as_ptr();
+        let mut reach = Vec::with_capacity(8);
+        let reach_ptr = reach.as_ptr();
+        let mut out = Vec::with_capacity(8);
+        let out_ptr = out.as_ptr();
+
+        cpu_ref_into(
+            3,
+            &edge_offsets,
+            &edge_targets,
+            &edge_kind_mask,
+            &edge_is_ffi,
+            &source,
+            &sink,
+            &mut post_cross,
+            &mut reach,
+            &mut out,
+        );
+
+        assert_eq!(post_cross.as_ptr(), post_ptr);
+        assert_eq!(reach.as_ptr(), reach_ptr);
+        assert_eq!(out.as_ptr(), out_ptr);
+        assert!(out[0] & (1 << 2) != 0);
     }
 
     #[test]

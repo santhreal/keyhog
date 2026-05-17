@@ -5,7 +5,7 @@
 //! boolean-matrix and reachability kernels can specialize the LUT once, then
 //! replace branchy byte logic with coalesced table loads.
 
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 use vyre_foundation::ir::model::expr::Ident;
 use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
@@ -48,6 +48,26 @@ pub fn binary_byte_lut(op: BooleanTileOp) -> Vec<u32> {
         }
     }
     table
+}
+
+/// Reuse a process-wide LUT for the standard Boolean byte-tile operations.
+///
+/// The Method-of-Four-Russians table is 65,536 `u32`s. Rebuilding it for every
+/// rule batch or graph shard is pure allocator and cache churn, so common
+/// operations share one immutable table per process.
+#[must_use]
+pub fn cached_binary_byte_lut(op: BooleanTileOp) -> &'static [u32] {
+    static AND: LazyLock<Vec<u32>> = LazyLock::new(|| binary_byte_lut(BooleanTileOp::And));
+    static OR: LazyLock<Vec<u32>> = LazyLock::new(|| binary_byte_lut(BooleanTileOp::Or));
+    static XOR: LazyLock<Vec<u32>> = LazyLock::new(|| binary_byte_lut(BooleanTileOp::Xor));
+    static AND_NOT: LazyLock<Vec<u32>> = LazyLock::new(|| binary_byte_lut(BooleanTileOp::AndNot));
+
+    match op {
+        BooleanTileOp::And => AND.as_slice(),
+        BooleanTileOp::Or => OR.as_slice(),
+        BooleanTileOp::Xor => XOR.as_slice(),
+        BooleanTileOp::AndNot => AND_NOT.as_slice(),
+    }
 }
 
 /// Build a Program: `out[w] = lut[(lhs_byte << 8) | rhs_byte]` per byte lane.
@@ -132,21 +152,27 @@ pub fn four_russians_apply_byte_lut(
 /// CPU reference for [`four_russians_apply_byte_lut`].
 #[must_use]
 pub fn cpu_ref(lhs: &[u32], rhs: &[u32], lut: &[u32]) -> Vec<u32> {
-    lhs.iter()
-        .zip(rhs.iter())
-        .map(|(left, right)| {
-            let mut out = 0u32;
-            for lane in 0..4 {
-                let shift = lane * 8;
-                let left_byte = (left >> shift) & 0xFF;
-                let right_byte = (right >> shift) & 0xFF;
-                let idx = ((left_byte << 8) | right_byte) as usize;
-                let byte = lut.get(idx).copied().unwrap_or_default() & 0xFF;
-                out |= byte << shift;
-            }
-            out
-        })
-        .collect()
+    let mut out = Vec::new();
+    cpu_ref_into(lhs, rhs, lut, &mut out);
+    out
+}
+
+/// CPU reference for [`four_russians_apply_byte_lut`] into caller-owned storage.
+pub fn cpu_ref_into(lhs: &[u32], rhs: &[u32], lut: &[u32], out: &mut Vec<u32>) {
+    out.clear();
+    out.reserve(lhs.len().min(rhs.len()));
+    out.extend(lhs.iter().zip(rhs.iter()).map(|(left, right)| {
+        let mut word = 0u32;
+        for lane in 0..4 {
+            let shift = lane * 8;
+            let left_byte = (left >> shift) & 0xFF;
+            let right_byte = (right >> shift) & 0xFF;
+            let idx = ((left_byte << 8) | right_byte) as usize;
+            let byte = lut.get(idx).copied().unwrap_or_default() & 0xFF;
+            word |= byte << shift;
+        }
+        word
+    }));
 }
 
 #[cfg(feature = "inventory-registry")]

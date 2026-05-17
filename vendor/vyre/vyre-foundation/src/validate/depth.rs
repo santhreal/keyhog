@@ -60,8 +60,7 @@ pub fn check_expr_depth(depth: usize, errors: &mut Vec<ValidationError>) -> bool
 /// `Err(depth)` if the limit is exceeded.
 #[inline]
 #[must_use]
-pub fn max_call_depth(op_id: &str, depth: usize) -> Result<usize, usize> {
-    let _ = op_id;
+pub fn max_call_depth(_op_id: &str, depth: usize) -> Result<usize, usize> {
     if depth > DEFAULT_MAX_CALL_DEPTH {
         return Err(depth);
     }
@@ -72,4 +71,62 @@ pub fn max_call_depth(op_id: &str, depth: usize) -> Result<usize, usize> {
     // before validation. See `vyre-driver::pipeline::compile` for the full
     // call-depth walk that uses the DialectRegistry.
     Ok(depth)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn check_limits_within_bounds_no_error() {
+        let mut limits = LimitState::default();
+        let mut errors = Vec::new();
+        check_limits(&mut limits, 5, &mut errors);
+        assert!(errors.is_empty());
+        assert_eq!(limits.node_count, 1);
+    }
+
+    #[test]
+    fn check_limits_nesting_depth_overflow() {
+        let mut limits = LimitState::default();
+        let mut errors = Vec::new();
+        check_limits(&mut limits, DEFAULT_MAX_NESTING_DEPTH + 1, &mut errors);
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].message().contains("V018"));
+    }
+
+    #[test]
+    fn check_limits_nesting_only_reports_once() {
+        let mut limits = LimitState::default();
+        let mut errors = Vec::new();
+        check_limits(&mut limits, DEFAULT_MAX_NESTING_DEPTH + 1, &mut errors);
+        check_limits(&mut limits, DEFAULT_MAX_NESTING_DEPTH + 2, &mut errors);
+        assert_eq!(errors.len(), 1, "nesting should only be reported once");
+    }
+
+    #[test]
+    fn check_expr_depth_within_bounds() {
+        let mut errors = Vec::new();
+        assert!(check_expr_depth(100, &mut errors));
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn check_expr_depth_overflow() {
+        let mut errors = Vec::new();
+        assert!(!check_expr_depth(DEFAULT_MAX_EXPR_DEPTH + 1, &mut errors));
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].message().contains("V033"));
+    }
+
+    #[test]
+    fn max_call_depth_within_bounds() {
+        assert!(max_call_depth("my_op", 10).is_ok());
+    }
+
+    #[test]
+    fn max_call_depth_exceeded() {
+        let result = max_call_depth("my_op", DEFAULT_MAX_CALL_DEPTH + 1);
+        assert!(result.is_err());
+    }
 }

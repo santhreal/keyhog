@@ -5,7 +5,7 @@
 //! a function's return / global / heap-store sites. Exposed as a
 //! per-node bitset for surgec rules to read.
 //!
-//! Soundness: [`MayOver`](super::soundness::Soundness::MayOver) — the
+//! Soundness: `MayOver` — the
 //! points-to is sound (over-approximates), so the escape set is sound.
 
 use vyre::ir::Program;

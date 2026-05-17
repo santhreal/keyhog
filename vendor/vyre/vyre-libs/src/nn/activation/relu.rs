@@ -59,3 +59,75 @@ inventory::submit! {
         ]]),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use vyre_reference::value::Value;
+
+    fn u32_bytes(values: &[u32]) -> Vec<u8> {
+        values.iter().flat_map(|v| v.to_le_bytes()).collect()
+    }
+
+    #[test]
+    fn relu_empty_tensor_produces_no_panic() {
+        let program = relu("input", "output", 0);
+        let outputs = vyre_reference::reference_eval(
+            &program,
+            &[Value::from(vec![]), Value::from(vec![])],
+        )
+        .expect("Fix: relu n=0 must not panic");
+        assert!(outputs[0].to_bytes().is_empty());
+    }
+
+    #[test]
+    fn relu_single_element_identity() {
+        let input = [42u32];
+        let program = relu("input", "output", 1);
+        let outputs = vyre_reference::reference_eval(
+            &program,
+            &[Value::from(u32_bytes(&input)), Value::from(vec![0u8; 4])],
+        )
+        .expect("Fix: relu single element must execute");
+        let out: Vec<u32> = outputs[0]
+            .to_bytes()
+            .chunks_exact(4)
+            .map(|c| u32::from_le_bytes(c.try_into().unwrap()))
+            .collect();
+        assert_eq!(out, vec![42]);
+    }
+
+    #[test]
+    fn relu_all_zeros_identity() {
+        let input = [0u32, 0, 0, 0];
+        let program = relu("input", "output", 4);
+        let outputs = vyre_reference::reference_eval(
+            &program,
+            &[Value::from(u32_bytes(&input)), Value::from(vec![0u8; 16])],
+        )
+        .expect("Fix: relu all-zeros must execute");
+        let out: Vec<u32> = outputs[0]
+            .to_bytes()
+            .chunks_exact(4)
+            .map(|c| u32::from_le_bytes(c.try_into().unwrap()))
+            .collect();
+        assert_eq!(out, vec![0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn relu_all_max_u32_identity() {
+        let input = [u32::MAX; 4];
+        let program = relu("input", "output", 4);
+        let outputs = vyre_reference::reference_eval(
+            &program,
+            &[Value::from(u32_bytes(&input)), Value::from(vec![0u8; 16])],
+        )
+        .expect("Fix: relu all-max-u32 must execute");
+        let out: Vec<u32> = outputs[0]
+            .to_bytes()
+            .chunks_exact(4)
+            .map(|c| u32::from_le_bytes(c.try_into().unwrap()))
+            .collect();
+        assert_eq!(out, vec![u32::MAX; 4]);
+    }
+}

@@ -51,22 +51,7 @@ impl FusionCertificate {
 }
 
 fn blake3_program(program: &Program) -> [u8; 32] {
-    // VYRE_OPTIMIZER audit CRIT-02: unserializable programs must
-    // NOT all collide to [0; 32]. Domain-separated error digest —
-    // same pattern as `optimizer::fingerprint_program` — so two
-    // distinct unserializable programs produce distinct digests
-    // and the fusion certificate remains auditable.
-    const BLAKE3_ERROR_SENTINEL: &[u8] =
-        b"vyre-foundation::optimizer::fusion_cert::blake3_program::to_wire_failed";
-    match program.to_wire() {
-        Ok(bytes) => *blake3::hash(&bytes).as_bytes(),
-        Err(err) => {
-            let mut hasher = blake3::Hasher::new();
-            hasher.update(BLAKE3_ERROR_SENTINEL);
-            hasher.update(err.to_string().as_bytes());
-            *hasher.finalize().as_bytes()
-        }
-    }
+    program.fingerprint()
 }
 
 #[cfg(test)]

@@ -1,13 +1,16 @@
 //! WGSL-specific dispatch helpers for the wgpu backend.
 //!
 //! Raw WGSL is a property of the wgpu implementation, not the substrate-neutral
-//! [`vyre::VyreBackend`] contract.
+//! [`vyre_driver::VyreBackend`] contract.
 
 use std::sync::Arc;
+
+use dashmap::mapref::entry::Entry;
 
 use crate::engine::record_and_readback::{record_and_readback, DispatchLabels, RecordAndReadback};
 use crate::pipeline::{BufferBindingInfo, OutputBindingLayout, OutputLayout};
 use crate::WgpuBackend;
+use vyre_emit_naga::program::bind_group_for;
 use vyre_foundation::ir::{BufferAccess, DataType};
 
 impl WgpuBackend {
@@ -30,13 +33,27 @@ impl WgpuBackend {
         let device_queue = self.current_device_queue();
         let (device, _queue) = &*device_queue;
 
-        let pipeline = crate::runtime::compile_compute_pipeline(
-            device,
-            "vyre backend dispatch_wgsl",
-            wgsl,
-            "main",
-        )
-        .map_err(|error| error.to_string())?;
+        let cache_key = dispatch_wgsl_pipeline_cache_key(wgsl, "main");
+        let pipeline = if let Some(hit) = self.wgsl_dispatch_pipeline_cache.get(&cache_key) {
+            Arc::clone(hit.value())
+        } else {
+            let compiled = Arc::new(
+                crate::runtime::compile_compute_pipeline(
+                    device,
+                    "vyre backend dispatch_wgsl",
+                    wgsl,
+                    "main",
+                )
+                .map_err(|error| error.to_string())?,
+            );
+            match self.wgsl_dispatch_pipeline_cache.entry(cache_key) {
+                Entry::Occupied(hit) => Arc::clone(hit.get()),
+                Entry::Vacant(slot) => {
+                    slot.insert(Arc::clone(&compiled));
+                    compiled
+                }
+            }
+        };
 
         let output_word_count = output_size
             .checked_add(3)
@@ -61,7 +78,7 @@ impl WgpuBackend {
         })?;
         let params = [input_len_u32, output_len_u32, 0u32, 0u32];
         let params_bytes = bytemuck::try_cast_slice(&params).map_err(|error| {
-            vyre::BackendError::new(format!(
+            vyre_driver::BackendError::new(format!(
                 "WGSL dispatch params could not be viewed as bytes: {error}. Fix: keep dispatch parameter buffers aligned to u32."
             ))
             .into_message()
@@ -76,12 +93,12 @@ impl WgpuBackend {
         let buffer_bindings = [
             BufferBindingInfo {
                 internal_trap: false,
-                group: crate::lowering::bind_group_for(vyre::ir::MemoryKind::Readonly),
+                group: bind_group_for(vyre_foundation::ir::MemoryKind::Readonly),
                 binding: 0,
                 name: Arc::from("input"),
                 access: BufferAccess::ReadOnly,
-                kind: vyre::ir::MemoryKind::Readonly,
-                hints: vyre::ir::MemoryHints::default(),
+                kind: vyre_foundation::ir::MemoryKind::Readonly,
+                hints: vyre_foundation::ir::MemoryHints::default(),
                 element: DataType::U32,
                 count: u32::try_from(input_word_count).unwrap_or(u32::MAX),
                 is_output: false,
@@ -89,12 +106,12 @@ impl WgpuBackend {
             },
             BufferBindingInfo {
                 internal_trap: false,
-                group: crate::lowering::bind_group_for(vyre::ir::MemoryKind::Global),
+                group: bind_group_for(vyre_foundation::ir::MemoryKind::Global),
                 binding: 1,
                 name: Arc::from("output"),
                 access: BufferAccess::ReadWrite,
-                kind: vyre::ir::MemoryKind::Global,
-                hints: vyre::ir::MemoryHints::default(),
+                kind: vyre_foundation::ir::MemoryKind::Global,
+                hints: vyre_foundation::ir::MemoryHints::default(),
                 element: DataType::U32,
                 count: u32::try_from(output_word_count).unwrap_or(u32::MAX),
                 is_output: true,
@@ -102,12 +119,12 @@ impl WgpuBackend {
             },
             BufferBindingInfo {
                 internal_trap: false,
-                group: crate::lowering::bind_group_for(vyre::ir::MemoryKind::Uniform),
+                group: bind_group_for(vyre_foundation::ir::MemoryKind::Uniform),
                 binding: 2,
                 name: Arc::from("params"),
                 access: BufferAccess::Uniform,
-                kind: vyre::ir::MemoryKind::Uniform,
-                hints: vyre::ir::MemoryHints::default(),
+                kind: vyre_foundation::ir::MemoryKind::Uniform,
+                hints: vyre_foundation::ir::MemoryHints::default(),
                 element: DataType::U32,
                 count: 4,
                 is_output: false,
@@ -119,7 +136,7 @@ impl WgpuBackend {
             .map(|g| Arc::new(pipeline.get_bind_group_layout(g)))
             .collect();
         let inputs = [input, params_bytes];
-        let output_bindings = [OutputBindingLayout {
+        let output_bindings: Arc<[OutputBindingLayout]> = Arc::from([OutputBindingLayout {
             binding: 1,
             name: Arc::from("output"),
             layout: OutputLayout {
@@ -130,12 +147,15 @@ impl WgpuBackend {
                 trim_start: 0,
             },
             word_count: output_word_count,
-        }];
+        }]);
+        let dispatch_arena = self.dispatch_arena_snapshot();
         let outputs = record_and_readback(RecordAndReadback {
             device_queue: &device_queue,
-            pool: self.dispatch_arena.pool(),
-            pipeline: &pipeline,
+            pool: dispatch_arena.pool(),
+            readback_rings: None,
+            pipeline: pipeline.as_ref(),
             bind_group_layouts: &bind_group_layouts,
+            bind_group_cache: None,
             buffer_bindings: &buffer_bindings,
             inputs: &inputs,
             output_bindings: &output_bindings,
@@ -149,6 +169,7 @@ impl WgpuBackend {
                 compute: "vyre backend dispatch_wgsl compute",
             },
             iterations: 1,
+            timestamp_profile: false,
         })
         .map_err(|error| error.into_message())?;
 
@@ -156,5 +177,69 @@ impl WgpuBackend {
             .into_iter()
             .next()
             .ok_or_else(|| "WGSL dispatch produced no output. Fix: declare binding(1) as the output storage buffer.".to_string())
+    }
+}
+
+fn dispatch_wgsl_pipeline_cache_key(wgsl: &str, entry_point: &str) -> [u8; 32] {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"vyre-wgpu.dispatch_wgsl.pipeline.v1");
+    hasher.update(&(entry_point.len() as u64).to_le_bytes());
+    hasher.update(entry_point.as_bytes());
+    hasher.update(&(wgsl.len() as u64).to_le_bytes());
+    hasher.update(wgsl.as_bytes());
+    *hasher.finalize().as_bytes()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dispatch_wgsl_reuses_backend_pipeline_cache() {
+        let Ok(backend) = WgpuBackend::acquire() else {
+            panic!("Fix: WGPU dispatch_wgsl cache test requires a live GPU adapter");
+        };
+        let wgsl = r#"
+@group(0) @binding(0) var<storage, read> input: array<u32>;
+@group(0) @binding(1) var<storage, read_write> output: array<u32>;
+@group(1) @binding(2) var<uniform> params: vec4<u32>;
+
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    if (gid.x >= params.y) {
+        return;
+    }
+    output[gid.x] = input[gid.x] + 1u;
+}
+"#;
+        let input: Vec<u8> = [41_u32, 99_u32]
+            .into_iter()
+            .flat_map(u32::to_le_bytes)
+            .collect();
+
+        let first = backend
+            .dispatch_wgsl(wgsl, &input, 8, 64)
+            .expect("Fix: first raw WGSL dispatch must compile and run");
+        let second = backend
+            .dispatch_wgsl(wgsl, &input, 8, 64)
+            .expect("Fix: second raw WGSL dispatch must reuse the cached pipeline and run");
+
+        assert_eq!(first, second);
+        assert_eq!(first, [42_u32, 100_u32].as_slice().as_bytes());
+        assert_eq!(
+            backend.wgsl_dispatch_pipeline_cache.len(),
+            1,
+            "Fix: identical dispatch_wgsl source must compile once per backend instance"
+        );
+    }
+
+    trait U32SliceBytes {
+        fn as_bytes(&self) -> &[u8];
+    }
+
+    impl U32SliceBytes for [u32] {
+        fn as_bytes(&self) -> &[u8] {
+            bytemuck::cast_slice(self)
+        }
     }
 }

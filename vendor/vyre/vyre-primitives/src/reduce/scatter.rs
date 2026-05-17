@@ -38,13 +38,17 @@ pub const OP_ID: &str = "vyre-primitives::reduce::scatter";
 /// Build a Program: `dst[indices[i]] = src[i]` for every `i < count`
 /// where `indices[i] < count`.
 ///
-/// # Panics
-///
-/// Panics if `count == 0` — a zero-element scatter has no valid
-/// output buffer and would make every dispatch a no-op.
+/// Invalid `count == 0` lowers to an explicit trap program.
 #[must_use]
 pub fn scatter(src: &str, indices: &str, dst: &str, count: u32) -> Program {
-    assert!(count > 0, "Fix: scatter requires count > 0, got {count}.");
+    if count == 0 {
+        return crate::invalid_output_program(
+            OP_ID,
+            dst,
+            DataType::U32,
+            format!("Fix: scatter requires count > 0, got {count}."),
+        );
+    }
 
     let t = Expr::InvocationId { axis: 0 };
 
@@ -81,22 +85,27 @@ pub fn scatter(src: &str, indices: &str, dst: &str, count: u32) -> Program {
 
 /// CPU reference.
 ///
-/// Returns a `Vec<u32>` of length `dst_len`.  Out-of-range indices
-/// **panic** so that conformance tests with invalid data fail loudly
-/// rather than silently producing wrong results.
+/// Returns a `Vec<u32>` of length `dst_len`. Out-of-range indices are
+/// ignored, matching the guarded GPU store contract.
 #[must_use]
 pub fn cpu_ref(src: &[u32], indices: &[u32], dst_len: usize) -> Vec<u32> {
-    let mut dst = vec![0u32; dst_len];
+    let mut dst = Vec::new();
+    cpu_ref_into(src, indices, dst_len, &mut dst);
+    dst
+}
+
+/// CPU reference into caller-owned destination storage.
+pub fn cpu_ref_into(src: &[u32], indices: &[u32], dst_len: usize, dst: &mut Vec<u32>) {
+    dst.clear();
+    dst.resize(dst_len, 0);
     for (i, &idx) in indices.iter().enumerate() {
         let j = idx as usize;
-        assert!(
-            j < dst.len(),
-            "Fix: scatter index {idx} out of bounds for dst length {}.",
-            dst.len()
-        );
-        dst[j] = src[i];
+        if j < dst.len() {
+            if let Some(&value) = src.get(i) {
+                dst[j] = value;
+            }
+        }
     }
-    dst
 }
 
 #[cfg(feature = "inventory-registry")]
@@ -128,6 +137,18 @@ mod tests {
         let src = &[10u32, 20, 30, 40];
         let indices = &[3u32, 0, 2, 1];
         assert_eq!(cpu_ref(src, indices, 4), vec![20, 40, 30, 10]);
+    }
+
+    #[test]
+    fn cpu_ref_into_reuses_destination() {
+        let mut dst = Vec::with_capacity(8);
+        cpu_ref_into(&[10, 20, 30, 40], &[3, 0, 2, 1], 4, &mut dst);
+        let capacity = dst.capacity();
+        assert_eq!(dst, vec![20, 40, 30, 10]);
+
+        cpu_ref_into(&[7, 8], &[1, 3], 4, &mut dst);
+        assert_eq!(dst.capacity(), capacity);
+        assert_eq!(dst, vec![0, 7, 0, 8]);
     }
 
     #[test]
@@ -166,19 +187,17 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "out of bounds")]
-    fn cpu_ref_panics_on_out_of_bounds() {
+    fn cpu_ref_ignores_out_of_bounds() {
         let src = &[1u32, 2, 3];
         let indices = &[0u32, 5]; // 5 is out of bounds
-        let _ = cpu_ref(src, indices, 4);
+        assert_eq!(cpu_ref(src, indices, 4), vec![1, 0, 0, 0]);
     }
 
     #[test]
-    #[should_panic(expected = "out of bounds")]
-    fn cpu_ref_panics_on_max_u32_index() {
+    fn cpu_ref_ignores_max_u32_index() {
         let src = &[1u32];
         let indices = &[u32::MAX];
-        let _ = cpu_ref(src, indices, 2);
+        assert_eq!(cpu_ref(src, indices, 2), vec![0, 0]);
     }
 
     #[test]
@@ -198,9 +217,9 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "count > 0")]
-    fn zero_count_panics() {
-        let _ = scatter("src", "indices", "dst", 0);
+    fn zero_count_traps() {
+        let p = scatter("src", "indices", "dst", 0);
+        assert!(p.stats().trap());
     }
 
     #[test]

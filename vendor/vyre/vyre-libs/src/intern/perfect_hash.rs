@@ -25,8 +25,7 @@
 //! GPU consumers upload once and lookup via subgroup-parallel
 //! evaluation.
 
-use std::collections::HashSet;
-
+use rustc_hash::FxHashSet;
 /// Space-factor α: table size = ⌈n × α⌉. 1.23 is the CHD paper's
 /// recommended sweet spot for 1k..1M-entry corpora.
 const ALPHA: f64 = 1.23;
@@ -46,7 +45,7 @@ const MAX_DISPLACEMENT_TRIES: u32 = 1_000_000;
 const MAX_SALT_RETRIES: u32 = 16;
 
 /// A constructed perfect hash table.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct PerfectHash {
     seed1: u64,
     seed2: u64,
@@ -54,19 +53,6 @@ pub struct PerfectHash {
     key_hashes: Vec<u64>,
     values: Vec<u32>,
     len: usize,
-}
-
-impl Default for PerfectHash {
-    fn default() -> Self {
-        Self {
-            seed1: 0,
-            seed2: 0,
-            displacement: Vec::new(),
-            key_hashes: Vec::new(),
-            values: Vec::new(),
-            len: 0,
-        }
-    }
 }
 
 impl PerfectHash {
@@ -129,17 +115,14 @@ impl PerfectHash {
 
 /// Build a CHD perfect hash from `(key, value)` pairs.
 ///
-/// Panics if construction fails (extremely rare — practically only
-/// on duplicate keys). Use [`try_build_chd`] for a fallible API.
+/// Returns an empty hash if construction fails. Use [`try_build_chd`]
+/// when the caller needs diagnostics for duplicate or adversarial keys.
 pub fn build_chd<I, S>(entries: I) -> PerfectHash
 where
     I: IntoIterator<Item = (S, u32)>,
     S: AsRef<str>,
 {
-    try_build_chd(entries).expect(
-        "build_chd: construction failed. Input likely contains \
-         duplicate keys. Use try_build_chd for a fallible API.",
-    )
+    try_build_chd(entries).unwrap_or_default()
 }
 
 /// Fallible variant of [`build_chd`].
@@ -158,7 +141,8 @@ where
     }
 
     // Dedupe check.
-    let mut seen = HashSet::with_capacity(pairs.len());
+    let mut seen = FxHashSet::default();
+    seen.reserve(pairs.len());
     for (k, _) in &pairs {
         if !seen.insert(k.as_str()) {
             return Err(BuildError::DuplicateKey(k.clone()));
@@ -183,24 +167,39 @@ fn try_build_with_salt(pairs: &[(String, u32)], salt: u64) -> Option<PerfectHash
         .wrapping_mul(0xBF58_476D_1CE4_E5B9)
         .wrapping_add(0xDEAD_BEEF_CAFE_BABE);
 
-    // Bucket each key by hash1.
-    let mut buckets: Vec<Vec<usize>> = vec![Vec::new(); n_buckets];
+    // Bucket each key by hash1 without allocating one Vec per bucket.
+    let mut bucket_offsets = vec![0usize; n_buckets + 1];
+    for (k, _) in pairs {
+        let h = hash_with_seed(k.as_bytes(), seed1) as usize;
+        bucket_offsets[h % n_buckets + 1] += 1;
+    }
+    for i in 1..bucket_offsets.len() {
+        bucket_offsets[i] += bucket_offsets[i - 1];
+    }
+    let mut bucket_cursor = bucket_offsets[..n_buckets].to_vec();
+    let mut bucket_items = vec![0usize; n];
     for (i, (k, _)) in pairs.iter().enumerate() {
         let h = hash_with_seed(k.as_bytes(), seed1) as usize;
-        buckets[h % n_buckets].push(i);
+        let bucket = h % n_buckets;
+        let slot = bucket_cursor[bucket];
+        bucket_items[slot] = i;
+        bucket_cursor[bucket] += 1;
     }
 
     // Process buckets in descending-size order — hardest first.
     let mut bucket_order: Vec<usize> = (0..n_buckets).collect();
-    bucket_order.sort_by_key(|&b| std::cmp::Reverse(buckets[b].len()));
+    bucket_order.sort_by_key(|&b| std::cmp::Reverse(bucket_offsets[b + 1] - bucket_offsets[b]));
 
     let mut displacement = vec![0_u32; n_buckets];
     let mut key_hashes = vec![0_u64; table_size];
     let mut values = vec![0_u32; table_size];
     let mut occupied = vec![false; table_size];
+    let mut candidate_scratch = vec![false; table_size];
+    let mut candidate_slots = Vec::new();
 
     'bucket: for b in bucket_order {
-        if buckets[b].is_empty() {
+        let bucket = &bucket_items[bucket_offsets[b]..bucket_offsets[b + 1]];
+        if bucket.is_empty() {
             continue;
         }
         // PHASE5_ASTWALK MEDIUM: previous `candidate_slots.contains`
@@ -211,11 +210,11 @@ fn try_build_with_salt(pairs: &[(String, u32)], salt: u64) -> Option<PerfectHash
         // keeps the check O(1). The scratch vec is reused across
         // displacement tries, which is why we zero the touched
         // slots rather than reallocating.
-        let mut candidate_scratch = vec![false; table_size];
         for disp in 0..MAX_DISPLACEMENT_TRIES {
-            let mut candidate_slots: Vec<usize> = Vec::with_capacity(buckets[b].len());
+            candidate_slots.clear();
+            candidate_slots.reserve(bucket.len());
             let mut ok = true;
-            for &ki in &buckets[b] {
+            for &ki in bucket {
                 let key = pairs[ki].0.as_bytes();
                 let h2 = hash_with_seed(key, seed2.wrapping_add(disp as u64));
                 let slot = (h2 as usize) % table_size;
@@ -233,7 +232,7 @@ fn try_build_with_salt(pairs: &[(String, u32)], salt: u64) -> Option<PerfectHash
             }
             if ok {
                 displacement[b] = disp;
-                for (ki, slot) in buckets[b].iter().zip(candidate_slots.iter()) {
+                for (ki, slot) in bucket.iter().zip(candidate_slots.iter()) {
                     let key = pairs[*ki].0.as_bytes();
                     key_hashes[*slot] = hash_verify(key);
                     values[*slot] = pairs[*ki].1;
@@ -351,6 +350,12 @@ mod tests {
     }
 
     #[test]
+    fn infallible_builder_does_not_panic_on_duplicates() {
+        let ph = build_chd([("dup", 1_u32), ("dup", 2_u32)]);
+        assert!(ph.is_empty());
+    }
+
+    #[test]
     fn value_preserved_bitwise() {
         let entries: Vec<(String, u32)> = (0..100)
             .map(|i| (format!("k_{i}"), (i as u32).wrapping_mul(0xDEAD_BEEF)))
@@ -448,5 +453,57 @@ mod tests {
         }
         assert_eq!(ph.lookup("not_in_family"), None);
         assert_eq!(ph.lookup("malloc"), None);
+    }
+
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn proptest_roundtrip_random_keys(
+            entries in prop::collection::hash_map(
+                "[a-zA-Z0-9_]{1,32}",
+                0u32..10000u32,
+                1..256usize,
+            ),
+        ) {
+            let vec: Vec<(String, u32)> = entries.into_iter().collect();
+            let ph = build_chd(vec.clone());
+            for (k, v) in &vec {
+                prop_assert_eq!(ph.lookup(k), Some(*v), "key={}", k);
+            }
+        }
+
+        #[test]
+        fn proptest_negative_lookups_miss(
+            entries in prop::collection::vec(("[a-z]{1,16}", 0u32..100u32), 1..100usize),
+            queries in prop::collection::vec("[a-z]{1,16}", 1..50usize),
+        ) {
+            let deduped: std::collections::HashMap<String, u32> = entries.into_iter().collect();
+            prop_assume!(!deduped.is_empty());
+            let vec: Vec<(String, u32)> = deduped.clone().into_iter().collect();
+            let ph = build_chd(vec);
+            let key_set: std::collections::HashSet<&str> = deduped.keys().map(|k| k.as_str()).collect();
+            for q in &queries {
+                if key_set.contains(q.as_str()) {
+                    continue;
+                }
+                prop_assert_eq!(ph.lookup(q), None, "false hit on {}", q);
+            }
+        }
+
+        #[test]
+        fn proptest_space_overhead_under_35_percent(
+            entries in prop::collection::vec(("[a-zA-Z0-9_]{1,32}", 0u32..10000u32), 10..500usize),
+        ) {
+            let deduped: std::collections::HashMap<String, u32> = entries.into_iter().collect();
+            prop_assume!(deduped.len() >= 10);
+            let vec: Vec<(String, u32)> = deduped.into_iter().collect();
+            let ph = build_chd(vec.clone());
+            let n = vec.len();
+            let ratio = ph.slots() as f64 / n as f64;
+            // CHD overhead is tighter for larger tables; allow rounding slack for tiny sets.
+            let budget = if n < 20 { 1.5 } else { 1.35 };
+            prop_assert!(ratio < budget, "slots/len ratio {ratio} > {budget} budget for n={n}");
+        }
     }
 }

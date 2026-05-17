@@ -1,6 +1,6 @@
 [package]
 name = "vyre-foundation"
-version = "0.6.0"
+version = "0.4.1"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -23,9 +23,11 @@ vyre-spec.workspace = true
 vyre-macros.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+toml.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 rustc-hash.workspace = true
+hashbrown.workspace = true
 smallvec.workspace = true
 blake3.workspace = true
 bytemuck.workspace = true
@@ -33,6 +35,10 @@ inventory.workspace = true
 lasso = { version = "0.7.3", features = ["multi-threaded"] }
 bumpalo.workspace = true
 im.workspace = true
+libm.workspace = true
+itoa.workspace = true
+ryu.workspace = true
+arrayvec.workspace = true
 
 [lints]
 workspace = true
@@ -47,14 +53,6 @@ vyre-reference.workspace = true
 proptest.workspace = true
 criterion.workspace = true
 
-[[bench]]
-name = "cse"
-harness = false
 
-[[bench]]
-name = "optimizer_scheduler"
-harness = false
 
-[[bench]]
-name = "fuse_programs"
-harness = false
+

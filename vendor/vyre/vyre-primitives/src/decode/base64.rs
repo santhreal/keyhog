@@ -23,14 +23,16 @@ pub fn decoded_capacity(input_len: u32) -> u32 {
 }
 
 fn clamp_lookup(name: &str, table: &str) -> Vec<Node> {
+    let raw = format!("{name}_raw");
+    let value = format!("{name}_v");
     vec![
-        Node::let_bind(format!("{name}_raw"), Expr::load(table, Expr::var(name))),
+        Node::let_bind(raw.as_str(), Expr::load(table, Expr::var(name))),
         Node::let_bind(
-            format!("{name}_v"),
+            value.as_str(),
             Expr::select(
-                Expr::eq(Expr::var(format!("{name}_raw")), Expr::u32(INVALID)),
+                Expr::eq(Expr::var(raw.as_str()), Expr::u32(INVALID)),
                 Expr::u32(0),
-                Expr::var(format!("{name}_raw")),
+                Expr::var(raw.as_str()),
             ),
         ),
     ]
@@ -45,6 +47,12 @@ pub fn base64_decode_body(
     decoded_len_buffer: &str,
     input_len: u32,
 ) -> Vec<Node> {
+    if input_len % 4 != 0 {
+        return vec![Node::trap(
+            Expr::u32(input_len),
+            "Fix: base64_decode requires input_len to be a multiple of 4; pad with '=' or reject the truncated payload upstream",
+        )];
+    }
     let decoded_len = decoded_capacity(input_len);
     let mut body = vec![Node::let_bind("j", Expr::InvocationId { axis: 0 })];
     if input_len >= 2 {

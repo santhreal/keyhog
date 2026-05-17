@@ -1,16 +1,44 @@
 use crate::parsing::c::lex::tokens::*;
+use crate::parsing::composition::child_phase;
 use crate::region::wrap_anonymous;
 use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 
 fn expr_is_any(token: Expr, candidates: &[u32]) -> Expr {
-    let mut iter = candidates.iter();
-    let Some(first) = iter.next() else {
+    let ranges = merged_token_ranges(candidates);
+    let mut iter = ranges.into_iter();
+    let Some((first_lo, first_hi)) = iter.next() else {
         return Expr::u32(0);
     };
     iter.fold(
-        Expr::eq(token.clone(), Expr::u32(*first)),
-        |acc, candidate| Expr::or(acc, Expr::eq(token.clone(), Expr::u32(*candidate))),
+        token_range_expr(&token, first_lo, first_hi),
+        |acc, (lo, hi)| Expr::or(acc, token_range_expr(&token, lo, hi)),
     )
+}
+
+fn token_range_expr(token: &Expr, lo: u32, hi: u32) -> Expr {
+    if lo == hi {
+        Expr::eq(token.clone(), Expr::u32(lo))
+    } else {
+        Expr::and(
+            Expr::ge(token.clone(), Expr::u32(lo)),
+            Expr::le(token.clone(), Expr::u32(hi)),
+        )
+    }
+}
+
+fn merged_token_ranges(candidates: &[u32]) -> Vec<(u32, u32)> {
+    let mut values = candidates.to_vec();
+    values.sort_unstable();
+    values.dedup();
+
+    let mut ranges: Vec<(u32, u32)> = Vec::new();
+    for value in values {
+        match ranges.last_mut() {
+            Some((_, hi)) if hi.checked_add(1) == Some(value) => *hi = value,
+            _ => ranges.push((value, value)),
+        }
+    }
+    ranges
 }
 
 fn function_prefix_token(token: Expr) -> Expr {
@@ -306,6 +334,13 @@ pub fn c11_extract_functions(
         // Single flattened predicate. 5-way AND collapses the
         // previously-nested shape into one if_then.
         Node::let_bind(
+            "is_attribute_suffix",
+            Expr::and(
+                Expr::eq(Expr::var("prev_type"), Expr::u32(TOK_RPAREN)),
+                Expr::eq(Expr::var("before_wrapper_type"), Expr::u32(TOK_RPAREN)),
+            ),
+        ),
+        Node::let_bind(
             "is_match",
             Expr::and(
                 Expr::and(
@@ -314,7 +349,10 @@ pub fn c11_extract_functions(
                         Expr::or(
                             Expr::and(
                                 Expr::eq(Expr::var("next_type"), Expr::u32(TOK_LPAREN)),
-                                function_prefix_token(Expr::var("prev_type")),
+                                Expr::or(
+                                    function_prefix_token(Expr::var("prev_type")),
+                                    Expr::var("is_attribute_suffix"),
+                                ),
                             ),
                             Expr::and(
                                 Expr::var("is_parenthesized_function_name"),
@@ -375,9 +413,13 @@ pub fn c11_extract_functions(
         [256, 1, 1],
         vec![wrap_anonymous(
             "vyre-libs::parsing::c11_extract_functions",
-            vec![Node::if_then(
-                Expr::lt(t.clone(), Expr::sub(num_tokens.clone(), Expr::u32(2))),
-                loop_body,
+            vec![child_phase(
+                "vyre-libs::parsing::c11_extract_functions",
+                vyre_primitives::text::line_index::OP_ID,
+                vec![Node::if_then(
+                    Expr::lt(t.clone(), Expr::sub(num_tokens.clone(), Expr::u32(2))),
+                    loop_body,
+                )],
             )],
         )],
     )
@@ -552,13 +594,9 @@ pub fn c11_extract_calls(
         // Per-lane global allocation: each matching lane claims a
         // 4-slot record via one atomic_add. The previous design used
         // subgroup_add + subgroup_shuffle to batch claims per warp,
-        // but those ops lower to SubgroupAdd / SubgroupShuffle and
-        // Naga 24 rejects those collective-op variants
-        // (see naga_emit/expr.rs). The per-lane fallback is slower
-        // at high saturation but always valid, and the output stream
-        // is bitwise identical to the subgroup-scan version. When
-        // the Naga upgrade lands the prefix-scan allocation comes
-        // back as a targeted perf PR.
+        // but this library must stay backend-neutral. Concrete drivers
+        // can recognize this atomic allocation pattern and lower it to
+        // target-native subgroup allocation without changing library IR.
         Node::if_then(
             Expr::var("is_direct_call"),
             vec![
@@ -640,9 +678,13 @@ pub fn c11_extract_calls(
         [256, 1, 1],
         vec![wrap_anonymous(
             "vyre-libs::parsing::c11_extract_calls",
-            vec![Node::if_then(
-                Expr::lt(t.clone(), Expr::sub(num_tokens.clone(), Expr::u32(1))),
-                loop_body,
+            vec![child_phase(
+                "vyre-libs::parsing::c11_extract_calls",
+                vyre_primitives::text::utf8_validate::OP_ID,
+                vec![Node::if_then(
+                    Expr::lt(t.clone(), Expr::sub(num_tokens.clone(), Expr::u32(1))),
+                    loop_body,
+                )],
             )],
         )],
     )
@@ -786,21 +828,10 @@ inventory::submit! {
     crate::harness::OpEntry {
         id: "vyre-libs::parsing::c11_extract_functions",
         build: || c11_extract_functions(
-            "tok_types", "paren_pairs", "brace_pairs", Expr::u32(4), "out_functions", "out_counts"
+            "tok_types", "paren_pairs", "brace_pairs", Expr::u32(6), "out_functions", "out_counts"
         ),
-        // Zero-filled read-only + read-write buffers. tok_types[0] = 0
-        // is not TYPE_IDENTIFIER, so no match fires; outputs stay 0.
-        // The fixture sizes mirror the Program declarations exactly.
-        // Oversized static-buffer inputs are invalid because the wgpu
-        // path allocates from BufferDecl counts, not caller byte length.
-        test_inputs: Some(|| vec![vec![
-            vec![0u8; 4 * 4],
-            vec![0u8; 4 * 4],
-            vec![0u8; 4 * 4],
-            vec![0u8; 4 * 12],
-            vec![0u8; 4],
-        ]]),
-        expected_output: Some(|| vec![vec![vec![0u8; 4 * 12], vec![0u8; 4]]]),
+        test_inputs: Some(function_extract_inputs),
+        expected_output: Some(function_extract_expected),
     }
 }
 
@@ -808,18 +839,10 @@ inventory::submit! {
     crate::harness::OpEntry {
         id: "vyre-libs::parsing::c11_extract_calls",
         build: || c11_extract_calls(
-            "tok_types", "paren_pairs", "functions", Expr::u32(4), Expr::u32(2), "out_calls", "out_counts"
+            "tok_types", "paren_pairs", "functions", Expr::u32(9), Expr::u32(1), "out_calls", "out_counts"
         ),
-        // Static fixture sizes match c11_extract_calls' declarations:
-        // 4 tokens, 2 function records (6 u32 words), 16 call-output words.
-        test_inputs: Some(|| vec![vec![
-            vec![0u8; 4 * 4],
-            vec![0u8; 4 * 4],
-            vec![0u8; 4 * 6],
-            vec![0u8; 4 * 16],
-            vec![0u8; 4],
-        ]]),
-        expected_output: Some(|| vec![vec![vec![0u8; 4 * 16], vec![0u8; 4]]]),
+        test_inputs: Some(call_extract_inputs),
+        expected_output: Some(call_extract_expected),
     }
 }
 
@@ -827,18 +850,99 @@ inventory::submit! {
     crate::harness::OpEntry {
         id: "vyre-libs::parsing::c11_build_call_graph",
         build: || c11_build_call_graph("calls", "fn_hashes", "tok_starts", "tok_lens", "haystack", Expr::u32(1), Expr::u32(1), "out_edges", "out_counts"),
-        // Single call with zeroed hash table: the inner fnv1a walk
-        // returns FNV offset basis which doesn't match a zero
-        // fn_hash, so no edge fires. Counter stays 0.
-        test_inputs: Some(|| vec![vec![
-            vec![0u8; 4 * 4],
-            vec![0u8; 4],
-            vec![0u8; 4],
-            vec![0u8; 4],
-            vec![0u8; 4 * 16],
-            vec![0u8; 4 * 4],
-            vec![0u8; 4],
-        ]]),
-        expected_output: Some(|| vec![vec![vec![0u8; 4 * 4], vec![0u8; 4]]]),
+        test_inputs: Some(call_graph_inputs),
+        expected_output: Some(call_graph_expected),
     }
+}
+
+fn pack_u32(words: &[u32]) -> Vec<u8> {
+    words.iter().flat_map(|word| word.to_le_bytes()).collect()
+}
+
+fn function_extract_inputs() -> Vec<Vec<Vec<u8>>> {
+    vec![vec![
+        pack_u32(&[
+            TOK_INT,
+            TOK_IDENTIFIER,
+            TOK_LPAREN,
+            TOK_RPAREN,
+            TOK_LBRACE,
+            TOK_RBRACE,
+        ]),
+        pack_u32(&[u32::MAX, u32::MAX, 3, 2, u32::MAX, u32::MAX]),
+        pack_u32(&[u32::MAX, u32::MAX, u32::MAX, u32::MAX, 5, 4]),
+        vec![0u8; 6 * 3 * 4],
+        pack_u32(&[0]),
+    ]]
+}
+
+fn function_extract_expected() -> Vec<Vec<Vec<u8>>> {
+    let mut functions = vec![0u32; 18];
+    functions[0..3].copy_from_slice(&[1, 4, 5]);
+    vec![vec![pack_u32(&functions), pack_u32(&[3])]]
+}
+
+fn call_extract_inputs() -> Vec<Vec<Vec<u8>>> {
+    vec![vec![
+        pack_u32(&[
+            TOK_INT,
+            TOK_IDENTIFIER,
+            TOK_LPAREN,
+            TOK_RPAREN,
+            TOK_LBRACE,
+            TOK_IDENTIFIER,
+            TOK_LPAREN,
+            TOK_RPAREN,
+            TOK_SEMICOLON,
+        ]),
+        pack_u32(&[u32::MAX, u32::MAX, 3, 2, u32::MAX, u32::MAX, 7, 6, u32::MAX]),
+        pack_u32(&[1, 4, 8]),
+        vec![0u8; 9 * 4 * 4],
+        pack_u32(&[0]),
+    ]]
+}
+
+fn call_extract_expected() -> Vec<Vec<Vec<u8>>> {
+    let mut calls = vec![0u32; 9 * 4];
+    calls[0..4].copy_from_slice(&[0, 5, 6, 7]);
+    vec![vec![pack_u32(&calls), pack_u32(&[4])]]
+}
+
+fn fnv1a32(bytes: &[u8]) -> u32 {
+    bytes.iter().fold(2_166_136_261u32, |hash, byte| {
+        (hash ^ u32::from(*byte)).wrapping_mul(16_777_619)
+    })
+}
+
+fn call_graph_inputs() -> Vec<Vec<Vec<u8>>> {
+    vec![vec![
+        pack_u32(&[0, 5, 6, 7]),
+        pack_u32(&[fnv1a32(b"foo")]),
+        pack_u32(&[0, 0, 0, 0, 0, 0]),
+        pack_u32(&[0, 0, 0, 0, 0, 3]),
+        pack_u32(&[
+            u32::from(b'f'),
+            u32::from(b'o'),
+            u32::from(b'o'),
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+        ]),
+        vec![0u8; 4 * 4],
+        pack_u32(&[0]),
+    ]]
+}
+
+fn call_graph_expected() -> Vec<Vec<Vec<u8>>> {
+    vec![vec![pack_u32(&[0, 0, 0, 0]), pack_u32(&[2])]]
 }

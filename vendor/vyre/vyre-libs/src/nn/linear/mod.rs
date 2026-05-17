@@ -1,4 +1,7 @@
 //! Linear-layer sub-dialect: affine transforms built on `math::linalg`.
-mod linear;
+mod inner;
 
-pub use linear::{linear, linear_relu, rms_norm_linear};
+pub use inner::{
+    linear, linear_relu, linear_silu, linear_tiled, linear_tiled_reference, rms_norm_linear,
+    try_rms_norm_linear, Linear,
+};

@@ -10,7 +10,7 @@ pub mod toposort;
 /// GPU-resident depth-wave dispatcher for bottom-up callee-before-
 /// caller computations (e.g. weir::summary's per-procedure summary
 /// fixpoint with topological ordering). Composes Node::Loop +
-/// Node::Barrier + a per-lane depth predicate; no new sub-op.
+/// Node::Barrier { ordering: vyre::memory_model::MemoryOrdering::SeqCst } + a per-lane depth predicate; no new sub-op.
 pub mod level_wave;
 
 /// Reachability scan — given a source set + edge list, which nodes
@@ -31,6 +31,11 @@ pub mod persistent_bfs_step;
 /// Reverse-direction BFS frontier step.
 pub mod csr_backward_traverse;
 
+/// Total outgoing-edge count over the active frontier. Building block
+/// for load-balanced one-thread-per-edge expansion that beats naive
+/// one-thread-per-node on power-law graphs.
+pub mod csr_frontier_degree_sum;
+
 /// One BFS step over BOTH forward + backward edges.
 pub mod csr_bidirectional;
 
@@ -49,11 +54,11 @@ pub mod motif;
 pub mod scc_decompose;
 
 /// Exploded-supergraph builder — (CFG × fact) pairs as graph vertices
-/// so IFDS/IDE reduces to `csr_forward_traverse`. Scaffold for G3.
+/// so IFDS/IDE reduces to `csr_forward_traverse`.
 pub mod exploded;
 
 /// Adaptive CSR / dense bitmatrix traversal — picks representation
-/// per tile based on frontier density. Scaffold for G4.
+/// per tile based on frontier density.
 pub mod adaptive_traverse;
 
 /// Persistent BFS — multi-step frontier expansion in a single dispatch.
@@ -64,6 +69,54 @@ pub mod alias_registry;
 
 /// Lock-free Union-Find for subset alias resolving constraint grids.
 pub mod union_find;
+pub mod vast_tree_walk;
 
 /// 3D sub-warp dataflow tensors
 pub mod tensor_flow_forward;
+
+/// K-step Chebyshev polynomial filter on a graph Laplacian. Composes
+/// from `vyre-primitives::math::semiring_gemm` (each step is one
+/// `n × n · n × 1` Real-semiring matvec). Same Program serves user
+/// dialects (spectral GNN, security spectral anomaly) AND vyre-self
+/// (#23 spectral analysis of dispatch graph for fusion clustering).
+pub mod chebyshev_filter;
+
+/// Sum-product circuit (probabilistic circuit) per-node evaluator.
+/// Composes with `level_wave_program` for bottom-up evaluation. Same
+/// Program serves user probabilistic-ML dialects AND vyre-self
+/// dispatch cost-model (#28).
+pub mod sum_product_circuit;
+
+/// Pearl do-calculus graph surgery — incoming-edge deletion for
+/// `do(X = x)` interventions. Same Program serves user causal-
+/// inference dialects AND vyre-self change-impact analysis (do(rule_X)
+/// on rule dependency graph predicts cache invalidation downstream).
+pub mod do_calculus;
+
+/// Back-door / front-door adjustment set predicates for causal
+/// inference (#37). Composes with #36 do-calculus for full ID-
+/// algorithm pipelines.
+pub mod adjustment_set;
+
+/// Matroid intersection — exchange-graph BFS step for combinatorial
+/// scheduling and bipartite matching (#46). Self-consumer: vyre's
+/// megakernel scheduler fusion-grouping (#22).
+pub mod matroid;
+
+/// Sheaf neural network diagonal-form diffusion step (#31). User:
+/// heterophilic GNN, typed call-graph anomalies. Self: vyre's
+/// dispatch graph as heterophilic sheaf.
+pub mod sheaf;
+
+/// Probabilistic knowledge compilation d-DNNF evaluator (#38).
+/// Composes with #10 sum_product_circuit for probability-weighted
+/// variants.
+pub mod knowledge_compile;
+
+/// Functorial data migration (#52). Schema-functor
+/// application as graph rewrite.
+pub mod functorial;
+
+/// Monoidal-category sequential composition (#53).
+/// String-diagram compilation primitive.
+pub mod string_diagram;

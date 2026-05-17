@@ -1264,7 +1264,7 @@ pub type vyre_spec::intrinsic_descriptor::CpuFn = fn(input: &[u8], output: &mut 
 pub mod vyre_spec::intrinsic_table
 pub struct vyre_spec::intrinsic_table::IntrinsicTable
 pub vyre_spec::intrinsic_table::IntrinsicTable::cuda: core::option::Option<&'static str>
-pub vyre_spec::intrinsic_table::IntrinsicTable::metal: core::option::Option<&'static str>
+pub vyre_spec::intrinsic_table::IntrinsicTable::native_module: core::option::Option<&'static str>
 pub vyre_spec::intrinsic_table::IntrinsicTable::spirv: core::option::Option<&'static str>
 pub vyre_spec::intrinsic_table::IntrinsicTable::wgsl: core::option::Option<&'static str>
 impl vyre_spec::intrinsic_table::IntrinsicTable
@@ -3751,7 +3751,7 @@ impl<T> core::convert::From<T> for vyre_spec::intrinsic_descriptor::IntrinsicDes
 pub fn vyre_spec::intrinsic_descriptor::IntrinsicDescriptor::from(t: T) -> T
 pub struct vyre_spec::IntrinsicTable
 pub vyre_spec::IntrinsicTable::cuda: core::option::Option<&'static str>
-pub vyre_spec::IntrinsicTable::metal: core::option::Option<&'static str>
+pub vyre_spec::IntrinsicTable::native_module: core::option::Option<&'static str>
 pub vyre_spec::IntrinsicTable::spirv: core::option::Option<&'static str>
 pub vyre_spec::IntrinsicTable::wgsl: core::option::Option<&'static str>
 impl vyre_spec::intrinsic_table::IntrinsicTable

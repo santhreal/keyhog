@@ -5,11 +5,14 @@ use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 #[cfg(test)]
 use crate::buffer_names::fixed_name;
 use crate::buffer_names::scoped_generic_name;
+use crate::decode::scan::tiled_decode_aho_scan_body;
 use crate::region::wrap_anonymous;
 
 const OP_ID: &str = "vyre-libs::decode::hex";
 const FUSED_SCAN_OP_ID: &str = "vyre-libs::decode::hex_then_aho_corasick";
 const FAMILY_PREFIX: &str = "decode_hex";
+/// Fixed buffer name carrying the ASCII hex decode lookup table.
+pub const HEX_DECODE_TABLE_BUFFER: &str = "__vyre_decode_hex_table";
 
 fn scoped_input_buffer(name: &str) -> String {
     scoped_generic_name(FAMILY_PREFIX, "input", name, &["input"])
@@ -23,38 +26,33 @@ fn pack_words(words: &[u32]) -> Vec<u8> {
     words.iter().flat_map(|word| word.to_le_bytes()).collect()
 }
 
-fn nibble_expr(byte: Expr) -> Expr {
-    let digit = Expr::and(
-        Expr::ge(byte.clone(), Expr::u32(u32::from(b'0'))),
-        Expr::le(byte.clone(), Expr::u32(u32::from(b'9'))),
-    );
-    let upper = Expr::and(
-        Expr::ge(byte.clone(), Expr::u32(u32::from(b'A'))),
-        Expr::le(byte.clone(), Expr::u32(u32::from(b'F'))),
-    );
-    let lower = Expr::and(
-        Expr::ge(byte.clone(), Expr::u32(u32::from(b'a'))),
-        Expr::le(byte.clone(), Expr::u32(u32::from(b'f'))),
-    );
-    Expr::select(
-        digit,
-        Expr::sub(byte.clone(), Expr::u32(u32::from(b'0'))),
-        Expr::select(
-            upper,
-            Expr::add(
-                Expr::sub(byte.clone(), Expr::u32(u32::from(b'A'))),
-                Expr::u32(10),
-            ),
-            Expr::select(
-                lower,
-                Expr::add(Expr::sub(byte, Expr::u32(u32::from(b'a'))), Expr::u32(10)),
-                Expr::u32(0),
-            ),
-        ),
-    )
+/// Return the canonical 256-entry ASCII hex decode table.
+#[must_use]
+pub fn hex_decode_table() -> [u32; 256] {
+    let mut table = [0u32; 256];
+    let mut byte = b'0';
+    while byte <= b'9' {
+        table[byte as usize] = u32::from(byte - b'0');
+        byte += 1;
+    }
+    byte = b'A';
+    while byte <= b'F' {
+        table[byte as usize] = u32::from(byte - b'A' + 10);
+        byte += 1;
+    }
+    byte = b'a';
+    while byte <= b'f' {
+        table[byte as usize] = u32::from(byte - b'a' + 10);
+        byte += 1;
+    }
+    table
 }
 
-fn decode_body(input: &str, output: &str, input_len: u32) -> Vec<Node> {
+fn nibble_expr(byte: Expr, table: &str) -> Expr {
+    Expr::load(table, Expr::bitand(byte, Expr::u32(0xFF)))
+}
+
+fn decode_body(input: &str, output: &str, table: &str, input_len: u32) -> Vec<Node> {
     let output_len = input_len / 2;
     vec![
         Node::let_bind("pair", Expr::InvocationId { axis: 0 }),
@@ -62,60 +60,21 @@ fn decode_body(input: &str, output: &str, input_len: u32) -> Vec<Node> {
             Expr::lt(Expr::var("pair"), Expr::u32(output_len)),
             vec![
                 Node::let_bind("in_base", Expr::mul(Expr::var("pair"), Expr::u32(2))),
-                Node::let_bind("hi", nibble_expr(Expr::load(input, Expr::var("in_base")))),
-                Node::let_bind(
-                    "lo",
-                    nibble_expr(Expr::load(
-                        input,
-                        Expr::add(Expr::var("in_base"), Expr::u32(1)),
-                    )),
-                ),
                 Node::store(
                     output,
                     Expr::var("pair"),
-                    Expr::bitor(Expr::shl(Expr::var("hi"), Expr::u32(4)), Expr::var("lo")),
+                    decode_pair_expr(input, table, Expr::var("pair")),
                 ),
             ],
         ),
     ]
 }
 
-fn dynamic_aho_scan_body(
-    decoded: &str,
-    transitions: &str,
-    accept: &str,
-    matches: &str,
-    decoded_len: u32,
-) -> Vec<Node> {
-    vec![
-        Node::let_bind("scan_i", Expr::InvocationId { axis: 0 }),
-        Node::if_then(
-            Expr::lt(Expr::var("scan_i"), Expr::u32(decoded_len)),
-            vec![
-                Node::let_bind("state", Expr::u32(0)),
-                Node::loop_for(
-                    "scan_step",
-                    Expr::u32(0),
-                    Expr::add(Expr::var("scan_i"), Expr::u32(1)),
-                    vec![Node::assign(
-                        "state",
-                        Expr::load(
-                            transitions,
-                            Expr::add(
-                                Expr::mul(Expr::var("state"), Expr::u32(256)),
-                                Expr::load(decoded, Expr::var("scan_step")),
-                            ),
-                        ),
-                    )],
-                ),
-                Node::store(
-                    matches,
-                    Expr::var("scan_i"),
-                    Expr::load(accept, Expr::var("state")),
-                ),
-            ],
-        ),
-    ]
+fn decode_pair_expr(input: &str, table: &str, pair: Expr) -> Expr {
+    let in_base = Expr::mul(pair, Expr::u32(2));
+    let hi = nibble_expr(Expr::load(input, in_base.clone()), table);
+    let lo = nibble_expr(Expr::load(input, Expr::add(in_base, Expr::u32(1))), table);
+    Expr::bitor(Expr::shl(hi, Expr::u32(4)), lo)
 }
 
 /// Build a Program that decodes ASCII hex bytes from `input` into `output`,
@@ -131,12 +90,19 @@ fn dynamic_aho_scan_body(
 pub fn hex_decode(input: &str, output: &str, input_len: u32) -> Program {
     let input = scoped_input_buffer(input);
     let output = scoped_output_buffer(output);
-    let body = decode_body(&input, &output, input_len);
+    let body = decode_body(&input, &output, HEX_DECODE_TABLE_BUFFER, input_len);
     Program::wrapped(
         vec![
             BufferDecl::storage(&input, 0, BufferAccess::ReadOnly, DataType::U32)
                 .with_count(input_len),
             BufferDecl::output(&output, 1, DataType::U32).with_count(input_len / 2),
+            BufferDecl::storage(
+                HEX_DECODE_TABLE_BUFFER,
+                2,
+                BufferAccess::ReadOnly,
+                DataType::U32,
+            )
+            .with_count(256),
         ],
         [64, 1, 1],
         vec![wrap_anonymous(OP_ID, body)],
@@ -174,14 +140,15 @@ pub fn hex_decode_then_aho_corasick(
     let input = scoped_input_buffer(input);
     let decoded = scoped_output_buffer(decoded);
     let decoded_len = input_len / 2;
-    let mut body = decode_body(&input, &decoded, input_len);
-    body.extend(dynamic_aho_scan_body(
-        &decoded,
+    let body = tiled_decode_aho_scan_body(
         transitions,
         accept,
         matches,
-        decoded_len,
-    ));
+        Expr::u32(decoded_len),
+        64,
+        |pair| decode_pair_expr(&input, HEX_DECODE_TABLE_BUFFER, pair),
+        |pair, byte| Some(Node::store(&decoded, pair, byte)),
+    );
     Program::wrapped(
         vec![
             BufferDecl::storage(&input, 0, BufferAccess::ReadOnly, DataType::U32)
@@ -192,6 +159,13 @@ pub fn hex_decode_then_aho_corasick(
             BufferDecl::storage(accept, 3, BufferAccess::ReadOnly, DataType::U32)
                 .with_count(state_count),
             BufferDecl::output(matches, 4, DataType::U32).with_count(decoded_len),
+            BufferDecl::storage(
+                HEX_DECODE_TABLE_BUFFER,
+                5,
+                BufferAccess::ReadOnly,
+                DataType::U32,
+            )
+            .with_count(256),
         ],
         [64, 1, 1],
         vec![wrap_anonymous(FUSED_SCAN_OP_ID, body)],
@@ -231,6 +205,7 @@ fn fixture_inputs() -> Vec<Vec<Vec<u8>>> {
                 u32::from(b'E'),
             ]),
             vec![0u8; 3 * 4],
+            pack_words(&hex_decode_table()),
         ],
         vec![
             pack_words(&[
@@ -242,6 +217,7 @@ fn fixture_inputs() -> Vec<Vec<Vec<u8>>> {
                 u32::from(b'A'),
             ]),
             vec![0u8; 3 * 4],
+            pack_words(&hex_decode_table()),
         ],
         vec![
             pack_words(&[
@@ -253,6 +229,7 @@ fn fixture_inputs() -> Vec<Vec<Vec<u8>>> {
                 u32::from(b'0'),
             ]),
             vec![0u8; 3 * 4],
+            pack_words(&hex_decode_table()),
         ],
     ]
 }
@@ -293,9 +270,10 @@ mod tests {
                     .collect::<Vec<_>>(),
             )),
             Value::from(vec![0u8; (input.len() / 2) * 4]),
+            Value::from(pack_words(&hex_decode_table())),
         ];
-        let outputs =
-            vyre_reference::reference_eval(&program, &inputs).expect("hex decode must run");
+        let outputs = vyre_reference::reference_eval(&program, &inputs)
+            .expect("Fix: hex decode must run; restore this invariant before continuing.");
         outputs[0]
             .to_bytes()
             .chunks_exact(4)
@@ -339,6 +317,7 @@ mod tests {
             program.buffers()[1].name(),
             fixed_name(FAMILY_PREFIX, "decoded")
         );
+        assert_eq!(program.buffers()[2].name(), HEX_DECODE_TABLE_BUFFER);
     }
 
     #[test]
@@ -347,6 +326,7 @@ mod tests {
             transitions: vec![0; 256],
             accept: vec![0],
             state_count: 1,
+            max_pattern_len: 0,
             output_offsets: vec![0, 0],
             output_records: vec![],
         };
@@ -364,5 +344,6 @@ mod tests {
             fixed_name(FAMILY_PREFIX, "decoded")
         );
         assert_eq!(program.buffers()[4].name(), "matches");
+        assert_eq!(program.buffers()[5].name(), HEX_DECODE_TABLE_BUFFER);
     }
 }

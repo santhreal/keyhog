@@ -23,7 +23,7 @@
 //! runs of this primitive with an element-wise `min(lo, lo')` /
 //! `max(hi, hi')` kernel (built via `vyre_primitives::math` ops).
 //!
-//! Soundness: [`MayOver`](super::Soundness::MayOver) in the standard
+//! Soundness: `MayOver` in the standard
 //! abstract-interpretation sense. Zero-FP rules that consume this
 //! lattice must pair with DF-3 + an aliasing filter.
 
@@ -96,5 +96,49 @@ pub struct Range;
 impl super::soundness::SoundnessTagged for Range {
     fn soundness(&self) -> super::soundness::Soundness {
         super::soundness::Soundness::MayOver
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn range_propagate_emits_three_buffers() {
+        let p = range_propagate_with_count("defs", "edges", "out", 4);
+        let names: Vec<&str> = p.buffers.iter().map(|b| b.name()).collect();
+        assert_eq!(names, vec!["defs", "edges", "out"]);
+    }
+
+    #[test]
+    fn range_buffer_count_is_double_var_count() {
+        let var_count = 8;
+        let p = range_propagate_with_count("defs", "edges", "out", var_count);
+        let out_buf = p
+            .buffers
+            .iter()
+            .find(|b| b.name() == "out")
+            .expect("out buffer");
+        assert_eq!(out_buf.count, var_count * 2);
+    }
+
+    #[test]
+    fn range_workgroup_size_is_256_1_1() {
+        let p = range_propagate_with_count("defs", "edges", "out", 4);
+        assert_eq!(p.workgroup_size, [256, 1, 1]);
+    }
+
+    #[test]
+    fn range_default_delegates_to_with_count() {
+        let default = range_propagate("defs", "edges", "out");
+        let explicit = range_propagate_with_count("defs", "edges", "out", 4);
+        assert_eq!(default.workgroup_size, explicit.workgroup_size);
+        assert_eq!(default.buffers.len(), explicit.buffers.len());
+    }
+
+    #[test]
+    fn range_soundness_is_mayover() {
+        use super::super::soundness::{Soundness, SoundnessTagged};
+        assert_eq!(Range.soundness(), Soundness::MayOver);
     }
 }

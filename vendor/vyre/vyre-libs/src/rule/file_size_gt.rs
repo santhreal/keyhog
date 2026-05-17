@@ -25,7 +25,7 @@ impl FileSizeGt {
 }
 
 /// Stable operation id for strict lower file size checks.
-pub const OP_ID: &str = "rule.file_size_gt";
+pub const OP_ID: &str = "vyre-libs::rule::file_size_gt";
 
 /// Execution contract annotation for the standard catalog.
 pub const CONTRACT: OperationContract = crate::contracts::RULE_PREDICATE_CHEAP;

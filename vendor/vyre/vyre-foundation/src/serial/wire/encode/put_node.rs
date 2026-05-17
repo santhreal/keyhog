@@ -1,8 +1,9 @@
 //! Node encoder for the stable IR wire format.
 
 use super::{put_expr, put_nodes};
+use crate::serial::wire::encode::WireEncodeErr;
 use crate::serial::wire::framing::{put_len_u32, put_string, put_u8};
-use crate::serial::wire::Node;
+use crate::serial::wire::{Node, MAX_OPAQUE_PAYLOAD_LEN};
 
 /// Append the wire-format tag and payload for one [`Node`] to `out`.
 ///
@@ -38,7 +39,7 @@ use crate::serial::wire::Node;
 /// count exceeds `u32::MAX`).
 #[inline]
 #[must_use]
-pub fn put_node(out: &mut Vec<u8>, node: &Node) -> Result<(), String> {
+pub fn put_node(out: &mut Vec<u8>, node: &Node) -> Result<(), WireEncodeErr> {
     match node {
         Node::Let { name, value } => {
             put_u8(out, 0);
@@ -87,7 +88,10 @@ pub fn put_node(out: &mut Vec<u8>, node: &Node) -> Result<(), String> {
             put_u8(out, 6);
             put_nodes(out, nodes)?;
         }
-        Node::Barrier => put_u8(out, 7),
+        Node::Barrier { ordering } => {
+            put_u8(out, 7);
+            put_u8(out, ordering.wire_tag());
+        }
         Node::IndirectDispatch {
             count_buffer,
             count_offset,
@@ -157,6 +161,13 @@ pub fn put_node(out: &mut Vec<u8>, node: &Node) -> Result<(), String> {
             put_u8(out, 0x80);
             put_string(out, extension.extension_kind())?;
             let payload = extension.wire_payload();
+            if payload.len() > MAX_OPAQUE_PAYLOAD_LEN {
+                return Err(WireEncodeErr::fmt_usize(
+                    "opaque node payload",
+                    payload.len(),
+                    &format!(" exceeds {MAX_OPAQUE_PAYLOAD_LEN}. Fix: split the payload across multiple opaque nodes or reduce the extension data size."),
+                ));
+            }
             put_len_u32(out, payload.len(), "opaque node payload length")?;
             out.extend_from_slice(&payload);
         }

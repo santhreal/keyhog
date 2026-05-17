@@ -7,7 +7,7 @@
 //!
 //! This module provides that mechanism for the **metadata** part of
 //! a dialect: op id, dialect name, category, signature, laws. The
-//! behavioral part (`cpu_ref`, `naga_wgsl`, etc.) still comes from
+//! behavioral part (`cpu_ref`, `primary_text`, etc.) still comes from
 //! Rust because TOML can't declaratively describe a compute kernel.
 //! External dialect crates can thus ship the behavioral half as Rust
 //! and the declarative half as TOML — the TOML supports community
@@ -36,6 +36,7 @@ use serde::{Deserialize, Serialize};
 use crate::diagnostics::{Diagnostic, DiagnosticCode};
 
 const DIALECT_PATH_ENV: &str = "VYRE_DIALECT_PATH";
+const MAX_DIALECT_TOML_BYTES: u64 = 1024 * 1024;
 
 /// Top-level TOML schema for a dialect manifest.
 ///
@@ -119,7 +120,7 @@ impl TomlDialectStore {
     /// Load a single TOML file. Errors become diagnostics; the
     /// function never panics.
     pub fn load_file(&mut self, path: &Path) {
-        let Ok(contents) = fs::read_to_string(path) else {
+        let Ok(contents) = read_toml_bounded(path) else {
             self.diagnostics.push(
                 Diagnostic::warning("W-TOML-UNREADABLE",
                     format!("TOML dialect file `{}` is unreadable", path.display()))
@@ -212,6 +213,28 @@ impl TomlDialectStore {
             .values()
             .any(|m| m.ops.iter().any(|op| op.id == op_id))
     }
+}
+
+fn read_toml_bounded(path: &Path) -> std::io::Result<String> {
+    use std::io::Read as _;
+
+    let mut file = fs::File::open(path)?;
+    let metadata = file.metadata()?;
+    if metadata.len() > MAX_DIALECT_TOML_BYTES {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("dialect TOML exceeds {MAX_DIALECT_TOML_BYTES} byte limit"),
+        ));
+    }
+    let mut text = String::with_capacity(metadata.len() as usize);
+    file.by_ref().take(MAX_DIALECT_TOML_BYTES + 1).read_to_string(&mut text)?;
+    if text.len() as u64 > MAX_DIALECT_TOML_BYTES {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "dialect TOML exceeded bounded read limit",
+        ));
+    }
+    Ok(text)
 }
 
 /// Stable diagnostic code family for TOML loader issues. Tooling

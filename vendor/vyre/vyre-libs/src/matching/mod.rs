@@ -9,7 +9,7 @@
 //!
 //! # API index
 //!
-//! Every public surface in this module is enumerated in [`API_INDEX`]
+//! Every public surface in this module is enumerated in `API_INDEX`
 //! as a stable `(name, kind, feature)` triple. Consumers that need to
 //! discover the engine surface programmatically — keyhog's
 //! `--list-engines`, the conformance harness's coverage check, the
@@ -23,7 +23,7 @@
 ///
 /// Keep this in sync with the `pub use` lines below. The
 /// `api_index_covers_every_export` test in `tests/api_index.rs`
-/// verifies that every name in [`API_INDEX`] resolves to a real
+/// verifies that every name in `API_INDEX` resolves to a real
 /// import path so a refactor that removes or renames a public symbol
 /// fails CI loudly instead of silently leaving the index stale.
 pub const API_INDEX: &[(&str, ApiKind, Option<&str>)] = &[
@@ -104,7 +104,7 @@ pub const API_INDEX: &[(&str, ApiKind, Option<&str>)] = &[
     ("RegexCompileError", ApiKind::Enum, Some("matching-regex")),
 ];
 
-/// Item-kind tag for entries in [`API_INDEX`]. Coarse on purpose —
+/// Item-kind tag for entries in `API_INDEX`. Coarse on purpose —
 /// the goal is "what's the symbol shape?" not full reflection.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum ApiKind {
@@ -223,8 +223,8 @@ pub use literal_set::{GpuLiteralSet, LiteralSetWireError, Match as LiteralMatch}
 pub use mega_scan::{build as build_rule_pipeline, PipelineWireError, RulePipeline};
 pub use pipeline::{Pipeline, PostProcessFn};
 pub use post_process::{
-    post_process_cpu, shannon_entropy_bits_per_byte, try_post_process_cpu, PostProcessError,
-    PostProcessedMatch,
+    post_process_cpu, shannon_entropy_bits_per_byte, try_post_process_cpu,
+    try_post_process_cpu_into, PostProcessError, PostProcessedMatch,
 };
 #[cfg(feature = "matching-regex")]
 pub use regex_compile::{

@@ -1,4 +1,5 @@
-//! Tier 2.5 UTF-8 validator — single-pass byte-classification scan.
+//! Tier 2.5 UTF-8 validator — single-pass byte classification with
+//! structural sequence checks.
 //!
 //! Each invocation reads one source byte (`source[i]`, low 8 bits)
 //! and writes one of four classification codes into `classes[i]`:
@@ -10,12 +11,9 @@
 //! - [`UTF8_CONT`]   — byte 0x80..0xBF, continuation byte
 //! - [`UTF8_INVALID`] — byte 0xC0/0xC1 (overlong) or ≥ 0xF8 (out of range)
 //!
-//! Strict structural validation (continuation-count alignment,
-//! surrogate-pair rejection, overlong-encoding detection beyond the
-//! initial-byte sanity check) is the responsibility of the caller's
-//! follow-up scan that consumes this classification stream. This op
-//! provides the raw classification — the LEGO substrate that every
-//! parser dialect builds its own UTF-8 enforcement on.
+//! Malformed lead/continuation structure is reported as
+//! [`UTF8_INVALID`] at the offending byte. Valid bytes retain the
+//! shape code parser dialects need for downstream tokenization.
 
 use std::sync::Arc;
 use vyre_foundation::ir::model::expr::Ident;
@@ -37,15 +35,17 @@ pub const UTF8_CONT: u32 = 4;
 /// 0xC0, 0xC1 (overlong) or 0xF8..0xFF (out of range) — invalid lead.
 pub const UTF8_INVALID: u32 = 5;
 
-/// Build a Program that classifies each `source[i]` byte into one of
-/// the `UTF8_*` codes above and writes the result into `classes[i]`.
+/// Build a Program that validates and classifies each `source[i]`
+/// byte into one of the `UTF8_*` codes above and writes the result
+/// into `classes[i]`.
 #[must_use]
 pub fn utf8_validate(source: &str, classes: &str, n: u32) -> Program {
+    let idx = Expr::InvocationId { axis: 0 };
     let body = vec![Node::Region {
         generator: Ident::from(OP_ID),
         source_region: None,
         body: Arc::new(vec![
-            Node::let_bind("idx", Expr::InvocationId { axis: 0 }),
+            Node::let_bind("idx", idx.clone()),
             Node::if_then(
                 Expr::lt(Expr::var("idx"), Expr::u32(n)),
                 vec![
@@ -53,43 +53,26 @@ pub fn utf8_validate(source: &str, classes: &str, n: u32) -> Program {
                         "byte",
                         Expr::bitand(Expr::load(source, Expr::var("idx")), Expr::u32(0xFF)),
                     ),
-                    // Six-way classification using nested Select. The
-                    // ordering walks INVALID first so 0xC0/0xC1 don't
-                    // fall through to LEAD_2.
-                    Node::let_bind(
-                        "class",
-                        // ASCII (< 0x80) -> UTF8_ASCII
-                        Expr::select(
-                            Expr::lt(Expr::var("byte"), Expr::u32(0x80)),
-                            Expr::u32(UTF8_ASCII),
-                            // CONT (0x80..0xBF) -> UTF8_CONT
-                            Expr::select(
-                                Expr::lt(Expr::var("byte"), Expr::u32(0xC0)),
-                                Expr::u32(UTF8_CONT),
-                                // INVALID overlong (0xC0..0xC1) -> UTF8_INVALID
-                                Expr::select(
-                                    Expr::lt(Expr::var("byte"), Expr::u32(0xC2)),
-                                    Expr::u32(UTF8_INVALID),
-                                    // LEAD_2 (0xC2..0xDF) -> UTF8_LEAD_2
-                                    Expr::select(
-                                        Expr::lt(Expr::var("byte"), Expr::u32(0xE0)),
-                                        Expr::u32(UTF8_LEAD_2),
-                                        // LEAD_3 (0xE0..0xEF) -> UTF8_LEAD_3
-                                        Expr::select(
-                                            Expr::lt(Expr::var("byte"), Expr::u32(0xF0)),
-                                            Expr::u32(UTF8_LEAD_3),
-                                            // LEAD_4 (0xF0..0xF7) -> UTF8_LEAD_4
-                                            Expr::select(
-                                                Expr::lt(Expr::var("byte"), Expr::u32(0xF8)),
-                                                Expr::u32(UTF8_LEAD_4),
-                                                // 0xF8..0xFF -> UTF8_INVALID
-                                                Expr::u32(UTF8_INVALID),
-                                            ),
-                                        ),
-                                    ),
-                                ),
-                            ),
-                        ),
+                    Node::let_bind("class", Expr::u32(UTF8_INVALID)),
+                    Node::if_then(
+                        Expr::lt(Expr::var("byte"), Expr::u32(0x80)),
+                        vec![Node::assign("class", Expr::u32(UTF8_ASCII))],
+                    ),
+                    Node::if_then(
+                        in_range(Expr::var("byte"), 0x80, 0xBF),
+                        continuation_validation_body(source),
+                    ),
+                    Node::if_then(
+                        in_range(Expr::var("byte"), 0xC2, 0xDF),
+                        lead2_validation_body(source, n),
+                    ),
+                    Node::if_then(
+                        in_range(Expr::var("byte"), 0xE0, 0xEF),
+                        lead3_validation_body(source, n),
+                    ),
+                    Node::if_then(
+                        in_range(Expr::var("byte"), 0xF0, 0xF4),
+                        lead4_validation_body(source, n),
                     ),
                     Node::store(classes, Expr::var("idx"), Expr::var("class")),
                 ],
@@ -97,31 +80,344 @@ pub fn utf8_validate(source: &str, classes: &str, n: u32) -> Program {
         ]),
     }];
 
+    let source_decl = if n == 0 {
+        BufferDecl::storage(source, 0, BufferAccess::ReadOnly, DataType::U32)
+    } else {
+        BufferDecl::storage(source, 0, BufferAccess::ReadOnly, DataType::U32).with_count(n)
+    };
     Program::wrapped(
         vec![
-            BufferDecl::storage(source, 0, BufferAccess::ReadOnly, DataType::U32).with_count(n),
-            BufferDecl::output(classes, 1, DataType::U32).with_count(n),
+            source_decl,
+            BufferDecl::output(classes, 1, DataType::U32)
+                .with_count(n.max(1))
+                .with_output_byte_range(0..(n as usize).saturating_mul(4)),
         ],
         [64, 1, 1],
         body,
     )
 }
 
-/// CPU reference: classify each byte the same way the GPU kernel does.
+fn byte_expr(source: &str, index: Expr) -> Expr {
+    Expr::bitand(Expr::load(source, index), Expr::u32(0xFF))
+}
+
+fn in_range(value: Expr, lo: u32, hi: u32) -> Expr {
+    Expr::and(
+        Expr::ge(value.clone(), Expr::u32(lo)),
+        Expr::le(value, Expr::u32(hi)),
+    )
+}
+
+fn valid_three_byte_first(lead: Expr, first: Expr) -> Expr {
+    Expr::or(
+        Expr::or(
+            Expr::and(
+                Expr::eq(lead.clone(), Expr::u32(0xE0)),
+                in_range(first.clone(), 0xA0, 0xBF),
+            ),
+            Expr::and(
+                Expr::eq(lead.clone(), Expr::u32(0xED)),
+                in_range(first.clone(), 0x80, 0x9F),
+            ),
+        ),
+        Expr::and(
+            Expr::or(
+                in_range(lead.clone(), 0xE1, 0xEC),
+                in_range(lead, 0xEE, 0xEF),
+            ),
+            in_range(first, 0x80, 0xBF),
+        ),
+    )
+}
+
+fn valid_four_byte_first(lead: Expr, first: Expr) -> Expr {
+    Expr::or(
+        Expr::or(
+            Expr::and(
+                Expr::eq(lead.clone(), Expr::u32(0xF0)),
+                in_range(first.clone(), 0x90, 0xBF),
+            ),
+            Expr::and(
+                Expr::eq(lead.clone(), Expr::u32(0xF4)),
+                in_range(first.clone(), 0x80, 0x8F),
+            ),
+        ),
+        Expr::and(in_range(lead, 0xF1, 0xF3), in_range(first, 0x80, 0xBF)),
+    )
+}
+
+fn continuation_validation_body(source: &str) -> Vec<Node> {
+    vec![
+        Node::if_then(
+            Expr::lt(Expr::u32(0), Expr::var("idx")),
+            vec![
+                Node::let_bind(
+                    "prev1",
+                    byte_expr(source, Expr::add(Expr::var("idx"), Expr::u32(u32::MAX))),
+                ),
+                Node::if_then(
+                    in_range(Expr::var("prev1"), 0xC2, 0xDF),
+                    vec![Node::assign("class", Expr::u32(UTF8_CONT))],
+                ),
+                Node::if_then(
+                    Expr::lt(
+                        Expr::add(Expr::var("idx"), Expr::u32(1)),
+                        Expr::buf_len(source),
+                    ),
+                    vec![
+                        Node::let_bind(
+                            "next1_after_cont3",
+                            byte_expr(source, Expr::add(Expr::var("idx"), Expr::u32(1))),
+                        ),
+                        Node::if_then(
+                            Expr::and(
+                                valid_three_byte_first(Expr::var("prev1"), Expr::var("byte")),
+                                in_range(Expr::var("next1_after_cont3"), 0x80, 0xBF),
+                            ),
+                            vec![Node::assign("class", Expr::u32(UTF8_CONT))],
+                        ),
+                    ],
+                ),
+                Node::if_then(
+                    Expr::lt(
+                        Expr::add(Expr::var("idx"), Expr::u32(2)),
+                        Expr::buf_len(source),
+                    ),
+                    vec![
+                        Node::let_bind(
+                            "next1_after_cont4",
+                            byte_expr(source, Expr::add(Expr::var("idx"), Expr::u32(1))),
+                        ),
+                        Node::let_bind(
+                            "next2_after_cont4",
+                            byte_expr(source, Expr::add(Expr::var("idx"), Expr::u32(2))),
+                        ),
+                        Node::if_then(
+                            Expr::and(
+                                Expr::and(
+                                    valid_four_byte_first(Expr::var("prev1"), Expr::var("byte")),
+                                    in_range(Expr::var("next1_after_cont4"), 0x80, 0xBF),
+                                ),
+                                in_range(Expr::var("next2_after_cont4"), 0x80, 0xBF),
+                            ),
+                            vec![Node::assign("class", Expr::u32(UTF8_CONT))],
+                        ),
+                    ],
+                ),
+            ],
+        ),
+        Node::if_then(
+            Expr::lt(Expr::u32(1), Expr::var("idx")),
+            vec![
+                Node::let_bind(
+                    "prev2",
+                    byte_expr(source, Expr::add(Expr::var("idx"), Expr::u32(u32::MAX - 1))),
+                ),
+                Node::let_bind(
+                    "prev1_for_3",
+                    byte_expr(source, Expr::add(Expr::var("idx"), Expr::u32(u32::MAX))),
+                ),
+                Node::if_then(
+                    valid_three_byte_first(Expr::var("prev2"), Expr::var("prev1_for_3")),
+                    vec![Node::assign("class", Expr::u32(UTF8_CONT))],
+                ),
+                Node::if_then(
+                    Expr::lt(
+                        Expr::add(Expr::var("idx"), Expr::u32(1)),
+                        Expr::buf_len(source),
+                    ),
+                    vec![
+                        Node::let_bind(
+                            "next1_after_cont4_mid",
+                            byte_expr(source, Expr::add(Expr::var("idx"), Expr::u32(1))),
+                        ),
+                        Node::if_then(
+                            Expr::and(
+                                Expr::and(
+                                    valid_four_byte_first(
+                                        Expr::var("prev2"),
+                                        Expr::var("prev1_for_3"),
+                                    ),
+                                    in_range(Expr::var("byte"), 0x80, 0xBF),
+                                ),
+                                in_range(Expr::var("next1_after_cont4_mid"), 0x80, 0xBF),
+                            ),
+                            vec![Node::assign("class", Expr::u32(UTF8_CONT))],
+                        ),
+                    ],
+                ),
+            ],
+        ),
+        Node::if_then(
+            Expr::lt(Expr::u32(2), Expr::var("idx")),
+            vec![
+                Node::let_bind(
+                    "prev3",
+                    byte_expr(source, Expr::add(Expr::var("idx"), Expr::u32(u32::MAX - 2))),
+                ),
+                Node::let_bind(
+                    "prev2_for_4",
+                    byte_expr(source, Expr::add(Expr::var("idx"), Expr::u32(u32::MAX - 1))),
+                ),
+                Node::let_bind(
+                    "prev1_for_4",
+                    byte_expr(source, Expr::add(Expr::var("idx"), Expr::u32(u32::MAX))),
+                ),
+                Node::if_then(
+                    Expr::and(
+                        valid_four_byte_first(Expr::var("prev3"), Expr::var("prev2_for_4")),
+                        in_range(Expr::var("prev1_for_4"), 0x80, 0xBF),
+                    ),
+                    vec![Node::assign("class", Expr::u32(UTF8_CONT))],
+                ),
+            ],
+        ),
+    ]
+}
+
+fn lead2_validation_body(source: &str, n: u32) -> Vec<Node> {
+    vec![Node::if_then(
+        Expr::lt(Expr::add(Expr::var("idx"), Expr::u32(1)), Expr::u32(n)),
+        vec![
+            Node::let_bind(
+                "next1_for_2",
+                byte_expr(source, Expr::add(Expr::var("idx"), Expr::u32(1))),
+            ),
+            Node::if_then(
+                in_range(Expr::var("next1_for_2"), 0x80, 0xBF),
+                vec![Node::assign("class", Expr::u32(UTF8_LEAD_2))],
+            ),
+        ],
+    )]
+}
+
+fn lead3_validation_body(source: &str, n: u32) -> Vec<Node> {
+    vec![Node::if_then(
+        Expr::lt(Expr::add(Expr::var("idx"), Expr::u32(2)), Expr::u32(n)),
+        vec![
+            Node::let_bind(
+                "next1_for_3",
+                byte_expr(source, Expr::add(Expr::var("idx"), Expr::u32(1))),
+            ),
+            Node::let_bind(
+                "next2_for_3",
+                byte_expr(source, Expr::add(Expr::var("idx"), Expr::u32(2))),
+            ),
+            Node::if_then(
+                Expr::and(
+                    valid_three_byte_first(Expr::var("byte"), Expr::var("next1_for_3")),
+                    in_range(Expr::var("next2_for_3"), 0x80, 0xBF),
+                ),
+                vec![Node::assign("class", Expr::u32(UTF8_LEAD_3))],
+            ),
+        ],
+    )]
+}
+
+fn lead4_validation_body(source: &str, n: u32) -> Vec<Node> {
+    vec![Node::if_then(
+        Expr::lt(Expr::add(Expr::var("idx"), Expr::u32(3)), Expr::u32(n)),
+        vec![
+            Node::let_bind(
+                "next1_for_4",
+                byte_expr(source, Expr::add(Expr::var("idx"), Expr::u32(1))),
+            ),
+            Node::let_bind(
+                "next2_for_4",
+                byte_expr(source, Expr::add(Expr::var("idx"), Expr::u32(2))),
+            ),
+            Node::let_bind(
+                "next3_for_4",
+                byte_expr(source, Expr::add(Expr::var("idx"), Expr::u32(3))),
+            ),
+            Node::if_then(
+                Expr::and(
+                    Expr::and(
+                        valid_four_byte_first(Expr::var("byte"), Expr::var("next1_for_4")),
+                        in_range(Expr::var("next2_for_4"), 0x80, 0xBF),
+                    ),
+                    in_range(Expr::var("next3_for_4"), 0x80, 0xBF),
+                ),
+                vec![Node::assign("class", Expr::u32(UTF8_LEAD_4))],
+            ),
+        ],
+    )]
+}
+
+/// CPU reference: validate and classify each byte the same way the GPU kernel does.
 #[must_use]
 pub fn cpu_ref(source: &[u8]) -> Vec<u32> {
-    source
-        .iter()
-        .map(|&byte| match byte {
-            0x00..=0x7F => UTF8_ASCII,
-            0x80..=0xBF => UTF8_CONT,
-            0xC0 | 0xC1 => UTF8_INVALID,
-            0xC2..=0xDF => UTF8_LEAD_2,
-            0xE0..=0xEF => UTF8_LEAD_3,
-            0xF0..=0xF7 => UTF8_LEAD_4,
-            0xF8..=0xFF => UTF8_INVALID,
-        })
+    (0..source.len())
+        .map(|idx| cpu_class_at(source, idx))
         .collect()
+}
+
+fn cpu_is_cont(byte: u8) -> bool {
+    matches!(byte, 0x80..=0xBF)
+}
+
+fn cpu_valid_lead2(source: &[u8], idx: usize) -> bool {
+    matches!(source[idx], 0xC2..=0xDF) && source.get(idx + 1).copied().is_some_and(cpu_is_cont)
+}
+
+fn cpu_valid_lead3(source: &[u8], idx: usize) -> bool {
+    let Some(&b1) = source.get(idx + 1) else {
+        return false;
+    };
+    let Some(&b2) = source.get(idx + 2) else {
+        return false;
+    };
+    let first_ok = match source[idx] {
+        0xE0 => matches!(b1, 0xA0..=0xBF),
+        0xE1..=0xEC | 0xEE..=0xEF => cpu_is_cont(b1),
+        0xED => matches!(b1, 0x80..=0x9F),
+        _ => false,
+    };
+    first_ok && cpu_is_cont(b2)
+}
+
+fn cpu_valid_lead4(source: &[u8], idx: usize) -> bool {
+    let Some(&b1) = source.get(idx + 1) else {
+        return false;
+    };
+    let Some(&b2) = source.get(idx + 2) else {
+        return false;
+    };
+    let Some(&b3) = source.get(idx + 3) else {
+        return false;
+    };
+    let first_ok = match source[idx] {
+        0xF0 => matches!(b1, 0x90..=0xBF),
+        0xF1..=0xF3 => cpu_is_cont(b1),
+        0xF4 => matches!(b1, 0x80..=0x8F),
+        _ => false,
+    };
+    first_ok && cpu_is_cont(b2) && cpu_is_cont(b3)
+}
+
+fn cpu_valid_cont_position(source: &[u8], idx: usize) -> bool {
+    idx.checked_sub(1).is_some_and(|lead| {
+        cpu_valid_lead2(source, lead)
+            || cpu_valid_lead3(source, lead)
+            || cpu_valid_lead4(source, lead)
+    }) || idx
+        .checked_sub(2)
+        .is_some_and(|lead| cpu_valid_lead3(source, lead) || cpu_valid_lead4(source, lead))
+        || idx
+            .checked_sub(3)
+            .is_some_and(|lead| cpu_valid_lead4(source, lead))
+}
+
+fn cpu_class_at(source: &[u8], idx: usize) -> u32 {
+    match source[idx] {
+        0x00..=0x7F => UTF8_ASCII,
+        0x80..=0xBF if cpu_valid_cont_position(source, idx) => UTF8_CONT,
+        0x80..=0xBF => UTF8_INVALID,
+        0xC2..=0xDF if cpu_valid_lead2(source, idx) => UTF8_LEAD_2,
+        0xE0..=0xEF if cpu_valid_lead3(source, idx) => UTF8_LEAD_3,
+        0xF0..=0xF4 if cpu_valid_lead4(source, idx) => UTF8_LEAD_4,
+        _ => UTF8_INVALID,
+    }
 }
 
 #[cfg(feature = "inventory-registry")]
@@ -190,5 +486,31 @@ mod tests {
             cpu_ref(&[0xF8, 0xFC, 0xFF]),
             vec![UTF8_INVALID, UTF8_INVALID, UTF8_INVALID]
         );
+    }
+
+    #[test]
+    fn cpu_ref_rejects_stray_continuation() {
+        assert_eq!(cpu_ref(&[0x80]), vec![UTF8_INVALID]);
+        assert_eq!(cpu_ref(&[b'a', 0xBF]), vec![UTF8_ASCII, UTF8_INVALID]);
+    }
+
+    #[test]
+    fn cpu_ref_rejects_truncated_sequences() {
+        assert_eq!(cpu_ref(&[0xC3]), vec![UTF8_INVALID]);
+        assert_eq!(cpu_ref(&[0xE2, 0x82]), vec![UTF8_INVALID, UTF8_INVALID]);
+        assert_eq!(
+            cpu_ref(&[0xF0, 0x9F, 0x98]),
+            vec![UTF8_INVALID, UTF8_INVALID, UTF8_INVALID]
+        );
+    }
+
+    #[test]
+    fn cpu_ref_rejects_surrogate_and_overlong_sequences() {
+        assert_eq!(
+            cpu_ref(&[0xED, 0xA0, 0x80]),
+            vec![UTF8_INVALID, UTF8_INVALID, UTF8_INVALID]
+        );
+        assert_eq!(cpu_ref(&[0xE0, 0x80, 0x80]), vec![UTF8_INVALID; 3]);
+        assert_eq!(cpu_ref(&[0xF0, 0x80, 0x80, 0x80]), vec![UTF8_INVALID; 4]);
     }
 }

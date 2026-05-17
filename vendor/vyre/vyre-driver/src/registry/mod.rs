@@ -10,7 +10,7 @@ pub mod enforce;
 pub mod interner;
 /// I/O lowering helpers (DMA, NVMe passthrough).
 pub mod io;
-/// Naga / SPIR-V / PTX / Metal builder traits + `LoweringTable`.
+/// Target builder traits + `LoweringTable`.
 pub mod lowering;
 /// `Migration` and `Deprecation` inventory types for op-id renames.
 pub mod migration;
@@ -30,8 +30,8 @@ pub use dialect::{
 pub use enforce::{Chain, EnforceGate, EnforceVerdict};
 pub use interner::{intern_string, InternedOpId};
 pub use lowering::{
-    LoweringCtx, LoweringTable, MetalBuilder, MetalModule, NagaBuilder, PtxBuilder, PtxModule,
-    ReferenceKind, SpirvBuilder,
+    LoweringCtx, LoweringTable, NativeModule, NativeModuleBuilder, PrimaryBinaryBuilder,
+    PrimaryTextBuilder, ReferenceKind, SecondaryTextBuilder, TextModule,
 };
 pub use migration::{
     deprecation_diagnostic, AttrMap, AttrValue, Deprecation, Migration, MigrationError,

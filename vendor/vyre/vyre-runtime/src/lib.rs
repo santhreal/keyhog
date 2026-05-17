@@ -23,13 +23,17 @@
 //!   registered mapped reads, but the native path is NVMe passthrough into
 //!   BAR1 GPU memory; after launch the megakernel owns execution and the CPU
 //!   only touches queue metadata.
-//! - **Megakernel is IR, not WGSL.** The persistent kernel is a
+//! - **Megakernel is IR, not target-text.** The persistent kernel is a
 //!   `Program` any `VyreBackend` can compile + dispatch.
 //! - **Structured errors, never silent swallowing.** Every failure
 //!   mode returns `PipelineError` with a `Fix: ` hint.
 
 #![deny(missing_docs)]
 #![warn(unreachable_pub)]
+// vyre-runtime owns the io_uring zero-copy ingest path and the persistent
+// megakernel ring; both reach into FFI / mmap territory. Every unsafe site
+// carries a `Safety:` comment that `check_unsafe_justifications.sh` validates.
+#![allow(unsafe_code)]
 
 /// Errors surfaced by the runtime layer. Every variant carries a
 /// `Fix:`-bearing message so a reviewer can act on the failure.
@@ -91,6 +95,9 @@ pub mod replay;
 /// Backend routing policy for execution plans.
 pub mod routing;
 
+/// Multi-GPU work partitioning across runtime backends.
+pub mod scheduler;
+
 /// Multi-tenant megakernel multiplexing — one persistent kernel per
 /// GPU, shared across warpscan / keyhog / soleno / vein etc via the
 /// `tenant_id` field already in the ring protocol.
@@ -105,10 +112,11 @@ pub use tenant::{
 #[cfg(feature = "remote")]
 pub use pipeline_cache::RemoteCache;
 pub use pipeline_cache::{
-    InMemoryPipelineCache, LayeredPipelineCache, PipelineCacheStore, PipelineFingerprint,
+    DiskCache, DiskCacheError, InMemoryPipelineCache, LayeredPipelineCache,
+    PersistentPipelineCacheStore, PipelineCacheMetrics, PipelineCacheStore, PipelineFingerprint,
 };
 
-pub use megakernel::{Megakernel, WgpuMegakernelDispatcher};
+pub use megakernel::Megakernel;
 
 /// Linux io_uring integration. Compiled out on macOS / Windows.
 #[cfg(target_os = "linux")]
@@ -120,14 +128,6 @@ pub mod uring;
 pub struct GpuStream<'a> {
     #[cfg(target_os = "linux")]
     uring: Option<uring::AsyncUringStream<'a>>,
-    /// Phantom binding so the `'a` lifetime is always used even on
-    /// non-Linux platforms where the `uring` field is cfg'd out.
-    /// Without this the lib fails to compile on Windows / macOS with
-    /// `unused lifetime parameter`. (vyre-side fix candidate; until
-    /// upstream lands a cross-platform structural change we keep this
-    /// PhantomData here in the vendored copy.)
-    #[cfg(not(target_os = "linux"))]
-    _marker: std::marker::PhantomData<&'a ()>,
     shutdown_requested: bool,
 }
 
@@ -154,8 +154,6 @@ impl<'a> GpuStream<'a> {
         Self {
             #[cfg(target_os = "linux")]
             uring: None,
-            #[cfg(not(target_os = "linux"))]
-            _marker: std::marker::PhantomData,
             shutdown_requested: false,
         }
     }

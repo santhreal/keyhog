@@ -17,7 +17,10 @@
 #[cfg(all(target_os = "linux", feature = "uring-cmd-nvme"))]
 use std::fs;
 #[cfg(all(target_os = "linux", feature = "uring-cmd-nvme"))]
-use std::io::ErrorKind;
+use std::io::{ErrorKind, Read as _};
+
+#[cfg(all(target_os = "linux", feature = "uring-cmd-nvme"))]
+const MAX_NVIDIA_FS_STATS_BYTES: u64 = 1024 * 1024;
 
 /// Result of probing the host for GPUDirect Storage support.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -59,7 +62,7 @@ impl GpuDirectCapability {
         }
 
         #[cfg(all(target_os = "linux", feature = "uring-cmd-nvme"))]
-        match fs::read_to_string("/proc/driver/nvidia-fs/stats") {
+        match read_nvidia_fs_stats() {
             Ok(stats) if !stats.trim().is_empty() => {
                 GpuDirectCapability::Available { stats }
             }
@@ -84,6 +87,22 @@ impl GpuDirectCapability {
     pub fn is_available(&self) -> bool {
         matches!(self, GpuDirectCapability::Available { .. })
     }
+}
+
+#[cfg(all(target_os = "linux", feature = "uring-cmd-nvme"))]
+fn read_nvidia_fs_stats() -> std::io::Result<String> {
+    let mut file = fs::File::open("/proc/driver/nvidia-fs/stats")?;
+    let mut stats = String::new();
+    file.by_ref()
+        .take(MAX_NVIDIA_FS_STATS_BYTES + 1)
+        .read_to_string(&mut stats)?;
+    if stats.len() as u64 > MAX_NVIDIA_FS_STATS_BYTES {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "nvidia-fs stats exceeded bounded read limit",
+        ));
+    }
+    Ok(stats)
 }
 
 /// NVMe `0x02` Read opcode (see NVMe Base Spec 1.4, §5.15).

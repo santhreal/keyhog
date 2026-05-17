@@ -14,8 +14,10 @@ pub use vyre_primitives::text::char_class::{
     C_BACKSLASH, C_BANG, C_CARET, C_CLOSE_BRACE, C_CLOSE_BRACKET, C_CLOSE_PAREN, C_COMMA, C_DIGIT,
     C_DOT, C_DQUOTE, C_EOF, C_EQUALS, C_GT, C_HASH, C_LT, C_MINUS, C_NEWLINE, C_OPEN_BRACE,
     C_OPEN_BRACKET, C_OPEN_PAREN, C_OTHER, C_PERCENT, C_PIPE, C_PLUS, C_QUOTE, C_SEMICOLON,
-    C_SLASH, C_STAR, C_TILDE, C_WS, OP_ID,
+    C_SLASH, C_STAR, C_TILDE, C_WS,
 };
+
+const OP_ID: &str = "vyre-libs::text::char_class";
 
 fn fixture_inputs() -> Vec<Vec<Vec<u8>>> {
     let table = build_char_class_table();
@@ -54,8 +56,8 @@ mod tests {
             Value::Bytes(pack_u32(&table).into()),
             Value::Bytes(vec![0u8; (n as usize) * 4].into()),
         ];
-        let outputs =
-            vyre_reference::reference_eval(&program, &inputs).expect("char_class must run");
+        let outputs = vyre_reference::reference_eval(&program, &inputs)
+            .expect("Fix: char_class must run; restore this invariant before continuing.");
         outputs[0]
             .to_bytes()
             .chunks_exact(4)

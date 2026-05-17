@@ -1,13 +1,13 @@
 [package]
 name = "vyre-reference"
-version = "0.6.0"
+version = "0.4.1"
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
 homepage.workspace = true
-description = "Pure-Rust CPU reference interpreter for vyre IR — byte-identical oracle for backend conformance and small-data fallback"
+description = "Pure-Rust CPU reference interpreter for vyre IR; byte-identical oracle for backend conformance"
 readme = "README.md"
 keywords = ["gpu", "ir", "reference", "interpreter", "vyre"]
 categories = ["algorithms", "api-bindings"]
@@ -23,6 +23,7 @@ blake3.workspace = true
 bytemuck.workspace = true
 rustc-hash.workspace = true
 smallvec.workspace = true
+im.workspace = true
 libm.workspace = true
 
 [dev-dependencies]
@@ -32,18 +33,13 @@ regex-automata.workspace = true
 hex.workspace = true
 fnv = "1.0.7"
 vyre.workspace = true
-vyre-driver-wgpu = { workspace = true, features = ["parity-testing"] }
-
-[[bench]]
-name = "eval_throughput"
-harness = false
 
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
-default = []
+default = ["subgroup-ops"]
 subgroup-ops = []
 
 [lints]
@@ -51,4 +47,4 @@ workspace = true
 
 [[test]]
 name = "test_fnv1a32_zero"
-path = "../tests/adversarial/test_fnv1a32_zero.rs"
+path = "tests/fnv1a32_zero.rs"

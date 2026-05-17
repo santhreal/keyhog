@@ -1,7 +1,7 @@
-//! Adapter capabilities + pass context, the scaffolding A-C7b part 1
-//! ships for later passes that want to adapt to the real device.
+//! Adapter capabilities + pass context shared by backend-aware passes that
+//! adapt to the real device.
 //!
-//! The existing [`crate::optimizer::Pass`] trait takes a `Program`
+//! The existing [`crate::optimizer::ProgramPass`] trait takes a `Program`
 //! and returns a `PassResult`. That shape is fine for IR-only
 //! rewrites. But backend-aware passes — fusion (Gemini C's C-B8),
 //! subgroup-op lowering (C-B2), shared-memory allocator — need
@@ -9,7 +9,7 @@
 //!
 //! This module ships the types every such pass consumes:
 //!
-//! * [`AdapterCaps`] — the subset of `wgpu::Adapter` info that
+//! * [`AdapterCaps`] — the subset of concrete adapter info that
 //!   passes care about, in a backend-neutral shape. Backends fill
 //!   this in; passes read it.
 //! * [`PassCtx`] — the mutable context handed to passes that opt
@@ -20,17 +20,17 @@
 //!   diagnostic with the stable `E-PASS-CYCLE` / `E-PASS-REQUIRE`
 //!   codes.
 //!
-//! Existing passes continue to work unchanged. New passes (added
+//! Program-IR passes continue to work unchanged. New passes (added
 //! as part of A-C7b and the Gemini C perf blitz) can adopt the
 //! ctx-based path without breaking the registry.
 
 use crate::diagnostics::{Diagnostic, OpLocation};
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 /// The subset of device info passes read.
 ///
-/// Vendored backends (wgpu, spirv, ptx, metal) fill this from their
-/// native `Adapter::get_info()` + `features()` + `limits()`. Passes
+/// Concrete backends fill this from their native device-info,
+/// feature, and limit surfaces. Passes
 /// read it to decide whether subgroup ops emit intrinsics, how much
 /// shared memory a kernel may use, whether to fuse large kernels,
 /// etc.
@@ -40,14 +40,14 @@ use std::collections::HashMap;
 /// [`AdapterCaps`] should emit the safe fallback.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AdapterCaps {
-    /// Backend identifier ("wgpu", "spirv", "ptx", "metal", "cpu-ref").
+    /// Backend identifier.
     pub backend: &'static str,
-    /// The adapter supports `subgroup*` intrinsics (WGSL or SPIR-V).
+    /// The adapter supports subgroup intrinsics.
     pub supports_subgroup_ops: bool,
     /// The adapter supports `dispatch_workgroups_indirect`.
     pub supports_indirect_dispatch: bool,
     /// The adapter supports specialization constants at pipeline
-    /// creation (WGSL `Override`, SPIR-V `OpDefRegistrationConstant`).
+    /// creation.
     pub supports_specialization_constants: bool,
     /// Maximum compute workgroup size per dimension `[x, y, z]`.
     pub max_workgroup_size: [u32; 3],
@@ -59,6 +59,26 @@ pub struct AdapterCaps {
     pub max_storage_buffer_binding_size: u64,
     /// Subgroup size (warp / wavefront). `0` when unknown.
     pub subgroup_size: u32,
+    /// Physical compute-unit count. `0` when unknown.
+    pub compute_units: u32,
+    /// Maximum registers per thread. `0` when unknown.
+    pub regs_per_thread_max: u32,
+    /// L1 cache size in bytes. `0` when unknown.
+    pub l1_cache_bytes: u32,
+    /// L2 cache size in bytes. `0` when unknown.
+    pub l2_cache_bytes: u32,
+    /// Peak memory bandwidth in GB/s. `0` when unknown.
+    pub mem_bw_gbps: u32,
+    /// Device-signature preferred unroll depth. `0` when unknown.
+    pub ideal_unroll_depth: u32,
+    /// Device-signature preferred vector pack width in bits. `0` when unknown.
+    pub ideal_vector_pack_bits: u32,
+    /// Device-signature preferred workgroup tile. `[0, 0, 0]` when unknown.
+    pub ideal_workgroup_tile: [u32; 3],
+    /// Shared-memory bank count. `0` when unknown.
+    pub shared_memory_bank_count: u32,
+    /// Shared-memory bank width in bytes. `0` when unknown.
+    pub shared_memory_bank_width_bytes: u32,
 }
 
 impl Default for AdapterCaps {
@@ -73,6 +93,16 @@ impl Default for AdapterCaps {
             max_shared_memory_bytes: 16 * 1024,
             max_storage_buffer_binding_size: 128 * 1024 * 1024,
             subgroup_size: 0,
+            compute_units: 0,
+            regs_per_thread_max: 0,
+            l1_cache_bytes: 0,
+            l2_cache_bytes: 0,
+            mem_bw_gbps: 0,
+            ideal_unroll_depth: 0,
+            ideal_vector_pack_bits: 0,
+            ideal_workgroup_tile: [0, 0, 0],
+            shared_memory_bank_count: 0,
+            shared_memory_bank_width_bytes: 0,
         }
     }
 }
@@ -94,17 +124,27 @@ impl AdapterCaps {
             max_shared_memory_bytes: 16 * 1024,
             max_storage_buffer_binding_size: 128 * 1024 * 1024,
             subgroup_size: 0,
+            compute_units: 0,
+            regs_per_thread_max: 0,
+            l1_cache_bytes: 0,
+            l2_cache_bytes: 0,
+            mem_bw_gbps: 0,
+            ideal_unroll_depth: 0,
+            ideal_vector_pack_bits: 0,
+            ideal_workgroup_tile: [0, 0, 0],
+            shared_memory_bank_count: 0,
+            shared_memory_bank_width_bytes: 0,
         }
     }
 
-    /// High-end profile (RTX 5090-class).
+    /// High-end profile used by tests and synthetic planners.
     ///
     /// Used by benches and tests that want to measure the fast
     /// path without probing a real adapter.
     #[must_use]
-    pub const fn rtx_5090() -> Self {
+    pub const fn high_end() -> Self {
         Self {
-            backend: "wgpu",
+            backend: "high-end-dispatch",
             supports_subgroup_ops: true,
             supports_indirect_dispatch: true,
             supports_specialization_constants: true,
@@ -113,6 +153,16 @@ impl AdapterCaps {
             max_shared_memory_bytes: 128 * 1024,
             max_storage_buffer_binding_size: 2 * 1024 * 1024 * 1024,
             subgroup_size: 32,
+            compute_units: 128,
+            regs_per_thread_max: 255,
+            l1_cache_bytes: 128 * 1024,
+            l2_cache_bytes: 64 * 1024 * 1024,
+            mem_bw_gbps: 1700,
+            ideal_unroll_depth: 8,
+            ideal_vector_pack_bits: 128,
+            ideal_workgroup_tile: [16, 16, 1],
+            shared_memory_bank_count: 32,
+            shared_memory_bank_width_bytes: 4,
         }
     }
 }
@@ -128,7 +178,7 @@ impl AdapterCaps {
 /// strongly-typed analysis without teaching this module about it.
 #[derive(Default)]
 pub struct AnalysisCache {
-    entries: HashMap<&'static str, Box<dyn std::any::Any + Send + Sync>>,
+    entries: FxHashMap<&'static str, Box<dyn std::any::Any + Send + Sync>>,
 }
 
 impl AnalysisCache {
@@ -171,7 +221,7 @@ impl std::fmt::Debug for AnalysisCache {
 
 /// Mutable context handed to ctx-aware passes.
 ///
-/// See [`crate::optimizer::Pass`] for the legacy API; ctx-aware
+/// See [`crate::optimizer::ProgramPass`] for the ctx-aware extension API; ctx-aware
 /// passes take a `PassCtx` instead and push diagnostics onto
 /// [`PassCtx::diagnostics`] rather than returning them from the
 /// `transform` method.
@@ -183,6 +233,10 @@ pub struct PassCtx<'a> {
     pub adapter_caps: &'a AdapterCaps,
     /// Analysis cache shared across passes in one schedule run.
     pub analyses: &'a mut AnalysisCache,
+    /// Shared fact substrate (shape / use / type facts) for this
+    /// schedule run. The scheduler initializes it before the first
+    /// pass and invalidates it whenever a pass changes the program.
+    pub fact_substrate: &'a mut crate::optimizer::fact_substrate::FactSubstrate,
     /// Diagnostics accumulated during this pass run. Severity
     /// `Error` halts the scheduler; `Warning` and `Note` surface
     /// after the run completes.
@@ -209,5 +263,102 @@ pub fn scheduling_error_to_diagnostic(err: &crate::optimizer::PassSchedulingErro
         E::DuplicateId { id } => Diagnostic::error(format!(
             "OPTSCHED003: duplicate pass id `{id}`. Fix: assign every pass a unique stable id."
         )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_caps_conservative() {
+        let caps = AdapterCaps::default();
+        assert_eq!(caps.backend, "unknown");
+        assert!(!caps.supports_subgroup_ops);
+        assert!(!caps.supports_indirect_dispatch);
+        assert_eq!(caps.subgroup_size, 0);
+    }
+
+    #[test]
+    fn conservative_profile() {
+        let caps = AdapterCaps::conservative();
+        assert_eq!(caps.backend, "conservative");
+        assert_eq!(caps.max_workgroup_size, [256, 1, 1]);
+    }
+
+    #[test]
+    fn high_end_profile() {
+        let caps = AdapterCaps::high_end();
+        assert_eq!(caps.backend, "high-end-dispatch");
+        assert!(caps.supports_subgroup_ops);
+        assert!(caps.supports_indirect_dispatch);
+        assert!(caps.supports_specialization_constants);
+        assert_eq!(caps.subgroup_size, 32);
+        assert_eq!(caps.max_invocations_per_workgroup, 1024);
+    }
+
+    #[test]
+    fn analysis_cache_insert_and_get() {
+        let mut cache = AnalysisCache::new();
+        cache.insert("node_count", 42u32);
+        assert_eq!(cache.get::<u32>("node_count"), Some(&42));
+    }
+
+    #[test]
+    fn analysis_cache_get_missing() {
+        let cache = AnalysisCache::new();
+        assert_eq!(cache.get::<u32>("nonexistent"), None);
+    }
+
+    #[test]
+    fn analysis_cache_type_mismatch() {
+        let mut cache = AnalysisCache::new();
+        cache.insert("node_count", 42u32);
+        // Asking for wrong type returns None.
+        assert_eq!(cache.get::<String>("node_count"), None);
+    }
+
+    #[test]
+    fn analysis_cache_clear() {
+        let mut cache = AnalysisCache::new();
+        cache.insert("a", 1u32);
+        cache.clear();
+        assert_eq!(cache.get::<u32>("a"), None);
+    }
+
+    #[test]
+    fn analysis_cache_debug() {
+        let cache = AnalysisCache::new();
+        let debug = format!("{cache:?}");
+        assert!(debug.contains("AnalysisCache"));
+    }
+
+    #[test]
+    fn scheduling_error_unknown_require() {
+        let err = crate::optimizer::PassSchedulingError::UnknownRequire {
+            pass: "fusion",
+            missing: "dead_buffer_elim",
+        };
+        let diag = scheduling_error_to_diagnostic(&err);
+        assert!(diag.message.contains("OPTSCHED001"));
+        assert!(diag.message.contains("fusion"));
+    }
+
+    #[test]
+    fn scheduling_error_cycle() {
+        let err = crate::optimizer::PassSchedulingError::Cycle {
+            pass_ids: vec!["a", "b"],
+            fix: "break the cycle",
+        };
+        let diag = scheduling_error_to_diagnostic(&err);
+        assert!(diag.message.contains("OPTSCHED002"));
+    }
+
+    #[test]
+    fn scheduling_error_duplicate_id() {
+        let err = crate::optimizer::PassSchedulingError::DuplicateId { id: "dup_pass" };
+        let diag = scheduling_error_to_diagnostic(&err);
+        assert!(diag.message.contains("OPTSCHED003"));
+        assert!(diag.message.contains("dup_pass"));
     }
 }

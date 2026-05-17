@@ -24,8 +24,8 @@
 //! running the step kernel over it.
 //!
 //! This module's [`ifds_reach_step`] is now correctly tagged
-//! [`MayOver`](super::Soundness::MayOver) and delegates to
-//! [`super::ifds_gpu::ifds_gpu_step`] when the caller passes a real
+//! `MayOver` and delegates to
+//! `super::ifds_gpu::ifds_gpu_step` when the caller passes a real
 //! [`super::ifds_gpu::IfdsShape`]. The Tier-3 ProgramGraphShape
 //! entry remains for back-compat callers that pre-built the CSR by
 //! hand — those callers MUST still iterate to fixpoint and gate
@@ -68,7 +68,10 @@ const IFDS_REACH_MASK: u32 = edge_kind::ASSIGNMENT
 /// fixpoint, (e) intersecting the final reach with the sink set.
 #[must_use]
 pub fn ifds_reach_step(shape: ProgramGraphShape, frontier_in: &str, frontier_out: &str) -> Program {
-    csr_forward_traverse(shape, frontier_in, frontier_out, IFDS_REACH_MASK)
+    crate::region::tag_program(
+        OP_ID,
+        csr_forward_traverse(shape, frontier_in, frontier_out, IFDS_REACH_MASK),
+    )
 }
 
 /// PHASE6_DATAFLOW CRITICAL: bridge from the high-level IFDS surface
@@ -84,7 +87,10 @@ pub fn ifds_reach_step_exploded(
     frontier_in: &str,
     frontier_out: &str,
 ) -> Program {
-    super::ifds_gpu::ifds_gpu_step(shape, frontier_in, frontier_out)
+    crate::region::tag_program(
+        OP_ID,
+        super::ifds_gpu::ifds_gpu_step(shape, frontier_in, frontier_out),
+    )
 }
 
 inventory::submit! {
@@ -203,6 +209,123 @@ mod tests {
             Ifds.soundness(),
             Soundness::MayOver,
             "IFDS without sanitizer-gating is not Exact — must be MayOver"
+        );
+    }
+
+    #[test]
+    fn ifds_mixed_edge_mask_only_traverses_matching_kinds() {
+        // M8 adversarial: mixed edge kinds with IFDS mask.
+        let got = vyre_primitives::graph::csr_forward_traverse::cpu_ref(
+            5,
+            &[0, 4, 4, 4, 4, 4],
+            &[1, 2, 3, 4],
+            &[
+                edge_kind::CALL_ARG,   // 0→1: match
+                edge_kind::RETURN,     // 0→2: match
+                edge_kind::CONTROL,    // 0→3: NO match
+                edge_kind::DOMINANCE,  // 0→4: NO match
+            ],
+            &[0b0001], // frontier = {0}
+            IFDS_REACH_MASK,
+        );
+        assert_eq!(
+            got,
+            vec![0b0110],
+            "IFDS mask must exclude CONTROL and DOMINANCE edges"
+        );
+    }
+
+    #[test]
+    fn ifds_empty_call_graph_no_propagation() {
+        // No edges. Frontier should stay empty.
+        let got = vyre_primitives::graph::csr_forward_traverse::cpu_ref(
+            3,
+            &[0, 0, 0, 0],
+            &[0, 0],
+            &[0, 0],
+            &[0b0001],
+            IFDS_REACH_MASK,
+        );
+        assert_eq!(got, vec![0], "empty graph must produce empty frontier");
+    }
+
+    #[test]
+    fn ifds_raw_csr_step_follows_materialized_call_arg_edges() {
+        // This primitive operates after exploded-supergraph construction.
+        // If construction emits a CALL_ARG edge, the raw step follows it;
+        // call/return matching is enforced by the graph builder, not by
+        // this single CSR frontier expansion.
+        let got = vyre_primitives::graph::csr_forward_traverse::cpu_ref(
+            3,
+            &[0, 1, 1, 1],
+            &[1],
+            &[edge_kind::CALL_ARG],
+            &[0b0001],
+            IFDS_REACH_MASK,
+        );
+        assert_eq!(
+            got,
+            vec![0b0010],
+            "raw IFDS CSR step must follow materialized CALL_ARG edges"
+        );
+    }
+
+    #[test]
+    fn ifds_raw_csr_step_follows_materialized_return_edges() {
+        // Same contract: RETURN edges are already validated/materialized
+        // by the exploded-supergraph builder before this primitive runs.
+        let got = vyre_primitives::graph::csr_forward_traverse::cpu_ref(
+            3,
+            &[0, 1, 1, 1],
+            &[1],
+            &[edge_kind::RETURN],
+            &[0b0001],
+            IFDS_REACH_MASK,
+        );
+        assert_eq!(
+            got,
+            vec![0b0010],
+            "raw IFDS CSR step must follow materialized RETURN edges"
+        );
+    }
+
+    #[test]
+    fn ifds_self_recursive_function_reaches_fixpoint() {
+        // Self-recursive: 0→1 (CALL_ARG), 1→1 (RETURN to self).
+        let mut frontier = vec![0b0001];
+        let words = vyre_primitives::graph::csr_forward_traverse::bitset_words(2) as usize;
+        frontier.resize(words, 0);
+        let mut iters = 0;
+        for _ in 0..128 {
+            let next = vyre_primitives::graph::csr_forward_traverse::cpu_ref(
+                2,
+                &[0, 1, 2],
+                &[1, 1],
+                &[edge_kind::CALL_ARG, edge_kind::RETURN],
+                &frontier,
+                IFDS_REACH_MASK,
+            );
+            let mut changed = false;
+            for i in 0..words {
+                let old = frontier[i];
+                frontier[i] |= next[i];
+                if frontier[i] != old {
+                    changed = true;
+                }
+            }
+            iters += 1;
+            if !changed {
+                break;
+            }
+        }
+        assert!(
+            iters > 1,
+            "self-recursive reachability must take >1 iteration; converged in {iters}"
+        );
+        assert_eq!(
+            frontier,
+            vec![0b0011],
+            "self-recursive function must reach both nodes in fixpoint"
         );
     }
 }

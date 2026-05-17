@@ -11,7 +11,10 @@ pub const OP_ID: &str = "vyre-primitives::predicate::in_function";
 /// Build a Program that emits the NodeSet of function-tagged nodes.
 #[must_use]
 pub fn in_function(node_tags: &str, nodeset_out: &str, node_count: u32) -> Program {
-    resolve_family(node_tags, nodeset_out, node_count, tag_family::FUNCTION)
+    crate::program_region::tag_program(
+        OP_ID,
+        resolve_family(node_tags, nodeset_out, node_count, tag_family::FUNCTION),
+    )
 }
 
 /// CPU reference.

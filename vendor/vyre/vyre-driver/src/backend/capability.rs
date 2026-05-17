@@ -81,7 +81,7 @@ mod tests {
         }
 
         fn version(&self) -> &'static str {
-            "0.6.0-test"
+            "0.4.1-test"
         }
 
         fn supported_ops(&self) -> &HashSet<OpId> {

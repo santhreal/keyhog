@@ -38,7 +38,16 @@ pub fn bitset_xor(lhs: &str, rhs: &str, out: &str, words: u32) -> Program {
 /// CPU reference.
 #[must_use]
 pub fn cpu_ref(lhs: &[u32], rhs: &[u32]) -> Vec<u32> {
-    lhs.iter().zip(rhs.iter()).map(|(a, b)| a ^ b).collect()
+    let mut out = Vec::new();
+    cpu_ref_into(lhs, rhs, &mut out);
+    out
+}
+
+/// CPU reference into caller-owned storage.
+pub fn cpu_ref_into(lhs: &[u32], rhs: &[u32], out: &mut Vec<u32>) {
+    out.clear();
+    out.reserve(lhs.len().min(rhs.len()));
+    out.extend(lhs.iter().zip(rhs.iter()).map(|(a, b)| a ^ b));
 }
 
 #[cfg(feature = "inventory-registry")]
@@ -64,5 +73,25 @@ mod tests {
     #[test]
     fn xor_full_coverage() {
         assert_eq!(cpu_ref(&[0xFFFF_0000], &[0x0000_FFFF]), vec![0xFFFF_FFFF]);
+    }
+
+    #[test]
+    fn empty_bitset() {
+        assert_eq!(cpu_ref(&[], &[]), Vec::<u32>::new());
+    }
+
+    #[test]
+    fn single_word_all_bits() {
+        assert_eq!(
+            cpu_ref(&[0xFFFF_FFFF], &[0xFFFF_FFFF]),
+            vec![0x0000_0000]
+        );
+    }
+
+    #[test]
+    fn cross_word_boundary() {
+        let lhs = vec![0x8000_0000, 0x0000_0001];
+        let rhs = vec![0x0000_0000, 0x0000_0001];
+        assert_eq!(cpu_ref(&lhs, &rhs), vec![0x8000_0000, 0x0000_0000]);
     }
 }

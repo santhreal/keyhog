@@ -1,7 +1,6 @@
 //! Live wgpu capability decisions shared by validation and dispatch.
 
 use crate::runtime::device::EnabledFeatures;
-use vyre_foundation::validate::BackendCapabilities;
 
 #[inline]
 pub(crate) fn is_real_gpu(adapter_info: &wgpu::AdapterInfo) -> bool {
@@ -44,31 +43,37 @@ pub(crate) fn supports_subgroup_for_adapter(
     features: wgpu::Features,
     limits: &wgpu::Limits,
 ) -> bool {
-    features.contains(wgpu::Features::SUBGROUP)
-        && limits.min_subgroup_size > 0
-        && limits.max_subgroup_size >= limits.min_subgroup_size
+    subgroup_caps_for_adapter(features, limits).is_usable()
 }
 
 /// Subgroup support requires both the requested device feature and usable
 /// subgroup-size limits for dispatch planning.
 #[inline]
 pub(crate) fn supports_subgroup_ops(enabled: &EnabledFeatures) -> bool {
-    enabled.subgroup
-        && enabled.min_subgroup_size > 0
-        && enabled.max_subgroup_size >= enabled.min_subgroup_size
+    subgroup_caps(enabled).is_usable()
 }
 
-/// Capability snapshot consumed by foundation validation and execution
-/// planning. Keep this as the single value-object constructor so trait
-/// reports and planner checks cannot drift.
+/// Shared subgroup capability record from live adapter features.
 #[inline]
-pub(crate) fn validation_capabilities(
-    adapter_info: &wgpu::AdapterInfo,
-    enabled: &EnabledFeatures,
-) -> BackendCapabilities {
-    BackendCapabilities {
-        supports_subgroup_ops: supports_subgroup_ops(enabled),
-        supports_indirect_dispatch: supports_indirect_dispatch(adapter_info, enabled),
-        supports_specialization_constants: true,
-    }
+pub(crate) fn subgroup_caps_for_adapter(
+    features: wgpu::Features,
+    limits: &wgpu::Limits,
+) -> vyre_driver::SubgroupCaps {
+    vyre_driver::SubgroupCaps::from_feature_range(
+        features.contains(wgpu::Features::SUBGROUP),
+        features.contains(wgpu::Features::SUBGROUP_VERTEX),
+        limits.min_subgroup_size,
+        limits.max_subgroup_size,
+    )
+}
+
+/// Shared subgroup capability record from the created device feature set.
+#[inline]
+pub(crate) fn subgroup_caps(enabled: &EnabledFeatures) -> vyre_driver::SubgroupCaps {
+    vyre_driver::SubgroupCaps::from_feature_range(
+        enabled.subgroup,
+        false,
+        enabled.min_subgroup_size,
+        enabled.max_subgroup_size,
+    )
 }

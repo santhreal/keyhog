@@ -1,3 +1,4 @@
+use crate::parsing::composition::child_phase;
 use crate::region::wrap_anonymous;
 use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 
@@ -186,11 +187,54 @@ pub fn python312_lexer(
                 Expr::u32(0),
             ),
         ),
+        Node::let_bind("comment_scan_active", Expr::u32(1)),
+        Node::let_bind("in_comment_tail", Expr::u32(0)),
+        Node::loop_for(
+            "comment_rev",
+            Expr::u32(0),
+            t.clone(),
+            vec![Node::if_then(
+                Expr::eq(Expr::var("comment_scan_active"), Expr::u32(1)),
+                vec![
+                    Node::let_bind(
+                        "comment_pos",
+                        Expr::sub(Expr::sub(t.clone(), Expr::u32(1)), Expr::var("comment_rev")),
+                    ),
+                    Node::let_bind("comment_ch", load_byte(haystack, Expr::var("comment_pos"))),
+                    Node::if_then(
+                        Expr::eq(Expr::var("comment_ch"), ascii(b'\n')),
+                        vec![Node::assign("comment_scan_active", Expr::u32(0))],
+                    ),
+                    Node::if_then(
+                        Expr::eq(Expr::var("comment_ch"), ascii(b'#')),
+                        vec![
+                            Node::assign("in_comment_tail", Expr::u32(1)),
+                            Node::assign("comment_scan_active", Expr::u32(0)),
+                        ],
+                    ),
+                ],
+            )],
+        ),
         Node::let_bind("emit", Expr::u32(0)),
         Node::let_bind("token_type", Expr::u32(TOK_NONE)),
         Node::let_bind("token_len", Expr::u32(0)),
-        Node::let_bind("is_ident_start", is_ident_start(Expr::var("ch"))),
-        Node::let_bind("prev_identish", is_ident_continue(Expr::var("prev"))),
+        // Store as u32(0|1) so later sites can `Expr::eq(_, Expr::u32(0))`
+        // without the validator rejecting bool/u32 mismatches. The bool-
+        // valued helpers `is_ident_start` / `is_ident_continue` return
+        // genuine boolean exprs; coercing through `select` here keeps the
+        // downstream call sites uniform with the surrounding u32 vars.
+        Node::let_bind(
+            "is_ident_start",
+            Expr::select(is_ident_start(Expr::var("ch")), Expr::u32(1), Expr::u32(0)),
+        ),
+        Node::let_bind(
+            "prev_identish",
+            Expr::select(
+                is_ident_continue(Expr::var("prev")),
+                Expr::u32(1),
+                Expr::u32(0),
+            ),
+        ),
         Node::if_then(
             Expr::eq(Expr::var("ch"), ascii(b'\n')),
             vec![
@@ -282,7 +326,7 @@ pub fn python312_lexer(
             Expr::and(
                 Expr::eq(Expr::var("emit"), Expr::u32(0)),
                 Expr::and(
-                    Expr::var("is_ident_start"),
+                    Expr::eq(Expr::var("is_ident_start"), Expr::u32(1)),
                     Expr::eq(Expr::var("prev_identish"), Expr::u32(0)),
                 ),
             ),
@@ -490,6 +534,13 @@ pub fn python312_lexer(
             ],
         ),
         Node::if_then(
+            Expr::and(
+                Expr::eq(Expr::var("in_comment_tail"), Expr::u32(1)),
+                Expr::ne(Expr::var("ch"), ascii(b'\n')),
+            ),
+            vec![Node::assign("emit", Expr::u32(0))],
+        ),
+        Node::if_then(
             Expr::eq(Expr::var("emit"), Expr::u32(1)),
             vec![
                 Node::store(out_tok_types, t.clone(), Expr::var("token_type")),
@@ -520,14 +571,16 @@ pub fn python312_lexer(
         [256, 1, 1],
         vec![wrap_anonymous(
             "vyre-libs::parsing::python312_lexer",
-            vec![Node::if_then(
-                Expr::lt(t.clone(), Expr::u32(haystack_len)),
-                body,
+            vec![child_phase(
+                "vyre-libs::parsing::python312_lexer",
+                vyre_primitives::text::line_index::OP_ID,
+                vec![Node::if_then(
+                    Expr::lt(t.clone(), Expr::u32(haystack_len)),
+                    body,
+                )],
             )],
         )],
     )
-    .with_entry_op_id("vyre-libs::parsing::python312_lexer")
-    .with_non_composable_with_self(true)
     .with_entry_op_id("vyre-libs::parsing::python312_lexer")
     .with_non_composable_with_self(true)
 }
@@ -536,18 +589,69 @@ inventory::submit! {
     crate::harness::OpEntry {
         id: "vyre-libs::parsing::python312_lexer",
         build: || python312_lexer("haystack", "tok_types", "tok_starts", "tok_lens", "counts", 16),
-        test_inputs: Some(|| vec![vec![
-            vec![0u8; 16 * 4],
-            vec![0u8; 16 * 4],
-            vec![0u8; 16 * 4],
-            vec![0u8; 16 * 4],
-            vec![0u8; 4],
-        ]]),
-        expected_output: Some(|| vec![vec![
-            vec![0u8; 16 * 4],
-            vec![0u8; 16 * 4],
-            vec![0u8; 16 * 4],
-            vec![0u8; 4],
-        ]]),
+        test_inputs: Some(lexer_fixture_inputs),
+        expected_output: Some(lexer_fixture_expected),
     }
+}
+
+fn lexer_fixture_inputs() -> Vec<Vec<Vec<u8>>> {
+    let source = b"def f(x):\n#z\n";
+    let mut haystack = vec![0u8; 16 * 4];
+    for (idx, byte) in source.iter().enumerate() {
+        haystack[idx * 4..idx * 4 + 4].copy_from_slice(&u32::from(*byte).to_le_bytes());
+    }
+    vec![vec![
+        haystack,
+        vec![0u8; 16 * 4],
+        vec![0u8; 16 * 4],
+        vec![0u8; 16 * 4],
+        vec![0u8; 4],
+    ]]
+}
+
+fn write_sparse_token(
+    tok_types: &mut [u8],
+    tok_starts: &mut [u8],
+    tok_lens: &mut [u8],
+    pos: usize,
+    tok: u32,
+    len: u32,
+) {
+    let base = pos * 4;
+    tok_types[base..base + 4].copy_from_slice(&tok.to_le_bytes());
+    tok_starts[base..base + 4].copy_from_slice(&(pos as u32).to_le_bytes());
+    tok_lens[base..base + 4].copy_from_slice(&len.to_le_bytes());
+}
+
+fn lexer_fixture_expected() -> Vec<Vec<Vec<u8>>> {
+    let mut tok_types = vec![0u8; 16 * 4];
+    let mut tok_starts = vec![0u8; 16 * 4];
+    let mut tok_lens = vec![0u8; 16 * 4];
+    for (pos, tok, len) in [
+        (0usize, TOK_DEF, 3u32),
+        (4, TOK_IDENTIFIER, 1),
+        (5, TOK_LPAREN, 1),
+        (6, TOK_IDENTIFIER, 1),
+        (7, TOK_RPAREN, 1),
+        (8, TOK_COLON, 1),
+        (9, TOK_NEWLINE, 1),
+        (10, TOK_COMMENT, 2),
+        (12, TOK_NEWLINE, 1),
+    ] {
+        write_sparse_token(
+            &mut tok_types,
+            &mut tok_starts,
+            &mut tok_lens,
+            pos,
+            tok,
+            len,
+        );
+    }
+
+    vec![vec![
+        tok_types,
+        tok_starts,
+        tok_lens,
+        9u32.to_le_bytes().to_vec(),
+    ]]
 }

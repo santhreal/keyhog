@@ -27,9 +27,9 @@ runtime Program walks the table one byte per step.
 ## Benchmark targets (criterion)
 
 - Substring search 4 KiB haystack × 3-byte needle: ≤ 50 µs CPU ref;
-  wgpu ≤ 10 µs on a 3090.
+  dispatch backends ≤ 10 µs on current high-end fleet hardware.
 - Aho-Corasick with 100 patterns × 4 KiB haystack: ≤ 1 ms CPU ref;
-  wgpu ≤ 50 µs.
+  dispatch backends ≤ 50 µs.
 
 ## DFA size contract
 

@@ -2,9 +2,10 @@
 
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, OnceLock, Weak};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock, Weak};
 use std::time::Instant;
 
+use dashmap::DashMap;
 use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 use vyre_driver::BackendError;
@@ -12,10 +13,10 @@ use vyre_driver::BackendError;
 use super::pool::PoolReturn;
 
 static NEXT_BUFFER_ID: AtomicU64 = AtomicU64::new(1);
-static RESIDENT_BUFFERS: OnceLock<Mutex<FxHashMap<u64, Weak<GpuBufferInner>>>> = OnceLock::new();
+static RESIDENT_BUFFERS: OnceLock<DashMap<u64, Weak<GpuBufferInner>>> = OnceLock::new();
 
-fn resident_buffers() -> &'static Mutex<FxHashMap<u64, Weak<GpuBufferInner>>> {
-    RESIDENT_BUFFERS.get_or_init(|| Mutex::new(FxHashMap::default()))
+fn resident_buffers() -> &'static DashMap<u64, Weak<GpuBufferInner>> {
+    RESIDENT_BUFFERS.get_or_init(DashMap::new)
 }
 
 /// Cheaply cloneable handle for a GPU-resident buffer.
@@ -293,7 +294,7 @@ impl GpuBufferHandle {
             label: Some("vyre persistent handle readback encoder"),
         });
         encoder.copy_buffer_to_buffer(self.buffer(), 0, &readback, 0, read_len);
-        let _submission = queue.submit(std::iter::once(encoder.finish()));
+        let submission = queue.submit(std::iter::once(encoder.finish()));
         let slice = readback.slice(0..read_len);
         let (sender, receiver) = std::sync::mpsc::channel();
         slice.map_async(wgpu::MapMode::Read, move |result| {
@@ -305,18 +306,22 @@ impl GpuBufferHandle {
             }
         });
         let mapping = if let Some(deadline) = deadline {
-            // VYRE_BACKEND_WGPU HIGH: the old deadline path spun on
-            // `yield_now` + `Poll`, burning an entire core while
-            // waiting on the GPU. Poll + recv_timeout lets the
-            // thread actually sleep between polls. Poll cadence is
-            // bounded by `poll_tick` (coarse enough to avoid core
-            // saturation, fine enough to keep driver submission
-            // queues responsive). At deadline, return a structured
-            // error instead of livelocking.
-            const POLL_TICK: std::time::Duration = std::time::Duration::from_millis(1);
+            const SPIN_POLLS: u32 = 64;
+            const MIN_PARK: std::time::Duration = std::time::Duration::from_micros(2);
+            const MAX_PARK: std::time::Duration = std::time::Duration::from_micros(50);
+            let mut idle_polls = 0u32;
             loop {
                 match device.poll(wgpu::Maintain::Poll) {
                     wgpu::MaintainResult::Ok | wgpu::MaintainResult::SubmissionQueueEmpty => {}
+                }
+                match receiver.try_recv() {
+                    Ok(result) => break result,
+                    Err(std::sync::mpsc::TryRecvError::Empty) => {}
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                        return Err(BackendError::new(
+                            "persistent buffer readback channel closed before completion. Fix: keep the GPU device alive until readback completes.",
+                        ));
+                    }
                 }
                 let now = Instant::now();
                 if now >= deadline {
@@ -324,27 +329,29 @@ impl GpuBufferHandle {
                         "dispatch cancelled after DispatchConfig.timeout before readback completed. Fix: raise DispatchConfig.timeout or split the program into smaller chunks.",
                     ));
                 }
-                let slice_remaining = deadline.saturating_duration_since(now);
-                let wait = slice_remaining.min(POLL_TICK);
-                match receiver.recv_timeout(wait) {
-                    Ok(result) => break result,
-                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
-                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                        return Err(BackendError::new(
-                            "persistent buffer readback channel closed before completion. Fix: keep the GPU device alive until readback completes.",
-                        ));
-                    }
+                idle_polls = idle_polls.saturating_add(1);
+                if idle_polls <= SPIN_POLLS {
+                    std::thread::yield_now();
+                } else {
+                    let shift = (idle_polls - SPIN_POLLS).min(5);
+                    let park = MIN_PARK
+                        .saturating_mul(1u32 << shift)
+                        .min(MAX_PARK)
+                        .min(deadline.saturating_duration_since(now));
+                    std::thread::park_timeout(park);
                 }
             }
         } else {
-            match device.poll(wgpu::Maintain::Wait) {
+            match device.poll(wgpu::Maintain::wait_for(submission)) {
                 wgpu::MaintainResult::Ok | wgpu::MaintainResult::SubmissionQueueEmpty => {}
             }
-            receiver.recv().map_err(|source| {
-                BackendError::new(format!(
-                    "persistent buffer readback channel closed: {source}. Fix: keep the GPU device alive until readback completes."
-                ))
-            })?
+            receiver
+                .recv_timeout(std::time::Duration::from_secs(30))
+                .map_err(|source| {
+                    BackendError::new(format!(
+                        "persistent buffer readback callback did not complete after submission wait: {source}. Fix: keep the GPU device alive and inspect driver callback progress."
+                    ))
+                })?
         };
         let result = mapping.map_err(|source| {
             BackendError::new(format!(
@@ -359,6 +366,7 @@ impl GpuBufferHandle {
             ))
         })?;
         out.clear();
+        out.reserve(visible_len);
         out.extend_from_slice(&mapped[..visible_len]);
         drop(mapped);
         readback.unmap();
@@ -374,11 +382,25 @@ impl GpuBufferHandle {
         self.inner.id
     }
 
+    /// Stable process-local identity for the backing GPU allocation.
+    ///
+    /// Unlike [`Self::id`], this survives pool release/reacquire cycles for the
+    /// same underlying `wgpu::Buffer`. Bind-group caches must key on this value
+    /// plus the logical binding range; otherwise hot dispatches miss every time
+    /// a pooled allocation is wrapped in a fresh handle.
+    #[must_use]
+    pub(crate) fn allocation_identity(&self) -> u64 {
+        Arc::as_ptr(&self.inner.buffer) as usize as u64
+    }
+
     /// Resolve a process-local resident buffer id back into a live GPU handle.
     #[must_use]
     pub fn from_resident_id(id: u64) -> Option<Self> {
-        let mut registry = resident_buffers().lock().unwrap_or_else(|e| e.into_inner());
-        match registry.get(&id).and_then(Weak::upgrade) {
+        let registry = resident_buffers();
+        let entry = registry.get(&id)?;
+        let upgraded = entry.value().upgrade();
+        drop(entry);
+        match upgraded {
             Some(inner) => Some(Self { inner }),
             None => {
                 registry.remove(&id);
@@ -442,10 +464,7 @@ impl GpuBufferHandle {
             usage,
             pool_return,
         });
-        resident_buffers()
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .insert(inner.id, Arc::downgrade(&inner));
+        resident_buffers().insert(inner.id, Arc::downgrade(&inner));
         Self { inner }
     }
 }
@@ -465,10 +484,7 @@ impl std::fmt::Debug for GpuBufferHandle {
 
 impl Drop for GpuBufferInner {
     fn drop(&mut self) {
-        resident_buffers()
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .remove(&self.id);
+        resident_buffers().remove(&self.id);
         if let Some(pool_return) = self.pool_return.take() {
             pool_return.release(
                 Arc::clone(&self.buffer),
@@ -514,15 +530,11 @@ pub(crate) fn write_padded(
         zero_start += 4;
     }
     if allocation_len > zero_start {
-        // S5.9: wgpu::Queue::write_buffer(..vec![0u8; N]..) allocates N bytes
-        // on the CPU and uploads them every call. clear_buffer is the GPU-side
-        // zero operation — no CPU alloc, no bus transfer.
-        let encoder = std::ptr::null::<()>();
-        let _ = encoder;
-        // Use wgpu CommandEncoder path. The queue API does not expose clear
-        // directly, but write_buffer with a borrowed zero'd static slice below
-        // is dramatically cheaper than a fresh vec per call.
-        static SCRATCH_ZEROS: [u8; 4096] = [0u8; 4096];
+        // This helper is used by standalone uploads that do not have a
+        // command encoder available. Encoder-backed dispatch paths should use
+        // clear_buffer for the tail; this path uses one static slab to avoid
+        // allocating a fresh zero Vec per upload.
+        static SCRATCH_ZEROS: [u8; 65_536] = [0u8; 65_536];
         let mut offset = zero_start;
         let end = allocation_len;
         while offset < end {
@@ -550,10 +562,27 @@ type BindGroupHandleKey = SmallVec<[u64; 16]>;
 /// descriptor-heap exhaustion on long-running servers.
 #[derive(Clone)]
 pub struct BindGroupCache {
-    cache: moka::sync::Cache<BindGroupCacheKey, Arc<wgpu::BindGroup>>,
+    cache: Arc<Mutex<BindGroupCacheInner>>,
     hits: Arc<AtomicUsize>,
     misses: Arc<AtomicUsize>,
     evictions: Arc<AtomicUsize>,
+}
+
+struct BindGroupCacheInner {
+    entries: FxHashMap<BindGroupCacheKey, BindGroupCacheEntry>,
+    lru: VecDeque<(BindGroupCacheKey, u64)>,
+    cap: usize,
+    next_generation: u64,
+}
+
+struct BindGroupCacheEntry {
+    bind_group: Arc<wgpu::BindGroup>,
+    generation: u64,
+}
+
+fn push_bind_group_handle_key(key: &mut BindGroupHandleKey, handle: &GpuBufferHandle) {
+    key.push(handle.allocation_identity());
+    key.push(handle.byte_len().max(4).next_multiple_of(4));
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
@@ -568,7 +597,7 @@ impl std::fmt::Debug for BindGroupCache {
             .field("hits", &self.hits.load(Ordering::Relaxed))
             .field("misses", &self.misses.load(Ordering::Relaxed))
             .field("evictions", &self.evictions.load(Ordering::Relaxed))
-            .field("entries", &self.cache.entry_count())
+            .field("entries", &self.lock_cache().entries.len())
             .finish_non_exhaustive()
     }
 }
@@ -579,7 +608,58 @@ impl Default for BindGroupCache {
     }
 }
 
+impl BindGroupCacheInner {
+    fn next_lru_generation(&mut self) -> u64 {
+        let generation = self.next_generation;
+        self.next_generation = self.next_generation.wrapping_add(1);
+        generation
+    }
+
+    fn touch_existing(&mut self, key: &BindGroupCacheKey) -> Option<Arc<wgpu::BindGroup>> {
+        let generation = self.next_lru_generation();
+        let bind_group = {
+            let entry = self.entries.get_mut(key)?;
+            entry.generation = generation;
+            Arc::clone(&entry.bind_group)
+        };
+        self.lru.push_back((key.clone(), generation));
+        Some(bind_group)
+    }
+
+    fn insert_entry(&mut self, key: BindGroupCacheKey, bind_group: Arc<wgpu::BindGroup>) {
+        let generation = self.next_lru_generation();
+        self.entries.insert(
+            key.clone(),
+            BindGroupCacheEntry {
+                bind_group,
+                generation,
+            },
+        );
+        self.lru.push_back((key, generation));
+    }
+
+    fn evict_to_cap(&mut self, mut on_evict: impl FnMut()) {
+        while self.entries.len() > self.cap {
+            let Some((key, generation)) = self.lru.pop_front() else {
+                break;
+            };
+            let is_current = self
+                .entries
+                .get(&key)
+                .is_some_and(|entry| entry.generation == generation);
+            if is_current {
+                self.entries.remove(&key);
+                on_evict();
+            }
+        }
+    }
+}
+
 impl BindGroupCache {
+    fn lock_cache(&self) -> MutexGuard<'_, BindGroupCacheInner> {
+        self.cache.lock().unwrap_or_else(|error| error.into_inner())
+    }
+
     /// Create a bind-group cache with the default 256-entry cap.
     #[must_use]
     pub fn new() -> Self {
@@ -591,9 +671,12 @@ impl BindGroupCache {
     #[must_use]
     pub fn with_cap(cap: usize) -> Self {
         Self {
-            cache: moka::sync::Cache::builder()
-                .max_capacity(cap.max(1) as u64)
-                .build(),
+            cache: Arc::new(Mutex::new(BindGroupCacheInner {
+                entries: FxHashMap::default(),
+                lru: VecDeque::new(),
+                cap: cap.max(1),
+                next_generation: 0,
+            })),
             hits: Arc::new(AtomicUsize::new(0)),
             misses: Arc::new(AtomicUsize::new(0)),
             evictions: Arc::new(AtomicUsize::new(0)),
@@ -613,16 +696,72 @@ impl BindGroupCache {
         handles: &[GpuBufferHandle],
         factory: impl FnOnce() -> wgpu::BindGroup,
     ) -> Arc<wgpu::BindGroup> {
+        let mut key_parts = SmallVec::with_capacity(handles.len().saturating_mul(2));
+        for handle in handles {
+            push_bind_group_handle_key(&mut key_parts, handle);
+        }
+        self.get_or_create_by_ids(layout_id, key_parts, factory)
+    }
+
+    pub(crate) fn get_or_create_by_ids(
+        &self,
+        layout_id: usize,
+        handles: SmallVec<[u64; 16]>,
+        factory: impl FnOnce() -> wgpu::BindGroup,
+    ) -> Arc<wgpu::BindGroup> {
+        let key = BindGroupCacheKey { layout_id, handles };
+        {
+            let mut cache = self.lock_cache();
+            if let Some(existing) = cache.touch_existing(&key) {
+                self.hits.fetch_add(1, Ordering::Relaxed);
+                return existing;
+            }
+        }
+        let bg = Arc::new(factory());
+        let mut cache = self.lock_cache();
+        cache.insert_entry(key, Arc::clone(&bg));
+        cache.evict_to_cap(|| {
+            self.evictions.fetch_add(1, Ordering::Relaxed);
+        });
+        self.misses.fetch_add(1, Ordering::Relaxed);
+        bg
+    }
+
+    pub(crate) fn get_by_ids(
+        &self,
+        layout_id: usize,
+        handles: &[u64],
+    ) -> Option<Arc<wgpu::BindGroup>> {
         let key = BindGroupCacheKey {
             layout_id,
-            handles: handles.iter().map(|h| h.id()).collect(),
+            handles: SmallVec::from_slice(handles),
         };
-        if let Some(existing) = self.cache.get(&key) {
+        let mut cache = self.lock_cache();
+        let existing = cache.touch_existing(&key)?;
+        self.hits.fetch_add(1, Ordering::Relaxed);
+        Some(existing)
+    }
+
+    pub(crate) fn insert_by_ids(
+        &self,
+        layout_id: usize,
+        handles: &[u64],
+        bind_group: wgpu::BindGroup,
+    ) -> Arc<wgpu::BindGroup> {
+        let key = BindGroupCacheKey {
+            layout_id,
+            handles: SmallVec::from_slice(handles),
+        };
+        let mut cache = self.lock_cache();
+        if let Some(existing) = cache.touch_existing(&key) {
             self.hits.fetch_add(1, Ordering::Relaxed);
             return existing;
         }
-        let bg = Arc::new(factory());
-        self.cache.insert(key, Arc::clone(&bg));
+        let bg = Arc::new(bind_group);
+        cache.insert_entry(key, Arc::clone(&bg));
+        cache.evict_to_cap(|| {
+            self.evictions.fetch_add(1, Ordering::Relaxed);
+        });
         self.misses.fetch_add(1, Ordering::Relaxed);
         bg
     }
@@ -634,7 +773,7 @@ impl BindGroupCache {
             hits: self.hits.load(Ordering::Relaxed),
             misses: self.misses.load(Ordering::Relaxed),
             evictions: self.evictions.load(Ordering::Relaxed),
-            entries: self.cache.entry_count() as usize,
+            entries: self.lock_cache().entries.len(),
         }
     }
 }
@@ -711,23 +850,36 @@ mod tests {
     }
 
     #[test]
-    fn drop_handles_resident_registry_poison_without_panicking() {
+    fn resident_registry_handles_concurrent_lookup_and_drop() {
         let arc = crate::runtime::cached_device()
-            .expect("Fix: GPU device is required for resident registry poison test");
+            .expect("Fix: GPU device is required for resident registry concurrency test");
         let (device, queue) = &*arc;
         let handle =
             GpuBufferHandle::upload(device, queue, &[1, 2, 3, 4], wgpu::BufferUsages::COPY_SRC)
                 .expect("Fix: upload should register a resident buffer");
+        let id = handle.id();
 
-        let poisoner = std::thread::spawn(|| {
-            let _guard = resident_buffers().lock().unwrap();
-            panic!("intentional poison for resident buffer drop regression test");
-        });
-        assert!(
-            poisoner.join().is_err(),
-            "poisoning thread must panic to set lock state"
-        );
+        let readers = (0..8)
+            .map(|_| {
+                std::thread::spawn(move || {
+                    for _ in 0..1_000 {
+                        let resident =
+                            GpuBufferHandle::from_resident_id(id).expect("resident id must resolve");
+                        assert_eq!(resident.id(), id);
+                    }
+                })
+            })
+            .collect::<Vec<_>>();
 
         drop(handle);
+        for reader in readers {
+            reader
+                .join()
+                .expect("Fix: concurrent resident lookups must not panic");
+        }
+        assert!(
+            GpuBufferHandle::from_resident_id(id).is_none(),
+            "dropped handles must be removed from the resident registry"
+        );
     }
 }

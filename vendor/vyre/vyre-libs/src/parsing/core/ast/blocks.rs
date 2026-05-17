@@ -10,22 +10,19 @@ use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 ///
 /// Uses purely spatial boundaries computed during the Structure pass.
 ///
-/// `out_scope_parents` is reserved for the forthcoming scope-pass
-/// wiring — the current V1 body derives header positions entirely
-/// from `tok_types` + `statements`, so the parameter is threaded
-/// through for the stable public signature; the V1 body does not
-/// consume it. Once the scope pass lands it will use the buffer to
-/// disambiguate nested if/while regions.
+/// `out_scope_parents` is part of the stable public signature. The
+/// current body derives header positions from `tok_types` +
+/// `statements`; callers may pass the scope-parent buffer produced by
+/// the surrounding C pipeline without changing this contract.
 #[must_use]
 #[allow(clippy::too_many_arguments)]
 pub fn ast_cfg_blocks(
     tok_types: &str,
-    out_scope_parents: &str, // Inherited logical boundaries — reserved for V2.
+    _out_scope_parents: &str, // Inherited logical boundaries — reserved for V2.
     statements: &str,        // Array of statement [start_tok, end_tok]
     num_statements: Expr,
     out_block_headers: &str, // Maps stmt -> enclosing control flow keyword token index
 ) -> Program {
-    let _ = out_scope_parents;
     let t = Expr::InvocationId { axis: 0 };
 
     // We assume `statements` provides [start_tok, end_tok].

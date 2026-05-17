@@ -1,0 +1,2 @@
+/// docs
+pub mod reference;

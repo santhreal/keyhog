@@ -2,13 +2,11 @@
 //! a sink-family bitset. Used by rules that want a fractional
 //! confidence ("X% of nodes reachable from source landed in sinks").
 
-use vyre::ir::Program;
-use vyre_foundation::execution_plan::fusion::fuse_programs;
-use vyre_primitives::bitset::and::bitset_and;
-use vyre_primitives::bitset::popcount::bitset_popcount;
-use vyre_primitives::graph::csr_forward_traverse::bitset_words;
+use std::sync::Arc;
 
-use crate::region::{reparent_program_children, wrap_anonymous};
+use vyre::ir::model::expr::Ident;
+use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program, UnOp};
+use vyre_primitives::graph::csr_forward_traverse::bitset_words;
 
 pub(crate) const OP_ID: &str = "vyre-libs::security::sink_intersection";
 
@@ -23,17 +21,44 @@ pub fn sink_intersection(
     out_scalar: &str,
 ) -> Program {
     let words = bitset_words(node_count);
-    let intersect = bitset_and(query_set, sink_set, intersect_buf, words);
-    let count = bitset_popcount(intersect_buf, out_scalar, words);
-    let fused =
-        fuse_programs(&[intersect, count]).expect("sink_intersection: and+popcount fuse cleanly");
+    let t = Expr::InvocationId { axis: 0 };
+    let body = vec![
+        Node::let_bind(
+            "intersect",
+            Expr::bitand(
+                Expr::load(query_set, t.clone()),
+                Expr::load(sink_set, t.clone()),
+            ),
+        ),
+        Node::store(intersect_buf, t.clone(), Expr::var("intersect")),
+        Node::let_bind(
+            "count",
+            Expr::UnOp {
+                op: UnOp::Popcount,
+                operand: Box::new(Expr::var("intersect")),
+            },
+        ),
+        Node::let_bind(
+            "_",
+            Expr::atomic_add(out_scalar, Expr::u32(0), Expr::var("count")),
+        ),
+    ];
     Program::wrapped(
-        fused.buffers().to_vec(),
-        fused.workgroup_size(),
-        vec![wrap_anonymous(
-            OP_ID,
-            reparent_program_children(&fused, OP_ID),
-        )],
+        vec![
+            BufferDecl::storage(query_set, 0, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(words),
+            BufferDecl::storage(sink_set, 1, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(words),
+            BufferDecl::storage(intersect_buf, 2, BufferAccess::ReadWrite, DataType::U32)
+                .with_count(words),
+            BufferDecl::output(out_scalar, 3, DataType::U32).with_count(1),
+        ],
+        [256, 1, 1],
+        vec![Node::Region {
+            generator: Ident::from(OP_ID),
+            source_region: None,
+            body: Arc::new(vec![Node::if_then(Expr::lt(t.clone(), Expr::u32(words)), body)]),
+        }],
     )
 }
 

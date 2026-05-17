@@ -1,7 +1,7 @@
 use super::expand::CalleeExpander;
 use super::{
-    input_arg_map, input_buffers, output_buffer, zero_value, Error, Expr, HashMap, InlineCtx, Node,
-    OpResolver, Program, Result,
+    input_arg_map, input_buffers, output_buffer, zero_value, Error, Expr, HashMap, Ident,
+    InlineCtx, Node, OpResolver, Program, Result,
 };
 
 impl InlineCtx {
@@ -74,7 +74,7 @@ impl InlineCtx {
             }
             Node::Return => Ok(vec![Node::Return]),
             Node::Block(nodes) => Ok(vec![Node::Block(self.inline_nodes(nodes)?)]),
-            Node::Barrier => Ok(vec![Node::Barrier]),
+            Node::Barrier { ordering } => Ok(vec![Node::barrier_with_ordering(*ordering)]),
             Node::IndirectDispatch {
                 count_buffer,
                 count_offset,
@@ -117,7 +117,7 @@ impl InlineCtx {
             } => Ok(vec![Node::Region {
                 generator: generator.clone(),
                 source_region: source_region.clone(),
-                body: body.clone(),
+                body: std::sync::Arc::new(self.inline_nodes(body)?),
             }]),
             Node::Opaque(extension) => Err(Error::Interp {
                 message: format!(
@@ -227,6 +227,7 @@ impl InlineCtx {
                 index,
                 expected,
                 value,
+                ordering,
             } => {
                 let (mut prefix, index) = self.inline_expr(index)?;
                 let (expected_prefix, expected) = match expected.as_deref() {
@@ -247,6 +248,7 @@ impl InlineCtx {
                         index: Box::new(index),
                         expected,
                         value: Box::new(value),
+                        ordering: *ordering,
                     },
                 ))
             }
@@ -307,9 +309,9 @@ impl InlineCtx {
         let mut expander = CalleeExpander {
             ctx: self,
             prefix,
-            vars: HashMap::new(),
+            vars: HashMap::default(),
             input_args: input_arg_map(callee, args),
-            output_name: output.name().to_string(),
+            output_name: Ident::from(output.name()),
             result_name: result_name.clone(),
             saw_output: false,
         };

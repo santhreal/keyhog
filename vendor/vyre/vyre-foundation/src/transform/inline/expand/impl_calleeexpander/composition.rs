@@ -1,11 +1,12 @@
 use super::super::CalleeExpander;
 use crate::error::Result;
-use crate::ir::{AtomicOp, BinOp, Expr, UnOp};
+use crate::ir::{AtomicOp, BinOp, Expr, Ident, UnOp};
+use crate::memory_model::MemoryOrdering;
 
 enum Frame<'a> {
     Enter(&'a Expr),
     Load {
-        buffer: &'a str,
+        buffer: &'a Ident,
     },
     Bin {
         op: BinOp,
@@ -24,21 +25,22 @@ enum Frame<'a> {
     },
     Atomic {
         op: AtomicOp,
-        buffer: &'a str,
+        buffer: &'a Ident,
         has_expected: bool,
+        ordering: MemoryOrdering,
     },
 }
 
 impl CalleeExpander<'_> {
     #[inline]
-    pub(crate) fn rename_decl(&mut self, name: &str) -> String {
+    pub(crate) fn rename_decl(&mut self, name: &Ident) -> String {
         let renamed = format!("{}{name}", self.prefix);
-        self.vars.insert(name.to_string(), renamed.clone());
+        self.vars.insert(Ident::from(name), renamed.clone());
         renamed
     }
 
     #[inline]
-    pub(crate) fn rename_use(&self, name: &str) -> String {
+    pub(crate) fn rename_use(&self, name: &Ident) -> String {
         self.vars
             .get(name)
             .cloned()
@@ -63,7 +65,8 @@ impl CalleeExpander<'_> {
                     op,
                     buffer,
                     has_expected,
-                } => push_atomic(op, buffer, has_expected, &mut values)?,
+                    ordering,
+                } => push_atomic(op, buffer, has_expected, ordering, &mut values)?,
             }
         }
         values.pop().ok_or_else(|| {
@@ -131,11 +134,13 @@ impl CalleeExpander<'_> {
                 index,
                 expected,
                 value,
+                ordering,
             } => {
                 frames.push(Frame::Atomic {
                     op: *op,
                     buffer,
                     has_expected: expected.is_some(),
+                    ordering: *ordering,
                 });
                 frames.push(Frame::Enter(value));
                 if let Some(expected) = expected.as_deref() {
@@ -169,7 +174,7 @@ fn missing(what: &str) -> crate::error::Error {
     ))
 }
 
-fn push_load(buffer: &str, values: &mut Vec<Expr>) -> Result<()> {
+fn push_load(buffer: &Ident, values: &mut Vec<Expr>) -> Result<()> {
     let index = values.pop().ok_or_else(|| missing("load index"))?;
     values.push(Expr::Load {
         buffer: buffer.into(),
@@ -243,8 +248,9 @@ fn push_cast(target: crate::ir::DataType, values: &mut Vec<Expr>) -> Result<()> 
 
 fn push_atomic(
     op: AtomicOp,
-    buffer: &str,
+    buffer: &Ident,
     has_expected: bool,
+    ordering: MemoryOrdering,
     values: &mut Vec<Expr>,
 ) -> Result<()> {
     let value = values.pop().ok_or_else(|| missing("atomic value"))?;
@@ -264,6 +270,7 @@ fn push_atomic(
         index: Box::new(index),
         expected,
         value: Box::new(value),
+        ordering,
     });
     Ok(())
 }

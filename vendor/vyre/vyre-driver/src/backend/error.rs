@@ -20,7 +20,7 @@ pub enum ErrorCode {
     PoisonedLock,
     /// GPU kernel-source compilation failed. "Shader" in the variant
     /// name is historical; the code covers any kernel-source compile
-    /// failure — WGSL, SPIR-V, PTX, Metal IR, or CUDA PTX validation.
+    /// failure for any backend kernel-source or binary validation.
     /// A 2.0 rename to `KernelCompileFailed` is tracked in the
     /// semver-policy doc; the variant stays stable in 0.x.
     KernelCompileFailed,
@@ -68,7 +68,7 @@ impl ErrorCode {
 /// ```
 /// use vyre::BackendError;
 ///
-/// let err = BackendError::new("adapter not found. Fix: install a Vulkan-compatible driver.");
+/// let err = BackendError::new("adapter not found. Fix: install a compatible device driver.");
 /// assert!(err.message().contains("Fix:"));
 /// ```
 #[non_exhaustive]
@@ -92,7 +92,7 @@ pub enum BackendError {
     UnsupportedFeature {
         /// Feature name (e.g. `"subgroup_ops"`, `"f16"`).
         name: String,
-        /// Backend identifier (matches [`VyreBackend::id`]).
+        /// Backend identifier (matches [`crate::backend::VyreBackend::id`]).
         backend: String,
     },
 
@@ -109,8 +109,7 @@ pub enum BackendError {
     ///
     /// "Shader" in the variant name is historical and generalised
     /// — the code applies to any kernel-source compile failure across
-    /// backends: WGSL (wgpu), SPIR-V (Vulkan), PTX (CUDA), Metal IR,
-    /// and any naga IR the driver rejects. A 2.0 rename to
+    /// backends. A 2.0 rename to
     /// `KernelCompileFailed` is tracked in the semver-policy doc.
     #[error(
         "kernel-source compile failed on backend `{backend}`: {compiler_message}.          Fix: validate the vyre IR before lowering and check the lowered kernel source for type errors."

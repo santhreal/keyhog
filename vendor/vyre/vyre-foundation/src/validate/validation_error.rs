@@ -36,3 +36,42 @@ impl fmt::Display for ValidationError {
         write!(f, "vyre IR validation: {}", self.message)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unsupported_op_contains_fix_hint() {
+        let err = ValidationError::unsupported_op("backend-a", Arc::from("math::fma"), 3);
+        assert!(err.message().contains("backend-a"));
+        assert!(err.message().contains("math::fma"));
+        assert!(err.message().contains("3"));
+        assert!(err.message().contains("Fix:"));
+    }
+
+    #[test]
+    fn message_accessor() {
+        let err = ValidationError {
+            message: Cow::Borrowed("test"),
+        };
+        assert_eq!(err.message(), "test");
+    }
+
+    #[test]
+    fn display_formatting() {
+        let err = ValidationError {
+            message: Cow::Borrowed("bad IR"),
+        };
+        assert_eq!(err.to_string(), "vyre IR validation: bad IR");
+    }
+
+    #[test]
+    fn clone_and_eq() {
+        let a = ValidationError {
+            message: Cow::Borrowed("same"),
+        };
+        let b = a.clone();
+        assert_eq!(a, b);
+    }
+}

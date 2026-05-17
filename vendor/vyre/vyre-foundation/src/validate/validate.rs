@@ -22,7 +22,9 @@ use crate::ir_inner::model::node::Node;
 use crate::ir_inner::model::program::Program;
 use crate::ir_inner::model::types::{BufferAccess, DataType};
 use crate::visit::traits::{dispatch_node, NodeVisitor};
+use hashbrown::hash_map::RawEntryMut;
 use rustc_hash::{FxHashMap, FxHashSet};
+use smallvec::SmallVec;
 use std::convert::Infallible;
 use std::ops::ControlFlow;
 
@@ -111,10 +113,25 @@ pub fn validate_with_options(
     buffer_map.reserve(program.buffers().len());
     buffer_map.extend(program.buffers().iter().map(|b| (b.name.as_ref(), b)));
 
-    let mut validator = PreorderValidator::new(program, options, buffer_map);
+    let mut validator = PreorderValidator::new(options, buffer_map);
     validator.run(program.entry());
     report.errors.append(&mut validator.errors);
     report.warnings.append(&mut validator.warnings);
+
+    // P-1.0-V2.2: linear-type discipline checker. Reports buffers
+    // whose `LinearType` declaration is violated by the actual usage
+    // count in the IR.
+    report
+        .errors
+        .extend(crate::validate::linear_type::check_linear_types(program));
+
+    // P-1.0-V3.2: shape-predicate refinement checker. Reports buffers
+    // whose static `count` violates the declared `ShapePredicate`.
+    report
+        .errors
+        .extend(crate::validate::shape_predicate::check_shape_predicates(
+            program,
+        ));
 
     report
 }
@@ -152,7 +169,7 @@ use super::uniformity::is_uniform;
 /// Scope frame pushed for every nested node sequence.
 struct ScopeFrame<'p> {
     scope_log: nodes::ScopeLog,
-    region_bindings: FxHashSet<String>,
+    region_bindings: FxHashSet<Ident>,
     divergent: bool,
     depth: usize,
     nodes: &'p [Node],
@@ -189,46 +206,46 @@ enum Frame<'p> {
 /// Single-pass validator that performs all node-tree checks in one
 /// explicit-stack traversal.
 struct PreorderValidator<'p, 'o> {
-    program: &'p Program,
     options: ValidationOptions<'o>,
     buffers: FxHashMap<&'p str, &'p crate::ir_inner::model::program::BufferDecl>,
-    scope: FxHashMap<String, Binding>,
-    scope_stack: Vec<ScopeFrame<'p>>,
+    scope: FxHashMap<Ident, Binding>,
+    scope_stack: SmallVec<[ScopeFrame<'p>; 16]>,
     limits: depth::LimitState,
-    alias_reads: FxHashSet<String>,
-    alias_atomics: FxHashSet<String>,
-    alias_stack: Vec<(FxHashSet<String>, FxHashSet<String>)>,
-    pending_alias_extensions: Vec<NodeAccesses>,
-    self_comp_counts: FxHashMap<String, usize>,
+    alias_reads: FxHashSet<Ident>,
+    alias_atomics: FxHashSet<Ident>,
+    alias_stack: SmallVec<[(FxHashSet<Ident>, FxHashSet<Ident>); 8]>,
+    pending_alias_extensions: SmallVec<[NodeAccesses; 8]>,
+    self_comp_counts: hashbrown::HashMap<String, usize>,
     errors: Vec<ValidationError>,
     warnings: Vec<super::ValidationWarning>,
+    /// HOT PATH (`PreorderValidator::validate_expr`): reuse one report buffer per expression so we do not allocate fresh error/warning vectors for every `validate_expr` invocation while traversing the IR tree.
+    expr_report_scratch: ValidationReport,
 }
 
 impl<'p, 'o> PreorderValidator<'p, 'o> {
     fn new(
-        program: &'p Program,
         options: ValidationOptions<'o>,
         buffers: FxHashMap<&'p str, &'p crate::ir_inner::model::program::BufferDecl>,
     ) -> Self {
         Self {
-            program,
             options,
             buffers,
             scope: FxHashMap::default(),
-            scope_stack: Vec::new(),
+            scope_stack: SmallVec::new(),
             limits: depth::LimitState::default(),
             alias_reads: FxHashSet::default(),
             alias_atomics: FxHashSet::default(),
-            alias_stack: Vec::new(),
-            pending_alias_extensions: Vec::new(),
-            self_comp_counts: FxHashMap::default(),
+            alias_stack: SmallVec::new(),
+            pending_alias_extensions: SmallVec::new(),
+            self_comp_counts: hashbrown::HashMap::default(),
             errors: Vec::new(),
             warnings: Vec::new(),
+            expr_report_scratch: ValidationReport::default(),
         }
     }
 
     fn run(&mut self, nodes: &'p [Node]) {
-        let mut stack: Vec<Frame<'p>> = Vec::new();
+        let mut stack: SmallVec<[Frame<'p>; 128]> = SmallVec::new();
         stack.push(Frame::PopScope);
         for node in nodes.iter().rev() {
             stack.push(Frame::Child(node));
@@ -394,7 +411,7 @@ impl<'p, 'o> PreorderValidator<'p, 'o> {
                     };
                     nodes::insert_binding(
                         &mut self.scope,
-                        var.to_string(),
+                        var.clone(),
                         Binding {
                             ty: DataType::U32,
                             mutable: false,
@@ -412,7 +429,7 @@ impl<'p, 'o> PreorderValidator<'p, 'o> {
             .drain()
             .filter_map(|(generator, count)| (count > 1).then_some(generator))
             .collect();
-        duplicates.sort();
+        duplicates.sort_unstable();
         for generator in duplicates {
             self.errors.push(err(format!(
                 "region `{generator}` is marked non-composable with itself but appears multiple times in one fused program. Fix: split the parser into separate dispatches, or give each instance distinct scratch storage before fusion."
@@ -435,20 +452,18 @@ impl<'p, 'o> PreorderValidator<'p, 'o> {
 
     /// Run the legacy `validate_expr` helper and merge its diagnostics.
     fn validate_expr(&mut self, expr: &Expr, depth_level: usize) {
-        let mut report = ValidationReport {
-            errors: Vec::new(),
-            warnings: Vec::new(),
-        };
+        self.expr_report_scratch.errors.clear();
+        self.expr_report_scratch.warnings.clear();
         expr_rules::validate_expr(
             expr,
             &self.buffers,
             &self.scope,
             self.options,
-            &mut report,
+            &mut self.expr_report_scratch,
             depth_level,
         );
-        self.errors.append(&mut report.errors);
-        self.warnings.append(&mut report.warnings);
+        self.errors.append(&mut self.expr_report_scratch.errors);
+        self.warnings.append(&mut self.expr_report_scratch.warnings);
     }
 
     /// Report fusion-alias hazards between `accesses` and the current linear state.
@@ -457,14 +472,14 @@ impl<'p, 'o> PreorderValidator<'p, 'o> {
             .atomic_buffers
             .intersection(&self.alias_reads)
             .cloned()
-            .collect::<Vec<_>>();
+            .collect::<SmallVec<[Ident; 8]>>();
         hazards.extend(
             accesses
                 .read_buffers
                 .intersection(&self.alias_atomics)
                 .cloned(),
         );
-        hazards.sort();
+        hazards.sort_by(|a, b| a.as_str().cmp(b.as_str()));
         hazards.dedup();
 
         for buffer in hazards {
@@ -485,7 +500,7 @@ impl<'p, 'o> PreorderValidator<'p, 'o> {
 
 /// Push the stack frames needed to process a nested node sequence.
 fn push_nested_sequence<'p>(
-    stack: &mut Vec<Frame<'p>>,
+    stack: &mut SmallVec<[Frame<'p>; 128]>,
     nodes: &'p [Node],
     divergent: bool,
     depth: usize,
@@ -525,8 +540,17 @@ impl NodeVisitor for PreorderValidator<'_, '_> {
             )));
             return ControlFlow::Continue(());
         };
-        let duplicate_sibling =
-            check_sibling_duplicate(name, &mut frame.region_bindings, &mut self.errors);
+        // Same-region duplicate Lets are always invalid, even when
+        // shadowing is allowed for nested scopes — the V032 contract
+        // covered by `sibling_duplicate_lets_are_rejected_even_when_shadowing_is_allowed`.
+        // `allow_shadowing` only opens nested scopes; siblings collide
+        // unconditionally.
+        let duplicate_sibling = check_sibling_duplicate(
+            name,
+            &mut frame.region_bindings,
+            /*allow_duplicate_siblings=*/ false,
+            &mut self.errors,
+        );
         if !duplicate_sibling {
             shadowing::check_local(name, &self.scope, self.options, &mut self.errors);
         }
@@ -534,7 +558,7 @@ impl NodeVisitor for PreorderValidator<'_, '_> {
         let uniform = is_uniform(value, &self.scope);
         nodes::insert_binding(
             &mut self.scope,
-            name.to_string(),
+            name.clone(),
             Binding {
                 ty,
                 mutable: true,
@@ -564,6 +588,14 @@ impl NodeVisitor for PreorderValidator<'_, '_> {
                 self.errors.push(err(format!(
                     "V011: assignment to loop variable `{name}`. Fix: loop variables are immutable."
                 )));
+            }
+            if let Some(value_ty) = expr_type(value, &self.buffers, &self.scope) {
+                if value_ty != binding.ty {
+                    self.errors.push(err(format!(
+                        "V045: assignment to `{name}` has type `{value_ty}` but the binding was declared as `{declared}`. Fix: cast the value to `{declared}` or introduce a new binding with the intended type.",
+                        declared = binding.ty
+                    )));
+                }
             }
         } else {
             self.errors.push(err(format!(
@@ -622,7 +654,7 @@ impl NodeVisitor for PreorderValidator<'_, '_> {
         self.validate_expr(value, 0);
 
         let mut accesses = NodeAccesses::default();
-        accesses.read_buffers.insert(buffer.to_string());
+        accesses.read_buffers.insert(buffer.clone());
         collect_expr_accesses(index, &mut accesses);
         collect_expr_accesses(value, &mut accesses);
         self.report_alias_hazards(&accesses);
@@ -714,7 +746,7 @@ impl NodeVisitor for PreorderValidator<'_, '_> {
         }
 
         let mut accesses = NodeAccesses::default();
-        accesses.read_buffers.insert(count_buffer.to_string());
+        accesses.read_buffers.insert(count_buffer.clone());
         self.report_alias_hazards(&accesses);
         self.extend_alias(&accesses);
 
@@ -740,8 +772,8 @@ impl NodeVisitor for PreorderValidator<'_, '_> {
         }
 
         let mut accesses = NodeAccesses::default();
-        accesses.read_buffers.insert(source.to_string());
-        accesses.read_buffers.insert(destination.to_string());
+        accesses.read_buffers.insert(source.clone());
+        accesses.read_buffers.insert(destination.clone());
         self.report_alias_hazards(&accesses);
         self.extend_alias(&accesses);
 
@@ -767,8 +799,8 @@ impl NodeVisitor for PreorderValidator<'_, '_> {
         }
 
         let mut accesses = NodeAccesses::default();
-        accesses.read_buffers.insert(source.to_string());
-        accesses.read_buffers.insert(destination.to_string());
+        accesses.read_buffers.insert(source.clone());
+        accesses.read_buffers.insert(destination.clone());
         self.report_alias_hazards(&accesses);
         self.extend_alias(&accesses);
 
@@ -810,11 +842,18 @@ impl NodeVisitor for PreorderValidator<'_, '_> {
         ControlFlow::Continue(())
     }
 
-    fn visit_barrier(&mut self, _node: &Node) -> ControlFlow<Self::Break> {
+    fn visit_barrier(&mut self, node: &Node) -> ControlFlow<Self::Break> {
         let depth = self.current_depth();
         depth::check_limits(&mut self.limits, depth, &mut self.errors);
         let divergent = self.current_divergent();
-        barrier::check_barrier(divergent, &mut self.errors);
+        let Node::Barrier { ordering } = node else {
+            self.errors.push(err(
+                "malformed barrier visitor dispatch. Fix: rebuild the program through the structured IR builder before validation."
+                    .to_string(),
+            ));
+            return ControlFlow::Continue(());
+        };
+        barrier::check_barrier(divergent, *ordering, &mut self.errors);
         self.alias_reads.clear();
         self.alias_atomics.clear();
         ControlFlow::Continue(())
@@ -836,7 +875,12 @@ impl NodeVisitor for PreorderValidator<'_, '_> {
         let depth = self.current_depth();
         depth::check_limits(&mut self.limits, depth, &mut self.errors);
         if let Some(base) = self_exclusive_region_key(generator.as_str()) {
-            *self.self_comp_counts.entry(base.to_string()).or_insert(0) += 1;
+            match self.self_comp_counts.raw_entry_mut().from_key(base) {
+                RawEntryMut::Occupied(mut o) => *o.get_mut() += 1,
+                RawEntryMut::Vacant(v) => {
+                    v.insert(base.to_string(), 1);
+                }
+            }
         }
         ControlFlow::Continue(())
     }
@@ -871,275 +915,6 @@ impl NodeVisitor for PreorderValidator<'_, '_> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::ir::{
-        AtomicOp, BinOp, BufferAccess, BufferDecl, DataType, Expr, Node, Program, UnOp,
-    };
-    use crate::validate::fusion_safety::validate_fusion_alias_hazards;
-    use crate::validate::self_composition::validate_self_composition;
-    use proptest::prelude::*;
-
-    // ------------------------------------------------------------------
-    // Legacy multi-walk validator (copied from pre-refactor code) for
-    // regression testing.
-    // ------------------------------------------------------------------
-    fn validate_with_options_legacy(
-        program: &Program,
-        options: ValidationOptions<'_>,
-    ) -> ValidationReport {
-        let mut report = ValidationReport {
-            errors: Vec::with_capacity(program.buffers().len() + program.entry().len()),
-            warnings: Vec::new(),
-        };
-
-        if let Some(message) = program.top_level_region_violation() {
-            report.errors.push(err(message));
-        }
-
-        for (axis, &size) in program.workgroup_size.iter().enumerate() {
-            if size == 0 {
-                report.errors.push(err(format!(
-                    "workgroup_size[{axis}] is 0. Fix: all workgroup dimensions must be >= 1."
-                )));
-            }
-        }
-
-        let mut seen_names = FxHashSet::default();
-        let mut seen_bindings = FxHashSet::default();
-        for buf in program.buffers() {
-            if !seen_names.insert(&buf.name) {
-                report.errors.push(err(format!(
-                    "duplicate buffer name `{}`. Fix: each buffer must have a unique name.",
-                    buf.name
-                )));
-            }
-            if buf.access != BufferAccess::Workgroup && !seen_bindings.insert(buf.binding) {
-                report.errors.push(err(format!(
-                    "duplicate binding slot {} (buffer `{}`). Fix: each buffer must have a unique binding.",
-                    buf.binding, buf.name
-                )));
-            }
-            if buf.access == BufferAccess::Workgroup && buf.count == 0 {
-                report.errors.push(err(format!(
-                    "workgroup buffer `{}` has count 0. Fix: declare a positive element count.",
-                    buf.name
-                )));
-            }
-            validate_output_buffer_element_type(buf, &mut report.errors);
-        }
-        validate_output_markers(program.buffers(), &mut report.errors);
-
-        let mut buffer_map: FxHashMap<&str, &crate::ir_inner::model::program::BufferDecl> =
-            FxHashMap::default();
-        buffer_map.reserve(program.buffers().len());
-        buffer_map.extend(program.buffers().iter().map(|b| (b.name.as_ref(), b)));
-
-        let mut scope = FxHashMap::default();
-        let mut limits = depth::LimitState::default();
-        nodes::validate_nodes(
-            program.entry(),
-            &buffer_map,
-            &mut scope,
-            false,
-            0,
-            &mut limits,
-            options,
-            &mut report,
-        );
-        validate_fusion_alias_hazards(program.entry(), &mut report.errors);
-        validate_self_composition(program.entry(), &mut report.errors);
-
-        report
+    mod tests {
+        include!("validate_tests.rs");
     }
-
-    // ------------------------------------------------------------------
-    // Proptest generators (adapted from transform::visit tests).
-    // ------------------------------------------------------------------
-    fn arb_ident() -> BoxedStrategy<String> {
-        prop::sample::select(&["x", "y", "idx", "i", "acc"][..])
-            .prop_map(str::to_string)
-            .boxed()
-    }
-
-    fn arb_buffer_name() -> BoxedStrategy<String> {
-        prop::sample::select(&["out", "input", "rw", "counts", "scratch"][..])
-            .prop_map(str::to_string)
-            .boxed()
-    }
-
-    fn arb_expr() -> BoxedStrategy<Expr> {
-        let leaf = prop_oneof![
-            any::<u32>().prop_map(Expr::LitU32),
-            any::<i32>().prop_map(Expr::LitI32),
-            any::<bool>().prop_map(Expr::LitBool),
-            arb_ident().prop_map(Expr::var),
-            arb_buffer_name().prop_map(Expr::buf_len),
-        ];
-
-        leaf.prop_recursive(3, 48, 3, |inner| {
-            prop_oneof![
-                (arb_buffer_name(), inner.clone()).prop_map(|(buffer, index)| Expr::Load {
-                    buffer: buffer.into(),
-                    index: Box::new(index),
-                }),
-                (inner.clone(), inner.clone()).prop_map(|(left, right)| Expr::BinOp {
-                    op: BinOp::Add,
-                    left: Box::new(left),
-                    right: Box::new(right),
-                }),
-                (inner.clone(), inner.clone()).prop_map(|(left, right)| Expr::BinOp {
-                    op: BinOp::Sub,
-                    left: Box::new(left),
-                    right: Box::new(right),
-                }),
-                inner.clone().prop_map(|operand| Expr::UnOp {
-                    op: UnOp::Negate,
-                    operand: Box::new(operand),
-                }),
-                (inner.clone(), inner.clone(), inner.clone()).prop_map(
-                    |(cond, true_val, false_val)| Expr::Select {
-                        cond: Box::new(cond),
-                        true_val: Box::new(true_val),
-                        false_val: Box::new(false_val),
-                    }
-                ),
-                inner.clone().prop_map(|value| Expr::Cast {
-                    target: DataType::U32,
-                    value: Box::new(value),
-                }),
-                (
-                    arb_buffer_name(),
-                    inner.clone(),
-                    proptest::option::of(inner.clone()),
-                    inner.clone(),
-                )
-                    .prop_map(|(buffer, index, expected, value)| Expr::Atomic {
-                        op: AtomicOp::Add,
-                        buffer: buffer.into(),
-                        index: Box::new(index),
-                        expected: expected.map(Box::new),
-                        value: Box::new(value),
-                    }),
-            ]
-        })
-        .boxed()
-    }
-
-    fn arb_node() -> BoxedStrategy<Node> {
-        arb_node_with_depth(3)
-    }
-
-    fn arb_node_with_depth(depth: u32) -> BoxedStrategy<Node> {
-        let leaf = prop_oneof![
-            (arb_ident(), arb_expr()).prop_map(|(name, value)| Node::Let {
-                name: name.into(),
-                value,
-            }),
-            (arb_ident(), arb_expr()).prop_map(|(name, value)| Node::Assign {
-                name: name.into(),
-                value,
-            }),
-            (arb_buffer_name(), arb_expr(), arb_expr()).prop_map(|(buffer, index, value)| {
-                Node::Store {
-                    buffer: buffer.into(),
-                    index,
-                    value,
-                }
-            }),
-            Just(Node::Return),
-            Just(Node::Barrier),
-        ];
-
-        if depth == 0 {
-            return leaf.boxed();
-        }
-
-        leaf.prop_recursive(2, 32, 2, move |inner| {
-            prop_oneof![
-                (
-                    arb_expr(),
-                    prop::collection::vec(inner.clone(), 0..=3),
-                    prop::collection::vec(inner.clone(), 0..=3),
-                )
-                    .prop_map(|(cond, then, otherwise)| Node::If {
-                        cond,
-                        then,
-                        otherwise,
-                    }),
-                (
-                    arb_ident(),
-                    arb_expr(),
-                    arb_expr(),
-                    prop::collection::vec(inner.clone(), 0..=3),
-                )
-                    .prop_map(|(var, from, to, body)| Node::Loop {
-                        var: var.into(),
-                        from,
-                        to,
-                        body,
-                    }),
-                prop::collection::vec(inner, 0..=3).prop_map(Node::Block),
-            ]
-        })
-        .boxed()
-    }
-
-    fn arb_program() -> BoxedStrategy<Program> {
-        prop::collection::vec(arb_node(), 0..=8)
-            .prop_map(|entry| {
-                Program::wrapped(
-                    vec![
-                        BufferDecl::output("out", 0, DataType::U32)
-                            .with_count(8)
-                            .with_output_byte_range(0..16),
-                        BufferDecl::read("input", 1, DataType::U32).with_count(8),
-                        BufferDecl::read_write("rw", 2, DataType::U32).with_count(8),
-                        BufferDecl::read("counts", 3, DataType::U32).with_count(8),
-                        BufferDecl::workgroup("scratch", 4, DataType::U32),
-                    ],
-                    [1, 1, 1],
-                    entry,
-                )
-            })
-            .boxed()
-    }
-
-    // ------------------------------------------------------------------
-    // Regression test: new single-pass validator must emit exactly the
-    // same errors (+ warnings) as the old four-walk validator.
-    // ------------------------------------------------------------------
-    proptest! {
-        #![proptest_config(ProptestConfig {
-            cases: 50,
-            ..ProptestConfig::default()
-        })]
-
-        #[test]
-        fn single_pass_validator_matches_legacy(program in arb_program()) {
-            let legacy = validate_with_options_legacy(&program, ValidationOptions::default());
-            let modern = validate_with_options(&program, ValidationOptions::default());
-
-            // Deterministic ordering: sort both error sets by message.
-            let mut legacy_errors = legacy.errors;
-            let mut modern_errors = modern.errors;
-            legacy_errors.sort_by(|a, b| a.message.cmp(&b.message));
-            modern_errors.sort_by(|a, b| a.message.cmp(&b.message));
-
-            prop_assert_eq!(
-                legacy_errors, modern_errors,
-                "error mismatch between legacy and single-pass validator"
-            );
-
-            let mut legacy_warnings = legacy.warnings;
-            let mut modern_warnings = modern.warnings;
-            legacy_warnings.sort_by(|a, b| a.message.cmp(&b.message));
-            modern_warnings.sort_by(|a, b| a.message.cmp(&b.message));
-
-            prop_assert_eq!(
-                legacy_warnings, modern_warnings,
-                "warning mismatch between legacy and single-pass validator"
-            );
-        }
-    }
-}

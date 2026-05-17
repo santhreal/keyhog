@@ -13,7 +13,7 @@ impl RoutingPolicy for StandardPolicy {
 
     fn route(&self, plan: &ExecutionPlan) -> RoutingDecision {
         match SchedulingPolicy::standard().route(plan.fusion.node_count, plan.memory.static_bytes) {
-            PolicyRoute::CpuSimd => RoutingDecision::CpuSimd,
+            PolicyRoute::CpuSimd => RoutingDecision::GpuPipeline,
             PolicyRoute::GpuPipeline => RoutingDecision::GpuPipeline,
             PolicyRoute::PersistentMegakernel => RoutingDecision::PersistentMegakernel,
         }

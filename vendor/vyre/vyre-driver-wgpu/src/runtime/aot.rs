@@ -14,6 +14,8 @@ use vyre_driver::{BackendError, DispatchConfig};
 use vyre_foundation::ir::Program;
 
 const CACHE_VERSION: u32 = 1;
+const MAX_AOT_WGSL_BYTES: u64 = 16 * 1024 * 1024;
+const MAX_AOT_METADATA_BYTES: u64 = 64 * 1024;
 
 /// Result of reading or populating the AOT specialization cache.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -81,7 +83,7 @@ pub fn load_or_compile_with_config(
     let wgsl_path = dir.join(format!("{key}.wgsl"));
     let meta_path = dir.join(format!("{key}.toml"));
 
-    if let Ok(wgsl) = fs::read_to_string(&wgsl_path) {
+    if let Ok(wgsl) = read_aot_text_bounded(&wgsl_path, MAX_AOT_WGSL_BYTES) {
         if metadata_matches(&meta_path, &spec_hash, fingerprint, wgsl.len()) {
             return Ok(AotArtifact {
                 wgsl,
@@ -91,7 +93,7 @@ pub fn load_or_compile_with_config(
         }
     }
 
-    let wgsl = crate::lowering::lower_with_config(program, config).map_err(|error| {
+    let wgsl = crate::emit::lower_with_config(program, config).map_err(|error| {
         BackendError::new(format!(
             "failed to lower vyre IR to WGSL: {error}. Fix: provide a valid Program accepted by the WGSL lowering pipeline."
         ))
@@ -137,9 +139,11 @@ pub fn load_or_compile_with_config(
 /// Deterministic cache key for one specialization.
 #[must_use]
 pub fn cache_key(spec_hash: &str, backend_fingerprint: &str) -> String {
-    blake3::hash(format!("{CACHE_VERSION}:{spec_hash}:{backend_fingerprint}").as_bytes())
-        .to_hex()
-        .to_string()
+    vyre_driver::specialization::versioned_specialization_artifact_key(
+        CACHE_VERSION,
+        spec_hash,
+        backend_fingerprint,
+    )
 }
 
 /// Directory used by the AOT cache.
@@ -158,7 +162,7 @@ fn metadata_matches(
     backend_fingerprint: &str,
     wgsl_bytes: usize,
 ) -> bool {
-    let Ok(raw) = fs::read_to_string(path) else {
+    let Ok(raw) = read_aot_text_bounded(path, MAX_AOT_METADATA_BYTES) else {
         return false;
     };
     let Ok(metadata) = toml::from_str::<AotMetadata>(&raw) else {
@@ -168,6 +172,28 @@ fn metadata_matches(
         && metadata.spec_hash == spec_hash
         && metadata.backend_fingerprint == backend_fingerprint
         && metadata.wgsl_bytes == wgsl_bytes
+}
+
+fn read_aot_text_bounded(path: &std::path::Path, max_bytes: u64) -> std::io::Result<String> {
+    use std::io::Read as _;
+
+    let mut file = fs::File::open(path)?;
+    let metadata = file.metadata()?;
+    if metadata.len() > max_bytes {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("AOT cache file exceeds {max_bytes} byte limit"),
+        ));
+    }
+    let mut text = String::with_capacity(metadata.len() as usize);
+    file.by_ref().take(max_bytes + 1).read_to_string(&mut text)?;
+    if text.len() as u64 > max_bytes {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "AOT cache file exceeded bounded read limit",
+        ));
+    }
+    Ok(text)
 }
 
 fn now_unix_ms() -> u64 {

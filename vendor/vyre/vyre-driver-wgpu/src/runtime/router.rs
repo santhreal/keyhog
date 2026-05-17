@@ -1,21 +1,20 @@
 //! Backend auto-picker.
 //!
 //! `BackendRouter` walks `inventory::iter::<BackendRegistration>`,
-//! filters out registered backends that cannot dispatch, and picks the
-//! best executable backend available by precedence. Override via
-//! `VYRE_BACKEND=<id>`; cached per adapter fingerprint (hook exposed,
-//! persistence deferred).
+//! filters out registered backends that cannot dispatch or are CPU
+//! reference oracles, and picks the best executable GPU backend available
+//! by precedence. Override via `VYRE_BACKEND=<id>`. The router is
+//! intentionally stateless: backend precedence lives in inventory
+//! registrations and adapter-specific persistence belongs to the backend
+//! cache layer, not routing.
 //!
 //! Precedence (high → low):
 //!
 //! 1. `VYRE_BACKEND=<id>` — if set and the backend is registered,
-//!    wins only when the backend is registered and executable.
-//! 2. `ptx` — when NVIDIA GPU + CUDA present (not shipped yet;
-//!    future backend registers and slots in here).
-//! 3. `spirv` — when the SPIR-V backend is registered
-//!    (Gemini C's C-B7).
-//! 4. `wgpu` — the default WGSL path.
-//! 5. `reference` — CPU reference, last resort.
+//!    wins only when the backend is registered, executable, and GPU-backed.
+//! 2. `cuda` — when an NVIDIA/CUDA backend is linked, registered, and executable.
+//! 3. `wgpu` — portable GPU backend after CUDA.
+//! 4. `spirv` — when the SPIR-V backend is registered.
 //!
 //! `BackendRouter::pick()` returns the selected backend id on success,
 //! or a structured `BackendError` when no executable backend is linked.
@@ -83,9 +82,9 @@ impl BackendRouter {
     ///
     /// * `VYRE_BACKEND` is set to a backend id that is not
     ///   registered.
-    /// * No registered backend is found. (`reference` is always
-    ///   present as the lowest-precedence fallback; a hit on no
-    ///   backend indicates a broken link-time inventory.)
+    /// * No executable registered GPU backend is found. Vyre does not
+    ///   silently fall back to CPU evaluation; this is a linkage or
+    ///   driver-visibility error.
     pub fn pick(&self, program: &Program) -> Result<RouterDecision, BackendError> {
         self.pick_with_override(program, Override::FromEnv)
     }
@@ -101,7 +100,7 @@ impl BackendRouter {
         _program: &Program,
         source: Override<'_>,
     ) -> Result<RouterDecision, BackendError> {
-        let registered = vyre::backend::registered_backends();
+        let registered = vyre_driver::backend::registered_backends();
 
         let forced: Option<String> = match source {
             Override::FromEnv => env::var(OVERRIDE_ENV).ok(),
@@ -113,14 +112,18 @@ impl BackendRouter {
             if !forced.is_empty() {
                 let hit = registered
                     .iter()
-                    .find(|r| r.id == forced && backend_dispatches(r.id));
+                    .find(|r| {
+                        r.id == forced
+                            && backend_dispatches(r.id)
+                            && !is_reference_oracle_backend(r.id)
+                    });
                 return match hit {
                     Some(reg) => Ok(RouterDecision {
                         backend: reg.id,
                         reason: Reason::EnvOverride,
                     }),
                     None => Err(BackendError::new(format!(
-                        "VYRE_BACKEND={forced} is not an executable registered backend. Fix: link a backend crate whose registration dispatches, or unset VYRE_BACKEND to let the router pick."
+                        "VYRE_BACKEND={forced} is not an executable registered GPU backend. Fix: link CUDA/WGPU or unset VYRE_BACKEND; cpu-ref/reference are explicit conformance oracles, not runtime router targets."
                     ))),
                 };
             }
@@ -130,7 +133,10 @@ impl BackendRouter {
         // submitted by each backend crate, not a hardcoded driver-side table.
         // Walk backends in precedence order and return the first hit.
         for reg in registered_backends_by_precedence_slice() {
-            if registered.iter().any(|r| r.id == reg.id) && backend_dispatches(reg.id) {
+            if registered.iter().any(|r| r.id == reg.id)
+                && backend_dispatches(reg.id)
+                && !is_reference_oracle_backend(reg.id)
+            {
                 return Ok(RouterDecision {
                     backend: reg.id,
                     reason: Reason::Precedence,
@@ -139,7 +145,7 @@ impl BackendRouter {
         }
 
         Err(BackendError::new(
-            "no backend is registered. Fix: link at least one of vyre-wgpu, vyre-reference, or a custom VyreBackend crate into the binary.",
+            "no executable GPU backend is registered. Fix: link vyre-driver-cuda or vyre-driver-wgpu into the binary and verify the GPU driver probe succeeds.",
         ))
     }
 
@@ -150,6 +156,10 @@ impl BackendRouter {
     pub fn enumerate_by_precedence() -> Vec<&'static BackendRegistration> {
         registered_backends_by_precedence_slice().to_vec()
     }
+}
+
+fn is_reference_oracle_backend(id: &str) -> bool {
+    matches!(id, "cpu-ref" | "reference")
 }
 
 #[cfg(test)]
@@ -166,13 +176,13 @@ mod tests {
     #[test]
     fn enumerate_by_precedence_puts_wgpu_before_reference() {
         // V7-EXT-021: precedence is now inventory-driven. wgpu submits
-        // rank 30 in this crate's lib.rs; reference (when registered)
+        // rank 30 in this crate's lib.rs; cpu-ref (when registered)
         // must trail it.
         let wgpu_rank = backend_precedence("wgpu");
-        let ref_rank = backend_precedence("reference");
+        let ref_rank = backend_precedence("cpu-ref");
         assert!(
             wgpu_rank < ref_rank || ref_rank == u32::MAX,
-            "wgpu (rank {wgpu_rank}) must take precedence over the CPU reference (rank {ref_rank})"
+            "wgpu (rank {wgpu_rank}) must take precedence over the CPU reference oracle (rank {ref_rank})"
         );
     }
 
@@ -181,10 +191,9 @@ mod tests {
         // Replaces the BACKEND_PRECEDENCE static-slice assertion.
         let ranked = BackendRouter::enumerate_by_precedence();
         // wgpu registers in this crate; it must appear with a finite rank.
-        let wgpu = ranked
-            .iter()
-            .find(|r| r.id == "wgpu")
-            .expect("wgpu backend registered in this crate");
+        let wgpu = ranked.iter().find(|r| r.id == "wgpu").expect(
+            "Fix: wgpu backend registered in this crate; restore this invariant before continuing.",
+        );
         assert_eq!(backend_precedence(wgpu.id), 30);
     }
 

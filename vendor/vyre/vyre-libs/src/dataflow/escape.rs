@@ -20,7 +20,7 @@
 //! drives the fixpoint via `bitset_fixpoint` and stops when the
 //! bitset is unchanged.
 //!
-//! Soundness: [`MayOver`](super::Soundness::MayOver).
+//! Soundness: `MayOver`.
 //!
 //! Required for C03 (double-free on concurrent path), C17 (fd
 //! passing confused-deputy).
@@ -95,5 +95,50 @@ pub struct Escape;
 impl super::soundness::SoundnessTagged for Escape {
     fn soundness(&self) -> super::soundness::Soundness {
         super::soundness::Soundness::MayOver
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn escape_analyze_emits_three_buffers() {
+        let p = escape_analyze_with_count("pts", "cg", "out", 64);
+        let names: Vec<&str> = p.buffers.iter().map(|b| b.name()).collect();
+        assert_eq!(names, vec!["pts", "cg", "out"]);
+    }
+
+    #[test]
+    fn escape_buffer_count_matches_bitset_words() {
+        let node_count = 64;
+        let words = bitset_words(node_count);
+        let p = escape_analyze_with_count("pts", "cg", "out", node_count);
+        let out_buf = p
+            .buffers
+            .iter()
+            .find(|b| b.name() == "out")
+            .expect("out buffer");
+        assert_eq!(out_buf.count, words);
+    }
+
+    #[test]
+    fn escape_workgroup_size_is_256_1_1() {
+        let p = escape_analyze_with_count("pts", "cg", "out", 64);
+        assert_eq!(p.workgroup_size, [256, 1, 1]);
+    }
+
+    #[test]
+    fn escape_default_delegates_to_with_count() {
+        let default = escape_analyze("pts", "cg", "out");
+        let explicit = escape_analyze_with_count("pts", "cg", "out", 64);
+        assert_eq!(default.workgroup_size, explicit.workgroup_size);
+        assert_eq!(default.buffers.len(), explicit.buffers.len());
+    }
+
+    #[test]
+    fn escape_soundness_is_mayover() {
+        use super::super::soundness::{Soundness, SoundnessTagged};
+        assert_eq!(Escape.soundness(), Soundness::MayOver);
     }
 }

@@ -6,12 +6,10 @@
 //! alternate classifier sets can be swapped in without rebuilding the
 //! crate.
 //!
-//! First Tier 2.5 migration per `docs/primitives-tier.md` Step 2.
-//! Tier 3 dialects (`vyre-libs::text::char_class`, future
-//! `vyre-libs-parse-c::lexer`) call this builder + register their
-//! own `OpEntry` against it. The function lives here so future
-//! parsers reuse the exact same byte-classifier kernel — the LEGO
-//! substrate.
+//! Tier 3 dialects call this builder and may register wrapper ops
+//! with their own ids. This primitive keeps its own Tier 2.5 id so
+//! op coverage and composition audits can distinguish the reusable
+//! substrate from user-facing library wrappers.
 
 use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 
@@ -80,10 +78,8 @@ pub const C_CLOSE_BRACKET: u32 = 30;
 /// Anything else.
 pub const C_OTHER: u32 = 31;
 
-/// Stable op id for the registered Tier 3 wrapper. Kept in this
-/// crate so callers (and the harness) can reference the canonical
-/// id without duplicating the string literal.
-pub const OP_ID: &str = "vyre-libs::text::char_class";
+/// Stable op id for the registered Tier 2.5 primitive.
+pub const CHAR_CLASS_OP_ID: &str = "vyre-primitives::text::char_class";
 
 /// Build the default ASCII byte-classification table.
 #[must_use]
@@ -143,7 +139,7 @@ pub fn build_char_class_table() -> [u32; 256] {
 #[must_use]
 pub fn char_class(source: &str, classified: &str, n: u32) -> Program {
     let body = vec![Node::Region {
-        generator: vyre_foundation::ir::model::expr::Ident::from(OP_ID),
+        generator: vyre_foundation::ir::model::expr::Ident::from(CHAR_CLASS_OP_ID),
         source_region: None,
         body: std::sync::Arc::new(vec![
             Node::let_bind("idx", Expr::InvocationId { axis: 0 }),
@@ -199,6 +195,26 @@ pub fn pack_bytes_as_u32(bytes: &[u8]) -> Vec<u8> {
         .collect()
 }
 
+#[cfg(feature = "inventory-registry")]
+inventory::submit! {
+    crate::harness::OpEntry::new(
+        CHAR_CLASS_OP_ID,
+        || char_class("source", "classified", 3),
+        Some(|| {
+            let table = build_char_class_table();
+            vec![vec![
+                pack_bytes_as_u32(b"A1 "),
+                pack_u32(&table),
+                vec![0u8; 3 * 4],
+            ]]
+        }),
+        Some(|| {
+            let table = build_char_class_table();
+            vec![vec![pack_u32(&cpu_ref(b"A1 ", &table))]]
+        }),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -223,5 +239,10 @@ mod tests {
     fn cpu_ref_walks_table() {
         let table = build_char_class_table();
         assert_eq!(cpu_ref(b"A1 ", &table), vec![C_ALPHA, C_DIGIT, C_WS]);
+    }
+
+    #[test]
+    fn primitive_id_names_the_primitive_tier() {
+        assert_eq!(CHAR_CLASS_OP_ID, "vyre-primitives::text::char_class");
     }
 }

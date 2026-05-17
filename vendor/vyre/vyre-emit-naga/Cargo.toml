@@ -1,0 +1,31 @@
+[package]
+name = "vyre-emit-naga"
+version = "0.4.1"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Naga IR emitter for vyre KernelDescriptor. Produces wgpu-compatible compute shaders."
+readme = "README.md"
+repository = "https://github.com/santhsecurity/vyre"
+homepage = "https://github.com/santhsecurity/vyre"
+documentation = "https://docs.rs/vyre-emit-naga"
+categories = ["compilers", "hardware-support"]
+keywords = ["vyre", "naga", "wgpu", "shader"]
+
+[lib]
+name = "vyre_emit_naga"
+path = "src/lib.rs"
+
+[dependencies]
+vyre-lower = { version = "0.4.1", path = "../vyre-lower" }
+naga = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+vyre-foundation = { version = "0.4.1", path = "../vyre-foundation" }
+vyre-driver = { workspace = true }
+vyre-spec = { workspace = true }
+rustc-hash = { workspace = true }
+inventory = { workspace = true }
+serde_json.workspace = true
+
+[dev-dependencies]
+vyre-libs = { version = "0.4.1", path = "../vyre-libs", features = ["c-parser"] }

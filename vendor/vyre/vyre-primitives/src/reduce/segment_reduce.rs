@@ -14,11 +14,7 @@ pub const OP_ID: &str = "vyre-primitives::reduce::segment_reduce_sum";
 
 /// Build a Program: `output[seg] = Σ input[offsets[seg]..offsets[seg+1]]`.
 ///
-/// # Panics
-///
-/// Panics with an actionable message if `num_segments` is zero or
-/// exceeds the workgroup size (256).  Larger counts must be tiled by
-/// the caller.
+/// Invalid segment counts lower to an explicit trap program.
 #[must_use]
 pub fn segment_reduce_sum(
     input: &str,
@@ -26,11 +22,14 @@ pub fn segment_reduce_sum(
     output: &str,
     num_segments: u32,
 ) -> Program {
-    assert!(
-        num_segments > 0 && num_segments <= 256,
-        "Fix: segment_reduce_sum requires 0 < num_segments <= 256, got {num_segments}. \
-         For larger counts, tile the dispatch across multiple work-groups.",
-    );
+    if num_segments == 0 || num_segments > 256 {
+        return crate::invalid_output_program(
+            OP_ID,
+            output,
+            DataType::U32,
+            format!("Fix: segment_reduce_sum requires 0 < num_segments <= 256, got {num_segments}. For larger counts, tile the dispatch across multiple work-groups."),
+        );
+    }
 
     let lane = Expr::InvocationId { axis: 0 };
 
@@ -80,8 +79,20 @@ pub fn segment_reduce_sum(
 /// `input.len()`.
 #[must_use]
 pub fn cpu_ref(input: &[u32], segment_offsets: &[u32]) -> Vec<u32> {
+    let mut out = Vec::new();
+    cpu_ref_into(input, segment_offsets, &mut out);
+    out
+}
+
+/// CPU reference using a caller-owned output buffer.
+///
+/// `segment_offsets` must contain `num_segments + 1` entries in
+/// non-decreasing order and the last entry must not exceed
+/// `input.len()`.
+pub fn cpu_ref_into(input: &[u32], segment_offsets: &[u32], out: &mut Vec<u32>) {
     let num_segments = segment_offsets.len().saturating_sub(1);
-    let mut out = Vec::with_capacity(num_segments);
+    out.clear();
+    out.reserve(num_segments);
     for seg in 0..num_segments {
         let start = segment_offsets[seg] as usize;
         let end = segment_offsets[seg + 1] as usize;
@@ -91,7 +102,6 @@ pub fn cpu_ref(input: &[u32], segment_offsets: &[u32]) -> Vec<u32> {
             .fold(0u32, u32::wrapping_add);
         out.push(sum);
     }
-    out
 }
 
 #[cfg(feature = "inventory-registry")]
@@ -139,6 +149,15 @@ mod tests {
     }
 
     #[test]
+    fn cpu_ref_into_reuses_output_buffer() {
+        let mut out = Vec::with_capacity(8);
+        let ptr = out.as_ptr();
+        cpu_ref_into(&[1, 2, 3, 4, 5], &[0, 2, 5], &mut out);
+        assert_eq!(out, vec![3, 12]);
+        assert_eq!(out.as_ptr(), ptr);
+    }
+
+    #[test]
     fn emitted_program_has_expected_buffers() {
         let p = segment_reduce_sum("input", "segment_offsets", "output", 4);
         assert_eq!(p.workgroup_size, [256, 1, 1]);
@@ -147,14 +166,14 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "num_segments <= 256")]
-    fn zero_segments_panics() {
-        let _ = segment_reduce_sum("input", "segment_offsets", "output", 0);
+    fn zero_segments_traps() {
+        let p = segment_reduce_sum("input", "segment_offsets", "output", 0);
+        assert!(p.stats().trap());
     }
 
     #[test]
-    #[should_panic(expected = "num_segments <= 256")]
-    fn over_limit_segments_panics() {
-        let _ = segment_reduce_sum("input", "segment_offsets", "output", 257);
+    fn over_limit_segments_traps() {
+        let p = segment_reduce_sum("input", "segment_offsets", "output", 257);
+        assert!(p.stats().trap());
     }
 }

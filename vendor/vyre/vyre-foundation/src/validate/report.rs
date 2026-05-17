@@ -42,3 +42,43 @@ pub(crate) fn warn(message: impl Into<Cow<'static, str>>) -> ValidationWarning {
         message: message.into(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn empty_report_is_ok() {
+        let report = ValidationReport::default();
+        assert!(report.is_ok());
+    }
+
+    #[test]
+    fn report_with_error_is_not_ok() {
+        let mut report = ValidationReport::default();
+        report.errors.push(ValidationError {
+            message: Cow::Borrowed("test error"),
+        });
+        assert!(!report.is_ok());
+    }
+
+    #[test]
+    fn warn_builds_warning() {
+        let w = warn("narrowing cast");
+        assert_eq!(w.message(), "narrowing cast");
+    }
+
+    #[test]
+    fn warning_clone_and_eq() {
+        let a = warn("test");
+        let b = a.clone();
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn report_clone_and_eq() {
+        let a = ValidationReport::default();
+        let b = a.clone();
+        assert_eq!(a, b);
+    }
+}

@@ -3,6 +3,7 @@ use crate::ir_inner::model::program::BufferDecl;
 use crate::ir_inner::model::types::{BinOp, DataType};
 use crate::validate::{err, Binding, ValidationError};
 use rustc_hash::FxHashMap;
+use smallvec::SmallVec;
 
 #[inline]
 pub(crate) fn validate_binop_operands(
@@ -10,14 +11,14 @@ pub(crate) fn validate_binop_operands(
     left: &Expr,
     right: &Expr,
     buffers: &FxHashMap<&str, &BufferDecl>,
-    scope: &FxHashMap<String, Binding>,
+    scope: &FxHashMap<crate::ir::Ident, Binding>,
     errors: &mut Vec<ValidationError>,
 ) {
     let left_ty = expr_type(left, buffers, scope);
     let right_ty = expr_type(right, buffers, scope);
 
     match op {
-        // Arithmetic: U32, I32, and F32 are all valid in WGSL.
+        // Arithmetic: U32, I32, and F32 are all valid in target-text.
         // Bool is NOT — `(a && b) + 1` must be rejected at validation time.
         // Operand types must also match: `u32 + f32` is silently ambiguous
         // today and must be rejected (VAL-003).
@@ -31,12 +32,18 @@ pub(crate) fn validate_binop_operands(
         | BinOp::Min
         | BinOp::Max
         | BinOp::AbsDiff => {
+            if matches!(op, BinOp::Div) && expr_is_static_zero(right) {
+                errors.push(err(
+                    "V044: binary operation `Div` has a statically-zero divisor. Fix: guard the divisor, use Select to substitute a non-zero value, or reject the input before building IR."
+                        .to_string(),
+                ));
+            }
             if let (Some(l), Some(r)) = (&left_ty, &right_ty) {
                 if matches!(l, DataType::U64 | DataType::I64)
                     || matches!(r, DataType::U64 | DataType::I64)
                 {
                     errors.push(err(format!(
-                        "binary operation `{op:?}` received left=`{l}`, right=`{r}`. 64-bit integer arithmetic is not yet validated across all backends. Fix: decompose into a U32 pair with explicit carry, or wait for the U64 emulation pass."
+                        "binary operation `{op:?}` received left=`{l}`, right=`{r}`. 64-bit integer arithmetic is outside vyre-foundation's cross-backend arithmetic contract. Fix: express the operation as a U32 pair with explicit carry/borrow, or use a backend-specific op whose schema declares native 64-bit arithmetic."
                     )));
                 }
 
@@ -56,7 +63,7 @@ pub(crate) fn validate_binop_operands(
                 if matches!(op, BinOp::AbsDiff) && (l == &DataType::I32 || r == &DataType::I32) {
                     errors.push(err(
                         format!(
-                            "AbsDiff has left=`{l}`, right=`{r}` and can overflow (i32::MIN - i32::MAX invokes WGSL signed-integer UB). Fix: cast operands to U32 before AbsDiff, or rewrite as an explicit branch."
+                            "AbsDiff has left=`{l}`, right=`{r}` and can overflow (i32::MIN - i32::MAX invokes target-text signed-integer UB). Fix: cast operands to U32 before AbsDiff, or rewrite as an explicit branch."
                         )
                             .to_string(),
                     ));
@@ -71,7 +78,7 @@ pub(crate) fn validate_binop_operands(
                     }
                 }
             }
-            // VAL-003: reject mixed numeric types. WGSL has no implicit
+            // VAL-003: reject mixed numeric types. target-text has no implicit
             // promotion; `a: u32 + b: f32` must be a cast at the call site,
             // not a silent validator pass.
             if let (Some(l), Some(r)) = (&left_ty, &right_ty) {
@@ -79,13 +86,19 @@ pub(crate) fn validate_binop_operands(
                     && matches!(r, DataType::U32 | DataType::I32 | DataType::F32);
                 if both_numeric && l != r {
                     errors.push(err(format!(
-                        "binary operation `{op:?}` operands have mismatched numeric types: left=`{l}`, right=`{r}` (legal set: U32, I32, F32). Fix: cast one operand so both sides share a type (WGSL has no implicit promotion)."
+                        "binary operation `{op:?}` operands have mismatched numeric types: left=`{l}`, right=`{r}` (legal set: U32, I32, F32). Fix: cast one operand so both sides share a type (target-text has no implicit promotion)."
                     )));
                 }
             }
         }
-        // Modulo: WGSL lowers to `_vyre_safe_mod_u32`, so both sides must be u32.
+        // Modulo: target-text lowers to `_vyre_safe_mod_u32`, so both sides must be u32.
         BinOp::Mod => {
+            if expr_is_static_zero(right) {
+                errors.push(err(
+                    "V044: binary operation `Mod` has a statically-zero divisor. Fix: guard the divisor, use Select to substitute a non-zero value, or reject the input before building IR."
+                        .to_string(),
+                ));
+            }
             for (side, ty) in [("left", left_ty), ("right", right_ty)] {
                 if let Some(ty) = ty {
                     if !matches!(ty, DataType::U32) {
@@ -96,7 +109,7 @@ pub(crate) fn validate_binop_operands(
                 }
             }
         }
-        // Bitwise: WGSL `&` / `|` / `^` require integer operands of the same type.
+        // Bitwise: target-text `&` / `|` / `^` require integer operands of the same type.
         BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor => {
             if let (Some(l), Some(r)) = (&left_ty, &right_ty) {
                 if !matches!(l, DataType::U32 | DataType::I32) {
@@ -116,7 +129,7 @@ pub(crate) fn validate_binop_operands(
                 }
             }
         }
-        // Shifts and rotates: WGSL masks the right operand with `& 31u`,
+        // Shifts and rotates: target-text masks the right operand with `& 31u`,
         // so both sides must be u32. Rotates share the same typing —
         // left is the bit-pattern, right is the rotation count in bits.
         BinOp::Shl | BinOp::Shr | BinOp::RotateLeft | BinOp::RotateRight => {
@@ -130,7 +143,7 @@ pub(crate) fn validate_binop_operands(
                 }
             }
         }
-        // Logical And/Or: WGSL lowers via `!= 0u`, so only u32 and bool are valid.
+        // Logical And/Or: target-text lowers via `!= 0u`, so only u32 and bool are valid.
         BinOp::And | BinOp::Or => {
             for (side, ty) in [("left", left_ty), ("right", right_ty)] {
                 if let Some(ty) = ty {
@@ -142,7 +155,7 @@ pub(crate) fn validate_binop_operands(
                 }
             }
         }
-        // Comparisons: WGSL requires both operands to have the same type.
+        // Comparisons: target-text requires both operands to have the same type.
         BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Gt | BinOp::Le | BinOp::Ge => {
             if let (Some(l), Some(r)) = (&left_ty, &right_ty) {
                 if l != r {
@@ -168,11 +181,21 @@ pub(crate) fn validate_binop_operands(
 }
 
 #[inline]
+fn expr_is_static_zero(expr: &Expr) -> bool {
+    match expr {
+        Expr::LitU32(0) | Expr::LitI32(0) => true,
+        Expr::LitF32(value) => *value == 0.0,
+        Expr::Cast { value, .. } => expr_is_static_zero(value),
+        _ => false,
+    }
+}
+
+#[inline]
 pub(crate) fn validate_unop_operand(
     op: &crate::ir_inner::model::types::UnOp,
     expr: &Expr,
     buffers: &FxHashMap<&str, &BufferDecl>,
-    scope: &FxHashMap<String, Binding>,
+    scope: &FxHashMap<crate::ir::Ident, Binding>,
     errors: &mut Vec<ValidationError>,
 ) {
     if let Some(ty) = expr_type(expr, buffers, scope) {
@@ -202,7 +225,7 @@ pub(crate) fn validate_unop_operand(
             | crate::ir_inner::model::types::UnOp::ReverseBits => {
                 // VAL-004: U64 operands are valid for every bitwise-unary
                 // op. The reference interpreter handles Value::U64 for
-                // BitNot/Popcount/Clz/Ctz/ReverseBits and WGSL ≥ the 64-bit
+                // BitNot/Popcount/Clz/Ctz/ReverseBits and target-text ≥ the 64-bit
                 // extension emits the right intrinsics. Previously the
                 // validator rejected U64 and forced an avoidable down-cast.
                 if !matches!(ty, DataType::U32 | DataType::I32 | DataType::U64) {
@@ -227,6 +250,7 @@ pub(crate) fn validate_unop_operand(
             | crate::ir_inner::model::types::UnOp::Abs
             | crate::ir_inner::model::types::UnOp::Sqrt
             | crate::ir_inner::model::types::UnOp::InverseSqrt
+            | crate::ir_inner::model::types::UnOp::Reciprocal
             | crate::ir_inner::model::types::UnOp::Floor
             | crate::ir_inner::model::types::UnOp::Ceil
             | crate::ir_inner::model::types::UnOp::Round
@@ -243,7 +267,7 @@ pub(crate) fn validate_unop_operand(
             }
             _ => {
                 errors.push(err(format!(
-                    "unary operation `{op:?}` is not recognized. Fix: use a known UnOp variant from this enum (`Negate`, `LogicalNot`, `BitNot`, `Popcount`, `Clz`, `Ctz`, `ReverseBits`, `Sin`, `Cos`, `Exp`, `Log`, `Log2`, `Exp2`, `Tan`, `Acos`, `Asin`, `Atan`, `Tanh`, `Sinh`, `Cosh`, `Abs`, `Sqrt`, `InverseSqrt`, `Floor`, `Ceil`, `Round`, `Trunc`, `Sign`, `IsNan`, `IsInf`, `IsFinite`, `Unpack4Low`, `Unpack4High`, `Unpack8Low`, `Unpack8High`)."
+                    "unary operation `{op:?}` is not recognized. Fix: use a known UnOp variant from this enum (`Negate`, `LogicalNot`, `BitNot`, `Popcount`, `Clz`, `Ctz`, `ReverseBits`, `Sin`, `Cos`, `Exp`, `Log`, `Log2`, `Exp2`, `Tan`, `Acos`, `Asin`, `Atan`, `Tanh`, `Sinh`, `Cosh`, `Abs`, `Sqrt`, `InverseSqrt`, `Reciprocal`, `Floor`, `Ceil`, `Round`, `Trunc`, `Sign`, `IsNan`, `IsInf`, `IsFinite`, `Unpack4Low`, `Unpack4High`, `Unpack8Low`, `Unpack8High`)."
                 )));
             }
         }
@@ -255,7 +279,7 @@ pub(crate) fn validate_unop_operand(
 pub(crate) fn expr_type(
     expr: &Expr,
     buffers: &FxHashMap<&str, &BufferDecl>,
-    scope: &FxHashMap<String, Binding>,
+    scope: &FxHashMap<crate::ir::Ident, Binding>,
 ) -> Option<DataType> {
     enum Frame<'a> {
         Enter(&'a Expr),
@@ -265,8 +289,9 @@ pub(crate) fn expr_type(
         Fma,
     }
 
-    let mut frames = vec![Frame::Enter(expr)];
-    let mut values: Vec<Option<DataType>> = Vec::new();
+    let mut frames: SmallVec<[Frame<'_>; 32]> = SmallVec::new();
+    frames.push(Frame::Enter(expr));
+    let mut values: SmallVec<[Option<DataType>; 32]> = SmallVec::new();
     while let Some(frame) = frames.pop() {
         match frame {
             Frame::Enter(expr) => match expr {
@@ -328,10 +353,8 @@ pub(crate) fn expr_type(
                         frames.push(Frame::Un);
                         frames.push(Frame::Enter(operand));
                     }
-                    // GAP-4 fix: LogicalNot produces Bool, not U32. The Naga
-                    // lowering emits `x == 0u` for integer operands which
-                    // yields `bool`. The prior U32 typing allowed `!x + 1`
-                    // to pass validation while lowering produced a type error.
+                    // LogicalNot produces Bool. Integer lowering emits
+                    // `x == 0u`, which also yields Bool.
                     crate::ir_inner::model::types::UnOp::LogicalNot => {
                         values.push(Some(DataType::Bool))
                     }
@@ -351,6 +374,7 @@ pub(crate) fn expr_type(
                     | crate::ir_inner::model::types::UnOp::Abs
                     | crate::ir_inner::model::types::UnOp::Sqrt
                     | crate::ir_inner::model::types::UnOp::InverseSqrt
+                    | crate::ir_inner::model::types::UnOp::Reciprocal
                     | crate::ir_inner::model::types::UnOp::Floor
                     | crate::ir_inner::model::types::UnOp::Ceil
                     | crate::ir_inner::model::types::UnOp::Round
@@ -381,13 +405,9 @@ pub(crate) fn expr_type(
                 &Expr::SubgroupBallot { .. } => {
                     values.push(Some(crate::ir_inner::model::types::DataType::U32))
                 }
-                // GAP-3 fix: SubgroupShuffle/Add must push a value onto
-                // the type-inference stack. The prior empty body desync'd
-                // the stack when these expressions appeared inside compound
-                // expressions (BinOp, Select, etc.). Both operations
-                // produce the same type as their value operand — U32 is
-                // the conservative default since the IR currently restricts
-                // subgroup ops to integer types.
+                // Both operations produce the same type as their value
+                // operand. U32 is the conservative default while the IR
+                // restricts subgroup ops to integer types.
                 &Expr::SubgroupShuffle { .. } | &Expr::SubgroupAdd { .. } => {
                     values.push(Some(DataType::U32))
                 }
@@ -438,8 +458,9 @@ pub(crate) fn expr_type(
 }
 
 #[cfg(test)]
-#[path = "typecheck_critical_test.rs"]
-mod typecheck_critical_test;
+    mod typecheck_critical_test {
+        include!("typecheck_critical_test.rs");
+    }
 
 #[cfg(test)]
 mod tests {
@@ -449,7 +470,7 @@ mod tests {
     fn empty_buffers() -> FxHashMap<&'static str, &'static BufferDecl> {
         FxHashMap::default()
     }
-    fn empty_scope() -> FxHashMap<String, Binding> {
+    fn empty_scope() -> FxHashMap<crate::ir::Ident, Binding> {
         FxHashMap::default()
     }
 
@@ -525,5 +546,50 @@ mod tests {
             "arithmetic on a Bool-typed operand must be rejected"
         );
         Ok(())
+    }
+
+    #[test]
+    fn div_by_static_zero_is_rejected() {
+        let mut errors = Vec::new();
+        validate_binop_operands(
+            &BinOp::Div,
+            &Expr::LitU32(9),
+            &Expr::LitU32(0),
+            &empty_buffers(),
+            &empty_scope(),
+            &mut errors,
+        );
+        assert!(errors.iter().any(|error| error.message().contains("V044")));
+    }
+
+    #[test]
+    fn div_by_casted_static_zero_is_rejected() {
+        let mut errors = Vec::new();
+        validate_binop_operands(
+            &BinOp::Div,
+            &Expr::LitU32(9),
+            &Expr::Cast {
+                target: DataType::U32,
+                value: Box::new(Expr::LitI32(0)),
+            },
+            &empty_buffers(),
+            &empty_scope(),
+            &mut errors,
+        );
+        assert!(errors.iter().any(|error| error.message().contains("V044")));
+    }
+
+    #[test]
+    fn mod_by_static_zero_is_rejected() {
+        let mut errors = Vec::new();
+        validate_binop_operands(
+            &BinOp::Mod,
+            &Expr::LitU32(9),
+            &Expr::LitU32(0),
+            &empty_buffers(),
+            &empty_scope(),
+            &mut errors,
+        );
+        assert!(errors.iter().any(|error| error.message().contains("V044")));
     }
 }

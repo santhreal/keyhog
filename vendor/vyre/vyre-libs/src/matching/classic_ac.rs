@@ -1,6 +1,6 @@
 //! Classic Aho-Corasick scanner with flat `output_links`.
 //!
-//! Unlike the single-accept DFA in [`super::dfa::dfa_compile`], this
+//! Unlike the single-accept DFA in `super::dfa::dfa_compile`, this
 //! module precomputes **all** pattern ids that match at each state
 //! (including patterns reachable via failure links) into a flat
 //! `output_offsets` + `output_records` array.  At scan time the
@@ -31,7 +31,7 @@ pub struct ClassicAcAutomaton {
 /// # Panics
 ///
 /// Panics with an actionable message on DFA budget exhaustion.
-/// Use [`super::dfa::dfa_compile_with_budget`] for structured
+/// Use `super::dfa::dfa_compile_with_budget` for structured
 /// error handling.
 #[must_use]
 pub fn classic_ac_compile(patterns: &[&[u8]]) -> ClassicAcAutomaton {
@@ -200,10 +200,6 @@ pub fn classic_ac_program(
 mod tests {
     use super::*;
 
-    fn u32_bytes(words: &[u32]) -> Vec<u8> {
-        words.iter().flat_map(|w| w.to_le_bytes()).collect()
-    }
-
     fn decode_u32_words(bytes: &[u8]) -> Vec<u32> {
         bytes
             .chunks_exact(4)
@@ -314,18 +310,25 @@ mod tests {
         );
 
         let inputs = vec![
-            vyre_reference::value::Value::from(u32_bytes(
+            vyre_reference::value::Value::from(crate::test_support::byte_pack::u32_bytes(
                 &haystack.iter().map(|&b| u32::from(b)).collect::<Vec<_>>(),
             )),
-            vyre_reference::value::Value::from(u32_bytes(&ac.dfa.transitions)),
-            vyre_reference::value::Value::from(u32_bytes(&ac.dfa.output_offsets)),
-            vyre_reference::value::Value::from(u32_bytes(&ac.dfa.output_records)),
-            vyre_reference::value::Value::from(u32_bytes(&[0u32])),
+            vyre_reference::value::Value::from(crate::test_support::byte_pack::u32_bytes(
+                &ac.dfa.transitions,
+            )),
+            vyre_reference::value::Value::from(crate::test_support::byte_pack::u32_bytes(
+                &ac.dfa.output_offsets,
+            )),
+            vyre_reference::value::Value::from(crate::test_support::byte_pack::u32_bytes(
+                &ac.dfa.output_records,
+            )),
+            vyre_reference::value::Value::from(crate::test_support::byte_pack::u32_bytes(&[0u32])),
             vyre_reference::value::Value::from(vec![0u8; 1024 * 4]),
         ];
 
-        let outputs = vyre_reference::reference_eval(&program, &inputs)
-            .expect("classic_ac_program must execute");
+        let outputs = vyre_reference::reference_eval(&program, &inputs).expect(
+            "Fix: classic_ac_program must execute; restore this invariant before continuing.",
+        );
 
         let match_count = decode_u32_words(&outputs[0].to_bytes())[0];
         let gpu_matches_raw = decode_u32_words(&outputs[1].to_bytes());
@@ -364,18 +367,25 @@ mod tests {
         );
 
         let inputs = vec![
-            vyre_reference::value::Value::from(u32_bytes(
+            vyre_reference::value::Value::from(crate::test_support::byte_pack::u32_bytes(
                 &haystack.iter().map(|&b| u32::from(b)).collect::<Vec<_>>(),
             )),
-            vyre_reference::value::Value::from(u32_bytes(&ac.dfa.transitions)),
-            vyre_reference::value::Value::from(u32_bytes(&ac.dfa.output_offsets)),
-            vyre_reference::value::Value::from(u32_bytes(&ac.dfa.output_records)),
-            vyre_reference::value::Value::from(u32_bytes(&[0u32])),
+            vyre_reference::value::Value::from(crate::test_support::byte_pack::u32_bytes(
+                &ac.dfa.transitions,
+            )),
+            vyre_reference::value::Value::from(crate::test_support::byte_pack::u32_bytes(
+                &ac.dfa.output_offsets,
+            )),
+            vyre_reference::value::Value::from(crate::test_support::byte_pack::u32_bytes(
+                &ac.dfa.output_records,
+            )),
+            vyre_reference::value::Value::from(crate::test_support::byte_pack::u32_bytes(&[0u32])),
             vyre_reference::value::Value::from(vec![0u8; 2 * 4]),
         ];
 
-        let outputs = vyre_reference::reference_eval(&program, &inputs)
-            .expect("classic_ac_program must execute");
+        let outputs = vyre_reference::reference_eval(&program, &inputs).expect(
+            "Fix: classic_ac_program must execute; restore this invariant before continuing.",
+        );
 
         let match_count = decode_u32_words(&outputs[0].to_bytes())[0];
         // Total matches = 1 + 2 + 3 = 6, but only 2 slots.

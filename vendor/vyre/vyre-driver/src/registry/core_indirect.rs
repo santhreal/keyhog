@@ -1,9 +1,8 @@
 //! `core.indirect_dispatch` op (C-B4).
 //!
-//! `core.indirect_dispatch(workgroup_count: GpuBufferHandle<[u32;3]>)`
-//! lowers to `ComputePass::dispatch_workgroups_indirect(buffer, 0)`
-//! on the wgpu backend. The workgroup count is read from GPU
-//! memory at submission time — enabling patterns like:
+//! `core.indirect_dispatch(workgroup_count: BackendBuffer<[u32;3]>)`
+//! lowers to a target-native indirect dispatch. The workgroup count is
+//! read from device memory at submission time — enabling patterns like:
 //!
 //! * Compact + dispatch: one kernel computes a list of work items
 //!   and writes its size to a buffer; the next dispatch reads the
@@ -73,11 +72,11 @@ mod tests {
         let reg = DialectRegistry::global();
         let id = reg.intern_op(OP_ID);
         let def = reg.lookup(id).unwrap();
-        // Cat C op; the Wgsl/Spirv/Ptx/Metal lowerings are all None.
-        assert!(def.lowerings.naga_wgsl.is_none());
-        assert!(def.lowerings.naga_spv.is_none());
-        assert!(def.lowerings.ptx.is_none());
-        assert!(def.lowerings.metal.is_none());
+        // Cat C op; the PrimaryText/PrimaryBinary/SecondaryText/native-module lowerings are all None.
+        assert!(def.lowerings.primary_text.is_none());
+        assert!(def.lowerings.primary_binary.is_none());
+        assert!(def.lowerings.secondary_text.is_none());
+        assert!(def.lowerings.native_module.is_none());
     }
 
     #[test]

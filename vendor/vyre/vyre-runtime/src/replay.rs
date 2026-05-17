@@ -42,6 +42,7 @@
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::Path;
+use std::sync::Arc;
 
 use crate::PipelineError;
 
@@ -83,7 +84,7 @@ pub enum ReplayLogError {
         /// Syscall name (`open`, `seek`, `read`, `write`).
         op: &'static str,
         /// Path the syscall was issued against.
-        path: String,
+        path: Arc<str>,
         /// Underlying io::Error.
         #[source]
         source: std::io::Error,
@@ -92,7 +93,7 @@ pub enum ReplayLogError {
     #[error("replay log `{path}` header mismatch. Fix: regenerate the log; VRRL format may have changed.")]
     HeaderMismatch {
         /// Log path.
-        path: String,
+        path: Arc<str>,
     },
     /// Capacity of `0` is rejected — a zero-capacity log never accepts writes.
     #[error("replay log capacity must be > 0. Fix: construct with at least one slot.")]
@@ -112,7 +113,7 @@ pub enum ReplayLogError {
 fn io_err(op: &'static str, path: &Path, source: std::io::Error) -> ReplayLogError {
     ReplayLogError::Io {
         op,
-        path: path.to_string_lossy().into_owned(),
+        path: Arc::from(path.to_string_lossy().as_ref()),
         source,
     }
 }
@@ -123,7 +124,7 @@ fn io_err(op: &'static str, path: &Path, source: std::io::Error) -> ReplayLogErr
 #[derive(Debug)]
 pub struct RingLog {
     file: File,
-    path_repr: String,
+    path_repr: Arc<str>,
     capacity: u64,
     next_slot: u64,
 }
@@ -146,6 +147,7 @@ impl RingLog {
         validate_capacity(capacity)?;
 
         let path = path.as_ref();
+        let path_repr: Arc<str> = Arc::from(path.to_string_lossy().as_ref());
         let existed = path.exists();
         let mut file = OpenOptions::new()
             .create(true)
@@ -161,7 +163,7 @@ impl RingLog {
                 .map_err(|e| io_err("read", path, e))?;
             if &magic != LOG_MAGIC {
                 return Err(ReplayLogError::HeaderMismatch {
-                    path: path.to_string_lossy().into_owned(),
+                    path: Arc::clone(&path_repr),
                 });
             }
             let mut version_bytes = [0u8; 4];
@@ -169,7 +171,7 @@ impl RingLog {
                 .map_err(|e| io_err("read", path, e))?;
             if u32::from_le_bytes(version_bytes) != LOG_VERSION {
                 return Err(ReplayLogError::HeaderMismatch {
-                    path: path.to_string_lossy().into_owned(),
+                    path: Arc::clone(&path_repr),
                 });
             }
             let mut _flags = [0u8; 4];
@@ -186,7 +188,7 @@ impl RingLog {
             let cursor = u64::from_le_bytes(cursor_bytes);
             return Ok(Self {
                 file,
-                path_repr: path.to_string_lossy().into_owned(),
+                path_repr,
                 capacity: existing_cap,
                 next_slot: cursor % existing_cap,
             });
@@ -213,7 +215,7 @@ impl RingLog {
 
         Ok(Self {
             file,
-            path_repr: path.to_string_lossy().into_owned(),
+            path_repr,
             capacity,
             next_slot: 0,
         })
@@ -235,7 +237,7 @@ impl RingLog {
     /// Path representation this log was opened against.
     #[must_use]
     pub fn path(&self) -> &str {
-        &self.path_repr
+        self.path_repr.as_ref()
     }
 
     /// Append a record. Overwrites the oldest slot when the log
@@ -284,7 +286,7 @@ impl RingLog {
     /// immediately after the current cursor (oldest still-live
     /// record). Stops at the first record whose magic differs from
     /// the crate-private `RECORD_MAGIC` sentinel — meaning the log
-    /// has not yet wrapped past that position — unless every record
+    /// is still before wraparound at that position — unless every record
     /// has been written.
     ///
     /// # Errors
@@ -420,12 +422,15 @@ mod tests {
     fn append_and_replay_round_trip() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("log.vrrl");
-        let mut log = RingLog::open(&path, 4).expect("open fresh log");
+        let mut log = RingLog::open(&path, 4)
+            .expect("Fix: open fresh log; restore this invariant before continuing.");
         log.append(rec(1, 10)).unwrap();
         log.append(rec(2, 11)).unwrap();
         log.sync().unwrap();
 
-        let replay = log.replay_all().expect("replay");
+        let replay = log
+            .replay_all()
+            .expect("Fix: replay; restore this invariant before continuing.");
         assert_eq!(replay.len(), 2);
         assert_eq!(replay[0].slot_idx, 1);
         assert_eq!(replay[0].epoch, 10);
@@ -437,11 +442,14 @@ mod tests {
     fn log_rollover_preserves_most_recent() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("log.vrrl");
-        let mut log = RingLog::open(&path, 3).expect("open");
+        let mut log =
+            RingLog::open(&path, 3).expect("Fix: open; restore this invariant before continuing.");
         for i in 0..5 {
             log.append(rec(i, 100 + i)).unwrap();
         }
-        let replay = log.replay_all().expect("replay");
+        let replay = log
+            .replay_all()
+            .expect("Fix: replay; restore this invariant before continuing.");
         assert_eq!(replay.len(), 3, "capacity=3 must retain exactly 3 records");
         let slot_ids: Vec<u32> = replay.iter().map(|r| r.slot_idx).collect();
         // Publish order: 0, 1, 2, 3, 4. After 2 wraps, live records
@@ -455,12 +463,14 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("log.vrrl");
         {
-            let mut log = RingLog::open(&path, 4).expect("open fresh");
+            let mut log = RingLog::open(&path, 4)
+                .expect("Fix: open fresh; restore this invariant before continuing.");
             log.append(rec(1, 10)).unwrap();
             log.append(rec(2, 11)).unwrap();
             log.sync().unwrap();
         }
-        let mut reopened = RingLog::open(&path, 4).expect("reopen");
+        let mut reopened = RingLog::open(&path, 4)
+            .expect("Fix: reopen; restore this invariant before continuing.");
         assert_eq!(reopened.cursor(), 2);
         let replay = reopened.replay_all().unwrap();
         assert_eq!(replay.len(), 2);

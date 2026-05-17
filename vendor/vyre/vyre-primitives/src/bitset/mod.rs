@@ -15,17 +15,23 @@ pub mod and_not_into;
 pub mod any;
 pub mod clear_bit;
 pub mod contains;
+pub mod copy;
 pub mod equal;
 pub mod four_russians;
 pub mod not;
 pub mod or;
 pub mod or_into;
 pub mod popcount;
+pub mod select;
 pub mod set_bit;
 pub mod subset_of;
 pub mod test_bit;
 pub mod xor;
 pub mod xor_into;
+
+/// Stochastic computing primitive (#59) — bitstream multiplication
+/// via AND. Power-efficient inference substrate.
+pub mod stochastic_compute;
 
 /// Words needed to hold a bitset over `n` elements.
 ///

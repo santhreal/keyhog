@@ -7,8 +7,9 @@
 
 use core::fmt;
 
-use crate::region::wrap_anonymous;
+use crate::region::{tag_program, wrap_anonymous, wrap_child};
 use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
+use vyre_foundation::ir::model::expr::GeneratorRef;
 
 const RANK_SUPERBLOCKS_OP_ID: &str = "vyre-libs::math::succinct::rank1_superblocks";
 const RANK_QUERY_OP_ID: &str = "vyre-libs::math::succinct::rank1_query";
@@ -63,8 +64,14 @@ pub fn rank1_superblocks(
     word_count: u32,
     block_words: u32,
 ) -> Program {
-    try_rank1_superblocks(bits, superblocks, word_count, block_words)
-        .unwrap_or_else(|err| panic!("Fix: {RANK_SUPERBLOCKS_OP_ID} build failed: {err}"))
+    try_rank1_superblocks(bits, superblocks, word_count, block_words).unwrap_or_else(|err| {
+        crate::builder::invalid_output_program(
+            RANK_SUPERBLOCKS_OP_ID,
+            superblocks,
+            DataType::U32,
+            format!("{err}"),
+        )
+    })
 }
 
 /// Checked builder for [`rank1_superblocks`].
@@ -123,7 +130,16 @@ pub fn try_rank1_superblocks(
             BufferDecl::output(superblocks, 1, DataType::U32).with_count(out_count),
         ],
         [1, 1, 1],
-        vec![wrap_anonymous(RANK_SUPERBLOCKS_OP_ID, body)],
+        vec![wrap_anonymous(
+            RANK_SUPERBLOCKS_OP_ID,
+            vec![wrap_child(
+                vyre_primitives::graph::path_reconstruct::OP_ID,
+                GeneratorRef {
+                    name: RANK_SUPERBLOCKS_OP_ID.to_string(),
+                },
+                body,
+            )],
+        )],
     ))
 }
 
@@ -151,7 +167,14 @@ pub fn rank1_query(
         query_count,
         block_words,
     )
-    .unwrap_or_else(|err| panic!("Fix: {RANK_QUERY_OP_ID} build failed: {err}"))
+    .unwrap_or_else(|err| {
+        crate::builder::invalid_output_program(
+            RANK_QUERY_OP_ID,
+            out,
+            DataType::U32,
+            format!("{err}"),
+        )
+    })
 }
 
 /// Checked builder for [`rank1_query`].
@@ -266,8 +289,14 @@ pub fn select1_query(
     word_count: u32,
     query_count: u32,
 ) -> Program {
-    try_select1_query(bits, k_indices, out, word_count, query_count)
-        .unwrap_or_else(|err| panic!("Fix: {SELECT_QUERY_OP_ID} build failed: {err}"))
+    try_select1_query(bits, k_indices, out, word_count, query_count).unwrap_or_else(|err| {
+        crate::builder::invalid_output_program(
+            SELECT_QUERY_OP_ID,
+            out,
+            DataType::U32,
+            format!("{err}"),
+        )
+    })
 }
 
 /// Checked builder for [`select1_query`].
@@ -283,122 +312,15 @@ pub fn try_select1_query(
     word_count: u32,
     query_count: u32,
 ) -> Result<Program, SuccinctBuildError> {
-    let q = Expr::InvocationId { axis: 0 };
-    let body = vec![Node::if_then(
-        Expr::lt(q.clone(), Expr::u32(query_count)),
-        vec![
-            Node::let_bind("select_k", Expr::load(k_indices, q.clone())),
-            Node::if_then(
-                Expr::eq(Expr::var("select_k"), Expr::u32(0)),
-                vec![Node::trap(Expr::var("select_k"), "select-query-zero-rank")],
-            ),
-            Node::let_bind("select_remaining", Expr::var("select_k")),
-            Node::let_bind("select_found", Expr::u32(0)),
-            Node::let_bind("select_result", Expr::u32(0)),
-            Node::loop_for(
-                "select_word_idx",
-                Expr::u32(0),
-                Expr::u32(word_count),
-                vec![Node::if_then(
-                    Expr::eq(Expr::var("select_found"), Expr::u32(0)),
-                    vec![
-                        Node::let_bind(
-                            "select_word",
-                            Expr::load(bits, Expr::var("select_word_idx")),
-                        ),
-                        Node::let_bind("select_word_pop", Expr::popcount(Expr::var("select_word"))),
-                        Node::if_then_else(
-                            Expr::gt(Expr::var("select_remaining"), Expr::var("select_word_pop")),
-                            vec![Node::assign(
-                                "select_remaining",
-                                Expr::sub(
-                                    Expr::var("select_remaining"),
-                                    Expr::var("select_word_pop"),
-                                ),
-                            )],
-                            vec![
-                                Node::let_bind("select_bit_found", Expr::u32(0)),
-                                Node::loop_for(
-                                    "select_bit_idx",
-                                    Expr::u32(0),
-                                    Expr::u32(32),
-                                    vec![Node::if_then(
-                                        Expr::eq(Expr::var("select_bit_found"), Expr::u32(0)),
-                                        vec![
-                                            Node::let_bind(
-                                                "select_bit_set",
-                                                Expr::ne(
-                                                    Expr::bitand(
-                                                        Expr::shr(
-                                                            Expr::var("select_word"),
-                                                            Expr::var("select_bit_idx"),
-                                                        ),
-                                                        Expr::u32(1),
-                                                    ),
-                                                    Expr::u32(0),
-                                                ),
-                                            ),
-                                            Node::if_then(
-                                                Expr::var("select_bit_set"),
-                                                vec![Node::if_then_else(
-                                                    Expr::eq(
-                                                        Expr::var("select_remaining"),
-                                                        Expr::u32(1),
-                                                    ),
-                                                    vec![
-                                                        Node::assign(
-                                                            "select_result",
-                                                            Expr::add(
-                                                                Expr::mul(
-                                                                    Expr::var("select_word_idx"),
-                                                                    Expr::u32(32),
-                                                                ),
-                                                                Expr::var("select_bit_idx"),
-                                                            ),
-                                                        ),
-                                                        Node::assign("select_found", Expr::u32(1)),
-                                                        Node::assign(
-                                                            "select_bit_found",
-                                                            Expr::u32(1),
-                                                        ),
-                                                    ],
-                                                    vec![Node::assign(
-                                                        "select_remaining",
-                                                        Expr::sub(
-                                                            Expr::var("select_remaining"),
-                                                            Expr::u32(1),
-                                                        ),
-                                                    )],
-                                                )],
-                                            ),
-                                        ],
-                                    )],
-                                ),
-                            ],
-                        ),
-                    ],
-                )],
-            ),
-            Node::if_then(
-                Expr::eq(Expr::var("select_found"), Expr::u32(0)),
-                vec![Node::trap(
-                    Expr::var("select_k"),
-                    "select-query-rank-out-of-bounds",
-                )],
-            ),
-            Node::store(out, q, Expr::var("select_result")),
-        ],
-    )];
-    Ok(Program::wrapped(
-        vec![
-            BufferDecl::storage(bits, 0, BufferAccess::ReadOnly, DataType::U32)
-                .with_count(word_count.max(1)),
-            BufferDecl::storage(k_indices, 1, BufferAccess::ReadOnly, DataType::U32)
-                .with_count(query_count.max(1)),
-            BufferDecl::output(out, 2, DataType::U32).with_count(query_count.max(1)),
-        ],
-        [64, 1, 1],
-        vec![wrap_anonymous(SELECT_QUERY_OP_ID, body)],
+    Ok(tag_program(
+        SELECT_QUERY_OP_ID,
+        vyre_primitives::bitset::select::select1_query(
+            bits,
+            k_indices,
+            out,
+            word_count,
+            query_count,
+        ),
     ))
 }
 

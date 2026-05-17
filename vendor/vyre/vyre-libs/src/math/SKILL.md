@@ -22,16 +22,18 @@ pure vyre IR assembled from `vyre-ops` primitives.
 
 ## Benchmark targets (criterion)
 
-- `dot` on 1024 elements: ≤ 100 µs CPU ref, wgpu parity within 1%.
-- `matmul` 256×256×256: ≤ 50 ms CPU ref, wgpu sub-1 ms on a 3090.
-- `scan_prefix_sum` on 4096 elements: CPU ref ≤ 1 ms; wgpu ≤ 50 µs
-  once `DataType::Shared` unlocks workgroup-cooperative scans.
+- `dot` on 1024 elements: ≤ 100 µs CPU ref; linked dispatch backends
+  stay within 1% of their checked-in baseline.
+- `matmul` 256×256×256: ≤ 50 ms CPU ref; dispatch backends must stay
+  sub-ms on current high-end fleet hardware.
+- `scan_prefix_sum` on 4096 elements: CPU ref ≤ 1 ms; dispatch backends
+  ≤ 50 µs once shared-memory cooperative scans are available.
 
 ## Backend parity contract
 
 Every op's forward compression-function output MUST byte-match across
-`vyre-reference`, `vyre-driver-wgpu`, and `vyre-driver-spirv` on the
-witness corpus. Divergences are P0 conformance bugs.
+`vyre-reference` and every linked backend contract on the witness
+corpus. Divergences are P0 conformance bugs.
 
 ## Shape-mismatch contract
 

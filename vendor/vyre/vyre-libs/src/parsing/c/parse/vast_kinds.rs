@@ -74,6 +74,10 @@ pub const C_AST_KIND_ATTRIBUTE_CONST: u32 = 0xC011_A784;
 pub const C_AST_KIND_ATTRIBUTE_FORMAT: u32 = 0xC011_A785;
 /// Parser-local VAST kind for GNU `fallthrough` attributes.
 pub const C_AST_KIND_ATTRIBUTE_FALLTHROUGH: u32 = 0xC011_A786;
+/// Parser-local VAST kind for GNU `noreturn` attributes.
+pub const C_AST_KIND_ATTRIBUTE_NORETURN: u32 = 0xC011_A787;
+/// Parser-local VAST kind for GNU `deprecated` attributes.
+pub const C_AST_KIND_ATTRIBUTE_DEPRECATED: u32 = 0xC011_A788;
 /// Parser-local VAST kind for GNU labels-as-values address expressions.
 pub const C_AST_KIND_GNU_LABEL_ADDRESS_EXPR: u32 = 0xC011_AADD;
 /// Parser-local VAST kind for C/GNU label definitions (`identifier:`).

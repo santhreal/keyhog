@@ -9,7 +9,7 @@
 //! Output is a per-node bitset where bit `n` is set iff node `n`'s
 //! use of the queried variable is must-initialized.
 //!
-//! Soundness: [`Exact`](super::soundness::Soundness::Exact) when
+//! Soundness: `Exact` when
 //! the supplied dominator tree is correct.
 
 use vyre::ir::Program;

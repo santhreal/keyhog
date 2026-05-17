@@ -9,7 +9,7 @@
 //!
 //! ## Two-stage pipeline
 //!
-//! 1. **Index build** (CPU fallback today, GPU prefix-sum in future).
+//! 1. **Index build** (the producer must satisfy the sequence-index contract).
 //!    Walk the token stream and emit a table where row `i` holds:
 //!    - `seq_literal_start[i]` — byte offset of the first literal byte
 //!    - `seq_literal_len[i]`  — number of literal bytes
@@ -22,12 +22,11 @@
 //!    by the natural distribution of literal lengths, and the output stays
 //!    in GPU memory for a fused scan kernel.
 //!
-//! ## Future work
+//! ## Index-build contract
 //!
-//! - Move the index build to GPU using a Blelloch prefix-sum over a
-//!   token-length pass (needs `BufferAccess::Workgroup` + barrier lowering).
-//! - Fuse `ziftsieve_gpu` with `aho_corasick` so literals never touch host
-//!   memory (decode→scan chain).
+//! The sequence index is an explicit input contract. Host and GPU index
+//! builders must both produce the three buffers above; this copy stage remains
+//! unchanged and can be fused after any producer that satisfies that contract.
 //!
 //! See `NOTE_ZIFTSIEVE_GPU_DESIGN` for the canonical pointer.
 
@@ -59,22 +58,22 @@ fn pack_words(words: &[u32]) -> Vec<u8> {
 }
 
 // ---------------------------------------------------------------------------
-// CPU fallback
+// Host reference
 // ---------------------------------------------------------------------------
 
 const MAX_BLOCK_SIZE: usize = 4 * 1024 * 1024;
 const MAX_SEQUENCES_PER_BLOCK: usize = 100_000;
 
-/// CPU fallback: sequential LZ4 literal extraction.
+/// Host-side reference: sequential LZ4 literal extraction.
 ///
 /// Re-implements the hot loop from `ziftsieve::lz4::extract_literals` so
-/// `vyre-libs` does not need to depend on the `ziftsieve` crate.
+/// `vyre-libs` has a deterministic oracle for fixtures and index generation.
 ///
 /// # Errors
 ///
 /// Returns an actionable error string on malformed input.  Every error
 /// message includes a `Fix:` tag.
-pub fn ziftsieve_cpu_extract_literals(
+pub fn ziftsieve_reference_extract_literals(
     compressed: &[u8],
     max_output: usize,
 ) -> Result<Vec<u8>, String> {
@@ -145,12 +144,22 @@ pub fn ziftsieve_cpu_extract_literals(
             pos += 2; // skip match offset
 
             if match_len == 15 {
-                let _ = decode_length(compressed, &mut pos, match_len)?;
+                let _match_len_extension = decode_length(compressed, &mut pos, match_len)?;
             }
         }
     }
 
     Ok(literals)
+}
+
+/// Compatibility alias for older callers.
+///
+/// This is a host-side reference/oracle helper, not a GPU execution fallback.
+pub fn ziftsieve_cpu_extract_literals(
+    compressed: &[u8],
+    max_output: usize,
+) -> Result<Vec<u8>, String> {
+    ziftsieve_reference_extract_literals(compressed, max_output)
 }
 
 fn decode_length(data: &[u8], pos: &mut usize, initial: usize) -> Result<usize, String> {
@@ -371,8 +380,8 @@ mod tests {
             Value::from(pack_words(seq_offsets)),
             Value::from(vec![0u8; (max_output.max(1) as usize) * 4]),
         ];
-        let outputs =
-            vyre_reference::reference_eval(&program, &inputs).expect("ziftsieve_gpu must run");
+        let outputs = vyre_reference::reference_eval(&program, &inputs)
+            .expect("Fix: ziftsieve_gpu must run; restore this invariant before continuing.");
         let words: Vec<u32> = outputs[0]
             .to_bytes()
             .chunks_exact(4)
@@ -407,30 +416,30 @@ mod tests {
     }
 
     #[test]
-    fn cpu_fallback_extracts_simple_literal() {
+    fn reference_extracts_simple_literal() {
         let data = [0x10, b'A'];
-        let result = ziftsieve_cpu_extract_literals(&data, 1024).unwrap();
+        let result = ziftsieve_reference_extract_literals(&data, 1024).unwrap();
         assert_eq!(result, b"A");
     }
 
     #[test]
-    fn cpu_fallback_extracts_with_match_skip() {
+    fn reference_extracts_with_match_skip() {
         // Token: 0x11 = literal_len=1, match_len=1
         // Literal: 'A'
         // Match offset: 0x0001
         let data = [0x11, b'A', 0x01, 0x00];
-        let result = ziftsieve_cpu_extract_literals(&data, 1024).unwrap();
+        let result = ziftsieve_reference_extract_literals(&data, 1024).unwrap();
         assert_eq!(result, b"A");
     }
 
     #[test]
-    fn cpu_fallback_rejects_truncated_literal() {
+    fn reference_rejects_truncated_literal() {
         let data = [0x20, b'A']; // Claims 2 literals, only 1 present
-        assert!(ziftsieve_cpu_extract_literals(&data, 1024).is_err());
+        assert!(ziftsieve_reference_extract_literals(&data, 1024).is_err());
     }
 
     #[test]
-    fn cpu_fallback_rejects_too_many_sequences() {
+    fn reference_rejects_too_many_sequences() {
         let mut data = Vec::new();
         // Pack MAX_SEQUENCES_PER_BLOCK + 1 single-byte-literal sequences.
         for _ in 0..=MAX_SEQUENCES_PER_BLOCK {
@@ -438,6 +447,6 @@ mod tests {
             data.push(b'X');
             data.extend_from_slice(&[0x00, 0x00]); // match offset
         }
-        assert!(ziftsieve_cpu_extract_literals(&data, 1024).is_err());
+        assert!(ziftsieve_reference_extract_literals(&data, 1024).is_err());
     }
 }

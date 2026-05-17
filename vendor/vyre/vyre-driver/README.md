@@ -4,7 +4,7 @@ Substrate-agnostic backend machinery for the vyre GPU compiler.
 
 `vyre-driver` is the second layer in vyre's four-layer model. It sits
 between `vyre-foundation` (the IR + validator) and concrete backend
-crates (`vyre-driver-wgpu`, `vyre-driver-spirv`, `vyre-reference`). It
+crates. It
 owns the frozen contract every backend must implement, the registry
 that routes a `Program` to the right backend, the pipeline-cache key
 machinery, and the capability surface consumer tools use to decide
@@ -15,7 +15,7 @@ vyre-foundation (IR + validator)
    ↓
 vyre-driver        ← you are here
    ↓
-vyre-driver-wgpu / vyre-driver-spirv / vyre-reference
+concrete driver crates
 ```
 
 ## Invariants
@@ -46,6 +46,19 @@ vyre-driver-wgpu / vyre-driver-spirv / vyre-reference
 
 ## Boundaries
 
+Concrete-driver isolation is part of the driver contract:
+
+- Concrete backend crates own their own runtime objects, codegen objects,
+  feature names, tests, target-specific terminology, and concrete API/type
+  names such as adapter objects or launch objects.
+- Shared crates and tools must not import concrete backend crates or spell
+  concrete backend APIs. They depend on `vyre-driver` traits, registrations,
+  capabilities, shared binding layouts, validation helpers, tuners, and
+  opaque backend ids.
+- If two concrete drivers need the same decision logic, move that logic here
+  as a backend-neutral module. The concrete drivers keep only the target
+  mechanics that cannot be shared.
+
 `vyre-driver` does:
 
 - Define `VyreBackend`, `CompiledPipeline`, `PendingDispatch`,
@@ -54,7 +67,10 @@ vyre-driver-wgpu / vyre-driver-spirv / vyre-reference
 - Host `backend::registry` (inventory-backed discovery), `pipeline`
   (compile/dispatch indirection), `shadow` (reference-diff
   instrumentation), `migration` (deprecation + semver registries),
-  and `validation` (program-level preconditions).
+  `binding` (neutral ABI plans), `fusion` (cross-dispatch decisions),
+  `specialization` (neutral override values), `subgroup` (operation
+  taxonomy), `tuner` (candidate/cache framework), and `validation`
+  (program-level preconditions plus shared validation caches).
 - Expose `core_supported_ops()` so backend crates and consumer tools
   can ask "does this backend execute this Program?" without importing
   any concrete backend.
@@ -73,17 +89,12 @@ vyre-driver-wgpu / vyre-driver-spirv / vyre-reference
 ### 1. Pick the best-available backend and dispatch
 
 ```rust
-use vyre_driver::backend::{registered_backends_by_precedence, VyreBackend};
-use vyre_driver::pipeline::compile;
+use vyre_driver::backend::acquire_preferred_dispatch_backend;
 use vyre_foundation::ir::Program;
 
 fn run(program: &Program, inputs: &[Vec<u8>]) -> Result<Vec<Vec<u8>>, vyre_driver::BackendError> {
-    let backend = registered_backends_by_precedence()
-        .first()
-        .expect("no backend registered")
-        .instantiate()?;
-    let pipeline = compile(backend.as_ref(), program)?;
-    pipeline.dispatch(inputs, &Default::default())
+    let backend = acquire_preferred_dispatch_backend()?;
+    backend.dispatch(program, inputs, &Default::default())
 }
 ```
 
@@ -94,10 +105,10 @@ use vyre_driver::backend::{registered_backends, core_supported_ops};
 use vyre_foundation::ir::Program;
 
 fn can_run(program: &Program) -> bool {
-    let ops = core_supported_ops(program);
+    let ops = core_supported_ops();
     registered_backends()
         .iter()
-        .any(|reg| ops.iter().all(|op| reg.capability.supports(op)))
+        .any(|reg| program.ops().all(|op| ops.contains(&op)))
 }
 ```
 
@@ -120,9 +131,9 @@ fn compile_with_shadow(
 
 ## Extension guide — adding a new backend
 
-1. Create a new crate (for example `vyre-driver-cuda`). Depend on
-   `vyre-foundation` and `vyre-driver` only; never on `vyre-runtime`
-   or the `vyre` meta-crate.
+1. Create a concrete driver crate. Depend on `vyre-foundation`,
+   `vyre-driver`, and any backend-neutral shared crate needed by the
+   contract. Do not make shared crates depend back on the concrete driver.
 2. Implement `VyreBackend` for your backend struct. Include a
    `BackendCapability` describing the ops, memory model, subgroup
    size, and max workgroup extent your hardware supports.

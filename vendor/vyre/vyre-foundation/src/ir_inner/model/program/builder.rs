@@ -136,9 +136,60 @@ impl Program {
         }
     }
 
+    /// Clone this program with replacement buffer declarations while
+    /// preserving the entry body, workgroup size, and metadata flags.
     #[must_use]
     #[inline]
-    pub(crate) fn into_entry_vec(self) -> Vec<Node> {
+    pub fn with_rewritten_buffers(&self, buffers: Vec<BufferDecl>) -> Self {
+        let buffer_index = Self::build_buffer_index(&buffers);
+        Self {
+            entry_op_id: self.entry_op_id.clone(),
+            buffers: Arc::from(buffers),
+            buffer_index: Arc::new(buffer_index),
+            workgroup_size: self.workgroup_size,
+            entry: Arc::clone(&self.entry),
+            hash: OnceLock::new(),
+            validation_set: Arc::new(dashmap::DashSet::new()),
+            structural_validated: std::sync::atomic::AtomicBool::new(false),
+            fingerprint: OnceLock::new(),
+            output_buffer_index: OnceLock::new(),
+            has_indirect_dispatch: OnceLock::new(),
+            stats: OnceLock::new(),
+            non_composable_with_self: self.non_composable_with_self,
+        }
+    }
+
+    /// Clone this program with replacement dispatch dimensions and entry body
+    /// while preserving the existing buffer table, indexes, and metadata flags.
+    #[must_use]
+    #[inline]
+    pub fn with_rewritten_workgroup_size_and_entry(
+        &self,
+        workgroup_size: [u32; 3],
+        entry: Vec<Node>,
+    ) -> Self {
+        Self {
+            entry_op_id: self.entry_op_id.clone(),
+            buffers: Arc::clone(&self.buffers),
+            buffer_index: Arc::clone(&self.buffer_index),
+            workgroup_size,
+            entry: Arc::new(entry),
+            hash: OnceLock::new(),
+            validation_set: Arc::new(dashmap::DashSet::new()),
+            structural_validated: std::sync::atomic::AtomicBool::new(false),
+            fingerprint: OnceLock::new(),
+            output_buffer_index: OnceLock::new(),
+            has_indirect_dispatch: OnceLock::new(),
+            stats: OnceLock::new(),
+            non_composable_with_self: self.non_composable_with_self,
+        }
+    }
+
+    /// Consume the program and return its entry nodes, reusing the
+    /// backing vector when this program owns the entry body uniquely.
+    #[must_use]
+    #[inline]
+    pub fn into_entry_vec(self) -> Vec<Node> {
         Arc::try_unwrap(self.entry).unwrap_or_else(|entry| entry.as_ref().clone())
     }
 

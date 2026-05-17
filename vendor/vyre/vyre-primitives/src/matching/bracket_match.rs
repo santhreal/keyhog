@@ -15,8 +15,8 @@ use std::sync::Arc;
 use vyre_foundation::ir::model::expr::Ident;
 use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 
-/// Stable op id for the registered Tier 3 wrapper.
-pub const OP_ID: &str = "vyre-libs::parsing::bracket_match";
+/// Stable op id for the Tier 2.5 primitive.
+pub const OP_ID: &str = "vyre-primitives::matching::bracket_match";
 
 /// Token kind: not a brace.
 pub const OTHER: u32 = 0;
@@ -136,7 +136,28 @@ pub fn cpu_ref(kinds: &[u32], max_depth: u32) -> Vec<u32> {
 /// Pack `[u32]` into the LE-byte layout the harness uses.
 #[must_use]
 pub fn pack_u32(words: &[u32]) -> Vec<u8> {
-    words.iter().flat_map(|word| word.to_le_bytes()).collect()
+    let mut bytes = Vec::with_capacity(words.len().saturating_mul(4));
+    for word in words {
+        bytes.extend_from_slice(&word.to_le_bytes());
+    }
+    bytes
+}
+
+#[cfg(feature = "inventory-registry")]
+inventory::submit! {
+    crate::harness::OpEntry::new(
+        OP_ID,
+        || bracket_match("kinds", "stack", "match_pairs", 4, 4),
+        Some(|| vec![vec![
+            pack_u32(&[OPEN_BRACE, OPEN_BRACE, CLOSE_BRACE, CLOSE_BRACE]),
+            pack_u32(&[0, 0, 0, 0]),
+            pack_u32(&[MATCH_NONE, MATCH_NONE, MATCH_NONE, MATCH_NONE]),
+        ]]),
+        Some(|| vec![vec![
+            pack_u32(&[0, 1, 0, 0]),
+            pack_u32(&[3, 2, 1, 0]),
+        ]]),
+    )
 }
 
 #[cfg(test)]

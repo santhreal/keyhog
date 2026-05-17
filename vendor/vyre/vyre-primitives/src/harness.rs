@@ -1,5 +1,9 @@
 //! Tier 2.5 LEGO primitive registry.
 //!
+//! **Registry Layering**: This file defines the `OpEntry` registry for Tier-2.5 primitives.
+//! It operates in parallel with the Cat-A registry (`vyre-harness::OpEntry`) and the Tier-2 hardware intrinsics registry (`vyre-intrinsics::harness::OpEntry`).
+//! For an architectural overview of this three-registry split, see `vyre-harness/README.md`.
+//!
 //! Mirrors `vyre_libs::harness::OpEntry` so that the universal
 //! conform harness, `cargo xtask print-composition`, and the
 //! cross-backend parity matrix discover primitives via the same

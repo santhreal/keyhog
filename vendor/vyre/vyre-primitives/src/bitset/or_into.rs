@@ -6,7 +6,7 @@
 //! triggering merge-time deduplication that silently drops the
 //! ReadWrite half on the merged Program. This in-place variant exposes
 //! ONE binding for the accumulator and a separate binding for the
-//! addend, matching the WGSL contract for fixpoint composition. Used
+//! addend, matching the target-text contract for fixpoint composition. Used
 //! by the surgec rule lowering to grow a reachability accumulator
 //! across persistent-dispatch iterations.
 

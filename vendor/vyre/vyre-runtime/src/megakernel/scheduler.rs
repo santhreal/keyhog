@@ -19,17 +19,14 @@
 //! This prevents priority inversion where a flood of CRITICAL slots
 //! starves NORMAL/"background" work indefinitely.
 
+use super::ir_util::{atomic_load_relaxed, atomic_store_relaxed};
 use super::protocol::*;
-use crate::PipelineError;
 use vyre_foundation::ir::{Expr, Node};
 
-fn atomic_load_relaxed(buffer: &str, index: Expr) -> Expr {
-    Expr::atomic_add(buffer, index, Expr::u32(0))
-}
-
-fn atomic_store_relaxed(name: &str, buffer: &str, index: Expr, value: Expr) -> Node {
-    Node::let_bind(name, Expr::atomic_exchange(buffer, index, value))
-}
+mod offsets;
+pub use offsets::{
+    default_priority_offsets, default_priority_offsets_array, write_default_priority_offsets,
+};
 
 /// Number of priority levels the scheduler supports.
 pub const PRIORITY_LEVELS: u32 = 5;
@@ -71,7 +68,40 @@ pub const PRIORITY_STARVATION_COUNTER: u32 = control::PRIORITY_STARVATION_COUNTE
 #[must_use]
 pub fn policy_offset_start(partition_start: Expr, partition_end: Expr, lane_id: Expr) -> Expr {
     let range = Expr::sub(partition_end.clone(), partition_start.clone());
-    Expr::add(partition_start, Expr::rem(lane_id, range))
+    let nonzero_range = Expr::max(range, Expr::u32(1));
+    Expr::add(partition_start, Expr::rem(lane_id, nonzero_range))
+}
+
+/// Number of strided probes each lane needs to cover a priority partition.
+///
+/// The scheduler has `worker_width` lanes scanning one partition in lockstep.
+/// Bounding this as a ceiling division keeps the generated scan work linear in
+/// slot count instead of priority_levels * total_slots.
+#[must_use]
+pub fn priority_partition_probe_count(partition_slots: u32, worker_width: u32) -> u32 {
+    if partition_slots == 0 {
+        return 0;
+    }
+    let width = worker_width.max(1);
+    partition_slots.div_ceil(width)
+}
+
+/// Number of lanes that should actively probe one priority partition.
+///
+/// Lanes outside `partition_slots` cannot discover additional work when the
+/// worker set is wider than the partition; masking them avoids duplicate slot
+/// probes across every priority band.
+#[must_use]
+pub fn priority_partition_active_lane_count(partition_slots: u32, worker_width: u32) -> u32 {
+    partition_slots.min(worker_width.max(1))
+}
+
+/// Upper bound on slot status probes for one priority partition.
+#[must_use]
+pub fn priority_partition_probe_budget(partition_slots: u32, worker_width: u32) -> u32 {
+    priority_partition_active_lane_count(partition_slots, worker_width).saturating_mul(
+        priority_partition_probe_count(partition_slots, worker_width),
+    )
 }
 
 /// Policy helper: check if a tenant has exceeded its fairness quota.
@@ -110,6 +140,17 @@ pub fn check_priority_fairness(priority: Expr) -> Expr {
 /// Requires `lane_id` and `workgroup_size_x` in scope.
 #[must_use]
 pub fn priority_scan_body(total_slots: u32) -> Vec<Node> {
+    priority_scan_body_with_stride(total_slots, total_slots.max(1))
+}
+
+/// Build the priority-aware scan loop with an explicit global worker stride.
+///
+/// Each lane probes its own congruence class inside each priority partition.
+/// Across all launched workers this changes the scan from every worker probing
+/// every slot to the worker set covering the partition once per priority pass.
+#[must_use]
+pub fn priority_scan_body_with_stride(total_slots: u32, worker_stride: u32) -> Vec<Node> {
+    let worker_stride = worker_stride.max(1);
     vec![
         // Initialize output: no slot claimed
         Node::let_bind("claimed_slot_base", Expr::u32(u32::MAX)),
@@ -160,125 +201,181 @@ pub fn priority_scan_body(total_slots: u32) -> Vec<Node> {
                                 ),
                             ),
                         ),
-                        // Scan slots within this priority partition
-                        Node::loop_for(
-                            "scan_idx",
-                            Expr::u32(0),
+                        Node::let_bind(
+                            "part_len",
                             Expr::sub(Expr::var("part_end"), Expr::var("part_start")),
-                            vec![Node::if_then(
-                                Expr::and(
-                                    Expr::eq(Expr::var("claimed_slot_base"), Expr::u32(u32::MAX)),
-                                    Expr::lt(
-                                        Expr::add(Expr::var("part_start"), Expr::var("scan_idx")),
-                                        Expr::u32(total_slots),
-                                    ),
+                        ),
+                        Node::let_bind(
+                            "probe_count",
+                            Expr::div(
+                                Expr::add(
+                                    Expr::var("part_len"),
+                                    Expr::u32(worker_stride.saturating_sub(1)),
                                 ),
-                                vec![
-                                    // Use policy to select slot: start at lane-dependent offset
-                                    Node::let_bind(
-                                        "scan_slot",
-                                        Expr::add(
-                                            Expr::var("part_start"),
-                                            Expr::rem(
-                                                Expr::add(
-                                                    Expr::var("scan_idx"),
-                                                    Expr::var("lane_id"),
-                                                ),
-                                                Expr::sub(
-                                                    Expr::var("part_end"),
-                                                    Expr::var("part_start"),
-                                                ),
-                                            ),
-                                        ),
-                                    ),
-                                    Node::let_bind(
-                                        "probe_base",
-                                        Expr::mul(Expr::var("scan_slot"), Expr::u32(SLOT_WORDS)),
-                                    ),
-                                    // CAS status: PUBLISHED → CLAIMED
-                                    Node::let_bind(
-                                        "probe_status",
-                                        atomic_load_relaxed("ring_buffer", Expr::var("probe_base")),
-                                    ),
-                                    Node::let_bind(
-                                        "probe_schedulable",
-                                        Expr::or(
-                                            Expr::eq(
-                                                Expr::var("probe_status"),
-                                                Expr::u32(slot::PUBLISHED),
-                                            ),
-                                            Expr::or(
-                                                Expr::eq(
-                                                    Expr::var("probe_status"),
-                                                    Expr::u32(slot::YIELD),
-                                                ),
-                                                Expr::eq(
-                                                    Expr::var("probe_status"),
-                                                    Expr::u32(slot::REQUEUE),
-                                                ),
-                                            ),
-                                        ),
-                                    ),
-                                    Node::if_then(
-                                        Expr::var("probe_schedulable"),
+                                Expr::u32(worker_stride),
+                            ),
+                        ),
+                        // Scan slots within this priority partition
+                        Node::if_then(
+                            Expr::gt(Expr::var("part_len"), Expr::u32(0)),
+                            vec![
+                                Node::let_bind(
+                                    "partition_lane",
+                                    Expr::rem(Expr::var("lane_id"), Expr::u32(worker_stride)),
+                                ),
+                                Node::if_then(
+                                    Expr::lt(Expr::var("partition_lane"), Expr::var("part_len")),
+                                    vec![Node::loop_for(
+                                        "scan_idx",
+                                        Expr::u32(0),
+                                        Expr::var("probe_count"),
                                         vec![
-                                            // Hierarchy Phase 2: Tenant Fairness Accounting
                                             Node::let_bind(
-                                                "probe_tenant",
-                                                Expr::load(
-                                                    "ring_buffer",
-                                                    Expr::add(
-                                                        Expr::var("probe_base"),
-                                                        Expr::u32(TENANT_WORD),
+                                                "scan_slot",
+                                                Expr::add(
+                                                    Expr::var("part_start"),
+                                                    Expr::rem(
+                                                        Expr::add(
+                                                            Expr::var("partition_lane"),
+                                                            Expr::mul(
+                                                                Expr::var("scan_idx"),
+                                                                Expr::u32(worker_stride),
+                                                            ),
+                                                        ),
+                                                        Expr::var("part_len"),
                                                     ),
                                                 ),
-                                            ),
-                                            Node::let_bind(
-                                                "tenant_fair",
-                                                check_tenant_fairness(Expr::var("probe_tenant")),
                                             ),
                                             Node::if_then(
-                                                Expr::var("tenant_fair"),
+                                                Expr::and(
+                                                    Expr::eq(
+                                                        Expr::var("claimed_slot_base"),
+                                                        Expr::u32(u32::MAX),
+                                                    ),
+                                                    Expr::lt(
+                                                        Expr::var("scan_slot"),
+                                                        Expr::u32(total_slots),
+                                                    ),
+                                                ),
                                                 vec![
                                                     Node::let_bind(
-                                                        "probe_expected",
-                                                        Expr::var("probe_status"),
+                                                        "probe_base",
+                                                        Expr::mul(
+                                                            Expr::var("scan_slot"),
+                                                            Expr::u32(SLOT_WORDS),
+                                                        ),
                                                     ),
                                                     Node::let_bind(
-                                                        "probe_prev",
-                                                        Expr::atomic_compare_exchange(
+                                                        "probe_status",
+                                                        atomic_load_relaxed(
                                                             "ring_buffer",
                                                             Expr::var("probe_base"),
-                                                            Expr::var("probe_expected"),
-                                                            Expr::u32(slot::CLAIMED),
+                                                        ),
+                                                    ),
+                                                    Node::let_bind(
+                                                        "probe_schedulable",
+                                                        Expr::or(
+                                                            Expr::eq(
+                                                                Expr::var("probe_status"),
+                                                                Expr::u32(slot::PUBLISHED),
+                                                            ),
+                                                            Expr::or(
+                                                                Expr::eq(
+                                                                    Expr::var("probe_status"),
+                                                                    Expr::u32(slot::YIELD),
+                                                                ),
+                                                                Expr::eq(
+                                                                    Expr::var("probe_status"),
+                                                                    Expr::u32(slot::REQUEUE),
+                                                                ),
+                                                            ),
                                                         ),
                                                     ),
                                                     Node::if_then(
-                                                        Expr::eq(
-                                                            Expr::var("probe_prev"),
-                                                            Expr::var("probe_expected"),
-                                                        ),
+                                                        Expr::var("probe_schedulable"),
                                                         vec![
-                                                            Node::assign(
-                                                                "claimed_slot_base",
-                                                                Expr::var("probe_base"),
+                                                            Node::let_bind(
+                                                                "probe_tenant",
+                                                                Expr::load(
+                                                                    "ring_buffer",
+                                                                    Expr::add(
+                                                                        Expr::var("probe_base"),
+                                                                        Expr::u32(TENANT_WORD),
+                                                                    ),
+                                                                ),
                                                             ),
-                                                            Node::assign(
-                                                                "claimed_priority",
-                                                                Expr::var("scan_pri"),
+                                                            Node::let_bind(
+                                                                "probe_tenant_base",
+                                                                atomic_load_relaxed(
+                                                                    "control",
+                                                                    Expr::u32(
+                                                                        control::TENANT_BASE,
+                                                                    ),
+                                                                ),
                                                             ),
-                                                            Node::assign(
-                                                                "claimed_tenant",
-                                                                Expr::var("probe_tenant"),
+                                                            Node::let_bind(
+                                                                "probe_tenant_mask",
+                                                                atomic_load_relaxed(
+                                                                    "control",
+                                                                    Expr::add(
+                                                                        Expr::var(
+                                                                            "probe_tenant_base",
+                                                                        ),
+                                                                        Expr::var("probe_tenant"),
+                                                                    ),
+                                                                ),
+                                                            ),
+                                                            Node::if_then(
+                                                                Expr::ne(
+                                                                    Expr::var(
+                                                                        "probe_tenant_mask",
+                                                                    ),
+                                                                    Expr::u32(0),
+                                                                ),
+                                                                vec![
+                                                                    Node::let_bind(
+                                                                        "probe_expected",
+                                                                        Expr::var("probe_status"),
+                                                                    ),
+                                                                    Node::let_bind(
+                                                                        "probe_prev",
+                                                                        Expr::atomic_compare_exchange(
+                                                                            "ring_buffer",
+                                                                            Expr::var("probe_base"),
+                                                                            Expr::var("probe_expected"),
+                                                                            Expr::u32(slot::CLAIMED),
+                                                                        ),
+                                                                    ),
+                                                                    Node::if_then(
+                                                                        Expr::eq(
+                                                                            Expr::var("probe_prev"),
+                                                                            Expr::var("probe_expected"),
+                                                                        ),
+                                                                        vec![
+                                                                    Node::assign(
+                                                                        "claimed_slot_base",
+                                                                        Expr::var("probe_base"),
+                                                                    ),
+                                                                    Node::assign(
+                                                                        "claimed_priority",
+                                                                        Expr::var("scan_pri"),
+                                                                    ),
+                                                                    Node::assign(
+                                                                        "claimed_tenant",
+                                                                        Expr::var("probe_tenant"),
+                                                                    ),
+                                                                ],
+                                                                    ),
+                                                                ],
                                                             ),
                                                         ],
                                                     ),
                                                 ],
                                             ),
                                         ],
-                                    ),
-                                ],
-                            )],
+                                    )],
+                                ),
+                            ],
                         ),
                     ],
                 ),
@@ -288,16 +385,23 @@ pub fn priority_scan_body(total_slots: u32) -> Vec<Node> {
         Node::if_then(
             Expr::ne(Expr::var("claimed_priority"), Expr::u32(u32::MAX)),
             vec![
-                // Update priority starvation counter
-                atomic_store_relaxed(
-                    "priority_starvation_prev",
-                    "control",
-                    Expr::u32(PRIORITY_STARVATION_COUNTER),
-                    Expr::select(
-                        Expr::le(Expr::var("claimed_priority"), Expr::u32(priority::HIGH)),
-                        Expr::add(Expr::var("priority_starvation_count"), Expr::u32(1)),
+                // Update priority starvation counter atomically
+                Node::if_then_else(
+                    Expr::le(Expr::var("claimed_priority"), Expr::u32(priority::HIGH)),
+                    vec![Node::let_bind(
+                        "priority_starvation_prev",
+                        Expr::atomic_add(
+                            "control",
+                            Expr::u32(PRIORITY_STARVATION_COUNTER),
+                            Expr::u32(1),
+                        ),
+                    )],
+                    vec![atomic_store_relaxed(
+                        "priority_starvation_prev",
+                        "control",
+                        Expr::u32(PRIORITY_STARVATION_COUNTER),
                         Expr::u32(0),
-                    ),
+                    )],
                 ),
                 // Update per-tenant fairness counter
                 Node::let_bind(
@@ -331,119 +435,5 @@ pub fn priority_scan_body(total_slots: u32) -> Vec<Node> {
     ]
 }
 
-/// Encode default priority partition offsets for uniform distribution.
-///
-/// Each priority level gets `total_slots / PRIORITY_LEVELS` slots.
-/// Any remainder goes to the NORMAL partition.
-#[must_use]
-pub fn default_priority_offsets(total_slots: u32) -> Vec<u32> {
-    let base_per_pri = total_slots / PRIORITY_LEVELS;
-    let remainder = total_slots % PRIORITY_LEVELS;
-    let mut offsets = Vec::with_capacity(PRIORITY_LEVELS as usize + 1);
-    let mut cursor = 0u32;
-    for pri in 0..PRIORITY_LEVELS {
-        offsets.push(cursor);
-        let size = base_per_pri
-            + if pri == priority::NORMAL {
-                remainder
-            } else {
-                0
-            };
-        cursor += size;
-    }
-    offsets.push(cursor); // sentinel
-    offsets
-}
-
-/// Write default priority partition offsets into an encoded control buffer.
-///
-/// # Errors
-///
-/// Returns [`PipelineError::QueueFull`] when the provided control buffer is too
-/// short or not aligned to u32 words.
-pub fn write_default_priority_offsets(
-    control_bytes: &mut [u8],
-    total_slots: u32,
-) -> Result<(), PipelineError> {
-    if control_bytes.len() % 4 != 0 {
-        return Err(PipelineError::QueueFull {
-            queue: "submission",
-            fix: "control buffer byte length is not 4-byte aligned; rebuild it with Megakernel::encode_control",
-        });
-    }
-    let offsets = default_priority_offsets(total_slots);
-    for (i, value) in offsets.iter().enumerate() {
-        let word_idx = PRIORITY_OFFSETS_BASE as usize + i;
-        let start = word_idx.checked_mul(4).ok_or(PipelineError::QueueFull {
-            queue: "submission",
-            fix: "priority-offset byte index overflowed usize; keep control ABI constants bounded",
-        })?;
-        let end = start.checked_add(4).ok_or(PipelineError::QueueFull {
-            queue: "submission",
-            fix: "priority-offset byte index overflowed usize; keep control ABI constants bounded",
-        })?;
-        let dst = control_bytes.get_mut(start..end).ok_or(PipelineError::QueueFull {
-            queue: "submission",
-            fix: "control buffer is too small for priority partition offsets; rebuild it with Megakernel::encode_control",
-        })?;
-        dst.copy_from_slice(&value.to_le_bytes());
-    }
-    Ok(())
-}
-
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn default_offsets_cover_all_slots() {
-        let offsets = default_priority_offsets(256);
-        assert_eq!(offsets.len(), PRIORITY_LEVELS as usize + 1);
-        assert_eq!(*offsets.last().unwrap(), 256);
-        // Every partition has at least base_per_pri slots
-        for i in 0..PRIORITY_LEVELS as usize {
-            assert!(
-                offsets[i + 1] > offsets[i],
-                "empty partition at priority {i}"
-            );
-        }
-    }
-
-    #[test]
-    fn offsets_with_small_count() {
-        let offsets = default_priority_offsets(5);
-        // 5 / 5 = 1 per partition
-        assert_eq!(offsets, vec![0, 1, 2, 3, 4, 5]);
-    }
-
-    #[test]
-    #[allow(clippy::assertions_on_constants)]
-    fn priority_offsets_do_not_overlap_epoch() {
-        assert!(
-            PRIORITY_OFFSETS_BASE > control::EPOCH,
-            "priority offsets must not overwrite the batch-fence epoch word"
-        );
-    }
-
-    #[test]
-    fn write_default_offsets_populates_control_buffer() {
-        let mut control = crate::megakernel::Megakernel::try_encode_control(false, 1, 0).unwrap();
-        write_default_priority_offsets(&mut control, 10).unwrap();
-        let read = |word: u32| {
-            let start = word as usize * 4;
-            u32::from_le_bytes(control[start..start + 4].try_into().unwrap())
-        };
-        assert_eq!(read(PRIORITY_OFFSETS_BASE), 0);
-        assert_eq!(read(PRIORITY_OFFSETS_BASE + PRIORITY_LEVELS), 10);
-        assert_eq!(read(control::EPOCH), 0);
-    }
-
-    #[test]
-    fn priority_scan_produces_valid_ir() {
-        let nodes = priority_scan_body(256);
-        assert!(
-            nodes.len() >= 6,
-            "priority scan must include claim outputs, starvation accounting, scan loop, and accounting writeback"
-        );
-    }
-}
+mod tests;

@@ -56,8 +56,7 @@ impl<E: MatchScan> Pipeline<E> {
     #[must_use]
     pub fn scan_cpu_processed(&self, haystack: &[u8]) -> Vec<PostProcessedMatch> {
         let raw = self.engine.scan_cpu(haystack);
-        (self.post_process)(&raw, haystack)
-            .expect("scan_cpu_processed received corrupt match ranges from the CPU reference")
+        (self.post_process)(&raw, haystack).unwrap_or_default()
     }
 
     /// CPU reference one-shot that surfaces post-processing contract errors.

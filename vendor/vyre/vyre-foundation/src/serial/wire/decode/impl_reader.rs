@@ -110,7 +110,9 @@ impl Reader<'_> {
             }),
             5 => Ok(Node::Return),
             6 => Ok(Node::Block(self.nodes()?)),
-            7 => Ok(Node::Barrier),
+            7 => Ok(Node::Barrier {
+                ordering: crate::memory_model::MemoryOrdering::from_wire_tag(self.u8()?)?,
+            }),
             8 => Ok(Node::IndirectDispatch {
                 count_buffer: self.string()?.into(),
                 count_offset: self.u64()?,
@@ -356,6 +358,7 @@ impl Reader<'_> {
                 } else {
                     atomic_op_from_tag(tag)?
                 };
+                let ordering = crate::memory_model::MemoryOrdering::from_wire_tag(self.u8()?)?;
                 Ok(Expr::Atomic {
                     op,
                     buffer: self.string()?.into(),
@@ -366,6 +369,7 @@ impl Reader<'_> {
                         Some(Box::new(self.expr()?))
                     },
                     value: Box::new(self.expr()?),
+                    ordering,
                 })
             }
             16 => Ok(Expr::Fma {

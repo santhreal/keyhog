@@ -131,7 +131,22 @@ pub fn cpu_ref(
     component_in: &[u32],
     pivot: u32,
 ) -> Vec<u32> {
-    let mut out = component_in.to_vec();
+    let mut out = Vec::new();
+    cpu_ref_into(node_count, forward, backward, component_in, pivot, &mut out);
+    out
+}
+
+/// CPU reference writing into caller-owned storage.
+pub fn cpu_ref_into(
+    node_count: u32,
+    forward: &[u32],
+    backward: &[u32],
+    component_in: &[u32],
+    pivot: u32,
+    out: &mut Vec<u32>,
+) {
+    out.clear();
+    out.extend_from_slice(component_in);
     for v in 0..node_count {
         let word = (v / 32) as usize;
         let bit = 1u32 << (v % 32);
@@ -144,7 +159,6 @@ pub fn cpu_ref(
             out[v as usize] = pivot;
         }
     }
-    out
 }
 
 #[cfg(test)]
@@ -237,5 +251,77 @@ mod tests {
         let comp_in = vec![u32::MAX; 4];
         let out = cpu_ref(4, &[0b0001], &[0b1000], &comp_in, 0);
         assert_eq!(out, comp_in);
+    }
+
+    // ------------------------------------------------------------------
+    // Adversarial fixtures — empty/single/self-loop/disconnected/multi-word.
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn empty_graph_returns_empty() {
+        let out = cpu_ref(0, &[], &[], &[], 0);
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn single_node_not_in_intersection_stays_unassigned() {
+        let out = cpu_ref(1, &[0], &[0], &[u32::MAX; 1], 0);
+        assert_eq!(out, vec![u32::MAX]);
+    }
+
+    #[test]
+    fn single_node_in_intersection_gets_stamped() {
+        let out = cpu_ref(1, &[0b0001], &[0b0001], &[u32::MAX; 1], 7);
+        assert_eq!(out, vec![7]);
+    }
+
+    #[test]
+    fn self_loop_scc() {
+        // Node 0 can reach itself forward and backward.
+        let out = cpu_ref(1, &[0b0001], &[0b0001], &[u32::MAX; 1], 0);
+        assert_eq!(out, vec![0]);
+    }
+
+    #[test]
+    fn disconnected_components_only_stamp_reachable() {
+        // Nodes 0 and 2 are in their own SCCs; nodes 1 and 3 are isolated.
+        let forward = vec![0b0101];
+        let backward = vec![0b0101];
+        let comp_in = vec![u32::MAX; 4];
+        let out = cpu_ref(4, &forward, &backward, &comp_in, 0);
+        assert_eq!(out[0], 0);
+        assert_eq!(out[1], u32::MAX);
+        assert_eq!(out[2], 0);
+        assert_eq!(out[3], u32::MAX);
+    }
+
+    #[test]
+    fn all_nodes_pre_assigned_skips_all() {
+        let comp_in = vec![5, 5, 5, 5];
+        let out = cpu_ref(4, &[0b1111], &[0b1111], &comp_in, 9);
+        assert_eq!(
+            out,
+            vec![5, 5, 5, 5],
+            "pre-assigned nodes must not be overwritten"
+        );
+    }
+
+    #[test]
+    fn multi_word_bitset_cross_boundary() {
+        // 65 nodes: node 32 (word 1 bit 0) and node 64 (word 2 bit 0) in intersection.
+        let mut forward = vec![0u32; 3];
+        let mut backward = vec![0u32; 3];
+        forward[1] = 1; // node 32
+        forward[2] = 1; // node 64
+        backward[1] = 1; // node 32
+        backward[2] = 1; // node 64
+        let comp_in = vec![u32::MAX; 65];
+        let out = cpu_ref(65, &forward, &backward, &comp_in, 42);
+        assert_eq!(out[32], 42);
+        assert_eq!(out[64], 42);
+        assert_eq!(out[0], u32::MAX);
+        assert_eq!(out[31], u32::MAX);
+        assert_eq!(out[33], u32::MAX);
+        assert_eq!(out[63], u32::MAX);
     }
 }

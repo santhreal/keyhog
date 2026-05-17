@@ -1,7 +1,9 @@
-//! Zero-Copy NVMe Integration via AsyncLoad
+//! GPU-initiated IO fragment via `AsyncLoad`.
 //!
-//! Bridges the wyre megakernel to io_uring completely bypassing host memory
-//! round-tripping for raw payload data.
+//! Emits the IR node that asks the runtime scheduler to map source and
+//! destination capability tables onto the concrete ingest path. Linux runtimes
+//! wire that request to registered mapped reads or the native GPUDirect NVMe
+//! driver; this module owns only the device-side request fragment.
 
 use vyre_foundation::ir::{Expr, Node};
 

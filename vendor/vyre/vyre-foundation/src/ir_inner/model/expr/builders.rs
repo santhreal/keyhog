@@ -1,10 +1,16 @@
-#[path = "builders/arithmetic.rs"]
-mod arithmetic;
-#[path = "builders/bitwise.rs"]
-mod bitwise;
-#[path = "builders/comparison.rs"]
-mod comparison;
-#[path = "builders/float.rs"]
-mod float;
-#[path = "builders/wide_literals.rs"]
-mod wide_literals;
+
+    mod arithmetic {
+        include!("builders/arithmetic.rs");
+    }
+    mod bitwise {
+        include!("builders/bitwise.rs");
+    }
+    mod comparison {
+        include!("builders/comparison.rs");
+    }
+    mod float {
+        include!("builders/float.rs");
+    }
+    mod wide_literals {
+        include!("builders/wide_literals.rs");
+    }

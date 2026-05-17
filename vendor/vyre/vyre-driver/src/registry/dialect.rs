@@ -9,7 +9,7 @@
 //!
 //! Dialects register themselves via [`DialectRegistration`]. The per-op
 //! [`OpBackendTarget`] rows are a pure metadata index so the coverage
-//! matrix can answer "does this op have a wgsl path declared" without
+//! matrix can answer "does this op have a primary-text path declared" without
 //! loading every backend's lowering table.
 //!
 //! Extension crates adding new ops do not edit this module. They submit
@@ -43,11 +43,11 @@ pub fn default_validator() -> bool {
 /// specific op. This is distinct from [`crate::backend::BackendRegistration`]
 /// (which registers a full `VyreBackend` implementation): it is a compact
 /// (op, target) pair used by the coverage-matrix introspection path to list
-/// "this op has a naga_wgsl / naga_spv / ptx / metal_ir path declared".
+/// "this op has a concrete lowering path declared".
 pub struct OpBackendTarget {
     /// Op id (e.g. `primitive.math.add`).
     pub op: &'static str,
-    /// Backend-target id (e.g. `"wgsl"`, `"spirv"`, `"ptx"`, `"metal_ir"`).
+    /// Backend-target id.
     pub target: &'static str,
 }
 

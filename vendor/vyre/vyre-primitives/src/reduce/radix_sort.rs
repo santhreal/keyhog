@@ -32,17 +32,25 @@ pub const OP_ID: &str = "vyre-primitives::reduce::radix_sort";
 ///
 /// # Panics
 ///
-/// Panics if `bits > 32`.
+/// Invalid dimensions lower to an explicit trap program.
 #[must_use]
 pub fn radix_sort(input: &str, output: &str, count: u32, bits: u32) -> Program {
-    assert!(
-        count > 0,
-        "Fix: radix_sort requires count > 0, got {count}."
-    );
-    assert!(
-        bits <= 32,
-        "Fix: radix_sort bits must be <= 32, got {bits}."
-    );
+    if count == 0 {
+        return crate::invalid_output_program(
+            OP_ID,
+            output,
+            DataType::U32,
+            format!("Fix: radix_sort requires count > 0, got {count}."),
+        );
+    }
+    if bits > 32 {
+        return crate::invalid_output_program(
+            OP_ID,
+            output,
+            DataType::U32,
+            format!("Fix: radix_sort bits must be <= 32, got {bits}."),
+        );
+    }
 
     let buffers = vec![
         BufferDecl::storage(input, 0, BufferAccess::ReadOnly, DataType::U32).with_count(count),
@@ -108,56 +116,69 @@ pub fn radix_sort(input: &str, output: &str, count: u32, bits: u32) -> Program {
 /// CPU-reference stable u32 sort over the lowest `bits` key bits.
 #[must_use]
 pub fn cpu_ref(input: &[u32], bits: u32) -> Vec<u32> {
-    assert!(
-        bits <= 32,
-        "Fix: radix_sort bits must be <= 32, got {bits}."
-    );
+    let mut out = Vec::new();
+    let mut scratch = Vec::new();
+    cpu_ref_into(input, bits, &mut out, &mut scratch);
+    out
+}
 
-    let mut keys = input.to_vec();
-    if keys.is_empty() || bits == 0 {
-        return keys;
+/// CPU-reference stable u32 sort into caller-owned storage.
+pub fn cpu_ref_into(input: &[u32], bits: u32, out: &mut Vec<u32>, scratch: &mut Vec<u32>) {
+    let bits = bits.min(32);
+
+    out.clear();
+    out.extend_from_slice(input);
+    if out.is_empty() || bits == 0 {
+        return;
     }
 
-    let mut temp = vec![0u32; keys.len()];
+    scratch.clear();
+    scratch.resize(out.len(), 0);
     let passes = ((bits + 7) / 8).min(4) as usize;
+    let mut sorted_in_scratch = false;
 
     for pass in 0..passes {
-        let shift = pass * 8;
-        let mask = if shift + 8 >= bits as usize {
-            // Last pass: only mask the remaining significant bits.
-            (1u32 << ((bits as usize - shift).min(8))) - 1
+        if sorted_in_scratch {
+            radix_pass(scratch, out, bits, pass);
         } else {
-            0xFF
-        };
-
-        let mut counts = [0u32; 256];
-
-        // 1. Histogram
-        for &k in &keys {
-            let digit = ((k >> shift) & mask) as usize;
-            counts[digit] += 1;
+            radix_pass(out, scratch, bits, pass);
         }
-
-        // 2. Exclusive prefix scan → offsets
-        let mut offset = 0u32;
-        for count in &mut counts {
-            let c = *count;
-            *count = offset;
-            offset += c;
-        }
-
-        // 3. Stable scatter
-        for &k in &keys {
-            let digit = ((k >> shift) & mask) as usize;
-            let dest = counts[digit] as usize;
-            temp[dest] = k;
-            counts[digit] += 1;
-        }
-
-        std::mem::swap(&mut keys, &mut temp);
+        sorted_in_scratch = !sorted_in_scratch;
     }
 
-    keys
+    if sorted_in_scratch {
+        out.clear();
+        out.extend_from_slice(scratch);
+    }
+}
+
+fn radix_pass(src: &[u32], dst: &mut [u32], bits: u32, pass: usize) {
+    let shift = pass * 8;
+    let mask = if shift + 8 >= bits as usize {
+        (1u32 << ((bits as usize - shift).min(8))) - 1
+    } else {
+        0xFF
+    };
+
+    let mut counts = [0u32; 256];
+    for &key in src {
+        let digit = ((key >> shift) & mask) as usize;
+        counts[digit] += 1;
+    }
+
+    let mut offset = 0u32;
+    for count in &mut counts {
+        let current = *count;
+        *count = offset;
+        offset += current;
+    }
+
+    for &key in src {
+        let digit = ((key >> shift) & mask) as usize;
+        let dest = counts[digit] as usize;
+        dst[dest] = key;
+        counts[digit] += 1;
+    }
 }
 
 #[cfg(test)]
@@ -184,6 +205,21 @@ mod tests {
     fn cpu_ref_reverse_sorted() {
         let input = vec![5, 4, 3, 2, 1];
         assert_eq!(cpu_ref(&input, 32), vec![1, 2, 3, 4, 5]);
+    }
+
+    #[test]
+    fn cpu_ref_into_reuses_buffers() {
+        let mut out = Vec::with_capacity(16);
+        let mut scratch = Vec::with_capacity(16);
+        cpu_ref_into(&[5, 4, 3, 2, 1], 32, &mut out, &mut scratch);
+        let out_capacity = out.capacity();
+        let scratch_capacity = scratch.capacity();
+        assert_eq!(out, vec![1, 2, 3, 4, 5]);
+
+        cpu_ref_into(&[3, 1, 2], 32, &mut out, &mut scratch);
+        assert_eq!(out.capacity(), out_capacity);
+        assert_eq!(scratch.capacity(), scratch_capacity);
+        assert_eq!(out, vec![1, 2, 3]);
     }
 
     #[test]
@@ -252,14 +288,13 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "bits must be <= 32")]
-    fn bits_over_32_panics() {
-        let _ = radix_sort("in", "out", 10, 33);
+    fn bits_over_32_traps() {
+        let p = radix_sort("in", "out", 10, 33);
+        assert!(p.stats().trap());
     }
 
     #[test]
-    #[should_panic(expected = "bits must be <= 32")]
-    fn cpu_ref_bits_over_32_panics() {
-        let _ = cpu_ref(&[1, 2], 33);
+    fn cpu_ref_bits_over_32_clamps_to_full_key_sort() {
+        assert_eq!(cpu_ref(&[2, 1], 33), vec![1, 2]);
     }
 }

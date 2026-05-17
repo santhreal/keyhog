@@ -10,6 +10,7 @@
 use crate::ir_inner::model::expr::Expr;
 use crate::ir_inner::model::program::BufferDecl;
 use crate::ir_inner::model::types::{AtomicOp, BufferAccess, DataType};
+use crate::memory_model::MemoryOrdering;
 use crate::validate::typecheck::expr_type;
 use crate::validate::{err, Binding, ValidationError};
 use rustc_hash::FxHashMap;
@@ -46,11 +47,17 @@ pub(crate) fn validate_atomic(
     index: &Expr,
     expected: Option<&Expr>,
     value: &Expr,
+    ordering: MemoryOrdering,
     buffers: &FxHashMap<&str, &BufferDecl>,
-    scope: &FxHashMap<String, Binding>,
+    scope: &FxHashMap<crate::ir::Ident, Binding>,
     errors: &mut Vec<ValidationError>,
 ) {
-    // VAL-001: the atomic index must be u32. WGSL `atomicLoad`/`atomicStore`
+    if !ordering.is_valid_for_atomic_rmw() {
+        errors.push(err(format!(
+            "V042: atomic `{op:?}` on buffer `{buffer}` uses invalid memory ordering `{ordering:?}`. Fix: use Relaxed, Acquire, Release, AcqRel, or SeqCst for atomic read-modify-write operations."
+        )));
+    }
+    // VAL-001: the atomic index must be u32. target-text `atomicLoad`/`atomicStore`
     // and friends are indexed by `u32`; an f32 or i32 index slips past
     // validation today and then crashes the backend at dispatch time.
     if let Some(index_ty) = expr_type(index, buffers, scope) {
@@ -132,5 +139,133 @@ pub(crate) fn validate_atomic(
         errors.push(err(format!(
             "atomic on unknown buffer `{buffer}`. Fix: declare it in Program::buffers."
         )));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ir::{BufferDecl, DataType};
+
+    fn buf_map(decl: &BufferDecl) -> FxHashMap<&str, &BufferDecl> {
+        let mut m = FxHashMap::default();
+        m.insert(decl.name(), decl);
+        m
+    }
+
+    fn empty_scope() -> FxHashMap<crate::ir::Ident, Binding> {
+        FxHashMap::default()
+    }
+
+    #[test]
+    fn readwrite_u32_buffer_passes() {
+        let decl =
+            BufferDecl::storage("buf", 0, BufferAccess::ReadWrite, DataType::U32).with_count(4);
+        let buffers = buf_map(&decl);
+        let mut errors = Vec::new();
+        validate_atomic(
+            &AtomicOp::Add,
+            "buf",
+            &Expr::u32(0),
+            None,
+            &Expr::u32(1),
+            MemoryOrdering::SeqCst,
+            &buffers,
+            &empty_scope(),
+            &mut errors,
+        );
+        // Should have no V009, V013, or V025 errors
+        let critical: Vec<_> = errors
+            .iter()
+            .filter(|e| {
+                let m = e.message();
+                m.contains("V009") || m.contains("V013") || m.contains("V025")
+            })
+            .collect();
+        assert!(
+            critical.is_empty(),
+            "ReadWrite U32 should have no access/type errors: {:?}",
+            critical
+        );
+    }
+
+    #[test]
+    fn readonly_buffer_emits_v009() {
+        let decl = BufferDecl::read("buf", 0, DataType::U32).with_count(4);
+        let buffers = buf_map(&decl);
+        let mut errors = Vec::new();
+        validate_atomic(
+            &AtomicOp::Add,
+            "buf",
+            &Expr::u32(0),
+            None,
+            &Expr::u32(1),
+            MemoryOrdering::SeqCst,
+            &buffers,
+            &empty_scope(),
+            &mut errors,
+        );
+        assert!(errors.iter().any(|e| e.message().contains("V009")));
+    }
+
+    #[test]
+    fn workgroup_buffer_emits_v025() {
+        let decl = BufferDecl::workgroup("buf", 4, DataType::U32);
+        let buffers = buf_map(&decl);
+        let mut errors = Vec::new();
+        validate_atomic(
+            &AtomicOp::Add,
+            "buf",
+            &Expr::u32(0),
+            None,
+            &Expr::u32(1),
+            MemoryOrdering::SeqCst,
+            &buffers,
+            &empty_scope(),
+            &mut errors,
+        );
+        assert!(errors.iter().any(|e| e.message().contains("V025")));
+    }
+
+    #[test]
+    fn unknown_buffer_emits_error() {
+        let buffers: FxHashMap<&str, &BufferDecl> = FxHashMap::default();
+        let mut errors = Vec::new();
+        validate_atomic(
+            &AtomicOp::Add,
+            "missing",
+            &Expr::u32(0),
+            None,
+            &Expr::u32(1),
+            MemoryOrdering::SeqCst,
+            &buffers,
+            &empty_scope(),
+            &mut errors,
+        );
+        assert!(errors
+            .iter()
+            .any(|e| e.message().contains("unknown buffer")));
+    }
+
+    #[test]
+    fn compare_exchange_missing_expected_emits_error() {
+        let decl =
+            BufferDecl::storage("buf", 0, BufferAccess::ReadWrite, DataType::U32).with_count(4);
+        let buffers = buf_map(&decl);
+        let mut errors = Vec::new();
+        validate_atomic(
+            &AtomicOp::CompareExchange,
+            "buf",
+            &Expr::u32(0),
+            None,
+            &Expr::u32(1),
+            MemoryOrdering::SeqCst,
+            &buffers,
+            &empty_scope(),
+            &mut errors,
+        );
+        assert!(errors
+            .iter()
+            .any(|e| e.message().contains("missing expected")));
     }
 }

@@ -234,6 +234,9 @@ inventory::submit! {
                 to_bytes(&[0]),                   // tout
             ]]
         }),
-        None,
+        Some(|| {
+            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            vec![vec![to_bytes(&[0x1110])]]
+        }),
     )
 }

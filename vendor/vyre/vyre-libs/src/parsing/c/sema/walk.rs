@@ -15,7 +15,27 @@ pub fn emit_scope_resolution(tok_types: &str, node_idx: Expr, _num_tokens: &Expr
         Node::let_bind("scope_depth", Expr::u32(0)),
     ];
 
-    nodes.push(Node::loop_for(
+    nodes.extend(emit_brace_scope_resolution(
+        tok_types,
+        node_idx.clone(),
+        _num_tokens,
+    ));
+    nodes.extend(emit_function_parameter_scope(
+        tok_types,
+        node_idx,
+        _num_tokens,
+    ));
+
+    nodes
+}
+
+/// Emits IR nodes for resolving scope boundaries at braces.
+pub fn emit_brace_scope_resolution(
+    tok_types: &str,
+    node_idx: Expr,
+    _num_tokens: &Expr,
+) -> Vec<Node> {
+    let mut nodes = vec![Node::loop_for(
         "scope_scan",
         Expr::u32(0),
         node_idx.clone(),
@@ -50,7 +70,7 @@ pub fn emit_scope_resolution(tok_types: &str, node_idx: Expr, _num_tokens: &Expr
                 )],
             ),
         ],
-    ));
+    )];
 
     nodes.push(Node::if_then(
         Expr::ne(Expr::var("scope_open"), Expr::u32(u32::MAX)),
@@ -121,12 +141,6 @@ pub fn emit_scope_resolution(tok_types: &str, node_idx: Expr, _num_tokens: &Expr
         ],
     ));
 
-    nodes.extend(emit_function_parameter_scope(
-        tok_types,
-        node_idx,
-        _num_tokens,
-    ));
-
     nodes
 }
 
@@ -172,7 +186,12 @@ fn function_name_prefix(token: Expr) -> Expr {
     )
 }
 
-fn emit_function_parameter_scope(tok_types: &str, node_idx: Expr, num_tokens: &Expr) -> Vec<Node> {
+/// Emits IR nodes for resolving scope boundaries of function parameters.
+pub fn emit_function_parameter_scope(
+    tok_types: &str,
+    node_idx: Expr,
+    num_tokens: &Expr,
+) -> Vec<Node> {
     let mut nodes = vec![
         Node::let_bind("fn_param_lparen", Expr::u32(u32::MAX)),
         Node::let_bind("fn_param_depth", Expr::u32(0)),

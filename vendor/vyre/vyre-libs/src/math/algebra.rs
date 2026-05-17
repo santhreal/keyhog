@@ -6,9 +6,10 @@
 //! Every op here is a pure Category A composition over vyre-ops primitives.
 
 use crate::builder::{build_elementwise_binary, build_elementwise_unary, BuildOptions};
-use crate::region::wrap_anonymous;
+use crate::region::{wrap_anonymous, wrap_child};
 use crate::tensor_ref::{check_dtype, check_shape, check_unique_names, TensorRef, TensorRefError};
 use vyre::ir::{BinOp, BufferAccess, BufferDecl, DataType, Expr, Node, Program};
+use vyre_foundation::ir::model::expr::GeneratorRef;
 
 const JOIN_OP_ID: &str = "vyre-libs::math::algebra::join";
 const MEET_OP_ID: &str = "vyre-libs::math::algebra::meet";
@@ -23,8 +24,14 @@ const SKETCH_MIX_OP_ID: &str = "vyre-libs::math::algebra::sketch_mix";
 /// taint bitsets) and parser state sets.
 #[must_use]
 pub fn lattice_join(a: &str, b: &str, out: &str, size: u32) -> Program {
-    try_lattice_join(a, b, out, size)
-        .unwrap_or_else(|err| panic!("Fix: {JOIN_OP_ID} build failed: {err}"))
+    try_lattice_join(a, b, out, size).unwrap_or_else(|err| {
+        crate::builder::invalid_output_program(
+            JOIN_OP_ID,
+            out,
+            DataType::U32,
+            format!("Fix: {err}"),
+        )
+    })
 }
 
 /// Checked builder for [`lattice_join`].
@@ -35,7 +42,7 @@ pub fn lattice_join(a: &str, b: &str, out: &str, size: u32) -> Program {
 /// element count cannot be represented by the IR.
 pub fn try_lattice_join(a: &str, b: &str, out: &str, size: u32) -> Result<Program, TensorRefError> {
     build_elementwise_binary(
-        JOIN_OP_ID,
+        "vyre-libs::logical::or",
         TensorRef::u32_1d(a, size),
         TensorRef::u32_1d(b, size),
         TensorRef::u32_1d(out, size),
@@ -51,8 +58,14 @@ pub fn try_lattice_join(a: &str, b: &str, out: &str, size: u32) -> Result<Progra
 /// narrowing value sets during dataflow analysis.
 #[must_use]
 pub fn lattice_meet(a: &str, b: &str, out: &str, size: u32) -> Program {
-    try_lattice_meet(a, b, out, size)
-        .unwrap_or_else(|err| panic!("Fix: {MEET_OP_ID} build failed: {err}"))
+    try_lattice_meet(a, b, out, size).unwrap_or_else(|err| {
+        crate::builder::invalid_output_program(
+            MEET_OP_ID,
+            out,
+            DataType::U32,
+            format!("Fix: {err}"),
+        )
+    })
 }
 
 /// Checked builder for [`lattice_meet`].
@@ -63,7 +76,7 @@ pub fn lattice_meet(a: &str, b: &str, out: &str, size: u32) -> Program {
 /// element count cannot be represented by the IR.
 pub fn try_lattice_meet(a: &str, b: &str, out: &str, size: u32) -> Result<Program, TensorRefError> {
     build_elementwise_binary(
-        MEET_OP_ID,
+        "vyre-libs::logical::and",
         TensorRef::u32_1d(a, size),
         TensorRef::u32_1d(b, size),
         TensorRef::u32_1d(out, size),
@@ -81,8 +94,14 @@ pub fn try_lattice_meet(a: &str, b: &str, out: &str, size: u32) -> Result<Progra
 /// propagation in adaptive scheduling and loop-cost estimation.
 #[must_use]
 pub fn semiring_min_plus_mul(a: &str, b: &str, out: &str, size: u32) -> Program {
-    try_semiring_min_plus_mul(a, b, out, size)
-        .unwrap_or_else(|err| panic!("Fix: {MINPLUS_MUL_OP_ID} build failed: {err}"))
+    try_semiring_min_plus_mul(a, b, out, size).unwrap_or_else(|err| {
+        crate::builder::invalid_output_program(
+            MINPLUS_MUL_OP_ID,
+            out,
+            DataType::U32,
+            format!("Fix: {err}"),
+        )
+    })
 }
 
 /// Checked builder for [`semiring_min_plus_mul`].
@@ -125,8 +144,14 @@ pub fn bool_semiring_matmul(
     inner: u32,
     cols: u32,
 ) -> Program {
-    try_bool_semiring_matmul(a, b, out, rows, inner, cols)
-        .unwrap_or_else(|err| panic!("Fix: {BOOL_MATMUL_OP_ID} build failed: {err}"))
+    try_bool_semiring_matmul(a, b, out, rows, inner, cols).unwrap_or_else(|err| {
+        crate::builder::invalid_output_program(
+            BOOL_MATMUL_OP_ID,
+            out,
+            DataType::U32,
+            format!("Fix: {err}"),
+        )
+    })
 }
 
 /// Checked builder for [`bool_semiring_matmul`].
@@ -200,12 +225,25 @@ pub fn try_bool_semiring_matmul(
                             Expr::var("bool_mm_col"),
                         ),
                     ),
-                    Node::if_then(
-                        Expr::and(
-                            Expr::ne(Expr::load(a, Expr::var("bool_mm_a_idx")), Expr::u32(0)),
-                            Expr::ne(Expr::load(b, Expr::var("bool_mm_b_idx")), Expr::u32(0)),
+                    Node::assign(
+                        "bool_mm_acc",
+                        Expr::bitor(
+                            Expr::var("bool_mm_acc"),
+                            Expr::select(
+                                Expr::and(
+                                    Expr::ne(
+                                        Expr::load(a, Expr::var("bool_mm_a_idx")),
+                                        Expr::u32(0),
+                                    ),
+                                    Expr::ne(
+                                        Expr::load(b, Expr::var("bool_mm_b_idx")),
+                                        Expr::u32(0),
+                                    ),
+                                ),
+                                Expr::u32(1),
+                                Expr::u32(0),
+                            ),
                         ),
-                        vec![Node::assign("bool_mm_acc", Expr::u32(1))],
                     ),
                 ],
             ),
@@ -221,7 +259,22 @@ pub fn try_bool_semiring_matmul(
             BufferDecl::output(out, 2, DataType::U32).with_count(out_count.max(1)),
         ],
         [64, 1, 1],
-        vec![wrap_anonymous(BOOL_MATMUL_OP_ID, body)],
+        vec![wrap_anonymous(
+            BOOL_MATMUL_OP_ID,
+            vec![wrap_child(
+                vyre_primitives::math::scallop_join_wide::OP_ID,
+                GeneratorRef {
+                    name: BOOL_MATMUL_OP_ID.to_string(),
+                },
+                vec![wrap_child(
+                    vyre_primitives::math::scallop_join::OP_ID,
+                    GeneratorRef {
+                        name: BOOL_MATMUL_OP_ID.to_string(),
+                    },
+                    body,
+                )],
+            )],
+        )],
     ))
 }
 
@@ -233,8 +286,14 @@ pub fn try_bool_semiring_matmul(
 /// sketch updates, suitable for corpus scoring in G9.
 #[must_use]
 pub fn sketch_mix(input: &str, out: &str, size: u32) -> Program {
-    try_sketch_mix(input, out, size)
-        .unwrap_or_else(|err| panic!("Fix: {SKETCH_MIX_OP_ID} build failed: {err}"))
+    try_sketch_mix(input, out, size).unwrap_or_else(|err| {
+        crate::builder::invalid_output_program(
+            SKETCH_MIX_OP_ID,
+            out,
+            DataType::U32,
+            format!("Fix: {err}"),
+        )
+    })
 }
 
 /// Checked builder for [`sketch_mix`].

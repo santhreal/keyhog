@@ -1,82 +1,140 @@
-//! Preorder walk for a **spine** tree encoded like [`vyre_foundation::vast::VastNode`]
-//! (`first_child` chain from root `0`, `next_sibling` = sentinel).
+//! Preorder walk for a tree encoded like [`vyre_foundation::vast::VastNode`]
+//! (`first_child` plus `next_sibling`, rooted at node `0`).
 //!
-//! The v0 GPU composition follows `first_child` edges until [`vyre_foundation::vast::SENTINEL`].
-//! General trees use [`vyre_foundation::vast::walk_preorder_indices`] on the host until a
-//! stack-backed GPU walker lands (see `docs/PARSING_EXECUTION_PLAN.md` P5).
+//! The IR uses parent links to avoid an auxiliary stack: after visiting
+//! a node it descends to `first_child` when present; otherwise it climbs
+//! parents until it finds a valid `next_sibling`.
 
-use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
+use vyre::ir::Program;
+use vyre_foundation::vast::{VastNode, NODE_STRIDE_U32, SENTINEL};
+use vyre_primitives::graph::vast_tree_walk;
 
-use crate::region::wrap_anonymous;
+use crate::region::tag_program;
 
 const OP_ID: &str = "vyre-libs::graph::ast_walk_preorder";
 
-/// Pack a spine fixture: full VAST bytes plus the node-table slice (for harness + tests).
+/// Pack a spine fixture: full VAST bytes plus the node-table slice.
+#[cfg(test)]
 pub(crate) fn pack_spine_fixture(node_count: u32) -> (Vec<u8>, Vec<u8>) {
     let full = vyre_foundation::vast::pack_spine_vast(&vec![1u32; node_count as usize]);
-    let node_len = (node_count as usize) * vyre_foundation::vast::NODE_STRIDE_U32 * 4;
+    let node_len = (node_count as usize) * NODE_STRIDE_U32 * 4;
     let start = vyre_foundation::vast::HEADER_LEN;
     let region = full[start..start + node_len].to_vec();
     (full, region)
 }
 
-/// Emit preorder node indices for a `first_child` spine starting at root `0`.
+/// Pack a branching fixture:
+///
+/// ```text
+/// 0
+/// |- 1
+/// |  `- 4
+/// |- 2
+/// `- 3
+///    `- 5
+/// ```
+///
+/// Preorder: `0, 1, 4, 2, 3, 5`; postorder: `4, 1, 2, 5, 3, 0`.
+pub(crate) fn pack_branching_fixture() -> Vec<u8> {
+    let nodes = [
+        VastNode {
+            kind: 1,
+            parent_idx: SENTINEL,
+            first_child: 1,
+            next_sibling: SENTINEL,
+            src_file: 0,
+            src_byte_off: 0,
+            src_byte_len: 1,
+            attr_off: 0,
+            attr_len: 0,
+            reserved: 0,
+        },
+        VastNode {
+            kind: 1,
+            parent_idx: 0,
+            first_child: 4,
+            next_sibling: 2,
+            src_file: 0,
+            src_byte_off: 1,
+            src_byte_len: 1,
+            attr_off: 0,
+            attr_len: 0,
+            reserved: 0,
+        },
+        VastNode {
+            kind: 1,
+            parent_idx: 0,
+            first_child: SENTINEL,
+            next_sibling: 3,
+            src_file: 0,
+            src_byte_off: 2,
+            src_byte_len: 1,
+            attr_off: 0,
+            attr_len: 0,
+            reserved: 0,
+        },
+        VastNode {
+            kind: 1,
+            parent_idx: 0,
+            first_child: 5,
+            next_sibling: SENTINEL,
+            src_file: 0,
+            src_byte_off: 3,
+            src_byte_len: 1,
+            attr_off: 0,
+            attr_len: 0,
+            reserved: 0,
+        },
+        VastNode {
+            kind: 1,
+            parent_idx: 1,
+            first_child: SENTINEL,
+            next_sibling: SENTINEL,
+            src_file: 0,
+            src_byte_off: 4,
+            src_byte_len: 1,
+            attr_off: 0,
+            attr_len: 0,
+            reserved: 0,
+        },
+        VastNode {
+            kind: 1,
+            parent_idx: 3,
+            first_child: SENTINEL,
+            next_sibling: SENTINEL,
+            src_file: 0,
+            src_byte_off: 5,
+            src_byte_len: 1,
+            attr_off: 0,
+            attr_len: 0,
+            reserved: 0,
+        },
+    ];
+    let mut out = Vec::with_capacity(nodes.len() * NODE_STRIDE_U32 * 4);
+    for node in nodes {
+        out.extend_from_slice(&node.to_bytes());
+    }
+    out
+}
+
+/// Emit preorder node indices for a VAST first-child / next-sibling tree.
 #[must_use]
 pub fn ast_walk_preorder(nodes: &str, out: &str, node_count: u32, out_cap: u32) -> Program {
-    let stride = vyre_foundation::vast::NODE_STRIDE_U32 as u32;
-    let node_words = node_count.saturating_mul(stride).max(1);
-    let out_words = out_cap.max(1);
-    let body = vec![
-        Node::let_bind("oi", Expr::u32(0)),
-        Node::let_bind("n", Expr::u32(0)),
-        Node::loop_for(
-            "step",
-            Expr::u32(0),
-            Expr::u32(node_count),
-            vec![
-                Node::if_then(
-                    Expr::ge(Expr::var("oi"), Expr::u32(out_cap)),
-                    vec![Node::return_()],
-                ),
-                Node::Block(vec![
-                    Node::let_bind(
-                        "fc_idx",
-                        Expr::add(Expr::mul(Expr::var("n"), Expr::u32(stride)), Expr::u32(2)),
-                    ),
-                    Node::let_bind("fc", Expr::load(nodes, Expr::var("fc_idx"))),
-                    Node::store(out, Expr::var("oi"), Expr::var("n")),
-                    Node::assign("oi", Expr::add(Expr::var("oi"), Expr::u32(1))),
-                    Node::if_then(
-                        Expr::eq(Expr::var("fc"), Expr::u32(vyre_foundation::vast::SENTINEL)),
-                        vec![Node::return_()],
-                    ),
-                    Node::assign("n", Expr::var("fc")),
-                ]),
-            ],
-        ),
-    ];
-
-    Program::wrapped(
-        vec![
-            BufferDecl::storage(nodes, 0, BufferAccess::ReadOnly, DataType::U32)
-                .with_count(node_words),
-            BufferDecl::storage(out, 1, BufferAccess::ReadWrite, DataType::U32)
-                .with_count(out_words),
-        ],
-        [1, 1, 1],
-        vec![wrap_anonymous(OP_ID, body)],
+    tag_program(
+        OP_ID,
+        vast_tree_walk::ast_walk_preorder(nodes, out, node_count, out_cap),
     )
 }
 
 fn preorder_harness_inputs() -> Vec<Vec<Vec<u8>>> {
-    let (_, node_region) = pack_spine_fixture(4);
-    let outz = vec![0u8; 32];
-    vec![vec![node_region, outz]]
+    vec![vec![pack_branching_fixture(), vec![0u8; 32]]]
 }
 
 fn preorder_harness_expected() -> Vec<Vec<Vec<u8>>> {
-    let (_, node_region) = pack_spine_fixture(4);
-    let order = vyre_foundation::vast::walk_preorder_indices(&node_region, 4, 128).unwrap();
+    let node_region = pack_branching_fixture();
+    let Ok(order) = vyre_foundation::vast::walk_preorder_indices(&node_region, 6, 128) else {
+        return Vec::new();
+    };
     let mut out = vec![0u8; 32];
     for (i, &v) in order.iter().enumerate() {
         out[i * 4..(i + 1) * 4].copy_from_slice(&v.to_le_bytes());
@@ -87,7 +145,7 @@ fn preorder_harness_expected() -> Vec<Vec<Vec<u8>>> {
 inventory::submit! {
     crate::harness::OpEntry {
         id: OP_ID,
-        build: || ast_walk_preorder("nodes", "out", 4, 8),
+        build: || ast_walk_preorder("nodes", "out", 6, 8),
         test_inputs: Some(preorder_harness_inputs),
         expected_output: Some(preorder_harness_expected),
     }
@@ -100,6 +158,25 @@ mod tests {
     #[test]
     fn preorder_program_validates() {
         let p = ast_walk_preorder("nodes", "out", 4, 8);
+        assert!(vyre::validate(&p).is_empty());
+    }
+
+    #[test]
+    fn spine_fixture_region_has_expected_node_words() {
+        let (_full, region) = pack_spine_fixture(3);
+        assert_eq!(region.len(), 3 * NODE_STRIDE_U32 * 4);
+        assert_eq!(
+            vyre_foundation::vast::walk_preorder_indices(&region, 3, 16).unwrap(),
+            vec![0, 1, 2]
+        );
+    }
+
+    #[test]
+    fn preorder_handles_branching_siblings() {
+        let node_region = pack_branching_fixture();
+        let order = vyre_foundation::vast::walk_preorder_indices(&node_region, 6, 128).unwrap();
+        assert_eq!(order, vec![0, 1, 4, 2, 3, 5]);
+        let p = ast_walk_preorder("nodes", "out", 6, 8);
         assert!(vyre::validate(&p).is_empty());
     }
 }

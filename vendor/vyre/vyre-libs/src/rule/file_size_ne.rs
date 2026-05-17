@@ -24,4 +24,4 @@ impl FileSizeNe {
 }
 
 /// Stable operation id for file size inequality checks.
-pub const OP_ID: &str = "rule.file_size_ne";
+pub const OP_ID: &str = "vyre-libs::rule::file_size_ne";

@@ -6,10 +6,11 @@
 
 use crate::error::{Error, Result};
 use crate::ir_inner::model::expr::Expr;
+use crate::ir_inner::model::expr::Ident;
 use crate::ir_inner::model::node::Node;
 use crate::ir_inner::model::program::{BufferDecl, Program};
 use crate::ir_inner::model::types::{BufferAccess, DataType};
-use std::collections::HashMap;
+use rustc_hash::FxHashMap as HashMap;
 
 /// Resolve an operation id to the canonical IR program for that operation.
 pub type OpResolver = fn(&str) -> Option<Program>;
@@ -81,13 +82,13 @@ mod impl_inlinectx;
 
 /// Map a callee's input buffers to the argument expressions from a call site.
 #[inline]
-pub(crate) fn input_arg_map(callee: &Program, args: Vec<Expr>) -> HashMap<String, Expr> {
+pub(crate) fn input_arg_map(callee: &Program, args: Vec<Expr>) -> HashMap<Ident, Expr> {
     let mut inputs = input_buffers(callee);
     inputs.sort_by_key(|buf| buf.binding());
     inputs
         .into_iter()
         .zip(args)
-        .map(|(buf, arg)| (buf.name().to_string(), arg))
+        .map(|(buf, arg)| (Ident::from(buf.name()), arg))
         .collect()
 }
 
@@ -143,5 +144,96 @@ pub fn zero_value(ty: DataType) -> Expr {
         | DataType::Array { .. }
         | DataType::Tensor => Expr::u32(0),
         _ => Expr::u32(0),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ir_inner::model::expr::Expr;
+    use crate::ir_inner::model::node::Node;
+    use crate::ir_inner::model::program::BufferDecl;
+
+    fn make_caller() -> Program {
+        Program::wrapped(
+            vec![
+                BufferDecl::storage("A", 0, BufferAccess::ReadOnly, DataType::U32).with_count(1),
+                BufferDecl::output("out", 1, DataType::U32).with_count(1),
+            ],
+            [1, 1, 1],
+            vec![Node::store(
+                "out",
+                Expr::u32(0),
+                Expr::Call {
+                    op_id: "add_one".into(),
+                    args: vec![Expr::Load {
+                        buffer: "A".into(),
+                        index: Box::new(Expr::u32(0)),
+                    }],
+                },
+            )],
+        )
+    }
+
+    fn make_callee() -> Program {
+        Program::wrapped(
+            vec![
+                BufferDecl::storage("x", 0, BufferAccess::ReadOnly, DataType::U32).with_count(1),
+                BufferDecl::output("result", 1, DataType::U32).with_count(1),
+            ],
+            [1, 1, 1],
+            vec![Node::store(
+                "result",
+                Expr::u32(0),
+                Expr::add(
+                    Expr::Load {
+                        buffer: "x".into(),
+                        index: Box::new(Expr::u32(0)),
+                    },
+                    Expr::u32(1),
+                ),
+            )],
+        )
+    }
+
+    fn test_resolver(op_id: &str) -> Option<Program> {
+        if op_id == "add_one" {
+            Some(make_callee())
+        } else {
+            None
+        }
+    }
+
+    #[test]
+    fn test_inline_call_success() {
+        let caller = make_caller();
+        let inlined = inline_calls_with_resolver(&caller, test_resolver).unwrap();
+
+        // The call should be gone
+        let nodes = inlined.entry();
+        // Since we inline a store, we expect an internal let for the argument or a direct replacement
+        // Just verify we don't have Expr::Call anymore
+        let mut has_call = false;
+        let dump = format!("{nodes:?}");
+        if dump.contains("Call {") {
+            has_call = true;
+        }
+        assert!(!has_call, "Expr::Call should be inlined out: {dump}");
+    }
+
+    #[test]
+    fn test_inline_unknown_op() {
+        let caller = make_caller();
+        // default_resolver always returns None
+        let err = inline_calls(&caller).unwrap_err();
+        assert!(matches!(err, Error::InlineUnknownOp { .. }));
+    }
+
+    #[test]
+    fn test_zero_value() {
+        assert_eq!(zero_value(DataType::I32), Expr::i32(0));
+        assert_eq!(zero_value(DataType::F32), Expr::f32(0.0));
+        assert_eq!(zero_value(DataType::Bool), Expr::LitBool(false));
+        assert_eq!(zero_value(DataType::U32), Expr::u32(0));
     }
 }

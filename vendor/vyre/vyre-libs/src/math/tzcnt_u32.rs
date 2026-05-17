@@ -1,12 +1,12 @@
 //! Cat-A `tzcnt_u32` — count trailing zeros per u32 lane.
 //!
 //! Migration target per `docs/migration-vyre-ops-to-intrinsics.md`:
-//! `Expr::ctz` is an existing UnOp primitive; no dedicated Naga emitter
+//! `Expr::ctz` is an existing UnOp primitive; no dedicated target builder emitter
 //! arm needed. Library, not intrinsic.
 //!
 //! CPU reference: `u32::trailing_zeros` bit-exact.
 
-use vyre::ir::{Expr, Program};
+use vyre::ir::{DataType, Expr, Program};
 
 use crate::builder::{build_elementwise_unary, BuildOptions};
 use crate::tensor_ref::TensorRef;
@@ -23,7 +23,9 @@ pub fn tzcnt_u32(input: &str, out: &str, size: u32) -> Program {
         BuildOptions::default(),
         Expr::ctz,
     )
-    .unwrap_or_else(|err| panic!("Fix: {OP_ID} build failed: {err}"))
+    .unwrap_or_else(|err| {
+        crate::builder::invalid_output_program(OP_ID, out, DataType::U32, format!("Fix: {err}"))
+    })
 }
 
 inventory::submit! {
@@ -60,8 +62,8 @@ mod tests {
             Value::Bytes(to_bytes(input).into()),
             Value::Bytes(vec![0u8; (n.max(1) * 4) as usize].into()),
         ];
-        let outputs =
-            vyre_reference::reference_eval(&program, &inputs).expect("tzcnt_u32 must run");
+        let outputs = vyre_reference::reference_eval(&program, &inputs)
+            .expect("Fix: tzcnt_u32 must run; restore this invariant before continuing.");
         let raw = outputs[0].to_bytes();
         raw.chunks_exact(4)
             .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))

@@ -46,17 +46,17 @@ inventory::submit! {
         id: "vyre-libs::representation::unpack_4bit_f32",
         build: || unpack_4bit_f32("input", "output", 16),
         test_inputs: Some(|| {
-            let to_u32_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+
             // Pack 16 4-bit values: 0..15 into 2 u32s (8 nibbles each)
             // u32[0] = 0x76543210, u32[1] = 0xFEDCBA98
             vec![vec![
-                to_u32_bytes(&[0x7654_3210, 0xFEDC_BA98]), // input: 2 packed u32s
+                crate::test_support::byte_pack::u32_bytes(&[0x7654_3210, 0xFEDC_BA98]), // input: 2 packed u32s
                 vec![0u8; 16 * 4],                          // output: 16 f32s
             ]]
         }),
         expected_output: Some(|| {
             // u32 → f32 as a value-preserving cast (not a bit-cast),
-            // matching WGSL `f32(u32_value)`. The packed input
+            // matching target-text `f32(u32_value)`. The packed input
             // [0x76543210, 0xFEDCBA98] unpacks into nibbles 0..15
             // in LSB-first order, each of which casts to its integer
             // value as f32.

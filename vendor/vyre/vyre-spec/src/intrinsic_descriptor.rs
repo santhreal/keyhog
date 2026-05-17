@@ -18,9 +18,8 @@ pub type CpuFn = fn(input: &[u8], output: &mut Vec<u8>);
 
 /// Stable string identity for a backend.
 ///
-/// Usage: `BackendId::new("wgpu")`. Hash + Eq operate on the interned string
-/// value — two `BackendId`s with identical content compare equal regardless
-/// of Arc reuse.
+/// Concrete driver crates own the spelling of their ids. The spec layer stores
+/// ids as opaque strings so adding a backend never requires editing this crate.
 #[derive(Debug, Clone)]
 pub struct BackendId(Arc<str>);
 
@@ -70,64 +69,63 @@ impl core::hash::Hash for BackendId {
     }
 }
 
-impl From<&Backend> for BackendId {
-    fn from(backend: &Backend) -> Self {
-        Self::from(backend.id())
-    }
-}
-
-/// A trait for extension backends.
-pub trait BackendKind: std::fmt::Debug + Send + Sync + 'static {
-    /// Friendly name of the backend.
-    fn name(&self) -> &str;
-    /// Stable string identifier for this backend.
-    fn id(&self) -> &str;
-}
-
-/// A named backend provided by an external crate.
-#[derive(Debug, Clone)]
-pub struct ExtensionBackend(pub Arc<dyn BackendKind>);
-
-impl PartialEq for ExtensionBackend {
-    fn eq(&self, other: &Self) -> bool {
-        self.0.id() == other.0.id()
-    }
-}
-impl Eq for ExtensionBackend {}
-
-impl std::hash::Hash for ExtensionBackend {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.0.id().hash(state);
-    }
-}
-
 /// Backend identity used when checking Category C intrinsic availability.
-#[non_exhaustive]
+///
+/// This is intentionally a data wrapper, not an enum. Concrete backend names
+/// belong in the driver crates that implement them.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum Backend {
-    /// The reference WGSL backend.
-    Wgsl,
-    /// A CUDA backend.
-    Cuda,
-    /// A SPIR-V backend.
-    SpirV,
-    /// A Metal backend.
-    Metal,
-    /// A backend provided by an external crate.
-    Extension(ExtensionBackend),
+pub struct Backend {
+    id: BackendId,
+    name: Option<Arc<str>>,
 }
 
 impl Backend {
+    /// Construct a backend identity from an opaque backend id.
+    #[must_use]
+    pub fn new(id: impl Into<BackendId>) -> Self {
+        Self {
+            id: id.into(),
+            name: None,
+        }
+    }
+
+    /// Construct a backend identity with a friendly display name.
+    #[must_use]
+    pub fn named(id: impl Into<BackendId>, name: impl Into<Arc<str>>) -> Self {
+        Self {
+            id: id.into(),
+            name: Some(name.into()),
+        }
+    }
+
     /// Stable string identifier for this backend.
     #[must_use]
     pub fn id(&self) -> &str {
-        match self {
-            Self::Wgsl => "wgsl",
-            Self::Cuda => "cuda",
-            Self::SpirV => "spirv",
-            Self::Metal => "metal",
-            Self::Extension(ext) => ext.0.id(),
-        }
+        self.id.as_str()
+    }
+
+    /// Friendly backend name, falling back to [`Backend::id`].
+    #[must_use]
+    pub fn name(&self) -> &str {
+        self.name.as_deref().unwrap_or_else(|| self.id())
+    }
+}
+
+impl From<BackendId> for Backend {
+    fn from(id: BackendId) -> Self {
+        Self::new(id)
+    }
+}
+
+impl From<&str> for Backend {
+    fn from(id: &str) -> Self {
+        Self::new(BackendId::from(id))
+    }
+}
+
+impl From<&Backend> for BackendId {
+    fn from(backend: &Backend) -> Self {
+        backend.id.clone()
     }
 }
 

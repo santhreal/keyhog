@@ -239,7 +239,7 @@ pub(crate) fn vyre_ast_registry_impl(item: TokenStream) -> TokenStream {
                         )),
                         right: Box::new(crate::ir_inner::model::expr::Expr::LitU32(#hash_val)),
                     },
-                    then: vec![ crate::ir_inner::model::node::Node::Barrier ], // Native ALUs go here
+                    then: vec![ crate::ir_inner::model::node::Node::barrier() ], // Native ALUs go here
                     otherwise: vec![ cascade ],
                 };
             }

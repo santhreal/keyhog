@@ -153,6 +153,11 @@ pub use put_nodes::put_nodes;
 /// message instead of arbitrary downstream parse errors.
 pub use to_wire::to_wire;
 pub use to_wire::to_wire_into;
+pub use to_wire::to_wire_with_buffer_order_into;
+
+/// Zero-allocation error type for hot-path wire encoders.
+pub mod error;
+pub use error::WireEncodeErr;
 
 /// Expression tag-and-payload encoder.
 ///

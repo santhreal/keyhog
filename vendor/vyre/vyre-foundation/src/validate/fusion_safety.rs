@@ -4,31 +4,41 @@
 //! but it cannot see hazards introduced when independently valid nodes are
 //! fused into the same kernel. This pass walks node sequences and rejects
 //! mixed atomic / non-atomic access to the same buffer unless an explicit
-//! `Node::Barrier` separates them.
+//! `Node::Barrier { ordering: vyre::memory_model::MemoryOrdering::SeqCst }` separates them.
 
 use crate::ir::Expr;
+use crate::ir::Ident;
+#[cfg(test)]
 use crate::ir::Node;
+#[cfg(test)]
 use crate::validate::{err, ValidationError};
 use rustc_hash::FxHashSet;
+use smallvec::SmallVec;
 
 #[derive(Debug, Default)]
 pub(crate) struct NodeAccesses {
-    pub(crate) read_buffers: FxHashSet<String>,
-    pub(crate) atomic_buffers: FxHashSet<String>,
+    // PERF: uses `Ident` (Arc<str> + pre-hashed) instead of `String`.
+    // Cloning an Ident is a single atomic refcount bump (~1ns) versus
+    // a heap allocation + memcpy (~30-80ns per String). On programs
+    // with 1000+ buffer accesses this is a measurable win.
+    pub(crate) read_buffers: FxHashSet<Ident>,
+    pub(crate) atomic_buffers: FxHashSet<Ident>,
 }
 
 /// Validate fusion hazards caused by mixing non-atomic reads and atomic writes.
+#[cfg(test)]
 pub(crate) fn validate_fusion_alias_hazards(nodes: &[Node], errors: &mut Vec<ValidationError>) {
     validate_sequence(nodes, errors);
 }
 
+#[cfg(test)]
 fn validate_sequence(nodes: &[Node], errors: &mut Vec<ValidationError>) {
-    let mut reads_since_barrier = FxHashSet::<String>::default();
-    let mut atomics_since_barrier = FxHashSet::<String>::default();
+    let mut reads_since_barrier = FxHashSet::<Ident>::default();
+    let mut atomics_since_barrier = FxHashSet::<Ident>::default();
 
     for node in nodes {
         match node {
-            Node::Barrier => {
+            Node::Barrier { .. } => {
                 reads_since_barrier.clear();
                 atomics_since_barrier.clear();
             }
@@ -86,10 +96,11 @@ fn validate_sequence(nodes: &[Node], errors: &mut Vec<ValidationError>) {
     }
 }
 
+#[cfg(test)]
 fn report_alias_hazards(
     accesses: &NodeAccesses,
-    reads_since_barrier: &FxHashSet<String>,
-    atomics_since_barrier: &FxHashSet<String>,
+    reads_since_barrier: &FxHashSet<Ident>,
+    atomics_since_barrier: &FxHashSet<Ident>,
     errors: &mut Vec<ValidationError>,
 ) {
     let mut hazards = accesses
@@ -103,7 +114,8 @@ fn report_alias_hazards(
             .intersection(atomics_since_barrier)
             .cloned(),
     );
-    hazards.sort();
+    // Sort by string content for deterministic error ordering.
+    hazards.sort_by(|a, b| a.as_str().cmp(b.as_str()));
     hazards.dedup();
 
     for buffer in hazards {
@@ -113,6 +125,7 @@ fn report_alias_hazards(
     }
 }
 
+#[cfg(test)]
 pub(crate) fn collect_node_accesses(node: &Node, accesses: &mut NodeAccesses) {
     match node {
         Node::Let { value, .. } | Node::Assign { value, .. } => {
@@ -123,12 +136,12 @@ pub(crate) fn collect_node_accesses(node: &Node, accesses: &mut NodeAccesses) {
             index,
             value,
         } => {
-            accesses.read_buffers.insert(buffer.to_string());
+            accesses.read_buffers.insert(buffer.clone());
             collect_expr_accesses(index, accesses);
             collect_expr_accesses(value, accesses);
         }
         Node::IndirectDispatch { count_buffer, .. } => {
-            accesses.read_buffers.insert(count_buffer.to_string());
+            accesses.read_buffers.insert(count_buffer.clone());
         }
         Node::AsyncLoad {
             source,
@@ -144,89 +157,115 @@ pub(crate) fn collect_node_accesses(node: &Node, accesses: &mut NodeAccesses) {
             size,
             ..
         } => {
-            accesses.read_buffers.insert(source.to_string());
-            accesses.read_buffers.insert(destination.to_string());
+            accesses.read_buffers.insert(source.clone());
+            accesses.read_buffers.insert(destination.clone());
             collect_expr_accesses(offset, accesses);
             collect_expr_accesses(size, accesses);
+        }
+        Node::If {
+            cond,
+            then,
+            otherwise,
+        } => {
+            collect_expr_accesses(cond, accesses);
+            collect_node_sequence_accesses(then, accesses);
+            collect_node_sequence_accesses(otherwise, accesses);
+        }
+        Node::Loop { from, to, body, .. } => {
+            collect_expr_accesses(from, accesses);
+            collect_expr_accesses(to, accesses);
+            collect_node_sequence_accesses(body, accesses);
+        }
+        Node::Block(body) => {
+            collect_node_sequence_accesses(body, accesses);
+        }
+        Node::Region { body, .. } => {
+            collect_node_sequence_accesses(body, accesses);
         }
         Node::Trap { .. }
         | Node::Resume { .. }
         | Node::Return
-        | Node::Barrier
+        | Node::Barrier { .. }
         | Node::Opaque(_) => {}
-        Node::If { .. } | Node::Loop { .. } | Node::Block(_) | Node::Region { .. } => {
-            unreachable!("control-flow nodes are handled by validate_sequence")
-        }
         Node::AsyncWait { .. } => {}
     }
 }
 
+#[cfg(test)]
+fn collect_node_sequence_accesses(nodes: &[Node], accesses: &mut NodeAccesses) {
+    for node in nodes {
+        collect_node_accesses(node, accesses);
+    }
+}
+
 pub(crate) fn collect_expr_accesses(expr: &Expr, accesses: &mut NodeAccesses) {
-    match expr {
-        Expr::Load { buffer, index } => {
-            accesses.read_buffers.insert(buffer.to_string());
-            collect_expr_accesses(index, accesses);
-        }
-        Expr::BufLen { buffer } => {
-            accesses.read_buffers.insert(buffer.to_string());
-        }
-        Expr::Atomic {
-            buffer,
-            index,
-            expected,
-            value,
-            ..
-        } => {
-            accesses.atomic_buffers.insert(buffer.to_string());
-            collect_expr_accesses(index, accesses);
-            if let Some(expected) = expected {
-                collect_expr_accesses(expected, accesses);
+    let mut stack: SmallVec<[&Expr; 32]> = SmallVec::new();
+    stack.push(expr);
+    while let Some(expr) = stack.pop() {
+        match expr {
+            Expr::Load { buffer, index } => {
+                accesses.read_buffers.insert(buffer.clone());
+                stack.push(index);
             }
-            collect_expr_accesses(value, accesses);
-        }
-        Expr::BinOp { left, right, .. } => {
-            collect_expr_accesses(left, accesses);
-            collect_expr_accesses(right, accesses);
-        }
-        Expr::UnOp { operand, .. } | Expr::Cast { value: operand, .. } => {
-            collect_expr_accesses(operand, accesses);
-        }
-        Expr::Call { args, .. } => {
-            for arg in args {
-                collect_expr_accesses(arg, accesses);
+            Expr::BufLen { buffer } => {
+                accesses.read_buffers.insert(buffer.clone());
             }
+            Expr::Atomic {
+                buffer,
+                index,
+                expected,
+                value,
+                ..
+            } => {
+                accesses.atomic_buffers.insert(buffer.clone());
+                stack.push(value);
+                if let Some(expected) = expected {
+                    stack.push(expected);
+                }
+                stack.push(index);
+            }
+            Expr::BinOp { left, right, .. } => {
+                stack.push(right);
+                stack.push(left);
+            }
+            Expr::UnOp { operand, .. } | Expr::Cast { value: operand, .. } => {
+                stack.push(operand);
+            }
+            Expr::Call { args, .. } => {
+                stack.extend(args.iter());
+            }
+            Expr::Fma { a, b, c } => {
+                stack.push(c);
+                stack.push(b);
+                stack.push(a);
+            }
+            Expr::Select {
+                cond,
+                true_val,
+                false_val,
+            } => {
+                stack.push(false_val);
+                stack.push(true_val);
+                stack.push(cond);
+            }
+            Expr::SubgroupBallot { cond } => stack.push(cond),
+            Expr::SubgroupShuffle { value, lane } => {
+                stack.push(lane);
+                stack.push(value);
+            }
+            Expr::SubgroupAdd { value } => stack.push(value),
+            Expr::LitU32(_)
+            | Expr::LitI32(_)
+            | Expr::LitF32(_)
+            | Expr::LitBool(_)
+            | Expr::Var(_)
+            | Expr::InvocationId { .. }
+            | Expr::WorkgroupId { .. }
+            | Expr::LocalId { .. }
+            | Expr::SubgroupLocalId
+            | Expr::SubgroupSize
+            | Expr::Opaque(_) => {}
         }
-        Expr::Fma { a, b, c } => {
-            collect_expr_accesses(a, accesses);
-            collect_expr_accesses(b, accesses);
-            collect_expr_accesses(c, accesses);
-        }
-        Expr::Select {
-            cond,
-            true_val,
-            false_val,
-        } => {
-            collect_expr_accesses(cond, accesses);
-            collect_expr_accesses(true_val, accesses);
-            collect_expr_accesses(false_val, accesses);
-        }
-        Expr::SubgroupBallot { cond } => collect_expr_accesses(cond, accesses),
-        Expr::SubgroupShuffle { value, lane } => {
-            collect_expr_accesses(value, accesses);
-            collect_expr_accesses(lane, accesses);
-        }
-        Expr::SubgroupAdd { value } => collect_expr_accesses(value, accesses),
-        Expr::LitU32(_)
-        | Expr::LitI32(_)
-        | Expr::LitF32(_)
-        | Expr::LitBool(_)
-        | Expr::Var(_)
-        | Expr::InvocationId { .. }
-        | Expr::WorkgroupId { .. }
-        | Expr::LocalId { .. }
-        | Expr::SubgroupLocalId
-        | Expr::SubgroupSize
-        | Expr::Opaque(_) => {}
     }
 }
 

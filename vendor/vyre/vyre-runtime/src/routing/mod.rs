@@ -9,7 +9,11 @@ use vyre_foundation::execution_plan::ExecutionPlan;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum RoutingDecision {
-    /// Use CPU SIMD reference interpreter (latency optimized).
+    /// Legacy explicit reference route.
+    ///
+    /// The standard runtime policy does not select this automatically; callers
+    /// that require GPU execution should treat this as an opt-in diagnostic
+    /// route, never as an implicit fallback.
     CpuSimd,
     /// Use the default GPU pipeline.
     GpuPipeline,

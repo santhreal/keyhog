@@ -1,6 +1,6 @@
 use crate::builder::BuildOptions;
 use crate::tensor_ref::TensorRef;
-use vyre::ir::{Expr, Program};
+use vyre::ir::{DataType, Expr, Program};
 
 const OP_ID: &str = "vyre-libs::logical::or";
 
@@ -15,7 +15,9 @@ pub fn or(a: &str, b: &str, out: &str, size: u32) -> Program {
         BuildOptions::default(),
         Expr::bitor,
     )
-    .unwrap_or_else(|err| panic!("Fix: {OP_ID} build failed: {err}"))
+    .unwrap_or_else(|err| {
+        crate::builder::invalid_output_program(OP_ID, out, DataType::U32, format!("Fix: {err}"))
+    })
 }
 
 inventory::submit! {

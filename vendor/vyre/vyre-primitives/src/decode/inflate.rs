@@ -8,15 +8,15 @@ use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Progra
 /// Canonical op id for stored-block inflate.
 pub const INFLATE_STORED_OP_ID: &str = "vyre-primitives::decode::inflate_stored";
 /// Fixed-Huffman block diagnostic.
-pub const FIXED_HUFFMAN_FIX: &str = "Fix: implement DEFLATE fixed-Huffman decode in vyre-primitives::decode::inflate before dispatching BTYPE=1 blocks.";
+pub const FIXED_HUFFMAN_REJECT: &str = "Fix: vyre-primitives::decode::inflate_stored accepts raw DEFLATE stored blocks only; route BTYPE=1 input to a compressed-block decoder.";
 /// Dynamic-Huffman block diagnostic.
-pub const DYNAMIC_HUFFMAN_FIX: &str = "Fix: implement DEFLATE dynamic-Huffman table construction + decode in vyre-primitives::decode::inflate before dispatching BTYPE=2 blocks.";
+pub const DYNAMIC_HUFFMAN_REJECT: &str = "Fix: vyre-primitives::decode::inflate_stored accepts raw DEFLATE stored blocks only; route BTYPE=2 input to a dynamic-Huffman decoder.";
 /// Reserved BTYPE diagnostic.
 pub const RESERVED_BTYPE_FIX: &str =
-    "Fix: reject reserved DEFLATE BTYPE=3 inputs before dispatching vyre-primitives::decode::inflate.";
+    "Fix: reject reserved DEFLATE BTYPE=3 inputs before dispatching vyre-primitives::decode::inflate_stored.";
 /// Stored block LEN/NLEN diagnostic.
 pub const STORED_HEADER_FIX: &str =
-    "Fix: validate LEN/NLEN before copying a stored DEFLATE block in vyre-primitives::decode::inflate.";
+    "Fix: validate LEN/NLEN before copying a stored DEFLATE block in vyre-primitives::decode::inflate_stored.";
 
 /// Build the reusable stored-block inflate body.
 #[must_use]
@@ -84,11 +84,11 @@ pub fn inflate_stored_body(input: &str, output: &str, inflated_len_buffer: &str)
         ),
         Node::if_then(
             Expr::eq(Expr::var("btype"), Expr::u32(1)),
-            vec![Node::trap(Expr::u32(1), FIXED_HUFFMAN_FIX)],
+            vec![Node::trap(Expr::u32(1), FIXED_HUFFMAN_REJECT)],
         ),
         Node::if_then(
             Expr::eq(Expr::var("btype"), Expr::u32(2)),
-            vec![Node::trap(Expr::u32(2), DYNAMIC_HUFFMAN_FIX)],
+            vec![Node::trap(Expr::u32(2), DYNAMIC_HUFFMAN_REJECT)],
         ),
         Node::if_then(
             Expr::eq(Expr::var("btype"), Expr::u32(3)),

@@ -53,9 +53,17 @@ mod bytes_rejection;
 mod cast;
 mod expr_rules;
 mod fusion_safety;
+/// Linear-type discipline checker (P-1.0-V2.2). Verifies each
+/// `BufferDecl::linear_type()` against the actual usage count in the
+/// IR. Violators are reported as `ValidationError`s.
+pub mod linear_type;
 mod nodes;
 mod self_composition;
 mod shadowing;
+/// Shape-refinement predicate checker (P-1.0-V3.2). Evaluates each
+/// `BufferDecl::shape_predicate()` against the static `count` and
+/// reports a `ValidationError` for every contradiction.
+pub mod shape_predicate;
 mod typecheck;
 mod uniformity;
 
@@ -158,5 +166,86 @@ mod tests {
         assert!(errors.iter().any(|error| {
             error.message.contains("top-level Region") || error.message.contains("Node::Region")
         }));
+    }
+
+    /// P-1.0-V2.2 integration: linear_type::check_linear_types is
+    /// invoked through the public validate() entry. Buffers declared
+    /// `Linear` but unused must surface as a top-level validation
+    /// error so backends never see the offending program.
+    #[test]
+    fn linear_type_violation_surfaces_through_validate() {
+        use crate::ir::LinearType;
+        let program = Program::wrapped(
+            vec![BufferDecl::output("ghost", 0, DataType::U32)
+                .with_count(1)
+                .with_linear_type(LinearType::Linear)],
+            [1, 1, 1],
+            vec![Node::Return],
+        );
+        let errors = validate(&program);
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.message.contains("`ghost` declared `LinearType::Linear`")),
+            "linear-type checker not wired into validate(): got {errors:?}"
+        );
+    }
+
+    /// Negative twin: an Unrestricted (default) buffer used zero
+    /// times must not surface as a linear-type error.
+    #[test]
+    fn unrestricted_buffer_is_not_flagged_by_linear_type_checker() {
+        let program = Program::wrapped(
+            vec![BufferDecl::output("ok", 0, DataType::U32).with_count(1)],
+            [1, 1, 1],
+            vec![Node::store("ok", Expr::u32(0), Expr::u32(0))],
+        );
+        let errors = validate(&program);
+        assert!(
+            !errors.iter().any(|e| e.message.contains("LinearType::")),
+            "unrestricted buffer flagged: {errors:?}"
+        );
+    }
+
+    /// P-1.0-V3.2 integration: shape_predicate::check_shape_predicates
+    /// is invoked through the public validate() entry. Buffers whose
+    /// static count contradicts their declared predicate must surface
+    /// as a top-level validation error.
+    #[test]
+    fn shape_predicate_violation_surfaces_through_validate() {
+        use crate::ir::ShapePredicate;
+        let program = Program::wrapped(
+            vec![BufferDecl::output("misaligned", 0, DataType::U32)
+                .with_count(3)
+                .with_shape_predicate(ShapePredicate::MultipleOf(64))],
+            [1, 1, 1],
+            vec![Node::store("misaligned", Expr::u32(0), Expr::u32(0))],
+        );
+        let errors = validate(&program);
+        assert!(
+            errors.iter().any(
+                |e| e.message.contains("`misaligned`") && e.message.contains("count % 64 == 0")
+            ),
+            "shape-predicate checker not wired into validate(): got {errors:?}"
+        );
+    }
+
+    /// Negative twin: a buffer satisfying its predicate must not
+    /// surface as a shape-predicate error.
+    #[test]
+    fn satisfied_shape_predicate_is_not_flagged() {
+        use crate::ir::ShapePredicate;
+        let program = Program::wrapped(
+            vec![BufferDecl::output("aligned", 0, DataType::U32)
+                .with_count(128)
+                .with_shape_predicate(ShapePredicate::MultipleOf(64))],
+            [1, 1, 1],
+            vec![Node::store("aligned", Expr::u32(0), Expr::u32(0))],
+        );
+        let errors = validate(&program);
+        assert!(
+            !errors.iter().any(|e| e.message.contains("count % ")),
+            "satisfied predicate flagged: {errors:?}"
+        );
     }
 }

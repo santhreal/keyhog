@@ -1,4 +1,5 @@
 use crate::parsing::c::lex::tokens::*;
+use crate::parsing::composition::child_phase;
 use crate::region::wrap_anonymous;
 use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 
@@ -166,7 +167,11 @@ pub fn opt_propagate_type_specifiers(
         [256, 1, 1],
         vec![wrap_anonymous(
             "vyre-libs::parsing::opt_propagate_type_specifiers",
-            vec![Node::if_then(Expr::lt(t.clone(), num_tokens), loop_body)],
+            vec![child_phase(
+                "vyre-libs::parsing::opt_propagate_type_specifiers",
+                vyre_primitives::parsing::ssa_dominance_scan::OP_ID,
+                vec![Node::if_then(Expr::lt(t.clone(), num_tokens), loop_body)],
+            )],
         )],
     )
     .with_entry_op_id("vyre-libs::parsing::opt_propagate_type_specifiers")
@@ -270,6 +275,7 @@ fn is_declaration_prefix(token: Expr) -> Expr {
             TOK_NORETURN,
             TOK_THREAD_LOCAL,
             TOK_GNU_EXTENSION,
+            TOK_GNU_TYPEOF,
             TOK_GNU_TYPEOF_UNQUAL,
             TOK_GNU_AUTO_TYPE,
             TOK_GNU_INT128,

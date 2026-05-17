@@ -89,9 +89,9 @@ pub enum Error {
         message: String,
     },
 
-    /// WGSL lowering failed before a shader could be emitted.
+    /// target-text lowering failed before a shader could be emitted.
     #[error(
-        "vyre WGSL lowering: {message}. Fix: inspect the Program shape, backend capability report, and emitted shader diagnostics before retrying."
+        "vyre target-text lowering: {message}. Fix: inspect the Program shape, backend capability report, and emitted shader diagnostics before retrying."
     )]
     Lowering {
         /// Human-readable description of the lowering failure.
@@ -109,7 +109,7 @@ pub enum Error {
 
     /// GPU execution failed.
     #[error(
-        "GPU pipeline failed: {message}. Fix: verify wgpu is available and the compiled buffers fit the target adapter limits."
+        "GPU pipeline failed: {message}. Fix: verify a concrete driver is linked and the compiled buffers fit the target adapter limits."
     )]
     Gpu {
         /// Description of the GPU failure.
@@ -232,7 +232,7 @@ pub enum Error {
 }
 
 impl Error {
-    /// Build a WGSL lowering error with actionable guidance.
+    /// Build a target-text lowering error with actionable guidance.
     #[must_use]
     pub fn lowering(message: impl Into<String>) -> Self {
         Self::Lowering {
@@ -246,5 +246,74 @@ impl Error {
         Self::Interp {
             message: message.into(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lowering_helper_contains_fix_hint() {
+        let err = Error::lowering("buffer too large");
+        let msg = err.to_string();
+        assert!(msg.contains("buffer too large"));
+        assert!(msg.contains("Fix:"));
+    }
+
+    #[test]
+    fn interp_helper_contains_fix_hint() {
+        let err = Error::interp("division by zero");
+        let msg = err.to_string();
+        assert!(msg.contains("division by zero"));
+        assert!(msg.contains("Fix:"));
+    }
+
+    #[test]
+    fn inline_cycle_display() {
+        let err = Error::InlineCycle {
+            op_id: "math::add".into(),
+        };
+        assert!(err.to_string().contains("math::add"));
+        assert!(err.to_string().contains("cycle"));
+    }
+
+    #[test]
+    fn version_mismatch_display() {
+        let err = Error::VersionMismatch {
+            expected: 6,
+            found: 5,
+        };
+        let msg = err.to_string();
+        assert!(msg.contains("6"));
+        assert!(msg.contains("5"));
+    }
+
+    #[test]
+    fn unknown_dialect_display() {
+        let err = Error::UnknownDialect {
+            name: "my-dialect".into(),
+            requested: "1.0".into(),
+        };
+        assert!(err.to_string().contains("my-dialect"));
+    }
+
+    #[test]
+    fn error_is_clone_and_eq() {
+        let a = Error::lowering("test");
+        let b = a.clone();
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn inline_arg_count_mismatch_display() {
+        let err = Error::InlineArgCountMismatch {
+            op_id: "test::op".into(),
+            expected: 3,
+            got: 1,
+        };
+        let msg = err.to_string();
+        assert!(msg.contains("expected 3"));
+        assert!(msg.contains("got 1"));
     }
 }

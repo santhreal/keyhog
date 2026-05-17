@@ -1,3 +1,4 @@
+use crate::dialect_lookup::DialectLookup;
 use crate::ir::DataType;
 
 /// Backend-specific validation hooks for capability-sensitive rules.
@@ -14,6 +15,22 @@ pub struct BackendCapabilities {
     pub supports_indirect_dispatch: bool,
     /// The backend can compile specialization constants.
     pub supports_specialization_constants: bool,
+    /// Backend has native unsigned multiply-high.
+    pub has_mul_high: bool,
+    /// INT32 and FP32 pipelines can execute simultaneously.
+    pub has_dual_issue_fp32_int32: bool,
+    /// Backend supports tensor-core integer matrix multiply.
+    pub has_tensor_core_int: bool,
+    /// Backend supports native f16 arithmetic at useful throughput.
+    pub has_native_f16: bool,
+    /// Backend supports warp-level shuffle primitives.
+    pub has_warp_shuffle: bool,
+    /// Backend supports shared memory with explicit barriers.
+    pub has_shared_memory: bool,
+    /// Backend can emit bounded polynomial approximations for selected transcendentals.
+    pub has_transcendental_polynomial_emit: bool,
+    /// Maximum supported integer width for native operations.
+    pub max_native_int_width: u32,
 }
 
 /// Capability view supplied by a concrete backend during validation.
@@ -51,6 +68,7 @@ pub trait BackendValidationCapabilities {
             supports_subgroup_ops: self.supports_subgroup_ops(),
             supports_indirect_dispatch: self.supports_indirect_dispatch(),
             supports_specialization_constants: self.supports_specialization_constants(),
+            ..BackendCapabilities::default()
         }
     }
 }
@@ -66,6 +84,8 @@ pub struct ValidationOptions<'a> {
     pub backend: Option<&'a dyn BackendValidationCapabilities>,
     /// Snapshot of backend capabilities for direct feature checks.
     pub backend_capabilities: Option<BackendCapabilities>,
+    /// Optional dialect lookup used to resolve `Expr::Call` signatures.
+    pub dialect_lookup: Option<&'a dyn DialectLookup>,
     /// Allow nested-scope shadowing explicitly for this validation run.
     pub allow_shadowing: bool,
 }
@@ -92,6 +112,14 @@ impl<'a> ValidationOptions<'a> {
     #[inline]
     pub fn with_backend_capabilities(mut self, backend_capabilities: BackendCapabilities) -> Self {
         self.backend_capabilities = Some(backend_capabilities);
+        self
+    }
+
+    /// Validate operation calls against an explicit dialect lookup.
+    #[must_use]
+    #[inline]
+    pub fn with_dialect_lookup(mut self, lookup: &'a dyn DialectLookup) -> Self {
+        self.dialect_lookup = Some(lookup);
         self
     }
 
@@ -127,5 +155,79 @@ impl<'a> ValidationOptions<'a> {
     pub fn requires_subgroup_ops(&self) -> bool {
         self.backend_capabilities
             .is_some_and(|caps| caps.supports_subgroup_ops)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct CapabilityFixtureBackend;
+    impl BackendValidationCapabilities for CapabilityFixtureBackend {
+        fn backend_name(&self) -> &'static str {
+            "capability-fixture-gpu"
+        }
+        fn supports_cast_target(&self, target: &DataType) -> bool {
+            matches!(target, DataType::U32 | DataType::F32)
+        }
+        fn supports_subgroup_ops(&self) -> bool {
+            true
+        }
+    }
+
+    #[test]
+    fn universal_defaults() {
+        let opts = ValidationOptions::universal();
+        assert!(opts.backend.is_none());
+        assert!(!opts.allow_shadowing);
+        assert_eq!(opts.backend_name(), "best-effort universal");
+    }
+
+    #[test]
+    fn with_backend_sets_name_and_caps() {
+        let backend = CapabilityFixtureBackend;
+        let opts = ValidationOptions::universal().with_backend(&backend);
+        assert_eq!(opts.backend_name(), "capability-fixture-gpu");
+        assert!(opts.requires_subgroup_ops());
+    }
+
+    #[test]
+    fn supports_cast_target_delegates_to_backend() {
+        let backend = CapabilityFixtureBackend;
+        let opts = ValidationOptions::universal().with_backend(&backend);
+        assert!(opts.supports_cast_target(&DataType::U32));
+        assert!(!opts.supports_cast_target(&DataType::Bool));
+    }
+
+    #[test]
+    fn supports_cast_target_defaults_true_without_backend() {
+        let opts = ValidationOptions::universal();
+        assert!(opts.supports_cast_target(&DataType::Bool));
+    }
+
+    #[test]
+    fn with_shadowing_toggle() {
+        let opts = ValidationOptions::universal().with_shadowing(true);
+        assert!(opts.allow_shadowing);
+    }
+
+    #[test]
+    fn backend_capabilities_default() {
+        let caps = BackendCapabilities::default();
+        assert!(!caps.supports_subgroup_ops);
+        assert!(!caps.supports_indirect_dispatch);
+        assert!(!caps.supports_specialization_constants);
+    }
+
+    #[test]
+    fn with_backend_capabilities_snapshot() {
+        let caps = BackendCapabilities {
+            supports_subgroup_ops: true,
+            supports_indirect_dispatch: false,
+            supports_specialization_constants: false,
+            ..BackendCapabilities::default()
+        };
+        let opts = ValidationOptions::universal().with_backend_capabilities(caps);
+        assert!(opts.requires_subgroup_ops());
     }
 }

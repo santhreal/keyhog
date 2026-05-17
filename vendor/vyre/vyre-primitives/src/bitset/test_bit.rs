@@ -74,4 +74,33 @@ mod tests {
     fn bit_in_second_word() {
         assert_eq!(cpu_ref(&[0, 0b100], 34), 1);
     }
+
+    // ------------------------------------------------------------------
+    // Adversarial fixtures — empty, single-word all-bits, cross-word boundary.
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn empty_bitset_returns_zero() {
+        assert_eq!(cpu_ref(&[], 0), 0);
+        assert_eq!(cpu_ref(&[], 31), 0);
+        assert_eq!(cpu_ref(&[], 32), 0);
+    }
+
+    #[test]
+    fn single_word_all_bits() {
+        let word = 0xFFFF_FFFF;
+        for bit in 0..32 {
+            assert_eq!(cpu_ref(&[word], bit), 1, "bit {bit} must be 1 in all-ones word");
+        }
+    }
+
+    #[test]
+    fn cross_word_boundary_adjacent_bits() {
+        // Word 0 bit 31 and word 1 bit 0 are adjacent node indices.
+        let buf = vec![0x8000_0000, 0x0000_0001];
+        assert_eq!(cpu_ref(&buf, 31), 1, "bit 31 in word 0");
+        assert_eq!(cpu_ref(&buf, 32), 1, "bit 0 in word 1");
+        assert_eq!(cpu_ref(&buf, 30), 0, "bit 30 in word 0 is unset");
+        assert_eq!(cpu_ref(&buf, 33), 0, "bit 1 in word 1 is unset");
+    }
 }

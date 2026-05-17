@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 //! `vyre-primitives` — compositional primitives for vyre.
 //!
 //! Shape (mirrors Linux kernel `fs/` / `mm/` / `net/` — subsystem
@@ -49,11 +50,41 @@
 //! the tier rule, admission criteria, and Gate 1 enforcement.
 
 mod markers;
+#[cfg(feature = "vyre-foundation")]
+use std::sync::Arc;
+
 pub use markers::{
     ArithAdd, ArithMul, BitwiseAnd, BitwiseOr, BitwiseXor, Clz, CombineOp, CompareEq, CompareLt,
     Gather, HashBlake3, HashFnv1a, PatternMatchDfa, PatternMatchLiteral, Popcount, Reduce,
     RegionId, Scan, Scatter, ShiftLeft, ShiftRight, Shuffle,
 };
+#[cfg(feature = "vyre-foundation")]
+use vyre_foundation::ir::model::expr::Ident;
+#[cfg(feature = "vyre-foundation")]
+use vyre_foundation::ir::{BufferDecl, DataType, Expr, Node, Program};
+
+/// Build a scalar trap program for invalid primitive builder inputs.
+///
+/// Primitive constructors are intentionally infallible for composition with
+/// registry fixtures and generated dialect code. Invalid user-controlled
+/// shapes must therefore become explicit IR traps, not host panics.
+#[cfg(feature = "vyre-foundation")]
+pub(crate) fn invalid_output_program(
+    op_id: &'static str,
+    output: &str,
+    data_type: DataType,
+    message: String,
+) -> Program {
+    Program::wrapped(
+        vec![BufferDecl::output(output, 0, data_type).with_count(1)],
+        [1, 1, 1],
+        vec![Node::Region {
+            generator: Ident::from(op_id),
+            source_region: None,
+            body: Arc::new(vec![Node::trap(Expr::u32(0), message)]),
+        }],
+    )
+}
 
 /// Domain-neutral byte-range primitive.
 ///
@@ -61,9 +92,9 @@ pub use markers::{
 /// matching-flavoured `Match { pattern_id, start, end }` today. This
 /// module introduces `ByteRange { tag, start, end }` as the neutral
 /// name so new dialects do not have to adopt matching vocabulary. The
-/// full migration (demoting `Match` to a deprecated alias in
-/// foundation) happens in a later sweep; this is the forward-compat
-/// half so new dialects are unblocked.
+/// bridge from foundation's legacy `Match` type is implemented in
+/// [`range`], so new dialects can adopt the neutral type without
+/// waiting on a foundation API break.
 pub mod range;
 
 /// Tier-2.5 primitive registry. See [`harness::OpEntry`]. Gated
@@ -109,6 +140,61 @@ pub mod nn;
 /// that surgec's stdlib rules compose against).
 #[cfg(feature = "graph")]
 pub mod graph;
+
+/// Geometric / Clifford-algebra primitives (#8). Multivector products
+/// for equivariant NNs, physics simulation, robotics, 3D vision.
+#[cfg(feature = "geom")]
+pub mod geom;
+
+/// Optimization primitives (#9, #14, #46). Homotopy continuation,
+/// SOS, matroid intersection. Self: vyre's megakernel scheduler.
+#[cfg(feature = "opt")]
+pub mod opt;
+
+/// Topological-data-analysis primitives (#15, #32). Vietoris-Rips
+/// filtration + simplicial complex operations. User: TDA, persistent
+/// landscape features, call-graph topological signatures.
+#[cfg(feature = "topology")]
+pub mod topology;
+
+/// Visual pixel-map primitives. Shared packed-RGBA invocation skeletons
+/// reused by higher-level image-processing compositions.
+#[cfg(feature = "visual")]
+pub mod visual;
+
+/// Effects-typed pipeline primitives (P-1.0-V1.x).
+/// Pure-data substrate: `EffectRow` bitmask, `Handler` over a row,
+/// `handler_apply` discharges effects, `handler_compose` builds a
+/// joint handler. Reference for the foundation effects-typed
+/// `lower` pipeline (V1.3).
+#[cfg(feature = "effects")]
+pub mod effects;
+
+/// Type-discipline primitives (P-PRIM-14, …). Substructural
+/// (linear/affine/relevant/unrestricted) checks the foundation
+/// validate pipeline consumes per buffer.
+#[cfg(feature = "types")]
+pub mod types;
+
+/// Categorical primitives (P-PRIM-16/17/18). Yoneda embedding,
+/// adjoint-pair detection, Kan extension over finite categories.
+/// Consumed by the optimizer's functorial_pass_composition substrate.
+#[cfg(feature = "cat")]
+pub mod cat;
+
+/// ZX-calculus rewrite primitives (P-PRIM-5). Spider fusion,
+/// identity removal, color change. Pure-CPU on a Vec<ZxSpider> +
+/// edge multiset; no FP, no IR-builder dep.
+#[cfg(feature = "zx")]
+pub mod zx;
+
+/// d-DNNF (decomposable / deterministic NNF) compiler primitive
+/// (P-PRIM-6). Host-side CNF → d-DNNF via Shannon decomposition,
+/// linear-time model counting on the result. Used by
+/// `knowledge_compile_pass_precondition` to turn pass-precondition
+/// formulae into linear-cost evaluators.
+#[cfg(feature = "dnnf")]
+pub mod dnnf;
 
 /// Bitset primitives — `and`/`or`/`not`/`xor`/`popcount`/`any`/
 /// `contains` over packed u32 bitsets. The NodeSet / ValueSet
@@ -177,4 +263,53 @@ pub mod serial_data {
     pub use vyre_foundation::serial::envelope::{
         test_helpers, EnvelopeError, WireReader, WireWriter,
     };
+}
+
+#[cfg(feature = "predicate")]
+pub(crate) mod program_region {
+    use std::sync::Arc;
+
+    use vyre_foundation::ir::model::expr::{GeneratorRef, Ident};
+    use vyre_foundation::ir::{Node, Program};
+
+    pub(crate) fn tag_program(parent_op_id: &str, program: Program) -> Program {
+        Program::wrapped(
+            program.buffers().to_vec(),
+            program.workgroup_size(),
+            vec![Node::Region {
+                generator: Ident::from(parent_op_id),
+                source_region: None,
+                body: Arc::new(reparent_program_children(&program, parent_op_id)),
+            }],
+        )
+    }
+
+    fn reparent_program_children(program: &Program, parent_op_id: &str) -> Vec<Node> {
+        let parent = GeneratorRef {
+            name: parent_op_id.to_string(),
+        };
+        program
+            .entry()
+            .iter()
+            .cloned()
+            .map(|node| reparent_entry_node(node, &parent))
+            .collect()
+    }
+
+    fn reparent_entry_node(node: Node, parent: &GeneratorRef) -> Node {
+        match node {
+            Node::Region {
+                generator, body, ..
+            } => Node::Region {
+                generator,
+                source_region: Some(parent.clone()),
+                body,
+            },
+            other => Node::Region {
+                generator: Ident::from(Program::ROOT_REGION_GENERATOR),
+                source_region: Some(parent.clone()),
+                body: Arc::new(vec![other]),
+            },
+        }
+    }
 }

@@ -7,9 +7,8 @@ use vyre_foundation::ir::{OpId, Program, ValidationError};
 
 /// Validate that `backend` supports every operation in `program`.
 pub fn validate_program(program: &Program, backend: &dyn Backend) -> Result<(), ValidationError> {
-    let supported = backend.supported_ops();
     for (index, node) in program.entry().iter().enumerate() {
-        validate_node(node, index, backend.id(), supported)?;
+        validate_node(node, index, backend.id(), backend.supported_ops())?;
     }
     Ok(())
 }
@@ -44,6 +43,20 @@ pub fn default_supported_ops() -> &'static std::collections::HashSet<OpId> {
         .into_iter()
         .map(Arc::<str>::from)
         .collect()
+    })
+}
+
+/// Default core operation set plus `Node::Trap`.
+///
+/// `Trap` is a structural control-flow node, not a concrete-driver extension:
+/// backends that lower it as lane termination should use this shared set
+/// instead of carrying a backend-local `OnceLock` and literal allocation.
+pub fn default_supported_ops_with_trap() -> &'static std::collections::HashSet<OpId> {
+    static OPS: std::sync::OnceLock<std::collections::HashSet<OpId>> = std::sync::OnceLock::new();
+    OPS.get_or_init(|| {
+        let mut ops = default_supported_ops().clone();
+        ops.insert(Arc::<str>::from("vyre.node.trap"));
+        ops
     })
 }
 
@@ -83,7 +96,7 @@ fn validate_node(
         | Node::Assign { .. }
         | Node::Store { .. }
         | Node::Return
-        | Node::Barrier
+        | Node::Barrier { .. }
         | Node::IndirectDispatch { .. }
         | Node::AsyncLoad { .. }
         | Node::AsyncWait { .. }
@@ -106,7 +119,7 @@ pub fn node_op_id(node: &Node) -> &'static str {
         Node::Loop { .. } => "vyre.node.loop",
         Node::Return => "vyre.node.return",
         Node::Block(_) => "vyre.node.block",
-        Node::Barrier => "vyre.node.barrier",
+        Node::Barrier { .. } => "vyre.node.barrier",
         Node::IndirectDispatch { .. } => "vyre.node.indirect_dispatch",
         Node::AsyncLoad { .. } => "vyre.node.async_load",
         Node::AsyncWait { .. } => "vyre.node.async_wait",
@@ -114,8 +127,8 @@ pub fn node_op_id(node: &Node) -> &'static str {
         Node::Resume { .. } => "vyre.node.resume",
         // Region is a debug wrapper produced by vyre-libs Cat-A
         // compositions. Every backend must accept it — either by
-        // lowering its body transparently (wgpu does) or via the
-        // region_inline optimizer pass. Treat it as a structural node
+        // lowering its body transparently or via the region_inline
+        // optimizer pass. Treat it as a structural node
         // with no capability requirement.
         Node::Region { .. } => "vyre.node.region",
         Node::Opaque(extension) => extension.extension_kind(),

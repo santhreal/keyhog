@@ -11,7 +11,7 @@ use std::sync::Arc;
 use vyre_foundation::ir::model::expr::Ident;
 use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 
-use crate::graph::persistent_bfs_step::persistent_bfs_step_child;
+use crate::graph::persistent_bfs_step::persistent_bfs_step_child_prefixed;
 use crate::graph::program_graph::{ProgramGraphShape, BINDING_PRIMITIVE_START};
 
 /// Canonical op id.
@@ -50,26 +50,27 @@ pub fn persistent_bfs(
     let words = bitset_words(shape.node_count);
     let t = Expr::gid_x();
 
-    let unrolled_iter = || -> Node {
-        persistent_bfs_step_child(
+    let unrolled_iter = |iter: u32| -> Node {
+        persistent_bfs_step_child_prefixed(
             OP_ID,
             shape,
             frontier_out,
             "changed",
             "wg_scratch",
             edge_kind_mask,
+            &format!("unroll_{iter}"),
         )
     };
 
     let mut entry: Vec<Node> = vec![
         // Seed frontier_out from frontier_in.
-        Node::let_bind("word_idx", t.clone()),
+        Node::let_bind("seed_word_idx", t.clone()),
         Node::if_then(
-            Expr::lt(Expr::var("word_idx"), Expr::u32(words)),
+            Expr::lt(Expr::var("seed_word_idx"), Expr::u32(words)),
             vec![Node::store(
                 frontier_out,
-                Expr::var("word_idx"),
-                Expr::load(frontier_in, Expr::var("word_idx")),
+                Expr::var("seed_word_idx"),
+                Expr::load(frontier_in, Expr::var("seed_word_idx")),
             )],
         ),
         // Zero the global changed flag.
@@ -83,8 +84,8 @@ pub fn persistent_bfs(
     ];
 
     let unroll_count = max_iters.min(4);
-    for _ in 0..unroll_count {
-        entry.push(unrolled_iter());
+    for iter in 0..unroll_count {
+        entry.push(unrolled_iter(iter));
     }
 
     let remaining = max_iters.saturating_sub(unroll_count);
@@ -98,12 +99,13 @@ pub fn persistent_bfs(
                 Node::if_then(
                     Expr::lt(t.clone(), Expr::u32(shape.node_count)),
                     vec![
-                        crate::graph::csr_forward_or_changed::csr_forward_or_changed_child(
+                        crate::graph::csr_forward_or_changed::csr_forward_or_changed_child_prefixed(
                             OP_ID,
                             shape,
                             frontier_out,
                             "local_changed",
                             edge_kind_mask,
+                            "remaining_csr",
                         ),
                     ],
                 ),

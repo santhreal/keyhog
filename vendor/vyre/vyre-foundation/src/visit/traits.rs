@@ -3,6 +3,7 @@ use crate::ir_inner::model::expr::{Expr, GeneratorRef, Ident};
 use crate::ir_inner::model::generated::Node;
 use crate::ir_inner::model::node::NodeExtension;
 use crate::visit::VisitOrder;
+use smallvec::SmallVec;
 use std::ops::ControlFlow;
 
 /// Anything that can be lowered to a target representation.
@@ -153,7 +154,8 @@ pub fn visit_node<V: NodeVisitor>(visitor: &mut V, node: &Node) -> ControlFlow<V
 
 /// Visit a node tree in pre-order without recursive stack growth.
 pub fn visit_node_preorder<V: NodeVisitor>(visitor: &mut V, node: &Node) -> ControlFlow<V::Break> {
-    let mut stack = vec![node];
+    let mut stack = SmallVec::<[&Node; 32]>::new();
+    stack.push(node);
     while let Some(current) = stack.pop() {
         dispatch_node(visitor, current)?;
         match current {
@@ -189,7 +191,8 @@ pub fn visit_node_postorder<V: NodeVisitor>(visitor: &mut V, node: &Node) -> Con
         Visit(&'a Node),
         Dispatch(&'a Node),
     }
-    let mut stack = vec![Task::Visit(node)];
+    let mut stack = SmallVec::<[Task<'_>; 32]>::new();
+    stack.push(Task::Visit(node));
     while let Some(task) = stack.pop() {
         match task {
             Task::Visit(n) => {
@@ -311,7 +314,7 @@ pub(crate) fn dispatch_node<V: NodeVisitor>(visitor: &mut V, node: &Node) -> Con
         Node::Trap { address, tag } => visitor.visit_trap(node, address, tag),
         Node::Resume { tag } => visitor.visit_resume(node, tag),
         Node::Return => visitor.visit_return(node),
-        Node::Barrier => visitor.visit_barrier(node),
+        Node::Barrier { .. } => visitor.visit_barrier(node),
         Node::Block(body) => visitor.visit_block(node, body),
         Node::Region {
             generator,

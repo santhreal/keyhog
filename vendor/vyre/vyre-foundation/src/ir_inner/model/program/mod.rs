@@ -1,11 +1,11 @@
 //! Program model — a complete, self-contained GPU compute dispatch.
 //!
-//! A [`Program`] can be constructed without a GPU, serialized to disk,
+//! A `Program` can be constructed without a GPU, serialized to disk,
 //! transmitted over a network, optimized by transformation passes, and lowered
 //! to any target backend. It is the unit of work in vyre.
 //!
 //! Equality is intentionally **structural**, not allocation-based:
-//! - [`Program::structural_eq`] performs an O(N) walk of the visible IR.
+//! - `Program::structural_eq` performs an O(N) walk of the visible IR.
 //! - [`PartialEq`] delegates to that same structural walk.
 //! - Buffer declaration order is treated as a set, because reordering
 //!   declarations without changing names/bindings/types does not change
@@ -15,18 +15,21 @@
 
 mod buffer_decl;
 mod builder;
+mod canonical;
 mod core;
+#[allow(clippy::expect_used)]
 mod meta;
 mod scope;
 mod stats;
 
 #[cfg(test)]
-#[path = "stats_test.rs"]
-mod stats_test;
+    mod stats_test {
+        include!("stats_test.rs");
+    }
 #[cfg(test)]
 mod tests;
 
-pub use self::buffer_decl::BufferDecl;
+pub use self::buffer_decl::{BufferDecl, LinearType, ShapePredicate};
 pub use self::core::Program;
 pub use self::scope::Scope;
 pub use self::stats::ProgramStats;

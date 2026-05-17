@@ -111,3 +111,48 @@ impl super::soundness::SoundnessTagged for Summary {
         super::soundness::Soundness::MayOver
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn summary_emits_four_buffers() {
+        let p = summarize_function_with_count("ast", "cg", "cached", "out", 64);
+        let names: Vec<&str> = p.buffers.iter().map(|b| b.name()).collect();
+        assert_eq!(names, vec!["ast", "cg", "cached", "out"]);
+    }
+
+    #[test]
+    fn summary_buffer_count_matches_bitset_words() {
+        let bit_count = 64;
+        let words = bitset_words(bit_count);
+        let p = summarize_function_with_count("ast", "cg", "cached", "out", bit_count);
+        let out_buf = p
+            .buffers
+            .iter()
+            .find(|b| b.name() == "out")
+            .expect("out buffer");
+        assert_eq!(out_buf.count, words);
+    }
+
+    #[test]
+    fn summary_workgroup_size_is_256_1_1() {
+        let p = summarize_function_with_count("ast", "cg", "cached", "out", 64);
+        assert_eq!(p.workgroup_size, [256, 1, 1]);
+    }
+
+    #[test]
+    fn summary_default_delegates_to_with_count() {
+        let default = summarize_function("ast", "cg", "cached", "out");
+        let explicit = summarize_function_with_count("ast", "cg", "cached", "out", 64);
+        assert_eq!(default.workgroup_size, explicit.workgroup_size);
+        assert_eq!(default.buffers.len(), explicit.buffers.len());
+    }
+
+    #[test]
+    fn summary_soundness_is_mayover() {
+        use super::super::soundness::{Soundness, SoundnessTagged};
+        assert_eq!(Summary.soundness(), Soundness::MayOver);
+    }
+}

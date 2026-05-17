@@ -33,7 +33,7 @@ use std::error::Error;
 use std::fmt;
 
 /// Errors returned from [`WireReader`] decode operations. Variants are
-/// non-exhaustive so future framing additions stay backward-compatible.
+/// non-exhaustive so additive framing variants stay backward-compatible.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub enum EnvelopeError {
@@ -191,7 +191,7 @@ impl<'a> WireReader<'a> {
                 found: found_magic,
             });
         }
-        let version = u32::from_le_bytes(bytes[4..8].try_into().unwrap());
+        let version = u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
         if version != expected_version {
             return Err(EnvelopeError::VersionMismatch {
                 expected: expected_version,
@@ -230,7 +230,12 @@ impl<'a> WireReader<'a> {
         }
         let mut v = Vec::with_capacity(n_words);
         for _ in 0..n_words {
-            let w = u32::from_le_bytes(self.src[self.cursor..self.cursor + 4].try_into().unwrap());
+            let w = u32::from_le_bytes([
+                self.src[self.cursor],
+                self.src[self.cursor + 1],
+                self.src[self.cursor + 2],
+                self.src[self.cursor + 3],
+            ]);
             v.push(w);
             self.cursor += 4;
         }
@@ -245,7 +250,12 @@ impl<'a> WireReader<'a> {
                 got: self.src.len(),
             });
         }
-        let n = u32::from_le_bytes(self.src[self.cursor..self.cursor + 4].try_into().unwrap());
+        let n = u32::from_le_bytes([
+            self.src[self.cursor],
+            self.src[self.cursor + 1],
+            self.src[self.cursor + 2],
+            self.src[self.cursor + 3],
+        ]);
         self.cursor += 4;
         Ok(n)
     }
@@ -324,7 +334,9 @@ pub mod test_helpers {
     where
         T: WireRoundTrip + std::fmt::Debug,
     {
-        let bytes = sample.to_bytes().expect("encode sample");
+        let bytes = sample
+            .to_bytes()
+            .expect("Fix: encode sample; restore this invariant before continuing.");
         assert!(
             bytes.len() >= 8,
             "wire blob must include at least the 8-byte header"
@@ -341,7 +353,8 @@ pub mod test_helpers {
             "version mismatch in encoded blob: got {version_field}, expected {expected_version}"
         );
 
-        let back = T::from_bytes(&bytes).expect("decode round trip");
+        let back = T::from_bytes(&bytes)
+            .expect("Fix: decode round trip; restore this invariant before continuing.");
         assert!(
             sample.structurally_eq(&back),
             "round-tripped value diverges from original"
@@ -387,13 +400,22 @@ pub mod test_helpers {
     /// (without requiring the consumer's wrapper enum to expose
     /// PartialEq).
     pub fn assert_envelope_error_kind(err: &EnvelopeError, kind: ExpectedEnvelopeError) {
-        let matches = match (err, kind) {
-            (EnvelopeError::Truncated { .. }, ExpectedEnvelopeError::Truncated) => true,
-            (EnvelopeError::BadMagic { .. }, ExpectedEnvelopeError::BadMagic) => true,
-            (EnvelopeError::VersionMismatch { .. }, ExpectedEnvelopeError::VersionMismatch) => true,
-            (EnvelopeError::SectionTooLarge { .. }, ExpectedEnvelopeError::SectionTooLarge) => true,
-            _ => false,
-        };
+        let matches = matches!(
+            (err, kind),
+            (
+                EnvelopeError::Truncated { .. },
+                ExpectedEnvelopeError::Truncated
+            ) | (
+                EnvelopeError::BadMagic { .. },
+                ExpectedEnvelopeError::BadMagic
+            ) | (
+                EnvelopeError::VersionMismatch { .. },
+                ExpectedEnvelopeError::VersionMismatch
+            ) | (
+                EnvelopeError::SectionTooLarge { .. },
+                ExpectedEnvelopeError::SectionTooLarge
+            )
+        );
         assert!(
             matches,
             "expected envelope error kind {kind:?}, got {err:?}"

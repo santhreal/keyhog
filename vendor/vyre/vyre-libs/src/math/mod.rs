@@ -40,14 +40,24 @@ pub mod atomic;
 pub mod avg_floor;
 /// Clamp to [lo, hi] per lane (migrated from vyre-ops per the intrinsic-vs-library rule).
 pub mod clamp_u32;
+/// 2D convolution — direct 3x3 kernel base case (ROADMAP H3).
+pub mod conv;
+/// Fast Fourier Transform — base-case 4-point complex FFT (ROADMAP H2).
+pub mod fft;
 /// Count leading zeros per u32 lane (migrated from vyre-ops).
 pub mod lzcnt_u32;
 /// Arithmetic mean reduction
 pub mod reduce_mean;
+/// Welford variance reduction
+pub mod reduce_variance;
 /// Element-wise square operation
 pub mod square;
 /// Count trailing zeros per u32 lane (migrated from vyre-ops).
 pub mod tzcnt_u32;
+/// Block-FMA weighted-sum reduction (ROADMAP G7).
+pub mod weighted_sum;
+/// Welford sum-of-squares operation
+pub mod welford;
 /// Wrapping negation operation
 pub mod wrapping_neg;
 
@@ -58,8 +68,10 @@ pub use atomic::{
 pub use clamp_u32::clamp_u32;
 pub use lzcnt_u32::lzcnt_u32;
 pub use reduce_mean::reduce_mean;
+pub use reduce_variance::reduce_variance;
 pub use square::square;
 pub use tzcnt_u32::tzcnt_u32;
+pub use welford::welford_sum_of_squares;
 
 // Flat re-exports — keep callers that pin against `vyre_libs::math::dot`
 // (and siblings) working across the nested-tree reshape.
@@ -72,7 +84,10 @@ pub use algebra::{
 #[cfg(feature = "math-broadcast")]
 pub use broadcast::broadcast;
 #[cfg(feature = "math-linalg")]
-pub use linalg::{dot, matmul, matmul_tiled, Matmul, MatmulTiled};
+pub use linalg::{
+    dot, matmul, matmul_bias, matmul_bias_tiled, matmul_tiled, Dot, Matmul, MatmulBias,
+    MatmulBiasTiled, MatmulTiled,
+};
 #[cfg(feature = "math-scan")]
 pub use scan::scan_prefix_sum;
 #[cfg(feature = "math-succinct")]

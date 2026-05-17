@@ -15,7 +15,7 @@ const CAP_TRAP: u32 = 1 << 7;
 /// This struct is cached inside [`Program`] via a [`std::sync::OnceLock`]
 /// so that planning passes (execution plan, capability scan, provenance,
 /// fusion) can read constant-time summaries instead of re-walking the IR.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct ProgramStats {
     /// Total statement-node count (includes nested children).
     pub node_count: usize,
@@ -29,6 +29,16 @@ pub struct ProgramStats {
     pub top_level_regions: u32,
     /// Sum of statically-known buffer byte sizes.
     pub static_storage_bytes: u64,
+    /// Estimated scalar/vector IR instruction count.
+    pub instruction_count: u64,
+    /// Number of explicit memory operations (loads, stores, async copies).
+    pub memory_op_count: u64,
+    /// Number of atomic read-modify-write expressions.
+    pub atomic_op_count: u64,
+    /// Number of control-flow operations.
+    pub control_flow_count: u64,
+    /// Coarse register pressure estimate from simultaneously named SSA-ish values.
+    pub register_pressure_estimate: u32,
     /// Bitmask of capability requirements (see `CAP_*` constants).
     pub capability_bits: u32,
 }
@@ -110,6 +120,7 @@ pub(crate) fn compute_stats(program: &Program) -> ProgramStats {
     let mut opaque_count = 0u32;
     let mut capability_bits = 0u32;
     let mut static_storage_bytes = 0u64;
+    let mut ir = IrCounters::default();
 
     for decl in program.buffers.iter() {
         let count = decl.count();
@@ -130,6 +141,7 @@ pub(crate) fn compute_stats(program: &Program) -> ProgramStats {
             &mut call_count,
             &mut opaque_count,
             &mut capability_bits,
+            &mut ir,
         );
     }
 
@@ -146,7 +158,60 @@ pub(crate) fn compute_stats(program: &Program) -> ProgramStats {
         opaque_count,
         top_level_regions,
         static_storage_bytes,
+        instruction_count: ir.instruction_count,
+        memory_op_count: ir.memory_op_count,
+        atomic_op_count: ir.atomic_op_count,
+        control_flow_count: ir.control_flow_count,
+        register_pressure_estimate: ir.register_pressure_estimate(),
         capability_bits,
+    }
+}
+
+#[derive(Default)]
+struct IrCounters {
+    instruction_count: u64,
+    memory_op_count: u64,
+    atomic_op_count: u64,
+    control_flow_count: u64,
+    live_names: u32,
+    max_live_names: u32,
+}
+
+impl IrCounters {
+    fn instruction(&mut self) {
+        self.instruction_count = self.instruction_count.saturating_add(1);
+    }
+
+    fn memory(&mut self) {
+        self.memory_op_count = self.memory_op_count.saturating_add(1);
+        self.instruction();
+    }
+
+    fn atomic(&mut self) {
+        self.atomic_op_count = self.atomic_op_count.saturating_add(1);
+        self.memory();
+    }
+
+    fn control_flow(&mut self) {
+        self.control_flow_count = self.control_flow_count.saturating_add(1);
+        self.instruction();
+    }
+
+    fn bind_name(&mut self) {
+        self.live_names = self.live_names.saturating_add(1);
+        self.max_live_names = self.max_live_names.max(self.live_names);
+    }
+
+    fn enter_scope(&mut self) -> u32 {
+        self.live_names
+    }
+
+    fn leave_scope(&mut self, saved: u32) {
+        self.live_names = saved;
+    }
+
+    fn register_pressure_estimate(&self) -> u32 {
+        self.max_live_names
     }
 }
 
@@ -168,63 +233,86 @@ fn walk_node(
     calls: &mut u32,
     opaque: &mut u32,
     bits: &mut u32,
+    ir: &mut IrCounters,
 ) {
     *nodes = nodes.saturating_add(1);
     match node {
         Node::Let { value, .. } | Node::Assign { value, .. } => {
-            walk_expr(value, nodes, regions, calls, opaque, bits);
+            ir.instruction();
+            if matches!(node, Node::Let { .. }) {
+                ir.bind_name();
+            }
+            walk_expr(value, nodes, regions, calls, opaque, bits, ir);
         }
         Node::Store { index, value, .. } => {
-            walk_expr(index, nodes, regions, calls, opaque, bits);
-            walk_expr(value, nodes, regions, calls, opaque, bits);
+            ir.memory();
+            walk_expr(index, nodes, regions, calls, opaque, bits, ir);
+            walk_expr(value, nodes, regions, calls, opaque, bits, ir);
         }
         Node::If {
             cond,
             then,
             otherwise,
         } => {
-            walk_expr(cond, nodes, regions, calls, opaque, bits);
+            ir.control_flow();
+            walk_expr(cond, nodes, regions, calls, opaque, bits, ir);
+            let saved = ir.enter_scope();
             for child in then.iter().chain(otherwise.iter()) {
-                walk_node(child, nodes, regions, calls, opaque, bits);
+                walk_node(child, nodes, regions, calls, opaque, bits, ir);
             }
+            ir.leave_scope(saved);
         }
         Node::Loop { from, to, body, .. } => {
-            walk_expr(from, nodes, regions, calls, opaque, bits);
-            walk_expr(to, nodes, regions, calls, opaque, bits);
+            ir.control_flow();
+            walk_expr(from, nodes, regions, calls, opaque, bits, ir);
+            walk_expr(to, nodes, regions, calls, opaque, bits, ir);
+            let saved = ir.enter_scope();
             for child in body.iter() {
-                walk_node(child, nodes, regions, calls, opaque, bits);
+                walk_node(child, nodes, regions, calls, opaque, bits, ir);
             }
+            ir.leave_scope(saved);
         }
         Node::Block(children) => {
+            let saved = ir.enter_scope();
             for child in children.iter() {
-                walk_node(child, nodes, regions, calls, opaque, bits);
+                walk_node(child, nodes, regions, calls, opaque, bits, ir);
             }
+            ir.leave_scope(saved);
         }
         Node::Region { body, .. } => {
             *regions = regions.saturating_add(1);
+            let saved = ir.enter_scope();
             for child in body.iter() {
-                walk_node(child, nodes, regions, calls, opaque, bits);
+                walk_node(child, nodes, regions, calls, opaque, bits, ir);
             }
+            ir.leave_scope(saved);
         }
         Node::AsyncLoad { offset, size, .. } | Node::AsyncStore { offset, size, .. } => {
             *bits |= CAP_ASYNC_DISPATCH;
-            walk_expr(offset, nodes, regions, calls, opaque, bits);
-            walk_expr(size, nodes, regions, calls, opaque, bits);
+            ir.memory();
+            walk_expr(offset, nodes, regions, calls, opaque, bits, ir);
+            walk_expr(size, nodes, regions, calls, opaque, bits, ir);
         }
         Node::AsyncWait { .. } => {
             *bits |= CAP_ASYNC_DISPATCH;
+            ir.control_flow();
         }
         Node::IndirectDispatch { .. } => {
             *bits |= CAP_INDIRECT_DISPATCH;
+            ir.control_flow();
         }
         Node::Trap { address, .. } => {
             *bits |= CAP_TRAP;
-            walk_expr(address, nodes, regions, calls, opaque, bits);
+            ir.control_flow();
+            walk_expr(address, nodes, regions, calls, opaque, bits, ir);
         }
         Node::Opaque(_) => {
             *opaque = opaque.saturating_add(1);
+            ir.instruction();
         }
-        Node::Return | Node::Barrier | Node::Resume { .. } => {}
+        Node::Return | Node::Barrier { .. } | Node::Resume { .. } => {
+            ir.control_flow();
+        }
     }
 }
 
@@ -236,52 +324,67 @@ fn walk_expr(
     calls: &mut u32,
     opaque: &mut u32,
     bits: &mut u32,
+    ir: &mut IrCounters,
 ) {
     match expr {
         Expr::SubgroupAdd { value } => {
             *bits |= CAP_SUBGROUP_OPS;
-            walk_expr(value, nodes, regions, calls, opaque, bits);
+            ir.instruction();
+            walk_expr(value, nodes, regions, calls, opaque, bits, ir);
         }
         Expr::SubgroupBallot { cond } => {
             *bits |= CAP_SUBGROUP_OPS;
-            walk_expr(cond, nodes, regions, calls, opaque, bits);
+            ir.instruction();
+            walk_expr(cond, nodes, regions, calls, opaque, bits, ir);
         }
         Expr::SubgroupShuffle { value, lane } => {
             *bits |= CAP_SUBGROUP_OPS;
-            walk_expr(value, nodes, regions, calls, opaque, bits);
-            walk_expr(lane, nodes, regions, calls, opaque, bits);
+            ir.instruction();
+            walk_expr(value, nodes, regions, calls, opaque, bits, ir);
+            walk_expr(lane, nodes, regions, calls, opaque, bits, ir);
         }
         Expr::BinOp { left, right, .. } => {
-            walk_expr(left, nodes, regions, calls, opaque, bits);
-            walk_expr(right, nodes, regions, calls, opaque, bits);
+            ir.instruction();
+            walk_expr(left, nodes, regions, calls, opaque, bits, ir);
+            walk_expr(right, nodes, regions, calls, opaque, bits, ir);
         }
-        Expr::UnOp { operand, .. } => walk_expr(operand, nodes, regions, calls, opaque, bits),
+        Expr::UnOp { operand, .. } => {
+            ir.instruction();
+            walk_expr(operand, nodes, regions, calls, opaque, bits, ir);
+        }
         Expr::Fma { a, b, c } => {
-            walk_expr(a, nodes, regions, calls, opaque, bits);
-            walk_expr(b, nodes, regions, calls, opaque, bits);
-            walk_expr(c, nodes, regions, calls, opaque, bits);
+            ir.instruction();
+            walk_expr(a, nodes, regions, calls, opaque, bits, ir);
+            walk_expr(b, nodes, regions, calls, opaque, bits, ir);
+            walk_expr(c, nodes, regions, calls, opaque, bits, ir);
         }
         Expr::Select {
             cond,
             true_val,
             false_val,
         } => {
-            walk_expr(cond, nodes, regions, calls, opaque, bits);
-            walk_expr(true_val, nodes, regions, calls, opaque, bits);
-            walk_expr(false_val, nodes, regions, calls, opaque, bits);
+            ir.instruction();
+            walk_expr(cond, nodes, regions, calls, opaque, bits, ir);
+            walk_expr(true_val, nodes, regions, calls, opaque, bits, ir);
+            walk_expr(false_val, nodes, regions, calls, opaque, bits, ir);
         }
         Expr::Cast { target, value } => {
             mark_datatype_bits(target, bits);
-            walk_expr(value, nodes, regions, calls, opaque, bits);
+            ir.instruction();
+            walk_expr(value, nodes, regions, calls, opaque, bits, ir);
         }
-        Expr::Load { index, .. } => walk_expr(index, nodes, regions, calls, opaque, bits),
+        Expr::Load { index, .. } => {
+            ir.memory();
+            walk_expr(index, nodes, regions, calls, opaque, bits, ir);
+        }
         Expr::Call { op_id, args } => {
             if is_subgroup_intrinsic_id(op_id) {
                 *bits |= CAP_SUBGROUP_OPS;
             }
             *calls = calls.saturating_add(1);
+            ir.instruction();
             for arg in args.iter() {
-                walk_expr(arg, nodes, regions, calls, opaque, bits);
+                walk_expr(arg, nodes, regions, calls, opaque, bits, ir);
             }
         }
         Expr::Atomic {
@@ -290,17 +393,20 @@ fn walk_expr(
             value,
             ..
         } => {
-            walk_expr(index, nodes, regions, calls, opaque, bits);
+            ir.atomic();
+            walk_expr(index, nodes, regions, calls, opaque, bits, ir);
             if let Some(expected) = expected.as_deref() {
-                walk_expr(expected, nodes, regions, calls, opaque, bits);
+                walk_expr(expected, nodes, regions, calls, opaque, bits, ir);
             }
-            walk_expr(value, nodes, regions, calls, opaque, bits);
+            walk_expr(value, nodes, regions, calls, opaque, bits, ir);
         }
         Expr::Opaque(_) => {
             *opaque = opaque.saturating_add(1);
+            ir.instruction();
         }
         Expr::SubgroupLocalId | Expr::SubgroupSize => {
             *bits |= CAP_SUBGROUP_OPS;
+            ir.instruction();
         }
         Expr::LitU32(_)
         | Expr::LitI32(_)

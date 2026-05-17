@@ -35,7 +35,7 @@ impl Buffer {
     }
 
     pub(crate) fn len(&self) -> u32 {
-        let bytes_guard = self.bytes.read().unwrap();
+        let bytes_guard = self.bytes.read().unwrap_or_else(|error| error.into_inner());
         let stride = self.element.min_bytes();
         let count = if stride == 0 {
             bytes_guard.len()
@@ -45,18 +45,39 @@ impl Buffer {
         u32::try_from(count).unwrap_or(u32::MAX)
     }
 
+    pub(crate) fn byte_len(&self) -> usize {
+        self.bytes
+            .read()
+            .unwrap_or_else(|error| error.into_inner())
+            .len()
+    }
+
+    pub(crate) fn element(&self) -> &IrDataType {
+        &self.element
+    }
+
+    pub(crate) fn zero_fill(&self) {
+        self.bytes
+            .write()
+            .unwrap_or_else(|error| error.into_inner())
+            .fill(0);
+    }
+
     /// Consume this buffer and return its contents as a Value.
     #[must_use]
     pub fn to_value(self) -> crate::value::Value {
         let vec = std::sync::Arc::try_unwrap(self.bytes)
-            .map(|rw| rw.into_inner().unwrap())
-            .unwrap_or_else(|a| a.read().unwrap().clone());
+            .map(|rw| rw.into_inner().unwrap_or_else(|error| error.into_inner()))
+            .unwrap_or_else(|a| a.read().unwrap_or_else(|error| error.into_inner()).clone());
         crate::value::Value::from(vec)
     }
 }
 
 pub(crate) fn load(buffer: &Buffer, index: u32) -> Value {
-    let bytes_guard = buffer.bytes.read().unwrap();
+    let bytes_guard = buffer
+        .bytes
+        .read()
+        .unwrap_or_else(|error| error.into_inner());
     let stride = buffer.element.min_bytes();
     let ty = ir_to_conform_type(buffer.element.clone());
     if matches!(buffer.element, IrDataType::Bytes) {
@@ -77,7 +98,10 @@ pub(crate) fn load(buffer: &Buffer, index: u32) -> Value {
 }
 
 pub(crate) fn store(buffer: &mut Buffer, index: u32, value: &Value) {
-    let mut bytes_guard = buffer.bytes.write().unwrap();
+    let mut bytes_guard = buffer
+        .bytes
+        .write()
+        .unwrap_or_else(|error| error.into_inner());
     let stride = buffer.element.min_bytes();
     if matches!(buffer.element, IrDataType::Bytes) {
         let offset = index as usize;
@@ -104,7 +128,10 @@ pub(crate) fn store(buffer: &mut Buffer, index: u32, value: &Value) {
 }
 
 pub(crate) fn atomic_load(buffer: &Buffer, index: u32) -> Option<u32> {
-    let bytes_guard = buffer.bytes.read().unwrap();
+    let bytes_guard = buffer
+        .bytes
+        .read()
+        .unwrap_or_else(|error| error.into_inner());
     let stride = buffer.element.min_bytes().max(4);
     let offset = byte_offset(index, stride)?;
     if offset + 4 > bytes_guard.len() {
@@ -115,7 +142,10 @@ pub(crate) fn atomic_load(buffer: &Buffer, index: u32) -> Option<u32> {
 }
 
 pub(crate) fn atomic_store(buffer: &mut Buffer, index: u32, value: u32) {
-    let mut bytes_guard = buffer.bytes.write().unwrap();
+    let mut bytes_guard = buffer
+        .bytes
+        .write()
+        .unwrap_or_else(|error| error.into_inner());
     let stride = buffer.element.min_bytes().max(4);
     let Some(offset) = byte_offset(index, stride) else {
         return;

@@ -1,0 +1,27 @@
+[package]
+name = "vyre-self-substrate"
+version = "0.4.1"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Vyre self-substrate: vyre using its own primitives on its own scheduler problems. The recursion-thesis layer between vyre-primitives and vyre-driver."
+readme = "README.md"
+keywords = ["gpu", "compiler", "scheduler", "vyre"]
+categories = ["compilers", "algorithms"]
+documentation = "https://docs.rs/vyre-self-substrate"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[dependencies]
+vyre-foundation = { version = "0.4.1", path = "../vyre-foundation" }
+vyre-primitives = { version = "0.4.1", path = "../vyre-primitives", features = ["math", "graph", "fixpoint", "bitset", "reduce", "topology", "opt", "hash", "parsing", "predicate", "label", "effects", "types", "cat", "zx", "dnnf", "inventory-registry"] }
+tracing.workspace = true
+rustc-hash.workspace = true
+
+[dev-dependencies]
+vyre-reference = { workspace = true }

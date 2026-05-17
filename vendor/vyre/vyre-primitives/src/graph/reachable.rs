@@ -1,8 +1,8 @@
 //! Transitive reachability over an edge list — CPU reference + Tier-2.5
 //! GPU Program builder.
 //!
-//! Consumed by surgec `flows_to` taint analysis and any future
-//! analysis that needs "is B reachable from A given these edges?"
+//! Consumed by surgec `flows_to` taint analysis and graph analyses
+//! that need "is B reachable from A given these edges?"
 //!
 //! AUDIT_2026-04-24 F-REACH-02 (RESOLVED): `reachable_program` now
 //! ships as a Tier-2.5 builder. It fuses `csr_forward_traverse` +
@@ -14,12 +14,15 @@
 use std::collections::HashSet;
 
 use vyre_foundation::execution_plan::fusion::fuse_programs;
-use vyre_foundation::ir::Program;
+use vyre_foundation::ir::{DataType, Program};
 
 use crate::bitset::bitset_words;
 use crate::bitset::or::bitset_or;
 use crate::graph::csr_forward_traverse::csr_forward_traverse;
 use crate::graph::program_graph::ProgramGraphShape;
+
+/// Canonical op id.
+pub const OP_ID: &str = "vyre-primitives::graph::reachable_program";
 
 /// Error returned by [`reachable`] when the edge list contains a
 /// node index outside `0..node_count`.
@@ -62,8 +65,12 @@ pub fn reachable(
     edges: &[(u32, u32)],
     sources: &[u32],
 ) -> Result<HashSet<u32>, UnknownNode> {
+    const NONE: usize = usize::MAX;
+
     let n = node_count as usize;
-    let mut adj: Vec<Vec<u32>> = vec![Vec::new(); n];
+    let mut head = vec![NONE; n];
+    let mut to_nodes = Vec::with_capacity(edges.len());
+    let mut next_edges = Vec::with_capacity(edges.len());
     for (index, &(from, to)) in edges.iter().enumerate() {
         if (from as usize) >= n {
             return Err(UnknownNode {
@@ -79,23 +86,48 @@ pub fn reachable(
                 node_count,
             });
         }
-        adj[from as usize].push(to);
+        let edge_index = to_nodes.len();
+        to_nodes.push(to);
+        next_edges.push(head[from as usize]);
+        head[from as usize] = edge_index;
     }
-    let mut visited: HashSet<u32> = HashSet::with_capacity(n);
-    let mut stack: Vec<u32> = sources.to_vec();
+    let mut visited = vec![false; n];
+    let mut out_of_range_sources = Vec::new();
+    let mut stack = Vec::with_capacity(sources.len());
+    stack.extend_from_slice(sources);
     while let Some(v) = stack.pop() {
-        if !visited.insert(v) {
+        let idx = v as usize;
+        if idx >= n {
+            out_of_range_sources.push(v);
             continue;
         }
-        if (v as usize) < n {
-            for &u in &adj[v as usize] {
-                if !visited.contains(&u) {
-                    stack.push(u);
-                }
+        if visited[idx] {
+            continue;
+        }
+        visited[idx] = true;
+        let mut edge = head[idx];
+        while edge != NONE {
+            let next = to_nodes[edge];
+            if !visited[next as usize] {
+                stack.push(next);
             }
+            edge = next_edges[edge];
         }
     }
-    Ok(visited)
+    let mut result = HashSet::with_capacity(
+        visited
+            .iter()
+            .filter(|&&is_visited| is_visited)
+            .count()
+            .saturating_add(out_of_range_sources.len()),
+    );
+    for (idx, is_visited) in visited.into_iter().enumerate() {
+        if is_visited {
+            result.insert(idx as u32);
+        }
+    }
+    result.extend(out_of_range_sources);
+    Ok(result)
 }
 
 /// Build a Tier-2.5 GPU Program for transitive reachability.
@@ -166,8 +198,14 @@ pub fn reachable_program(
         arms.push(bitset_or(out_buf, reach_out, reach_out, words));
     }
 
-    fuse_programs(&arms)
-        .expect("reachable_program: fuse_programs should not fail for this composition")
+    fuse_programs(&arms).unwrap_or_else(|error| {
+        crate::invalid_output_program(
+            OP_ID,
+            reach_out,
+            DataType::U32,
+            format!("Fix: reachable_program composition failed: {error}"),
+        )
+    })
 }
 
 #[cfg(test)]

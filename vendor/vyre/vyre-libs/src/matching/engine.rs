@@ -197,10 +197,12 @@ where
         match E::from_bytes(&bytes) {
             Ok(engine) => return engine,
             Err(_) => {
-                // Stale or corrupt blob — best-effort delete and fall
-                // through to recompile. Cache-side errors are silent
-                // by design: a broken cache must never break the scan.
-                let _ = std::fs::remove_file(&path);
+                // Stale or corrupt blob: delete and fall through to
+                // recompile. Cache-side errors must be visible because a
+                // permanently broken cache distorts benchmark evidence.
+                if let Err(error) = std::fs::remove_file(&path) {
+                    eprintln!("failed to remove corrupt matching cache {}: {error}", path.display());
+                }
             }
         }
     }
@@ -208,10 +210,21 @@ where
     let engine = compile();
     if let Ok(bytes) = engine.to_bytes() {
         let tmp = path.with_extension(format!("tmp.{}", std::process::id()));
-        if std::fs::write(&tmp, &bytes).is_ok() {
-            // Best-effort rename. A crash here leaves either the old
-            // cache (still valid) or no cache (recompile next run).
-            let _ = std::fs::rename(&tmp, &path);
+        match std::fs::write(&tmp, &bytes) {
+            Ok(()) => {
+                if let Err(error) = std::fs::rename(&tmp, &path) {
+                    eprintln!("failed to publish matching cache {}: {error}", path.display());
+                    if let Err(cleanup_error) = std::fs::remove_file(&tmp) {
+                        eprintln!(
+                            "failed to remove matching cache temp file {}: {cleanup_error}",
+                            tmp.display()
+                        );
+                    }
+                }
+            }
+            Err(error) => {
+                eprintln!("failed to write matching cache temp file {}: {error}", tmp.display());
+            }
         }
     }
     engine

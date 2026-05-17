@@ -19,7 +19,7 @@
 //! Each invocation handles one variable's `[lo, hi]` pair,
 //! identical buffer layout to DF-7 `range`.
 //!
-//! Soundness: [`MayOver`](super::Soundness::MayOver) under the standard
+//! Soundness: `MayOver` under the standard
 //! widening-narrowing correctness argument.
 
 use std::sync::Arc;
@@ -108,5 +108,49 @@ pub struct LoopSum;
 impl super::soundness::SoundnessTagged for LoopSum {
     fn soundness(&self) -> super::soundness::Soundness {
         super::soundness::Soundness::MayOver
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn loop_summarize_emits_three_buffers() {
+        let p = loop_summarize_with_count("cfg", "ranges", "out", 4);
+        let names: Vec<&str> = p.buffers.iter().map(|b| b.name()).collect();
+        assert_eq!(names, vec!["cfg", "ranges", "out"]);
+    }
+
+    #[test]
+    fn loop_summarize_buffer_count_is_double_var_count() {
+        let var_count = 8;
+        let p = loop_summarize_with_count("cfg", "ranges", "out", var_count);
+        let out_buf = p
+            .buffers
+            .iter()
+            .find(|b| b.name() == "out")
+            .expect("out buffer");
+        assert_eq!(out_buf.count, var_count * 2);
+    }
+
+    #[test]
+    fn loop_summarize_workgroup_size_is_256_1_1() {
+        let p = loop_summarize_with_count("cfg", "ranges", "out", 4);
+        assert_eq!(p.workgroup_size, [256, 1, 1]);
+    }
+
+    #[test]
+    fn loop_summarize_default_delegates_to_with_count() {
+        let default = loop_summarize("cfg", "ranges", "out");
+        let explicit = loop_summarize_with_count("cfg", "ranges", "out", 4);
+        assert_eq!(default.workgroup_size, explicit.workgroup_size);
+        assert_eq!(default.buffers.len(), explicit.buffers.len());
+    }
+
+    #[test]
+    fn loop_summarize_soundness_is_mayover() {
+        use super::super::soundness::{Soundness, SoundnessTagged};
+        assert_eq!(LoopSum.soundness(), Soundness::MayOver);
     }
 }

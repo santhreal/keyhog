@@ -79,7 +79,7 @@ pub struct UringMegakernelPump<'a> {
     /// per in-flight submit keeps the buffer alive until the CQE
     /// arrives.
     iovec_scratch: Vec<super::stream::Iovec>,
-    /// Chunks submitted but not yet drained, in submission order.
+    /// Chunks submitted and pending drain, in submission order.
     /// Iterated FIFO by `drain_into_ring` as each CQE arrives.
     pending: VecDeque<PendingPublish>,
 }
@@ -267,7 +267,7 @@ mod tests {
             args: [11, 22, 33],
         };
         Megakernel::publish_slot(&mut ring, p.slot_idx, p.tenant_id, p.opcode, &p.args)
-            .expect("publish slot");
+            .expect("Fix: publish slot; restore this invariant before continuing.");
 
         // Second publish on the same slot without DONE must reject
         // (status still PUBLISHED/CLAIMED); this is the back-
@@ -286,7 +286,7 @@ mod tests {
         // This test does not spin up a live ring; it only exercises
         // the length guard. Constructing an AsyncUringStream
         // requires a real `IoUringState`, so instead we exercise
-        // the guard on a spare pump built via a minimal stub that
+        // the guard on a spare pump built via a minimal harness double that
         // lives in the uring smoke-test harness.
         //
         // The length guard runs first in `submit_file_scan`; any

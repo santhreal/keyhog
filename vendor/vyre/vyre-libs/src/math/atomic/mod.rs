@@ -2,7 +2,7 @@
 //!
 //! These builders live in `vyre-libs` because they are still compositions over
 //! `Expr::Atomic`, but they are NOT Category A: correctness depends on the
-//! backend owning the matching Naga atomic emission path. If a backend cannot
+//! backend owning the matching target builder atomic emission path. If a backend cannot
 //! lower the atomic op, dispatch must fail loudly instead of silently treating
 //! these as pure library sugar.
 //!
@@ -13,6 +13,7 @@
 //! or `compare_exchange` semantics under single-lane contention.
 
 use vyre::ir::{AtomicOp, BufferAccess, BufferDecl, DataType, Expr, Node, Program};
+use vyre::memory_model::MemoryOrdering;
 
 // --- Macros must be defined before `pub mod` declarations so child modules
 // can name them. `macro_rules!` is textual and scoped to what appears
@@ -22,7 +23,7 @@ use vyre::ir::{AtomicOp, BufferAccess, BufferDecl, DataType, Expr, Node, Program
 
 /// Helper macro to register a Cat-B atomic serial op in the dialect registry.
 /// Every atomic op that emits `Expr::Atomic` must carry `Category::Intrinsic`
-/// so the validator knows the backend must own the corresponding Naga arm.
+/// so the validator knows the backend must own the corresponding target builder arm.
 macro_rules! register_atomic_serial_op {
     ($op_id:expr, $compose:expr) => {
         ::inventory::submit! {
@@ -134,6 +135,7 @@ pub(crate) fn build_atomic_serial(
                             index: Box::new(Expr::u32(0)),
                             expected: None,
                             value: Box::new(Expr::load(values, Expr::var("i"))),
+                            ordering: MemoryOrdering::SeqCst,
                         },
                     ),
                     Node::store(trace, Expr::var("i"), Expr::var("old")),
@@ -179,6 +181,7 @@ pub(crate) fn build_atomic_compare_exchange(
                             index: Box::new(Expr::u32(0)),
                             expected: Some(Box::new(Expr::load(expected, Expr::var("i")))),
                             value: Box::new(Expr::load(desired, Expr::var("i"))),
+                            ordering: MemoryOrdering::SeqCst,
                         },
                     ),
                     Node::store(trace, Expr::var("i"), Expr::var("old")),
@@ -218,7 +221,8 @@ pub(crate) mod testutil {
             Value::Bytes(pack_u32(&[initial_state]).into()),
             Value::Bytes(vec![0u8; n * 4].into()),
         ];
-        let outputs = vyre_reference::reference_eval(program, &inputs).expect("atomic op must run");
+        let outputs = vyre_reference::reference_eval(program, &inputs)
+            .expect("Fix: atomic op must run; restore this invariant before continuing.");
         let state_bytes = outputs[0].to_bytes();
         let state = u32::from_le_bytes([
             state_bytes[0],
@@ -247,7 +251,8 @@ pub(crate) mod testutil {
             Value::Bytes(pack_u32(&[initial_state]).into()),
             Value::Bytes(vec![0u8; n * 4].into()),
         ];
-        let outputs = vyre_reference::reference_eval(program, &inputs).expect("cas op must run");
+        let outputs = vyre_reference::reference_eval(program, &inputs)
+            .expect("Fix: cas op must run; restore this invariant before continuing.");
         let state_bytes = outputs[0].to_bytes();
         let state = u32::from_le_bytes([
             state_bytes[0],

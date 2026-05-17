@@ -1,6 +1,6 @@
 [package]
 name = "vyre-spec"
-version = "0.6.0"
+version = "0.4.1"
 edition.workspace = true
 rust-version.workspace = true
 description = "Frozen data contracts for vyre — OpDef, AlgebraicLaw, Category, IntrinsicTable"
@@ -16,6 +16,9 @@ documentation = "https://docs.rs/vyre-spec"
 [dependencies]
 serde.workspace = true
 smallvec.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
 
 [package.metadata.docs.rs]
 all-features = true

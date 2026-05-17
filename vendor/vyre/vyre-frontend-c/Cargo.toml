@@ -1,0 +1,44 @@
+[package]
+name = "vyre-frontend-c"
+version = "0.4.1"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "GPU-first C parser and compile-evidence driver built on vyre and vyre-libs: bounded TU preparation, lex, digraph rewrite, AST evidence, and supported IR composition."
+readme = "README.md"
+keywords = ["vyre", "gpu", "c", "compiler", "cc"]
+categories = ["compilers", "development-tools"]
+# vyre-frontend-c is a workspace consumer/driver for the rest of vyre.
+# Publishing is gated on the crate API review alongside vyre-libs.
+publish = false
+
+[lints]
+workspace = true
+
+[features]
+default = []
+
+[dependencies]
+vyre = { path = "../vyre-core" }
+vyre-driver = { path = "../vyre-driver" }
+vyre-lower = { path = "../vyre-lower" }
+vyre-self-substrate = { path = "../vyre-self-substrate" }
+vyre-libs = { path = "../vyre-libs", default-features = false, features = ["c-parser"] }
+vyre-primitives = { path = "../vyre-primitives", default-features = false, features = ["matching"] }
+surgec-grammar-gen = { path = "../../../../shared/surgec-grammar-gen" }
+vyre-runtime = { path = "../vyre-runtime" }
+vyre-foundation = { path = "../vyre-foundation" }
+object = { version = "0.36", default-features = false, features = ["write"] }
+
+[dev-dependencies]
+vyre-driver-wgpu = { path = "../vyre-driver-wgpu", features = ["c-parser"] }
+vyre-debug = { path = "../vyre-debug" }
+vyre-lower = { path = "../vyre-lower" }
+vyre-reference = { path = "../vyre-reference" }
+# S0 — AST equivalence oracle. clang's `-Xclang -ast-dump=json` is parsed in
+# the test support layer; serde_json is a workspace dep used by other
+# vyre crates already, no new build-time cost.
+serde_json = { workspace = true }

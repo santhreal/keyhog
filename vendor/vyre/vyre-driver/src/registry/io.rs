@@ -4,12 +4,12 @@
 //! storage and GPU memory without a CPU staging copy. These are
 //! Category C — they have no portable lowering. A concrete backend
 //! opts in by registering a `BackendRegistration` that supplies
-//! `naga_wgsl` / `naga_spv` / `ptx` / `metal` builders.
+//! `primary_text` / `primary_binary` / `secondary_text` / `native_module` builders.
 //!
-//! Today, no backend opts in. A program that uses these ops fails
-//! the capability check with a clear message. The opt-in crate
-//! (`vyre-dialect-io`, planned) will register io_uring + GPUDirect
-//! Storage lowerings.
+//! The ops are opt-in: a backend registers concrete io_uring /
+//! GPUDirect Storage lowerings before it can execute them. A program
+//! that uses these ops fails capability checks with a clear message
+//! unless such a backend is linked.
 //!
 //! The ops:
 //!
@@ -206,14 +206,14 @@ mod tests {
             OP_UNMAP,
         ] {
             let id = reg.intern_op(op);
-            // No backend opts into io ops yet; wgsl/spv/ptx/metal
+            // No backend opts into io ops yet; target lowerings
             // lowerings are all None. The capability-negotiation
             // layer surfaces a `BackendError::Unsupported` in this
             // case (see B-B5 backend trait split for the checked
             // path).
             assert!(
-                reg.get_lowering(id, Target::Wgsl).is_none(),
-                "{op} must not carry a wgsl lowering until a backend opts in"
+                reg.get_lowering(id, Target::PrimaryText).is_none(),
+                "{op} must not carry a primary-text lowering until a backend opts in"
             );
         }
     }
@@ -233,7 +233,7 @@ mod tests {
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 (def.lowerings.cpu_ref)(&[1, 2, 3], &mut out);
             }))
-            .expect("Category C io cpu_ref must never panic inside reference dispatch");
+            .expect("Fix: Category C io cpu_ref must never panic inside reference dispatch; restore this invariant before continuing.");
             assert!(
                 out.is_empty(),
                 "{op} cpu_ref must clear output before failing so callers cannot consume stale bytes"

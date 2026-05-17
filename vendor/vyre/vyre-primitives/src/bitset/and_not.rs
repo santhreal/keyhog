@@ -51,7 +51,46 @@ pub fn bitset_and_not(lhs: &str, rhs: &str, out: &str, words: u32) -> Program {
 /// CPU reference: `out[i] = lhs[i] & !rhs[i]` per word.
 #[must_use]
 pub fn cpu_ref(lhs: &[u32], rhs: &[u32]) -> Vec<u32> {
-    lhs.iter().zip(rhs.iter()).map(|(a, b)| a & !b).collect()
+    let mut out = Vec::new();
+    cpu_ref_into(lhs, rhs, &mut out);
+    out
+}
+
+/// CPU reference into caller-owned storage.
+pub fn cpu_ref_into(lhs: &[u32], rhs: &[u32], out: &mut Vec<u32>) {
+    out.clear();
+    out.reserve(lhs.len().min(rhs.len()));
+    out.extend(lhs.iter().zip(rhs.iter()).map(|(a, b)| a & !b));
+}
+
+#[cfg(feature = "inventory-registry")]
+inventory::submit! {
+    crate::harness::OpEntry::new(
+        OP_ID,
+        || bitset_and_not("lhs", "rhs", "out", 2),
+        Some(|| {
+            let to_bytes = |words: &[u32]| {
+                words
+                    .iter()
+                    .flat_map(|word| word.to_le_bytes())
+                    .collect::<Vec<u8>>()
+            };
+            vec![vec![
+                to_bytes(&[0xFF00, 0xAAAA_AAAA]),
+                to_bytes(&[0xF0F0, 0x5555_5555]),
+                to_bytes(&[0, 0]),
+            ]]
+        }),
+        Some(|| {
+            let to_bytes = |words: &[u32]| {
+                words
+                    .iter()
+                    .flat_map(|word| word.to_le_bytes())
+                    .collect::<Vec<u8>>()
+            };
+            vec![vec![to_bytes(&[0x0F00, 0xAAAA_AAAA])]]
+        }),
+    )
 }
 
 #[cfg(test)]
@@ -80,5 +119,42 @@ mod tests {
         let rhs = [0x0000_FFFF, 0xF0F0_F0F0, 0x5555_5555];
         let want = [0xFFFF_0000, 0x0F0F_0F0F, 0xAAAA_AAAA];
         assert_eq!(cpu_ref(&lhs, &rhs), want);
+    }
+
+    // ------------------------------------------------------------------
+    // Adversarial fixtures — empty, single-word, cross-word, A==B, B=all-1s.
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn empty_bitset() {
+        assert_eq!(cpu_ref(&[], &[]), Vec::<u32>::new());
+    }
+
+    #[test]
+    fn single_word_all_bits() {
+        let lhs = vec![0xFFFF_FFFF];
+        let rhs = vec![0x0000_FFFF];
+        assert_eq!(cpu_ref(&lhs, &rhs), vec![0xFFFF_0000]);
+    }
+
+    #[test]
+    fn cross_word_boundary() {
+        // Word 0 bit 31 and word 1 bit 0 are adjacent nodes.
+        let lhs = vec![0x8000_0000, 0x0000_0001];
+        let rhs = vec![0x0000_0000, 0x0000_0000];
+        assert_eq!(cpu_ref(&lhs, &rhs), vec![0x8000_0000, 0x0000_0001]);
+    }
+
+    #[test]
+    fn a_eq_b_produces_all_zeros() {
+        let a = vec![0xDEAD_BEEF, 0x0F0F_0F0F];
+        assert_eq!(cpu_ref(&a, &a), vec![0, 0]);
+    }
+
+    #[test]
+    fn b_all_ones_produces_zeros() {
+        let lhs = vec![0xFFFF_FFFF, 0xFFFF_FFFF];
+        let rhs = vec![0xFFFF_FFFF, 0xFFFF_FFFF];
+        assert_eq!(cpu_ref(&lhs, &rhs), vec![0, 0]);
     }
 }

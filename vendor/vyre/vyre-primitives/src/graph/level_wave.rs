@@ -6,19 +6,19 @@
 //! - **persistent_fixpoint**: re-run a transfer step until convergence.
 //!   No depth ordering — every lane runs the step every iteration.
 //! - **level_wave**: deterministic ordered traversal. Each lane runs
-//!   the step only when `current_depth == depth[lane]`. Used for
+//!   the step only when `current_depth == depth`lane``. Used for
 //!   bottom-up summary computations where children must complete
 //!   before parents.
 //!
 //! ## LEGO discipline
 //!
 //! Composes:
-//! - [`toposort`](super::toposort) — CPU reference for the depth
+//! - [`crate::graph::toposort::toposort()`] — CPU reference for the depth
 //!   assignment (caller computes `depth[node]` from the topological
 //!   ordering before invoking this primitive).
 //! - `Node::Loop` (vyre-foundation IR primitive) — outer per-depth
 //!   loop.
-//! - `Node::Barrier` — synchronisation between depth waves.
+//! - `Node::Barrier { ordering: vyre_foundation::MemoryOrdering::SeqCst }` — synchronisation between depth waves.
 //! - `Expr::eq` + `Node::if_then` — depth predicate per lane.
 //!
 //! No new sub-op invented. The caller composes its own per-lane work
@@ -32,12 +32,12 @@
 //!   reads its own depth and gates its work on equality with the
 //!   current wave depth.
 //! - `step_body`: caller-provided IR body that runs ONE node's work.
-//!   Reads `current_depth` and `depth_buf[lane]`; the
+//!   Reads `current_depth` and `depth_buf`lane``; the
 //!   level_wave_program guards the body in `if depth == current`
 //!   already, so the body itself doesn't need to re-check.
 //! - `max_depth`: maximum depth value in the topology.
 //!
-//! Caller receives a [`Program`] that, when dispatched once, runs
+//! Caller receives a `Program` that, when dispatched once, runs
 //! every lane at every depth wave from 0..max_depth. Barriers between
 //! waves ensure depth-N work is fully complete before depth-N+1
 //! starts.
@@ -93,7 +93,9 @@ pub fn level_wave_program(
             ),
             // Wave barrier: every lane waits here so depth-N
             // effects are globally visible before depth-N+1 starts.
-            Node::Barrier,
+            Node::Barrier {
+                ordering: vyre_foundation::MemoryOrdering::SeqCst,
+            },
         ],
     )];
 
@@ -113,7 +115,7 @@ pub fn level_wave_program(
 
 /// CPU oracle. Iterates depth waves on the host and calls
 /// `step_for_lane(lane, depth)` exactly once per (lane, depth ==
-/// depth_for_lane[lane]). Used by the conformance harness to verify
+/// depth_for_lane`lane`). Used by the conformance harness to verify
 /// that the GPU kernel respects the depth ordering.
 pub fn cpu_ref<F>(depths: &[u32], max_depth: u32, mut step_for_lane: F)
 where

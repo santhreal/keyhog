@@ -13,10 +13,9 @@
 //! * [`Deprecation`] — marks an op as deprecated since a specific
 //!   version, with a note that becomes part of the
 //!   [`deprecation_diagnostic`] warning surfaced to the caller.
-//! * The wire decoder consults these tables on each decoded op. The
-//!   hook-up to the decoder lands with A-C7 (open Expr/Node); this
-//!   module ships the registries + public API so dialect crates can
-//!   register migrations today.
+//! * Decoders consult these tables before validating an op against the
+//!   final schema. This module ships the registries and public API so
+//!   dialect crates register migrations next to the evolving op.
 //!
 //! Design notes:
 //!
@@ -29,16 +28,16 @@
 //!   absent further migration is a terminal state, not an error.
 
 use std::borrow::Cow;
-use std::collections::HashMap;
 use std::sync::OnceLock;
 
 use crate::diagnostics::{Diagnostic, OpLocation, Severity};
+use rustc_hash::FxHashMap;
 
 /// Semantic version triple used for op versioning.
 ///
 /// The registry's current `Dialect::version` is still a single `u32`;
-/// the triple form here is future-proofing for per-op evolution,
-/// where minor bumps are backward-compatible additions and patch
+/// the triple form is the canonical representation for per-op
+/// evolution: minor bumps are backward-compatible additions and patch
 /// bumps are bug fixes. The `Ord` impl is lexicographic major→minor→
 /// patch so ordinary comparison works for chain resolution.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -100,7 +99,7 @@ pub enum AttrValue {
 /// schema.
 #[derive(Debug, Default, Clone)]
 pub struct AttrMap {
-    attrs: HashMap<String, AttrValue>,
+    attrs: FxHashMap<String, AttrValue>,
 }
 
 impl AttrMap {
@@ -213,12 +212,19 @@ impl std::error::Error for MigrationError {}
 ///
 /// Dialect crates register migrations via:
 ///
-/// ```ignore
+/// ```
+/// use vyre_driver::registry::{AttrMap, Migration, MigrationError, Semver};
+///
+/// fn rename_mode(attrs: &mut AttrMap) -> Result<(), MigrationError> {
+///     attrs.rename("mode", "overflow_behavior");
+///     Ok(())
+/// }
+///
 /// inventory::submit! {
-///     vyre::dialect::migration::Migration::new(
+///     Migration::new(
 ///         ("math.add", Semver::new(1, 0, 0)),
 ///         ("math.add", Semver::new(2, 0, 0)),
-///         |attrs| { attrs.rename("mode", "overflow_behavior"); Ok(()) },
+///         rename_mode,
 ///     )
 /// }
 /// ```
@@ -286,8 +292,8 @@ pub struct MigrationRegistry {
     // Keyed by (op_id, from_version). Value is the single migration
     // registered for that step. Duplicate registrations collapse to
     // the last-inserted for deterministic behavior.
-    forward: HashMap<(String, Semver), &'static Migration>,
-    deprecations: HashMap<String, &'static Deprecation>,
+    forward: FxHashMap<(&'static str, Semver), &'static Migration>,
+    deprecations: FxHashMap<&'static str, &'static Deprecation>,
 }
 
 impl MigrationRegistry {
@@ -296,13 +302,18 @@ impl MigrationRegistry {
     pub fn global() -> &'static MigrationRegistry {
         static REGISTRY: OnceLock<MigrationRegistry> = OnceLock::new();
         REGISTRY.get_or_init(|| {
-            let mut forward = HashMap::new();
-            for m in inventory::iter::<Migration> {
-                forward.insert((m.from.0.to_owned(), m.from.1), m);
+            let migrations: Vec<&'static Migration> = inventory::iter::<Migration>().collect();
+            let mut forward =
+                FxHashMap::with_capacity_and_hasher(migrations.len(), Default::default());
+            for m in migrations {
+                forward.insert((m.from.0, m.from.1), m);
             }
-            let mut deprecations = HashMap::new();
-            for d in inventory::iter::<Deprecation> {
-                deprecations.insert(d.op_id.to_owned(), d);
+            let deprecation_defs: Vec<&'static Deprecation> =
+                inventory::iter::<Deprecation>().collect();
+            let mut deprecations =
+                FxHashMap::with_capacity_and_hasher(deprecation_defs.len(), Default::default());
+            for d in deprecation_defs {
+                deprecations.insert(d.op_id, d);
             }
             MigrationRegistry {
                 forward,
@@ -314,7 +325,7 @@ impl MigrationRegistry {
     /// Look up a single-step migration for `(op_id, from)`.
     #[must_use]
     pub fn lookup(&self, op_id: &str, from: Semver) -> Option<&'static Migration> {
-        self.forward.get(&(op_id.to_owned(), from)).copied()
+        self.forward.get(&(op_id, from)).copied()
     }
 
     /// Follow the migration chain starting at `(op_id, from)` and

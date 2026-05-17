@@ -11,15 +11,26 @@ pub const WORKGROUP_ANY_U32_OP_ID: &str = "vyre-primitives::reduce::workgroup_an
 /// Build a body that assigns `out_var = bit_or(values[0..count])`.
 #[must_use]
 pub fn workgroup_any_u32_body(values: &str, out_var: &str, count: u32) -> Vec<Node> {
+    workgroup_any_u32_body_prefixed(values, out_var, count, "i")
+}
+
+/// Build a body with a caller-selected loop variable name for repeated inlining.
+#[must_use]
+pub fn workgroup_any_u32_body_prefixed(
+    values: &str,
+    out_var: &str,
+    count: u32,
+    iter_var: &str,
+) -> Vec<Node> {
     vec![
         Node::assign(out_var, Expr::u32(0)),
         Node::loop_for(
-            "i",
+            iter_var,
             Expr::u32(0),
             Expr::u32(count),
             vec![Node::assign(
                 out_var,
-                Expr::bitor(Expr::var(out_var), Expr::load(values, Expr::var("i"))),
+                Expr::bitor(Expr::var(out_var), Expr::load(values, Expr::var(iter_var))),
             )],
         ),
     ]
@@ -33,12 +44,27 @@ pub fn workgroup_any_u32_child(
     out_var: &str,
     count: u32,
 ) -> Node {
+    workgroup_any_u32_child_prefixed(parent_op_id, values, out_var, count, "i")
+}
+
+/// Wrap the workgroup any body with a prefixed loop variable for repeated
+/// inlining under no-shadowing validation.
+#[must_use]
+pub fn workgroup_any_u32_child_prefixed(
+    parent_op_id: &str,
+    values: &str,
+    out_var: &str,
+    count: u32,
+    iter_var: &str,
+) -> Node {
     Node::Region {
         generator: Ident::from(WORKGROUP_ANY_U32_OP_ID),
         source_region: Some(GeneratorRef {
             name: parent_op_id.to_string(),
         }),
-        body: Arc::new(workgroup_any_u32_body(values, out_var, count)),
+        body: Arc::new(workgroup_any_u32_body_prefixed(
+            values, out_var, count, iter_var,
+        )),
     }
 }
 

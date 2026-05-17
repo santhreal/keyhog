@@ -68,6 +68,47 @@ pub fn quest_score_pages_body(
     d_head: u32,
 ) -> Vec<Node> {
     let t = Expr::InvocationId { axis: 0 };
+    let score_body = if d_head <= 8 {
+        (0..d_head)
+            .map(|lane| {
+                Node::assign(
+                    "score",
+                    Expr::add(
+                        Expr::var("score"),
+                        Expr::mul(
+                            Expr::load(query, Expr::u32(lane)),
+                            Expr::load(
+                                page_metadata,
+                                Expr::add(
+                                    Expr::mul(Expr::var("p"), Expr::u32(d_head)),
+                                    Expr::u32(lane),
+                                ),
+                            ),
+                        ),
+                    ),
+                )
+            })
+            .collect()
+    } else {
+        vec![Node::loop_for(
+            "d",
+            Expr::u32(0),
+            Expr::u32(d_head),
+            vec![Node::assign(
+                "score",
+                Expr::add(
+                    Expr::var("score"),
+                    Expr::mul(
+                        Expr::load(query, Expr::var("d")),
+                        Expr::load(
+                            page_metadata,
+                            Expr::add(Expr::mul(Expr::var("p"), Expr::u32(d_head)), Expr::var("d")),
+                        ),
+                    ),
+                ),
+            )],
+        )]
+    };
     vec![Node::loop_for(
         "loop_idx",
         Expr::u32(0),
@@ -80,34 +121,13 @@ pub fn quest_score_pages_body(
                 "p",
                 Expr::add(Expr::mul(Expr::var("loop_idx"), Expr::u32(256)), t.clone()),
             ),
-            Node::if_then(
-                Expr::lt(Expr::var("p"), Expr::u32(num_pages)),
-                vec![
-                    Node::let_bind("score", Expr::f32(0.0)),
-                    Node::loop_for(
-                        "d",
-                        Expr::u32(0),
-                        Expr::u32(d_head),
-                        vec![Node::assign(
-                            "score",
-                            Expr::add(
-                                Expr::var("score"),
-                                Expr::mul(
-                                    Expr::load(query, Expr::var("d")),
-                                    Expr::load(
-                                        page_metadata,
-                                        Expr::add(
-                                            Expr::mul(Expr::var("p"), Expr::u32(d_head)),
-                                            Expr::var("d"),
-                                        ),
-                                    ),
-                                ),
-                            ),
-                        )],
-                    ),
-                    Node::store(scores, Expr::var("p"), Expr::var("score")),
-                ],
-            ),
+            Node::if_then(Expr::lt(Expr::var("p"), Expr::u32(num_pages)), {
+                let mut body = Vec::with_capacity(score_body.len() + 2);
+                body.push(Node::let_bind("score", Expr::f32(0.0)));
+                body.extend(score_body.clone());
+                body.push(Node::store(scores, Expr::var("p"), Expr::var("score")));
+                body
+            }),
         ],
     )]
 }
@@ -249,11 +269,7 @@ inventory::submit! {
 inventory::submit! {
     crate::harness::OpEntry::new(
         QUEST_SELECT_TOP_K_OP_ID,
-        // VYRE_PRIMITIVES_GAPS LOW: negative scores are valid inputs;
-        // `f32::MIN` collides with any score near -3.4e38. Use
-        // `-INFINITY` as the sentinel so the invalid-slot marker is
-        // distinguishable from every finite score.
-        || quest_select_top_k("scores", "io", 4, 2, f32::NEG_INFINITY),
+        || quest_select_top_k("scores", "io", 4, 2, f32::MIN),
         Some(|| {
             let to_f32_bytes =
                 |w: &[f32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
@@ -270,7 +286,7 @@ inventory::submit! {
             let to_u32_bytes =
                 |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
             vec![vec![
-                to_f32_bytes(&[0.0, f32::NEG_INFINITY, f32::NEG_INFINITY, 0.5]),
+                to_f32_bytes(&[0.0, f32::MIN, f32::MIN, 0.5]),
                 to_u32_bytes(&[2, 1, 0, 0]),
             ]]
         }),

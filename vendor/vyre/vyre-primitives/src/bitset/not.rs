@@ -40,7 +40,16 @@ pub fn bitset_not(input: &str, out: &str, words: u32) -> Program {
 /// CPU reference.
 #[must_use]
 pub fn cpu_ref(input: &[u32]) -> Vec<u32> {
-    input.iter().map(|w| !w).collect()
+    let mut out = Vec::new();
+    cpu_ref_into(input, &mut out);
+    out
+}
+
+/// CPU reference into caller-owned storage.
+pub fn cpu_ref_into(input: &[u32], out: &mut Vec<u32>) {
+    out.clear();
+    out.reserve(input.len());
+    out.extend(input.iter().map(|word| !word));
 }
 
 #[cfg(feature = "inventory-registry")]
@@ -66,5 +75,22 @@ mod tests {
     #[test]
     fn flips_every_bit() {
         assert_eq!(cpu_ref(&[0x0F0F_0F0F]), vec![0xF0F0_F0F0]);
+    }
+
+    #[test]
+    fn empty_bitset() {
+        assert_eq!(cpu_ref(&[]), Vec::<u32>::new());
+    }
+
+    #[test]
+    fn single_word_all_bits() {
+        assert_eq!(cpu_ref(&[0xFFFF_FFFF]), vec![0x0000_0000]);
+        assert_eq!(cpu_ref(&[0x0000_0000]), vec![0xFFFF_FFFF]);
+    }
+
+    #[test]
+    fn cross_word_boundary() {
+        let input = vec![0x8000_0000, 0x0000_0001];
+        assert_eq!(cpu_ref(&input), vec![0x7FFF_FFFF, 0xFFFF_FFFE]);
     }
 }

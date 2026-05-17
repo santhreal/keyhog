@@ -6,7 +6,8 @@
 // Exp=0x14, Log=0x15, Log2=0x16, Exp2=0x17, Tan=0x18, Acos=0x19,
 // Asin=0x1A, Atan=0x1B, Tanh=0x1C, Sinh=0x1D, Cosh=0x1E,
 // InverseSqrt=0x1F, Unpack4Low=0x20, Unpack4High=0x21,
-// Unpack8Low=0x22, Unpack8High=0x23, 0x24..=0x7F reserved, Opaque=0x80.
+// Unpack8Low=0x22, Unpack8High=0x23, Reciprocal=0x24,
+// 0x25..=0x7F reserved, Opaque=0x80.
 //
 // Rotate ops are *binary* (operand + count), so they live on `BinOp`
 // alongside `Shl`/`Shr`. See `vyre-spec::BinOp::RotateRight/RotateLeft`.
@@ -90,6 +91,8 @@ pub enum UnOp {
     Unpack8Low,
     /// Unpack upper 8-bits (byte 3) of a u32 into a u32/f32.
     Unpack8High,
+    /// Reciprocal (f32).
+    Reciprocal,
     /// Extension-declared unary operator.
     ///
     /// The `ExtensionUnOpId` resolves via the vyre-core extension

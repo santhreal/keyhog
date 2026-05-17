@@ -68,7 +68,11 @@ pub fn cooperative_dfa_scan_body_with_store(
     let round_count = effective_subgroup.ilog2();
 
     let mut lane_body = vec![
-        Node::let_bind("byte", Expr::load(input, idx.clone())),
+        Node::let_bind(
+            "safe_idx",
+            Expr::select(Expr::var("in_bounds"), idx.clone(), Expr::u32(0)),
+        ),
+        Node::let_bind("byte", Expr::load(input, Expr::var("safe_idx"))),
         Node::assign(
             "state",
             transition_expr(transitions, Expr::var("state"), Expr::var("byte")),
@@ -99,21 +103,25 @@ pub fn cooperative_dfa_scan_body_with_store(
         "accepting",
         Expr::load(accept_mask, Expr::var("state")),
     ));
-    lane_body.push(Node::Store {
-        buffer: matches.into(),
-        index: idx.clone(),
-        value: store_value,
-    });
+    lane_body.push(Node::if_then(
+        Expr::var("in_bounds"),
+        vec![Node::Store {
+            buffer: matches.into(),
+            index: idx.clone(),
+            value: store_value,
+        }],
+    ));
 
-    vec![
+    let mut body = vec![
         Node::let_bind("idx", idx),
-        // Every lane in the subgroup must bind `state`, including lanes
-        // masked off by the input-length guard. SubgroupShuffle evaluates
-        // its operand across the whole subgroup, so leaving inactive lanes
-        // without this binding makes the CPU oracle correctly reject the IR.
+        Node::let_bind(
+            "in_bounds",
+            Expr::lt(Expr::var("idx"), Expr::buf_len(input)),
+        ),
         Node::let_bind("state", Expr::u32(0)),
-        Node::if_then(Expr::lt(Expr::var("idx"), Expr::buf_len(input)), lane_body),
-    ]
+    ];
+    body.extend(lane_body);
+    body
 }
 
 /// Build a Program that scans `input` for accepting DFA states using
@@ -172,22 +180,29 @@ pub(crate) fn cpu_ref_cooperative_dfa(
     alphabet_size: u32,
 ) -> Vec<u32> {
     let row_width = alphabet_size as usize;
-    assert_eq!(
-        transitions.len(),
-        state_count as usize * row_width,
-        "Fix: cooperative_dfa transitions must be a dense state_count * alphabet_size table.",
-    );
-    assert_eq!(
-        accept_mask.len(),
-        state_count as usize,
-        "Fix: cooperative_dfa accept_mask must contain one entry per DFA state.",
-    );
+    let Some(expected_transitions) = (state_count as usize).checked_mul(row_width) else {
+        return vec![0; input.len()];
+    };
+    if row_width == 0
+        || transitions.len() != expected_transitions
+        || accept_mask.len() < state_count as usize
+    {
+        return vec![0; input.len()];
+    }
 
     let mut state = 0u32;
     let mut matches = Vec::with_capacity(input.len());
     for &symbol in input {
-        state = transitions[(state as usize) * row_width + symbol as usize];
-        matches.push(u32::from(accept_mask[state as usize] != 0));
+        if symbol >= alphabet_size || state >= state_count {
+            state = 0;
+            matches.push(0);
+            continue;
+        }
+        let offset = (state as usize) * row_width + symbol as usize;
+        state = transitions[offset];
+        matches.push(u32::from(
+            (state as usize) < accept_mask.len() && accept_mask[state as usize] != 0,
+        ));
     }
     matches
 }

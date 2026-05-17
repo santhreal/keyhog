@@ -1,0 +1,35 @@
+[package]
+name = "vyre-debug"
+version = "0.4.1"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Debugging CLI and inspection helpers for Vyre programs, lowering, and emitted shaders."
+readme = "README.md"
+repository = "https://github.com/santhsecurity/vyre"
+homepage = "https://github.com/santhsecurity/vyre"
+documentation = "https://docs.rs/vyre-debug"
+categories = ["development-tools", "compilers"]
+keywords = ["vyre", "debug", "gpu", "shader"]
+
+[lib]
+
+[[bin]]
+name = "vyre-dbg"
+path = "src/bin/vyre_dbg.rs"
+
+[dependencies]
+vyre = { version = "0.4.1", path = "../vyre-core" }
+vyre-foundation = { version = "0.4.1", path = "../vyre-foundation" }
+vyre-lower = { version = "0.4.1", path = "../vyre-lower" }
+vyre-emit-naga = { version = "0.4.1", path = "../vyre-emit-naga" }
+naga = { workspace = true, features = ["wgsl-out"] }
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+vyre-libs = { version = "0.4.1", path = "../vyre-libs", features = ["c-parser"] }
+vyre-primitives = { version = "0.4.1", path = "../vyre-primitives" }
+bincode = "1.3"
+
+[dev-dependencies]
+assert_cmd = "2"
+predicates = "3"

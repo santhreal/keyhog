@@ -1,11 +1,12 @@
 use crate::ir::UnOp;
+use crate::serial::wire::encode::WireEncodeErr;
 
 /// Encode a [`UnOp`] into its stable VIR0 wire-format tag byte.
 ///
 /// # Preconditions
 ///
 /// `value` must be a variant known to the VIR0 encoder. Because `UnOp` is
-/// `#[non_exhaustive]`, future spec additions must receive a tag here before
+/// `#[non_exhaustive]`, spec additions must receive a tag here before
 /// they can round-trip through the wire format.
 ///
 /// # Returns
@@ -22,7 +23,7 @@ use crate::ir::UnOp;
 /// L.1.27 / I4: remaining f32 unary ops had no wire tags, breaking roundtrip
 /// serialization for any Program that declared them. They now map to `11..=18`.
 #[inline]
-pub(crate) fn un_op_tag(value: UnOp) -> Result<u8, String> {
+pub(crate) fn un_op_tag(value: UnOp) -> Result<u8, WireEncodeErr> {
     match value {
         UnOp::Negate => Ok(0x01),
         UnOp::BitNot => Ok(0x02),
@@ -62,6 +63,7 @@ pub(crate) fn un_op_tag(value: UnOp) -> Result<u8, String> {
         UnOp::Unpack4High => Ok(0x21),
         UnOp::Unpack8Low => Ok(0x22),
         UnOp::Unpack8High => Ok(0x23),
-        _ => Err("unknown UnOp variant".to_string()),
+        UnOp::Reciprocal => Ok(0x24),
+        _ => Err(WireEncodeErr::static_msg("unknown UnOp variant")),
     }
 }

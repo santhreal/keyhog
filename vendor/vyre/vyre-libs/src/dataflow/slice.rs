@@ -14,20 +14,40 @@
 //! `ProgramGraph`. The caller merges `reach`, `callgraph`, and
 //! `dom` into a single CSR before dispatch (dense-OR of three CSRs
 //! — a one-kernel fusion via `fuse_programs`). The
-//! `edge_kind_mask` channel already supports up to 32 independent
-//! edge kinds, so we admit **every** kind with `u32::MAX` — the
-//! slicer is intentionally maximal, and false-positives are
-//! filtered by the downstream rule.
+//! `edge_kind_mask` channel already supports independent edge
+//! families, so the slicer admits data/call/memory dependence edges
+//! plus dominance-dependence edges. Raw CFG `CONTROL` edges are not
+//! accepted; pulling the whole predecessor chain into every slice is
+//! a precision bug, not a conservative dependency.
 //!
 //! # Soundness
 //!
-//! [`MayOver`](super::Soundness::MayOver). Rules requiring zero-FP
+//! `MayOver`. Rules requiring zero-FP
 //! pair this slicer with a sanitizer filter on each edge in the
 //! returned slice.
 
 use vyre::ir::Program;
 use vyre_primitives::graph::csr_backward_traverse::csr_backward_traverse;
 use vyre_primitives::graph::program_graph::ProgramGraphShape;
+use vyre_primitives::predicate::edge_kind;
+
+pub(crate) const OP_ID: &str = "vyre-libs::dataflow::slice";
+
+const SLICE_EDGE_MASK: u32 = edge_kind::ASSIGNMENT
+    | edge_kind::CALL_ARG
+    | edge_kind::RETURN
+    | edge_kind::PHI
+    | edge_kind::DOMINANCE
+    | edge_kind::ALIAS
+    | edge_kind::MEM_STORE
+    | edge_kind::MEM_LOAD
+    | edge_kind::MUT_REF
+    | edge_kind::INDEX
+    | edge_kind::BASE
+    | edge_kind::INDUCTION_VARIABLE
+    | edge_kind::UPPER_BOUND
+    | edge_kind::FORMAT_STRING_ARG
+    | edge_kind::SIZE_ARG;
 
 /// Build one reverse-BFS step. Caller invokes this Program in a
 /// host loop until the slice bitset stops growing (same fixpoint
@@ -48,13 +68,13 @@ use vyre_primitives::graph::program_graph::ProgramGraphShape;
 /// Callers MUST use the explicit-shape entry below.
 #[must_use]
 pub fn backward_slice(shape: ProgramGraphShape, frontier_in: &str, frontier_out: &str) -> Program {
-    csr_backward_traverse(shape, frontier_in, frontier_out, u32::MAX)
+    csr_backward_traverse(shape, frontier_in, frontier_out, SLICE_EDGE_MASK)
 }
 
 /// Deprecated alias for back-compat with callers that imported the
 /// pre-fix `backward_slice_with_shape` name.
 #[deprecated(
-    since = "0.6.0",
+    since = "0.4.1",
     note = "use `backward_slice(shape, frontier_in, frontier_out)` directly — the suffix is redundant since the 5-arg entry was removed"
 )]
 #[must_use]
@@ -92,7 +112,9 @@ mod regression_tests {
             .iter()
             .find(|b| b.name() == "sink_in")
             .map(|b| b.count)
-            .expect("sink_in buffer must be declared");
+            .expect(
+                "Fix: sink_in buffer must be declared; restore this invariant before continuing.",
+            );
         // bitset_words(64) = 2; the pre-fix 1-node hardcode would
         // have produced 1.
         assert!(

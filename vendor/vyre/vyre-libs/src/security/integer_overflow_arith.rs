@@ -5,10 +5,10 @@
 //! (mul / add / shl) AND at least one operand is reachable from
 //! `@http_input_family` AND there is no dominating overflow check.
 
-use vyre::ir::Program;
-use vyre_foundation::execution_plan::fusion::fuse_programs;
-use vyre_primitives::bitset::and::bitset_and;
-use vyre_primitives::bitset::and_not::bitset_and_not;
+use std::sync::Arc;
+
+use vyre::ir::model::expr::Ident;
+use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 use vyre_primitives::graph::csr_forward_traverse::bitset_words;
 
 pub(crate) const OP_ID: &str = "vyre-libs::security::integer_overflow_arith";
@@ -25,11 +25,47 @@ pub fn integer_overflow_arith(
     out: &str,
 ) -> Program {
     let words = bitset_words(node_count);
-    let attacker_arith = bitset_and(arith_set, attacker_reach, intermediate, words);
-    let unguarded = bitset_and_not(intermediate, overflow_check_dominates, out, words);
-    let fused = fuse_programs(&[attacker_arith, unguarded])
-        .expect("integer_overflow_arith: and+and_not fuse cleanly");
-    crate::region::tag_program(OP_ID, fused)
+    let t = Expr::InvocationId { axis: 0 };
+    let attacker_arith = Expr::bitand(
+        Expr::load(arith_set, t.clone()),
+        Expr::load(attacker_reach, t.clone()),
+    );
+    let body = vec![
+        Node::let_bind("attacker_arith", attacker_arith),
+        Node::store(intermediate, t.clone(), Expr::var("attacker_arith")),
+        Node::store(
+            out,
+            t.clone(),
+            Expr::bitand(
+                Expr::var("attacker_arith"),
+                Expr::bitnot(Expr::load(overflow_check_dominates, t.clone())),
+            ),
+        ),
+    ];
+    Program::wrapped(
+        vec![
+            BufferDecl::storage(arith_set, 0, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(words),
+            BufferDecl::storage(attacker_reach, 1, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(words),
+            BufferDecl::storage(
+                overflow_check_dominates,
+                2,
+                BufferAccess::ReadOnly,
+                DataType::U32,
+            )
+            .with_count(words),
+            BufferDecl::storage(intermediate, 3, BufferAccess::ReadWrite, DataType::U32)
+                .with_count(words),
+            BufferDecl::output(out, 4, DataType::U32).with_count(words),
+        ],
+        [256, 1, 1],
+        vec![Node::Region {
+            generator: Ident::from(OP_ID),
+            source_region: None,
+            body: Arc::new(vec![Node::if_then(Expr::lt(t.clone(), Expr::u32(words)), body)]),
+        }],
+    )
 }
 
 /// CPU oracle.
