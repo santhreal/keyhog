@@ -125,6 +125,10 @@ impl ScanOrchestrator {
         let start = Instant::now();
         let show_progress = std::io::stderr().is_terminal();
 
+        if self.args.dogfood {
+            keyhog_scanner::telemetry::enable_dogfood();
+        }
+
         // `--backend <name>` is sugar for `KEYHOG_BACKEND=<name>`. Setting
         // the env var here is safe even though the scanner was already
         // built — `select_backend` reads the var on every routing
@@ -412,6 +416,7 @@ impl ScanOrchestrator {
         if show_progress {
             report_completion_summary(report_findings.len(), elapsed);
         }
+        dump_dogfood_trace();
 
         tracing::info!(
             "Done in {:.1}s — {} findings",
@@ -976,17 +981,48 @@ fn stream_finding_preview<W: std::io::Write>(w: &mut W, m: &RawMatch) {
 }
 
 fn report_completion_summary(count: usize, elapsed: f64) {
+    let suppressed_examples = keyhog_scanner::telemetry::example_suppression_count();
     if count == 0 {
-        eprintln!(
-            "\n✨ Scan complete! Found \x1b[1;32m0\x1b[0m secrets in \x1b[33m{:.2}s\x1b[0m. You are secure!",
-            elapsed
-        );
+        if suppressed_examples > 0 {
+            // The user just got "No secrets found" but we DID match credentials
+            // and silenced them as known examples/placeholders. Tell them — this
+            // is the difference between "your code is clean" and "your code has
+            // demo keys you might or might not have meant to ship".
+            let plural = if suppressed_examples == 1 { "" } else { "s" };
+            eprintln!(
+                "\n✨ Scan complete in \x1b[33m{:.2}s\x1b[0m — \x1b[1;32m0\x1b[0m real secrets, \x1b[33m{}\x1b[0m example/test key{} suppressed (pass --dogfood to see them).",
+                elapsed, suppressed_examples, plural
+            );
+        } else {
+            eprintln!(
+                "\n✨ Scan complete! Found \x1b[1;32m0\x1b[0m secrets in \x1b[33m{:.2}s\x1b[0m. You are secure!",
+                elapsed
+            );
+        }
     } else {
         eprintln!(
             "\n✨ Scan complete! Found \x1b[1;31m{}\x1b[0m secrets in \x1b[33m{:.2}s\x1b[0m.",
             count, elapsed
         );
     }
+}
+
+/// Dump the captured dogfood events as a single JSON object on stderr.
+/// Called after the normal report so it never interferes with stdout
+/// formats (json/sarif/jsonl). No-op when `--dogfood` was not passed.
+pub(crate) fn dump_dogfood_trace() {
+    if !keyhog_scanner::telemetry::is_dogfood_enabled() {
+        return;
+    }
+    let events = keyhog_scanner::telemetry::drain_events();
+    let suppressed = keyhog_scanner::telemetry::example_suppression_count();
+    let payload = serde_json::json!({
+        "dogfood": {
+            "example_suppressions_total": suppressed,
+            "events": events,
+        }
+    });
+    eprintln!("{payload}");
 }
 
 #[cfg(test)]

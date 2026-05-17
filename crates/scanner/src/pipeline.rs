@@ -180,6 +180,12 @@ pub fn should_suppress_known_example_credential_with_source(
         && !credential.contains("example.com")
         && !credential.contains("example.org")
     {
+        crate::telemetry::record_example_suppression(
+            "pipeline",
+            path,
+            credential,
+            "contains_EXAMPLE_token",
+        );
         return true;
     }
 
@@ -282,6 +288,12 @@ pub fn should_suppress_known_example_credential_with_source(
     // ── 6. Algorithmic placeholder detection ──
     // Credentials dominated by filler after stripping known prefixes.
     if crate::context::is_known_example_credential(credential) {
+        crate::telemetry::record_example_suppression(
+            "pipeline",
+            path,
+            credential,
+            "algorithmic_placeholder",
+        );
         return true;
     }
 

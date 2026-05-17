@@ -533,6 +533,15 @@ pub struct ScanArgs {
     #[arg(long)]
     pub benchmark: bool,
 
+    /// Emit a structured `--dogfood` JSON trace to stderr after the
+    /// scan: every example/test/placeholder credential that was
+    /// suppressed, with the reason. Credentials are redacted (prefix
+    /// only). Useful when keyhog reports zero findings and you want
+    /// to know whether a match was made and silenced, or never
+    /// reached the engine at all.
+    #[arg(long)]
+    pub dogfood: bool,
+
     /// ML weight for confidence scoring, 0.0-1.0 (default: 0.6).
     #[arg(long, value_name = "WEIGHT")]
     pub ml_weight: Option<f64>,
