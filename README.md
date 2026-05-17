@@ -8,6 +8,8 @@
   <a href="https://github.com/santhsecurity/keyhog/actions"><img src="https://img.shields.io/github/actions/workflow/status/santhsecurity/keyhog/ci.yml?style=flat-square&label=CI" alt="CI" /></a>
 </p>
 
+![KeyHog Demo](keyhog-demo.gif)
+
 ---
 
 KeyHog scans source trees, git history, Docker images, S3 buckets, and web assets for leaked credentials. It compiles **888 embedded detectors** into a single Hyperscan NFA database, decodes nested encodings before matching, scores findings with ML confidence + Bayesian Beta(α,β) calibration, and routes scans to the fastest hardware backend available:
@@ -136,7 +138,7 @@ keyhog explain aws-access-key                  # Spec, regex, severity, rotation
 # Compare scan results
 keyhog diff before.json after.json             # NEW / RESOLVED / UNCHANGED for CI gates
 
-# Daemon mode — sub-100ms re-scan on save
+# Daemon mode: sub-100ms re-scan on save
 keyhog watch ./src                             # inotify/FSEvents/RDCW recursive watch
 
 # Bayesian Beta(α,β) calibration (per-detector confidence multiplier)
@@ -174,8 +176,8 @@ preference: Windows → DX12, macOS/iOS → Metal, Linux/BSD → Vulkan.
 ### Lockdown mode (security-critical embeddings)
 
 For deployments where keyhog runs inside a sealed environment (e.g.
-[EnvSeal](https://github.com/santhsecurity/envseal)) — the same machine
-that holds the secrets, with no untrusted code on the box — pass
+[EnvSeal](https://github.com/santhsecurity/envseal)): the same machine
+that holds the secrets, with no untrusted code on the box: pass
 `--lockdown`:
 
 ```bash
@@ -184,9 +186,9 @@ keyhog scan . --lockdown
 
 What `--lockdown` enforces:
 
-- `mlockall(MCL_CURRENT|MCL_FUTURE)` on Linux — credentials never page
+- `mlockall(MCL_CURRENT|MCL_FUTURE)` on Linux: credentials never page
   to swap.
-- `prctl(PR_SET_DUMPABLE, 0)` (always on, even outside lockdown) —
+- `prctl(PR_SET_DUMPABLE, 0)` (always on, even outside lockdown):
   disables core dumps, ptrace, and `/proc/<pid>/mem` reads. macOS gets
   `PT_DENY_ATTACH`.
 - Refuses to run if `~/.cache/keyhog/*` exists (would leak past
@@ -199,7 +201,7 @@ What `--lockdown` enforces:
   anonymous pages.
 
 The free protections (everything except mlock and the disk-cache
-refusals) are always on — even without `--lockdown` keyhog binaries
+refusals) are always on: even without `--lockdown` keyhog binaries
 disable core dumps and ptrace at startup.
 
 ### System-wide credential triage
@@ -218,14 +220,14 @@ runs the same scan + git-history pipeline that `keyhog scan
 --git-history` uses on each. Honors a hard `--space <bytes>` ceiling
 (default 50 GiB; supports `K`/`M`/`G`/`T` suffixes).
 
-Ignores `.gitignore` by default — system scans are paranoid because
+Ignores `.gitignore` by default: system scans are paranoid because
 an attacker stashing a leaked key would `.gitignore` it. Add
 `--respect-gitignore` if you want normal-scan behavior. Always
 applies the always-on hardening, even outside `--lockdown`.
 
 ### `.keyhogignore` allowlist
 
-Suppress known false positives by hash, detector, or path glob — with optional
+Suppress known false positives by hash, detector, or path glob, with optional
 governance metadata enforced at parse time:
 
 ```
@@ -240,8 +242,8 @@ Entries past `expires` are silently dropped on load (with a warning).
 
 When scanning git history (`keyhog scan --git-history`), findings whose blob
 OID is reachable from `HEAD` keep their detector's declared severity (live
-leak — an attacker can `grep` it from `main`). Findings only present in
-older commits get downgraded one tier (Critical → High, etc.) — they're still
+leak: an attacker can `grep` it from `main`). Findings only present in
+older commits get downgraded one tier (Critical → High, etc.): they're still
 reported, but ranked below live leaks.
 
 ### Incremental scan (CI re-runs)
@@ -309,7 +311,7 @@ repos:
 
 ## Roadmap
 
-Where keyhog is going next. Feedback / PRs welcome — file an issue to argue scope.
+Where keyhog is going next. Feedback / PRs welcome: file an issue to argue scope.
 
 - **Hyperscan on Windows out of the box.** Today the `simd` feature is opt-in
   on Windows because `hyperscan-sys` requires a vcpkg/MSVC build of the
@@ -319,8 +321,8 @@ Where keyhog is going next. Feedback / PRs welcome — file an issue to argue sc
   `cargo install keyhog` on Windows lands the SIMD path automatically.
 - **Real VRAM probe.** `wgpu` has no portable VRAM query, so the GPU report
   shows `max buffer size` (the per-buffer allocation cap, capped at 256 GB by
-  the wgpu spec). Next: backend-specific probes — DXGI on Windows, NVML for
-  NVIDIA, IOKit on macOS — to display the actual installed VRAM.
+  the wgpu spec). Next: backend-specific probes, DXGI on Windows, NVML for
+  NVIDIA, IOKit on macOS, to display the actual installed VRAM.
 - **Native Apple-silicon / aarch64 binaries** in the GitHub release artifact
   matrix (currently x86_64-only). The code already compiles cleanly on
   aarch64 (NEON path tested in CI); the gap is the release pipeline.

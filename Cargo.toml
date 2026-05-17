@@ -80,7 +80,7 @@ gix = { version = "0.77.0", default-features = false, features = ["max-performan
 criterion = { version = "=0.5.1", features = ["html_reports"] }
 
 # Parallelism
-rayon = "=1.11.0"
+rayon = "=1.12.0"
 memchr = "=2.8.0"
 parking_lot = "=0.12.5"
 dashmap = "6.1.0"
@@ -89,10 +89,10 @@ notify = "=8.0.0"
 
 # Performance libraries
 simdsieve = "=0.1.1"
-vyre = { version = "=0.6.0", path = "vendor/vyre/vyre-core" }
-vyre_libs = { package = "vyre-libs", version = "=0.6.0", path = "vendor/vyre/vyre-libs" }
-vyre-driver-wgpu = { package = "vyre-driver-wgpu", version = "=0.6.0", path = "vendor/vyre/vyre-driver-wgpu" }
-vyre-runtime = { version = "=0.6.0", path = "vendor/vyre/vyre-runtime" }
+vyre = { version = "=0.4.1", path = "vendor/vyre/vyre-core" }
+vyre_libs = { package = "vyre-libs", version = "=0.4.1", path = "vendor/vyre/vyre-libs" }
+vyre-driver-wgpu = { package = "vyre-driver-wgpu", version = "=0.4.1", path = "vendor/vyre/vyre-driver-wgpu" }
+vyre-runtime = { version = "=0.4.1", path = "vendor/vyre/vyre-runtime" }
 wgpu = "=24.0.5"
 pollster = "=0.4.0"
 bytemuck = { version = "=1.25.0", features = ["derive"] }
