@@ -27,6 +27,73 @@ fn pure_placeholder_not_flagged() {
     );
 }
 
+/// Regression for TODO 2026-05-17 #2: scanning demo-secret.env's
+/// `AKIAIOSFODNN7EXAMPLE` used to silently drop the match and print
+/// "No secrets found", indistinguishable from a clean repo. The
+/// scanner must now record the suppression so the reporter can
+/// distinguish "clean" from "saw a known example".
+#[test]
+fn example_suppression_is_recorded_in_telemetry() {
+    keyhog_scanner::telemetry::reset();
+    let detector = DetectorSpec {
+        id: "aws-key".into(),
+        name: "AWS Key".into(),
+        service: "aws".into(),
+        severity: Severity::Critical,
+        patterns: vec![PatternSpec {
+            regex: "AKIA[0-9A-Z]{16}".into(),
+            description: None,
+            group: None,
+        }],
+        companions: Vec::new(),
+        verify: None,
+        keywords: vec!["AKIA".into()],
+    };
+    let scanner = CompiledScanner::compile(vec![detector]).unwrap();
+    let chunk = make_chunk("AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE\n");
+    let matches = scanner.scan(&chunk);
+    assert!(matches.is_empty(), "still suppressed (this is the bug we're closing the messaging gap on)");
+    assert!(
+        keyhog_scanner::telemetry::example_suppression_count() >= 1,
+        "telemetry must count the EXAMPLE suppression so the reporter can surface it"
+    );
+}
+
+#[test]
+fn dogfood_captures_redacted_event() {
+    keyhog_scanner::telemetry::reset();
+    keyhog_scanner::telemetry::enable_dogfood();
+    let detector = DetectorSpec {
+        id: "aws-key".into(),
+        name: "AWS Key".into(),
+        service: "aws".into(),
+        severity: Severity::Critical,
+        patterns: vec![PatternSpec {
+            regex: "AKIA[0-9A-Z]{16}".into(),
+            description: None,
+            group: None,
+        }],
+        companions: Vec::new(),
+        verify: None,
+        keywords: vec!["AKIA".into()],
+    };
+    let scanner = CompiledScanner::compile(vec![detector]).unwrap();
+    let chunk = make_chunk("AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE\n");
+    let _ = scanner.scan(&chunk);
+    let events = keyhog_scanner::telemetry::drain_events();
+    assert!(!events.is_empty(), "--dogfood must capture the suppression event");
+    let serialized = serde_json::to_string(&events[0]).unwrap();
+    assert!(
+        !serialized.contains("AKIAIOSFODNN7EXAMPLE"),
+        "redacted output must NOT contain the full credential: {serialized}"
+    );
+    assert!(
+        serialized.contains("AKIAIO"),
+        "redacted output should preserve a short prefix so the user recognises the detector: {serialized}"
+    );
+    keyhog_scanner::telemetry::reset();
+}
+
 #[test]
 fn github_pat_example_suppressed() {
     let detector = DetectorSpec {
