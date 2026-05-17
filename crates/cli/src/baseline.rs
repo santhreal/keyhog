@@ -92,9 +92,9 @@ impl Baseline {
             .with_context(|| format!("creating baseline tmp in {}", parent.display()))?;
         std::io::Write::write_all(&mut tmp, &serialized)
             .with_context(|| format!("writing baseline tmp for {}", path.display()))?;
-        tmp.as_file().sync_all().with_context(|| {
-            format!("fsyncing baseline tmp for {}", path.display())
-        })?;
+        tmp.as_file()
+            .sync_all()
+            .with_context(|| format!("fsyncing baseline tmp for {}", path.display()))?;
         tmp.persist(path)
             .map_err(|e| e.error)
             .with_context(|| format!("renaming baseline tmp onto {}", path.display()))?;

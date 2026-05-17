@@ -24,7 +24,10 @@ pub(crate) fn configure_threads(threads: Option<usize>, physical_cores: usize) {
     // Both paths log a warning so an operator who fat-fingered the value
     // sees what was actually used.
     let (n, source) = if let Some(t) = threads {
-        (sanitise_thread_count(t, physical_cores, "cli-arg"), "cli-arg")
+        (
+            sanitise_thread_count(t, physical_cores, "cli-arg"),
+            "cli-arg",
+        )
     } else if let Ok(env) = std::env::var("KEYHOG_THREADS") {
         match env.parse::<usize>() {
             Ok(t) => (
@@ -280,6 +283,9 @@ mod tests {
         assert_eq!(sanitise_thread_count(1, 8, "test"), 1);
         assert_eq!(sanitise_thread_count(8, 8, "test"), 8);
         assert_eq!(sanitise_thread_count(64, 8, "test"), 64);
-        assert_eq!(sanitise_thread_count(MAX_THREADS_CAP, 8, "test"), MAX_THREADS_CAP);
+        assert_eq!(
+            sanitise_thread_count(MAX_THREADS_CAP, 8, "test"),
+            MAX_THREADS_CAP
+        );
     }
 }

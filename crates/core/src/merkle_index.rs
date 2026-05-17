@@ -216,11 +216,7 @@ impl MerkleIndex {
 
     /// Persist the index *with* the given detector-spec hash so a future
     /// load can detect detector drift and invalidate cleanly.
-    pub fn save_with_spec(
-        &self,
-        path: &Path,
-        spec_hash: &[u8; 32],
-    ) -> std::io::Result<()> {
+    pub fn save_with_spec(&self, path: &Path, spec_hash: &[u8; 32]) -> std::io::Result<()> {
         self.save_inner(path, Some(spec_hash))
     }
 
@@ -411,8 +407,12 @@ const STALE_TMP_CUTOFF_SECS: u64 = 60 * 60;
 /// to the real `merkle.idx`. Logged at debug level only since
 /// failure is non-fatal.
 fn sweep_stale_tmp_files(cache_path: &Path) {
-    let Some(parent) = cache_path.parent() else { return };
-    let Ok(entries) = std::fs::read_dir(parent) else { return };
+    let Some(parent) = cache_path.parent() else {
+        return;
+    };
+    let Ok(entries) = std::fs::read_dir(parent) else {
+        return;
+    };
     let stem = cache_path
         .file_stem()
         .and_then(|s| s.to_str())
@@ -421,18 +421,22 @@ fn sweep_stale_tmp_files(cache_path: &Path) {
     let mut swept = 0usize;
     for entry in entries.flatten() {
         let name = entry.file_name();
-        let Some(name_str) = name.to_str() else { continue };
+        let Some(name_str) = name.to_str() else {
+            continue;
+        };
         // tempfile::NamedTempFile uses random hex-suffixed names with
         // a `.tmp` prefix — match conservatively to avoid eating
         // unrelated files: `<stem>.tmp*` OR `.tmp<hex>`.
-        let is_tmp_sibling = name_str.starts_with(&format!("{stem}.tmp"))
-            || name_str.starts_with(".tmp");
+        let is_tmp_sibling =
+            name_str.starts_with(&format!("{stem}.tmp")) || name_str.starts_with(".tmp");
         if !is_tmp_sibling {
             continue;
         }
         let path = entry.path();
         let Ok(meta) = path.metadata() else { continue };
-        let Ok(modified) = meta.modified() else { continue };
+        let Ok(modified) = meta.modified() else {
+            continue;
+        };
         let age = match now.duration_since(modified) {
             Ok(d) => d,
             Err(_) => continue, // mtime in the future — skip rather than guess
@@ -471,7 +475,10 @@ pub fn compute_spec_hash(detectors: &[DetectorSpec]) -> [u8; 32] {
                 ));
             }
             for c in &d.companions {
-                entries.push(format!("c:{}|{}|w:{}|r:{}", c.name, c.regex, c.within_lines, c.required));
+                entries.push(format!(
+                    "c:{}|{}|w:{}|r:{}",
+                    c.name, c.regex, c.within_lines, c.required
+                ));
             }
             entries
         })
@@ -528,7 +535,12 @@ mod tests {
     fn metadata_unchanged_matches_only_on_exact_pair() {
         let idx = MerkleIndex::empty();
         let p = PathBuf::from("/tmp/file");
-        idx.record_with_metadata(p.clone(), 1_700_000_000_000_000_000, 4096, sample_hash(b"x"));
+        idx.record_with_metadata(
+            p.clone(),
+            1_700_000_000_000_000_000,
+            4096,
+            sample_hash(b"x"),
+        );
         assert!(idx.metadata_unchanged(&p, 1_700_000_000_000_000_000, 4096));
         // mtime drift
         assert!(!idx.metadata_unchanged(&p, 1_700_000_000_000_000_001, 4096));
@@ -739,21 +751,11 @@ mod tests {
         let spec = [42u8; 32];
 
         let idx_old = MerkleIndex::empty();
-        idx_old.record_with_metadata(
-            PathBuf::from("/x"),
-            100,
-            10,
-            sample_hash(b"old"),
-        );
+        idx_old.record_with_metadata(PathBuf::from("/x"), 100, 10, sample_hash(b"old"));
         idx_old.save_with_spec(&cache_path, &spec).unwrap();
 
         let idx_new = MerkleIndex::empty();
-        idx_new.record_with_metadata(
-            PathBuf::from("/x"),
-            200,
-            20,
-            sample_hash(b"new"),
-        );
+        idx_new.record_with_metadata(PathBuf::from("/x"), 200, 20, sample_hash(b"new"));
         idx_new.save_with_spec(&cache_path, &spec).unwrap();
 
         let loaded = MerkleIndex::load_with_spec(&cache_path, &spec);
@@ -777,8 +779,8 @@ mod tests {
         // Old tmp — should be swept.
         let old_tmp = dir.path().join(".tmpABCDEF");
         std::fs::write(&old_tmp, b"stale leftover").unwrap();
-        let two_hours_ago = std::time::SystemTime::now()
-            - std::time::Duration::from_secs(2 * 60 * 60);
+        let two_hours_ago =
+            std::time::SystemTime::now() - std::time::Duration::from_secs(2 * 60 * 60);
         let _ = filetime_workaround::set_mtime(&old_tmp, two_hours_ago);
         // (The real test below uses a manual-mtime manipulation via
         // Linux/macOS `utimensat`. On Windows the test verifies the
@@ -831,8 +833,7 @@ mod tests {
             let dur = t
                 .duration_since(SystemTime::UNIX_EPOCH)
                 .map_err(std::io::Error::other)?;
-            let cpath =
-                CString::new(path.as_os_str().as_bytes()).map_err(std::io::Error::other)?;
+            let cpath = CString::new(path.as_os_str().as_bytes()).map_err(std::io::Error::other)?;
             let times = [
                 libc::timespec {
                     tv_sec: dur.as_secs() as libc::time_t,
@@ -883,21 +884,11 @@ mod tests {
         let cache_path = dir.path().join("merkle.idx");
 
         let idx_old = MerkleIndex::empty();
-        idx_old.record_with_metadata(
-            PathBuf::from("/from-old-spec"),
-            1,
-            1,
-            sample_hash(b"x"),
-        );
+        idx_old.record_with_metadata(PathBuf::from("/from-old-spec"), 1, 1, sample_hash(b"x"));
         idx_old.save_with_spec(&cache_path, &[1u8; 32]).unwrap();
 
         let idx_new = MerkleIndex::empty();
-        idx_new.record_with_metadata(
-            PathBuf::from("/from-new-spec"),
-            2,
-            2,
-            sample_hash(b"y"),
-        );
+        idx_new.record_with_metadata(PathBuf::from("/from-new-spec"), 2, 2, sample_hash(b"y"));
         idx_new.save_with_spec(&cache_path, &[2u8; 32]).unwrap();
 
         // After saving with the new spec, only the new-spec entry

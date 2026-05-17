@@ -22,41 +22,41 @@ exclude = ["detectors/.keyhog-cache.json"]
 status = "alpha"
 
 [dependencies]
-serde = { workspace = true, features = ["derive"] }
-serde_json = { workspace = true }
-toml = { workspace = true }
-thiserror = { workspace = true }
-tracing = { workspace = true }
-regex = { workspace = true }
-regex-syntax = { workspace = true }
-sha2 = { workspace = true }
-rayon = { workspace = true }
-hex = { workspace = true }
-once_cell = { workspace = true }
-async-trait = { workspace = true }
-serde_with = { workspace = true }
-parking_lot = { workspace = true }
-indexmap = { workspace = true }
-blake3 = { workspace = true }
-dirs = { workspace = true }
-zeroize = { workspace = true }
-anyhow.workspace = true
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+thiserror = "2"
+tracing = "0.1"
+regex = "1"
+regex-syntax = "0.8"
+sha2 = "0.10"
+rayon = "1"
+hex = "0.4"
+once_cell = "1"
+async-trait = "0.1"
+serde_with = "3"
+parking_lot = "0.12"
+indexmap = "2"
+blake3 = "1"
+dirs = "6"
+zeroize = { version = "1", features = ["derive"] }
+anyhow = "1"
 # Used for atomic-rename writes of `merkle.idx` and `calibration.json`
 # via `NamedTempFile::persist()`. The Drop impl deletes the tmp on
 # panic between create and rename, so a partial save doesn't leak a
 # stale `tmp.NNN` next to the real cache file.
-tempfile = { workspace = true }
+tempfile = "3"
 # `vyre_libs::rule` for the declarative `.keyhogignore.toml` engine
 # (see `crates/core/src/rule_filter.rs`). Pulls in the `rule`
 # feature which compiles the CPU evaluator + the `regex` dep used
 # by `RuleCondition::RegexMatch`.
-vyre_libs = { workspace = true, features = ["rule"] }
-smallvec = { version = "=1.15.1" }
+vyre_libs = { package = "vyre-libs", version = "0.4.1", path = "../../vendor/vyre/vyre-libs", features = ["rule"] }
+smallvec = { version = "1" }
 
 [target.'cfg(unix)'.dependencies]
-libc = { workspace = true }
+libc = "0.2"
 
 [dev-dependencies]
-proptest = { workspace = true }
-tokio = { workspace = true, features = ["full"] }
-tracing-subscriber = { workspace = true, features = ["fmt"] }
+proptest = "1"
+tokio = { version = "1", features = ["full"] }
+tracing-subscriber = { version = "0.3", features = ["fmt"] }

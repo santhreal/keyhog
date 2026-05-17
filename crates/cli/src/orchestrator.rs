@@ -423,8 +423,7 @@ impl ScanOrchestrator {
         // were produced. The user MUST see the failure rather than
         // assume clean. Live-credentials still wins (more urgent),
         // then panic (reliability signal), then new entries.
-        let scanner_panicked =
-            crate::SCANNER_PANICKED.load(std::sync::atomic::Ordering::Relaxed);
+        let scanner_panicked = crate::SCANNER_PANICKED.load(std::sync::atomic::Ordering::Relaxed);
         Ok(if has_live_credentials {
             std::process::ExitCode::from(EXIT_LIVE_CREDENTIALS)
         } else if scanner_panicked {
@@ -457,16 +456,11 @@ impl ScanOrchestrator {
     /// orchestrator and every source share. The index is loaded with the
     /// detector spec hash gate so adding a detector forces a clean
     /// re-scan of every previously-cached file.
-    fn build_merkle_index(
-        &self,
-    ) -> Option<Arc<keyhog_core::merkle_index::MerkleIndex>> {
+    fn build_merkle_index(&self) -> Option<Arc<keyhog_core::merkle_index::MerkleIndex>> {
         let path = self.incremental_cache_path()?;
         let spec_hash = keyhog_core::merkle_index::compute_spec_hash(&self.detectors);
         let idx = keyhog_core::merkle_index::MerkleIndex::load_with_spec(&path, &spec_hash);
-        tracing::info!(
-            indexed = idx.len(),
-            "incremental scan: loaded merkle index"
-        );
+        tracing::info!(indexed = idx.len(), "incremental scan: loaded merkle index");
         Some(Arc::new(idx))
     }
 
@@ -509,8 +503,7 @@ impl ScanOrchestrator {
         const PIPELINE_DEPTH: usize = 1;
 
         let scanner = Arc::clone(&self.scanner);
-        let (tx, rx) =
-            std::sync::mpsc::sync_channel::<Vec<keyhog_core::Chunk>>(PIPELINE_DEPTH);
+        let (tx, rx) = std::sync::mpsc::sync_channel::<Vec<keyhog_core::Chunk>>(PIPELINE_DEPTH);
 
         // `--stream`: print a one-line redacted preview to stderr as
         // each finding lands. Captured into the worker thread closure
@@ -562,20 +555,19 @@ impl ScanOrchestrator {
         // we'll never get to send.
         let mut pipeline_alive = true;
 
-        let send_batch = |batch: &mut Vec<keyhog_core::Chunk>,
-                              batch_bytes: &mut usize,
-                              alive: &mut bool| {
-            if !*alive || batch.is_empty() {
-                batch.clear();
+        let send_batch =
+            |batch: &mut Vec<keyhog_core::Chunk>, batch_bytes: &mut usize, alive: &mut bool| {
+                if !*alive || batch.is_empty() {
+                    batch.clear();
+                    *batch_bytes = 0;
+                    return;
+                }
+                let payload = std::mem::take(batch);
                 *batch_bytes = 0;
-                return;
-            }
-            let payload = std::mem::take(batch);
-            *batch_bytes = 0;
-            if tx.send(payload).is_err() {
-                *alive = false;
-            }
-        };
+                if tx.send(payload).is_err() {
+                    *alive = false;
+                }
+            };
 
         'sources: for source in &sources {
             for chunk_result in source.chunks() {
@@ -647,9 +639,7 @@ impl ScanOrchestrator {
         // cleanly once the in-flight batch is processed.
         drop(tx);
         let findings = scanner_thread.join().unwrap_or_else(|_| {
-            tracing::error!(
-                "scanner thread panicked mid-scan; results are incomplete"
-            );
+            tracing::error!("scanner thread panicked mid-scan; results are incomplete");
             // Surface the failure to `run()` so the process exits with
             // a non-zero code instead of silently reporting clean.
             crate::SCANNER_PANICKED.store(true, std::sync::atomic::Ordering::Relaxed);
@@ -667,8 +657,7 @@ impl ScanOrchestrator {
             // run rejects this cache the moment a detector is added,
             // removed, or modified — that's the only way to keep
             // metadata-skip safe under detector drift.
-            let spec_hash =
-                keyhog_core::merkle_index::compute_spec_hash(&self.detectors);
+            let spec_hash = keyhog_core::merkle_index::compute_spec_hash(&self.detectors);
             if let Err(e) = idx.save_with_spec(path, &spec_hash) {
                 tracing::warn!(error = %e, "failed to persist merkle index");
             }
@@ -967,11 +956,7 @@ fn allowlist_root(path: &Path) -> PathBuf {
 /// still lands at the end. Keeps the stderr feed readable on terminals
 /// while a 100k-file scan is in flight.
 fn stream_finding_preview<W: std::io::Write>(w: &mut W, m: &RawMatch) {
-    let path = m
-        .location
-        .file_path
-        .as_deref()
-        .unwrap_or("<stdin>");
+    let path = m.location.file_path.as_deref().unwrap_or("<stdin>");
     let line = m
         .location
         .line
@@ -1076,8 +1061,7 @@ mod pipeline_tests {
         let args = crate::args::ScanArgs::try_parse_from(["scan"])
             .expect("ScanArgs default-parse from bare invocation");
         let scanner = Arc::new(
-            keyhog_scanner::CompiledScanner::compile(detectors.clone())
-                .expect("scanner compile"),
+            keyhog_scanner::CompiledScanner::compile(detectors.clone()).expect("scanner compile"),
         );
         let signatures = detectors
             .iter()
@@ -1095,10 +1079,7 @@ mod pipeline_tests {
     fn pipeline_finds_secret_in_single_source_single_chunk() {
         let orch = make_orchestrator(vec![make_detector()]);
         let sources: Vec<Box<dyn Source>> = vec![Box::new(StaticSource {
-            chunks: vec![make_chunk(
-                "let key = STATIC_SECRET_12345;",
-                "fixture.rs",
-            )],
+            chunks: vec![make_chunk("let key = STATIC_SECRET_12345;", "fixture.rs")],
         })];
         let findings = orch.scan_sources(sources, false, None);
         assert_eq!(findings.len(), 1, "expected exactly one finding");
@@ -1131,8 +1112,7 @@ mod pipeline_tests {
         ];
         let findings = orch.scan_sources(sources, false, None);
         assert_eq!(findings.len(), 2);
-        let mut creds: Vec<String> =
-            findings.iter().map(|f| f.credential.to_string()).collect();
+        let mut creds: Vec<String> = findings.iter().map(|f| f.credential.to_string()).collect();
         creds.sort();
         assert_eq!(creds, vec!["STATIC_SECRET_1", "STATIC_SECRET_2"]);
     }
@@ -1194,8 +1174,7 @@ mod pipeline_tests {
         })];
         let findings = orch.scan_sources(sources, false, None);
         assert_eq!(findings.len(), 2);
-        let mut creds: Vec<String> =
-            findings.iter().map(|f| f.credential.to_string()).collect();
+        let mut creds: Vec<String> = findings.iter().map(|f| f.credential.to_string()).collect();
         creds.sort();
         assert_eq!(creds, vec!["STATIC_SECRET_12345", "STATIC_SECRET_67890"]);
     }
@@ -1236,8 +1215,9 @@ mod pipeline_tests {
         chunk.metadata.size_bytes = Some(123);
 
         let merkle = Arc::new(keyhog_core::merkle_index::MerkleIndex::empty());
-        let sources: Vec<Box<dyn Source>> =
-            vec![Box::new(StaticSource { chunks: vec![chunk] })];
+        let sources: Vec<Box<dyn Source>> = vec![Box::new(StaticSource {
+            chunks: vec![chunk],
+        })];
         let findings = orch.scan_sources(sources, false, Some(merkle.clone()));
 
         // Scanner still produced the finding even though merkle is
@@ -1246,11 +1226,8 @@ mod pipeline_tests {
         // The orchestrator recorded the chunk's metadata so a future
         // metadata_unchanged check would hit.
         assert!(
-            merkle.metadata_unchanged(
-                std::path::Path::new("x.rs"),
-                1_700_000_000_000_000_000,
-                123,
-            ),
+            merkle
+                .metadata_unchanged(std::path::Path::new("x.rs"), 1_700_000_000_000_000_000, 123,),
             "merkle should now contain the chunk's (path, mtime, size) entry"
         );
     }
@@ -1269,12 +1246,12 @@ mod pipeline_tests {
         let chunk = make_chunk(text, "y.rs");
 
         let merkle = Arc::new(keyhog_core::merkle_index::MerkleIndex::empty());
-        let known_hash =
-            keyhog_core::merkle_index::MerkleIndex::hash_content(text.as_bytes());
+        let known_hash = keyhog_core::merkle_index::MerkleIndex::hash_content(text.as_bytes());
         merkle.record(std::path::PathBuf::from("y.rs"), known_hash);
 
-        let sources: Vec<Box<dyn Source>> =
-            vec![Box::new(StaticSource { chunks: vec![chunk] })];
+        let sources: Vec<Box<dyn Source>> = vec![Box::new(StaticSource {
+            chunks: vec![chunk],
+        })];
         let findings = orch.scan_sources(sources, false, Some(merkle));
 
         assert!(

@@ -24,9 +24,9 @@ pub fn report_findings(findings: &[VerifiedFinding], args: &ScanArgs) -> Result<
             .with_context(|| format!("creating output parent dir {}", parent.display()))?;
         let tmp = tempfile::NamedTempFile::new_in(parent)
             .with_context(|| format!("creating output tmp in {}", parent.display()))?;
-        let writer_handle = tmp.reopen().with_context(|| {
-            format!("reopening output tmp for write of {}", path.display())
-        })?;
+        let writer_handle = tmp
+            .reopen()
+            .with_context(|| format!("reopening output tmp for write of {}", path.display()))?;
         let w = io::BufWriter::new(writer_handle);
         report_with(w, &args.format, false, findings)?;
         // BufWriter is dropped inside report_with's flush path;
@@ -34,9 +34,9 @@ pub fn report_findings(findings: &[VerifiedFinding], args: &ScanArgs) -> Result<
         // a crash between persist and the next fsync of the parent
         // dir doesn't lose data on filesystems with delayed
         // metadata writeback.
-        tmp.as_file().sync_all().with_context(|| {
-            format!("fsyncing output tmp for {}", path.display())
-        })?;
+        tmp.as_file()
+            .sync_all()
+            .with_context(|| format!("fsyncing output tmp for {}", path.display()))?;
         tmp.persist(path)
             .map_err(|e| e.error)
             .with_context(|| format!("renaming output tmp onto {}", path.display()))?;
