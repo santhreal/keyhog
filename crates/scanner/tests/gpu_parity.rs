@@ -97,11 +97,7 @@ fn gpu_and_simd_produce_identical_findings_on_same_corpus() {
     // results identical to SIMD by construction. That degenerate
     // case is uninteresting for parity; surface it as a SKIP so
     // CI doesn't trumpet a no-op pass.
-    if gpu_results
-        .iter()
-        .all(|c| c.is_empty())
-        && simd_results.iter().any(|c| !c.is_empty())
-    {
+    if gpu_results.iter().all(|c| c.is_empty()) && simd_results.iter().any(|c| !c.is_empty()) {
         eprintln!("SKIP: GPU returned zero findings vs {} SIMD findings — likely no compatible adapter; not a parity failure", simd_keys.len());
         return;
     }

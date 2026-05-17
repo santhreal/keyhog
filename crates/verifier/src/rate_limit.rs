@@ -107,7 +107,11 @@ impl RateLimiter {
 }
 
 fn rps_to_nanos(rps: f64) -> u64 {
-    let rate = if rps.is_finite() && rps > 0.0 { rps } else { 1.0 };
+    let rate = if rps.is_finite() && rps > 0.0 {
+        rps
+    } else {
+        1.0
+    };
     let nanos = (1.0e9 / rate).round();
     if nanos.is_finite() && nanos >= 1.0 && nanos <= u64::MAX as f64 {
         nanos as u64

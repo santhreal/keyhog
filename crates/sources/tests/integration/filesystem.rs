@@ -147,11 +147,7 @@ fn unreadable_subtree_does_not_abort_full_scan() {
 
     let locked = dir.path().join("locked");
     fs::create_dir_all(&locked).unwrap();
-    fs::write(
-        locked.join("hidden.txt"),
-        "HIDDEN_KEY=AKIAIOSFODNN7HIDDEN",
-    )
-    .unwrap();
+    fs::write(locked.join("hidden.txt"), "HIDDEN_KEY=AKIAIOSFODNN7HIDDEN").unwrap();
     let mut perms = fs::metadata(&locked).unwrap().permissions();
     perms.set_mode(0o000);
     fs::set_permissions(&locked, perms).unwrap();
@@ -179,7 +175,10 @@ fn unreadable_subtree_does_not_abort_full_scan() {
         "root-level readable file was lost: scan aborted on the locked sibling.\n\
          emitted {} chunks: {:?}",
         chunks.len(),
-        chunks.iter().map(|c| c.metadata.path.as_deref()).collect::<Vec<_>>()
+        chunks
+            .iter()
+            .map(|c| c.metadata.path.as_deref())
+            .collect::<Vec<_>>()
     );
     assert!(
         combined.contains("AKIAIOSFODNN7OTHER12"),
@@ -309,8 +308,7 @@ fn merkle_skip_avoids_reading_unchanged_files() {
     let idx = Arc::new(MerkleIndex::empty());
     idx.record_with_metadata(canonical.clone(), m, size, [0u8; 32]);
 
-    let source = FilesystemSource::new(dir.path().to_path_buf())
-        .with_merkle_skip(idx.clone());
+    let source = FilesystemSource::new(dir.path().to_path_buf()).with_merkle_skip(idx.clone());
     let counter = source.skipped_counter();
     let chunks: Vec<_> = source.chunks().collect::<Result<Vec<_>, _>>().unwrap();
 
@@ -331,8 +329,7 @@ fn merkle_skip_does_not_fire_when_size_drifts() {
     // Record with a deliberately wrong size so the fast-path must miss.
     idx.record_with_metadata(canonical, m, /*size=*/ 1, [0u8; 32]);
 
-    let source = FilesystemSource::new(dir.path().to_path_buf())
-        .with_merkle_skip(idx);
+    let source = FilesystemSource::new(dir.path().to_path_buf()).with_merkle_skip(idx);
     let counter = source.skipped_counter();
     let chunks: Vec<_> = source.chunks().collect::<Result<Vec<_>, _>>().unwrap();
 
@@ -354,8 +351,7 @@ fn windowed_path_emits_multiple_chunks_with_overlap() {
 
     // window=128 overlap=32 → for len=200 we get exactly 2 windows
     // (matches the secret-straddling-cut test in read.rs).
-    let source = FilesystemSource::new(dir.path().to_path_buf())
-        .with_window_config(128, 32);
+    let source = FilesystemSource::new(dir.path().to_path_buf()).with_window_config(128, 32);
     let chunks: Vec<_> = source.chunks().collect::<Result<Vec<_>, _>>().unwrap();
 
     assert_eq!(chunks.len(), 2, "expected 2 windowed chunks for 200B file");
@@ -385,19 +381,24 @@ fn windowed_path_finds_secret_in_overlap_region() {
     let p = dir.path().join("secret.log");
     let mut content = vec![b'.'; 200];
     let secret = b"AKIAIOSFODNN7EXAMPLE"; // 20 bytes
-    // Place at offset 100 so the secret fits in the overlap region
-    // (96..128). 20-byte secret at 100..120 is fully inside both
-    // window 0 (0..128) and window 1 (96..200).
+                                          // Place at offset 100 so the secret fits in the overlap region
+                                          // (96..128). 20-byte secret at 100..120 is fully inside both
+                                          // window 0 (0..128) and window 1 (96..200).
     content[100..100 + secret.len()].copy_from_slice(secret);
     fs::write(&p, &content).unwrap();
 
-    let source = FilesystemSource::new(dir.path().to_path_buf())
-        .with_window_config(128, 32);
+    let source = FilesystemSource::new(dir.path().to_path_buf()).with_window_config(128, 32);
     let chunks: Vec<_> = source.chunks().collect::<Result<Vec<_>, _>>().unwrap();
     assert_eq!(chunks.len(), 2);
     let s = std::str::from_utf8(secret).unwrap();
-    assert!(chunks[0].data.contains(s), "window 0 must include the overlap-region secret");
-    assert!(chunks[1].data.contains(s), "window 1 must include the overlap-region secret");
+    assert!(
+        chunks[0].data.contains(s),
+        "window 0 must include the overlap-region secret"
+    );
+    assert!(
+        chunks[1].data.contains(s),
+        "window 1 must include the overlap-region secret"
+    );
 }
 
 #[test]
@@ -411,14 +412,13 @@ fn windowed_path_finds_post_cut_secret_in_second_window_only() {
     let p = dir.path().join("secret.log");
     let mut content = vec![b'.'; 200];
     let secret = b"AKIAIOSFODNN7EXAMPLE"; // 20 bytes
-    // Place at offset 120 so it sits PAST the cut at 128 — only fully
-    // contained in window 1 (96..200). Window 0 has the first 8 bytes
-    // only and won't substring-match the full credential.
+                                          // Place at offset 120 so it sits PAST the cut at 128 — only fully
+                                          // contained in window 1 (96..200). Window 0 has the first 8 bytes
+                                          // only and won't substring-match the full credential.
     content[120..120 + secret.len()].copy_from_slice(secret);
     fs::write(&p, &content).unwrap();
 
-    let source = FilesystemSource::new(dir.path().to_path_buf())
-        .with_window_config(128, 32);
+    let source = FilesystemSource::new(dir.path().to_path_buf()).with_window_config(128, 32);
     let chunks: Vec<_> = source.chunks().collect::<Result<Vec<_>, _>>().unwrap();
     assert_eq!(chunks.len(), 2);
     let s = std::str::from_utf8(secret).unwrap();
@@ -443,8 +443,7 @@ fn windowed_path_single_chunk_for_file_at_exactly_window_size() {
     let content: Vec<u8> = (b'a'..=b'z').cycle().take(128).collect();
     fs::write(&p, &content).unwrap();
 
-    let source = FilesystemSource::new(dir.path().to_path_buf())
-        .with_window_config(128, 32);
+    let source = FilesystemSource::new(dir.path().to_path_buf()).with_window_config(128, 32);
     let chunks: Vec<_> = source.chunks().collect::<Result<Vec<_>, _>>().unwrap();
     assert_eq!(chunks.len(), 1);
     assert_ne!(
@@ -464,8 +463,7 @@ fn windowed_path_single_chunk_when_only_one_window_above_threshold() {
     let content: Vec<u8> = (b'a'..=b'z').cycle().take(65).collect();
     fs::write(&p, &content).unwrap();
 
-    let source = FilesystemSource::new(dir.path().to_path_buf())
-        .with_window_config(64, 8);
+    let source = FilesystemSource::new(dir.path().to_path_buf()).with_window_config(64, 8);
     let chunks: Vec<_> = source.chunks().collect::<Result<Vec<_>, _>>().unwrap();
     assert_eq!(chunks.len(), 2);
     // Window 0: 0..64 = 64 bytes; window 1: 56..65 = 9 bytes.
@@ -485,14 +483,20 @@ fn windowed_path_offsets_strictly_monotonic() {
     let content: Vec<u8> = (b'a'..=b'z').cycle().take(2000).collect();
     fs::write(&p, &content).unwrap();
 
-    let source = FilesystemSource::new(dir.path().to_path_buf())
-        .with_window_config(256, 32);
+    let source = FilesystemSource::new(dir.path().to_path_buf()).with_window_config(256, 32);
     let chunks: Vec<_> = source.chunks().collect::<Result<Vec<_>, _>>().unwrap();
-    assert!(chunks.len() >= 5, "expected several windows for 2000B / 256");
+    assert!(
+        chunks.len() >= 5,
+        "expected several windows for 2000B / 256"
+    );
 
     for pair in chunks.windows(2) {
         let stride = pair[1].metadata.base_offset - pair[0].metadata.base_offset;
-        assert_eq!(stride, 256 - 32, "stride mismatch between consecutive windows");
+        assert_eq!(
+            stride,
+            256 - 32,
+            "stride mismatch between consecutive windows"
+        );
     }
 }
 
@@ -545,7 +549,9 @@ fn compressed_gz_file_yields_decompressed_chunk() {
     // At least one chunk emitted from the gz; tagged compressed.
     assert!(!chunks.is_empty(), "compressed path must emit a chunk");
     assert!(
-        chunks.iter().any(|c| c.metadata.source_type == "filesystem/compressed"),
+        chunks
+            .iter()
+            .any(|c| c.metadata.source_type == "filesystem/compressed"),
         "expected filesystem/compressed source_type"
     );
     let combined: String = chunks
@@ -587,6 +593,9 @@ fn merkle_skip_chunks_carry_live_metadata() {
     let chunks: Vec<_> = source.chunks().collect::<Result<Vec<_>, _>>().unwrap();
     assert_eq!(chunks.len(), 1);
     let meta = &chunks[0].metadata;
-    assert!(meta.mtime_ns.is_some(), "mtime_ns should be populated by FilesystemSource");
+    assert!(
+        meta.mtime_ns.is_some(),
+        "mtime_ns should be populated by FilesystemSource"
+    );
     assert_eq!(meta.size_bytes, Some(size));
 }

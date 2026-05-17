@@ -49,9 +49,9 @@ fn make_chunk(data: String, path: Option<&str>) -> Chunk {
             commit: None,
             author: None,
             date: None,
-                    mtime_ns: None,
+            mtime_ns: None,
             size_bytes: None,
-},
+        },
     }
 }
 

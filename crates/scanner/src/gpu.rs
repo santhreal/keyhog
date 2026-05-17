@@ -23,10 +23,10 @@ mod backend {
     /// Below this, CPU is faster due to GPU dispatch overhead.
     const GPU_BATCH_THRESHOLD: usize = 64;
 
-    /// Per-OS preferred wgpu backend mask. Returns the union of the OS-native
-    /// backend (DX12/Metal/Vulkan) and a portable fallback (Vulkan/GL) so a
-    /// missing native ICD still surfaces *some* adapter rather than dropping
-    /// straight to CpuFallback.
+    /// Per-OS preferred wgpu backend mask. Retained for the
+    /// `preferred_backends_picks_native_per_os` test — runtime GPU
+    /// init now goes through `vyre_driver_wgpu::WgpuBackend::shared()`.
+    #[allow(dead_code)]
     pub(super) fn preferred_backends() -> wgpu::Backends {
         #[cfg(target_os = "windows")]
         {
@@ -56,9 +56,10 @@ mod backend {
     }
 
     pub(super) struct GpuContext {
-        device: wgpu::Device,
-        queue: wgpu::Queue,
+        /// Shared device+queue from vyre — NOT a second device.
+        device_queue: std::sync::Arc<(wgpu::Device, wgpu::Queue)>,
         adapter_info: wgpu::AdapterInfo,
+        device_limits: wgpu::Limits,
         pipeline: wgpu::ComputePipeline,
         weights_buf: wgpu::Buffer,
         params_buf: wgpu::Buffer,
@@ -67,171 +68,130 @@ mod backend {
 
     impl GpuContext {
         /// Maximum single storage-buffer size the device will accept, in MiB.
-        /// This is the practical ceiling on a GPU batch — not actual VRAM
-        /// (wgpu/WebGPU does not standardize VRAM queries), but the right
-        /// number for sizing scan batches. Clamped to 256 GiB because some
-        /// drivers (NVIDIA in particular) report the full 64-bit virtual
-        /// address space (≈18 EB) as `max_buffer_size`, which is technically
-        /// correct but useless to display.
+        /// Clamped to 256 GiB because some drivers report the full 64-bit
+        /// virtual address space as `max_buffer_size`.
         pub fn vram_mb(&self) -> Option<u64> {
             const SANE_CAP_MB: u64 = 256 * 1024;
-            let limits = self.device.limits();
-            Some((limits.max_buffer_size / (1024 * 1024)).min(SANE_CAP_MB))
+            Some((self.device_limits.max_buffer_size / (1024 * 1024)).min(SANE_CAP_MB))
         }
 
         /// Human-readable GPU name from the adapter.
         pub fn gpu_name(&self) -> &str {
             &self.adapter_info.name
         }
+
+        #[inline]
+        fn device(&self) -> &wgpu::Device {
+            &self.device_queue.0
+        }
+
+        #[inline]
+        fn queue(&self) -> &wgpu::Queue {
+            &self.device_queue.1
+        }
     }
 
     static GPU: OnceLock<Option<GpuContext>> = OnceLock::new();
 
     fn init_gpu() -> Result<GpuContext, Box<dyn std::error::Error + Send + Sync>> {
-        // Offload blocking wgpu initialization to a dedicated OS thread so we
-        // don't starve the calling thread's async runtime (e.g. tokio workers).
-        let handle = std::thread::spawn(|| {
-            // Per-OS native backend preference — wgpu maps to:
-            //   Linux/BSD → Vulkan (also covers Steam Deck / proton / mesa)
-            //   Windows   → DX12 (native) + Vulkan (NVIDIA/AMD on Win11)
-            //   macOS/iOS → Metal (only first-class API on Apple silicon)
-            //   Other     → all backends, let wgpu pick
-            // We OR with GL as a last-resort so headless Linux servers
-            // without a real Vulkan ICD still get *something*. Backends::all()
-            // is the union; we just rank-bias the pickone via env override
-            // (`WGPU_BACKEND=vulkan` etc) for diagnostics.
-            let backends = preferred_backends();
-            let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
-                backends,
-                ..Default::default()
-            });
+        // Reuse the vyre WgpuBackend's device instead of creating a second one.
+        // This shares the adapter probe, device request, and queue with the
+        // literal-set/MegaScan GPU scanner — halving init time and memory.
+        let vyre_backend = vyre_driver_wgpu::WgpuBackend::shared()
+            .map_err(|e| format!("vyre WgpuBackend unavailable: {e}"))?;
 
-            let adapter =
-                pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-                    power_preference: wgpu::PowerPreference::HighPerformance,
-                    compatible_surface: None,
-                    force_fallback_adapter: false,
-                }))
-                .ok_or("No GPU adapter found")?;
+        let adapter_info = vyre_backend.adapter_info().clone();
 
-            let adapter_info = adapter.get_info();
-
-            // Reject software fallback adapters at the wgpu layer too —
-            // hw_probe's name-based check (llvmpipe/lavapipe/swiftshader)
-            // catches the common ones, but `device_type == Cpu` is the
-            // authoritative signal. Returning Err here drops us straight
-            // to SimdCpu without ever instantiating an unusable device.
-            if adapter_info.device_type == wgpu::DeviceType::Cpu {
-                return Err(format!(
-                    "GPU adapter is a software fallback ({} on {:?}); refusing to use",
-                    adapter_info.name, adapter_info.backend
-                )
-                .into());
-            }
-
-            // Request the adapter's full limits — wgpu's `Limits::default()`
-            // caps `max_storage_buffer_binding_size` at 128 MiB which is far
-            // smaller than the actual GPU capacity (e.g. 32 GB on an RTX 5090).
-            // Using adapter limits unlocks larger batch dispatches; if the
-            // adapter is constrained we still get the right effective ceiling.
-            let adapter_limits = adapter.limits();
-            let (device, queue) = pollster::block_on(adapter.request_device(
-                &wgpu::DeviceDescriptor {
-                    label: Some("keyhog-moe"),
-                    required_features: wgpu::Features::empty(),
-                    required_limits: adapter_limits,
-                    ..Default::default()
-                },
-                None,
-            ))?;
-            tracing::info!(
-                gpu = %adapter_info.name,
-                backend = ?adapter_info.backend,
-                device_type = ?adapter_info.device_type,
-                driver = %adapter_info.driver,
-                "GPU device initialized"
-            );
-
-            let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-                label: Some("moe_shader"),
-                source: wgpu::ShaderSource::Wgsl(MOE_SHADER.into()),
-            });
-
-            let bind_group_layout =
-                device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                    label: Some("moe_bgl"),
-                    entries: &[
-                        // Weights buffer (read-only storage)
-                        bgl_entry(0, true),
-                        // Input features buffer (read-only storage)
-                        bgl_entry(1, true),
-                        // Output scores buffer (read-write storage)
-                        bgl_entry(2, false),
-                        // Params uniform
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 3,
-                            visibility: wgpu::ShaderStages::COMPUTE,
-                            ty: wgpu::BindingType::Buffer {
-                                ty: wgpu::BufferBindingType::Uniform,
-                                has_dynamic_offset: false,
-                                min_binding_size: None,
-                            },
-                            count: None,
-                        },
-                    ],
-                });
-
-            let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("moe_pipeline_layout"),
-                bind_group_layouts: &[&bind_group_layout],
-                push_constant_ranges: &[],
-            });
-
-            let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                label: Some("moe_pipeline"),
-                layout: Some(&pipeline_layout),
-                module: &shader,
-                entry_point: Some("moe_forward"),
-                compilation_options: Default::default(),
-                cache: None,
-            });
-
-            // Upload weights once
-            let all_weights = crate::ml_scorer::ml_weights::all_weights_slice();
-            let weights_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("weights"),
-                contents: bytemuck::cast_slice(all_weights),
-                usage: wgpu::BufferUsages::STORAGE,
-            });
-
-            let params_buf = device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("params"),
-                size: std::mem::size_of::<GpuParams>() as u64,
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            });
-
-            Ok(GpuContext {
-                device,
-                queue,
-                adapter_info,
-                pipeline,
-                weights_buf,
-                params_buf,
-                bind_group_layout,
-            })
-        });
-        // 2-second timeout: never block startup waiting for GPU.
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
-        loop {
-            if handle.is_finished() {
-                return handle.join().map_err(|_| "GPU init thread panicked")?;
-            }
-            if std::time::Instant::now() > deadline {
-                return Err("GPU init timed out — falling back to CPU".into());
-            }
-            std::thread::sleep(std::time::Duration::from_millis(50));
+        // Reject software fallback adapters.
+        if adapter_info.device_type == wgpu::DeviceType::Cpu {
+            return Err(format!(
+                "GPU adapter is a software fallback ({} on {:?}); refusing to use",
+                adapter_info.name, adapter_info.backend
+            )
+            .into());
         }
+
+        let device_limits = vyre_backend.device_limits().clone();
+        let dq = vyre_backend.device_queue();
+
+        tracing::info!(
+            gpu = %adapter_info.name,
+            backend = ?adapter_info.backend,
+            device_type = ?adapter_info.device_type,
+            driver = %adapter_info.driver,
+            "GPU MoE: reusing vyre shared device"
+        );
+
+        let device = &dq.0;
+
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("moe_shader"),
+            source: wgpu::ShaderSource::Wgsl(MOE_SHADER.into()),
+        });
+
+        let bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("moe_bgl"),
+                entries: &[
+                    // Weights buffer (read-only storage)
+                    bgl_entry(0, true),
+                    // Input features buffer (read-only storage)
+                    bgl_entry(1, true),
+                    // Output scores buffer (read-write storage)
+                    bgl_entry(2, false),
+                    // Params uniform
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                ],
+            });
+
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("moe_pipeline_layout"),
+            bind_group_layouts: &[&bind_group_layout],
+            push_constant_ranges: &[],
+        });
+
+        let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("moe_pipeline"),
+            layout: Some(&pipeline_layout),
+            module: &shader,
+            entry_point: Some("moe_forward"),
+            compilation_options: Default::default(),
+            cache: None,
+        });
+
+        // Upload weights once
+        let all_weights = crate::ml_scorer::ml_weights::all_weights_slice();
+        let weights_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("weights"),
+            contents: bytemuck::cast_slice(all_weights),
+            usage: wgpu::BufferUsages::STORAGE,
+        });
+
+        let params_buf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("params"),
+            size: std::mem::size_of::<GpuParams>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        Ok(GpuContext {
+            device_queue: dq,
+            adapter_info,
+            device_limits,
+            pipeline,
+            weights_buf,
+            params_buf,
+            bind_group_layout,
+        })
     }
 
     fn bgl_entry(binding: u32, read_only: bool) -> wgpu::BindGroupLayoutEntry {
@@ -258,7 +218,7 @@ mod backend {
     pub fn get_gpu() -> Option<&'static GpuContext> {
         GPU.get_or_init(|| match init_gpu() {
             Ok(ctx) => {
-                tracing::info!("GPU MoE inference initialized");
+                tracing::info!("GPU MoE inference initialized (shared device)");
                 Some(ctx)
             }
             Err(e) => {
@@ -270,7 +230,6 @@ mod backend {
     }
 
     /// Score a batch of feature vectors on GPU. Returns one score per input.
-    /// Score a batch of precomputed feature vectors on the GPU.
     ///
     /// # Examples
     ///
@@ -285,12 +244,13 @@ mod backend {
 
         let gpu = get_gpu()?;
         let batch_size = features.len();
+        let device = gpu.device();
+        let queue = gpu.queue();
 
         // Flatten features into a contiguous f32 buffer
         let flat_features: Vec<f32> = features.iter().flat_map(|f| f.iter().copied()).collect();
 
-        let input_buf = gpu
-            .device
+        let input_buf = device
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("input"),
                 contents: bytemuck::cast_slice(&flat_features),
@@ -298,14 +258,14 @@ mod backend {
             });
 
         let output_size = (batch_size * std::mem::size_of::<f32>()) as u64;
-        let output_buf = gpu.device.create_buffer(&wgpu::BufferDescriptor {
+        let output_buf = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("output"),
             size: output_size,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
 
-        let staging_buf = gpu.device.create_buffer(&wgpu::BufferDescriptor {
+        let staging_buf = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("staging"),
             size: output_size,
             usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
@@ -317,10 +277,10 @@ mod backend {
             batch_size: batch_size as u32,
             _pad: [0; 3],
         };
-        gpu.queue
+        queue
             .write_buffer(&gpu.params_buf, 0, bytemuck::bytes_of(&params));
 
-        let bind_group = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("moe_bg"),
             layout: &gpu.bind_group_layout,
             entries: &[
@@ -343,8 +303,7 @@ mod backend {
             ],
         });
 
-        let mut encoder = gpu
-            .device
+        let mut encoder = device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("moe_encoder"),
             });
@@ -362,7 +321,7 @@ mod backend {
         }
 
         encoder.copy_buffer_to_buffer(&output_buf, 0, &staging_buf, 0, output_size);
-        gpu.queue.submit(std::iter::once(encoder.finish()));
+        queue.submit(std::iter::once(encoder.finish()));
 
         // Read back results
         let slice = staging_buf.slice(..);
@@ -370,7 +329,7 @@ mod backend {
         slice.map_async(wgpu::MapMode::Read, move |result| {
             let _ = sender.send(result);
         });
-        gpu.device.poll(wgpu::Maintain::Wait);
+        device.poll(wgpu::Maintain::Wait);
 
         receiver.recv().ok()?.ok()?;
         let data = slice.get_mapped_range();

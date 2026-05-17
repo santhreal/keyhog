@@ -142,9 +142,9 @@ fn stream_git_history_chunks(
                                     commit: Some(commit.clone()),
                                     author: Some(author.clone()),
                                     date: Some(date.clone()),
-                                                                    mtime_ns: None,
+                                    mtime_ns: None,
                                     size_bytes: None,
-},
+                                },
                             }));
                         }
                     }
@@ -177,9 +177,9 @@ fn stream_git_history_chunks(
                                 commit: Some(commit.clone()),
                                 author: Some(author.clone()),
                                 date: Some(date.clone()),
-                                                            mtime_ns: None,
+                                mtime_ns: None,
                                 size_bytes: None,
-},
+                            },
                         })
                     } else {
                         None
@@ -228,9 +228,9 @@ fn stream_git_history_chunks(
                                 commit: Some(commit.clone()),
                                 author: Some(author.clone()),
                                 date: Some(date.clone()),
-                                                            mtime_ns: None,
+                                mtime_ns: None,
                                 size_bytes: None,
-},
+                            },
                         })
                     } else {
                         None
@@ -293,9 +293,9 @@ fn stream_git_history_chunks(
                             commit: Some(commit.clone()),
                             author: Some(author.clone()),
                             date: Some(date.clone()),
-                                                    mtime_ns: None,
+                            mtime_ns: None,
                             size_bytes: None,
-},
+                        },
                     }));
                 }
             }

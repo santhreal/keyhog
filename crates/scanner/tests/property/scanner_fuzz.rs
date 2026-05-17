@@ -11,9 +11,7 @@
 //! pathological inputs are exercised by `tests/oom_test.rs` and
 //! `tests/adversarial`.
 
-use keyhog_core::{
-    Chunk, ChunkMetadata, DetectorSpec, PatternSpec, Severity,
-};
+use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, Severity};
 use keyhog_scanner::CompiledScanner;
 use proptest::prelude::*;
 

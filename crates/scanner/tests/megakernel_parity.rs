@@ -38,9 +38,7 @@ fn make_chunk(text: &str, path: &str) -> Chunk {
 
 type FindingKey = (String, String, usize);
 
-fn collect_keys(
-    results: &[Vec<keyhog_core::RawMatch>],
-) -> std::collections::BTreeSet<FindingKey> {
+fn collect_keys(results: &[Vec<keyhog_core::RawMatch>]) -> std::collections::BTreeSet<FindingKey> {
     let mut set = std::collections::BTreeSet::new();
     for chunk in results {
         for m in chunk {

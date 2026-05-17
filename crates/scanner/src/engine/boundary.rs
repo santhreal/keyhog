@@ -159,7 +159,9 @@ fn scan_one_pair(
         let already_seen = per_chunk_results[ai]
             .iter()
             .chain(per_chunk_results[bi].iter())
-            .any(|x| x.location.offset == m.location.offset && x.credential_hash == m.credential_hash);
+            .any(|x| {
+                x.location.offset == m.location.offset && x.credential_hash == m.credential_hash
+            });
         if already_seen {
             continue;
         }
@@ -328,7 +330,11 @@ mod tests {
         // Pre-seed chunk B with that canonical match, then re-run.
         let mut per_chunk: Vec<Vec<RawMatch>> = vec![Vec::new(), vec![canonical]];
         scan_chunk_boundaries(&scanner, &chunks, &mut per_chunk);
-        assert_eq!(per_chunk[1].len(), 1, "dedup must keep just the seeded match");
+        assert_eq!(
+            per_chunk[1].len(),
+            1,
+            "dedup must keep just the seeded match"
+        );
     }
 
     #[test]

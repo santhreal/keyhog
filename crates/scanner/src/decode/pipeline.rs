@@ -163,10 +163,13 @@ pub(super) fn push_decoded_text_chunk(
     text: String,
     decoder_name: &str,
 ) {
+    // Fast ASCII check: control chars are always in 0x00-0x1F range.
+    // Byte-level iteration avoids UTF-8 decode overhead.
+    let bytes = text.as_bytes();
     if text.is_empty()
-        || !text
-            .chars()
-            .all(|ch| !ch.is_control() || ch == '\n' || ch == '\r' || ch == '\t')
+        || bytes.iter().any(|&b| {
+            b < 0x20 && b != b'\n' && b != b'\r' && b != b'\t'
+        })
     {
         return;
     }

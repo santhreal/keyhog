@@ -91,18 +91,38 @@ impl CompiledScanner {
             return self.scan_coalesced_gpu(chunks);
         }
 
-        let mut matches: Vec<vyre_libs::matching::LiteralMatch> = {
-            use vyre_libs::matching::{dedup_regions_inplace, LiteralMatch, RegionTriple};
-            let mut triples: Vec<RegionTriple> = raw_matches
-                .iter()
-                .map(|m| RegionTriple::new(m.pattern_id, m.start, m.end))
-                .collect();
-            dedup_regions_inplace(&mut triples);
-            triples
-                .into_iter()
-                .map(|t| LiteralMatch::new(t.pid, t.start, t.end))
-                .collect()
-        };
+        let mut matches: Vec<vyre_libs::matching::LiteralMatch> = raw_matches
+            .iter()
+            .map(|m| vyre_libs::matching::LiteralMatch::new(m.pattern_id, m.start, m.end))
+            .collect();
+        // In-place dedup: sort by (pattern_id, start, end) and fold overlapping spans.
+        matches.sort_unstable_by(|a, b| {
+            a.pattern_id.cmp(&b.pattern_id)
+                .then(a.start.cmp(&b.start))
+                .then(a.end.cmp(&b.end))
+        });
+        {
+            let mut write = 0;
+            for read in 1..matches.len() {
+                if matches[read].pattern_id == matches[write].pattern_id
+                    && matches[read].start <= matches[write].end
+                {
+                    if matches[read].end > matches[write].end {
+                        matches[write] = vyre_libs::matching::LiteralMatch::new(
+                            matches[write].pattern_id,
+                            matches[write].start,
+                            matches[read].end,
+                        );
+                    }
+                } else {
+                    write += 1;
+                    matches[write] = matches[read];
+                }
+            }
+            if !matches.is_empty() {
+                matches.truncate(write + 1);
+            }
+        }
         matches.sort_unstable_by_key(|m| m.start);
 
         let total_patterns = self.ac_map.len() + self.fallback.len();
@@ -156,62 +176,19 @@ impl CompiledScanner {
         results
     }
 
-    /// GPU coalesced scan via the vyre megakernel `BatchDispatcher`.
-    /// Single persistent kernel launch handles every chunk × every
-    /// detector literal, replacing the N-shard `GpuLiteralSet::scan`
-    /// loop in `scan_coalesced_gpu`. Per-chunk extraction phase still
-    /// runs CPU-side after the trigger bitmask is decoded — the
-    /// architectural step that moves extraction onto GPU is a
-    /// separate megakernel opcode handler set, tracked in
-    /// `docs/vyre-usage.md` next-wires #8 step 7.
+    /// GPU coalesced scan — legacy megakernel entry point.
     ///
-    /// Falls back to `scan_coalesced_gpu` when the megakernel can't
-    /// be initialised (no adapter, no literals, dispatcher init
-    /// failure, dispatch error mid-batch).
+    /// Previously attempted to dispatch via a `MegakernelScanner` stub
+    /// that always returned `None`, falling through to `scan_coalesced_gpu`.
+    /// The stub has been removed (see audit 2026-05-11); this function
+    /// now delegates directly. Kept as a named entry point so the
+    /// `scan_chunks_with_backend` routing table and the megakernel
+    /// parity test continue to compile without churn.
     pub fn scan_coalesced_megakernel(
         &self,
         chunks: &[keyhog_core::Chunk],
     ) -> Vec<Vec<keyhog_core::RawMatch>> {
-        use crate::hw_probe::ScanBackend;
-
-        let Some(megakernel) = self.megakernel_scanner() else {
-            tracing::debug!(
-                "Megakernel: not initialised, falling back to literal-set GPU"
-            );
-            return self.scan_coalesced_gpu(chunks);
-        };
-
-        let triggers_opt = {
-            let mut guard = megakernel.lock();
-            guard.dispatch_triggers(chunks)
-        };
-        let Some(per_chunk_triggers) = triggers_opt else {
-            return self.scan_coalesced_gpu(chunks);
-        };
-
-        // Same per-chunk extraction phase as scan_coalesced_gpu: rayon
-        // par_iter over (chunk, triggers), prepare_chunk,
-        // scan_prepared_with_triggered, post_process_matches, then
-        // boundary reassembly across contiguous chunks.
-        use rayon::prelude::*;
-        let mut results: Vec<Vec<keyhog_core::RawMatch>> = chunks
-            .par_iter()
-            .zip(per_chunk_triggers.into_par_iter())
-            .map(|(chunk, triggered)| {
-                let prepared = self.prepare_chunk(chunk);
-                let mut matches = self.scan_prepared_with_triggered(
-                    prepared,
-                    ScanBackend::Gpu,
-                    triggered,
-                    None,
-                );
-                self.post_process_matches(chunk, &mut matches, None);
-                matches
-            })
-            .collect();
-
-        super::boundary::scan_chunk_boundaries(self, chunks, &mut results);
-        results
+        self.scan_coalesced_gpu(chunks)
     }
 
     /// GPU coalesced scan via one Vyre literal-set dispatch.
@@ -356,19 +333,38 @@ impl CompiledScanner {
         // bumps that duplicate `(pid, start, end)` triples used to
         // cause. We then re-sort by `start` for the chunk-attribution
         // walk that follows.
+        // Per-pid region dedup: sort by (pattern_id, start, end) and fold
+        // overlapping same-pid spans in-place. Avoids the intermediate
+        // Vec<RegionTriple> → Vec<LiteralMatch> round-trip that doubled
+        // the allocation cost of this path.
         {
-            use vyre_libs::matching::{dedup_regions_inplace, RegionTriple};
-            let mut triples: Vec<RegionTriple> = matches
-                .iter()
-                .map(|m| RegionTriple::new(m.pattern_id, m.start, m.end))
-                .collect();
-            dedup_regions_inplace(&mut triples);
-            matches.clear();
-            matches.extend(
-                triples
-                    .into_iter()
-                    .map(|t| vyre_libs::matching::LiteralMatch::new(t.pid, t.start, t.end)),
-            );
+            matches.sort_unstable_by(|a, b| {
+                a.pattern_id.cmp(&b.pattern_id)
+                    .then(a.start.cmp(&b.start))
+                    .then(a.end.cmp(&b.end))
+            });
+            // Fold overlapping same-pid spans
+            let mut write = 0;
+            for read in 1..matches.len() {
+                if matches[read].pattern_id == matches[write].pattern_id
+                    && matches[read].start <= matches[write].end
+                {
+                    // Extend the current region
+                    if matches[read].end > matches[write].end {
+                        matches[write] = vyre_libs::matching::LiteralMatch::new(
+                            matches[write].pattern_id,
+                            matches[write].start,
+                            matches[read].end,
+                        );
+                    }
+                } else {
+                    write += 1;
+                    matches[write] = matches[read];
+                }
+            }
+            if !matches.is_empty() {
+                matches.truncate(write + 1);
+            }
         }
         matches.sort_unstable_by_key(|matched| matched.start);
 

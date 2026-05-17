@@ -33,9 +33,7 @@ impl PreprocessedText {
     /// 10 000-line file with ~100 matches that's 10 000 × 100 = 1 M
     /// pointer compares cut to ~1 400.
     pub fn line_for_offset(&self, offset: usize) -> Option<usize> {
-        let idx = self
-            .mappings
-            .partition_point(|m| m.start_offset <= offset);
+        let idx = self.mappings.partition_point(|m| m.start_offset <= offset);
         if idx == 0 {
             return None;
         }

@@ -169,10 +169,7 @@ impl FileBytes {
 /// pathological inputs at the source rather than letting them land in
 /// the decompressor) or when neither mmap nor buffered read can
 /// produce bytes.
-pub(super) fn read_file_for_compressed_input(
-    path: &Path,
-    size_cap: u64,
-) -> Option<FileBytes> {
+pub(super) fn read_file_for_compressed_input(path: &Path, size_cap: u64) -> Option<FileBytes> {
     let file = open_file_safe(path).ok()?;
     let metadata = file.metadata().ok()?;
     if metadata.len() > size_cap {
@@ -752,7 +749,12 @@ mod tests {
         // decode is a no-op and byte length is preserved across
         // the String round-trip — otherwise U+FFFD substitution
         // makes the post-decode lengths drift from the raw slice.
-        let bytes: Vec<u8> = b"0123456789abcdefghijklmnopqrstuvwxyz".iter().copied().cycle().take(200).collect();
+        let bytes: Vec<u8> = b"0123456789abcdefghijklmnopqrstuvwxyz"
+            .iter()
+            .copied()
+            .cycle()
+            .take(200)
+            .collect();
         let ws = slice_into_windows(&bytes, 100, 16);
         assert!(ws.len() >= 2);
         for pair in ws.windows(2) {
@@ -798,10 +800,20 @@ mod tests {
         let secret = b"AKIAIOSFODNN7EXAMPLE";
         bytes[100..100 + secret.len()].copy_from_slice(secret);
         let ws = slice_into_windows(&bytes, 128, 32);
-        assert_eq!(ws.len(), 2, "expected exactly 2 windows for len=200, ws=128, ov=32");
+        assert_eq!(
+            ws.len(),
+            2,
+            "expected exactly 2 windows for len=200, ws=128, ov=32"
+        );
         let s = std::str::from_utf8(secret).unwrap();
-        assert!(ws[0].text.contains(s), "window 0 must carry the straddling secret");
-        assert!(ws[1].text.contains(s), "window 1 must carry the straddling secret");
+        assert!(
+            ws[0].text.contains(s),
+            "window 0 must carry the straddling secret"
+        );
+        assert!(
+            ws[1].text.contains(s),
+            "window 1 must carry the straddling secret"
+        );
     }
 
     #[test]

@@ -14,9 +14,9 @@ fn make_chunk(data: &str, path: Option<&str>) -> Chunk {
             commit: None,
             author: None,
             date: None,
-                    mtime_ns: None,
+            mtime_ns: None,
             size_bytes: None,
-},
+        },
     }
 }
 
@@ -140,7 +140,7 @@ fn bench_raw_vyre_gpu(c: &mut Criterion) {
     let dq = vyre_wgpu::runtime::cached_device().expect("failed to get GPU device");
     let (device, _) = &*dq;
 
-    let scanner = vyre_libs::matching::GpuLiteralSet::compile(&pattern_refs);
+    let scanner = vyre_libs::scan::GpuLiteralSet::compile(&pattern_refs);
 
     let sizes = [1024, 1024 * 1024, 8 * 1024 * 1024];
     let mut group = c.benchmark_group("vyre_raw_scan");

@@ -46,6 +46,7 @@ const SEED_SOURCE_TYPES: &[&str] = &[
 /// Frozen static-string interner. Built once at scanner
 /// construction; cloneable via `Arc` so every rayon worker shares
 /// one read-only instance.
+#[derive(Default)]
 pub struct StaticInterner {
     phf: PerfectHash,
     arena: Vec<Arc<str>>,
@@ -118,14 +119,7 @@ impl StaticInterner {
     }
 }
 
-impl Default for StaticInterner {
-    fn default() -> Self {
-        Self {
-            phf: PerfectHash::default(),
-            arena: Vec::new(),
-        }
-    }
-}
+
 
 #[cfg(test)]
 mod tests {

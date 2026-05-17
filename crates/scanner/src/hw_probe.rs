@@ -328,9 +328,7 @@ pub fn select_backend(
         let solo = gpu_solo_bytes_for_tier(tier);
         let min = gpu_min_bytes_for_tier(tier);
         let pattern_floor = gpu_pattern_breakeven_for_tier(tier);
-        if workload_bytes >= solo
-            || (workload_bytes >= min && pattern_count >= pattern_floor)
-        {
+        if workload_bytes >= solo || (workload_bytes >= min && pattern_count >= pattern_floor) {
             return ScanBackend::Gpu;
         }
     }

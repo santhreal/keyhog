@@ -100,36 +100,16 @@ impl CompiledScanner {
         // that threw the GPU results away — see audit release-2026-04-26.
         if self.gpu_literals.is_none() || self.wgpu_backend.is_none() {
             let fallback_backend = self.degraded_backend_after_gpu_failure();
-            tracing::debug!(
-                fallback = fallback_backend.label(),
-                "gpu matcher unavailable, using non-gpu backend"
-            );
             use rayon::prelude::*;
             return chunks
                 .par_iter()
                 .map(|chunk| self.scan_with_backend(chunk, fallback_backend))
                 .collect();
         }
+
         match backend {
             ScanBackend::MegaScan => self.scan_coalesced_megascan(chunks),
-            _ => {
-                // Opt-in megakernel-batched dispatch: when
-                // KEYHOG_USE_MEGAKERNEL=1, route the GPU literal-set
-                // path through vyre's persistent BatchDispatcher
-                // (one launch per batch) instead of the sharded
-                // GpuLiteralSet (50 launches for a 100 MiB batch).
-                // Defaults off until the megakernel parity test
-                // ships and the dispatch latency is measured against
-                // the sharded path on production corpora.
-                let use_megakernel = std::env::var("KEYHOG_USE_MEGAKERNEL")
-                    .map(|v| matches!(v.trim(), "1" | "true" | "TRUE" | "yes"))
-                    .unwrap_or(false);
-                if use_megakernel {
-                    self.scan_coalesced_megakernel(chunks)
-                } else {
-                    self.scan_coalesced_gpu(chunks)
-                }
-            }
+            _ => self.scan_coalesced_megakernel(chunks),
         }
     }
 

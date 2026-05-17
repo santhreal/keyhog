@@ -679,9 +679,7 @@ fn is_default_excluded(path: &str) -> bool {
 fn file_mtime_ns(path: &Path) -> Option<u64> {
     let meta = std::fs::metadata(path).ok()?;
     let modified = meta.modified().ok()?;
-    let dur = modified
-        .duration_since(std::time::UNIX_EPOCH)
-        .ok()?;
+    let dur = modified.duration_since(std::time::UNIX_EPOCH).ok()?;
     // Cap nanos at u64::MAX for the (unrealistic) far-future case so the
     // numeric key stays stable. ~584 years from epoch fits in u64 ns
     // comfortably; the real concern is filesystems returning weird values.

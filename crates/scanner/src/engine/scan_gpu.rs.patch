@@ -1,0 +1,23 @@
+--- crates/scanner/src/engine/scan_gpu.rs
++++ crates/scanner/src/engine/scan_gpu.rs
+@@ -377,6 +377,13 @@
+             .collect();
+ 
++        for (i, res) in results.iter().enumerate() {
++            for m in res {
++                if m.credential.as_ref().contains("sb_4") {
++                    println!("BEFORE BOUNDARY CHUNK {}: {:?}", i, m.credential);
++                }
++            }
++        }
+         // Cross-chunk boundary reassembly
+         super::boundary::scan_chunk_boundaries(self, chunks, &mut results);
++        for (i, res) in results.iter().enumerate() {
++            for m in res {
++                if m.credential.as_ref().contains("sb_4") {
++                    println!("AFTER BOUNDARY CHUNK {}: {:?}", i, m.credential);
++                }
++            }
++        }
+         results
+     }

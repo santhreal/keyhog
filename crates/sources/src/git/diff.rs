@@ -154,9 +154,9 @@ fn stream_added_lines(
                                     commit: Some(head_commit.clone()),
                                     author: Some(author.clone()),
                                     date: Some(date.clone()),
-                                                                    mtime_ns: None,
+                                    mtime_ns: None,
                                     size_bytes: None,
-},
+                                },
                             }));
                         }
                     }
@@ -181,9 +181,9 @@ fn stream_added_lines(
                                 commit: Some(head_commit.clone()),
                                 author: Some(author.clone()),
                                 date: Some(date.clone()),
-                                                            mtime_ns: None,
+                                mtime_ns: None,
                                 size_bytes: None,
-},
+                            },
                         }));
                     }
                 }
@@ -231,9 +231,9 @@ fn stream_added_lines(
                                 commit: Some(head_commit.clone()),
                                 author: Some(author.clone()),
                                 date: Some(date.clone()),
-                                                            mtime_ns: None,
+                                mtime_ns: None,
                                 size_bytes: None,
-},
+                            },
                         }));
                     }
                 }

@@ -66,9 +66,7 @@ impl CompiledScanner {
                 // `match_line_number` — `line_offsets` is sorted
                 // ascending, so the first offset > `offset` IS the
                 // 1-based line number directly.
-                let line = line_offsets
-                    .partition_point(|&lo| lo <= offset)
-                    .max(1);
+                let line = line_offsets.partition_point(|&lo| lo <= offset).max(1);
 
                 let detector_id_value = format!("hot-{}", HOT_PATTERN_NAMES[pattern_idx]);
                 let detector_name_value =

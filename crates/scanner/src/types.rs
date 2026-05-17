@@ -394,7 +394,6 @@ impl ScanState {
 
     /// Push a match to the state, maintaining priority and capacity.
     /// High-confidence secrets will displace lower-confidence findings.
-
     pub fn push_match(&mut self, m: keyhog_core::RawMatch, limit: usize) {
         if self.matches.len() < limit {
             self.matches.push(Reverse(m));

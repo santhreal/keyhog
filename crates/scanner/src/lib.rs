@@ -31,13 +31,13 @@ pub mod hw_probe;
 pub mod ml_scorer;
 /// Multiline secret reassembly logic.
 pub mod multiline;
+/// Match resolution and deduplication.
+pub mod resolution;
 /// Static-string interner backed by vyre's CHD perfect hash.
 /// Used by `CompiledScanner` to pre-intern detector metadata strings
 /// so the per-scan `ScanState` interner is hit only by dynamic
 /// strings (file paths, commit SHAs).
 pub mod static_intern;
-/// Match resolution and deduplication.
-pub mod resolution;
 /// Shared types for the scanner engine.
 pub mod types;
 

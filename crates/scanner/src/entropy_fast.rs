@@ -32,37 +32,45 @@ pub fn shannon_entropy_simd(data: &[u8]) -> f64 {
     shannon_entropy_scalar(data)
 }
 
-/// Scalar fallback - optimized version of original
+/// Scalar fallback: 4-way parallel histogram to break load-add-store chains.
+///
+/// A single `counts[b] += 1` has a 4-cycle dependency chain. By maintaining
+/// 4 independent arrays and interleaving accesses, the OOE engine can issue
+/// 4 independent chains in parallel, yielding ~3-4x throughput on modern CPUs.
 #[inline]
 pub fn shannon_entropy_scalar(data: &[u8]) -> f64 {
     if data.is_empty() {
         return 0.0;
     }
 
-    // Unroll by 8 for better instruction-level parallelism
-    let mut counts = [0u32; 256];
-    let chunks = data.chunks_exact(8);
+    let mut c0 = [0u32; 256];
+    let mut c1 = [0u32; 256];
+    let mut c2 = [0u32; 256];
+    let mut c3 = [0u32; 256];
+
+    let chunks = data.chunks_exact(4);
     let remainder = chunks.remainder();
 
     for chunk in chunks {
-        counts[chunk[0] as usize] += 1;
-        counts[chunk[1] as usize] += 1;
-        counts[chunk[2] as usize] += 1;
-        counts[chunk[3] as usize] += 1;
-        counts[chunk[4] as usize] += 1;
-        counts[chunk[5] as usize] += 1;
-        counts[chunk[6] as usize] += 1;
-        counts[chunk[7] as usize] += 1;
+        c0[chunk[0] as usize] += 1;
+        c1[chunk[1] as usize] += 1;
+        c2[chunk[2] as usize] += 1;
+        c3[chunk[3] as usize] += 1;
     }
 
     for &byte in remainder {
-        counts[byte as usize] += 1;
+        c0[byte as usize] += 1;
+    }
+
+    // Merge
+    let mut counts = [0u32; 256];
+    for j in 0..256 {
+        counts[j] = c0[j] + c1[j] + c2[j] + c3[j];
     }
 
     let len = data.len() as f64;
     let mut entropy = 0.0;
 
-    // Process in chunks for cache efficiency
     for &count in &counts {
         if count > 0 {
             let p = count as f64 / len;
@@ -73,51 +81,62 @@ pub fn shannon_entropy_scalar(data: &[u8]) -> f64 {
     entropy
 }
 
-/// True AVX2 SIMD path using population count on equality masks.
-/// Instead of iterating 32 bytes scalar-style, we broadcast elements, create equality masks,
-/// and popcount them via `_mm256_movemask_epi8`. Perfect for compressing low-entropy strings.
+/// AVX2 path: 4-way parallel histogram to break load-add-store dependency chains.
+///
+/// The previous broadcast+cmpeq approach was O(unique_chars × n/32), which is
+/// slow on high-entropy data (base64 secrets: ~64 unique chars = 64 iterations
+/// per 32-byte chunk). The 4-way parallel histogram is O(n) regardless of data
+/// entropy, with 4 independent dependency chains for the OOE engine.
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 #[allow(unsafe_op_in_unsafe_fn)]
 unsafe fn shannon_entropy_avx2(data: &[u8]) -> f64 {
-    #[cfg(target_arch = "x86_64")]
-    use core::arch::x86_64::*;
+    let mut c0 = [0u32; 256];
+    let mut c1 = [0u32; 256];
+    let mut c2 = [0u32; 256];
+    let mut c3 = [0u32; 256];
 
+    let ptr = data.as_ptr();
+    let len = data.len();
+    let mut i = 0usize;
+
+    // Process 16 bytes per iteration (4 bytes × 4 lanes)
+    let end16 = len & !15;
+    while i < end16 {
+        c0[*ptr.add(i) as usize] += 1;
+        c1[*ptr.add(i + 1) as usize] += 1;
+        c2[*ptr.add(i + 2) as usize] += 1;
+        c3[*ptr.add(i + 3) as usize] += 1;
+        c0[*ptr.add(i + 4) as usize] += 1;
+        c1[*ptr.add(i + 5) as usize] += 1;
+        c2[*ptr.add(i + 6) as usize] += 1;
+        c3[*ptr.add(i + 7) as usize] += 1;
+        c0[*ptr.add(i + 8) as usize] += 1;
+        c1[*ptr.add(i + 9) as usize] += 1;
+        c2[*ptr.add(i + 10) as usize] += 1;
+        c3[*ptr.add(i + 11) as usize] += 1;
+        c0[*ptr.add(i + 12) as usize] += 1;
+        c1[*ptr.add(i + 13) as usize] += 1;
+        c2[*ptr.add(i + 14) as usize] += 1;
+        c3[*ptr.add(i + 15) as usize] += 1;
+        i += 16;
+    }
+    while i < len {
+        c0[*ptr.add(i) as usize] += 1;
+        i += 1;
+    }
+
+    // Merge the 4 histograms
     let mut counts = [0u32; 256];
-    let mut chunks = data.chunks_exact(32);
-
-    for chunk in chunks.by_ref() {
-        let v = _mm256_loadu_si256(chunk.as_ptr() as *const __m256i);
-        let mut active_mask = 0xFFFF_FFFFu32;
-
-        while active_mask != 0 {
-            // Find the first unprocessed byte
-            let tz = active_mask.trailing_zeros();
-            let b = chunk[tz as usize];
-
-            // Broadcast and match horizontally across 32 bytes
-            let broadcast = _mm256_set1_epi8(b as i8);
-            let cmp = _mm256_cmpeq_epi8(v, broadcast);
-            let match_mask = _mm256_movemask_epi8(cmp) as u32;
-
-            // Count exactly how many of this character were found in the active set
-            let combined = match_mask & active_mask;
-            counts[b as usize] += combined.count_ones();
-
-            // Remove those from the active mask instantly natively
-            active_mask ^= combined;
-        }
+    for j in 0..256 {
+        counts[j] = c0[j] + c1[j] + c2[j] + c3[j];
     }
 
-    for &byte in chunks.remainder() {
-        counts[byte as usize] += 1;
-    }
-
-    let len = data.len() as f64;
+    let len_f = len as f64;
     let mut entropy = 0.0;
     for &count in &counts {
         if count > 0 {
-            let p = count as f64 / len;
+            let p = count as f64 / len_f;
             entropy -= p * p.log2();
         }
     }
@@ -125,44 +144,58 @@ unsafe fn shannon_entropy_avx2(data: &[u8]) -> f64 {
     entropy
 }
 
-/// Fallback vectorized proxy for SSE2 targets utilizing smaller YMM segments
+/// SSE2 path: 4-way parallel histogram, same strategy as AVX2/AVX-512.
+///
+/// The old broadcast+cmpeq approach was O(unique_chars × n/16), which is
+/// quadratic-ish on high-entropy data. 4-way histogram is O(n) regardless.
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "sse2")]
 #[allow(unsafe_op_in_unsafe_fn)]
 unsafe fn shannon_entropy_sse2(data: &[u8]) -> f64 {
-    #[cfg(target_arch = "x86_64")]
-    use core::arch::x86_64::*;
+    let mut c0 = [0u32; 256];
+    let mut c1 = [0u32; 256];
+    let mut c2 = [0u32; 256];
+    let mut c3 = [0u32; 256];
+
+    let ptr = data.as_ptr();
+    let len = data.len();
+    let mut i = 0usize;
+
+    let end16 = len & !15;
+    while i < end16 {
+        c0[*ptr.add(i) as usize] += 1;
+        c1[*ptr.add(i + 1) as usize] += 1;
+        c2[*ptr.add(i + 2) as usize] += 1;
+        c3[*ptr.add(i + 3) as usize] += 1;
+        c0[*ptr.add(i + 4) as usize] += 1;
+        c1[*ptr.add(i + 5) as usize] += 1;
+        c2[*ptr.add(i + 6) as usize] += 1;
+        c3[*ptr.add(i + 7) as usize] += 1;
+        c0[*ptr.add(i + 8) as usize] += 1;
+        c1[*ptr.add(i + 9) as usize] += 1;
+        c2[*ptr.add(i + 10) as usize] += 1;
+        c3[*ptr.add(i + 11) as usize] += 1;
+        c0[*ptr.add(i + 12) as usize] += 1;
+        c1[*ptr.add(i + 13) as usize] += 1;
+        c2[*ptr.add(i + 14) as usize] += 1;
+        c3[*ptr.add(i + 15) as usize] += 1;
+        i += 16;
+    }
+    while i < len {
+        c0[*ptr.add(i) as usize] += 1;
+        i += 1;
+    }
 
     let mut counts = [0u32; 256];
-    let mut chunks = data.chunks_exact(16);
-
-    for chunk in chunks.by_ref() {
-        let v = _mm_loadu_si128(chunk.as_ptr() as *const __m128i);
-        let mut active_mask = 0xFFFFu32;
-
-        while active_mask != 0 {
-            let tz = active_mask.trailing_zeros();
-            let b = chunk[tz as usize];
-
-            let broadcast = _mm_set1_epi8(b as i8);
-            let cmp = _mm_cmpeq_epi8(v, broadcast);
-            let match_mask = _mm_movemask_epi8(cmp) as u32;
-
-            let combined = match_mask & active_mask;
-            counts[b as usize] += combined.count_ones();
-            active_mask ^= combined;
-        }
+    for j in 0..256 {
+        counts[j] = c0[j] + c1[j] + c2[j] + c3[j];
     }
 
-    for &byte in chunks.remainder() {
-        counts[byte as usize] += 1;
-    }
-
-    let len = data.len() as f64;
+    let len_f = len as f64;
     let mut entropy = 0.0;
     for &count in &counts {
         if count > 0 {
-            let p = count as f64 / len;
+            let p = count as f64 / len_f;
             entropy -= p * p.log2();
         }
     }
@@ -241,28 +274,32 @@ pub fn shannon_entropy_simd(data: &[u8]) -> f64 {
     shannon_entropy_scalar(data)
 }
 
-/// Fast check if data MIGHT have high entropy
-/// Returns quickly for obviously low-entropy data
+/// Fast check if data MIGHT have high entropy.
+/// Returns quickly for obviously low-entropy data.
+///
+/// Uses a 256-bit bitset for uniqueness counting instead of a HashSet,
+/// eliminating heap allocation on the hot path.
 pub fn has_high_entropy_fast(data: &[u8], threshold: f64) -> bool {
-    // Quick rejection: if all bytes are same, return false immediately
     if data.len() < 8 {
         return shannon_entropy_scalar(data) >= threshold;
     }
 
-    // Sample check: look at first, middle, last 4 bytes
-    let first = &data[..4.min(data.len())];
-    let mid = &data[data.len() / 2..data.len() / 2 + 4.min(data.len())];
-    let last = &data[data.len() - 4.min(data.len())..];
+    // Sample 12 bytes: first 4 + middle 4 + last 4.
+    // Count unique bytes via a 256-bit bitset (4 × u64, stack-only).
+    let mut seen = [0u64; 4];
+    let mid = data.len() / 2;
+    let samples = [
+        data[0], data[1], data[2], data[3],
+        data[mid], data[mid + 1], data[mid + 2], data[mid + 3],
+        data[data.len() - 4], data[data.len() - 3], data[data.len() - 2], data[data.len() - 1],
+    ];
+    for &b in &samples {
+        seen[b as usize / 64] |= 1u64 << (b % 64);
+    }
+    let unique = seen[0].count_ones() + seen[1].count_ones() + seen[2].count_ones() + seen[3].count_ones();
 
-    // If samples show low variation, full check needed
-    let sample_variation = first
-        .iter()
-        .chain(mid)
-        .chain(last)
-        .collect::<std::collections::HashSet<_>>()
-        .len();
-    if sample_variation < 4 {
-        // Likely low entropy, but verify
+    if unique < 4 {
+        // Low variation in sample; still verify with full calculation
         return shannon_entropy_simd(data) >= threshold;
     }
 
