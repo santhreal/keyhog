@@ -2,6 +2,21 @@
 
 All notable changes to KeyHog. Versions follow [Semantic Versioning](https://semver.org/).
 
+## v0.5.7 — 2026-05-17
+
+### Fixed
+
+- **The 'No secrets found. Your code is clean.' message lied when
+  every match was suppressed as an EXAMPLE/test key.** The 0.5.6
+  bump wired example-suppression telemetry into the orchestrator,
+  but the user-facing summary is owned by `TextReporter::finish()`
+  in `keyhog-core`, not the orchestrator — so the misleading
+  banner still printed. `TextReporter` now takes the suppression
+  count via `set_example_suppressions(n)` and prints "No real
+  secrets — but N example/test key(s) suppressed. Pass --dogfood
+  to see them." instead. Verified end-to-end against
+  `demo-secret.env`. Regression tests pin all three states.
+
 ## v0.5.6 — 2026-05-17
 
 ### Added — dogfooding-driven UX
