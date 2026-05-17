@@ -15,12 +15,6 @@ pub mod inline;
 /// Compiler-oriented IR primitives.
 pub mod compiler;
 
-/// Whole-program optimization passes.
-///
-/// These functions run standard compiler optimizations (CSE, DCE) on vyre
-/// IR so that frontends can emit naive code and rely on the core library
-/// to clean it up before lowering.
-pub mod optimize;
 /// Shared-nothing parallel dispatch analysis.
 pub mod parallelism;
 
@@ -29,3 +23,9 @@ pub mod parallelism;
 /// Provides iterative traversal functions that walk nodes and expressions
 /// without recursion, preventing stack overflow on deeply nested programs.
 pub mod visit;
+
+/// Reverse-mode automatic differentiation via IR transform (RFC 0002).
+///
+/// Given a forward `Program` + output/input buffer names, emits a backward
+/// `Program` computing gradients via the chain rule.
+pub mod autodiff;

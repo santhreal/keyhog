@@ -22,4 +22,4 @@ impl LiteralFalse {
 pub struct LiteralFalse;
 
 /// Stable operation id for constant false leaves.
-pub const OP_ID: &str = "rule.literal_false";
+pub const OP_ID: &str = "vyre-libs::rule::literal_false";

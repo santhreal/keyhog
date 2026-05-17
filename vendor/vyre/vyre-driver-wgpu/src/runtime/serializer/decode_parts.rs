@@ -15,7 +15,8 @@ pub fn decode_parts(mut bytes: &[u8]) -> Result<Vec<&[u8]>> {
         });
     }
     bytes = &bytes[MAGIC.len()..];
-    let mut parts = Vec::new();
+    let max_possible_parts = (bytes.len() / 8).min(MAX_PART_COUNT);
+    let mut parts = Vec::with_capacity(max_possible_parts);
     while !bytes.is_empty() {
         if parts.len() == MAX_PART_COUNT {
             return Err(Error::Serialization {

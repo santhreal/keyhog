@@ -36,9 +36,11 @@
 //! wrapper that we can ship alongside the runtime — the registry
 //! here already handles the interesting concurrency.
 
-use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+use dashmap::DashMap;
 
 use crate::megakernel::protocol::opcode::SHUTDOWN;
 use crate::megakernel::Megakernel;
@@ -46,7 +48,7 @@ use crate::PipelineError;
 
 /// First opcode the tenant registry hands out. Sits inside the
 /// user-extension range reserved by the megakernel protocol,
-/// matching `surgec::compile::fuse::RULE_OPCODE_BASE` so fused
+/// matching `surgec::fuse::RULE_OPCODE_BASE` so fused
 /// rule documents compose with tenant allocation without colliding
 /// with built-in opcodes.
 pub const TENANT_OPCODE_BASE: u32 = 0x4000_0000;
@@ -60,6 +62,31 @@ pub const TENANT_ID_MAX: u32 = u32::MAX - 1;
 /// while still allowing ~4094 simultaneous tenants inside the u32
 /// opcode range.
 pub const OPCODE_RANGE_PER_TENANT: u32 = 1 << 20;
+
+const QUIESCE_SPIN_POLLS: u64 = 64;
+const QUIESCE_YIELD_POLLS: u64 = 128;
+const QUIESCE_MIN_PARK: Duration = Duration::from_micros(2);
+const QUIESCE_MAX_PARK: Duration = Duration::from_micros(50);
+const QUIESCE_BACKOFF_SHIFT_CAP: u64 = 5;
+
+#[allow(clippy::unnecessary_min_or_max)]
+fn quiesce_backoff_duration(poll: u64) -> Duration {
+    let parked_poll = poll.saturating_sub(QUIESCE_YIELD_POLLS);
+    let shift = parked_poll.min(QUIESCE_BACKOFF_SHIFT_CAP) as u32;
+    QUIESCE_MIN_PARK
+        .saturating_mul(1u32 << shift)
+        .min(QUIESCE_MAX_PARK)
+}
+
+fn quiesce_idle(poll: u64) {
+    if poll < QUIESCE_SPIN_POLLS {
+        std::hint::spin_loop();
+    } else if poll < QUIESCE_YIELD_POLLS {
+        std::thread::yield_now();
+    } else {
+        std::thread::park_timeout(quiesce_backoff_duration(poll));
+    }
+}
 
 /// Errors surfaced by the tenant registry.
 #[derive(Debug, thiserror::Error)]
@@ -103,6 +130,19 @@ pub enum TenantError {
         /// Number of slots still inflight at timeout.
         outstanding: u64,
     },
+    /// Tenant has reached its configured outstanding-slot cap.
+    #[error(
+        "tenant {tenant_id} has {outstanding} outstanding slots, cap {cap}. \
+         Fix: wait for drain progress or register the tenant with a larger bounded backlog."
+    )]
+    Backpressure {
+        /// Tenant id whose backlog is full.
+        tenant_id: u32,
+        /// Current host-visible outstanding slots.
+        outstanding: u64,
+        /// Configured outstanding-slot cap.
+        cap: u64,
+    },
     /// Protocol error bubbled up from `Megakernel::publish_slot`.
     #[error("{0}")]
     Pipeline(#[from] PipelineError),
@@ -116,9 +156,17 @@ struct TenantState {
     opcode_cap: u32,
     /// Number of slots this tenant has ever published.
     published_count: AtomicU64,
+    /// Maximum host-visible slots this tenant may keep outstanding.
+    max_outstanding_slots: u64,
     /// Number of slots the GPU has reported DONE for this tenant.
     /// Advanced by [`TenantHandle::note_drained`].
     drained_count: AtomicU64,
+    /// Number of quiesce calls completed or timed out for this tenant.
+    quiesce_calls: AtomicU64,
+    /// Number of quiesce calls that timed out before the tenant drained.
+    quiesce_timeouts: AtomicU64,
+    /// Cumulative host-observed drain wait across quiesce calls.
+    quiesce_wait_ns: AtomicU64,
     /// Set to 1 on `unregister`; publishes reject afterwards.
     revoked: AtomicU32,
     /// Stable label for diagnostics (e.g., `"warpscan"`, `"keyhog"`).
@@ -133,6 +181,27 @@ pub struct TenantHandle {
     state: Arc<TenantState>,
 }
 
+/// Host-visible tenant runtime counters.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TenantRuntimeCounters {
+    /// Tenant id.
+    pub tenant_id: u32,
+    /// Number of slots ever published by this tenant.
+    pub published_count: u64,
+    /// Number of slots observed drained for this tenant.
+    pub drained_count: u64,
+    /// Current host-visible backlog (`published_count - drained_count`).
+    pub outstanding_slots: u64,
+    /// Configured outstanding-slot cap for this tenant.
+    pub max_outstanding_slots: u64,
+    /// Number of quiesce calls recorded for this tenant.
+    pub quiesce_calls: u64,
+    /// Number of quiesce calls that timed out.
+    pub quiesce_timeouts: u64,
+    /// Cumulative nanoseconds spent waiting for this tenant to drain.
+    pub quiesce_wait_ns: u64,
+}
+
 impl std::fmt::Debug for TenantHandle {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("TenantHandle")
@@ -143,6 +212,7 @@ impl std::fmt::Debug for TenantHandle {
                 "published_count",
                 &self.state.published_count.load(Ordering::Relaxed),
             )
+            .field("max_outstanding_slots", &self.state.max_outstanding_slots)
             .field(
                 "drained_count",
                 &self.state.drained_count.load(Ordering::Relaxed),
@@ -191,7 +261,9 @@ impl TenantHandle {
         }
         let global = self.state.base_opcode + local;
         if let Err(e) = crate::megakernel::protocol::opcode::validate_user_opcode(global) {
-            panic!("Tenant registry produced invalid global opcode: {e}");
+            return Err(TenantError::Pipeline(PipelineError::Backend(format!(
+                "tenant registry produced invalid global opcode {global}: {e}. Fix: repair tenant opcode window allocation before publishing."
+            ))));
         }
         Ok(global)
     }
@@ -220,9 +292,39 @@ impl TenantHandle {
             });
         }
         let global = self.global_opcode(local_opcode)?;
-        Megakernel::publish_slot(ring_bytes, slot_idx, self.state.id, global, args)?;
-        self.state.published_count.fetch_add(1, Ordering::AcqRel);
+        self.reserve_publish_slot()?;
+        if let Err(error) =
+            Megakernel::publish_slot(ring_bytes, slot_idx, self.state.id, global, args)
+        {
+            self.state.published_count.fetch_sub(1, Ordering::AcqRel);
+            return Err(error.into());
+        }
         Ok(())
+    }
+
+    fn reserve_publish_slot(&self) -> Result<(), TenantError> {
+        let cap = self.state.max_outstanding_slots;
+        let mut published = self.state.published_count.load(Ordering::Acquire);
+        loop {
+            let drained = self.state.drained_count.load(Ordering::Acquire);
+            let outstanding = published.saturating_sub(drained);
+            if outstanding >= cap {
+                return Err(TenantError::Backpressure {
+                    tenant_id: self.state.id,
+                    outstanding,
+                    cap,
+                });
+            }
+            match self.state.published_count.compare_exchange_weak(
+                published,
+                published.saturating_add(1),
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => return Ok(()),
+                Err(next) => published = next,
+            }
+        }
     }
 
     /// Number of slots this tenant has ever published.
@@ -238,6 +340,29 @@ impl TenantHandle {
         self.state.drained_count.load(Ordering::Relaxed)
     }
 
+    /// Maximum host-visible slots this tenant may keep outstanding.
+    #[must_use]
+    pub fn max_outstanding_slots(&self) -> u64 {
+        self.state.max_outstanding_slots
+    }
+
+    /// Snapshot host-visible runtime counters for this tenant.
+    #[must_use]
+    pub fn runtime_counters(&self) -> TenantRuntimeCounters {
+        let published_count = self.state.published_count.load(Ordering::Acquire);
+        let drained_count = self.state.drained_count.load(Ordering::Acquire);
+        TenantRuntimeCounters {
+            tenant_id: self.state.id,
+            published_count,
+            drained_count,
+            outstanding_slots: published_count.saturating_sub(drained_count),
+            max_outstanding_slots: self.state.max_outstanding_slots,
+            quiesce_calls: self.state.quiesce_calls.load(Ordering::Acquire),
+            quiesce_timeouts: self.state.quiesce_timeouts.load(Ordering::Acquire),
+            quiesce_wait_ns: self.state.quiesce_wait_ns.load(Ordering::Acquire),
+        }
+    }
+
     /// Mark `count` slots as drained. The host pump that observes
     /// DONE_COUNT calls this when it sees the global counter
     /// advance past the tenant's last-published cursor.
@@ -245,8 +370,8 @@ impl TenantHandle {
         self.state.drained_count.fetch_add(count, Ordering::AcqRel);
     }
 
-    /// Block-style quiesce: spin-waits (yielding) until every
-    /// published slot has been drained or `max_spins` elapse.
+    /// Block-style quiesce: bounded backoff until every published
+    /// slot has been drained or `max_spins` polls elapse.
     ///
     /// # Errors
     ///
@@ -254,35 +379,68 @@ impl TenantHandle {
     /// iterations pass without full drain. The outstanding count
     /// at timeout is included for diagnostics.
     pub fn quiesce(&self, max_spins: u64) -> Result<(), TenantError> {
-        for _ in 0..max_spins {
+        let started = Instant::now();
+        for poll in 0..max_spins {
             let pub_count = self.state.published_count.load(Ordering::Acquire);
             let drained = self.state.drained_count.load(Ordering::Acquire);
             if drained >= pub_count {
+                self.record_quiesce(started, false);
                 return Ok(());
             }
-            std::thread::yield_now();
+            quiesce_idle(poll);
         }
         let pub_count = self.state.published_count.load(Ordering::Acquire);
         let drained = self.state.drained_count.load(Ordering::Acquire);
+        self.record_quiesce(started, true);
         Err(TenantError::QuiesceTimeout {
             tenant_id: self.state.id,
             outstanding: pub_count.saturating_sub(drained),
         })
     }
+
+    fn record_quiesce(&self, started: Instant, timed_out: bool) {
+        self.state.quiesce_calls.fetch_add(1, Ordering::AcqRel);
+        if timed_out {
+            self.state.quiesce_timeouts.fetch_add(1, Ordering::AcqRel);
+        }
+        let elapsed_ns = u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX);
+        self.state
+            .quiesce_wait_ns
+            .fetch_add(elapsed_ns, Ordering::AcqRel);
+    }
 }
 
 /// Thread-safe tenant registry. One per megakernel instance.
-#[derive(Default)]
 pub struct TenantRegistry {
-    inner: RwLock<TenantRegistryInner>,
+    tenants: DashMap<u32, TenantHandle>,
+    next_id: AtomicU32,
 }
 
-#[derive(Default)]
-struct TenantRegistryInner {
-    tenants: HashMap<u32, TenantHandle>,
-    /// Next tenant id to hand out. Starts at 1 so `0` can stay a
-    /// "no tenant" sentinel if a producer forgets to register.
-    next_id: u32,
+impl Default for TenantRegistry {
+    fn default() -> Self {
+        Self {
+            tenants: DashMap::new(),
+            next_id: AtomicU32::new(0),
+        }
+    }
+}
+
+/// Caller-owned scratch for repeated concurrent-tenant selection.
+#[derive(Debug, Default)]
+pub struct TenantSelectionScratch {
+    active_ids: Vec<u32>,
+    selected_indices: Vec<usize>,
+}
+
+impl TenantSelectionScratch {
+    /// Construct empty tenant-selection scratch.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self {
+            active_ids: Vec::new(),
+            selected_indices: Vec::new(),
+        }
+    }
 }
 
 impl TenantRegistry {
@@ -301,38 +459,48 @@ impl TenantRegistry {
     /// Returns [`TenantError::RegistryFull`] when the tenant id or
     /// opcode space is exhausted.
     pub fn register(&self, label: impl Into<String>) -> Result<TenantHandle, TenantError> {
-        let mut inner = self.inner.write().unwrap_or_else(|e| e.into_inner());
-        if inner.next_id >= TENANT_ID_MAX {
-            return Err(TenantError::RegistryFull {
-                issued: inner.next_id,
-            });
-        }
-        let id = inner.next_id.max(1);
-        // Opcodes occupy the range
-        //   [TENANT_OPCODE_BASE + id * OPCODE_RANGE_PER_TENANT,
-        //    ... + OPCODE_RANGE_PER_TENANT)
-        // so tenant 1's first opcode is TENANT_OPCODE_BASE +
-        // OPCODE_RANGE_PER_TENANT. Keeping `id=0` off the list is
-        // intentional — "no tenant" callers never publish.
+        self.register_with_backpressure(label, u64::MAX)
+    }
+
+    /// Register a new tenant with a bounded outstanding-slot budget.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TenantError::RegistryFull`] when the tenant id or opcode space
+    /// is exhausted.
+    pub fn register_with_backpressure(
+        &self,
+        label: impl Into<String>,
+        max_outstanding_slots: u64,
+    ) -> Result<TenantHandle, TenantError> {
+        let (issued, id) = loop {
+            let current = self.next_id.load(Ordering::Relaxed);
+            if current >= TENANT_ID_MAX {
+                return Err(TenantError::RegistryFull { issued: current });
+            }
+            let id = current.max(1);
+            let next = id + 1;
+            match self.next_id.compare_exchange_weak(
+                current,
+                next,
+                Ordering::SeqCst,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => break (current, id),
+                Err(_) => std::hint::spin_loop(),
+            }
+        };
+
         let base_opcode = TENANT_OPCODE_BASE
             .checked_add(id.checked_mul(OPCODE_RANGE_PER_TENANT).ok_or_else(|| {
-                TenantError::RegistryFull {
-                    issued: inner.next_id,
-                }
+                TenantError::RegistryFull { issued }
             })?)
-            .ok_or(TenantError::RegistryFull {
-                issued: inner.next_id,
-            })?;
-        // If the top of the tenant's range would overflow u32 or
-        // land on the SHUTDOWN reserved opcode (u32::MAX) we've
-        // overflowed the user window.
+            .ok_or(TenantError::RegistryFull { issued })?;
         if base_opcode
             .checked_add(OPCODE_RANGE_PER_TENANT)
             .is_none_or(|top| top == SHUTDOWN)
         {
-            return Err(TenantError::RegistryFull {
-                issued: inner.next_id,
-            });
+            return Err(TenantError::RegistryFull { issued });
         }
         let handle = TenantHandle {
             state: Arc::new(TenantState {
@@ -340,13 +508,16 @@ impl TenantRegistry {
                 base_opcode,
                 opcode_cap: OPCODE_RANGE_PER_TENANT,
                 published_count: AtomicU64::new(0),
+                max_outstanding_slots: max_outstanding_slots.max(1),
                 drained_count: AtomicU64::new(0),
+                quiesce_calls: AtomicU64::new(0),
+                quiesce_timeouts: AtomicU64::new(0),
+                quiesce_wait_ns: AtomicU64::new(0),
                 revoked: AtomicU32::new(0),
                 label: label.into(),
             }),
         };
-        inner.tenants.insert(id, handle.clone());
-        inner.next_id = id + 1;
+        self.tenants.insert(id, handle.clone());
         Ok(handle)
     }
 
@@ -355,8 +526,7 @@ impl TenantRegistry {
     /// the GPU still execute — the host is responsible for
     /// quiescing before unregister if it needs that guarantee.
     pub fn unregister(&self, tenant_id: u32) -> Option<TenantHandle> {
-        let mut inner = self.inner.write().unwrap_or_else(|e| e.into_inner());
-        let handle = inner.tenants.remove(&tenant_id)?;
+        let (_, handle) = self.tenants.remove(&tenant_id)?;
         handle.state.revoked.store(1, Ordering::Release);
         Some(handle)
     }
@@ -364,25 +534,112 @@ impl TenantRegistry {
     /// Snapshot of active tenants for observability / diagnostics.
     #[must_use]
     pub fn active_tenants(&self) -> Vec<TenantHandle> {
-        self.inner
-            .read()
-            .unwrap_or_else(|e| e.into_inner())
-            .tenants
-            .values()
-            .cloned()
-            .collect()
+        let mut out = Vec::with_capacity(self.tenants.len());
+        out.extend(self.tenants.iter().map(|entry| entry.value().clone()));
+        out.sort_by_key(TenantHandle::id);
+        out
+    }
+
+    /// Snapshot active tenants into caller-owned storage.
+    pub fn active_tenants_into(&self, out: &mut Vec<TenantHandle>) {
+        out.clear();
+        out.reserve(self.tenants.len());
+        self.tenants
+            .iter()
+            .for_each(|entry| out.push(entry.value().clone()));
+        out.sort_by_key(TenantHandle::id);
     }
 
     /// Look up a tenant by id. Returns `None` if the id was
     /// unregistered.
     #[must_use]
     pub fn lookup(&self, tenant_id: u32) -> Option<TenantHandle> {
-        self.inner
-            .read()
-            .unwrap_or_else(|e| e.into_inner())
-            .tenants
-            .get(&tenant_id)
-            .cloned()
+        self.tenants.get(&tenant_id).map(|entry| entry.value().clone())
+    }
+
+    /// Snapshot runtime counters for every active tenant.
+    #[must_use]
+    pub fn runtime_counters(&self) -> Vec<TenantRuntimeCounters> {
+        let mut out = Vec::with_capacity(self.tenants.len());
+        self.tenants
+            .iter()
+            .map(|entry| entry.value().runtime_counters())
+            .for_each(|counters| out.push(counters));
+        out.sort_by_key(|counters| counters.tenant_id);
+        out
+    }
+
+    /// Snapshot runtime counters into caller-owned storage.
+    pub fn runtime_counters_into(&self, out: &mut Vec<TenantRuntimeCounters>) {
+        out.clear();
+        out.reserve(self.tenants.len());
+        self.tenants
+            .iter()
+            .map(|entry| entry.value().runtime_counters())
+            .for_each(|counters| out.push(counters));
+        out.sort_by_key(|counters| counters.tenant_id);
+    }
+
+    /// Select a maximal independent subset of tenants for a fair
+    /// schedule slot.
+    ///
+    /// `conflict_adj[i*n+j] != 0` means tenants `i` and `j` cannot
+    /// share the same dispatch slot (e.g., both pinned to the same
+    /// queue, or both holding mutually-exclusive opcode locks). The
+    /// Returns a Vec of tenant ids in selection order. Empty if no
+    /// tenants are active.
+    #[must_use]
+    pub fn select_concurrent_tenants(&self, conflict_adj: &[u32]) -> Vec<u32> {
+        let mut out = Vec::new();
+        let mut scratch = TenantSelectionScratch::new();
+        self.select_concurrent_tenants_into(conflict_adj, &mut out, &mut scratch);
+        out
+    }
+
+    /// Select a maximal independent tenant subset into caller-owned storage.
+    pub fn select_concurrent_tenants_into(
+        &self,
+        conflict_adj: &[u32],
+        out: &mut Vec<u32>,
+        scratch: &mut TenantSelectionScratch,
+    ) {
+        out.clear();
+        scratch.active_ids.clear();
+        scratch.active_ids.reserve(self.tenants.len());
+        self.tenants
+            .iter()
+            .map(|entry| entry.value().id())
+            .for_each(|id| scratch.active_ids.push(id));
+        scratch.active_ids.sort_unstable();
+        let n = scratch.active_ids.len();
+        if n == 0 {
+            return;
+        }
+        if conflict_adj.len() != n * n {
+            // Degenerate: caller didn't supply a matching adjacency.
+            // Default to all-tenants-can-run (no conflicts).
+            out.reserve(n);
+            out.extend(scratch.active_ids.iter().copied());
+            return;
+        }
+        scratch.selected_indices.clear();
+        scratch.selected_indices.reserve(n);
+        'candidate: for candidate_idx in 0..n {
+            for &selected_idx in &scratch.selected_indices {
+                if conflict_adj[candidate_idx * n + selected_idx] != 0
+                    || conflict_adj[selected_idx * n + candidate_idx] != 0
+                {
+                    continue 'candidate;
+                }
+            }
+            scratch.selected_indices.push(candidate_idx);
+        }
+        out.reserve(scratch.selected_indices.len());
+        for &index in &scratch.selected_indices {
+            if let Some(&id) = scratch.active_ids.get(index) {
+                out.push(id);
+            }
+        }
     }
 }
 
@@ -393,8 +650,12 @@ mod tests {
     #[test]
     fn two_tenants_get_distinct_id_and_opcode_ranges() {
         let reg = TenantRegistry::new();
-        let a = reg.register("warpscan").expect("register a");
-        let b = reg.register("keyhog").expect("register b");
+        let a = reg
+            .register("warpscan")
+            .expect("Fix: register a; restore this invariant before continuing.");
+        let b = reg
+            .register("keyhog")
+            .expect("Fix: register b; restore this invariant before continuing.");
         assert_ne!(a.id(), b.id());
         assert!(a.base_opcode() + OPCODE_RANGE_PER_TENANT <= b.base_opcode());
         assert_eq!(a.label(), "warpscan");
@@ -410,7 +671,9 @@ mod tests {
             .expect_err("oversized local opcode must reject");
         assert!(matches!(err, TenantError::OpcodeOutOfRange { .. }));
 
-        let ok = t.global_opcode(42).expect("42 < cap");
+        let ok = t
+            .global_opcode(42)
+            .expect("Fix: 42 < cap; restore this invariant before continuing.");
         assert_eq!(ok, t.base_opcode() + 42);
     }
 
@@ -426,7 +689,7 @@ mod tests {
             /* local = */ 7,
             &[1, 2, 3],
         )
-        .expect("publish");
+        .expect("Fix: publish; restore this invariant before continuing.");
         assert_eq!(t.published_count(), 1);
 
         // Slot 0 should carry tenant=t.id(), opcode=t.base_opcode()+7.
@@ -447,8 +710,9 @@ mod tests {
         let tenant_id = t.id();
         let mut ring = Megakernel::try_encode_empty_ring(2).unwrap();
         t.publish_slot(&mut ring, 0, 0, &[0, 0, 0])
-            .expect("first publish ok");
-        reg.unregister(tenant_id).expect("unregister");
+            .expect("Fix: first publish ok; restore this invariant before continuing.");
+        reg.unregister(tenant_id)
+            .expect("Fix: unregister; restore this invariant before continuing.");
         let err = t
             .publish_slot(&mut ring, 1, 0, &[0, 0, 0])
             .expect_err("publish after unregister must reject");
@@ -466,7 +730,13 @@ mod tests {
         assert_eq!(t.published_count(), 2);
         t.note_drained(2);
         t.quiesce(1)
-            .expect("drained == published after note_drained");
+            .expect("Fix: drained == published after note_drained; restore this invariant before continuing.");
+        let counters = t.runtime_counters();
+        assert_eq!(counters.published_count, 2);
+        assert_eq!(counters.drained_count, 2);
+        assert_eq!(counters.outstanding_slots, 0);
+        assert_eq!(counters.quiesce_calls, 1);
+        assert_eq!(counters.quiesce_timeouts, 0);
     }
 
     #[test]
@@ -481,6 +751,70 @@ mod tests {
             err,
             TenantError::QuiesceTimeout { outstanding: 1, .. }
         ));
+        let counters = t.runtime_counters();
+        assert_eq!(counters.outstanding_slots, 1);
+        assert_eq!(counters.quiesce_calls, 1);
+        assert_eq!(counters.quiesce_timeouts, 1);
+    }
+
+    #[test]
+    fn bounded_tenant_backpressure_rejects_unbounded_publish_backlog() {
+        let reg = TenantRegistry::new();
+        let t = reg.register_with_backpressure("bounded", 2).unwrap();
+        let mut ring = Megakernel::try_encode_empty_ring(4).unwrap();
+
+        t.publish_slot(&mut ring, 0, 0, &[1]).unwrap();
+        t.publish_slot(&mut ring, 1, 0, &[2]).unwrap();
+        let err = t
+            .publish_slot(&mut ring, 2, 0, &[3])
+            .expect_err("third outstanding publish must hit tenant backpressure");
+        assert!(matches!(
+            err,
+            TenantError::Backpressure {
+                outstanding: 2,
+                cap: 2,
+                ..
+            }
+        ));
+        assert_eq!(t.published_count(), 2);
+        let counters = t.runtime_counters();
+        assert_eq!(counters.max_outstanding_slots, 2);
+        assert_eq!(counters.outstanding_slots, 2);
+    }
+
+    #[test]
+    fn tenant_backpressure_reopens_after_drain_progress() {
+        let reg = TenantRegistry::new();
+        let t = reg.register_with_backpressure("bounded", 1).unwrap();
+        let mut ring = Megakernel::try_encode_empty_ring(2).unwrap();
+
+        t.publish_slot(&mut ring, 0, 0, &[1]).unwrap();
+        assert!(matches!(
+            t.publish_slot(&mut ring, 1, 0, &[2]).unwrap_err(),
+            TenantError::Backpressure { .. }
+        ));
+        t.note_drained(1);
+        t.publish_slot(&mut ring, 1, 0, &[2])
+            .expect("Fix: drain progress must reopen the bounded tenant queue; restore this invariant before continuing.");
+        assert_eq!(t.published_count(), 2);
+        assert_eq!(t.runtime_counters().outstanding_slots, 1);
+    }
+
+    #[test]
+    fn quiesce_backoff_is_bounded_and_monotonic() {
+        let samples = [
+            quiesce_backoff_duration(0),
+            quiesce_backoff_duration(1),
+            quiesce_backoff_duration(2),
+            quiesce_backoff_duration(8),
+            quiesce_backoff_duration(64),
+        ];
+        assert_eq!(samples[0], QUIESCE_MIN_PARK);
+        for pair in samples.windows(2) {
+            assert!(pair[0] <= pair[1], "quiesce backoff must not shrink");
+            assert!(pair[1] <= QUIESCE_MAX_PARK, "quiesce backoff must cap");
+        }
+        assert_eq!(quiesce_backoff_duration(u64::MAX), QUIESCE_MAX_PARK);
     }
 
     #[test]
@@ -495,6 +829,80 @@ mod tests {
         let after: Vec<u32> = reg.active_tenants().iter().map(|t| t.id()).collect();
         assert!(!after.contains(&a.id()));
         assert!(after.contains(&b.id()));
+        let counters: Vec<u32> = reg
+            .runtime_counters()
+            .iter()
+            .map(|tenant| tenant.tenant_id)
+            .collect();
+        assert_eq!(counters, vec![b.id()]);
+    }
+
+    #[test]
+    fn tenant_snapshots_reuse_caller_storage() {
+        let reg = TenantRegistry::new();
+        let a = reg.register("a").unwrap();
+        let b = reg.register("b").unwrap();
+        let mut active = Vec::with_capacity(2);
+        let mut counters = Vec::with_capacity(2);
+
+        reg.active_tenants_into(&mut active);
+        reg.runtime_counters_into(&mut counters);
+        let active_ptr = active.as_ptr();
+        let counters_ptr = counters.as_ptr();
+        reg.active_tenants_into(&mut active);
+        reg.runtime_counters_into(&mut counters);
+
+        assert_eq!(active.as_ptr(), active_ptr);
+        assert_eq!(counters.as_ptr(), counters_ptr);
+        assert!(active.iter().any(|tenant| tenant.id() == a.id()));
+        assert!(active.iter().any(|tenant| tenant.id() == b.id()));
+        assert!(counters.iter().any(|tenant| tenant.tenant_id == a.id()));
+        assert!(counters.iter().any(|tenant| tenant.tenant_id == b.id()));
+    }
+
+    #[test]
+    fn concurrent_tenant_selection_reuses_scratch_and_output() {
+        let reg = TenantRegistry::new();
+        let a = reg.register("a").unwrap();
+        let b = reg.register("b").unwrap();
+        let c = reg.register("c").unwrap();
+        let n = 3;
+        let mut conflicts = vec![0_u32; n * n];
+        conflicts[0 * n + 1] = 1;
+        conflicts[1 * n + 0] = 1;
+        let mut out = Vec::with_capacity(3);
+        let mut scratch = TenantSelectionScratch::new();
+
+        reg.select_concurrent_tenants_into(&conflicts, &mut out, &mut scratch);
+        let out_ptr = out.as_ptr();
+        let active_ids_ptr = scratch.active_ids.as_ptr();
+        let selected_ptr = scratch.selected_indices.as_ptr();
+        reg.select_concurrent_tenants_into(&conflicts, &mut out, &mut scratch);
+
+        assert_eq!(out.as_ptr(), out_ptr);
+        assert_eq!(scratch.active_ids.as_ptr(), active_ids_ptr);
+        assert_eq!(scratch.selected_indices.as_ptr(), selected_ptr);
+        assert!(out.contains(&a.id()) || out.contains(&b.id()));
+        assert!(!(out.contains(&a.id()) && out.contains(&b.id())));
+        assert!(out.contains(&c.id()));
+    }
+
+    #[test]
+    fn concurrent_tenant_selection_respects_conflicts() {
+        let reg = TenantRegistry::new();
+        let a = reg.register("a").unwrap();
+        let b = reg.register("b").unwrap();
+        let c = reg.register("c").unwrap();
+        let n = 3;
+        let mut conflicts = vec![0_u32; n * n];
+        conflicts[0 * n + 1] = 1;
+        conflicts[1 * n + 0] = 1;
+
+        let selected = reg.select_concurrent_tenants(&conflicts);
+
+        assert!(selected.contains(&a.id()) || selected.contains(&b.id()));
+        assert!(!(selected.contains(&a.id()) && selected.contains(&b.id())));
+        assert!(selected.contains(&c.id()));
     }
 
     #[test]

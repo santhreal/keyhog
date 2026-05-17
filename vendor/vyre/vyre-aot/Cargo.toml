@@ -1,0 +1,39 @@
+[package]
+name = "vyre-aot"
+version = "0.4.1"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/vyre-aot"
+description = "Ahead-of-time compilation for vyre Programs: emits target-native bytes plus a self-contained launcher bundle suitable for embedded and competition-style code-budget-constrained submissions."
+readme = "README.md"
+keywords = ["vyre", "gpu", "aot", "compiler"]
+categories = ["compilers", "hardware-support"]
+
+[lints]
+workspace = true
+
+[dependencies]
+vyre-foundation.workspace = true
+vyre-driver.workspace = true
+vyre-self-substrate.workspace = true
+vyre-primitives = { version = "0.4.1", path = "../vyre-primitives", default-features = false, features = ["math", "graph", "fixpoint", "bitset", "reduce", "inventory-registry"] }
+vyre-spec.workspace = true
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+thiserror.workspace = true
+sha2.workspace = true
+blake3.workspace = true
+brotli = "8"
+lzma-rs = "0.3"
+
+[features]
+default = []
+ptx = []
+
+[dev-dependencies]
+vyre-reference.workspace = true
+tempfile.workspace = true

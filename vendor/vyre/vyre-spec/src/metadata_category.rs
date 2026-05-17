@@ -13,7 +13,7 @@ pub enum MetadataCategory {
     B,
     /// Category C: hardware intrinsic path.
     C,
-    /// Category is not yet classified.
+    /// Catalog producer did not assign a category.
     Unclassified,
 }
 

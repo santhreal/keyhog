@@ -205,11 +205,9 @@ mod tests {
         let decoder = decoder_with_handoff("decoded");
         let scanner = scanner_with_handoff("decoded");
         let fused = fuse_decode_scan(decoder, scanner, "decoded", 128).unwrap();
-        let handoff = fused
-            .buffers
-            .iter()
-            .find(|b| b.name() == "decoded")
-            .expect("handoff buffer survives fusion");
+        let handoff = fused.buffers.iter().find(|b| b.name() == "decoded").expect(
+            "Fix: handoff buffer survives fusion; restore this invariant before continuing.",
+        );
         assert_eq!(handoff.access(), BufferAccess::Workgroup);
         assert_eq!(handoff.kind(), MemoryKind::Shared);
         assert_eq!(handoff.count(), 128);
@@ -235,12 +233,22 @@ mod tests {
         let decoder = decoder_with_handoff("decoded");
         let scanner = scanner_with_handoff("decoded");
         let fused = fuse_decode_scan(decoder, scanner, "decoded", 64).unwrap();
-        // fuse_programs wraps each arm in its own Region; the
-        // outer body has at least 2 nodes (one per arm).
+        // `Program::wrapped` always normalizes a multi-node entry into a
+        // single root `Node::Region` that owns the per-arm body; check
+        // that body holds the two arms (plus any inserted barrier).
+        assert_eq!(
+            fused.entry.len(),
+            1,
+            "wrapped entry must be a single root Region"
+        );
+        let body = match &fused.entry[0] {
+            vyre::ir::Node::Region { body, .. } => body.as_ref(),
+            other => panic!("Fix: fused entry root must be a Region, got {other:?}"),
+        };
         assert!(
-            fused.entry.len() >= 2,
-            "fused entry body should contain both arms, got {} nodes",
-            fused.entry.len()
+            body.len() >= 2,
+            "fused root region body should contain both arms, got {} nodes",
+            body.len()
         );
     }
 

@@ -1,13 +1,13 @@
 //! Cat-C `popcount_u32` — count of set bits in each u32 lane.
 //! CPU reference: `u32::count_ones` bit-exact.
 //!
-//! # Backend fallback
+//! # Backend support contract
 //!
-//! `popcount_u32` lowers to the Naga `MathFunction::CountOneBits` intrinsic.
+//! `popcount_u32` lowers to the target builder `MathFunction::CountOneBits` intrinsic.
 //! On backends that do not expose `countOneBits` (e.g. very old GLSL
 //! targets), the lowering must emit a clear `BackendError::Unsupported`
 //! rather than silently producing incorrect results.  There is no portable
-//! software fallback at the vyre-intrinsics layer because the bit-exact
+//! lowered expansion at the vyre-intrinsics layer because the bit-exact
 //! contract would require a multi-instruction sequence that differs per
 //! target; callers needing universal portability should use a Category-A
 //! composition over shifts and masks instead.

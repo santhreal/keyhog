@@ -14,6 +14,7 @@ use core::sync::atomic::{AtomicU32, Ordering};
 
 /// Minimal `iovec` struct matching the Linux ABI for `readv`.
 #[repr(C)]
+#[derive(Debug, Clone, Copy)]
 pub struct Iovec {
     /// Target buffer address for this chunk of the read.
     pub iov_base: *mut core::ffi::c_void,
@@ -52,10 +53,8 @@ impl<'a> GpuMappedBuffer<'a> {
     /// # Safety
     ///
     /// The caller asserts:
-    /// - `slice` aliases a GPU allocation created with host-visible +
-    ///   host-shared usage bits (wgpu's `BufferUsages::MAP_READ |
-    ///   MAP_WRITE`, CUDA's `cudaHostAllocMapped`, Metal's
-    ///   `MTLResourceStorageModeShared`).
+    /// - `slice` aliases a device allocation created with host-visible
+    ///   host-shared usage bits by the concrete backend.
     /// - No other code reads or writes through `slice` while the
     ///   returned handle is alive.
     pub unsafe fn from_host_visible_slice(slice: &'a mut [u8]) -> Self {
@@ -159,7 +158,7 @@ impl<'a> GpuMappedBuffer<'a> {
         core::slice::from_raw_parts_mut(self.ptr, self.len)
     }
 
-    /// Construct from a PCIe BAR1 peer-memory pointer (NVIDIA
+    /// Construct from a PCIe peer-memory pointer
     /// GPUDirect Storage).
     ///
     /// When paired with [`crate::PipelineError::NvmePassthroughDisabled`]
@@ -281,6 +280,8 @@ impl<'a> AsyncUringStream<'a> {
         target_offset: u64,
         iovs_storage: &mut [Iovec],
     ) -> Result<(), PipelineError> {
+        // SAFETY: registered fixed buffers + file index are valid for the lifetime
+        // of the ring; the SQE is built on the ring's own SQ slot.
         unsafe {
             self.submit_read_to_gpu_at_with_user_data(
                 fd,

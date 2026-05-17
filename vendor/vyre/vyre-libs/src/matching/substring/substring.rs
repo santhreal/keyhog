@@ -129,16 +129,16 @@ inventory::submit! {
         id: "vyre-libs::matching::substring_search",
         build: || substring_search("haystack", "needle", "matches", 8, 3),
         test_inputs: Some(|| {
-            let u32_bytes = |s: &str| s.bytes().map(u32::from).flat_map(|w| w.to_le_bytes()).collect::<Vec<u8>>();
+            let to_u32_vec = |s: &str| s.bytes().map(u32::from).collect::<Vec<_>>();
             vec![
                 vec![
-                    u32_bytes("abcabc++"),
-                    u32_bytes("abc"),
+                    crate::test_support::byte_pack::u32_bytes(&to_u32_vec("abcabc++")),
+                    crate::test_support::byte_pack::u32_bytes(&to_u32_vec("abc")),
                     vec![0u8; 8 * 4],
                 ],
                 vec![
-                    u32_bytes("xyzxyzxy"),
-                    u32_bytes("xyz"),
+                    crate::test_support::byte_pack::u32_bytes(&to_u32_vec("xyzxyzxy")),
+                    crate::test_support::byte_pack::u32_bytes(&to_u32_vec("xyz")),
                     vec![0u8; 8 * 4],
                 ]
             ]
@@ -150,10 +150,8 @@ inventory::submit! {
             //   fires.
             // Case 1: haystack="xyzxyzxy", needle="xyz". Matches at
             //   i ∈ {0, 3}.
-            let to_bytes =
-                |s: &[u32]| s.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
-            let case0 = to_bytes(&[1u32, 0, 0, 1, 0, 0, 0, 0]);
-            let case1 = to_bytes(&[1u32, 0, 0, 1, 0, 0, 0, 0]);
+            let case0 = crate::test_support::byte_pack::u32_bytes(&[1u32, 0, 0, 1, 0, 0, 0, 0]);
+            let case1 = crate::test_support::byte_pack::u32_bytes(&[1u32, 0, 0, 1, 0, 0, 0, 0]);
             vec![vec![case0], vec![case1]]
         }),
     }

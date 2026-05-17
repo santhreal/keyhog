@@ -81,3 +81,66 @@ fn integer_width_bits(data_type: &DataType) -> Option<u16> {
         _ => None,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn identity_cast_is_valid() {
+        assert!(cast_is_valid(&DataType::U32, &DataType::U32));
+        assert!(cast_is_valid(&DataType::F32, &DataType::F32));
+    }
+
+    #[test]
+    fn u32_to_f32_is_valid() {
+        assert!(cast_is_valid(&DataType::U32, &DataType::F32));
+        assert!(cast_is_valid(&DataType::F32, &DataType::U32));
+    }
+
+    #[test]
+    fn integer_like_scalars_cross_cast() {
+        assert!(cast_is_valid(&DataType::U8, &DataType::U32));
+        assert!(cast_is_valid(&DataType::I32, &DataType::U64));
+        assert!(cast_is_valid(&DataType::Bool, &DataType::U32));
+    }
+
+    #[test]
+    fn u32_to_vec2u32_is_valid() {
+        assert!(cast_is_valid(&DataType::U32, &DataType::Vec2U32));
+        assert!(cast_is_valid(&DataType::Vec2U32, &DataType::U32));
+    }
+
+    #[test]
+    fn bytes_cast_is_invalid() {
+        assert!(!cast_is_valid(&DataType::Bytes, &DataType::U32));
+        assert!(!cast_is_valid(&DataType::U32, &DataType::Bytes));
+    }
+
+    #[test]
+    fn f32_to_bytes_is_invalid() {
+        assert!(!cast_is_valid(&DataType::F32, &DataType::Bytes));
+    }
+
+    #[test]
+    fn narrowing_detected() {
+        assert!(cast_is_narrowing(&DataType::U64, &DataType::U32));
+        assert!(cast_is_narrowing(&DataType::U32, &DataType::U8));
+    }
+
+    #[test]
+    fn widening_not_narrowing() {
+        assert!(!cast_is_narrowing(&DataType::U8, &DataType::U32));
+        assert!(!cast_is_narrowing(&DataType::U32, &DataType::U64));
+    }
+
+    #[test]
+    fn same_width_not_narrowing() {
+        assert!(!cast_is_narrowing(&DataType::U32, &DataType::I32));
+    }
+
+    #[test]
+    fn non_integer_not_narrowing() {
+        assert!(!cast_is_narrowing(&DataType::F32, &DataType::U32));
+    }
+}

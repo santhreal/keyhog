@@ -1,4 +1,9 @@
+#![forbid(unsafe_code)]
 //! Universal Cat-A op harness registry + Region builder.
+//!
+//! **Registry Layering**: This file defines the `OpEntry` registry for Tier-3 Cat-A compositions.
+//! It operates in parallel with the Tier-2.5 primitives registry (`vyre-primitives::harness::OpEntry`) and the Tier-2 hardware intrinsics registry (`vyre-intrinsics::harness::OpEntry`).
+//! For an architectural overview of this three-registry split, see `vyre-harness/README.md`.
 //!
 //! Every Cat-A composition that participates in automated harness
 //! checks registers one `OpEntry` through `inventory::submit!`. The
@@ -12,11 +17,70 @@
 //! [`region`](self::region) for `wrap`, `wrap_anonymous`, `wrap_child`,
 //! `tag_program`.
 
+pub mod fp_contract;
 pub mod region;
 
 pub use region::{reparent_program_children, tag_program, wrap, wrap_anonymous, wrap_child};
 
+/// Re-exported so the [`vyre_op!`] macro can call into `inventory`
+/// without callers needing to add it as a direct dependency.
+#[doc(hidden)]
+pub use inventory;
+
 use vyre::ir::Program;
+
+/// Canonical operation tier used by harness, catalog, and matrix gates.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OpTier {
+    /// Foundation-level IR rewrite or built-in IR operation.
+    FoundationIr,
+    /// Tier-2 hardware intrinsic.
+    Intrinsic,
+    /// Tier-2.5 reusable primitive.
+    Primitive,
+    /// Tier-3 library composition.
+    Libs,
+    /// Runtime or driver-owned operation.
+    Runtime,
+    /// External consumer registered into the shared harness.
+    External,
+    /// Identifier does not match any accepted registry namespace.
+    Unknown,
+}
+
+impl OpTier {
+    /// Return the stable `OP_MATRIX.toml` tier spelling.
+    #[must_use]
+    pub const fn matrix_value(self) -> &'static str {
+        match self {
+            Self::FoundationIr => "foundation_ir",
+            Self::Intrinsic => "intrinsic",
+            Self::Primitive => "primitive",
+            Self::Libs => "libs",
+            Self::Runtime => "runtime",
+            Self::External => "external",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
+/// Classify an operation id by the canonical namespace contract.
+#[must_use]
+pub fn classify_op_id(id: &str) -> OpTier {
+    if id.starts_with("vyre-intrinsics::hardware::") {
+        OpTier::Intrinsic
+    } else if id.starts_with("vyre-primitives::") {
+        OpTier::Primitive
+    } else if id.starts_with("vyre-libs::") {
+        OpTier::Libs
+    } else if id.starts_with("core.") || id.starts_with("io.") || id.starts_with("mem.") {
+        OpTier::Runtime
+    } else if id.starts_with("weir::") {
+        OpTier::External
+    } else {
+        OpTier::Unknown
+    }
+}
 
 /// Deterministic fixture input cases.
 pub type InputsFn = fn() -> Vec<Vec<Vec<u8>>>;
@@ -80,19 +144,70 @@ impl OpEntry {
     ///
     /// `0` means byte-identity is required. Non-zero tolerances are used only
     /// for ops whose contract already permits backend-defined transcendental
-    /// drift.
+    /// drift OR whose lowered IR contains f32 mul+add chains that the WGSL
+    /// implementation is allowed to fuse into a single FMA (one rounding
+    /// instead of two). Catalog wrappers like
+    /// `vyre-libs::catalog::math::<name>::consumer_a` are mapped to the
+    /// underlying primitive id so they inherit the primitive's tolerance
+    /// without a hand-maintained per-wrapper row (Q5 in
+    /// `docs/optimization/ROADMAP.md`).
     #[must_use]
     pub fn tolerance(&self) -> u32 {
-        match self.id {
-            "vyre-libs::nn::softmax" => 1,
-            "vyre-libs::nn::attention" => 4,
-            "vyre-libs::nn::layer_norm" => 1,
-            "vyre-libs::nn::silu" => 1,
-            "vyre-libs::nn::rms_norm" => 2,
-            "vyre-libs::nn::rms_norm_linear" => 2,
-            _ => 0,
-        }
+        Self::tolerance_for_id(self.id)
     }
+
+    /// Resolve the ULP tolerance for an op id, normalising catalog wrapper
+    /// ids through their underlying primitive path first.
+    ///
+    /// Public for cross-crate consumers (e.g. the conformance harness)
+    /// that want to consult the tolerance contract without holding a
+    /// concrete `OpEntry`.
+    #[must_use]
+    pub fn tolerance_for_id(id: &str) -> u32 {
+        if let Some(path) = catalog_primitive_path(id) {
+            return primitive_tolerance_for_path(path);
+        }
+        explicit_tolerance_for_id(id)
+    }
+}
+
+fn explicit_tolerance_for_id(id: &str) -> u32 {
+    match id {
+        "vyre-libs::nn::softmax" => 1,
+        "vyre-libs::nn::attention" => 4,
+        "vyre-libs::nn::gqa_attention" => 4,
+        "vyre-libs::nn::layer_norm" => 1,
+        "vyre-libs::nn::silu" => 1,
+        // Observed 2-ULP drift on a 5090 lane (CPU 0x415dd0f4 vs
+        // GPU 0x415dd0f6) under FMA fusion in cat_a_gpu_differential.
+        "vyre-libs::nn::logit_softcap" => 2,
+        "vyre-libs::nn::rms_norm" => 2,
+        "vyre-libs::nn::rms_norm_linear" => 2,
+        "vyre-libs::math::fft::fft_convolve_circular_complex" => 4,
+        "vyre-libs::optim::newton_schulz_5step" => 4,
+        // `decay*ema + (1-decay)*theta` — straight mul+add chain,
+        // one lane drifts 1 ULP from CPU's serial mul+add+add to
+        // GPU's fused mul-add (WGSL-spec-allowed).
+        "vyre-libs::optim::ema_apply" => 1,
+        // Newton-Schulz Cat-A primitive: the polynomial has nested
+        // mul+add steps that fuse to FMA on GPU. Worst observed
+        // single-lane divergence is 4 ULP.
+        "vyre-primitives::math::newton_schulz_poly5_f32" => 4,
+        _ => 0,
+    }
+}
+
+fn primitive_tolerance_for_path(path: &str) -> u32 {
+    match path {
+        "math::newton_schulz_poly5_f32" => 4,
+        _ => 0,
+    }
+}
+
+fn catalog_primitive_path(id: &str) -> Option<&str> {
+    let rest = id.strip_prefix("vyre-libs::catalog::")?;
+    rest.strip_suffix("::consumer_a")
+        .or_else(|| rest.strip_suffix("::consumer_b"))
 }
 
 inventory::collect!(OpEntry);
@@ -166,61 +281,193 @@ pub fn convergence_contract(op_id: &str) -> Option<&'static ConvergenceContract>
     inventory::iter::<ConvergenceContract>().find(|contract| contract.op_id == op_id)
 }
 
-/// Declares an op is exempt from the workspace-wide universal byte-identity
-/// GPU-differential sweep, with a reason recorded at registration site.
+// Tolerance metadata and capability requirements are encoded in
+// [`OpEntry::tolerance`] and checked by the conform lenses directly.
+// There is no global exemption registry; every registered op must
+// provide runnable `test_inputs` / `expected_output` fixtures or fail
+// loudly with a diagnostic.
+
+/// Declarative op registration shorthand (ROADMAP S8 generator half).
 ///
-/// Replaces the hardcoded `is_universal_diff_exempt` match inside the wgpu
-/// differential test. Each exempt op lives next to the op that needs it,
-/// which means (a) adding a new op automatically causes the diff test to
-/// run (LAW 9 evasion harder to sneak in), (b) the reason is self-
-/// documenting, and (c) removing the exemption is one local edit instead
-/// of a cross-crate test patch.
-pub struct UniversalDiffExemption {
-    /// Stable op id this exemption applies to (`OpEntry::id`).
-    pub op_id: &'static str,
-    /// Why this op is exempt. Must be specific — e.g. "fixpoint op, needs
-    /// driver convergence loop", "approximate intrinsic with declared
-    /// tolerance", not "broken on GPU".
-    pub reason: &'static str,
+/// One source declares a Cat-A op; the macro expands to the matching
+/// `inventory::submit!{ OpEntry { .. } }` so writers can't accidentally
+/// drift from the canonical `OpEntry` shape.
+///
+/// ## Forms
+///
+/// ```ignore
+/// // Minimal: just id + builder.
+/// vyre_harness::vyre_op! {
+///     id: "vyre-libs::math::matmul",
+///     build: || matmul("a", "b", "out", 2, 2, 2),
+/// }
+///
+/// // Full: explicit fixtures.
+/// vyre_harness::vyre_op! {
+///     id: "vyre-libs::math::matmul",
+///     build: || matmul("a", "b", "out", 2, 2, 2),
+///     test_inputs: || vec![vec![input_bytes(), output_zeros()]],
+///     expected_output: || vec![vec![expected_bytes()]],
+/// }
+/// ```
+///
+/// `test_inputs` / `expected_output` default to `None` when omitted.
+/// Every form expands to exactly one `inventory::submit!` of an
+/// `OpEntry`, keeping the registration shape locked to the struct
+/// definition above.
+///
+/// Future `OpEntry` field additions extend this macro with defaulted
+/// arms so existing call sites stay green.
+#[macro_export]
+macro_rules! vyre_op {
+    (
+        id: $id:expr,
+        build: $build:expr $(,)?
+    ) => {
+        $crate::vyre_op! {
+            id: $id,
+            build: $build,
+            test_inputs: ::core::option::Option::None,
+            expected_output: ::core::option::Option::None,
+        }
+    };
+    (
+        id: $id:expr,
+        build: $build:expr,
+        test_inputs: $inputs:expr,
+        expected_output: $output:expr $(,)?
+    ) => {
+        $crate::inventory::submit! {
+            $crate::OpEntry {
+                id: $id,
+                build: $build,
+                test_inputs: $inputs,
+                expected_output: $output,
+            }
+        }
+    };
 }
 
-inventory::collect!(UniversalDiffExemption);
+#[cfg(test)]
+mod tests {
+    use super::{catalog_primitive_path, OpEntry};
 
-/// Return the recorded exemption reason for `op_id`, if any.
-#[must_use]
-pub fn universal_diff_exemption(op_id: &str) -> Option<&'static str> {
-    inventory::iter::<UniversalDiffExemption>()
-        .find(|exempt| exempt.op_id == op_id)
-        .map(|exempt| exempt.reason)
-}
+    #[test]
+    fn catalog_primitive_path_strips_consumer_a() {
+        // Q5: catalog wrapper consumer_a/b ids canonicalize to their
+        // wrapped primitive id so tolerance() does not depend on a
+        // hand-maintained per-wrapper row.
+        assert_eq!(
+            catalog_primitive_path("vyre-libs::catalog::math::newton_schulz_poly5_f32::consumer_a"),
+            Some("math::newton_schulz_poly5_f32"),
+        );
+    }
 
-/// One record in the universal byte-identity diff matrix.
-///
-/// Pairs an `OpEntry` with any structured reason it should be skipped.
-/// Conform lenses iterate this instead of iterating raw `all_entries()`
-/// and re-implementing the skip logic, which kept drifting.
-pub struct DiffCandidate {
-    /// The registered op entry.
-    pub entry: &'static OpEntry,
-    /// If `Some`, the harness must skip this entry and record the string
-    /// as the reason. Includes both registered exemptions (from
-    /// [`universal_diff_exemption`]) and ops missing `test_inputs`.
-    pub skip_reason: Option<String>,
-}
+    #[test]
+    fn catalog_primitive_path_strips_consumer_b() {
+        assert_eq!(
+            catalog_primitive_path("vyre-libs::catalog::math::newton_schulz_poly5_f32::consumer_b"),
+            Some("math::newton_schulz_poly5_f32"),
+        );
+    }
 
-/// Iterate every registered `OpEntry`, pairing each with its skip reason.
-///
-/// This is the single source of truth for "which ops participate in the
-/// universal byte-identity GPU differential sweep". Replaces ad-hoc
-/// iteration and per-test hardcoded skip lists so adding a new exempt op
-/// is one registration next to the op body, not a cross-crate patch.
-pub fn universal_diff_candidates() -> impl Iterator<Item = DiffCandidate> {
-    all_entries().map(|entry| {
-        let skip_reason = if entry.test_inputs.is_none() {
-            Some("no test_inputs — nothing to differentiate.".to_string())
-        } else {
-            universal_diff_exemption(entry.id).map(|reason| reason.to_string())
-        };
-        DiffCandidate { entry, skip_reason }
-    })
+    #[test]
+    fn catalog_primitive_path_rejects_non_catalog_ids() {
+        assert_eq!(catalog_primitive_path("vyre-libs::nn::softmax"), None);
+        assert_eq!(
+            catalog_primitive_path("vyre-primitives::hash::fnv1a64"),
+            None
+        );
+    }
+
+    #[test]
+    fn tolerance_for_id_inherits_from_primitive_through_catalog_wrapper() {
+        // The proving test for Q5: catalog consumer_a and consumer_b
+        // return the same ULP tolerance as their underlying primitive,
+        // without anyone hand-adding a wrapper row.
+        let primitive = OpEntry::tolerance_for_id("vyre-primitives::math::newton_schulz_poly5_f32");
+        let consumer_a = OpEntry::tolerance_for_id(
+            "vyre-libs::catalog::math::newton_schulz_poly5_f32::consumer_a",
+        );
+        let consumer_b = OpEntry::tolerance_for_id(
+            "vyre-libs::catalog::math::newton_schulz_poly5_f32::consumer_b",
+        );
+        assert_eq!(consumer_a, primitive);
+        assert_eq!(consumer_b, primitive);
+        assert!(
+            primitive > 0,
+            "primitive needs a non-zero tolerance for this test to be meaningful"
+        );
+    }
+
+    #[test]
+    fn tolerance_defaults_to_zero_byte_identity() {
+        // Adversarial: an unknown op id (not catalog-shaped, no
+        // explicit tolerance row) must default to byte identity.
+        assert_eq!(
+            OpEntry::tolerance_for_id("vyre-libs::foo::bar::baz_unknown_op_id"),
+            0
+        );
+        // Adversarial: a catalog-shaped id whose primitive is unknown
+        // must also default to byte identity, not silently leak a
+        // tolerance from another op.
+        assert_eq!(
+            OpEntry::tolerance_for_id(
+                "vyre-libs::catalog::imaginary::path_that_does_not_exist::consumer_a"
+            ),
+            0
+        );
+    }
+
+    // ---------------- vyre_op! macro (S8 generator) ----------------
+
+    fn _trivial_program() -> vyre_foundation::ir::Program {
+        use vyre_foundation::ir::{BufferDecl, DataType, Expr, Node, Program};
+        Program::wrapped(
+            vec![BufferDecl::output("out", 0, DataType::U32).with_count(1)],
+            [1, 1, 1],
+            vec![Node::store("out", Expr::u32(0), Expr::u32(7))],
+        )
+    }
+
+    // Minimal-form invocation; expansion succeeds at compile time.
+    crate::vyre_op! {
+        id: "vyre-harness::test::trivial_minimal",
+        build: _trivial_program,
+    }
+
+    // Full-form invocation with explicit fixtures.
+    crate::vyre_op! {
+        id: "vyre-harness::test::trivial_full",
+        build: _trivial_program,
+        test_inputs: ::core::option::Option::Some(|| vec![vec![vec![0u8; 4]]]),
+        expected_output: ::core::option::Option::Some(|| vec![vec![vec![7u8, 0, 0, 0]]]),
+    }
+
+    #[test]
+    fn vyre_op_macro_minimal_form_registers_entry() {
+        let entry = crate::all_entries()
+            .find(|e| e.id == "vyre-harness::test::trivial_minimal")
+            .expect("Fix: vyre_op! minimal form must register an OpEntry");
+        assert!(entry.test_inputs.is_none());
+        assert!(entry.expected_output.is_none());
+    }
+
+    #[test]
+    fn vyre_op_macro_full_form_registers_entry_with_fixtures() {
+        let entry = crate::all_entries()
+            .find(|e| e.id == "vyre-harness::test::trivial_full")
+            .expect("Fix: vyre_op! full form must register an OpEntry");
+        assert!(entry.test_inputs.is_some());
+        assert!(entry.expected_output.is_some());
+    }
+
+    #[test]
+    fn vyre_op_macro_build_fn_produces_program() {
+        let entry = crate::all_entries()
+            .find(|e| e.id == "vyre-harness::test::trivial_minimal")
+            .expect("entry must exist");
+        let program = (entry.build)();
+        assert!(!program.entry().is_empty());
+    }
 }

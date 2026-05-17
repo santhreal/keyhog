@@ -1,5 +1,6 @@
 use super::{Node, NodeExtension};
 use crate::ir_inner::model::expr::{Expr, Ident};
+use crate::memory_model::MemoryOrdering;
 use std::sync::Arc;
 
 impl Node {
@@ -135,7 +136,7 @@ impl Node {
     ///
     /// Linus principle: one enum variant (`Node::Loop`) handles both
     /// bounded and persistent cases. No cascade of match arms through
-    /// every pass; no new wire-format tag. A future optimizer pass
+    /// every pass; no new wire-format tag. An optimizer pass
     /// that wants to distinguish "truly unbounded" from "large bound"
     /// inspects the `to` expression.
     ///
@@ -189,11 +190,19 @@ impl Node {
     /// ```
     /// use vyre::ir::Node;
     ///
-    /// assert!(matches!(Node::barrier(), Node::Barrier));
+    /// assert!(matches!(Node::barrier(), Node::Barrier { .. }));
     /// ```
     #[must_use]
     pub const fn barrier() -> Self {
-        Self::Barrier
+        Self::Barrier {
+            ordering: MemoryOrdering::SeqCst,
+        }
+    }
+
+    /// Workgroup barrier statement with explicit memory ordering.
+    #[must_use]
+    pub const fn barrier_with_ordering(ordering: MemoryOrdering) -> Self {
+        Self::Barrier { ordering }
     }
 
     /// Statement-level invocation of another registered op by stable

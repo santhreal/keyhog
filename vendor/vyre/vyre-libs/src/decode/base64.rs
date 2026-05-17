@@ -1,10 +1,11 @@
 //! GPU base64 decode compositions.
 
-use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
+use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Program};
 
 #[cfg(test)]
 use crate::buffer_names::fixed_name;
 use crate::buffer_names::scoped_generic_name;
+use crate::decode::scan::linear_aho_scan_body;
 use crate::region::wrap_anonymous;
 use vyre_primitives::decode::base64::base64_decode_child;
 
@@ -70,46 +71,6 @@ fn pack_words(words: &[u32]) -> Vec<u8> {
     words.iter().flat_map(|word| word.to_le_bytes()).collect()
 }
 
-fn dynamic_aho_scan_body(
-    decoded: &str,
-    transitions: &str,
-    accept: &str,
-    matches: &str,
-) -> Vec<Node> {
-    vec![
-        Node::let_bind("scan_i", Expr::InvocationId { axis: 0 }),
-        Node::if_then(
-            Expr::lt(
-                Expr::var("scan_i"),
-                Expr::load(DECODED_LEN_BUFFER, Expr::u32(0)),
-            ),
-            vec![
-                Node::let_bind("state", Expr::u32(0)),
-                Node::loop_for(
-                    "scan_step",
-                    Expr::u32(0),
-                    Expr::add(Expr::var("scan_i"), Expr::u32(1)),
-                    vec![Node::assign(
-                        "state",
-                        Expr::load(
-                            transitions,
-                            Expr::add(
-                                Expr::mul(Expr::var("state"), Expr::u32(256)),
-                                Expr::load(decoded, Expr::var("scan_step")),
-                            ),
-                        ),
-                    )],
-                ),
-                Node::store(
-                    matches,
-                    Expr::var("scan_i"),
-                    Expr::load(accept, Expr::var("state")),
-                ),
-            ],
-        ),
-    ]
-}
-
 /// Build a Program that decodes base64-encoded ASCII bytes from `input` into
 /// `output`, storing one decoded byte per `u32` slot.
 ///
@@ -123,19 +84,8 @@ fn dynamic_aho_scan_body(
 /// assert_eq!(program.workgroup_size(), [64, 1, 1]);
 /// ```
 ///
-/// # Panics
-///
-/// Panics when `input_len` is not a multiple of 4. Base64 encodes
-/// 24 input bits as 4 characters; any other length is either a
-/// truncated payload or a caller bug (PHASE2_DECODE MEDIUM —
-/// previous implementation silently dropped the trailing bytes).
 #[must_use]
 pub fn base64_decode(input: &str, output: &str, input_len: u32) -> Program {
-    assert!(
-        input_len % 4 == 0,
-        "Fix: base64_decode requires input_len to be a multiple of 4, got {input_len}. \
-         Pad the input with '=' or reject the payload upstream."
-    );
     let input = scoped_input_buffer(input);
     let output = scoped_output_buffer(output);
     let body = vec![base64_decode_child(
@@ -205,11 +155,12 @@ pub fn base64_decode_then_aho_corasick(
         DECODED_LEN_BUFFER,
         input_len,
     )];
-    entry.extend(dynamic_aho_scan_body(
+    entry.extend(linear_aho_scan_body(
         &decoded,
         transitions,
         accept,
         matches,
+        Expr::load(DECODED_LEN_BUFFER, Expr::u32(0)),
     ));
     Program::wrapped(
         vec![
@@ -362,8 +313,8 @@ mod tests {
             Value::from(vec![0u8; decoded_capacity as usize * 4]),
             Value::from(vec![0u8; 4]),
         ];
-        let outputs =
-            vyre_reference::reference_eval(&program, &inputs).expect("base64 decode must run");
+        let outputs = vyre_reference::reference_eval(&program, &inputs)
+            .expect("Fix: base64 decode must run; restore this invariant before continuing.");
         let decoded = outputs[0]
             .to_bytes()
             .chunks_exact(4)
@@ -397,11 +348,18 @@ mod tests {
     }
 
     #[test]
+    fn malformed_length_lowers_to_ir_trap_not_host_panic() {
+        let program = base64_decode("input", "output", 3);
+        assert!(program.stats().trap());
+    }
+
+    #[test]
     fn fused_program_reuses_decoded_buffer_for_scan() {
         let dfa = CompiledDfa {
             transitions: vec![0; 256],
             accept: vec![0],
             state_count: 1,
+            max_pattern_len: 0,
             output_offsets: vec![0, 0],
             output_records: vec![],
         };

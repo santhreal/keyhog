@@ -18,7 +18,7 @@ use crate::hardware::{pack_f32, ternary_f32_program};
 ///
 /// This op requires the backend to advertise the `FMA` capability.  If the
 /// backend reports `FMA` as absent, lowering **must** emit a clear
-/// [`BackendError::Unsupported`](vyre::BackendError::Unsupported) — it must
+/// `BackendError::Unsupported` — it must
 /// **never** silently fall back to `a * b + c`, because IEEE-754 multiply-then-add
 /// double-rounds and produces a different result from single-round fused
 /// multiply-add.  Callers that want the weaker `a * b + c` contract must build

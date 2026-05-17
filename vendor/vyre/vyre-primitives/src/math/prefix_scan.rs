@@ -5,8 +5,8 @@
 //!
 //! * **Hit-buffer compaction:** each lane produces 0 or 1 live
 //!   flag; an exclusive scan over the flag vector gives the
-//!   destination slot for each live hit. One dispatch replaces the
-//!   current `[1,1,1]` scalar-clamp hack flagged by PHASE9_EMIT.
+//!   destination slot for each live hit. One dispatch provides the
+//!   parallel compaction primitive used by PHASE9_EMIT.
 //! * **Histogram prefix:** turn a bin-count vector into the CDF
 //!   lookup used by the radix-sort primitive.
 //! * **Segmented-reduce baseline:** classical parallel-scan is
@@ -24,15 +24,10 @@
 //!       out[lane] = in[lane]
 //! ```
 //!
-//! `op` is `+` for sum-scan; pluggable via the `op` selector. We
-//! unroll `log2(N)` rounds in the emitted Program by splitting
-//! input and output across two bounce buffers — no shared memory
-//! needed, runs on any GPU with `@workgroup_size(N, 1, 1)`.
-//!
-//! For bigger-than-subgroup N the caller tiles the scan: scan each
-//! subgroup locally, then a second dispatch adds each subgroup's
-//! total prefix to its neighbours. This module ships the inner
-//! kernel — the driver stitches tiles.
+//! `op` is `+` for sum-scan; the emitted Program ping-pongs through
+//! two workgroup-local scratch buffers with a barrier after every
+//! round. The public builder accepts any `N` in `1..=1024` and pads
+//! the workgroup to the next power of two internally.
 
 use std::sync::Arc;
 
@@ -55,89 +50,186 @@ pub enum ScanKind {
 
 /// Emit a Hillis-Steele prefix-sum Program.
 ///
-/// `n` is the number of input slots (upper bound on lanes — caller
-/// dispatches `@workgroup_size(n, 1, 1)`). `n` must be a power of
-/// two and at most 1024 (one subgroup worst-case). Larger n: tile.
+/// `n` is the number of input slots. The emitted workgroup size is
+/// `n.next_power_of_two()` so non-power-of-two lengths execute with
+/// inactive padded lanes.
 #[must_use]
 pub fn prefix_scan(in_buf: &str, out_buf: &str, n: u32, kind: ScanKind) -> Program {
-    assert!(
-        n.is_power_of_two() && n > 0 && n <= 1024,
-        "Fix: prefix_scan requires n a power of two in 1..=1024, got {n}. \
-         For larger N, tile: scan each subgroup then add subgroup prefixes.",
-    );
-
-    let lane = Expr::InvocationId { axis: 0 };
-
-    // Body:
-    //   let mut v = in_buf[lane];
-    //   (For exclusive: shift — seed v with in_buf[lane - 1], zero at lane 0.)
-    //   for stride in [1, 2, 4, …, n/2]:
-    //       if lane >= stride: v += in_buf[lane - stride]
-    //                           using a bounce bitset to avoid read-after-write
-    //   out_buf[lane] = v
-    //
-    // We emit the ping-pong through `out_buf` itself + a scratch
-    // lane-local `v`; each round reads in_buf at (lane - stride) and
-    // unions into v. At the end we write v to out_buf.
-    let mut body: Vec<Node> = Vec::new();
-
-    match kind {
-        ScanKind::InclusiveSum => {
-            body.push(Node::let_bind("v", Expr::load(in_buf, lane.clone())));
-        }
-        ScanKind::ExclusiveSum => {
-            body.push(Node::let_bind(
-                "v",
-                Expr::select(
-                    Expr::eq(lane.clone(), Expr::u32(0)),
-                    Expr::u32(0),
-                    Expr::load(in_buf, Expr::add(lane.clone(), Expr::u32(u32::MAX))),
-                ),
-            ));
-        }
-    }
-
-    let mut stride = 1_u32;
-    while stride < n {
-        body.push(Node::if_then(
-            Expr::lt(Expr::u32(stride.saturating_sub(1)), lane.clone()),
-            vec![Node::assign(
-                "v",
-                Expr::add(
-                    Expr::var("v"),
-                    Expr::load(
-                        in_buf,
-                        // (lane - stride) — u32 subtraction, guarded above.
-                        Expr::add(lane.clone(), Expr::u32(u32::MAX.wrapping_sub(stride - 1))),
-                    ),
-                ),
-            )],
-        ));
-        stride *= 2;
-    }
-
-    body.push(Node::store(out_buf, lane.clone(), Expr::var("v")));
-
     let op_id = match kind {
         ScanKind::InclusiveSum => OP_ID_INCLUSIVE_SUM,
         ScanKind::ExclusiveSum => OP_ID_EXCLUSIVE_SUM,
     };
+    prefix_scan_with_op_id(in_buf, out_buf, n, kind, op_id)
+}
+
+/// Emit a Hillis-Steele prefix-sum Program with an explicit region generator id.
+#[must_use]
+pub fn prefix_scan_with_op_id(
+    in_buf: &str,
+    out_buf: &str,
+    n: u32,
+    kind: ScanKind,
+    op_id: &'static str,
+) -> Program {
+    if n == 0 || n > 1024 {
+        return crate::invalid_output_program(
+            op_id,
+            out_buf,
+            DataType::U32,
+            format!("Fix: prefix_scan requires n in 1..=1024, got {n}."),
+        );
+    }
+
+    let lanes = n.next_power_of_two();
+    let lane = Expr::InvocationId { axis: 0 };
+    let scratch_a = format!("__{out_buf}_scan_a");
+    let scratch_b = format!("__{out_buf}_scan_b");
+
+    let mut body: Vec<Node> = Vec::new();
+    body.push(Node::store(&scratch_a, lane.clone(), Expr::u32(0)));
+    match kind {
+        ScanKind::InclusiveSum => body.push(Node::if_then(
+            Expr::lt(lane.clone(), Expr::u32(n)),
+            vec![Node::store(
+                &scratch_a,
+                lane.clone(),
+                Expr::load(in_buf, lane.clone()),
+            )],
+        )),
+        ScanKind::ExclusiveSum => body.push(Node::if_then(
+            Expr::and(
+                Expr::lt(Expr::u32(0), lane.clone()),
+                Expr::lt(lane.clone(), Expr::u32(n)),
+            ),
+            vec![Node::store(
+                &scratch_a,
+                lane.clone(),
+                Expr::load(in_buf, Expr::add(lane.clone(), Expr::u32(u32::MAX))),
+            )],
+        )),
+    }
+    body.push(Node::Barrier {
+        ordering: vyre_foundation::MemoryOrdering::SeqCst,
+    });
+
+    let mut stride = 1_u32;
+    while stride < lanes {
+        let previous_lane = Expr::add(lane.clone(), Expr::u32(u32::MAX.wrapping_sub(stride - 1)));
+        body.push(Node::store(
+            &scratch_b,
+            lane.clone(),
+            Expr::load(&scratch_a, lane.clone()),
+        ));
+        body.push(Node::if_then(
+            Expr::lt(Expr::u32(stride.saturating_sub(1)), lane.clone()),
+            vec![Node::store(
+                &scratch_b,
+                lane.clone(),
+                Expr::add(
+                    Expr::load(&scratch_a, lane.clone()),
+                    Expr::load(&scratch_a, previous_lane),
+                ),
+            )],
+        ));
+        body.push(Node::Barrier {
+            ordering: vyre_foundation::MemoryOrdering::SeqCst,
+        });
+        body.push(Node::store(
+            &scratch_a,
+            lane.clone(),
+            Expr::load(&scratch_b, lane.clone()),
+        ));
+        body.push(Node::Barrier {
+            ordering: vyre_foundation::MemoryOrdering::SeqCst,
+        });
+        stride *= 2;
+    }
+
+    body.push(Node::if_then(
+        Expr::lt(lane.clone(), Expr::u32(n)),
+        vec![Node::store(
+            out_buf,
+            lane.clone(),
+            Expr::load(&scratch_a, lane.clone()),
+        )],
+    ));
 
     let buffers = vec![
         BufferDecl::storage(in_buf, 0, BufferAccess::ReadOnly, DataType::U32).with_count(n),
-        BufferDecl::storage(out_buf, 1, BufferAccess::ReadWrite, DataType::U32).with_count(n),
+        BufferDecl::output(out_buf, 1, DataType::U32)
+            .with_count(n)
+            .with_output_byte_range(0..(n as usize) * 4),
+        BufferDecl::workgroup(&scratch_a, lanes, DataType::U32),
+        BufferDecl::workgroup(&scratch_b, lanes, DataType::U32),
     ];
 
     Program::wrapped(
         buffers,
-        [n, 1, 1],
+        [lanes, 1, 1],
         vec![Node::Region {
             generator: Ident::from(op_id),
             source_region: None,
-            body: Arc::new(vec![Node::if_then(
-                Expr::lt(lane.clone(), Expr::u32(n)),
-                body,
-            )]),
+            body: Arc::new(body),
+        }],
+    )
+}
+
+/// Emit a sequential inclusive scan for inputs too large for one
+/// workgroup. This preserves exact scan semantics inside the single
+/// `Program` abstraction while the workgroup primitive handles the
+/// hot sub-1024 path.
+#[must_use]
+pub fn prefix_scan_large(in_buf: &str, out_buf: &str, n: u32) -> Program {
+    prefix_scan_large_with_op_id(in_buf, out_buf, n, OP_ID_INCLUSIVE_SUM)
+}
+
+/// Emit a sequential inclusive scan with an explicit region generator id.
+#[must_use]
+pub fn prefix_scan_large_with_op_id(
+    in_buf: &str,
+    out_buf: &str,
+    n: u32,
+    op_id: &'static str,
+) -> Program {
+    let input_decl = if n == 0 {
+        BufferDecl::storage(in_buf, 0, BufferAccess::ReadOnly, DataType::U32)
+    } else {
+        BufferDecl::storage(in_buf, 0, BufferAccess::ReadOnly, DataType::U32).with_count(n)
+    };
+    let output_decl = BufferDecl::output(out_buf, 1, DataType::U32)
+        .with_count(n.max(1))
+        .with_output_byte_range(0..(n as usize).saturating_mul(4));
+
+    let body = if n == 0 {
+        Vec::new()
+    } else {
+        vec![Node::if_then(
+            Expr::eq(Expr::InvocationId { axis: 0 }, Expr::u32(0)),
+            vec![
+                Node::let_bind("acc", Expr::u32(0)),
+                Node::loop_for(
+                    "i",
+                    Expr::u32(0),
+                    Expr::u32(n),
+                    vec![
+                        Node::assign(
+                            "acc",
+                            Expr::add(Expr::var("acc"), Expr::load(in_buf, Expr::var("i"))),
+                        ),
+                        Node::store(out_buf, Expr::var("i"), Expr::var("acc")),
+                    ],
+                ),
+            ],
+        )]
+    };
+
+    Program::wrapped(
+        vec![input_decl, output_decl],
+        [1, 1, 1],
+        vec![Node::Region {
+            generator: Ident::from(op_id),
+            source_region: None,
+            body: Arc::new(body),
         }],
     )
 }
@@ -146,7 +238,15 @@ pub fn prefix_scan(in_buf: &str, out_buf: &str, n: u32, kind: ScanKind) -> Progr
 /// Program produces the same output for every input.
 #[must_use]
 pub fn cpu_ref(input: &[u32], kind: ScanKind) -> Vec<u32> {
-    let mut out = Vec::with_capacity(input.len());
+    let mut out = Vec::new();
+    cpu_ref_into(input, kind, &mut out);
+    out
+}
+
+/// CPU-reference prefix scan using a caller-owned output buffer.
+pub fn cpu_ref_into(input: &[u32], kind: ScanKind, out: &mut Vec<u32>) {
+    out.clear();
+    out.reserve(input.len());
     let mut acc = 0_u32;
     match kind {
         ScanKind::InclusiveSum => {
@@ -162,7 +262,6 @@ pub fn cpu_ref(input: &[u32], kind: ScanKind) -> Vec<u32> {
             }
         }
     }
-    out
 }
 
 #[cfg(test)]
@@ -201,11 +300,20 @@ mod tests {
     }
 
     #[test]
+    fn cpu_ref_into_reuses_output_buffer() {
+        let mut out = Vec::with_capacity(16);
+        let ptr = out.as_ptr();
+        cpu_ref_into(&[1, 2, 3, 4], ScanKind::ExclusiveSum, &mut out);
+        assert_eq!(out, vec![0, 1, 3, 6]);
+        assert_eq!(out.as_ptr(), ptr);
+    }
+
+    #[test]
     fn emitted_inclusive_program_has_expected_buffers() {
         let p = prefix_scan("in", "out", 32, ScanKind::InclusiveSum);
         assert_eq!(p.workgroup_size, [32, 1, 1]);
         let names: Vec<&str> = p.buffers.iter().map(|b| b.name()).collect();
-        assert_eq!(names, vec!["in", "out"]);
+        assert_eq!(names, vec!["in", "out", "__out_scan_a", "__out_scan_b"]);
     }
 
     #[test]
@@ -215,27 +323,31 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "power of two")]
-    fn non_power_of_two_n_panics() {
-        let _ = prefix_scan("in", "out", 5, ScanKind::InclusiveSum);
+    fn non_power_of_two_n_pads_to_next_power_of_two() {
+        let p = prefix_scan("in", "out", 5, ScanKind::InclusiveSum);
+        assert_eq!(p.workgroup_size, [8, 1, 1]);
     }
 
     #[test]
-    #[should_panic(expected = "power of two")]
-    fn zero_n_panics() {
-        let _ = prefix_scan("in", "out", 0, ScanKind::InclusiveSum);
+    fn zero_n_traps() {
+        let p = prefix_scan("in", "out", 0, ScanKind::InclusiveSum);
+        assert!(p.stats().trap());
     }
 
     #[test]
-    #[should_panic(expected = "power of two")]
-    fn over_limit_n_panics() {
-        let _ = prefix_scan("in", "out", 2048, ScanKind::InclusiveSum);
+    fn over_limit_n_traps() {
+        let p = prefix_scan("in", "out", 2048, ScanKind::InclusiveSum);
+        assert!(p.stats().trap());
     }
 
     #[test]
     fn binary_power_of_two_sizes_accepted() {
         for n in &[1_u32, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024] {
-            let _ = prefix_scan("in", "out", *n, ScanKind::InclusiveSum);
+            let program = prefix_scan("in", "out", *n, ScanKind::InclusiveSum);
+            assert!(
+                !program.entry().is_empty(),
+                "prefix_scan must emit executable work for n={n}"
+            );
         }
     }
 }

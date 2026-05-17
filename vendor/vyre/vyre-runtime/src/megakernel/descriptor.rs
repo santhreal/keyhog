@@ -7,6 +7,8 @@
 
 use crate::PipelineError;
 
+use smallvec::SmallVec;
+
 use super::{protocol, Megakernel};
 
 /// Built-in megakernel opcodes exposed as a typed host API.
@@ -145,11 +147,7 @@ impl SlotDescriptor {
                 Megakernel::publish_slot(ring_bytes, slot_idx, *tenant_id, opcode.into_wire(), args)
             }
             Self::Packed { tenant_id, ops } => {
-                let packed = ops
-                    .iter()
-                    .map(|op| (op.opcode, op.args.clone()))
-                    .collect::<Vec<_>>();
-                Megakernel::publish_packed_slot(ring_bytes, slot_idx, *tenant_id, &packed)
+                Megakernel::publish_packed_descriptors(ring_bytes, slot_idx, *tenant_id, ops)
             }
         }
     }
@@ -291,130 +289,101 @@ impl WindowDescriptor {
 
     /// Publish the full window into the ring and return the number of emitted slots.
     pub fn publish_into(&self, ring_bytes: &mut [u8]) -> Result<u32, PipelineError> {
-        self.into_batch().publish_into(ring_bytes)
+        let consumed = self
+            .required
+            .len()
+            .checked_add(self.lookahead.len())
+            .ok_or(PipelineError::QueueFull {
+                queue: "submission",
+                fix: "window item count overflowed usize; split the window before publishing",
+            })?;
+        let consumed_u32 = u32::try_from(consumed).map_err(|_| PipelineError::QueueFull {
+            queue: "submission",
+            fix: "window size exceeds u32::MAX slots; split the window before publishing",
+        })?;
+        if consumed_u32 == 0 {
+            return Ok(0);
+        }
+        self.start_slot
+            .checked_add(consumed_u32 - 1)
+            .ok_or(PipelineError::QueueFull {
+                queue: "submission",
+                fix: "window start plus item count overflows u32; split the window before publishing",
+            })?;
+
+        let mut slot_offset = 0u32;
+        let mut args = SmallVec::<[u32; protocol::ARGS_PER_SLOT as usize]>::new();
+        for payload in &self.required {
+            publish_window_payload(
+                ring_bytes,
+                self.start_slot,
+                &mut slot_offset,
+                self.tenant_id,
+                self.opcode,
+                self.ticket,
+                WindowClass::Required,
+                payload,
+                &mut args,
+            )?;
+        }
+        for payload in &self.lookahead {
+            publish_window_payload(
+                ring_bytes,
+                self.start_slot,
+                &mut slot_offset,
+                self.tenant_id,
+                self.opcode,
+                self.ticket,
+                WindowClass::Lookahead,
+                payload,
+                &mut args,
+            )?;
+        }
+        Ok(slot_offset)
     }
+}
+
+fn publish_window_payload(
+    ring_bytes: &mut [u8],
+    start_slot: u32,
+    slot_offset: &mut u32,
+    tenant_id: u32,
+    opcode: SlotOpcode,
+    ticket: u32,
+    class: WindowClass,
+    payload: &[u32],
+    args: &mut SmallVec<[u32; protocol::ARGS_PER_SLOT as usize]>,
+) -> Result<(), PipelineError> {
+    let slot_idx = start_slot
+        .checked_add(*slot_offset)
+        .ok_or(PipelineError::QueueFull {
+            queue: "submission",
+            fix: "window slot index overflowed u32; split the window before publishing",
+        })?;
+    args.clear();
+    let required_args = payload
+        .len()
+        .checked_add(2)
+        .ok_or(PipelineError::QueueFull {
+        queue: "submission",
+        fix: "window payload argument count overflowed usize; split the payload before publishing",
+    })?;
+    if required_args > protocol::ARGS_PER_SLOT as usize {
+        return Err(PipelineError::QueueFull {
+            queue: "submission",
+            fix: "too many args for one window payload; ticket plus class plus payload must fit in 12 u32 args",
+        });
+    }
+    args.push(ticket);
+    args.push(class.into_wire());
+    args.extend_from_slice(payload);
+    Megakernel::publish_slot(ring_bytes, slot_idx, tenant_id, opcode.into_wire(), args)?;
+    *slot_offset = slot_offset.checked_add(1).ok_or(PipelineError::QueueFull {
+        queue: "submission",
+        fix: "window slot count overflowed u32; split the window before publishing",
+    })?;
+    Ok(())
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::megakernel::protocol::{slot, ARGS_PER_SLOT, SLOT_WORDS, STATUS_WORD};
-
-    fn read_word(buf: &[u8], slot_idx: u32, word_idx: u32) -> u32 {
-        let base = (slot_idx as usize) * (SLOT_WORDS as usize) * 4;
-        let off = base + (word_idx as usize) * 4;
-        u32::from_le_bytes(buf[off..off + 4].try_into().unwrap())
-    }
-
-    #[test]
-    fn single_descriptor_publishes_normal_slot() {
-        let mut ring = Megakernel::try_encode_empty_ring(4).unwrap();
-        let slot = SlotDescriptor::single(
-            7,
-            SlotOpcode::Builtin(BuiltinOpcode::StoreU32),
-            vec![11, 13],
-        );
-        slot.publish_into(&mut ring, 1).unwrap();
-        assert_eq!(read_word(&ring, 1, STATUS_WORD), slot::PUBLISHED);
-    }
-
-    #[test]
-    fn packed_descriptor_uses_packed_opcode() {
-        let mut ring = Megakernel::try_encode_empty_ring(2).unwrap();
-        let slot = SlotDescriptor::packed(
-            3,
-            vec![
-                PackedOpDescriptor::new(9, vec![1, 2, 3]),
-                PackedOpDescriptor::new(10, vec![4]),
-            ],
-        );
-        slot.publish_into(&mut ring, 0).unwrap();
-        assert_eq!(read_word(&ring, 0, STATUS_WORD), slot::PUBLISHED);
-        assert_eq!(
-            read_word(&ring, 0, protocol::OPCODE_WORD),
-            protocol::opcode::PACKED_SLOT
-        );
-    }
-
-    #[test]
-    fn batch_descriptor_publishes_sequential_slots() {
-        let mut ring = Megakernel::try_encode_empty_ring(4).unwrap();
-        let batch = BatchDescriptor::new(
-            1,
-            vec![
-                SlotDescriptor::single(0, SlotOpcode::Builtin(BuiltinOpcode::Nop), vec![]),
-                SlotDescriptor::single(
-                    0,
-                    SlotOpcode::Builtin(BuiltinOpcode::AtomicAdd),
-                    vec![1, 2],
-                ),
-            ],
-        );
-        let consumed = batch.publish_into(&mut ring).unwrap();
-        assert_eq!(consumed, 2);
-        assert_eq!(read_word(&ring, 1, STATUS_WORD), slot::PUBLISHED);
-        assert_eq!(read_word(&ring, 2, STATUS_WORD), slot::PUBLISHED);
-    }
-
-    #[test]
-    fn batch_descriptor_rejects_slot_index_overflow_before_publication() {
-        let mut ring = Megakernel::try_encode_empty_ring(4).unwrap();
-        let before = ring.clone();
-        let batch = BatchDescriptor::new(
-            u32::MAX,
-            vec![
-                SlotDescriptor::single(0, SlotOpcode::Builtin(BuiltinOpcode::Nop), vec![]),
-                SlotDescriptor::single(0, SlotOpcode::Builtin(BuiltinOpcode::Nop), vec![]),
-            ],
-        );
-
-        let err = batch.publish_into(&mut ring).unwrap_err();
-        assert!(
-            err.to_string().contains("overflows u32"),
-            "overflowing descriptor batch must fail with an actionable message: {err}"
-        );
-        assert_eq!(
-            ring, before,
-            "overflow preflight must not partially publish slots before failing"
-        );
-    }
-
-    #[test]
-    fn normal_slot_respects_wire_arg_budget() {
-        let mut ring = Megakernel::try_encode_empty_ring(1).unwrap();
-        let slot = SlotDescriptor::single(
-            0,
-            SlotOpcode::Builtin(BuiltinOpcode::Memcpy),
-            vec![0; ARGS_PER_SLOT as usize + 1],
-        );
-        let err = slot.publish_into(&mut ring, 0).unwrap_err();
-        assert!(matches!(err, PipelineError::QueueFull { .. }));
-    }
-
-    #[test]
-    fn window_descriptor_publishes_required_then_lookahead() {
-        let mut ring = Megakernel::try_encode_empty_ring(4).unwrap();
-        let window = WindowDescriptor::new(
-            1,
-            5,
-            SlotOpcode::Custom(0xF101),
-            77,
-            vec![vec![17], vec![42]],
-            vec![vec![99]],
-        );
-        let consumed = window.publish_into(&mut ring).unwrap();
-        assert_eq!(consumed, 3);
-        assert_eq!(read_word(&ring, 1, STATUS_WORD), slot::PUBLISHED);
-        assert_eq!(read_word(&ring, 2, STATUS_WORD), slot::PUBLISHED);
-        assert_eq!(read_word(&ring, 3, STATUS_WORD), slot::PUBLISHED);
-        assert_eq!(read_word(&ring, 1, protocol::ARG0_WORD), 77);
-        assert_eq!(
-            read_word(&ring, 1, protocol::ARG0_WORD + 1),
-            WindowClass::Required.into_wire()
-        );
-        assert_eq!(
-            read_word(&ring, 3, protocol::ARG0_WORD + 1),
-            WindowClass::Lookahead.into_wire()
-        );
-    }
-}
+mod tests;

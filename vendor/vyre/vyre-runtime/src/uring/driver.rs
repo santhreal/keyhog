@@ -26,7 +26,7 @@ enum PendingCompletion {
     NativeNvmeStatus { expected_byte_count: u32 },
 }
 
-/// Host-visible completion surfaced once the DMA lands.
+/// Host-visible completion surfaced after the DMA completes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CompletedIngest {
     /// Queue slot that completed.
@@ -310,8 +310,22 @@ impl<'a> NvmeGpuIngestDriver<'a> {
     /// Flush submissions, reap CQEs, and publish the completed slots into the
     /// megakernel `io_queue`.
     pub fn poll_completions(&mut self) -> Result<Vec<CompletedIngest>, PipelineError> {
+        let mut completed = Vec::with_capacity(self.pending.len());
+        self.poll_completions_into(&mut completed)?;
+        Ok(completed)
+    }
+
+    /// Flush submissions, reap CQEs, and append completed slots into
+    /// caller-owned storage.
+    ///
+    /// Reusing `completed` across polls keeps the ingest hot path allocation
+    /// free after driver construction.
+    pub fn poll_completions_into(
+        &mut self,
+        completed: &mut Vec<CompletedIngest>,
+    ) -> Result<(), PipelineError> {
+        completed.clear();
         self.stream.flush_submissions()?;
-        let mut completed = Vec::new();
         let mut first_error: Option<PipelineError> = None;
 
         while let Some(cqe) = self.stream.ring_state.peek_cqe() {
@@ -374,7 +388,7 @@ impl<'a> NvmeGpuIngestDriver<'a> {
 
         match first_error {
             Some(err) => Err(err),
-            None => Ok(completed),
+            None => Ok(()),
         }
     }
 

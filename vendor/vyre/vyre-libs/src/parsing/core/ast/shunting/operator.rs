@@ -3,113 +3,40 @@ use crate::parsing::core::ast::node::*;
 use vyre::ir::Expr;
 
 pub(super) fn is_value_token(token: Expr) -> Expr {
+    eq_any2(token, TOK_INTEGER, TOK_IDENTIFIER)
+}
+
+pub(super) fn is_assignment_token(token: Expr) -> Expr {
     Expr::or(
-        Expr::eq(token.clone(), Expr::u32(TOK_INTEGER)),
-        Expr::eq(token, Expr::u32(TOK_IDENTIFIER)),
+        eq_token(&token, TOK_ASSIGN),
+        in_closed(&token, TOK_PLUS_EQ, TOK_SLASH_EQ),
     )
 }
 
-fn is_assignment_token(token: Expr) -> Expr {
-    Expr::or(
-        Expr::eq(token.clone(), Expr::u32(TOK_ASSIGN)),
-        Expr::or(
-            Expr::eq(token.clone(), Expr::u32(TOK_PLUS_EQ)),
-            Expr::or(
-                Expr::eq(token.clone(), Expr::u32(TOK_MINUS_EQ)),
-                Expr::or(
-                    Expr::eq(token.clone(), Expr::u32(TOK_STAR_EQ)),
-                    Expr::eq(token, Expr::u32(TOK_SLASH_EQ)),
-                ),
-            ),
-        ),
-    )
-}
-
-pub(super) fn is_binary_token(token: Expr) -> Expr {
-    Expr::or(
-        is_assignment_token(token.clone()),
-        Expr::or(
-            Expr::or(
-                Expr::eq(token.clone(), Expr::u32(TOK_PLUS)),
-                Expr::or(
-                    Expr::eq(token.clone(), Expr::u32(TOK_MINUS)),
-                    Expr::eq(token.clone(), Expr::u32(TOK_STAR)),
-                ),
-            ),
-            Expr::or(
-                Expr::or(
-                    Expr::eq(token.clone(), Expr::u32(TOK_SLASH)),
-                    Expr::eq(token.clone(), Expr::u32(TOK_PERCENT)),
-                ),
-                Expr::or(
-                    Expr::or(
-                        Expr::eq(token.clone(), Expr::u32(TOK_EQ)),
-                        Expr::eq(token.clone(), Expr::u32(TOK_NE)),
-                    ),
-                    Expr::or(
-                        Expr::or(
-                            Expr::eq(token.clone(), Expr::u32(TOK_LT)),
-                            Expr::eq(token.clone(), Expr::u32(TOK_GT)),
-                        ),
-                        Expr::or(
-                            Expr::or(
-                                Expr::eq(token.clone(), Expr::u32(TOK_LE)),
-                                Expr::eq(token.clone(), Expr::u32(TOK_GE)),
-                            ),
-                            Expr::or(
-                                Expr::eq(token.clone(), Expr::u32(TOK_AND)),
-                                Expr::eq(token, Expr::u32(TOK_OR)),
-                            ),
-                        ),
-                    ),
-                ),
-            ),
-        ),
-    )
-}
-
-fn precedence(token: Expr) -> Expr {
+pub(super) fn precedence(token: Expr) -> Expr {
     Expr::select(
-        is_assignment_token(token.clone()),
+        is_assignment_token_ref(&token),
         Expr::u32(1),
         Expr::select(
-            Expr::eq(token.clone(), Expr::u32(TOK_OR)),
+            eq_token(&token, TOK_OR),
             Expr::u32(2),
             Expr::select(
-                Expr::eq(token.clone(), Expr::u32(TOK_AND)),
+                eq_token(&token, TOK_AND),
                 Expr::u32(3),
                 Expr::select(
-                    Expr::or(
-                        Expr::eq(token.clone(), Expr::u32(TOK_EQ)),
-                        Expr::eq(token.clone(), Expr::u32(TOK_NE)),
-                    ),
+                    in_closed(&token, TOK_EQ, TOK_NE),
                     Expr::u32(4),
                     Expr::select(
                         Expr::or(
-                            Expr::or(
-                                Expr::eq(token.clone(), Expr::u32(TOK_LT)),
-                                Expr::eq(token.clone(), Expr::u32(TOK_GT)),
-                            ),
-                            Expr::or(
-                                Expr::eq(token.clone(), Expr::u32(TOK_LE)),
-                                Expr::eq(token.clone(), Expr::u32(TOK_GE)),
-                            ),
+                            in_closed(&token, TOK_LT, TOK_GT),
+                            in_closed(&token, TOK_LE, TOK_GE),
                         ),
                         Expr::u32(5),
                         Expr::select(
-                            Expr::or(
-                                Expr::eq(token.clone(), Expr::u32(TOK_PLUS)),
-                                Expr::eq(token.clone(), Expr::u32(TOK_MINUS)),
-                            ),
+                            in_closed(&token, TOK_PLUS, TOK_MINUS),
                             Expr::u32(6),
                             Expr::select(
-                                Expr::or(
-                                    Expr::or(
-                                        Expr::eq(token.clone(), Expr::u32(TOK_STAR)),
-                                        Expr::eq(token.clone(), Expr::u32(TOK_SLASH)),
-                                    ),
-                                    Expr::eq(token, Expr::u32(TOK_PERCENT)),
-                                ),
+                                in_closed(&token, TOK_STAR, TOK_PERCENT),
                                 Expr::u32(7),
                                 Expr::u32(0),
                             ),
@@ -123,51 +50,27 @@ fn precedence(token: Expr) -> Expr {
 
 pub(super) fn ast_opcode(token: Expr) -> Expr {
     Expr::select(
-        is_assignment_token(token.clone()),
+        is_assignment_token_ref(&token),
         Expr::u32(AST_ASSIGN),
         Expr::select(
-            Expr::eq(token.clone(), Expr::u32(TOK_MINUS)),
-            Expr::u32(AST_SUB),
+            in_closed(&token, TOK_MINUS, TOK_SLASH),
+            offset_table(&token, TOK_MINUS, AST_SUB),
             Expr::select(
-                Expr::eq(token.clone(), Expr::u32(TOK_STAR)),
-                Expr::u32(AST_MUL),
+                eq_token(&token, TOK_PERCENT),
+                Expr::u32(AST_MOD),
                 Expr::select(
-                    Expr::eq(token.clone(), Expr::u32(TOK_SLASH)),
-                    Expr::u32(AST_DIV),
+                    in_closed(&token, TOK_EQ, TOK_NE),
+                    offset_table(&token, TOK_EQ, AST_EQ),
                     Expr::select(
-                        Expr::eq(token.clone(), Expr::u32(TOK_PERCENT)),
-                        Expr::u32(AST_MOD),
+                        in_closed(&token, TOK_LT, TOK_GT),
+                        offset_table(&token, TOK_LT, AST_LT),
                         Expr::select(
-                            Expr::eq(token.clone(), Expr::u32(TOK_EQ)),
-                            Expr::u32(AST_EQ),
+                            in_closed(&token, TOK_LE, TOK_GE),
+                            offset_table(&token, TOK_LE, AST_LE),
                             Expr::select(
-                                Expr::eq(token.clone(), Expr::u32(TOK_NE)),
-                                Expr::u32(AST_NE),
-                                Expr::select(
-                                    Expr::eq(token.clone(), Expr::u32(TOK_LT)),
-                                    Expr::u32(AST_LT),
-                                    Expr::select(
-                                        Expr::eq(token.clone(), Expr::u32(TOK_GT)),
-                                        Expr::u32(AST_GT),
-                                        Expr::select(
-                                            Expr::eq(token.clone(), Expr::u32(TOK_LE)),
-                                            Expr::u32(AST_LE),
-                                            Expr::select(
-                                                Expr::eq(token.clone(), Expr::u32(TOK_GE)),
-                                                Expr::u32(AST_GE),
-                                                Expr::select(
-                                                    Expr::eq(token.clone(), Expr::u32(TOK_AND)),
-                                                    Expr::u32(AST_LOGICAL_AND),
-                                                    Expr::select(
-                                                        Expr::eq(token, Expr::u32(TOK_OR)),
-                                                        Expr::u32(AST_LOGICAL_OR),
-                                                        Expr::u32(AST_ADD),
-                                                    ),
-                                                ),
-                                            ),
-                                        ),
-                                    ),
-                                ),
+                                in_closed(&token, TOK_AND, TOK_OR),
+                                offset_table(&token, TOK_AND, AST_LOGICAL_AND),
+                                Expr::u32(AST_ADD),
                             ),
                         ),
                     ),
@@ -177,18 +80,136 @@ pub(super) fn ast_opcode(token: Expr) -> Expr {
     )
 }
 
-pub(super) fn should_pop(top: Expr, current: Expr) -> Expr {
-    let top_prec = precedence(top.clone());
-    let current_prec = precedence(current.clone());
+fn eq_token(token: &Expr, expected: u32) -> Expr {
+    Expr::eq(token.clone(), Expr::u32(expected))
+}
+
+fn eq_any2(token: Expr, a: u32, b: u32) -> Expr {
+    Expr::or(eq_token(&token, a), Expr::eq(token, Expr::u32(b)))
+}
+
+fn in_closed(token: &Expr, lo: u32, hi: u32) -> Expr {
+    Expr::and(
+        Expr::ge(token.clone(), Expr::u32(lo)),
+        Expr::le(token.clone(), Expr::u32(hi)),
+    )
+}
+
+fn is_assignment_token_ref(token: &Expr) -> Expr {
+    Expr::or(
+        eq_token(token, TOK_ASSIGN),
+        in_closed(token, TOK_PLUS_EQ, TOK_SLASH_EQ),
+    )
+}
+
+fn offset_table(token: &Expr, token_base: u32, opcode_base: u32) -> Expr {
+    Expr::add(
+        Expr::sub(token.clone(), Expr::u32(token_base)),
+        Expr::u32(opcode_base),
+    )
+}
+
+pub(super) fn should_pop_cached(
+    top: Expr,
+    top_prec: Expr,
+    current_prec: Expr,
+    current_is_assignment: Expr,
+) -> Expr {
     Expr::and(
         Expr::and(
-            Expr::ne(top.clone(), Expr::u32(TOK_LPAREN)),
-            is_binary_token(top),
+            Expr::ne(top, Expr::u32(TOK_LPAREN)),
+            Expr::ne(top_prec.clone(), Expr::u32(0)),
         ),
         Expr::select(
-            is_assignment_token(current),
+            current_is_assignment,
             Expr::gt(top_prec.clone(), current_prec.clone()),
             Expr::ge(top_prec, current_prec),
         ),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn precedence_uses_range_checks_instead_of_per_token_selects() {
+        let expr = precedence(Expr::var("tok"));
+        assert!(
+            count_selects(&expr) <= 7,
+            "Fix: precedence IR must stay range-grouped instead of rebuilding one select per token."
+        );
+    }
+
+    #[test]
+    fn ast_opcode_uses_offset_tables_instead_of_per_opcode_selects() {
+        let expr = ast_opcode(Expr::var("tok"));
+        assert!(
+            count_selects(&expr) <= 7,
+            "Fix: ast opcode IR must stay table/range-built instead of rebuilding one select per opcode."
+        );
+    }
+
+    fn count_selects(expr: &Expr) -> usize {
+        let mut count = 0;
+        let mut stack = vec![expr];
+        while let Some(expr) = stack.pop() {
+            match expr {
+                Expr::Select {
+                    cond,
+                    true_val,
+                    false_val,
+                } => {
+                    count += 1;
+                    stack.push(cond);
+                    stack.push(true_val);
+                    stack.push(false_val);
+                }
+                Expr::Load { index, .. } | Expr::UnOp { operand: index, .. } => stack.push(index),
+                Expr::BinOp { left, right, .. } => {
+                    stack.push(left);
+                    stack.push(right);
+                }
+                Expr::Call { args, .. } => stack.extend(args),
+                Expr::Cast { value, .. } => stack.push(value),
+                Expr::Fma { a, b, c } => {
+                    stack.push(a);
+                    stack.push(b);
+                    stack.push(c);
+                }
+                Expr::Atomic {
+                    index,
+                    expected,
+                    value,
+                    ..
+                } => {
+                    stack.push(index);
+                    if let Some(expected) = expected {
+                        stack.push(expected);
+                    }
+                    stack.push(value);
+                }
+                Expr::SubgroupBallot { cond } => stack.push(cond),
+                Expr::SubgroupShuffle { value, lane } => {
+                    stack.push(value);
+                    stack.push(lane);
+                }
+                Expr::SubgroupAdd { value } => stack.push(value),
+                Expr::LitU32(_)
+                | Expr::LitI32(_)
+                | Expr::LitF32(_)
+                | Expr::LitBool(_)
+                | Expr::Var(_)
+                | Expr::BufLen { .. }
+                | Expr::InvocationId { .. }
+                | Expr::WorkgroupId { .. }
+                | Expr::LocalId { .. }
+                | Expr::SubgroupLocalId
+                | Expr::SubgroupSize
+                | Expr::Opaque(_)
+                | _ => {}
+            }
+        }
+        count
+    }
 }

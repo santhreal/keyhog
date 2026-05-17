@@ -76,6 +76,52 @@ impl Value {
         bytes
     }
 
+    /// Append this value encoded at the declared input width without
+    /// allocating a temporary byte vector for the caller.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the destination length would overflow.
+    pub fn extend_bytes_width(
+        &self,
+        declared_width: usize,
+        out: &mut Vec<u8>,
+    ) -> Result<(), vyre::Error> {
+        let start_len = out.len();
+        let fixed_next_len = if declared_width == 0 {
+            None
+        } else {
+            Some(start_len.checked_add(declared_width).ok_or_else(|| {
+                vyre::Error::interp(
+                    "encoded value byte size overflows usize. Fix: reduce the argument count or byte payload size.",
+                )
+            })?)
+        };
+        match self {
+            Self::U32(value) => extend_fixed_width(&value.to_le_bytes(), declared_width, out),
+            Self::I32(value) => extend_fixed_width(&value.to_le_bytes(), declared_width, out),
+            Self::U64(value) => extend_fixed_width(&value.to_le_bytes(), declared_width, out),
+            Self::Bool(value) => {
+                extend_fixed_width(&u32::from(*value).to_le_bytes(), declared_width, out);
+            }
+            Self::Bytes(bytes) => extend_fixed_width(bytes, declared_width, out),
+            Self::Float(value) => extend_fixed_width(&value.to_le_bytes(), declared_width, out),
+            Self::Array(values) => {
+                for value in values {
+                    value.extend_bytes_width(0, out)?;
+                }
+                if let Some(next_len) = fixed_next_len {
+                    out.truncate(start_len + declared_width.min(out.len() - start_len));
+                    out.resize(next_len, 0);
+                }
+            }
+        }
+        if let Some(next_len) = fixed_next_len {
+            debug_assert_eq!(out.len(), next_len);
+        }
+        Ok(())
+    }
+
     /// Try to interpret the value as the IR's scalar `u32` word.
     #[must_use]
     pub fn try_as_u32(&self) -> Option<u32> {
@@ -219,6 +265,16 @@ impl Value {
     }
 }
 
+fn extend_fixed_width(bytes: &[u8], declared_width: usize, out: &mut Vec<u8>) {
+    if declared_width == 0 {
+        out.extend_from_slice(bytes);
+        return;
+    }
+    let copied = bytes.len().min(declared_width);
+    out.extend_from_slice(&bytes[..copied]);
+    out.resize(out.len() + (declared_width - copied), 0);
+}
+
 impl From<Vec<u8>> for Value {
     fn from(bytes: Vec<u8>) -> Self {
         Self::Bytes(Arc::from(bytes))
@@ -275,7 +331,7 @@ mod tests {
         ) {
             let zero = if positive_sign { 0.0_f64 } else { -0.0_f64 };
             prop_assert!(!Value::Float(zero).truthy(),
-                "Value::Float({zero}).truthy() must be false to match WGSL bool(0.0)/bool(-0.0) semantics");
+                "Value::Float({zero}).truthy() must be false to match backend bool(0.0)/bool(-0.0) semantics");
         }
     }
 }

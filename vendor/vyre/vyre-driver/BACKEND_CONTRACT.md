@@ -1,10 +1,9 @@
-# vyre-driver backend contract (v0.6 terminal)
+# vyre-driver backend contract (v0.4.1 release)
 
 This document is the long-form specification of the `VyreBackend` trait
-defined in `vyre-driver/src/backend.rs`. It exists because after vyre 0.6
+defined in `vyre-driver/src/backend.rs`. It exists because after vyre 0.4.1
 the trait surface is *frozen* — the only post-0.6 changes permitted are
-additive defaulted methods. Every backend authored in 0.7 and beyond
-(CUDA, Metal, photonic, CPU-SIMD, distributed) implements this trait by
+additive defaulted methods. Every backend authored in later versions implements this trait by
 inheriting all defaults and overriding only the methods where the
 backend is more capable than the conservative floor.
 
@@ -26,7 +25,7 @@ architectural rot.
 
 The failure mode we are preventing: vyre 0.7 adds
 `fn supports_cooperative_matrix(&self) -> bool` as a *required*
-method. Every downstream CUDA backend breaks. The user files an issue.
+method. Every downstream backend breaks. The user files an issue.
 We tell them to update their Cargo.toml. They walk away.
 
 The solution is the one every seasoned library author uses: defaulted
@@ -56,17 +55,17 @@ corresponding intrinsic and the current adapter supports it. "Feature
 bit is set but lowering emits scalar fallback" = capability is
 `false`.
 
-| Query | Default | wgpu | spirv | cuda (0.7) | metal (0.7) | photonic (0.7) | cpu-simd (0.7) | distributed (0.7) |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `supports_subgroup_ops` | `false` | probed | probed | probed | probed | N/A | feature-gated | per-node |
-| `supports_f16` | `false` | probed | probed | probed | probed | native | feature-gated | per-node |
-| `supports_bf16` | `false` | probed | probed | probed | probed | N/A | feature-gated | per-node |
-| `supports_tensor_cores` | `false` | no | no | probed | probed | N/A | no | per-node |
-| `supports_async_compute` | `false` | yes | yes | yes | yes | yes | cpu-thread pool | yes |
-| `supports_indirect_dispatch` | `false` | yes | yes | yes | yes | no | n/a | yes |
-| `is_distributed` | `false` | no | no | no | no | no | no | **yes** |
-| `max_workgroup_size` | `[1,1,1]` | probed (`Limits::max_compute_workgroup_size_*`) | probed | probed | probed | hardware-specific | `num_cpus` | union |
-| `max_storage_buffer_bytes` | `0` | probed | probed | probed | probed | hardware-specific | RAM-capped | min(nodes) |
+| Query | Default | Concrete backend behavior |
+| --- | --- | --- |
+| `supports_subgroup_ops` | `false` | probed from the backend-owned device capability surface |
+| `supports_f16` | `false` | probed from the backend-owned device capability surface |
+| `supports_bf16` | `false` | probed from the backend-owned device capability surface |
+| `supports_tensor_cores` | `false` | probed or kept false when the backend has no native matrix path |
+| `supports_async_compute` | `false` | true only when the backend owns a real asynchronous queue |
+| `supports_indirect_dispatch` | `false` | true only when the backend can execute indirect launch records |
+| `is_distributed` | `false` | true only for multi-node backends |
+| `max_workgroup_size` | `[1,1,1]` | probed or conservatively bounded by the backend |
+| `max_storage_buffer_bytes` | `0` | probed or conservatively bounded by the backend |
 
 "probed" = queried at device construction from the underlying adapter
 or runtime, cached, returned verbatim.
@@ -76,13 +75,13 @@ or runtime, cached, returned verbatim.
 Every hook has a safe default that a backend without the concept can
 use as-is.
 
-| Hook | Default | wgpu | spirv (offline emitter) | cuda | metal | photonic | cpu-simd | distributed |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `prepare(&self)` | `Ok(())` | warm pipeline cache | no-op | cuInit + context warm | MTLDevice warm | hardware init | no-op | node handshake |
-| `flush(&self)` | `Ok(())` | `device.poll(Wait)` | no-op | `cuStreamSynchronize` | `MTLCommandQueue.commit + waitUntilCompleted` | hardware flush | no-op | collective barrier |
-| `shutdown(&self)` | `Ok(())` | drop caches, queue | no-op | cuCtxDestroy | release autoreleasepool | hardware teardown | no-op | node release |
-| `device_lost(&self)` | `false` | polled | no | polled | polled | polled | no | `any(nodes.lost)` |
-| `try_recover(&self)` | `UnsupportedFeature` | reacquire device + invalidate caches | `Unsupported` | reacquire context | reacquire MTLDevice | hardware-reacquire | `Unsupported` | rejoin surviving nodes |
+| Hook | Default | Concrete backend behavior |
+| --- | --- | --- |
+| `prepare(&self)` | `Ok(())` | warm backend-owned runtime state |
+| `flush(&self)` | `Ok(())` | drain backend-owned queues or streams |
+| `shutdown(&self)` | `Ok(())` | release backend-owned runtime state |
+| `device_lost(&self)` | `false` | report backend-owned liveness state |
+| `try_recover(&self)` | `UnsupportedFeature` | rebuild backend-owned runtime state and invalidate compiled handles |
 
 Recovery is opt-in by default because silently re-acquiring a device
 without invalidating the caller's `CompiledPipeline` handles is a
@@ -90,9 +89,8 @@ correctness hazard. A backend that implements recovery must also
 invalidate every `CompiledPipeline` it handed out before the loss.
 
 **Operational caveat: `try_recover` latency is bounded by the slowest
-in-flight dispatch.** The wgpu backend guards its device handle with an
-`RwLock`; recovery takes a write lock, which waits for every reader
-(active dispatch) to drain. A stuck readback therefore stalls recovery.
+in-flight dispatch.** A backend that guards device state with shared
+locks must ensure recovery cannot starve behind active dispatches.
 Production deployments that need bounded recovery must cap dispatch
 duration via `DispatchConfig::timeout` and force-cancel on expiry so
 writer starvation is impossible.
@@ -108,24 +106,23 @@ This private defaulted method is the forward-compat lever. If vyre 0.8
 truly needs a required method, we can add it alongside a sealed
 breakage of this marker — forcing external impls to explicitly migrate
 via a feature gate rather than silently miscompiling. Internal impls
-(vyre-driver-wgpu, vyre-driver-spirv, vyre-reference-as-backend if
-any) rely on the default body and never notice.
+internal implementations rely on the default body and never notice.
 
 ## Authoring a new backend
 
-Given a new `CudaBackend`:
+Given a new concrete backend:
 
 ```rust
 use vyre_driver::{BackendError, CompiledPipeline, DispatchConfig, VyreBackend};
 use vyre_foundation::ir::Program;
 
-pub struct CudaBackend {
-    context: cuda::Context,
-    caps: CudaCaps,
+pub struct MyBackend {
+    state: BackendState,
+    caps: MyCaps,
 }
 
-impl VyreBackend for CudaBackend {
-    fn id(&self) -> &'static str { "cuda" }
+impl VyreBackend for MyBackend {
+    fn id(&self) -> &'static str { "my-backend" }
     fn version(&self) -> &'static str { env!("CARGO_PKG_VERSION") }
 
     fn dispatch(

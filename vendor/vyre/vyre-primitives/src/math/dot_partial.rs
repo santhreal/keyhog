@@ -22,6 +22,25 @@ pub fn dot_partial(
     k_base: Expr,
     d: u32,
 ) -> Node {
+    if d <= 8 {
+        return Node::Block(
+            (0..d)
+                .map(|lane| {
+                    Node::assign(
+                        accum_var,
+                        Expr::add(
+                            Expr::var(accum_var),
+                            Expr::mul(
+                                Expr::load(q_buffer, Expr::add(q_base.clone(), Expr::u32(lane))),
+                                Expr::load(k_buffer, Expr::add(k_base.clone(), Expr::u32(lane))),
+                            ),
+                        ),
+                    )
+                })
+                .collect(),
+        );
+    }
+
     Node::loop_for(
         "dk",
         Expr::u32(0),

@@ -22,9 +22,9 @@ fuzz_target!(|data: &[u8]| {
     // from_wire ∘ to_wire ∘ from_wire == from_wire
     let round = program
         .to_wire()
-        .expect("to_wire must succeed for a Program that just decoded");
+        .expect("Fix: to_wire must succeed for a Program that just decoded; restore this invariant before continuing.");
     let reparsed = Program::from_wire(&round)
-        .expect("reparsing canonical to_wire bytes must succeed");
+        .expect("Fix: reparsing canonical to_wire bytes must succeed; restore this invariant before continuing.");
     assert!(
         program.structural_eq(&reparsed),
         "round-trip structural equality failed"

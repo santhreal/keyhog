@@ -1,8 +1,8 @@
 //! Deterministic buffer naming for generic Cat-A builder aliases.
 //!
-//! Some vyre-libs builders historically accepted placeholder names such as
+//! Some vyre-libs builders historically accepted generic names such as
 //! `"input"`, `"output"`, `"decoded"`, or `"out"`. When multiple Programs were
-//! fused into one rule kernel, those placeholders could alias unrelated
+//! fused into one rule kernel, those aliases could collide with unrelated
 //! buffers across families. This module rewrites only the generic aliases into
 //! stable family-scoped names while preserving caller-specified explicit names.
 
@@ -12,7 +12,7 @@ pub(crate) fn fixed_name(family_prefix: &str, role: &str) -> String {
     format!("__vyre_{family_prefix}_{role}")
 }
 
-/// Rewrite a generic placeholder name into a stable family-local name.
+/// Rewrite a generic buffer name into a stable family-local name.
 ///
 /// Explicit caller-provided names are preserved so intentional composition can
 /// still route buffers by name.

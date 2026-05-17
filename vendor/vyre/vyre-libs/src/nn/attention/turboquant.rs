@@ -133,8 +133,7 @@ inventory::submit! {
         test_inputs: Some(|| {
             let to_f32_bytes =
                 |w: &[f32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
-            let to_u32_bytes =
-                |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+
             // seq_len=2, d_head=2 → 4 packed values per buffer, 1 u32 holds them.
             // 3-bit layout (LSB first): shifts 0, 3, 6, 9.
             //
@@ -146,8 +145,8 @@ inventory::submit! {
             // q = [1.0, 1.0].
             vec![vec![
                 to_f32_bytes(&[1.0, 1.0]),
-                to_u32_bytes(&[0x8D1u32]),
-                to_u32_bytes(&[0x201u32]),
+                crate::test_support::byte_pack::u32_bytes(&[0x8D1u32]),
+                crate::test_support::byte_pack::u32_bytes(&[0x201u32]),
                 vec![0u8; 2 * 4],
             ]]
         }),
@@ -160,5 +159,92 @@ inventory::submit! {
             // out[1] = score[0]*v01 + score[1]*v11 = 3*0 + 7*1 = 7
             vec![vec![to_f32_bytes(&[3.0, 7.0])]]
         }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use vyre_reference::value::Value;
+
+    fn f32_bytes(values: &[f32]) -> Vec<u8> {
+        values.iter().flat_map(|v| v.to_le_bytes()).collect()
+    }
+
+    fn decode_f32(bytes: &[u8]) -> Vec<f32> {
+        bytes
+            .chunks_exact(4)
+            .map(|c| f32::from_le_bytes(c.try_into().unwrap()))
+            .collect()
+    }
+
+    #[test]
+    fn turboquant_nan_in_q_propagates_to_output() {
+        let q = [f32::NAN, 1.0];
+        // k_packed: 4 values in 1 u32, all zeros
+        let kp = crate::test_support::byte_pack::u32_bytes(&[0u32]);
+        let vp = crate::test_support::byte_pack::u32_bytes(&[0u32]);
+        let program = turboquant_attention("q", "kp", "vp", "out", 2, 2);
+        let outputs = vyre_reference::reference_eval(
+            &program,
+            &[
+                Value::from(f32_bytes(&q)),
+                Value::from(kp),
+                Value::from(vp),
+                Value::from(vec![0u8; 8]),
+            ],
+        )
+        .expect("Fix: turboquant must not panic on NaN q");
+        let out = decode_f32(&outputs[0].to_bytes());
+        assert!(
+            out.iter().all(|v| v.is_nan()),
+            "turboquant NaN in q must produce NaN output, got {:?}",
+            out
+        );
+    }
+
+    #[test]
+    fn turboquant_zero_seq_len() {
+        let q = [1.0f32, 1.0];
+        let kp = crate::test_support::byte_pack::u32_bytes(&[0u32]);
+        let vp = crate::test_support::byte_pack::u32_bytes(&[0u32]);
+        let program = turboquant_attention("q", "kp", "vp", "out", 0, 2);
+        let outputs = vyre_reference::reference_eval(
+            &program,
+            &[
+                Value::from(f32_bytes(&q)),
+                Value::from(kp),
+                Value::from(vp),
+                Value::from(vec![0u8; 8]),
+            ],
+        )
+        .expect("Fix: turboquant seq_len=0 must not panic");
+        let out = decode_f32(&outputs[0].to_bytes());
+        assert_eq!(out, vec![0.0, 0.0], "turboquant zero seq_len must produce zeros");
+    }
+
+    #[test]
+    fn turboquant_single_token() {
+        let q = [1.0f32, 1.0];
+        // k_packed: 2 values in 1 u32: both 1 (bits 0 and 3)
+        // word = 1 | (1<<3) = 1 + 8 = 9
+        let kp = crate::test_support::byte_pack::u32_bytes(&[9u32]);
+        // v_packed: same
+        let vp = crate::test_support::byte_pack::u32_bytes(&[9u32]);
+        let program = turboquant_attention("q", "kp", "vp", "out", 1, 2);
+        let outputs = vyre_reference::reference_eval(
+            &program,
+            &[
+                Value::from(f32_bytes(&q)),
+                Value::from(kp),
+                Value::from(vp),
+                Value::from(vec![0u8; 8]),
+            ],
+        )
+        .expect("Fix: turboquant single token must execute");
+        let out = decode_f32(&outputs[0].to_bytes());
+        // score = dot([1,1], [1,1]) = 2
+        // out[d] = score * v[0,d] = 2 * 1 = 2 for both lanes
+        assert_eq!(out, vec![2.0, 2.0]);
     }
 }

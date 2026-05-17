@@ -110,7 +110,7 @@ impl GpuLiteralSet {
         // Buffer order matches the BufferDecl declaration in
         // `build_literal_set_program`; reordering here would silently
         // miswire the GPU program.
-        let inputs = vec![
+        let inputs = [
             // 0: haystack (Packed U32)
             dispatch_io::pack_haystack_u32(haystack),
             // 1: pattern_offsets
@@ -133,26 +133,23 @@ impl GpuLiteralSet {
 
         let config =
             dispatch_io::byte_scan_dispatch_config(haystack_len, self.program.workgroup_size[0]);
-        let outputs = backend.dispatch(&self.program, &inputs, &config)?;
+        let borrowed_inputs: smallvec::SmallVec<[&[u8]; 8]> =
+            inputs.iter().map(Vec::as_slice).collect();
+        let outputs = backend.dispatch_borrowed(&self.program, &borrowed_inputs, &config)?;
 
         let count_bytes = &outputs[0];
-        let count = u32::from_le_bytes(count_bytes[0..4].try_into().unwrap());
+        let count = u32::from_le_bytes([
+            count_bytes[0],
+            count_bytes[1],
+            count_bytes[2],
+            count_bytes[3],
+        ]);
         let matches_bytes = &outputs[1];
 
         Ok(dispatch_io::unpack_match_triples(
             matches_bytes,
             count.min(max_matches),
         ))
-    }
-
-    /// Scan input bytes using the shared Vyre device.
-    ///
-    /// # Errors
-    /// Returns [\`vyre::BackendError\`] if dispatch or readback fails.
-    #[cfg(feature = "vyre_wgpu")]
-    pub fn scan_shared(&self, haystack: &[u8]) -> Result<Vec<Match>, vyre::BackendError> {
-        let backend = vyre_driver_wgpu::WgpuBackend::new()?;
-        self.scan(&backend, haystack, 10000)
     }
 
     /// Serialize this matcher into a self-describing binary blob suitable
@@ -391,29 +388,6 @@ fn build_literal_set_program(
         [subgroup_size, 1, 1],
         vec![wrap_anonymous(OP_ID, body)],
     )
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use vyre_driver_wgpu::WgpuBackend;
-
-    #[test]
-    fn literal_set_parity_abc() {
-        let patterns: &[&[u8]] = &[b"abc", b"bc"];
-        let engine = GpuLiteralSet::compile(patterns);
-        let haystack = b"zabc";
-
-        let cpu_matches = engine.scan_cpu(haystack);
-        assert_eq!(cpu_matches.len(), 2);
-        assert_eq!(cpu_matches[0], Match::new(0, 1, 4)); // abc
-        assert_eq!(cpu_matches[1], Match::new(1, 2, 4)); // bc
-
-        let backend =
-            WgpuBackend::new().expect("Fix: literal_set subgroup parity requires a live GPU");
-        let gpu_matches = engine.scan(&backend, haystack, 10_000).unwrap();
-        assert_eq!(gpu_matches, cpu_matches);
-    }
 }
 
 /// Innovation I.18: JIT DFA Lowering.

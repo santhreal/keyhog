@@ -5,10 +5,10 @@
 //! thin re-export so existing call sites
 //! (`vyre_libs::harness::OpEntry`, etc.) keep compiling unchanged.
 
+pub use vyre_harness::fp_contract;
 pub use vyre_harness::{
-    all_entries, convergence_contract, fixpoint_contract, universal_diff_candidates,
-    universal_diff_exemption, ConvergenceContract, DiffCandidate, ExpectedFn, FixpointContract,
-    FixpointRegistration, InputsFn, OpEntry, UniversalDiffExemption,
+    all_entries, convergence_contract, fixpoint_contract, ConvergenceContract, ExpectedFn,
+    FixpointContract, FixpointRegistration, InputsFn, OpEntry,
 };
 pub use vyre_harness::{
     region, reparent_program_children, tag_program, wrap, wrap_anonymous, wrap_child,

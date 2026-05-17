@@ -21,7 +21,7 @@ impl PatternExists {
 }
 
 /// Stable operation id for pattern existence checks.
-pub const OP_ID: &str = "rule.pattern_exists";
+pub const OP_ID: &str = "vyre-libs::rule::pattern_exists";
 
 /// Execution contract annotation for the standard catalog.
 pub const CONTRACT: OperationContract = crate::contracts::RULE_PREDICATE_CHEAP;

@@ -34,11 +34,17 @@
 //!
 //! Every speculative dispatch's output buffer carries a two-u32
 //! trailer: `[committed, rolled_back]`. The host reads it via
-//! [`parse_counter_tail`] to build a [`SpeculationReport`].
+//! [`crate::speculate::parse_counter_tail`] to build a [`crate::speculate::SpeculationReport`].
 
 #![allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 
 use std::sync::atomic::{AtomicU32, Ordering};
+
+use vyre_foundation::ir::Program;
+
+use crate::autotune_store::{AutotuneKey, AutotuneRecord, AutotuneStore};
+use crate::backend::{BackendError, DispatchConfig, OutputBuffers, VyreBackend};
+use crate::specialization::SpecCacheKey;
 
 /// Counts from one speculative dispatch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -105,6 +111,20 @@ impl SpeculationReport {
 /// speculative path underperforms the serial prefilter → confirmer
 /// pair on Ada-class hardware. Empirical.
 pub const DEFAULT_THRESHOLD_PCT: u32 = 15;
+
+/// Caller-controlled speculation policy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SpeculationMode {
+    /// Framework decides per-dispatch based on the backend capability
+    /// and the adaptive speculator.
+    #[default]
+    Auto,
+    /// Force the speculative path; fail loudly if the backend does not
+    /// support it.
+    Force,
+    /// Never speculate, even if the backend supports it.
+    Disable,
+}
 
 /// α = 1/4 for the commit-rate EMA. Reacts inside ~4 batches while
 /// staying quiet on a single anomalous dispatch.
@@ -175,14 +195,15 @@ impl AdaptiveSpeculator {
         let observation = report.commit_rate_ppm();
         // EMA update — single fetch_update so concurrent callers
         // cannot lose samples.
-        let _ = self
+        self
             .ema_commit_rate_ppm
             .fetch_update(Ordering::AcqRel, Ordering::Acquire, |old| {
                 let delta = i64::from(observation) - i64::from(old);
                 let step = delta >> EMA_SHIFT;
                 let new = i64::from(old) + step;
                 Some(new.clamp(0, i64::from(u32::MAX)) as u32)
-            });
+            })
+            .expect("speculation EMA update closure always returns Some");
         self.samples.fetch_add(1, Ordering::AcqRel);
         let new_ppm = self.ema_commit_rate_ppm.load(Ordering::Acquire);
         // Hysteresis: enable when we clearly beat threshold,
@@ -242,9 +263,222 @@ pub fn encode_counter_tail(report: SpeculationReport) -> [u8; COUNTER_TAIL_BYTES
     out
 }
 
+/// Variant chosen by a speculative side-cache race.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SpeculativeVariantKind {
+    /// The conservative already-compiled plan won.
+    Conservative,
+    /// The speculative transformed plan won.
+    Speculative,
+}
+
+/// Cache-key pair for a conservative-vs-speculative variant race.
+#[derive(Debug, Clone, Copy)]
+pub struct SpeculativeVariantKeys<'a> {
+    /// Cache identity for the conservative plan.
+    pub conservative: &'a SpecCacheKey,
+    /// Cache identity for the speculative plan.
+    pub speculative: &'a SpecCacheKey,
+    /// Stable adapter id used by the autotune store.
+    pub adapter_id: &'a str,
+}
+
+/// Timing + autotune record pair observed from one variant race.
+#[derive(Debug, Clone)]
+pub struct SpeculativeVariantRace {
+    /// Conservative dispatch elapsed time, excluding compile.
+    pub conservative_dispatch_ns: u64,
+    /// Speculative dispatch elapsed time, excluding compile.
+    pub speculative_dispatch_ns: u64,
+    /// Conservative compile/cache-miss cost paid for this sample.
+    pub conservative_compile_ns: u64,
+    /// Speculative compile/cache-miss cost paid for this sample.
+    pub speculative_compile_ns: u64,
+    /// Autotune record that produced the conservative timing.
+    pub conservative_record: AutotuneRecord,
+    /// Autotune record that produced the speculative timing.
+    pub speculative_record: AutotuneRecord,
+}
+
+/// Recorded verdict for one conservative-vs-speculative race.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SpeculativeVariantDecision {
+    /// Which variant won after compile + dispatch cost.
+    pub winner: SpeculativeVariantKind,
+    /// Nanoseconds saved versus the loser. Zero for exact ties.
+    pub saved_ns: u64,
+    /// Autotune key used for the winning record.
+    pub autotune_key: AutotuneKey,
+}
+
+impl SpeculativeVariantRace {
+    /// Conservative total time: compile/cache-miss plus dispatch.
+    #[must_use]
+    pub fn conservative_total_ns(&self) -> u64 {
+        self.conservative_compile_ns
+            .saturating_add(self.conservative_dispatch_ns)
+    }
+
+    /// Speculative total time: compile/cache-miss plus dispatch.
+    #[must_use]
+    pub fn speculative_total_ns(&self) -> u64 {
+        self.speculative_compile_ns
+            .saturating_add(self.speculative_dispatch_ns)
+    }
+
+    /// Pick the faster variant. Ties intentionally choose the conservative
+    /// plan so an equal speculative transform does not churn cache entries.
+    #[must_use]
+    pub fn winner(&self) -> SpeculativeVariantKind {
+        if self.speculative_total_ns() < self.conservative_total_ns() {
+            SpeculativeVariantKind::Speculative
+        } else {
+            SpeculativeVariantKind::Conservative
+        }
+    }
+}
+
+/// Record the faster side of a conservative-vs-speculative race.
+///
+/// Backends run the actual compile/dispatch measurements; this shared helper
+/// owns the decision rule and autotune-store write so every backend learns the
+/// same way from vec-pack, shared-promote, async-load-promote, and similar
+/// speculative transforms.
+pub fn record_speculative_variant_race(
+    store: &mut AutotuneStore,
+    keys: SpeculativeVariantKeys<'_>,
+    race: SpeculativeVariantRace,
+) -> SpeculativeVariantDecision {
+    let conservative_total = race.conservative_total_ns();
+    let speculative_total = race.speculative_total_ns();
+    let winner = race.winner();
+    let (cache_key, record, saved_ns) = match winner {
+        SpeculativeVariantKind::Conservative => (
+            keys.conservative,
+            race.conservative_record,
+            speculative_total.saturating_sub(conservative_total),
+        ),
+        SpeculativeVariantKind::Speculative => (
+            keys.speculative,
+            race.speculative_record,
+            conservative_total.saturating_sub(speculative_total),
+        ),
+    };
+    let autotune_key = AutotuneKey::new(cache_key, keys.adapter_id);
+    store.put(autotune_key.clone(), record);
+    SpeculativeVariantDecision {
+        winner,
+        saved_ns,
+        autotune_key,
+    }
+}
+
+/// Program pair used by a real prefilter/confirm scan path.
+#[derive(Clone, Copy, Debug)]
+pub struct SpeculativeDispatchPlan<'a> {
+    /// Fused speculative prefilter + confirmer program.
+    pub fused_program: &'a Program,
+    /// Cheap prefilter program used by the serial fallback.
+    pub prefilter_program: &'a Program,
+    /// Output buffer containing the two-u32 speculative counter tail.
+    pub counter_output_index: usize,
+    /// Remove the counter tail from the returned fused output.
+    pub strip_counter_tail: bool,
+}
+
+/// Result of a speculative routing decision.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SpeculativeDispatchOutcome {
+    /// Output buffers produced by the fused program or serial confirmer.
+    pub outputs: OutputBuffers,
+    /// Counters observed from a fused speculative dispatch.
+    pub report: Option<SpeculationReport>,
+    /// True when the fused speculative program ran.
+    pub used_speculative_path: bool,
+}
+
+/// Dispatch a real prefilter/confirm pair with adaptive speculative routing.
+///
+/// When `speculator.should_speculate()` is true this runs `plan.fused_program`,
+/// parses the counter tail, records it back into the speculator, and returns
+/// the fused outputs. When speculation is disabled it runs
+/// `plan.prefilter_program` and passes the materialized prefilter outputs to
+/// `confirm_serial`; the closure owns candidate compaction and confirmer
+/// dispatch semantics for the caller's domain.
+///
+/// # Errors
+///
+/// Returns a backend error when either dispatch fails, when the fused output
+/// does not contain the required counter tail, or when the serial confirmer
+/// closure rejects the prefilter output.
+pub fn dispatch_prefilter_confirm<B, F>(
+    backend: &B,
+    speculator: &AdaptiveSpeculator,
+    plan: SpeculativeDispatchPlan<'_>,
+    inputs: &[&[u8]],
+    config: &DispatchConfig,
+    mut confirm_serial: F,
+) -> Result<SpeculativeDispatchOutcome, BackendError>
+where
+    B: VyreBackend + ?Sized,
+    F: FnMut(OutputBuffers) -> Result<OutputBuffers, BackendError>,
+{
+    let use_speculative = match config.speculation {
+        Some(SpeculationMode::Force) => {
+            if !backend.supports_speculation() {
+                return Err(BackendError::UnsupportedFeature {
+                    name: "speculative dispatch".to_string(),
+                    backend: backend.id().to_string(),
+                });
+            }
+            true
+        }
+        Some(SpeculationMode::Disable) => false,
+        Some(SpeculationMode::Auto) | None => speculator.should_speculate(),
+    };
+    if use_speculative {
+        let mut outputs = backend.dispatch_borrowed(plan.fused_program, inputs, config)?;
+        let output_count = outputs.len();
+        let counter_output = outputs.get_mut(plan.counter_output_index).ok_or_else(|| {
+            BackendError::new(format!(
+                "speculative dispatch expected counter output #{}, but fused program returned {output_count} outputs. Fix: set SpeculativeDispatchPlan.counter_output_index to the output carrying the two-u32 counter tail.",
+                plan.counter_output_index,
+            ))
+        })?;
+        let report = parse_counter_tail(counter_output).ok_or_else(|| {
+            BackendError::new(
+                "speculative dispatch output is missing the two-u32 counter tail. Fix: fused prefilter/confirm kernels must append [committed, rolled_back] to the configured output buffer.",
+            )
+        })?;
+        if plan.strip_counter_tail {
+            let new_len = counter_output.len().checked_sub(COUNTER_TAIL_BYTES).ok_or_else(|| {
+                BackendError::new(
+                    "speculative counter-tail strip underflowed. Fix: only strip outputs that contain the standard counter tail.",
+                )
+            })?;
+            counter_output.truncate(new_len);
+        }
+        speculator.record(report);
+        return Ok(SpeculativeDispatchOutcome {
+            outputs,
+            report: Some(report),
+            used_speculative_path: true,
+        });
+    }
+
+    let prefilter_outputs = backend.dispatch_borrowed(plan.prefilter_program, inputs, config)?;
+    let outputs = confirm_serial(prefilter_outputs)?;
+    Ok(SpeculativeDispatchOutcome {
+        outputs,
+        report: None,
+        used_speculative_path: false,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashSet;
 
     #[test]
     fn empty_report_has_zero_commit_rate() {
@@ -288,7 +522,8 @@ mod tests {
         let mut buf = vec![0_u8; 32];
         buf[24..28].copy_from_slice(&42_u32.to_le_bytes());
         buf[28..32].copy_from_slice(&100_u32.to_le_bytes());
-        let r = parse_counter_tail(&buf).expect("valid length");
+        let r = parse_counter_tail(&buf)
+            .expect("Fix: valid length; restore this invariant before continuing.");
         assert_eq!(r.committed_tiles, 42);
         assert_eq!(r.rolled_back_tiles, 100);
     }
@@ -311,6 +546,99 @@ mod tests {
         buf[24..32].copy_from_slice(&tail);
         let parsed = parse_counter_tail(&buf).unwrap();
         assert_eq!(parsed, r);
+    }
+
+    fn spec_key(spec_hash: u64) -> SpecCacheKey {
+        SpecCacheKey {
+            shader_hash: 0xfeed,
+            binding_sig: 0xbeef,
+            workgroup_size: [64, 1, 1],
+            spec_hash,
+        }
+    }
+
+    fn tune(unroll: u32) -> AutotuneRecord {
+        AutotuneRecord {
+            workgroup_size: [64, 1, 1],
+            unroll,
+            tile: [0, 0, 0],
+            recorded_at: String::new(),
+        }
+    }
+
+    #[test]
+    fn speculative_variant_race_records_speculative_winner() {
+        let conservative = spec_key(1);
+        let speculative = spec_key(2);
+        let mut store = AutotuneStore::default();
+        let decision = record_speculative_variant_race(
+            &mut store,
+            SpeculativeVariantKeys {
+                conservative: &conservative,
+                speculative: &speculative,
+                adapter_id: "native-sm120",
+            },
+            SpeculativeVariantRace {
+                conservative_dispatch_ns: 1_000,
+                conservative_compile_ns: 0,
+                speculative_dispatch_ns: 200,
+                speculative_compile_ns: 100,
+                conservative_record: tune(1),
+                speculative_record: tune(4),
+            },
+        );
+
+        assert_eq!(decision.winner, SpeculativeVariantKind::Speculative);
+        assert_eq!(decision.saved_ns, 700);
+        assert_eq!(store.len(), 1);
+        assert_eq!(
+            store
+                .get(&decision.autotune_key)
+                .expect("winning speculative record must be stored")
+                .unroll,
+            4
+        );
+        assert_eq!(
+            decision.autotune_key,
+            AutotuneKey::new(&speculative, "native-sm120")
+        );
+    }
+
+    #[test]
+    fn speculative_variant_race_tie_keeps_conservative_record() {
+        let conservative = spec_key(3);
+        let speculative = spec_key(4);
+        let mut store = AutotuneStore::default();
+        let decision = record_speculative_variant_race(
+            &mut store,
+            SpeculativeVariantKeys {
+                conservative: &conservative,
+                speculative: &speculative,
+                adapter_id: "portable-vk",
+            },
+            SpeculativeVariantRace {
+                conservative_dispatch_ns: 500,
+                conservative_compile_ns: 100,
+                speculative_dispatch_ns: 100,
+                speculative_compile_ns: 500,
+                conservative_record: tune(2),
+                speculative_record: tune(8),
+            },
+        );
+
+        assert_eq!(decision.winner, SpeculativeVariantKind::Conservative);
+        assert_eq!(decision.saved_ns, 0);
+        assert_eq!(
+            store
+                .get(&decision.autotune_key)
+                .expect("winning conservative record must be stored")
+                .unroll,
+            2
+        );
+        assert_eq!(
+            decision.autotune_key,
+            AutotuneKey::new(&conservative, "portable-vk")
+        );
     }
 
     #[test]
@@ -377,5 +705,89 @@ mod tests {
             s.record(SpeculationReport::from_counts(i + 1, 10));
         }
         assert_eq!(s.samples(), 17);
+    }
+
+    struct TailBackend;
+
+    impl crate::backend::private::Sealed for TailBackend {}
+
+    impl VyreBackend for TailBackend {
+        fn id(&self) -> &'static str {
+            "tail-test"
+        }
+
+        fn supported_ops(&self) -> &HashSet<vyre_foundation::ir::OpId> {
+            static OPS: std::sync::OnceLock<HashSet<vyre_foundation::ir::OpId>> =
+                std::sync::OnceLock::new();
+            OPS.get_or_init(HashSet::new)
+        }
+
+        fn dispatch(
+            &self,
+            _program: &Program,
+            _inputs: &[Vec<u8>],
+            _config: &DispatchConfig,
+        ) -> Result<OutputBuffers, BackendError> {
+            Ok(vec![encode_counter_tail(SpeculationReport::from_counts(
+                3, 1,
+            ))
+            .to_vec()])
+        }
+    }
+
+    #[test]
+    fn dispatch_prefilter_confirm_records_fused_counter_tail() {
+        let backend = TailBackend;
+        let speculator = AdaptiveSpeculator::new(15);
+        let plan = SpeculativeDispatchPlan {
+            fused_program: &Program::empty(),
+            prefilter_program: &Program::empty(),
+            counter_output_index: 0,
+            strip_counter_tail: true,
+        };
+        let outcome = dispatch_prefilter_confirm(
+            &backend,
+            &speculator,
+            plan,
+            &[],
+            &DispatchConfig::default(),
+            |_| panic!("serial fallback must not run while speculation is enabled"),
+        )
+        .expect("Fix: fused counter tail should parse");
+        assert!(outcome.used_speculative_path);
+        assert_eq!(outcome.report, Some(SpeculationReport::from_counts(3, 1)));
+        assert_eq!(outcome.outputs, vec![Vec::<u8>::new()]);
+        assert_eq!(speculator.samples(), 1);
+    }
+
+    #[test]
+    fn dispatch_prefilter_confirm_runs_serial_fallback_when_disabled() {
+        let backend = TailBackend;
+        let speculator = AdaptiveSpeculator::new(90);
+        for _ in 0..16 {
+            speculator.record(SpeculationReport::from_counts(0, 100));
+        }
+        assert!(!speculator.should_speculate());
+        let plan = SpeculativeDispatchPlan {
+            fused_program: &Program::empty(),
+            prefilter_program: &Program::empty(),
+            counter_output_index: 0,
+            strip_counter_tail: false,
+        };
+        let outcome = dispatch_prefilter_confirm(
+            &backend,
+            &speculator,
+            plan,
+            &[],
+            &DispatchConfig::default(),
+            |prefilter| {
+                assert_eq!(prefilter.len(), 1);
+                Ok(vec![b"confirmed".to_vec()])
+            },
+        )
+        .expect("Fix: serial fallback should dispatch prefilter and confirmer");
+        assert!(!outcome.used_speculative_path);
+        assert_eq!(outcome.report, None);
+        assert_eq!(outcome.outputs, vec![b"confirmed".to_vec()]);
     }
 }

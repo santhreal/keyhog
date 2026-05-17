@@ -1,4 +1,4 @@
-//! Vector-widened string interning — scaffold.
+//! Vector-widened string interning.
 //!
 //! # Idea (G9)
 //!
@@ -12,7 +12,7 @@
 //! surgec's label resolver when the label corpus grows past the
 //! linear threshold).
 
-/// CHD perfect-hash construction + lookup. G0 scaffold.
+/// CHD perfect-hash construction + lookup.
 pub mod perfect_hash;
 
 pub use perfect_hash::{build_chd, PerfectHash};

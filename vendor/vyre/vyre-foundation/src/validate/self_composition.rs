@@ -1,10 +1,14 @@
 //! Validation for self-exclusive regions.
 
+#[cfg(test)]
 use crate::composition::duplicate_self_exclusive_regions;
+#[cfg(test)]
 use crate::ir::Node;
+#[cfg(test)]
 use crate::validate::{err, ValidationError};
 
 /// Reject programs that compose the same self-exclusive region twice.
+#[cfg(test)]
 pub(crate) fn validate_self_composition(nodes: &[Node], errors: &mut Vec<ValidationError>) {
     for generator in duplicate_self_exclusive_regions(nodes) {
         errors.push(err(format!(

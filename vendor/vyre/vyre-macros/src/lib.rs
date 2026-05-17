@@ -48,6 +48,7 @@ struct PassArgs {
     name: LitStr,
     requires: Vec<LitStr>,
     invalidates: Vec<LitStr>,
+    analyze_always: bool,
 }
 
 impl Parse for PassArgs {
@@ -55,6 +56,7 @@ impl Parse for PassArgs {
         let mut name = None;
         let mut requires = Vec::new();
         let mut invalidates = Vec::new();
+        let mut analyze_always = false;
 
         while !input.is_empty() {
             let key: syn::Ident = input.parse()?;
@@ -63,10 +65,21 @@ impl Parse for PassArgs {
                 "name" => name = Some(input.parse()?),
                 "requires" => requires = parse_string_array(input)?,
                 "invalidates" => invalidates = parse_string_array(input)?,
+                "analyze" => {
+                    let value: LitStr = input.parse()?;
+                    if value.value() == "always" {
+                        analyze_always = true;
+                    } else {
+                        return Err(syn::Error::new_spanned(
+                            value,
+                            "unsupported analyze mode. Fix: use analyze = \"always\" or omit it.",
+                        ));
+                    }
+                }
                 _ => {
                     return Err(syn::Error::new(
                         key.span(),
-                        "unsupported vyre_pass argument. Fix: use name, requires, or invalidates.",
+                        "unsupported vyre_pass argument. Fix: use name, requires, invalidates, or analyze.",
                     ));
                 }
             }
@@ -79,6 +92,7 @@ impl Parse for PassArgs {
             name: name.ok_or_else(|| input.error("missing pass name. Fix: add name = \"...\"."))?,
             requires,
             invalidates,
+            analyze_always,
         })
     }
 }
@@ -104,10 +118,11 @@ fn parse_string_array(input: ParseStream<'_>) -> syn::Result<Vec<LitStr>> {
         .collect()
 }
 
-/// Register a unit struct as a `vyre::optimizer::Pass`.
+/// Register a unit struct as a `vyre::optimizer::ProgramPass`.
 ///
-/// Expands to (a) a full `Pass` trait impl that forwards to your inherent
-/// `analyze` / `transform` / `fingerprint` methods and (b) an
+/// Expands to (a) a full `ProgramPass` trait impl that forwards to your inherent
+/// `analyze` / `transform` methods plus the canonical optimizer
+/// fingerprint and (b) an
 /// `inventory::submit!` that adds the pass to the global registry so
 /// `vyre::optimize()` picks it up automatically.
 ///
@@ -122,15 +137,14 @@ fn parse_string_array(input: ParseStream<'_>) -> syn::Result<Vec<LitStr>> {
 /// # Required inherent methods on the annotated type
 ///
 /// ```ignore
-/// fn analyze(program: &Program) -> PassAnalysis;
+/// fn analyze_impl(program: &Program) -> PassAnalysis;
 /// fn transform(program: Program) -> PassResult;
-/// fn fingerprint(program: &Program) -> u64;
 /// ```
 ///
 /// # Example
 ///
 /// ```ignore
-/// use vyre::optimizer::{vyre_pass, PassAnalysis, PassResult, fingerprint_program};
+/// use vyre::optimizer::{vyre_pass, PassAnalysis, PassResult};
 /// use vyre::ir::Program;
 ///
 /// #[vyre_pass(name = "fold_zero_add", requires = [], invalidates = [])]
@@ -142,12 +156,11 @@ fn parse_string_array(input: ParseStream<'_>) -> syn::Result<Vec<LitStr>> {
 ///         // ... real rewrite ...
 ///         PassResult::from_programs(&program.clone(), program)
 ///     }
-///     fn fingerprint(program: &Program) -> u64 { fingerprint_program(program) }
 /// }
 /// ```
 ///
 /// After expansion, `vyre::optimize(p)` will pick up `FoldZeroAdd` through
-/// the `inventory::collect!(PassRegistration)` entry emitted by the macro.
+/// the `inventory::collect!(ProgramPassRegistration)` entry emitted by the macro.
 /// No manual registration needed.
 #[proc_macro_attribute]
 pub fn vyre_pass(args: TokenStream, item: TokenStream) -> TokenStream {
@@ -157,13 +170,18 @@ pub fn vyre_pass(args: TokenStream, item: TokenStream) -> TokenStream {
     let name = args.name;
     let requires = args.requires;
     let invalidates = args.invalidates;
+    let analyze_body = if args.analyze_always {
+        quote! { ::vyre::optimizer::PassAnalysis::RUN }
+    } else {
+        quote! { Self::analyze_impl(program) }
+    };
 
     quote! {
         #item
 
         impl ::vyre::optimizer::private::Sealed for #ident {}
 
-        impl ::vyre::optimizer::Pass for #ident {
+        impl ::vyre::optimizer::ProgramPass for #ident {
             #[inline]
             fn metadata(&self) -> ::vyre::optimizer::PassMetadata {
                 ::vyre::optimizer::PassMetadata {
@@ -175,7 +193,7 @@ pub fn vyre_pass(args: TokenStream, item: TokenStream) -> TokenStream {
 
             #[inline]
             fn analyze(&self, program: &::vyre::ir::Program) -> ::vyre::optimizer::PassAnalysis {
-                Self::analyze(program)
+                #analyze_body
             }
 
             #[inline]
@@ -188,12 +206,12 @@ pub fn vyre_pass(args: TokenStream, item: TokenStream) -> TokenStream {
 
             #[inline]
             fn fingerprint(&self, program: &::vyre::ir::Program) -> u64 {
-                Self::fingerprint(program)
+                ::vyre::optimizer::fingerprint_program(program)
             }
         }
 
         ::inventory::submit! {
-            ::vyre::optimizer::PassRegistration {
+            ::vyre::optimizer::ProgramPassRegistration {
                 metadata: ::vyre::optimizer::PassMetadata {
                     name: #name,
                     requires: &[#(#requires),*],

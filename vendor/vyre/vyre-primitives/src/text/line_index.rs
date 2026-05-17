@@ -11,10 +11,10 @@
 //! `\n` increments on the `\r` itself. This matches `str::lines()`
 //! semantics for byte-counting purposes.
 //!
-//! Ranged use: `column_for_byte(idx)` is `idx - line_start_offset`,
-//! which the consuming dialect can compute via a separate Tier 2.5
-//! primitive (planned `vyre-primitives::text::line_starts`) once a
-//! second caller wants it. For now line_index alone is the LEGO piece.
+//! Ranged use: `column_for_byte(idx)` is `idx - line_start_offset`.
+//! This primitive deliberately publishes per-byte line numbers only;
+//! dialects that need column offsets derive them from their own
+//! line-start representation.
 
 use std::sync::Arc;
 use vyre_foundation::ir::model::expr::Ident;
@@ -64,7 +64,7 @@ pub fn line_index(source: &str, lines: &str, n: u32) -> Program {
                                 Expr::eq(Expr::var("byte"), Expr::u32(0x0D)),
                                 vec![
                                     // '\r' marks state but doesn't yet
-                                    // increment — defer until we know
+                                    // increment only after we know
                                     // whether '\n' follows.
                                     Node::assign("prev_was_cr", Expr::u32(1)),
                                 ],

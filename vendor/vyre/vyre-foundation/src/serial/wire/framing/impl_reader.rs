@@ -89,7 +89,12 @@ impl<'a> Reader<'a> {
     pub(crate) fn string(&mut self) -> Result<String, String> {
         let len = self.bounded_len(MAX_STRING_LEN, "string length")?;
         let bytes = self.take(len)?;
-        String::from_utf8(bytes.to_vec()).map_err(|err| {
+        // VYRE_IR_HOTSPOTS CRIT (impl_reader.rs:92): previous code did
+        // `bytes.to_vec()` then `String::from_utf8(vec)`, allocating an
+        // intermediate `Vec<u8>` for every string decode. Using
+        // `std::str::from_utf8` validates the borrowed slice directly;
+        // `str::to_owned` copies once into the final `String`.
+        std::str::from_utf8(bytes).map(str::to_owned).map_err(|err| {
             format!("invalid UTF-8 in IR wire-format string: {err}. Fix: serialize valid Rust String values.")
         })
     }

@@ -9,13 +9,14 @@
 //! callback limits, giving conform a byte-identical target to verify against.
 
 use crate::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
+use rustc_hash::FxHashMap;
 use thiserror::Error;
 use vyre_spec::AlgebraicLaw;
 
-/// Portable WGSL source for the recursive-descent primitive.
+/// Registered device source for the recursive-descent primitive.
 #[must_use]
-pub const fn source() -> &'static str {
-    include_str!("wgsl/recursive_descent.wgsl")
+pub fn source() -> Option<&'static str> {
+    crate::transform::compiler::shader_provider::source("recursive_descent")
 }
 
 /// Build a vyre IR Program that consumes `token_count` tokens in a
@@ -137,15 +138,22 @@ pub fn parse(
     max_stack: usize,
     max_callbacks: usize,
 ) -> Result<ParseResult, RecursiveDescentError> {
+    let mut transition_index: FxHashMap<(u32, u32), Transition> = FxHashMap::default();
+    transition_index.reserve(transitions.len());
+    for &transition in transitions {
+        transition_index
+            .entry((transition.state, transition.token_kind))
+            .or_insert(transition);
+    }
+
     let mut state = start_state;
     let mut stack = Vec::with_capacity(max_stack);
-    let mut callbacks = Vec::new();
+    let mut callbacks = Vec::with_capacity(tokens.len().min(max_callbacks));
     let mut consumed = 0usize;
     while consumed < tokens.len() {
         let token = tokens[consumed];
-        let transition = transitions
-            .iter()
-            .find(|candidate| candidate.state == state && candidate.token_kind == token)
+        let transition = transition_index
+            .get(&(state, token))
             .copied()
             .ok_or(RecursiveDescentError::NoTransition { state, token })?;
         if transition.push_state != u32::MAX {
@@ -262,7 +270,7 @@ pub struct Transition {
     pub push_state: u32,
 }
 
-/// Workgroup size used by the reference WGSL lowering.
+/// Workgroup size used by the reference target-text lowering.
 pub const WORKGROUP_SIZE: [u32; 3] = [64, 1, 1];
 
 #[cfg(test)]
@@ -293,8 +301,11 @@ mod ir_program_tests {
     #[test]
     fn consume_step_program_wire_round_trips() {
         let prog = make_prog();
-        let bytes = prog.to_wire().expect("serialize");
-        let decoded = Program::from_wire(&bytes).expect("decode");
+        let bytes = prog
+            .to_wire()
+            .expect("Fix: serialize; restore this invariant before continuing.");
+        let decoded = Program::from_wire(&bytes)
+            .expect("Fix: decode; restore this invariant before continuing.");
         assert_eq!(decoded.buffers().len(), 6);
     }
 
@@ -307,5 +318,52 @@ mod ir_program_tests {
             .to_wire()
             .unwrap();
         assert_ne!(a, b);
+    }
+
+    #[test]
+    fn cpu_parse_uses_indexed_transition_lookup() {
+        let transitions = [
+            Transition {
+                state: 0,
+                token_kind: 1,
+                next_state: 1,
+                callback: 10,
+                push_state: u32::MAX,
+            },
+            Transition {
+                state: 1,
+                token_kind: 2,
+                next_state: 2,
+                callback: 20,
+                push_state: u32::MAX,
+            },
+        ];
+        let result = parse(&[1, 2], &transitions, 0, 2, 4, 4).unwrap();
+        assert_eq!(result.callbacks, vec![10, 20]);
+        assert_eq!(result.consumed, 2);
+        assert_eq!(result.final_state, 2);
+    }
+
+    #[test]
+    fn duplicate_transition_keeps_first_match_contract() {
+        let transitions = [
+            Transition {
+                state: 0,
+                token_kind: 1,
+                next_state: 1,
+                callback: 10,
+                push_state: u32::MAX,
+            },
+            Transition {
+                state: 0,
+                token_kind: 1,
+                next_state: 9,
+                callback: 99,
+                push_state: u32::MAX,
+            },
+        ];
+        let result = parse(&[1], &transitions, 0, 1, 4, 4).unwrap();
+        assert_eq!(result.callbacks, vec![10]);
+        assert_eq!(result.final_state, 1);
     }
 }

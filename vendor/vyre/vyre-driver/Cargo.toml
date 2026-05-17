@@ -1,6 +1,6 @@
 [package]
 name = "vyre-driver"
-version = "0.6.0"
+version = "0.4.1"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -17,8 +17,13 @@ documentation = "https://docs.rs/vyre-driver"
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
+[features]
+default = []
+self-substrate-adapters = ["dep:vyre-self-substrate"]
+
 [dependencies]
-vyre-foundation = { version = "0.6.0", path = "../vyre-foundation" }
+vyre-foundation = { version = "0.4.1", path = "../vyre-foundation" }
+vyre-self-substrate = { workspace = true, optional = true }
 vyre-spec.workspace = true
 vyre-macros.workspace = true
 serde.workspace = true
@@ -31,20 +36,20 @@ blake3.workspace = true
 bytemuck.workspace = true
 inventory.workspace = true
 toml.workspace = true
-naga.workspace = true
 arc-swap = "1.9.1"
 lasso = { version = "0.7.3", features = ["multi-threaded"] }
 dashmap.workspace = true
+fs2.workspace = true
 
 [lints]
 workspace = true
 
 [dev-dependencies]
+vyre-reference = { version = "0.4.1", path = "../vyre-reference" }
 # The `vyre` meta-shim re-exports every driver-tier public type. Doctest
 # examples in this crate demonstrate the consumer-facing `vyre::X` path
 # (that's how surgec / pyrograph / warpscan call them in production), so
 # the shim must be in scope when doctests compile. Dev-dep only — the
 # library itself has no runtime dependency on `vyre`.
 vyre = { workspace = true }
-vyre-conform-spec = { path = "../conform/vyre-conform-spec" }
 tempfile.workspace = true

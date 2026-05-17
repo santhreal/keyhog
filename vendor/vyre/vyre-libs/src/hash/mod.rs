@@ -1,15 +1,9 @@
 //! Cat-A hash / checksum compositions.
 //!
-//! Consolidates `vyre-libs::crypto` (fnv1a32, blake3_compress) with
-//! the migrated-from-vyre-ops ops (fnv1a64, crc32, adler32) per
-//! `docs/migration-vyre-ops-to-intrinsics.md`. Each op is a pure
-//! serial composition over existing IR primitives (XOR + multiply +
-//! shift); no dedicated Naga emitter arm required.
-//!
-//! Migration 3 continues to move the existing crypto submodules into
-//! this tree; until that lands, both `vyre-libs::hash` and
-//! `vyre-libs::crypto` coexist. After Migration 3, `crypto` becomes a
-//! deprecation re-export shim for one release, then dissolves.
+//! Owns the checksum and hash compositions migrated from the old
+//! target-text-string op surface. Each op is a pure serial composition over
+//! existing IR primitives (XOR + multiply + shift); no dedicated target builder
+//! emitter arm required.
 
 pub mod adler32;
 pub mod blake3_compress;

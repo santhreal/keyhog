@@ -23,14 +23,13 @@ let cpu_outputs: Vec<Vec<u8>> = execute(&program, inputs)?;
 // compare cpu_outputs against a backend's dispatch() output
 ```
 
-### 2. Small-data CPU fallback
+### 2. Explicit host oracle for tests and diagnostics
 
-When the input is small enough that GPU dispatch overhead dominates, call reference directly:
+Use the reference interpreter when you intentionally need host-side oracle output for tests, diagnostics, or backend development. This is not a production fallback path for GPU-required execution.
 
 ```rust
 use vyre_reference::execute;
 
-// 512 bytes of input — not worth a GPU round-trip
 let outputs = execute(&program, inputs)?;
 ```
 

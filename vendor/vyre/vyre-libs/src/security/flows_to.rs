@@ -12,7 +12,7 @@
 //!
 //! vyre-libs ships one dispatch step that surgec's fixpoint driver
 //! iterates. Op id stays stable; the dead v2 edges_from/edges_to
-//! signature from the inert-stub era has been deleted — the shim
+//! signature from the inert v2 API has been deleted — the shim
 //! now takes only the canonical frontier / sink buffer names.
 
 use vyre::ir::Program;
@@ -37,12 +37,53 @@ pub const FLOWS_TO_MASK: u32 = edge_kind::ASSIGNMENT
     | edge_kind::MEM_LOAD
     | edge_kind::MUT_REF;
 
+/// Bitmask of edge kinds that represent genuine *aliasing* relations
+/// (same memory cell, not just "data flowed through this op").
+/// Aliasing is a strict subset of `FLOWS_TO_MASK`:
+///
+/// - `ASSIGNMENT` (`a = b`) — `a` aliases `b`'s referenced cell.
+/// - `ALIAS` (init-decl, init-alias-bridge, etc.) — explicit alias
+///   edge emitted by the walker.
+/// - `MUT_REF` (`&mut x`) — the reference aliases `x`.
+/// - `PHI` — SSA phi result aliases each incoming source.
+///
+/// `CALL_ARG` / `RETURN` / `MEM_STORE` / `MEM_LOAD` are EXCLUDED:
+/// passing a value into a function or storing it to memory does NOT
+/// imply the result aliases the source. The pre-T11 `aliases`
+/// primitive used `FLOWS_TO_MASK` directly and reported
+/// `aliases(msg, copy) = true` on `char *copy = strdup(msg);`
+/// because forward-reach traversed `msg → strdup [CALL_ARG] →
+/// copy [ALIAS]`. That FP pattern hit every `dup_*` /
+/// `realloc_*_fresh_alloc` / `copy-then-use` negative on the
+/// per_shape_truth gate's `use_after_free_double_drop` shape.
+pub const ALIAS_PROPAGATION_MASK: u32 =
+    edge_kind::ASSIGNMENT | edge_kind::ALIAS | edge_kind::MUT_REF | edge_kind::PHI;
+
 /// Build one forward-traversal step along DATAFLOW edges only.
 /// `frontier_in` reads the current reached set, `frontier_out`
 /// receives the union of nodes reachable in one more dataflow hop.
 #[must_use]
 pub fn flows_to(shape: ProgramGraphShape, frontier_in: &str, frontier_out: &str) -> Program {
-    csr_forward_traverse(shape, frontier_in, frontier_out, FLOWS_TO_MASK)
+    crate::region::tag_program(
+        OP_ID,
+        csr_forward_traverse(shape, frontier_in, frontier_out, FLOWS_TO_MASK),
+    )
+}
+
+/// Build one forward-traversal step along ALIAS-only edges.
+/// Used by [`crate::security::aliases_dataflow::aliases_dataflow`]
+/// to compute bidirectional aliasing without conflating "data
+/// flowed through this op" with "same memory cell."
+#[must_use]
+pub fn flows_to_alias_only(
+    shape: ProgramGraphShape,
+    frontier_in: &str,
+    frontier_out: &str,
+) -> Program {
+    crate::region::tag_program(
+        OP_ID,
+        csr_forward_traverse(shape, frontier_in, frontier_out, ALIAS_PROPAGATION_MASK),
+    )
 }
 
 inventory::submit! {
@@ -89,5 +130,100 @@ inventory::submit! {
     crate::harness::ConvergenceContract {
         op_id: OP_ID,
         max_iterations: 4096,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use vyre_primitives::predicate::edge_kind;
+
+    #[test]
+    fn flows_to_mask_excludes_control_and_dominance() {
+        assert_eq!(FLOWS_TO_MASK & edge_kind::CONTROL, 0);
+        assert_eq!(FLOWS_TO_MASK & edge_kind::DOMINANCE, 0);
+    }
+
+    #[test]
+    fn flows_to_mask_includes_assignment_and_call_arg() {
+        assert_ne!(FLOWS_TO_MASK & edge_kind::ASSIGNMENT, 0);
+        assert_ne!(FLOWS_TO_MASK & edge_kind::CALL_ARG, 0);
+    }
+
+    #[test]
+    fn flows_to_mask_is_not_universal() {
+        assert_ne!(FLOWS_TO_MASK, 0xFFFF_FFFF, "regression to universal mask");
+    }
+
+    #[test]
+    fn flows_to_program_emits_frontier_buffers() {
+        let p = flows_to(ProgramGraphShape::new(4, 3), "fin", "fout");
+        let names: Vec<&str> = p.buffers.iter().map(|b| b.name()).collect();
+        assert!(names.contains(&"fin"));
+        assert!(names.contains(&"fout"));
+    }
+
+    #[test]
+    fn flows_to_program_uses_non_degenerate_shape() {
+        let shape = ProgramGraphShape::new(64, 128);
+        let p = flows_to(shape, "fin", "fout");
+        let fin_buf = p
+            .buffers
+            .iter()
+            .find(|b| b.name() == "fin")
+            .expect("fin buffer");
+        assert!(
+            fin_buf.count >= 2,
+            "bitset_words(64) = 2; count {} suggests degenerate shape",
+            fin_buf.count
+        );
+    }
+
+    #[test]
+    fn flows_to_and_taint_flow_convergence_contracts_are_duplicate() {
+        let c_flows = crate::harness::convergence_contract("vyre-libs::security::flows_to")
+            .expect("flows_to must have a ConvergenceContract");
+        let c_taint = crate::harness::convergence_contract("vyre-libs::security::taint_flow")
+            .expect("taint_flow must have a ConvergenceContract");
+        assert_ne!(
+            c_flows.max_iterations, c_taint.max_iterations,
+            "flows_to and taint_flow register identical ConvergenceContract entries (max_iterations={}); \
+             duplicate contracts for byte-identical ops is a registry hygiene gap",
+            c_flows.max_iterations
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "node_count must be positive")]
+    fn flows_to_zero_node_count_should_panic() {
+        flows_to(ProgramGraphShape::new(0, 0), "fin", "fout");
+    }
+
+    #[test]
+    #[should_panic(expected = "empty buffer name")]
+    fn flows_to_empty_buffer_name_should_panic() {
+        flows_to(ProgramGraphShape::new(4, 3), "", "fout");
+    }
+
+    #[test]
+    fn flows_to_edge_count_exceeds_actual_edges_traps_in_reference() {
+        let p = flows_to(ProgramGraphShape::new(4, 10), "fin", "fout");
+        let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+        let inputs = vec![
+            to_bytes(&[0, 0, 0, 0]),          // pg_nodes
+            to_bytes(&[0, 1, 2, 3, 3]),       // pg_edge_offsets (only 3 edges)
+            to_bytes(&[1, 2, 3]),             // pg_edge_targets (3 elements, declared 10)
+            to_bytes(&[edge_kind::ASSIGNMENT, edge_kind::ASSIGNMENT, edge_kind::ASSIGNMENT]),
+            to_bytes(&[0, 0, 0, 0]),          // pg_node_tags
+            to_bytes(&[0b0001]),              // fin
+            to_bytes(&[0b0001]),              // fout
+        ];
+        let values: Vec<vyre_reference::value::Value> =
+            inputs.into_iter().map(vyre_reference::value::Value::from).collect();
+        let result = vyre_reference::reference_eval(&p, &values);
+        assert!(
+            result.is_err(),
+            "edge_count (10) exceeds actual edges (3) must trap or error in reference_eval, not silently succeed"
+        );
     }
 }

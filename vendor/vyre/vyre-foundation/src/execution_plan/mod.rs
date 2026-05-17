@@ -3,6 +3,7 @@
 use std::ops::Range;
 
 use crate::ir::{BufferAccess, DataType, MemoryKind, Node, Program};
+use crate::optimizer::AdapterCaps;
 use crate::program_caps::{self, RequiredCapabilities};
 use crate::validate::{validate_with_options, ValidationOptions};
 
@@ -106,13 +107,31 @@ pub enum PlanError {
 
 /// Build a backend-neutral execution plan with default validation options.
 pub fn plan(program: &Program) -> Result<ExecutionPlan, PlanError> {
-    plan_with_options(program, ValidationOptions::default())
+    plan_for_adapter(program, &AdapterCaps::conservative())
+}
+
+/// Build a backend-neutral execution plan parameterized by adapter facts.
+pub fn plan_for_adapter(
+    program: &Program,
+    adapter_caps: &AdapterCaps,
+) -> Result<ExecutionPlan, PlanError> {
+    plan_with_options_for_adapter(program, ValidationOptions::default(), adapter_caps)
 }
 
 /// Build a backend-neutral execution plan after validating with `options`.
 pub fn plan_with_options(
     program: &Program,
     options: ValidationOptions<'_>,
+) -> Result<ExecutionPlan, PlanError> {
+    plan_with_options_for_adapter(program, options, &AdapterCaps::conservative())
+}
+
+/// Build a backend-neutral execution plan after validating with `options` and
+/// adapter facts.
+pub fn plan_with_options_for_adapter(
+    program: &Program,
+    options: ValidationOptions<'_>,
+    adapter_caps: &AdapterCaps,
 ) -> Result<ExecutionPlan, PlanError> {
     validate_program_for_plan(program, options)?;
     let required_capabilities = program_caps::scan(program);
@@ -121,7 +140,7 @@ pub fn plan_with_options(
     let program_fingerprint = canonical_program_fingerprint(program)?;
     let provenance = provenance_plan(program, &fusion);
     let accuracy = accuracy_plan(&required_capabilities, &provenance);
-    let autotune = autotune_plan(program, &required_capabilities, &fusion);
+    let autotune = autotune_plan(program, &required_capabilities, &fusion, adapter_caps);
 
     let strategy = StrategyPlan::from_parts(&fusion, &memory, &provenance, &accuracy, &autotune);
     let tracks = track_decisions(&fusion, &memory, &provenance, &accuracy, &autotune);
@@ -153,12 +172,19 @@ fn validate_program_for_plan(
     if report.errors.is_empty() {
         return Ok(());
     }
-    let messages = report
+    let message_len = report
         .errors
         .iter()
-        .map(|error| error.message().to_string())
-        .collect::<Vec<_>>()
-        .join("; ");
+        .map(|error| error.message().len())
+        .sum::<usize>()
+        + report.errors.len().saturating_sub(1) * 2;
+    let mut messages = String::with_capacity(message_len);
+    for (index, error) in report.errors.iter().enumerate() {
+        if index != 0 {
+            messages.push_str("; ");
+        }
+        messages.push_str(error.message());
+    }
     Err(PlanError::NonCanonicalProgram {
         source: crate::error::Error::WireFormatValidation {
             message: format!(
@@ -197,8 +223,9 @@ fn count_nodes(nodes: &[Node]) -> usize {
 }
 
 fn canonical_program_fingerprint(program: &Program) -> Result<[u8; 32], PlanError> {
-    let wire = program
-        .to_wire()
+    let mut wire = Vec::with_capacity(4096);
+    program
+        .to_wire_into(&mut wire)
         .map_err(|source| PlanError::NonCanonicalProgram { source })?;
     Ok(*blake3::hash(&wire).as_bytes())
 }
@@ -291,18 +318,60 @@ fn autotune_plan(
     program: &Program,
     _caps: &RequiredCapabilities,
     _fusion: &FusionPlan,
+    adapter_caps: &AdapterCaps,
 ) -> AutotunePlan {
     let node_count = count_nodes(program.entry());
     let policy = SchedulingPolicy::standard();
+    let problem_size = infer_static_problem_size(program);
+    let recommended_workgroup_size = [
+        policy.select_workgroup_x(
+            program.parallel_region_size()[0],
+            problem_size,
+            adapter_caps,
+        ),
+        1,
+        1,
+    ];
+    let recommended_tile =
+        policy.select_workgroup_tile(program.parallel_region_size(), problem_size, adapter_caps);
+    let recommended_vector_pack_bits = policy.select_vector_pack_bits(32, adapter_caps);
+    let recommended_unroll_depth = policy.select_unroll_depth(None, adapter_caps);
+    let profile_driven = adapter_caps.ideal_unroll_depth > 0
+        || adapter_caps.ideal_vector_pack_bits > 0
+        || !adapter_caps.ideal_workgroup_tile.contains(&0);
     AutotunePlan {
-        recommended: policy.recommend_autotune(node_count),
+        // Only flag autotuning as recommended when there's a real
+        // signal: a large enough program OR a device profile that
+        // declares preferred shapes. The previous
+        // `recommended_workgroup_size != parallel_region_size` check
+        // fired spuriously for tiny declared shapes (e.g. [1, 1, 1])
+        // because the policy's min_workgroup_x floor is 32 — the
+        // selector always returns a different number, so every small
+        // program got marked autotune-recommended even when it has no
+        // measurement variants worth exploring.
+        recommended: policy.recommend_autotune(node_count) || profile_driven,
         parallel_region_size: program.parallel_region_size(),
-        reason: if policy.recommend_autotune(node_count) {
+        recommended_workgroup_size,
+        recommended_tile,
+        recommended_vector_pack_bits,
+        recommended_unroll_depth,
+        reason: if profile_driven {
+            "device profile"
+        } else if policy.recommend_autotune(node_count) {
             "large program"
         } else {
             "none"
         },
     }
+}
+
+fn infer_static_problem_size(program: &Program) -> Option<u32> {
+    program
+        .buffers()
+        .iter()
+        .filter(|buffer| buffer.count() > 0 && !matches!(buffer.kind(), MemoryKind::Shared))
+        .map(|buffer| buffer.count())
+        .min()
 }
 
 fn track_decisions(
@@ -431,6 +500,128 @@ pub struct AutotunePlan {
     pub recommended: bool,
     /// Declared parallel region size.
     pub parallel_region_size: [u32; 3],
+    /// Adapter/profile-selected workgroup size.
+    pub recommended_workgroup_size: [u32; 3],
+    /// Adapter/profile-selected tile shape for tiled lowering.
+    pub recommended_tile: [u32; 3],
+    /// Adapter/profile-selected vector pack width in bits.
+    pub recommended_vector_pack_bits: u32,
+    /// Adapter/profile-selected unroll depth.
+    pub recommended_unroll_depth: u32,
     /// Stable reason for the recommendation.
     pub reason: &'static str,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ir::{BufferDecl, DataType, Expr, Node, Program};
+
+    fn trivial_program() -> Program {
+        Program::wrapped(
+            vec![
+                BufferDecl::read("input", 0, DataType::U32).with_count(4),
+                BufferDecl::output("out", 1, DataType::U32).with_count(1),
+            ],
+            [1, 1, 1],
+            vec![Node::store(
+                "out",
+                Expr::u32(0),
+                Expr::load("input", Expr::u32(0)),
+            )],
+        )
+    }
+
+    #[test]
+    fn plan_succeeds_on_trivial_program() {
+        let p = trivial_program();
+        let exec_plan = plan(&p).expect("Fix: plan should succeed on trivial program; restore this invariant before continuing.");
+        assert!(exec_plan.memory.static_bytes > 0);
+        assert_eq!(exec_plan.memory.dynamic_buffers, 0);
+    }
+
+    #[test]
+    fn plan_fingerprint_is_deterministic() {
+        let p = trivial_program();
+        let plan1 = plan(&p).unwrap();
+        let plan2 = plan(&p).unwrap();
+        assert_eq!(plan1.program_fingerprint, plan2.program_fingerprint);
+    }
+
+    #[test]
+    fn count_nodes_simple() {
+        let nodes = vec![
+            Node::let_bind("x", Expr::u32(1)),
+            Node::let_bind("y", Expr::u32(2)),
+        ];
+        assert_eq!(count_nodes(&nodes), 2);
+    }
+
+    #[test]
+    fn count_nodes_nested_if() {
+        let nodes = vec![Node::if_then_else(
+            Expr::u32(1),
+            vec![Node::let_bind("x", Expr::u32(1))],
+            vec![
+                Node::let_bind("a", Expr::u32(2)),
+                Node::let_bind("b", Expr::u32(3)),
+            ],
+        )];
+        // 1 (if) + 1 (then let) + 2 (else lets) = 4
+        assert_eq!(count_nodes(&nodes), 4);
+    }
+
+    #[test]
+    fn track_active_returns_false_for_inactive() {
+        let p = trivial_program();
+        let exec_plan = plan(&p).unwrap();
+        // GpuResidentProvenance is always inactive in current implementation
+        assert!(!exec_plan.track_active(InnovationTrack::GpuResidentProvenance));
+    }
+
+    #[test]
+    fn plan_tiny_program_uses_persistent_dispatch() {
+        let p = trivial_program();
+        let exec_plan = plan(&p).unwrap();
+        assert_eq!(
+            exec_plan.strategy.dispatch,
+            DispatchStrategy::PersistentRuntime
+        );
+    }
+
+    #[test]
+    fn device_profile_changes_autotune_recommendations() {
+        let p = Program::wrapped(
+            vec![BufferDecl::output("out", 0, DataType::U32).with_count(4096)],
+            [1, 1, 1],
+            vec![Node::store("out", Expr::gid_x(), Expr::u32(1))],
+        );
+        let compact = AdapterCaps {
+            max_workgroup_size: [256, 256, 64],
+            max_invocations_per_workgroup: 256,
+            subgroup_size: 32,
+            ideal_unroll_depth: 4,
+            ideal_vector_pack_bits: 64,
+            ideal_workgroup_tile: [8, 8, 1],
+            ..AdapterCaps::conservative()
+        };
+        let wide = AdapterCaps {
+            ideal_unroll_depth: 8,
+            ideal_vector_pack_bits: 128,
+            ideal_workgroup_tile: [16, 16, 1],
+            ..compact
+        };
+
+        let compact_plan = plan_for_adapter(&p, &compact).unwrap();
+        let wide_plan = plan_for_adapter(&p, &wide).unwrap();
+
+        assert_eq!(compact_plan.autotune.recommended_workgroup_size, [64, 1, 1]);
+        assert_eq!(wide_plan.autotune.recommended_workgroup_size, [256, 1, 1]);
+        assert_eq!(compact_plan.autotune.recommended_tile, [8, 8, 1]);
+        assert_eq!(wide_plan.autotune.recommended_tile, [16, 16, 1]);
+        assert_eq!(compact_plan.autotune.recommended_vector_pack_bits, 64);
+        assert_eq!(wide_plan.autotune.recommended_vector_pack_bits, 128);
+        assert_eq!(compact_plan.autotune.recommended_unroll_depth, 4);
+        assert_eq!(wide_plan.autotune.recommended_unroll_depth, 8);
+    }
 }

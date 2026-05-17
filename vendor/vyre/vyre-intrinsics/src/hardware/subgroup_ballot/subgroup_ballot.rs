@@ -1,20 +1,15 @@
 //! Cat-C `subgroup_ballot` — popcount of per-lane bool into u32 bitmask.
 //!
-//! Maps to hardware `subgroupBallot()` (WGSL) / `OpGroupNonUniformBallot`
-//! (SPIR-V) via a dedicated Naga emitter arm (gated on Naga 25+). Serial
-//! CPU reference (SUBGROUP_WIDTH=1): `cond ? 1u32 : 0u32`. Feature-gated
-//! behind `subgroup-ops` — off by default until Naga 25+ and the wire
-//! format stabilize. See FINDING-PRIM-2.
+//! Maps to the target-native subgroup ballot intrinsic via a concrete
+//! driver emitter arm.
 
 use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 
-#[cfg(any(test, feature = "subgroup-ops"))]
 use crate::hardware::pack_u32;
 use crate::hardware::MAP_WORKGROUP;
 
 /// Build a Program that collects the per-lane boolean predicate into a u32
-/// bitmask broadcast to every lane. Serial CPU reference
-/// (SUBGROUP_WIDTH=1): `out[i] = cond_input[i] ? 1u32 : 0u32`.
+/// bitmask broadcast to every lane.
 #[must_use]
 pub fn subgroup_ballot(cond_input: &str, out: &str, n: u32) -> Program {
     let body = vec![crate::region::wrap_anonymous(
@@ -46,49 +41,35 @@ pub fn subgroup_ballot(cond_input: &str, out: &str, n: u32) -> Program {
     )
 }
 
-#[cfg(any(test, feature = "subgroup-ops"))]
 fn cpu_ref(cond: &[u32]) -> Vec<u8> {
-    // With `subgroup-ops` enabled, every lane in a 32-wide subgroup
-    // receives the bitmask of its subgroup's predicates (bit `k` set
-    // iff `cond[subgroup_start + k] == 1`). Without the feature,
-    // SubgroupBallot degenerates to the single-lane identity
-    // `cond[i] == 1 ? 1 : 0`.
-    #[cfg(feature = "subgroup-ops")]
-    {
-        const SUBGROUP_WIDTH: usize = 32;
-        let n = cond.len();
-        let mut out = Vec::with_capacity(n);
-        for i in 0..n {
-            let subgroup_start = (i / SUBGROUP_WIDTH) * SUBGROUP_WIDTH;
-            let subgroup_end = (subgroup_start + SUBGROUP_WIDTH).min(n);
-            let mut mask = 0u32;
-            for (lane, c) in cond[subgroup_start..subgroup_end].iter().enumerate() {
-                if *c == 1 {
-                    mask |= 1u32 << lane;
-                }
+    const SUBGROUP_WIDTH: usize = 32;
+    let n = cond.len();
+    let mut out = Vec::with_capacity(n);
+    for i in 0..n {
+        let subgroup_start = (i / SUBGROUP_WIDTH) * SUBGROUP_WIDTH;
+        let subgroup_end = (subgroup_start + SUBGROUP_WIDTH).min(n);
+        let mut mask = 0u32;
+        for (lane, c) in cond[subgroup_start..subgroup_end].iter().enumerate() {
+            if *c == 1 {
+                mask |= 1u32 << lane;
             }
-            out.push(mask);
         }
-        return pack_u32(&out);
+        out.push(mask);
     }
-    #[allow(unreachable_code)]
-    pack_u32(&cond.iter().map(|&c| u32::from(c == 1)).collect::<Vec<_>>())
+    pack_u32(&out)
 }
 
-#[cfg(feature = "subgroup-ops")]
 fn test_inputs() -> Vec<Vec<Vec<u8>>> {
     let cond = vec![0u32, 1, 0, 1];
     let len = cond.len() * 4;
     vec![vec![pack_u32(&cond), vec![0u8; len]]]
 }
 
-#[cfg(feature = "subgroup-ops")]
 fn expected_output() -> Vec<Vec<Vec<u8>>> {
     let cond = vec![0u32, 1, 0, 1];
     vec![vec![cpu_ref(&cond)]]
 }
 
-#[cfg(feature = "subgroup-ops")]
 inventory::submit! {
     crate::harness::OpEntry {
         id: "vyre-intrinsics::hardware::subgroup_ballot",

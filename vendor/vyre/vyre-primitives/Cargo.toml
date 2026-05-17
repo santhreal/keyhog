@@ -1,6 +1,6 @@
 [package]
 name = "vyre-primitives"
-version = "0.6.0"
+version = "0.4.1"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -18,6 +18,9 @@ documentation = "https://docs.rs/vyre-primitives"
 # need a Tier 2.5 builder enable the matching domain flag.
 default = []
 
+# Enable GPU-backend parity tests (requires CUDA driver + device).
+gpu = []
+
 # Internal marker feature — ON whenever any domain feature pulls
 # vyre-foundation. Keeps `#[cfg]` expressions terse (one gate
 # instead of `any(feature = "text", feature = "matching", …)`).
@@ -33,7 +36,7 @@ matching = ["vyre-foundation"]
 decode = ["vyre-foundation"]
 # Subgroup-cooperative NFA step (G1). Composes bitset + matching.
 nfa = ["vyre-foundation", "bitset", "matching"]
-math = ["vyre-foundation"]
+math = ["vyre-foundation", "graph", "fixpoint"]
 nn = ["vyre-foundation", "math"]
 hash = ["vyre-foundation"]
 parsing = ["vyre-foundation", "text", "matching"]
@@ -41,14 +44,40 @@ graph = ["vyre-foundation", "bitset", "reduce"]
 bitset = ["vyre-foundation"]
 reduce = ["vyre-foundation"]
 label = ["vyre-foundation", "bitset"]
-predicate = ["vyre-foundation", "graph", "bitset"]
+predicate = ["vyre-foundation", "graph", "bitset", "label"]
 fixpoint = ["vyre-foundation", "bitset"]
+# Geometric / Clifford algebra primitives (#8). Multivector products
+# unify quaternions, dual quaternions, and projective transformations
+# on a single substrate; reused by equivariant NNs (#33), physics
+# simulation, robotics, 3D vision.
+geom = ["vyre-foundation", "math"]
+# Convex / combinatorial optimization primitives (#9, #14, #46).
+opt = ["vyre-foundation", "math"]
+# Effects-typed pipeline primitives (P-1.0-V1.x). Pure-data substrate
+# for handler-applied effect rows; no IR-builder deps.
+effects = []
+# Type-discipline primitives (P-PRIM-14, …). Substructural type
+# checks the foundation validate pipeline calls per buffer. Pure
+# scalar ops, no IR-builder dep.
+types = []
+# Categorical primitives (P-PRIM-16/17/18). Yoneda / adjoint /
+# Kan extension over finite categories. Pure scalar + Vec ops.
+cat = []
+# ZX-calculus rewrite primitives (P-PRIM-5). Spider fusion +
+# identity removal + color change over discrete-phase diagrams.
+zx = []
+# d-DNNF compiler + GPU-shaped evaluator (P-PRIM-6).
+dnnf = ["vyre-foundation", "graph"]
+# Persistent homology + simplicial complex primitives (#15, #32).
+topology = ["vyre-foundation", "math", "graph"]
+visual = ["vyre-foundation"]
 
 # Convenience aggregate — enable the entire Tier 2.5 substrate.
 all-lego = [
     "text", "matching", "math", "nn", "hash", "parsing",
+    "geom", "opt", "topology",
     "graph", "bitset", "reduce", "label", "predicate", "fixpoint", "decode",
-    "nfa",
+    "nfa", "effects", "visual",
 ]
 
 # Enable the `inventory::submit!(OpEntry { ... })` registrations so the
@@ -58,11 +87,15 @@ inventory-registry = ["dep:inventory", "vyre-foundation"]
 
 [dependencies]
 vyre-foundation = { workspace = true, optional = true }
+vyre-spec.workspace = true
 inventory = { workspace = true, optional = true }
 
 [dev-dependencies]
-vyre-reference = { path = "../vyre-reference" }
+vyre-reference = { version = "0.4.1", path = "../vyre-reference" }
+vyre-foundation.workspace = true
 proptest.workspace = true
+vyre-driver-cuda = { workspace = true }
+vyre-driver = { workspace = true }
 
 [package.metadata.docs.rs]
 all-features = true
@@ -210,6 +243,16 @@ required-features = ["graph"]
 [[test]]
 name = "adversarial_boolean_packing_four_russians_readiness"
 path = "tests/adversarial_boolean_packing_four_russians_readiness.rs"
+required-features = ["bitset"]
+
+[[test]]
+name = "adversarial_graph_ops"
+path = "tests/adversarial_graph_ops.rs"
+required-features = ["graph"]
+
+[[test]]
+name = "adversarial_bitset_ops"
+path = "tests/adversarial_bitset_ops.rs"
 required-features = ["bitset"]
 
 [[test]]

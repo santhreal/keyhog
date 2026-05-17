@@ -30,7 +30,10 @@ pub enum EnforceVerdict {
     /// `detail` string is a human-readable message that must start with
     /// `"Fix:"`.
     Deny {
+        /// Stable identifier for the gate that produced the veto.
         policy: &'static str,
+        /// Human-readable reason; the prose MUST start with `Fix:` so the
+        /// `check_expect_has_fix.sh` gate accepts it.
         detail: String,
     },
 }

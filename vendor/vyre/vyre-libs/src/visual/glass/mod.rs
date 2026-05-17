@@ -18,7 +18,7 @@
 
 use vyre::ir::Program;
 
-use super::blur::gaussian_blur_2pass;
+use super::blur::{gaussian_blur_2pass, GaussianBlurStages};
 use super::downsample::downsample_2x;
 use super::filter_chain::filter_chain;
 use super::upsample::upsample_2x;
@@ -65,7 +65,12 @@ pub struct GlassParams {
 /// This function returns the blur `Program` — the critical path.
 /// Call `glass_filter_stage` for the tint program.
 #[must_use]
-pub fn glass_blur_stage(input: &str, output: &str, scratch: &str, params: &GlassParams) -> Program {
+pub fn glass_blur_stage(
+    input: &str,
+    output: &str,
+    scratch: &str,
+    params: &GlassParams,
+) -> GaussianBlurStages {
     gaussian_blur_2pass(
         input,
         output,
@@ -105,197 +110,10 @@ pub fn glass_stages(
     output: &str,
     scratch: &str,
     params: &GlassParams,
-) -> (Program, Program) {
+) -> (GaussianBlurStages, Program) {
     (
         glass_blur_stage(input, output, scratch, params),
         glass_filter_stage(output, params),
-    )
-}
-
-/// Fused glass: blur + filter in a SINGLE dispatch.
-///
-/// Instead of:
-///   dispatch(blur) → barrier → dispatch(filter)  (2 GPU submissions)
-///
-/// This produces ONE Program that does:
-///   h_blur(input → scratch) → barrier → v_blur+filter(scratch → output)
-///
-/// The brightness/saturation adjustment is inlined into the vertical
-/// blur's pack step — after accumulating the blurred pixel, instead of
-/// just writing it, we apply the filter chain in-register and write the
-/// final tinted pixel. Zero extra memory traffic.
-///
-/// This eliminates one entire dispatch for glass, which is typically the
-/// most expensive visual effect on the page.
-#[must_use]
-pub fn glass_fused(input: &str, output: &str, scratch: &str, params: &GlassParams) -> Program {
-    use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node};
-
-    let count = params.width.saturating_mul(params.height);
-
-    // Filter chain fixed-point constants.
-    let br_fp = (params.brightness * 65536.0).round() as u32;
-    let sat_fp = (params.saturation * 65536.0).round() as u32;
-    let luma_r: u32 = 13933; // 0.2126 * 65536
-    let luma_g: u32 = 46871; // 0.7152 * 65536
-    let luma_b: u32 = 4732; // 0.0722 * 65536
-
-    // Helper: clamp to [0, 255]
-    let clamp255 = |name: &str| -> Node {
-        Node::assign(
-            name,
-            Expr::select(
-                Expr::gt(Expr::var(name), Expr::u32(255)),
-                Expr::u32(255),
-                Expr::var(name),
-            ),
-        )
-    };
-
-    // Saturate one channel toward luma.
-    let saturate_ch = |ch: &str| -> Vec<Node> {
-        let delta_pos = format!("{ch}_sdp");
-        let delta_neg = format!("{ch}_sdn");
-        vec![
-            Node::let_bind(
-                &delta_pos,
-                Expr::shr(
-                    Expr::mul(
-                        Expr::sub(Expr::var(ch), Expr::var("luma")),
-                        Expr::u32(sat_fp),
-                    ),
-                    Expr::u32(16),
-                ),
-            ),
-            Node::let_bind(
-                &delta_neg,
-                Expr::shr(
-                    Expr::mul(
-                        Expr::sub(Expr::var("luma"), Expr::var(ch)),
-                        Expr::u32(sat_fp),
-                    ),
-                    Expr::u32(16),
-                ),
-            ),
-            Node::assign(
-                ch,
-                Expr::select(
-                    Expr::ge(Expr::var(ch), Expr::var("luma")),
-                    Expr::add(Expr::var("luma"), Expr::var(&delta_pos)),
-                    Expr::select(
-                        Expr::ge(Expr::var("luma"), Expr::var(&delta_neg)),
-                        Expr::sub(Expr::var("luma"), Expr::var(&delta_neg)),
-                        Expr::u32(0),
-                    ),
-                ),
-            ),
-        ]
-    };
-
-    // === Horizontal blur pass (input → scratch) ===
-    let h_pass = super::blur::gaussian_blur_2pass(
-        input,
-        output,
-        scratch,
-        params.width,
-        params.height,
-        params.blur_radius,
-        params.blur_sigma,
-    );
-
-    // Return the standard two-pass blur + fused filter.
-    // The blur already uses scratch as intermediate. We embed filter
-    // into the glass pipeline by using blur → filter_chain sequentially
-    // but within a single Program via the Region wrapper.
-    //
-    // For maximum fusion, we return a single Program that concatenates
-    // the blur program's body with inline filter nodes, separated by
-    // a barrier to ensure blur completes before filter reads.
-
-    let filter_body = vec![
-        Node::let_bind("fidx", Expr::gid_x()),
-        Node::if_then(Expr::lt(Expr::var("fidx"), Expr::u32(count)), {
-            let mut body = vec![
-                Node::let_bind("fpx", Expr::load(output, Expr::var("fidx"))),
-                Node::let_bind("fr", Expr::bitand(Expr::var("fpx"), Expr::u32(0xFF))),
-                Node::let_bind(
-                    "fg",
-                    Expr::bitand(Expr::shr(Expr::var("fpx"), Expr::u32(8)), Expr::u32(0xFF)),
-                ),
-                Node::let_bind(
-                    "fb",
-                    Expr::bitand(Expr::shr(Expr::var("fpx"), Expr::u32(16)), Expr::u32(0xFF)),
-                ),
-                Node::let_bind("fa", Expr::shr(Expr::var("fpx"), Expr::u32(24))),
-                // Brightness.
-                Node::assign(
-                    "fr",
-                    Expr::shr(Expr::mul(Expr::var("fr"), Expr::u32(br_fp)), Expr::u32(16)),
-                ),
-                Node::assign(
-                    "fg",
-                    Expr::shr(Expr::mul(Expr::var("fg"), Expr::u32(br_fp)), Expr::u32(16)),
-                ),
-                Node::assign(
-                    "fb",
-                    Expr::shr(Expr::mul(Expr::var("fb"), Expr::u32(br_fp)), Expr::u32(16)),
-                ),
-                clamp255("fr"),
-                clamp255("fg"),
-                clamp255("fb"),
-                // Luma for saturation.
-                Node::let_bind(
-                    "luma",
-                    Expr::shr(
-                        Expr::add(
-                            Expr::add(
-                                Expr::mul(Expr::var("fr"), Expr::u32(luma_r)),
-                                Expr::mul(Expr::var("fg"), Expr::u32(luma_g)),
-                            ),
-                            Expr::mul(Expr::var("fb"), Expr::u32(luma_b)),
-                        ),
-                        Expr::u32(16),
-                    ),
-                ),
-            ];
-            body.extend(saturate_ch("fr"));
-            body.extend(saturate_ch("fg"));
-            body.extend(saturate_ch("fb"));
-            body.push(clamp255("fr"));
-            body.push(clamp255("fg"));
-            body.push(clamp255("fb"));
-            // Pack + write.
-            body.push(Node::store(
-                output,
-                Expr::var("fidx"),
-                Expr::bitor(
-                    Expr::bitor(Expr::var("fr"), Expr::shl(Expr::var("fg"), Expr::u32(8))),
-                    Expr::bitor(
-                        Expr::shl(Expr::var("fb"), Expr::u32(16)),
-                        Expr::shl(Expr::var("fa"), Expr::u32(24)),
-                    ),
-                ),
-            ));
-            body
-        }),
-    ];
-
-    // Concatenate: blur body → barrier → filter body.
-    // This gives us ONE program, ONE dispatch, ONE queue submission.
-    let mut fused_body = h_pass.entry().to_vec();
-    fused_body.push(Node::Barrier);
-    fused_body.extend(filter_body);
-
-    Program::wrapped(
-        vec![
-            BufferDecl::storage(input, 0, BufferAccess::ReadOnly, DataType::U32).with_count(count),
-            BufferDecl::storage(output, 1, BufferAccess::ReadWrite, DataType::U32)
-                .with_count(count),
-            BufferDecl::storage(scratch, 2, BufferAccess::ReadWrite, DataType::U32)
-                .with_count(count),
-        ],
-        super::PIXEL_WORKGROUP_SIZE,
-        fused_body,
     )
 }
 
@@ -371,8 +189,8 @@ pub fn glass_stages_half_res(
 pub enum GlassHalfResPipeline {
     /// Standard two-stage (blur + filter) when radius is small.
     FullRes {
-        /// Gaussian blur program.
-        blur: Program,
+        /// Gaussian blur dispatches.
+        blur: GaussianBlurStages,
         /// Filter chain program.
         filter: Program,
     },
@@ -381,7 +199,7 @@ pub enum GlassHalfResPipeline {
         /// 2× downsample.
         downsample: Program,
         /// Blur at half resolution.
-        blur: Program,
+        blur: GaussianBlurStages,
         /// 2× upsample.
         upsample: Program,
         /// Filter chain.
@@ -394,8 +212,8 @@ impl GlassHalfResPipeline {
     #[must_use]
     pub fn stage_count(&self) -> usize {
         match self {
-            Self::FullRes { .. } => 2,
-            Self::HalfRes { .. } => 4,
+            Self::FullRes { blur, .. } => blur.stage_count() + 1,
+            Self::HalfRes { blur, .. } => blur.stage_count() + 3,
         }
     }
 
@@ -403,14 +221,24 @@ impl GlassHalfResPipeline {
     #[must_use]
     pub fn programs(&self) -> Vec<&Program> {
         match self {
-            Self::FullRes { blur, filter } => vec![blur, filter],
+            Self::FullRes { blur, filter } => {
+                let mut programs = Vec::with_capacity(3);
+                programs.extend(blur.programs());
+                programs.push(filter);
+                programs
+            }
             Self::HalfRes {
                 downsample,
                 blur,
                 upsample,
                 filter,
             } => {
-                vec![downsample, blur, upsample, filter]
+                let mut programs = Vec::with_capacity(5);
+                programs.push(downsample);
+                programs.extend(blur.programs());
+                programs.push(upsample);
+                programs.push(filter);
+                programs
             }
         }
     }
@@ -419,7 +247,7 @@ impl GlassHalfResPipeline {
 inventory::submit! {
     crate::harness::OpEntry {
         id: OP_ID,
-        build: || glass_blur_stage("scene", "output", "scratch", &GlassParams {
+        build: || crate::region::tag_program(OP_ID, glass_blur_stage("scene", "output", "scratch", &GlassParams {
             width: 4,
             height: 4,
             blur_radius: 1,
@@ -427,21 +255,18 @@ inventory::submit! {
             tint_rgba: 0x0D_FFFFFF,
             brightness: 1.0,
             saturation: 0.75,
-        }),
+        }).horizontal),
         test_inputs: Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
             // 4×4 all-white scene → glass blur → all-white.
             let pixels = vec![0xFFFF_FFFFu32; 16];
             vec![vec![
-                to_bytes(&pixels),
-                vec![0u8; 64],
+                crate::visual::byte_helpers::u32_words_to_le_bytes(&pixels),
                 vec![0u8; 64],
             ]]
         }),
         expected_output: Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
             let pixels = vec![0xFFFF_FFFFu32; 16];
-            vec![vec![to_bytes(&pixels)]]
+            vec![vec![crate::visual::byte_helpers::u32_words_to_le_bytes(&pixels)]]
         }),
     }
 }

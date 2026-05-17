@@ -12,7 +12,7 @@
 //! after each step to guarantee sanitizer nodes never re-enter the
 //! frontier.
 //!
-//! Soundness: [`Exact`](super::Soundness::Exact). The set difference
+//! Soundness: ``Exact``. The set difference
 //! is bit-precise on every word; no over- or under-approximation.
 
 use vyre::ir::Program;

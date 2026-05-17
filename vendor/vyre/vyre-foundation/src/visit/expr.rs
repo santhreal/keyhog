@@ -1,6 +1,7 @@
 use crate::ir_inner::model::expr::{Expr, ExprNode, Ident};
 use crate::ir_inner::model::types::{AtomicOp, BinOp, DataType, UnOp};
 use crate::visit::VisitOrder;
+use smallvec::SmallVec;
 use std::ops::ControlFlow;
 
 /// Visitor over [`Expr`] trees.
@@ -21,93 +22,161 @@ pub trait ExprVisitor {
     type Break;
 
     /// Integer literal (`u32`).
-    fn visit_lit_u32(&mut self, expr: &Expr, value: u32) -> ControlFlow<Self::Break>;
+    fn visit_lit_u32(&mut self, _expr: &Expr, _value: u32) -> ControlFlow<Self::Break> {
+        ControlFlow::Continue(())
+    }
     /// Integer literal (`i32`).
-    fn visit_lit_i32(&mut self, expr: &Expr, value: i32) -> ControlFlow<Self::Break>;
+    fn visit_lit_i32(&mut self, _expr: &Expr, _value: i32) -> ControlFlow<Self::Break> {
+        ControlFlow::Continue(())
+    }
     /// Float literal (`f32`).
-    fn visit_lit_f32(&mut self, expr: &Expr, value: f32) -> ControlFlow<Self::Break>;
+    fn visit_lit_f32(&mut self, _expr: &Expr, _value: f32) -> ControlFlow<Self::Break> {
+        ControlFlow::Continue(())
+    }
     /// Bool literal.
-    fn visit_lit_bool(&mut self, expr: &Expr, value: bool) -> ControlFlow<Self::Break>;
+    fn visit_lit_bool(&mut self, _expr: &Expr, _value: bool) -> ControlFlow<Self::Break> {
+        ControlFlow::Continue(())
+    }
     /// Variable reference.
-    fn visit_var(&mut self, expr: &Expr, name: &Ident) -> ControlFlow<Self::Break>;
+    fn visit_var(&mut self, _expr: &Expr, _name: &Ident) -> ControlFlow<Self::Break> {
+        ControlFlow::Continue(())
+    }
     /// Buffer load (`buffer[index]`).
-    fn visit_load(&mut self, expr: &Expr, buffer: &Ident, index: &Expr)
-        -> ControlFlow<Self::Break>;
+    fn visit_load(
+        &mut self,
+        _expr: &Expr,
+        _buffer: &Ident,
+        _index: &Expr,
+    ) -> ControlFlow<Self::Break> {
+        ControlFlow::Continue(())
+    }
     /// Buffer length.
-    fn visit_buf_len(&mut self, expr: &Expr, buffer: &Ident) -> ControlFlow<Self::Break>;
+    fn visit_buf_len(&mut self, _expr: &Expr, _buffer: &Ident) -> ControlFlow<Self::Break> {
+        ControlFlow::Continue(())
+    }
     /// Invocation id axis (`gid.{x,y,z}`).
-    fn visit_invocation_id(&mut self, expr: &Expr, axis: u32) -> ControlFlow<Self::Break>;
+    fn visit_invocation_id(&mut self, _expr: &Expr, _axis: u32) -> ControlFlow<Self::Break> {
+        ControlFlow::Continue(())
+    }
     /// Workgroup id axis.
-    fn visit_workgroup_id(&mut self, expr: &Expr, axis: u32) -> ControlFlow<Self::Break>;
+    fn visit_workgroup_id(&mut self, _expr: &Expr, _axis: u32) -> ControlFlow<Self::Break> {
+        ControlFlow::Continue(())
+    }
     /// Local id axis within the workgroup.
-    fn visit_local_id(&mut self, expr: &Expr, axis: u32) -> ControlFlow<Self::Break>;
+    fn visit_local_id(&mut self, _expr: &Expr, _axis: u32) -> ControlFlow<Self::Break> {
+        ControlFlow::Continue(())
+    }
     /// Subgroup invocation id (lane index within subgroup).
-    fn visit_subgroup_local_id(&mut self, expr: &Expr) -> ControlFlow<Self::Break>;
+    fn visit_subgroup_local_id(&mut self, _expr: &Expr) -> ControlFlow<Self::Break> {
+        ControlFlow::Continue(())
+    }
     /// Subgroup size.
-    fn visit_subgroup_size(&mut self, expr: &Expr) -> ControlFlow<Self::Break>;
+    fn visit_subgroup_size(&mut self, _expr: &Expr) -> ControlFlow<Self::Break> {
+        ControlFlow::Continue(())
+    }
     /// Binary operation.
     fn visit_bin_op(
         &mut self,
-        expr: &Expr,
-        op: &BinOp,
-        left: &Expr,
-        right: &Expr,
-    ) -> ControlFlow<Self::Break>;
+        _expr: &Expr,
+        _op: &BinOp,
+        _left: &Expr,
+        _right: &Expr,
+    ) -> ControlFlow<Self::Break> {
+        ControlFlow::Continue(())
+    }
     /// Unary operation.
-    fn visit_un_op(&mut self, expr: &Expr, op: &UnOp, operand: &Expr) -> ControlFlow<Self::Break>;
+    fn visit_un_op(
+        &mut self,
+        _expr: &Expr,
+        _op: &UnOp,
+        _operand: &Expr,
+    ) -> ControlFlow<Self::Break> {
+        ControlFlow::Continue(())
+    }
     /// Function call.
-    fn visit_call(&mut self, expr: &Expr, op_id: &str, args: &[Expr]) -> ControlFlow<Self::Break>;
+    fn visit_call(
+        &mut self,
+        _expr: &Expr,
+        _op_id: &str,
+        _args: &[Expr],
+    ) -> ControlFlow<Self::Break> {
+        ControlFlow::Continue(())
+    }
     /// Sequence-valued extension hook.
     ///
     /// Core IR does not currently emit a dedicated `Expr::Sequence`
     /// variant, but downstream visitor implementations must still opt in
-    /// explicitly so a future sequence node cannot compile behind a silent
+    /// explicitly so a sequence node cannot compile behind a silent
     /// default body.
-    fn visit_sequence(&mut self, parts: &[Expr]) -> ControlFlow<Self::Break>;
+    fn visit_sequence(&mut self, _parts: &[Expr]) -> ControlFlow<Self::Break> {
+        ControlFlow::Continue(())
+    }
     /// Fused multiply-add (`a * b + c`).
-    fn visit_fma(&mut self, expr: &Expr, a: &Expr, b: &Expr, c: &Expr) -> ControlFlow<Self::Break>;
+    fn visit_fma(
+        &mut self,
+        _expr: &Expr,
+        _a: &Expr,
+        _b: &Expr,
+        _c: &Expr,
+    ) -> ControlFlow<Self::Break> {
+        ControlFlow::Continue(())
+    }
     /// Ternary `select(cond, true_val, false_val)`.
     fn visit_select(
         &mut self,
-        expr: &Expr,
-        cond: &Expr,
-        true_val: &Expr,
-        false_val: &Expr,
-    ) -> ControlFlow<Self::Break>;
+        _expr: &Expr,
+        _cond: &Expr,
+        _true_val: &Expr,
+        _false_val: &Expr,
+    ) -> ControlFlow<Self::Break> {
+        ControlFlow::Continue(())
+    }
     /// Numeric cast.
     fn visit_cast(
         &mut self,
-        expr: &Expr,
-        target: &DataType,
-        value: &Expr,
-    ) -> ControlFlow<Self::Break>;
+        _expr: &Expr,
+        _target: &DataType,
+        _value: &Expr,
+    ) -> ControlFlow<Self::Break> {
+        ControlFlow::Continue(())
+    }
     /// Atomic operation on a shared buffer.
     fn visit_atomic(
         &mut self,
-        expr: &Expr,
-        op: &AtomicOp,
-        buffer: &Ident,
-        index: &Expr,
-        expected: Option<&Expr>,
-        value: &Expr,
-    ) -> ControlFlow<Self::Break>;
+        _expr: &Expr,
+        _op: &AtomicOp,
+        _buffer: &Ident,
+        _index: &Expr,
+        _expected: Option<&Expr>,
+        _value: &Expr,
+    ) -> ControlFlow<Self::Break> {
+        ControlFlow::Continue(())
+    }
     /// Subgroup ballot.
-    fn visit_subgroup_ballot(&mut self, expr: &Expr, cond: &Expr) -> ControlFlow<Self::Break>;
+    fn visit_subgroup_ballot(&mut self, _expr: &Expr, _cond: &Expr) -> ControlFlow<Self::Break> {
+        ControlFlow::Continue(())
+    }
     /// Subgroup shuffle.
     fn visit_subgroup_shuffle(
         &mut self,
-        expr: &Expr,
-        value: &Expr,
-        lane: &Expr,
-    ) -> ControlFlow<Self::Break>;
+        _expr: &Expr,
+        _value: &Expr,
+        _lane: &Expr,
+    ) -> ControlFlow<Self::Break> {
+        ControlFlow::Continue(())
+    }
     /// Subgroup add.
-    fn visit_subgroup_add(&mut self, expr: &Expr, value: &Expr) -> ControlFlow<Self::Break>;
+    fn visit_subgroup_add(&mut self, _expr: &Expr, _value: &Expr) -> ControlFlow<Self::Break> {
+        ControlFlow::Continue(())
+    }
     /// Downstream opaque expression extension.
     fn visit_opaque_expr(
         &mut self,
-        expr: &Expr,
-        extension: &dyn ExprNode,
-    ) -> ControlFlow<Self::Break>;
+        _expr: &Expr,
+        _extension: &dyn ExprNode,
+    ) -> ControlFlow<Self::Break> {
+        ControlFlow::Continue(())
+    }
 
     /// Recursively walk this expression's children using the requested order.
     fn walk_children_default(&mut self, expr: &Expr, order: VisitOrder) -> ControlFlow<Self::Break>
@@ -127,14 +196,29 @@ pub fn visit_expr<V: ExprVisitor>(visitor: &mut V, expr: &Expr) -> ControlFlow<V
 
 /// Visit an expression tree in pre-order.
 pub fn visit_preorder<V: ExprVisitor>(visitor: &mut V, expr: &Expr) -> ControlFlow<V::Break> {
-    dispatch_expr(visitor, expr)?;
-    walk_expr_children_default(visitor, expr, VisitOrder::Preorder)
+    let mut stack = SmallVec::<[&Expr; 32]>::new();
+    stack.push(expr);
+    while let Some(current) = stack.pop() {
+        dispatch_expr(visitor, current)?;
+        push_expr_children_reverse(&mut stack, current);
+    }
+    ControlFlow::Continue(())
 }
 
 /// Visit an expression tree in post-order.
 pub fn visit_postorder<V: ExprVisitor>(visitor: &mut V, expr: &Expr) -> ControlFlow<V::Break> {
-    walk_expr_children_default(visitor, expr, VisitOrder::Postorder)?;
-    dispatch_expr(visitor, expr)
+    let mut stack = SmallVec::<[ExprVisitTask<'_>; 32]>::new();
+    stack.push(ExprVisitTask::Visit(expr));
+    while let Some(task) = stack.pop() {
+        match task {
+            ExprVisitTask::Visit(current) => {
+                stack.push(ExprVisitTask::Dispatch(current));
+                push_expr_child_tasks_reverse(&mut stack, current);
+            }
+            ExprVisitTask::Dispatch(current) => dispatch_expr(visitor, current)?,
+        }
+    }
+    ControlFlow::Continue(())
 }
 
 /// Walk only the children of `expr`, leaving the current node to the caller.
@@ -216,6 +300,136 @@ fn visit_with_order<V: ExprVisitor>(
     }
 }
 
+fn push_expr_children_reverse<'a>(stack: &mut SmallVec<[&'a Expr; 32]>, expr: &'a Expr) {
+    match expr {
+        Expr::LitU32(_)
+        | Expr::LitI32(_)
+        | Expr::LitF32(_)
+        | Expr::LitBool(_)
+        | Expr::Var(_)
+        | Expr::BufLen { .. }
+        | Expr::InvocationId { .. }
+        | Expr::WorkgroupId { .. }
+        | Expr::LocalId { .. }
+        | Expr::SubgroupLocalId
+        | Expr::SubgroupSize
+        | Expr::Opaque(_) => {}
+        Expr::Load { index, .. }
+        | Expr::UnOp { operand: index, .. }
+        | Expr::Cast { value: index, .. }
+        | Expr::SubgroupBallot { cond: index }
+        | Expr::SubgroupAdd { value: index } => stack.push(index),
+        Expr::BinOp { left, right, .. } => {
+            stack.push(right);
+            stack.push(left);
+        }
+        Expr::Call { args, .. } => {
+            for arg in args.iter().rev() {
+                stack.push(arg);
+            }
+        }
+        Expr::Fma { a, b, c } => {
+            stack.push(c);
+            stack.push(b);
+            stack.push(a);
+        }
+        Expr::Select {
+            cond,
+            true_val,
+            false_val,
+        } => {
+            stack.push(false_val);
+            stack.push(true_val);
+            stack.push(cond);
+        }
+        Expr::Atomic {
+            index,
+            expected,
+            value,
+            ..
+        } => {
+            stack.push(value);
+            if let Some(expected) = expected.as_deref() {
+                stack.push(expected);
+            }
+            stack.push(index);
+        }
+        Expr::SubgroupShuffle { value, lane } => {
+            stack.push(lane);
+            stack.push(value);
+        }
+    }
+}
+
+fn push_expr_child_tasks_reverse<'a>(
+    stack: &mut SmallVec<[ExprVisitTask<'a>; 32]>,
+    expr: &'a Expr,
+) {
+    match expr {
+        Expr::LitU32(_)
+        | Expr::LitI32(_)
+        | Expr::LitF32(_)
+        | Expr::LitBool(_)
+        | Expr::Var(_)
+        | Expr::BufLen { .. }
+        | Expr::InvocationId { .. }
+        | Expr::WorkgroupId { .. }
+        | Expr::LocalId { .. }
+        | Expr::SubgroupLocalId
+        | Expr::SubgroupSize
+        | Expr::Opaque(_) => {}
+        Expr::Load { index, .. }
+        | Expr::UnOp { operand: index, .. }
+        | Expr::Cast { value: index, .. }
+        | Expr::SubgroupBallot { cond: index }
+        | Expr::SubgroupAdd { value: index } => stack.push(ExprVisitTask::Visit(index)),
+        Expr::BinOp { left, right, .. } => {
+            stack.push(ExprVisitTask::Visit(right));
+            stack.push(ExprVisitTask::Visit(left));
+        }
+        Expr::Call { args, .. } => {
+            for arg in args.iter().rev() {
+                stack.push(ExprVisitTask::Visit(arg));
+            }
+        }
+        Expr::Fma { a, b, c } => {
+            stack.push(ExprVisitTask::Visit(c));
+            stack.push(ExprVisitTask::Visit(b));
+            stack.push(ExprVisitTask::Visit(a));
+        }
+        Expr::Select {
+            cond,
+            true_val,
+            false_val,
+        } => {
+            stack.push(ExprVisitTask::Visit(false_val));
+            stack.push(ExprVisitTask::Visit(true_val));
+            stack.push(ExprVisitTask::Visit(cond));
+        }
+        Expr::Atomic {
+            index,
+            expected,
+            value,
+            ..
+        } => {
+            stack.push(ExprVisitTask::Visit(value));
+            if let Some(expected) = expected.as_deref() {
+                stack.push(ExprVisitTask::Visit(expected));
+            }
+            stack.push(ExprVisitTask::Visit(index));
+        }
+        Expr::SubgroupShuffle { value, lane } => {
+            stack.push(ExprVisitTask::Visit(lane));
+            stack.push(ExprVisitTask::Visit(value));
+        }
+    }
+}
+
+enum ExprVisitTask<'a> {
+    Visit(&'a Expr),
+    Dispatch(&'a Expr),
+}
+
 fn dispatch_expr<V: ExprVisitor>(visitor: &mut V, expr: &Expr) -> ControlFlow<V::Break> {
     match expr {
         Expr::LitU32(value) => visitor.visit_lit_u32(expr, *value),
@@ -244,6 +458,7 @@ fn dispatch_expr<V: ExprVisitor>(visitor: &mut V, expr: &Expr) -> ControlFlow<V:
             index,
             expected,
             value,
+            ordering: _,
         } => visitor.visit_atomic(expr, op, buffer, index, expected.as_deref(), value),
         Expr::SubgroupBallot { cond } => visitor.visit_subgroup_ballot(expr, cond),
         Expr::SubgroupShuffle { value, lane } => visitor.visit_subgroup_shuffle(expr, value, lane),

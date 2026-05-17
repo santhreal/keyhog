@@ -186,23 +186,44 @@ pub fn cpu_ref(
     frontier_in: &[u32],
     allow_mask: u32,
 ) -> Vec<u32> {
+    let mut out = Vec::new();
+    cpu_ref_into(
+        node_count,
+        edge_offsets,
+        edge_targets,
+        edge_kind_mask,
+        frontier_in,
+        allow_mask,
+        &mut out,
+    );
+    out
+}
+
+/// CPU reference using caller-owned output storage.
+///
+/// Malformed CSR inputs produce an all-zero frontier instead of
+/// panicking. GPU lowering has bounds checks on target nodes; the
+/// reference must be equally robust for hostile conformance inputs.
+pub fn cpu_ref_into(
+    node_count: u32,
+    edge_offsets: &[u32],
+    edge_targets: &[u32],
+    edge_kind_mask: &[u32],
+    frontier_in: &[u32],
+    allow_mask: u32,
+    out: &mut Vec<u32>,
+) {
     let words = bitset_words(node_count) as usize;
-    let mut out = vec![0u32; words];
+    out.clear();
+    out.resize(words, 0);
     let expected_offsets = node_count as usize + 1;
-    assert_eq!(
-        edge_offsets.len(),
-        expected_offsets,
-        "Fix: csr_forward_traverse cpu_ref requires edge_offsets.len() == node_count + 1"
-    );
+    if edge_offsets.len() != expected_offsets {
+        return;
+    }
     let edge_count = edge_offsets.last().copied().unwrap_or_default() as usize;
-    assert!(
-        edge_targets.len() >= edge_count,
-        "Fix: csr_forward_traverse cpu_ref requires edge_targets to contain every CSR edge"
-    );
-    assert!(
-        edge_kind_mask.len() >= edge_count,
-        "Fix: csr_forward_traverse cpu_ref requires edge_kind_mask to contain every CSR edge"
-    );
+    if edge_targets.len() < edge_count || edge_kind_mask.len() < edge_count {
+        return;
+    }
     for src in 0..node_count {
         let word_idx = (src / 32) as usize;
         let bit_mask = 1u32 << (src % 32);
@@ -227,7 +248,6 @@ pub fn cpu_ref(
             }
         }
     }
-    out
 }
 
 #[cfg(feature = "inventory-registry")]
@@ -301,5 +321,155 @@ mod tests {
             0xFFFF_FFFF,
         );
         assert_eq!(got, vec![0]);
+    }
+
+    #[test]
+    fn malformed_csr_returns_empty_frontier_without_panicking() {
+        let got = cpu_ref(4, &[0, 1], &[1], &[1], &[0b0001], 0xFFFF_FFFF);
+        assert_eq!(got, vec![0]);
+    }
+
+    #[test]
+    fn cpu_ref_into_reuses_output_buffer() {
+        let mut out = Vec::with_capacity(8);
+        let ptr = out.as_ptr();
+        cpu_ref_into(
+            4,
+            &[0, 2, 3, 4, 4],
+            &[1, 2, 3, 3],
+            &[1, 1, 1, 1],
+            &[0b0001],
+            0xFFFF_FFFF,
+            &mut out,
+        );
+        assert_eq!(out.as_ptr(), ptr);
+        assert_eq!(out, vec![0b0110]);
+    }
+
+    // ------------------------------------------------------------------
+    // Adversarial fixtures — hostile boundaries, empty graphs, kind-mask
+    // diversity (M8), malformed CSR, cross-word bitsets.
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn empty_graph_zero_nodes_zero_edges() {
+        let got = cpu_ref(0, &[0], &[], &[], &[], 0xFFFF_FFFF);
+        assert!(got.is_empty(), "0-node graph must produce empty bitset");
+    }
+
+    #[test]
+    fn single_node_no_edges_returns_empty() {
+        // 1 node, 0 edges, frontier {0} → no successors → empty output.
+        let got = cpu_ref(1, &[0, 0], &[0], &[0], &[0b0001], 0xFFFF_FFFF);
+        assert_eq!(got, vec![0]);
+    }
+
+    #[test]
+    fn self_loops_only_preserve_frontier() {
+        // 2 nodes, each has a self-loop. frontier {0,1} → out {0,1}
+        let got = cpu_ref(
+            2,
+            &[0, 1, 2],
+            &[0, 1],
+            &[1, 1],
+            &[0b0011],
+            0xFFFF_FFFF,
+        );
+        assert_eq!(got, vec![0b0011]);
+    }
+
+    #[test]
+    fn disconnected_components_only_reach_within_component() {
+        // Component A: 0→1. Component B: 2→3. frontier {0} → out {1}
+        let got = cpu_ref(
+            4,
+            &[0, 1, 1, 2, 2],
+            &[1, 3],
+            &[1, 1],
+            &[0b0001],
+            0xFFFF_FFFF,
+        );
+        assert_eq!(got, vec![0b0010]);
+    }
+
+    #[test]
+    fn max_node_count_cross_word_boundary() {
+        // 65 nodes (3 words), one edge from node 64 to node 0.
+        let mut offsets = vec![0u32; 66];
+        offsets[64] = 0;
+        offsets[65] = 1;
+        let mut frontier = vec![0u32; 3];
+        frontier[2] = 1; // node 64 is set
+        let got = cpu_ref(65, &offsets, &[0], &[1], &frontier, 0xFFFF_FFFF);
+        assert_eq!(got.len(), 3);
+        assert_eq!(got[0], 1, "node 0 reached from node 64");
+        assert_eq!(got[1], 0);
+        assert_eq!(got[2], 0, "node 64 is not its own successor");
+    }
+
+    #[test]
+    fn edge_mask_filters_all_edges_yields_empty() {
+        // All edges have mask 0b01; allow_mask is 0b10 → no overlap.
+        let got = cpu_ref(
+            4,
+            &[0, 2, 3, 4, 4],
+            &[1, 2, 3, 3],
+            &[0b01, 0b01, 0b01, 0b01],
+            &[0b0001],
+            0b10,
+        );
+        assert_eq!(got, vec![0], "mask mismatch must block every edge");
+    }
+
+    #[test]
+    fn edge_mask_universal_allow_mask_behaves_like_all_ones() {
+        let got = cpu_ref(
+            4,
+            &[0, 2, 3, 4, 4],
+            &[1, 2, 3, 3],
+            &[1, 1, 1, 1],
+            &[0b0001],
+            0xFFFF_FFFF,
+        );
+        assert_eq!(got, vec![0b0110]);
+    }
+
+    #[test]
+    fn edge_kind_diversity_ignoring_mask_would_fail() {
+        // M8 regression: graph with two edge kinds.
+        // 0→1 (DOMINANCE=0x01), 0→2 (ASSIGNMENT=0x02).
+        // Mask only DOMINANCE → only node 1 reached.
+        // A broken implementation that ignores kind_mask would reach BOTH.
+        let got = cpu_ref(
+            4,
+            &[0, 2, 2, 2, 2],
+            &[1, 2],
+            &[0x01, 0x02],
+            &[0b0001],
+            0x01,
+        );
+        assert_eq!(
+            got,
+            vec![0b0010],
+            "only DOMINANCE edge 0→1 must be traversed; broken impl ignoring mask would produce 0b0110"
+        );
+    }
+
+    #[test]
+    fn malformed_csr_non_monotonic_offsets_returns_empty() {
+        // edge_offsets.len() == node_count+1 (5), but the range for node 1
+        // is backwards (edge_end < edge_start), which cpu_ref_into handles
+        // by producing an empty out vector because edge_offsets.len() != expected.
+        // Wait, edge_offsets.len() IS 5 here. Let's make it short instead.
+        let got = cpu_ref(4, &[0, 1], &[1], &[1], &[0b0001], 0xFFFF_FFFF);
+        assert_eq!(got, vec![0], "short edge_offsets must yield empty frontier");
+    }
+
+    #[test]
+    fn frontier_word_oob_is_safely_skipped() {
+        // 40 nodes need 2 words, but frontier only has 1 word.
+        let offsets: Vec<u32> = (0..41).map(|_| 0).collect();
+        let got = cpu_ref(40, &offsets, &[0], &[0], &[0], 0xFFFF_FFFF);
+        assert_eq!(got, vec![0, 0], "short frontier must be handled safely");
     }
 }

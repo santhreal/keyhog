@@ -26,6 +26,7 @@ use crossbeam_channel::{bounded, Receiver, Sender};
 use vyre_driver::{BackendError, CompiledPipeline, DispatchConfig};
 
 use crate::pipeline::WgpuPipeline;
+use crate::thread_pool::{BoundedWorkerJob, BoundedWorkerPool};
 
 /// Async copy stream primitives.
 pub mod async_copy;
@@ -42,17 +43,6 @@ pub struct HostIngressStream {
     in_flight: Option<Receiver<Result<Vec<Vec<u8>>, BackendError>>>,
 }
 
-/// Backwards-compatible alias for the old host-overlap name.
-///
-/// New code should use [`HostIngressStream`] when it specifically needs a
-/// host-memory ingress bridge, or the megakernel queue for device-resident
-/// streaming.
-#[deprecated(
-    since = "0.6.0",
-    note = "renamed to HostIngressStream; canonical VYRE streaming is the device-resident megakernel queue"
-)]
-pub type StreamingDispatch = HostIngressStream;
-
 type ChunkResult = Result<Vec<Vec<u8>>, BackendError>;
 
 struct ChunkJob {
@@ -64,7 +54,7 @@ struct ChunkJob {
 }
 
 struct StreamingPool {
-    sender: Sender<ChunkJob>,
+    pool: BoundedWorkerPool<ChunkJob>,
 }
 
 impl StreamingPool {
@@ -76,47 +66,14 @@ impl StreamingPool {
 
     fn new() -> Result<Self, BackendError> {
         const JOB_QUEUE: usize = 64;
-        let (sender, receiver) = bounded::<ChunkJob>(JOB_QUEUE);
-        let workers = std::thread::available_parallelism()
-            .map(usize::from)
-            .unwrap_or(1)
-            .min(32)
-            .max(1);
-        for index in 0..workers {
-            // Each worker owns its own `Receiver` handle — cloning is
-            // cheap and every worker drains the same MPMC queue
-            // without contending on a mutex.
-            let receiver = receiver.clone();
-            std::thread::Builder::new()
-                .name(format!("vyre-wgpu-streaming-{index}"))
-                .spawn(move || loop {
-                    match receiver.recv() {
-                        Ok(job) => {
-                            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                                (job.runner)(job.bytes, job.config)
-                            }))
-                            .unwrap_or_else(|_| {
-                                Err(BackendError::new(
-                                    "host-ingress worker panicked. Fix: inspect the chunk program and GPU driver logs.",
-                                ))
-                            });
-                            if let Err(error) = job.response.send(result) {
-                                tracing::error!(
-                                    ?error,
-                                    "host-ingress result was lost because the receiver dropped"
-                                );
-                            }
-                        }
-                        Err(_) => return, // All senders dropped; pool is shutting down.
-                    }
-                })
-                .map_err(|e| {
-                    BackendError::new(format!(
-                        "failed to spawn vyre-wgpu streaming worker thread: {e}. Fix: reduce process thread count or increase system nproc limit."
-                    ))
-                })?;
-        }
-        Ok(Self { sender })
+        Ok(Self {
+            pool: BoundedWorkerPool::new(
+                JOB_QUEUE,
+                "vyre-wgpu-streaming",
+                "inspect the chunk program and GPU driver logs.",
+                "reduce process thread count or increase system nproc limit.",
+            )?,
+        })
     }
 
     fn submit(
@@ -134,14 +91,23 @@ impl StreamingPool {
             config,
             response: sender,
         };
-        self.sender
-            .send(job)
-            .map_err(|error| {
-                BackendError::new(format!(
-                    "host-ingress worker pool is closed: {error}. Fix: recreate the process; the global stream pool only closes during shutdown."
-                ))
-            })?;
+        self.pool.submit_blocking(
+            job,
+            "recreate the process; the global stream pool only closes during shutdown.",
+        )?;
         Ok(receiver)
+    }
+}
+
+impl BoundedWorkerJob for ChunkJob {
+    type Output = Vec<Vec<u8>>;
+
+    fn response(&self) -> &Sender<ChunkResult> {
+        &self.response
+    }
+
+    fn run(self) -> ChunkResult {
+        (self.runner)(self.bytes, self.config)
     }
 }
 

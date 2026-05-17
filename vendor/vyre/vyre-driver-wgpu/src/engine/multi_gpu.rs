@@ -1,8 +1,8 @@
-//! Mockable multi-GPU work partitioning and work-stealing decisions.
+//! Multi-GPU adapter probing, backend acquisition, and work partitioning.
 //!
-//! This module intentionally owns host-side scheduling only. It does not probe
-//! adapters or submit GPU work; tests can exercise the partitioner without
-//! requiring hardware.
+//! The pure partitioner stays separately testable, but production callers can
+//! now derive device loads from live wgpu adapters and acquire one backend per
+//! selected adapter instead of stopping at scheduling math.
 //!
 //! ## Two allocation modes
 //!
@@ -19,198 +19,382 @@
 //!    spills to the least-loaded neighbor to keep tail latency
 //!    bounded.
 
-/// One pending unit of GPU work.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct WorkItem {
-    /// Stable work identifier used by callers to map results back.
-    pub id: usize,
-    /// Relative cost estimate. Zero-cost work is rejected because it cannot
-    /// contribute to a meaningful load balance.
-    pub cost: u64,
-}
+mod partition;
+mod stream_shard;
 
-/// Current mocked device load.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct DeviceLoad {
-    /// Device ordinal in the caller's adapter list.
-    pub device_index: usize,
-    /// Cost already queued on the device before this partitioning pass.
-    pub queued_cost: u64,
-}
+pub use partition::{partition_work_stealing, DeviceLoad, Partition, WeightedWorkItem};
+pub use stream_shard::{shard_by_blake3, StreamShardAllocator};
 
-/// Work assigned to one device.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Partition {
-    /// Device ordinal receiving this partition.
-    pub device_index: usize,
-    /// Work item identifiers assigned to the device.
-    pub item_ids: Vec<usize>,
-    /// Total assigned cost including pre-existing queued cost.
-    pub total_cost: u64,
-}
-
-/// Partition work by repeatedly assigning the largest remaining item to the
-/// least-loaded device.
+/// Enumerate live wgpu GPU adapters as zero-load scheduling targets.
 ///
 /// # Errors
 ///
-/// Returns an actionable error when no devices are available, duplicate device
-/// ordinals are supplied, or a work item has zero cost.
-pub fn partition_work_stealing(
-    devices: &[DeviceLoad],
-    items: &[WorkItem],
-) -> Result<Vec<Partition>, String> {
-    validate_inputs(devices, items)?;
-    let mut partitions = devices
-        .iter()
-        .map(|device| Partition {
-            device_index: device.device_index,
-            item_ids: Vec::new(),
-            total_cost: device.queued_cost,
-        })
-        .collect::<Vec<_>>();
-
-    let mut ordered = items.to_vec();
-    ordered.sort_by(|left, right| {
-        right
-            .cost
-            .cmp(&left.cost)
-            .then_with(|| left.id.cmp(&right.id))
-    });
-
-    for item in ordered {
-        let target = partitions
-            .iter_mut()
-            .min_by_key(|partition| (partition.total_cost, partition.device_index))
-            .ok_or_else(|| {
-                "partition target not found. Fix: validate non-empty device list before partitioning."
-                    .to_string()
-            })?;
-        target.item_ids.push(item.id);
-        target.total_cost = target.total_cost.checked_add(item.cost).ok_or_else(|| {
-            "partition cost overflow. Fix: split the batch before multi-GPU scheduling.".to_string()
-        })?;
-    }
-    Ok(partitions)
-}
-
-fn validate_inputs(devices: &[DeviceLoad], items: &[WorkItem]) -> Result<(), String> {
-    if devices.is_empty() {
-        return Err(
-            "no GPU devices supplied. Fix: probe adapters before partitioning.".to_string(),
-        );
-    }
-    let mut seen = rustc_hash::FxHashSet::default();
-    for device in devices {
-        if !seen.insert(device.device_index) {
-            return Err(format!(
-                "duplicate GPU device index {}. Fix: pass each adapter exactly once.",
-                device.device_index
-            ));
-        }
-    }
-    for item in items {
-        if item.cost == 0 {
-            return Err(format!(
-                "work item {} has zero cost. Fix: assign at least one cost unit or remove it.",
-                item.id
-            ));
-        }
-    }
-    Ok(())
-}
-
-/// Deterministic content-addressed device pick.
-///
-/// Computes `blake3(key)` and maps the first 4 bytes (little-endian)
-/// onto `[0, n_gpus)`. Callers use this as the initial landing
-/// device; overflow handling lives in `StreamShardAllocator`.
-///
-/// `n_gpus == 0` returns `0` — callers that call with no devices
-/// have a precondition bug, but we prefer to never panic on this
-/// hot path.
-#[must_use]
-pub fn shard_by_blake3(key: &[u8], n_gpus: u32) -> u32 {
-    if n_gpus == 0 {
-        return 0;
-    }
-    let hash = blake3::hash(key);
-    let bytes: [u8; 4] = hash.as_bytes()[..4]
-        .try_into()
-        .unwrap_or_else(|_| unreachable!("blake3 output is 32 bytes"));
-    u32::from_le_bytes(bytes) % n_gpus
-}
-
-/// Streaming shard allocator. Callers feed `(key, cost)` pairs; the
-/// allocator returns the target device plus a running snapshot of
-/// per-device load.
-///
-/// Initial landing is `shard_by_blake3`. If the target device's
-/// running cost exceeds the least-loaded device's cost by more than
-/// `spill_threshold`, the item spills to the least-loaded device.
-/// Spilling keeps tail latency bounded on adversarial streams where
-/// hash-collision bias concentrates work on one GPU.
-pub struct StreamShardAllocator {
-    per_device_cost: Vec<u64>,
-    n_gpus: u32,
-    spill_threshold: u64,
-}
-
-impl StreamShardAllocator {
-    /// Create an allocator for `n_gpus` devices with an initial
-    /// zero-cost load vector.
-    #[must_use]
-    pub fn new(n_gpus: u32, spill_threshold: u64) -> Self {
-        let gpus = n_gpus.max(1);
-        Self {
-            per_device_cost: vec![0u64; gpus as usize],
-            n_gpus: gpus,
-            spill_threshold,
-        }
-    }
-
-    /// Inject pre-existing load (e.g., already-queued work).
-    pub fn seed_load(&mut self, device: u32, cost: u64) {
-        if let Some(slot) = self.per_device_cost.get_mut(device as usize) {
-            *slot = slot.saturating_add(cost);
-        }
-    }
-
-    /// Assign one item. Returns the chosen device index, or `None`
-    /// if `cost` is zero (zero-cost items are rejected, matching
-    /// the batch partitioner).
-    pub fn assign(&mut self, key: &[u8], cost: u64) -> Option<u32> {
-        if cost == 0 {
-            return None;
-        }
-        let initial = shard_by_blake3(key, self.n_gpus) as usize;
-        let initial_cost = self.per_device_cost[initial];
-
-        // Identify the least-loaded device; ties break on the lower
-        // index so the allocation is deterministic.
-        let (least_idx, least_cost) = self
-            .per_device_cost
+/// Returns an error when wgpu exposes no real GPU adapters. On supported
+/// production hosts that means adapter probing or driver setup is broken.
+pub fn live_gpu_loads() -> Result<Vec<DeviceLoad>, String> {
+    let adapters = crate::runtime::device::enumerate_adapters();
+    let mut loads = Vec::with_capacity(adapters.len());
+    loads.extend(
+        adapters
             .iter()
-            .copied()
             .enumerate()
-            .min_by_key(|&(idx, cost)| (cost, idx))
-            .unwrap_or_else(|| unreachable!("per_device_cost is non-empty"));
+            .filter_map(|(device_index, info)| {
+                crate::capabilities::is_real_gpu(info).then_some(DeviceLoad {
+                    device_index,
+                    queued_cost: 0,
+                })
+            }),
+    );
+    if loads.is_empty() {
+        return Err(format!(
+            "wgpu enumerated {} adapters but none were real GPU execution targets. Fix: inspect driver setup and adapter filtering.",
+            adapters.len()
+        ));
+    }
+    Ok(loads)
+}
 
-        let target =
-            if initial_cost > least_cost && initial_cost - least_cost > self.spill_threshold {
-                least_idx
-            } else {
-                initial
-            };
+/// A live GPU selected for multi-device scheduling.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LiveGpu {
+    /// Adapter index accepted by `runtime::device::init_device_for_adapter`.
+    pub adapter_index: usize,
+    /// Stable adapter information captured during enumeration.
+    pub info: wgpu::AdapterInfo,
+}
 
-        self.per_device_cost[target] = self.per_device_cost[target].saturating_add(cost);
-        Some(target as u32)
+/// One executable multi-GPU work packet.
+pub struct GpuWorkItem {
+    /// Stable work identifier returned with the output.
+    pub id: usize,
+    /// Relative scheduling cost.
+    pub cost: u64,
+    /// Program to compile and dispatch on the selected adapter.
+    pub program: vyre_foundation::ir::Program,
+    /// Input buffers for the dispatch.
+    pub inputs: Vec<Vec<u8>>,
+    /// Dispatch policy for this item.
+    pub config: vyre_driver::DispatchConfig,
+}
+
+/// Output from one dispatched [`GpuWorkItem`].
+#[derive(Debug)]
+pub struct GpuWorkOutput {
+    /// Work identifier.
+    pub id: usize,
+    /// Adapter index that executed the work.
+    pub adapter_index: usize,
+    /// Dispatch outputs.
+    pub outputs: Vec<Vec<u8>>,
+}
+
+/// Borrowed multi-GPU work packet for hot scan paths.
+pub struct BorrowedGpuWorkItem<'a> {
+    /// Stable work identifier returned with the output.
+    pub id: usize,
+    /// Relative scheduling cost.
+    pub cost: u64,
+    /// Program to compile and dispatch on the selected adapter.
+    pub program: &'a vyre_foundation::ir::Program,
+    /// Input buffers for the dispatch.
+    pub inputs: &'a [&'a [u8]],
+    /// Dispatch policy for this item.
+    pub config: &'a vyre_driver::DispatchConfig,
+}
+
+/// Real multi-GPU executor backed by one [`crate::WgpuBackend`] per adapter.
+pub struct MultiGpuExecutor {
+    devices: Vec<ExecutorDevice>,
+}
+
+struct ExecutorDevice {
+    adapter_index: usize,
+    backend: crate::WgpuBackend,
+    queued_cost: u64,
+}
+
+impl MultiGpuExecutor {
+    /// Enumerate real GPU adapters visible to wgpu.
+    #[must_use]
+    pub fn enumerate_live_gpus() -> Vec<LiveGpu> {
+        crate::runtime::device::enumerate_adapters()
+            .into_iter()
+            .enumerate()
+            .filter(|(_, info)| crate::capabilities::is_real_gpu(info))
+            .map(|(adapter_index, info)| LiveGpu {
+                adapter_index,
+                info,
+            })
+            .collect()
     }
 
-    /// Snapshot of per-device cost. Index = device id.
+    /// Build an executor over every real adapter that can create a device.
+    ///
+    /// # Errors
+    ///
+    /// Returns a backend error when no real adapters are visible or when a
+    /// visible adapter fails device creation.
+    pub fn acquire_all() -> Result<Self, vyre_driver::BackendError> {
+        let live = Self::enumerate_live_gpus();
+        if live.is_empty() {
+            return Err(vyre_driver::BackendError::new(
+                "no real GPU adapters found for multi-GPU execution. Fix: expose at least one discrete, integrated, or virtual GPU through wgpu before calling MultiGpuExecutor::acquire_all.",
+            ));
+        }
+        let mut devices = Vec::with_capacity(live.len());
+        for gpu in live {
+            let backend = crate::WgpuBackend::acquire_adapter(gpu.adapter_index)?;
+            devices.push(ExecutorDevice {
+                adapter_index: gpu.adapter_index,
+                backend,
+                queued_cost: 0,
+            });
+        }
+        Ok(Self { devices })
+    }
+
+    /// Build an executor over explicit adapter indices.
+    ///
+    /// # Errors
+    ///
+    /// Returns a backend error if the list is empty, duplicated, or contains an
+    /// adapter that cannot create a real GPU device.
+    pub fn acquire_indices(indices: &[usize]) -> Result<Self, vyre_driver::BackendError> {
+        if indices.is_empty() {
+            return Err(vyre_driver::BackendError::new(
+                "no adapter indices supplied for multi-GPU execution. Fix: pass indices returned by runtime::device::enumerate_adapters().",
+            ));
+        }
+        let mut seen = rustc_hash::FxHashSet::default();
+        let mut devices = Vec::with_capacity(indices.len());
+        for &index in indices {
+            if !seen.insert(index) {
+                return Err(vyre_driver::BackendError::new(format!(
+                    "duplicate adapter index {index} supplied for multi-GPU execution. Fix: pass each adapter once."
+                )));
+            }
+            let backend = crate::WgpuBackend::acquire_adapter(index)?;
+            devices.push(ExecutorDevice {
+                adapter_index: index,
+                backend,
+                queued_cost: 0,
+            });
+        }
+        Ok(Self { devices })
+    }
+
+    /// Number of live device backends owned by this executor.
     #[must_use]
-    pub fn load(&self) -> &[u64] {
-        &self.per_device_cost
+    pub fn len(&self) -> usize {
+        self.devices.len()
+    }
+
+    /// Whether the executor owns no devices.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.devices.is_empty()
+    }
+
+    /// Adapter indices owned by this executor.
+    #[must_use]
+    pub fn adapter_indices(&self) -> Vec<usize> {
+        self.devices
+            .iter()
+            .map(|device| device.adapter_index)
+            .collect()
+    }
+
+    /// Dispatch a batch across the selected adapters using the LPT partitioner.
+    ///
+    /// Dispatches are submitted from one host thread per selected adapter. wgpu
+    /// devices are independent, so separate physical adapters can compile,
+    /// submit, and read back concurrently.
+    pub fn dispatch_batch(
+        &mut self,
+        items: Vec<GpuWorkItem>,
+    ) -> Result<Vec<GpuWorkOutput>, vyre_driver::BackendError> {
+        let mut devices = Vec::with_capacity(self.devices.len());
+        devices.extend(self.devices.iter().map(|device| DeviceLoad {
+            device_index: device.adapter_index,
+            queued_cost: device.queued_cost,
+        }));
+        let mut work = Vec::with_capacity(items.len());
+        work.extend(items.iter().map(|item| WeightedWorkItem {
+            id: item.id,
+            cost: item.cost,
+        }));
+        let partitions =
+            partition_work_stealing(&devices, &work).map_err(vyre_driver::BackendError::new)?;
+        let mut by_id =
+            rustc_hash::FxHashMap::with_capacity_and_hasher(items.len(), Default::default());
+        by_id.extend(items.into_iter().map(|item| (item.id, item)));
+        let mut outputs = Vec::with_capacity(by_id.len());
+        std::thread::scope(|scope| {
+            let mut handles = smallvec::SmallVec::<[_; 8]>::with_capacity(partitions.len());
+            for (partition, device) in partitions.into_iter().zip(self.devices.iter_mut()) {
+                if device.adapter_index != partition.device_index {
+                    return Err(vyre_driver::BackendError::new(format!(
+                        "partition targeted missing adapter {}. Fix: keep partition device indices synchronized with executor devices.",
+                        partition.device_index
+                    )));
+                }
+                device.queued_cost = partition.total_cost;
+                let backend = device.backend.clone();
+                let adapter_index = device.adapter_index;
+                let mut assigned =
+                    smallvec::SmallVec::<[_; 8]>::with_capacity(partition.item_ids.len());
+                for id in partition.item_ids {
+                    let item = by_id.remove(&id).ok_or_else(|| {
+                        vyre_driver::BackendError::new(format!(
+                            "partition referenced unknown work item {id}. Fix: partition only ids from the submitted batch."
+                        ))
+                    })?;
+                    assigned.push(item);
+                }
+                handles.push(scope.spawn(move || {
+                    let mut local = Vec::with_capacity(assigned.len());
+                    for item in assigned {
+                        let outputs = vyre_driver::VyreBackend::dispatch(
+                            &backend,
+                            &item.program,
+                            &item.inputs,
+                            &item.config,
+                        )?;
+                        local.push(GpuWorkOutput {
+                            id: item.id,
+                            adapter_index,
+                            outputs,
+                        });
+                    }
+                    Ok::<_, vyre_driver::BackendError>(local)
+                }));
+            }
+            for handle in handles {
+                let mut local = handle.join().map_err(|_| {
+                    vyre_driver::BackendError::new(
+                        "multi-GPU worker thread panicked. Fix: inspect adapter-specific dispatch failure handling.",
+                    )
+                })??;
+                outputs.append(&mut local);
+            }
+            Ok::<_, vyre_driver::BackendError>(())
+        })?;
+        if !by_id.is_empty() {
+            return Err(vyre_driver::BackendError::new(
+                "multi-GPU partition left unassigned work items. Fix: partition every submitted item exactly once.",
+            ));
+        }
+        outputs.sort_by_key(|output| output.id);
+        Ok(outputs)
+    }
+
+    /// Dispatch a borrowed batch across selected adapters without cloning
+    /// input buffers into owned work packets.
+    ///
+    /// Each adapter receives one backend-local batched submission, so wgpu's
+    /// per-device command buffers stay valid while independent adapters run on
+    /// separate host threads.
+    pub fn dispatch_borrowed_batch(
+        &mut self,
+        items: &[BorrowedGpuWorkItem<'_>],
+    ) -> Result<Vec<Result<GpuWorkOutput, vyre_driver::BackendError>>, vyre_driver::BackendError>
+    {
+        if items.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut devices = Vec::with_capacity(self.devices.len());
+        devices.extend(self.devices.iter().map(|device| DeviceLoad {
+            device_index: device.adapter_index,
+            queued_cost: device.queued_cost,
+        }));
+        let mut work = Vec::with_capacity(items.len());
+        work.extend(items.iter().map(|item| WeightedWorkItem {
+            id: item.id,
+            cost: item.cost,
+        }));
+        let partitions =
+            partition_work_stealing(&devices, &work).map_err(vyre_driver::BackendError::new)?;
+        let mut by_id =
+            rustc_hash::FxHashMap::with_capacity_and_hasher(items.len(), Default::default());
+        by_id.extend(items.iter().enumerate().map(|(slot, item)| (item.id, slot)));
+        let mut results: Vec<Option<Result<GpuWorkOutput, vyre_driver::BackendError>>> =
+            std::iter::repeat_with(|| None).take(items.len()).collect();
+
+        std::thread::scope(|scope| {
+            let mut handles = smallvec::SmallVec::<[_; 8]>::with_capacity(partitions.len());
+            for (partition, device) in partitions.into_iter().zip(self.devices.iter_mut()) {
+                if device.adapter_index != partition.device_index {
+                    return Err(vyre_driver::BackendError::new(format!(
+                        "partition targeted missing adapter {}. Fix: keep partition device indices synchronized with executor devices.",
+                        partition.device_index
+                    )));
+                }
+                device.queued_cost = partition.total_cost;
+                let backend = device.backend.clone();
+                let adapter_index = device.adapter_index;
+                let mut assigned_slots =
+                    smallvec::SmallVec::<[_; 8]>::with_capacity(partition.item_ids.len());
+                for id in partition.item_ids {
+                    let slot = *by_id.get(&id).ok_or_else(|| {
+                        vyre_driver::BackendError::new(format!(
+                            "partition referenced unknown work item {id}. Fix: partition only ids from the submitted batch."
+                        ))
+                    })?;
+                    assigned_slots.push(slot);
+                }
+                handles.push(scope.spawn(move || {
+                    let backend_jobs: smallvec::SmallVec<
+                        [(
+                            &vyre_foundation::ir::Program,
+                            &[&[u8]],
+                            &vyre_driver::DispatchConfig,
+                        ); 8],
+                    > = assigned_slots
+                        .iter()
+                        .map(|&slot| {
+                            let item = &items[slot];
+                            (item.program, item.inputs, item.config)
+                        })
+                        .collect();
+                    let local = backend.dispatch_borrowed_batch(&backend_jobs)?;
+                    Ok::<_, vyre_driver::BackendError>((adapter_index, assigned_slots, local))
+                }));
+            }
+            for handle in handles {
+                let (adapter_index, assigned_slots, local) = handle.join().map_err(|_| {
+                    vyre_driver::BackendError::new(
+                        "multi-GPU borrowed worker thread panicked. Fix: inspect adapter-specific dispatch failure handling.",
+                    )
+                })??;
+                if assigned_slots.len() != local.len() {
+                    return Err(vyre_driver::BackendError::new(format!(
+                        "adapter {adapter_index} returned {} results for {} assigned jobs. Fix: keep backend batch metadata synchronized.",
+                        local.len(),
+                        assigned_slots.len()
+                    )));
+                }
+                for (slot, output_result) in assigned_slots.into_iter().zip(local) {
+                    let id = items[slot].id;
+                    results[slot] = Some(output_result.map(|outputs| GpuWorkOutput {
+                        id,
+                        adapter_index,
+                        outputs,
+                    }));
+                }
+            }
+            Ok::<_, vyre_driver::BackendError>(())
+        })?;
+
+        Ok(results
+            .into_iter()
+            .map(|result| {
+                result.unwrap_or_else(|| {
+                    Err(vyre_driver::BackendError::new(
+                        "multi-GPU borrowed dispatch result slot was not filled. Fix: ensure partitioning assigns every job exactly once.",
+                    ))
+                })
+            })
+            .collect())
     }
 }
 
@@ -219,158 +403,35 @@ mod tests {
     use super::*;
 
     #[test]
-    fn multi_gpu_partition_unit() {
-        let devices = [
-            DeviceLoad {
-                device_index: 0,
-                queued_cost: 0,
-            },
-            DeviceLoad {
-                device_index: 1,
-                queued_cost: 4,
-            },
-        ];
-        let items = [
-            WorkItem { id: 10, cost: 9 },
-            WorkItem { id: 11, cost: 4 },
-            WorkItem { id: 12, cost: 4 },
-            WorkItem { id: 13, cost: 1 },
-        ];
-
-        let partitions = partition_work_stealing(&devices, &items)
-            .expect("Fix: valid mocked devices must partition");
-        let mut assigned = partitions
-            .iter()
-            .flat_map(|partition| partition.item_ids.iter().copied())
-            .collect::<Vec<_>>();
-        assigned.sort_unstable();
-
-        assert_eq!(assigned, vec![10, 11, 12, 13]);
-        let spread = partitions
-            .iter()
-            .map(|partition| partition.total_cost)
-            .max()
-            .zip(
-                partitions
-                    .iter()
-                    .map(|partition| partition.total_cost)
-                    .min(),
-            )
-            .map(|(max, min)| max - min)
-            .expect("Fix: partitions must be non-empty");
+    fn live_gpu_enumeration_uses_wgpu_adapters() {
+        let live = MultiGpuExecutor::enumerate_live_gpus();
         assert!(
-            spread <= 5,
-            "mocked work stealing left an avoidable load spread: {partitions:?}"
+            !live.is_empty(),
+            "Fix: multi-GPU runtime must enumerate at least one real GPU adapter on this fleet host."
         );
-    }
-
-    #[test]
-    fn rejects_duplicate_device_ordinals() {
-        let devices = [
-            DeviceLoad {
-                device_index: 0,
-                queued_cost: 0,
-            },
-            DeviceLoad {
-                device_index: 0,
-                queued_cost: 1,
-            },
-        ];
-
-        let error = partition_work_stealing(&devices, &[WorkItem { id: 1, cost: 1 }])
-            .expect_err("Fix: duplicate mocked devices must be rejected");
-        assert!(error.contains("duplicate GPU device index"));
-    }
-
-    // ── Phase 11 — blake3 sharding + stream allocator ─────────────
-
-    #[test]
-    fn shard_by_blake3_is_deterministic() {
-        let key = b"src/foo.rs";
-        let a = shard_by_blake3(key, 4);
-        let b = shard_by_blake3(key, 4);
-        assert_eq!(a, b);
-        assert!(a < 4);
-    }
-
-    #[test]
-    fn shard_by_blake3_spreads_across_devices() {
-        // Over a diverse input set, the distribution should cover
-        // every device at least once.
-        let keys: Vec<Vec<u8>> = (0..128)
-            .map(|i| format!("src/file_{i}.rs").into_bytes())
-            .collect();
-        let mut hits = [0u32; 4];
-        for k in &keys {
-            hits[shard_by_blake3(k, 4) as usize] += 1;
-        }
-        for h in &hits {
-            assert!(*h > 0, "blake3 sharding must hit every device: {hits:?}");
+        for gpu in live {
+            assert!(
+                crate::capabilities::is_real_gpu(&gpu.info),
+                "Fix: multi-GPU executor must filter CPU/Other adapters before scheduling: {:?}",
+                gpu.info
+            );
         }
     }
 
     #[test]
-    fn shard_by_blake3_n_zero_defaults_to_zero() {
-        assert_eq!(shard_by_blake3(b"anything", 0), 0);
-    }
-
-    #[test]
-    fn stream_allocator_initial_placement_matches_hash() {
-        let mut a = StreamShardAllocator::new(4, /* spill_threshold = */ 100);
-        let key = b"cold/file.bin";
-        let initial = shard_by_blake3(key, 4);
-        let assigned = a.assign(key, 10).expect("non-zero cost accepted");
-        assert_eq!(assigned, initial);
-        assert_eq!(a.load()[initial as usize], 10);
-    }
-
-    #[test]
-    fn stream_allocator_rejects_zero_cost() {
-        let mut a = StreamShardAllocator::new(2, 0);
-        assert!(a.assign(b"x", 0).is_none());
-    }
-
-    #[test]
-    fn stream_allocator_spills_when_imbalance_exceeds_threshold() {
-        // Craft a load imbalance and a key whose blake3 hashes to
-        // the overloaded device — the allocator must spill.
-        let mut a = StreamShardAllocator::new(2, /* spill_threshold = */ 5);
-        // Find a key that hashes to device 0.
-        let mut key = vec![0u8; 4];
-        while shard_by_blake3(&key, 2) != 0 {
-            key[0] = key[0].wrapping_add(1);
-        }
-        // Pre-load device 0 above threshold.
-        a.seed_load(0, 100);
-
-        // Without spilling, this would land on device 0. With the
-        // spill_threshold=5 policy we must land on device 1.
-        let target = a.assign(&key, 1).expect("assigned");
-        assert_eq!(target, 1, "heavy initial must spill to least-loaded");
-    }
-
-    #[test]
-    fn stream_allocator_stays_affine_under_threshold() {
-        // If the imbalance is below the threshold, the allocator
-        // must honor blake3 affinity — cache-warm paths don't spill.
-        let mut a = StreamShardAllocator::new(2, /* spill_threshold = */ 100);
-        let mut key = vec![0u8; 4];
-        while shard_by_blake3(&key, 2) != 0 {
-            key[0] = key[0].wrapping_add(1);
-        }
-        a.seed_load(0, 50); // imbalance 50 < threshold 100
-        let target = a.assign(&key, 1).expect("assigned");
-        assert_eq!(target, 0, "affinity wins when imbalance ≤ spill_threshold");
-    }
-
-    #[test]
-    fn stream_allocator_load_monotone() {
-        let mut a = StreamShardAllocator::new(3, 0);
-        for i in 0..30 {
-            let key = format!("path{i}").into_bytes();
-            a.assign(&key, 1).expect("assigned");
-        }
-        let total: u64 = a.load().iter().sum();
-        assert_eq!(total, 30, "every assignment must bump total load by cost");
+    fn acquire_indices_rejects_duplicate_live_ordinals_before_dispatch() {
+        let live = MultiGpuExecutor::enumerate_live_gpus();
+        let first = live
+            .first()
+            .expect("Fix: duplicate-index test requires the live GPU adapter promised by the fleet")
+            .adapter_index;
+        let error = match MultiGpuExecutor::acquire_indices(&[first, first]) {
+            Ok(_) => panic!("Fix: duplicate adapter indices must be rejected"),
+            Err(error) => error,
+        };
+        assert!(
+            error.to_string().contains("duplicate adapter index"),
+            "Fix: duplicate-index diagnostic must be actionable, got: {error}"
+        );
     }
 }

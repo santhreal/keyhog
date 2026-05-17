@@ -2,6 +2,12 @@
 //!
 //! Frontier = callers. Emits the NodeSet of the argument-expression
 //! predecessors. Uses [`crate::graph::csr_backward_traverse`].
+//!
+//! Slot-precise variants restrict the traversal to a single argument
+//! slot via the per-slot CALL_ARG_N edge subkind the walker stamps.
+//! `arg_of_unspecified` (legacy alias) returns every CALL_ARG
+//! predecessor regardless of position — recall-safe but
+//! precision-loose.
 
 use vyre_foundation::ir::Program;
 
@@ -12,13 +18,35 @@ use crate::predicate::edge_kind;
 /// Canonical op id.
 pub const OP_ID: &str = "vyre-primitives::predicate::arg_of";
 
-/// Build a Program.
+/// Build a Program traversing CALL_ARG edges restricted to argument
+/// slot `slot`. Slot 0 catches the first arg, slot 1 the second, etc.
+/// Beyond `edge_kind::CALL_ARG_MAX_SLOT` (7) the mask falls back to
+/// the generic CALL_ARG bit — recall-safe but precision-loose; widen
+/// the substrate to u64 edge_kind_mask before relying on slot N>7.
+#[must_use]
+pub fn arg_of_slot(
+    shape: ProgramGraphShape,
+    frontier_in: &str,
+    frontier_out: &str,
+    slot: u32,
+) -> Program {
+    csr_backward_traverse(
+        shape,
+        frontier_in,
+        frontier_out,
+        edge_kind::call_arg_slot(slot),
+    )
+}
+
+/// Build a Program traversing every CALL_ARG edge regardless of
+/// argument position. Recall-safe over-approximation; only use when
+/// the slot is genuinely unknown.
 #[must_use]
 pub fn arg_of(shape: ProgramGraphShape, frontier_in: &str, frontier_out: &str) -> Program {
     csr_backward_traverse(shape, frontier_in, frontier_out, edge_kind::CALL_ARG)
 }
 
-/// CPU reference.
+/// CPU reference for the legacy unspecified-slot form.
 #[must_use]
 pub fn cpu_ref(
     node_count: u32,
@@ -34,6 +62,26 @@ pub fn cpu_ref(
         edge_kind_mask,
         frontier_in,
         edge_kind::CALL_ARG,
+    )
+}
+
+/// Slot-precise CPU reference. Mirrors `arg_of_slot`'s GPU semantics.
+#[must_use]
+pub fn cpu_ref_slot(
+    node_count: u32,
+    edge_offsets: &[u32],
+    edge_targets: &[u32],
+    edge_kind_mask: &[u32],
+    frontier_in: &[u32],
+    slot: u32,
+) -> Vec<u32> {
+    crate::graph::csr_backward_traverse::cpu_ref(
+        node_count,
+        edge_offsets,
+        edge_targets,
+        edge_kind_mask,
+        frontier_in,
+        edge_kind::call_arg_slot(slot),
     )
 }
 

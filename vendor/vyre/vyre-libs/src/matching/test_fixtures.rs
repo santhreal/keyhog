@@ -3,7 +3,7 @@
 //!
 //! Why a public module instead of a `tests/` helper file: integration
 //! tests live in separate target binaries and can't share a private
-//! `tests/common.rs` without `#[path = ...]` hacks. Exposing the
+//! `tests/common.rs` without path attributes. Exposing the
 //! fixtures behind a feature flag keeps the public API surface
 //! explicit, lets downstream consumers (keyhog tests, conformance
 //! harness, benchmark suites) reuse the *exact* corpus our regression

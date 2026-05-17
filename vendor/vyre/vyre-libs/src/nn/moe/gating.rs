@@ -2,8 +2,16 @@
 //!
 //! Category-A composition over `nn::softmax` and `nn::top_k`.
 
-use crate::region::wrap_anonymous;
-use vyre::ir::{BinOp, BufferAccess, BufferDecl, DataType, Expr, Node, Program};
+use crate::region::{wrap_anonymous, wrap_child};
+use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program, UnOp};
+use vyre_foundation::ir::model::expr::GeneratorRef;
+use vyre_primitives::nn::quest_paging_passes::{quest_select_top_k_body, QUEST_SELECT_TOP_K_OP_ID};
+
+const OP_ID: &str = "vyre-libs::nn::moe_gate";
+const SCORES_SCRATCH: &str = "__moe_gate_scores_scratch";
+const STATS_SCRATCH: &str = "__moe_gate_stats";
+const SOFTMAX_STATS_OP_ID: &str = "vyre-libs::nn::moe_gate::softmax_stats";
+const WEIGHT_WRITE_OP_ID: &str = "vyre-libs::nn::moe_gate::weight_write";
 
 /// Build a Program that computes MoE gating.
 /// `input_scores`: `num_experts`, `output_indices`: `k`, `output_weights`: `k`.
@@ -15,70 +23,28 @@ pub fn moe_gate(
     num_experts: u32,
     k: u32,
 ) -> Program {
-    // 1. Softmax scores -> temp_weights
-    // 2. Top-K(temp_weights) -> output_indices
-    // 3. Gather(temp_weights, output_indices) -> output_weights
-
-    // Lane-0 serial top-k over `input_scores` with uniform (1/k)
-    // weights. The previous body chained softmax + bubble-down via
-    // Expr::call into other registered ops, but Expr::call resolves
-    // through a DialectLookup the reference interpreter isn't
-    // guaranteed to have installed. Inlining the top-k here removes
-    // the order-of-init dependency; the downstream exp/sum/divide
-    // softmax is a separate Cat-A op the caller chains. Fold the
-    // [0..k] seed into the same outer loop via a conditional
-    // initialization, keeping the op under the 4-loop composition
-    // budget enforced by vyre-conform-enforce.
+    // Lane-0 deterministic gate: stable softmax denominator followed
+    // by duplicate-suppressed top-k selection.
+    let parent = GeneratorRef {
+        name: OP_ID.to_string(),
+    };
     let body = vec![Node::if_then(
         Expr::eq(Expr::InvocationId { axis: 0 }, Expr::u32(0)),
         vec![
-            // Top-k via bubble-down. For `i` in `0..num_experts`:
-            //   if i < k, seed output_indices[i] = i
-            //   else try to insert `i` into the top-k slot whose
-            //        current score is smaller.
-            Node::loop_for(
-                "i",
-                Expr::u32(0),
-                Expr::u32(num_experts),
-                vec![Node::if_then_else(
-                    Expr::lt(Expr::var("i"), Expr::u32(k)),
-                    vec![Node::store(output_indices, Expr::var("i"), Expr::var("i"))],
-                    vec![Node::loop_for(
-                        "j",
-                        Expr::u32(0),
-                        Expr::u32(k),
-                        vec![
-                            Node::let_bind("cand_idx", Expr::load(output_indices, Expr::var("j"))),
-                            Node::if_then(
-                                Expr::gt(
-                                    Expr::load(input_scores, Expr::var("i")),
-                                    Expr::load(input_scores, Expr::var("cand_idx")),
-                                ),
-                                vec![Node::store(output_indices, Expr::var("j"), Expr::var("i"))],
-                            ),
-                        ],
-                    )],
-                )],
+            wrap_child(
+                SOFTMAX_STATS_OP_ID,
+                parent.clone(),
+                softmax_stats_body(input_scores, num_experts),
             ),
-            // Uniform weights (1/k). A downstream nn::softmax op
-            // converts these into score-weighted gating.
-            Node::let_bind(
-                "inv_k",
-                Expr::BinOp {
-                    op: BinOp::Div,
-                    left: Box::new(Expr::f32(1.0)),
-                    right: Box::new(Expr::f32(k as f32)),
-                },
+            wrap_child(
+                QUEST_SELECT_TOP_K_OP_ID,
+                parent.clone(),
+                quest_select_top_k_body(SCORES_SCRATCH, output_indices, num_experts, k, f32::MIN),
             ),
-            Node::loop_for(
-                "j",
-                Expr::u32(0),
-                Expr::u32(k),
-                vec![Node::store(
-                    output_weights,
-                    Expr::var("j"),
-                    Expr::var("inv_k"),
-                )],
+            wrap_child(
+                WEIGHT_WRITE_OP_ID,
+                parent,
+                weight_write_body(input_scores, output_indices, output_weights, k),
             ),
         ],
     )];
@@ -94,19 +60,98 @@ pub fn moe_gate(
             BufferDecl::storage(output_indices, 1, BufferAccess::ReadWrite, DataType::U32)
                 .with_count(k),
             BufferDecl::output(output_weights, 2, DataType::F32).with_count(k),
+            BufferDecl::workgroup(SCORES_SCRATCH, num_experts, DataType::F32),
+            BufferDecl::workgroup(STATS_SCRATCH, 2, DataType::F32),
         ],
         [1, 1, 1],
-        vec![wrap_anonymous("vyre-libs::nn::moe_gate", body)],
+        vec![wrap_anonymous(OP_ID, body)],
     )
+}
+
+fn softmax_stats_body(input_scores: &str, num_experts: u32) -> Vec<Node> {
+    vec![
+        Node::let_bind("max_score", Expr::f32(f32::MIN)),
+        Node::loop_for(
+            "i",
+            Expr::u32(0),
+            Expr::u32(num_experts),
+            vec![
+                Node::let_bind("score", Expr::load(input_scores, Expr::var("i"))),
+                Node::store(SCORES_SCRATCH, Expr::var("i"), Expr::var("score")),
+                Node::assign(
+                    "max_score",
+                    Expr::max(Expr::var("max_score"), Expr::var("score")),
+                ),
+            ],
+        ),
+        Node::let_bind("sum_exp", Expr::f32(0.0)),
+        Node::loop_for(
+            "i",
+            Expr::u32(0),
+            Expr::u32(num_experts),
+            vec![Node::assign(
+                "sum_exp",
+                Expr::add(
+                    Expr::var("sum_exp"),
+                    Expr::UnOp {
+                        op: UnOp::Exp,
+                        operand: Box::new(Expr::sub(
+                            Expr::load(input_scores, Expr::var("i")),
+                            Expr::var("max_score"),
+                        )),
+                    },
+                ),
+            )],
+        ),
+        Node::store(STATS_SCRATCH, Expr::u32(0), Expr::var("max_score")),
+        Node::store(STATS_SCRATCH, Expr::u32(1), Expr::var("sum_exp")),
+    ]
+}
+
+fn weight_write_body(
+    input_scores: &str,
+    output_indices: &str,
+    output_weights: &str,
+    k: u32,
+) -> Vec<Node> {
+    vec![
+        Node::let_bind("max_score", Expr::load(STATS_SCRATCH, Expr::u32(0))),
+        Node::let_bind("sum_exp", Expr::load(STATS_SCRATCH, Expr::u32(1))),
+        Node::loop_for(
+            "j",
+            Expr::u32(0),
+            Expr::u32(k),
+            vec![
+                Node::let_bind("best_idx", Expr::load(output_indices, Expr::var("j"))),
+                Node::let_bind(
+                    "best_score",
+                    Expr::load(input_scores, Expr::var("best_idx")),
+                ),
+                Node::store(
+                    output_weights,
+                    Expr::var("j"),
+                    Expr::div(
+                        Expr::UnOp {
+                            op: UnOp::Exp,
+                            operand: Box::new(Expr::sub(
+                                Expr::var("best_score"),
+                                Expr::var("max_score"),
+                            )),
+                        },
+                        Expr::var("sum_exp"),
+                    ),
+                ),
+            ],
+        ),
+    ]
 }
 
 inventory::submit! {
     crate::harness::OpEntry {
-        id: "vyre-libs::nn::moe_gate",
+        id: OP_ID,
         build: || moe_gate("scores", "indices", "weights", 8, 2),
         // Buffer order: scores (read-only f32 × 8), indices
-        // (read-write u32 × 2), weights (output f32 × 2). The body
-        // stores uniform 1/k weights into `output_weights` directly.
+        // (read-write u32 × 2), weights (output f32 × 2).
         test_inputs: Some(|| {
             let scores: [f32; 8] = [0.5, 1.0, 0.1, 2.0, 0.3, 3.0, 0.2, 0.4];
             let scores_bytes = scores
@@ -116,32 +161,194 @@ inventory::submit! {
             vec![vec![scores_bytes, vec![0u8; 4 * 2], vec![0u8; 4 * 2]]]
         }),
         expected_output: Some(|| {
-            // Two ReadWrite outputs land in the witness stream in
-            // declaration order: indices (binding 1) and weights
-            // (binding 2). The serial top-k bubble-down over input
-            // scores [0.5, 1.0, 0.1, 2.0, 0.3, 3.0, 0.2, 0.4] with
-            // k=2 seeds slots 0/1 to {0, 1}, then swaps to {3, 1}
-            // when i=3 (2.0) beats slot-0's 0.5, and finally to
-            // {5, 3} when i=5 (3.0) displaces the previous top and
-            // the runner-up. Weights are uniform 1/k = 0.5.
-            // Bubble-down greedily overwrites each slot with `i`
-            // whenever score[i] > score[slot]. With scores
-            // [0.5, 1.0, 0.1, 2.0, 0.3, 3.0, 0.2, 0.4] both slots
-            // stop at index 5 (score 3.0, the global max) because
-            // the inner loop never rotates the beaten candidate
-            // into the next slot. This matches the current
-            // algorithmic shape; a real tournament top-k would
-            // produce [5, 3].
-            let indices: [u32; 2] = [5, 5];
+            let scores: [f32; 8] = [0.5, 1.0, 0.1, 2.0, 0.3, 3.0, 0.2, 0.4];
+            let max_score = scores.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+            let sum_exp = scores
+                .iter()
+                .map(|score| libm::expf(*score - max_score))
+                .sum::<f32>();
+            let indices: [u32; 2] = [5, 3];
             let idx_bytes = indices
                 .iter()
                 .flat_map(|v| v.to_le_bytes())
                 .collect::<Vec<u8>>();
-            let half: f32 = 0.5;
+            let expected_weights = [
+                libm::expf(scores[5] - max_score) / sum_exp,
+                libm::expf(scores[3] - max_score) / sum_exp,
+            ];
             let mut weights = Vec::with_capacity(8);
-            weights.extend_from_slice(&half.to_bits().to_le_bytes());
-            weights.extend_from_slice(&half.to_bits().to_le_bytes());
+            for weight in expected_weights {
+                weights.extend_from_slice(&weight.to_bits().to_le_bytes());
+            }
             vec![vec![idx_bytes, weights]]
         }),
+    }
+}
+
+fn f32_fixture(values: &[f32]) -> Vec<u8> {
+    values
+        .iter()
+        .flat_map(|value| value.to_bits().to_le_bytes())
+        .collect()
+}
+
+fn u32_fixture(values: &[u32]) -> Vec<u8> {
+    values
+        .iter()
+        .flat_map(|value| value.to_le_bytes())
+        .collect()
+}
+
+fn softmax_stats_program() -> Program {
+    Program::wrapped(
+        vec![
+            BufferDecl::storage("scores", 0, BufferAccess::ReadOnly, DataType::F32).with_count(8),
+            BufferDecl::storage(SCORES_SCRATCH, 1, BufferAccess::ReadWrite, DataType::F32)
+                .with_count(8),
+            BufferDecl::storage(STATS_SCRATCH, 2, BufferAccess::ReadWrite, DataType::F32)
+                .with_count(2),
+        ],
+        [1, 1, 1],
+        vec![wrap_anonymous(
+            SOFTMAX_STATS_OP_ID,
+            vec![Node::if_then(
+                Expr::eq(Expr::InvocationId { axis: 0 }, Expr::u32(0)),
+                softmax_stats_body("scores", 8),
+            )],
+        )],
+    )
+}
+
+fn weight_write_program() -> Program {
+    Program::wrapped(
+        vec![
+            BufferDecl::storage("scores", 0, BufferAccess::ReadOnly, DataType::F32).with_count(8),
+            BufferDecl::storage("indices", 1, BufferAccess::ReadOnly, DataType::U32).with_count(2),
+            BufferDecl::storage(STATS_SCRATCH, 2, BufferAccess::ReadOnly, DataType::F32)
+                .with_count(2),
+            BufferDecl::output("weights", 3, DataType::F32).with_count(2),
+        ],
+        [1, 1, 1],
+        vec![wrap_anonymous(
+            WEIGHT_WRITE_OP_ID,
+            vec![Node::if_then(
+                Expr::eq(Expr::InvocationId { axis: 0 }, Expr::u32(0)),
+                weight_write_body("scores", "indices", "weights", 2),
+            )],
+        )],
+    )
+}
+
+inventory::submit! {
+    crate::harness::OpEntry {
+        id: SOFTMAX_STATS_OP_ID,
+        build: softmax_stats_program,
+        test_inputs: Some(|| {
+            let scores = [0.5_f32, 1.0, 0.1, 2.0, 0.3, 3.0, 0.2, 0.4];
+            vec![vec![
+                f32_fixture(&scores),
+                f32_fixture(&[0.0; 8]),
+                f32_fixture(&[0.0; 2]),
+            ]]
+        }),
+        expected_output: Some(|| {
+            let scores = [0.5_f32, 1.0, 0.1, 2.0, 0.3, 3.0, 0.2, 0.4];
+            let max_score = scores.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+            let sum_exp = scores
+                .iter()
+                .map(|score| libm::expf(*score - max_score))
+                .sum::<f32>();
+            vec![vec![f32_fixture(&scores), f32_fixture(&[max_score, sum_exp])]]
+        }),
+    }
+}
+
+inventory::submit! {
+    crate::harness::OpEntry {
+        id: WEIGHT_WRITE_OP_ID,
+        build: weight_write_program,
+        test_inputs: Some(|| {
+            let scores = [0.5_f32, 1.0, 0.1, 2.0, 0.3, 3.0, 0.2, 0.4];
+            let max_score = scores.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+            let sum_exp = scores
+                .iter()
+                .map(|score| libm::expf(*score - max_score))
+                .sum::<f32>();
+            vec![vec![
+                f32_fixture(&scores),
+                u32_fixture(&[5, 3]),
+                f32_fixture(&[max_score, sum_exp]),
+                f32_fixture(&[0.0; 2]),
+            ]]
+        }),
+        expected_output: Some(|| {
+            let scores = [0.5_f32, 1.0, 0.1, 2.0, 0.3, 3.0, 0.2, 0.4];
+            let max_score = scores.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+            let sum_exp = scores
+                .iter()
+                .map(|score| libm::expf(*score - max_score))
+                .sum::<f32>();
+            vec![vec![f32_fixture(&[
+                libm::expf(scores[5] - max_score) / sum_exp,
+                libm::expf(scores[3] - max_score) / sum_exp,
+            ])]]
+        }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use vyre_reference::value::Value;
+
+    fn f32_bytes(values: &[f32]) -> Vec<u8> {
+        values
+            .iter()
+            .flat_map(|value| value.to_bits().to_le_bytes())
+            .collect()
+    }
+
+    fn u32_words(bytes: &[u8]) -> Vec<u32> {
+        bytes
+            .chunks_exact(4)
+            .map(|chunk| u32::from_le_bytes(chunk.try_into().unwrap()))
+            .collect()
+    }
+
+    fn f32_words(bytes: &[u8]) -> Vec<f32> {
+        bytes
+            .chunks_exact(4)
+            .map(|chunk| f32::from_bits(u32::from_le_bytes(chunk.try_into().unwrap())))
+            .collect()
+    }
+
+    #[test]
+    fn moe_gate_outputs_unique_top_k_softmax_weights() {
+        let scores: [f32; 8] = [0.5, 1.0, 0.1, 2.0, 0.3, 3.0, 0.2, 0.4];
+        let program = moe_gate("scores", "indices", "weights", 8, 2);
+        let outputs = vyre_reference::reference_eval(
+            &program,
+            &[
+                Value::from(f32_bytes(&scores)),
+                Value::from(vec![0u8; 8]),
+                Value::from(vec![0u8; 8]),
+            ],
+        )
+        .expect("Fix: moe_gate must execute in the reference interpreter.");
+
+        assert_eq!(u32_words(&outputs[0].to_bytes()), vec![5, 3]);
+        let weights = f32_words(&outputs[1].to_bytes());
+        let max_score = scores.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+        let sum_exp = scores
+            .iter()
+            .map(|score| libm::expf(*score - max_score))
+            .sum::<f32>();
+        let expected = [
+            libm::expf(scores[5] - max_score) / sum_exp,
+            libm::expf(scores[3] - max_score) / sum_exp,
+        ];
+        for (actual, expected) in weights.iter().zip(expected.iter()) {
+            assert!((actual - expected).abs() <= 1.0e-6);
+        }
     }
 }

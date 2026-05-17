@@ -12,6 +12,7 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 vyre-foundation = { path = ".." }
+toml = "0.8"
 
 [[bin]]
 name = "decoder"
@@ -23,6 +24,13 @@ bench = false
 [[bin]]
 name = "program_wire"
 path = "fuzz_targets/program_wire.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "registry_toml"
+path = "fuzz_targets/registry_toml.rs"
 test = false
 doc = false
 bench = false

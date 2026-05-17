@@ -9,6 +9,8 @@
 pub mod lex;
 /// Python structural extractors.
 pub mod parse;
+/// Content-keyed pipeline Program cache.
+pub mod source_cache;
 
 #[cfg(test)]
 mod tests;

@@ -4,7 +4,7 @@
 //! traversals, dominator walks.  `visitor_walk` gives vyre a first-class
 //! primitive for that coordination.  It takes a root node and a CSR child
 //! table, then emits a post-order sequence using an explicit stack that lives
-//! in workgroup-local SRAM.  The WGSL kernel uses the same stack bound and
+//! in workgroup-local SRAM.  The target-text kernel uses the same stack bound and
 //! cycle-detection logic, so conform can prove the visit order is identical on
 //! CPU and GPU.
 
@@ -12,10 +12,10 @@ use crate::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 use thiserror::Error;
 use vyre_spec::AlgebraicLaw;
 
-/// Portable WGSL source for the visitor walk primitive.
+/// Registered target-text source for the visitor walk primitive.
 #[must_use]
-pub const fn source() -> &'static str {
-    include_str!("wgsl/visitor_walk.wgsl")
+pub fn source() -> Option<&'static str> {
+    crate::transform::compiler::shader_provider::source("visitor_walk")
 }
 
 /// Sentinel for "no more visits queued" in the visit stack.
@@ -141,8 +141,9 @@ pub fn postorder(
     }
     validate_tree(node_count, child_offsets, children)?;
     let mut seen = vec![false; node_count];
-    let mut sequence = Vec::new();
-    let mut stack = vec![(root, false)];
+    let mut sequence = Vec::with_capacity(node_count);
+    let mut stack = Vec::with_capacity(max_stack.min(node_count).saturating_add(1));
+    stack.push((root, false));
     while let Some((node, expanded)) = stack.pop() {
         let node_index = index(node)?;
         if expanded {
@@ -256,7 +257,7 @@ pub enum VisitorWalkError {
 #[derive(Debug, Default, Clone, Copy)]
 pub struct VisitorWalkOp;
 
-/// Workgroup size used by the reference WGSL lowering.
+/// Workgroup size used by the reference target-text lowering.
 pub const WORKGROUP_SIZE: [u32; 3] = [64, 1, 1];
 
 #[cfg(test)]
@@ -273,8 +274,11 @@ mod ir_program_tests {
     #[test]
     fn visit_step_program_wire_round_trips() {
         let prog = visit_step_program("co", "c", "stack", "po", "pc");
-        let bytes = prog.to_wire().expect("serialize");
-        let decoded = Program::from_wire(&bytes).expect("decode");
+        let bytes = prog
+            .to_wire()
+            .expect("Fix: serialize; restore this invariant before continuing.");
+        let decoded = Program::from_wire(&bytes)
+            .expect("Fix: decode; restore this invariant before continuing.");
         assert_eq!(decoded.buffers().len(), 5);
     }
 

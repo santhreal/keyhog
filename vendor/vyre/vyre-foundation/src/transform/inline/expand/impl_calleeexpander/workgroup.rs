@@ -1,6 +1,6 @@
 use super::super::CalleeExpander;
 use crate::error::Result;
-use crate::ir::{Expr, Node};
+use crate::ir::{Expr, Ident, Node};
 
 impl CalleeExpander<'_> {
     #[inline]
@@ -35,7 +35,7 @@ impl CalleeExpander<'_> {
             } => self.loop_for(var, from, to, body),
             Node::Return => Ok(vec![Node::Return]),
             Node::Block(nodes) => Ok(vec![Node::Block(self.nodes(nodes)?)]),
-            Node::Barrier => Ok(vec![Node::Barrier]),
+            Node::Barrier { ordering } => Ok(vec![Node::barrier_with_ordering(*ordering)]),
             Node::IndirectDispatch {
                 count_buffer,
                 count_offset,
@@ -71,9 +71,18 @@ impl CalleeExpander<'_> {
             )]),
             Node::AsyncWait { tag } => Ok(vec![Node::async_wait(tag)]),
             Node::Trap { .. } | Node::Resume { .. } => Ok(vec![node.clone()]),
-            Node::Region { .. } => Err(crate::error::Error::lowering(
-                "cannot inline workgroup ops with opaque generic regions".to_string(),
-            )),
+            Node::Region {
+                generator,
+                source_region,
+                body,
+            } => {
+                let body_nodes = std::sync::Arc::try_unwrap(body.clone()).unwrap_or_else(|arc| (*arc).clone());
+                Ok(vec![Node::Region {
+                    generator: generator.clone(),
+                    source_region: source_region.clone(),
+                    body: std::sync::Arc::new(self.nodes(&body_nodes)?),
+                }])
+            }
             Node::Opaque(extension) => Err(crate::error::Error::lowering(format!(
                 "inliner cannot expand opaque statement extension `{}`/`{}`. Fix: lower the extension to core Node variants before inlining.",
                 extension.extension_kind(),
@@ -83,7 +92,7 @@ impl CalleeExpander<'_> {
     }
 
     #[inline]
-    pub(crate) fn bind(&mut self, name: &str, value: &Expr) -> Result<Vec<Node>> {
+    pub(crate) fn bind(&mut self, name: &Ident, value: &Expr) -> Result<Vec<Node>> {
         let renamed = self.rename_decl(name);
         let (mut prefix, value) = self.expr(value)?;
         prefix.push(Node::let_bind(&renamed, value));
@@ -91,18 +100,23 @@ impl CalleeExpander<'_> {
     }
 
     #[inline]
-    pub(crate) fn assign(&mut self, name: &str, value: &Expr) -> Result<Vec<Node>> {
+    pub(crate) fn assign(&mut self, name: &Ident, value: &Expr) -> Result<Vec<Node>> {
         let (mut prefix, value) = self.expr(value)?;
         prefix.push(Node::assign(self.rename_use(name), value));
         Ok(prefix)
     }
 
     #[inline]
-    pub(crate) fn store(&mut self, buffer: &str, index: &Expr, value: &Expr) -> Result<Vec<Node>> {
+    pub(crate) fn store(
+        &mut self,
+        buffer: &Ident,
+        index: &Expr,
+        value: &Expr,
+    ) -> Result<Vec<Node>> {
         let (mut prefix, index) = self.expr(index)?;
         let (value_prefix, value) = self.expr(value)?;
         prefix.extend(value_prefix);
-        if self.output_name == buffer {
+        if self.output_name == *buffer {
             self.saw_output = true;
             prefix.push(Node::assign(&self.result_name, value));
         } else {
@@ -130,7 +144,7 @@ impl CalleeExpander<'_> {
     #[inline]
     pub(crate) fn loop_for(
         &mut self,
-        var: &str,
+        var: &Ident,
         from: &Expr,
         to: &Expr,
         body: &[Node],

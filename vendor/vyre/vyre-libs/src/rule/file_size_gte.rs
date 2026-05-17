@@ -24,4 +24,4 @@ impl FileSizeGte {
 }
 
 /// Stable operation id for inclusive lower file size checks.
-pub const OP_ID: &str = "rule.file_size_gte";
+pub const OP_ID: &str = "vyre-libs::rule::file_size_gte";

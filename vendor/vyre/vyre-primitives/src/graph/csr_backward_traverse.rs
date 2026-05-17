@@ -187,31 +187,25 @@ pub fn cpu_ref(
     let words = crate::graph::csr_forward_traverse::bitset_words(node_count) as usize;
     let mut out = vec![0u32; words];
     for src in 0..node_count {
-        // AUDIT_2026-04-24 F-CBT-01/02: same silent-masking pattern
-        // as csr_forward_traverse::cpu_ref. Replace with explicit
-        // expect so malformed CSR fails loudly.
-        let edge_start = edge_offsets.get(src as usize).copied().expect(
-            "csr_backward_traverse cpu_ref: edge_offsets[src] missing — \
-                     malformed CSR; edge_offsets must have node_count + 1 entries",
-        ) as usize;
-        let edge_end = edge_offsets.get(src as usize + 1).copied().expect(
-            "csr_backward_traverse cpu_ref: edge_offsets[src + 1] missing — \
-                     malformed CSR",
-        ) as usize;
+        let Some(edge_start) = edge_offsets.get(src as usize).copied() else {
+            continue;
+        };
+        let Some(edge_end) = edge_offsets.get(src as usize + 1).copied() else {
+            continue;
+        };
+        let edge_start = edge_start as usize;
+        let edge_end = edge_end as usize;
         let mut hit = false;
         for e in edge_start..edge_end {
-            let kind = edge_kind_mask.get(e).copied().expect(
-                "csr_backward_traverse cpu_ref: edge_kind_mask[e] missing — \
-                         malformed CSR; edge_kind_mask and edge_targets must have \
-                         the same length",
-            );
+            let Some(kind) = edge_kind_mask.get(e).copied() else {
+                break;
+            };
             if (kind & allow_mask) == 0 {
                 continue;
             }
-            let dst = edge_targets.get(e).copied().expect(
-                "csr_backward_traverse cpu_ref: edge_targets[e] missing — \
-                         malformed CSR",
-            );
+            let Some(dst) = edge_targets.get(e).copied() else {
+                break;
+            };
             let dst_word = (dst / 32) as usize;
             let dst_bit = 1u32 << (dst % 32);
             if dst_word < frontier_in.len() && (frontier_in[dst_word] & dst_bit) != 0 {
@@ -272,5 +266,119 @@ mod tests {
             0xFFFF_FFFF,
         );
         assert_eq!(got, vec![0b0110]);
+    }
+
+    // ------------------------------------------------------------------
+    // Adversarial fixtures — backward direction is undertested.
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn empty_graph_returns_empty() {
+        let got = cpu_ref(0, &[0], &[], &[], &[], 0xFFFF_FFFF);
+        assert!(got.is_empty());
+    }
+
+    #[test]
+    fn single_node_no_edges_returns_empty() {
+        let got = cpu_ref(1, &[0, 0], &[0], &[0], &[0b0001], 0xFFFF_FFFF);
+        assert_eq!(got, vec![0]);
+    }
+
+    #[test]
+    fn self_loops_only_predecessor_is_self() {
+        // 2 nodes, each has self-loop. frontier {0} → out {0}
+        let got = cpu_ref(
+            2,
+            &[0, 1, 2],
+            &[0, 1],
+            &[1, 1],
+            &[0b0001],
+            0xFFFF_FFFF,
+        );
+        assert_eq!(got, vec![0b0001], "self-loop: predecessor of 0 is 0");
+    }
+
+    #[test]
+    fn disconnected_components_reverse_only_reach_within() {
+        // Component A: 0→1. Component B: 2→3. frontier {3} → out {2}
+        let got = cpu_ref(
+            4,
+            &[0, 1, 1, 2, 2],
+            &[1, 3],
+            &[1, 1],
+            &[0b1000],
+            0xFFFF_FFFF,
+        );
+        assert_eq!(got, vec![0b0100]);
+    }
+
+    #[test]
+    fn max_node_count_cross_word_boundary_backward() {
+        // 65 nodes (3 words), one edge from node 0 to node 64.
+        let mut offsets = vec![0u32; 66];
+        offsets[0] = 0;
+        offsets[1] = 1;
+        let mut frontier = vec![0u32; 3];
+        frontier[2] = 1; // node 64
+        let got = cpu_ref(65, &offsets, &[64], &[1], &frontier, 0xFFFF_FFFF);
+        assert_eq!(got.len(), 3);
+        assert_eq!(got[0], 1, "node 0 is predecessor of 64");
+        assert_eq!(got[1], 0);
+        assert_eq!(got[2], 0);
+    }
+
+    #[test]
+    fn edge_mask_zero_blocks_all_backward() {
+        let got = cpu_ref(
+            4,
+            &[0, 2, 3, 4, 4],
+            &[1, 2, 3, 3],
+            &[1, 1, 1, 1],
+            &[0b1000],
+            0,
+        );
+        assert_eq!(got, vec![0], "zero allow_mask must block every edge");
+    }
+
+    #[test]
+    fn edge_mask_universal_backward() {
+        let got = cpu_ref(
+            4,
+            &[0, 2, 3, 4, 4],
+            &[1, 2, 3, 3],
+            &[1, 1, 1, 1],
+            &[0b1000],
+            0xFFFF_FFFF,
+        );
+        assert_eq!(got, vec![0b0110]);
+    }
+
+    #[test]
+    fn edge_kind_diversity_backward_ignoring_mask_would_fail() {
+        // M8 regression: graph with two edge kinds.
+        // 0→1 (DOMINANCE=0x01), 0→2 (ASSIGNMENT=0x02).
+        // Backward from frontier {1} with mask DOMINANCE → out {0}.
+        // Broken impl ignoring mask would see 0→2 (ASSIGNMENT) and not set 0,
+        // producing an empty frontier.
+        let got = cpu_ref(
+            4,
+            &[0, 2, 2, 2, 2],
+            &[1, 2],
+            &[0x01, 0x02],
+            &[0b0010], // frontier = {1}
+            0x01,      // only DOMINANCE
+        );
+        assert_eq!(
+            got,
+            vec![0b0001],
+            "only node 0 reaches 1 via DOMINANCE; broken impl ignoring mask would produce 0"
+        );
+    }
+
+    #[test]
+    fn malformed_csr_returns_empty_without_panicking() {
+        // edge_offsets too short — cpu_ref uses .get() so it does not panic.
+        let got = cpu_ref(4, &[0, 1], &[1], &[1], &[0b0001], 0xFFFF_FFFF);
+        assert_eq!(got, vec![0]);
     }
 }

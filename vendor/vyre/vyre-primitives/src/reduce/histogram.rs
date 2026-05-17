@@ -29,17 +29,25 @@ pub const OP_ID: &str = "vyre-primitives::reduce::histogram";
 
 /// Build a Program: `output[input[i]] += 1` for every `i < count`.
 ///
-/// # Panics
-///
-/// Panics if `num_bins == 0` — a zero-bin histogram has no valid
-/// output buffer and would make every input index out-of-range.
+/// Invalid zero dimensions lower to an explicit trap program.
 #[must_use]
 pub fn histogram(input: &str, output: &str, count: u32, num_bins: u32) -> Program {
-    assert!(count > 0, "Fix: histogram requires count > 0, got {count}.");
-    assert!(
-        num_bins > 0,
-        "Fix: histogram requires num_bins > 0, got {num_bins}."
-    );
+    if count == 0 {
+        return crate::invalid_output_program(
+            OP_ID,
+            output,
+            DataType::U32,
+            format!("Fix: histogram requires count > 0, got {count}."),
+        );
+    }
+    if num_bins == 0 {
+        return crate::invalid_output_program(
+            OP_ID,
+            output,
+            DataType::U32,
+            format!("Fix: histogram requires num_bins > 0, got {num_bins}."),
+        );
+    }
 
     let t = Expr::InvocationId { axis: 0 };
 
@@ -78,14 +86,21 @@ pub fn histogram(input: &str, output: &str, count: u32, num_bins: u32) -> Progra
 /// values are ignored (matches the GPU drop behaviour).
 #[must_use]
 pub fn cpu_ref(input: &[u32], num_bins: u32) -> Vec<u32> {
-    let mut out = vec![0u32; num_bins as usize];
+    let mut out = Vec::new();
+    cpu_ref_into(input, num_bins, &mut out);
+    out
+}
+
+/// CPU reference into caller-owned storage.
+pub fn cpu_ref_into(input: &[u32], num_bins: u32, out: &mut Vec<u32>) {
+    out.clear();
+    out.resize(num_bins as usize, 0);
     for &bin in input {
         let b = bin as usize;
         if b < out.len() {
             out[b] = out[b].wrapping_add(1);
         }
     }
-    out
 }
 
 #[cfg(feature = "inventory-registry")]
@@ -147,11 +162,6 @@ mod tests {
 
     #[test]
     fn wrapping_overflow_correct() {
-        // Simulate a bin that already has u32::MAX - 1 and we add 3 more.
-        // cpu_ref starts from 0, so we need to verify wrapping_add works.
-        let mut manual = [0u32; 2];
-        manual[0] = u32::MAX - 1;
-        // cpu_ref computes from input, so we test the add behaviour directly.
         let base = u32::MAX - 1;
         let after_three = base.wrapping_add(3);
         assert_eq!(after_three, 1);
@@ -193,15 +203,15 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "num_bins > 0")]
-    fn zero_bins_panics() {
-        let _ = histogram("in", "out", 10, 0);
+    fn zero_bins_traps() {
+        let p = histogram("in", "out", 10, 0);
+        assert!(p.stats().trap());
     }
 
     #[test]
-    #[should_panic(expected = "count > 0")]
-    fn zero_count_panics() {
-        let _ = histogram("in", "out", 0, 4);
+    fn zero_count_traps() {
+        let p = histogram("in", "out", 0, 4);
+        assert!(p.stats().trap());
     }
 
     #[test]

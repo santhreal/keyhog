@@ -13,8 +13,7 @@ fn all_algebraic_laws_custom_check(_op: fn(&[u8]) -> Vec<u8>, _args: &[u32]) -> 
 ///
 /// **V7-CORR-016 clarification**: the op-id strings below
 /// (`"primitive.bitwise.and"`, `"primitive.math.add"`, etc.) are
-/// intentional PLACEHOLDERS that demonstrate the shape of a law's
-/// payload. They are NOT references to ops in the inventory, and
+/// representative payload examples. They are NOT references to ops in the inventory, and
 /// downstream code must NOT feed them to `laws_for_op` or any op-id
 /// lookup. This array is a variant-coverage catalog to guarantee
 /// every enum variant has a canonical value; it is not a registry.

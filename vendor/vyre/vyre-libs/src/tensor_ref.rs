@@ -151,9 +151,11 @@ pub enum TensorRefError {
 /// Verify that every name in `refs` is unique. Returns
 /// [`TensorRefError::NameCollision`] on the first duplicate.
 pub fn check_unique_names(refs: &[&TensorRef], op: &'static str) -> Result<(), TensorRefError> {
-    let mut seen = std::collections::HashSet::new();
-    for t in refs {
-        if !seen.insert(t.name_str()) {
+    for (idx, t) in refs.iter().enumerate() {
+        if refs[..idx]
+            .iter()
+            .any(|previous| previous.name_str() == t.name_str())
+        {
             return Err(TensorRefError::NameCollision {
                 name: t.name.as_str().to_string(),
                 op,

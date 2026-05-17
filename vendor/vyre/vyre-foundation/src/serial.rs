@@ -18,6 +18,12 @@ pub mod text;
 /// be round-tripped through this format without loss.
 pub mod wire;
 
+/// Output set serialization.
+///
+/// Persistent encoding of which buffers are writable outputs, used by
+/// the wire format and persistent cache layers.
+pub mod output_set;
+
 /// Reusable on-wire envelope: magic + version + length-prefixed
 /// sections / word arrays. Higher-layer types (`CompiledDfa` in
 /// vyre-primitives, `GpuLiteralSet` / `RulePipeline` in vyre-libs,

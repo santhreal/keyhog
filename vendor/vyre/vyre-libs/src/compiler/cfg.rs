@@ -1,5 +1,6 @@
-use crate::region::wrap_anonymous;
+use crate::region::{wrap_anonymous, wrap_child};
 use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
+use vyre_foundation::ir::model::expr::GeneratorRef;
 
 /// SIMT Control Flow Graph (CFG) & Goto Resolver.
 ///
@@ -155,7 +156,13 @@ pub fn c11_build_cfg_and_gotos(
         [256, 1, 1],
         vec![wrap_anonymous(
             "vyre-libs::parsing::c11_build_cfg_and_gotos",
-            vec![Node::if_then(Expr::lt(t.clone(), num_ssa), loop_body)],
+            vec![wrap_child(
+                vyre_primitives::graph::csr_forward_traverse::OP_ID,
+                GeneratorRef {
+                    name: "vyre-libs::parsing::c11_build_cfg_and_gotos".to_string(),
+                },
+                vec![Node::if_then(Expr::lt(t.clone(), num_ssa), loop_body)],
+            )],
         )],
     )
 }
@@ -163,23 +170,35 @@ pub fn c11_build_cfg_and_gotos(
 inventory::submit! {
     crate::harness::OpEntry {
         id: "vyre-libs::parsing::c11_build_cfg_and_gotos",
-        build: || c11_build_cfg_and_gotos("ssa", "cfg", "labels", Expr::u32(4)),
-        // 4-slot fixture: every SSA node is a plain sequence (opcode
-        // neither LABL 0x4C41424C nor GOTO 0x474F544F). Label insert
-        // and goto lookup stay quiescent; cfg + keys + vals stay at
-        // their zero init. All-zero witness.
-        test_inputs: Some(|| vec![vec![
-            vec![0u8; 4 * 4],
-            vec![0u8; 4 * 4],
-            vec![0u8; 4 * 4],
-            vec![0u8; 4 * 4096],
-            vec![0u8; 4 * 4096],
-        ]]),
-        expected_output: Some(|| vec![vec![
-            vec![0u8; 4 * 4],
-            vec![0u8; 4 * 4],
-            vec![0u8; 4 * 4096],
-            vec![0u8; 4 * 4096],
-        ]]),
+        build: || c11_build_cfg_and_gotos("ssa", "cfg", "labels", Expr::u32(5)),
+        test_inputs: Some(|| {
+            let mut ssa = Vec::with_capacity(5 * 4);
+            for value in [0u32, 0x4C41424C, 7, 0x474F544F, 7] {
+                ssa.extend_from_slice(&value.to_le_bytes());
+            }
+            vec![vec![
+                ssa,
+                vec![0u8; 5 * 4],
+                vec![0u8; 5 * 4],
+                vec![0xFFu8; 4 * 4096],
+                vec![0u8; 4 * 4096],
+            ]]
+        }),
+        expected_output: Some(|| {
+            let mut cfg = Vec::with_capacity(5 * 4);
+            for value in [0u32, 0, 0, 1, 0] {
+                cfg.extend_from_slice(&value.to_le_bytes());
+            }
+
+            let labels = vec![0u8; 5 * 4];
+
+            let mut keys = vec![0xFFu8; 4 * 4096];
+            let mut vals = vec![0u8; 4 * 4096];
+            let slot = (7u32.wrapping_mul(2_654_435_769) & (4096 - 1)) as usize;
+            keys[slot * 4..slot * 4 + 4].copy_from_slice(&7u32.to_le_bytes());
+            vals[slot * 4..slot * 4 + 4].copy_from_slice(&1u32.to_le_bytes());
+
+            vec![vec![cfg, labels, keys, vals]]
+        }),
     }
 }

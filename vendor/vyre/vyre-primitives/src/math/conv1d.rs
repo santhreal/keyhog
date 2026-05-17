@@ -169,10 +169,10 @@ pub fn gaussian_weights(radius: u32, sigma: f32) -> Vec<u32> {
     let s2 = 2.0 * (sigma as f64) * (sigma as f64);
     let mut sum = 0.0;
 
-    for i in 0..diameter {
+    for (i, w) in weights.iter_mut().enumerate() {
         let x = i as f64 - clamped as f64;
-        weights[i] = (-x * x / s2).exp();
-        sum += weights[i];
+        *w = (-x * x / s2).exp();
+        sum += *w;
     }
 
     weights
@@ -207,9 +207,12 @@ inventory::submit! {
             ]]
         }),
         Some(|| {
-            // Expected: smoothed signal (reference interpreter computes exact values).
+            // Expected fixed-point accumulators before caller-side normalization.
             let to_bytes = |v: &[u32]| v.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<u8>>();
-            vec![vec![to_bytes(&[0u32; 8])]]
+            vec![vec![to_bytes(&[
+                8_192_000, 13_107_200, 19_660_800, 26_214_400, 32_768_000, 39_321_600,
+                45_875_200, 50_790_400,
+            ])]]
         }),
     )
 }

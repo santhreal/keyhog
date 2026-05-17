@@ -42,21 +42,64 @@ pub const OP_ID: &str = "vyre-libs::matching::nfa_scan";
 /// counter, each match does `atomic_add(counter, 1)` and writes its
 /// `(pattern_id, start, end)` triple at `1 + 3*slot`.
 ///
-/// # Panics
-///
-/// Panics when the total NFA state count exceeds
-/// [`MAX_STATES_PER_SUBGROUP`]. Callers with larger pattern sets
-/// should shard via [`plan_shards`].
+/// Invalid pattern plans lower to an explicit trap program.
 #[must_use]
+#[allow(clippy::vec_init_then_push)]
 pub fn nfa_scan(patterns: &[&str], input_buf: &str, hit_buf: &str, input_len: u32) -> Program {
+    try_nfa_scan(patterns, input_buf, hit_buf, input_len).unwrap_or_else(|error| {
+        crate::builder::invalid_output_program(
+            OP_ID,
+            hit_buf,
+            DataType::U32,
+            format!("Fix: {error}"),
+        )
+    })
+}
+
+/// Fallible NFA scan builder.
+///
+/// # Errors
+///
+/// Returns an actionable error when the compiled pattern set exceeds
+/// one subgroup's state budget. Callers should shard via [`plan_shards`].
+#[allow(clippy::vec_init_then_push)]
+pub fn try_nfa_scan(
+    patterns: &[&str],
+    input_buf: &str,
+    hit_buf: &str,
+    input_len: u32,
+) -> Result<Program, String> {
     let plan = compile(patterns).for_input_len(input_len);
-    assert!(
-        plan.num_states <= MAX_STATES_PER_SUBGROUP as u32,
-        "Fix: NFA state count {} exceeds MAX_STATES_PER_SUBGROUP {}. \
-         Use `plan_shards` to split the pattern set across dispatches.",
-        plan.num_states,
-        MAX_STATES_PER_SUBGROUP,
-    );
+    nfa_scan_with_plan(&plan, false, input_buf, hit_buf, input_len)
+}
+
+/// Build an NFA scan kernel from a precompiled plan.
+///
+/// Regex and other grammar frontends produce the same transition/epsilon table
+/// shape as literal compilation, but their state graph is not recoverable from
+/// the source strings. This builder keeps the executable scan program tied to
+/// the actual compiled plan instead of rebuilding a literal-only plan.
+///
+/// # Errors
+///
+/// Returns an actionable error when the plan exceeds one subgroup's state
+/// budget.
+#[allow(clippy::vec_init_then_push)]
+pub fn nfa_scan_with_plan(
+    plan: &NfaPlan,
+    has_epsilon: bool,
+    input_buf: &str,
+    hit_buf: &str,
+    input_len: u32,
+) -> Result<Program, String> {
+    let plan = plan.clone().for_input_len(input_len);
+    if plan.num_states > MAX_STATES_PER_SUBGROUP as u32 {
+        return Err(format!(
+            "NFA state count {} exceeds MAX_STATES_PER_SUBGROUP {}. \
+             Fix: use `plan_shards` to split the pattern set across dispatches.",
+            plan.num_states, MAX_STATES_PER_SUBGROUP
+        ));
+    }
     // input_len == 0 is legal: the byte loop runs 0 times and the
     // hit buffer stays empty. This is the natural answer for an
     // empty haystack; consumers should not special-case it at the
@@ -69,10 +112,8 @@ pub fn nfa_scan(patterns: &[&str], input_buf: &str, hit_buf: &str, input_len: u3
     let num_states = plan.num_states;
     let accepts = plan.accept_states.clone();
     let accept_state_ids = plan.accept_state_ids.clone();
-    // PHASE3_SCAN: skip the epsilon closure when no pattern has
-    // epsilon transitions (literal-only pattern set). Saves one full
-    // transition-table-sized pass per input byte.
-    let has_epsilon = build_epsilon_table(patterns).iter().any(|w| *w != 0);
+    let accept_start_anchored = plan.accept_start_anchored.clone();
+    let accept_end_anchored = plan.accept_end_anchored.clone();
 
     // Per-cursor body. Runs inside the byte loop.
     let mut cursor_body: Vec<Node> = Vec::new();
@@ -100,7 +141,7 @@ pub fn nfa_scan(patterns: &[&str], input_buf: &str, hit_buf: &str, input_len: u3
     //       if src < num_states && ((peer >> i) & 1) != 0:
     //         next_state |= trans[src*256*LANES + byte*LANES + lane]
     //
-    // WGSL subgroup_shuffle requires compile-time peer so we unroll
+    // target-text subgroup_shuffle requires compile-time peer so we unroll
     // k. We also unroll i (identical pattern to the primitive) so
     // each byte step is a straight-line block the optimiser can fold.
     for k in 0..LANES_PER_SUBGROUP as u32 {
@@ -147,7 +188,7 @@ pub fn nfa_scan(patterns: &[&str], input_buf: &str, hit_buf: &str, input_len: u3
     // OR is idempotent so a fixed `num_states` iteration count
     // reaches fixpoint.
     if has_epsilon {
-        let eps_iters = num_states.min(32).max(1);
+        let eps_iters = num_states.clamp(1, 32);
         let mut eps_body: Vec<Node> = Vec::new();
         for k in 0..LANES_PER_SUBGROUP as u32 {
             let eps_peer_name = format!("eps_peer_{k}");
@@ -202,19 +243,42 @@ pub fn nfa_scan(patterns: &[&str], input_buf: &str, hit_buf: &str, input_len: u3
     // Slot 0 of hit_buf is the atomic counter; each match claims
     // the next `(pattern_id, start, end)` triple via atomic_add(1).
     let max_hits = 10_000u32;
-    for (&accept_state, &(pattern_id, _pattern_len)) in accept_state_ids.iter().zip(&accepts) {
+    for (accept_idx, (&accept_state, &(pattern_id, _pattern_len))) in
+        accept_state_ids.iter().zip(&accepts).enumerate()
+    {
         let word_idx = accept_state / 32;
         let bit_offset = accept_state % 32;
+        let mut accept_guard = Expr::ne(
+            Expr::bitand(
+                Expr::var("state_word"),
+                Expr::shl(Expr::u32(1), Expr::u32(bit_offset)),
+            ),
+            Expr::u32(0),
+        );
+        if accept_start_anchored
+            .get(accept_idx)
+            .copied()
+            .unwrap_or(false)
+        {
+            accept_guard = Expr::and(accept_guard, Expr::eq(start_u32(), Expr::u32(0)));
+        }
+        if accept_end_anchored
+            .get(accept_idx)
+            .copied()
+            .unwrap_or(false)
+        {
+            accept_guard = Expr::and(
+                accept_guard,
+                Expr::eq(
+                    Expr::add(Expr::var("cursor"), Expr::u32(1)),
+                    Expr::u32(plan.input_len),
+                ),
+            );
+        }
         cursor_body.push(Node::if_then(
             Expr::eq(lane_u32(), Expr::u32(word_idx)),
             vec![Node::if_then(
-                Expr::ne(
-                    Expr::bitand(
-                        Expr::var("state_word"),
-                        Expr::shl(Expr::u32(1), Expr::u32(bit_offset)),
-                    ),
-                    Expr::u32(0),
-                ),
+                accept_guard,
                 vec![
                     Node::let_bind(
                         "slot_idx",
@@ -258,6 +322,57 @@ pub fn nfa_scan(patterns: &[&str], input_buf: &str, hit_buf: &str, input_len: u3
             Expr::u32(0),
         ),
     ));
+    // Regex-compiled plans connect the shared entry to pattern starts
+    // via ε-edges. Close ε from the seeded entry before consuming the
+    // first byte so transition reads include those starts.
+    if has_epsilon {
+        let eps_iters = num_states.clamp(1, 32);
+        let mut initial_eps_body: Vec<Node> = Vec::new();
+        for k in 0..LANES_PER_SUBGROUP as u32 {
+            let eps_peer_name = format!("init_eps_peer_{k}");
+            initial_eps_body.push(Node::let_bind(
+                &eps_peer_name,
+                Expr::subgroup_shuffle(Expr::var("state_word"), Expr::u32(k)),
+            ));
+            for i in 0..32_u32 {
+                let src_state = k * 32 + i;
+                if src_state >= num_states {
+                    continue;
+                }
+                initial_eps_body.push(Node::if_then(
+                    Expr::ne(
+                        Expr::bitand(
+                            Expr::shr(Expr::var(&eps_peer_name), Expr::u32(i)),
+                            Expr::u32(1),
+                        ),
+                        Expr::u32(0),
+                    ),
+                    vec![Node::assign(
+                        "state_word",
+                        Expr::bitor(
+                            Expr::var("state_word"),
+                            Expr::load(
+                                "nfa_epsilon",
+                                Expr::add(
+                                    Expr::mul(
+                                        Expr::u32(src_state),
+                                        Expr::u32(LANES_PER_SUBGROUP as u32),
+                                    ),
+                                    lane_u32(),
+                                ),
+                            ),
+                        ),
+                    )],
+                ));
+            }
+        }
+        body.push(Node::loop_for(
+            "init_eps_iter",
+            Expr::u32(0),
+            Expr::u32(eps_iters),
+            initial_eps_body,
+        ));
+    }
     body.push(Node::loop_for(
         "cursor",
         start_u32(),
@@ -278,7 +393,7 @@ pub fn nfa_scan(patterns: &[&str], input_buf: &str, hit_buf: &str, input_len: u3
             .with_count(num_hit_slots),
     ];
 
-    Program::wrapped(
+    Ok(Program::wrapped(
         buffers,
         [LANES_PER_SUBGROUP as u32, 1, 1],
         vec![Node::Region {
@@ -292,7 +407,7 @@ pub fn nfa_scan(patterns: &[&str], input_buf: &str, hit_buf: &str, input_len: u3
                 body,
             )]),
         }],
-    )
+    ))
 }
 
 /// Compiled plan for a pattern set.
@@ -306,6 +421,10 @@ pub struct NfaPlan {
     pub accept_states: Vec<(u32, u32)>,
     /// NFA state id for each entry in [`accept_states`](Self::accept_states).
     pub accept_state_ids: Vec<u32>,
+    /// Per-accept flag requiring the match start offset to be zero.
+    pub accept_start_anchored: Vec<bool>,
+    /// Per-accept flag requiring the match end offset to equal input length.
+    pub accept_end_anchored: Vec<bool>,
 }
 
 impl NfaPlan {
@@ -336,6 +455,8 @@ pub fn compile(patterns: &[&str]) -> NfaPlan {
         input_len: 0,
         accept_states,
         accept_state_ids,
+        accept_start_anchored: vec![false; patterns.len()],
+        accept_end_anchored: vec![false; patterns.len()],
     }
 }
 
@@ -427,12 +548,14 @@ pub fn plan_shards<'a>(patterns: &'a [&'a str]) -> Vec<Vec<&'a str>> {
     let mut current_states: usize = 1;
     for p in patterns {
         let extra = p.len();
-        assert!(
-            1 + extra <= MAX_STATES_PER_SUBGROUP,
-            "pattern {p:?} ({} chars) alone exceeds MAX_STATES_PER_SUBGROUP ({})",
-            p.len(),
-            MAX_STATES_PER_SUBGROUP,
-        );
+        if extra >= MAX_STATES_PER_SUBGROUP {
+            if !current.is_empty() {
+                shards.push(std::mem::take(&mut current));
+                current_states = 1;
+            }
+            shards.push(vec![*p]);
+            continue;
+        }
         if current_states + extra > MAX_STATES_PER_SUBGROUP {
             shards.push(std::mem::take(&mut current));
             current_states = 1;
@@ -535,7 +658,7 @@ mod tests {
         let shards = plan_shards(&refs);
         for s in &shards {
             let sum: usize = s.iter().map(|p| p.len()).sum();
-            assert!(sum + 1 <= MAX_STATES_PER_SUBGROUP);
+            assert!(sum < MAX_STATES_PER_SUBGROUP);
         }
         assert!(shards.len() >= 2);
     }
@@ -601,7 +724,7 @@ mod tests {
             .buffers
             .iter()
             .find(|b| b.name() == "nfa_transition")
-            .expect("nfa_transition buffer");
+            .expect("Fix: nfa_transition buffer; restore this invariant before continuing.");
         let plan = compile(&["abc"]);
         assert_eq!(
             trans.count,
@@ -618,17 +741,21 @@ mod tests {
             .buffers
             .iter()
             .find(|b| b.name() == "nfa_epsilon")
-            .expect("nfa_epsilon buffer");
+            .expect("Fix: nfa_epsilon buffer; restore this invariant before continuing.");
         let plan = compile(&["abc"]);
         assert_eq!(eps.count, plan.num_states * LANES_PER_SUBGROUP as u32);
     }
 
     #[test]
-    #[should_panic(expected = "exceeds MAX_STATES_PER_SUBGROUP")]
-    fn nfa_scan_rejects_over_budget_patterns() {
+    fn try_nfa_scan_rejects_over_budget_patterns_with_result_error() {
         let big: Vec<String> = (0..12).map(|_| "a".repeat(100)).collect();
         let refs: Vec<&str> = big.iter().map(String::as_str).collect();
-        let _ = nfa_scan(&refs, "input", "hits", 16);
+        let error = try_nfa_scan(&refs, "input", "hits", 16)
+            .expect_err("Fix: over-budget NFA must return an error contract");
+        assert!(
+            error.contains("MAX_STATES_PER_SUBGROUP") && error.contains("plan_shards"),
+            "Fix: NFA error must name the state budget and sharding remedy: {error}"
+        );
     }
 
     #[test]

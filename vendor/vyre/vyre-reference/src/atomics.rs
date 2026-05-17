@@ -75,9 +75,7 @@ pub fn atomic_exchange(old: u32, value: u32) -> (u32, u32) {
 /// `value` is strictly greater than `old` (the "more recent
 /// timestamp" wins). Identical tie-breaker behavior to `atomic_max`,
 /// kept as a distinct op so backends can lower it to a dedicated
-/// LRU-tracking instruction on hardware that has one (NVIDIA's
-/// `atomicCAS` + priority pattern, or a future pipelined
-/// `atomicLruUpdate` WGSL intrinsic). CPU reference is the
+/// LRU-tracking instruction on hardware that has one. CPU reference is the
 /// correctness oracle.
 pub fn atomic_lru_update(old: u32, value: u32) -> (u32, u32) {
     (old, old.max(value))

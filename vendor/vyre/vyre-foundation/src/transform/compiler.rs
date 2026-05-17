@@ -12,7 +12,7 @@ pub mod dataflow_fixpoint;
 pub mod dominator_tree;
 /// Bounded table-driven recursive-descent parsing primitive.
 pub mod recursive_descent;
-/// Inventory-based WGSL source provider (assets live in driver crates).
+/// Inventory-based target-text source provider (assets live in driver crates).
 pub mod shader_provider;
 /// Deterministic workgroup-local string interner (symbol table).
 pub mod string_interner;
@@ -22,7 +22,3 @@ pub mod typed_arena;
 pub mod visitor_walk;
 
 pub(crate) use buffer_layouts::U32X4_INPUTS;
-
-pub(crate) fn wgsl_backend(backend: &vyre_spec::Backend) -> bool {
-    matches!(backend, vyre_spec::Backend::Wgsl)
-}

@@ -45,6 +45,13 @@ impl Ident {
         Self { text, hash }
     }
 
+    /// Clone the underlying interned string handle without copying UTF-8 bytes.
+    #[must_use]
+    #[inline]
+    pub fn shared_text(&self) -> Arc<str> {
+        Arc::clone(&self.text)
+    }
+
     /// Return the identifier text.
     #[must_use]
     #[inline]
@@ -74,6 +81,13 @@ impl From<String> for Ident {
     }
 }
 
+impl From<Arc<str>> for Ident {
+    #[inline]
+    fn from(value: Arc<str>) -> Self {
+        Self::new(value)
+    }
+}
+
 impl From<&String> for Ident {
     #[inline]
     fn from(value: &String) -> Self {
@@ -95,9 +109,18 @@ impl fmt::Debug for Ident {
 }
 
 impl Hash for Ident {
+    /// Audit P-IDENT-BORROW (2026-04-29): hash via the underlying str so the
+    /// `Hash` impl matches the `Borrow<str>` impl, preserving the
+    /// `HashMap::get<Q: Borrow<K> + Hash + Eq>` invariant. The
+    /// pre-fix `state.write_u64(self.hash)` produced a different u64 than
+    /// `<str as Hash>::hash` for the same hasher (which writes bytes + a
+    /// length terminator), so any `FxHashMap<Ident, V>::get(&str)` lookup
+    /// silently missed the inserted entry. Callers that want the cached
+    /// FxHash for a fast equality-check key call [`Ident::cached_hash`]
+    /// directly.
     #[inline]
     fn hash<H: Hasher>(&self, state: &mut H) {
-        state.write_u64(self.hash);
+        self.text.hash(state);
     }
 }
 
@@ -142,6 +165,20 @@ impl PartialEq<&str> for Ident {
     #[inline]
     fn eq(&self, other: &&str) -> bool {
         self.as_str() == *other
+    }
+}
+
+impl PartialOrd for Ident {
+    #[inline]
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Ident {
+    #[inline]
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.as_str().cmp(other.as_str())
     }
 }
 
@@ -332,9 +369,8 @@ impl Expr {
     /// Substrate-neutral alias for [`workgroup_x`](Self::workgroup_x).
     ///
     /// "Parallel region" is the vocabulary used in vyre-core's public
-    /// surface (see ARCHITECTURE.md Law H). Backends may spell the concept
-    /// differently (WGSL workgroup, CUDA block, Metal threadgroup) —
-    /// their crates translate at the boundary.
+    /// surface. Concrete drivers translate this concept into their own
+    /// target vocabulary at the boundary.
     #[must_use]
     #[inline]
     pub fn parallel_region_x() -> Self {

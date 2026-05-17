@@ -1,9 +1,8 @@
 //! `reduce_min` — unsigned minimum over a u32 ValueSet.
 
-use std::sync::Arc;
+use vyre_foundation::ir::Program;
 
-use vyre_foundation::ir::model::expr::Ident;
-use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
+use super::atomic_scalar::{atomic_reduce_u32, AtomicReduceKind};
 
 /// Canonical op id.
 pub const OP_ID: &str = "vyre-primitives::reduce::min";
@@ -11,37 +10,7 @@ pub const OP_ID: &str = "vyre-primitives::reduce::min";
 /// Build a Program: `out[0] = min(values)`.
 #[must_use]
 pub fn reduce_min(values: &str, out: &str, count: u32) -> Program {
-    let body = vec![
-        Node::let_bind("acc", Expr::u32(u32::MAX)),
-        Node::loop_for(
-            "i",
-            Expr::u32(0),
-            Expr::u32(count),
-            vec![
-                Node::let_bind("v", Expr::load(values, Expr::var("i"))),
-                Node::if_then(
-                    Expr::lt(Expr::var("v"), Expr::var("acc")),
-                    vec![Node::assign("acc", Expr::var("v"))],
-                ),
-            ],
-        ),
-        Node::store(out, Expr::u32(0), Expr::var("acc")),
-    ];
-    Program::wrapped(
-        vec![
-            BufferDecl::storage(values, 0, BufferAccess::ReadOnly, DataType::U32).with_count(count),
-            BufferDecl::storage(out, 1, BufferAccess::ReadWrite, DataType::U32).with_count(1),
-        ],
-        [1, 1, 1],
-        vec![Node::Region {
-            generator: Ident::from(OP_ID),
-            source_region: None,
-            body: Arc::new(vec![Node::if_then(
-                Expr::eq(Expr::InvocationId { axis: 0 }, Expr::u32(0)),
-                body,
-            )]),
-        }],
-    )
+    atomic_reduce_u32(values, out, count, AtomicReduceKind::Min, OP_ID)
 }
 
 /// CPU reference.
@@ -78,5 +47,14 @@ mod tests {
     #[test]
     fn empty_returns_u32_max() {
         assert_eq!(cpu_ref(&[]), u32::MAX);
+    }
+
+    #[test]
+    fn program_uses_parallel_grid_stride() {
+        let program = reduce_min("values", "out", 513);
+        assert_eq!(
+            program.workgroup_size(),
+            [crate::reduce::atomic_scalar::WORKGROUP_SIZE, 1, 1]
+        );
     }
 }

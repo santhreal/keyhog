@@ -242,4 +242,14 @@ impl Expr {
             operand: Box::new(operand),
         }
     }
+
+    /// `1.0 / a` (f32 reciprocal).
+    #[must_use]
+    #[inline(always)]
+    pub fn reciprocal(operand: Expr) -> Expr {
+        Expr::UnOp {
+            op: UnOp::Reciprocal,
+            operand: Box::new(operand),
+        }
+    }
 }

@@ -14,42 +14,94 @@ use super::interner::{intern_string, InternedOpId};
 use super::lowering::ReferenceKind;
 use super::op_def::OpDef;
 use arc_swap::{ArcSwap, Guard};
-use rustc_hash::FxHashMap;
-use std::fmt;
+use rustc_hash::{FxHashMap, FxHashSet};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::fmt::{self, Write as _};
 use std::sync::{Arc, OnceLock};
 use vyre_foundation::dialect_lookup::{install_dialect_lookup, Category, DialectLookup};
 use vyre_foundation::extern_registry::{ExternDialect, ExternOp};
 
 /// Lookup target for a dialect op's lowering path.
 ///
-/// The in-tree variants (`Wgsl`, `Spirv`, `Ptx`, `MetalIr`, `ReferenceBackend`)
-/// map to the typed slots on [`vyre_foundation::dialect_lookup::LoweringTable`].
-/// Out-of-tree backends (CUDA runtime, photonic, CPU-SIMD, distributed,
-/// WebGL-compute, …) register by stable backend id via the table's
+/// The in-tree variants map to the typed slots on
+/// [`vyre_foundation::dialect_lookup::LoweringTable`].
+/// Out-of-tree backends register by stable backend id via the table's
 /// `extensions` map and are looked up by `Target::Extension("backend-id")`.
 ///
-/// The enum is `#[non_exhaustive]` so adding an in-tree variant in 0.7 does
-/// not break downstream matches.
+/// The enum is `#[non_exhaustive]` so adding an in-tree variant does not
+/// break downstream matches.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum Target {
-    /// WGSL via naga. The in-tree wgpu backend.
-    Wgsl,
-    /// SPIR-V via naga. The in-tree Vulkan path.
-    Spirv,
-    /// PTX. Reserved for a CUDA emitter.
+    /// CUDA PTX AOT artifact target.
     Ptx,
-    /// Metal IR. Reserved for a Metal emitter.
-    MetalIr,
+    /// SPIR-V AOT artifact target.
+    SpirV,
+    /// Primary text target.
+    PrimaryText,
+    /// Primary binary target.
+    PrimaryBinary,
+    /// Secondary text target.
+    SecondaryText,
+    /// native-module IR. Reserved for a native-module emitter.
+    NativeModule,
     /// Portable reference backend. Always available.
     ReferenceBackend,
     /// Out-of-tree backend registered by stable id. Matches the
     /// string a consumer wrote into
     /// [`vyre_foundation::dialect_lookup::LoweringTable::with_extension`].
     ///
-    /// Examples: `"cuda"`, `"webgl"`, `"photonic"`, `"x86-avx512"`,
-    /// `"distributed-nccl"`.
+    /// Examples are backend-owned stable identifiers.
     Extension(&'static str),
+}
+
+impl Target {
+    /// Stable AOT target id consumed by the `vyre-driver` AOT emitter registry.
+    #[must_use]
+    pub fn aot_target_id(self) -> &'static str {
+        match self {
+            Self::Ptx | Self::SecondaryText => "secondary_text",
+            Self::SpirV => "spv",
+            Self::PrimaryText => "primary_text",
+            Self::PrimaryBinary => "primary_binary",
+            Self::NativeModule => "native_module",
+            Self::ReferenceBackend => "reference_backend",
+            Self::Extension(id) => id,
+        }
+    }
+
+    /// File-extension hint for AOT bundles.
+    #[must_use]
+    pub fn extension(self) -> &'static str {
+        self.aot_target_id()
+    }
+}
+
+impl Serialize for Target {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(self.aot_target_id())
+    }
+}
+
+impl<'de> Deserialize<'de> for Target {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        Ok(match value.as_str() {
+            "ptx" | "secondary_text" => Self::Ptx,
+            "spv" | "spirv" => Self::SpirV,
+            "primary_text" => Self::PrimaryText,
+            "primary_binary" => Self::PrimaryBinary,
+            "native_module" => Self::NativeModule,
+            "reference_backend" => Self::ReferenceBackend,
+            other => Self::Extension(Box::leak(other.to_string().into_boxed_str())),
+        })
+    }
 }
 
 /// Process-wide dialect registry — lock-free dispatch, supports hot-reloading.
@@ -117,11 +169,42 @@ struct FrozenIndex {
 }
 
 impl DialectRegistry {
+    /// Snapshot the current global dialect registry for the lifetime
+    /// of the returned guard. The guard installs the snapshot as the
+    /// active dialect-lookup table for any code that reads
+    /// `dialect_lookup` during its scope.
     pub fn global() -> Guard<Arc<Self>> {
+        match Self::try_global() {
+            Ok(guard) => guard,
+            Err(error) => {
+                tracing::error!(
+                    target: "vyre::driver::dialect_registry",
+                    error,
+                    "dialect lookup install failed while loading the global registry. \
+                     Fix: install exactly one dialect lookup provider for this process. \
+                     Continuing with the frozen registry snapshot so callers receive \
+                     lookup misses instead of a process abort."
+                );
+                registry_swap().load()
+            }
+        }
+    }
+
+    /// Fallible variant of [`DialectRegistry::global`].
+    ///
+    /// Callers that are already returning an error should prefer this method so
+    /// conflicting lookup-provider installs surface at their API boundary
+    /// instead of being downgraded to an error log.
+    ///
+    /// # Errors
+    ///
+    /// Returns the error from foundation's process-wide dialect-lookup
+    /// installation when another provider has already been installed.
+    pub fn try_global() -> Result<Guard<Arc<Self>>, String> {
         let loader = registry_swap();
         let guard = loader.load();
-        install_dialect_lookup(guard.clone());
-        guard
+        install_dialect_lookup(guard.clone())?;
+        Ok(guard)
     }
 
     fn from_inventory() -> Self {
@@ -130,7 +213,7 @@ impl DialectRegistry {
             .collect();
         defs.extend(Self::extern_defs());
         defs.sort_by(|left, right| (left.dialect, left.id).cmp(&(right.dialect, right.id)));
-        Self::validate_no_duplicates(defs.iter()).unwrap_or_else(|err| panic!("{err}"));
+        let defs = Self::drop_duplicate_defs(defs);
         Self::from_validated_defs(defs)
     }
 
@@ -142,19 +225,28 @@ impl DialectRegistry {
         let mut ops: Vec<&'static ExternOp> = inventory::iter::<ExternOp>().collect();
         ops.sort_by(|left, right| (left.dialect, left.op_id).cmp(&(right.dialect, right.op_id)));
 
-        vyre_foundation::extern_registry::verify().unwrap_or_else(|errors| {
-            let message = errors
-                .into_iter()
-                .map(|error| error.to_string())
-                .collect::<Vec<_>>()
-                .join("; ");
-            panic!("extern dialect inventory is invalid. Fix: {message}");
-        });
+        if let Err(errors) = vyre_foundation::extern_registry::verify() {
+            let mut message = String::new();
+            for (index, error) in errors.into_iter().enumerate() {
+                if index != 0 {
+                    message.push_str("; ");
+                }
+                let _ = write!(&mut message, "{error}");
+            }
+            tracing::error!(
+                target: "vyre::driver::dialect_registry",
+                message,
+                "extern dialect inventory is invalid. Fix: register each extern op \
+                 under a submitted extern dialect before the registry is built. \
+                 Invalid extern ops are ignored for this snapshot instead of \
+                 aborting the process."
+            );
+        }
 
         let known = dialects
             .into_iter()
             .map(|dialect| dialect.name)
-            .collect::<std::collections::HashSet<_>>();
+            .collect::<FxHashSet<_>>();
 
         ops.into_iter()
             .filter(|op| known.contains(op.dialect))
@@ -165,6 +257,32 @@ impl DialectRegistry {
                 ..OpDef::default()
             })
             .collect()
+    }
+
+    fn drop_duplicate_defs(defs: Vec<OpDef>) -> Vec<OpDef> {
+        let mut seen: FxHashMap<&'static str, &'static str> =
+            FxHashMap::with_capacity_and_hasher(defs.len(), Default::default());
+        let mut unique = Vec::with_capacity(defs.len());
+        for def in defs {
+            let registrant = Self::registrant_for(&def);
+            if let Some(&first_registrant) = seen.get(def.id) {
+                let error = DuplicateOpIdError {
+                    op_id: def.id,
+                    first_registrant,
+                    second_registrant: registrant,
+                };
+                tracing::error!(
+                    target: "vyre::driver::dialect_registry",
+                    %error,
+                    "duplicate dialect operation ignored while building the global registry. \
+                     Fix: keep exactly one owner for every stable op id."
+                );
+                continue;
+            }
+            seen.insert(def.id, registrant);
+            unique.push(def);
+        }
+        unique
     }
 
     fn from_validated_defs(defs: impl IntoIterator<Item = OpDef>) -> Self {
@@ -196,11 +314,7 @@ impl DialectRegistry {
     ) -> Result<(), DuplicateOpIdError> {
         let mut seen: FxHashMap<&'static str, &'static str> = FxHashMap::default();
         for def in defs {
-            let registrant = if def.dialect.is_empty() {
-                "<unknown dialect>"
-            } else {
-                def.dialect
-            };
+            let registrant = Self::registrant_for(def);
             if let Some(first_registrant) = seen.insert(def.id, registrant) {
                 return Err(DuplicateOpIdError {
                     op_id: def.id,
@@ -212,6 +326,14 @@ impl DialectRegistry {
         Ok(())
     }
 
+    fn registrant_for(def: &OpDef) -> &'static str {
+        if def.dialect.is_empty() {
+            "<unknown dialect>"
+        } else {
+            def.dialect
+        }
+    }
+
     /// Install a new process-wide dialect registry snapshot.
     ///
     /// This is the only sanctioned mutation path. TOML hot-reload should build
@@ -221,6 +343,9 @@ impl DialectRegistry {
         registry_swap().store(Arc::new(new));
     }
 
+    /// Intern a textual op name into the registry's `InternedOpId`
+    /// space. The interner is shared across the workspace; calling
+    /// twice with the same string returns the same id.
     pub fn intern_op(&self, name: &str) -> InternedOpId {
         intern_string(name)
     }
@@ -230,6 +355,8 @@ impl DialectRegistry {
         self.index.by_id.get(&id).copied()
     }
 
+    /// Resolve the lowering descriptor for `id` on `target`, or `None`
+    /// when no backend lowering has been registered for that pair.
     pub fn get_lowering(&self, id: InternedOpId, target: Target) -> Option<ReferenceKind> {
         let def = self.index.by_id.get(&id)?;
         if target == Target::ReferenceBackend {
@@ -274,7 +401,7 @@ mod tests {
     inventory::submit! {
         ExternDialect::new(
             "vyre-libs-driver-registry-test",
-            "0.6.0-test",
+            "0.4.1-test",
             "https://example.invalid/vyre-libs-driver-registry-test",
         )
     }

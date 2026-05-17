@@ -1,14 +1,13 @@
 //! SPIR-V backend module (C-B7).
 //!
-//! Reuses every `LoweringTable::naga_wgsl` builder by feeding the
+//! Reuses every `LoweringTable::primary_text` builder by feeding the
 //! resulting `naga::Module` through `naga::back::spv::write_vec`
 //! instead of `naga::back::wgsl::write_string`. The naga::Module
 //! is identical; only the emitter changes.
 //!
 //! The backend runs through wgpu with the Vulkan adapter selected.
 //! Testing byte-identity between the WGSL path (wgpu default) and
-//! the SPIR-V path on the same Program is the conformance gate
-//! (planned in C-B7's integration tests).
+//! the SPIR-V path on the same Program is the conformance contract.
 //!
 //! This module ships:
 //!

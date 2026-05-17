@@ -53,6 +53,8 @@ pub fn vfs_resolve_dma(
                 .with_count(n),
             BufferDecl::storage(out_file_buffers, 1, BufferAccess::ReadWrite, DataType::U32)
                 .with_count(n),
+            BufferDecl::storage("global_dma_pool", 2, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(1024),
         ],
         [256, 1, 1], // Warp aligned
         body,
@@ -63,16 +65,19 @@ pub fn vfs_resolve_dma(
 inventory::submit! {
     crate::harness::OpEntry::new(
         VFS_RESOLVE_OP_ID,
-        || vfs_resolve_dma("include_hashes", "out_file_buffers", Expr::u32(2)),
+        || vfs_resolve_dma("include_hashes", "out_file_buffers", Expr::u32(1)),
         Some(|| {
+            let mut dma_pool = vec![0u8; 4096];
+            dma_pool[..4].copy_from_slice(&[1, 2, 3, 4]);
             vec![vec![
-                vec![0x78, 0x56, 0x34, 0x12, 0xF0, 0xDE, 0xBC, 0x9A],
-                vec![0u8; 8],
+                0u32.to_le_bytes().to_vec(),
+                vec![0u8; 4],
+                dma_pool,
             ]]
         }),
         Some(|| {
             vec![vec![
-                vec![0u8; 8],
+                vec![1, 2, 3, 4],
             ]]
         }),
     )

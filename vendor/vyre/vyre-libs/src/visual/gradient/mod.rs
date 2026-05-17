@@ -4,6 +4,7 @@
 //! Category A composition — pure IR expressions.
 
 use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
+use vyre_foundation::ir::model::expr::GeneratorRef;
 
 const OP_ID: &str = "vyre-libs::visual::gradient";
 
@@ -29,24 +30,43 @@ pub fn linear_gradient(
     angle_deg: f32,
     stops: &[ColorStop],
 ) -> Program {
+    try_linear_gradient(output, width, height, angle_deg, stops).unwrap_or_else(|error| {
+        crate::builder::invalid_output_program(
+            OP_ID,
+            output,
+            DataType::U32,
+            format!("Fix: {error}"),
+        )
+    })
+}
+
+/// Fallible linear-gradient builder.
+///
+/// # Errors
+///
+/// Returns an error when the stop count is outside the supported
+/// 2..=16 interval.
+pub fn try_linear_gradient(
+    output: &str,
+    width: u32,
+    height: u32,
+    angle_deg: f32,
+    stops: &[ColorStop],
+) -> Result<Program, String> {
     let count = width.saturating_mul(height);
 
-    assert!(stops.len() >= 2 && stops.len() <= 16, "need 2..=16 stops");
+    if !(2..=16).contains(&stops.len()) {
+        return Err(format!(
+            "linear_gradient needs 2..=16 stops, got {}. Fix: provide at least two color stops and at most sixteen.",
+            stops.len()
+        ));
+    }
 
-    // For a linear gradient at angle θ:
-    // t = dot(pixel_pos, direction) / max_projection
-    // where direction = (sin(θ), -cos(θ)) (CSS convention: 0° = up)
-    //
-    // We precompute the parametric projection as:
-    // t(px, py) = (px * sin(θ) + py * (-cos(θ))) / (W*sin(θ) + H*(-cos(θ)))
-    //
-    // But for GPU integer math, we encode `t` in fixed-point 16.16.
-    // For simplicity, we compute per-pixel t from the gradient endpoints:
-    // Map (0,0) → t=0, (W-1,H-1) → t=1 along the gradient angle.
-
-    // Simplified: for angle=0° (bottom-to-top): t = 1 - py/(H-1)
-    // For angle=90° (left-to-right): t = px/(W-1)
-    // General: t = (px*dx + py*dy + offset) / range
+    // CSS linear-gradient angle convention: 0deg points upward and 90deg
+    // points right. The parameter is the pixel projection shifted by the
+    // minimum projection of the image corners, then divided by the corner
+    // projection range. That keeps negative directions, such as 0deg and
+    // 270deg, exact instead of clamping half the image to the first stop.
 
     let angle_rad = angle_deg.to_radians();
     let dx = angle_rad.sin();
@@ -56,9 +76,22 @@ pub fn linear_gradient(
     let dx_fp = (dx * 65536.0).round() as i32;
     let dy_fp = (dy * 65536.0).round() as i32;
 
-    // Max projection: max(|dx|*(W-1), 0) + max(|dy|*(H-1), 0)
-    let max_proj = (dx.abs() * (width as f32 - 1.0) + dy.abs() * (height as f32 - 1.0)).max(1.0);
-    let _range_fp = (max_proj * 65536.0).round() as u32;
+    let width_extent = width.saturating_sub(1) as i64;
+    let height_extent = height.saturating_sub(1) as i64;
+    let corner_projections = [
+        0i64,
+        width_extent * i64::from(dx_fp),
+        height_extent * i64::from(dy_fp),
+        width_extent * i64::from(dx_fp) + height_extent * i64::from(dy_fp),
+    ];
+    let min_projection = corner_projections.into_iter().min().unwrap_or(0);
+    let max_projection = corner_projections.into_iter().max().unwrap_or(0);
+    let projection_offset = min_projection
+        .saturating_neg()
+        .clamp(0, i64::from(u32::MAX)) as u32;
+    let projection_range = (max_projection - min_projection).max(1);
+    let projection_range_pixels =
+        ((projection_range + 65_535) / 65_536).clamp(1, i64::from(u32::MAX)) as u32;
 
     // Precompute stop positions in fixed-point and colors per channel.
     let stop_positions: Vec<u32> = stops
@@ -101,13 +134,8 @@ pub fn linear_gradient(
                 Expr::mul(Expr::var("py"), Expr::u32((-dy_fp) as u32))
             };
 
-            // Total dot = add positive parts - negative parts.
-            // For the common case angle=90° (left-to-right): dx>0, dy=0 → dp = px*dx.
-            // Since this is sign-sensitive, we compute:
-            //   positive_part = (dx>=0 ? px*dx : 0) + (dy>=0 ? py*dy : 0)
-            //   negative_part = (dx<0 ? px*|dx| : 0) + (dy<0 ? py*|dy| : 0)
-            //   dp = positive_part - negative_part ... if positive_part >= negative_part
-            //     else dp = 0 (clamp at start of gradient)
+            // Signed projection is represented as positive and negative
+            // unsigned parts, then shifted by `-min_corner_projection`.
             let pos_part = Expr::add(
                 if dx_fp >= 0 {
                     dp_x.clone()
@@ -128,33 +156,28 @@ pub fn linear_gradient(
             inner.push(Node::let_bind("pos_dp", pos_part));
             inner.push(Node::let_bind("neg_dp", neg_part));
 
-            // t = (pos_dp - neg_dp) * 65536 / range
-            // Clamped to [0, 65536]
+            // t = (dot(pixel, direction) - min_corner_projection) / range.
+            // `raw_dp` is still fixed-point 16.16, so division by the
+            // pixel-space range preserves a 16.16 normalized parameter while
+            // avoiding a wide multiply on backends without native u64.
+            let shifted_pos = Expr::add(Expr::var("pos_dp"), Expr::u32(projection_offset));
             inner.push(Node::let_bind(
                 "raw_dp",
                 Expr::select(
-                    Expr::ge(Expr::var("pos_dp"), Expr::var("neg_dp")),
-                    Expr::sub(Expr::var("pos_dp"), Expr::var("neg_dp")),
+                    Expr::ge(shifted_pos.clone(), Expr::var("neg_dp")),
+                    Expr::sub(shifted_pos, Expr::var("neg_dp")),
                     Expr::u32(0),
                 ),
             ));
-            // t = raw_dp / range (both already in the same scale)
-            // Normalize: t_fp = raw_dp * 65536 / range_fp
-            // But raw_dp is already scaled by 65536, so: t_fp = raw_dp / (range_fp / 65536)
-            // Actually: raw_dp is px*dx_fp where dx_fp is in 16.16. So raw_dp is in pixels*16.16.
-            // max_proj was in pixels. range_fp = max_proj * 65536.
-            // t_fp = raw_dp * 65536 / range_fp. But that would overflow for large images.
-            // Simpler: t_fp = raw_dp / (range_fp / 65536) = raw_dp / max_proj_int
-            let max_proj_int = max_proj.round() as u32;
             inner.push(Node::let_bind(
                 "t",
                 Expr::select(
                     Expr::gt(
-                        Expr::div(Expr::var("raw_dp"), Expr::u32(max_proj_int.max(1))),
+                        Expr::div(Expr::var("raw_dp"), Expr::u32(projection_range_pixels)),
                         Expr::u32(65536),
                     ),
                     Expr::u32(65536),
-                    Expr::div(Expr::var("raw_dp"), Expr::u32(max_proj_int.max(1))),
+                    Expr::div(Expr::var("raw_dp"), Expr::u32(projection_range_pixels)),
                 ),
             ));
 
@@ -172,8 +195,18 @@ pub fn linear_gradient(
                 let span = if t1 > t0 { t1 - t0 } else { 1 }; // avoid div by 0
 
                 // If t >= t0 AND t < t1: lerp between stop[i] and stop[i+1]
-                // frac = (t - t0) * 256 / span
+                // Channel delta is rounded in fixed-point stop space.
                 let lerp_ch = |ch: &str, c0: u32, c1: u32| -> Node {
+                    let stop_delta = Expr::sub(Expr::var("t"), Expr::u32(t0));
+                    let rounded_delta = |delta: u32| {
+                        Expr::div(
+                            Expr::add(
+                                Expr::mul(Expr::u32(delta), stop_delta.clone()),
+                                Expr::u32(span / 2),
+                            ),
+                            Expr::u32(span),
+                        )
+                    };
                     Node::assign(
                         ch,
                         Expr::select(
@@ -181,41 +214,11 @@ pub fn linear_gradient(
                                 Expr::ge(Expr::var("t"), Expr::u32(t0)),
                                 Expr::lt(Expr::var("t"), Expr::u32(t1)),
                             ),
-                            // lerp: c0 + (c1 - c0) * frac / 256
+                            // lerp: c0 + round((c1 - c0) * (t - t0) / span)
                             if c1 >= c0 {
-                                Expr::add(
-                                    Expr::u32(c0),
-                                    Expr::shr(
-                                        Expr::mul(
-                                            Expr::u32(c1 - c0),
-                                            Expr::div(
-                                                Expr::mul(
-                                                    Expr::sub(Expr::var("t"), Expr::u32(t0)),
-                                                    Expr::u32(256),
-                                                ),
-                                                Expr::u32(span),
-                                            ),
-                                        ),
-                                        Expr::u32(8),
-                                    ),
-                                )
+                                Expr::add(Expr::u32(c0), rounded_delta(c1 - c0))
                             } else {
-                                Expr::sub(
-                                    Expr::u32(c0),
-                                    Expr::shr(
-                                        Expr::mul(
-                                            Expr::u32(c0 - c1),
-                                            Expr::div(
-                                                Expr::mul(
-                                                    Expr::sub(Expr::var("t"), Expr::u32(t0)),
-                                                    Expr::u32(256),
-                                                ),
-                                                Expr::u32(span),
-                                            ),
-                                        ),
-                                        Expr::u32(8),
-                                    ),
-                                )
+                                Expr::sub(Expr::u32(c0), rounded_delta(c0 - c1))
                             },
                             Expr::var(ch),
                         ),
@@ -289,14 +292,23 @@ pub fn linear_gradient(
         },
     ));
 
-    Program::wrapped(
+    Ok(Program::wrapped(
         vec![
             BufferDecl::storage(output, 0, BufferAccess::ReadWrite, DataType::U32)
                 .with_count(count),
         ],
         super::PIXEL_WORKGROUP_SIZE,
-        vec![crate::region::wrap_anonymous(OP_ID, body)],
-    )
+        vec![crate::region::wrap_anonymous(
+            OP_ID,
+            vec![crate::region::wrap_child(
+                vyre_primitives::visual::packed_rgba_map::OP_ID,
+                GeneratorRef {
+                    name: OP_ID.to_string(),
+                },
+                body,
+            )],
+        )],
+    ))
 }
 
 inventory::submit! {
@@ -310,15 +322,14 @@ inventory::submit! {
             ],
         ),
         test_inputs: Some(|| {
-            vec![vec![vec![0u8; 16]]]  // 4×1 output zeroed
+            vec![vec![vec![0u8; 16]]]  // initial 4×1 output buffer
         }),
         expected_output: Some(|| {
             // 4-pixel horizontal gradient: red → blue.
             // Pixel 0: pure red, Pixel 3: pure blue.
             // Exact values depend on interpolation rounding.
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
-            let expected = [0xFF_0000FFu32, 0xFF_550055u32, 0xFF_AA00AAu32, 0xFF_FF0000u32];
-            vec![vec![to_bytes(&expected)]]
+            let expected = [0xFF_0000FFu32, 0xFF_5500AAu32, 0xFF_AA0055u32, 0xFF_FF0000u32];
+            vec![vec![crate::visual::byte_helpers::u32_words_to_le_bytes(&expected)]]
         }),
     }
 }

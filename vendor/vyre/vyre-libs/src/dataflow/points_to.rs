@@ -22,16 +22,25 @@
 //!
 //! Fixpoint gives `pts(v)` for every variable `v`.
 //!
-//! Soundness: [`MayOver`](super::Soundness::MayOver). Rules requiring
+//! Soundness: `MayOver`. Rules requiring
 //! zero-FP MUST compose a downstream sanitizer / type filter.
 
 use vyre::ir::Program;
 use vyre_primitives::graph::csr_forward_traverse::{
-    bitset_words, cpu_ref as csr_forward_cpu_ref, csr_forward_traverse,
+    bitset_words, cpu_ref_into as csr_forward_cpu_ref_into, csr_forward_traverse,
 };
 use vyre_primitives::graph::program_graph::ProgramGraphShape;
+use vyre_primitives::predicate::edge_kind;
 
 pub(crate) const OP_ID: &str = "vyre-libs::dataflow::points_to";
+const POINTS_TO_EDGE_MASK: u32 = edge_kind::ASSIGNMENT
+    | edge_kind::CALL_ARG
+    | edge_kind::RETURN
+    | edge_kind::PHI
+    | edge_kind::ALIAS
+    | edge_kind::MEM_STORE
+    | edge_kind::MEM_LOAD
+    | edge_kind::MUT_REF;
 
 /// Build one Andersen propagation step. Caller MUST supply the real
 /// constraint-graph shape (`node_count`, `edge_count`) so the emitted
@@ -57,14 +66,17 @@ pub fn andersen_points_to(
     constraints_in: &str,
     pts_out: &str,
 ) -> Program {
-    csr_forward_traverse(shape, constraints_in, pts_out, u32::MAX)
+    crate::region::tag_program(
+        OP_ID,
+        csr_forward_traverse(shape, constraints_in, pts_out, POINTS_TO_EDGE_MASK),
+    )
 }
 
 /// Deprecated alias for back-compat with callers that imported the
 /// pre-fix name `andersen_points_to_with_shape`. Same semantics as
 /// [`andersen_points_to`].
 #[deprecated(
-    since = "0.6.0",
+    since = "0.4.1",
     note = "use `andersen_points_to(shape, ...)` directly — the name suffix is redundant since the 2-arg entry was removed"
 )]
 #[must_use]
@@ -82,8 +94,8 @@ pub fn andersen_points_to_with_shape(
 /// `edge_offsets`, `edge_targets`, and `edge_kind_mask` are the
 /// canonical ProgramGraph CSR buffers. `seed_bits` is the initial
 /// points-to frontier as a packed u32 bitset. The returned bitset is
-/// `seed_bits ∪ reachable(seed_bits)` over all subset edges whose
-/// kind mask is non-zero.
+/// `seed_bits ∪ reachable(seed_bits)` over subset/dependence edges
+/// accepted by [`POINTS_TO_EDGE_MASK`].
 ///
 /// The GPU Program is intentionally one propagation step; callers use
 /// this oracle to verify the whole host-driven fixpoint contract.
@@ -96,20 +108,47 @@ pub fn cpu_subset_closure(
     seed_bits: &[u32],
 ) -> Vec<u32> {
     let words = bitset_words(node_count) as usize;
-    assert_eq!(
-        seed_bits.len(),
-        words,
-        "cpu_subset_closure: seed_bits length must equal bitset_words(node_count)"
+    let mut reached = Vec::new();
+    let mut step = Vec::new();
+    cpu_subset_closure_into(
+        node_count,
+        edge_offsets,
+        edge_targets,
+        edge_kind_mask,
+        seed_bits,
+        &mut reached,
+        &mut step,
     );
-    let mut reached = seed_bits.to_vec();
+    if reached.len() != words {
+        reached.resize(words, 0);
+    }
+    reached
+}
+
+/// Caller-owned variant of [`cpu_subset_closure`].
+pub fn cpu_subset_closure_into(
+    node_count: u32,
+    edge_offsets: &[u32],
+    edge_targets: &[u32],
+    edge_kind_mask: &[u32],
+    seed_bits: &[u32],
+    reached: &mut Vec<u32>,
+    step: &mut Vec<u32>,
+) {
+    let words = bitset_words(node_count) as usize;
+    reached.clear();
+    reached.resize(words, 0);
+    let copy_len = words.min(seed_bits.len());
+    reached[..copy_len].copy_from_slice(&seed_bits[..copy_len]);
     for _ in 0..node_count {
-        let step = csr_forward_cpu_ref(
+        csr_forward_cpu_ref_into(
             node_count,
             edge_offsets,
             edge_targets,
             edge_kind_mask,
-            &reached,
-            u32::MAX,
+            reached,
+            POINTS_TO_EDGE_MASK,
+            step,
         );
         let mut changed = false;
         for (dst, src) in reached.iter_mut().zip(step.iter()) {
@@ -118,10 +157,9 @@ pub fn cpu_subset_closure(
             *dst = next;
         }
         if !changed {
-            return reached;
+            return;
         }
     }
-    reached
 }
 
 inventory::submit! {
@@ -137,7 +175,7 @@ inventory::submit! {
                 to_bytes(&[0, 0, 0, 0]),    // pg_nodes
                 to_bytes(&[0, 1, 2, 3, 3]), // pg_edge_offsets
                 to_bytes(&[1, 2, 3]),       // pg_edge_targets
-                to_bytes(&[1, 1, 1]),       // pg_edge_kind_mask
+                to_bytes(&[edge_kind::ASSIGNMENT, edge_kind::ASSIGNMENT, edge_kind::ASSIGNMENT]), // pg_edge_kind_mask
                 to_bytes(&[0, 0, 0, 0]),    // pg_node_tags
                 to_bytes(&[0b0001]),        // pts_in seed
                 to_bytes(&[0b0001]),        // pts_out accumulator seed
@@ -232,7 +270,7 @@ mod tests {
             .iter()
             .find(|b| b.name() == "constraints_in")
             .map(|b| b.count)
-            .expect("constraints_in buffer must be declared");
+            .expect("Fix: constraints_in buffer must be declared; restore this invariant before continuing.");
         // bitset_words(64) = 2 (64 bits / 32 bits per u32). NOT 1, which
         // is what the pre-fix hardcoded ProgramGraphShape::new(1, 1)
         // would have produced.
@@ -244,7 +282,7 @@ mod tests {
 
     /// PHASE6_DATAFLOW HIGH regression: the deprecated alias still
     /// works for back-compat callers but emits the same Program as the
-    /// canonical entry. Drop in a future major version.
+    /// canonical entry and preserves the current compatibility surface.
     #[test]
     #[allow(deprecated)]
     fn deprecated_alias_emits_same_program_shape() {
@@ -272,6 +310,33 @@ mod tests {
                 bit_is_set(&closure, node),
                 "Fix: subset closure must propagate addr-of seed across transitive edge chain; missing node {node}"
             );
+        }
+    }
+
+    #[test]
+    fn subset_closure_into_reuses_buffers_and_tolerates_short_seed() {
+        let node_count = 4;
+        let edges = [(0, 1), (1, 2), (2, 3)];
+        let (offsets, targets, masks) = csr_from_edges(node_count, &edges);
+        let mut reached = Vec::with_capacity(8);
+        let reached_ptr = reached.as_ptr();
+        let mut step = Vec::with_capacity(8);
+        let step_ptr = step.as_ptr();
+
+        cpu_subset_closure_into(
+            node_count,
+            &offsets,
+            &targets,
+            &masks,
+            &[1],
+            &mut reached,
+            &mut step,
+        );
+
+        assert_eq!(reached.as_ptr(), reached_ptr);
+        assert_eq!(step.as_ptr(), step_ptr);
+        for node in 0..node_count {
+            assert!(bit_is_set(&reached, node));
         }
     }
 

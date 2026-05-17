@@ -1,5 +1,5 @@
 //! Elementwise logical operations (and, or, xor, nand, nor).
-//! Ported from the legacy WGSL implementations in vyre-ops.
+//! Ported from the legacy target-text implementations in vyre-ops.
 
 /// Bitwise AND
 pub mod and;

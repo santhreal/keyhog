@@ -1,13 +1,13 @@
 //! Semantic canonicalisation for opaque-payload hash equality.
 //!
 //! Helpers that normalise payload bytes so two semantically-equivalent
-//! programs hash to the same value under [`crate::ir::Program::hash`].
+//! programs hash to the same value under `crate::ir::Program::hash`.
 //! These concerns are separate from wire-format endianness; they live
 //! here so extension authors can opt into canonicalisation without
 //! mixing it with the byte-level encode/decode primitives.
 
 /// Canonicalise an inline regex-flag set so payloads encoding the same
-/// semantic regex hash equal under [`crate::ir::Program::hash`].
+/// semantic regex hash equal under `crate::ir::Program::hash`.
 ///
 /// Rust/ICU-style inline regex literals of the shape `(?flags)pattern`
 /// accept the flag characters in any order — `(?mi)` and `(?im)`

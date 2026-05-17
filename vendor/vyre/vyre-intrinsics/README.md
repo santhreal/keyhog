@@ -26,10 +26,9 @@ The split is documented in `docs/migration-vyre-ops-to-intrinsics.md`.
    `Program` by composing existing IR variants lives in `vyre-libs`
    (shared) or the caller's own crate. `vyre-intrinsics` is strictly
    Category-C: hardware-bound ops.
-5. **Feature flags are additive.** `hardware` is on by default;
-   `subgroup-ops` is opt-in while the Naga 25+ wire format and
-   subgroup semantics settle. Enabling a feature never removes or
-   changes the signature of an already-enabled intrinsic.
+5. **Feature flags are additive.** `hardware` and `subgroup-ops` are
+   on by default. Enabling a feature never removes or changes the
+   signature of an already-enabled intrinsic.
 6. **Region chains wrap every composition.** The `region` module is
    the mandatory wrap helper every tier uses; consumers of this crate
    get it re-exported so they don't hand-roll it.
@@ -39,7 +38,7 @@ The split is documented in `docs/migration-vyre-ops-to-intrinsics.md`.
 `vyre-intrinsics` owns:
 
 - `subgroup_add`, `subgroup_ballot`, `subgroup_shuffle` — wave-level
-  collectives (feature-gated behind `subgroup-ops` pending Naga 25+).
+  collectives backed by Naga 25+ subgroup lowering.
 - `workgroup_barrier`, `storage_barrier` — concurrency fences.
 - `bit_reverse_u32`, `popcount_u32` — bit intrinsics mapping 1:1 to
   hardware (`reverseBits`, `countOneBits`).
@@ -73,11 +72,11 @@ fn popcount_program(input: &Expr) -> Program {
 }
 ```
 
-### 2. Enable feature-gated subgroup ops
+### 2. Use subgroup ops
 
 ```toml
 [dependencies]
-vyre-intrinsics = { version = "0.6", features = ["subgroup-ops"] }
+vyre-intrinsics = "0.4.1"
 ```
 
 Then in code:
@@ -86,9 +85,8 @@ Then in code:
 use vyre_intrinsics::hardware::subgroup_ballot;
 ```
 
-If `subgroup-ops` is not enabled at the dependency declaration site,
-the symbol is not in scope — no silent CPU fallback, no runtime
-dispatch check, no surprise perf cliff.
+The default feature set includes `subgroup-ops`; a backend that cannot
+lower subgroup collectives rejects the program during validation.
 
 ### 3. CPU-reference dispatch for a custom intrinsic test
 
@@ -110,8 +108,8 @@ assert_eq!(expected, 7.0);
    - The builder function returning `Program` / `Expr`.
    - The `CpuOp` / `CategoryAOp` implementation for bit-identical
      reference evaluation.
-   - The dedicated Naga emitter arm in `vyre-driver-wgpu`'s
-     `naga_emit` module.
+   - The dedicated emitter arm in the concrete driver that owns the
+     target lowering.
 3. Register with `inventory::submit!(IntrinsicDescriptor { ... })`
    — the harness discovers you automatically.
 4. Declare algebraic laws (`AlgebraicLaw`) if your op has any; the
@@ -124,4 +122,4 @@ assert_eq!(expected, 7.0);
    the classification rule stays authoritative.
 
 See `hardware/popcount.rs` for the minimal template and
-`hardware/subgroup/ballot.rs` for the feature-gated pattern.
+`hardware/subgroup_ballot/subgroup_ballot.rs` for the subgroup pattern.

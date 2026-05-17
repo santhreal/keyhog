@@ -7,16 +7,20 @@
 use crate::ir::DataType;
 
 /// Single-word `u32` output.
+#[allow(dead_code, reason = "compiler op schema catalog entry")]
 pub(crate) const U32_OUTPUTS: &[DataType] = &[DataType::U32];
 
 /// Two-word `u32` output.
+#[allow(dead_code, reason = "compiler op schema catalog entry")]
 pub(crate) const U32X2_OUTPUTS: &[DataType] = &[DataType::U32, DataType::U32];
 
 /// Four-word `u32` input tuple.
+#[allow(dead_code, reason = "compiler op schema catalog entry")]
 pub(crate) const U32X4_INPUTS: &[DataType] =
     &[DataType::U32, DataType::U32, DataType::U32, DataType::U32];
 
 /// Five-word `u32` input tuple.
+#[allow(dead_code, reason = "compiler op schema catalog entry")]
 pub(crate) const U32X5_INPUTS: &[DataType] = &[
     DataType::U32,
     DataType::U32,

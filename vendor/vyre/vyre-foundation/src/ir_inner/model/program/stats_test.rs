@@ -15,6 +15,7 @@ fn stats_matches_old_multi_walk_empty() {
             top_level_regions: 1,
             static_storage_bytes: 0,
             capability_bits: 0,
+            ..ProgramStats::default()
         }
     );
 }
@@ -36,7 +37,11 @@ fn stats_matches_old_multi_walk_single_store() {
             opaque_count: 0,
             top_level_regions: 1,
             static_storage_bytes: 4,
+            instruction_count: 2,
+            memory_op_count: 1,
+            control_flow_count: 1,
             capability_bits: 0,
+            ..ProgramStats::default()
         }
     );
 }
@@ -63,7 +68,11 @@ fn stats_matches_old_multi_walk_batch() {
             opaque_count: 0,
             top_level_regions: 1,
             static_storage_bytes: 16,
+            instruction_count: 4,
+            memory_op_count: 3,
+            control_flow_count: 1,
             capability_bits: 0,
+            ..ProgramStats::default()
         }
     );
 }
@@ -98,6 +107,7 @@ fn stats_matches_old_multi_walk_region_chain() {
             top_level_regions: 2,
             static_storage_bytes: 0,
             capability_bits: 0,
+            ..ProgramStats::default()
         }
     );
 }
@@ -124,7 +134,11 @@ fn stats_matches_old_multi_walk_recursive() {
             opaque_count: 0,
             top_level_regions: 1,
             static_storage_bytes: 4,
+            instruction_count: 3,
+            control_flow_count: 1,
+            register_pressure_estimate: 1,
             capability_bits: 0,
+            ..ProgramStats::default()
         }
     );
 }

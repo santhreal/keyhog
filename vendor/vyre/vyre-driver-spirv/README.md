@@ -5,12 +5,10 @@ SPIR-V backend for [vyre](https://crates.io/crates/vyre), via
 
 ## What it does
 
-Reuses the shared `naga::Module` builder family with `vyre-driver-wgpu` and emits
-SPIR-V words via `naga::back::spv::write_vec`. That means the kernel body
-is the same program across both backends — the only difference is the
-back-end writer. This is the "substrate-neutral" claim of vyre 0.5.0 made
-concrete: two real compute backends, same IR, same op ids, interchangeable
-certificates.
+Emits SPIR-V words from validated `naga::Module` values via
+`naga::back::spv::write_vec`. The crate owns only SPIR-V serialization;
+shared lowering belongs in a backend-neutral layer, and concrete runtime
+dispatch belongs in concrete runtime drivers.
 
 ## Using it
 
@@ -24,12 +22,12 @@ let spirv_words: Vec<u32> = SpirvBackend::emit_spv(&module).expect("spv emit");
 # fn build_module_for_current_program() -> naga::Module { naga::Module::default() }
 ```
 
-## Relationship to vyre-driver-wgpu
+## Relationship to runtime drivers
 
-`vyre-driver-wgpu` owns a Vulkan/Metal/DirectX dispatch stack via `wgpu`. `vyre-driver-spirv`
-does not — it emits a SPIR-V blob for consumers that own their own Vulkan
-stack. The registered `VyreBackend::dispatch` returns a structured refusal
-pointing the caller at the intended flow.
+`vyre-driver-spirv` does not own a device queue or Vulkan dispatch stack. It
+emits a SPIR-V blob for consumers that own execution. The registered
+`VyreBackend::dispatch` returns a structured refusal pointing the caller at
+the intended flow.
 
 ## License
 

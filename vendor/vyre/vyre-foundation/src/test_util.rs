@@ -9,7 +9,7 @@ use crate::ir::{Node, Program};
 /// the optimized IR need to look inside that Region. This helper hides the
 /// unwrap so tests stay consistent even when the program has already been
 /// through `region_inline` and the wrapper is gone.
-pub fn region_body(program: &Program) -> &[Node] {
+pub(crate) fn region_body(program: &Program) -> &[Node] {
     match program.entry() {
         [Node::Region { body, .. }] => body,
         other => other,

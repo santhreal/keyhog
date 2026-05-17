@@ -16,3 +16,23 @@ pub mod crc32;
 
 /// Hash table primitives.
 pub mod table;
+
+/// Vector Symbolic Architecture (VSA) primitives — bind + bundle on
+/// 10K-dim binary hypervectors. Same Programs serve user retrieval /
+/// reasoning dialects AND vyre-self consumers (#29 VSA-based op
+/// cache key for content-addressable Program fingerprints).
+pub mod hypervector;
+
+/// Count-Sketch — Charikar 2002 frequency-moment estimator. Same
+/// Program serves user streaming/observability dialects AND vyre-self
+/// profiler latency-distribution sketching.
+pub mod sketch;
+
+/// Number-Theoretic Transform — exact-integer FFT over GF(p) for
+/// FHE / zk / lattice crypto. CPU + per-stage butterfly Program.
+/// 32-bit prime variant; 64-bit Goldilocks ships with U64 buffers.
+pub mod ntt;
+
+/// Hassanieh-Indyk-Katabi-Price sparse FFT bin-hash primitive (#49).
+/// User: sparse audio / radio / imaging analysis.
+pub mod sparse_fft;

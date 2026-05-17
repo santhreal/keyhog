@@ -38,6 +38,38 @@ impl Expr {
         }
     }
 
+    /// `saturating_sub(a, b)` for unsigned operands — clamps to 0
+    /// when `b > a` instead of underflowing.
+    ///
+    /// Compiles to `a - min(a, b)` so the WGSL static evaluator never
+    /// observes a literal underflow on either branch of an enclosing
+    /// `Expr::select`. Use this whenever `b` is a small constant
+    /// (typically 1) and the surrounding guard cannot be statically
+    /// proven to short-circuit. Without this, const-folding `a` to
+    /// `0u` inside an unguarded `Expr::sub(_, Expr::u32(1))` produces
+    /// the literal `0u - 1u` which `naga` rejects with "subtraction
+    /// operation overflowed" at shader-parse time.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use vyre::ir::Expr;
+    /// let _ = Expr::saturating_sub(Expr::u32(0), Expr::u32(1)); // -> 0u, not panic
+    /// ```
+    #[must_use]
+    #[inline]
+    pub fn saturating_sub(left: Expr, right: Expr) -> Expr {
+        Expr::BinOp {
+            op: BinOp::Sub,
+            left: Box::new(left.clone()),
+            right: Box::new(Expr::BinOp {
+                op: BinOp::Min,
+                left: Box::new(left),
+                right: Box::new(right),
+            }),
+        }
+    }
+
     /// `a * b`
     ///
     /// # Examples
@@ -69,6 +101,29 @@ impl Expr {
     pub fn div(left: Expr, right: Expr) -> Expr {
         Expr::BinOp {
             op: BinOp::Div,
+            left: Box::new(left),
+            right: Box::new(right),
+        }
+    }
+
+    /// Upper 32 bits of `a × b` (unsigned widening multiply).
+    ///
+    /// Maps to `OpUMulExtended` (primary-binary), `mul.hi.u32` (secondary-text), or a
+    /// 16-bit half-word decomposition when neither is available.
+    /// The strength-reduce pass emits this to implement
+    /// Granlund-Montgomery constant integer division.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use vyre::ir::Expr;
+    /// let _ = Expr::mulhi(Expr::var("n"), Expr::u32(0xAAAAAAAB));
+    /// ```
+    #[must_use]
+    #[inline(always)]
+    pub fn mulhi(left: Expr, right: Expr) -> Expr {
+        Expr::BinOp {
+            op: BinOp::MulHigh,
             left: Box::new(left),
             right: Box::new(right),
         }

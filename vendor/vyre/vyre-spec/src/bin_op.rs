@@ -5,7 +5,7 @@
 // AbsDiff=0x13, Min=0x14, Max=0x15, SaturatingAdd=0x16,
 // SaturatingSub=0x17, SaturatingMul=0x18, Shuffle=0x19, Ballot=0x1A,
 // WaveReduce=0x1B, WaveBroadcast=0x1C, RotateLeft=0x1D, WrappingAdd=0x1F, WrappingSub=0x20,
-// RotateRight=0x1E, 0x1F..=0x7F reserved, Opaque=0x80.
+// RotateRight=0x1E, MulHigh=0x21, 0x22..=0x7F reserved, Opaque=0x80.
 
 use crate::extension::ExtensionBinOpId;
 
@@ -92,6 +92,10 @@ pub enum BinOp {
     RotateLeft,
     /// Rotate-right.
     RotateRight,
+    /// Unsigned multiply-high: upper 32 bits of `(left × right)` treated
+    /// as a 64-bit product. Enables Granlund-Montgomery strength reduction
+    /// of integer division by constant to 2 instructions.
+    MulHigh,
     /// Extension-declared binary operator.
     Opaque(ExtensionBinOpId),
 }

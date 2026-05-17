@@ -1,70 +1,41 @@
 //! Prefix-sum scan — inclusive scan over a u32 buffer.
 //!
-//! Category A composition. Single-workgroup sequential version;
-//! callers with large arrays should lower into a Blelloch tree-scan
-//! variant (future `scan_prefix_sum_parallel`).
+//! Category A composition backed by the Tier-2.5 workgroup scan
+//! primitive for one-workgroup inputs.
 
-use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
+use vyre::ir::Program;
+use vyre_primitives::math::prefix_scan::{
+    prefix_scan_large_with_op_id, prefix_scan_with_op_id, ScanKind,
+};
 
-use crate::region::wrap_anonymous;
+const OP_ID: &str = "vyre-libs::math::scan_prefix_sum";
 
 /// Build a Program that computes the inclusive prefix sum of `input`
 /// into `output`, both sized `n`.
 ///
-/// The first invocation does the entire scan sequentially. This is
-/// correct and slow — O(n) work, one-threaded. The parallel Blelloch
-/// version belongs in a future `scan_prefix_sum_parallel`.
-///
 /// **Overflow semantics** (V7-CORR-018): all accumulator additions
 /// use `u32::wrapping_add`. For inputs whose cumulative sum exceeds
-/// `u32::MAX`, the output wraps modulo 2^32. Callers that need
-/// saturation or a larger accumulator must cast to f32 first (via a
-/// companion `scan_prefix_sum_f32` — future op) or split the input
-/// into chunks small enough to avoid overflow.
+/// `u32::MAX`, the output wraps modulo 2^32.
 #[must_use]
 pub fn scan_prefix_sum(input: &str, output: &str, n: u32) -> Program {
-    let input_decl = BufferDecl::storage(input, 0, BufferAccess::ReadOnly, DataType::U32);
-    let input_decl = if n == 0 {
-        input_decl
+    if n == 0 {
+        return crate::builder::invalid_output_program(
+            OP_ID,
+            output,
+            vyre::ir::DataType::U32,
+            "Fix: scan_prefix_sum requires n > 0.".to_string(),
+        );
+    }
+    if (1..=1024).contains(&n) {
+        prefix_scan_with_op_id(input, output, n, ScanKind::InclusiveSum, OP_ID)
     } else {
-        input_decl.with_count(n)
-    };
-    let output_decl = BufferDecl::output(output, 1, DataType::U32)
-        .with_count(n.max(1))
-        .with_output_byte_range(0..(n as usize).saturating_mul(4));
-    let body = scan_body(input, output, n);
-    let region = wrap_anonymous("vyre-libs::math::scan_prefix_sum", body);
-    Program::wrapped(vec![input_decl, output_decl], [1, 1, 1], vec![region])
-}
-
-fn scan_body(input: &str, output: &str, n: u32) -> Vec<Node> {
-    vec![Node::if_then(
-        Expr::eq(Expr::InvocationId { axis: 0 }, Expr::u32(0)),
-        vec![
-            Node::let_bind("acc", Expr::u32(0)),
-            Node::loop_for(
-                "i",
-                Expr::u32(0),
-                Expr::u32(n),
-                vec![
-                    Node::assign(
-                        "acc",
-                        Expr::add(Expr::var("acc"), Expr::load(input, Expr::var("i"))),
-                    ),
-                    Node::Store {
-                        buffer: output.into(),
-                        index: Expr::var("i"),
-                        value: Expr::var("acc"),
-                    },
-                ],
-            ),
-        ],
-    )]
+        prefix_scan_large_with_op_id(input, output, n, OP_ID)
+    }
 }
 
 inventory::submit! {
     crate::harness::OpEntry {
-        id: "vyre-libs::math::scan_prefix_sum",
+        id: OP_ID,
         build: || scan_prefix_sum("input", "output", 4),
         test_inputs: Some(|| vec![vec![
             [1u32, 2, 3, 4].iter().flat_map(|v| v.to_le_bytes()).collect(),
@@ -74,5 +45,95 @@ inventory::submit! {
             // Only ReadWrite buffer: prefix sum [1, 3, 6, 10]
             [1u32, 3, 6, 10].iter().flat_map(|v| v.to_le_bytes()).collect(),
         ]]),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use vyre_reference::value::Value;
+
+    fn u32_bytes(values: &[u32]) -> Vec<u8> {
+        values.iter().flat_map(|v| v.to_le_bytes()).collect()
+    }
+
+    fn decode_u32_words(bytes: &[u8]) -> Vec<u32> {
+        bytes
+            .chunks_exact(4)
+            .map(|c| u32::from_le_bytes(c.try_into().unwrap()))
+            .collect()
+    }
+
+    fn run_scan(n: u32, input: &[u32]) -> Vec<u32> {
+        let program = scan_prefix_sum("input", "output", n);
+        let outputs = vyre_reference::reference_eval(
+            &program,
+            &[
+                Value::from(u32_bytes(input)),
+                Value::from(vec![0u8; (n as usize).saturating_mul(4)]),
+            ],
+        )
+        .expect("prefix sum must execute");
+        decode_u32_words(&outputs[0].to_bytes())
+    }
+
+    #[test]
+    fn prefix_sum_single_element() {
+        let input = [42u32];
+        let actual = run_scan(1, &input);
+        assert_eq!(actual, vec![42u32]);
+    }
+
+    #[test]
+    fn prefix_sum_empty_n_zero_should_trap() {
+        let program = scan_prefix_sum("input", "output", 0);
+        let result = vyre_reference::reference_eval(
+            &program,
+            &[
+                Value::from(vec![0u8; 0]),
+                Value::from(vec![0u8; 0]),
+            ],
+        );
+        assert!(
+            result.is_err(),
+            "n=0 prefix_sum must trap instead of returning empty"
+        );
+    }
+
+    #[test]
+    fn prefix_sum_boundary_small_path() {
+        let input: Vec<u32> = (1..=1024).collect();
+        let actual = run_scan(1024, &input);
+        let expected: Vec<u32> = input
+            .iter()
+            .scan(0u32, |acc, &x| {
+                *acc = acc.wrapping_add(x);
+                Some(*acc)
+            })
+            .collect();
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn prefix_sum_boundary_large_path() {
+        let input: Vec<u32> = (1..=1025).collect();
+        let actual = run_scan(1025, &input);
+        let expected: Vec<u32> = input
+            .iter()
+            .scan(0u32, |acc, &x| {
+                *acc = acc.wrapping_add(x);
+                Some(*acc)
+            })
+            .collect();
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn prefix_sum_overflow_wraps() {
+        let input = [u32::MAX, 1u32, 1u32];
+        let actual = run_scan(3, &input);
+        assert_eq!(actual[0], u32::MAX);
+        assert_eq!(actual[1], 0u32, "u32::MAX + 1 must wrap to 0");
+        assert_eq!(actual[2], 1u32, "0 + 1 must be 1");
     }
 }

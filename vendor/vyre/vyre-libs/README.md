@@ -30,10 +30,11 @@ its own crates.io identity (`vyre-nn`, `vyre-math`, `vyre-scan`,
 
 ```rust
 use vyre::VyreBackend;
+use vyre_driver::backend::acquire_preferred_dispatch_backend;
 use vyre_libs::math::dot;
 
 let program = dot("x", "y", "result");
-let backend = vyre_driver_wgpu::WgpuBackend::acquire()?;
+let backend = acquire_preferred_dispatch_backend()?;
 let result = backend.dispatch(
     &program,
     &[vec![1, 2, 3, 4], vec![5, 6, 7, 8], vec![0]],

@@ -75,7 +75,7 @@ impl RulePipeline {
         // The hit buffer pre-allocates `max_matches * 3 + 1` u32 slots
         // (slot 0 = atomic counter, then triples).
         let hit_buf_words = (max_matches as usize) * 3 + 1;
-        let inputs = vec![
+        let inputs = [
             dispatch_io::pack_haystack_u32(haystack),
             dispatch_io::pack_u32_slice(&self.transition_table),
             dispatch_io::pack_u32_slice(&self.epsilon_table),
@@ -84,7 +84,9 @@ impl RulePipeline {
 
         let config = dispatch_io::candidate_start_dispatch_config(haystack_len);
 
-        let outputs = backend.dispatch(&self.program, &inputs, &config)?;
+        let borrowed_inputs: smallvec::SmallVec<[&[u8]; 4]> =
+            inputs.iter().map(Vec::as_slice).collect();
+        let outputs = backend.dispatch_borrowed(&self.program, &borrowed_inputs, &config)?;
 
         // The hit buffer is the only ReadWrite storage in the program;
         // backends return outputs in declaration order, so it lives at
@@ -96,7 +98,7 @@ impl RulePipeline {
                  Fix: this is a backend bug; report it.",
             ));
         }
-        let count = u32::from_le_bytes(hit_bytes[0..4].try_into().unwrap());
+        let count = u32::from_le_bytes([hit_bytes[0], hit_bytes[1], hit_bytes[2], hit_bytes[3]]);
         // Triples start at byte 4 (after the atomic counter).
         Ok(dispatch_io::unpack_match_triples(
             &hit_bytes[4..],
@@ -179,7 +181,7 @@ pub fn build(patterns: &[&str], input_buf: &str, hit_buf: &str, input_len: u32) 
 }
 
 const PIPELINE_WIRE_MAGIC: &[u8; 4] = b"VRPL";
-const PIPELINE_WIRE_VERSION: u32 = 1;
+const PIPELINE_WIRE_VERSION: u32 = 2;
 
 /// Errors returned by [`RulePipeline::from_bytes`]. Mirrors the layered
 /// error pattern of `LiteralSetWireError` — outer envelope failures
@@ -233,6 +235,8 @@ impl RulePipeline {
     ///   - words 3   : `plan.accept_states` flattened as
     ///                 `[pid_0, len_0, pid_1, len_1, …]`
     ///   - words 4   : `plan.accept_state_ids`
+    ///   - words 5   : accept anchor flags, one bitset word per accept
+    ///                 (`bit0=start`, `bit1=end`)
     ///
     /// # Errors
     /// Returns [`PipelineWireError::WireFraming`] if any section
@@ -260,6 +264,31 @@ impl RulePipeline {
         w.write_words(&accept_flat)
             .map_err(PipelineWireError::WireFraming)?;
         w.write_words(&self.plan.accept_state_ids)
+            .map_err(PipelineWireError::WireFraming)?;
+        let mut anchor_flags: Vec<u32> = Vec::with_capacity(self.plan.accept_states.len());
+        for idx in 0..self.plan.accept_states.len() {
+            let mut flags = 0u32;
+            if self
+                .plan
+                .accept_start_anchored
+                .get(idx)
+                .copied()
+                .unwrap_or(false)
+            {
+                flags |= 1;
+            }
+            if self
+                .plan
+                .accept_end_anchored
+                .get(idx)
+                .copied()
+                .unwrap_or(false)
+            {
+                flags |= 2;
+            }
+            anchor_flags.push(flags);
+        }
+        w.write_words(&anchor_flags)
             .map_err(PipelineWireError::WireFraming)?;
         Ok(w.into_bytes())
     }
@@ -290,6 +319,7 @@ impl RulePipeline {
         let epsilon_table = r.read_words().map_err(PipelineWireError::WireFraming)?;
         let accept_flat = r.read_words().map_err(PipelineWireError::WireFraming)?;
         let accept_state_ids = r.read_words().map_err(PipelineWireError::WireFraming)?;
+        let anchor_flags = r.read_words().map_err(PipelineWireError::WireFraming)?;
 
         if accept_flat.len() % 2 != 0 {
             return Err(PipelineWireError::ShapeMismatch {
@@ -303,6 +333,13 @@ impl RulePipeline {
                 reason: "accept_state_ids length disagrees with accept_states length",
             });
         }
+        if anchor_flags.len() != accept_states.len() {
+            return Err(PipelineWireError::ShapeMismatch {
+                reason: "accept anchor flag length disagrees with accept_states length",
+            });
+        }
+        let accept_start_anchored = anchor_flags.iter().map(|flags| flags & 1 != 0).collect();
+        let accept_end_anchored = anchor_flags.iter().map(|flags| flags & 2 != 0).collect();
 
         Ok(RulePipeline {
             program,
@@ -313,6 +350,8 @@ impl RulePipeline {
                 input_len,
                 accept_states,
                 accept_state_ids,
+                accept_start_anchored,
+                accept_end_anchored,
             },
         })
     }

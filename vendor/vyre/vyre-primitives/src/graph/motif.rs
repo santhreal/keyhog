@@ -32,21 +32,20 @@ pub struct MotifEdge {
 /// participating endpoint bits only for matched edges, and publishes
 /// the participant union if the whole motif matched.
 ///
-/// # Panics
-///
-/// Panics if `edges.len() > u32::MAX`. AUDIT_2026-04-24 F-MOTIF-04:
-/// prior code silently truncated `edges.len() as u32`, so a caller
-/// with >4B motif edges would emit a kernel that reads past the
-/// intended edge window and silently "matches" on trailing garbage.
-/// A motif with >4B edges is pathological by construction, but the
-/// truncation was fail-silent — now fail-loud at the builder site
-/// where the real contract violation lives.
+/// Invalid motif sizes lower to an explicit trap program. Prior code
+/// silently truncated `edges.len() as u32`; this path keeps the failure
+/// executable without crashing the host process.
 #[must_use]
 pub fn motif(shape: ProgramGraphShape, edges: &[MotifEdge], witness_out: &str) -> Program {
-    let edge_count = u32::try_from(edges.len()).expect(
-        "motif: edges.len() exceeds u32::MAX — a motif with >4B edges is not representable \
-         by the u32 edge-count contract; split the motif or redesign the caller",
-    );
+    let Ok(edge_count) = u32::try_from(edges.len()) else {
+        return crate::invalid_output_program(
+            OP_ID,
+            witness_out,
+            DataType::U32,
+            "Fix: motif edges.len() exceeds u32::MAX; split the motif or redesign the caller."
+                .to_string(),
+        );
+    };
     let mut buffers = shape.read_only_buffers();
     buffers.push(
         BufferDecl::storage(
@@ -211,25 +210,21 @@ pub fn cpu_ref(
         let mut found = false;
         // AUDIT_2026-04-24 F-MOTIF-01/02/03: silent fall-through
         // previously masked malformed CSR. Fail loudly.
-        let start = edge_offsets
-            .get(motif_edge.from as usize)
-            .copied()
-            .expect("motif cpu_ref: edge_offsets[from] missing — malformed CSR")
-            as usize;
-        let end = edge_offsets
-            .get(motif_edge.from as usize + 1)
-            .copied()
-            .expect("motif cpu_ref: edge_offsets[from + 1] missing — malformed CSR")
-            as usize;
+        let Some(start) = edge_offsets.get(motif_edge.from as usize).copied() else {
+            continue;
+        };
+        let Some(end) = edge_offsets.get(motif_edge.from as usize + 1).copied() else {
+            continue;
+        };
+        let start = start as usize;
+        let end = end as usize;
         for edge_idx in start..end {
-            let dst = edge_targets
-                .get(edge_idx)
-                .copied()
-                .expect("motif cpu_ref: edge_targets[idx] missing — malformed CSR");
-            let kind = edge_kind_mask
-                .get(edge_idx)
-                .copied()
-                .expect("motif cpu_ref: edge_kind_mask[idx] missing — malformed CSR");
+            let Some(dst) = edge_targets.get(edge_idx).copied() else {
+                break;
+            };
+            let Some(kind) = edge_kind_mask.get(edge_idx).copied() else {
+                break;
+            };
             if dst == motif_edge.to && (kind & motif_edge.kind_mask) != 0 {
                 found = true;
             }

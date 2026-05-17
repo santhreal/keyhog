@@ -21,6 +21,7 @@
 
 /// Two-pass separable Gaussian blur (composes `math::conv1d`).
 pub mod blur;
+pub(crate) mod byte_helpers;
 /// Porter-Duff alpha compositing.
 pub mod composite;
 /// 2× box-filter downsample for half-resolution blur.
@@ -37,13 +38,12 @@ pub mod shadow;
 pub mod upsample;
 
 // Re-exports for the public API surface.
-pub use blur::gaussian_blur_2pass;
+pub use blur::{gaussian_blur_2pass, GaussianBlurStages};
 pub use composite::alpha_over;
 pub use downsample::downsample_2x;
 pub use filter_chain::filter_chain;
 pub use glass::{
-    glass_blur_stage, glass_filter_stage, glass_fused, glass_stages, glass_stages_half_res,
-    GlassParams,
+    glass_blur_stage, glass_filter_stage, glass_stages, glass_stages_half_res, GlassParams,
 };
 pub use gradient::{linear_gradient, ColorStop};
 pub use shadow::box_shadow;

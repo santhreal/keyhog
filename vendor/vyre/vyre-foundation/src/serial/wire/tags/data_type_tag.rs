@@ -1,4 +1,5 @@
 use crate::ir::DataType;
+use crate::serial::wire::encode::WireEncodeErr;
 use crate::serial::wire::framing::{put_u32, put_u8};
 
 /// Encode a [`DataType`] into its stable VIR0 wire-format tag byte.
@@ -6,7 +7,7 @@ use crate::serial::wire::framing::{put_u32, put_u8};
 /// # Preconditions
 ///
 /// `value` must be a variant known to the VIR0 encoder. Because `DataType` is
-/// `#[non_exhaustive]`, future spec additions must receive a tag here before
+/// `#[non_exhaustive]`, spec additions must receive a tag here before
 /// they can round-trip through the wire format.
 ///
 /// # Returns
@@ -25,7 +26,7 @@ use crate::serial::wire::framing::{put_u32, put_u8};
 pub(crate) const DATA_TYPE_TAG_OPAQUE: u8 = 0x80;
 
 #[inline]
-pub(crate) fn data_type_tag(value: &DataType) -> Result<u8, String> {
+pub(crate) fn data_type_tag(value: &DataType) -> Result<u8, WireEncodeErr> {
     match value {
         DataType::U32 => Ok(0x01),
         DataType::I32 => Ok(0x02),
@@ -49,7 +50,7 @@ pub(crate) fn data_type_tag(value: &DataType) -> Result<u8, String> {
         DataType::Vec { .. } => Ok(0x14),
         DataType::TensorShaped { .. } => Ok(0x15),
         DataType::Opaque(_) => Ok(DATA_TYPE_TAG_OPAQUE),
-        _ => Err("unknown DataType variant".to_string()),
+        _ => Err(WireEncodeErr::static_msg("unknown DataType variant")),
     }
 }
 
@@ -71,13 +72,15 @@ pub(crate) fn data_type_tag(value: &DataType) -> Result<u8, String> {
 /// * Returns `Err("Fix: array element_size ... cannot fit the VIR0 u32 payload")`
 ///   when `element_size` exceeds `u32::MAX`, which would truncate the payload.
 #[inline]
-pub(crate) fn put_data_type(out: &mut Vec<u8>, value: &DataType) -> Result<(), String> {
+pub(crate) fn put_data_type(out: &mut Vec<u8>, value: &DataType) -> Result<(), WireEncodeErr> {
     put_u8(out, data_type_tag(value)?);
     match value {
         DataType::Array { element_size } => {
-            let encoded = u32::try_from(*element_size).map_err(|err| {
-                format!(
-                    "Fix: array element_size {element_size} cannot fit the VIR0 u32 payload ({err}); cap the element size or extend the wire format."
+            let encoded = u32::try_from(*element_size).map_err(|_| {
+                WireEncodeErr::fmt_usize(
+                    "Fix: array element_size ",
+                    *element_size,
+                    " cannot fit the VIR0 u32 payload; cap the element size or extend the wire format.",
                 )
             })?;
             put_u32(out, encoded);
@@ -95,10 +98,11 @@ pub(crate) fn put_data_type(out: &mut Vec<u8>, value: &DataType) -> Result<(), S
         }
         DataType::TensorShaped { element, shape } => {
             put_data_type(out, element)?;
-            let len = u32::try_from(shape.len()).map_err(|err| {
-                format!(
-                    "Fix: tensor shape rank {} cannot fit the VIR0 u32 payload ({err}); cap rank before serialization.",
-                    shape.len()
+            let len = u32::try_from(shape.len()).map_err(|_| {
+                WireEncodeErr::fmt_usize(
+                    "Fix: tensor shape rank ",
+                    shape.len(),
+                    " cannot fit the VIR0 u32 payload; cap rank before serialization.",
                 )
             })?;
             put_u32(out, len);
@@ -125,13 +129,13 @@ pub(crate) fn put_data_type(out: &mut Vec<u8>, value: &DataType) -> Result<(), S
         | DataType::Tensor
         | DataType::Vec2U32
         | DataType::Vec4U32 => {}
-        // `DataType` is `#[non_exhaustive]` in vyre-spec; future extension
+        // `DataType` is `#[non_exhaustive]` in vyre-spec; extension
         // variants added there must not break the existing encoder. Any
         // new variant must also add a payload-emission arm above before
         // being released, or encoding will fail fast here.
         _ => {
-            return Err(format!(
-                "Fix: unknown DataType variant {value:?} has no wire-format payload emitter. Add a match arm in put_data_type when the variant is introduced in vyre-spec."
+            return Err(WireEncodeErr::static_msg(
+                "Fix: unknown DataType variant has no wire-format payload emitter. Add a match arm in put_data_type when the variant is introduced in vyre-spec.",
             ));
         }
     }

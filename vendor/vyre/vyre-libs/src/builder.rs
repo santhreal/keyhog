@@ -17,9 +17,19 @@
 //! this). Every Cat-A op exposes its builder as `<Op>Builder::new(...)`
 //! and delegates defaults through `BuildOptions::default()`.
 
-use vyre::ir::DataType;
+use vyre::ir::{BufferDecl, DataType, Expr, Node, Program};
+use vyre_foundation::ir::model::expr::GeneratorRef;
 
 use crate::tensor_ref::{TensorRef, TensorRefError};
+
+/// Shared child region for one-output indexed maps.
+///
+/// This is the kernel skeleton behind embedding lookup, byte shuffles,
+/// quant pack/unpack, and similar data-layout transforms:
+/// `for i in 0..n { out[dst(i)] = value(i) }`.
+pub(crate) const INDEXED_MAP_OP_ID: &str = "vyre-libs::substrate::indexed_map";
+/// Shared child region for strided per-lane workgroup accumulators.
+pub(crate) const STRIDED_ACCUMULATE_OP_ID: &str = "vyre-libs::substrate::strided_accumulate";
 
 /// Shared options every Cat-A builder threads through. Lives here so
 /// every op agrees on the same surface.
@@ -84,10 +94,189 @@ pub fn check_tensors(
             });
         }
     }
-    // Name-uniqueness check across the whole slice.
-    let refs: Vec<&TensorRef> = tensors.iter().map(|(r, _)| *r).collect();
-    crate::tensor_ref::check_unique_names(&refs, op)?;
+    for (idx, (left, _)) in tensors.iter().enumerate() {
+        for (right, _) in &tensors[idx + 1..] {
+            if left.name_str() == right.name_str() {
+                return Err(TensorRefError::NameCollision {
+                    name: left.name.as_str().to_string(),
+                    op,
+                });
+            }
+        }
+    }
     Ok(())
+}
+
+/// Build the canonical one-output indexed-map skeleton.
+///
+/// Callers provide buffer declarations plus the semantic mapping from logical
+/// element `i` to `(dst_index, value)`. The loop, bounds guard, invocation id,
+/// workgroup default, and composition region stay centralized.
+pub(crate) fn build_indexed_map<F>(
+    op_id: &'static str,
+    buffers: Vec<BufferDecl>,
+    output: &str,
+    count: u32,
+    workgroup_size: [u32; 3],
+    f: F,
+) -> Program
+where
+    F: FnOnce(Expr) -> (Expr, Expr),
+{
+    let i = Expr::var("i");
+    let (dst_index, value) = f(i.clone());
+    let child_body = vec![
+        Node::let_bind("i", Expr::InvocationId { axis: 0 }),
+        Node::if_then(
+            Expr::lt(i, Expr::u32(count)),
+            vec![Node::store(output, dst_index, value)],
+        ),
+    ];
+    let parent = GeneratorRef {
+        name: op_id.to_string(),
+    };
+
+    Program::wrapped(
+        buffers,
+        workgroup_size,
+        vec![crate::region::wrap_anonymous(
+            op_id,
+            vec![crate::region::wrap_child(
+                INDEXED_MAP_OP_ID,
+                parent,
+                child_body,
+            )],
+        )],
+    )
+}
+
+/// Build a shared strided single-accumulator child region.
+///
+/// The parent must bind `local = LocalId(0)` before this child. The child
+/// accumulates `i = chunk * tile + local` for `chunk in 0..chunks`, guards
+/// `i < n`, and stores the lane-local accumulator into `scratch[local]`.
+pub(crate) fn strided_accumulate_child<F>(
+    parent_op_id: &'static str,
+    tile: u32,
+    chunks: u32,
+    n: u32,
+    acc_name: &'static str,
+    initial: Expr,
+    scratch: &'static str,
+    step: F,
+) -> Node
+where
+    F: Fn(Expr, Expr) -> Expr,
+{
+    let local = Expr::var("local");
+    let idx = Expr::var("idx");
+    let acc = Expr::var(acc_name);
+    let child_body = vec![Node::if_then(
+        Expr::eq(Expr::WorkgroupId { axis: 0 }, Expr::u32(0)),
+        vec![
+            Node::let_bind(acc_name, initial),
+            strided_loop(
+                tile,
+                chunks,
+                n,
+                vec![Node::assign(acc_name, step(idx, acc))],
+            ),
+            Node::store(scratch, local, Expr::var(acc_name)),
+        ],
+    )];
+
+    child_region(parent_op_id, STRIDED_ACCUMULATE_OP_ID, child_body)
+}
+
+/// Build a shared strided dual-accumulator child region.
+///
+/// This keeps paired reductions such as `(sum, sum_sq)` in one memory pass
+/// instead of forcing two separate scans over the input.
+pub(crate) fn strided_accumulate2_child<F1, F2>(
+    parent_op_id: &'static str,
+    tile: u32,
+    chunks: u32,
+    n: u32,
+    first: (&'static str, Expr, &'static str, F1),
+    second: (&'static str, Expr, &'static str, F2),
+) -> Node
+where
+    F1: Fn(Expr, Expr) -> Expr,
+    F2: Fn(Expr, Expr) -> Expr,
+{
+    let (first_name, first_initial, first_scratch, first_step) = first;
+    let (second_name, second_initial, second_scratch, second_step) = second;
+    let local = Expr::var("local");
+    let idx = Expr::var("idx");
+    let child_body = vec![Node::if_then(
+        Expr::eq(Expr::WorkgroupId { axis: 0 }, Expr::u32(0)),
+        vec![
+            Node::let_bind(first_name, first_initial),
+            Node::let_bind(second_name, second_initial),
+            strided_loop(
+                tile,
+                chunks,
+                n,
+                vec![
+                    Node::assign(first_name, first_step(idx.clone(), Expr::var(first_name))),
+                    Node::assign(second_name, second_step(idx, Expr::var(second_name))),
+                ],
+            ),
+            Node::store(first_scratch, local.clone(), Expr::var(first_name)),
+            Node::store(second_scratch, local, Expr::var(second_name)),
+        ],
+    )];
+
+    child_region(parent_op_id, STRIDED_ACCUMULATE_OP_ID, child_body)
+}
+
+fn strided_loop(tile: u32, chunks: u32, n: u32, guarded_body: Vec<Node>) -> Node {
+    Node::loop_for(
+        "chunk",
+        Expr::u32(0),
+        Expr::u32(chunks),
+        vec![
+            Node::let_bind(
+                "idx",
+                Expr::add(
+                    Expr::mul(Expr::var("chunk"), Expr::u32(tile)),
+                    Expr::var("local"),
+                ),
+            ),
+            Node::if_then(Expr::lt(Expr::var("idx"), Expr::u32(n)), guarded_body),
+        ],
+    )
+}
+
+fn child_region(parent_op_id: &'static str, child_op_id: &'static str, body: Vec<Node>) -> Node {
+    crate::region::wrap_child(
+        child_op_id,
+        GeneratorRef {
+            name: parent_op_id.to_string(),
+        },
+        body,
+    )
+}
+
+/// Build a scalar-output trap program for invalid Cat-A builder inputs.
+///
+/// This keeps public compatibility wrappers infallible without panicking on
+/// user-controlled names or shapes. Typed builders should still return
+/// `Result`; this helper is for legacy `fn foo(...) -> Program` surfaces.
+pub(crate) fn invalid_output_program(
+    op_id: &'static str,
+    output: &str,
+    data_type: DataType,
+    message: String,
+) -> Program {
+    Program::wrapped(
+        vec![BufferDecl::output(output, 0, data_type).with_count(1)],
+        [1, 1, 1],
+        vec![crate::region::wrap_anonymous(
+            op_id,
+            vec![Node::trap(Expr::u32(0), message)],
+        )],
+    )
 }
 
 /// Tensor-ref elementwise builders; reserved for upcoming domain ops.
@@ -121,8 +310,18 @@ where
         });
     }
 
-    let a_count = a.element_count().unwrap();
-    let out_count = out.element_count().unwrap();
+    let a_count = a.element_count().ok_or_else(|| {
+        crate::tensor_ref::TensorRefError::ElementCountOverflow {
+            name: a.name_str().to_string(),
+            shape: a.shape.to_vec(),
+        }
+    })?;
+    let out_count = out.element_count().ok_or_else(|| {
+        crate::tensor_ref::TensorRefError::ElementCountOverflow {
+            name: out.name_str().to_string(),
+            shape: out.shape.to_vec(),
+        }
+    })?;
     if out_count < a_count {
         return Err(crate::tensor_ref::TensorRefError::ShapeMismatch {
             name: out.name_str().to_string(),
@@ -132,7 +331,7 @@ where
         });
     }
 
-    let n = a.element_count().unwrap();
+    let n = a_count;
     let body = vec![
         vyre::ir::Node::let_bind("idx", vyre::ir::Expr::InvocationId { axis: 0 }),
         vyre::ir::Node::if_then(
@@ -201,7 +400,12 @@ where
         });
     }
 
-    let n = a.element_count().unwrap();
+    let n = a.element_count().ok_or_else(|| {
+        crate::tensor_ref::TensorRefError::ElementCountOverflow {
+            name: a.name_str().to_string(),
+            shape: a.shape.to_vec(),
+        }
+    })?;
     let body = vec![
         vyre::ir::Node::let_bind("idx", vyre::ir::Expr::InvocationId { axis: 0 }),
         vyre::ir::Node::if_then(
@@ -285,5 +489,26 @@ mod tests {
         let b = TensorRef::u32_1d("x", 4);
         let err = check_tensors("op", &[(&a, DataType::U32), (&b, DataType::U32)]).unwrap_err();
         assert!(matches!(err, TensorRefError::NameCollision { .. }));
+    }
+
+    #[test]
+    fn indexed_map_builder_emits_shared_child_region() {
+        let program = build_indexed_map(
+            "vyre-libs::test::indexed_map_user",
+            vec![
+                BufferDecl::storage("input", 0, vyre::ir::BufferAccess::ReadOnly, DataType::U32)
+                    .with_count(4),
+                BufferDecl::output("output", 1, DataType::U32).with_count(4),
+            ],
+            "output",
+            4,
+            [64, 1, 1],
+            |i| (i.clone(), Expr::load("input", i)),
+        );
+        let rendered = format!("{:?}", program.entry());
+        assert!(
+            rendered.contains(INDEXED_MAP_OP_ID),
+            "Fix: indexed-map users must share the same child region instead of copying loop skeletons: {rendered}"
+        );
     }
 }

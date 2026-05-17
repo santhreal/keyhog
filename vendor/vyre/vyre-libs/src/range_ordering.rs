@@ -9,7 +9,7 @@
 //! pulled the security dialect into every SURGE compile path even when
 //! the author's program had nothing to do with security.
 //!
-//! Callers: `surgec::compile::ir_emit` for `Before`/`After` predicates;
+//! Callers: `surgec::emit` for `Before`/`After` predicates;
 //! any future dialect that enumerates `(tag, start, end)` ranges and
 //! asks relational questions about them.
 //!

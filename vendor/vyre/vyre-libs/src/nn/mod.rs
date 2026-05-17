@@ -1,12 +1,16 @@
-//! Neural-net primitives — activation, linear, normalization, attention.
+//! Neural-net primitives — activation, linear, normalization, attention,
+//! optimizer, quantization.
+//!
 //! Each function is a Category-A composition over vyre-ops primitives
 //! and lower-level `vyre-libs::math` functions.
 //!
 //! Organized into sub-dialects:
-//! - `activation` — ReLU (future: gelu, silu, tanh, sigmoid)
+//! - `activation` — ReLU, LeakyReLU², LogitSoftcap, CrossEntropy, Embedding, SkipGate
 //! - `linear` — affine linear layer
-//! - `norm` — LayerNorm (future: rmsnorm, batchnorm, groupnorm)
-//! - `attention` — softmax, scaled_dot_product_attention
+//! - `norm` — LayerNorm, RMSNorm, LayerwiseLNScale
+//! - `attention` — softmax, scaled_dot_product_attention, QKGain, PartialRoPE
+//! - `optim` — EMA, AdamW, Muon, Newton-Schulz, MuonEq-R
+//! - `quant` — int6, int8 pack/unpack, byte_shuffle, GPTQ-SDClip
 //!
 //! Flat re-exports preserve the pre-0.6 API surface.
 
@@ -25,12 +29,20 @@ pub mod attention;
 #[cfg(feature = "nn-moe")]
 pub mod moe;
 
+#[cfg(feature = "nn-activation")]
+pub mod optim;
+
+#[cfg(feature = "nn-activation")]
+pub mod quant;
+
 // Flat re-exports for back-compat.
 #[cfg(feature = "nn-activation")]
 pub use activation::relu;
 #[cfg(feature = "nn-attention")]
-pub use attention::{attention, softmax, Attention, Softmax};
+pub use attention::{
+    attention, attention_reference, softmax, softmax_reference, Attention, Softmax,
+};
 #[cfg(feature = "nn-linear")]
-pub use linear::{linear, linear_relu};
+pub use linear::{linear, linear_relu, linear_silu, linear_tiled, Linear};
 #[cfg(feature = "nn-norm")]
-pub use norm::{layer_norm, LayerNorm};
+pub use norm::{layer_norm, rms_norm, rms_norm_reference, LayerNorm};

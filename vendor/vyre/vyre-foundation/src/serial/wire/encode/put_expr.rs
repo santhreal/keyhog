@@ -1,8 +1,9 @@
 //! Expression encoder for the stable IR wire format.
 
+use crate::serial::wire::encode::WireEncodeErr;
 use crate::serial::wire::framing::{put_len_u32, put_string, put_u32, put_u8};
 use crate::serial::wire::tags::{atomic_op_tag, bin_op_tag, put_data_type, un_op_tag};
-use crate::serial::wire::Expr;
+use crate::serial::wire::{Expr, MAX_OPAQUE_PAYLOAD_LEN};
 
 /// Append the wire-format tag and payload for one [`Expr`] to `out`.
 ///
@@ -43,7 +44,7 @@ use crate::serial::wire::Expr;
 ///   larger than `u32::MAX`.
 #[inline]
 #[must_use]
-pub fn put_expr(out: &mut Vec<u8>, expr: &Expr) -> Result<(), String> {
+pub fn put_expr(out: &mut Vec<u8>, expr: &Expr) -> Result<(), WireEncodeErr> {
     match expr {
         Expr::LitU32(value) => {
             put_u8(out, 0);
@@ -144,6 +145,7 @@ pub fn put_expr(out: &mut Vec<u8>, expr: &Expr) -> Result<(), String> {
             index,
             expected,
             value,
+            ordering,
         } => {
             put_u8(out, 14);
             if let crate::ir::AtomicOp::Opaque(id) = op {
@@ -152,6 +154,7 @@ pub fn put_expr(out: &mut Vec<u8>, expr: &Expr) -> Result<(), String> {
             } else {
                 put_u8(out, atomic_op_tag(*op)?);
             }
+            put_u8(out, ordering.wire_tag());
             put_string(out, buffer)?;
             put_expr(out, index)?;
             match expected {
@@ -186,6 +189,13 @@ pub fn put_expr(out: &mut Vec<u8>, expr: &Expr) -> Result<(), String> {
             put_u8(out, 0x80);
             put_string(out, extension.extension_kind())?;
             let payload = extension.wire_payload();
+            if payload.len() > MAX_OPAQUE_PAYLOAD_LEN {
+                return Err(WireEncodeErr::fmt_usize(
+                    "opaque expression payload",
+                    payload.len(),
+                    &format!(" exceeds {MAX_OPAQUE_PAYLOAD_LEN}. Fix: split the payload across multiple opaque expressions or reduce the extension data size."),
+                ));
+            }
             put_len_u32(out, payload.len(), "opaque expression payload length")?;
             out.extend_from_slice(&payload);
         }
@@ -195,6 +205,12 @@ pub fn put_expr(out: &mut Vec<u8>, expr: &Expr) -> Result<(), String> {
 
 #[inline]
 fn canonical_f32_bits(value: f32) -> u32 {
+    if value.is_nan() {
+        return 0x7FC0_0000;
+    }
+    if value.is_subnormal() {
+        return 0.0f32.to_bits();
+    }
     let bits = value.to_bits();
     if bits == (-0.0f32).to_bits() {
         0.0f32.to_bits()

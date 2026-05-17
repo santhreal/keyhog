@@ -24,10 +24,11 @@
 //!
 //! Soundness: identical to the one BFS step `flows_to` provides —
 //! [`MayOver`](super::super::dataflow::Soundness::MayOver) on a single
-//! step, [`Exact`] when iterated to fixpoint with sanitizer gating.
+//! step, `Exact` when iterated to fixpoint with sanitizer gating.
 
 use vyre::ir::Program;
 use vyre_primitives::graph::program_graph::ProgramGraphShape;
+use vyre_primitives::predicate::edge_kind;
 
 use crate::security::flow_composition::{
     any_dataflow_hit, dataflow_hit_program, dataflow_reach_step,
@@ -84,6 +85,40 @@ pub fn cpu_ref(
         source,
     );
     any_dataflow_hit(&reach, sink)
+}
+
+inventory::submit! {
+    crate::harness::OpEntry {
+        id: OP_ID,
+        build: || flows_to_to_sink(ProgramGraphShape::new(4, 3), "source", "sink", "reach", "hits", "out_scalar"),
+        test_inputs: Some(|| {
+            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            vec![vec![
+                to_bytes(&[0, 0, 0, 0]),          // pg_nodes
+                to_bytes(&[0, 1, 2, 3, 3]),       // pg_edge_offsets
+                to_bytes(&[1, 2, 3]),             // pg_edge_targets
+                to_bytes(&[
+                    edge_kind::ASSIGNMENT,
+                    edge_kind::ASSIGNMENT,
+                    edge_kind::ASSIGNMENT,
+                ]),                               // pg_edge_kind_mask
+                to_bytes(&[0, 0, 0, 0]),          // pg_node_tags
+                to_bytes(&[0b0001]),              // source = {0}
+                to_bytes(&[0b0001]),              // reach = {0}
+                to_bytes(&[0b0010]),              // sink = {1}
+                to_bytes(&[0b0000]),              // hits
+                to_bytes(&[0b0000]),              // out_scalar
+            ]]
+        }),
+        expected_output: Some(|| {
+            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            vec![vec![
+                to_bytes(&[0b0011]),              // reach = {0,1}
+                to_bytes(&[0b0010]),              // hits = {1}
+                to_bytes(&[0b0001]),              // out_scalar = 1
+            ]]
+        }),
+    }
 }
 
 #[cfg(test)]

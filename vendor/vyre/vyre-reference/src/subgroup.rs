@@ -2,7 +2,7 @@
 //!
 //! The reference interpreter executes one invocation at a time, but Cat-C
 //! subgroup ops need lane-collective semantics to stay oracle-worthy once the
-//! lowering path emits Naga subgroup expressions. This module provides a small,
+//! lowering path emits backend subgroup expressions. This module provides a small,
 //! deterministic simulator over a logical subgroup of lanes.
 
 /// Deterministic CPU model of a hardware subgroup/wave.

@@ -5,8 +5,10 @@
 //! executes the ordered kernel sequence already resident in the command queue.
 
 use crate::buffer::GpuBufferHandle;
+use crate::pipeline::compound::CompoundResource;
 use crate::pipeline::WgpuPipeline;
-use vyre_driver::{BackendError, DispatchConfig, Resource};
+use smallvec::SmallVec;
+use vyre_driver::{BackendError, DispatchConfig};
 
 /// A GPU-resident or host-side resource.
 #[derive(Clone)]
@@ -32,7 +34,7 @@ impl From<GpuBufferHandle> for GpuResource {
 /// Ordered graph of compiled wgpu pipeline dispatches.
 #[derive(Default)]
 pub struct GpuDispatchGraph {
-    ops: Vec<GraphOp>,
+    ops: SmallVec<[GraphOp; 8]>,
 }
 
 #[derive(Clone)]
@@ -45,7 +47,9 @@ impl GpuDispatchGraph {
     /// Create an empty graph.
     #[must_use]
     pub fn new() -> Self {
-        Self { ops: Vec::new() }
+        Self {
+            ops: SmallVec::new(),
+        }
     }
 
     /// Append one pipeline dispatch to the graph.
@@ -82,17 +86,17 @@ impl GpuDispatchGraph {
         // V7-PERF-021: Zero-copy graph execution (I.14).
         // Convert GpuResources to substrate-neutral Resources for the pipeline engine.
         // Resident handles are identified by their process-stable id.
-        let mut internal_requests = Vec::with_capacity(self.ops.len());
+        let mut internal_requests: SmallVec<[(&WgpuPipeline, CompoundResource<'_>); 8]> =
+            SmallVec::with_capacity(self.ops.len());
         for op in &self.ops {
             let res = match &op.input {
-                GpuResource::Borrowed(bytes) => Resource::Borrowed(bytes.clone()),
-                GpuResource::Resident(handle) => Resource::Resident(handle.id()),
+                GpuResource::Borrowed(bytes) => CompoundResource::Borrowed(bytes),
+                GpuResource::Resident(handle) => CompoundResource::Resident(handle.id()),
             };
             internal_requests.push((&op.pipeline, res));
         }
 
-        // Note: dispatch_compound needs to be updated to accept Resource instead of &[u8]
-        WgpuPipeline::dispatch_compound_v2(&internal_requests, config)
+        WgpuPipeline::dispatch_compound_borrowed(&internal_requests, config)
     }
 }
 

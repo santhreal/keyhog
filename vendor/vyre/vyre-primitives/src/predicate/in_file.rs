@@ -11,7 +11,10 @@ pub const OP_ID: &str = "vyre-primitives::predicate::in_file";
 /// Build a Program.
 #[must_use]
 pub fn in_file(node_tags: &str, nodeset_out: &str, node_count: u32) -> Program {
-    resolve_family(node_tags, nodeset_out, node_count, tag_family::FILE)
+    crate::program_region::tag_program(
+        OP_ID,
+        resolve_family(node_tags, nodeset_out, node_count, tag_family::FILE),
+    )
 }
 
 /// CPU reference.

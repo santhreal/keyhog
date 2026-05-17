@@ -233,10 +233,7 @@ pub fn assert_exhaustive_byte_identity(
 }
 
 fn program_fingerprint(program: &Program) -> [u8; 32] {
-    let wire = program
-        .to_wire()
-        .expect("Fix: conformance Program must always serialize");
-    *::blake3::hash(&wire).as_bytes()
+    vyre_foundation::optimizer::pipeline_fingerprint_bytes(program)
 }
 
 #[cfg(test)]
@@ -244,19 +241,18 @@ mod tests {
     use super::*;
     use std::sync::Mutex;
 
-    use vyre_conform_spec::U32Witness;
     use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 
-    type StubRun = dyn Fn(&[Vec<u8>]) -> Result<Vec<Vec<u8>>, BackendError> + Send + Sync;
+    type FakeRun = dyn Fn(&[Vec<u8>]) -> Result<Vec<Vec<u8>>, BackendError> + Send + Sync;
 
-    struct StubPipeline {
+    struct FakePipeline {
         id: String,
-        run: Arc<StubRun>,
+        run: Arc<FakeRun>,
     }
 
-    impl crate::backend::private::Sealed for StubPipeline {}
+    impl crate::backend::private::Sealed for FakePipeline {}
 
-    impl CompiledPipeline for StubPipeline {
+    impl CompiledPipeline for FakePipeline {
         fn id(&self) -> &str {
             &self.id
         }
@@ -289,7 +285,7 @@ mod tests {
 
     fn witness_matrix() -> ConformanceMatrix {
         ConformanceMatrix::new(
-            U32Witness::enumerate()
+            u32_witnesses()
                 .into_iter()
                 .map(|witness| {
                     ConformanceCase::new(
@@ -303,8 +299,8 @@ mod tests {
 
     #[test]
     fn empty_matrix_is_rejected() {
-        let pipeline: Arc<dyn CompiledPipeline> = Arc::new(StubPipeline {
-            id: "stub".into(),
+        let pipeline: Arc<dyn CompiledPipeline> = Arc::new(FakePipeline {
+            id: "fake".into(),
             run: Arc::new(|inputs| Ok(inputs.to_vec())),
         });
         let reference = ReferenceExecutor::new(|_, inputs| Ok(inputs.to_vec()));
@@ -323,8 +319,8 @@ mod tests {
 
     #[test]
     fn exhaustive_matrix_passes_matching_outputs() {
-        let pipeline: Arc<dyn CompiledPipeline> = Arc::new(StubPipeline {
-            id: "stub".into(),
+        let pipeline: Arc<dyn CompiledPipeline> = Arc::new(FakePipeline {
+            id: "fake".into(),
             run: Arc::new(|inputs| Ok(inputs.to_vec())),
         });
         let reference = ReferenceExecutor::new(|_, inputs| Ok(inputs.to_vec()));
@@ -336,7 +332,7 @@ mod tests {
             &witness_matrix(),
             &DispatchConfig::default(),
         )
-        .expect("matching backend/reference outputs must pass the exhaustive matrix");
+        .expect("Fix: matching backend/reference outputs must pass the exhaustive matrix; restore this invariant before continuing.");
     }
 
     #[test]
@@ -344,8 +340,8 @@ mod tests {
         let hidden_witness = 0xDEAD_BEEF_u32.to_le_bytes().to_vec();
         let seen = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
         let seen_clone = Arc::clone(&seen);
-        let pipeline: Arc<dyn CompiledPipeline> = Arc::new(StubPipeline {
-            id: "stub".into(),
+        let pipeline: Arc<dyn CompiledPipeline> = Arc::new(FakePipeline {
+            id: "fake".into(),
             run: Arc::new(move |inputs| {
                 seen_clone.lock().unwrap().push(inputs[0].clone());
                 if inputs[0] == hidden_witness {
@@ -381,8 +377,35 @@ mod tests {
 
         assert_eq!(
             seen.lock().unwrap().len(),
-            U32Witness::enumerate().len(),
+            u32_witnesses().len(),
             "the conformance matrix must execute every witness tuple exactly once"
         );
+    }
+
+    fn u32_witnesses() -> Vec<u32> {
+        let mut out = vec![
+            0u32,
+            1,
+            2,
+            3,
+            u32::MAX,
+            u32::MAX - 1,
+            0x8000_0000,
+            0x7FFF_FFFF,
+            0xAAAA_AAAA,
+            0x5555_5555,
+            0xDEAD_BEEF,
+            0xCAFE_F00D,
+        ];
+        let mut state = 0xD5E4_A7B9_3C6D_102Fu64;
+        for _ in 0..24 {
+            state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);
+            let mut z = state;
+            z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+            z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+            z ^= z >> 31;
+            out.push((z as u32) ^ ((z >> 32) as u32));
+        }
+        out
     }
 }

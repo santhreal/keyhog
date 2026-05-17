@@ -11,7 +11,9 @@ use crate::ir_inner::model::expr::Expr;
 use crate::ir_inner::model::expr::Ident;
 use crate::ir_inner::model::node::Node;
 use crate::ir_inner::model::program::Program;
+use smallvec::SmallVec;
 use std::collections::HashSet;
+use std::sync::Arc;
 
 /// Visitor called for each [`Node`] during [`walk_nodes_and_exprs`].
 pub trait NodeVisitor {
@@ -47,7 +49,8 @@ pub trait ExprVisitor {
 /// ```
 #[inline]
 pub fn walk_nodes(program: &Program, mut f: impl FnMut(&Node)) {
-    let mut stack = Vec::with_capacity(program.entry().len());
+    let mut stack: SmallVec<[&Node; 128]> = SmallVec::new();
+    stack.reserve(program.entry().len());
     for node in program.entry().iter().rev() {
         stack.push(node);
     }
@@ -84,7 +87,7 @@ pub fn walk_nodes(program: &Program, mut f: impl FnMut(&Node)) {
             | Node::Assign { .. }
             | Node::Store { .. }
             | Node::Return
-            | Node::Barrier
+            | Node::Barrier { .. }
             | Node::IndirectDispatch { .. }
             | Node::AsyncLoad { .. }
             | Node::AsyncStore { .. }
@@ -115,12 +118,14 @@ pub fn walk_nodes(program: &Program, mut f: impl FnMut(&Node)) {
 /// ```
 #[inline]
 pub fn walk_exprs(program: &Program, mut f: impl FnMut(&Expr)) {
-    let mut node_stack = Vec::with_capacity(program.entry().len());
+    let mut node_stack: SmallVec<[&Node; 128]> = SmallVec::new();
+    node_stack.reserve(program.entry().len());
     for node in program.entry().iter().rev() {
         node_stack.push(node);
     }
 
-    let mut expr_stack = Vec::with_capacity(program.entry().len().saturating_mul(2));
+    let mut expr_stack: SmallVec<[&Expr; 128]> = SmallVec::new();
+    expr_stack.reserve(program.entry().len().saturating_mul(2));
 
     while let Some(node) = node_stack.pop() {
         match node {
@@ -162,7 +167,7 @@ pub fn walk_exprs(program: &Program, mut f: impl FnMut(&Expr)) {
                 }
             }
             Node::Return
-            | Node::Barrier
+            | Node::Barrier { .. }
             | Node::IndirectDispatch { .. }
             | Node::AsyncLoad { .. }
             | Node::AsyncStore { .. }
@@ -252,7 +257,8 @@ pub fn walk_exprs(program: &Program, mut f: impl FnMut(&Expr)) {
 /// ```
 #[inline]
 pub fn walk_nodes_mut(program: &mut Program, mut f: impl FnMut(&mut Node)) {
-    let mut stack = Vec::with_capacity(program.entry().len());
+    let mut stack: SmallVec<[&mut Node; 128]> = SmallVec::new();
+    stack.reserve(program.entry().len());
     for node in program.entry_mut().iter_mut().rev() {
         stack.push(node);
     }
@@ -289,7 +295,7 @@ pub fn walk_nodes_mut(program: &mut Program, mut f: impl FnMut(&mut Node)) {
             | Node::Assign { .. }
             | Node::Store { .. }
             | Node::Return
-            | Node::Barrier
+            | Node::Barrier { .. }
             | Node::IndirectDispatch { .. }
             | Node::AsyncLoad { .. }
             | Node::AsyncStore { .. }
@@ -333,12 +339,14 @@ pub fn walk_nodes_mut(program: &mut Program, mut f: impl FnMut(&mut Node)) {
 /// ```
 #[inline]
 pub fn walk_nodes_and_exprs<V: NodeVisitor + ExprVisitor>(program: &Program, visitor: &mut V) {
-    let mut node_stack = Vec::with_capacity(program.entry().len());
+    let mut node_stack: SmallVec<[&Node; 128]> = SmallVec::new();
+    node_stack.reserve(program.entry().len());
     for node in program.entry().iter().rev() {
         node_stack.push(node);
     }
 
-    let mut expr_stack = Vec::with_capacity(program.entry().len().saturating_mul(2));
+    let mut expr_stack: SmallVec<[&Expr; 128]> = SmallVec::new();
+    expr_stack.reserve(program.entry().len().saturating_mul(2));
 
     while let Some(node) = node_stack.pop() {
         visitor.visit_node(node);
@@ -381,7 +389,7 @@ pub fn walk_nodes_and_exprs<V: NodeVisitor + ExprVisitor>(program: &Program, vis
                 }
             }
             Node::Return
-            | Node::Barrier
+            | Node::Barrier { .. }
             | Node::IndirectDispatch { .. }
             | Node::AsyncLoad { .. }
             | Node::AsyncStore { .. }
@@ -504,7 +512,7 @@ pub fn referenced_buffers(program: &Program) -> HashSet<Ident> {
         }
     }
 
-    let mut names = HashSet::new();
+    let mut names = HashSet::with_capacity(program.buffers().len());
     let mut collector = Collector { names: &mut names };
     walk_nodes_and_exprs(program, &mut collector);
     names
@@ -527,15 +535,21 @@ pub fn referenced_buffers(program: &Program) -> HashSet<Ident> {
 ///     [1, 1, 1],
 ///     vec![Node::let_bind("x", Expr::call("primitive.math.add", vec![Expr::u32(1)]))],
 /// );
-/// assert_eq!(collect_call_op_ids(&program), vec!["primitive.math.add"]);
+/// assert_eq!(
+///     collect_call_op_ids(&program)
+///         .into_iter()
+///         .map(|id| id.to_string())
+///         .collect::<Vec<_>>(),
+///     vec!["primitive.math.add".to_string()]
+/// );
 /// ```
 #[must_use]
 #[inline]
-pub fn collect_call_op_ids(program: &Program) -> Vec<String> {
+pub fn collect_call_op_ids(program: &Program) -> Vec<Arc<str>> {
     let mut op_ids = Vec::with_capacity(program.entry().len());
     walk_exprs(program, |expr| {
         if let Expr::Call { op_id, .. } = expr {
-            op_ids.push(op_id.to_string());
+            op_ids.push(op_id.shared_text());
         }
     });
     op_ids
@@ -632,6 +646,7 @@ mod tests {
                         index: Box::new(index),
                         expected: expected.map(Box::new),
                         value: Box::new(value),
+                        ordering: crate::MemoryOrdering::SeqCst,
                     }),
             ]
         })
@@ -660,7 +675,7 @@ mod tests {
                 }
             }),
             Just(Node::Return),
-            Just(Node::Barrier),
+            Just(Node::barrier()),
         ];
 
         if depth == 0 {
@@ -769,6 +784,7 @@ mod tests {
                         index: Box::new(Expr::u32(0)),
                         expected: None,
                         value: Box::new(Expr::u32(1)),
+                        ordering: crate::MemoryOrdering::SeqCst,
                     },
                 ),
                 Node::IndirectDispatch {

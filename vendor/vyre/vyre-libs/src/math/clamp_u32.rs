@@ -2,7 +2,7 @@
 //!
 //! Migration target per `docs/migration-vyre-ops-to-intrinsics.md`:
 //! pure composition of `Expr::min` and `Expr::max` (both are existing
-//! `BinOp` primitives with no dedicated Naga arm required at the op
+//! `BinOp` primitives with no dedicated target builder arm required at the op
 //! level). Library, not intrinsic.
 //!
 //! Signature takes three buffers + one output — the binary helper
@@ -91,8 +91,8 @@ mod tests {
             Value::Bytes(to_bytes(hi).into()),
             Value::Bytes(vec![0u8; (n.max(1) * 4) as usize].into()),
         ];
-        let outputs =
-            vyre_reference::reference_eval(&program, &inputs).expect("clamp_u32 must run");
+        let outputs = vyre_reference::reference_eval(&program, &inputs)
+            .expect("Fix: clamp_u32 must run; restore this invariant before continuing.");
         let raw = outputs[0].to_bytes();
         raw.chunks_exact(4)
             .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))

@@ -62,6 +62,12 @@ pub fn vyre_foundation::cpu_op::is_fallback_cpu_ref(f: vyre_foundation::cpu_op::
 pub fn vyre_foundation::cpu_op::structured_intrinsic_cpu(input: &[u8], output: &mut alloc::vec::Vec<u8>)
 pub type vyre_foundation::cpu_op::CpuFn = fn(input: &[u8], output: &mut alloc::vec::Vec<u8>)
 pub mod vyre_foundation::cpu_references
+pub fn vyre_foundation::cpu_references::functor_apply_cpu(source_row: &[u32], mapping: &[u32], target_size: u32) -> alloc::vec::Vec<u32>
+pub fn vyre_foundation::cpu_references::homotopy_euler_predictor_cpu(x_curr: &[f64], v: &[f64], dt: f64) -> alloc::vec::Vec<f64>
+pub fn vyre_foundation::cpu_references::jacobi_smooth_step_cpu(a: &[f64], b: &[f64], x: &[f64], w: f64, n: u32) -> alloc::vec::Vec<f64>
+pub fn vyre_foundation::cpu_references::linear_homotopy_cpu(g_x: &[f64], f_x: &[f64], t: f64) -> alloc::vec::Vec<f64>
+pub fn vyre_foundation::cpu_references::matroid_exchange_bfs_step_cpu(f_in: &[u32], adj: &[u32], v: &[u32], n: usize) -> (alloc::vec::Vec<u32>, bool)
+pub fn vyre_foundation::cpu_references::monoidal_compose_cpu(f: &[f64], g: &[f64], a: u32, b: u32, c: u32) -> alloc::vec::Vec<f64>
 pub mod vyre_foundation::diagnostics
 pub struct vyre_foundation::diagnostics::Diagnostic
 pub vyre_foundation::diagnostics::Diagnostic::location: core::option::Option<vyre_foundation::diagnostics::OpLocation>
@@ -379,10 +385,10 @@ pub type vyre_foundation::dialect_lookup::LoweringCtx<'a>::Output = T
 pub struct vyre_foundation::dialect_lookup::LoweringTable
 pub vyre_foundation::dialect_lookup::LoweringTable::cpu_ref: vyre_foundation::dialect_lookup::ReferenceKind
 pub vyre_foundation::dialect_lookup::LoweringTable::extensions: rustc_hash::FxHashMap<&'static str, vyre_foundation::dialect_lookup::ExtensionLoweringFn>
-pub vyre_foundation::dialect_lookup::LoweringTable::metal: core::option::Option<vyre_foundation::dialect_lookup::MetalBuilder>
-pub vyre_foundation::dialect_lookup::LoweringTable::naga_spv: core::option::Option<vyre_foundation::dialect_lookup::SpirvBuilder>
-pub vyre_foundation::dialect_lookup::LoweringTable::naga_wgsl: core::option::Option<vyre_foundation::dialect_lookup::NagaBuilder>
-pub vyre_foundation::dialect_lookup::LoweringTable::ptx: core::option::Option<vyre_foundation::dialect_lookup::PtxBuilder>
+pub vyre_foundation::dialect_lookup::LoweringTable::native_module: core::option::Option<vyre_foundation::dialect_lookup::NativeModuleBuilder>
+pub vyre_foundation::dialect_lookup::LoweringTable::primary_binary: core::option::Option<vyre_foundation::dialect_lookup::PrimaryBinaryBuilder>
+pub vyre_foundation::dialect_lookup::LoweringTable::primary_text: core::option::Option<vyre_foundation::dialect_lookup::PrimaryTextBuilder>
+pub vyre_foundation::dialect_lookup::LoweringTable::secondary_text: core::option::Option<vyre_foundation::dialect_lookup::SecondaryTextBuilder>
 impl vyre_foundation::dialect_lookup::LoweringTable
 pub fn vyre_foundation::dialect_lookup::LoweringTable::empty() -> Self
 pub fn vyre_foundation::dialect_lookup::LoweringTable::extension(&self, backend_id: &str) -> core::option::Option<vyre_foundation::dialect_lookup::ExtensionLoweringFn>
@@ -426,51 +432,51 @@ impl<T> tracing::instrument::Instrument for vyre_foundation::dialect_lookup::Low
 impl<T> tracing::instrument::WithSubscriber for vyre_foundation::dialect_lookup::LoweringTable
 impl<T> typenum::type_operators::Same for vyre_foundation::dialect_lookup::LoweringTable
 pub type vyre_foundation::dialect_lookup::LoweringTable::Output = T
-pub struct vyre_foundation::dialect_lookup::MetalModule
-pub vyre_foundation::dialect_lookup::MetalModule::ast: alloc::vec::Vec<u8>
-pub vyre_foundation::dialect_lookup::MetalModule::entry: alloc::string::String
-impl core::clone::Clone for vyre_foundation::dialect_lookup::MetalModule
-pub fn vyre_foundation::dialect_lookup::MetalModule::clone(&self) -> vyre_foundation::dialect_lookup::MetalModule
-impl core::cmp::Eq for vyre_foundation::dialect_lookup::MetalModule
-impl core::cmp::PartialEq for vyre_foundation::dialect_lookup::MetalModule
-pub fn vyre_foundation::dialect_lookup::MetalModule::eq(&self, other: &vyre_foundation::dialect_lookup::MetalModule) -> bool
-impl core::fmt::Debug for vyre_foundation::dialect_lookup::MetalModule
-pub fn vyre_foundation::dialect_lookup::MetalModule::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for vyre_foundation::dialect_lookup::MetalModule
-impl core::marker::Freeze for vyre_foundation::dialect_lookup::MetalModule
-impl core::marker::Send for vyre_foundation::dialect_lookup::MetalModule
-impl core::marker::Sync for vyre_foundation::dialect_lookup::MetalModule
-impl core::marker::Unpin for vyre_foundation::dialect_lookup::MetalModule
-impl core::panic::unwind_safe::RefUnwindSafe for vyre_foundation::dialect_lookup::MetalModule
-impl core::panic::unwind_safe::UnwindSafe for vyre_foundation::dialect_lookup::MetalModule
-impl<Q, K> hashbrown::Equivalent<K> for vyre_foundation::dialect_lookup::MetalModule where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
-pub fn vyre_foundation::dialect_lookup::MetalModule::equivalent(&self, key: &K) -> bool
-impl<T, U> core::convert::Into<U> for vyre_foundation::dialect_lookup::MetalModule where U: core::convert::From<T>
-pub fn vyre_foundation::dialect_lookup::MetalModule::into(self) -> U
-impl<T, U> core::convert::TryFrom<U> for vyre_foundation::dialect_lookup::MetalModule where U: core::convert::Into<T>
-pub type vyre_foundation::dialect_lookup::MetalModule::Error = core::convert::Infallible
-pub fn vyre_foundation::dialect_lookup::MetalModule::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
-impl<T, U> core::convert::TryInto<U> for vyre_foundation::dialect_lookup::MetalModule where U: core::convert::TryFrom<T>
-pub type vyre_foundation::dialect_lookup::MetalModule::Error = <U as core::convert::TryFrom<T>>::Error
-pub fn vyre_foundation::dialect_lookup::MetalModule::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
-impl<T> alloc::borrow::ToOwned for vyre_foundation::dialect_lookup::MetalModule where T: core::clone::Clone
-pub type vyre_foundation::dialect_lookup::MetalModule::Owned = T
-pub fn vyre_foundation::dialect_lookup::MetalModule::clone_into(&self, target: &mut T)
-pub fn vyre_foundation::dialect_lookup::MetalModule::to_owned(&self) -> T
-impl<T> core::any::Any for vyre_foundation::dialect_lookup::MetalModule where T: 'static + ?core::marker::Sized
-pub fn vyre_foundation::dialect_lookup::MetalModule::type_id(&self) -> core::any::TypeId
-impl<T> core::borrow::Borrow<T> for vyre_foundation::dialect_lookup::MetalModule where T: ?core::marker::Sized
-pub fn vyre_foundation::dialect_lookup::MetalModule::borrow(&self) -> &T
-impl<T> core::borrow::BorrowMut<T> for vyre_foundation::dialect_lookup::MetalModule where T: ?core::marker::Sized
-pub fn vyre_foundation::dialect_lookup::MetalModule::borrow_mut(&mut self) -> &mut T
-impl<T> core::clone::CloneToUninit for vyre_foundation::dialect_lookup::MetalModule where T: core::clone::Clone
-pub unsafe fn vyre_foundation::dialect_lookup::MetalModule::clone_to_uninit(&self, dest: *mut u8)
-impl<T> core::convert::From<T> for vyre_foundation::dialect_lookup::MetalModule
-pub fn vyre_foundation::dialect_lookup::MetalModule::from(t: T) -> T
-impl<T> tracing::instrument::Instrument for vyre_foundation::dialect_lookup::MetalModule
-impl<T> tracing::instrument::WithSubscriber for vyre_foundation::dialect_lookup::MetalModule
-impl<T> typenum::type_operators::Same for vyre_foundation::dialect_lookup::MetalModule
-pub type vyre_foundation::dialect_lookup::MetalModule::Output = T
+pub struct vyre_foundation::dialect_lookup::NativeModule
+pub vyre_foundation::dialect_lookup::NativeModule::ast: alloc::vec::Vec<u8>
+pub vyre_foundation::dialect_lookup::NativeModule::entry: alloc::string::String
+impl core::clone::Clone for vyre_foundation::dialect_lookup::NativeModule
+pub fn vyre_foundation::dialect_lookup::NativeModule::clone(&self) -> vyre_foundation::dialect_lookup::NativeModule
+impl core::cmp::Eq for vyre_foundation::dialect_lookup::NativeModule
+impl core::cmp::PartialEq for vyre_foundation::dialect_lookup::NativeModule
+pub fn vyre_foundation::dialect_lookup::NativeModule::eq(&self, other: &vyre_foundation::dialect_lookup::NativeModule) -> bool
+impl core::fmt::Debug for vyre_foundation::dialect_lookup::NativeModule
+pub fn vyre_foundation::dialect_lookup::NativeModule::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for vyre_foundation::dialect_lookup::NativeModule
+impl core::marker::Freeze for vyre_foundation::dialect_lookup::NativeModule
+impl core::marker::Send for vyre_foundation::dialect_lookup::NativeModule
+impl core::marker::Sync for vyre_foundation::dialect_lookup::NativeModule
+impl core::marker::Unpin for vyre_foundation::dialect_lookup::NativeModule
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_foundation::dialect_lookup::NativeModule
+impl core::panic::unwind_safe::UnwindSafe for vyre_foundation::dialect_lookup::NativeModule
+impl<Q, K> hashbrown::Equivalent<K> for vyre_foundation::dialect_lookup::NativeModule where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn vyre_foundation::dialect_lookup::NativeModule::equivalent(&self, key: &K) -> bool
+impl<T, U> core::convert::Into<U> for vyre_foundation::dialect_lookup::NativeModule where U: core::convert::From<T>
+pub fn vyre_foundation::dialect_lookup::NativeModule::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for vyre_foundation::dialect_lookup::NativeModule where U: core::convert::Into<T>
+pub type vyre_foundation::dialect_lookup::NativeModule::Error = core::convert::Infallible
+pub fn vyre_foundation::dialect_lookup::NativeModule::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for vyre_foundation::dialect_lookup::NativeModule where U: core::convert::TryFrom<T>
+pub type vyre_foundation::dialect_lookup::NativeModule::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn vyre_foundation::dialect_lookup::NativeModule::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for vyre_foundation::dialect_lookup::NativeModule where T: core::clone::Clone
+pub type vyre_foundation::dialect_lookup::NativeModule::Owned = T
+pub fn vyre_foundation::dialect_lookup::NativeModule::clone_into(&self, target: &mut T)
+pub fn vyre_foundation::dialect_lookup::NativeModule::to_owned(&self) -> T
+impl<T> core::any::Any for vyre_foundation::dialect_lookup::NativeModule where T: 'static + ?core::marker::Sized
+pub fn vyre_foundation::dialect_lookup::NativeModule::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for vyre_foundation::dialect_lookup::NativeModule where T: ?core::marker::Sized
+pub fn vyre_foundation::dialect_lookup::NativeModule::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for vyre_foundation::dialect_lookup::NativeModule where T: ?core::marker::Sized
+pub fn vyre_foundation::dialect_lookup::NativeModule::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for vyre_foundation::dialect_lookup::NativeModule where T: core::clone::Clone
+pub unsafe fn vyre_foundation::dialect_lookup::NativeModule::clone_to_uninit(&self, dest: *mut u8)
+impl<T> core::convert::From<T> for vyre_foundation::dialect_lookup::NativeModule
+pub fn vyre_foundation::dialect_lookup::NativeModule::from(t: T) -> T
+impl<T> tracing::instrument::Instrument for vyre_foundation::dialect_lookup::NativeModule
+impl<T> tracing::instrument::WithSubscriber for vyre_foundation::dialect_lookup::NativeModule
+impl<T> typenum::type_operators::Same for vyre_foundation::dialect_lookup::NativeModule
+pub type vyre_foundation::dialect_lookup::NativeModule::Output = T
 pub struct vyre_foundation::dialect_lookup::OpDef
 pub vyre_foundation::dialect_lookup::OpDef::category: vyre_foundation::dialect_lookup::Category
 pub vyre_foundation::dialect_lookup::OpDef::compose: core::option::Option<fn() -> vyre_foundation::ir::Program>
@@ -520,51 +526,51 @@ impl<T> tracing::instrument::Instrument for vyre_foundation::dialect_lookup::OpD
 impl<T> tracing::instrument::WithSubscriber for vyre_foundation::dialect_lookup::OpDef
 impl<T> typenum::type_operators::Same for vyre_foundation::dialect_lookup::OpDef
 pub type vyre_foundation::dialect_lookup::OpDef::Output = T
-pub struct vyre_foundation::dialect_lookup::PtxModule
-pub vyre_foundation::dialect_lookup::PtxModule::asm: alloc::string::String
-pub vyre_foundation::dialect_lookup::PtxModule::version: u32
-impl core::clone::Clone for vyre_foundation::dialect_lookup::PtxModule
-pub fn vyre_foundation::dialect_lookup::PtxModule::clone(&self) -> vyre_foundation::dialect_lookup::PtxModule
-impl core::cmp::Eq for vyre_foundation::dialect_lookup::PtxModule
-impl core::cmp::PartialEq for vyre_foundation::dialect_lookup::PtxModule
-pub fn vyre_foundation::dialect_lookup::PtxModule::eq(&self, other: &vyre_foundation::dialect_lookup::PtxModule) -> bool
-impl core::fmt::Debug for vyre_foundation::dialect_lookup::PtxModule
-pub fn vyre_foundation::dialect_lookup::PtxModule::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for vyre_foundation::dialect_lookup::PtxModule
-impl core::marker::Freeze for vyre_foundation::dialect_lookup::PtxModule
-impl core::marker::Send for vyre_foundation::dialect_lookup::PtxModule
-impl core::marker::Sync for vyre_foundation::dialect_lookup::PtxModule
-impl core::marker::Unpin for vyre_foundation::dialect_lookup::PtxModule
-impl core::panic::unwind_safe::RefUnwindSafe for vyre_foundation::dialect_lookup::PtxModule
-impl core::panic::unwind_safe::UnwindSafe for vyre_foundation::dialect_lookup::PtxModule
-impl<Q, K> hashbrown::Equivalent<K> for vyre_foundation::dialect_lookup::PtxModule where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
-pub fn vyre_foundation::dialect_lookup::PtxModule::equivalent(&self, key: &K) -> bool
-impl<T, U> core::convert::Into<U> for vyre_foundation::dialect_lookup::PtxModule where U: core::convert::From<T>
-pub fn vyre_foundation::dialect_lookup::PtxModule::into(self) -> U
-impl<T, U> core::convert::TryFrom<U> for vyre_foundation::dialect_lookup::PtxModule where U: core::convert::Into<T>
-pub type vyre_foundation::dialect_lookup::PtxModule::Error = core::convert::Infallible
-pub fn vyre_foundation::dialect_lookup::PtxModule::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
-impl<T, U> core::convert::TryInto<U> for vyre_foundation::dialect_lookup::PtxModule where U: core::convert::TryFrom<T>
-pub type vyre_foundation::dialect_lookup::PtxModule::Error = <U as core::convert::TryFrom<T>>::Error
-pub fn vyre_foundation::dialect_lookup::PtxModule::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
-impl<T> alloc::borrow::ToOwned for vyre_foundation::dialect_lookup::PtxModule where T: core::clone::Clone
-pub type vyre_foundation::dialect_lookup::PtxModule::Owned = T
-pub fn vyre_foundation::dialect_lookup::PtxModule::clone_into(&self, target: &mut T)
-pub fn vyre_foundation::dialect_lookup::PtxModule::to_owned(&self) -> T
-impl<T> core::any::Any for vyre_foundation::dialect_lookup::PtxModule where T: 'static + ?core::marker::Sized
-pub fn vyre_foundation::dialect_lookup::PtxModule::type_id(&self) -> core::any::TypeId
-impl<T> core::borrow::Borrow<T> for vyre_foundation::dialect_lookup::PtxModule where T: ?core::marker::Sized
-pub fn vyre_foundation::dialect_lookup::PtxModule::borrow(&self) -> &T
-impl<T> core::borrow::BorrowMut<T> for vyre_foundation::dialect_lookup::PtxModule where T: ?core::marker::Sized
-pub fn vyre_foundation::dialect_lookup::PtxModule::borrow_mut(&mut self) -> &mut T
-impl<T> core::clone::CloneToUninit for vyre_foundation::dialect_lookup::PtxModule where T: core::clone::Clone
-pub unsafe fn vyre_foundation::dialect_lookup::PtxModule::clone_to_uninit(&self, dest: *mut u8)
-impl<T> core::convert::From<T> for vyre_foundation::dialect_lookup::PtxModule
-pub fn vyre_foundation::dialect_lookup::PtxModule::from(t: T) -> T
-impl<T> tracing::instrument::Instrument for vyre_foundation::dialect_lookup::PtxModule
-impl<T> tracing::instrument::WithSubscriber for vyre_foundation::dialect_lookup::PtxModule
-impl<T> typenum::type_operators::Same for vyre_foundation::dialect_lookup::PtxModule
-pub type vyre_foundation::dialect_lookup::PtxModule::Output = T
+pub struct vyre_foundation::dialect_lookup::TextModule
+pub vyre_foundation::dialect_lookup::TextModule::asm: alloc::string::String
+pub vyre_foundation::dialect_lookup::TextModule::version: u32
+impl core::clone::Clone for vyre_foundation::dialect_lookup::TextModule
+pub fn vyre_foundation::dialect_lookup::TextModule::clone(&self) -> vyre_foundation::dialect_lookup::TextModule
+impl core::cmp::Eq for vyre_foundation::dialect_lookup::TextModule
+impl core::cmp::PartialEq for vyre_foundation::dialect_lookup::TextModule
+pub fn vyre_foundation::dialect_lookup::TextModule::eq(&self, other: &vyre_foundation::dialect_lookup::TextModule) -> bool
+impl core::fmt::Debug for vyre_foundation::dialect_lookup::TextModule
+pub fn vyre_foundation::dialect_lookup::TextModule::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for vyre_foundation::dialect_lookup::TextModule
+impl core::marker::Freeze for vyre_foundation::dialect_lookup::TextModule
+impl core::marker::Send for vyre_foundation::dialect_lookup::TextModule
+impl core::marker::Sync for vyre_foundation::dialect_lookup::TextModule
+impl core::marker::Unpin for vyre_foundation::dialect_lookup::TextModule
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_foundation::dialect_lookup::TextModule
+impl core::panic::unwind_safe::UnwindSafe for vyre_foundation::dialect_lookup::TextModule
+impl<Q, K> hashbrown::Equivalent<K> for vyre_foundation::dialect_lookup::TextModule where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn vyre_foundation::dialect_lookup::TextModule::equivalent(&self, key: &K) -> bool
+impl<T, U> core::convert::Into<U> for vyre_foundation::dialect_lookup::TextModule where U: core::convert::From<T>
+pub fn vyre_foundation::dialect_lookup::TextModule::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for vyre_foundation::dialect_lookup::TextModule where U: core::convert::Into<T>
+pub type vyre_foundation::dialect_lookup::TextModule::Error = core::convert::Infallible
+pub fn vyre_foundation::dialect_lookup::TextModule::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for vyre_foundation::dialect_lookup::TextModule where U: core::convert::TryFrom<T>
+pub type vyre_foundation::dialect_lookup::TextModule::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn vyre_foundation::dialect_lookup::TextModule::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for vyre_foundation::dialect_lookup::TextModule where T: core::clone::Clone
+pub type vyre_foundation::dialect_lookup::TextModule::Owned = T
+pub fn vyre_foundation::dialect_lookup::TextModule::clone_into(&self, target: &mut T)
+pub fn vyre_foundation::dialect_lookup::TextModule::to_owned(&self) -> T
+impl<T> core::any::Any for vyre_foundation::dialect_lookup::TextModule where T: 'static + ?core::marker::Sized
+pub fn vyre_foundation::dialect_lookup::TextModule::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for vyre_foundation::dialect_lookup::TextModule where T: ?core::marker::Sized
+pub fn vyre_foundation::dialect_lookup::TextModule::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for vyre_foundation::dialect_lookup::TextModule where T: ?core::marker::Sized
+pub fn vyre_foundation::dialect_lookup::TextModule::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for vyre_foundation::dialect_lookup::TextModule where T: core::clone::Clone
+pub unsafe fn vyre_foundation::dialect_lookup::TextModule::clone_to_uninit(&self, dest: *mut u8)
+impl<T> core::convert::From<T> for vyre_foundation::dialect_lookup::TextModule
+pub fn vyre_foundation::dialect_lookup::TextModule::from(t: T) -> T
+impl<T> tracing::instrument::Instrument for vyre_foundation::dialect_lookup::TextModule
+impl<T> tracing::instrument::WithSubscriber for vyre_foundation::dialect_lookup::TextModule
+impl<T> typenum::type_operators::Same for vyre_foundation::dialect_lookup::TextModule
+pub type vyre_foundation::dialect_lookup::TextModule::Output = T
 pub struct vyre_foundation::dialect_lookup::Signature
 pub vyre_foundation::dialect_lookup::Signature::attrs: &'static [vyre_foundation::dialect_lookup::AttrSchema]
 pub vyre_foundation::dialect_lookup::Signature::bytes_extraction: bool
@@ -664,14 +670,14 @@ pub fn vyre_foundation::dialect_lookup::DialectLookup::intern_op(&self, name: &s
 pub fn vyre_foundation::dialect_lookup::DialectLookup::lookup(&self, id: vyre_foundation::dialect_lookup::InternedOpId) -> core::option::Option<&'static vyre_foundation::dialect_lookup::OpDef>
 pub fn vyre_foundation::dialect_lookup::DialectLookup::provider_id(&self) -> &'static str
 pub fn vyre_foundation::dialect_lookup::dialect_lookup() -> core::option::Option<&'static dyn vyre_foundation::dialect_lookup::DialectLookup>
-pub fn vyre_foundation::dialect_lookup::install_dialect_lookup(lookup: alloc::sync::Arc<dyn vyre_foundation::dialect_lookup::DialectLookup>)
+pub fn vyre_foundation::dialect_lookup::install_dialect_lookup(lookup: alloc::sync::Arc<dyn vyre_foundation::dialect_lookup::DialectLookup>) -> core::result::Result<(), alloc::string::String>
 pub fn vyre_foundation::dialect_lookup::intern_string(s: &str) -> vyre_foundation::dialect_lookup::InternedOpId
 pub type vyre_foundation::dialect_lookup::ExtensionLoweringFn = fn(&vyre_foundation::dialect_lookup::LoweringCtx<'_>) -> core::result::Result<alloc::vec::Vec<u8>, alloc::string::String>
-pub type vyre_foundation::dialect_lookup::MetalBuilder = fn(&vyre_foundation::dialect_lookup::LoweringCtx<'_>) -> vyre_foundation::dialect_lookup::MetalModule
-pub type vyre_foundation::dialect_lookup::NagaBuilder = fn(&vyre_foundation::dialect_lookup::LoweringCtx<'_>) -> core::result::Result<(), alloc::string::String>
-pub type vyre_foundation::dialect_lookup::PtxBuilder = fn(&vyre_foundation::dialect_lookup::LoweringCtx<'_>) -> vyre_foundation::dialect_lookup::PtxModule
+pub type vyre_foundation::dialect_lookup::NativeModuleBuilder = fn(&vyre_foundation::dialect_lookup::LoweringCtx<'_>) -> vyre_foundation::dialect_lookup::NativeModule
+pub type vyre_foundation::dialect_lookup::PrimaryTextBuilder = fn(&vyre_foundation::dialect_lookup::LoweringCtx<'_>) -> core::result::Result<(), alloc::string::String>
+pub type vyre_foundation::dialect_lookup::SecondaryTextBuilder = fn(&vyre_foundation::dialect_lookup::LoweringCtx<'_>) -> vyre_foundation::dialect_lookup::TextModule
 pub type vyre_foundation::dialect_lookup::ReferenceKind = vyre_spec::intrinsic_descriptor::CpuFn
-pub type vyre_foundation::dialect_lookup::SpirvBuilder = fn(&vyre_foundation::dialect_lookup::LoweringCtx<'_>) -> alloc::vec::Vec<u32>
+pub type vyre_foundation::dialect_lookup::PrimaryBinaryBuilder = fn(&vyre_foundation::dialect_lookup::LoweringCtx<'_>) -> alloc::vec::Vec<u32>
 pub mod vyre_foundation::engine
 pub mod vyre_foundation::engine::prefix
 pub const vyre_foundation::engine::prefix::MAX_PREFIX_INPUT_BYTES: usize
@@ -986,7 +992,8 @@ impl<T> tracing::instrument::WithSubscriber for vyre_foundation::execution_plan:
 impl<T> typenum::type_operators::Same for vyre_foundation::execution_plan::fusion::FusionSelfAliasingError
 pub type vyre_foundation::execution_plan::fusion::FusionSelfAliasingError::Output = T
 pub fn vyre_foundation::execution_plan::fusion::fuse_programs(programs: &[vyre_foundation::ir::Program]) -> core::result::Result<vyre_foundation::ir::Program, vyre_foundation::execution_plan::fusion::FusionError>
-#[non_exhaustive] pub enum vyre_foundation::execution_plan::AccuracyStrategy
+pub fn vyre_foundation::execution_plan::fusion::fuse_programs_vec(programs: alloc::vec::Vec<vyre_foundation::ir::Program>) -> core::result::Result<vyre_foundation::ir::Program, vyre_foundation::execution_plan::fusion::FusionError>
+pub enum vyre_foundation::execution_plan::AccuracyStrategy
 pub vyre_foundation::execution_plan::AccuracyStrategy::Direct
 pub vyre_foundation::execution_plan::AccuracyStrategy::ShadowReference
 impl core::clone::Clone for vyre_foundation::execution_plan::AccuracyStrategy
@@ -1032,7 +1039,7 @@ impl<T> tracing::instrument::Instrument for vyre_foundation::execution_plan::Acc
 impl<T> tracing::instrument::WithSubscriber for vyre_foundation::execution_plan::AccuracyStrategy
 impl<T> typenum::type_operators::Same for vyre_foundation::execution_plan::AccuracyStrategy
 pub type vyre_foundation::execution_plan::AccuracyStrategy::Output = T
-#[non_exhaustive] pub enum vyre_foundation::execution_plan::AutotuneStrategy
+pub enum vyre_foundation::execution_plan::AutotuneStrategy
 pub vyre_foundation::execution_plan::AutotuneStrategy::DeclaredShape
 pub vyre_foundation::execution_plan::AutotuneStrategy::MeasureVariants
 impl core::clone::Clone for vyre_foundation::execution_plan::AutotuneStrategy
@@ -1078,7 +1085,7 @@ impl<T> tracing::instrument::Instrument for vyre_foundation::execution_plan::Aut
 impl<T> tracing::instrument::WithSubscriber for vyre_foundation::execution_plan::AutotuneStrategy
 impl<T> typenum::type_operators::Same for vyre_foundation::execution_plan::AutotuneStrategy
 pub type vyre_foundation::execution_plan::AutotuneStrategy::Output = T
-#[non_exhaustive] pub enum vyre_foundation::execution_plan::DispatchStrategy
+pub enum vyre_foundation::execution_plan::DispatchStrategy
 pub vyre_foundation::execution_plan::DispatchStrategy::CompiledPipeline
 pub vyre_foundation::execution_plan::DispatchStrategy::PersistentRuntime
 impl core::clone::Clone for vyre_foundation::execution_plan::DispatchStrategy
@@ -1124,7 +1131,7 @@ impl<T> tracing::instrument::Instrument for vyre_foundation::execution_plan::Dis
 impl<T> tracing::instrument::WithSubscriber for vyre_foundation::execution_plan::DispatchStrategy
 impl<T> typenum::type_operators::Same for vyre_foundation::execution_plan::DispatchStrategy
 pub type vyre_foundation::execution_plan::DispatchStrategy::Output = T
-#[non_exhaustive] pub enum vyre_foundation::execution_plan::FusionStrategy
+pub enum vyre_foundation::execution_plan::FusionStrategy
 pub vyre_foundation::execution_plan::FusionStrategy::Candidate
 pub vyre_foundation::execution_plan::FusionStrategy::Isolated
 impl core::clone::Clone for vyre_foundation::execution_plan::FusionStrategy
@@ -1223,7 +1230,7 @@ impl<T> tracing::instrument::Instrument for vyre_foundation::execution_plan::Inn
 impl<T> tracing::instrument::WithSubscriber for vyre_foundation::execution_plan::InnovationTrack
 impl<T> typenum::type_operators::Same for vyre_foundation::execution_plan::InnovationTrack
 pub type vyre_foundation::execution_plan::InnovationTrack::Output = T
-#[non_exhaustive] pub enum vyre_foundation::execution_plan::LayoutStrategy
+pub enum vyre_foundation::execution_plan::LayoutStrategy
 pub vyre_foundation::execution_plan::LayoutStrategy::Dynamic
 pub vyre_foundation::execution_plan::LayoutStrategy::Empty
 pub vyre_foundation::execution_plan::LayoutStrategy::Static
@@ -1270,7 +1277,7 @@ impl<T> tracing::instrument::Instrument for vyre_foundation::execution_plan::Lay
 impl<T> tracing::instrument::WithSubscriber for vyre_foundation::execution_plan::LayoutStrategy
 impl<T> typenum::type_operators::Same for vyre_foundation::execution_plan::LayoutStrategy
 pub type vyre_foundation::execution_plan::LayoutStrategy::Output = T
-#[non_exhaustive] pub enum vyre_foundation::execution_plan::PlanError
+pub enum vyre_foundation::execution_plan::PlanError
 pub vyre_foundation::execution_plan::PlanError::InvalidOutputRange
 pub vyre_foundation::execution_plan::PlanError::InvalidOutputRange::end: usize
 pub vyre_foundation::execution_plan::PlanError::InvalidOutputRange::full_size: u64
@@ -1312,7 +1319,56 @@ impl<T> tracing::instrument::Instrument for vyre_foundation::execution_plan::Pla
 impl<T> tracing::instrument::WithSubscriber for vyre_foundation::execution_plan::PlanError
 impl<T> typenum::type_operators::Same for vyre_foundation::execution_plan::PlanError
 pub type vyre_foundation::execution_plan::PlanError::Output = T
-#[non_exhaustive] pub enum vyre_foundation::execution_plan::ProvenanceStrategy
+pub enum vyre_foundation::execution_plan::PolicyRoute
+pub vyre_foundation::execution_plan::PolicyRoute::CpuSimd
+pub vyre_foundation::execution_plan::PolicyRoute::GpuPipeline
+pub vyre_foundation::execution_plan::PolicyRoute::PersistentMegakernel
+impl core::clone::Clone for vyre_foundation::execution_plan::PolicyRoute
+pub fn vyre_foundation::execution_plan::PolicyRoute::clone(&self) -> vyre_foundation::execution_plan::PolicyRoute
+impl core::cmp::Eq for vyre_foundation::execution_plan::PolicyRoute
+impl core::cmp::PartialEq for vyre_foundation::execution_plan::PolicyRoute
+pub fn vyre_foundation::execution_plan::PolicyRoute::eq(&self, other: &vyre_foundation::execution_plan::PolicyRoute) -> bool
+impl core::fmt::Debug for vyre_foundation::execution_plan::PolicyRoute
+pub fn vyre_foundation::execution_plan::PolicyRoute::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for vyre_foundation::execution_plan::PolicyRoute
+pub fn vyre_foundation::execution_plan::PolicyRoute::hash<__H: core::hash::Hasher>(&self, state: &mut __H)
+impl core::marker::Copy for vyre_foundation::execution_plan::PolicyRoute
+impl core::marker::StructuralPartialEq for vyre_foundation::execution_plan::PolicyRoute
+impl core::marker::Freeze for vyre_foundation::execution_plan::PolicyRoute
+impl core::marker::Send for vyre_foundation::execution_plan::PolicyRoute
+impl core::marker::Sync for vyre_foundation::execution_plan::PolicyRoute
+impl core::marker::Unpin for vyre_foundation::execution_plan::PolicyRoute
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_foundation::execution_plan::PolicyRoute
+impl core::panic::unwind_safe::UnwindSafe for vyre_foundation::execution_plan::PolicyRoute
+impl<Q, K> hashbrown::Equivalent<K> for vyre_foundation::execution_plan::PolicyRoute where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn vyre_foundation::execution_plan::PolicyRoute::equivalent(&self, key: &K) -> bool
+impl<T, U> core::convert::Into<U> for vyre_foundation::execution_plan::PolicyRoute where U: core::convert::From<T>
+pub fn vyre_foundation::execution_plan::PolicyRoute::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for vyre_foundation::execution_plan::PolicyRoute where U: core::convert::Into<T>
+pub type vyre_foundation::execution_plan::PolicyRoute::Error = core::convert::Infallible
+pub fn vyre_foundation::execution_plan::PolicyRoute::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for vyre_foundation::execution_plan::PolicyRoute where U: core::convert::TryFrom<T>
+pub type vyre_foundation::execution_plan::PolicyRoute::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn vyre_foundation::execution_plan::PolicyRoute::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for vyre_foundation::execution_plan::PolicyRoute where T: core::clone::Clone
+pub type vyre_foundation::execution_plan::PolicyRoute::Owned = T
+pub fn vyre_foundation::execution_plan::PolicyRoute::clone_into(&self, target: &mut T)
+pub fn vyre_foundation::execution_plan::PolicyRoute::to_owned(&self) -> T
+impl<T> core::any::Any for vyre_foundation::execution_plan::PolicyRoute where T: 'static + ?core::marker::Sized
+pub fn vyre_foundation::execution_plan::PolicyRoute::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for vyre_foundation::execution_plan::PolicyRoute where T: ?core::marker::Sized
+pub fn vyre_foundation::execution_plan::PolicyRoute::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for vyre_foundation::execution_plan::PolicyRoute where T: ?core::marker::Sized
+pub fn vyre_foundation::execution_plan::PolicyRoute::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for vyre_foundation::execution_plan::PolicyRoute where T: core::clone::Clone
+pub unsafe fn vyre_foundation::execution_plan::PolicyRoute::clone_to_uninit(&self, dest: *mut u8)
+impl<T> core::convert::From<T> for vyre_foundation::execution_plan::PolicyRoute
+pub fn vyre_foundation::execution_plan::PolicyRoute::from(t: T) -> T
+impl<T> tracing::instrument::Instrument for vyre_foundation::execution_plan::PolicyRoute
+impl<T> tracing::instrument::WithSubscriber for vyre_foundation::execution_plan::PolicyRoute
+impl<T> typenum::type_operators::Same for vyre_foundation::execution_plan::PolicyRoute
+pub type vyre_foundation::execution_plan::PolicyRoute::Output = T
+pub enum vyre_foundation::execution_plan::ProvenanceStrategy
 pub vyre_foundation::execution_plan::ProvenanceStrategy::GpuTrace
 pub vyre_foundation::execution_plan::ProvenanceStrategy::Minimal
 impl core::clone::Clone for vyre_foundation::execution_plan::ProvenanceStrategy
@@ -1358,14 +1414,14 @@ impl<T> tracing::instrument::Instrument for vyre_foundation::execution_plan::Pro
 impl<T> tracing::instrument::WithSubscriber for vyre_foundation::execution_plan::ProvenanceStrategy
 impl<T> typenum::type_operators::Same for vyre_foundation::execution_plan::ProvenanceStrategy
 pub type vyre_foundation::execution_plan::ProvenanceStrategy::Output = T
-#[non_exhaustive] pub enum vyre_foundation::execution_plan::ReadbackStrategy
+pub enum vyre_foundation::execution_plan::ReadbackStrategy
 pub vyre_foundation::execution_plan::ReadbackStrategy::Full
 pub vyre_foundation::execution_plan::ReadbackStrategy::Full::bytes: u64
 pub vyre_foundation::execution_plan::ReadbackStrategy::Trimmed
 pub vyre_foundation::execution_plan::ReadbackStrategy::Trimmed::avoided_bytes: u64
 pub vyre_foundation::execution_plan::ReadbackStrategy::Trimmed::visible_bytes: u64
 impl vyre_foundation::execution_plan::ReadbackStrategy
-pub const fn vyre_foundation::execution_plan::ReadbackStrategy::visible_bytes(self) -> u64
+pub fn vyre_foundation::execution_plan::ReadbackStrategy::visible_bytes(&self) -> u64
 impl core::clone::Clone for vyre_foundation::execution_plan::ReadbackStrategy
 pub fn vyre_foundation::execution_plan::ReadbackStrategy::clone(&self) -> vyre_foundation::execution_plan::ReadbackStrategy
 impl core::cmp::Eq for vyre_foundation::execution_plan::ReadbackStrategy
@@ -1746,6 +1802,68 @@ impl<T> tracing::instrument::Instrument for vyre_foundation::execution_plan::Pro
 impl<T> tracing::instrument::WithSubscriber for vyre_foundation::execution_plan::ProvenancePlan
 impl<T> typenum::type_operators::Same for vyre_foundation::execution_plan::ProvenancePlan
 pub type vyre_foundation::execution_plan::ProvenancePlan::Output = T
+pub struct vyre_foundation::execution_plan::SchedulingPolicy
+impl vyre_foundation::execution_plan::SchedulingPolicy
+pub const fn vyre_foundation::execution_plan::SchedulingPolicy::allow_fused_threads(&self, fused_threads: u64, max_arm_threads: u64) -> bool
+pub const fn vyre_foundation::execution_plan::SchedulingPolicy::default_worker_count(&self) -> u32
+pub const fn vyre_foundation::execution_plan::SchedulingPolicy::default_worker_groups_from_limits(&self, max_compute_workgroups_per_dimension: u32, max_compute_invocations_per_workgroup: u32) -> u32
+pub const fn vyre_foundation::execution_plan::SchedulingPolicy::dispatch_grid_for(&self, worker_count: u32, queue_len: u32, max_workgroup_size_x: u32) -> [u32; 3]
+pub const fn vyre_foundation::execution_plan::SchedulingPolicy::fused_over_dispatch_multiplier(&self) -> u64
+pub const fn vyre_foundation::execution_plan::SchedulingPolicy::legal_workgroup_x_ceiling(&self, caps: &vyre_foundation::optimizer::ctx::AdapterCaps) -> u32
+pub const fn vyre_foundation::execution_plan::SchedulingPolicy::padded_slot_count(&self, slot_count: u32, workgroup_size_x: u32) -> u32
+pub const fn vyre_foundation::execution_plan::SchedulingPolicy::recommend_autotune(&self, node_count: usize) -> bool
+pub const fn vyre_foundation::execution_plan::SchedulingPolicy::route(&self, node_count: usize, static_bytes: u64) -> vyre_foundation::execution_plan::PolicyRoute
+pub fn vyre_foundation::execution_plan::SchedulingPolicy::select_workgroup_x(&self, declared_x: u32, problem_size: core::option::Option<u32>, caps: &vyre_foundation::optimizer::ctx::AdapterCaps) -> u32
+pub const fn vyre_foundation::execution_plan::SchedulingPolicy::standard() -> Self
+pub const fn vyre_foundation::execution_plan::SchedulingPolicy::use_cpu_fast_path(&self, node_count: usize, static_bytes: u64) -> bool
+pub const fn vyre_foundation::execution_plan::SchedulingPolicy::use_persistent_megakernel(&self, node_count: usize) -> bool
+pub const fn vyre_foundation::execution_plan::SchedulingPolicy::use_persistent_runtime(&self, node_count: usize) -> bool
+pub const fn vyre_foundation::execution_plan::SchedulingPolicy::worker_workgroup_size(&self, worker_count: u32, max_workgroup_size_x: u32) -> u32
+impl core::clone::Clone for vyre_foundation::execution_plan::SchedulingPolicy
+pub fn vyre_foundation::execution_plan::SchedulingPolicy::clone(&self) -> vyre_foundation::execution_plan::SchedulingPolicy
+impl core::cmp::Eq for vyre_foundation::execution_plan::SchedulingPolicy
+impl core::cmp::PartialEq for vyre_foundation::execution_plan::SchedulingPolicy
+pub fn vyre_foundation::execution_plan::SchedulingPolicy::eq(&self, other: &vyre_foundation::execution_plan::SchedulingPolicy) -> bool
+impl core::default::Default for vyre_foundation::execution_plan::SchedulingPolicy
+pub fn vyre_foundation::execution_plan::SchedulingPolicy::default() -> Self
+impl core::fmt::Debug for vyre_foundation::execution_plan::SchedulingPolicy
+pub fn vyre_foundation::execution_plan::SchedulingPolicy::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for vyre_foundation::execution_plan::SchedulingPolicy
+impl core::marker::StructuralPartialEq for vyre_foundation::execution_plan::SchedulingPolicy
+impl core::marker::Freeze for vyre_foundation::execution_plan::SchedulingPolicy
+impl core::marker::Send for vyre_foundation::execution_plan::SchedulingPolicy
+impl core::marker::Sync for vyre_foundation::execution_plan::SchedulingPolicy
+impl core::marker::Unpin for vyre_foundation::execution_plan::SchedulingPolicy
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_foundation::execution_plan::SchedulingPolicy
+impl core::panic::unwind_safe::UnwindSafe for vyre_foundation::execution_plan::SchedulingPolicy
+impl<Q, K> hashbrown::Equivalent<K> for vyre_foundation::execution_plan::SchedulingPolicy where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn vyre_foundation::execution_plan::SchedulingPolicy::equivalent(&self, key: &K) -> bool
+impl<T, U> core::convert::Into<U> for vyre_foundation::execution_plan::SchedulingPolicy where U: core::convert::From<T>
+pub fn vyre_foundation::execution_plan::SchedulingPolicy::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for vyre_foundation::execution_plan::SchedulingPolicy where U: core::convert::Into<T>
+pub type vyre_foundation::execution_plan::SchedulingPolicy::Error = core::convert::Infallible
+pub fn vyre_foundation::execution_plan::SchedulingPolicy::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for vyre_foundation::execution_plan::SchedulingPolicy where U: core::convert::TryFrom<T>
+pub type vyre_foundation::execution_plan::SchedulingPolicy::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn vyre_foundation::execution_plan::SchedulingPolicy::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for vyre_foundation::execution_plan::SchedulingPolicy where T: core::clone::Clone
+pub type vyre_foundation::execution_plan::SchedulingPolicy::Owned = T
+pub fn vyre_foundation::execution_plan::SchedulingPolicy::clone_into(&self, target: &mut T)
+pub fn vyre_foundation::execution_plan::SchedulingPolicy::to_owned(&self) -> T
+impl<T> core::any::Any for vyre_foundation::execution_plan::SchedulingPolicy where T: 'static + ?core::marker::Sized
+pub fn vyre_foundation::execution_plan::SchedulingPolicy::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for vyre_foundation::execution_plan::SchedulingPolicy where T: ?core::marker::Sized
+pub fn vyre_foundation::execution_plan::SchedulingPolicy::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for vyre_foundation::execution_plan::SchedulingPolicy where T: ?core::marker::Sized
+pub fn vyre_foundation::execution_plan::SchedulingPolicy::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for vyre_foundation::execution_plan::SchedulingPolicy where T: core::clone::Clone
+pub unsafe fn vyre_foundation::execution_plan::SchedulingPolicy::clone_to_uninit(&self, dest: *mut u8)
+impl<T> core::convert::From<T> for vyre_foundation::execution_plan::SchedulingPolicy
+pub fn vyre_foundation::execution_plan::SchedulingPolicy::from(t: T) -> T
+impl<T> tracing::instrument::Instrument for vyre_foundation::execution_plan::SchedulingPolicy
+impl<T> tracing::instrument::WithSubscriber for vyre_foundation::execution_plan::SchedulingPolicy
+impl<T> typenum::type_operators::Same for vyre_foundation::execution_plan::SchedulingPolicy
+pub type vyre_foundation::execution_plan::SchedulingPolicy::Output = T
 pub struct vyre_foundation::execution_plan::StrategyPlan
 pub vyre_foundation::execution_plan::StrategyPlan::accuracy: vyre_foundation::execution_plan::AccuracyStrategy
 pub vyre_foundation::execution_plan::StrategyPlan::autotune: vyre_foundation::execution_plan::AutotuneStrategy
@@ -1842,9 +1960,8 @@ impl<T> tracing::instrument::Instrument for vyre_foundation::execution_plan::Tra
 impl<T> tracing::instrument::WithSubscriber for vyre_foundation::execution_plan::TrackDecision
 impl<T> typenum::type_operators::Same for vyre_foundation::execution_plan::TrackDecision
 pub type vyre_foundation::execution_plan::TrackDecision::Output = T
-pub const vyre_foundation::execution_plan::AUTOTUNE_NODE_COUNT_THRESHOLD: usize
-pub const vyre_foundation::execution_plan::AUTOTUNE_STORAGE_THRESHOLD_BYTES: u64
 pub fn vyre_foundation::execution_plan::plan(program: &vyre_foundation::ir::Program) -> core::result::Result<vyre_foundation::execution_plan::ExecutionPlan, vyre_foundation::execution_plan::PlanError>
+pub fn vyre_foundation::execution_plan::plan_with_options(program: &vyre_foundation::ir::Program, options: vyre_foundation::validate::options::ValidationOptions<'_>) -> core::result::Result<vyre_foundation::execution_plan::ExecutionPlan, vyre_foundation::execution_plan::PlanError>
 pub mod vyre_foundation::extension
 #[non_exhaustive] pub enum vyre_foundation::extension::ExtensionKind
 pub vyre_foundation::extension::ExtensionKind::DataType
@@ -2175,6 +2292,12 @@ pub fn vyre_foundation::extension::resolve_atomic_op(id: vyre_spec::extension::E
 pub fn vyre_foundation::extension::resolve_bin_op(id: vyre_spec::extension::ExtensionBinOpId) -> core::option::Option<&'static dyn vyre_spec::extension::ExtensionBinOp>
 pub fn vyre_foundation::extension::resolve_data_type(id: vyre_spec::extension::ExtensionDataTypeId) -> core::option::Option<&'static dyn vyre_spec::extension::ExtensionDataType>
 pub fn vyre_foundation::extension::resolve_un_op(id: vyre_spec::extension::ExtensionUnOpId) -> core::option::Option<&'static dyn vyre_spec::extension::ExtensionUnOp>
+pub fn vyre_foundation::extension::try_find_extension(id: vyre_foundation::extension::ExtensionId) -> core::result::Result<core::option::Option<&'static vyre_foundation::extension::ExtensionRegistration>, alloc::string::String>
+pub fn vyre_foundation::extension::try_registered_extensions() -> core::result::Result<alloc::vec::Vec<&'static vyre_foundation::extension::ExtensionRegistration>, alloc::string::String>
+pub fn vyre_foundation::extension::try_resolve_atomic_op(id: vyre_spec::extension::ExtensionAtomicOpId) -> core::result::Result<core::option::Option<&'static dyn vyre_spec::extension::ExtensionAtomicOp>, alloc::string::String>
+pub fn vyre_foundation::extension::try_resolve_bin_op(id: vyre_spec::extension::ExtensionBinOpId) -> core::result::Result<core::option::Option<&'static dyn vyre_spec::extension::ExtensionBinOp>, alloc::string::String>
+pub fn vyre_foundation::extension::try_resolve_data_type(id: vyre_spec::extension::ExtensionDataTypeId) -> core::result::Result<core::option::Option<&'static dyn vyre_spec::extension::ExtensionDataType>, alloc::string::String>
+pub fn vyre_foundation::extension::try_resolve_un_op(id: vyre_spec::extension::ExtensionUnOpId) -> core::result::Result<core::option::Option<&'static dyn vyre_spec::extension::ExtensionUnOp>, alloc::string::String>
 pub type vyre_foundation::extension::ExprExtensionDeserializer = fn(&[u8]) -> core::result::Result<alloc::sync::Arc<dyn vyre_foundation::ir::ExprNode>, alloc::string::String>
 pub type vyre_foundation::extension::NodeExtensionDeserializer = fn(&[u8]) -> core::result::Result<alloc::sync::Arc<dyn vyre_foundation::ir::NodeExtension>, alloc::string::String>
 pub mod vyre_foundation::extern_registry
@@ -2703,6 +2826,7 @@ impl<T> tracing::instrument::Instrument for vyre_foundation::transform::optimize
 impl<T> tracing::instrument::WithSubscriber for vyre_foundation::transform::optimize::cse::cse_ctx::CseCtx
 impl<T> typenum::type_operators::Same for vyre_foundation::transform::optimize::cse::cse_ctx::CseCtx
 pub type vyre_foundation::transform::optimize::cse::cse_ctx::CseCtx::Output = T
+pub fn vyre_foundation::ir::cse::cse(program: vyre_foundation::ir::Program) -> vyre_foundation::ir::Program
 pub mod vyre_foundation::ir::dce
 pub mod vyre_foundation::ir::dce::collect_expr_refs
 pub mod vyre_foundation::ir::dce::const_loop_empty
@@ -2711,9 +2835,15 @@ pub mod vyre_foundation::ir::dce::dce
 pub fn vyre_foundation::ir::dce::dce::dce(program: vyre_foundation::ir::Program) -> vyre_foundation::ir::Program
 pub mod vyre_foundation::ir::dce::eliminate_dead_lets
 pub mod vyre_foundation::ir::dce::eliminate_unreachable
-pub mod vyre_foundation::ir::dce::expr_has_effect
 pub mod vyre_foundation::ir::dce::live_result
 pub mod vyre_foundation::ir::dce::reachable_prefix
+pub fn vyre_foundation::ir::dce::dce(program: vyre_foundation::ir::Program) -> vyre_foundation::ir::Program
+pub mod vyre_foundation::ir::eval
+pub fn vyre_foundation::ir::eval::fold_binary_literal(op: &vyre_spec::bin_op::BinOp, left: &vyre_foundation::ir::Expr, right: &vyre_foundation::ir::Expr) -> core::option::Option<vyre_foundation::ir::Expr>
+pub fn vyre_foundation::ir::eval::fold_cast_literal(target: &vyre_spec::data_type::DataType, value: &vyre_foundation::ir::Expr) -> core::option::Option<vyre_foundation::ir::Expr>
+pub fn vyre_foundation::ir::eval::fold_fma_literal(a: &vyre_foundation::ir::Expr, b: &vyre_foundation::ir::Expr, c: &vyre_foundation::ir::Expr) -> core::option::Option<vyre_foundation::ir::Expr>
+pub fn vyre_foundation::ir::eval::fold_literal_tree(expr: &vyre_foundation::ir::Expr) -> core::option::Option<alloc::borrow::Cow<'_, vyre_foundation::ir::Expr>>
+pub fn vyre_foundation::ir::eval::fold_unary_literal(op: &vyre_spec::un_op::UnOp, operand: &vyre_foundation::ir::Expr) -> core::option::Option<vyre_foundation::ir::Expr>
 pub mod vyre_foundation::ir::memory_model
 #[non_exhaustive] pub enum vyre_foundation::ir::memory_model::MemoryOrdering
 pub vyre_foundation::ir::memory_model::MemoryOrdering::AcqRel
@@ -2721,6 +2851,11 @@ pub vyre_foundation::ir::memory_model::MemoryOrdering::Acquire
 pub vyre_foundation::ir::memory_model::MemoryOrdering::Relaxed
 pub vyre_foundation::ir::memory_model::MemoryOrdering::Release
 pub vyre_foundation::ir::memory_model::MemoryOrdering::SeqCst
+impl vyre_foundation::memory_model::MemoryOrdering
+pub fn vyre_foundation::memory_model::MemoryOrdering::from_wire_tag(tag: u8) -> core::result::Result<Self, alloc::string::String>
+pub const fn vyre_foundation::memory_model::MemoryOrdering::is_valid_for_atomic_rmw(self) -> bool
+pub const fn vyre_foundation::memory_model::MemoryOrdering::is_valid_for_barrier(self) -> bool
+pub const fn vyre_foundation::memory_model::MemoryOrdering::wire_tag(self) -> u8
 impl core::clone::Clone for vyre_foundation::memory_model::MemoryOrdering
 pub fn vyre_foundation::memory_model::MemoryOrdering::clone(&self) -> vyre_foundation::memory_model::MemoryOrdering
 impl core::cmp::Eq for vyre_foundation::memory_model::MemoryOrdering
@@ -2895,6 +3030,7 @@ pub vyre_foundation::ir::model::expr::Expr::Atomic::buffer: vyre_foundation::ir:
 pub vyre_foundation::ir::model::expr::Expr::Atomic::expected: core::option::Option<alloc::boxed::Box<vyre_foundation::ir::Expr>>
 pub vyre_foundation::ir::model::expr::Expr::Atomic::index: alloc::boxed::Box<vyre_foundation::ir::Expr>
 pub vyre_foundation::ir::model::expr::Expr::Atomic::op: vyre_spec::atomic_op::AtomicOp
+pub vyre_foundation::ir::model::expr::Expr::Atomic::ordering: vyre_foundation::memory_model::MemoryOrdering
 pub vyre_foundation::ir::model::expr::Expr::Atomic::value: alloc::boxed::Box<vyre_foundation::ir::Expr>
 pub vyre_foundation::ir::model::expr::Expr::BinOp
 pub vyre_foundation::ir::model::expr::Expr::BinOp::left: alloc::boxed::Box<vyre_foundation::ir::Expr>
@@ -2932,9 +3068,11 @@ pub vyre_foundation::ir::model::expr::Expr::SubgroupAdd
 pub vyre_foundation::ir::model::expr::Expr::SubgroupAdd::value: alloc::boxed::Box<vyre_foundation::ir::Expr>
 pub vyre_foundation::ir::model::expr::Expr::SubgroupBallot
 pub vyre_foundation::ir::model::expr::Expr::SubgroupBallot::cond: alloc::boxed::Box<vyre_foundation::ir::Expr>
+pub vyre_foundation::ir::model::expr::Expr::SubgroupLocalId
 pub vyre_foundation::ir::model::expr::Expr::SubgroupShuffle
 pub vyre_foundation::ir::model::expr::Expr::SubgroupShuffle::lane: alloc::boxed::Box<vyre_foundation::ir::Expr>
 pub vyre_foundation::ir::model::expr::Expr::SubgroupShuffle::value: alloc::boxed::Box<vyre_foundation::ir::Expr>
+pub vyre_foundation::ir::model::expr::Expr::SubgroupSize
 pub vyre_foundation::ir::model::expr::Expr::UnOp
 pub vyre_foundation::ir::model::expr::Expr::UnOp::op: vyre_spec::un_op::UnOp
 pub vyre_foundation::ir::model::expr::Expr::UnOp::operand: alloc::boxed::Box<vyre_foundation::ir::Expr>
@@ -2964,10 +3102,14 @@ pub fn vyre_foundation::ir::Expr::mul(left: vyre_foundation::ir::Expr, right: vy
 pub fn vyre_foundation::ir::Expr::negate(operand: vyre_foundation::ir::Expr) -> vyre_foundation::ir::Expr
 pub fn vyre_foundation::ir::Expr::rem(left: vyre_foundation::ir::Expr, right: vyre_foundation::ir::Expr) -> vyre_foundation::ir::Expr
 pub fn vyre_foundation::ir::Expr::sub(left: vyre_foundation::ir::Expr, right: vyre_foundation::ir::Expr) -> vyre_foundation::ir::Expr
+pub fn vyre_foundation::ir::Expr::wrapping_add(self, other: impl core::convert::Into<vyre_foundation::ir::Expr>) -> Self
+pub fn vyre_foundation::ir::Expr::wrapping_sub(self, other: impl core::convert::Into<vyre_foundation::ir::Expr>) -> Self
 impl vyre_foundation::ir::Expr
 pub fn vyre_foundation::ir::Expr::atomic_add(buffer: &str, index: vyre_foundation::ir::Expr, value: vyre_foundation::ir::Expr) -> vyre_foundation::ir::Expr
+pub fn vyre_foundation::ir::Expr::atomic_add_ordered(buffer: &str, index: vyre_foundation::ir::Expr, value: vyre_foundation::ir::Expr, ordering: vyre_foundation::memory_model::MemoryOrdering) -> vyre_foundation::ir::Expr
 pub fn vyre_foundation::ir::Expr::atomic_and(buffer: &str, index: vyre_foundation::ir::Expr, value: vyre_foundation::ir::Expr) -> vyre_foundation::ir::Expr
 pub fn vyre_foundation::ir::Expr::atomic_compare_exchange(buffer: &str, index: vyre_foundation::ir::Expr, expected: vyre_foundation::ir::Expr, new_value: vyre_foundation::ir::Expr) -> vyre_foundation::ir::Expr
+pub fn vyre_foundation::ir::Expr::atomic_compare_exchange_ordered(buffer: &str, index: vyre_foundation::ir::Expr, expected: vyre_foundation::ir::Expr, new_value: vyre_foundation::ir::Expr, ordering: vyre_foundation::memory_model::MemoryOrdering) -> vyre_foundation::ir::Expr
 pub fn vyre_foundation::ir::Expr::atomic_exchange(buffer: &str, index: vyre_foundation::ir::Expr, value: vyre_foundation::ir::Expr) -> vyre_foundation::ir::Expr
 pub fn vyre_foundation::ir::Expr::atomic_max(buffer: &str, index: vyre_foundation::ir::Expr, value: vyre_foundation::ir::Expr) -> vyre_foundation::ir::Expr
 pub fn vyre_foundation::ir::Expr::atomic_min(buffer: &str, index: vyre_foundation::ir::Expr, value: vyre_foundation::ir::Expr) -> vyre_foundation::ir::Expr
@@ -3010,7 +3152,9 @@ pub fn vyre_foundation::ir::Expr::parallel_region_z() -> Self
 pub fn vyre_foundation::ir::Expr::select(cond: Self, true_val: Self, false_val: Self) -> Self
 pub fn vyre_foundation::ir::Expr::subgroup_add(value: Self) -> Self
 pub fn vyre_foundation::ir::Expr::subgroup_ballot(cond: Self) -> Self
+pub fn vyre_foundation::ir::Expr::subgroup_local_id() -> Self
 pub fn vyre_foundation::ir::Expr::subgroup_shuffle(value: Self, lane: Self) -> Self
+pub fn vyre_foundation::ir::Expr::subgroup_size() -> Self
 pub fn vyre_foundation::ir::Expr::u32(value: u32) -> Self
 pub fn vyre_foundation::ir::Expr::var(name: impl core::convert::Into<vyre_foundation::ir::Ident>) -> Self
 pub fn vyre_foundation::ir::Expr::workgroup_x() -> Self
@@ -3125,12 +3269,16 @@ pub fn vyre_foundation::ir::Ident::borrow(&self) -> &str
 impl core::clone::Clone for vyre_foundation::ir::Ident
 pub fn vyre_foundation::ir::Ident::clone(&self) -> vyre_foundation::ir::Ident
 impl core::cmp::Eq for vyre_foundation::ir::Ident
+impl core::cmp::Ord for vyre_foundation::ir::Ident
+pub fn vyre_foundation::ir::Ident::cmp(&self, other: &Self) -> core::cmp::Ordering
 impl core::cmp::PartialEq for vyre_foundation::ir::Ident
 pub fn vyre_foundation::ir::Ident::eq(&self, other: &vyre_foundation::ir::Ident) -> bool
 impl core::cmp::PartialEq<&str> for vyre_foundation::ir::Ident
 pub fn vyre_foundation::ir::Ident::eq(&self, other: &&str) -> bool
 impl core::cmp::PartialEq<str> for vyre_foundation::ir::Ident
 pub fn vyre_foundation::ir::Ident::eq(&self, other: &str) -> bool
+impl core::cmp::PartialOrd for vyre_foundation::ir::Ident
+pub fn vyre_foundation::ir::Ident::partial_cmp(&self, other: &Self) -> core::option::Option<core::cmp::Ordering>
 impl core::convert::AsRef<str> for vyre_foundation::ir::Ident
 pub fn vyre_foundation::ir::Ident::as_ref(&self) -> &str
 impl core::convert::From<&alloc::string::String> for vyre_foundation::ir::Ident
@@ -3205,6 +3353,7 @@ pub vyre_foundation::ir::model::generated::Expr::Atomic::buffer: vyre_foundation
 pub vyre_foundation::ir::model::generated::Expr::Atomic::expected: core::option::Option<alloc::boxed::Box<vyre_foundation::ir::Expr>>
 pub vyre_foundation::ir::model::generated::Expr::Atomic::index: alloc::boxed::Box<vyre_foundation::ir::Expr>
 pub vyre_foundation::ir::model::generated::Expr::Atomic::op: vyre_spec::atomic_op::AtomicOp
+pub vyre_foundation::ir::model::generated::Expr::Atomic::ordering: vyre_foundation::memory_model::MemoryOrdering
 pub vyre_foundation::ir::model::generated::Expr::Atomic::value: alloc::boxed::Box<vyre_foundation::ir::Expr>
 pub vyre_foundation::ir::model::generated::Expr::BinOp
 pub vyre_foundation::ir::model::generated::Expr::BinOp::left: alloc::boxed::Box<vyre_foundation::ir::Expr>
@@ -3242,9 +3391,11 @@ pub vyre_foundation::ir::model::generated::Expr::SubgroupAdd
 pub vyre_foundation::ir::model::generated::Expr::SubgroupAdd::value: alloc::boxed::Box<vyre_foundation::ir::Expr>
 pub vyre_foundation::ir::model::generated::Expr::SubgroupBallot
 pub vyre_foundation::ir::model::generated::Expr::SubgroupBallot::cond: alloc::boxed::Box<vyre_foundation::ir::Expr>
+pub vyre_foundation::ir::model::generated::Expr::SubgroupLocalId
 pub vyre_foundation::ir::model::generated::Expr::SubgroupShuffle
 pub vyre_foundation::ir::model::generated::Expr::SubgroupShuffle::lane: alloc::boxed::Box<vyre_foundation::ir::Expr>
 pub vyre_foundation::ir::model::generated::Expr::SubgroupShuffle::value: alloc::boxed::Box<vyre_foundation::ir::Expr>
+pub vyre_foundation::ir::model::generated::Expr::SubgroupSize
 pub vyre_foundation::ir::model::generated::Expr::UnOp
 pub vyre_foundation::ir::model::generated::Expr::UnOp::op: vyre_spec::un_op::UnOp
 pub vyre_foundation::ir::model::generated::Expr::UnOp::operand: alloc::boxed::Box<vyre_foundation::ir::Expr>
@@ -3274,10 +3425,14 @@ pub fn vyre_foundation::ir::Expr::mul(left: vyre_foundation::ir::Expr, right: vy
 pub fn vyre_foundation::ir::Expr::negate(operand: vyre_foundation::ir::Expr) -> vyre_foundation::ir::Expr
 pub fn vyre_foundation::ir::Expr::rem(left: vyre_foundation::ir::Expr, right: vyre_foundation::ir::Expr) -> vyre_foundation::ir::Expr
 pub fn vyre_foundation::ir::Expr::sub(left: vyre_foundation::ir::Expr, right: vyre_foundation::ir::Expr) -> vyre_foundation::ir::Expr
+pub fn vyre_foundation::ir::Expr::wrapping_add(self, other: impl core::convert::Into<vyre_foundation::ir::Expr>) -> Self
+pub fn vyre_foundation::ir::Expr::wrapping_sub(self, other: impl core::convert::Into<vyre_foundation::ir::Expr>) -> Self
 impl vyre_foundation::ir::Expr
 pub fn vyre_foundation::ir::Expr::atomic_add(buffer: &str, index: vyre_foundation::ir::Expr, value: vyre_foundation::ir::Expr) -> vyre_foundation::ir::Expr
+pub fn vyre_foundation::ir::Expr::atomic_add_ordered(buffer: &str, index: vyre_foundation::ir::Expr, value: vyre_foundation::ir::Expr, ordering: vyre_foundation::memory_model::MemoryOrdering) -> vyre_foundation::ir::Expr
 pub fn vyre_foundation::ir::Expr::atomic_and(buffer: &str, index: vyre_foundation::ir::Expr, value: vyre_foundation::ir::Expr) -> vyre_foundation::ir::Expr
 pub fn vyre_foundation::ir::Expr::atomic_compare_exchange(buffer: &str, index: vyre_foundation::ir::Expr, expected: vyre_foundation::ir::Expr, new_value: vyre_foundation::ir::Expr) -> vyre_foundation::ir::Expr
+pub fn vyre_foundation::ir::Expr::atomic_compare_exchange_ordered(buffer: &str, index: vyre_foundation::ir::Expr, expected: vyre_foundation::ir::Expr, new_value: vyre_foundation::ir::Expr, ordering: vyre_foundation::memory_model::MemoryOrdering) -> vyre_foundation::ir::Expr
 pub fn vyre_foundation::ir::Expr::atomic_exchange(buffer: &str, index: vyre_foundation::ir::Expr, value: vyre_foundation::ir::Expr) -> vyre_foundation::ir::Expr
 pub fn vyre_foundation::ir::Expr::atomic_max(buffer: &str, index: vyre_foundation::ir::Expr, value: vyre_foundation::ir::Expr) -> vyre_foundation::ir::Expr
 pub fn vyre_foundation::ir::Expr::atomic_min(buffer: &str, index: vyre_foundation::ir::Expr, value: vyre_foundation::ir::Expr) -> vyre_foundation::ir::Expr
@@ -3320,7 +3475,9 @@ pub fn vyre_foundation::ir::Expr::parallel_region_z() -> Self
 pub fn vyre_foundation::ir::Expr::select(cond: Self, true_val: Self, false_val: Self) -> Self
 pub fn vyre_foundation::ir::Expr::subgroup_add(value: Self) -> Self
 pub fn vyre_foundation::ir::Expr::subgroup_ballot(cond: Self) -> Self
+pub fn vyre_foundation::ir::Expr::subgroup_local_id() -> Self
 pub fn vyre_foundation::ir::Expr::subgroup_shuffle(value: Self, lane: Self) -> Self
+pub fn vyre_foundation::ir::Expr::subgroup_size() -> Self
 pub fn vyre_foundation::ir::Expr::u32(value: u32) -> Self
 pub fn vyre_foundation::ir::Expr::var(name: impl core::convert::Into<vyre_foundation::ir::Ident>) -> Self
 pub fn vyre_foundation::ir::Expr::workgroup_x() -> Self
@@ -3398,6 +3555,7 @@ pub vyre_foundation::ir::model::generated::Node::AsyncStore::tag: vyre_foundatio
 pub vyre_foundation::ir::model::generated::Node::AsyncWait
 pub vyre_foundation::ir::model::generated::Node::AsyncWait::tag: vyre_foundation::ir::Ident
 pub vyre_foundation::ir::model::generated::Node::Barrier
+pub vyre_foundation::ir::model::generated::Node::Barrier::ordering: vyre_foundation::memory_model::MemoryOrdering
 pub vyre_foundation::ir::model::generated::Node::Block(alloc::vec::Vec<vyre_foundation::ir::Node>)
 pub vyre_foundation::ir::model::generated::Node::If
 pub vyre_foundation::ir::model::generated::Node::If::cond: vyre_foundation::ir::Expr
@@ -3436,6 +3594,7 @@ pub fn vyre_foundation::ir::Node::async_load_ext(source: impl core::convert::Int
 pub fn vyre_foundation::ir::Node::async_store(source: impl core::convert::Into<vyre_foundation::ir::Ident>, destination: impl core::convert::Into<vyre_foundation::ir::Ident>, offset: vyre_foundation::ir::Expr, size: vyre_foundation::ir::Expr, tag: impl core::convert::Into<vyre_foundation::ir::Ident>) -> Self
 pub fn vyre_foundation::ir::Node::async_wait(tag: impl core::convert::Into<vyre_foundation::ir::Ident>) -> Self
 pub const fn vyre_foundation::ir::Node::barrier() -> Self
+pub const fn vyre_foundation::ir::Node::barrier_with_ordering(ordering: vyre_foundation::memory_model::MemoryOrdering) -> Self
 pub fn vyre_foundation::ir::Node::block(nodes: alloc::vec::Vec<Self>) -> Self
 pub fn vyre_foundation::ir::Node::call(op_id: impl core::convert::Into<vyre_foundation::ir::Ident>, args: alloc::vec::Vec<vyre_foundation::ir::Expr>) -> Self
 pub fn vyre_foundation::ir::Node::forever(body: alloc::vec::Vec<Self>) -> Self
@@ -3513,6 +3672,7 @@ pub vyre_foundation::ir::model::node::Node::AsyncStore::tag: vyre_foundation::ir
 pub vyre_foundation::ir::model::node::Node::AsyncWait
 pub vyre_foundation::ir::model::node::Node::AsyncWait::tag: vyre_foundation::ir::Ident
 pub vyre_foundation::ir::model::node::Node::Barrier
+pub vyre_foundation::ir::model::node::Node::Barrier::ordering: vyre_foundation::memory_model::MemoryOrdering
 pub vyre_foundation::ir::model::node::Node::Block(alloc::vec::Vec<vyre_foundation::ir::Node>)
 pub vyre_foundation::ir::model::node::Node::If
 pub vyre_foundation::ir::model::node::Node::If::cond: vyre_foundation::ir::Expr
@@ -3551,6 +3711,7 @@ pub fn vyre_foundation::ir::Node::async_load_ext(source: impl core::convert::Int
 pub fn vyre_foundation::ir::Node::async_store(source: impl core::convert::Into<vyre_foundation::ir::Ident>, destination: impl core::convert::Into<vyre_foundation::ir::Ident>, offset: vyre_foundation::ir::Expr, size: vyre_foundation::ir::Expr, tag: impl core::convert::Into<vyre_foundation::ir::Ident>) -> Self
 pub fn vyre_foundation::ir::Node::async_wait(tag: impl core::convert::Into<vyre_foundation::ir::Ident>) -> Self
 pub const fn vyre_foundation::ir::Node::barrier() -> Self
+pub const fn vyre_foundation::ir::Node::barrier_with_ordering(ordering: vyre_foundation::memory_model::MemoryOrdering) -> Self
 pub fn vyre_foundation::ir::Node::block(nodes: alloc::vec::Vec<Self>) -> Self
 pub fn vyre_foundation::ir::Node::call(op_id: impl core::convert::Into<vyre_foundation::ir::Ident>, args: alloc::vec::Vec<vyre_foundation::ir::Expr>) -> Self
 pub fn vyre_foundation::ir::Node::forever(body: alloc::vec::Vec<Self>) -> Self
@@ -4006,6 +4167,61 @@ impl<T> tracing::instrument::Instrument for vyre_foundation::ir::CacheLocality
 impl<T> tracing::instrument::WithSubscriber for vyre_foundation::ir::CacheLocality
 impl<T> typenum::type_operators::Same for vyre_foundation::ir::CacheLocality
 pub type vyre_foundation::ir::CacheLocality::Output = T
+#[non_exhaustive] pub enum vyre_foundation::ir::model::program::LinearType
+pub vyre_foundation::ir::model::program::LinearType::Affine
+pub vyre_foundation::ir::model::program::LinearType::Linear
+pub vyre_foundation::ir::model::program::LinearType::Relevant
+pub vyre_foundation::ir::model::program::LinearType::Unrestricted
+impl vyre_foundation::ir::LinearType
+pub const fn vyre_foundation::ir::LinearType::forbids_drop(self) -> bool
+pub const fn vyre_foundation::ir::LinearType::forbids_reuse(self) -> bool
+impl core::clone::Clone for vyre_foundation::ir::LinearType
+pub fn vyre_foundation::ir::LinearType::clone(&self) -> vyre_foundation::ir::LinearType
+impl core::cmp::Eq for vyre_foundation::ir::LinearType
+impl core::cmp::PartialEq for vyre_foundation::ir::LinearType
+pub fn vyre_foundation::ir::LinearType::eq(&self, other: &vyre_foundation::ir::LinearType) -> bool
+impl core::default::Default for vyre_foundation::ir::LinearType
+pub fn vyre_foundation::ir::LinearType::default() -> vyre_foundation::ir::LinearType
+impl core::fmt::Debug for vyre_foundation::ir::LinearType
+pub fn vyre_foundation::ir::LinearType::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for vyre_foundation::ir::LinearType
+pub fn vyre_foundation::ir::LinearType::hash<__H: core::hash::Hasher>(&self, state: &mut __H)
+impl core::marker::Copy for vyre_foundation::ir::LinearType
+impl core::marker::StructuralPartialEq for vyre_foundation::ir::LinearType
+impl core::marker::Freeze for vyre_foundation::ir::LinearType
+impl core::marker::Send for vyre_foundation::ir::LinearType
+impl core::marker::Sync for vyre_foundation::ir::LinearType
+impl core::marker::Unpin for vyre_foundation::ir::LinearType
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_foundation::ir::LinearType
+impl core::panic::unwind_safe::UnwindSafe for vyre_foundation::ir::LinearType
+impl<Q, K> hashbrown::Equivalent<K> for vyre_foundation::ir::LinearType where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn vyre_foundation::ir::LinearType::equivalent(&self, key: &K) -> bool
+impl<T, U> core::convert::Into<U> for vyre_foundation::ir::LinearType where U: core::convert::From<T>
+pub fn vyre_foundation::ir::LinearType::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for vyre_foundation::ir::LinearType where U: core::convert::Into<T>
+pub type vyre_foundation::ir::LinearType::Error = core::convert::Infallible
+pub fn vyre_foundation::ir::LinearType::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for vyre_foundation::ir::LinearType where U: core::convert::TryFrom<T>
+pub type vyre_foundation::ir::LinearType::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn vyre_foundation::ir::LinearType::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for vyre_foundation::ir::LinearType where T: core::clone::Clone
+pub type vyre_foundation::ir::LinearType::Owned = T
+pub fn vyre_foundation::ir::LinearType::clone_into(&self, target: &mut T)
+pub fn vyre_foundation::ir::LinearType::to_owned(&self) -> T
+impl<T> core::any::Any for vyre_foundation::ir::LinearType where T: 'static + ?core::marker::Sized
+pub fn vyre_foundation::ir::LinearType::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for vyre_foundation::ir::LinearType where T: ?core::marker::Sized
+pub fn vyre_foundation::ir::LinearType::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for vyre_foundation::ir::LinearType where T: ?core::marker::Sized
+pub fn vyre_foundation::ir::LinearType::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for vyre_foundation::ir::LinearType where T: core::clone::Clone
+pub unsafe fn vyre_foundation::ir::LinearType::clone_to_uninit(&self, dest: *mut u8)
+impl<T> core::convert::From<T> for vyre_foundation::ir::LinearType
+pub fn vyre_foundation::ir::LinearType::from(t: T) -> T
+impl<T> tracing::instrument::Instrument for vyre_foundation::ir::LinearType
+impl<T> tracing::instrument::WithSubscriber for vyre_foundation::ir::LinearType
+impl<T> typenum::type_operators::Same for vyre_foundation::ir::LinearType
+pub type vyre_foundation::ir::LinearType::Output = T
 #[non_exhaustive] pub enum vyre_foundation::ir::model::program::MemoryKind
 pub vyre_foundation::ir::model::program::MemoryKind::Global
 pub vyre_foundation::ir::model::program::MemoryKind::Local
@@ -4059,6 +4275,59 @@ impl<T> tracing::instrument::Instrument for vyre_foundation::ir::MemoryKind
 impl<T> tracing::instrument::WithSubscriber for vyre_foundation::ir::MemoryKind
 impl<T> typenum::type_operators::Same for vyre_foundation::ir::MemoryKind
 pub type vyre_foundation::ir::MemoryKind::Output = T
+#[non_exhaustive] pub enum vyre_foundation::ir::model::program::ShapePredicate
+pub vyre_foundation::ir::model::program::ShapePredicate::And(alloc::boxed::Box<vyre_foundation::ir::ShapePredicate>, alloc::boxed::Box<vyre_foundation::ir::ShapePredicate>)
+pub vyre_foundation::ir::model::program::ShapePredicate::AtLeast(u32)
+pub vyre_foundation::ir::model::program::ShapePredicate::AtMost(u32)
+pub vyre_foundation::ir::model::program::ShapePredicate::Exactly(u32)
+pub vyre_foundation::ir::model::program::ShapePredicate::MultipleOf(u32)
+impl vyre_foundation::ir::ShapePredicate
+pub fn vyre_foundation::ir::ShapePredicate::describe(&self) -> alloc::string::String
+pub fn vyre_foundation::ir::ShapePredicate::holds(&self, count: u32) -> bool
+impl core::clone::Clone for vyre_foundation::ir::ShapePredicate
+pub fn vyre_foundation::ir::ShapePredicate::clone(&self) -> vyre_foundation::ir::ShapePredicate
+impl core::cmp::Eq for vyre_foundation::ir::ShapePredicate
+impl core::cmp::PartialEq for vyre_foundation::ir::ShapePredicate
+pub fn vyre_foundation::ir::ShapePredicate::eq(&self, other: &vyre_foundation::ir::ShapePredicate) -> bool
+impl core::fmt::Debug for vyre_foundation::ir::ShapePredicate
+pub fn vyre_foundation::ir::ShapePredicate::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for vyre_foundation::ir::ShapePredicate
+pub fn vyre_foundation::ir::ShapePredicate::hash<__H: core::hash::Hasher>(&self, state: &mut __H)
+impl core::marker::StructuralPartialEq for vyre_foundation::ir::ShapePredicate
+impl core::marker::Freeze for vyre_foundation::ir::ShapePredicate
+impl core::marker::Send for vyre_foundation::ir::ShapePredicate
+impl core::marker::Sync for vyre_foundation::ir::ShapePredicate
+impl core::marker::Unpin for vyre_foundation::ir::ShapePredicate
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_foundation::ir::ShapePredicate
+impl core::panic::unwind_safe::UnwindSafe for vyre_foundation::ir::ShapePredicate
+impl<Q, K> hashbrown::Equivalent<K> for vyre_foundation::ir::ShapePredicate where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn vyre_foundation::ir::ShapePredicate::equivalent(&self, key: &K) -> bool
+impl<T, U> core::convert::Into<U> for vyre_foundation::ir::ShapePredicate where U: core::convert::From<T>
+pub fn vyre_foundation::ir::ShapePredicate::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for vyre_foundation::ir::ShapePredicate where U: core::convert::Into<T>
+pub type vyre_foundation::ir::ShapePredicate::Error = core::convert::Infallible
+pub fn vyre_foundation::ir::ShapePredicate::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for vyre_foundation::ir::ShapePredicate where U: core::convert::TryFrom<T>
+pub type vyre_foundation::ir::ShapePredicate::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn vyre_foundation::ir::ShapePredicate::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for vyre_foundation::ir::ShapePredicate where T: core::clone::Clone
+pub type vyre_foundation::ir::ShapePredicate::Owned = T
+pub fn vyre_foundation::ir::ShapePredicate::clone_into(&self, target: &mut T)
+pub fn vyre_foundation::ir::ShapePredicate::to_owned(&self) -> T
+impl<T> core::any::Any for vyre_foundation::ir::ShapePredicate where T: 'static + ?core::marker::Sized
+pub fn vyre_foundation::ir::ShapePredicate::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for vyre_foundation::ir::ShapePredicate where T: ?core::marker::Sized
+pub fn vyre_foundation::ir::ShapePredicate::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for vyre_foundation::ir::ShapePredicate where T: ?core::marker::Sized
+pub fn vyre_foundation::ir::ShapePredicate::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for vyre_foundation::ir::ShapePredicate where T: core::clone::Clone
+pub unsafe fn vyre_foundation::ir::ShapePredicate::clone_to_uninit(&self, dest: *mut u8)
+impl<T> core::convert::From<T> for vyre_foundation::ir::ShapePredicate
+pub fn vyre_foundation::ir::ShapePredicate::from(t: T) -> T
+impl<T> tracing::instrument::Instrument for vyre_foundation::ir::ShapePredicate
+impl<T> tracing::instrument::WithSubscriber for vyre_foundation::ir::ShapePredicate
+impl<T> typenum::type_operators::Same for vyre_foundation::ir::ShapePredicate
+pub type vyre_foundation::ir::ShapePredicate::Output = T
 pub struct vyre_foundation::ir::model::program::BufferDecl
 pub vyre_foundation::ir::model::program::BufferDecl::access: vyre_spec::buffer_access::BufferAccess
 pub vyre_foundation::ir::model::program::BufferDecl::binding: u32
@@ -4068,9 +4337,11 @@ pub vyre_foundation::ir::model::program::BufferDecl::element: vyre_spec::data_ty
 pub vyre_foundation::ir::model::program::BufferDecl::hints: vyre_foundation::ir::MemoryHints
 pub vyre_foundation::ir::model::program::BufferDecl::is_output: bool
 pub vyre_foundation::ir::model::program::BufferDecl::kind: vyre_foundation::ir::MemoryKind
+pub vyre_foundation::ir::model::program::BufferDecl::linear_type: vyre_foundation::ir::LinearType
 pub vyre_foundation::ir::model::program::BufferDecl::name: alloc::sync::Arc<str>
 pub vyre_foundation::ir::model::program::BufferDecl::output_byte_range: core::option::Option<core::ops::range::Range<usize>>
 pub vyre_foundation::ir::model::program::BufferDecl::pipeline_live_out: bool
+pub vyre_foundation::ir::model::program::BufferDecl::shape_predicate: core::option::Option<vyre_foundation::ir::ShapePredicate>
 impl vyre_foundation::ir::BufferDecl
 pub fn vyre_foundation::ir::BufferDecl::access(&self) -> vyre_spec::buffer_access::BufferAccess
 pub fn vyre_foundation::ir::BufferDecl::binding(&self) -> u32
@@ -4080,19 +4351,23 @@ pub fn vyre_foundation::ir::BufferDecl::hints(&self) -> vyre_foundation::ir::Mem
 pub fn vyre_foundation::ir::BufferDecl::is_output(&self) -> bool
 pub fn vyre_foundation::ir::BufferDecl::is_pipeline_live_out(&self) -> bool
 pub fn vyre_foundation::ir::BufferDecl::kind(&self) -> vyre_foundation::ir::MemoryKind
+pub fn vyre_foundation::ir::BufferDecl::linear_type(&self) -> vyre_foundation::ir::LinearType
 pub fn vyre_foundation::ir::BufferDecl::name(&self) -> &str
 pub fn vyre_foundation::ir::BufferDecl::output(name: &str, binding: u32, element: vyre_spec::data_type::DataType) -> Self
 pub fn vyre_foundation::ir::BufferDecl::output_byte_range(&self) -> core::option::Option<core::ops::range::Range<usize>>
 pub fn vyre_foundation::ir::BufferDecl::read(name: &str, binding: u32, element: vyre_spec::data_type::DataType) -> Self
 pub fn vyre_foundation::ir::BufferDecl::read_write(name: &str, binding: u32, element: vyre_spec::data_type::DataType) -> Self
+pub fn vyre_foundation::ir::BufferDecl::shape_predicate(&self) -> core::option::Option<&vyre_foundation::ir::ShapePredicate>
 pub fn vyre_foundation::ir::BufferDecl::storage(name: &str, binding: u32, access: vyre_spec::buffer_access::BufferAccess, element: vyre_spec::data_type::DataType) -> Self
 pub fn vyre_foundation::ir::BufferDecl::uniform(name: &str, binding: u32, element: vyre_spec::data_type::DataType) -> Self
 pub fn vyre_foundation::ir::BufferDecl::with_bytes_extraction(self, flag: bool) -> Self
 pub fn vyre_foundation::ir::BufferDecl::with_count(self, count: u32) -> Self
 pub fn vyre_foundation::ir::BufferDecl::with_hints(self, hints: vyre_foundation::ir::MemoryHints) -> Self
 pub fn vyre_foundation::ir::BufferDecl::with_kind(self, kind: vyre_foundation::ir::MemoryKind) -> Self
+pub fn vyre_foundation::ir::BufferDecl::with_linear_type(self, linear_type: vyre_foundation::ir::LinearType) -> Self
 pub fn vyre_foundation::ir::BufferDecl::with_output_byte_range(self, range: core::ops::range::Range<usize>) -> Self
 pub fn vyre_foundation::ir::BufferDecl::with_pipeline_live_out(self, flag: bool) -> Self
+pub fn vyre_foundation::ir::BufferDecl::with_shape_predicate(self, predicate: vyre_foundation::ir::ShapePredicate) -> Self
 pub fn vyre_foundation::ir::BufferDecl::workgroup(name: &str, count: u32, element: vyre_spec::data_type::DataType) -> Self
 impl core::clone::Clone for vyre_foundation::ir::BufferDecl
 pub fn vyre_foundation::ir::BufferDecl::clone(&self) -> vyre_foundation::ir::BufferDecl
@@ -4199,10 +4474,13 @@ impl vyre_foundation::ir::Program
 pub const vyre_foundation::ir::Program::ROOT_REGION_GENERATOR: &'static str
 pub fn vyre_foundation::ir::Program::empty() -> Self
 pub fn vyre_foundation::ir::Program::entry_op_id(&self) -> core::option::Option<&str>
+pub fn vyre_foundation::ir::Program::into_entry_vec(self) -> alloc::vec::Vec<vyre_foundation::ir::Node>
 pub fn vyre_foundation::ir::Program::new(buffers: alloc::vec::Vec<vyre_foundation::ir::BufferDecl>, workgroup_size: [u32; 3], entry: alloc::vec::Vec<vyre_foundation::ir::Node>) -> Self
 pub fn vyre_foundation::ir::Program::with_arena(arena: &vyre_foundation::ir::ExprArena, buffers: alloc::vec::Vec<vyre_foundation::ir::BufferDecl>, workgroup_size: [u32; 3]) -> vyre_foundation::ir::ArenaProgram<'_>
 pub fn vyre_foundation::ir::Program::with_entry_op_id(self, op_id: impl core::convert::Into<alloc::string::String>) -> Self
+pub fn vyre_foundation::ir::Program::with_rewritten_buffers(&self, buffers: alloc::vec::Vec<vyre_foundation::ir::BufferDecl>) -> Self
 pub fn vyre_foundation::ir::Program::with_rewritten_entry(&self, entry: alloc::vec::Vec<vyre_foundation::ir::Node>) -> Self
+pub fn vyre_foundation::ir::Program::with_rewritten_workgroup_size_and_entry(&self, workgroup_size: [u32; 3], entry: alloc::vec::Vec<vyre_foundation::ir::Node>) -> Self
 pub fn vyre_foundation::ir::Program::wrapped(buffers: alloc::vec::Vec<vyre_foundation::ir::BufferDecl>, workgroup_size: [u32; 3], entry: alloc::vec::Vec<vyre_foundation::ir::Node>) -> Self
 impl vyre_foundation::ir::Program
 pub fn vyre_foundation::ir::Program::buffer(&self, name: &str) -> core::option::Option<&vyre_foundation::ir::BufferDecl>
@@ -4210,25 +4488,37 @@ pub fn vyre_foundation::ir::Program::buffer_count(&self) -> usize
 pub fn vyre_foundation::ir::Program::buffers(&self) -> &[vyre_foundation::ir::BufferDecl]
 pub fn vyre_foundation::ir::Program::entry(&self) -> &[vyre_foundation::ir::Node]
 pub fn vyre_foundation::ir::Program::entry_mut(&mut self) -> &mut alloc::vec::Vec<vyre_foundation::ir::Node>
+pub fn vyre_foundation::ir::Program::estimate_peak_vram_bytes(&self) -> u64
 pub fn vyre_foundation::ir::Program::fingerprint(&self) -> [u8; 32]
 pub fn vyre_foundation::ir::Program::has_buffer(&self, name: &str) -> bool
 pub fn vyre_foundation::ir::Program::has_indirect_dispatch(&self) -> bool
 pub fn vyre_foundation::ir::Program::is_explicit_noop(&self) -> bool
 pub fn vyre_foundation::ir::Program::is_non_composable_with_self(&self) -> bool
+pub fn vyre_foundation::ir::Program::is_structurally_validated(&self) -> bool
 pub fn vyre_foundation::ir::Program::is_top_level_region_wrapped(&self) -> bool
 pub fn vyre_foundation::ir::Program::is_validated(&self) -> bool
+pub fn vyre_foundation::ir::Program::is_validated_on(&self, backend_id: &str) -> bool
+pub fn vyre_foundation::ir::Program::mark_structurally_validated(&self)
 pub fn vyre_foundation::ir::Program::mark_validated(&self)
+pub fn vyre_foundation::ir::Program::mark_validated_on(&self, backend_id: &str)
 pub fn vyre_foundation::ir::Program::output_buffer_indices(&self) -> &[u32]
 pub fn vyre_foundation::ir::Program::parallel_region_size(&self) -> [u32; 3]
+pub fn vyre_foundation::ir::Program::peak_intensity(&self) -> vyre_spec::bin_op::OpIntensity
 pub fn vyre_foundation::ir::Program::reconcile_runnable_top_level(self) -> Self
 pub fn vyre_foundation::ir::Program::set_parallel_region_size(&mut self, parallel_region_size: [u32; 3])
 pub fn vyre_foundation::ir::Program::set_workgroup_size(&mut self, workgroup_size: [u32; 3])
 pub fn vyre_foundation::ir::Program::structural_eq(&self, other: &Self) -> bool
 pub fn vyre_foundation::ir::Program::top_level_region_violation(&self) -> core::option::Option<alloc::string::String>
 pub fn vyre_foundation::ir::Program::validate(&self) -> vyre_foundation::error::Result<()>
+pub fn vyre_foundation::ir::Program::vsa_fingerprint(&self) -> alloc::vec::Vec<u32>
 pub fn vyre_foundation::ir::Program::with_non_composable_with_self(self, flag: bool) -> Self
 pub fn vyre_foundation::ir::Program::workgroup_size(&self) -> [u32; 3]
 impl vyre_foundation::ir::Program
+pub fn vyre_foundation::ir::Program::canonical_wire_bytes(&self) -> core::result::Result<alloc::vec::Vec<u8>, vyre_foundation::error::Error>
+pub fn vyre_foundation::ir::Program::canonical_wire_hash(&self) -> core::result::Result<blake3::Hash, vyre_foundation::error::Error>
+pub fn vyre_foundation::ir::Program::canonicalized(&self) -> Self
+impl vyre_foundation::ir::Program
+pub fn vyre_foundation::ir::Program::content_hash(&self) -> [u8; 32]
 pub fn vyre_foundation::ir::Program::from_bytes(bytes: &[u8]) -> core::result::Result<Self, vyre_foundation::error::Error>
 pub fn vyre_foundation::ir::Program::from_wire(bytes: &[u8]) -> core::result::Result<Self, vyre_foundation::error::Error>
 pub fn vyre_foundation::ir::Program::to_bytes(&self) -> alloc::vec::Vec<u8>
@@ -4528,6 +4818,7 @@ pub vyre_foundation::ir::Expr::Atomic::buffer: vyre_foundation::ir::Ident
 pub vyre_foundation::ir::Expr::Atomic::expected: core::option::Option<alloc::boxed::Box<vyre_foundation::ir::Expr>>
 pub vyre_foundation::ir::Expr::Atomic::index: alloc::boxed::Box<vyre_foundation::ir::Expr>
 pub vyre_foundation::ir::Expr::Atomic::op: vyre_spec::atomic_op::AtomicOp
+pub vyre_foundation::ir::Expr::Atomic::ordering: vyre_foundation::memory_model::MemoryOrdering
 pub vyre_foundation::ir::Expr::Atomic::value: alloc::boxed::Box<vyre_foundation::ir::Expr>
 pub vyre_foundation::ir::Expr::BinOp
 pub vyre_foundation::ir::Expr::BinOp::left: alloc::boxed::Box<vyre_foundation::ir::Expr>
@@ -4565,9 +4856,11 @@ pub vyre_foundation::ir::Expr::SubgroupAdd
 pub vyre_foundation::ir::Expr::SubgroupAdd::value: alloc::boxed::Box<vyre_foundation::ir::Expr>
 pub vyre_foundation::ir::Expr::SubgroupBallot
 pub vyre_foundation::ir::Expr::SubgroupBallot::cond: alloc::boxed::Box<vyre_foundation::ir::Expr>
+pub vyre_foundation::ir::Expr::SubgroupLocalId
 pub vyre_foundation::ir::Expr::SubgroupShuffle
 pub vyre_foundation::ir::Expr::SubgroupShuffle::lane: alloc::boxed::Box<vyre_foundation::ir::Expr>
 pub vyre_foundation::ir::Expr::SubgroupShuffle::value: alloc::boxed::Box<vyre_foundation::ir::Expr>
+pub vyre_foundation::ir::Expr::SubgroupSize
 pub vyre_foundation::ir::Expr::UnOp
 pub vyre_foundation::ir::Expr::UnOp::op: vyre_spec::un_op::UnOp
 pub vyre_foundation::ir::Expr::UnOp::operand: alloc::boxed::Box<vyre_foundation::ir::Expr>
@@ -4597,10 +4890,14 @@ pub fn vyre_foundation::ir::Expr::mul(left: vyre_foundation::ir::Expr, right: vy
 pub fn vyre_foundation::ir::Expr::negate(operand: vyre_foundation::ir::Expr) -> vyre_foundation::ir::Expr
 pub fn vyre_foundation::ir::Expr::rem(left: vyre_foundation::ir::Expr, right: vyre_foundation::ir::Expr) -> vyre_foundation::ir::Expr
 pub fn vyre_foundation::ir::Expr::sub(left: vyre_foundation::ir::Expr, right: vyre_foundation::ir::Expr) -> vyre_foundation::ir::Expr
+pub fn vyre_foundation::ir::Expr::wrapping_add(self, other: impl core::convert::Into<vyre_foundation::ir::Expr>) -> Self
+pub fn vyre_foundation::ir::Expr::wrapping_sub(self, other: impl core::convert::Into<vyre_foundation::ir::Expr>) -> Self
 impl vyre_foundation::ir::Expr
 pub fn vyre_foundation::ir::Expr::atomic_add(buffer: &str, index: vyre_foundation::ir::Expr, value: vyre_foundation::ir::Expr) -> vyre_foundation::ir::Expr
+pub fn vyre_foundation::ir::Expr::atomic_add_ordered(buffer: &str, index: vyre_foundation::ir::Expr, value: vyre_foundation::ir::Expr, ordering: vyre_foundation::memory_model::MemoryOrdering) -> vyre_foundation::ir::Expr
 pub fn vyre_foundation::ir::Expr::atomic_and(buffer: &str, index: vyre_foundation::ir::Expr, value: vyre_foundation::ir::Expr) -> vyre_foundation::ir::Expr
 pub fn vyre_foundation::ir::Expr::atomic_compare_exchange(buffer: &str, index: vyre_foundation::ir::Expr, expected: vyre_foundation::ir::Expr, new_value: vyre_foundation::ir::Expr) -> vyre_foundation::ir::Expr
+pub fn vyre_foundation::ir::Expr::atomic_compare_exchange_ordered(buffer: &str, index: vyre_foundation::ir::Expr, expected: vyre_foundation::ir::Expr, new_value: vyre_foundation::ir::Expr, ordering: vyre_foundation::memory_model::MemoryOrdering) -> vyre_foundation::ir::Expr
 pub fn vyre_foundation::ir::Expr::atomic_exchange(buffer: &str, index: vyre_foundation::ir::Expr, value: vyre_foundation::ir::Expr) -> vyre_foundation::ir::Expr
 pub fn vyre_foundation::ir::Expr::atomic_max(buffer: &str, index: vyre_foundation::ir::Expr, value: vyre_foundation::ir::Expr) -> vyre_foundation::ir::Expr
 pub fn vyre_foundation::ir::Expr::atomic_min(buffer: &str, index: vyre_foundation::ir::Expr, value: vyre_foundation::ir::Expr) -> vyre_foundation::ir::Expr
@@ -4643,7 +4940,9 @@ pub fn vyre_foundation::ir::Expr::parallel_region_z() -> Self
 pub fn vyre_foundation::ir::Expr::select(cond: Self, true_val: Self, false_val: Self) -> Self
 pub fn vyre_foundation::ir::Expr::subgroup_add(value: Self) -> Self
 pub fn vyre_foundation::ir::Expr::subgroup_ballot(cond: Self) -> Self
+pub fn vyre_foundation::ir::Expr::subgroup_local_id() -> Self
 pub fn vyre_foundation::ir::Expr::subgroup_shuffle(value: Self, lane: Self) -> Self
+pub fn vyre_foundation::ir::Expr::subgroup_size() -> Self
 pub fn vyre_foundation::ir::Expr::u32(value: u32) -> Self
 pub fn vyre_foundation::ir::Expr::var(name: impl core::convert::Into<vyre_foundation::ir::Ident>) -> Self
 pub fn vyre_foundation::ir::Expr::workgroup_x() -> Self
@@ -4702,6 +5001,61 @@ impl<T> tracing::instrument::Instrument for vyre_foundation::ir::Expr
 impl<T> tracing::instrument::WithSubscriber for vyre_foundation::ir::Expr
 impl<T> typenum::type_operators::Same for vyre_foundation::ir::Expr
 pub type vyre_foundation::ir::Expr::Output = T
+#[non_exhaustive] pub enum vyre_foundation::ir::LinearType
+pub vyre_foundation::ir::LinearType::Affine
+pub vyre_foundation::ir::LinearType::Linear
+pub vyre_foundation::ir::LinearType::Relevant
+pub vyre_foundation::ir::LinearType::Unrestricted
+impl vyre_foundation::ir::LinearType
+pub const fn vyre_foundation::ir::LinearType::forbids_drop(self) -> bool
+pub const fn vyre_foundation::ir::LinearType::forbids_reuse(self) -> bool
+impl core::clone::Clone for vyre_foundation::ir::LinearType
+pub fn vyre_foundation::ir::LinearType::clone(&self) -> vyre_foundation::ir::LinearType
+impl core::cmp::Eq for vyre_foundation::ir::LinearType
+impl core::cmp::PartialEq for vyre_foundation::ir::LinearType
+pub fn vyre_foundation::ir::LinearType::eq(&self, other: &vyre_foundation::ir::LinearType) -> bool
+impl core::default::Default for vyre_foundation::ir::LinearType
+pub fn vyre_foundation::ir::LinearType::default() -> vyre_foundation::ir::LinearType
+impl core::fmt::Debug for vyre_foundation::ir::LinearType
+pub fn vyre_foundation::ir::LinearType::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for vyre_foundation::ir::LinearType
+pub fn vyre_foundation::ir::LinearType::hash<__H: core::hash::Hasher>(&self, state: &mut __H)
+impl core::marker::Copy for vyre_foundation::ir::LinearType
+impl core::marker::StructuralPartialEq for vyre_foundation::ir::LinearType
+impl core::marker::Freeze for vyre_foundation::ir::LinearType
+impl core::marker::Send for vyre_foundation::ir::LinearType
+impl core::marker::Sync for vyre_foundation::ir::LinearType
+impl core::marker::Unpin for vyre_foundation::ir::LinearType
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_foundation::ir::LinearType
+impl core::panic::unwind_safe::UnwindSafe for vyre_foundation::ir::LinearType
+impl<Q, K> hashbrown::Equivalent<K> for vyre_foundation::ir::LinearType where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn vyre_foundation::ir::LinearType::equivalent(&self, key: &K) -> bool
+impl<T, U> core::convert::Into<U> for vyre_foundation::ir::LinearType where U: core::convert::From<T>
+pub fn vyre_foundation::ir::LinearType::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for vyre_foundation::ir::LinearType where U: core::convert::Into<T>
+pub type vyre_foundation::ir::LinearType::Error = core::convert::Infallible
+pub fn vyre_foundation::ir::LinearType::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for vyre_foundation::ir::LinearType where U: core::convert::TryFrom<T>
+pub type vyre_foundation::ir::LinearType::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn vyre_foundation::ir::LinearType::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for vyre_foundation::ir::LinearType where T: core::clone::Clone
+pub type vyre_foundation::ir::LinearType::Owned = T
+pub fn vyre_foundation::ir::LinearType::clone_into(&self, target: &mut T)
+pub fn vyre_foundation::ir::LinearType::to_owned(&self) -> T
+impl<T> core::any::Any for vyre_foundation::ir::LinearType where T: 'static + ?core::marker::Sized
+pub fn vyre_foundation::ir::LinearType::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for vyre_foundation::ir::LinearType where T: ?core::marker::Sized
+pub fn vyre_foundation::ir::LinearType::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for vyre_foundation::ir::LinearType where T: ?core::marker::Sized
+pub fn vyre_foundation::ir::LinearType::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for vyre_foundation::ir::LinearType where T: core::clone::Clone
+pub unsafe fn vyre_foundation::ir::LinearType::clone_to_uninit(&self, dest: *mut u8)
+impl<T> core::convert::From<T> for vyre_foundation::ir::LinearType
+pub fn vyre_foundation::ir::LinearType::from(t: T) -> T
+impl<T> tracing::instrument::Instrument for vyre_foundation::ir::LinearType
+impl<T> tracing::instrument::WithSubscriber for vyre_foundation::ir::LinearType
+impl<T> typenum::type_operators::Same for vyre_foundation::ir::LinearType
+pub type vyre_foundation::ir::LinearType::Output = T
 #[non_exhaustive] pub enum vyre_foundation::ir::MemoryKind
 pub vyre_foundation::ir::MemoryKind::Global
 pub vyre_foundation::ir::MemoryKind::Local
@@ -4761,6 +5115,11 @@ pub vyre_foundation::ir::MemoryOrdering::Acquire
 pub vyre_foundation::ir::MemoryOrdering::Relaxed
 pub vyre_foundation::ir::MemoryOrdering::Release
 pub vyre_foundation::ir::MemoryOrdering::SeqCst
+impl vyre_foundation::memory_model::MemoryOrdering
+pub fn vyre_foundation::memory_model::MemoryOrdering::from_wire_tag(tag: u8) -> core::result::Result<Self, alloc::string::String>
+pub const fn vyre_foundation::memory_model::MemoryOrdering::is_valid_for_atomic_rmw(self) -> bool
+pub const fn vyre_foundation::memory_model::MemoryOrdering::is_valid_for_barrier(self) -> bool
+pub const fn vyre_foundation::memory_model::MemoryOrdering::wire_tag(self) -> u8
 impl core::clone::Clone for vyre_foundation::memory_model::MemoryOrdering
 pub fn vyre_foundation::memory_model::MemoryOrdering::clone(&self) -> vyre_foundation::memory_model::MemoryOrdering
 impl core::cmp::Eq for vyre_foundation::memory_model::MemoryOrdering
@@ -4827,6 +5186,7 @@ pub vyre_foundation::ir::Node::AsyncStore::tag: vyre_foundation::ir::Ident
 pub vyre_foundation::ir::Node::AsyncWait
 pub vyre_foundation::ir::Node::AsyncWait::tag: vyre_foundation::ir::Ident
 pub vyre_foundation::ir::Node::Barrier
+pub vyre_foundation::ir::Node::Barrier::ordering: vyre_foundation::memory_model::MemoryOrdering
 pub vyre_foundation::ir::Node::Block(alloc::vec::Vec<vyre_foundation::ir::Node>)
 pub vyre_foundation::ir::Node::If
 pub vyre_foundation::ir::Node::If::cond: vyre_foundation::ir::Expr
@@ -4865,6 +5225,7 @@ pub fn vyre_foundation::ir::Node::async_load_ext(source: impl core::convert::Int
 pub fn vyre_foundation::ir::Node::async_store(source: impl core::convert::Into<vyre_foundation::ir::Ident>, destination: impl core::convert::Into<vyre_foundation::ir::Ident>, offset: vyre_foundation::ir::Expr, size: vyre_foundation::ir::Expr, tag: impl core::convert::Into<vyre_foundation::ir::Ident>) -> Self
 pub fn vyre_foundation::ir::Node::async_wait(tag: impl core::convert::Into<vyre_foundation::ir::Ident>) -> Self
 pub const fn vyre_foundation::ir::Node::barrier() -> Self
+pub const fn vyre_foundation::ir::Node::barrier_with_ordering(ordering: vyre_foundation::memory_model::MemoryOrdering) -> Self
 pub fn vyre_foundation::ir::Node::block(nodes: alloc::vec::Vec<Self>) -> Self
 pub fn vyre_foundation::ir::Node::call(op_id: impl core::convert::Into<vyre_foundation::ir::Ident>, args: alloc::vec::Vec<vyre_foundation::ir::Expr>) -> Self
 pub fn vyre_foundation::ir::Node::forever(body: alloc::vec::Vec<Self>) -> Self
@@ -4973,6 +5334,59 @@ impl<T> tracing::instrument::Instrument for vyre_foundation::ir::NodeStorage
 impl<T> tracing::instrument::WithSubscriber for vyre_foundation::ir::NodeStorage
 impl<T> typenum::type_operators::Same for vyre_foundation::ir::NodeStorage
 pub type vyre_foundation::ir::NodeStorage::Output = T
+#[non_exhaustive] pub enum vyre_foundation::ir::ShapePredicate
+pub vyre_foundation::ir::ShapePredicate::And(alloc::boxed::Box<vyre_foundation::ir::ShapePredicate>, alloc::boxed::Box<vyre_foundation::ir::ShapePredicate>)
+pub vyre_foundation::ir::ShapePredicate::AtLeast(u32)
+pub vyre_foundation::ir::ShapePredicate::AtMost(u32)
+pub vyre_foundation::ir::ShapePredicate::Exactly(u32)
+pub vyre_foundation::ir::ShapePredicate::MultipleOf(u32)
+impl vyre_foundation::ir::ShapePredicate
+pub fn vyre_foundation::ir::ShapePredicate::describe(&self) -> alloc::string::String
+pub fn vyre_foundation::ir::ShapePredicate::holds(&self, count: u32) -> bool
+impl core::clone::Clone for vyre_foundation::ir::ShapePredicate
+pub fn vyre_foundation::ir::ShapePredicate::clone(&self) -> vyre_foundation::ir::ShapePredicate
+impl core::cmp::Eq for vyre_foundation::ir::ShapePredicate
+impl core::cmp::PartialEq for vyre_foundation::ir::ShapePredicate
+pub fn vyre_foundation::ir::ShapePredicate::eq(&self, other: &vyre_foundation::ir::ShapePredicate) -> bool
+impl core::fmt::Debug for vyre_foundation::ir::ShapePredicate
+pub fn vyre_foundation::ir::ShapePredicate::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for vyre_foundation::ir::ShapePredicate
+pub fn vyre_foundation::ir::ShapePredicate::hash<__H: core::hash::Hasher>(&self, state: &mut __H)
+impl core::marker::StructuralPartialEq for vyre_foundation::ir::ShapePredicate
+impl core::marker::Freeze for vyre_foundation::ir::ShapePredicate
+impl core::marker::Send for vyre_foundation::ir::ShapePredicate
+impl core::marker::Sync for vyre_foundation::ir::ShapePredicate
+impl core::marker::Unpin for vyre_foundation::ir::ShapePredicate
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_foundation::ir::ShapePredicate
+impl core::panic::unwind_safe::UnwindSafe for vyre_foundation::ir::ShapePredicate
+impl<Q, K> hashbrown::Equivalent<K> for vyre_foundation::ir::ShapePredicate where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn vyre_foundation::ir::ShapePredicate::equivalent(&self, key: &K) -> bool
+impl<T, U> core::convert::Into<U> for vyre_foundation::ir::ShapePredicate where U: core::convert::From<T>
+pub fn vyre_foundation::ir::ShapePredicate::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for vyre_foundation::ir::ShapePredicate where U: core::convert::Into<T>
+pub type vyre_foundation::ir::ShapePredicate::Error = core::convert::Infallible
+pub fn vyre_foundation::ir::ShapePredicate::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for vyre_foundation::ir::ShapePredicate where U: core::convert::TryFrom<T>
+pub type vyre_foundation::ir::ShapePredicate::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn vyre_foundation::ir::ShapePredicate::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for vyre_foundation::ir::ShapePredicate where T: core::clone::Clone
+pub type vyre_foundation::ir::ShapePredicate::Owned = T
+pub fn vyre_foundation::ir::ShapePredicate::clone_into(&self, target: &mut T)
+pub fn vyre_foundation::ir::ShapePredicate::to_owned(&self) -> T
+impl<T> core::any::Any for vyre_foundation::ir::ShapePredicate where T: 'static + ?core::marker::Sized
+pub fn vyre_foundation::ir::ShapePredicate::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for vyre_foundation::ir::ShapePredicate where T: ?core::marker::Sized
+pub fn vyre_foundation::ir::ShapePredicate::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for vyre_foundation::ir::ShapePredicate where T: ?core::marker::Sized
+pub fn vyre_foundation::ir::ShapePredicate::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for vyre_foundation::ir::ShapePredicate where T: core::clone::Clone
+pub unsafe fn vyre_foundation::ir::ShapePredicate::clone_to_uninit(&self, dest: *mut u8)
+impl<T> core::convert::From<T> for vyre_foundation::ir::ShapePredicate
+pub fn vyre_foundation::ir::ShapePredicate::from(t: T) -> T
+impl<T> tracing::instrument::Instrument for vyre_foundation::ir::ShapePredicate
+impl<T> tracing::instrument::WithSubscriber for vyre_foundation::ir::ShapePredicate
+impl<T> typenum::type_operators::Same for vyre_foundation::ir::ShapePredicate
+pub type vyre_foundation::ir::ShapePredicate::Output = T
 #[non_exhaustive] pub enum vyre_foundation::ir::Value
 pub vyre_foundation::ir::Value::Bool(bool)
 pub vyre_foundation::ir::Value::F32(f32)
@@ -5062,9 +5476,11 @@ pub vyre_foundation::ir::BufferDecl::element: vyre_spec::data_type::DataType
 pub vyre_foundation::ir::BufferDecl::hints: vyre_foundation::ir::MemoryHints
 pub vyre_foundation::ir::BufferDecl::is_output: bool
 pub vyre_foundation::ir::BufferDecl::kind: vyre_foundation::ir::MemoryKind
+pub vyre_foundation::ir::BufferDecl::linear_type: vyre_foundation::ir::LinearType
 pub vyre_foundation::ir::BufferDecl::name: alloc::sync::Arc<str>
 pub vyre_foundation::ir::BufferDecl::output_byte_range: core::option::Option<core::ops::range::Range<usize>>
 pub vyre_foundation::ir::BufferDecl::pipeline_live_out: bool
+pub vyre_foundation::ir::BufferDecl::shape_predicate: core::option::Option<vyre_foundation::ir::ShapePredicate>
 impl vyre_foundation::ir::BufferDecl
 pub fn vyre_foundation::ir::BufferDecl::access(&self) -> vyre_spec::buffer_access::BufferAccess
 pub fn vyre_foundation::ir::BufferDecl::binding(&self) -> u32
@@ -5074,19 +5490,23 @@ pub fn vyre_foundation::ir::BufferDecl::hints(&self) -> vyre_foundation::ir::Mem
 pub fn vyre_foundation::ir::BufferDecl::is_output(&self) -> bool
 pub fn vyre_foundation::ir::BufferDecl::is_pipeline_live_out(&self) -> bool
 pub fn vyre_foundation::ir::BufferDecl::kind(&self) -> vyre_foundation::ir::MemoryKind
+pub fn vyre_foundation::ir::BufferDecl::linear_type(&self) -> vyre_foundation::ir::LinearType
 pub fn vyre_foundation::ir::BufferDecl::name(&self) -> &str
 pub fn vyre_foundation::ir::BufferDecl::output(name: &str, binding: u32, element: vyre_spec::data_type::DataType) -> Self
 pub fn vyre_foundation::ir::BufferDecl::output_byte_range(&self) -> core::option::Option<core::ops::range::Range<usize>>
 pub fn vyre_foundation::ir::BufferDecl::read(name: &str, binding: u32, element: vyre_spec::data_type::DataType) -> Self
 pub fn vyre_foundation::ir::BufferDecl::read_write(name: &str, binding: u32, element: vyre_spec::data_type::DataType) -> Self
+pub fn vyre_foundation::ir::BufferDecl::shape_predicate(&self) -> core::option::Option<&vyre_foundation::ir::ShapePredicate>
 pub fn vyre_foundation::ir::BufferDecl::storage(name: &str, binding: u32, access: vyre_spec::buffer_access::BufferAccess, element: vyre_spec::data_type::DataType) -> Self
 pub fn vyre_foundation::ir::BufferDecl::uniform(name: &str, binding: u32, element: vyre_spec::data_type::DataType) -> Self
 pub fn vyre_foundation::ir::BufferDecl::with_bytes_extraction(self, flag: bool) -> Self
 pub fn vyre_foundation::ir::BufferDecl::with_count(self, count: u32) -> Self
 pub fn vyre_foundation::ir::BufferDecl::with_hints(self, hints: vyre_foundation::ir::MemoryHints) -> Self
 pub fn vyre_foundation::ir::BufferDecl::with_kind(self, kind: vyre_foundation::ir::MemoryKind) -> Self
+pub fn vyre_foundation::ir::BufferDecl::with_linear_type(self, linear_type: vyre_foundation::ir::LinearType) -> Self
 pub fn vyre_foundation::ir::BufferDecl::with_output_byte_range(self, range: core::ops::range::Range<usize>) -> Self
 pub fn vyre_foundation::ir::BufferDecl::with_pipeline_live_out(self, flag: bool) -> Self
+pub fn vyre_foundation::ir::BufferDecl::with_shape_predicate(self, predicate: vyre_foundation::ir::ShapePredicate) -> Self
 pub fn vyre_foundation::ir::BufferDecl::workgroup(name: &str, count: u32, element: vyre_spec::data_type::DataType) -> Self
 impl core::clone::Clone for vyre_foundation::ir::BufferDecl
 pub fn vyre_foundation::ir::BufferDecl::clone(&self) -> vyre_foundation::ir::BufferDecl
@@ -5277,12 +5697,16 @@ pub fn vyre_foundation::ir::Ident::borrow(&self) -> &str
 impl core::clone::Clone for vyre_foundation::ir::Ident
 pub fn vyre_foundation::ir::Ident::clone(&self) -> vyre_foundation::ir::Ident
 impl core::cmp::Eq for vyre_foundation::ir::Ident
+impl core::cmp::Ord for vyre_foundation::ir::Ident
+pub fn vyre_foundation::ir::Ident::cmp(&self, other: &Self) -> core::cmp::Ordering
 impl core::cmp::PartialEq for vyre_foundation::ir::Ident
 pub fn vyre_foundation::ir::Ident::eq(&self, other: &vyre_foundation::ir::Ident) -> bool
 impl core::cmp::PartialEq<&str> for vyre_foundation::ir::Ident
 pub fn vyre_foundation::ir::Ident::eq(&self, other: &&str) -> bool
 impl core::cmp::PartialEq<str> for vyre_foundation::ir::Ident
 pub fn vyre_foundation::ir::Ident::eq(&self, other: &str) -> bool
+impl core::cmp::PartialOrd for vyre_foundation::ir::Ident
+pub fn vyre_foundation::ir::Ident::partial_cmp(&self, other: &Self) -> core::option::Option<core::cmp::Ordering>
 impl core::convert::AsRef<str> for vyre_foundation::ir::Ident
 pub fn vyre_foundation::ir::Ident::as_ref(&self) -> &str
 impl core::convert::From<&alloc::string::String> for vyre_foundation::ir::Ident
@@ -5526,10 +5950,13 @@ impl vyre_foundation::ir::Program
 pub const vyre_foundation::ir::Program::ROOT_REGION_GENERATOR: &'static str
 pub fn vyre_foundation::ir::Program::empty() -> Self
 pub fn vyre_foundation::ir::Program::entry_op_id(&self) -> core::option::Option<&str>
+pub fn vyre_foundation::ir::Program::into_entry_vec(self) -> alloc::vec::Vec<vyre_foundation::ir::Node>
 pub fn vyre_foundation::ir::Program::new(buffers: alloc::vec::Vec<vyre_foundation::ir::BufferDecl>, workgroup_size: [u32; 3], entry: alloc::vec::Vec<vyre_foundation::ir::Node>) -> Self
 pub fn vyre_foundation::ir::Program::with_arena(arena: &vyre_foundation::ir::ExprArena, buffers: alloc::vec::Vec<vyre_foundation::ir::BufferDecl>, workgroup_size: [u32; 3]) -> vyre_foundation::ir::ArenaProgram<'_>
 pub fn vyre_foundation::ir::Program::with_entry_op_id(self, op_id: impl core::convert::Into<alloc::string::String>) -> Self
+pub fn vyre_foundation::ir::Program::with_rewritten_buffers(&self, buffers: alloc::vec::Vec<vyre_foundation::ir::BufferDecl>) -> Self
 pub fn vyre_foundation::ir::Program::with_rewritten_entry(&self, entry: alloc::vec::Vec<vyre_foundation::ir::Node>) -> Self
+pub fn vyre_foundation::ir::Program::with_rewritten_workgroup_size_and_entry(&self, workgroup_size: [u32; 3], entry: alloc::vec::Vec<vyre_foundation::ir::Node>) -> Self
 pub fn vyre_foundation::ir::Program::wrapped(buffers: alloc::vec::Vec<vyre_foundation::ir::BufferDecl>, workgroup_size: [u32; 3], entry: alloc::vec::Vec<vyre_foundation::ir::Node>) -> Self
 impl vyre_foundation::ir::Program
 pub fn vyre_foundation::ir::Program::buffer(&self, name: &str) -> core::option::Option<&vyre_foundation::ir::BufferDecl>
@@ -5537,25 +5964,37 @@ pub fn vyre_foundation::ir::Program::buffer_count(&self) -> usize
 pub fn vyre_foundation::ir::Program::buffers(&self) -> &[vyre_foundation::ir::BufferDecl]
 pub fn vyre_foundation::ir::Program::entry(&self) -> &[vyre_foundation::ir::Node]
 pub fn vyre_foundation::ir::Program::entry_mut(&mut self) -> &mut alloc::vec::Vec<vyre_foundation::ir::Node>
+pub fn vyre_foundation::ir::Program::estimate_peak_vram_bytes(&self) -> u64
 pub fn vyre_foundation::ir::Program::fingerprint(&self) -> [u8; 32]
 pub fn vyre_foundation::ir::Program::has_buffer(&self, name: &str) -> bool
 pub fn vyre_foundation::ir::Program::has_indirect_dispatch(&self) -> bool
 pub fn vyre_foundation::ir::Program::is_explicit_noop(&self) -> bool
 pub fn vyre_foundation::ir::Program::is_non_composable_with_self(&self) -> bool
+pub fn vyre_foundation::ir::Program::is_structurally_validated(&self) -> bool
 pub fn vyre_foundation::ir::Program::is_top_level_region_wrapped(&self) -> bool
 pub fn vyre_foundation::ir::Program::is_validated(&self) -> bool
+pub fn vyre_foundation::ir::Program::is_validated_on(&self, backend_id: &str) -> bool
+pub fn vyre_foundation::ir::Program::mark_structurally_validated(&self)
 pub fn vyre_foundation::ir::Program::mark_validated(&self)
+pub fn vyre_foundation::ir::Program::mark_validated_on(&self, backend_id: &str)
 pub fn vyre_foundation::ir::Program::output_buffer_indices(&self) -> &[u32]
 pub fn vyre_foundation::ir::Program::parallel_region_size(&self) -> [u32; 3]
+pub fn vyre_foundation::ir::Program::peak_intensity(&self) -> vyre_spec::bin_op::OpIntensity
 pub fn vyre_foundation::ir::Program::reconcile_runnable_top_level(self) -> Self
 pub fn vyre_foundation::ir::Program::set_parallel_region_size(&mut self, parallel_region_size: [u32; 3])
 pub fn vyre_foundation::ir::Program::set_workgroup_size(&mut self, workgroup_size: [u32; 3])
 pub fn vyre_foundation::ir::Program::structural_eq(&self, other: &Self) -> bool
 pub fn vyre_foundation::ir::Program::top_level_region_violation(&self) -> core::option::Option<alloc::string::String>
 pub fn vyre_foundation::ir::Program::validate(&self) -> vyre_foundation::error::Result<()>
+pub fn vyre_foundation::ir::Program::vsa_fingerprint(&self) -> alloc::vec::Vec<u32>
 pub fn vyre_foundation::ir::Program::with_non_composable_with_self(self, flag: bool) -> Self
 pub fn vyre_foundation::ir::Program::workgroup_size(&self) -> [u32; 3]
 impl vyre_foundation::ir::Program
+pub fn vyre_foundation::ir::Program::canonical_wire_bytes(&self) -> core::result::Result<alloc::vec::Vec<u8>, vyre_foundation::error::Error>
+pub fn vyre_foundation::ir::Program::canonical_wire_hash(&self) -> core::result::Result<blake3::Hash, vyre_foundation::error::Error>
+pub fn vyre_foundation::ir::Program::canonicalized(&self) -> Self
+impl vyre_foundation::ir::Program
+pub fn vyre_foundation::ir::Program::content_hash(&self) -> [u8; 32]
 pub fn vyre_foundation::ir::Program::from_bytes(bytes: &[u8]) -> core::result::Result<Self, vyre_foundation::error::Error>
 pub fn vyre_foundation::ir::Program::from_wire(bytes: &[u8]) -> core::result::Result<Self, vyre_foundation::error::Error>
 pub fn vyre_foundation::ir::Program::to_bytes(&self) -> alloc::vec::Vec<u8>
@@ -5786,6 +6225,72 @@ pub fn vyre_foundation::ir::validate(program: &vyre_foundation::ir::Program) -> 
 pub type vyre_foundation::ir::OpId = alloc::sync::Arc<str>
 pub type vyre_foundation::ir::OpResolver = fn(&str) -> core::option::Option<vyre_foundation::ir::Program>
 pub mod vyre_foundation::lower
+pub mod vyre_foundation::lower::effects
+pub struct vyre_foundation::lower::effects::ProgramEffects(_)
+impl vyre_foundation::lower::effects::ProgramEffects
+pub const vyre_foundation::lower::effects::ProgramEffects::ASYNC_LOAD: Self
+pub const vyre_foundation::lower::effects::ProgramEffects::ATOMIC: Self
+pub const vyre_foundation::lower::effects::ProgramEffects::BARRIER: Self
+pub const vyre_foundation::lower::effects::ProgramEffects::BUFFER_WRITE: Self
+pub const vyre_foundation::lower::effects::ProgramEffects::GPU_DISPATCH: Self
+pub const vyre_foundation::lower::effects::ProgramEffects::HOST_IO: Self
+pub const vyre_foundation::lower::effects::ProgramEffects::TRAP: Self
+pub const fn vyre_foundation::lower::effects::ProgramEffects::bits(self) -> u32
+pub const fn vyre_foundation::lower::effects::ProgramEffects::contains(self, other: Self) -> bool
+pub const fn vyre_foundation::lower::effects::ProgramEffects::empty() -> Self
+impl core::clone::Clone for vyre_foundation::lower::effects::ProgramEffects
+pub fn vyre_foundation::lower::effects::ProgramEffects::clone(&self) -> vyre_foundation::lower::effects::ProgramEffects
+impl core::cmp::Eq for vyre_foundation::lower::effects::ProgramEffects
+impl core::cmp::PartialEq for vyre_foundation::lower::effects::ProgramEffects
+pub fn vyre_foundation::lower::effects::ProgramEffects::eq(&self, other: &vyre_foundation::lower::effects::ProgramEffects) -> bool
+impl core::default::Default for vyre_foundation::lower::effects::ProgramEffects
+pub fn vyre_foundation::lower::effects::ProgramEffects::default() -> vyre_foundation::lower::effects::ProgramEffects
+impl core::fmt::Debug for vyre_foundation::lower::effects::ProgramEffects
+pub fn vyre_foundation::lower::effects::ProgramEffects::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for vyre_foundation::lower::effects::ProgramEffects
+pub fn vyre_foundation::lower::effects::ProgramEffects::hash<__H: core::hash::Hasher>(&self, state: &mut __H)
+impl core::marker::Copy for vyre_foundation::lower::effects::ProgramEffects
+impl core::marker::StructuralPartialEq for vyre_foundation::lower::effects::ProgramEffects
+impl core::ops::bit::BitOr for vyre_foundation::lower::effects::ProgramEffects
+pub type vyre_foundation::lower::effects::ProgramEffects::Output = vyre_foundation::lower::effects::ProgramEffects
+pub fn vyre_foundation::lower::effects::ProgramEffects::bitor(self, rhs: Self) -> Self
+impl core::ops::bit::BitOrAssign for vyre_foundation::lower::effects::ProgramEffects
+pub fn vyre_foundation::lower::effects::ProgramEffects::bitor_assign(&mut self, rhs: Self)
+impl core::marker::Freeze for vyre_foundation::lower::effects::ProgramEffects
+impl core::marker::Send for vyre_foundation::lower::effects::ProgramEffects
+impl core::marker::Sync for vyre_foundation::lower::effects::ProgramEffects
+impl core::marker::Unpin for vyre_foundation::lower::effects::ProgramEffects
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_foundation::lower::effects::ProgramEffects
+impl core::panic::unwind_safe::UnwindSafe for vyre_foundation::lower::effects::ProgramEffects
+impl<Q, K> hashbrown::Equivalent<K> for vyre_foundation::lower::effects::ProgramEffects where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn vyre_foundation::lower::effects::ProgramEffects::equivalent(&self, key: &K) -> bool
+impl<T, U> core::convert::Into<U> for vyre_foundation::lower::effects::ProgramEffects where U: core::convert::From<T>
+pub fn vyre_foundation::lower::effects::ProgramEffects::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for vyre_foundation::lower::effects::ProgramEffects where U: core::convert::Into<T>
+pub type vyre_foundation::lower::effects::ProgramEffects::Error = core::convert::Infallible
+pub fn vyre_foundation::lower::effects::ProgramEffects::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for vyre_foundation::lower::effects::ProgramEffects where U: core::convert::TryFrom<T>
+pub type vyre_foundation::lower::effects::ProgramEffects::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn vyre_foundation::lower::effects::ProgramEffects::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for vyre_foundation::lower::effects::ProgramEffects where T: core::clone::Clone
+pub type vyre_foundation::lower::effects::ProgramEffects::Owned = T
+pub fn vyre_foundation::lower::effects::ProgramEffects::clone_into(&self, target: &mut T)
+pub fn vyre_foundation::lower::effects::ProgramEffects::to_owned(&self) -> T
+impl<T> core::any::Any for vyre_foundation::lower::effects::ProgramEffects where T: 'static + ?core::marker::Sized
+pub fn vyre_foundation::lower::effects::ProgramEffects::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for vyre_foundation::lower::effects::ProgramEffects where T: ?core::marker::Sized
+pub fn vyre_foundation::lower::effects::ProgramEffects::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for vyre_foundation::lower::effects::ProgramEffects where T: ?core::marker::Sized
+pub fn vyre_foundation::lower::effects::ProgramEffects::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for vyre_foundation::lower::effects::ProgramEffects where T: core::clone::Clone
+pub unsafe fn vyre_foundation::lower::effects::ProgramEffects::clone_to_uninit(&self, dest: *mut u8)
+impl<T> core::convert::From<T> for vyre_foundation::lower::effects::ProgramEffects
+pub fn vyre_foundation::lower::effects::ProgramEffects::from(t: T) -> T
+impl<T> tracing::instrument::Instrument for vyre_foundation::lower::effects::ProgramEffects
+impl<T> tracing::instrument::WithSubscriber for vyre_foundation::lower::effects::ProgramEffects
+impl<T> typenum::type_operators::Same for vyre_foundation::lower::effects::ProgramEffects
+pub type vyre_foundation::lower::effects::ProgramEffects::Output = T
+pub fn vyre_foundation::lower::effects::compute_program_effects(program: &vyre_foundation::ir::Program) -> vyre_foundation::lower::effects::ProgramEffects
 pub struct vyre_foundation::lower::LoweringError
 impl vyre_foundation::lower::LoweringError
 pub fn vyre_foundation::lower::LoweringError::invalid(message: impl core::convert::Into<alloc::string::String>) -> Self
@@ -5842,6 +6347,71 @@ impl<T> tracing::instrument::Instrument for vyre_foundation::lower::LoweringErro
 impl<T> tracing::instrument::WithSubscriber for vyre_foundation::lower::LoweringError
 impl<T> typenum::type_operators::Same for vyre_foundation::lower::LoweringError
 pub type vyre_foundation::lower::LoweringError::Output = T
+pub struct vyre_foundation::lower::ProgramEffects(_)
+impl vyre_foundation::lower::effects::ProgramEffects
+pub const vyre_foundation::lower::effects::ProgramEffects::ASYNC_LOAD: Self
+pub const vyre_foundation::lower::effects::ProgramEffects::ATOMIC: Self
+pub const vyre_foundation::lower::effects::ProgramEffects::BARRIER: Self
+pub const vyre_foundation::lower::effects::ProgramEffects::BUFFER_WRITE: Self
+pub const vyre_foundation::lower::effects::ProgramEffects::GPU_DISPATCH: Self
+pub const vyre_foundation::lower::effects::ProgramEffects::HOST_IO: Self
+pub const vyre_foundation::lower::effects::ProgramEffects::TRAP: Self
+pub const fn vyre_foundation::lower::effects::ProgramEffects::bits(self) -> u32
+pub const fn vyre_foundation::lower::effects::ProgramEffects::contains(self, other: Self) -> bool
+pub const fn vyre_foundation::lower::effects::ProgramEffects::empty() -> Self
+impl core::clone::Clone for vyre_foundation::lower::effects::ProgramEffects
+pub fn vyre_foundation::lower::effects::ProgramEffects::clone(&self) -> vyre_foundation::lower::effects::ProgramEffects
+impl core::cmp::Eq for vyre_foundation::lower::effects::ProgramEffects
+impl core::cmp::PartialEq for vyre_foundation::lower::effects::ProgramEffects
+pub fn vyre_foundation::lower::effects::ProgramEffects::eq(&self, other: &vyre_foundation::lower::effects::ProgramEffects) -> bool
+impl core::default::Default for vyre_foundation::lower::effects::ProgramEffects
+pub fn vyre_foundation::lower::effects::ProgramEffects::default() -> vyre_foundation::lower::effects::ProgramEffects
+impl core::fmt::Debug for vyre_foundation::lower::effects::ProgramEffects
+pub fn vyre_foundation::lower::effects::ProgramEffects::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for vyre_foundation::lower::effects::ProgramEffects
+pub fn vyre_foundation::lower::effects::ProgramEffects::hash<__H: core::hash::Hasher>(&self, state: &mut __H)
+impl core::marker::Copy for vyre_foundation::lower::effects::ProgramEffects
+impl core::marker::StructuralPartialEq for vyre_foundation::lower::effects::ProgramEffects
+impl core::ops::bit::BitOr for vyre_foundation::lower::effects::ProgramEffects
+pub type vyre_foundation::lower::effects::ProgramEffects::Output = vyre_foundation::lower::effects::ProgramEffects
+pub fn vyre_foundation::lower::effects::ProgramEffects::bitor(self, rhs: Self) -> Self
+impl core::ops::bit::BitOrAssign for vyre_foundation::lower::effects::ProgramEffects
+pub fn vyre_foundation::lower::effects::ProgramEffects::bitor_assign(&mut self, rhs: Self)
+impl core::marker::Freeze for vyre_foundation::lower::effects::ProgramEffects
+impl core::marker::Send for vyre_foundation::lower::effects::ProgramEffects
+impl core::marker::Sync for vyre_foundation::lower::effects::ProgramEffects
+impl core::marker::Unpin for vyre_foundation::lower::effects::ProgramEffects
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_foundation::lower::effects::ProgramEffects
+impl core::panic::unwind_safe::UnwindSafe for vyre_foundation::lower::effects::ProgramEffects
+impl<Q, K> hashbrown::Equivalent<K> for vyre_foundation::lower::effects::ProgramEffects where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn vyre_foundation::lower::effects::ProgramEffects::equivalent(&self, key: &K) -> bool
+impl<T, U> core::convert::Into<U> for vyre_foundation::lower::effects::ProgramEffects where U: core::convert::From<T>
+pub fn vyre_foundation::lower::effects::ProgramEffects::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for vyre_foundation::lower::effects::ProgramEffects where U: core::convert::Into<T>
+pub type vyre_foundation::lower::effects::ProgramEffects::Error = core::convert::Infallible
+pub fn vyre_foundation::lower::effects::ProgramEffects::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for vyre_foundation::lower::effects::ProgramEffects where U: core::convert::TryFrom<T>
+pub type vyre_foundation::lower::effects::ProgramEffects::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn vyre_foundation::lower::effects::ProgramEffects::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for vyre_foundation::lower::effects::ProgramEffects where T: core::clone::Clone
+pub type vyre_foundation::lower::effects::ProgramEffects::Owned = T
+pub fn vyre_foundation::lower::effects::ProgramEffects::clone_into(&self, target: &mut T)
+pub fn vyre_foundation::lower::effects::ProgramEffects::to_owned(&self) -> T
+impl<T> core::any::Any for vyre_foundation::lower::effects::ProgramEffects where T: 'static + ?core::marker::Sized
+pub fn vyre_foundation::lower::effects::ProgramEffects::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for vyre_foundation::lower::effects::ProgramEffects where T: ?core::marker::Sized
+pub fn vyre_foundation::lower::effects::ProgramEffects::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for vyre_foundation::lower::effects::ProgramEffects where T: ?core::marker::Sized
+pub fn vyre_foundation::lower::effects::ProgramEffects::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for vyre_foundation::lower::effects::ProgramEffects where T: core::clone::Clone
+pub unsafe fn vyre_foundation::lower::effects::ProgramEffects::clone_to_uninit(&self, dest: *mut u8)
+impl<T> core::convert::From<T> for vyre_foundation::lower::effects::ProgramEffects
+pub fn vyre_foundation::lower::effects::ProgramEffects::from(t: T) -> T
+impl<T> tracing::instrument::Instrument for vyre_foundation::lower::effects::ProgramEffects
+impl<T> tracing::instrument::WithSubscriber for vyre_foundation::lower::effects::ProgramEffects
+impl<T> typenum::type_operators::Same for vyre_foundation::lower::effects::ProgramEffects
+pub type vyre_foundation::lower::effects::ProgramEffects::Output = T
+pub fn vyre_foundation::lower::compute_program_effects(program: &vyre_foundation::ir::Program) -> vyre_foundation::lower::effects::ProgramEffects
 pub mod vyre_foundation::match_result
 #[non_exhaustive] pub struct vyre_foundation::match_result::Match
 pub vyre_foundation::match_result::Match::end: u32
@@ -5905,6 +6475,11 @@ pub vyre_foundation::memory_model::MemoryOrdering::Acquire
 pub vyre_foundation::memory_model::MemoryOrdering::Relaxed
 pub vyre_foundation::memory_model::MemoryOrdering::Release
 pub vyre_foundation::memory_model::MemoryOrdering::SeqCst
+impl vyre_foundation::memory_model::MemoryOrdering
+pub fn vyre_foundation::memory_model::MemoryOrdering::from_wire_tag(tag: u8) -> core::result::Result<Self, alloc::string::String>
+pub const fn vyre_foundation::memory_model::MemoryOrdering::is_valid_for_atomic_rmw(self) -> bool
+pub const fn vyre_foundation::memory_model::MemoryOrdering::is_valid_for_barrier(self) -> bool
+pub const fn vyre_foundation::memory_model::MemoryOrdering::wire_tag(self) -> u8
 impl core::clone::Clone for vyre_foundation::memory_model::MemoryOrdering
 pub fn vyre_foundation::memory_model::MemoryOrdering::clone(&self) -> vyre_foundation::memory_model::MemoryOrdering
 impl core::cmp::Eq for vyre_foundation::memory_model::MemoryOrdering
@@ -6304,6 +6879,7 @@ pub struct vyre_foundation::optimizer::ctx::PassCtx<'a>
 pub vyre_foundation::optimizer::ctx::PassCtx::adapter_caps: &'a vyre_foundation::optimizer::ctx::AdapterCaps
 pub vyre_foundation::optimizer::ctx::PassCtx::analyses: &'a mut vyre_foundation::optimizer::ctx::AnalysisCache
 pub vyre_foundation::optimizer::ctx::PassCtx::diagnostics: &'a mut alloc::vec::Vec<vyre_foundation::diagnostics::Diagnostic>
+pub vyre_foundation::optimizer::ctx::PassCtx::fact_substrate: &'a mut vyre_foundation::optimizer::fact_substrate::FactSubstrate
 pub vyre_foundation::optimizer::ctx::PassCtx::program: &'a mut vyre_foundation::ir::Program
 impl<'a> core::marker::Freeze for vyre_foundation::optimizer::ctx::PassCtx<'a>
 impl<'a> core::marker::Send for vyre_foundation::optimizer::ctx::PassCtx<'a>
@@ -6332,6 +6908,102 @@ impl<T> tracing::instrument::WithSubscriber for vyre_foundation::optimizer::ctx:
 impl<T> typenum::type_operators::Same for vyre_foundation::optimizer::ctx::PassCtx<'a>
 pub type vyre_foundation::optimizer::ctx::PassCtx<'a>::Output = T
 pub fn vyre_foundation::optimizer::ctx::scheduling_error_to_diagnostic(err: &vyre_foundation::optimizer::PassSchedulingError) -> vyre_foundation::diagnostics::Diagnostic
+pub mod vyre_foundation::optimizer::fact_substrate
+pub struct vyre_foundation::optimizer::fact_substrate::FactSubstrate
+pub vyre_foundation::optimizer::fact_substrate::FactSubstrate::shape: core::option::Option<alloc::sync::Arc<vyre_foundation::optimizer::program_shape_facts::ProgramShapeFacts>>
+pub vyre_foundation::optimizer::fact_substrate::FactSubstrate::type_map: core::option::Option<alloc::sync::Arc<vyre_foundation::optimizer::fact_substrate::TypeFacts>>
+pub vyre_foundation::optimizer::fact_substrate::FactSubstrate::use_counts: core::option::Option<alloc::sync::Arc<rustc_hash::FxHashMap<vyre_foundation::ir::Ident, usize>>>
+impl vyre_foundation::optimizer::fact_substrate::FactSubstrate
+pub fn vyre_foundation::optimizer::fact_substrate::FactSubstrate::derive(program: &vyre_foundation::ir::Program) -> Self
+pub fn vyre_foundation::optimizer::fact_substrate::FactSubstrate::invalidate(&mut self)
+pub fn vyre_foundation::optimizer::fact_substrate::FactSubstrate::is_fresh_for(&self, program: &vyre_foundation::ir::Program) -> bool
+pub fn vyre_foundation::optimizer::fact_substrate::FactSubstrate::use_count_of(&self, name: &vyre_foundation::ir::Ident) -> usize
+pub fn vyre_foundation::optimizer::fact_substrate::FactSubstrate::use_counts(&self) -> core::option::Option<&rustc_hash::FxHashMap<vyre_foundation::ir::Ident, usize>>
+impl core::clone::Clone for vyre_foundation::optimizer::fact_substrate::FactSubstrate
+pub fn vyre_foundation::optimizer::fact_substrate::FactSubstrate::clone(&self) -> vyre_foundation::optimizer::fact_substrate::FactSubstrate
+impl core::default::Default for vyre_foundation::optimizer::fact_substrate::FactSubstrate
+pub fn vyre_foundation::optimizer::fact_substrate::FactSubstrate::default() -> vyre_foundation::optimizer::fact_substrate::FactSubstrate
+impl core::fmt::Debug for vyre_foundation::optimizer::fact_substrate::FactSubstrate
+pub fn vyre_foundation::optimizer::fact_substrate::FactSubstrate::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for vyre_foundation::optimizer::fact_substrate::FactSubstrate
+impl core::marker::Send for vyre_foundation::optimizer::fact_substrate::FactSubstrate
+impl core::marker::Sync for vyre_foundation::optimizer::fact_substrate::FactSubstrate
+impl core::marker::Unpin for vyre_foundation::optimizer::fact_substrate::FactSubstrate
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_foundation::optimizer::fact_substrate::FactSubstrate
+impl core::panic::unwind_safe::UnwindSafe for vyre_foundation::optimizer::fact_substrate::FactSubstrate
+impl<T, U> core::convert::Into<U> for vyre_foundation::optimizer::fact_substrate::FactSubstrate where U: core::convert::From<T>
+pub fn vyre_foundation::optimizer::fact_substrate::FactSubstrate::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for vyre_foundation::optimizer::fact_substrate::FactSubstrate where U: core::convert::Into<T>
+pub type vyre_foundation::optimizer::fact_substrate::FactSubstrate::Error = core::convert::Infallible
+pub fn vyre_foundation::optimizer::fact_substrate::FactSubstrate::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for vyre_foundation::optimizer::fact_substrate::FactSubstrate where U: core::convert::TryFrom<T>
+pub type vyre_foundation::optimizer::fact_substrate::FactSubstrate::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn vyre_foundation::optimizer::fact_substrate::FactSubstrate::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for vyre_foundation::optimizer::fact_substrate::FactSubstrate where T: core::clone::Clone
+pub type vyre_foundation::optimizer::fact_substrate::FactSubstrate::Owned = T
+pub fn vyre_foundation::optimizer::fact_substrate::FactSubstrate::clone_into(&self, target: &mut T)
+pub fn vyre_foundation::optimizer::fact_substrate::FactSubstrate::to_owned(&self) -> T
+impl<T> core::any::Any for vyre_foundation::optimizer::fact_substrate::FactSubstrate where T: 'static + ?core::marker::Sized
+pub fn vyre_foundation::optimizer::fact_substrate::FactSubstrate::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for vyre_foundation::optimizer::fact_substrate::FactSubstrate where T: ?core::marker::Sized
+pub fn vyre_foundation::optimizer::fact_substrate::FactSubstrate::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for vyre_foundation::optimizer::fact_substrate::FactSubstrate where T: ?core::marker::Sized
+pub fn vyre_foundation::optimizer::fact_substrate::FactSubstrate::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for vyre_foundation::optimizer::fact_substrate::FactSubstrate where T: core::clone::Clone
+pub unsafe fn vyre_foundation::optimizer::fact_substrate::FactSubstrate::clone_to_uninit(&self, dest: *mut u8)
+impl<T> core::convert::From<T> for vyre_foundation::optimizer::fact_substrate::FactSubstrate
+pub fn vyre_foundation::optimizer::fact_substrate::FactSubstrate::from(t: T) -> T
+impl<T> tracing::instrument::Instrument for vyre_foundation::optimizer::fact_substrate::FactSubstrate
+impl<T> tracing::instrument::WithSubscriber for vyre_foundation::optimizer::fact_substrate::FactSubstrate
+impl<T> typenum::type_operators::Same for vyre_foundation::optimizer::fact_substrate::FactSubstrate
+pub type vyre_foundation::optimizer::fact_substrate::FactSubstrate::Output = T
+pub struct vyre_foundation::optimizer::fact_substrate::TypeFacts
+pub vyre_foundation::optimizer::fact_substrate::TypeFacts::expr_types: rustc_hash::FxHashMap<u64, vyre_spec::data_type::DataType>
+pub vyre_foundation::optimizer::fact_substrate::TypeFacts::var_types: rustc_hash::FxHashMap<vyre_foundation::ir::Ident, vyre_spec::data_type::DataType>
+impl core::clone::Clone for vyre_foundation::optimizer::fact_substrate::TypeFacts
+pub fn vyre_foundation::optimizer::fact_substrate::TypeFacts::clone(&self) -> vyre_foundation::optimizer::fact_substrate::TypeFacts
+impl core::cmp::Eq for vyre_foundation::optimizer::fact_substrate::TypeFacts
+impl core::cmp::PartialEq for vyre_foundation::optimizer::fact_substrate::TypeFacts
+pub fn vyre_foundation::optimizer::fact_substrate::TypeFacts::eq(&self, other: &vyre_foundation::optimizer::fact_substrate::TypeFacts) -> bool
+impl core::default::Default for vyre_foundation::optimizer::fact_substrate::TypeFacts
+pub fn vyre_foundation::optimizer::fact_substrate::TypeFacts::default() -> vyre_foundation::optimizer::fact_substrate::TypeFacts
+impl core::fmt::Debug for vyre_foundation::optimizer::fact_substrate::TypeFacts
+pub fn vyre_foundation::optimizer::fact_substrate::TypeFacts::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for vyre_foundation::optimizer::fact_substrate::TypeFacts
+impl core::marker::Freeze for vyre_foundation::optimizer::fact_substrate::TypeFacts
+impl core::marker::Send for vyre_foundation::optimizer::fact_substrate::TypeFacts
+impl core::marker::Sync for vyre_foundation::optimizer::fact_substrate::TypeFacts
+impl core::marker::Unpin for vyre_foundation::optimizer::fact_substrate::TypeFacts
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_foundation::optimizer::fact_substrate::TypeFacts
+impl core::panic::unwind_safe::UnwindSafe for vyre_foundation::optimizer::fact_substrate::TypeFacts
+impl<Q, K> hashbrown::Equivalent<K> for vyre_foundation::optimizer::fact_substrate::TypeFacts where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn vyre_foundation::optimizer::fact_substrate::TypeFacts::equivalent(&self, key: &K) -> bool
+impl<T, U> core::convert::Into<U> for vyre_foundation::optimizer::fact_substrate::TypeFacts where U: core::convert::From<T>
+pub fn vyre_foundation::optimizer::fact_substrate::TypeFacts::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for vyre_foundation::optimizer::fact_substrate::TypeFacts where U: core::convert::Into<T>
+pub type vyre_foundation::optimizer::fact_substrate::TypeFacts::Error = core::convert::Infallible
+pub fn vyre_foundation::optimizer::fact_substrate::TypeFacts::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for vyre_foundation::optimizer::fact_substrate::TypeFacts where U: core::convert::TryFrom<T>
+pub type vyre_foundation::optimizer::fact_substrate::TypeFacts::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn vyre_foundation::optimizer::fact_substrate::TypeFacts::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for vyre_foundation::optimizer::fact_substrate::TypeFacts where T: core::clone::Clone
+pub type vyre_foundation::optimizer::fact_substrate::TypeFacts::Owned = T
+pub fn vyre_foundation::optimizer::fact_substrate::TypeFacts::clone_into(&self, target: &mut T)
+pub fn vyre_foundation::optimizer::fact_substrate::TypeFacts::to_owned(&self) -> T
+impl<T> core::any::Any for vyre_foundation::optimizer::fact_substrate::TypeFacts where T: 'static + ?core::marker::Sized
+pub fn vyre_foundation::optimizer::fact_substrate::TypeFacts::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for vyre_foundation::optimizer::fact_substrate::TypeFacts where T: ?core::marker::Sized
+pub fn vyre_foundation::optimizer::fact_substrate::TypeFacts::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for vyre_foundation::optimizer::fact_substrate::TypeFacts where T: ?core::marker::Sized
+pub fn vyre_foundation::optimizer::fact_substrate::TypeFacts::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for vyre_foundation::optimizer::fact_substrate::TypeFacts where T: core::clone::Clone
+pub unsafe fn vyre_foundation::optimizer::fact_substrate::TypeFacts::clone_to_uninit(&self, dest: *mut u8)
+impl<T> core::convert::From<T> for vyre_foundation::optimizer::fact_substrate::TypeFacts
+pub fn vyre_foundation::optimizer::fact_substrate::TypeFacts::from(t: T) -> T
+impl<T> tracing::instrument::Instrument for vyre_foundation::optimizer::fact_substrate::TypeFacts
+impl<T> tracing::instrument::WithSubscriber for vyre_foundation::optimizer::fact_substrate::TypeFacts
+impl<T> typenum::type_operators::Same for vyre_foundation::optimizer::fact_substrate::TypeFacts
+pub type vyre_foundation::optimizer::fact_substrate::TypeFacts::Output = T
 pub mod vyre_foundation::optimizer::fusion_cert
 pub struct vyre_foundation::optimizer::fusion_cert::FusionCertificate
 pub vyre_foundation::optimizer::fusion_cert::FusionCertificate::parity_holds: bool
@@ -6390,6 +7062,7 @@ impl vyre_foundation::optimizer::passes::autotune::Autotune
 pub fn vyre_foundation::optimizer::passes::autotune::Autotune::analyze(_program: &vyre_foundation::ir::Program) -> vyre_foundation::optimizer::PassAnalysis
 pub fn vyre_foundation::optimizer::passes::autotune::Autotune::fingerprint(program: &vyre_foundation::ir::Program) -> u64
 pub fn vyre_foundation::optimizer::passes::autotune::Autotune::transform(program: vyre_foundation::ir::Program) -> vyre_foundation::optimizer::PassResult
+pub fn vyre_foundation::optimizer::passes::autotune::Autotune::transform_for_adapter(program: vyre_foundation::ir::Program, caps: &vyre_foundation::optimizer::ctx::AdapterCaps) -> vyre_foundation::optimizer::PassResult
 impl core::default::Default for vyre_foundation::optimizer::passes::autotune::Autotune
 pub fn vyre_foundation::optimizer::passes::autotune::Autotune::default() -> vyre_foundation::optimizer::passes::autotune::Autotune
 impl core::fmt::Debug for vyre_foundation::optimizer::passes::autotune::Autotune
@@ -6426,6 +7099,44 @@ impl<T> tracing::instrument::Instrument for vyre_foundation::optimizer::passes::
 impl<T> tracing::instrument::WithSubscriber for vyre_foundation::optimizer::passes::autotune::Autotune
 impl<T> typenum::type_operators::Same for vyre_foundation::optimizer::passes::autotune::Autotune
 pub type vyre_foundation::optimizer::passes::autotune::Autotune::Output = T
+pub mod vyre_foundation::optimizer::passes::canonicalize
+pub struct vyre_foundation::optimizer::passes::canonicalize::Canonicalize
+impl vyre_foundation::optimizer::passes::canonicalize::Canonicalize
+pub fn vyre_foundation::optimizer::passes::canonicalize::Canonicalize::analyze(_program: &vyre_foundation::ir::Program) -> vyre_foundation::optimizer::PassAnalysis
+pub fn vyre_foundation::optimizer::passes::canonicalize::Canonicalize::fingerprint(program: &vyre_foundation::ir::Program) -> u64
+pub fn vyre_foundation::optimizer::passes::canonicalize::Canonicalize::transform(program: vyre_foundation::ir::Program) -> vyre_foundation::optimizer::PassResult
+impl vyre_foundation::optimizer::Pass for vyre_foundation::optimizer::passes::canonicalize::Canonicalize
+pub fn vyre_foundation::optimizer::passes::canonicalize::Canonicalize::analyze(&self, program: &vyre_foundation::ir::Program) -> vyre_foundation::optimizer::PassAnalysis
+pub fn vyre_foundation::optimizer::passes::canonicalize::Canonicalize::fingerprint(&self, program: &vyre_foundation::ir::Program) -> u64
+pub fn vyre_foundation::optimizer::passes::canonicalize::Canonicalize::metadata(&self) -> vyre_foundation::optimizer::PassMetadata
+pub fn vyre_foundation::optimizer::passes::canonicalize::Canonicalize::pass_id(&self) -> &'static str
+pub fn vyre_foundation::optimizer::passes::canonicalize::Canonicalize::transform(&self, program: vyre_foundation::ir::Program) -> vyre_foundation::optimizer::PassResult
+impl core::marker::Freeze for vyre_foundation::optimizer::passes::canonicalize::Canonicalize
+impl core::marker::Send for vyre_foundation::optimizer::passes::canonicalize::Canonicalize
+impl core::marker::Sync for vyre_foundation::optimizer::passes::canonicalize::Canonicalize
+impl core::marker::Unpin for vyre_foundation::optimizer::passes::canonicalize::Canonicalize
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_foundation::optimizer::passes::canonicalize::Canonicalize
+impl core::panic::unwind_safe::UnwindSafe for vyre_foundation::optimizer::passes::canonicalize::Canonicalize
+impl<T, U> core::convert::Into<U> for vyre_foundation::optimizer::passes::canonicalize::Canonicalize where U: core::convert::From<T>
+pub fn vyre_foundation::optimizer::passes::canonicalize::Canonicalize::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for vyre_foundation::optimizer::passes::canonicalize::Canonicalize where U: core::convert::Into<T>
+pub type vyre_foundation::optimizer::passes::canonicalize::Canonicalize::Error = core::convert::Infallible
+pub fn vyre_foundation::optimizer::passes::canonicalize::Canonicalize::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for vyre_foundation::optimizer::passes::canonicalize::Canonicalize where U: core::convert::TryFrom<T>
+pub type vyre_foundation::optimizer::passes::canonicalize::Canonicalize::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn vyre_foundation::optimizer::passes::canonicalize::Canonicalize::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> core::any::Any for vyre_foundation::optimizer::passes::canonicalize::Canonicalize where T: 'static + ?core::marker::Sized
+pub fn vyre_foundation::optimizer::passes::canonicalize::Canonicalize::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for vyre_foundation::optimizer::passes::canonicalize::Canonicalize where T: ?core::marker::Sized
+pub fn vyre_foundation::optimizer::passes::canonicalize::Canonicalize::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for vyre_foundation::optimizer::passes::canonicalize::Canonicalize where T: ?core::marker::Sized
+pub fn vyre_foundation::optimizer::passes::canonicalize::Canonicalize::borrow_mut(&mut self) -> &mut T
+impl<T> core::convert::From<T> for vyre_foundation::optimizer::passes::canonicalize::Canonicalize
+pub fn vyre_foundation::optimizer::passes::canonicalize::Canonicalize::from(t: T) -> T
+impl<T> tracing::instrument::Instrument for vyre_foundation::optimizer::passes::canonicalize::Canonicalize
+impl<T> tracing::instrument::WithSubscriber for vyre_foundation::optimizer::passes::canonicalize::Canonicalize
+impl<T> typenum::type_operators::Same for vyre_foundation::optimizer::passes::canonicalize::Canonicalize
+pub type vyre_foundation::optimizer::passes::canonicalize::Canonicalize::Output = T
 pub mod vyre_foundation::optimizer::passes::const_buffer_fold
 pub struct vyre_foundation::optimizer::passes::const_buffer_fold::ConstBuffer
 pub vyre_foundation::optimizer::passes::const_buffer_fold::ConstBuffer::name: vyre_foundation::ir::Ident
@@ -6515,6 +7226,82 @@ impl<T> tracing::instrument::Instrument for vyre_foundation::optimizer::passes::
 impl<T> tracing::instrument::WithSubscriber for vyre_foundation::optimizer::passes::const_fold::ConstFold
 impl<T> typenum::type_operators::Same for vyre_foundation::optimizer::passes::const_fold::ConstFold
 pub type vyre_foundation::optimizer::passes::const_fold::ConstFold::Output = T
+pub mod vyre_foundation::optimizer::passes::cse
+pub struct vyre_foundation::optimizer::passes::cse::CsePass
+impl vyre_foundation::optimizer::passes::cse::CsePass
+pub fn vyre_foundation::optimizer::passes::cse::CsePass::analyze(program: &vyre_foundation::ir::Program) -> vyre_foundation::optimizer::PassAnalysis
+pub fn vyre_foundation::optimizer::passes::cse::CsePass::fingerprint(program: &vyre_foundation::ir::Program) -> u64
+pub fn vyre_foundation::optimizer::passes::cse::CsePass::transform(program: vyre_foundation::ir::Program) -> vyre_foundation::optimizer::PassResult
+impl vyre_foundation::optimizer::Pass for vyre_foundation::optimizer::passes::cse::CsePass
+pub fn vyre_foundation::optimizer::passes::cse::CsePass::analyze(&self, program: &vyre_foundation::ir::Program) -> vyre_foundation::optimizer::PassAnalysis
+pub fn vyre_foundation::optimizer::passes::cse::CsePass::fingerprint(&self, program: &vyre_foundation::ir::Program) -> u64
+pub fn vyre_foundation::optimizer::passes::cse::CsePass::metadata(&self) -> vyre_foundation::optimizer::PassMetadata
+pub fn vyre_foundation::optimizer::passes::cse::CsePass::pass_id(&self) -> &'static str
+pub fn vyre_foundation::optimizer::passes::cse::CsePass::transform(&self, program: vyre_foundation::ir::Program) -> vyre_foundation::optimizer::PassResult
+impl core::marker::Freeze for vyre_foundation::optimizer::passes::cse::CsePass
+impl core::marker::Send for vyre_foundation::optimizer::passes::cse::CsePass
+impl core::marker::Sync for vyre_foundation::optimizer::passes::cse::CsePass
+impl core::marker::Unpin for vyre_foundation::optimizer::passes::cse::CsePass
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_foundation::optimizer::passes::cse::CsePass
+impl core::panic::unwind_safe::UnwindSafe for vyre_foundation::optimizer::passes::cse::CsePass
+impl<T, U> core::convert::Into<U> for vyre_foundation::optimizer::passes::cse::CsePass where U: core::convert::From<T>
+pub fn vyre_foundation::optimizer::passes::cse::CsePass::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for vyre_foundation::optimizer::passes::cse::CsePass where U: core::convert::Into<T>
+pub type vyre_foundation::optimizer::passes::cse::CsePass::Error = core::convert::Infallible
+pub fn vyre_foundation::optimizer::passes::cse::CsePass::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for vyre_foundation::optimizer::passes::cse::CsePass where U: core::convert::TryFrom<T>
+pub type vyre_foundation::optimizer::passes::cse::CsePass::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn vyre_foundation::optimizer::passes::cse::CsePass::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> core::any::Any for vyre_foundation::optimizer::passes::cse::CsePass where T: 'static + ?core::marker::Sized
+pub fn vyre_foundation::optimizer::passes::cse::CsePass::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for vyre_foundation::optimizer::passes::cse::CsePass where T: ?core::marker::Sized
+pub fn vyre_foundation::optimizer::passes::cse::CsePass::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for vyre_foundation::optimizer::passes::cse::CsePass where T: ?core::marker::Sized
+pub fn vyre_foundation::optimizer::passes::cse::CsePass::borrow_mut(&mut self) -> &mut T
+impl<T> core::convert::From<T> for vyre_foundation::optimizer::passes::cse::CsePass
+pub fn vyre_foundation::optimizer::passes::cse::CsePass::from(t: T) -> T
+impl<T> tracing::instrument::Instrument for vyre_foundation::optimizer::passes::cse::CsePass
+impl<T> tracing::instrument::WithSubscriber for vyre_foundation::optimizer::passes::cse::CsePass
+impl<T> typenum::type_operators::Same for vyre_foundation::optimizer::passes::cse::CsePass
+pub type vyre_foundation::optimizer::passes::cse::CsePass::Output = T
+pub mod vyre_foundation::optimizer::passes::dce
+pub struct vyre_foundation::optimizer::passes::dce::DcePass
+impl vyre_foundation::optimizer::passes::dce::DcePass
+pub fn vyre_foundation::optimizer::passes::dce::DcePass::analyze(_program: &vyre_foundation::ir::Program) -> vyre_foundation::optimizer::PassAnalysis
+pub fn vyre_foundation::optimizer::passes::dce::DcePass::fingerprint(program: &vyre_foundation::ir::Program) -> u64
+pub fn vyre_foundation::optimizer::passes::dce::DcePass::transform(program: vyre_foundation::ir::Program) -> vyre_foundation::optimizer::PassResult
+impl vyre_foundation::optimizer::Pass for vyre_foundation::optimizer::passes::dce::DcePass
+pub fn vyre_foundation::optimizer::passes::dce::DcePass::analyze(&self, program: &vyre_foundation::ir::Program) -> vyre_foundation::optimizer::PassAnalysis
+pub fn vyre_foundation::optimizer::passes::dce::DcePass::fingerprint(&self, program: &vyre_foundation::ir::Program) -> u64
+pub fn vyre_foundation::optimizer::passes::dce::DcePass::metadata(&self) -> vyre_foundation::optimizer::PassMetadata
+pub fn vyre_foundation::optimizer::passes::dce::DcePass::pass_id(&self) -> &'static str
+pub fn vyre_foundation::optimizer::passes::dce::DcePass::transform(&self, program: vyre_foundation::ir::Program) -> vyre_foundation::optimizer::PassResult
+impl core::marker::Freeze for vyre_foundation::optimizer::passes::dce::DcePass
+impl core::marker::Send for vyre_foundation::optimizer::passes::dce::DcePass
+impl core::marker::Sync for vyre_foundation::optimizer::passes::dce::DcePass
+impl core::marker::Unpin for vyre_foundation::optimizer::passes::dce::DcePass
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_foundation::optimizer::passes::dce::DcePass
+impl core::panic::unwind_safe::UnwindSafe for vyre_foundation::optimizer::passes::dce::DcePass
+impl<T, U> core::convert::Into<U> for vyre_foundation::optimizer::passes::dce::DcePass where U: core::convert::From<T>
+pub fn vyre_foundation::optimizer::passes::dce::DcePass::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for vyre_foundation::optimizer::passes::dce::DcePass where U: core::convert::Into<T>
+pub type vyre_foundation::optimizer::passes::dce::DcePass::Error = core::convert::Infallible
+pub fn vyre_foundation::optimizer::passes::dce::DcePass::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for vyre_foundation::optimizer::passes::dce::DcePass where U: core::convert::TryFrom<T>
+pub type vyre_foundation::optimizer::passes::dce::DcePass::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn vyre_foundation::optimizer::passes::dce::DcePass::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> core::any::Any for vyre_foundation::optimizer::passes::dce::DcePass where T: 'static + ?core::marker::Sized
+pub fn vyre_foundation::optimizer::passes::dce::DcePass::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for vyre_foundation::optimizer::passes::dce::DcePass where T: ?core::marker::Sized
+pub fn vyre_foundation::optimizer::passes::dce::DcePass::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for vyre_foundation::optimizer::passes::dce::DcePass where T: ?core::marker::Sized
+pub fn vyre_foundation::optimizer::passes::dce::DcePass::borrow_mut(&mut self) -> &mut T
+impl<T> core::convert::From<T> for vyre_foundation::optimizer::passes::dce::DcePass
+pub fn vyre_foundation::optimizer::passes::dce::DcePass::from(t: T) -> T
+impl<T> tracing::instrument::Instrument for vyre_foundation::optimizer::passes::dce::DcePass
+impl<T> tracing::instrument::WithSubscriber for vyre_foundation::optimizer::passes::dce::DcePass
+impl<T> typenum::type_operators::Same for vyre_foundation::optimizer::passes::dce::DcePass
+pub type vyre_foundation::optimizer::passes::dce::DcePass::Output = T
 pub mod vyre_foundation::optimizer::passes::dead_buffer_elim
 pub struct vyre_foundation::optimizer::passes::dead_buffer_elim::DeadBufferElim
 impl vyre_foundation::optimizer::passes::dead_buffer_elim::DeadBufferElim
@@ -6558,7 +7345,48 @@ impl<T> tracing::instrument::WithSubscriber for vyre_foundation::optimizer::pass
 impl<T> typenum::type_operators::Same for vyre_foundation::optimizer::passes::dead_buffer_elim::DeadBufferElim
 pub type vyre_foundation::optimizer::passes::dead_buffer_elim::DeadBufferElim::Output = T
 pub mod vyre_foundation::optimizer::passes::decode_scan_fuse
-pub fn vyre_foundation::optimizer::passes::decode_scan_fuse::candidate_handoffs(program: &vyre_foundation::ir::Program) -> rustc_hash::FxHashMap<alloc::string::String, u32>
+pub struct vyre_foundation::optimizer::passes::decode_scan_fuse::DecodeScanFuse
+impl vyre_foundation::optimizer::passes::decode_scan_fuse::DecodeScanFuse
+pub fn vyre_foundation::optimizer::passes::decode_scan_fuse::DecodeScanFuse::analyze(program: &vyre_foundation::ir::Program) -> vyre_foundation::optimizer::PassAnalysis
+pub fn vyre_foundation::optimizer::passes::decode_scan_fuse::DecodeScanFuse::fingerprint(program: &vyre_foundation::ir::Program) -> u64
+pub fn vyre_foundation::optimizer::passes::decode_scan_fuse::DecodeScanFuse::transform(program: vyre_foundation::ir::Program) -> vyre_foundation::optimizer::PassResult
+impl core::default::Default for vyre_foundation::optimizer::passes::decode_scan_fuse::DecodeScanFuse
+pub fn vyre_foundation::optimizer::passes::decode_scan_fuse::DecodeScanFuse::default() -> vyre_foundation::optimizer::passes::decode_scan_fuse::DecodeScanFuse
+impl core::fmt::Debug for vyre_foundation::optimizer::passes::decode_scan_fuse::DecodeScanFuse
+pub fn vyre_foundation::optimizer::passes::decode_scan_fuse::DecodeScanFuse::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl vyre_foundation::optimizer::Pass for vyre_foundation::optimizer::passes::decode_scan_fuse::DecodeScanFuse
+pub fn vyre_foundation::optimizer::passes::decode_scan_fuse::DecodeScanFuse::analyze(&self, program: &vyre_foundation::ir::Program) -> vyre_foundation::optimizer::PassAnalysis
+pub fn vyre_foundation::optimizer::passes::decode_scan_fuse::DecodeScanFuse::fingerprint(&self, program: &vyre_foundation::ir::Program) -> u64
+pub fn vyre_foundation::optimizer::passes::decode_scan_fuse::DecodeScanFuse::metadata(&self) -> vyre_foundation::optimizer::PassMetadata
+pub fn vyre_foundation::optimizer::passes::decode_scan_fuse::DecodeScanFuse::pass_id(&self) -> &'static str
+pub fn vyre_foundation::optimizer::passes::decode_scan_fuse::DecodeScanFuse::transform(&self, program: vyre_foundation::ir::Program) -> vyre_foundation::optimizer::PassResult
+impl core::marker::Freeze for vyre_foundation::optimizer::passes::decode_scan_fuse::DecodeScanFuse
+impl core::marker::Send for vyre_foundation::optimizer::passes::decode_scan_fuse::DecodeScanFuse
+impl core::marker::Sync for vyre_foundation::optimizer::passes::decode_scan_fuse::DecodeScanFuse
+impl core::marker::Unpin for vyre_foundation::optimizer::passes::decode_scan_fuse::DecodeScanFuse
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_foundation::optimizer::passes::decode_scan_fuse::DecodeScanFuse
+impl core::panic::unwind_safe::UnwindSafe for vyre_foundation::optimizer::passes::decode_scan_fuse::DecodeScanFuse
+impl<T, U> core::convert::Into<U> for vyre_foundation::optimizer::passes::decode_scan_fuse::DecodeScanFuse where U: core::convert::From<T>
+pub fn vyre_foundation::optimizer::passes::decode_scan_fuse::DecodeScanFuse::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for vyre_foundation::optimizer::passes::decode_scan_fuse::DecodeScanFuse where U: core::convert::Into<T>
+pub type vyre_foundation::optimizer::passes::decode_scan_fuse::DecodeScanFuse::Error = core::convert::Infallible
+pub fn vyre_foundation::optimizer::passes::decode_scan_fuse::DecodeScanFuse::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for vyre_foundation::optimizer::passes::decode_scan_fuse::DecodeScanFuse where U: core::convert::TryFrom<T>
+pub type vyre_foundation::optimizer::passes::decode_scan_fuse::DecodeScanFuse::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn vyre_foundation::optimizer::passes::decode_scan_fuse::DecodeScanFuse::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> core::any::Any for vyre_foundation::optimizer::passes::decode_scan_fuse::DecodeScanFuse where T: 'static + ?core::marker::Sized
+pub fn vyre_foundation::optimizer::passes::decode_scan_fuse::DecodeScanFuse::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for vyre_foundation::optimizer::passes::decode_scan_fuse::DecodeScanFuse where T: ?core::marker::Sized
+pub fn vyre_foundation::optimizer::passes::decode_scan_fuse::DecodeScanFuse::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for vyre_foundation::optimizer::passes::decode_scan_fuse::DecodeScanFuse where T: ?core::marker::Sized
+pub fn vyre_foundation::optimizer::passes::decode_scan_fuse::DecodeScanFuse::borrow_mut(&mut self) -> &mut T
+impl<T> core::convert::From<T> for vyre_foundation::optimizer::passes::decode_scan_fuse::DecodeScanFuse
+pub fn vyre_foundation::optimizer::passes::decode_scan_fuse::DecodeScanFuse::from(t: T) -> T
+impl<T> tracing::instrument::Instrument for vyre_foundation::optimizer::passes::decode_scan_fuse::DecodeScanFuse
+impl<T> tracing::instrument::WithSubscriber for vyre_foundation::optimizer::passes::decode_scan_fuse::DecodeScanFuse
+impl<T> typenum::type_operators::Same for vyre_foundation::optimizer::passes::decode_scan_fuse::DecodeScanFuse
+pub type vyre_foundation::optimizer::passes::decode_scan_fuse::DecodeScanFuse::Output = T
+pub fn vyre_foundation::optimizer::passes::decode_scan_fuse::candidate_handoffs(program: &vyre_foundation::ir::Program) -> rustc_hash::FxHashMap<vyre_foundation::ir::Ident, u32>
 pub fn vyre_foundation::optimizer::passes::decode_scan_fuse::count_opportunities(program: &vyre_foundation::ir::Program) -> usize
 pub fn vyre_foundation::optimizer::passes::decode_scan_fuse::run(program: vyre_foundation::ir::Program) -> vyre_foundation::ir::Program
 pub mod vyre_foundation::optimizer::passes::fuse_cse
@@ -6607,10 +7435,52 @@ impl<T> tracing::instrument::Instrument for vyre_foundation::optimizer::passes::
 impl<T> tracing::instrument::WithSubscriber for vyre_foundation::optimizer::passes::fusion::Fusion
 impl<T> typenum::type_operators::Same for vyre_foundation::optimizer::passes::fusion::Fusion
 pub type vyre_foundation::optimizer::passes::fusion::Fusion::Output = T
+pub mod vyre_foundation::optimizer::passes::loop_unroll
+pub struct vyre_foundation::optimizer::passes::loop_unroll::LoopUnroll
+impl vyre_foundation::optimizer::passes::loop_unroll::LoopUnroll
+pub fn vyre_foundation::optimizer::passes::loop_unroll::LoopUnroll::analyze(_program: &vyre_foundation::ir::Program) -> vyre_foundation::optimizer::PassAnalysis
+pub fn vyre_foundation::optimizer::passes::loop_unroll::LoopUnroll::fingerprint(program: &vyre_foundation::ir::Program) -> u64
+pub fn vyre_foundation::optimizer::passes::loop_unroll::LoopUnroll::transform(program: vyre_foundation::ir::Program) -> vyre_foundation::optimizer::PassResult
+impl core::default::Default for vyre_foundation::optimizer::passes::loop_unroll::LoopUnroll
+pub fn vyre_foundation::optimizer::passes::loop_unroll::LoopUnroll::default() -> vyre_foundation::optimizer::passes::loop_unroll::LoopUnroll
+impl core::fmt::Debug for vyre_foundation::optimizer::passes::loop_unroll::LoopUnroll
+pub fn vyre_foundation::optimizer::passes::loop_unroll::LoopUnroll::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl vyre_foundation::optimizer::Pass for vyre_foundation::optimizer::passes::loop_unroll::LoopUnroll
+pub fn vyre_foundation::optimizer::passes::loop_unroll::LoopUnroll::analyze(&self, program: &vyre_foundation::ir::Program) -> vyre_foundation::optimizer::PassAnalysis
+pub fn vyre_foundation::optimizer::passes::loop_unroll::LoopUnroll::fingerprint(&self, program: &vyre_foundation::ir::Program) -> u64
+pub fn vyre_foundation::optimizer::passes::loop_unroll::LoopUnroll::metadata(&self) -> vyre_foundation::optimizer::PassMetadata
+pub fn vyre_foundation::optimizer::passes::loop_unroll::LoopUnroll::pass_id(&self) -> &'static str
+pub fn vyre_foundation::optimizer::passes::loop_unroll::LoopUnroll::transform(&self, program: vyre_foundation::ir::Program) -> vyre_foundation::optimizer::PassResult
+impl core::marker::Freeze for vyre_foundation::optimizer::passes::loop_unroll::LoopUnroll
+impl core::marker::Send for vyre_foundation::optimizer::passes::loop_unroll::LoopUnroll
+impl core::marker::Sync for vyre_foundation::optimizer::passes::loop_unroll::LoopUnroll
+impl core::marker::Unpin for vyre_foundation::optimizer::passes::loop_unroll::LoopUnroll
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_foundation::optimizer::passes::loop_unroll::LoopUnroll
+impl core::panic::unwind_safe::UnwindSafe for vyre_foundation::optimizer::passes::loop_unroll::LoopUnroll
+impl<T, U> core::convert::Into<U> for vyre_foundation::optimizer::passes::loop_unroll::LoopUnroll where U: core::convert::From<T>
+pub fn vyre_foundation::optimizer::passes::loop_unroll::LoopUnroll::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for vyre_foundation::optimizer::passes::loop_unroll::LoopUnroll where U: core::convert::Into<T>
+pub type vyre_foundation::optimizer::passes::loop_unroll::LoopUnroll::Error = core::convert::Infallible
+pub fn vyre_foundation::optimizer::passes::loop_unroll::LoopUnroll::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for vyre_foundation::optimizer::passes::loop_unroll::LoopUnroll where U: core::convert::TryFrom<T>
+pub type vyre_foundation::optimizer::passes::loop_unroll::LoopUnroll::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn vyre_foundation::optimizer::passes::loop_unroll::LoopUnroll::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> core::any::Any for vyre_foundation::optimizer::passes::loop_unroll::LoopUnroll where T: 'static + ?core::marker::Sized
+pub fn vyre_foundation::optimizer::passes::loop_unroll::LoopUnroll::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for vyre_foundation::optimizer::passes::loop_unroll::LoopUnroll where T: ?core::marker::Sized
+pub fn vyre_foundation::optimizer::passes::loop_unroll::LoopUnroll::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for vyre_foundation::optimizer::passes::loop_unroll::LoopUnroll where T: ?core::marker::Sized
+pub fn vyre_foundation::optimizer::passes::loop_unroll::LoopUnroll::borrow_mut(&mut self) -> &mut T
+impl<T> core::convert::From<T> for vyre_foundation::optimizer::passes::loop_unroll::LoopUnroll
+pub fn vyre_foundation::optimizer::passes::loop_unroll::LoopUnroll::from(t: T) -> T
+impl<T> tracing::instrument::Instrument for vyre_foundation::optimizer::passes::loop_unroll::LoopUnroll
+impl<T> tracing::instrument::WithSubscriber for vyre_foundation::optimizer::passes::loop_unroll::LoopUnroll
+impl<T> typenum::type_operators::Same for vyre_foundation::optimizer::passes::loop_unroll::LoopUnroll
+pub type vyre_foundation::optimizer::passes::loop_unroll::LoopUnroll::Output = T
 pub mod vyre_foundation::optimizer::passes::normalize_atomics
 pub struct vyre_foundation::optimizer::passes::normalize_atomics::NormalizeAtomicsPass
 impl vyre_foundation::optimizer::passes::normalize_atomics::NormalizeAtomicsPass
-pub fn vyre_foundation::optimizer::passes::normalize_atomics::NormalizeAtomicsPass::analyze(_program: &vyre_foundation::ir::Program) -> vyre_foundation::optimizer::PassAnalysis
+pub fn vyre_foundation::optimizer::passes::normalize_atomics::NormalizeAtomicsPass::analyze(program: &vyre_foundation::ir::Program) -> vyre_foundation::optimizer::PassAnalysis
 pub fn vyre_foundation::optimizer::passes::normalize_atomics::NormalizeAtomicsPass::fingerprint(program: &vyre_foundation::ir::Program) -> u64
 pub fn vyre_foundation::optimizer::passes::normalize_atomics::NormalizeAtomicsPass::transform(program: vyre_foundation::ir::Program) -> vyre_foundation::optimizer::PassResult
 impl vyre_foundation::optimizer::Pass for vyre_foundation::optimizer::passes::normalize_atomics::NormalizeAtomicsPass
@@ -6645,6 +7515,44 @@ impl<T> tracing::instrument::Instrument for vyre_foundation::optimizer::passes::
 impl<T> tracing::instrument::WithSubscriber for vyre_foundation::optimizer::passes::normalize_atomics::NormalizeAtomicsPass
 impl<T> typenum::type_operators::Same for vyre_foundation::optimizer::passes::normalize_atomics::NormalizeAtomicsPass
 pub type vyre_foundation::optimizer::passes::normalize_atomics::NormalizeAtomicsPass::Output = T
+pub mod vyre_foundation::optimizer::passes::region_inline
+pub struct vyre_foundation::optimizer::passes::region_inline::RegionInlinePass
+impl vyre_foundation::optimizer::passes::region_inline::RegionInlinePass
+pub fn vyre_foundation::optimizer::passes::region_inline::RegionInlinePass::analyze(program: &vyre_foundation::ir::Program) -> vyre_foundation::optimizer::PassAnalysis
+pub fn vyre_foundation::optimizer::passes::region_inline::RegionInlinePass::fingerprint(program: &vyre_foundation::ir::Program) -> u64
+pub fn vyre_foundation::optimizer::passes::region_inline::RegionInlinePass::transform(program: vyre_foundation::ir::Program) -> vyre_foundation::optimizer::PassResult
+impl vyre_foundation::optimizer::Pass for vyre_foundation::optimizer::passes::region_inline::RegionInlinePass
+pub fn vyre_foundation::optimizer::passes::region_inline::RegionInlinePass::analyze(&self, program: &vyre_foundation::ir::Program) -> vyre_foundation::optimizer::PassAnalysis
+pub fn vyre_foundation::optimizer::passes::region_inline::RegionInlinePass::fingerprint(&self, program: &vyre_foundation::ir::Program) -> u64
+pub fn vyre_foundation::optimizer::passes::region_inline::RegionInlinePass::metadata(&self) -> vyre_foundation::optimizer::PassMetadata
+pub fn vyre_foundation::optimizer::passes::region_inline::RegionInlinePass::pass_id(&self) -> &'static str
+pub fn vyre_foundation::optimizer::passes::region_inline::RegionInlinePass::transform(&self, program: vyre_foundation::ir::Program) -> vyre_foundation::optimizer::PassResult
+impl core::marker::Freeze for vyre_foundation::optimizer::passes::region_inline::RegionInlinePass
+impl core::marker::Send for vyre_foundation::optimizer::passes::region_inline::RegionInlinePass
+impl core::marker::Sync for vyre_foundation::optimizer::passes::region_inline::RegionInlinePass
+impl core::marker::Unpin for vyre_foundation::optimizer::passes::region_inline::RegionInlinePass
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_foundation::optimizer::passes::region_inline::RegionInlinePass
+impl core::panic::unwind_safe::UnwindSafe for vyre_foundation::optimizer::passes::region_inline::RegionInlinePass
+impl<T, U> core::convert::Into<U> for vyre_foundation::optimizer::passes::region_inline::RegionInlinePass where U: core::convert::From<T>
+pub fn vyre_foundation::optimizer::passes::region_inline::RegionInlinePass::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for vyre_foundation::optimizer::passes::region_inline::RegionInlinePass where U: core::convert::Into<T>
+pub type vyre_foundation::optimizer::passes::region_inline::RegionInlinePass::Error = core::convert::Infallible
+pub fn vyre_foundation::optimizer::passes::region_inline::RegionInlinePass::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for vyre_foundation::optimizer::passes::region_inline::RegionInlinePass where U: core::convert::TryFrom<T>
+pub type vyre_foundation::optimizer::passes::region_inline::RegionInlinePass::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn vyre_foundation::optimizer::passes::region_inline::RegionInlinePass::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> core::any::Any for vyre_foundation::optimizer::passes::region_inline::RegionInlinePass where T: 'static + ?core::marker::Sized
+pub fn vyre_foundation::optimizer::passes::region_inline::RegionInlinePass::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for vyre_foundation::optimizer::passes::region_inline::RegionInlinePass where T: ?core::marker::Sized
+pub fn vyre_foundation::optimizer::passes::region_inline::RegionInlinePass::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for vyre_foundation::optimizer::passes::region_inline::RegionInlinePass where T: ?core::marker::Sized
+pub fn vyre_foundation::optimizer::passes::region_inline::RegionInlinePass::borrow_mut(&mut self) -> &mut T
+impl<T> core::convert::From<T> for vyre_foundation::optimizer::passes::region_inline::RegionInlinePass
+pub fn vyre_foundation::optimizer::passes::region_inline::RegionInlinePass::from(t: T) -> T
+impl<T> tracing::instrument::Instrument for vyre_foundation::optimizer::passes::region_inline::RegionInlinePass
+impl<T> tracing::instrument::WithSubscriber for vyre_foundation::optimizer::passes::region_inline::RegionInlinePass
+impl<T> typenum::type_operators::Same for vyre_foundation::optimizer::passes::region_inline::RegionInlinePass
+pub type vyre_foundation::optimizer::passes::region_inline::RegionInlinePass::Output = T
 pub mod vyre_foundation::optimizer::passes::spec_driven
 pub struct vyre_foundation::optimizer::passes::spec_driven::SpecDriven
 impl vyre_foundation::optimizer::passes::spec_driven::SpecDriven
@@ -6729,6 +7637,167 @@ impl<T> tracing::instrument::Instrument for vyre_foundation::optimizer::passes::
 impl<T> tracing::instrument::WithSubscriber for vyre_foundation::optimizer::passes::strength_reduce::StrengthReduce
 impl<T> typenum::type_operators::Same for vyre_foundation::optimizer::passes::strength_reduce::StrengthReduce
 pub type vyre_foundation::optimizer::passes::strength_reduce::StrengthReduce::Output = T
+pub mod vyre_foundation::optimizer::passes::vectorization
+pub struct vyre_foundation::optimizer::passes::vectorization::Vectorization
+impl vyre_foundation::optimizer::passes::vectorization::Vectorization
+pub fn vyre_foundation::optimizer::passes::vectorization::Vectorization::analyze(program: &vyre_foundation::ir::Program) -> vyre_foundation::optimizer::PassAnalysis
+pub fn vyre_foundation::optimizer::passes::vectorization::Vectorization::fingerprint(program: &vyre_foundation::ir::Program) -> u64
+pub fn vyre_foundation::optimizer::passes::vectorization::Vectorization::transform(program: vyre_foundation::ir::Program) -> vyre_foundation::optimizer::PassResult
+impl core::default::Default for vyre_foundation::optimizer::passes::vectorization::Vectorization
+pub fn vyre_foundation::optimizer::passes::vectorization::Vectorization::default() -> vyre_foundation::optimizer::passes::vectorization::Vectorization
+impl core::fmt::Debug for vyre_foundation::optimizer::passes::vectorization::Vectorization
+pub fn vyre_foundation::optimizer::passes::vectorization::Vectorization::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl vyre_foundation::optimizer::Pass for vyre_foundation::optimizer::passes::vectorization::Vectorization
+pub fn vyre_foundation::optimizer::passes::vectorization::Vectorization::analyze(&self, program: &vyre_foundation::ir::Program) -> vyre_foundation::optimizer::PassAnalysis
+pub fn vyre_foundation::optimizer::passes::vectorization::Vectorization::fingerprint(&self, program: &vyre_foundation::ir::Program) -> u64
+pub fn vyre_foundation::optimizer::passes::vectorization::Vectorization::metadata(&self) -> vyre_foundation::optimizer::PassMetadata
+pub fn vyre_foundation::optimizer::passes::vectorization::Vectorization::pass_id(&self) -> &'static str
+pub fn vyre_foundation::optimizer::passes::vectorization::Vectorization::transform(&self, program: vyre_foundation::ir::Program) -> vyre_foundation::optimizer::PassResult
+impl core::marker::Freeze for vyre_foundation::optimizer::passes::vectorization::Vectorization
+impl core::marker::Send for vyre_foundation::optimizer::passes::vectorization::Vectorization
+impl core::marker::Sync for vyre_foundation::optimizer::passes::vectorization::Vectorization
+impl core::marker::Unpin for vyre_foundation::optimizer::passes::vectorization::Vectorization
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_foundation::optimizer::passes::vectorization::Vectorization
+impl core::panic::unwind_safe::UnwindSafe for vyre_foundation::optimizer::passes::vectorization::Vectorization
+impl<T, U> core::convert::Into<U> for vyre_foundation::optimizer::passes::vectorization::Vectorization where U: core::convert::From<T>
+pub fn vyre_foundation::optimizer::passes::vectorization::Vectorization::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for vyre_foundation::optimizer::passes::vectorization::Vectorization where U: core::convert::Into<T>
+pub type vyre_foundation::optimizer::passes::vectorization::Vectorization::Error = core::convert::Infallible
+pub fn vyre_foundation::optimizer::passes::vectorization::Vectorization::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for vyre_foundation::optimizer::passes::vectorization::Vectorization where U: core::convert::TryFrom<T>
+pub type vyre_foundation::optimizer::passes::vectorization::Vectorization::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn vyre_foundation::optimizer::passes::vectorization::Vectorization::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> core::any::Any for vyre_foundation::optimizer::passes::vectorization::Vectorization where T: 'static + ?core::marker::Sized
+pub fn vyre_foundation::optimizer::passes::vectorization::Vectorization::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for vyre_foundation::optimizer::passes::vectorization::Vectorization where T: ?core::marker::Sized
+pub fn vyre_foundation::optimizer::passes::vectorization::Vectorization::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for vyre_foundation::optimizer::passes::vectorization::Vectorization where T: ?core::marker::Sized
+pub fn vyre_foundation::optimizer::passes::vectorization::Vectorization::borrow_mut(&mut self) -> &mut T
+impl<T> core::convert::From<T> for vyre_foundation::optimizer::passes::vectorization::Vectorization
+pub fn vyre_foundation::optimizer::passes::vectorization::Vectorization::from(t: T) -> T
+impl<T> tracing::instrument::Instrument for vyre_foundation::optimizer::passes::vectorization::Vectorization
+impl<T> tracing::instrument::WithSubscriber for vyre_foundation::optimizer::passes::vectorization::Vectorization
+impl<T> typenum::type_operators::Same for vyre_foundation::optimizer::passes::vectorization::Vectorization
+pub type vyre_foundation::optimizer::passes::vectorization::Vectorization::Output = T
+pub mod vyre_foundation::optimizer::program_shape_facts
+pub struct vyre_foundation::optimizer::program_shape_facts::BufferShapeFacts
+pub vyre_foundation::optimizer::program_shape_facts::BufferShapeFacts::binding: u32
+pub vyre_foundation::optimizer::program_shape_facts::BufferShapeFacts::byte_alignment: u32
+pub vyre_foundation::optimizer::program_shape_facts::BufferShapeFacts::declared_count: u32
+pub vyre_foundation::optimizer::program_shape_facts::BufferShapeFacts::dtype: vyre_spec::data_type::DataType
+pub vyre_foundation::optimizer::program_shape_facts::BufferShapeFacts::element_size_bytes: core::option::Option<usize>
+pub vyre_foundation::optimizer::program_shape_facts::BufferShapeFacts::is_fixed_count: bool
+pub vyre_foundation::optimizer::program_shape_facts::BufferShapeFacts::max_bytes: core::option::Option<u64>
+pub vyre_foundation::optimizer::program_shape_facts::BufferShapeFacts::max_count: core::option::Option<u32>
+pub vyre_foundation::optimizer::program_shape_facts::BufferShapeFacts::min_bytes: u64
+pub vyre_foundation::optimizer::program_shape_facts::BufferShapeFacts::min_count: u32
+pub vyre_foundation::optimizer::program_shape_facts::BufferShapeFacts::name: vyre_foundation::ir::Ident
+impl vyre_foundation::optimizer::program_shape_facts::BufferShapeFacts
+pub fn vyre_foundation::optimizer::program_shape_facts::BufferShapeFacts::is_non_empty(&self) -> bool
+pub fn vyre_foundation::optimizer::program_shape_facts::BufferShapeFacts::min_bytes_at_least(&self, bytes: u64) -> bool
+pub fn vyre_foundation::optimizer::program_shape_facts::BufferShapeFacts::vectorizable_at(&self, lane_count: u32) -> bool
+impl core::clone::Clone for vyre_foundation::optimizer::program_shape_facts::BufferShapeFacts
+pub fn vyre_foundation::optimizer::program_shape_facts::BufferShapeFacts::clone(&self) -> vyre_foundation::optimizer::program_shape_facts::BufferShapeFacts
+impl core::cmp::Eq for vyre_foundation::optimizer::program_shape_facts::BufferShapeFacts
+impl core::cmp::PartialEq for vyre_foundation::optimizer::program_shape_facts::BufferShapeFacts
+pub fn vyre_foundation::optimizer::program_shape_facts::BufferShapeFacts::eq(&self, other: &vyre_foundation::optimizer::program_shape_facts::BufferShapeFacts) -> bool
+impl core::fmt::Debug for vyre_foundation::optimizer::program_shape_facts::BufferShapeFacts
+pub fn vyre_foundation::optimizer::program_shape_facts::BufferShapeFacts::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for vyre_foundation::optimizer::program_shape_facts::BufferShapeFacts
+impl core::marker::Freeze for vyre_foundation::optimizer::program_shape_facts::BufferShapeFacts
+impl core::marker::Send for vyre_foundation::optimizer::program_shape_facts::BufferShapeFacts
+impl core::marker::Sync for vyre_foundation::optimizer::program_shape_facts::BufferShapeFacts
+impl core::marker::Unpin for vyre_foundation::optimizer::program_shape_facts::BufferShapeFacts
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_foundation::optimizer::program_shape_facts::BufferShapeFacts
+impl core::panic::unwind_safe::UnwindSafe for vyre_foundation::optimizer::program_shape_facts::BufferShapeFacts
+impl<Q, K> hashbrown::Equivalent<K> for vyre_foundation::optimizer::program_shape_facts::BufferShapeFacts where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn vyre_foundation::optimizer::program_shape_facts::BufferShapeFacts::equivalent(&self, key: &K) -> bool
+impl<T, U> core::convert::Into<U> for vyre_foundation::optimizer::program_shape_facts::BufferShapeFacts where U: core::convert::From<T>
+pub fn vyre_foundation::optimizer::program_shape_facts::BufferShapeFacts::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for vyre_foundation::optimizer::program_shape_facts::BufferShapeFacts where U: core::convert::Into<T>
+pub type vyre_foundation::optimizer::program_shape_facts::BufferShapeFacts::Error = core::convert::Infallible
+pub fn vyre_foundation::optimizer::program_shape_facts::BufferShapeFacts::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for vyre_foundation::optimizer::program_shape_facts::BufferShapeFacts where U: core::convert::TryFrom<T>
+pub type vyre_foundation::optimizer::program_shape_facts::BufferShapeFacts::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn vyre_foundation::optimizer::program_shape_facts::BufferShapeFacts::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for vyre_foundation::optimizer::program_shape_facts::BufferShapeFacts where T: core::clone::Clone
+pub type vyre_foundation::optimizer::program_shape_facts::BufferShapeFacts::Owned = T
+pub fn vyre_foundation::optimizer::program_shape_facts::BufferShapeFacts::clone_into(&self, target: &mut T)
+pub fn vyre_foundation::optimizer::program_shape_facts::BufferShapeFacts::to_owned(&self) -> T
+impl<T> core::any::Any for vyre_foundation::optimizer::program_shape_facts::BufferShapeFacts where T: 'static + ?core::marker::Sized
+pub fn vyre_foundation::optimizer::program_shape_facts::BufferShapeFacts::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for vyre_foundation::optimizer::program_shape_facts::BufferShapeFacts where T: ?core::marker::Sized
+pub fn vyre_foundation::optimizer::program_shape_facts::BufferShapeFacts::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for vyre_foundation::optimizer::program_shape_facts::BufferShapeFacts where T: ?core::marker::Sized
+pub fn vyre_foundation::optimizer::program_shape_facts::BufferShapeFacts::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for vyre_foundation::optimizer::program_shape_facts::BufferShapeFacts where T: core::clone::Clone
+pub unsafe fn vyre_foundation::optimizer::program_shape_facts::BufferShapeFacts::clone_to_uninit(&self, dest: *mut u8)
+impl<T> core::convert::From<T> for vyre_foundation::optimizer::program_shape_facts::BufferShapeFacts
+pub fn vyre_foundation::optimizer::program_shape_facts::BufferShapeFacts::from(t: T) -> T
+impl<T> tracing::instrument::Instrument for vyre_foundation::optimizer::program_shape_facts::BufferShapeFacts
+impl<T> tracing::instrument::WithSubscriber for vyre_foundation::optimizer::program_shape_facts::BufferShapeFacts
+impl<T> typenum::type_operators::Same for vyre_foundation::optimizer::program_shape_facts::BufferShapeFacts
+pub type vyre_foundation::optimizer::program_shape_facts::BufferShapeFacts::Output = T
+pub struct vyre_foundation::optimizer::program_shape_facts::ProgramShapeFacts
+impl vyre_foundation::optimizer::program_shape_facts::ProgramShapeFacts
+pub fn vyre_foundation::optimizer::program_shape_facts::ProgramShapeFacts::derive(program: &vyre_foundation::ir::Program) -> Self
+pub fn vyre_foundation::optimizer::program_shape_facts::ProgramShapeFacts::derive_into_cache(program: &vyre_foundation::ir::Program, cache: &mut vyre_foundation::optimizer::ctx::AnalysisCache)
+pub fn vyre_foundation::optimizer::program_shape_facts::ProgramShapeFacts::from_cache(cache: &vyre_foundation::optimizer::ctx::AnalysisCache) -> core::option::Option<&Self>
+pub fn vyre_foundation::optimizer::program_shape_facts::ProgramShapeFacts::get(&self, name: &vyre_foundation::ir::Ident) -> core::option::Option<&vyre_foundation::optimizer::program_shape_facts::BufferShapeFacts>
+pub fn vyre_foundation::optimizer::program_shape_facts::ProgramShapeFacts::is_empty(&self) -> bool
+pub fn vyre_foundation::optimizer::program_shape_facts::ProgramShapeFacts::iter(&self) -> impl core::iter::traits::iterator::Iterator<Item = (&vyre_foundation::ir::Ident, &vyre_foundation::optimizer::program_shape_facts::BufferShapeFacts)>
+pub fn vyre_foundation::optimizer::program_shape_facts::ProgramShapeFacts::len(&self) -> usize
+impl core::clone::Clone for vyre_foundation::optimizer::program_shape_facts::ProgramShapeFacts
+pub fn vyre_foundation::optimizer::program_shape_facts::ProgramShapeFacts::clone(&self) -> vyre_foundation::optimizer::program_shape_facts::ProgramShapeFacts
+impl core::cmp::Eq for vyre_foundation::optimizer::program_shape_facts::ProgramShapeFacts
+impl core::cmp::PartialEq for vyre_foundation::optimizer::program_shape_facts::ProgramShapeFacts
+pub fn vyre_foundation::optimizer::program_shape_facts::ProgramShapeFacts::eq(&self, other: &vyre_foundation::optimizer::program_shape_facts::ProgramShapeFacts) -> bool
+impl core::default::Default for vyre_foundation::optimizer::program_shape_facts::ProgramShapeFacts
+pub fn vyre_foundation::optimizer::program_shape_facts::ProgramShapeFacts::default() -> vyre_foundation::optimizer::program_shape_facts::ProgramShapeFacts
+impl core::fmt::Debug for vyre_foundation::optimizer::program_shape_facts::ProgramShapeFacts
+pub fn vyre_foundation::optimizer::program_shape_facts::ProgramShapeFacts::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for vyre_foundation::optimizer::program_shape_facts::ProgramShapeFacts
+impl core::marker::Freeze for vyre_foundation::optimizer::program_shape_facts::ProgramShapeFacts
+impl core::marker::Send for vyre_foundation::optimizer::program_shape_facts::ProgramShapeFacts
+impl core::marker::Sync for vyre_foundation::optimizer::program_shape_facts::ProgramShapeFacts
+impl core::marker::Unpin for vyre_foundation::optimizer::program_shape_facts::ProgramShapeFacts
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_foundation::optimizer::program_shape_facts::ProgramShapeFacts
+impl core::panic::unwind_safe::UnwindSafe for vyre_foundation::optimizer::program_shape_facts::ProgramShapeFacts
+impl<Q, K> hashbrown::Equivalent<K> for vyre_foundation::optimizer::program_shape_facts::ProgramShapeFacts where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn vyre_foundation::optimizer::program_shape_facts::ProgramShapeFacts::equivalent(&self, key: &K) -> bool
+impl<T, U> core::convert::Into<U> for vyre_foundation::optimizer::program_shape_facts::ProgramShapeFacts where U: core::convert::From<T>
+pub fn vyre_foundation::optimizer::program_shape_facts::ProgramShapeFacts::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for vyre_foundation::optimizer::program_shape_facts::ProgramShapeFacts where U: core::convert::Into<T>
+pub type vyre_foundation::optimizer::program_shape_facts::ProgramShapeFacts::Error = core::convert::Infallible
+pub fn vyre_foundation::optimizer::program_shape_facts::ProgramShapeFacts::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for vyre_foundation::optimizer::program_shape_facts::ProgramShapeFacts where U: core::convert::TryFrom<T>
+pub type vyre_foundation::optimizer::program_shape_facts::ProgramShapeFacts::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn vyre_foundation::optimizer::program_shape_facts::ProgramShapeFacts::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for vyre_foundation::optimizer::program_shape_facts::ProgramShapeFacts where T: core::clone::Clone
+pub type vyre_foundation::optimizer::program_shape_facts::ProgramShapeFacts::Owned = T
+pub fn vyre_foundation::optimizer::program_shape_facts::ProgramShapeFacts::clone_into(&self, target: &mut T)
+pub fn vyre_foundation::optimizer::program_shape_facts::ProgramShapeFacts::to_owned(&self) -> T
+impl<T> core::any::Any for vyre_foundation::optimizer::program_shape_facts::ProgramShapeFacts where T: 'static + ?core::marker::Sized
+pub fn vyre_foundation::optimizer::program_shape_facts::ProgramShapeFacts::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for vyre_foundation::optimizer::program_shape_facts::ProgramShapeFacts where T: ?core::marker::Sized
+pub fn vyre_foundation::optimizer::program_shape_facts::ProgramShapeFacts::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for vyre_foundation::optimizer::program_shape_facts::ProgramShapeFacts where T: ?core::marker::Sized
+pub fn vyre_foundation::optimizer::program_shape_facts::ProgramShapeFacts::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for vyre_foundation::optimizer::program_shape_facts::ProgramShapeFacts where T: core::clone::Clone
+pub unsafe fn vyre_foundation::optimizer::program_shape_facts::ProgramShapeFacts::clone_to_uninit(&self, dest: *mut u8)
+impl<T> core::convert::From<T> for vyre_foundation::optimizer::program_shape_facts::ProgramShapeFacts
+pub fn vyre_foundation::optimizer::program_shape_facts::ProgramShapeFacts::from(t: T) -> T
+impl<T> tracing::instrument::Instrument for vyre_foundation::optimizer::program_shape_facts::ProgramShapeFacts
+impl<T> tracing::instrument::WithSubscriber for vyre_foundation::optimizer::program_shape_facts::ProgramShapeFacts
+impl<T> typenum::type_operators::Same for vyre_foundation::optimizer::program_shape_facts::ProgramShapeFacts
+pub type vyre_foundation::optimizer::program_shape_facts::ProgramShapeFacts::Output = T
+pub const vyre_foundation::optimizer::program_shape_facts::ANALYSIS_KEY: &str
+pub mod vyre_foundation::optimizer::shape_facts
+pub fn vyre_foundation::optimizer::shape_facts::is_fixed_at(predicate: &vyre_foundation::ir::ShapePredicate, n: u32) -> bool
+pub fn vyre_foundation::optimizer::shape_facts::is_multiple_of(predicate: &vyre_foundation::ir::ShapePredicate, factor: u32) -> bool
+pub fn vyre_foundation::optimizer::shape_facts::max_count(predicate: &vyre_foundation::ir::ShapePredicate) -> core::option::Option<u32>
+pub fn vyre_foundation::optimizer::shape_facts::min_count(predicate: &vyre_foundation::ir::ShapePredicate) -> u32
+pub fn vyre_foundation::optimizer::shape_facts::proves_non_empty(predicate: &vyre_foundation::ir::ShapePredicate) -> bool
 #[non_exhaustive] pub enum vyre_foundation::optimizer::OptimizerError
 pub vyre_foundation::optimizer::OptimizerError::MaxIterations
 pub vyre_foundation::optimizer::OptimizerError::MaxIterations::last_pass: &'static str
@@ -6789,13 +7858,17 @@ impl<T> typenum::type_operators::Same for vyre_foundation::optimizer::OptimizerE
 pub type vyre_foundation::optimizer::OptimizerError::Output = T
 #[non_exhaustive] pub enum vyre_foundation::optimizer::PassKind
 pub vyre_foundation::optimizer::PassKind::Autotune(vyre_foundation::optimizer::passes::autotune::Autotune)
+pub vyre_foundation::optimizer::PassKind::Canonicalize(vyre_foundation::optimizer::passes::canonicalize::Canonicalize)
 pub vyre_foundation::optimizer::PassKind::ConstFold(vyre_foundation::optimizer::passes::const_fold::ConstFold)
 pub vyre_foundation::optimizer::PassKind::DeadBufferElim(vyre_foundation::optimizer::passes::dead_buffer_elim::DeadBufferElim)
+pub vyre_foundation::optimizer::PassKind::DecodeScanFuse(vyre_foundation::optimizer::passes::decode_scan_fuse::DecodeScanFuse)
 pub vyre_foundation::optimizer::PassKind::External(alloc::boxed::Box<dyn vyre_foundation::optimizer::Pass>)
 pub vyre_foundation::optimizer::PassKind::Fusion(vyre_foundation::optimizer::passes::fusion::Fusion)
+pub vyre_foundation::optimizer::PassKind::LoopUnroll(vyre_foundation::optimizer::passes::loop_unroll::LoopUnroll)
 pub vyre_foundation::optimizer::PassKind::NormalizeAtomics(vyre_foundation::optimizer::passes::normalize_atomics::NormalizeAtomicsPass)
 pub vyre_foundation::optimizer::PassKind::SpecDriven(vyre_foundation::optimizer::passes::spec_driven::SpecDriven)
 pub vyre_foundation::optimizer::PassKind::StrengthReduce(vyre_foundation::optimizer::passes::strength_reduce::StrengthReduce)
+pub vyre_foundation::optimizer::PassKind::Vectorization(vyre_foundation::optimizer::passes::vectorization::Vectorization)
 impl vyre_foundation::optimizer::PassKind
 pub fn vyre_foundation::optimizer::PassKind::analyze(&self, program: &vyre_foundation::ir::Program) -> vyre_foundation::optimizer::PassAnalysis
 pub fn vyre_foundation::optimizer::PassKind::metadata(&self) -> vyre_foundation::optimizer::PassMetadata
@@ -7029,6 +8102,37 @@ impl<T> tracing::instrument::Instrument for vyre_foundation::optimizer::fusion_c
 impl<T> tracing::instrument::WithSubscriber for vyre_foundation::optimizer::fusion_cert::FusionCertificate
 impl<T> typenum::type_operators::Same for vyre_foundation::optimizer::fusion_cert::FusionCertificate
 pub type vyre_foundation::optimizer::fusion_cert::FusionCertificate::Output = T
+pub struct vyre_foundation::optimizer::OptimizerRunReport
+pub vyre_foundation::optimizer::OptimizerRunReport::passes: alloc::vec::Vec<vyre_foundation::optimizer::PassRunMetric>
+pub vyre_foundation::optimizer::OptimizerRunReport::program: vyre_foundation::ir::Program
+impl core::fmt::Debug for vyre_foundation::optimizer::OptimizerRunReport
+pub fn vyre_foundation::optimizer::OptimizerRunReport::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl !core::marker::Freeze for vyre_foundation::optimizer::OptimizerRunReport
+impl core::marker::Send for vyre_foundation::optimizer::OptimizerRunReport
+impl core::marker::Sync for vyre_foundation::optimizer::OptimizerRunReport
+impl core::marker::Unpin for vyre_foundation::optimizer::OptimizerRunReport
+impl !core::panic::unwind_safe::RefUnwindSafe for vyre_foundation::optimizer::OptimizerRunReport
+impl !core::panic::unwind_safe::UnwindSafe for vyre_foundation::optimizer::OptimizerRunReport
+impl<T, U> core::convert::Into<U> for vyre_foundation::optimizer::OptimizerRunReport where U: core::convert::From<T>
+pub fn vyre_foundation::optimizer::OptimizerRunReport::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for vyre_foundation::optimizer::OptimizerRunReport where U: core::convert::Into<T>
+pub type vyre_foundation::optimizer::OptimizerRunReport::Error = core::convert::Infallible
+pub fn vyre_foundation::optimizer::OptimizerRunReport::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for vyre_foundation::optimizer::OptimizerRunReport where U: core::convert::TryFrom<T>
+pub type vyre_foundation::optimizer::OptimizerRunReport::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn vyre_foundation::optimizer::OptimizerRunReport::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> core::any::Any for vyre_foundation::optimizer::OptimizerRunReport where T: 'static + ?core::marker::Sized
+pub fn vyre_foundation::optimizer::OptimizerRunReport::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for vyre_foundation::optimizer::OptimizerRunReport where T: ?core::marker::Sized
+pub fn vyre_foundation::optimizer::OptimizerRunReport::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for vyre_foundation::optimizer::OptimizerRunReport where T: ?core::marker::Sized
+pub fn vyre_foundation::optimizer::OptimizerRunReport::borrow_mut(&mut self) -> &mut T
+impl<T> core::convert::From<T> for vyre_foundation::optimizer::OptimizerRunReport
+pub fn vyre_foundation::optimizer::OptimizerRunReport::from(t: T) -> T
+impl<T> tracing::instrument::Instrument for vyre_foundation::optimizer::OptimizerRunReport
+impl<T> tracing::instrument::WithSubscriber for vyre_foundation::optimizer::OptimizerRunReport
+impl<T> typenum::type_operators::Same for vyre_foundation::optimizer::OptimizerRunReport
+pub type vyre_foundation::optimizer::OptimizerRunReport::Output = T
 pub struct vyre_foundation::optimizer::PassAnalysis
 pub vyre_foundation::optimizer::PassAnalysis::should_run: bool
 impl vyre_foundation::optimizer::PassAnalysis
@@ -7081,6 +8185,7 @@ pub struct vyre_foundation::optimizer::PassCtx<'a>
 pub vyre_foundation::optimizer::PassCtx::adapter_caps: &'a vyre_foundation::optimizer::ctx::AdapterCaps
 pub vyre_foundation::optimizer::PassCtx::analyses: &'a mut vyre_foundation::optimizer::ctx::AnalysisCache
 pub vyre_foundation::optimizer::PassCtx::diagnostics: &'a mut alloc::vec::Vec<vyre_foundation::diagnostics::Diagnostic>
+pub vyre_foundation::optimizer::PassCtx::fact_substrate: &'a mut vyre_foundation::optimizer::fact_substrate::FactSubstrate
 pub vyre_foundation::optimizer::PassCtx::program: &'a mut vyre_foundation::ir::Program
 impl<'a> core::marker::Freeze for vyre_foundation::optimizer::ctx::PassCtx<'a>
 impl<'a> core::marker::Send for vyre_foundation::optimizer::ctx::PassCtx<'a>
@@ -7232,16 +8337,84 @@ impl<T> tracing::instrument::Instrument for vyre_foundation::optimizer::PassResu
 impl<T> tracing::instrument::WithSubscriber for vyre_foundation::optimizer::PassResult
 impl<T> typenum::type_operators::Same for vyre_foundation::optimizer::PassResult
 pub type vyre_foundation::optimizer::PassResult::Output = T
+pub struct vyre_foundation::optimizer::PassRunMetric
+pub vyre_foundation::optimizer::PassRunMetric::changed: bool
+pub vyre_foundation::optimizer::PassRunMetric::ir_heap_allocations_after: usize
+pub vyre_foundation::optimizer::PassRunMetric::ir_heap_allocations_before: usize
+pub vyre_foundation::optimizer::PassRunMetric::ir_heap_bytes_after: usize
+pub vyre_foundation::optimizer::PassRunMetric::ir_heap_bytes_before: usize
+pub vyre_foundation::optimizer::PassRunMetric::iteration: usize
+pub vyre_foundation::optimizer::PassRunMetric::nodes_after: usize
+pub vyre_foundation::optimizer::PassRunMetric::nodes_before: usize
+pub vyre_foundation::optimizer::PassRunMetric::pass: &'static str
+pub vyre_foundation::optimizer::PassRunMetric::ran: bool
+pub vyre_foundation::optimizer::PassRunMetric::runtime_ns: u128
+pub vyre_foundation::optimizer::PassRunMetric::static_storage_bytes_after: u64
+pub vyre_foundation::optimizer::PassRunMetric::static_storage_bytes_before: u64
+impl core::clone::Clone for vyre_foundation::optimizer::PassRunMetric
+pub fn vyre_foundation::optimizer::PassRunMetric::clone(&self) -> vyre_foundation::optimizer::PassRunMetric
+impl core::cmp::Eq for vyre_foundation::optimizer::PassRunMetric
+impl core::cmp::PartialEq for vyre_foundation::optimizer::PassRunMetric
+pub fn vyre_foundation::optimizer::PassRunMetric::eq(&self, other: &vyre_foundation::optimizer::PassRunMetric) -> bool
+impl core::fmt::Debug for vyre_foundation::optimizer::PassRunMetric
+pub fn vyre_foundation::optimizer::PassRunMetric::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for vyre_foundation::optimizer::PassRunMetric
+impl core::marker::Freeze for vyre_foundation::optimizer::PassRunMetric
+impl core::marker::Send for vyre_foundation::optimizer::PassRunMetric
+impl core::marker::Sync for vyre_foundation::optimizer::PassRunMetric
+impl core::marker::Unpin for vyre_foundation::optimizer::PassRunMetric
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_foundation::optimizer::PassRunMetric
+impl core::panic::unwind_safe::UnwindSafe for vyre_foundation::optimizer::PassRunMetric
+impl<Q, K> hashbrown::Equivalent<K> for vyre_foundation::optimizer::PassRunMetric where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn vyre_foundation::optimizer::PassRunMetric::equivalent(&self, key: &K) -> bool
+impl<T, U> core::convert::Into<U> for vyre_foundation::optimizer::PassRunMetric where U: core::convert::From<T>
+pub fn vyre_foundation::optimizer::PassRunMetric::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for vyre_foundation::optimizer::PassRunMetric where U: core::convert::Into<T>
+pub type vyre_foundation::optimizer::PassRunMetric::Error = core::convert::Infallible
+pub fn vyre_foundation::optimizer::PassRunMetric::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for vyre_foundation::optimizer::PassRunMetric where U: core::convert::TryFrom<T>
+pub type vyre_foundation::optimizer::PassRunMetric::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn vyre_foundation::optimizer::PassRunMetric::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for vyre_foundation::optimizer::PassRunMetric where T: core::clone::Clone
+pub type vyre_foundation::optimizer::PassRunMetric::Owned = T
+pub fn vyre_foundation::optimizer::PassRunMetric::clone_into(&self, target: &mut T)
+pub fn vyre_foundation::optimizer::PassRunMetric::to_owned(&self) -> T
+impl<T> core::any::Any for vyre_foundation::optimizer::PassRunMetric where T: 'static + ?core::marker::Sized
+pub fn vyre_foundation::optimizer::PassRunMetric::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for vyre_foundation::optimizer::PassRunMetric where T: ?core::marker::Sized
+pub fn vyre_foundation::optimizer::PassRunMetric::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for vyre_foundation::optimizer::PassRunMetric where T: ?core::marker::Sized
+pub fn vyre_foundation::optimizer::PassRunMetric::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for vyre_foundation::optimizer::PassRunMetric where T: core::clone::Clone
+pub unsafe fn vyre_foundation::optimizer::PassRunMetric::clone_to_uninit(&self, dest: *mut u8)
+impl<T> core::convert::From<T> for vyre_foundation::optimizer::PassRunMetric
+pub fn vyre_foundation::optimizer::PassRunMetric::from(t: T) -> T
+impl<T> tracing::instrument::Instrument for vyre_foundation::optimizer::PassRunMetric
+impl<T> tracing::instrument::WithSubscriber for vyre_foundation::optimizer::PassRunMetric
+impl<T> typenum::type_operators::Same for vyre_foundation::optimizer::PassRunMetric
+pub type vyre_foundation::optimizer::PassRunMetric::Output = T
 pub struct vyre_foundation::optimizer::PassScheduler
 impl vyre_foundation::optimizer::PassScheduler
+pub fn vyre_foundation::optimizer::PassScheduler::fusable_pass_pairs(&self) -> alloc::vec::Vec<(&'static str, &'static str)>
+pub fn vyre_foundation::optimizer::PassScheduler::fusable_subset(&self, seed: &[u32], max_iters: u32) -> alloc::vec::Vec<u32>
+pub fn vyre_foundation::optimizer::PassScheduler::fusion_friendly_order(passes: &[&'static vyre_foundation::optimizer::PassRegistration]) -> alloc::vec::Vec<usize>
+pub fn vyre_foundation::optimizer::PassScheduler::fusion_pressure(&self, costs: &[f64], steps: u32, dt: f64) -> alloc::vec::Vec<f64>
+pub fn vyre_foundation::optimizer::PassScheduler::invalidation_closure(&self) -> alloc::vec::Vec<u32>
+pub fn vyre_foundation::optimizer::PassScheduler::ordering_cost(passes: &[&'static vyre_foundation::optimizer::PassRegistration], order: &[usize]) -> u64
+pub fn vyre_foundation::optimizer::PassScheduler::pair_commutes(&self, pass_a: &str, pass_b: &str) -> bool
+pub fn vyre_foundation::optimizer::PassScheduler::reaches(&self, from: &str, to: &str) -> bool
 pub fn vyre_foundation::optimizer::PassScheduler::run(&self, program: vyre_foundation::ir::Program) -> core::result::Result<vyre_foundation::ir::Program, vyre_foundation::optimizer::OptimizerError>
+pub fn vyre_foundation::optimizer::PassScheduler::run_with_metrics(&self, program: vyre_foundation::ir::Program) -> core::result::Result<vyre_foundation::optimizer::OptimizerRunReport, vyre_foundation::optimizer::OptimizerError>
+pub fn vyre_foundation::optimizer::PassScheduler::smooth_pass_system(&self, b: &[f64], x_in: &[f64], weight: f64) -> alloc::vec::Vec<f64>
+pub fn vyre_foundation::optimizer::PassScheduler::transitive_dependents(&self, pass_name: &str) -> alloc::vec::Vec<&'static str>
+pub fn vyre_foundation::optimizer::PassScheduler::triple_associates(&self, pass_a: &str, pass_b: &str, pass_c: &str) -> core::option::Option<bool>
 pub fn vyre_foundation::optimizer::PassScheduler::with_max_iterations(self, max_iterations: usize) -> Self
 pub fn vyre_foundation::optimizer::PassScheduler::with_passes(passes: alloc::vec::Vec<vyre_foundation::optimizer::PassKind>) -> Self
 impl vyre_foundation::optimizer::PassScheduler
 pub fn vyre_foundation::optimizer::PassScheduler::try_default() -> core::result::Result<Self, vyre_foundation::optimizer::OptimizerError>
 impl core::default::Default for vyre_foundation::optimizer::PassScheduler
 pub fn vyre_foundation::optimizer::PassScheduler::default() -> Self
-impl core::marker::Freeze for vyre_foundation::optimizer::PassScheduler
+impl !core::marker::Freeze for vyre_foundation::optimizer::PassScheduler
 impl core::marker::Send for vyre_foundation::optimizer::PassScheduler
 impl core::marker::Sync for vyre_foundation::optimizer::PassScheduler
 impl core::marker::Unpin for vyre_foundation::optimizer::PassScheduler
@@ -7279,30 +8452,66 @@ pub fn vyre_foundation::optimizer::passes::autotune::Autotune::fingerprint(&self
 pub fn vyre_foundation::optimizer::passes::autotune::Autotune::metadata(&self) -> vyre_foundation::optimizer::PassMetadata
 pub fn vyre_foundation::optimizer::passes::autotune::Autotune::pass_id(&self) -> &'static str
 pub fn vyre_foundation::optimizer::passes::autotune::Autotune::transform(&self, program: vyre_foundation::ir::Program) -> vyre_foundation::optimizer::PassResult
+impl vyre_foundation::optimizer::Pass for vyre_foundation::optimizer::passes::canonicalize::Canonicalize
+pub fn vyre_foundation::optimizer::passes::canonicalize::Canonicalize::analyze(&self, program: &vyre_foundation::ir::Program) -> vyre_foundation::optimizer::PassAnalysis
+pub fn vyre_foundation::optimizer::passes::canonicalize::Canonicalize::fingerprint(&self, program: &vyre_foundation::ir::Program) -> u64
+pub fn vyre_foundation::optimizer::passes::canonicalize::Canonicalize::metadata(&self) -> vyre_foundation::optimizer::PassMetadata
+pub fn vyre_foundation::optimizer::passes::canonicalize::Canonicalize::pass_id(&self) -> &'static str
+pub fn vyre_foundation::optimizer::passes::canonicalize::Canonicalize::transform(&self, program: vyre_foundation::ir::Program) -> vyre_foundation::optimizer::PassResult
 impl vyre_foundation::optimizer::Pass for vyre_foundation::optimizer::passes::const_fold::ConstFold
 pub fn vyre_foundation::optimizer::passes::const_fold::ConstFold::analyze(&self, program: &vyre_foundation::ir::Program) -> vyre_foundation::optimizer::PassAnalysis
 pub fn vyre_foundation::optimizer::passes::const_fold::ConstFold::fingerprint(&self, program: &vyre_foundation::ir::Program) -> u64
 pub fn vyre_foundation::optimizer::passes::const_fold::ConstFold::metadata(&self) -> vyre_foundation::optimizer::PassMetadata
 pub fn vyre_foundation::optimizer::passes::const_fold::ConstFold::pass_id(&self) -> &'static str
 pub fn vyre_foundation::optimizer::passes::const_fold::ConstFold::transform(&self, program: vyre_foundation::ir::Program) -> vyre_foundation::optimizer::PassResult
+impl vyre_foundation::optimizer::Pass for vyre_foundation::optimizer::passes::cse::CsePass
+pub fn vyre_foundation::optimizer::passes::cse::CsePass::analyze(&self, program: &vyre_foundation::ir::Program) -> vyre_foundation::optimizer::PassAnalysis
+pub fn vyre_foundation::optimizer::passes::cse::CsePass::fingerprint(&self, program: &vyre_foundation::ir::Program) -> u64
+pub fn vyre_foundation::optimizer::passes::cse::CsePass::metadata(&self) -> vyre_foundation::optimizer::PassMetadata
+pub fn vyre_foundation::optimizer::passes::cse::CsePass::pass_id(&self) -> &'static str
+pub fn vyre_foundation::optimizer::passes::cse::CsePass::transform(&self, program: vyre_foundation::ir::Program) -> vyre_foundation::optimizer::PassResult
+impl vyre_foundation::optimizer::Pass for vyre_foundation::optimizer::passes::dce::DcePass
+pub fn vyre_foundation::optimizer::passes::dce::DcePass::analyze(&self, program: &vyre_foundation::ir::Program) -> vyre_foundation::optimizer::PassAnalysis
+pub fn vyre_foundation::optimizer::passes::dce::DcePass::fingerprint(&self, program: &vyre_foundation::ir::Program) -> u64
+pub fn vyre_foundation::optimizer::passes::dce::DcePass::metadata(&self) -> vyre_foundation::optimizer::PassMetadata
+pub fn vyre_foundation::optimizer::passes::dce::DcePass::pass_id(&self) -> &'static str
+pub fn vyre_foundation::optimizer::passes::dce::DcePass::transform(&self, program: vyre_foundation::ir::Program) -> vyre_foundation::optimizer::PassResult
 impl vyre_foundation::optimizer::Pass for vyre_foundation::optimizer::passes::dead_buffer_elim::DeadBufferElim
 pub fn vyre_foundation::optimizer::passes::dead_buffer_elim::DeadBufferElim::analyze(&self, program: &vyre_foundation::ir::Program) -> vyre_foundation::optimizer::PassAnalysis
 pub fn vyre_foundation::optimizer::passes::dead_buffer_elim::DeadBufferElim::fingerprint(&self, program: &vyre_foundation::ir::Program) -> u64
 pub fn vyre_foundation::optimizer::passes::dead_buffer_elim::DeadBufferElim::metadata(&self) -> vyre_foundation::optimizer::PassMetadata
 pub fn vyre_foundation::optimizer::passes::dead_buffer_elim::DeadBufferElim::pass_id(&self) -> &'static str
 pub fn vyre_foundation::optimizer::passes::dead_buffer_elim::DeadBufferElim::transform(&self, program: vyre_foundation::ir::Program) -> vyre_foundation::optimizer::PassResult
+impl vyre_foundation::optimizer::Pass for vyre_foundation::optimizer::passes::decode_scan_fuse::DecodeScanFuse
+pub fn vyre_foundation::optimizer::passes::decode_scan_fuse::DecodeScanFuse::analyze(&self, program: &vyre_foundation::ir::Program) -> vyre_foundation::optimizer::PassAnalysis
+pub fn vyre_foundation::optimizer::passes::decode_scan_fuse::DecodeScanFuse::fingerprint(&self, program: &vyre_foundation::ir::Program) -> u64
+pub fn vyre_foundation::optimizer::passes::decode_scan_fuse::DecodeScanFuse::metadata(&self) -> vyre_foundation::optimizer::PassMetadata
+pub fn vyre_foundation::optimizer::passes::decode_scan_fuse::DecodeScanFuse::pass_id(&self) -> &'static str
+pub fn vyre_foundation::optimizer::passes::decode_scan_fuse::DecodeScanFuse::transform(&self, program: vyre_foundation::ir::Program) -> vyre_foundation::optimizer::PassResult
 impl vyre_foundation::optimizer::Pass for vyre_foundation::optimizer::passes::fusion::Fusion
 pub fn vyre_foundation::optimizer::passes::fusion::Fusion::analyze(&self, program: &vyre_foundation::ir::Program) -> vyre_foundation::optimizer::PassAnalysis
 pub fn vyre_foundation::optimizer::passes::fusion::Fusion::fingerprint(&self, program: &vyre_foundation::ir::Program) -> u64
 pub fn vyre_foundation::optimizer::passes::fusion::Fusion::metadata(&self) -> vyre_foundation::optimizer::PassMetadata
 pub fn vyre_foundation::optimizer::passes::fusion::Fusion::pass_id(&self) -> &'static str
 pub fn vyre_foundation::optimizer::passes::fusion::Fusion::transform(&self, program: vyre_foundation::ir::Program) -> vyre_foundation::optimizer::PassResult
+impl vyre_foundation::optimizer::Pass for vyre_foundation::optimizer::passes::loop_unroll::LoopUnroll
+pub fn vyre_foundation::optimizer::passes::loop_unroll::LoopUnroll::analyze(&self, program: &vyre_foundation::ir::Program) -> vyre_foundation::optimizer::PassAnalysis
+pub fn vyre_foundation::optimizer::passes::loop_unroll::LoopUnroll::fingerprint(&self, program: &vyre_foundation::ir::Program) -> u64
+pub fn vyre_foundation::optimizer::passes::loop_unroll::LoopUnroll::metadata(&self) -> vyre_foundation::optimizer::PassMetadata
+pub fn vyre_foundation::optimizer::passes::loop_unroll::LoopUnroll::pass_id(&self) -> &'static str
+pub fn vyre_foundation::optimizer::passes::loop_unroll::LoopUnroll::transform(&self, program: vyre_foundation::ir::Program) -> vyre_foundation::optimizer::PassResult
 impl vyre_foundation::optimizer::Pass for vyre_foundation::optimizer::passes::normalize_atomics::NormalizeAtomicsPass
 pub fn vyre_foundation::optimizer::passes::normalize_atomics::NormalizeAtomicsPass::analyze(&self, program: &vyre_foundation::ir::Program) -> vyre_foundation::optimizer::PassAnalysis
 pub fn vyre_foundation::optimizer::passes::normalize_atomics::NormalizeAtomicsPass::fingerprint(&self, program: &vyre_foundation::ir::Program) -> u64
 pub fn vyre_foundation::optimizer::passes::normalize_atomics::NormalizeAtomicsPass::metadata(&self) -> vyre_foundation::optimizer::PassMetadata
 pub fn vyre_foundation::optimizer::passes::normalize_atomics::NormalizeAtomicsPass::pass_id(&self) -> &'static str
 pub fn vyre_foundation::optimizer::passes::normalize_atomics::NormalizeAtomicsPass::transform(&self, program: vyre_foundation::ir::Program) -> vyre_foundation::optimizer::PassResult
+impl vyre_foundation::optimizer::Pass for vyre_foundation::optimizer::passes::region_inline::RegionInlinePass
+pub fn vyre_foundation::optimizer::passes::region_inline::RegionInlinePass::analyze(&self, program: &vyre_foundation::ir::Program) -> vyre_foundation::optimizer::PassAnalysis
+pub fn vyre_foundation::optimizer::passes::region_inline::RegionInlinePass::fingerprint(&self, program: &vyre_foundation::ir::Program) -> u64
+pub fn vyre_foundation::optimizer::passes::region_inline::RegionInlinePass::metadata(&self) -> vyre_foundation::optimizer::PassMetadata
+pub fn vyre_foundation::optimizer::passes::region_inline::RegionInlinePass::pass_id(&self) -> &'static str
+pub fn vyre_foundation::optimizer::passes::region_inline::RegionInlinePass::transform(&self, program: vyre_foundation::ir::Program) -> vyre_foundation::optimizer::PassResult
 impl vyre_foundation::optimizer::Pass for vyre_foundation::optimizer::passes::spec_driven::SpecDriven
 pub fn vyre_foundation::optimizer::passes::spec_driven::SpecDriven::analyze(&self, program: &vyre_foundation::ir::Program) -> vyre_foundation::optimizer::PassAnalysis
 pub fn vyre_foundation::optimizer::passes::spec_driven::SpecDriven::fingerprint(&self, program: &vyre_foundation::ir::Program) -> u64
@@ -7315,12 +8524,205 @@ pub fn vyre_foundation::optimizer::passes::strength_reduce::StrengthReduce::fing
 pub fn vyre_foundation::optimizer::passes::strength_reduce::StrengthReduce::metadata(&self) -> vyre_foundation::optimizer::PassMetadata
 pub fn vyre_foundation::optimizer::passes::strength_reduce::StrengthReduce::pass_id(&self) -> &'static str
 pub fn vyre_foundation::optimizer::passes::strength_reduce::StrengthReduce::transform(&self, program: vyre_foundation::ir::Program) -> vyre_foundation::optimizer::PassResult
+impl vyre_foundation::optimizer::Pass for vyre_foundation::optimizer::passes::vectorization::Vectorization
+pub fn vyre_foundation::optimizer::passes::vectorization::Vectorization::analyze(&self, program: &vyre_foundation::ir::Program) -> vyre_foundation::optimizer::PassAnalysis
+pub fn vyre_foundation::optimizer::passes::vectorization::Vectorization::fingerprint(&self, program: &vyre_foundation::ir::Program) -> u64
+pub fn vyre_foundation::optimizer::passes::vectorization::Vectorization::metadata(&self) -> vyre_foundation::optimizer::PassMetadata
+pub fn vyre_foundation::optimizer::passes::vectorization::Vectorization::pass_id(&self) -> &'static str
+pub fn vyre_foundation::optimizer::passes::vectorization::Vectorization::transform(&self, program: vyre_foundation::ir::Program) -> vyre_foundation::optimizer::PassResult
 pub fn vyre_foundation::optimizer::fingerprint_program(program: &vyre_foundation::ir::Program) -> u64
 pub fn vyre_foundation::optimizer::optimize(program: vyre_foundation::ir::Program) -> core::result::Result<vyre_foundation::ir::Program, vyre_foundation::optimizer::OptimizerError>
+pub fn vyre_foundation::optimizer::pipeline_fingerprint_bytes(program: &vyre_foundation::ir::Program) -> [u8; 32]
 pub fn vyre_foundation::optimizer::registered_pass_registrations() -> core::result::Result<alloc::vec::Vec<&'static vyre_foundation::optimizer::PassRegistration>, vyre_foundation::optimizer::OptimizerError>
 pub fn vyre_foundation::optimizer::registered_passes() -> core::result::Result<alloc::vec::Vec<vyre_foundation::optimizer::PassKind>, vyre_foundation::optimizer::OptimizerError>
 pub fn vyre_foundation::optimizer::schedule_passes(passes: &[&'static vyre_foundation::optimizer::PassRegistration]) -> core::result::Result<alloc::vec::Vec<&'static vyre_foundation::optimizer::PassRegistration>, vyre_foundation::optimizer::PassSchedulingError>
 pub fn vyre_foundation::optimizer::scheduling_error_to_diagnostic(err: &vyre_foundation::optimizer::PassSchedulingError) -> vyre_foundation::diagnostics::Diagnostic
+pub mod vyre_foundation::pass_substrate
+pub mod vyre_foundation::pass_substrate::adjustment_set_pass_dependency
+pub fn vyre_foundation::pass_substrate::adjustment_set_pass_dependency::ordering_is_safe(adj: &[u32], treatment: u32, outcome: u32, n: u32) -> bool
+pub fn vyre_foundation::pass_substrate::adjustment_set_pass_dependency::pass_descendants(adj: &[u32], n: u32) -> alloc::vec::Vec<alloc::vec::Vec<u32>>
+pub mod vyre_foundation::pass_substrate::dataflow_fixpoint
+pub enum vyre_foundation::pass_substrate::dataflow_fixpoint::Semiring
+pub vyre_foundation::pass_substrate::dataflow_fixpoint::Semiring::BoolOr
+pub vyre_foundation::pass_substrate::dataflow_fixpoint::Semiring::Lineage
+pub vyre_foundation::pass_substrate::dataflow_fixpoint::Semiring::MinPlus
+impl vyre_foundation::pass_substrate::dataflow_fixpoint::Semiring
+pub fn vyre_foundation::pass_substrate::dataflow_fixpoint::Semiring::identity(self) -> u32
+impl core::clone::Clone for vyre_foundation::pass_substrate::dataflow_fixpoint::Semiring
+pub fn vyre_foundation::pass_substrate::dataflow_fixpoint::Semiring::clone(&self) -> vyre_foundation::pass_substrate::dataflow_fixpoint::Semiring
+impl core::cmp::Eq for vyre_foundation::pass_substrate::dataflow_fixpoint::Semiring
+impl core::cmp::PartialEq for vyre_foundation::pass_substrate::dataflow_fixpoint::Semiring
+pub fn vyre_foundation::pass_substrate::dataflow_fixpoint::Semiring::eq(&self, other: &vyre_foundation::pass_substrate::dataflow_fixpoint::Semiring) -> bool
+impl core::fmt::Debug for vyre_foundation::pass_substrate::dataflow_fixpoint::Semiring
+pub fn vyre_foundation::pass_substrate::dataflow_fixpoint::Semiring::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for vyre_foundation::pass_substrate::dataflow_fixpoint::Semiring
+impl core::marker::StructuralPartialEq for vyre_foundation::pass_substrate::dataflow_fixpoint::Semiring
+impl core::marker::Freeze for vyre_foundation::pass_substrate::dataflow_fixpoint::Semiring
+impl core::marker::Send for vyre_foundation::pass_substrate::dataflow_fixpoint::Semiring
+impl core::marker::Sync for vyre_foundation::pass_substrate::dataflow_fixpoint::Semiring
+impl core::marker::Unpin for vyre_foundation::pass_substrate::dataflow_fixpoint::Semiring
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_foundation::pass_substrate::dataflow_fixpoint::Semiring
+impl core::panic::unwind_safe::UnwindSafe for vyre_foundation::pass_substrate::dataflow_fixpoint::Semiring
+impl<Q, K> hashbrown::Equivalent<K> for vyre_foundation::pass_substrate::dataflow_fixpoint::Semiring where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn vyre_foundation::pass_substrate::dataflow_fixpoint::Semiring::equivalent(&self, key: &K) -> bool
+impl<T, U> core::convert::Into<U> for vyre_foundation::pass_substrate::dataflow_fixpoint::Semiring where U: core::convert::From<T>
+pub fn vyre_foundation::pass_substrate::dataflow_fixpoint::Semiring::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for vyre_foundation::pass_substrate::dataflow_fixpoint::Semiring where U: core::convert::Into<T>
+pub type vyre_foundation::pass_substrate::dataflow_fixpoint::Semiring::Error = core::convert::Infallible
+pub fn vyre_foundation::pass_substrate::dataflow_fixpoint::Semiring::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for vyre_foundation::pass_substrate::dataflow_fixpoint::Semiring where U: core::convert::TryFrom<T>
+pub type vyre_foundation::pass_substrate::dataflow_fixpoint::Semiring::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn vyre_foundation::pass_substrate::dataflow_fixpoint::Semiring::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for vyre_foundation::pass_substrate::dataflow_fixpoint::Semiring where T: core::clone::Clone
+pub type vyre_foundation::pass_substrate::dataflow_fixpoint::Semiring::Owned = T
+pub fn vyre_foundation::pass_substrate::dataflow_fixpoint::Semiring::clone_into(&self, target: &mut T)
+pub fn vyre_foundation::pass_substrate::dataflow_fixpoint::Semiring::to_owned(&self) -> T
+impl<T> core::any::Any for vyre_foundation::pass_substrate::dataflow_fixpoint::Semiring where T: 'static + ?core::marker::Sized
+pub fn vyre_foundation::pass_substrate::dataflow_fixpoint::Semiring::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for vyre_foundation::pass_substrate::dataflow_fixpoint::Semiring where T: ?core::marker::Sized
+pub fn vyre_foundation::pass_substrate::dataflow_fixpoint::Semiring::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for vyre_foundation::pass_substrate::dataflow_fixpoint::Semiring where T: ?core::marker::Sized
+pub fn vyre_foundation::pass_substrate::dataflow_fixpoint::Semiring::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for vyre_foundation::pass_substrate::dataflow_fixpoint::Semiring where T: core::clone::Clone
+pub unsafe fn vyre_foundation::pass_substrate::dataflow_fixpoint::Semiring::clone_to_uninit(&self, dest: *mut u8)
+impl<T> core::convert::From<T> for vyre_foundation::pass_substrate::dataflow_fixpoint::Semiring
+pub fn vyre_foundation::pass_substrate::dataflow_fixpoint::Semiring::from(t: T) -> T
+impl<T> tracing::instrument::Instrument for vyre_foundation::pass_substrate::dataflow_fixpoint::Semiring
+impl<T> tracing::instrument::WithSubscriber for vyre_foundation::pass_substrate::dataflow_fixpoint::Semiring
+impl<T> typenum::type_operators::Same for vyre_foundation::pass_substrate::dataflow_fixpoint::Semiring
+pub type vyre_foundation::pass_substrate::dataflow_fixpoint::Semiring::Output = T
+pub fn vyre_foundation::pass_substrate::dataflow_fixpoint::lineage_closure(adj: &[u32], n: u32, max_iters: u32) -> alloc::vec::Vec<u32>
+pub fn vyre_foundation::pass_substrate::dataflow_fixpoint::reachability_closure(adj: &[u32], n: u32, max_iters: u32) -> alloc::vec::Vec<u32>
+pub fn vyre_foundation::pass_substrate::dataflow_fixpoint::semiring_gemm_cpu(a: &[u32], b: &[u32], m: u32, n: u32, k: u32, semiring: vyre_foundation::pass_substrate::dataflow_fixpoint::Semiring) -> alloc::vec::Vec<u32>
+pub fn vyre_foundation::pass_substrate::dataflow_fixpoint::shortest_path_closure(adj: &[u32], n: u32, max_iters: u32) -> alloc::vec::Vec<u32>
+pub mod vyre_foundation::pass_substrate::functorial_pass_composition
+pub fn vyre_foundation::pass_substrate::functorial_pass_composition::apply_pass_functor(values: &[u32], mapping: &[u32], target_size: u32) -> alloc::vec::Vec<u32>
+pub fn vyre_foundation::pass_substrate::functorial_pass_composition::compose_passes(values: &[u32], first_mapping: &[u32], first_size: u32, second_mapping: &[u32], output_size: u32) -> alloc::vec::Vec<u32>
+pub fn vyre_foundation::pass_substrate::functorial_pass_composition::identity_functor(n: u32) -> alloc::vec::Vec<u32>
+pub fn vyre_foundation::pass_substrate::functorial_pass_composition::passes_commute_on(values: &[u32], left_first: &[u32], left_mid_size: u32, left_second: &[u32], right_first: &[u32], right_mid_size: u32, right_second: &[u32], output_size: u32) -> bool
+pub mod vyre_foundation::pass_substrate::matroid_megakernel_scheduler
+pub fn vyre_foundation::pass_substrate::matroid_megakernel_scheduler::max_fusion_subset(seed: &[u32], exchange_adj: &[u32], n: usize, max_items: u32) -> alloc::vec::Vec<u32>
+pub mod vyre_foundation::pass_substrate::megakernel_schedule
+pub fn vyre_foundation::pass_substrate::megakernel_schedule::schedule_via_homotopy(costs: &[f64], n: u32, steps: u32, dt: f64) -> alloc::vec::Vec<f64>
+pub mod vyre_foundation::pass_substrate::multigrid_matroid_solver
+pub fn vyre_foundation::pass_substrate::multigrid_matroid_solver::matroid_solve_step(a: &[f64], b: &[f64], x: &[f64], weight: f64, n: u32) -> alloc::vec::Vec<f64>
+pub mod vyre_foundation::pass_substrate::polyhedral_fusion
+pub fn vyre_foundation::pass_substrate::polyhedral_fusion::fusable_pairs(adj: &[u32], n: u32, max_iters: u32) -> alloc::vec::Vec<u32>
+pub mod vyre_foundation::pass_substrate::string_diagram_ir_rewrite
+pub fn vyre_foundation::pass_substrate::string_diagram_ir_rewrite::compose_ir_arrows(f: &[f64], g: &[f64], a: u32, b: u32, c: u32) -> alloc::vec::Vec<f64>
+pub fn vyre_foundation::pass_substrate::string_diagram_ir_rewrite::composition_associates(f: &[f64], g: &[f64], h: &[f64], a: u32, b: u32, c: u32, d: u32) -> bool
+pub fn vyre_foundation::pass_substrate::string_diagram_ir_rewrite::identity_arrow(n: u32) -> alloc::vec::Vec<f64>
+pub mod vyre_foundation::pass_substrate::tensor_network_fusion_order
+pub fn vyre_foundation::pass_substrate::tensor_network_fusion_order::fusion_order_cost(dimensions: &[u32], order: &[usize]) -> u64
+pub fn vyre_foundation::pass_substrate::tensor_network_fusion_order::optimal_fusion_order(dimensions: &[u32]) -> alloc::vec::Vec<usize>
+pub mod vyre_foundation::perf
+pub struct vyre_foundation::perf::PerfMeasurement
+pub vyre_foundation::perf::PerfMeasurement::elapsed_ns: u64
+impl core::clone::Clone for vyre_foundation::perf::PerfMeasurement
+pub fn vyre_foundation::perf::PerfMeasurement::clone(&self) -> vyre_foundation::perf::PerfMeasurement
+impl core::cmp::Eq for vyre_foundation::perf::PerfMeasurement
+impl core::cmp::PartialEq for vyre_foundation::perf::PerfMeasurement
+pub fn vyre_foundation::perf::PerfMeasurement::eq(&self, other: &vyre_foundation::perf::PerfMeasurement) -> bool
+impl core::fmt::Debug for vyre_foundation::perf::PerfMeasurement
+pub fn vyre_foundation::perf::PerfMeasurement::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for vyre_foundation::perf::PerfMeasurement
+impl core::marker::StructuralPartialEq for vyre_foundation::perf::PerfMeasurement
+impl core::marker::Freeze for vyre_foundation::perf::PerfMeasurement
+impl core::marker::Send for vyre_foundation::perf::PerfMeasurement
+impl core::marker::Sync for vyre_foundation::perf::PerfMeasurement
+impl core::marker::Unpin for vyre_foundation::perf::PerfMeasurement
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_foundation::perf::PerfMeasurement
+impl core::panic::unwind_safe::UnwindSafe for vyre_foundation::perf::PerfMeasurement
+impl<Q, K> hashbrown::Equivalent<K> for vyre_foundation::perf::PerfMeasurement where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn vyre_foundation::perf::PerfMeasurement::equivalent(&self, key: &K) -> bool
+impl<T, U> core::convert::Into<U> for vyre_foundation::perf::PerfMeasurement where U: core::convert::From<T>
+pub fn vyre_foundation::perf::PerfMeasurement::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for vyre_foundation::perf::PerfMeasurement where U: core::convert::Into<T>
+pub type vyre_foundation::perf::PerfMeasurement::Error = core::convert::Infallible
+pub fn vyre_foundation::perf::PerfMeasurement::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for vyre_foundation::perf::PerfMeasurement where U: core::convert::TryFrom<T>
+pub type vyre_foundation::perf::PerfMeasurement::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn vyre_foundation::perf::PerfMeasurement::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for vyre_foundation::perf::PerfMeasurement where T: core::clone::Clone
+pub type vyre_foundation::perf::PerfMeasurement::Owned = T
+pub fn vyre_foundation::perf::PerfMeasurement::clone_into(&self, target: &mut T)
+pub fn vyre_foundation::perf::PerfMeasurement::to_owned(&self) -> T
+impl<T> core::any::Any for vyre_foundation::perf::PerfMeasurement where T: 'static + ?core::marker::Sized
+pub fn vyre_foundation::perf::PerfMeasurement::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for vyre_foundation::perf::PerfMeasurement where T: ?core::marker::Sized
+pub fn vyre_foundation::perf::PerfMeasurement::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for vyre_foundation::perf::PerfMeasurement where T: ?core::marker::Sized
+pub fn vyre_foundation::perf::PerfMeasurement::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for vyre_foundation::perf::PerfMeasurement where T: core::clone::Clone
+pub unsafe fn vyre_foundation::perf::PerfMeasurement::clone_to_uninit(&self, dest: *mut u8)
+impl<T> core::convert::From<T> for vyre_foundation::perf::PerfMeasurement
+pub fn vyre_foundation::perf::PerfMeasurement::from(t: T) -> T
+impl<T> tracing::instrument::Instrument for vyre_foundation::perf::PerfMeasurement
+impl<T> tracing::instrument::WithSubscriber for vyre_foundation::perf::PerfMeasurement
+impl<T> typenum::type_operators::Same for vyre_foundation::perf::PerfMeasurement
+pub type vyre_foundation::perf::PerfMeasurement::Output = T
+pub struct vyre_foundation::perf::PerfScope
+impl vyre_foundation::perf::PerfScope
+pub fn vyre_foundation::perf::PerfScope::finish(self) -> vyre_foundation::perf::PerfMeasurement
+pub fn vyre_foundation::perf::PerfScope::start(_crate_name: &'static str, name: &'static str) -> Self
+impl core::marker::Freeze for vyre_foundation::perf::PerfScope
+impl core::marker::Send for vyre_foundation::perf::PerfScope
+impl core::marker::Sync for vyre_foundation::perf::PerfScope
+impl core::marker::Unpin for vyre_foundation::perf::PerfScope
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_foundation::perf::PerfScope
+impl core::panic::unwind_safe::UnwindSafe for vyre_foundation::perf::PerfScope
+impl<T, U> core::convert::Into<U> for vyre_foundation::perf::PerfScope where U: core::convert::From<T>
+pub fn vyre_foundation::perf::PerfScope::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for vyre_foundation::perf::PerfScope where U: core::convert::Into<T>
+pub type vyre_foundation::perf::PerfScope::Error = core::convert::Infallible
+pub fn vyre_foundation::perf::PerfScope::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for vyre_foundation::perf::PerfScope where U: core::convert::TryFrom<T>
+pub type vyre_foundation::perf::PerfScope::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn vyre_foundation::perf::PerfScope::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> core::any::Any for vyre_foundation::perf::PerfScope where T: 'static + ?core::marker::Sized
+pub fn vyre_foundation::perf::PerfScope::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for vyre_foundation::perf::PerfScope where T: ?core::marker::Sized
+pub fn vyre_foundation::perf::PerfScope::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for vyre_foundation::perf::PerfScope where T: ?core::marker::Sized
+pub fn vyre_foundation::perf::PerfScope::borrow_mut(&mut self) -> &mut T
+impl<T> core::convert::From<T> for vyre_foundation::perf::PerfScope
+pub fn vyre_foundation::perf::PerfScope::from(t: T) -> T
+impl<T> tracing::instrument::Instrument for vyre_foundation::perf::PerfScope
+impl<T> tracing::instrument::WithSubscriber for vyre_foundation::perf::PerfScope
+impl<T> typenum::type_operators::Same for vyre_foundation::perf::PerfScope
+pub type vyre_foundation::perf::PerfScope::Output = T
+pub struct vyre_foundation::perf::SpanGuard
+impl core::ops::drop::Drop for vyre_foundation::perf::SpanGuard
+pub fn vyre_foundation::perf::SpanGuard::drop(&mut self)
+impl core::marker::Freeze for vyre_foundation::perf::SpanGuard
+impl core::marker::Send for vyre_foundation::perf::SpanGuard
+impl core::marker::Sync for vyre_foundation::perf::SpanGuard
+impl core::marker::Unpin for vyre_foundation::perf::SpanGuard
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_foundation::perf::SpanGuard
+impl core::panic::unwind_safe::UnwindSafe for vyre_foundation::perf::SpanGuard
+impl<T, U> core::convert::Into<U> for vyre_foundation::perf::SpanGuard where U: core::convert::From<T>
+pub fn vyre_foundation::perf::SpanGuard::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for vyre_foundation::perf::SpanGuard where U: core::convert::Into<T>
+pub type vyre_foundation::perf::SpanGuard::Error = core::convert::Infallible
+pub fn vyre_foundation::perf::SpanGuard::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for vyre_foundation::perf::SpanGuard where U: core::convert::TryFrom<T>
+pub type vyre_foundation::perf::SpanGuard::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn vyre_foundation::perf::SpanGuard::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> core::any::Any for vyre_foundation::perf::SpanGuard where T: 'static + ?core::marker::Sized
+pub fn vyre_foundation::perf::SpanGuard::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for vyre_foundation::perf::SpanGuard where T: ?core::marker::Sized
+pub fn vyre_foundation::perf::SpanGuard::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for vyre_foundation::perf::SpanGuard where T: ?core::marker::Sized
+pub fn vyre_foundation::perf::SpanGuard::borrow_mut(&mut self) -> &mut T
+impl<T> core::convert::From<T> for vyre_foundation::perf::SpanGuard
+pub fn vyre_foundation::perf::SpanGuard::from(t: T) -> T
+impl<T> tracing::instrument::Instrument for vyre_foundation::perf::SpanGuard
+impl<T> tracing::instrument::WithSubscriber for vyre_foundation::perf::SpanGuard
+impl<T> typenum::type_operators::Same for vyre_foundation::perf::SpanGuard
+pub type vyre_foundation::perf::SpanGuard::Output = T
+pub fn vyre_foundation::perf::get_metrics() -> std::collections::hash::map::HashMap<&'static str, u64>
+pub fn vyre_foundation::perf::reset_metrics()
+pub fn vyre_foundation::perf::span(name: &'static str) -> vyre_foundation::perf::SpanGuard
 pub mod vyre_foundation::program_caps
 pub struct vyre_foundation::program_caps::MissingCapability
 pub vyre_foundation::program_caps::MissingCapability::backend: alloc::string::String
@@ -7430,9 +8832,249 @@ impl<T> tracing::instrument::Instrument for vyre_foundation::program_caps::Requi
 impl<T> tracing::instrument::WithSubscriber for vyre_foundation::program_caps::RequiredCapabilities
 impl<T> typenum::type_operators::Same for vyre_foundation::program_caps::RequiredCapabilities
 pub type vyre_foundation::program_caps::RequiredCapabilities::Output = T
-pub fn vyre_foundation::program_caps::check_backend_capabilities(backend_id: &str, supports_subgroup_ops: bool, supports_f16: bool, supports_bf16: bool, supports_indirect_dispatch: bool, max_workgroup_size: [u32; 3], required: &vyre_foundation::program_caps::RequiredCapabilities) -> core::result::Result<(), vyre_foundation::program_caps::MissingCapability>
+pub fn vyre_foundation::program_caps::check_backend_capabilities(backend_id: &str, supports_subgroup_ops: bool, supports_f16: bool, supports_bf16: bool, supports_indirect_dispatch: bool, supports_trap_propagation: bool, max_workgroup_size: [u32; 3], required: &vyre_foundation::program_caps::RequiredCapabilities) -> core::result::Result<(), vyre_foundation::program_caps::MissingCapability>
 pub fn vyre_foundation::program_caps::scan(program: &vyre_foundation::ir::Program) -> vyre_foundation::program_caps::RequiredCapabilities
 pub mod vyre_foundation::serial
+pub mod vyre_foundation::serial::envelope
+pub mod vyre_foundation::serial::envelope::test_helpers
+pub enum vyre_foundation::serial::envelope::test_helpers::ExpectedEnvelopeError
+pub vyre_foundation::serial::envelope::test_helpers::ExpectedEnvelopeError::BadMagic
+pub vyre_foundation::serial::envelope::test_helpers::ExpectedEnvelopeError::SectionTooLarge
+pub vyre_foundation::serial::envelope::test_helpers::ExpectedEnvelopeError::Truncated
+pub vyre_foundation::serial::envelope::test_helpers::ExpectedEnvelopeError::VersionMismatch
+impl core::clone::Clone for vyre_foundation::serial::envelope::test_helpers::ExpectedEnvelopeError
+pub fn vyre_foundation::serial::envelope::test_helpers::ExpectedEnvelopeError::clone(&self) -> vyre_foundation::serial::envelope::test_helpers::ExpectedEnvelopeError
+impl core::cmp::Eq for vyre_foundation::serial::envelope::test_helpers::ExpectedEnvelopeError
+impl core::cmp::PartialEq for vyre_foundation::serial::envelope::test_helpers::ExpectedEnvelopeError
+pub fn vyre_foundation::serial::envelope::test_helpers::ExpectedEnvelopeError::eq(&self, other: &vyre_foundation::serial::envelope::test_helpers::ExpectedEnvelopeError) -> bool
+impl core::fmt::Debug for vyre_foundation::serial::envelope::test_helpers::ExpectedEnvelopeError
+pub fn vyre_foundation::serial::envelope::test_helpers::ExpectedEnvelopeError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for vyre_foundation::serial::envelope::test_helpers::ExpectedEnvelopeError
+impl core::marker::StructuralPartialEq for vyre_foundation::serial::envelope::test_helpers::ExpectedEnvelopeError
+impl core::marker::Freeze for vyre_foundation::serial::envelope::test_helpers::ExpectedEnvelopeError
+impl core::marker::Send for vyre_foundation::serial::envelope::test_helpers::ExpectedEnvelopeError
+impl core::marker::Sync for vyre_foundation::serial::envelope::test_helpers::ExpectedEnvelopeError
+impl core::marker::Unpin for vyre_foundation::serial::envelope::test_helpers::ExpectedEnvelopeError
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_foundation::serial::envelope::test_helpers::ExpectedEnvelopeError
+impl core::panic::unwind_safe::UnwindSafe for vyre_foundation::serial::envelope::test_helpers::ExpectedEnvelopeError
+impl<Q, K> hashbrown::Equivalent<K> for vyre_foundation::serial::envelope::test_helpers::ExpectedEnvelopeError where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn vyre_foundation::serial::envelope::test_helpers::ExpectedEnvelopeError::equivalent(&self, key: &K) -> bool
+impl<T, U> core::convert::Into<U> for vyre_foundation::serial::envelope::test_helpers::ExpectedEnvelopeError where U: core::convert::From<T>
+pub fn vyre_foundation::serial::envelope::test_helpers::ExpectedEnvelopeError::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for vyre_foundation::serial::envelope::test_helpers::ExpectedEnvelopeError where U: core::convert::Into<T>
+pub type vyre_foundation::serial::envelope::test_helpers::ExpectedEnvelopeError::Error = core::convert::Infallible
+pub fn vyre_foundation::serial::envelope::test_helpers::ExpectedEnvelopeError::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for vyre_foundation::serial::envelope::test_helpers::ExpectedEnvelopeError where U: core::convert::TryFrom<T>
+pub type vyre_foundation::serial::envelope::test_helpers::ExpectedEnvelopeError::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn vyre_foundation::serial::envelope::test_helpers::ExpectedEnvelopeError::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for vyre_foundation::serial::envelope::test_helpers::ExpectedEnvelopeError where T: core::clone::Clone
+pub type vyre_foundation::serial::envelope::test_helpers::ExpectedEnvelopeError::Owned = T
+pub fn vyre_foundation::serial::envelope::test_helpers::ExpectedEnvelopeError::clone_into(&self, target: &mut T)
+pub fn vyre_foundation::serial::envelope::test_helpers::ExpectedEnvelopeError::to_owned(&self) -> T
+impl<T> core::any::Any for vyre_foundation::serial::envelope::test_helpers::ExpectedEnvelopeError where T: 'static + ?core::marker::Sized
+pub fn vyre_foundation::serial::envelope::test_helpers::ExpectedEnvelopeError::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for vyre_foundation::serial::envelope::test_helpers::ExpectedEnvelopeError where T: ?core::marker::Sized
+pub fn vyre_foundation::serial::envelope::test_helpers::ExpectedEnvelopeError::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for vyre_foundation::serial::envelope::test_helpers::ExpectedEnvelopeError where T: ?core::marker::Sized
+pub fn vyre_foundation::serial::envelope::test_helpers::ExpectedEnvelopeError::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for vyre_foundation::serial::envelope::test_helpers::ExpectedEnvelopeError where T: core::clone::Clone
+pub unsafe fn vyre_foundation::serial::envelope::test_helpers::ExpectedEnvelopeError::clone_to_uninit(&self, dest: *mut u8)
+impl<T> core::convert::From<T> for vyre_foundation::serial::envelope::test_helpers::ExpectedEnvelopeError
+pub fn vyre_foundation::serial::envelope::test_helpers::ExpectedEnvelopeError::from(t: T) -> T
+impl<T> tracing::instrument::Instrument for vyre_foundation::serial::envelope::test_helpers::ExpectedEnvelopeError
+impl<T> tracing::instrument::WithSubscriber for vyre_foundation::serial::envelope::test_helpers::ExpectedEnvelopeError
+impl<T> typenum::type_operators::Same for vyre_foundation::serial::envelope::test_helpers::ExpectedEnvelopeError
+pub type vyre_foundation::serial::envelope::test_helpers::ExpectedEnvelopeError::Output = T
+pub trait vyre_foundation::serial::envelope::test_helpers::WireRoundTrip: core::marker::Sized
+pub type vyre_foundation::serial::envelope::test_helpers::WireRoundTrip::DecodeError: core::fmt::Debug
+pub type vyre_foundation::serial::envelope::test_helpers::WireRoundTrip::EncodeError: core::fmt::Debug
+pub const vyre_foundation::serial::envelope::test_helpers::WireRoundTrip::MAGIC: [u8; 4]
+pub const vyre_foundation::serial::envelope::test_helpers::WireRoundTrip::VERSION: u32
+pub fn vyre_foundation::serial::envelope::test_helpers::WireRoundTrip::from_bytes(bytes: &[u8]) -> core::result::Result<Self, Self::DecodeError>
+pub fn vyre_foundation::serial::envelope::test_helpers::WireRoundTrip::structurally_eq(&self, other: &Self) -> bool
+pub fn vyre_foundation::serial::envelope::test_helpers::WireRoundTrip::to_bytes(&self) -> core::result::Result<alloc::vec::Vec<u8>, Self::EncodeError>
+pub fn vyre_foundation::serial::envelope::test_helpers::assert_envelope_error_kind(err: &vyre_foundation::serial::envelope::EnvelopeError, kind: vyre_foundation::serial::envelope::test_helpers::ExpectedEnvelopeError)
+pub fn vyre_foundation::serial::envelope::test_helpers::assert_envelope_roundtrip<T>(sample: &T) where T: vyre_foundation::serial::envelope::test_helpers::WireRoundTrip + core::fmt::Debug
+pub fn vyre_foundation::serial::envelope::test_helpers::header_only(magic: &[u8; 4], version: u32) -> alloc::vec::Vec<u8>
+#[non_exhaustive] pub enum vyre_foundation::serial::envelope::EnvelopeError
+pub vyre_foundation::serial::envelope::EnvelopeError::BadMagic
+pub vyre_foundation::serial::envelope::EnvelopeError::BadMagic::expected: [u8; 4]
+pub vyre_foundation::serial::envelope::EnvelopeError::BadMagic::found: [u8; 4]
+pub vyre_foundation::serial::envelope::EnvelopeError::SectionTooLarge
+pub vyre_foundation::serial::envelope::EnvelopeError::SectionTooLarge::len: usize
+pub vyre_foundation::serial::envelope::EnvelopeError::SectionTooLarge::max: usize
+pub vyre_foundation::serial::envelope::EnvelopeError::Truncated
+pub vyre_foundation::serial::envelope::EnvelopeError::Truncated::got: usize
+pub vyre_foundation::serial::envelope::EnvelopeError::Truncated::needed: usize
+pub vyre_foundation::serial::envelope::EnvelopeError::VersionMismatch
+pub vyre_foundation::serial::envelope::EnvelopeError::VersionMismatch::expected: u32
+pub vyre_foundation::serial::envelope::EnvelopeError::VersionMismatch::found: u32
+impl core::clone::Clone for vyre_foundation::serial::envelope::EnvelopeError
+pub fn vyre_foundation::serial::envelope::EnvelopeError::clone(&self) -> vyre_foundation::serial::envelope::EnvelopeError
+impl core::error::Error for vyre_foundation::serial::envelope::EnvelopeError
+impl core::fmt::Debug for vyre_foundation::serial::envelope::EnvelopeError
+pub fn vyre_foundation::serial::envelope::EnvelopeError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for vyre_foundation::serial::envelope::EnvelopeError
+pub fn vyre_foundation::serial::envelope::EnvelopeError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for vyre_foundation::serial::envelope::EnvelopeError
+impl core::marker::Send for vyre_foundation::serial::envelope::EnvelopeError
+impl core::marker::Sync for vyre_foundation::serial::envelope::EnvelopeError
+impl core::marker::Unpin for vyre_foundation::serial::envelope::EnvelopeError
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_foundation::serial::envelope::EnvelopeError
+impl core::panic::unwind_safe::UnwindSafe for vyre_foundation::serial::envelope::EnvelopeError
+impl<T, U> core::convert::Into<U> for vyre_foundation::serial::envelope::EnvelopeError where U: core::convert::From<T>
+pub fn vyre_foundation::serial::envelope::EnvelopeError::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for vyre_foundation::serial::envelope::EnvelopeError where U: core::convert::Into<T>
+pub type vyre_foundation::serial::envelope::EnvelopeError::Error = core::convert::Infallible
+pub fn vyre_foundation::serial::envelope::EnvelopeError::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for vyre_foundation::serial::envelope::EnvelopeError where U: core::convert::TryFrom<T>
+pub type vyre_foundation::serial::envelope::EnvelopeError::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn vyre_foundation::serial::envelope::EnvelopeError::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for vyre_foundation::serial::envelope::EnvelopeError where T: core::clone::Clone
+pub type vyre_foundation::serial::envelope::EnvelopeError::Owned = T
+pub fn vyre_foundation::serial::envelope::EnvelopeError::clone_into(&self, target: &mut T)
+pub fn vyre_foundation::serial::envelope::EnvelopeError::to_owned(&self) -> T
+impl<T> alloc::string::ToString for vyre_foundation::serial::envelope::EnvelopeError where T: core::fmt::Display + ?core::marker::Sized
+pub fn vyre_foundation::serial::envelope::EnvelopeError::to_string(&self) -> alloc::string::String
+impl<T> core::any::Any for vyre_foundation::serial::envelope::EnvelopeError where T: 'static + ?core::marker::Sized
+pub fn vyre_foundation::serial::envelope::EnvelopeError::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for vyre_foundation::serial::envelope::EnvelopeError where T: ?core::marker::Sized
+pub fn vyre_foundation::serial::envelope::EnvelopeError::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for vyre_foundation::serial::envelope::EnvelopeError where T: ?core::marker::Sized
+pub fn vyre_foundation::serial::envelope::EnvelopeError::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for vyre_foundation::serial::envelope::EnvelopeError where T: core::clone::Clone
+pub unsafe fn vyre_foundation::serial::envelope::EnvelopeError::clone_to_uninit(&self, dest: *mut u8)
+impl<T> core::convert::From<T> for vyre_foundation::serial::envelope::EnvelopeError
+pub fn vyre_foundation::serial::envelope::EnvelopeError::from(t: T) -> T
+impl<T> tracing::instrument::Instrument for vyre_foundation::serial::envelope::EnvelopeError
+impl<T> tracing::instrument::WithSubscriber for vyre_foundation::serial::envelope::EnvelopeError
+impl<T> typenum::type_operators::Same for vyre_foundation::serial::envelope::EnvelopeError
+pub type vyre_foundation::serial::envelope::EnvelopeError::Output = T
+pub struct vyre_foundation::serial::envelope::WireReader<'a>
+impl<'a> vyre_foundation::serial::envelope::WireReader<'a>
+pub fn vyre_foundation::serial::envelope::WireReader<'a>::new(bytes: &'a [u8], expected_magic: &[u8; 4], expected_version: u32) -> core::result::Result<Self, vyre_foundation::serial::envelope::EnvelopeError>
+pub fn vyre_foundation::serial::envelope::WireReader<'a>::read_section(&mut self) -> core::result::Result<&'a [u8], vyre_foundation::serial::envelope::EnvelopeError>
+pub fn vyre_foundation::serial::envelope::WireReader<'a>::read_u32(&mut self) -> core::result::Result<u32, vyre_foundation::serial::envelope::EnvelopeError>
+pub fn vyre_foundation::serial::envelope::WireReader<'a>::read_words(&mut self) -> core::result::Result<alloc::vec::Vec<u32>, vyre_foundation::serial::envelope::EnvelopeError>
+impl<'a> core::fmt::Debug for vyre_foundation::serial::envelope::WireReader<'a>
+pub fn vyre_foundation::serial::envelope::WireReader<'a>::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a> core::marker::Freeze for vyre_foundation::serial::envelope::WireReader<'a>
+impl<'a> core::marker::Send for vyre_foundation::serial::envelope::WireReader<'a>
+impl<'a> core::marker::Sync for vyre_foundation::serial::envelope::WireReader<'a>
+impl<'a> core::marker::Unpin for vyre_foundation::serial::envelope::WireReader<'a>
+impl<'a> core::panic::unwind_safe::RefUnwindSafe for vyre_foundation::serial::envelope::WireReader<'a>
+impl<'a> core::panic::unwind_safe::UnwindSafe for vyre_foundation::serial::envelope::WireReader<'a>
+impl<T, U> core::convert::Into<U> for vyre_foundation::serial::envelope::WireReader<'a> where U: core::convert::From<T>
+pub fn vyre_foundation::serial::envelope::WireReader<'a>::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for vyre_foundation::serial::envelope::WireReader<'a> where U: core::convert::Into<T>
+pub type vyre_foundation::serial::envelope::WireReader<'a>::Error = core::convert::Infallible
+pub fn vyre_foundation::serial::envelope::WireReader<'a>::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for vyre_foundation::serial::envelope::WireReader<'a> where U: core::convert::TryFrom<T>
+pub type vyre_foundation::serial::envelope::WireReader<'a>::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn vyre_foundation::serial::envelope::WireReader<'a>::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> core::any::Any for vyre_foundation::serial::envelope::WireReader<'a> where T: 'static + ?core::marker::Sized
+pub fn vyre_foundation::serial::envelope::WireReader<'a>::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for vyre_foundation::serial::envelope::WireReader<'a> where T: ?core::marker::Sized
+pub fn vyre_foundation::serial::envelope::WireReader<'a>::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for vyre_foundation::serial::envelope::WireReader<'a> where T: ?core::marker::Sized
+pub fn vyre_foundation::serial::envelope::WireReader<'a>::borrow_mut(&mut self) -> &mut T
+impl<T> core::convert::From<T> for vyre_foundation::serial::envelope::WireReader<'a>
+pub fn vyre_foundation::serial::envelope::WireReader<'a>::from(t: T) -> T
+impl<T> tracing::instrument::Instrument for vyre_foundation::serial::envelope::WireReader<'a>
+impl<T> tracing::instrument::WithSubscriber for vyre_foundation::serial::envelope::WireReader<'a>
+impl<T> typenum::type_operators::Same for vyre_foundation::serial::envelope::WireReader<'a>
+pub type vyre_foundation::serial::envelope::WireReader<'a>::Output = T
+pub struct vyre_foundation::serial::envelope::WireWriter
+impl vyre_foundation::serial::envelope::WireWriter
+pub fn vyre_foundation::serial::envelope::WireWriter::into_bytes(self) -> alloc::vec::Vec<u8>
+pub fn vyre_foundation::serial::envelope::WireWriter::new(magic: &[u8; 4], version: u32) -> Self
+pub fn vyre_foundation::serial::envelope::WireWriter::write_section(&mut self, bytes: &[u8]) -> core::result::Result<(), vyre_foundation::serial::envelope::EnvelopeError>
+pub fn vyre_foundation::serial::envelope::WireWriter::write_u32(&mut self, value: u32)
+pub fn vyre_foundation::serial::envelope::WireWriter::write_words(&mut self, words: &[u32]) -> core::result::Result<(), vyre_foundation::serial::envelope::EnvelopeError>
+impl core::fmt::Debug for vyre_foundation::serial::envelope::WireWriter
+pub fn vyre_foundation::serial::envelope::WireWriter::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for vyre_foundation::serial::envelope::WireWriter
+impl core::marker::Send for vyre_foundation::serial::envelope::WireWriter
+impl core::marker::Sync for vyre_foundation::serial::envelope::WireWriter
+impl core::marker::Unpin for vyre_foundation::serial::envelope::WireWriter
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_foundation::serial::envelope::WireWriter
+impl core::panic::unwind_safe::UnwindSafe for vyre_foundation::serial::envelope::WireWriter
+impl<T, U> core::convert::Into<U> for vyre_foundation::serial::envelope::WireWriter where U: core::convert::From<T>
+pub fn vyre_foundation::serial::envelope::WireWriter::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for vyre_foundation::serial::envelope::WireWriter where U: core::convert::Into<T>
+pub type vyre_foundation::serial::envelope::WireWriter::Error = core::convert::Infallible
+pub fn vyre_foundation::serial::envelope::WireWriter::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for vyre_foundation::serial::envelope::WireWriter where U: core::convert::TryFrom<T>
+pub type vyre_foundation::serial::envelope::WireWriter::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn vyre_foundation::serial::envelope::WireWriter::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> core::any::Any for vyre_foundation::serial::envelope::WireWriter where T: 'static + ?core::marker::Sized
+pub fn vyre_foundation::serial::envelope::WireWriter::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for vyre_foundation::serial::envelope::WireWriter where T: ?core::marker::Sized
+pub fn vyre_foundation::serial::envelope::WireWriter::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for vyre_foundation::serial::envelope::WireWriter where T: ?core::marker::Sized
+pub fn vyre_foundation::serial::envelope::WireWriter::borrow_mut(&mut self) -> &mut T
+impl<T> core::convert::From<T> for vyre_foundation::serial::envelope::WireWriter
+pub fn vyre_foundation::serial::envelope::WireWriter::from(t: T) -> T
+impl<T> tracing::instrument::Instrument for vyre_foundation::serial::envelope::WireWriter
+impl<T> tracing::instrument::WithSubscriber for vyre_foundation::serial::envelope::WireWriter
+impl<T> typenum::type_operators::Same for vyre_foundation::serial::envelope::WireWriter
+pub type vyre_foundation::serial::envelope::WireWriter::Output = T
+pub mod vyre_foundation::serial::output_set
+pub struct vyre_foundation::serial::output_set::OutputSet(_)
+impl vyre_foundation::serial::output_set::OutputSet
+pub fn vyre_foundation::serial::output_set::OutputSet::encode_into(&self, dst: &mut alloc::vec::Vec<u8>) -> core::result::Result<(), alloc::string::String>
+pub fn vyre_foundation::serial::output_set::OutputSet::from_buffers(buffers: &[vyre_foundation::ir::BufferDecl]) -> Self
+pub fn vyre_foundation::serial::output_set::OutputSet::from_vec(indices: alloc::vec::Vec<u32>) -> Self
+pub fn vyre_foundation::serial::output_set::OutputSet::indices(&self) -> &[u32]
+pub fn vyre_foundation::serial::output_set::OutputSet::into_vec(self) -> alloc::vec::Vec<u32>
+pub fn vyre_foundation::serial::output_set::OutputSet::is_empty(&self) -> bool
+pub fn vyre_foundation::serial::output_set::OutputSet::len(&self) -> usize
+impl core::clone::Clone for vyre_foundation::serial::output_set::OutputSet
+pub fn vyre_foundation::serial::output_set::OutputSet::clone(&self) -> vyre_foundation::serial::output_set::OutputSet
+impl core::cmp::Eq for vyre_foundation::serial::output_set::OutputSet
+impl core::cmp::PartialEq for vyre_foundation::serial::output_set::OutputSet
+pub fn vyre_foundation::serial::output_set::OutputSet::eq(&self, other: &vyre_foundation::serial::output_set::OutputSet) -> bool
+impl core::convert::AsRef<[u32]> for vyre_foundation::serial::output_set::OutputSet
+pub fn vyre_foundation::serial::output_set::OutputSet::as_ref(&self) -> &[u32]
+impl core::default::Default for vyre_foundation::serial::output_set::OutputSet
+pub fn vyre_foundation::serial::output_set::OutputSet::default() -> vyre_foundation::serial::output_set::OutputSet
+impl core::fmt::Debug for vyre_foundation::serial::output_set::OutputSet
+pub fn vyre_foundation::serial::output_set::OutputSet::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for vyre_foundation::serial::output_set::OutputSet
+impl core::marker::Freeze for vyre_foundation::serial::output_set::OutputSet
+impl core::marker::Send for vyre_foundation::serial::output_set::OutputSet
+impl core::marker::Sync for vyre_foundation::serial::output_set::OutputSet
+impl core::marker::Unpin for vyre_foundation::serial::output_set::OutputSet
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_foundation::serial::output_set::OutputSet
+impl core::panic::unwind_safe::UnwindSafe for vyre_foundation::serial::output_set::OutputSet
+impl<Q, K> hashbrown::Equivalent<K> for vyre_foundation::serial::output_set::OutputSet where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn vyre_foundation::serial::output_set::OutputSet::equivalent(&self, key: &K) -> bool
+impl<T, U> core::convert::Into<U> for vyre_foundation::serial::output_set::OutputSet where U: core::convert::From<T>
+pub fn vyre_foundation::serial::output_set::OutputSet::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for vyre_foundation::serial::output_set::OutputSet where U: core::convert::Into<T>
+pub type vyre_foundation::serial::output_set::OutputSet::Error = core::convert::Infallible
+pub fn vyre_foundation::serial::output_set::OutputSet::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for vyre_foundation::serial::output_set::OutputSet where U: core::convert::TryFrom<T>
+pub type vyre_foundation::serial::output_set::OutputSet::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn vyre_foundation::serial::output_set::OutputSet::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for vyre_foundation::serial::output_set::OutputSet where T: core::clone::Clone
+pub type vyre_foundation::serial::output_set::OutputSet::Owned = T
+pub fn vyre_foundation::serial::output_set::OutputSet::clone_into(&self, target: &mut T)
+pub fn vyre_foundation::serial::output_set::OutputSet::to_owned(&self) -> T
+impl<T> core::any::Any for vyre_foundation::serial::output_set::OutputSet where T: 'static + ?core::marker::Sized
+pub fn vyre_foundation::serial::output_set::OutputSet::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for vyre_foundation::serial::output_set::OutputSet where T: ?core::marker::Sized
+pub fn vyre_foundation::serial::output_set::OutputSet::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for vyre_foundation::serial::output_set::OutputSet where T: ?core::marker::Sized
+pub fn vyre_foundation::serial::output_set::OutputSet::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for vyre_foundation::serial::output_set::OutputSet where T: core::clone::Clone
+pub unsafe fn vyre_foundation::serial::output_set::OutputSet::clone_to_uninit(&self, dest: *mut u8)
+impl<T> core::convert::From<T> for vyre_foundation::serial::output_set::OutputSet
+pub fn vyre_foundation::serial::output_set::OutputSet::from(t: T) -> T
+impl<T> tracing::instrument::Instrument for vyre_foundation::serial::output_set::OutputSet
+impl<T> tracing::instrument::WithSubscriber for vyre_foundation::serial::output_set::OutputSet
+impl<T> typenum::type_operators::Same for vyre_foundation::serial::output_set::OutputSet
+pub type vyre_foundation::serial::output_set::OutputSet::Output = T
 pub mod vyre_foundation::serial::text
 #[non_exhaustive] pub enum vyre_foundation::serial::text::TextParseError
 pub vyre_foundation::serial::text::TextParseError::DeclaredLengthMismatch
@@ -7519,11 +9161,13 @@ pub fn vyre_foundation::serial::wire::encode::put_nodes::put_nodes(out: &mut all
 pub mod vyre_foundation::serial::wire::encode::to_wire
 pub fn vyre_foundation::serial::wire::encode::to_wire::to_wire(program: &vyre_foundation::ir::Program) -> core::result::Result<alloc::vec::Vec<u8>, alloc::string::String>
 pub fn vyre_foundation::serial::wire::encode::to_wire::to_wire_into(program: &vyre_foundation::ir::Program, dst: &mut alloc::vec::Vec<u8>) -> core::result::Result<(), alloc::string::String>
+pub fn vyre_foundation::serial::wire::encode::to_wire::to_wire_with_buffer_order_into(program: &vyre_foundation::ir::Program, buffers: &[vyre_foundation::ir::BufferDecl], dst: &mut alloc::vec::Vec<u8>) -> core::result::Result<(), alloc::string::String>
 pub fn vyre_foundation::serial::wire::encode::put_expr(out: &mut alloc::vec::Vec<u8>, expr: &vyre_foundation::ir::Expr) -> core::result::Result<(), alloc::string::String>
 pub fn vyre_foundation::serial::wire::encode::put_node(out: &mut alloc::vec::Vec<u8>, node: &vyre_foundation::ir::Node) -> core::result::Result<(), alloc::string::String>
 pub fn vyre_foundation::serial::wire::encode::put_nodes(out: &mut alloc::vec::Vec<u8>, nodes: &[vyre_foundation::ir::Node]) -> core::result::Result<(), alloc::string::String>
 pub fn vyre_foundation::serial::wire::encode::to_wire(program: &vyre_foundation::ir::Program) -> core::result::Result<alloc::vec::Vec<u8>, alloc::string::String>
 pub fn vyre_foundation::serial::wire::encode::to_wire_into(program: &vyre_foundation::ir::Program, dst: &mut alloc::vec::Vec<u8>) -> core::result::Result<(), alloc::string::String>
+pub fn vyre_foundation::serial::wire::encode::to_wire_with_buffer_order_into(program: &vyre_foundation::ir::Program, buffers: &[vyre_foundation::ir::BufferDecl], dst: &mut alloc::vec::Vec<u8>) -> core::result::Result<(), alloc::string::String>
 pub mod vyre_foundation::serial::wire::framing
 pub mod vyre_foundation::serial::wire::framing::magic
 pub const vyre_foundation::serial::wire::framing::magic::MAGIC: &[u8; 4]
@@ -7559,7 +9203,290 @@ pub const vyre_foundation::serial::wire::MAX_DECODE_DEPTH: u32
 pub const vyre_foundation::serial::wire::MAX_NODES: usize
 pub const vyre_foundation::serial::wire::MAX_PROGRAM_BYTES: usize
 pub const vyre_foundation::serial::wire::MAX_STRING_LEN: usize
+pub fn vyre_foundation::serial::wire::append_data_type_fingerprint(buf: &mut alloc::vec::Vec<u8>, value: &vyre_spec::data_type::DataType) -> core::result::Result<(), alloc::string::String>
+pub fn vyre_foundation::serial::wire::append_node_list_fingerprint(buf: &mut alloc::vec::Vec<u8>, nodes: &[vyre_foundation::ir::Node]) -> core::result::Result<(), alloc::string::String>
+#[non_exhaustive] pub enum vyre_foundation::serial::EnvelopeError
+pub vyre_foundation::serial::EnvelopeError::BadMagic
+pub vyre_foundation::serial::EnvelopeError::BadMagic::expected: [u8; 4]
+pub vyre_foundation::serial::EnvelopeError::BadMagic::found: [u8; 4]
+pub vyre_foundation::serial::EnvelopeError::SectionTooLarge
+pub vyre_foundation::serial::EnvelopeError::SectionTooLarge::len: usize
+pub vyre_foundation::serial::EnvelopeError::SectionTooLarge::max: usize
+pub vyre_foundation::serial::EnvelopeError::Truncated
+pub vyre_foundation::serial::EnvelopeError::Truncated::got: usize
+pub vyre_foundation::serial::EnvelopeError::Truncated::needed: usize
+pub vyre_foundation::serial::EnvelopeError::VersionMismatch
+pub vyre_foundation::serial::EnvelopeError::VersionMismatch::expected: u32
+pub vyre_foundation::serial::EnvelopeError::VersionMismatch::found: u32
+impl core::clone::Clone for vyre_foundation::serial::envelope::EnvelopeError
+pub fn vyre_foundation::serial::envelope::EnvelopeError::clone(&self) -> vyre_foundation::serial::envelope::EnvelopeError
+impl core::error::Error for vyre_foundation::serial::envelope::EnvelopeError
+impl core::fmt::Debug for vyre_foundation::serial::envelope::EnvelopeError
+pub fn vyre_foundation::serial::envelope::EnvelopeError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for vyre_foundation::serial::envelope::EnvelopeError
+pub fn vyre_foundation::serial::envelope::EnvelopeError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for vyre_foundation::serial::envelope::EnvelopeError
+impl core::marker::Send for vyre_foundation::serial::envelope::EnvelopeError
+impl core::marker::Sync for vyre_foundation::serial::envelope::EnvelopeError
+impl core::marker::Unpin for vyre_foundation::serial::envelope::EnvelopeError
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_foundation::serial::envelope::EnvelopeError
+impl core::panic::unwind_safe::UnwindSafe for vyre_foundation::serial::envelope::EnvelopeError
+impl<T, U> core::convert::Into<U> for vyre_foundation::serial::envelope::EnvelopeError where U: core::convert::From<T>
+pub fn vyre_foundation::serial::envelope::EnvelopeError::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for vyre_foundation::serial::envelope::EnvelopeError where U: core::convert::Into<T>
+pub type vyre_foundation::serial::envelope::EnvelopeError::Error = core::convert::Infallible
+pub fn vyre_foundation::serial::envelope::EnvelopeError::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for vyre_foundation::serial::envelope::EnvelopeError where U: core::convert::TryFrom<T>
+pub type vyre_foundation::serial::envelope::EnvelopeError::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn vyre_foundation::serial::envelope::EnvelopeError::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for vyre_foundation::serial::envelope::EnvelopeError where T: core::clone::Clone
+pub type vyre_foundation::serial::envelope::EnvelopeError::Owned = T
+pub fn vyre_foundation::serial::envelope::EnvelopeError::clone_into(&self, target: &mut T)
+pub fn vyre_foundation::serial::envelope::EnvelopeError::to_owned(&self) -> T
+impl<T> alloc::string::ToString for vyre_foundation::serial::envelope::EnvelopeError where T: core::fmt::Display + ?core::marker::Sized
+pub fn vyre_foundation::serial::envelope::EnvelopeError::to_string(&self) -> alloc::string::String
+impl<T> core::any::Any for vyre_foundation::serial::envelope::EnvelopeError where T: 'static + ?core::marker::Sized
+pub fn vyre_foundation::serial::envelope::EnvelopeError::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for vyre_foundation::serial::envelope::EnvelopeError where T: ?core::marker::Sized
+pub fn vyre_foundation::serial::envelope::EnvelopeError::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for vyre_foundation::serial::envelope::EnvelopeError where T: ?core::marker::Sized
+pub fn vyre_foundation::serial::envelope::EnvelopeError::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for vyre_foundation::serial::envelope::EnvelopeError where T: core::clone::Clone
+pub unsafe fn vyre_foundation::serial::envelope::EnvelopeError::clone_to_uninit(&self, dest: *mut u8)
+impl<T> core::convert::From<T> for vyre_foundation::serial::envelope::EnvelopeError
+pub fn vyre_foundation::serial::envelope::EnvelopeError::from(t: T) -> T
+impl<T> tracing::instrument::Instrument for vyre_foundation::serial::envelope::EnvelopeError
+impl<T> tracing::instrument::WithSubscriber for vyre_foundation::serial::envelope::EnvelopeError
+impl<T> typenum::type_operators::Same for vyre_foundation::serial::envelope::EnvelopeError
+pub type vyre_foundation::serial::envelope::EnvelopeError::Output = T
+pub struct vyre_foundation::serial::WireReader<'a>
+impl<'a> vyre_foundation::serial::envelope::WireReader<'a>
+pub fn vyre_foundation::serial::envelope::WireReader<'a>::new(bytes: &'a [u8], expected_magic: &[u8; 4], expected_version: u32) -> core::result::Result<Self, vyre_foundation::serial::envelope::EnvelopeError>
+pub fn vyre_foundation::serial::envelope::WireReader<'a>::read_section(&mut self) -> core::result::Result<&'a [u8], vyre_foundation::serial::envelope::EnvelopeError>
+pub fn vyre_foundation::serial::envelope::WireReader<'a>::read_u32(&mut self) -> core::result::Result<u32, vyre_foundation::serial::envelope::EnvelopeError>
+pub fn vyre_foundation::serial::envelope::WireReader<'a>::read_words(&mut self) -> core::result::Result<alloc::vec::Vec<u32>, vyre_foundation::serial::envelope::EnvelopeError>
+impl<'a> core::fmt::Debug for vyre_foundation::serial::envelope::WireReader<'a>
+pub fn vyre_foundation::serial::envelope::WireReader<'a>::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a> core::marker::Freeze for vyre_foundation::serial::envelope::WireReader<'a>
+impl<'a> core::marker::Send for vyre_foundation::serial::envelope::WireReader<'a>
+impl<'a> core::marker::Sync for vyre_foundation::serial::envelope::WireReader<'a>
+impl<'a> core::marker::Unpin for vyre_foundation::serial::envelope::WireReader<'a>
+impl<'a> core::panic::unwind_safe::RefUnwindSafe for vyre_foundation::serial::envelope::WireReader<'a>
+impl<'a> core::panic::unwind_safe::UnwindSafe for vyre_foundation::serial::envelope::WireReader<'a>
+impl<T, U> core::convert::Into<U> for vyre_foundation::serial::envelope::WireReader<'a> where U: core::convert::From<T>
+pub fn vyre_foundation::serial::envelope::WireReader<'a>::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for vyre_foundation::serial::envelope::WireReader<'a> where U: core::convert::Into<T>
+pub type vyre_foundation::serial::envelope::WireReader<'a>::Error = core::convert::Infallible
+pub fn vyre_foundation::serial::envelope::WireReader<'a>::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for vyre_foundation::serial::envelope::WireReader<'a> where U: core::convert::TryFrom<T>
+pub type vyre_foundation::serial::envelope::WireReader<'a>::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn vyre_foundation::serial::envelope::WireReader<'a>::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> core::any::Any for vyre_foundation::serial::envelope::WireReader<'a> where T: 'static + ?core::marker::Sized
+pub fn vyre_foundation::serial::envelope::WireReader<'a>::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for vyre_foundation::serial::envelope::WireReader<'a> where T: ?core::marker::Sized
+pub fn vyre_foundation::serial::envelope::WireReader<'a>::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for vyre_foundation::serial::envelope::WireReader<'a> where T: ?core::marker::Sized
+pub fn vyre_foundation::serial::envelope::WireReader<'a>::borrow_mut(&mut self) -> &mut T
+impl<T> core::convert::From<T> for vyre_foundation::serial::envelope::WireReader<'a>
+pub fn vyre_foundation::serial::envelope::WireReader<'a>::from(t: T) -> T
+impl<T> tracing::instrument::Instrument for vyre_foundation::serial::envelope::WireReader<'a>
+impl<T> tracing::instrument::WithSubscriber for vyre_foundation::serial::envelope::WireReader<'a>
+impl<T> typenum::type_operators::Same for vyre_foundation::serial::envelope::WireReader<'a>
+pub type vyre_foundation::serial::envelope::WireReader<'a>::Output = T
+pub struct vyre_foundation::serial::WireWriter
+impl vyre_foundation::serial::envelope::WireWriter
+pub fn vyre_foundation::serial::envelope::WireWriter::into_bytes(self) -> alloc::vec::Vec<u8>
+pub fn vyre_foundation::serial::envelope::WireWriter::new(magic: &[u8; 4], version: u32) -> Self
+pub fn vyre_foundation::serial::envelope::WireWriter::write_section(&mut self, bytes: &[u8]) -> core::result::Result<(), vyre_foundation::serial::envelope::EnvelopeError>
+pub fn vyre_foundation::serial::envelope::WireWriter::write_u32(&mut self, value: u32)
+pub fn vyre_foundation::serial::envelope::WireWriter::write_words(&mut self, words: &[u32]) -> core::result::Result<(), vyre_foundation::serial::envelope::EnvelopeError>
+impl core::fmt::Debug for vyre_foundation::serial::envelope::WireWriter
+pub fn vyre_foundation::serial::envelope::WireWriter::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for vyre_foundation::serial::envelope::WireWriter
+impl core::marker::Send for vyre_foundation::serial::envelope::WireWriter
+impl core::marker::Sync for vyre_foundation::serial::envelope::WireWriter
+impl core::marker::Unpin for vyre_foundation::serial::envelope::WireWriter
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_foundation::serial::envelope::WireWriter
+impl core::panic::unwind_safe::UnwindSafe for vyre_foundation::serial::envelope::WireWriter
+impl<T, U> core::convert::Into<U> for vyre_foundation::serial::envelope::WireWriter where U: core::convert::From<T>
+pub fn vyre_foundation::serial::envelope::WireWriter::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for vyre_foundation::serial::envelope::WireWriter where U: core::convert::Into<T>
+pub type vyre_foundation::serial::envelope::WireWriter::Error = core::convert::Infallible
+pub fn vyre_foundation::serial::envelope::WireWriter::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for vyre_foundation::serial::envelope::WireWriter where U: core::convert::TryFrom<T>
+pub type vyre_foundation::serial::envelope::WireWriter::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn vyre_foundation::serial::envelope::WireWriter::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> core::any::Any for vyre_foundation::serial::envelope::WireWriter where T: 'static + ?core::marker::Sized
+pub fn vyre_foundation::serial::envelope::WireWriter::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for vyre_foundation::serial::envelope::WireWriter where T: ?core::marker::Sized
+pub fn vyre_foundation::serial::envelope::WireWriter::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for vyre_foundation::serial::envelope::WireWriter where T: ?core::marker::Sized
+pub fn vyre_foundation::serial::envelope::WireWriter::borrow_mut(&mut self) -> &mut T
+impl<T> core::convert::From<T> for vyre_foundation::serial::envelope::WireWriter
+pub fn vyre_foundation::serial::envelope::WireWriter::from(t: T) -> T
+impl<T> tracing::instrument::Instrument for vyre_foundation::serial::envelope::WireWriter
+impl<T> tracing::instrument::WithSubscriber for vyre_foundation::serial::envelope::WireWriter
+impl<T> typenum::type_operators::Same for vyre_foundation::serial::envelope::WireWriter
+pub type vyre_foundation::serial::envelope::WireWriter::Output = T
 pub mod vyre_foundation::transform
+pub mod vyre_foundation::transform::autodiff
+pub mod vyre_foundation::transform::autodiff::error
+#[non_exhaustive] pub enum vyre_foundation::transform::autodiff::error::AutodiffError
+pub vyre_foundation::transform::autodiff::error::AutodiffError::BufferNotFound
+pub vyre_foundation::transform::autodiff::error::AutodiffError::BufferNotFound::name: alloc::string::String
+pub vyre_foundation::transform::autodiff::error::AutodiffError::NotDifferentiable
+pub vyre_foundation::transform::autodiff::error::AutodiffError::NotDifferentiable::fix: alloc::string::String
+pub vyre_foundation::transform::autodiff::error::AutodiffError::NotDifferentiable::op: alloc::string::String
+pub vyre_foundation::transform::autodiff::error::AutodiffError::UnsupportedNode
+pub vyre_foundation::transform::autodiff::error::AutodiffError::UnsupportedNode::kind: alloc::string::String
+impl core::clone::Clone for vyre_foundation::transform::autodiff::error::AutodiffError
+pub fn vyre_foundation::transform::autodiff::error::AutodiffError::clone(&self) -> vyre_foundation::transform::autodiff::error::AutodiffError
+impl core::cmp::Eq for vyre_foundation::transform::autodiff::error::AutodiffError
+impl core::cmp::PartialEq for vyre_foundation::transform::autodiff::error::AutodiffError
+pub fn vyre_foundation::transform::autodiff::error::AutodiffError::eq(&self, other: &vyre_foundation::transform::autodiff::error::AutodiffError) -> bool
+impl core::error::Error for vyre_foundation::transform::autodiff::error::AutodiffError
+impl core::fmt::Debug for vyre_foundation::transform::autodiff::error::AutodiffError
+pub fn vyre_foundation::transform::autodiff::error::AutodiffError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for vyre_foundation::transform::autodiff::error::AutodiffError
+pub fn vyre_foundation::transform::autodiff::error::AutodiffError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for vyre_foundation::transform::autodiff::error::AutodiffError
+impl core::marker::Freeze for vyre_foundation::transform::autodiff::error::AutodiffError
+impl core::marker::Send for vyre_foundation::transform::autodiff::error::AutodiffError
+impl core::marker::Sync for vyre_foundation::transform::autodiff::error::AutodiffError
+impl core::marker::Unpin for vyre_foundation::transform::autodiff::error::AutodiffError
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_foundation::transform::autodiff::error::AutodiffError
+impl core::panic::unwind_safe::UnwindSafe for vyre_foundation::transform::autodiff::error::AutodiffError
+impl<Q, K> hashbrown::Equivalent<K> for vyre_foundation::transform::autodiff::error::AutodiffError where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn vyre_foundation::transform::autodiff::error::AutodiffError::equivalent(&self, key: &K) -> bool
+impl<T, U> core::convert::Into<U> for vyre_foundation::transform::autodiff::error::AutodiffError where U: core::convert::From<T>
+pub fn vyre_foundation::transform::autodiff::error::AutodiffError::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for vyre_foundation::transform::autodiff::error::AutodiffError where U: core::convert::Into<T>
+pub type vyre_foundation::transform::autodiff::error::AutodiffError::Error = core::convert::Infallible
+pub fn vyre_foundation::transform::autodiff::error::AutodiffError::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for vyre_foundation::transform::autodiff::error::AutodiffError where U: core::convert::TryFrom<T>
+pub type vyre_foundation::transform::autodiff::error::AutodiffError::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn vyre_foundation::transform::autodiff::error::AutodiffError::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for vyre_foundation::transform::autodiff::error::AutodiffError where T: core::clone::Clone
+pub type vyre_foundation::transform::autodiff::error::AutodiffError::Owned = T
+pub fn vyre_foundation::transform::autodiff::error::AutodiffError::clone_into(&self, target: &mut T)
+pub fn vyre_foundation::transform::autodiff::error::AutodiffError::to_owned(&self) -> T
+impl<T> alloc::string::ToString for vyre_foundation::transform::autodiff::error::AutodiffError where T: core::fmt::Display + ?core::marker::Sized
+pub fn vyre_foundation::transform::autodiff::error::AutodiffError::to_string(&self) -> alloc::string::String
+impl<T> core::any::Any for vyre_foundation::transform::autodiff::error::AutodiffError where T: 'static + ?core::marker::Sized
+pub fn vyre_foundation::transform::autodiff::error::AutodiffError::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for vyre_foundation::transform::autodiff::error::AutodiffError where T: ?core::marker::Sized
+pub fn vyre_foundation::transform::autodiff::error::AutodiffError::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for vyre_foundation::transform::autodiff::error::AutodiffError where T: ?core::marker::Sized
+pub fn vyre_foundation::transform::autodiff::error::AutodiffError::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for vyre_foundation::transform::autodiff::error::AutodiffError where T: core::clone::Clone
+pub unsafe fn vyre_foundation::transform::autodiff::error::AutodiffError::clone_to_uninit(&self, dest: *mut u8)
+impl<T> core::convert::From<T> for vyre_foundation::transform::autodiff::error::AutodiffError
+pub fn vyre_foundation::transform::autodiff::error::AutodiffError::from(t: T) -> T
+impl<T> tracing::instrument::Instrument for vyre_foundation::transform::autodiff::error::AutodiffError
+impl<T> tracing::instrument::WithSubscriber for vyre_foundation::transform::autodiff::error::AutodiffError
+impl<T> typenum::type_operators::Same for vyre_foundation::transform::autodiff::error::AutodiffError
+pub type vyre_foundation::transform::autodiff::error::AutodiffError::Output = T
+pub mod vyre_foundation::transform::autodiff::grad
+pub fn vyre_foundation::transform::autodiff::grad::grad(program: &vyre_foundation::ir::Program, outputs: &[&str], inputs: &[&str]) -> core::result::Result<vyre_foundation::ir::Program, vyre_foundation::transform::autodiff::error::AutodiffError>
+pub mod vyre_foundation::transform::autodiff::rules
+pub struct vyre_foundation::transform::autodiff::rules::AdjointContrib
+pub vyre_foundation::transform::autodiff::rules::AdjointContrib::adjoint: vyre_foundation::ir::Expr
+pub vyre_foundation::transform::autodiff::rules::AdjointContrib::child: vyre_foundation::ir::Expr
+impl core::clone::Clone for vyre_foundation::transform::autodiff::rules::AdjointContrib
+pub fn vyre_foundation::transform::autodiff::rules::AdjointContrib::clone(&self) -> vyre_foundation::transform::autodiff::rules::AdjointContrib
+impl core::fmt::Debug for vyre_foundation::transform::autodiff::rules::AdjointContrib
+pub fn vyre_foundation::transform::autodiff::rules::AdjointContrib::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for vyre_foundation::transform::autodiff::rules::AdjointContrib
+impl core::marker::Send for vyre_foundation::transform::autodiff::rules::AdjointContrib
+impl core::marker::Sync for vyre_foundation::transform::autodiff::rules::AdjointContrib
+impl core::marker::Unpin for vyre_foundation::transform::autodiff::rules::AdjointContrib
+impl !core::panic::unwind_safe::RefUnwindSafe for vyre_foundation::transform::autodiff::rules::AdjointContrib
+impl !core::panic::unwind_safe::UnwindSafe for vyre_foundation::transform::autodiff::rules::AdjointContrib
+impl<T, U> core::convert::Into<U> for vyre_foundation::transform::autodiff::rules::AdjointContrib where U: core::convert::From<T>
+pub fn vyre_foundation::transform::autodiff::rules::AdjointContrib::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for vyre_foundation::transform::autodiff::rules::AdjointContrib where U: core::convert::Into<T>
+pub type vyre_foundation::transform::autodiff::rules::AdjointContrib::Error = core::convert::Infallible
+pub fn vyre_foundation::transform::autodiff::rules::AdjointContrib::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for vyre_foundation::transform::autodiff::rules::AdjointContrib where U: core::convert::TryFrom<T>
+pub type vyre_foundation::transform::autodiff::rules::AdjointContrib::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn vyre_foundation::transform::autodiff::rules::AdjointContrib::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for vyre_foundation::transform::autodiff::rules::AdjointContrib where T: core::clone::Clone
+pub type vyre_foundation::transform::autodiff::rules::AdjointContrib::Owned = T
+pub fn vyre_foundation::transform::autodiff::rules::AdjointContrib::clone_into(&self, target: &mut T)
+pub fn vyre_foundation::transform::autodiff::rules::AdjointContrib::to_owned(&self) -> T
+impl<T> core::any::Any for vyre_foundation::transform::autodiff::rules::AdjointContrib where T: 'static + ?core::marker::Sized
+pub fn vyre_foundation::transform::autodiff::rules::AdjointContrib::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for vyre_foundation::transform::autodiff::rules::AdjointContrib where T: ?core::marker::Sized
+pub fn vyre_foundation::transform::autodiff::rules::AdjointContrib::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for vyre_foundation::transform::autodiff::rules::AdjointContrib where T: ?core::marker::Sized
+pub fn vyre_foundation::transform::autodiff::rules::AdjointContrib::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for vyre_foundation::transform::autodiff::rules::AdjointContrib where T: core::clone::Clone
+pub unsafe fn vyre_foundation::transform::autodiff::rules::AdjointContrib::clone_to_uninit(&self, dest: *mut u8)
+impl<T> core::convert::From<T> for vyre_foundation::transform::autodiff::rules::AdjointContrib
+pub fn vyre_foundation::transform::autodiff::rules::AdjointContrib::from(t: T) -> T
+impl<T> tracing::instrument::Instrument for vyre_foundation::transform::autodiff::rules::AdjointContrib
+impl<T> tracing::instrument::WithSubscriber for vyre_foundation::transform::autodiff::rules::AdjointContrib
+impl<T> typenum::type_operators::Same for vyre_foundation::transform::autodiff::rules::AdjointContrib
+pub type vyre_foundation::transform::autodiff::rules::AdjointContrib::Output = T
+pub fn vyre_foundation::transform::autodiff::rules::binop_adjoints(op: vyre_spec::bin_op::BinOp, left: &vyre_foundation::ir::Expr, right: &vyre_foundation::ir::Expr, adjoint: &vyre_foundation::ir::Expr) -> core::result::Result<alloc::vec::Vec<vyre_foundation::transform::autodiff::rules::AdjointContrib>, vyre_foundation::transform::autodiff::error::AutodiffError>
+pub fn vyre_foundation::transform::autodiff::rules::fma_adjoints(a: &vyre_foundation::ir::Expr, b: &vyre_foundation::ir::Expr, c: &vyre_foundation::ir::Expr, adjoint: &vyre_foundation::ir::Expr) -> alloc::vec::Vec<vyre_foundation::transform::autodiff::rules::AdjointContrib>
+pub fn vyre_foundation::transform::autodiff::rules::unop_adjoint(op: &vyre_spec::un_op::UnOp, operand: &vyre_foundation::ir::Expr, adjoint: &vyre_foundation::ir::Expr) -> core::result::Result<vyre_foundation::transform::autodiff::rules::AdjointContrib, vyre_foundation::transform::autodiff::error::AutodiffError>
+#[non_exhaustive] pub enum vyre_foundation::transform::autodiff::AutodiffError
+pub vyre_foundation::transform::autodiff::AutodiffError::BufferNotFound
+pub vyre_foundation::transform::autodiff::AutodiffError::BufferNotFound::name: alloc::string::String
+pub vyre_foundation::transform::autodiff::AutodiffError::NotDifferentiable
+pub vyre_foundation::transform::autodiff::AutodiffError::NotDifferentiable::fix: alloc::string::String
+pub vyre_foundation::transform::autodiff::AutodiffError::NotDifferentiable::op: alloc::string::String
+pub vyre_foundation::transform::autodiff::AutodiffError::UnsupportedNode
+pub vyre_foundation::transform::autodiff::AutodiffError::UnsupportedNode::kind: alloc::string::String
+impl core::clone::Clone for vyre_foundation::transform::autodiff::error::AutodiffError
+pub fn vyre_foundation::transform::autodiff::error::AutodiffError::clone(&self) -> vyre_foundation::transform::autodiff::error::AutodiffError
+impl core::cmp::Eq for vyre_foundation::transform::autodiff::error::AutodiffError
+impl core::cmp::PartialEq for vyre_foundation::transform::autodiff::error::AutodiffError
+pub fn vyre_foundation::transform::autodiff::error::AutodiffError::eq(&self, other: &vyre_foundation::transform::autodiff::error::AutodiffError) -> bool
+impl core::error::Error for vyre_foundation::transform::autodiff::error::AutodiffError
+impl core::fmt::Debug for vyre_foundation::transform::autodiff::error::AutodiffError
+pub fn vyre_foundation::transform::autodiff::error::AutodiffError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for vyre_foundation::transform::autodiff::error::AutodiffError
+pub fn vyre_foundation::transform::autodiff::error::AutodiffError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for vyre_foundation::transform::autodiff::error::AutodiffError
+impl core::marker::Freeze for vyre_foundation::transform::autodiff::error::AutodiffError
+impl core::marker::Send for vyre_foundation::transform::autodiff::error::AutodiffError
+impl core::marker::Sync for vyre_foundation::transform::autodiff::error::AutodiffError
+impl core::marker::Unpin for vyre_foundation::transform::autodiff::error::AutodiffError
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_foundation::transform::autodiff::error::AutodiffError
+impl core::panic::unwind_safe::UnwindSafe for vyre_foundation::transform::autodiff::error::AutodiffError
+impl<Q, K> hashbrown::Equivalent<K> for vyre_foundation::transform::autodiff::error::AutodiffError where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn vyre_foundation::transform::autodiff::error::AutodiffError::equivalent(&self, key: &K) -> bool
+impl<T, U> core::convert::Into<U> for vyre_foundation::transform::autodiff::error::AutodiffError where U: core::convert::From<T>
+pub fn vyre_foundation::transform::autodiff::error::AutodiffError::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for vyre_foundation::transform::autodiff::error::AutodiffError where U: core::convert::Into<T>
+pub type vyre_foundation::transform::autodiff::error::AutodiffError::Error = core::convert::Infallible
+pub fn vyre_foundation::transform::autodiff::error::AutodiffError::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for vyre_foundation::transform::autodiff::error::AutodiffError where U: core::convert::TryFrom<T>
+pub type vyre_foundation::transform::autodiff::error::AutodiffError::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn vyre_foundation::transform::autodiff::error::AutodiffError::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for vyre_foundation::transform::autodiff::error::AutodiffError where T: core::clone::Clone
+pub type vyre_foundation::transform::autodiff::error::AutodiffError::Owned = T
+pub fn vyre_foundation::transform::autodiff::error::AutodiffError::clone_into(&self, target: &mut T)
+pub fn vyre_foundation::transform::autodiff::error::AutodiffError::to_owned(&self) -> T
+impl<T> alloc::string::ToString for vyre_foundation::transform::autodiff::error::AutodiffError where T: core::fmt::Display + ?core::marker::Sized
+pub fn vyre_foundation::transform::autodiff::error::AutodiffError::to_string(&self) -> alloc::string::String
+impl<T> core::any::Any for vyre_foundation::transform::autodiff::error::AutodiffError where T: 'static + ?core::marker::Sized
+pub fn vyre_foundation::transform::autodiff::error::AutodiffError::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for vyre_foundation::transform::autodiff::error::AutodiffError where T: ?core::marker::Sized
+pub fn vyre_foundation::transform::autodiff::error::AutodiffError::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for vyre_foundation::transform::autodiff::error::AutodiffError where T: ?core::marker::Sized
+pub fn vyre_foundation::transform::autodiff::error::AutodiffError::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for vyre_foundation::transform::autodiff::error::AutodiffError where T: core::clone::Clone
+pub unsafe fn vyre_foundation::transform::autodiff::error::AutodiffError::clone_to_uninit(&self, dest: *mut u8)
+impl<T> core::convert::From<T> for vyre_foundation::transform::autodiff::error::AutodiffError
+pub fn vyre_foundation::transform::autodiff::error::AutodiffError::from(t: T) -> T
+impl<T> tracing::instrument::Instrument for vyre_foundation::transform::autodiff::error::AutodiffError
+impl<T> tracing::instrument::WithSubscriber for vyre_foundation::transform::autodiff::error::AutodiffError
+impl<T> typenum::type_operators::Same for vyre_foundation::transform::autodiff::error::AutodiffError
+pub type vyre_foundation::transform::autodiff::error::AutodiffError::Output = T
+pub fn vyre_foundation::transform::autodiff::grad(program: &vyre_foundation::ir::Program, outputs: &[&str], inputs: &[&str]) -> core::result::Result<vyre_foundation::ir::Program, vyre_foundation::transform::autodiff::error::AutodiffError>
 pub mod vyre_foundation::transform::compiler
 pub mod vyre_foundation::transform::compiler::buffer_layouts
 pub mod vyre_foundation::transform::compiler::dataflow_fixpoint
@@ -8575,6 +10502,7 @@ pub type vyre_foundation::transform::inline::OpResolver = fn(&str) -> core::opti
 pub mod vyre_foundation::transform::optimize
 pub mod vyre_foundation::transform::optimize::canonicalize
 pub fn vyre_foundation::transform::optimize::canonicalize::run(program: vyre_foundation::ir::Program) -> vyre_foundation::ir::Program
+pub fn vyre_foundation::transform::optimize::canonicalize::run_borrowed(program: &vyre_foundation::ir::Program) -> vyre_foundation::ir::Program
 pub mod vyre_foundation::transform::optimize::cse
 pub mod vyre_foundation::transform::optimize::cse::cse
 pub fn vyre_foundation::transform::optimize::cse::cse::cse(program: vyre_foundation::ir::Program) -> vyre_foundation::ir::Program
@@ -8651,6 +10579,7 @@ impl<T> tracing::instrument::Instrument for vyre_foundation::transform::optimize
 impl<T> tracing::instrument::WithSubscriber for vyre_foundation::transform::optimize::cse::cse_ctx::CseCtx
 impl<T> typenum::type_operators::Same for vyre_foundation::transform::optimize::cse::cse_ctx::CseCtx
 pub type vyre_foundation::transform::optimize::cse::cse_ctx::CseCtx::Output = T
+pub fn vyre_foundation::transform::optimize::cse::cse(program: vyre_foundation::ir::Program) -> vyre_foundation::ir::Program
 pub mod vyre_foundation::transform::optimize::dce
 pub mod vyre_foundation::transform::optimize::dce::collect_expr_refs
 pub mod vyre_foundation::transform::optimize::dce::const_loop_empty
@@ -8659,9 +10588,9 @@ pub mod vyre_foundation::transform::optimize::dce::dce
 pub fn vyre_foundation::transform::optimize::dce::dce::dce(program: vyre_foundation::ir::Program) -> vyre_foundation::ir::Program
 pub mod vyre_foundation::transform::optimize::dce::eliminate_dead_lets
 pub mod vyre_foundation::transform::optimize::dce::eliminate_unreachable
-pub mod vyre_foundation::transform::optimize::dce::expr_has_effect
 pub mod vyre_foundation::transform::optimize::dce::live_result
 pub mod vyre_foundation::transform::optimize::dce::reachable_prefix
+pub fn vyre_foundation::transform::optimize::dce::dce(program: vyre_foundation::ir::Program) -> vyre_foundation::ir::Program
 pub mod vyre_foundation::transform::optimize::region_inline
 pub const vyre_foundation::transform::optimize::region_inline::DEFAULT_INLINE_THRESHOLD: usize
 pub fn vyre_foundation::transform::optimize::region_inline::run(program: vyre_foundation::ir::Program) -> vyre_foundation::ir::Program
@@ -8783,6 +10712,8 @@ pub const vyre_foundation::validate::limits::MAX_BFS_QUEUE: u32
 pub const vyre_foundation::validate::limits::MAX_DFA_STATES: u32
 pub const vyre_foundation::validate::limits::MAX_GRAPH_EDGES: usize
 pub const vyre_foundation::validate::limits::MAX_GRAPH_NODES: usize
+pub mod vyre_foundation::validate::linear_type
+pub fn vyre_foundation::validate::linear_type::check_linear_types(program: &vyre_foundation::ir::Program) -> alloc::vec::Vec<vyre_foundation::validate::validation_error::ValidationError>
 pub mod vyre_foundation::validate::options
 pub struct vyre_foundation::validate::options::BackendCapabilities
 pub vyre_foundation::validate::options::BackendCapabilities::supports_indirect_dispatch: bool
@@ -8837,6 +10768,7 @@ pub struct vyre_foundation::validate::options::ValidationOptions<'a>
 pub vyre_foundation::validate::options::ValidationOptions::allow_shadowing: bool
 pub vyre_foundation::validate::options::ValidationOptions::backend: core::option::Option<&'a dyn vyre_foundation::validate::options::BackendValidationCapabilities>
 pub vyre_foundation::validate::options::ValidationOptions::backend_capabilities: core::option::Option<vyre_foundation::validate::options::BackendCapabilities>
+pub vyre_foundation::validate::options::ValidationOptions::dialect_lookup: core::option::Option<&'a dyn vyre_foundation::dialect_lookup::DialectLookup>
 impl<'a> vyre_foundation::validate::options::ValidationOptions<'a>
 pub fn vyre_foundation::validate::options::ValidationOptions<'a>::backend_name(&self) -> &'static str
 pub fn vyre_foundation::validate::options::ValidationOptions<'a>::requires_subgroup_ops(&self) -> bool
@@ -8844,6 +10776,7 @@ pub fn vyre_foundation::validate::options::ValidationOptions<'a>::supports_cast_
 pub fn vyre_foundation::validate::options::ValidationOptions<'a>::universal() -> Self
 pub fn vyre_foundation::validate::options::ValidationOptions<'a>::with_backend(self, backend: &'a dyn vyre_foundation::validate::options::BackendValidationCapabilities) -> Self
 pub fn vyre_foundation::validate::options::ValidationOptions<'a>::with_backend_capabilities(self, backend_capabilities: vyre_foundation::validate::options::BackendCapabilities) -> Self
+pub fn vyre_foundation::validate::options::ValidationOptions<'a>::with_dialect_lookup(self, lookup: &'a dyn vyre_foundation::dialect_lookup::DialectLookup) -> Self
 pub fn vyre_foundation::validate::options::ValidationOptions<'a>::with_shadowing(self, allow_shadowing: bool) -> Self
 impl<'a> core::clone::Clone for vyre_foundation::validate::options::ValidationOptions<'a>
 pub fn vyre_foundation::validate::options::ValidationOptions<'a>::clone(&self) -> vyre_foundation::validate::options::ValidationOptions<'a>
@@ -8985,6 +10918,8 @@ impl<T> tracing::instrument::Instrument for vyre_foundation::validate::report::V
 impl<T> tracing::instrument::WithSubscriber for vyre_foundation::validate::report::ValidationWarning
 impl<T> typenum::type_operators::Same for vyre_foundation::validate::report::ValidationWarning
 pub type vyre_foundation::validate::report::ValidationWarning::Output = T
+pub mod vyre_foundation::validate::shape_predicate
+pub fn vyre_foundation::validate::shape_predicate::check_shape_predicates(program: &vyre_foundation::ir::Program) -> alloc::vec::Vec<vyre_foundation::validate::validation_error::ValidationError>
 pub mod vyre_foundation::validate::validate
 pub const vyre_foundation::validate::validate::DEFAULT_MAX_CALL_DEPTH: usize
 pub const vyre_foundation::validate::validate::DEFAULT_MAX_EXPR_DEPTH: usize
@@ -9182,6 +11117,7 @@ pub struct vyre_foundation::validate::ValidationOptions<'a>
 pub vyre_foundation::validate::ValidationOptions::allow_shadowing: bool
 pub vyre_foundation::validate::ValidationOptions::backend: core::option::Option<&'a dyn vyre_foundation::validate::options::BackendValidationCapabilities>
 pub vyre_foundation::validate::ValidationOptions::backend_capabilities: core::option::Option<vyre_foundation::validate::options::BackendCapabilities>
+pub vyre_foundation::validate::ValidationOptions::dialect_lookup: core::option::Option<&'a dyn vyre_foundation::dialect_lookup::DialectLookup>
 impl<'a> vyre_foundation::validate::options::ValidationOptions<'a>
 pub fn vyre_foundation::validate::options::ValidationOptions<'a>::backend_name(&self) -> &'static str
 pub fn vyre_foundation::validate::options::ValidationOptions<'a>::requires_subgroup_ops(&self) -> bool
@@ -9189,6 +11125,7 @@ pub fn vyre_foundation::validate::options::ValidationOptions<'a>::supports_cast_
 pub fn vyre_foundation::validate::options::ValidationOptions<'a>::universal() -> Self
 pub fn vyre_foundation::validate::options::ValidationOptions<'a>::with_backend(self, backend: &'a dyn vyre_foundation::validate::options::BackendValidationCapabilities) -> Self
 pub fn vyre_foundation::validate::options::ValidationOptions<'a>::with_backend_capabilities(self, backend_capabilities: vyre_foundation::validate::options::BackendCapabilities) -> Self
+pub fn vyre_foundation::validate::options::ValidationOptions<'a>::with_dialect_lookup(self, lookup: &'a dyn vyre_foundation::dialect_lookup::DialectLookup) -> Self
 pub fn vyre_foundation::validate::options::ValidationOptions<'a>::with_shadowing(self, allow_shadowing: bool) -> Self
 impl<'a> core::clone::Clone for vyre_foundation::validate::options::ValidationOptions<'a>
 pub fn vyre_foundation::validate::options::ValidationOptions<'a>::clone(&self) -> vyre_foundation::validate::options::ValidationOptions<'a>
@@ -9337,10 +11274,30 @@ pub fn vyre_foundation::validate::validate(program: &vyre_foundation::ir::Progra
 pub fn vyre_foundation::validate::validate_with_options(program: &vyre_foundation::ir::Program, options: vyre_foundation::validate::options::ValidationOptions<'_>) -> vyre_foundation::validate::report::ValidationReport
 pub mod vyre_foundation::vast
 pub enum vyre_foundation::vast::VastError
+pub vyre_foundation::vast::VastError::BadAttrSpan
+pub vyre_foundation::vast::VastError::BadAttrSpan::attr_blob_len: u32
+pub vyre_foundation::vast::VastError::BadAttrSpan::len: u32
+pub vyre_foundation::vast::VastError::BadAttrSpan::node: u32
+pub vyre_foundation::vast::VastError::BadAttrSpan::off: u32
 pub vyre_foundation::vast::VastError::BadEdge
 pub vyre_foundation::vast::VastError::BadEdge::from: u32
 pub vyre_foundation::vast::VastError::BadEdge::to: u32
+pub vyre_foundation::vast::VastError::BadFilePath
+pub vyre_foundation::vast::VastError::BadFilePath::file: u32
+pub vyre_foundation::vast::VastError::BadFilePath::len: u32
+pub vyre_foundation::vast::VastError::BadFilePath::off: u32
+pub vyre_foundation::vast::VastError::BadFilePath::string_blob_len: u32
 pub vyre_foundation::vast::VastError::BadMagic([u8; 4])
+pub vyre_foundation::vast::VastError::BadSourceFile
+pub vyre_foundation::vast::VastError::BadSourceFile::file: u32
+pub vyre_foundation::vast::VastError::BadSourceFile::file_count: u32
+pub vyre_foundation::vast::VastError::BadSourceFile::node: u32
+pub vyre_foundation::vast::VastError::BadSourceSpan
+pub vyre_foundation::vast::VastError::BadSourceSpan::file: u32
+pub vyre_foundation::vast::VastError::BadSourceSpan::file_size: u32
+pub vyre_foundation::vast::VastError::BadSourceSpan::len: u32
+pub vyre_foundation::vast::VastError::BadSourceSpan::node: u32
+pub vyre_foundation::vast::VastError::BadSourceSpan::off: u32
 pub vyre_foundation::vast::VastError::LengthMismatch
 pub vyre_foundation::vast::VastError::LengthMismatch::expected: usize
 pub vyre_foundation::vast::VastError::LengthMismatch::got: usize
@@ -9395,6 +11352,55 @@ impl<T> tracing::instrument::Instrument for vyre_foundation::vast::VastError
 impl<T> tracing::instrument::WithSubscriber for vyre_foundation::vast::VastError
 impl<T> typenum::type_operators::Same for vyre_foundation::vast::VastError
 pub type vyre_foundation::vast::VastError::Output = T
+pub struct vyre_foundation::vast::VastFile
+pub vyre_foundation::vast::VastFile::path_len: u32
+pub vyre_foundation::vast::VastFile::path_off: u32
+pub vyre_foundation::vast::VastFile::size: u32
+impl vyre_foundation::vast::VastFile
+pub fn vyre_foundation::vast::VastFile::read_row_bytes(file_bytes: &[u8], file_index: u32) -> core::option::Option<Self>
+impl core::clone::Clone for vyre_foundation::vast::VastFile
+pub fn vyre_foundation::vast::VastFile::clone(&self) -> vyre_foundation::vast::VastFile
+impl core::cmp::Eq for vyre_foundation::vast::VastFile
+impl core::cmp::PartialEq for vyre_foundation::vast::VastFile
+pub fn vyre_foundation::vast::VastFile::eq(&self, other: &vyre_foundation::vast::VastFile) -> bool
+impl core::fmt::Debug for vyre_foundation::vast::VastFile
+pub fn vyre_foundation::vast::VastFile::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for vyre_foundation::vast::VastFile
+impl core::marker::StructuralPartialEq for vyre_foundation::vast::VastFile
+impl core::marker::Freeze for vyre_foundation::vast::VastFile
+impl core::marker::Send for vyre_foundation::vast::VastFile
+impl core::marker::Sync for vyre_foundation::vast::VastFile
+impl core::marker::Unpin for vyre_foundation::vast::VastFile
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_foundation::vast::VastFile
+impl core::panic::unwind_safe::UnwindSafe for vyre_foundation::vast::VastFile
+impl<Q, K> hashbrown::Equivalent<K> for vyre_foundation::vast::VastFile where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn vyre_foundation::vast::VastFile::equivalent(&self, key: &K) -> bool
+impl<T, U> core::convert::Into<U> for vyre_foundation::vast::VastFile where U: core::convert::From<T>
+pub fn vyre_foundation::vast::VastFile::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for vyre_foundation::vast::VastFile where U: core::convert::Into<T>
+pub type vyre_foundation::vast::VastFile::Error = core::convert::Infallible
+pub fn vyre_foundation::vast::VastFile::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for vyre_foundation::vast::VastFile where U: core::convert::TryFrom<T>
+pub type vyre_foundation::vast::VastFile::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn vyre_foundation::vast::VastFile::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for vyre_foundation::vast::VastFile where T: core::clone::Clone
+pub type vyre_foundation::vast::VastFile::Owned = T
+pub fn vyre_foundation::vast::VastFile::clone_into(&self, target: &mut T)
+pub fn vyre_foundation::vast::VastFile::to_owned(&self) -> T
+impl<T> core::any::Any for vyre_foundation::vast::VastFile where T: 'static + ?core::marker::Sized
+pub fn vyre_foundation::vast::VastFile::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for vyre_foundation::vast::VastFile where T: ?core::marker::Sized
+pub fn vyre_foundation::vast::VastFile::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for vyre_foundation::vast::VastFile where T: ?core::marker::Sized
+pub fn vyre_foundation::vast::VastFile::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for vyre_foundation::vast::VastFile where T: core::clone::Clone
+pub unsafe fn vyre_foundation::vast::VastFile::clone_to_uninit(&self, dest: *mut u8)
+impl<T> core::convert::From<T> for vyre_foundation::vast::VastFile
+pub fn vyre_foundation::vast::VastFile::from(t: T) -> T
+impl<T> tracing::instrument::Instrument for vyre_foundation::vast::VastFile
+impl<T> tracing::instrument::WithSubscriber for vyre_foundation::vast::VastFile
+impl<T> typenum::type_operators::Same for vyre_foundation::vast::VastFile
+pub type vyre_foundation::vast::VastFile::Output = T
 pub struct vyre_foundation::vast::VastHeader
 pub vyre_foundation::vast::VastHeader::attr_blob_len: u32
 pub vyre_foundation::vast::VastHeader::file_count: u32
@@ -9536,7 +11542,9 @@ pub fn vyre_foundation::visit::expr::ExprVisitor::visit_select(&mut self, expr: 
 pub fn vyre_foundation::visit::expr::ExprVisitor::visit_sequence(&mut self, parts: &[vyre_foundation::ir::Expr]) -> core::ops::control_flow::ControlFlow<Self::Break>
 pub fn vyre_foundation::visit::expr::ExprVisitor::visit_subgroup_add(&mut self, expr: &vyre_foundation::ir::Expr, value: &vyre_foundation::ir::Expr) -> core::ops::control_flow::ControlFlow<Self::Break>
 pub fn vyre_foundation::visit::expr::ExprVisitor::visit_subgroup_ballot(&mut self, expr: &vyre_foundation::ir::Expr, cond: &vyre_foundation::ir::Expr) -> core::ops::control_flow::ControlFlow<Self::Break>
+pub fn vyre_foundation::visit::expr::ExprVisitor::visit_subgroup_local_id(&mut self, expr: &vyre_foundation::ir::Expr) -> core::ops::control_flow::ControlFlow<Self::Break>
 pub fn vyre_foundation::visit::expr::ExprVisitor::visit_subgroup_shuffle(&mut self, expr: &vyre_foundation::ir::Expr, value: &vyre_foundation::ir::Expr, lane: &vyre_foundation::ir::Expr) -> core::ops::control_flow::ControlFlow<Self::Break>
+pub fn vyre_foundation::visit::expr::ExprVisitor::visit_subgroup_size(&mut self, expr: &vyre_foundation::ir::Expr) -> core::ops::control_flow::ControlFlow<Self::Break>
 pub fn vyre_foundation::visit::expr::ExprVisitor::visit_un_op(&mut self, expr: &vyre_foundation::ir::Expr, op: &vyre_spec::un_op::UnOp, operand: &vyre_foundation::ir::Expr) -> core::ops::control_flow::ControlFlow<Self::Break>
 pub fn vyre_foundation::visit::expr::ExprVisitor::visit_var(&mut self, expr: &vyre_foundation::ir::Expr, name: &vyre_foundation::ir::Ident) -> core::ops::control_flow::ControlFlow<Self::Break>
 pub fn vyre_foundation::visit::expr::ExprVisitor::visit_workgroup_id(&mut self, expr: &vyre_foundation::ir::Expr, axis: u32) -> core::ops::control_flow::ControlFlow<Self::Break>
@@ -9643,7 +11651,9 @@ pub fn vyre_foundation::visit::ExprVisitor::visit_select(&mut self, expr: &vyre_
 pub fn vyre_foundation::visit::ExprVisitor::visit_sequence(&mut self, parts: &[vyre_foundation::ir::Expr]) -> core::ops::control_flow::ControlFlow<Self::Break>
 pub fn vyre_foundation::visit::ExprVisitor::visit_subgroup_add(&mut self, expr: &vyre_foundation::ir::Expr, value: &vyre_foundation::ir::Expr) -> core::ops::control_flow::ControlFlow<Self::Break>
 pub fn vyre_foundation::visit::ExprVisitor::visit_subgroup_ballot(&mut self, expr: &vyre_foundation::ir::Expr, cond: &vyre_foundation::ir::Expr) -> core::ops::control_flow::ControlFlow<Self::Break>
+pub fn vyre_foundation::visit::ExprVisitor::visit_subgroup_local_id(&mut self, expr: &vyre_foundation::ir::Expr) -> core::ops::control_flow::ControlFlow<Self::Break>
 pub fn vyre_foundation::visit::ExprVisitor::visit_subgroup_shuffle(&mut self, expr: &vyre_foundation::ir::Expr, value: &vyre_foundation::ir::Expr, lane: &vyre_foundation::ir::Expr) -> core::ops::control_flow::ControlFlow<Self::Break>
+pub fn vyre_foundation::visit::ExprVisitor::visit_subgroup_size(&mut self, expr: &vyre_foundation::ir::Expr) -> core::ops::control_flow::ControlFlow<Self::Break>
 pub fn vyre_foundation::visit::ExprVisitor::visit_un_op(&mut self, expr: &vyre_foundation::ir::Expr, op: &vyre_spec::un_op::UnOp, operand: &vyre_foundation::ir::Expr) -> core::ops::control_flow::ControlFlow<Self::Break>
 pub fn vyre_foundation::visit::ExprVisitor::visit_var(&mut self, expr: &vyre_foundation::ir::Expr, name: &vyre_foundation::ir::Ident) -> core::ops::control_flow::ControlFlow<Self::Break>
 pub fn vyre_foundation::visit::ExprVisitor::visit_workgroup_id(&mut self, expr: &vyre_foundation::ir::Expr, axis: u32) -> core::ops::control_flow::ControlFlow<Self::Break>
@@ -10082,6 +12092,11 @@ pub vyre_foundation::MemoryOrdering::Acquire
 pub vyre_foundation::MemoryOrdering::Relaxed
 pub vyre_foundation::MemoryOrdering::Release
 pub vyre_foundation::MemoryOrdering::SeqCst
+impl vyre_foundation::memory_model::MemoryOrdering
+pub fn vyre_foundation::memory_model::MemoryOrdering::from_wire_tag(tag: u8) -> core::result::Result<Self, alloc::string::String>
+pub const fn vyre_foundation::memory_model::MemoryOrdering::is_valid_for_atomic_rmw(self) -> bool
+pub const fn vyre_foundation::memory_model::MemoryOrdering::is_valid_for_barrier(self) -> bool
+pub const fn vyre_foundation::memory_model::MemoryOrdering::wire_tag(self) -> u8
 impl core::clone::Clone for vyre_foundation::memory_model::MemoryOrdering
 pub fn vyre_foundation::memory_model::MemoryOrdering::clone(&self) -> vyre_foundation::memory_model::MemoryOrdering
 impl core::cmp::Eq for vyre_foundation::memory_model::MemoryOrdering
@@ -10492,10 +12507,10 @@ pub type vyre_foundation::dialect_lookup::LoweringCtx<'a>::Output = T
 pub struct vyre_foundation::LoweringTable
 pub vyre_foundation::LoweringTable::cpu_ref: vyre_foundation::dialect_lookup::ReferenceKind
 pub vyre_foundation::LoweringTable::extensions: rustc_hash::FxHashMap<&'static str, vyre_foundation::dialect_lookup::ExtensionLoweringFn>
-pub vyre_foundation::LoweringTable::metal: core::option::Option<vyre_foundation::dialect_lookup::MetalBuilder>
-pub vyre_foundation::LoweringTable::naga_spv: core::option::Option<vyre_foundation::dialect_lookup::SpirvBuilder>
-pub vyre_foundation::LoweringTable::naga_wgsl: core::option::Option<vyre_foundation::dialect_lookup::NagaBuilder>
-pub vyre_foundation::LoweringTable::ptx: core::option::Option<vyre_foundation::dialect_lookup::PtxBuilder>
+pub vyre_foundation::LoweringTable::native_module: core::option::Option<vyre_foundation::dialect_lookup::NativeModuleBuilder>
+pub vyre_foundation::LoweringTable::primary_binary: core::option::Option<vyre_foundation::dialect_lookup::PrimaryBinaryBuilder>
+pub vyre_foundation::LoweringTable::primary_text: core::option::Option<vyre_foundation::dialect_lookup::PrimaryTextBuilder>
+pub vyre_foundation::LoweringTable::secondary_text: core::option::Option<vyre_foundation::dialect_lookup::SecondaryTextBuilder>
 impl vyre_foundation::dialect_lookup::LoweringTable
 pub fn vyre_foundation::dialect_lookup::LoweringTable::empty() -> Self
 pub fn vyre_foundation::dialect_lookup::LoweringTable::extension(&self, backend_id: &str) -> core::option::Option<vyre_foundation::dialect_lookup::ExtensionLoweringFn>
@@ -10539,51 +12554,51 @@ impl<T> tracing::instrument::Instrument for vyre_foundation::dialect_lookup::Low
 impl<T> tracing::instrument::WithSubscriber for vyre_foundation::dialect_lookup::LoweringTable
 impl<T> typenum::type_operators::Same for vyre_foundation::dialect_lookup::LoweringTable
 pub type vyre_foundation::dialect_lookup::LoweringTable::Output = T
-pub struct vyre_foundation::MetalModule
-pub vyre_foundation::MetalModule::ast: alloc::vec::Vec<u8>
-pub vyre_foundation::MetalModule::entry: alloc::string::String
-impl core::clone::Clone for vyre_foundation::dialect_lookup::MetalModule
-pub fn vyre_foundation::dialect_lookup::MetalModule::clone(&self) -> vyre_foundation::dialect_lookup::MetalModule
-impl core::cmp::Eq for vyre_foundation::dialect_lookup::MetalModule
-impl core::cmp::PartialEq for vyre_foundation::dialect_lookup::MetalModule
-pub fn vyre_foundation::dialect_lookup::MetalModule::eq(&self, other: &vyre_foundation::dialect_lookup::MetalModule) -> bool
-impl core::fmt::Debug for vyre_foundation::dialect_lookup::MetalModule
-pub fn vyre_foundation::dialect_lookup::MetalModule::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for vyre_foundation::dialect_lookup::MetalModule
-impl core::marker::Freeze for vyre_foundation::dialect_lookup::MetalModule
-impl core::marker::Send for vyre_foundation::dialect_lookup::MetalModule
-impl core::marker::Sync for vyre_foundation::dialect_lookup::MetalModule
-impl core::marker::Unpin for vyre_foundation::dialect_lookup::MetalModule
-impl core::panic::unwind_safe::RefUnwindSafe for vyre_foundation::dialect_lookup::MetalModule
-impl core::panic::unwind_safe::UnwindSafe for vyre_foundation::dialect_lookup::MetalModule
-impl<Q, K> hashbrown::Equivalent<K> for vyre_foundation::dialect_lookup::MetalModule where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
-pub fn vyre_foundation::dialect_lookup::MetalModule::equivalent(&self, key: &K) -> bool
-impl<T, U> core::convert::Into<U> for vyre_foundation::dialect_lookup::MetalModule where U: core::convert::From<T>
-pub fn vyre_foundation::dialect_lookup::MetalModule::into(self) -> U
-impl<T, U> core::convert::TryFrom<U> for vyre_foundation::dialect_lookup::MetalModule where U: core::convert::Into<T>
-pub type vyre_foundation::dialect_lookup::MetalModule::Error = core::convert::Infallible
-pub fn vyre_foundation::dialect_lookup::MetalModule::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
-impl<T, U> core::convert::TryInto<U> for vyre_foundation::dialect_lookup::MetalModule where U: core::convert::TryFrom<T>
-pub type vyre_foundation::dialect_lookup::MetalModule::Error = <U as core::convert::TryFrom<T>>::Error
-pub fn vyre_foundation::dialect_lookup::MetalModule::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
-impl<T> alloc::borrow::ToOwned for vyre_foundation::dialect_lookup::MetalModule where T: core::clone::Clone
-pub type vyre_foundation::dialect_lookup::MetalModule::Owned = T
-pub fn vyre_foundation::dialect_lookup::MetalModule::clone_into(&self, target: &mut T)
-pub fn vyre_foundation::dialect_lookup::MetalModule::to_owned(&self) -> T
-impl<T> core::any::Any for vyre_foundation::dialect_lookup::MetalModule where T: 'static + ?core::marker::Sized
-pub fn vyre_foundation::dialect_lookup::MetalModule::type_id(&self) -> core::any::TypeId
-impl<T> core::borrow::Borrow<T> for vyre_foundation::dialect_lookup::MetalModule where T: ?core::marker::Sized
-pub fn vyre_foundation::dialect_lookup::MetalModule::borrow(&self) -> &T
-impl<T> core::borrow::BorrowMut<T> for vyre_foundation::dialect_lookup::MetalModule where T: ?core::marker::Sized
-pub fn vyre_foundation::dialect_lookup::MetalModule::borrow_mut(&mut self) -> &mut T
-impl<T> core::clone::CloneToUninit for vyre_foundation::dialect_lookup::MetalModule where T: core::clone::Clone
-pub unsafe fn vyre_foundation::dialect_lookup::MetalModule::clone_to_uninit(&self, dest: *mut u8)
-impl<T> core::convert::From<T> for vyre_foundation::dialect_lookup::MetalModule
-pub fn vyre_foundation::dialect_lookup::MetalModule::from(t: T) -> T
-impl<T> tracing::instrument::Instrument for vyre_foundation::dialect_lookup::MetalModule
-impl<T> tracing::instrument::WithSubscriber for vyre_foundation::dialect_lookup::MetalModule
-impl<T> typenum::type_operators::Same for vyre_foundation::dialect_lookup::MetalModule
-pub type vyre_foundation::dialect_lookup::MetalModule::Output = T
+pub struct vyre_foundation::NativeModule
+pub vyre_foundation::NativeModule::ast: alloc::vec::Vec<u8>
+pub vyre_foundation::NativeModule::entry: alloc::string::String
+impl core::clone::Clone for vyre_foundation::dialect_lookup::NativeModule
+pub fn vyre_foundation::dialect_lookup::NativeModule::clone(&self) -> vyre_foundation::dialect_lookup::NativeModule
+impl core::cmp::Eq for vyre_foundation::dialect_lookup::NativeModule
+impl core::cmp::PartialEq for vyre_foundation::dialect_lookup::NativeModule
+pub fn vyre_foundation::dialect_lookup::NativeModule::eq(&self, other: &vyre_foundation::dialect_lookup::NativeModule) -> bool
+impl core::fmt::Debug for vyre_foundation::dialect_lookup::NativeModule
+pub fn vyre_foundation::dialect_lookup::NativeModule::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for vyre_foundation::dialect_lookup::NativeModule
+impl core::marker::Freeze for vyre_foundation::dialect_lookup::NativeModule
+impl core::marker::Send for vyre_foundation::dialect_lookup::NativeModule
+impl core::marker::Sync for vyre_foundation::dialect_lookup::NativeModule
+impl core::marker::Unpin for vyre_foundation::dialect_lookup::NativeModule
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_foundation::dialect_lookup::NativeModule
+impl core::panic::unwind_safe::UnwindSafe for vyre_foundation::dialect_lookup::NativeModule
+impl<Q, K> hashbrown::Equivalent<K> for vyre_foundation::dialect_lookup::NativeModule where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn vyre_foundation::dialect_lookup::NativeModule::equivalent(&self, key: &K) -> bool
+impl<T, U> core::convert::Into<U> for vyre_foundation::dialect_lookup::NativeModule where U: core::convert::From<T>
+pub fn vyre_foundation::dialect_lookup::NativeModule::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for vyre_foundation::dialect_lookup::NativeModule where U: core::convert::Into<T>
+pub type vyre_foundation::dialect_lookup::NativeModule::Error = core::convert::Infallible
+pub fn vyre_foundation::dialect_lookup::NativeModule::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for vyre_foundation::dialect_lookup::NativeModule where U: core::convert::TryFrom<T>
+pub type vyre_foundation::dialect_lookup::NativeModule::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn vyre_foundation::dialect_lookup::NativeModule::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for vyre_foundation::dialect_lookup::NativeModule where T: core::clone::Clone
+pub type vyre_foundation::dialect_lookup::NativeModule::Owned = T
+pub fn vyre_foundation::dialect_lookup::NativeModule::clone_into(&self, target: &mut T)
+pub fn vyre_foundation::dialect_lookup::NativeModule::to_owned(&self) -> T
+impl<T> core::any::Any for vyre_foundation::dialect_lookup::NativeModule where T: 'static + ?core::marker::Sized
+pub fn vyre_foundation::dialect_lookup::NativeModule::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for vyre_foundation::dialect_lookup::NativeModule where T: ?core::marker::Sized
+pub fn vyre_foundation::dialect_lookup::NativeModule::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for vyre_foundation::dialect_lookup::NativeModule where T: ?core::marker::Sized
+pub fn vyre_foundation::dialect_lookup::NativeModule::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for vyre_foundation::dialect_lookup::NativeModule where T: core::clone::Clone
+pub unsafe fn vyre_foundation::dialect_lookup::NativeModule::clone_to_uninit(&self, dest: *mut u8)
+impl<T> core::convert::From<T> for vyre_foundation::dialect_lookup::NativeModule
+pub fn vyre_foundation::dialect_lookup::NativeModule::from(t: T) -> T
+impl<T> tracing::instrument::Instrument for vyre_foundation::dialect_lookup::NativeModule
+impl<T> tracing::instrument::WithSubscriber for vyre_foundation::dialect_lookup::NativeModule
+impl<T> typenum::type_operators::Same for vyre_foundation::dialect_lookup::NativeModule
+pub type vyre_foundation::dialect_lookup::NativeModule::Output = T
 #[non_exhaustive] pub struct vyre_foundation::NodeGraph
 pub vyre_foundation::NodeGraph::buffers: alloc::vec::Vec<vyre_foundation::ir::BufferDecl>
 pub vyre_foundation::NodeGraph::edges: alloc::vec::Vec<vyre_foundation::graph_view::DataEdge>
@@ -10681,51 +12696,51 @@ impl<T> tracing::instrument::Instrument for vyre_foundation::dialect_lookup::OpD
 impl<T> tracing::instrument::WithSubscriber for vyre_foundation::dialect_lookup::OpDef
 impl<T> typenum::type_operators::Same for vyre_foundation::dialect_lookup::OpDef
 pub type vyre_foundation::dialect_lookup::OpDef::Output = T
-pub struct vyre_foundation::PtxModule
-pub vyre_foundation::PtxModule::asm: alloc::string::String
-pub vyre_foundation::PtxModule::version: u32
-impl core::clone::Clone for vyre_foundation::dialect_lookup::PtxModule
-pub fn vyre_foundation::dialect_lookup::PtxModule::clone(&self) -> vyre_foundation::dialect_lookup::PtxModule
-impl core::cmp::Eq for vyre_foundation::dialect_lookup::PtxModule
-impl core::cmp::PartialEq for vyre_foundation::dialect_lookup::PtxModule
-pub fn vyre_foundation::dialect_lookup::PtxModule::eq(&self, other: &vyre_foundation::dialect_lookup::PtxModule) -> bool
-impl core::fmt::Debug for vyre_foundation::dialect_lookup::PtxModule
-pub fn vyre_foundation::dialect_lookup::PtxModule::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for vyre_foundation::dialect_lookup::PtxModule
-impl core::marker::Freeze for vyre_foundation::dialect_lookup::PtxModule
-impl core::marker::Send for vyre_foundation::dialect_lookup::PtxModule
-impl core::marker::Sync for vyre_foundation::dialect_lookup::PtxModule
-impl core::marker::Unpin for vyre_foundation::dialect_lookup::PtxModule
-impl core::panic::unwind_safe::RefUnwindSafe for vyre_foundation::dialect_lookup::PtxModule
-impl core::panic::unwind_safe::UnwindSafe for vyre_foundation::dialect_lookup::PtxModule
-impl<Q, K> hashbrown::Equivalent<K> for vyre_foundation::dialect_lookup::PtxModule where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
-pub fn vyre_foundation::dialect_lookup::PtxModule::equivalent(&self, key: &K) -> bool
-impl<T, U> core::convert::Into<U> for vyre_foundation::dialect_lookup::PtxModule where U: core::convert::From<T>
-pub fn vyre_foundation::dialect_lookup::PtxModule::into(self) -> U
-impl<T, U> core::convert::TryFrom<U> for vyre_foundation::dialect_lookup::PtxModule where U: core::convert::Into<T>
-pub type vyre_foundation::dialect_lookup::PtxModule::Error = core::convert::Infallible
-pub fn vyre_foundation::dialect_lookup::PtxModule::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
-impl<T, U> core::convert::TryInto<U> for vyre_foundation::dialect_lookup::PtxModule where U: core::convert::TryFrom<T>
-pub type vyre_foundation::dialect_lookup::PtxModule::Error = <U as core::convert::TryFrom<T>>::Error
-pub fn vyre_foundation::dialect_lookup::PtxModule::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
-impl<T> alloc::borrow::ToOwned for vyre_foundation::dialect_lookup::PtxModule where T: core::clone::Clone
-pub type vyre_foundation::dialect_lookup::PtxModule::Owned = T
-pub fn vyre_foundation::dialect_lookup::PtxModule::clone_into(&self, target: &mut T)
-pub fn vyre_foundation::dialect_lookup::PtxModule::to_owned(&self) -> T
-impl<T> core::any::Any for vyre_foundation::dialect_lookup::PtxModule where T: 'static + ?core::marker::Sized
-pub fn vyre_foundation::dialect_lookup::PtxModule::type_id(&self) -> core::any::TypeId
-impl<T> core::borrow::Borrow<T> for vyre_foundation::dialect_lookup::PtxModule where T: ?core::marker::Sized
-pub fn vyre_foundation::dialect_lookup::PtxModule::borrow(&self) -> &T
-impl<T> core::borrow::BorrowMut<T> for vyre_foundation::dialect_lookup::PtxModule where T: ?core::marker::Sized
-pub fn vyre_foundation::dialect_lookup::PtxModule::borrow_mut(&mut self) -> &mut T
-impl<T> core::clone::CloneToUninit for vyre_foundation::dialect_lookup::PtxModule where T: core::clone::Clone
-pub unsafe fn vyre_foundation::dialect_lookup::PtxModule::clone_to_uninit(&self, dest: *mut u8)
-impl<T> core::convert::From<T> for vyre_foundation::dialect_lookup::PtxModule
-pub fn vyre_foundation::dialect_lookup::PtxModule::from(t: T) -> T
-impl<T> tracing::instrument::Instrument for vyre_foundation::dialect_lookup::PtxModule
-impl<T> tracing::instrument::WithSubscriber for vyre_foundation::dialect_lookup::PtxModule
-impl<T> typenum::type_operators::Same for vyre_foundation::dialect_lookup::PtxModule
-pub type vyre_foundation::dialect_lookup::PtxModule::Output = T
+pub struct vyre_foundation::TextModule
+pub vyre_foundation::TextModule::asm: alloc::string::String
+pub vyre_foundation::TextModule::version: u32
+impl core::clone::Clone for vyre_foundation::dialect_lookup::TextModule
+pub fn vyre_foundation::dialect_lookup::TextModule::clone(&self) -> vyre_foundation::dialect_lookup::TextModule
+impl core::cmp::Eq for vyre_foundation::dialect_lookup::TextModule
+impl core::cmp::PartialEq for vyre_foundation::dialect_lookup::TextModule
+pub fn vyre_foundation::dialect_lookup::TextModule::eq(&self, other: &vyre_foundation::dialect_lookup::TextModule) -> bool
+impl core::fmt::Debug for vyre_foundation::dialect_lookup::TextModule
+pub fn vyre_foundation::dialect_lookup::TextModule::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for vyre_foundation::dialect_lookup::TextModule
+impl core::marker::Freeze for vyre_foundation::dialect_lookup::TextModule
+impl core::marker::Send for vyre_foundation::dialect_lookup::TextModule
+impl core::marker::Sync for vyre_foundation::dialect_lookup::TextModule
+impl core::marker::Unpin for vyre_foundation::dialect_lookup::TextModule
+impl core::panic::unwind_safe::RefUnwindSafe for vyre_foundation::dialect_lookup::TextModule
+impl core::panic::unwind_safe::UnwindSafe for vyre_foundation::dialect_lookup::TextModule
+impl<Q, K> hashbrown::Equivalent<K> for vyre_foundation::dialect_lookup::TextModule where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn vyre_foundation::dialect_lookup::TextModule::equivalent(&self, key: &K) -> bool
+impl<T, U> core::convert::Into<U> for vyre_foundation::dialect_lookup::TextModule where U: core::convert::From<T>
+pub fn vyre_foundation::dialect_lookup::TextModule::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for vyre_foundation::dialect_lookup::TextModule where U: core::convert::Into<T>
+pub type vyre_foundation::dialect_lookup::TextModule::Error = core::convert::Infallible
+pub fn vyre_foundation::dialect_lookup::TextModule::try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for vyre_foundation::dialect_lookup::TextModule where U: core::convert::TryFrom<T>
+pub type vyre_foundation::dialect_lookup::TextModule::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn vyre_foundation::dialect_lookup::TextModule::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for vyre_foundation::dialect_lookup::TextModule where T: core::clone::Clone
+pub type vyre_foundation::dialect_lookup::TextModule::Owned = T
+pub fn vyre_foundation::dialect_lookup::TextModule::clone_into(&self, target: &mut T)
+pub fn vyre_foundation::dialect_lookup::TextModule::to_owned(&self) -> T
+impl<T> core::any::Any for vyre_foundation::dialect_lookup::TextModule where T: 'static + ?core::marker::Sized
+pub fn vyre_foundation::dialect_lookup::TextModule::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for vyre_foundation::dialect_lookup::TextModule where T: ?core::marker::Sized
+pub fn vyre_foundation::dialect_lookup::TextModule::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for vyre_foundation::dialect_lookup::TextModule where T: ?core::marker::Sized
+pub fn vyre_foundation::dialect_lookup::TextModule::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for vyre_foundation::dialect_lookup::TextModule where T: core::clone::Clone
+pub unsafe fn vyre_foundation::dialect_lookup::TextModule::clone_to_uninit(&self, dest: *mut u8)
+impl<T> core::convert::From<T> for vyre_foundation::dialect_lookup::TextModule
+pub fn vyre_foundation::dialect_lookup::TextModule::from(t: T) -> T
+impl<T> tracing::instrument::Instrument for vyre_foundation::dialect_lookup::TextModule
+impl<T> tracing::instrument::WithSubscriber for vyre_foundation::dialect_lookup::TextModule
+impl<T> typenum::type_operators::Same for vyre_foundation::dialect_lookup::TextModule
+pub type vyre_foundation::dialect_lookup::TextModule::Output = T
 pub struct vyre_foundation::Signature
 pub vyre_foundation::Signature::attrs: &'static [vyre_foundation::dialect_lookup::AttrSchema]
 pub vyre_foundation::Signature::bytes_extraction: bool
@@ -10830,16 +12845,16 @@ pub fn vyre_foundation::extern_dialects() -> alloc::vec::Vec<&'static vyre_found
 pub fn vyre_foundation::extern_ops_in_dialect(dialect: &str) -> alloc::vec::Vec<&'static vyre_foundation::extern_registry::ExternOp>
 pub fn vyre_foundation::from_graph(graph: vyre_foundation::graph_view::NodeGraph) -> core::result::Result<vyre_foundation::ir::Program, vyre_foundation::graph_view::GraphValidateError>
 pub fn vyre_foundation::has_law<F>(op_id: &str, predicate: F) -> bool where F: core::ops::function::Fn(&vyre_spec::algebraic_law::AlgebraicLaw) -> bool
-pub fn vyre_foundation::install_dialect_lookup(lookup: alloc::sync::Arc<dyn vyre_foundation::dialect_lookup::DialectLookup>)
+pub fn vyre_foundation::install_dialect_lookup(lookup: alloc::sync::Arc<dyn vyre_foundation::dialect_lookup::DialectLookup>) -> core::result::Result<(), alloc::string::String>
 pub fn vyre_foundation::intern_string(s: &str) -> vyre_foundation::dialect_lookup::InternedOpId
 pub fn vyre_foundation::is_associative(op_id: &str) -> bool
 pub fn vyre_foundation::is_commutative(op_id: &str) -> bool
 pub fn vyre_foundation::laws_for_op(op_id: &str) -> alloc::vec::Vec<&'static vyre_spec::algebraic_law::AlgebraicLaw>
 pub fn vyre_foundation::to_graph(program: &vyre_foundation::ir::Program) -> vyre_foundation::graph_view::NodeGraph
 pub fn vyre_foundation::verify_extern_registry() -> core::result::Result<(), alloc::vec::Vec<vyre_foundation::extern_registry::ExternVerifyError>>
-pub type vyre_foundation::MetalBuilder = fn(&vyre_foundation::dialect_lookup::LoweringCtx<'_>) -> vyre_foundation::dialect_lookup::MetalModule
-pub type vyre_foundation::NagaBuilder = fn(&vyre_foundation::dialect_lookup::LoweringCtx<'_>) -> core::result::Result<(), alloc::string::String>
-pub type vyre_foundation::PtxBuilder = fn(&vyre_foundation::dialect_lookup::LoweringCtx<'_>) -> vyre_foundation::dialect_lookup::PtxModule
+pub type vyre_foundation::NativeModuleBuilder = fn(&vyre_foundation::dialect_lookup::LoweringCtx<'_>) -> vyre_foundation::dialect_lookup::NativeModule
+pub type vyre_foundation::PrimaryTextBuilder = fn(&vyre_foundation::dialect_lookup::LoweringCtx<'_>) -> core::result::Result<(), alloc::string::String>
+pub type vyre_foundation::SecondaryTextBuilder = fn(&vyre_foundation::dialect_lookup::LoweringCtx<'_>) -> vyre_foundation::dialect_lookup::TextModule
 pub type vyre_foundation::ReferenceKind = vyre_spec::intrinsic_descriptor::CpuFn
 pub type vyre_foundation::Result<T> = core::result::Result<T, vyre_foundation::error::Error>
-pub type vyre_foundation::SpirvBuilder = fn(&vyre_foundation::dialect_lookup::LoweringCtx<'_>) -> alloc::vec::Vec<u32>
+pub type vyre_foundation::PrimaryBinaryBuilder = fn(&vyre_foundation::dialect_lookup::LoweringCtx<'_>) -> alloc::vec::Vec<u32>

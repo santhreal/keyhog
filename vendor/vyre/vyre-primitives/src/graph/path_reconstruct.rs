@@ -24,13 +24,6 @@ pub const OP_ID: &str = "vyre-primitives::graph::path_reconstruct";
 /// Build the IR `Program` for path reconstruction.
 #[must_use]
 ///
-/// # Panics
-///
-/// Panics if `max_depth == 0`. AUDIT_2026-04-24 F-PR-03: a zero-
-/// `max_depth` program emits a zero-count `path_out` buffer, which
-/// some GPU backends reject at pipeline creation and others silently
-/// accept as a 1-slot allocation — either way the caller never gets
-/// a meaningful witness back. Fail loud at build time instead.
 pub fn path_reconstruct(
     parent: &str,
     target: &str,
@@ -38,12 +31,14 @@ pub fn path_reconstruct(
     path_len: &str,
     max_depth: u32,
 ) -> Program {
-    assert!(
-        max_depth >= 1,
-        "Fix: path_reconstruct max_depth must be >= 1 — a zero-depth walk cannot \
-         emit a witness, and produces a zero-count BufferDecl that some GPU \
-         backends reject at pipeline creation"
-    );
+    if max_depth == 0 {
+        return crate::invalid_output_program(
+            OP_ID,
+            path_out,
+            DataType::U32,
+            "Fix: path_reconstruct max_depth must be >= 1.".to_string(),
+        );
+    }
     // Single-threaded walk (invocation 0 owns the chain). The work
     // is O(path_length) which is typically small (stack trace length,
     // tiny CFG path), so parallelism is not meaningful here.
@@ -213,5 +208,75 @@ mod tests {
         assert_eq!(len, 4);
         assert_eq!(&scratch[..4], &[3, 2, 1, 0]);
         assert_eq!(&scratch[4..], &[0, 0, 0, 0]);
+    }
+
+    // ------------------------------------------------------------------
+    // Adversarial fixtures — self-loops, deep chain, OOB target, max_depth.
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn parent_self_loops_terminate_immediately() {
+        // parent[0]=0, parent[1]=1. target=1 → path [1].
+        let mut scratch = Vec::with_capacity(4);
+        let len = cpu_ref(&[0, 1], 1, 4, &mut scratch);
+        assert_eq!(len, 1);
+        assert_eq!(scratch[0], 1);
+        assert_eq!(&scratch[1..], &[0, 0, 0]);
+    }
+
+    #[test]
+    fn deep_chain_within_max_depth() {
+        // 0 ← 1 ← 2 ← 3 ← 4
+        let parent = &[0, 0, 1, 2, 3];
+        let mut scratch = Vec::with_capacity(8);
+        let len = cpu_ref(parent, 4, 8, &mut scratch);
+        assert_eq!(len, 5);
+        assert_eq!(&scratch[..5], &[4, 3, 2, 1, 0]);
+        assert_eq!(&scratch[5..], &[0, 0, 0]);
+    }
+
+    #[test]
+    fn target_not_in_parent_array_terminates_at_target() {
+        // parent has 3 entries. target=5 is OOB.
+        let mut scratch = Vec::with_capacity(4);
+        let len = cpu_ref(&[0, 0, 1], 5, 4, &mut scratch);
+        assert_eq!(len, 1);
+        assert_eq!(scratch[0], 5);
+        assert_eq!(&scratch[1..], &[0, 0, 0]);
+    }
+
+    #[test]
+    fn max_depth_zero_returns_empty_path() {
+        let mut scratch = Vec::with_capacity(4);
+        let len = cpu_ref(&[0, 0, 1, 2], 3, 0, &mut scratch);
+        assert_eq!(len, 0);
+        assert!(scratch.is_empty());
+    }
+
+    #[test]
+    fn max_depth_one_returns_only_target() {
+        let mut scratch = Vec::with_capacity(4);
+        let len = cpu_ref(&[0, 0, 1, 2], 3, 1, &mut scratch);
+        assert_eq!(len, 1);
+        assert_eq!(scratch[0], 3);
+        assert_eq!(scratch.len(), 1, "cap == max_depth == 1, no padding needed");
+    }
+
+    #[test]
+    fn program_builder_max_depth_zero_emits_trap() {
+        let p = path_reconstruct("parent", "target", "out", "len", 0);
+        // Trap programs contain a Node::Trap in the entry region body.
+        let entry = p.entry();
+        let has_trap = entry.iter().any(|n| {
+            if let Node::Region { body, .. } = n {
+                body.iter().any(|inner| matches!(inner, Node::Trap { .. }))
+            } else {
+                matches!(n, Node::Trap { .. })
+            }
+        });
+        assert!(
+            has_trap,
+            "max_depth == 0 must produce a trap program, not panic"
+        );
     }
 }

@@ -8,7 +8,7 @@
 
 use vyre::ir::{BufferAccess, BufferDecl, DataType, Program};
 use vyre_foundation::ir::model::expr::GeneratorRef;
-use vyre_primitives::hash::fnv1a::{fnv1a32_program_dyn, FNV1A32_OP_ID};
+use vyre_primitives::hash::fnv1a::{fnv1a32_program, fnv1a32_program_dyn, FNV1A32_OP_ID};
 
 #[cfg(test)]
 use crate::buffer_names::fixed_name;
@@ -35,13 +35,37 @@ pub fn fnv1a32(input: &str, out: &str) -> Program {
     let input = scoped_input_buffer(input);
     let out = scoped_output_buffer(out);
     let primitive = fnv1a32_program_dyn(&input, &out);
+    fnv1a32_from_primitive(&input, &out, primitive, None)
+}
+
+/// Build a Program that computes FNV-1a 32-bit over exactly `n` input slots.
+#[must_use]
+pub fn fnv1a32_n(input: &str, out: &str, n: u32) -> Program {
+    let input = scoped_input_buffer(input);
+    let out = scoped_output_buffer(out);
+    let primitive = fnv1a32_program(&input, &out, n);
+    fnv1a32_from_primitive(&input, &out, primitive, Some(n))
+}
+
+fn fnv1a32_from_primitive(
+    input: &str,
+    out: &str,
+    primitive: Program,
+    static_count: Option<u32>,
+) -> Program {
     let parent = GeneratorRef {
         name: OP_ID.to_string(),
     };
+    let input_decl = match static_count {
+        Some(n) => {
+            BufferDecl::storage(input, 0, BufferAccess::ReadOnly, DataType::U32).with_count(n)
+        }
+        None => BufferDecl::storage(input, 0, BufferAccess::ReadOnly, DataType::U32),
+    };
     Program::wrapped(
         vec![
-            BufferDecl::storage(&input, 0, BufferAccess::ReadOnly, DataType::U32),
-            BufferDecl::output(&out, 1, DataType::U32).with_count(1),
+            input_decl,
+            BufferDecl::output(out, 1, DataType::U32).with_count(1),
         ],
         primitive.workgroup_size(),
         vec![crate::region::wrap_anonymous(
@@ -49,7 +73,7 @@ pub fn fnv1a32(input: &str, out: &str) -> Program {
             vec![crate::region::wrap_child(
                 FNV1A32_OP_ID,
                 parent,
-                primitive.entry().to_vec(),
+                primitive.into_entry_vec(),
             )],
         )],
     )
@@ -58,7 +82,7 @@ pub fn fnv1a32(input: &str, out: &str) -> Program {
 inventory::submit! {
     crate::harness::OpEntry {
         id: OP_ID,
-        build: || fnv1a32("input", "out"),
+        build: || fnv1a32_n("input", "out", 3),
         test_inputs: Some(|| vec![vec![
             vec![0x61, 0, 0, 0, 0x62, 0, 0, 0, 0x63, 0, 0, 0],
             vec![0, 0, 0, 0],

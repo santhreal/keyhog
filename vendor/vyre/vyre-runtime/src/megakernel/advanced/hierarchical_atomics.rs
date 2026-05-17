@@ -9,7 +9,10 @@
 
 use vyre_foundation::ir::{Expr, Node};
 
-use crate::megakernel::batch::queue_state_word;
+mod queue_state_word {
+    pub(super) const HIT_HEAD: usize = 2;
+    pub(super) const HIT_CAPACITY: usize = 3;
+}
 
 /// Host-independent binding names used by the hierarchical hit writer.
 #[derive(Debug, Clone, PartialEq, Eq)]

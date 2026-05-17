@@ -1,4 +1,4 @@
 pub use vyre_foundation::dialect_lookup::{
-    LoweringCtx, LoweringTable, MetalBuilder, MetalModule, NagaBuilder, PtxBuilder, PtxModule,
-    ReferenceKind, SpirvBuilder,
+    LoweringCtx, LoweringTable, NativeModule, NativeModuleBuilder, PrimaryBinaryBuilder,
+    PrimaryTextBuilder, ReferenceKind, SecondaryTextBuilder, TextModule,
 };

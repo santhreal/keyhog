@@ -34,6 +34,13 @@ pub const MAX_ARGS: usize = 4_096;
 /// attacker-controlled wire bytes.
 pub const MAX_STRING_LEN: usize = 1 << 20;
 
+/// Maximum opaque payload length accepted from the IR wire format.
+///
+/// I10 bounds allocation for extension-defined `Expr::Opaque` and
+/// `Node::Opaque` payloads carried by attacker-controlled wire bytes.
+/// Must match the encoder limit in `put_node.rs` and `put_expr.rs`.
+pub const MAX_OPAQUE_PAYLOAD_LEN: usize = MAX_ARGS * 1024;
+
 /// Maximum recursive decode depth for the IR wire format.
 ///
 /// The limit is applied to the **shared** recursion counter in `Reader`
@@ -105,12 +112,11 @@ impl Program {
     pub fn to_bytes(&self) -> Vec<u8> {
         match self.to_wire() {
             Ok(bytes) => bytes,
-            Err(e) => {
+            Err(error) => {
                 tracing::error!(
-                    error = %e,
+                    error = %error,
                     "Program::to_bytes: wire encoding failed; returning empty bytes. \
-                     This indicates a malformed Program; callers requiring strict \
-                     encoding must use Program::to_wire directly."
+                     Fix: call Program::to_wire and handle the validation error explicitly."
                 );
                 Vec::new()
             }
@@ -172,24 +178,15 @@ impl Program {
 
     /// Stable content hash of this Program, used as a cache identity.
     ///
-    /// Computed as BLAKE3 of the canonical wire-format encoding. Two
-    /// programs with the same wire bytes produce the same hash; two
-    /// programs that compile to different wire bytes produce different
-    /// hashes. This is the lego-correct identity for any persistent-
-    /// cache consumer that wants a deterministic key per Program
-    /// without re-implementing the hash itself.
-    ///
-    /// On wire-encoding failure (extremely rare — only when the
-    /// Program is structurally malformed) returns the all-zero hash.
-    /// Consumers that need to discriminate that case should call
-    /// [`Self::to_wire`] explicitly first.
+    /// Computed as BLAKE3 of the canonical wire-format encoding. This is the
+    /// exact-match identity for persistent-cache consumers that need a
+    /// deterministic key per Program without re-implementing canonicalization.
+    /// On canonical wire-encoding failure, the value is a domain-separated
+    /// error digest rather than an all-zero sentinel, so malformed programs do
+    /// not collapse into the same cache identity.
     #[must_use]
     pub fn content_hash(&self) -> [u8; 32] {
-        let bytes = self.to_bytes();
-        if bytes.is_empty() {
-            return [0u8; 32];
-        }
-        blake3::hash(&bytes).into()
+        self.fingerprint()
     }
 }
 
@@ -204,14 +201,14 @@ fn wire_err(message: String) -> crate::error::Error {
 /// `buf`. Used by disk-cache fingerprinting where `Debug` output would be
 /// the wrong contract.
 pub fn append_data_type_fingerprint(buf: &mut Vec<u8>, value: &DataType) -> Result<(), String> {
-    tags::data_type_tag::put_data_type(buf, value)
+    tags::data_type_tag::put_data_type(buf, value).map_err(String::from)
 }
 
 /// Append stable VIR0 wire bytes for a `Node` statement list (count + each
 /// node). Matches the statement encoding used in full program wire (`to_wire`)
 /// (without the file envelope, metadata, or buffer table).
 pub fn append_node_list_fingerprint(buf: &mut Vec<u8>, nodes: &[Node]) -> Result<(), String> {
-    encode::put_nodes(buf, nodes)
+    encode::put_nodes(buf, nodes).map_err(String::from)
 }
 
 #[cfg(test)]
@@ -286,3 +283,54 @@ mod tests {
         );
     }
 }
+
+
+    /// OPAQUE-001 regression: encoder and decoder must agree on the
+    /// maximum opaque payload length. A payload at MAX_OPAQUE_PAYLOAD_LEN
+    /// must encode; a payload one byte larger must fail at encode time.
+    #[test]
+    pub(crate) fn opaque_payload_limit_is_symmetric() {
+        use crate::ir::{Expr, ExprNode};
+        use std::any::Any;
+
+        #[derive(Debug)]
+        struct BigOpaque(Vec<u8>);
+        impl ExprNode for BigOpaque {
+            fn extension_kind(&self) -> &'static str { "test.big" }
+            fn debug_identity(&self) -> &str { "test.big" }
+            fn result_type(&self) -> Option<DataType> { Some(DataType::U32) }
+            fn cse_safe(&self) -> bool { false }
+            fn stable_fingerprint(&self) -> [u8; 32] { [0; 32] }
+            fn validate_extension(&self) -> Result<(), String> { Ok(()) }
+            fn as_any(&self) -> &dyn Any { self }
+            fn wire_payload(&self) -> Vec<u8> { self.0.clone() }
+        }
+
+        // At the limit: must encode successfully.
+        let expr_ok = Expr::opaque(BigOpaque(vec![0u8; MAX_OPAQUE_PAYLOAD_LEN]));
+        let program_ok = Program::wrapped(
+            vec![BufferDecl::read_write("out", 0, DataType::U32)],
+            [1, 1, 1],
+            vec![Node::let_bind("_", expr_ok)],
+        );
+        assert!(
+            program_ok.to_wire().is_ok(),
+            "at-limit opaque payload ({MAX_OPAQUE_PAYLOAD_LEN} bytes) must encode"
+        );
+
+        // One byte over: must fail at encode time.
+        let expr_over = Expr::opaque(BigOpaque(vec![0u8; MAX_OPAQUE_PAYLOAD_LEN + 1]));
+        let program_over = Program::wrapped(
+            vec![BufferDecl::read_write("out", 0, DataType::U32)],
+            [1, 1, 1],
+            vec![Node::let_bind("_", expr_over)],
+        );
+        let err = program_over.to_wire().expect_err(
+            "opaque payload exceeding MAX_OPAQUE_PAYLOAD_LEN must fail at encode"
+        );
+        let msg = err.to_string();
+        assert!(
+            msg.contains("MAX_OPAQUE_PAYLOAD_LEN") || msg.contains(&MAX_OPAQUE_PAYLOAD_LEN.to_string()),
+            "error should mention the limit, got: {msg}"
+        );
+    }

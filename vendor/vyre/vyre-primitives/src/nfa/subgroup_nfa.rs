@@ -58,7 +58,7 @@ pub const MAX_STATES_PER_SUBGROUP: usize = 1024;
 /// fixpoint are no-ops.
 pub const MAX_EPSILON_ITERS: u32 = MAX_STATES_PER_SUBGROUP as u32;
 
-/// How many u32 lanes encode the state set. NVIDIA subgroup = 32.
+/// How many u32 lanes encode the state set. Default subgroup width = 32.
 /// Multi-subgroup tiling is the composition layer's job.
 pub const LANES_PER_SUBGROUP: usize = 32;
 
@@ -87,11 +87,14 @@ pub fn nfa_step(
     out_buf: &str,
     num_states: u32,
 ) -> Program {
-    assert!(
-        num_states as usize <= MAX_STATES_PER_SUBGROUP,
-        "num_states {num_states} exceeds MAX_STATES_PER_SUBGROUP={MAX_STATES_PER_SUBGROUP}; \
-         caller must tile at composition layer (vyre-libs::matching::nfa)",
-    );
+    if num_states as usize > MAX_STATES_PER_SUBGROUP {
+        return crate::invalid_output_program(
+            OP_ID,
+            out_buf,
+            DataType::U32,
+            format!("Fix: num_states {num_states} exceeds MAX_STATES_PER_SUBGROUP={MAX_STATES_PER_SUBGROUP}; caller must tile at composition layer (vyre-libs::matching::nfa)."),
+        );
+    }
 
     let lane = Expr::InvocationId { axis: 0 };
     let lane_u32 = || lane.clone();
@@ -116,7 +119,7 @@ pub fn nfa_step(
     //
     // We unroll over k (LANES_PER_SUBGROUP peer lanes) because
     // subgroup_shuffle requires a compile-time peer constant in the
-    // WGSL lowering. Inner bit loop is also unrolled so each byte
+    // target-text lowering. Inner bit loop is also unrolled so each byte
     // step is a predictable straight-line block of ops.
     for k in 0..LANES_PER_SUBGROUP as u32 {
         body.push(Node::let_bind(
@@ -198,12 +201,10 @@ pub fn nfa_step(
         }
     }
 
-    // Choose a safe static cap for the emitted loop. For very
-    // small NFAs we cap at num_states (the diameter upper bound);
-    // for anything bigger we cap at a conservative 32 which
-    // handles essentially every real regex closure. Pathological
-    // NFAs that need more get an explicit upper bound via the
-    // composition layer — G1-follow-up adds an API knob.
+    // Choose a safe static cap for the emitted loop. For very small
+    // NFAs we cap at num_states (the diameter upper bound); for
+    // anything bigger we cap at a conservative 32. Callers that need
+    // a higher epsilon-closure bound compose multiple subgroup steps.
     let eps_iters = num_states.clamp(1, 32);
     body.push(Node::loop_for(
         "eps_iter",
@@ -255,11 +256,42 @@ pub fn cpu_step(
     epsilon: &[u32],
     num_states: usize,
 ) -> Vec<u32> {
-    assert_eq!(state.len(), LANES_PER_SUBGROUP);
-    assert_eq!(transition.len(), num_states * 256 * LANES_PER_SUBGROUP);
-    assert_eq!(epsilon.len(), num_states * LANES_PER_SUBGROUP);
+    let mut acc = Vec::new();
+    let mut scratch = Vec::new();
+    cpu_step_into(
+        state,
+        byte,
+        transition,
+        epsilon,
+        num_states,
+        &mut acc,
+        &mut scratch,
+    );
+    acc
+}
 
-    let mut acc = vec![0_u32; LANES_PER_SUBGROUP];
+/// CPU-reference NFA step using caller-owned buffers.
+pub fn cpu_step_into(
+    state: &[u32],
+    byte: u8,
+    transition: &[u32],
+    epsilon: &[u32],
+    num_states: usize,
+    acc: &mut Vec<u32>,
+    scratch: &mut Vec<u32>,
+) {
+    acc.clear();
+    acc.resize(LANES_PER_SUBGROUP, 0);
+    scratch.clear();
+    scratch.resize(LANES_PER_SUBGROUP, 0);
+
+    if state.len() != LANES_PER_SUBGROUP
+        || transition.len() != num_states.saturating_mul(256 * LANES_PER_SUBGROUP)
+        || epsilon.len() != num_states.saturating_mul(LANES_PER_SUBGROUP)
+    {
+        return;
+    }
+
     for (k, &peer) in state.iter().enumerate() {
         for i in 0..32 {
             let src_state = k * 32 + i;
@@ -282,8 +314,8 @@ pub fn cpu_step(
     // is guaranteed; cap defends against caller-supplied malformed
     // tables.
     for _ in 0..MAX_EPSILON_ITERS as usize {
-        let prev = acc.clone();
-        for (k, &peer) in prev.iter().enumerate() {
+        scratch.copy_from_slice(acc);
+        for (k, &peer) in scratch.iter().enumerate() {
             for i in 0..32 {
                 let src_state = k * 32 + i;
                 if src_state >= num_states {
@@ -298,11 +330,10 @@ pub fn cpu_step(
                 }
             }
         }
-        if acc == prev {
+        if acc == scratch {
             break;
         }
     }
-    acc
 }
 
 #[cfg(test)]
@@ -421,14 +452,45 @@ mod tests {
     }
 
     #[test]
-    fn num_states_bound_enforced_at_max() {
-        let _ = nfa_step("s", "i", "t", "e", "o", 1024);
+    fn cpu_step_into_reuses_buffers_and_rejects_malformed_tables() {
+        let trans = build_transition(&[(0, b'a', vec![1])], 2);
+        let eps = build_epsilon(&[], 2);
+        let mut acc = Vec::with_capacity(LANES_PER_SUBGROUP + 8);
+        let acc_ptr = acc.as_ptr();
+        let mut scratch = Vec::with_capacity(LANES_PER_SUBGROUP + 8);
+        let scratch_ptr = scratch.as_ptr();
+
+        cpu_step_into(
+            &seed_state(&[0]),
+            b'a',
+            &trans,
+            &eps,
+            2,
+            &mut acc,
+            &mut scratch,
+        );
+
+        assert_eq!(acc.as_ptr(), acc_ptr);
+        assert_eq!(scratch.as_ptr(), scratch_ptr);
+        assert_eq!(acc, seed_state(&[1]));
+
+        cpu_step_into(&[1], b'a', &trans, &eps, 2, &mut acc, &mut scratch);
+        assert_eq!(acc, vec![0_u32; LANES_PER_SUBGROUP]);
     }
 
     #[test]
-    #[should_panic(expected = "exceeds MAX_STATES_PER_SUBGROUP")]
-    fn num_states_over_bound_panics() {
-        let _ = nfa_step("s", "i", "t", "e", "o", 1025);
+    fn num_states_bound_enforced_at_max() {
+        let program = nfa_step("s", "i", "t", "e", "o", 1024);
+        assert!(
+            !program.entry().is_empty(),
+            "max-bound NFA step must emit executable work"
+        );
+    }
+
+    #[test]
+    fn num_states_over_bound_traps() {
+        let p = nfa_step("s", "i", "t", "e", "o", 1025);
+        assert!(p.stats().trap());
     }
 
     #[test]

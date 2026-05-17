@@ -83,7 +83,7 @@ pub fn multi_hash(
                 Node::loop_for(
                     "i",
                     Expr::u32(0),
-                    Expr::buf_len(&input),
+                    Expr::u32(n),
                     vec![
                         Node::let_bind("byte", Expr::load(&input, Expr::var("i"))),
                         // CRC-32 update
@@ -193,8 +193,8 @@ mod tests {
             Value::Bytes(vec![0u8; 4].into()),
             Value::Bytes(vec![0u8; 4].into()),
         ];
-        let outputs =
-            vyre_reference::reference_eval(&program, &inputs).expect("multi_hash must run");
+        let outputs = vyre_reference::reference_eval(&program, &inputs)
+            .expect("Fix: multi_hash must run; restore this invariant before continuing.");
         let crc = u32::from_le_bytes([
             outputs[0].to_bytes()[0],
             outputs[0].to_bytes()[1],
@@ -225,7 +225,8 @@ mod tests {
             Value::Bytes(input_bytes.into()),
             Value::Bytes(vec![0u8; 4].into()),
         ];
-        let outputs = vyre_reference::reference_eval(&program, &inputs).expect("crc32 must run");
+        let outputs = vyre_reference::reference_eval(&program, &inputs)
+            .expect("Fix: crc32 must run; restore this invariant before continuing.");
         let raw = outputs[0].to_bytes();
         u32::from_le_bytes([raw[0], raw[1], raw[2], raw[3]])
     }
@@ -238,7 +239,8 @@ mod tests {
             Value::Bytes(input_bytes.into()),
             Value::Bytes(vec![0u8; 4].into()),
         ];
-        let outputs = vyre_reference::reference_eval(&program, &inputs).expect("fnv1a32 must run");
+        let outputs = vyre_reference::reference_eval(&program, &inputs)
+            .expect("Fix: fnv1a32 must run; restore this invariant before continuing.");
         let raw = outputs[0].to_bytes();
         u32::from_le_bytes([raw[0], raw[1], raw[2], raw[3]])
     }
@@ -252,7 +254,8 @@ mod tests {
             Value::Bytes(input_bytes.into()),
             Value::Bytes(vec![0u8; 4].into()),
         ];
-        let outputs = vyre_reference::reference_eval(&program, &inputs).expect("adler32 must run");
+        let outputs = vyre_reference::reference_eval(&program, &inputs)
+            .expect("Fix: adler32 must run; restore this invariant before continuing.");
         let raw = outputs[0].to_bytes();
         u32::from_le_bytes([raw[0], raw[1], raw[2], raw[3]])
     }

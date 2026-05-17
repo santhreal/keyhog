@@ -5,8 +5,9 @@
 //! statement in the group. Any write-after-write conflict forms a serial
 //! boundary.
 
-use crate::ir::{Expr, Node};
+use crate::ir::{Expr, Ident, Node};
 use rustc_hash::FxHashSet;
+use smallvec::SmallVec;
 
 /// Dispatch grouping selected by shared-nothing analysis.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -26,25 +27,29 @@ pub enum DispatchGroup {
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct AccessSet {
-    reads: FxHashSet<String>,
-    writes: FxHashSet<String>,
+    reads: FxHashSet<Ident>,
+    writes: FxHashSet<Ident>,
     serial_boundary: bool,
 }
 
 /// Analyze top-level IR nodes for writable-state independence.
 #[must_use]
 pub fn detect_parallelism(nodes: &[Node]) -> Vec<DispatchGroup> {
-    let mut groups = Vec::new();
-    let mut current = Vec::new();
+    let mut groups = Vec::with_capacity(nodes.len());
+    let mut current = Vec::with_capacity(nodes.len());
     let mut current_access = AccessSet::default();
 
     for (index, node) in nodes.iter().enumerate() {
         let access = access_set(node);
-        if access.serial_boundary || conflicts(&current_access, &access) {
+        if access.serial_boundary {
             push_group(&mut groups, &mut current);
             groups.push(DispatchGroup::Serial { node_index: index });
             current_access = AccessSet::default();
             continue;
+        }
+        if conflicts(&current_access, &access) {
+            push_group(&mut groups, &mut current);
+            current_access = AccessSet::default();
         }
         current_access.reads.extend(access.reads);
         current_access.writes.extend(access.writes);
@@ -84,125 +89,130 @@ fn access_set(node: &Node) -> AccessSet {
     access
 }
 
-fn collect_node_access(node: &Node, access: &mut AccessSet) {
-    match node {
-        Node::Let { value, .. } | Node::Assign { value, .. } => collect_expr_reads(value, access),
-        Node::Store {
-            buffer,
-            index,
-            value,
-        } => {
-            collect_expr_reads(index, access);
-            collect_expr_reads(value, access);
-            access.writes.insert(buffer.to_string());
-        }
-        Node::If {
-            cond,
-            then,
-            otherwise,
-        } => {
-            collect_expr_reads(cond, access);
-            for node in then.iter().chain(otherwise) {
-                collect_node_access(node, access);
+fn collect_node_access(root: &Node, access: &mut AccessSet) {
+    let mut stack = SmallVec::<[&Node; 16]>::new();
+    stack.push(root);
+    while let Some(node) = stack.pop() {
+        match node {
+            Node::Let { value, .. } | Node::Assign { value, .. } => {
+                collect_expr_reads(value, access);
             }
-        }
-        Node::Loop { from, to, body, .. } => {
-            collect_expr_reads(from, access);
-            collect_expr_reads(to, access);
-            for node in body {
-                collect_node_access(node, access);
+            Node::Store {
+                buffer,
+                index,
+                value,
+            } => {
+                collect_expr_reads(index, access);
+                collect_expr_reads(value, access);
+                access.writes.insert(buffer.clone());
             }
-        }
-        Node::Block(body) => {
-            for node in body {
-                collect_node_access(node, access);
+            Node::If {
+                cond,
+                then,
+                otherwise,
+            } => {
+                collect_expr_reads(cond, access);
+                stack.extend(then);
+                stack.extend(otherwise);
             }
-        }
-        Node::IndirectDispatch { count_buffer, .. } => {
-            access.reads.insert(count_buffer.to_string());
-            access.serial_boundary = true;
-        }
-        Node::Trap { address, .. } => {
-            collect_expr_reads(address, access);
-            access.serial_boundary = true;
-        }
-        Node::Resume { .. } => {
-            access.serial_boundary = true;
-        }
-        Node::Return
-        | Node::Barrier
-        | Node::AsyncLoad { .. }
-        | Node::AsyncStore { .. }
-        | Node::AsyncWait { .. }
-        | Node::Region { .. }
-        | Node::Opaque(_) => {
-            access.serial_boundary = true;
+            Node::Loop { from, to, body, .. } => {
+                collect_expr_reads(from, access);
+                collect_expr_reads(to, access);
+                stack.extend(body);
+            }
+            Node::Block(body) => {
+                stack.extend(body);
+            }
+            Node::IndirectDispatch { count_buffer, .. } => {
+                access.reads.insert(count_buffer.clone());
+                access.serial_boundary = true;
+            }
+            Node::Trap { address, .. } => {
+                collect_expr_reads(address, access);
+                access.serial_boundary = true;
+            }
+            Node::Resume { .. } => {
+                access.serial_boundary = true;
+            }
+            Node::Return
+            | Node::Barrier { .. }
+            | Node::AsyncLoad { .. }
+            | Node::AsyncStore { .. }
+            | Node::AsyncWait { .. }
+            | Node::Region { .. }
+            | Node::Opaque(_) => {
+                access.serial_boundary = true;
+            }
         }
     }
 }
 
 fn collect_expr_reads(expr: &Expr, access: &mut AccessSet) {
-    match expr {
-        Expr::Load { buffer, index } => {
-            access.reads.insert(buffer.to_string());
-            collect_expr_reads(index, access);
-        }
-        Expr::BufLen { buffer } => {
-            access.reads.insert(buffer.to_string());
-        }
-        Expr::BinOp { left, right, .. } => {
-            collect_expr_reads(left, access);
-            collect_expr_reads(right, access);
-        }
-        Expr::UnOp { operand, .. } => collect_expr_reads(operand, access),
-        Expr::Call { args, .. } => {
-            for arg in args {
-                collect_expr_reads(arg, access);
+    let mut stack = SmallVec::<[&Expr; 32]>::new();
+    stack.push(expr);
+    while let Some(expr) = stack.pop() {
+        match expr {
+            Expr::Load { buffer, index } => {
+                access.reads.insert(buffer.clone());
+                stack.push(index);
             }
-        }
-        Expr::Select {
-            cond,
-            true_val,
-            false_val,
-        } => {
-            collect_expr_reads(cond, access);
-            collect_expr_reads(true_val, access);
-            collect_expr_reads(false_val, access);
-        }
-        Expr::Cast { value, .. } => collect_expr_reads(value, access),
-        Expr::Fma { a, b, c } => {
-            collect_expr_reads(a, access);
-            collect_expr_reads(b, access);
-            collect_expr_reads(c, access);
-        }
-        Expr::Atomic {
-            buffer,
-            index,
-            expected,
-            value,
-            ..
-        } => {
-            access.reads.insert(buffer.to_string());
-            access.writes.insert(buffer.to_string());
-            collect_expr_reads(index, access);
-            if let Some(expected) = expected {
-                collect_expr_reads(expected, access);
+            Expr::BufLen { buffer } => {
+                access.reads.insert(buffer.clone());
             }
-            collect_expr_reads(value, access);
-        }
-        Expr::LitU32(_)
-        | Expr::LitI32(_)
-        | Expr::LitF32(_)
-        | Expr::LitBool(_)
-        | Expr::Var(_)
-        | Expr::InvocationId { .. }
-        | Expr::WorkgroupId { .. }
-        | Expr::LocalId { .. }
-        | Expr::SubgroupLocalId
-        | Expr::SubgroupSize => {}
-        Expr::SubgroupBallot { .. } | Expr::SubgroupShuffle { .. } | Expr::SubgroupAdd { .. } => {}
-        Expr::Opaque(_) => {
-            access.serial_boundary = true;
+            Expr::BinOp { left, right, .. } => {
+                stack.push(left);
+                stack.push(right);
+            }
+            Expr::UnOp { operand, .. } => stack.push(operand),
+            Expr::Call { args, .. } => {
+                stack.extend(args);
+            }
+            Expr::Select {
+                cond,
+                true_val,
+                false_val,
+            } => {
+                stack.push(cond);
+                stack.push(true_val);
+                stack.push(false_val);
+            }
+            Expr::Cast { value, .. } => stack.push(value),
+            Expr::Fma { a, b, c } => {
+                stack.push(a);
+                stack.push(b);
+                stack.push(c);
+            }
+            Expr::Atomic {
+                buffer,
+                index,
+                expected,
+                value,
+                ..
+            } => {
+                access.reads.insert(buffer.clone());
+                access.writes.insert(buffer.clone());
+                stack.push(index);
+                if let Some(expected) = expected {
+                    stack.push(expected);
+                }
+                stack.push(value);
+            }
+            Expr::LitU32(_)
+            | Expr::LitI32(_)
+            | Expr::LitF32(_)
+            | Expr::LitBool(_)
+            | Expr::Var(_)
+            | Expr::InvocationId { .. }
+            | Expr::WorkgroupId { .. }
+            | Expr::LocalId { .. }
+            | Expr::SubgroupLocalId
+            | Expr::SubgroupSize => {}
+            Expr::SubgroupBallot { .. }
+            | Expr::SubgroupShuffle { .. }
+            | Expr::SubgroupAdd { .. } => {}
+            Expr::Opaque(_) => {
+                access.serial_boundary = true;
+            }
         }
     }
 }
@@ -259,6 +269,27 @@ pub mod tests {
             vec![
                 DispatchGroup::Serial { node_index: 0 },
                 DispatchGroup::Serial { node_index: 1 },
+            ]
+        );
+    }
+
+    /// A conflict only closes the current group; it does not make the next
+    /// independent run permanently serial.
+    #[test]
+    pub fn conflict_starts_next_parallel_run() {
+        let nodes = vec![
+            Node::store("out", Expr::u32(0), Expr::u32(1)),
+            Node::store("out", Expr::u32(1), Expr::u32(2)),
+            Node::store("other", Expr::u32(0), Expr::u32(3)),
+        ];
+
+        assert_eq!(
+            detect_parallelism(&nodes),
+            vec![
+                DispatchGroup::Serial { node_index: 0 },
+                DispatchGroup::Parallel {
+                    node_indices: vec![1, 2]
+                },
             ]
         );
     }

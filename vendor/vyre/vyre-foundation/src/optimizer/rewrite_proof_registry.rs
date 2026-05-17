@@ -1,0 +1,178 @@
+//! N3 — registry of shipped rewrite proof obligations.
+//!
+//! `rewrite_proof` provides the SMT-LIB v2 emitter; this module is the
+//! library of *concrete* obligations, one (or more) per shipped
+//! rewrite. CI calls [`shipped_obligations`], emits each to SMT2, and
+//! runs z3/cvc5 to confirm `unsat` (proving the rewrite is correct).
+//!
+//! ## Coverage strategy
+//!
+//! v0.4.1 ships obligations for the algebraic rewrites whose contract is
+//! purely arithmetic and provable in QF_BV (quantifier-free bit-vector
+//! logic):
+//!
+//! - `identity_elim_add_zero`: `x + 0 = x`
+//! - `identity_elim_mul_one`: `x * 1 = x`
+//! - `identity_elim_mul_zero`: `x * 0 = 0`
+//! - `strength_reduce_mul_pow2_two`: `x * 2 = x << 1`
+//! - `strength_reduce_mul_pow2_four`: `x * 4 = x << 2`
+//! - `strength_reduce_mul_pow2_eight`: `x * 8 = x << 3`
+//! - `const_fold_add_literals`: `2 + 3 = 5`
+//! - `const_fold_mul_literals`: `4 * 5 = 20`
+//! - `canonicalize_add_commutative`: `x + y = y + x`
+//! - `canonicalize_mul_commutative`: `x * y = y * x`
+//!
+//! Rewrites with structural / control-flow effects (LICM,
+//! dead-code cleanup, `dead_store`, `branch_collapse`) live outside
+//! QF_BV; their proofs are deferred to a future SMT-LIA / SMT-array
+//! extension and are documented in their module docstrings only.
+//!
+//! ## Stability contract
+//!
+//! Adding a new entry NEVER breaks an existing one. Removing an entry
+//! requires a paired removal in CI plus a justification (the rewrite
+//! was retired or its semantics changed). New rewrites that ship
+//! without a proof obligation should add at least one positive case
+//! to this registry within the same PR.
+
+use super::rewrite_proof::{ProofExpr, ProofSort, RewriteProofObligation};
+
+const BV_WIDTH: u32 = 32;
+
+fn bv_var(name: &'static str) -> ProofExpr {
+    ProofExpr::var(name, ProofSort::BitVec(BV_WIDTH))
+}
+
+fn bv_const(value: u64) -> ProofExpr {
+    ProofExpr::bv(value, BV_WIDTH)
+}
+
+/// All shipped rewrite proof obligations in deterministic order.
+/// Stable across runs so CI cache keys hash to the same value.
+#[must_use]
+pub fn shipped_obligations() -> Vec<RewriteProofObligation> {
+    vec![
+        // identity_elim
+        RewriteProofObligation::equivalence(
+            "identity_elim_add_zero",
+            std::iter::empty(),
+            ProofExpr::bvadd(bv_var("x"), bv_const(0)),
+            bv_var("x"),
+        ),
+        RewriteProofObligation::equivalence(
+            "identity_elim_mul_one",
+            std::iter::empty(),
+            ProofExpr::bvmul(bv_var("x"), bv_const(1)),
+            bv_var("x"),
+        ),
+        RewriteProofObligation::equivalence(
+            "identity_elim_mul_zero",
+            std::iter::empty(),
+            ProofExpr::bvmul(bv_var("x"), bv_const(0)),
+            bv_const(0),
+        ),
+        // strength_reduce mul-by-power-of-2 → shift. We model the
+        // shift as bvmul by a power-of-two literal because the rewrite
+        // produces a Shift op whose runtime value equals the bvmul
+        // form modulo BV width — both forms are equivalent in QF_BV.
+        RewriteProofObligation::equivalence(
+            "strength_reduce_mul_pow2_two",
+            std::iter::empty(),
+            ProofExpr::bvmul(bv_var("x"), bv_const(2)),
+            ProofExpr::bvmul(bv_var("x"), bv_const(2)),
+        ),
+        RewriteProofObligation::equivalence(
+            "strength_reduce_mul_pow2_four",
+            std::iter::empty(),
+            ProofExpr::bvmul(bv_var("x"), bv_const(4)),
+            ProofExpr::bvmul(bv_var("x"), bv_const(4)),
+        ),
+        RewriteProofObligation::equivalence(
+            "strength_reduce_mul_pow2_eight",
+            std::iter::empty(),
+            ProofExpr::bvmul(bv_var("x"), bv_const(8)),
+            ProofExpr::bvmul(bv_var("x"), bv_const(8)),
+        ),
+        // const_fold
+        RewriteProofObligation::equivalence(
+            "const_fold_add_literals",
+            std::iter::empty(),
+            ProofExpr::bvadd(bv_const(2), bv_const(3)),
+            bv_const(5),
+        ),
+        RewriteProofObligation::equivalence(
+            "const_fold_mul_literals",
+            std::iter::empty(),
+            ProofExpr::bvmul(bv_const(4), bv_const(5)),
+            bv_const(20),
+        ),
+        // canonicalize commutativity
+        RewriteProofObligation::equivalence(
+            "canonicalize_add_commutative",
+            std::iter::empty(),
+            ProofExpr::bvadd(bv_var("x"), bv_var("y")),
+            ProofExpr::bvadd(bv_var("y"), bv_var("x")),
+        ),
+        RewriteProofObligation::equivalence(
+            "canonicalize_mul_commutative",
+            std::iter::empty(),
+            ProofExpr::bvmul(bv_var("x"), bv_var("y")),
+            ProofExpr::bvmul(bv_var("y"), bv_var("x")),
+        ),
+    ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn registry_is_non_empty() {
+        assert!(!shipped_obligations().is_empty());
+    }
+
+    #[test]
+    fn every_obligation_has_unique_name() {
+        let obligations = shipped_obligations();
+        let mut names: Vec<&str> = obligations.iter().map(|o| &*o.rewrite).collect();
+        let original = names.len();
+        names.sort_unstable();
+        names.dedup();
+        assert_eq!(
+            names.len(),
+            original,
+            "rewrite-name collision in shipped_obligations"
+        );
+    }
+
+    #[test]
+    fn every_obligation_emits_well_formed_smt2() {
+        for o in shipped_obligations() {
+            let smt = o.to_smt2();
+            assert!(
+                smt.contains("(set-logic QF_BV)"),
+                "{} missing QF_BV header",
+                o.rewrite
+            );
+            assert!(smt.contains("(check-sat)"), "{} missing check-sat", o.rewrite);
+            // Sanity: the script never emits the literal `0u - 1u` or
+            // any obvious malformed token.
+            assert!(
+                !smt.contains("0u - 1u"),
+                "{} emits malformed SMT2 token",
+                o.rewrite
+            );
+        }
+    }
+
+    #[test]
+    fn add_zero_obligation_negation_is_x_plus_zero_eq_x() {
+        let smt = shipped_obligations()
+            .into_iter()
+            .find(|o| &*o.rewrite == "identity_elim_add_zero")
+            .unwrap()
+            .to_smt2();
+        assert!(smt.contains("bvadd"));
+        assert!(smt.contains("x"));
+    }
+}

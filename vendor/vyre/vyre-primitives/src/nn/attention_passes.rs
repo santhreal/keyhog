@@ -13,6 +13,43 @@ pub const ATTENTION_SUM_PASS_OP_ID: &str = "vyre-primitives::nn::attention_sum_p
 /// Stable op id for the weighted-value write pass.
 pub const ATTENTION_WRITE_PASS_OP_ID: &str = "vyre-primitives::nn::attention_write_pass";
 
+fn finite_or(value: Expr, replacement: Expr) -> Expr {
+    Expr::select(Expr::is_finite(value.clone()), value, replacement)
+}
+
+fn bounded_exp_arg(value: Expr) -> Expr {
+    let finite = finite_or(value, Expr::f32(-80.0));
+    let upper_bounded = Expr::select(
+        Expr::gt(finite.clone(), Expr::f32(0.0)),
+        Expr::f32(0.0),
+        finite,
+    );
+    Expr::select(
+        Expr::lt(upper_bounded.clone(), Expr::f32(-80.0)),
+        Expr::f32(-80.0),
+        upper_bounded,
+    )
+}
+
+fn positive_denominator(value: Expr) -> Expr {
+    Expr::select(
+        Expr::and(
+            Expr::is_finite(value.clone()),
+            Expr::gt(value.clone(), Expr::f32(f32::MIN_POSITIVE)),
+        ),
+        value,
+        Expr::f32(f32::MIN_POSITIVE),
+    )
+}
+
+fn flush_tiny(value: Expr) -> Expr {
+    Expr::select(
+        Expr::le(Expr::abs(value.clone()), Expr::f32(f32::MIN_POSITIVE)),
+        Expr::f32(0.0),
+        value,
+    )
+}
+
 /// Emit the attention max-reduction pass for one query row `i`.
 #[must_use]
 pub fn attention_max_pass(q: &str, k: &str, d: u32, s: u32, scale_expr: Expr) -> Vec<Node> {
@@ -37,15 +74,19 @@ pub fn attention_max_pass(q: &str, k: &str, d: u32, s: u32, scale_expr: Expr) ->
                     d,
                 ),
                 Node::let_bind("score", Expr::mul(Expr::var("dot_val"), scale_expr)),
+                Node::let_bind(
+                    "finite_score",
+                    finite_or(Expr::var("score"), Expr::f32(f32::MIN)),
+                ),
                 Node::assign(
                     "max_val",
                     Expr::select(
                         Expr::BinOp {
                             op: BinOp::Gt,
-                            left: Box::new(Expr::var("score")),
+                            left: Box::new(Expr::var("finite_score")),
                             right: Box::new(Expr::var("max_val")),
                         },
-                        Expr::var("score"),
+                        Expr::var("finite_score"),
                         Expr::var("max_val"),
                     ),
                 ),
@@ -103,17 +144,17 @@ pub fn attention_sum_pass(q: &str, k: &str, d: u32, s: u32, scale_expr: Expr) ->
                     d,
                 ),
                 Node::let_bind("score", Expr::mul(Expr::var("dot_val"), scale_expr)),
+                Node::let_bind(
+                    "exp_arg",
+                    bounded_exp_arg(Expr::sub(Expr::var("score"), Expr::var("max_val"))),
+                ),
                 Node::assign(
                     "sum_val",
                     Expr::add(
                         Expr::var("sum_val"),
                         Expr::UnOp {
                             op: UnOp::Exp,
-                            operand: Box::new(Expr::BinOp {
-                                op: BinOp::Sub,
-                                left: Box::new(Expr::var("score")),
-                                right: Box::new(Expr::var("max_val")),
-                            }),
+                            operand: Box::new(Expr::var("exp_arg")),
                         },
                     ),
                 ),
@@ -195,34 +236,38 @@ pub fn attention_write_pass(
                         ),
                         Node::let_bind("score", Expr::mul(Expr::var("dot_val"), scale_expr)),
                         Node::let_bind(
+                            "exp_arg",
+                            bounded_exp_arg(Expr::sub(Expr::var("score"), Expr::var("max_val"))),
+                        ),
+                        Node::let_bind(
                             "weight",
                             Expr::BinOp {
                                 op: BinOp::Div,
                                 left: Box::new(Expr::UnOp {
                                     op: UnOp::Exp,
-                                    operand: Box::new(Expr::BinOp {
-                                        op: BinOp::Sub,
-                                        left: Box::new(Expr::var("score")),
-                                        right: Box::new(Expr::var("max_val")),
-                                    }),
+                                    operand: Box::new(Expr::var("exp_arg")),
                                 }),
-                                right: Box::new(Expr::var("sum_val")),
+                                right: Box::new(Expr::var("denom")),
                             },
+                        ),
+                        Node::let_bind(
+                            "value",
+                            finite_or(
+                                Expr::load(
+                                    v,
+                                    Expr::add(
+                                        Expr::mul(Expr::var("j"), Expr::u32(d)),
+                                        Expr::var("t"),
+                                    ),
+                                ),
+                                Expr::f32(0.0),
+                            ),
                         ),
                         Node::assign(
                             "accum",
                             Expr::add(
                                 Expr::var("accum"),
-                                Expr::mul(
-                                    Expr::var("weight"),
-                                    Expr::load(
-                                        v,
-                                        Expr::add(
-                                            Expr::mul(Expr::var("j"), Expr::u32(d)),
-                                            Expr::var("t"),
-                                        ),
-                                    ),
-                                ),
+                                Expr::mul(Expr::var("weight"), Expr::var("value")),
                             ),
                         ),
                     ]),
@@ -231,7 +276,7 @@ pub fn attention_write_pass(
             Node::Store {
                 buffer: out.into(),
                 index: Expr::add(Expr::mul(Expr::var("i"), Expr::u32(d)), Expr::var("t")),
-                value: Expr::var("accum"),
+                value: flush_tiny(Expr::var("accum")),
             },
         ],
     )]
@@ -289,6 +334,7 @@ pub fn attention_write_pass_program(spec: AttentionWritePassProgramSpec<'_>) -> 
                 Node::let_bind("i", Expr::u32(0)),
                 Node::let_bind("max_val", Expr::load(max_in, Expr::u32(0))),
                 Node::let_bind("sum_val", Expr::load(sum_in, Expr::u32(0))),
+                Node::let_bind("denom", positive_denominator(Expr::var("sum_val"))),
                 Node::Block(attention_write_pass(q, k, v, d, s, scale_expr, out)),
             ]),
         }],

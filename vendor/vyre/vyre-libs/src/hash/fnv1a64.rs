@@ -26,7 +26,7 @@
 
 use vyre::ir::{BufferAccess, BufferDecl, DataType, Program};
 use vyre_foundation::ir::model::expr::GeneratorRef;
-use vyre_primitives::hash::fnv1a::{fnv1a64_program, FNV1A64_OP_ID};
+use vyre_primitives::hash::fnv1a::{fnv1a64_program, fnv1a64_program_n, FNV1A64_OP_ID};
 
 #[cfg(test)]
 use crate::buffer_names::fixed_name;
@@ -50,13 +50,37 @@ pub fn fnv1a64(input: &str, out: &str) -> Program {
     let input = scoped_input_buffer(input);
     let out = scoped_output_buffer(out);
     let primitive = fnv1a64_program(&input, &out);
+    fnv1a64_from_primitive(&input, &out, primitive, None)
+}
+
+/// Build a Program that computes FNV-1a 64-bit over exactly `n` input slots.
+#[must_use]
+pub fn fnv1a64_n(input: &str, out: &str, n: u32) -> Program {
+    let input = scoped_input_buffer(input);
+    let out = scoped_output_buffer(out);
+    let primitive = fnv1a64_program_n(&input, &out, n);
+    fnv1a64_from_primitive(&input, &out, primitive, Some(n))
+}
+
+fn fnv1a64_from_primitive(
+    input: &str,
+    out: &str,
+    primitive: Program,
+    static_count: Option<u32>,
+) -> Program {
     let parent = GeneratorRef {
         name: OP_ID.to_string(),
     };
+    let input_decl = match static_count {
+        Some(n) => {
+            BufferDecl::storage(input, 0, BufferAccess::ReadOnly, DataType::U32).with_count(n)
+        }
+        None => BufferDecl::storage(input, 0, BufferAccess::ReadOnly, DataType::U32),
+    };
     Program::wrapped(
         vec![
-            BufferDecl::storage(&input, 0, BufferAccess::ReadOnly, DataType::U32),
-            BufferDecl::output(&out, 1, DataType::U32).with_count(2),
+            input_decl,
+            BufferDecl::output(out, 1, DataType::U32).with_count(2),
         ],
         primitive.workgroup_size(),
         vec![crate::region::wrap_anonymous(
@@ -64,7 +88,7 @@ pub fn fnv1a64(input: &str, out: &str) -> Program {
             vec![crate::region::wrap_child(
                 FNV1A64_OP_ID,
                 parent,
-                primitive.entry().to_vec(),
+                primitive.into_entry_vec(),
             )],
         )],
     )
@@ -85,7 +109,7 @@ fn cpu_ref_u64(input: &[u8]) -> u64 {
 inventory::submit! {
     crate::harness::OpEntry {
         id: OP_ID,
-        build: || fnv1a64("input", "out"),
+        build: || fnv1a64_n("input", "out", 3),
         test_inputs: Some(|| {
             let mut bytes = Vec::with_capacity(12);
             for &b in b"abc" { bytes.extend_from_slice(&u32::from(b).to_le_bytes()); }
@@ -113,7 +137,8 @@ mod tests {
             Value::Bytes(pack_bytes_as_u32(bytes).into()),
             Value::Bytes(vec![0u8; 8].into()),
         ];
-        let outputs = vyre_reference::reference_eval(&program, &inputs).expect("fnv1a64 must run");
+        let outputs = vyre_reference::reference_eval(&program, &inputs)
+            .expect("Fix: fnv1a64 must run; restore this invariant before continuing.");
         let raw = outputs[0].to_bytes();
         let lo = u32::from_le_bytes([raw[0], raw[1], raw[2], raw[3]]);
         let hi = u32::from_le_bytes([raw[4], raw[5], raw[6], raw[7]]);

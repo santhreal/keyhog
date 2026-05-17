@@ -13,7 +13,7 @@
 //!     construction. We index it by the SSA version of the supplied
 //!     definition site and emit a bitset over node ids.
 //!
-//! Soundness: [`Exact`](super::soundness::Soundness::Exact). The
+//! Soundness: `Exact`. The
 //! def-use chain is computed by SSA construction, which is sound by
 //! construction; this primitive is a pure query against that
 //! pre-built table.

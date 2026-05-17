@@ -5,7 +5,7 @@ use crate::ir::BufferAccess;
 /// # Preconditions
 ///
 /// `value` must be a variant known to the VIR0 encoder. Because
-/// `BufferAccess` is `#[non_exhaustive]`, future spec additions must be
+/// `BufferAccess` is `#[non_exhaustive]`, spec additions must be
 /// matched here before they can round-trip through the wire format.
 ///
 /// # Returns

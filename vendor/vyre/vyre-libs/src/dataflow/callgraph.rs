@@ -18,7 +18,7 @@
 //! bitsets in the CSR-frontier shape we already own, so the kernel
 //! is a per-invocation bitwise OR of two loads plus a bounds check.
 //!
-//! Soundness: [`MayOver`](super::Soundness::MayOver) — may-analysis.
+//! Soundness: `MayOver` — may-analysis.
 //!
 //! Gate for C19.
 
@@ -115,5 +115,50 @@ pub struct Callgraph;
 impl super::soundness::SoundnessTagged for Callgraph {
     fn soundness(&self) -> super::soundness::Soundness {
         super::soundness::Soundness::MayOver
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn callgraph_emits_four_buffers() {
+        let p = callgraph_build_with_count("direct", "indirect", "pts", "out", 64);
+        let names: Vec<&str> = p.buffers.iter().map(|b| b.name()).collect();
+        assert_eq!(names, vec!["direct", "indirect", "pts", "out"]);
+    }
+
+    #[test]
+    fn callgraph_buffer_count_matches_bitset_words() {
+        let node_count = 64;
+        let words = bitset_words(node_count);
+        let p = callgraph_build_with_count("d", "i", "p", "o", node_count);
+        let out_buf = p
+            .buffers
+            .iter()
+            .find(|b| b.name() == "o")
+            .expect("out buffer");
+        assert_eq!(out_buf.count, words);
+    }
+
+    #[test]
+    fn callgraph_workgroup_size_is_256_1_1() {
+        let p = callgraph_build_with_count("d", "i", "p", "o", 64);
+        assert_eq!(p.workgroup_size, [256, 1, 1]);
+    }
+
+    #[test]
+    fn callgraph_default_delegates_to_with_count() {
+        let default = callgraph_build("d", "i", "p", "o");
+        let explicit = callgraph_build_with_count("d", "i", "p", "o", 4);
+        assert_eq!(default.workgroup_size, explicit.workgroup_size);
+        assert_eq!(default.buffers.len(), explicit.buffers.len());
+    }
+
+    #[test]
+    fn callgraph_soundness_is_mayover() {
+        use super::super::soundness::{Soundness, SoundnessTagged};
+        assert_eq!(Callgraph.soundness(), Soundness::MayOver);
     }
 }

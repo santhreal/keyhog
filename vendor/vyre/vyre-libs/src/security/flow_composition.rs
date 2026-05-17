@@ -1,19 +1,30 @@
 use vyre::ir::Program;
 use vyre_foundation::execution_plan::fusion::fuse_programs;
+use vyre_foundation::ir::DataType;
 use vyre_primitives::bitset::and::bitset_and;
 use vyre_primitives::bitset::and::cpu_ref as bitset_and_cpu_ref;
 use vyre_primitives::bitset::and_not::bitset_and_not;
 use vyre_primitives::bitset::and_not::cpu_ref as bitset_and_not_cpu_ref;
 use vyre_primitives::bitset::any::bitset_any;
+use vyre_primitives::graph::csr_forward_traverse::bitset_words;
 use vyre_primitives::graph::csr_forward_traverse::cpu_ref as csr_forward_cpu_ref;
-use vyre_primitives::graph::csr_forward_traverse::{bitset_words, csr_forward_traverse};
 use vyre_primitives::graph::program_graph::ProgramGraphShape;
 
 use crate::region::{reparent_program_children, wrap_anonymous};
-use crate::security::flows_to::FLOWS_TO_MASK;
+use crate::security::flows_to::{flows_to, FLOWS_TO_MASK};
 
-pub(crate) fn fuse_security_flow(op_id: &'static str, parts: &[Program]) -> Program {
-    let fused = fuse_programs(parts).expect("security flow composition must fuse cleanly");
+pub(crate) fn fuse_security_flow(op_id: &'static str, parts: &[Program], output: &str) -> Program {
+    let fused = match fuse_programs(parts) {
+        Ok(fused) => fused,
+        Err(error) => {
+            return crate::builder::invalid_output_program(
+                op_id,
+                output,
+                DataType::U32,
+                format!("Fix: security flow composition failed to fuse: {error}"),
+            );
+        }
+    };
     Program::wrapped(
         fused.buffers().to_vec(),
         fused.workgroup_size(),
@@ -56,10 +67,10 @@ pub(crate) fn dataflow_hit_program(
     out_scalar_buf: &str,
 ) -> Program {
     let words = bitset_words(shape.node_count);
-    let traverse = csr_forward_traverse(shape, source_buf, reach_buf, FLOWS_TO_MASK);
+    let traverse = flows_to(shape, source_buf, reach_buf);
     let intersect = bitset_and(reach_buf, sink_buf, hits_buf, words);
     let any = bitset_any(hits_buf, out_scalar_buf, words);
-    fuse_security_flow(op_id, &[traverse, intersect, any])
+    fuse_security_flow(op_id, &[traverse, intersect, any], out_scalar_buf)
 }
 
 pub(crate) fn sanitized_dataflow_hit_program(
@@ -76,11 +87,15 @@ pub(crate) fn sanitized_dataflow_hit_program(
 ) -> Program {
     let words = bitset_words(shape.node_count);
     let pre_kill = bitset_and_not(source_buf, sanitizer_buf, clean_buf, words);
-    let traverse = csr_forward_traverse(shape, clean_buf, reach_buf, FLOWS_TO_MASK);
+    let traverse = flows_to(shape, clean_buf, reach_buf);
     let post_kill = bitset_and_not(reach_buf, sanitizer_buf, alive_buf, words);
     let intersect = bitset_and(alive_buf, sink_buf, hits_buf, words);
     let any = bitset_any(hits_buf, out_scalar_buf, words);
-    fuse_security_flow(op_id, &[pre_kill, traverse, post_kill, intersect, any])
+    fuse_security_flow(
+        op_id,
+        &[pre_kill, traverse, post_kill, intersect, any],
+        out_scalar_buf,
+    )
 }
 
 pub(crate) fn sanitized_dataflow_hit(

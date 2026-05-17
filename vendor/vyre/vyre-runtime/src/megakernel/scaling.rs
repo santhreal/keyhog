@@ -1,12 +1,21 @@
 //! Occupancy-aware grid scaling for megakernels.
 //!
-//! Runtime code re-exports the driver-megakernel scheduling policy instead
-//! of carrying a second partial copy.
+//! Runtime-owned megakernel planning and launch policy.
 
-pub use vyre_driver_megakernel::{
-    default_worker_groups_from_limits, dispatch_grid_for, padded_slot_count, worker_workgroup_size,
-    MegakernelExecutionMode, MegakernelGridLimits, MegakernelGridPlan, MegakernelGridRequest,
-    MegakernelLaunchGeometry, MegakernelLaunchPolicy, MegakernelLaunchRecommendation,
-    MegakernelLaunchRequest, MegakernelQueuePressure, MegakernelSizingPolicy,
-    PriorityRequeueAccounting,
+#[cfg(feature = "self-substrate-adapters")]
+pub use super::planner::{
+    build_bellman_tn_order_program, build_kfac_autotune_step_program,
+    build_persistent_fixpoint_program, build_sinkhorn_clustering_program,
+};
+pub use super::planner::{
+    default_worker_groups_from_limits, dispatch_grid_for, padded_slot_count, select_fused_subset,
+    select_fused_subset_compact_into, select_fused_subset_into, select_fused_subset_pruned,
+    select_fused_subset_pruned_into, select_fused_subset_with_rate, select_optimal_fused_subset,
+    worker_workgroup_size, FusionSelectionScratch, MegakernelGridLimits, MegakernelGridPlan,
+    MegakernelGridRequest, MegakernelLaunchGeometry, MegakernelSizingPolicy,
+};
+pub use super::policy::{
+    diffuse_priority_across_siblings, diffuse_priority_across_siblings_into,
+    MegakernelExecutionMode, MegakernelLaunchPolicy, MegakernelLaunchRecommendation,
+    MegakernelLaunchRequest, MegakernelQueuePressure, PriorityRequeueAccounting,
 };

@@ -2,7 +2,7 @@
 //!
 //! This module is the Wave-1..Wave-3 deliverable of `docs/LEGENDARY_PLAN_2026-04-23.md`.
 //! Each submodule is one dataflow primitive, composed as a vyre `Program`
-//! (no raw WGSL — everything emits through the IR so CPU parity + GPU
+//! (no raw target-text — everything emits through the IR so CPU parity + GPU
 //! dispatch work identically).
 //!
 //! ## Layer position
@@ -39,6 +39,7 @@ pub mod soundness;
 pub use soundness::{Soundness, SoundnessTagged};
 
 pub mod callgraph;
+mod catalog;
 pub mod control_dependence;
 /// Cross-language dataflow primitive — forward reach REQUIRING the
 /// path to traverse at least one FFI edge (Python ctypes / JNI /
@@ -70,3 +71,8 @@ pub mod slice;
 pub mod ssa;
 pub mod summary;
 pub mod value_set;
+
+#[cfg(test)]
+    mod adversarial {
+        include!("tests/adversarial.rs");
+    }

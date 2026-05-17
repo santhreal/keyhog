@@ -46,7 +46,7 @@ use crate::bitset::bitset_words;
 
 /// Density threshold (percent). Tiles with ≥ this fraction of
 /// frontier bits set use the dense-bitmatrix step; below it, CSR.
-/// 25% is the empirical crossover on NVIDIA Ada+ / AMD RDNA3.
+/// 25% is the empirical crossover on current desktop GPU architectures.
 pub const DENSE_THRESHOLD_PCT: u32 = 25;
 
 /// Canonical op id for the dense step.
@@ -84,6 +84,14 @@ pub fn adaptive_dense_step(
     adj_rows_dense: &str,
     node_count: u32,
 ) -> Program {
+    if node_count == 0 {
+        return crate::invalid_output_program(
+            OP_ID,
+            frontier_out,
+            DataType::U32,
+            "Fix: adaptive_dense_step requires node_count > 0, got 0.".to_string(),
+        );
+    }
     let words = bitset_words(node_count);
     // PHASE7_GRAPH C1: the adjacency buffer size is `node_count *
     // words`. A u32 × u32 multiply wraps silently for non-trivial
@@ -91,17 +99,22 @@ pub fn adaptive_dense_step(
     // u32::MAX), producing a tiny buffer and catastrophic OOB
     // reads/writes. Check in u64 first and refuse programs we
     // cannot represent faithfully.
-    let adj_count = u64::from(node_count).checked_mul(u64::from(words)).expect(
-        "adaptive_dense_step: node_count * words overflows u64 — impossible on 32-bit u32 inputs",
-    );
-    assert!(
-        adj_count <= u64::from(u32::MAX),
-        "Fix: adaptive_dense_step buffer size {} exceeds u32::MAX ({} nodes × {} words). \
-         Partition the graph or use csr_forward_traverse.",
-        adj_count,
-        node_count,
-        words,
-    );
+    let Some(adj_count) = u64::from(node_count).checked_mul(u64::from(words)) else {
+        return crate::invalid_output_program(
+            OP_ID,
+            frontier_out,
+            DataType::U32,
+            format!("Fix: adaptive_dense_step buffer size overflows u64 ({node_count} nodes x {words} words)."),
+        );
+    };
+    if adj_count > u64::from(u32::MAX) {
+        return crate::invalid_output_program(
+            OP_ID,
+            frontier_out,
+            DataType::U32,
+            format!("Fix: adaptive_dense_step buffer size {adj_count} exceeds u32::MAX ({node_count} nodes x {words} words). Partition the graph or use csr_forward_traverse."),
+        );
+    }
     let adj_count_u32 = adj_count as u32;
     let d = Expr::InvocationId { axis: 0 };
 
@@ -169,15 +182,15 @@ pub fn adaptive_dense_step(
 #[must_use]
 pub fn cpu_dense_step(frontier_in: &[u32], adj_rows_dense: &[u32], node_count: u32) -> Vec<u32> {
     let words = bitset_words(node_count) as usize;
-    assert_eq!(frontier_in.len(), words);
-    assert_eq!(adj_rows_dense.len(), (node_count as usize) * words);
 
     let mut out = vec![0_u32; words];
     for d in 0..node_count as usize {
         let row_start = d * words;
         let mut hit: u32 = 0;
         for w in 0..words {
-            hit |= adj_rows_dense[row_start + w] & frontier_in[w];
+            let adj = adj_rows_dense.get(row_start + w).copied().unwrap_or(0);
+            let frontier = frontier_in.get(w).copied().unwrap_or(0);
+            hit |= adj & frontier;
         }
         if hit != 0 {
             out[d / 32] |= 1 << (d % 32);
@@ -275,6 +288,12 @@ mod tests {
         // 70 nodes → 3 words. Edge src=5 (word 0) → dst=65 (word 2).
         let out = cpu_dense_step(&pack_nodes(&[5], 70), &build_dense_adj(&[(5, 65)], 70), 70);
         assert_eq!(out, pack_nodes(&[65], 70));
+    }
+
+    #[test]
+    fn cpu_dense_step_short_buffers_treat_missing_words_as_zero() {
+        let out = cpu_dense_step(&[1], &[], 16);
+        assert!(out.iter().all(|&word| word == 0));
     }
 
     #[test]

@@ -262,25 +262,55 @@ inventory::submit! {
                 4096,
             )
         },
-        // Zero-filled fixture: counts[0]=0 so the guard `t < num_tokens`
-        // never fires, and no lane enters the keyword-lookup body. Every
-        // output buffer remains at its input state. This pins the no-op
-        // fast path byte-for-byte; non-empty token streams are exercised
-        // by `build_c11_compiler_megakernel`.
-        test_inputs: Some(|| vec![vec![
-            vec![0u8; 1024 * 4],        // tok_types
-            vec![0u8; 1024 * 4],        // tok_starts
-            vec![0u8; 1024 * 4],        // tok_lens
-            vec![0u8; 4],               // counts
-            vec![0u8; 4_096 * 4],       // haystack
-            vec![0u8; C_KEYWORDS.len() * 2 * 4], // keyword_map
-        ]]),
+        test_inputs: Some(keyword_fixture_inputs),
         expected_output: Some(|| {
-            // counts[0] = 0 → no lane enters the keyword loop, so
-            // tok_types is unchanged (all zero). Only ReadWrite/output
-            // buffers appear in the expected set; tok_types is the only
-            // ReadWrite buffer declared.
-            vec![vec![vec![0u8; 1024 * 4]]]
+            let mut tok_types = vec![0u8; 1024 * 4];
+            for (idx, tok) in [TOK_INT, TOK_IDENTIFIER, TOK_RETURN, TOK_GNU_ASM]
+                .into_iter()
+                .enumerate()
+            {
+                tok_types[idx * 4..idx * 4 + 4].copy_from_slice(&tok.to_le_bytes());
+            }
+            vec![vec![tok_types]]
         }),
     }
+}
+
+fn keyword_fixture_inputs() -> Vec<Vec<Vec<u8>>> {
+    let lexemes = b"int foo return __asm__";
+    let starts = [0u32, 4, 8, 15];
+    let lens = [3u32, 3, 6, 7];
+    let mut tok_types = vec![0u8; 1024 * 4];
+    let mut tok_starts = vec![0u8; 1024 * 4];
+    let mut tok_lens = vec![0u8; 1024 * 4];
+    for idx in 0..starts.len() {
+        tok_types[idx * 4..idx * 4 + 4].copy_from_slice(&TOK_IDENTIFIER.to_le_bytes());
+        tok_starts[idx * 4..idx * 4 + 4].copy_from_slice(&starts[idx].to_le_bytes());
+        tok_lens[idx * 4..idx * 4 + 4].copy_from_slice(&lens[idx].to_le_bytes());
+    }
+
+    let mut counts = vec![0u8; 4];
+    counts.copy_from_slice(&(starts.len() as u32).to_le_bytes());
+
+    let mut haystack = vec![0u8; 4_096 * 4];
+    for (idx, byte) in lexemes.iter().enumerate() {
+        haystack[idx * 4..idx * 4 + 4].copy_from_slice(&u32::from(*byte).to_le_bytes());
+    }
+
+    let mut keyword_map = vec![0u8; C_KEYWORDS.len() * 2 * 4];
+    for (idx, (keyword, tok)) in C_KEYWORDS.iter().enumerate() {
+        let hash = fnv1a32(keyword.as_bytes());
+        let base = idx * 8;
+        keyword_map[base..base + 4].copy_from_slice(&hash.to_le_bytes());
+        keyword_map[base + 4..base + 8].copy_from_slice(&tok.to_le_bytes());
+    }
+
+    vec![vec![
+        tok_types,
+        tok_starts,
+        tok_lens,
+        counts,
+        haystack,
+        keyword_map,
+    ]]
 }

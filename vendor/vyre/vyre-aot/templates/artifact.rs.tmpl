@@ -1,0 +1,116 @@
+//! Bundle loader: read manifest.json, decompress kernel, decompress weights.
+//!
+//! Self-contained — no vyre dependency at run-time.
+
+use std::fs;
+use std::io::Read;
+use std::path::{Path, PathBuf};
+
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum Target {
+    Ptx,
+    SpirV,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub enum BufferMemoryKind {
+    Global,
+    Shared,
+    Constant,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub enum BufferAccessKind {
+    ReadOnly,
+    WriteOnly,
+    ReadWrite,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BufferEntry {
+    pub name: String,
+    pub binding: u32,
+    pub element_count: u32,
+    pub element_size_bytes: u32,
+    pub memory_kind: BufferMemoryKind,
+    pub access: BufferAccessKind,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct DispatchConfig {
+    pub workgroup_size: [u32; 3],
+    pub grid_size: [u32; 3],
+    pub dynamic_shared_bytes: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Manifest {
+    pub schema: String,
+    pub aot_version: String,
+    pub artifact_name: String,
+    pub target: Target,
+    pub entry_point: String,
+    pub dispatch: DispatchConfig,
+    pub kernel_file: String,
+    pub weights_file: String,
+    pub kernel_compression: String,
+    pub weights_compression: String,
+    pub buffers: Vec<BufferEntry>,
+    pub kernel_sha256_hex: String,
+    pub weights_sha256_hex: String,
+    #[serde(default)]
+    pub notes: String,
+}
+
+pub struct LoadedBundle {
+    pub manifest: Manifest,
+    pub kernel_bytes: Vec<u8>,
+    pub weight_bytes: Vec<u8>,
+}
+
+pub fn load_bundle(dir: &Path) -> Result<LoadedBundle, Box<dyn std::error::Error>> {
+    let manifest_path = dir.join("manifest.json");
+    let manifest_str = fs::read_to_string(&manifest_path)
+        .map_err(|e| format!("read manifest {}: {e}", manifest_path.display()))?;
+    let manifest: Manifest = serde_json::from_str(&manifest_str)?;
+
+    let kernel_compressed = fs::read(dir.join(&manifest.kernel_file))?;
+    let kernel_bytes = match manifest.kernel_compression.as_str() {
+        "lzma" => decompress_lzma(&kernel_compressed)?,
+        "none" => kernel_compressed,
+        other => {
+            return Err(format!("unknown kernel_compression: {other}").into());
+        }
+    };
+
+    let weights_compressed = fs::read(dir.join(&manifest.weights_file))?;
+    let weight_bytes = match manifest.weights_compression.as_str() {
+        s if s.starts_with("brotli") => decompress_brotli(&weights_compressed)?,
+        "none" => weights_compressed,
+        other => {
+            return Err(format!("unknown weights_compression: {other}").into());
+        }
+    };
+
+    Ok(LoadedBundle {
+        manifest,
+        kernel_bytes,
+        weight_bytes,
+    })
+}
+
+fn decompress_lzma(input: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let mut out = Vec::new();
+    let mut reader = std::io::Cursor::new(input);
+    lzma_rs::lzma_decompress(&mut reader, &mut out)?;
+    Ok(out)
+}
+
+fn decompress_brotli(input: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let mut out = Vec::new();
+    let mut decoder = brotli::Decompressor::new(input, 4096);
+    decoder.read_to_end(&mut out)?;
+    Ok(out)
+}

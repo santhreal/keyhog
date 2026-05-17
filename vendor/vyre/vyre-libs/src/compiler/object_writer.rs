@@ -1,4 +1,5 @@
-use crate::region::wrap_anonymous;
+use crate::region::{wrap_anonymous, wrap_child};
+use vyre_foundation::ir::model::expr::GeneratorRef;
 use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 
 /// Registered op id for GPU ELF container emission.
@@ -57,182 +58,191 @@ pub fn opt_lower_elf(ssa_nodes: &str, target_object_bytes: &str, num_nodes: Expr
         [256, 1, 1],
         vec![wrap_anonymous(
             ELF_LOWERING_OP_ID,
-            vec![
-                Node::if_then(
-                    Expr::eq(t.clone(), Expr::u32(0)),
-                    vec![
-                        // e_ident (16 bytes)
-                        Node::store(target_object_bytes, Expr::u32(0), Expr::u32(0x464C457F)), // "\x7fELF"
-                        Node::store(target_object_bytes, Expr::u32(1), Expr::u32(0x00010102)), // 64-bit, LSB, SystemV ABI
-                        Node::store(target_object_bytes, Expr::u32(2), Expr::u32(0x00000000)), // Padding
-                        Node::store(target_object_bytes, Expr::u32(3), Expr::u32(0x00000000)), // Padding
-                        // e_type, e_machine, e_version
-                        Node::store(target_object_bytes, Expr::u32(4), Expr::u32(0x003E0001)), // ET_REL (1), EM_X86_64 (62)
-                        Node::store(target_object_bytes, Expr::u32(5), Expr::u32(0x00000001)), // Version 1
-                        // e_entry (8 bytes), e_phoff (8 bytes)
-                        Node::store(target_object_bytes, Expr::u32(6), Expr::u32(0x00000000)),
-                        Node::store(target_object_bytes, Expr::u32(7), Expr::u32(0x00000000)),
-                        Node::store(target_object_bytes, Expr::u32(8), Expr::u32(0x00000000)), // No Program Headers
-                        Node::store(target_object_bytes, Expr::u32(9), Expr::u32(0x00000000)),
-                        // e_shoff (8 bytes) -> Section Header Table immediately follows header (64)
-                        Node::store(target_object_bytes, Expr::u32(10), Expr::u32(0x00000040)),
-                        Node::store(target_object_bytes, Expr::u32(11), Expr::u32(0x00000000)),
-                        // e_flags (4 bytes)
-                        Node::store(target_object_bytes, Expr::u32(12), Expr::u32(0x00000000)),
-                        // e_ehsize (2), e_phentsize (2), e_phnum (2), e_shentsize (2)
-                        Node::store(target_object_bytes, Expr::u32(13), Expr::u32(0x00000040)), // Ehdr size = 64
-                        Node::store(target_object_bytes, Expr::u32(14), Expr::u32(0x00400000)), // Phnum = 0, Shdr size = 64
-                        // e_shnum (2), e_shstrndx (2)
-                        Node::store(
-                            target_object_bytes,
-                            Expr::u32(15),
-                            Expr::u32((SHSTRTAB_SECTION_INDEX << 16) | ELF_SECTION_COUNT),
-                        ),
-                        // Section 0: SHT_NULL, all zero.
-                        Node::loop_for(
-                            "null_sh_word",
-                            Expr::u32(0),
-                            Expr::u32(ELF64_SECTION_HEADER_WORDS),
-                            vec![Node::store(
+            vec![wrap_child(
+                vyre_primitives::decode::rle_segment_lengths::OP_ID,
+                GeneratorRef {
+                    name: ELF_LOWERING_OP_ID.to_string(),
+                },
+                vec![
+                    Node::if_then(
+                        Expr::eq(t.clone(), Expr::u32(0)),
+                        vec![
+                            // e_ident (16 bytes)
+                            Node::store(target_object_bytes, Expr::u32(0), Expr::u32(0x464C457F)), // "\x7fELF"
+                            Node::store(target_object_bytes, Expr::u32(1), Expr::u32(0x00010102)), // 64-bit, LSB, SystemV ABI
+                            Node::store(target_object_bytes, Expr::u32(2), Expr::u32(0x00000000)), // Padding
+                            Node::store(target_object_bytes, Expr::u32(3), Expr::u32(0x00000000)), // Padding
+                            // e_type, e_machine, e_version
+                            Node::store(target_object_bytes, Expr::u32(4), Expr::u32(0x003E0001)), // ET_REL (1), EM_X86_64 (62)
+                            Node::store(target_object_bytes, Expr::u32(5), Expr::u32(0x00000001)), // Version 1
+                            // e_entry (8 bytes), e_phoff (8 bytes)
+                            Node::store(target_object_bytes, Expr::u32(6), Expr::u32(0x00000000)),
+                            Node::store(target_object_bytes, Expr::u32(7), Expr::u32(0x00000000)),
+                            Node::store(target_object_bytes, Expr::u32(8), Expr::u32(0x00000000)), // No Program Headers
+                            Node::store(target_object_bytes, Expr::u32(9), Expr::u32(0x00000000)),
+                            // e_shoff (8 bytes) -> Section Header Table immediately follows header (64)
+                            Node::store(target_object_bytes, Expr::u32(10), Expr::u32(0x00000040)),
+                            Node::store(target_object_bytes, Expr::u32(11), Expr::u32(0x00000000)),
+                            // e_flags (4 bytes)
+                            Node::store(target_object_bytes, Expr::u32(12), Expr::u32(0x00000000)),
+                            // e_ehsize (2), e_phentsize (2), e_phnum (2), e_shentsize (2)
+                            Node::store(target_object_bytes, Expr::u32(13), Expr::u32(0x00000040)), // Ehdr size = 64
+                            Node::store(target_object_bytes, Expr::u32(14), Expr::u32(0x00400000)), // Phnum = 0, Shdr size = 64
+                            // e_shnum (2), e_shstrndx (2)
+                            Node::store(
                                 target_object_bytes,
-                                Expr::add(Expr::u32(ELF64_HEADER_WORDS), Expr::var("null_sh_word")),
+                                Expr::u32(15),
+                                Expr::u32((SHSTRTAB_SECTION_INDEX << 16) | ELF_SECTION_COUNT),
+                            ),
+                            // Section 0: SHT_NULL, all zero.
+                            Node::loop_for(
+                                "null_sh_word",
                                 Expr::u32(0),
-                            )],
-                        ),
-                        // Section 1: .text
-                        Node::store(
-                            target_object_bytes,
-                            Expr::u32(
-                                ELF64_HEADER_WORDS
-                                    + TEXT_SECTION_INDEX * ELF64_SECTION_HEADER_WORDS,
+                                Expr::u32(ELF64_SECTION_HEADER_WORDS),
+                                vec![Node::store(
+                                    target_object_bytes,
+                                    Expr::add(
+                                        Expr::u32(ELF64_HEADER_WORDS),
+                                        Expr::var("null_sh_word"),
+                                    ),
+                                    Expr::u32(0),
+                                )],
                             ),
-                            Expr::u32(1),
-                        ), // sh_name = ".text"
-                        Node::store(
-                            target_object_bytes,
-                            Expr::u32(
-                                ELF64_HEADER_WORDS
-                                    + TEXT_SECTION_INDEX * ELF64_SECTION_HEADER_WORDS
-                                    + 1,
+                            // Section 1: .text
+                            Node::store(
+                                target_object_bytes,
+                                Expr::u32(
+                                    ELF64_HEADER_WORDS
+                                        + TEXT_SECTION_INDEX * ELF64_SECTION_HEADER_WORDS,
+                                ),
+                                Expr::u32(1),
+                            ), // sh_name = ".text"
+                            Node::store(
+                                target_object_bytes,
+                                Expr::u32(
+                                    ELF64_HEADER_WORDS
+                                        + TEXT_SECTION_INDEX * ELF64_SECTION_HEADER_WORDS
+                                        + 1,
+                                ),
+                                Expr::u32(1),
+                            ), // SHT_PROGBITS
+                            Node::store(
+                                target_object_bytes,
+                                Expr::u32(
+                                    ELF64_HEADER_WORDS
+                                        + TEXT_SECTION_INDEX * ELF64_SECTION_HEADER_WORDS
+                                        + 2,
+                                ),
+                                Expr::u32(0x6),
+                            ), // SHF_ALLOC | SHF_EXECINSTR
+                            Node::store(
+                                target_object_bytes,
+                                Expr::u32(
+                                    ELF64_HEADER_WORDS
+                                        + TEXT_SECTION_INDEX * ELF64_SECTION_HEADER_WORDS
+                                        + 6,
+                                ),
+                                Expr::u32(TEXT_SECTION_WORD_OFFSET * 4),
                             ),
-                            Expr::u32(1),
-                        ), // SHT_PROGBITS
-                        Node::store(
-                            target_object_bytes,
-                            Expr::u32(
-                                ELF64_HEADER_WORDS
-                                    + TEXT_SECTION_INDEX * ELF64_SECTION_HEADER_WORDS
-                                    + 2,
+                            Node::store(
+                                target_object_bytes,
+                                Expr::u32(
+                                    ELF64_HEADER_WORDS
+                                        + TEXT_SECTION_INDEX * ELF64_SECTION_HEADER_WORDS
+                                        + 8,
+                                ),
+                                Expr::u32(node_count * 4),
                             ),
-                            Expr::u32(0x6),
-                        ), // SHF_ALLOC | SHF_EXECINSTR
-                        Node::store(
-                            target_object_bytes,
-                            Expr::u32(
-                                ELF64_HEADER_WORDS
-                                    + TEXT_SECTION_INDEX * ELF64_SECTION_HEADER_WORDS
-                                    + 6,
+                            Node::store(
+                                target_object_bytes,
+                                Expr::u32(
+                                    ELF64_HEADER_WORDS
+                                        + TEXT_SECTION_INDEX * ELF64_SECTION_HEADER_WORDS
+                                        + 12,
+                                ),
+                                Expr::u32(4),
                             ),
-                            Expr::u32(TEXT_SECTION_WORD_OFFSET * 4),
-                        ),
-                        Node::store(
-                            target_object_bytes,
-                            Expr::u32(
-                                ELF64_HEADER_WORDS
-                                    + TEXT_SECTION_INDEX * ELF64_SECTION_HEADER_WORDS
-                                    + 8,
+                            // Section 2: .shstrtab
+                            Node::store(
+                                target_object_bytes,
+                                Expr::u32(
+                                    ELF64_HEADER_WORDS
+                                        + SHSTRTAB_SECTION_INDEX * ELF64_SECTION_HEADER_WORDS,
+                                ),
+                                Expr::u32(7),
+                            ), // sh_name = ".shstrtab"
+                            Node::store(
+                                target_object_bytes,
+                                Expr::u32(
+                                    ELF64_HEADER_WORDS
+                                        + SHSTRTAB_SECTION_INDEX * ELF64_SECTION_HEADER_WORDS
+                                        + 1,
+                                ),
+                                Expr::u32(3),
+                            ), // SHT_STRTAB
+                            Node::store(
+                                target_object_bytes,
+                                Expr::u32(
+                                    ELF64_HEADER_WORDS
+                                        + SHSTRTAB_SECTION_INDEX * ELF64_SECTION_HEADER_WORDS
+                                        + 6,
+                                ),
+                                Expr::u32((TEXT_SECTION_WORD_OFFSET + node_count) * 4),
                             ),
-                            Expr::u32(node_count * 4),
-                        ),
-                        Node::store(
-                            target_object_bytes,
-                            Expr::u32(
-                                ELF64_HEADER_WORDS
-                                    + TEXT_SECTION_INDEX * ELF64_SECTION_HEADER_WORDS
-                                    + 12,
+                            Node::store(
+                                target_object_bytes,
+                                Expr::u32(
+                                    ELF64_HEADER_WORDS
+                                        + SHSTRTAB_SECTION_INDEX * ELF64_SECTION_HEADER_WORDS
+                                        + 8,
+                                ),
+                                Expr::u32(17),
                             ),
-                            Expr::u32(4),
-                        ),
-                        // Section 2: .shstrtab
-                        Node::store(
-                            target_object_bytes,
-                            Expr::u32(
-                                ELF64_HEADER_WORDS
-                                    + SHSTRTAB_SECTION_INDEX * ELF64_SECTION_HEADER_WORDS,
+                            Node::store(
+                                target_object_bytes,
+                                Expr::u32(
+                                    ELF64_HEADER_WORDS
+                                        + SHSTRTAB_SECTION_INDEX * ELF64_SECTION_HEADER_WORDS
+                                        + 12,
+                                ),
+                                Expr::u32(1),
                             ),
-                            Expr::u32(7),
-                        ), // sh_name = ".shstrtab"
-                        Node::store(
-                            target_object_bytes,
-                            Expr::u32(
-                                ELF64_HEADER_WORDS
-                                    + SHSTRTAB_SECTION_INDEX * ELF64_SECTION_HEADER_WORDS
-                                    + 1,
+                            Node::store(
+                                target_object_bytes,
+                                Expr::u32(TEXT_SECTION_WORD_OFFSET + node_count),
+                                Expr::u32(0x65742E00),
+                            ), // "\0.te"
+                            Node::store(
+                                target_object_bytes,
+                                Expr::u32(TEXT_SECTION_WORD_OFFSET + node_count + 1),
+                                Expr::u32(0x2E007478),
+                            ), // "xt\0."
+                            Node::store(
+                                target_object_bytes,
+                                Expr::u32(TEXT_SECTION_WORD_OFFSET + node_count + 2),
+                                Expr::u32(0x74736873),
+                            ), // "shst"
+                            Node::store(
+                                target_object_bytes,
+                                Expr::u32(TEXT_SECTION_WORD_OFFSET + node_count + 3),
+                                Expr::u32(0x62617472),
+                            ), // "rtab"
+                            Node::store(
+                                target_object_bytes,
+                                Expr::u32(TEXT_SECTION_WORD_OFFSET + node_count + 4),
+                                Expr::u32(0),
                             ),
-                            Expr::u32(3),
-                        ), // SHT_STRTAB
-                        Node::store(
-                            target_object_bytes,
-                            Expr::u32(
-                                ELF64_HEADER_WORDS
-                                    + SHSTRTAB_SECTION_INDEX * ELF64_SECTION_HEADER_WORDS
-                                    + 6,
+                            Node::store(
+                                "tmp_elf_offsets",
+                                Expr::u32(0),
+                                Expr::u32(TEXT_SECTION_WORD_OFFSET),
                             ),
-                            Expr::u32((TEXT_SECTION_WORD_OFFSET + node_count) * 4),
-                        ),
-                        Node::store(
-                            target_object_bytes,
-                            Expr::u32(
-                                ELF64_HEADER_WORDS
-                                    + SHSTRTAB_SECTION_INDEX * ELF64_SECTION_HEADER_WORDS
-                                    + 8,
-                            ),
-                            Expr::u32(17),
-                        ),
-                        Node::store(
-                            target_object_bytes,
-                            Expr::u32(
-                                ELF64_HEADER_WORDS
-                                    + SHSTRTAB_SECTION_INDEX * ELF64_SECTION_HEADER_WORDS
-                                    + 12,
-                            ),
-                            Expr::u32(1),
-                        ),
-                        Node::store(
-                            target_object_bytes,
-                            Expr::u32(TEXT_SECTION_WORD_OFFSET + node_count),
-                            Expr::u32(0x65742E00),
-                        ), // "\0.te"
-                        Node::store(
-                            target_object_bytes,
-                            Expr::u32(TEXT_SECTION_WORD_OFFSET + node_count + 1),
-                            Expr::u32(0x2E007478),
-                        ), // "xt\0."
-                        Node::store(
-                            target_object_bytes,
-                            Expr::u32(TEXT_SECTION_WORD_OFFSET + node_count + 2),
-                            Expr::u32(0x74736873),
-                        ), // "shst"
-                        Node::store(
-                            target_object_bytes,
-                            Expr::u32(TEXT_SECTION_WORD_OFFSET + node_count + 3),
-                            Expr::u32(0x62617472),
-                        ), // "rtab"
-                        Node::store(
-                            target_object_bytes,
-                            Expr::u32(TEXT_SECTION_WORD_OFFSET + node_count + 4),
-                            Expr::u32(0),
-                        ),
-                        Node::store(
-                            "tmp_elf_offsets",
-                            Expr::u32(0),
-                            Expr::u32(TEXT_SECTION_WORD_OFFSET),
-                        ),
-                    ],
-                ),
-                Node::barrier(),
-                Node::if_then(Expr::lt(t.clone(), num_nodes), loop_body),
-            ],
+                        ],
+                    ),
+                    Node::barrier(),
+                    Node::if_then(Expr::lt(t.clone(), num_nodes), loop_body),
+                ],
+            )],
         )],
     )
 }

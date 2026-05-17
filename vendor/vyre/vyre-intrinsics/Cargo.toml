@@ -1,6 +1,6 @@
 [package]
 name = "vyre-intrinsics"
-version = "0.6.0"
+version = "0.4.1"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -18,8 +18,8 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-vyre-foundation = { version = "0.6.0", path = "../vyre-foundation" }
-vyre-driver = { version = "0.6.0", path = "../vyre-driver" }
+vyre-foundation = { version = "0.4.1", path = "../vyre-foundation" }
+vyre-driver = { version = "0.4.1", path = "../vyre-driver" }
 vyre-spec.workspace = true
 vyre-macros.workspace = true
 serde.workspace = true
@@ -32,21 +32,14 @@ inventory.workspace = true
 [dev-dependencies]
 criterion.workspace = true
 vyre = { workspace = true }
-vyre-reference = { version = "0.6.0", path = "../vyre-reference" }
+vyre-reference = { version = "0.4.1", path = "../vyre-reference" }
 
 [features]
-default = ["all"]
+default = ["all", "subgroup-ops"]
 all = ["hardware"]
 hardware = []
-
-# Opt-in Cat-C subgroup intrinsics (subgroup_ballot, subgroup_shuffle,
-# subgroup_add). Off by default while the Naga 25+ lowering / wire
-# format settle. See FINDING-PRIM-2 and docs/rfcs/0004-collective-ops.md.
 subgroup-ops = ["vyre-reference/subgroup-ops"]
 
 [lints]
 workspace = true
 
-[[bench]]
-name = "intrinsic_perf"
-harness = false

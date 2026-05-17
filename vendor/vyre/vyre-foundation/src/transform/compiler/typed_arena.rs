@@ -2,7 +2,7 @@
 //!
 //! The typed arena is the memory primitive that makes GPU recursive descent
 //! and tree building possible.  It allocates offsets from a fixed workgroup-SRAM
-//! pool, rounds sizes to `u32` words, and resets in O(1).  The WGSL lowering
+//! pool, rounds sizes to `u32` words, and resets in O(1).  The target-text lowering
 //! maps `alloc` to an atomic bump-pointer increment in workgroup memory;
 //! the CPU reference mirrors the exact bound and alignment rules so the
 //! conform gate can prove byte-identical behavior.
@@ -35,10 +35,10 @@ use crate::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 use thiserror::Error;
 use vyre_spec::AlgebraicLaw;
 
-/// Portable WGSL source for the typed arena primitive.
+/// Registered target-text source for the typed arena primitive.
 #[must_use]
-pub const fn source() -> &'static str {
-    include_str!("wgsl/typed_arena.wgsl")
+pub fn source() -> Option<&'static str> {
+    crate::transform::compiler::shader_provider::source("typed_arena")
 }
 
 /// Word offset of the arena's `capacity_words` field.
@@ -236,7 +236,7 @@ pub enum TypedArenaError {
 #[derive(Debug, Default, Clone, Copy)]
 pub struct TypedArenaOp;
 
-/// Workgroup size used by the reference WGSL lowering.
+/// Workgroup size used by the reference target-text lowering.
 pub const WORKGROUP_SIZE: [u32; 3] = [64, 1, 1];
 
 #[cfg(test)]
@@ -264,8 +264,11 @@ mod ir_program_tests {
     #[test]
     fn alloc_program_is_wire_round_trip_stable() {
         let prog = alloc_program("arena", "out", 8);
-        let bytes = prog.to_wire().expect("serialize");
-        let decoded = Program::from_wire(&bytes).expect("decode");
+        let bytes = prog
+            .to_wire()
+            .expect("Fix: serialize; restore this invariant before continuing.");
+        let decoded = Program::from_wire(&bytes)
+            .expect("Fix: decode; restore this invariant before continuing.");
         assert_eq!(decoded.buffers().len(), prog.buffers().len());
         assert_eq!(decoded.workgroup_size(), prog.workgroup_size());
     }

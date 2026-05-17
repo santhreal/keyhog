@@ -23,7 +23,7 @@ impl LiteralTrue {
 pub struct LiteralTrue;
 
 /// Stable operation id for constant true leaves.
-pub const OP_ID: &str = "rule.literal_true";
+pub const OP_ID: &str = "vyre-libs::rule::literal_true";
 
 /// Execution contract annotation for the standard catalog.
 pub const CONTRACT: OperationContract = crate::contracts::RULE_PREDICATE_CHEAP;

@@ -78,21 +78,47 @@ pub fn try_post_process_cpu(
     matches: &[Match],
     haystack: &[u8],
 ) -> Result<Vec<PostProcessedMatch>, PostProcessError> {
+    let mut triples = Vec::new();
+    let mut out = Vec::new();
+    try_post_process_cpu_into(matches, haystack, &mut triples, &mut out)?;
+    Ok(out)
+}
+
+/// Caller-owned variant of [`try_post_process_cpu`].
+///
+/// Reuses `triples` and `out` across scans. This is the hot-path API for
+/// daemons and benchmark loops that post-process thousands of small readbacks.
+///
+/// # Errors
+///
+/// Returns [`PostProcessError::InvalidRange`] if any deduped match points
+/// outside `haystack`.
+pub fn try_post_process_cpu_into(
+    matches: &[Match],
+    haystack: &[u8],
+    triples: &mut Vec<RegionTriple>,
+    out: &mut Vec<PostProcessedMatch>,
+) -> Result<(), PostProcessError> {
+    triples.clear();
+    out.clear();
     if matches.is_empty() {
-        return Ok(Vec::new());
+        return Ok(());
     }
 
-    let mut triples: Vec<RegionTriple> = matches
-        .iter()
-        .map(|m| RegionTriple::new(m.pattern_id, m.start, m.end))
-        .collect();
-    dedup_regions_inplace(&mut triples);
+    triples.reserve(matches.len());
+    triples.extend(
+        matches
+            .iter()
+            .map(|m| RegionTriple::new(m.pattern_id, m.start, m.end)),
+    );
+    dedup_regions_inplace(triples);
 
-    let mut out = Vec::with_capacity(triples.len());
-    for t in triples {
+    out.reserve(triples.len());
+    for &t in triples.iter() {
         let s = t.start as usize;
         let e = t.end as usize;
         if e > haystack.len() || s > e {
+            out.clear();
             return Err(PostProcessError::InvalidRange {
                 pattern_id: t.pid,
                 start: t.start,
@@ -113,18 +139,17 @@ pub fn try_post_process_cpu(
             confidence,
         });
     }
-    Ok(out)
+    Ok(())
 }
 
 /// Infallible reference wrapper for callers whose matcher contract has
 /// already proved all ranges are within `haystack`.
 ///
-/// Panics with an actionable message on corrupt match triples instead of
-/// silently dropping evidence.
+/// Returns an empty result on corrupt match triples. Callers that need
+/// diagnostics use [`try_post_process_cpu`].
 #[must_use]
 pub fn post_process_cpu(matches: &[Match], haystack: &[u8]) -> Vec<PostProcessedMatch> {
-    try_post_process_cpu(matches, haystack)
-        .expect("post_process_cpu received corrupt match ranges; use try_post_process_cpu to surface PostProcessError")
+    try_post_process_cpu(matches, haystack).unwrap_or_default()
 }
 
 /// Shannon entropy in bits/byte. Returns `0.0` on an empty slice. The
@@ -150,4 +175,74 @@ pub fn shannon_entropy_bits_per_byte(bytes: &[u8]) -> f32 {
         h -= p * p.log2();
     }
     h
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn into_reuses_scratch_and_matches_allocating_api() {
+        let haystack = b"AKIA1234567890ZZ";
+        let matches = [
+            Match::new(7, 0, 8),
+            Match::new(7, 0, 8),
+            Match::new(8, 4, 12),
+        ];
+
+        let expected = try_post_process_cpu(&matches, haystack).unwrap();
+        let mut triples = Vec::with_capacity(16);
+        let triples_ptr = triples.as_ptr();
+        let mut out = Vec::with_capacity(16);
+        let out_ptr = out.as_ptr();
+
+        try_post_process_cpu_into(&matches, haystack, &mut triples, &mut out).unwrap();
+
+        assert_eq!(out, expected);
+        assert_eq!(triples.as_ptr(), triples_ptr);
+        assert_eq!(out.as_ptr(), out_ptr);
+    }
+
+    #[test]
+    fn into_clears_outputs_on_empty_input() {
+        let mut triples = vec![RegionTriple::new(1, 0, 1)];
+        let mut out = vec![PostProcessedMatch {
+            pattern_id: 1,
+            start: 0,
+            end: 1,
+            entropy_bits_per_byte: 0.0,
+            confidence: 0.0,
+        }];
+
+        try_post_process_cpu_into(&[], b"", &mut triples, &mut out).unwrap();
+
+        assert!(triples.is_empty());
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn into_reports_invalid_ranges_without_partial_output() {
+        let mut triples = Vec::new();
+        let mut out = Vec::new();
+        let err =
+            try_post_process_cpu_into(&[Match::new(1, 10, 12)], b"short", &mut triples, &mut out)
+                .unwrap_err();
+
+        assert_eq!(
+            err,
+            PostProcessError::InvalidRange {
+                pattern_id: 1,
+                start: 10,
+                end: 12,
+                haystack_len: 5,
+            }
+        );
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn infallible_wrapper_does_not_panic_on_corrupt_ranges() {
+        let out = post_process_cpu(&[Match::new(1, 10, 12)], b"short");
+        assert!(out.is_empty());
+    }
 }

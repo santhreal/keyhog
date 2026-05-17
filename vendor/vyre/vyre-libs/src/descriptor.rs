@@ -126,13 +126,17 @@ mod tests {
         use crate::nn::softmax;
         let program = softmax("in", "out", 64);
         let desc = ProgramDescriptor::from_program(&program);
-        assert_eq!(desc.buffer_count, 2);
-        assert_eq!(desc.workgroup_size, [1, 1, 1]);
+        // Tiled softmax uses workgroup scratch buffers: input, softmax_scratch,
+        // softmax_max, output = 4 buffers total.
+        assert_eq!(desc.buffer_count, 4);
+        assert_eq!(desc.workgroup_size, [256, 1, 1]);
         // Only the output buffer is ReadWrite; 64 F32 elements = 256 bytes.
         assert_eq!(desc.rw_bytes_lower_bound, 64 * 4);
         assert_eq!(desc.entry_node_count, 1); // one Region wrapper at top
         assert_eq!(desc.buffers[0].name, "in");
-        assert_eq!(desc.buffers[1].name, "out");
+        assert_eq!(desc.buffers[1].name, "softmax_scratch");
+        assert_eq!(desc.buffers[2].name, "softmax_max");
+        assert_eq!(desc.buffers[3].name, "out");
     }
 
     #[cfg(feature = "math-linalg")]

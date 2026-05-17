@@ -132,7 +132,7 @@ pub enum DataType {
     F8E5M2,
     /// 4-bit signed integer for aggressive LLM weight quantization.
     I4,
-    /// 4-bit float (custom per NVIDIA FP4) for LLM-class inference.
+    /// 4-bit float for LLM-class inference.
     FP4,
     /// 4-bit "normal-float" (per `QLoRA` paper) for LLM weight compression.
     NF4,

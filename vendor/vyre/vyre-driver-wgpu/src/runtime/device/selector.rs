@@ -24,13 +24,43 @@
 //! multi-GPU now select an adapter by index before constructing a
 //! device/queue pair.
 
-use std::future::Future;
-use std::pin::Pin;
-use std::sync::Arc;
-use std::task::{Context, Poll, Wake, Waker};
-use std::thread::{self, Thread};
-
 use vyre_driver::error::{Error, Result};
+
+/// Stable adapter identity used for deterministic recovery.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct AdapterIdentity {
+    name: String,
+    vendor: u32,
+    device: u32,
+    device_type: wgpu::DeviceType,
+    driver: String,
+    driver_info: String,
+    backend: wgpu::Backend,
+}
+
+impl AdapterIdentity {
+    pub(crate) fn from_info(info: &wgpu::AdapterInfo) -> Self {
+        Self {
+            name: info.name.clone(),
+            vendor: info.vendor,
+            device: info.device,
+            device_type: info.device_type,
+            driver: info.driver.clone(),
+            driver_info: info.driver_info.clone(),
+            backend: info.backend,
+        }
+    }
+
+    fn matches(&self, info: &wgpu::AdapterInfo) -> bool {
+        self.name == info.name
+            && self.vendor == info.vendor
+            && self.device == info.device
+            && self.device_type == info.device_type
+            && self.driver == info.driver
+            && self.driver_info == info.driver_info
+            && self.backend == info.backend
+    }
+}
 
 /// Criteria used by [`select_adapter`].
 #[derive(Debug, Default, Clone)]
@@ -137,7 +167,67 @@ pub fn init_device_for_adapter(
     wgpu::AdapterInfo,
     crate::runtime::device::EnabledFeatures,
 )> {
-    wait_for_gpu(acquire_gpu_for_adapter(index))
+    super::device::wait_for_gpu(acquire_gpu_for_adapter(index))
+}
+
+/// Recreate a device on the same adapter identity used by an existing backend.
+///
+/// # Errors
+///
+/// Returns `Error::Gpu` when the adapter disappeared, no longer reports as a
+/// real GPU, or rejects device creation.
+pub(crate) fn init_device_for_adapter_identity(
+    identity: &AdapterIdentity,
+) -> Result<(
+    (wgpu::Device, wgpu::Queue),
+    wgpu::AdapterInfo,
+    crate::runtime::device::EnabledFeatures,
+)> {
+    super::device::wait_for_gpu(acquire_gpu_for_adapter_identity(identity))
+}
+
+async fn acquire_gpu_for_adapter_identity(
+    identity: &AdapterIdentity,
+) -> Result<(
+    (wgpu::Device, wgpu::Queue),
+    wgpu::AdapterInfo,
+    crate::runtime::device::EnabledFeatures,
+)> {
+    let instance = wgpu::Instance::default();
+    let adapters = instance.enumerate_adapters(wgpu::Backends::all());
+    for adapter in &adapters {
+        let info = adapter.get_info();
+        if identity.matches(&info) {
+            if !crate::capabilities::is_real_gpu(&info) {
+                return Err(Error::Gpu {
+                    message: format!(
+                        "recovery target `{}` now reports device type {:?}, which is not a real GPU execution target. Fix: restore the original GPU adapter or construct a new backend for the changed adapter.",
+                        info.name, info.device_type
+                    ),
+                });
+            }
+            return super::device::request_device_for_adapter(adapter, "vyre device (recovered)")
+                .await;
+        }
+    }
+
+    let probed = adapters
+        .iter()
+        .map(|adapter| {
+            let info = adapter.get_info();
+            format!(
+                "{} ({:?}, backend={:?}, vendor={:08x}, device={:08x})",
+                info.name, info.device_type, info.backend, info.vendor, info.device
+            )
+        })
+        .collect::<Vec<_>>();
+    Err(Error::Gpu {
+        message: format!(
+            "original recovery adapter was not found. Target: {:?}. Probed adapters: [{}]. Fix: restore the original GPU or create a new WgpuBackend for the available adapter.",
+            identity,
+            probed.join(", ")
+        ),
+    })
 }
 
 /// Async variant of [`init_device_for_adapter`].
@@ -182,40 +272,17 @@ pub fn adapter_index_from_env() -> Option<usize> {
         .and_then(|s| s.parse::<usize>().ok())
 }
 
-// --- poll-to-block helpers (duplicated from device.rs) -----------
-
-struct ThreadWaker(Thread);
-
-impl Wake for ThreadWaker {
-    fn wake(self: Arc<Self>) {
-        self.0.unpark();
-    }
-    fn wake_by_ref(self: &Arc<Self>) {
-        self.0.unpark();
-    }
-}
-
-fn wait_for_gpu<T>(future: impl Future<Output = T>) -> T {
-    let waker = Waker::from(Arc::new(ThreadWaker(thread::current())));
-    let mut context = Context::from_waker(&waker);
-    let mut future = Box::pin(future);
-    loop {
-        match Pin::as_mut(&mut future).poll(&mut context) {
-            Poll::Ready(value) => return value,
-            Poll::Pending => thread::park(),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn enumerate_is_non_panic_even_without_gpu() {
-        // Safe on hosts without a GPU — returns empty vec, not a
-        // panic.
-        let _ = enumerate_adapters();
+    fn enumerate_adapters_finds_required_gpu() {
+        let adapters = enumerate_adapters();
+        assert!(
+            !adapters.is_empty(),
+            "Fix: WGPU adapter enumeration returned no adapters on a GPU-required release host; repair driver/runtime configuration instead of accepting a CPU-only environment."
+        );
     }
 
     #[test]
@@ -256,5 +323,27 @@ mod tests {
         std::env::set_var("VYRE_ADAPTER_INDEX", "not-a-number");
         assert_eq!(adapter_index_from_env(), None);
         std::env::remove_var("VYRE_ADAPTER_INDEX");
+    }
+
+    #[test]
+    fn adapter_identity_matches_every_recovery_field() {
+        let info = wgpu::AdapterInfo {
+            name: "gpu-a".to_string(),
+            vendor: 0x10de,
+            device: 0x2684,
+            device_type: wgpu::DeviceType::DiscreteGpu,
+            driver: "nvidia".to_string(),
+            driver_info: "driver-a".to_string(),
+            backend: wgpu::Backend::Vulkan,
+        };
+        let identity = AdapterIdentity::from_info(&info);
+        assert!(identity.matches(&info));
+
+        let mut changed = info.clone();
+        changed.device = 0x2685;
+        assert!(
+            !identity.matches(&changed),
+            "Fix: recovery must not silently bind to a different physical adapter."
+        );
     }
 }

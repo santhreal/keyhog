@@ -115,6 +115,21 @@ fn fnv1a32_program_bounded(
 /// halves and multiplied by the FNV prime via a widened split product.
 #[must_use]
 pub fn fnv1a64_program(input: &str, out: &str) -> Program {
+    fnv1a64_program_bounded(input, out, Expr::buf_len(input), None)
+}
+
+/// GPU IR builder: FNV-1a 64-bit serial walk over `input[0..n]`.
+#[must_use]
+pub fn fnv1a64_program_n(input: &str, out: &str, n: u32) -> Program {
+    fnv1a64_program_bounded(input, out, Expr::u32(n), Some(n))
+}
+
+fn fnv1a64_program_bounded(
+    input: &str,
+    out: &str,
+    loop_bound: Expr,
+    static_count: Option<u32>,
+) -> Program {
     let body = vec![Node::Region {
         generator: Ident::from(FNV1A64_OP_ID),
         source_region: None,
@@ -126,11 +141,14 @@ pub fn fnv1a64_program(input: &str, out: &str) -> Program {
                 Node::loop_for(
                     "i",
                     Expr::u32(0),
-                    Expr::buf_len(input),
+                    loop_bound,
                     vec![
                         Node::assign(
                             "h_lo",
-                            Expr::bitxor(Expr::var("h_lo"), Expr::load(input, Expr::var("i"))),
+                            Expr::bitxor(
+                                Expr::var("h_lo"),
+                                Expr::bitand(Expr::load(input, Expr::var("i")), Expr::u32(0xFF)),
+                            ),
                         ),
                         Node::let_bind(
                             "lo_lo16",
@@ -193,9 +211,16 @@ pub fn fnv1a64_program(input: &str, out: &str) -> Program {
         )]),
     }];
 
+    let input_buf = match static_count {
+        Some(n) => {
+            BufferDecl::storage(input, 0, BufferAccess::ReadOnly, DataType::U32).with_count(n)
+        }
+        None => BufferDecl::storage(input, 0, BufferAccess::ReadOnly, DataType::U32),
+    };
+
     Program::wrapped(
         vec![
-            BufferDecl::storage(input, 0, BufferAccess::ReadOnly, DataType::U32),
+            input_buf,
             BufferDecl::output(out, 1, DataType::U32).with_count(2),
         ],
         [1, 1, 1],

@@ -3,13 +3,13 @@
 //! Each engine is a self-contained GPU compute pipeline: structured input
 //! in, compute passes on a real GPU backend, typed output back.
 //!
-//! The 0.6 cycle keeps only the substrate-neutral engines (graph
-//! execution, multi-GPU work partitioning, persistent megakernel,
-//! host-ingress compatibility streaming, shared record/readback). Dialect-specific
-//! engines (dataflow, decode, decompress, dfa, string matching) were
-//! removed alongside the WGSL-string dialects they rode on; they
-//! return in 0.7 against the naga-AST emitter.
+//! This module owns backend execution helpers only: command graphs, work
+//! partitioning policy, persistent queues, host-ingress compatibility, and
+//! shared record/readback. Domain algorithms live in `vyre-libs` or
+//! wrappers that consume vyre.
 
+/// Per-thread scratch arenas for record/readback hot-path vectors.
+pub(crate) mod dispatch_scratch;
 /// GPU-resident command graph execution.
 pub mod graph;
 /// Mockable multi-GPU work partitioning.

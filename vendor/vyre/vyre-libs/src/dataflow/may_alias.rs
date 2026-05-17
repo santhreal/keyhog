@@ -4,12 +4,12 @@
 //! points-to sets overlap (`pts(p) ∩ pts(q) ≠ ∅`). Implementation:
 //! per-node bitset AND of pts(p) and pts(q), then any-reduce.
 //!
-//! Soundness: [`MayOver`](super::soundness::Soundness::MayOver).
+//! Soundness: `MayOver`.
 
-use vyre::ir::Program;
-use vyre_foundation::execution_plan::fusion::fuse_programs;
-use vyre_primitives::bitset::and::bitset_and;
-use vyre_primitives::bitset::any::bitset_any;
+use std::sync::Arc;
+
+use vyre::ir::model::expr::Ident;
+use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 use vyre_primitives::graph::csr_forward_traverse::bitset_words;
 
 pub(crate) const OP_ID: &str = "vyre-libs::dataflow::may_alias";
@@ -27,10 +27,37 @@ pub fn may_alias(
     out_scalar: &str,
 ) -> Program {
     let words = bitset_words(node_count);
-    let intersect = bitset_and(pts_p, pts_q, intersect_buf, words);
-    let any = bitset_any(intersect_buf, out_scalar, words);
-    let fused = fuse_programs(&[intersect, any]).expect("may_alias: and+any fuse cleanly");
-    crate::region::tag_program(OP_ID, fused)
+    let t = Expr::InvocationId { axis: 0 };
+    let body = vec![
+        Node::let_bind("p", Expr::load(pts_p, t.clone())),
+        Node::let_bind("q", Expr::load(pts_q, t.clone())),
+        Node::let_bind("intersect", Expr::bitand(Expr::var("p"), Expr::var("q"))),
+        Node::store(intersect_buf, t.clone(), Expr::var("intersect")),
+        Node::if_then(
+            Expr::ne(Expr::var("intersect"), Expr::u32(0)),
+            vec![Node::let_bind(
+                "_",
+                Expr::atomic_or(out_scalar, Expr::u32(0), Expr::u32(1)),
+            )],
+        ),
+    ];
+    Program::wrapped(
+        vec![
+            BufferDecl::storage(pts_p, 0, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(words),
+            BufferDecl::storage(pts_q, 1, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(words),
+            BufferDecl::storage(intersect_buf, 2, BufferAccess::ReadWrite, DataType::U32)
+                .with_count(words),
+            BufferDecl::output(out_scalar, 3, DataType::U32).with_count(1),
+        ],
+        [256, 1, 1],
+        vec![Node::Region {
+            generator: Ident::from(OP_ID),
+            source_region: None,
+            body: Arc::new(vec![Node::if_then(Expr::lt(t.clone(), Expr::u32(words)), body)]),
+        }],
+    )
 }
 
 /// CPU oracle.

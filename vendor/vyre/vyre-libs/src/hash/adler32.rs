@@ -23,7 +23,7 @@ fn scoped_output_buffer(name: &str) -> String {
     scoped_generic_name(FAMILY_PREFIX, "out", name, &["out", "output"])
 }
 
-/// Build a Program that writes Adler-32(input[0..]) to `out[0]`.
+/// Build a Program that writes Adler-32(input[0..n]) to `out[0]`.
 #[must_use]
 pub fn adler32(input: &str, out: &str, n: u32) -> Program {
     let input = scoped_input_buffer(input);
@@ -38,7 +38,7 @@ pub fn adler32(input: &str, out: &str, n: u32) -> Program {
                 Node::loop_for(
                     "i",
                     Expr::u32(0),
-                    Expr::buf_len(&input),
+                    Expr::u32(n),
                     vec![
                         Node::assign(
                             "a",
@@ -112,7 +112,8 @@ mod tests {
             Value::Bytes(pack_bytes_as_u32(bytes).into()),
             Value::Bytes(vec![0u8; 4].into()),
         ];
-        let outputs = vyre_reference::reference_eval(&program, &inputs).expect("adler32 must run");
+        let outputs = vyre_reference::reference_eval(&program, &inputs)
+            .expect("Fix: adler32 must run; restore this invariant before continuing.");
         let raw = outputs[0].to_bytes();
         u32::from_le_bytes([raw[0], raw[1], raw[2], raw[3]])
     }

@@ -55,9 +55,17 @@ pub fn node_kind_eq(nodes: &str, nodeset_out: &str, node_count: u32, kind: u32) 
 /// CPU reference.
 #[must_use]
 pub fn cpu_ref(nodes: &[u32], kind: u32) -> Vec<u32> {
+    let mut out = Vec::new();
+    cpu_ref_into(nodes, kind, &mut out);
+    out
+}
+
+/// CPU reference using a caller-owned nodeset bitset.
+pub fn cpu_ref_into(nodes: &[u32], kind: u32, out: &mut Vec<u32>) {
     let n = nodes.len() as u32;
     let words = n.div_ceil(32) as usize;
-    let mut out = vec![0u32; words];
+    out.clear();
+    out.resize(words, 0);
     for (v, k) in nodes.iter().enumerate() {
         if *k == kind {
             let word = v / 32;
@@ -65,7 +73,6 @@ pub fn cpu_ref(nodes: &[u32], kind: u32) -> Vec<u32> {
             out[word] |= bit;
         }
     }
-    out
 }
 
 #[cfg(feature = "inventory-registry")]
@@ -104,5 +111,23 @@ mod tests {
             node_kind::CALL,
         );
         assert_eq!(got, vec![0b0101]);
+    }
+
+    #[test]
+    fn cpu_ref_into_reuses_nodeset_buffer() {
+        let mut out = Vec::with_capacity(4);
+        let ptr = out.as_ptr();
+        cpu_ref_into(
+            &[
+                node_kind::CALL,
+                node_kind::VARIABLE,
+                node_kind::CALL,
+                node_kind::LITERAL,
+            ],
+            node_kind::CALL,
+            &mut out,
+        );
+        assert_eq!(out, vec![0b0101]);
+        assert_eq!(out.as_ptr(), ptr);
     }
 }

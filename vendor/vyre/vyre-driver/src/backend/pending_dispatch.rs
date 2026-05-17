@@ -3,7 +3,7 @@
 use crate::backend::{private, BackendError};
 
 /// Handle to a dispatch in flight. Returned by
-/// [`VyreBackend::dispatch_async`].
+/// [`crate::backend::VyreBackend::dispatch_async`].
 ///
 /// Consumer shape:
 ///
@@ -22,7 +22,7 @@ use crate::backend::{private, BackendError};
 ///
 /// Backends that do not overlap host and device work return a
 /// trivially-ready handle built by the default
-/// [`VyreBackend::dispatch_async`] implementation — the consumer code
+/// [`crate::backend::VyreBackend::dispatch_async`] implementation — the consumer code
 /// above still works, just without the overlap.
 pub trait PendingDispatch: private::Sealed + Send + Sync {
     /// Non-blocking probe. Returns `true` when
@@ -44,6 +44,23 @@ pub trait PendingDispatch: private::Sealed + Send + Sync {
     ///
     /// Returns [`BackendError`] if the dispatch failed on the device.
     fn await_result(self: Box<Self>) -> Result<Vec<Vec<u8>>, BackendError>;
+
+    /// Async variant of [`PendingDispatch::await_result`].
+    ///
+    /// Default implementation delegates to the synchronous
+    /// [`PendingDispatch::await_result`]; backends that overlap host
+    /// and device work should override this with a non-blocking await.
+    ///
+    /// `where Self: Sized` keeps `dyn PendingDispatch` object-safe;
+    /// call this on concrete pending-dispatch types.
+    fn await_result_async(
+        self: Box<Self>,
+    ) -> impl std::future::Future<Output = Result<Vec<Vec<u8>>, BackendError>> + Send
+    where
+        Self: Sized,
+    {
+        async { self.await_result() }
+    }
 }
 
 /// Default [`PendingDispatch`] adapter used by the synchronous

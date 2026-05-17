@@ -1,19 +1,225 @@
-#![allow(clippy::expect_used)]
+use std::hash::{Hash, Hasher as _};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
+
+use rustc_hash::FxHasher;
 use vyre_spec::bin_op::OpIntensity;
 
+use crate::ir::{Expr, Node};
 use crate::ir_inner::model::expr::Ident;
-use crate::ir_inner::model::node::Node;
 use crate::ir_inner::model::types::BufferAccess;
+use crate::transform::visit::{walk_nodes_and_exprs, ExprVisitor, NodeVisitor};
 
 use super::Program;
+
+fn mix_wire_fallback_hashable<T: Hash>(hasher: &mut blake3::Hasher, value: &T) {
+    let mut state = FxHasher::default();
+    value.hash(&mut state);
+    hasher.update(&state.finish().to_le_bytes());
+}
+
+/// Bounded IR structure digest for wire-hash fallback (never formats full IR via `Debug`).
+struct FallbackWireHasher<'a>(&'a mut blake3::Hasher);
+
+impl NodeVisitor for FallbackWireHasher<'_> {
+    fn visit_node(&mut self, node: &Node) {
+        let h = &mut *self.0;
+        match node {
+            Node::Let { name, .. } => {
+                h.update(b"n:Let\0");
+                h.update(name.as_bytes());
+            }
+            Node::Assign { name, .. } => {
+                h.update(b"n:Assign\0");
+                h.update(name.as_bytes());
+            }
+            Node::Store { buffer, .. } => {
+                h.update(b"n:Store\0");
+                h.update(buffer.as_bytes());
+            }
+            Node::If { .. } => {
+                h.update(b"n:If\0");
+            }
+            Node::Loop { var, .. } => {
+                h.update(b"n:Loop\0");
+                h.update(var.as_bytes());
+            }
+            Node::IndirectDispatch {
+                count_buffer,
+                count_offset,
+            } => {
+                h.update(b"n:IndirectDispatch\0");
+                h.update(count_buffer.as_bytes());
+                h.update(&count_offset.to_le_bytes());
+            }
+            Node::AsyncLoad {
+                source,
+                destination,
+                tag,
+                ..
+            } => {
+                h.update(b"n:AsyncLoad\0");
+                h.update(source.as_bytes());
+                h.update(destination.as_bytes());
+                h.update(tag.as_bytes());
+            }
+            Node::AsyncStore {
+                source,
+                destination,
+                tag,
+                ..
+            } => {
+                h.update(b"n:AsyncStore\0");
+                h.update(source.as_bytes());
+                h.update(destination.as_bytes());
+                h.update(tag.as_bytes());
+            }
+            Node::AsyncWait { tag } => {
+                h.update(b"n:AsyncWait\0");
+                h.update(tag.as_bytes());
+            }
+            Node::Trap { tag, .. } => {
+                h.update(b"n:Trap\0");
+                h.update(tag.as_bytes());
+            }
+            Node::Resume { tag } => {
+                h.update(b"n:Resume\0");
+                h.update(tag.as_bytes());
+            }
+            Node::Return => {
+                h.update(b"n:Return\0");
+            }
+            Node::Barrier { ordering } => {
+                h.update(b"n:Barrier\0");
+                mix_wire_fallback_hashable(h, ordering);
+            }
+            Node::Block(_) => {
+                h.update(b"n:Block\0");
+            }
+            Node::Region {
+                generator,
+                source_region,
+                ..
+            } => {
+                h.update(b"n:Region\0");
+                h.update(generator.as_bytes());
+                if let Some(gen) = source_region {
+                    h.update(gen.name.as_bytes());
+                }
+            }
+            Node::Opaque(ext) => {
+                h.update(b"n:Opaque\0");
+                h.update(ext.extension_kind().as_bytes());
+            }
+        }
+    }
+}
+
+impl ExprVisitor for FallbackWireHasher<'_> {
+    fn visit_expr(&mut self, expr: &Expr) {
+        let h = &mut *self.0;
+        match expr {
+            Expr::LitU32(v) => {
+                h.update(b"e:LitU32\0");
+                h.update(&v.to_le_bytes());
+            }
+            Expr::LitI32(v) => {
+                h.update(b"e:LitI32\0");
+                h.update(&v.to_le_bytes());
+            }
+            Expr::LitF32(v) => {
+                h.update(b"e:LitF32\0");
+                h.update(&v.to_le_bytes());
+            }
+            Expr::LitBool(v) => {
+                h.update(b"e:LitBool\0");
+                h.update(&[u8::from(*v)]);
+            }
+            Expr::Var(name) => {
+                h.update(b"e:Var\0");
+                h.update(name.as_bytes());
+            }
+            Expr::Load { buffer, .. } => {
+                h.update(b"e:Load\0");
+                h.update(buffer.as_bytes());
+            }
+            Expr::BufLen { buffer } => {
+                h.update(b"e:BufLen\0");
+                h.update(buffer.as_bytes());
+            }
+            Expr::InvocationId { axis } => {
+                h.update(b"e:InvocationId\0");
+                h.update(&[*axis]);
+            }
+            Expr::WorkgroupId { axis } => {
+                h.update(b"e:WorkgroupId\0");
+                h.update(&[*axis]);
+            }
+            Expr::LocalId { axis } => {
+                h.update(b"e:LocalId\0");
+                h.update(&[*axis]);
+            }
+            Expr::BinOp { op, .. } => {
+                h.update(b"e:BinOp\0");
+                mix_wire_fallback_hashable(h, op);
+            }
+            Expr::UnOp { op, .. } => {
+                h.update(b"e:UnOp\0");
+                mix_wire_fallback_hashable(h, op);
+            }
+            Expr::Call { op_id, .. } => {
+                h.update(b"e:Call\0");
+                h.update(op_id.as_bytes());
+            }
+            Expr::Select { .. } => {
+                h.update(b"e:Select\0");
+            }
+            Expr::Cast { target, .. } => {
+                h.update(b"e:Cast\0");
+                mix_wire_fallback_hashable(h, target);
+            }
+            Expr::Fma { .. } => {
+                h.update(b"e:Fma\0");
+            }
+            Expr::Atomic {
+                op,
+                buffer,
+                ordering,
+                ..
+            } => {
+                h.update(b"e:Atomic\0");
+                mix_wire_fallback_hashable(h, op);
+                h.update(buffer.as_bytes());
+                mix_wire_fallback_hashable(h, ordering);
+            }
+            Expr::SubgroupBallot { .. } => {
+                h.update(b"e:SubgroupBallot\0");
+            }
+            Expr::SubgroupShuffle { .. } => {
+                h.update(b"e:SubgroupShuffle\0");
+            }
+            Expr::SubgroupAdd { .. } => {
+                h.update(b"e:SubgroupAdd\0");
+            }
+            Expr::SubgroupLocalId => {
+                h.update(b"e:SubgroupLocalId\0");
+            }
+            Expr::SubgroupSize => {
+                h.update(b"e:SubgroupSize\0");
+            }
+            Expr::Opaque(ext) => {
+                h.update(b"e:Opaque\0");
+                h.update(ext.extension_kind().as_bytes());
+            }
+        }
+    }
+}
 
 impl Program {
     /// Re-apply the same top-level `Node::Region` contract as
     /// [`Program::wrapped`].
     ///
-    /// The [`transform::optimize::region_inline`](crate::transform::optimize::region_inline)
+    /// The [`region_inline_engine`](crate::optimizer::passes::cleanup::region_inline_engine)
     /// pass flattens small Category-A regions so CSE/DCE can see a single
     /// function-shaped body, which can leave a statement-shaped entry list. The
     /// standard optimizer run ends with this helper so the program remains in
@@ -21,6 +227,9 @@ impl Program {
     /// still benefiting from the inline pass.
     #[must_use]
     pub fn reconcile_runnable_top_level(self) -> Self {
+        if self.is_top_level_region_wrapped() {
+            return self;
+        }
         let new_entry = Self::wrap_entry(self.entry().to_vec());
         self.with_rewritten_entry(new_entry)
     }
@@ -39,6 +248,14 @@ impl Program {
     #[inline]
     pub fn buffers(&self) -> &[super::BufferDecl] {
         self.buffers.as_ref()
+    }
+
+    /// Access the buffer declaration Arc directly for identity checks.
+    #[must_use]
+    #[inline]
+    #[cfg(test)]
+    pub(crate) fn buffers_arc(&self) -> &Arc<[super::BufferDecl]> {
+        &self.buffers
     }
 
     /// Compare two programs by observable IR structure.
@@ -79,11 +296,8 @@ impl Program {
 
     /// Substrate-neutral alias for [`workgroup_size`](Self::workgroup_size).
     ///
-    /// Naming: "workgroup" is the WGSL spelling of the parallel region that
-    /// maps to one dispatch invocation grouping. Backends that have their
-    /// own spelling (CUDA block, Metal threadgroup, SPIR-V local workgroup,
-    /// photonic batch) use this alias to avoid picking a single substrate's
-    /// word. See `docs/ARCHITECTURE.md` Law H.
+    /// Naming: "parallel region" avoids picking a single target substrate's
+    /// word for one dispatch invocation grouping.
     #[must_use]
     #[inline]
     pub fn parallel_region_size(&self) -> [u32; 3] {
@@ -121,6 +335,7 @@ impl Program {
     #[inline]
     pub fn set_parallel_region_size(&mut self, parallel_region_size: [u32; 3]) {
         self.workgroup_size = parallel_region_size;
+        self.invalidate_caches();
     }
 
     /// Entry-point nodes.
@@ -128,6 +343,13 @@ impl Program {
     #[inline]
     pub fn entry(&self) -> &[Node] {
         self.entry.as_ref().as_slice()
+    }
+
+    /// Shared entry-point body Arc for identity checks.
+    #[must_use]
+    #[inline]
+    pub fn entry_arc(&self) -> &Arc<Vec<Node>> {
+        &self.entry
     }
 
     /// Return true when this Program is the canonical no-op shape produced by
@@ -183,7 +405,7 @@ impl Program {
         Arc::make_mut(&mut self.entry)
     }
 
-    /// Stable blake3 fingerprint of the canonical wire-format bytes.
+    /// Stable BLAKE3 fingerprint of the canonical wire-format bytes.
     #[must_use]
     #[inline]
     pub fn fingerprint(&self) -> [u8; 32] {
@@ -192,6 +414,26 @@ impl Program {
             let _ = self.hash.set(hash);
             *hash.as_bytes()
         })
+    }
+
+    /// VSA-style hypervector fingerprint of the canonical wire-format
+    /// bytes. Each `u32` lane is one segment of the program's blake3
+    /// hash; together they form an 8-lane hypervector suitable for
+    /// approximate similarity search via hamming distance.
+    ///
+    /// Use as the canonical cache key for approximate-match caches
+    /// (e.g. validation cache, AOT artifact dedup); use
+    /// [`Self::fingerprint`] for exact-match lookups.
+    ///
+    /// Wires the substrate's #29 hypervector primitive into Program
+    /// itself — every Program now carries its own VSA fingerprint
+    /// without callers having to reach into the substrate explicitly.
+    #[must_use]
+    pub fn vsa_fingerprint(&self) -> Vec<u32> {
+        self.fingerprint()
+            .chunks_exact(core::mem::size_of::<u32>())
+            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+            .collect()
     }
 
     /// Indices of read-write buffers in `buffers()` order.
@@ -238,7 +480,7 @@ impl Program {
                     | Node::Assign { .. }
                     | Node::Store { .. }
                     | Node::Return
-                    | Node::Barrier
+                    | Node::Barrier { .. }
                     | Node::AsyncLoad { .. }
                     | Node::AsyncStore { .. }
                     | Node::AsyncWait { .. }
@@ -295,14 +537,16 @@ impl Program {
     /// Mark this program as successfully validated for a specific backend.
     #[inline]
     pub fn mark_validated_on(&self, backend_id: &str) {
-        self.validation_set.insert(Arc::from(backend_id));
+        self.validation_set
+            .insert(Arc::from(self.validation_cache_key(backend_id)));
     }
 
     /// Return true if this program has been validated for the given backend.
     #[must_use]
     #[inline]
     pub fn is_validated_on(&self, backend_id: &str) -> bool {
-        self.validation_set.contains(backend_id)
+        self.validation_set
+            .contains(self.validation_cache_key(backend_id).as_str())
     }
 
     /// Deprecated: use `is_structurally_validated` or `is_validated_on`.
@@ -335,11 +579,13 @@ impl Program {
             self.mark_structurally_validated();
             return Ok(());
         }
-        let message = errors
-            .into_iter()
-            .map(|error| error.message().to_string())
-            .collect::<Vec<_>>()
-            .join("; ");
+        let mut message = String::new();
+        for (index, error) in errors.into_iter().enumerate() {
+            if index > 0 {
+                message.push_str("; ");
+            }
+            message.push_str(error.message());
+        }
         Err(crate::error::Error::WireFormatValidation { message })
     }
 
@@ -464,10 +710,56 @@ impl Program {
     }
 
     fn compute_wire_hash(&self) -> blake3::Hash {
-        let wire = self.to_wire().expect(
-            "Fix: fingerprinting requires a wire-serializable Program; validate or repair the IR before caching its fingerprint.",
-        );
-        blake3::hash(&wire)
+        match self.canonical_wire_hash() {
+            Ok(hash) => hash,
+            Err(error) => {
+                let structural = self.structural_fingerprint_fallback();
+                let err_msg = error.to_string();
+                let mut fallback = Vec::with_capacity(96 + err_msg.len() + structural.len());
+                fallback.extend_from_slice(b"VYRE-PROGRAM-CANONICAL-WIRE-HASH-ERROR\0");
+                fallback.extend_from_slice(err_msg.as_bytes());
+                fallback.push(0);
+                fallback.extend_from_slice(structural.as_bytes());
+                blake3::hash(&fallback)
+            }
+        }
+    }
+
+    fn structural_fingerprint_fallback(&self) -> String {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(b"VYRE-WIRE-FALLBACK-V4\0");
+        if let Some(id) = self.entry_op_id.as_deref() {
+            hasher.update(id.as_bytes());
+        }
+        hasher.update(b"\0");
+        for axis in &self.workgroup_size {
+            hasher.update(&axis.to_le_bytes());
+        }
+        hasher.update(&[u8::from(self.non_composable_with_self)]);
+        let mut keys: Vec<Vec<u8>> = self
+            .buffers()
+            .iter()
+            .map(buffer_decl_canonical_key)
+            .collect();
+        keys.sort_unstable();
+        for key in keys {
+            hasher.update(&key);
+        }
+        let mut visitor = FallbackWireHasher(&mut hasher);
+        walk_nodes_and_exprs(self, &mut visitor);
+        hasher.finalize().to_hex().to_string()
+    }
+
+    fn validation_cache_key(&self, backend_id: &str) -> String {
+        let fingerprint = self.fingerprint();
+        let mut key = String::with_capacity(backend_id.len() + 1 + 64);
+        key.push_str(backend_id);
+        key.push(':');
+        for byte in fingerprint {
+            use std::fmt::Write as _;
+            let _ = write!(&mut key, "{byte:02x}");
+        }
+        key
     }
 
     #[inline]
@@ -476,9 +768,9 @@ impl Program {
         self.validation_set.clear();
         let _ = self.hash.take();
         let _ = self.fingerprint.take();
-        let _ = self.output_buffer_index.take();
+        drop(self.output_buffer_index.take());
         let _ = self.has_indirect_dispatch.take();
-        let _ = self.stats.take();
+        drop(self.stats.take());
     }
 
     #[inline]
@@ -511,7 +803,7 @@ impl Program {
             Node::Loop { .. } => "Loop",
             Node::Return => "Return",
             Node::Block(_) => "Block",
-            Node::Barrier => "Barrier",
+            Node::Barrier { .. } => "Barrier",
             Node::Region { .. } => "Region",
             Node::IndirectDispatch { .. } => "IndirectDispatch",
             Node::AsyncLoad { .. } => "AsyncLoad",
@@ -542,33 +834,33 @@ pub(crate) fn buffers_equal_ignoring_declaration_order(
         return true;
     }
 
-    let mut left_keys = left
-        .iter()
-        .map(buffer_decl_canonical_key)
-        .collect::<Vec<_>>();
-    let mut right_keys = right
-        .iter()
-        .map(buffer_decl_canonical_key)
-        .collect::<Vec<_>>();
+    let mut left_keys = Vec::with_capacity(left.len());
+    left_keys.extend(left.iter().map(buffer_decl_canonical_key));
+    let mut right_keys = Vec::with_capacity(right.len());
+    right_keys.extend(right.iter().map(buffer_decl_canonical_key));
     left_keys.sort_unstable();
     right_keys.sort_unstable();
     left_keys == right_keys
 }
 
-fn buffer_decl_canonical_key(buffer: &super::BufferDecl) -> Vec<u8> {
+pub(super) fn buffer_decl_canonical_key(buffer: &super::BufferDecl) -> Vec<u8> {
     use crate::serial::wire::framing::{put_len_u32, put_u32, put_u8};
     use crate::serial::wire::tags::put_data_type;
 
     let mut key = Vec::with_capacity(96);
-    put_len_u32(&mut key, buffer.name.len(), "buffer name length")
-        .expect("Fix: Program equality requires encodable buffer names");
+    if let Err(error) = put_len_u32(&mut key, buffer.name.len(), "buffer name length") {
+        key.extend_from_slice(b"\0name-length-error\0");
+        key.extend_from_slice(error.as_bytes());
+    }
     key.extend_from_slice(buffer.name.as_bytes());
     put_u32(&mut key, buffer.binding);
-    put_u8(
-        &mut key,
-        crate::serial::wire::tags::access_tag::access_tag(buffer.access.clone())
-            .expect("Fix: Program equality requires a stable BufferAccess tag"),
-    );
+    match crate::serial::wire::tags::access_tag::access_tag(buffer.access.clone()) {
+        Ok(tag) => put_u8(&mut key, tag),
+        Err(error) => {
+            put_u8(&mut key, u8::MAX);
+            key.extend_from_slice(error.as_bytes());
+        }
+    }
     put_u8(
         &mut key,
         match buffer.kind {
@@ -581,24 +873,30 @@ fn buffer_decl_canonical_key(buffer: &super::BufferDecl) -> Vec<u8> {
             super::MemoryKind::Push => 6,
         },
     );
-    put_data_type(&mut key, &buffer.element)
-        .expect("Fix: Program equality requires a wire-tagged DataType");
+    if let Err(error) = put_data_type(&mut key, &buffer.element) {
+        key.extend_from_slice(b"\0dtype-error\0");
+        key.extend_from_slice(error.as_bytes());
+    }
     put_u32(&mut key, buffer.count);
     put_u8(&mut key, u8::from(buffer.is_output));
     put_u8(&mut key, u8::from(buffer.pipeline_live_out));
     match &buffer.output_byte_range {
         Some(range) => {
             put_u8(&mut key, 1);
-            put_u32(
-                &mut key,
-                u32::try_from(range.start)
-                    .expect("Fix: output range start must fit in canonical Program equality key"),
-            );
-            put_u32(
-                &mut key,
-                u32::try_from(range.end)
-                    .expect("Fix: output range end must fit in canonical Program equality key"),
-            );
+            match u32::try_from(range.start) {
+                Ok(start) => put_u32(&mut key, start),
+                Err(error) => {
+                    put_u32(&mut key, u32::MAX);
+                    key.extend_from_slice(error.to_string().as_bytes());
+                }
+            }
+            match u32::try_from(range.end) {
+                Ok(end) => put_u32(&mut key, end),
+                Err(error) => {
+                    put_u32(&mut key, u32::MAX);
+                    key.extend_from_slice(error.to_string().as_bytes());
+                }
+            }
         }
         None => put_u8(&mut key, 0),
     }

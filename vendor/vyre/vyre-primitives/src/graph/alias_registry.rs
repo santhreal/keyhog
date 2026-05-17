@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use vyre_foundation::ir::DataType;
 
 /// Stable Operation UUID identifying the Lock-Free Alias Union subkernel.
-pub const ALIAS_UNION_OP_ID: &str = "vyre.graph.union_find.v1";
+pub const ALIAS_UNION_OP_ID: &str = "vyre-primitives::graph::alias_union";
 
 /// Descriptor for an alias-analysis extension op.
 #[derive(Debug, Clone, PartialEq, Eq)]

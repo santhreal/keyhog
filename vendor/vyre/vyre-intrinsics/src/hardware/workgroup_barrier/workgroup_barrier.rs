@@ -1,8 +1,8 @@
 //! Cat-C `workgroup_barrier` — per-lane identity store followed by a
 //! workgroup-scope barrier. CPU reference is a no-op on the serial
 //! interpreter (barrier semantics are a concurrency fence, invisible
-//! sequentially). Backends lower the barrier to `workgroupBarrier`
-//! (WGSL) / `OpControlBarrier Workgroup` (SPIR-V).
+//! sequentially). Backends lower the barrier to their target-native
+//! workgroup-scope fence.
 
 use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 

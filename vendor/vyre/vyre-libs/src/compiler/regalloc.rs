@@ -51,7 +51,7 @@ pub fn opt_x86_64_register_allocation(
             .with_count(node_count),
             // The interference-mask scratch is kept in a ReadWrite storage
             // buffer rather than workgroup memory — atomics on workgroup
-            // memory are not portable across the WGSL / reference-interp
+            // memory are not portable across the target-text / reference-interp
             // backends we certify against.
             BufferDecl::storage(
                 "thread_block_interference",
@@ -73,23 +73,21 @@ inventory::submit! {
     crate::harness::OpEntry {
         id: "vyre-libs::parsing::opt_x86_64_register_allocation",
         build: || opt_x86_64_register_allocation("cfg", "regs", Expr::u32(16)),
-        // 16 SSA nodes, 16 physical registers. Every lane atomic_add
-        // with delta=0 (no-op), then assigns reg = t % 16. Output is
-        // a straight round-robin mapping 0..15.
+        // 16 SSA nodes, 16 physical registers. Every lane contributes
+        // a nonzero CFG weight to the shared interference counter, then
+        // assigns reg = t % 16.
         test_inputs: Some(|| vec![vec![
-            vec![0u8; 16 * 4],       // cfg_blocks (unused payload)
+            (1u32..=16)
+                .flat_map(u32::to_le_bytes)
+                .collect::<Vec<u8>>(),
             vec![0u8; 16 * 4],       // out_physical_registers
             vec![0u8; 4],            // thread_block_interference (scratch)
         ]]),
         expected_output: Some(|| {
             let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
-            // atomic_add(delta=0) returns the prior value, but the
-            // binding is unused afterward. Each lane t writes t % 16
-            // into out_physical_registers[t]. thread_block_interference
-            // remains zero.
             vec![vec![
                 to_bytes(&(0u32..16).collect::<Vec<u32>>()),
-                to_bytes(&[0u32]),
+                to_bytes(&[136u32]),
             ]]
         }),
     }

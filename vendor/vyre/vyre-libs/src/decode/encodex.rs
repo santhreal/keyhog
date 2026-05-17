@@ -8,15 +8,15 @@
 //!
 //! # Design notes
 //!
-//! - Single workgroup [256,1,1] keeps the classification exact (no
+//! - Single workgroup `256,1,1` keeps the classification exact (no
 //!   cross-workgroup reduction needed). The histogram is the bottleneck
 //!   for multi-MB scans; a single SM can saturate most of device memory
 //!   bandwidth with perfectly coalesced strided loads.
 //! - N-gram frequencies are **not** computed on-GPU yet; the task
 //!   explicitly permits leaving the small-N classifier on CPU and
 //!   focusing on the byte-histogram pass (PHASE2_DECODE MEDIUM).
-//! - The CPU fallback `encodex_cpu` mirrors the GPU heuristics so
-//!   callers can choose the path that fits their pipeline.
+//! - The host reference mirrors the GPU heuristics so conformance can
+//!   prove the on-device path without routing production work through it.
 
 use vyre::ir::{BufferAccess, BufferDecl, DataType, Program};
 use vyre_primitives::text::byte_histogram::byte_histogram_256_child;
@@ -86,17 +86,24 @@ pub fn encodex_gpu(input: &str, output: &str, count: u32) -> Program {
     )
 }
 
-/// CPU fallback that mirrors the GPU heuristics.
+/// Host-side reference that mirrors the GPU heuristics.
 ///
 /// Computes the same 256-bin histogram and applies the identical
-/// classification rules so `encodex_cpu` and `encodex_gpu` agree on
-/// every input.
-pub fn encodex_cpu(input: &[u8]) -> u32 {
+/// classification rules so the host oracle and `encodex_gpu` agree on
+/// every fixture input.
+pub fn encodex_reference(input: &[u8]) -> u32 {
     let mut histogram = [0u32; 256];
     for &byte in input {
         histogram[usize::from(byte)] += 1;
     }
     classify_from_histogram(&histogram, input.len() as u32)
+}
+
+/// Compatibility alias for older callers.
+///
+/// This is a host-side reference/oracle helper, not a GPU execution fallback.
+pub fn encodex_cpu(input: &[u8]) -> u32 {
+    encodex_reference(input)
 }
 
 // ---------------------------------------------------------------------------
@@ -172,7 +179,8 @@ mod tests {
             Value::from(vec![0u8; 256 * 4]),
             Value::from(vec![0u8; 4]),
         ];
-        let outputs = vyre_reference::reference_eval(&program, &inputs).expect("encodex must run");
+        let outputs = vyre_reference::reference_eval(&program, &inputs)
+            .expect("Fix: encodex must run; restore this invariant before continuing.");
         let histogram = outputs[0]
             .to_bytes()
             .chunks_exact(4)
@@ -231,7 +239,7 @@ mod tests {
     }
 
     #[test]
-    fn cpu_gpu_parity() {
+    fn reference_gpu_parity() {
         let inputs: Vec<&[u8]> = vec![
             b"Hello world",
             &[0xC3, 0xA9],
@@ -241,7 +249,7 @@ mod tests {
         ];
         for input in inputs {
             let (_, gpu_id) = run(input);
-            let cpu_id = encodex_cpu(input);
+            let cpu_id = encodex_reference(input);
             assert_eq!(
                 gpu_id, cpu_id,
                 "GPU/CPU mismatch for input {:?}: gpu={} cpu={}",

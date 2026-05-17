@@ -6,7 +6,7 @@
 //! [`vyre::Program`] built entirely from existing vyre IR primitives. The
 //! sole exception is the `math::atomic` family, which are **Category B**
 //! (`Category::Intrinsic`) because they require the backend to own the
-//! `Expr::Atomic` Naga emitter arm (F-IR-35).
+//! `Expr::Atomic` target builder emitter arm (F-IR-35).
 //!
 //! This is the ML/DSP/cryptographic ecosystem layer. Examples:
 //!
@@ -73,6 +73,22 @@
 // the architectural decision.
 #![allow(clippy::module_inception)]
 
+/// Build a trap-only program for registry fixtures or infallible composition wrappers.
+pub(crate) fn invalid_program(
+    op_id: &'static str,
+    message: impl Into<String>,
+) -> vyre::ir::Program {
+    let message = message.into();
+    vyre::ir::Program::wrapped(
+        Vec::new(),
+        [1, 1, 1],
+        vec![region::wrap_anonymous(
+            op_id,
+            vec![vyre::ir::Node::trap(vyre::ir::Expr::u32(0), message)],
+        )],
+    )
+}
+
 /// Region builder — the shared helper every composition routes through.
 /// Library component.
 /// Library component.
@@ -100,6 +116,7 @@ pub use tensor_ref::{check_dtype, check_shape, check_unique_names, TensorRef, Te
 /// Library component.
 /// Library component.
 pub mod builder;
+mod substrate_catalog;
 
 /// Library component.
 /// Library component.
@@ -117,6 +134,9 @@ pub mod descriptor;
 /// Library component.
 /// Library component.
 pub use descriptor::{BufferDescriptor, ProgramDescriptor};
+
+#[cfg(feature = "math-linalg")]
+pub use math::{matmul_bias_tiled, matmul_tiled, MatmulBias, MatmulBiasTiled, MatmulTiled};
 
 /// Universal op harness — auto-testing infrastructure for every composition.
 ///
@@ -182,7 +202,7 @@ pub mod decode;
 /// Hash / checksum dialect — FNV-1a-32, FNV-1a-64, CRC-32, Adler-32,
 /// BLAKE3 compression. Consolidated from the former `vyre-libs::crypto`
 /// module per Migration 3. Every op lives here as a pure Cat-A
-/// composition over existing IR primitives (no dedicated Naga emitter
+/// composition over existing IR primitives (no dedicated target builder emitter
 /// arm required, per the intrinsic-vs-library rule).
 /// Library component.
 /// Library component.
@@ -217,6 +237,13 @@ pub mod graph;
 /// Library component.
 pub mod compiler;
 
+#[cfg(feature = "c-parser")]
+pub use compiler::{
+    cfg::c11_build_cfg_and_gotos, object_writer::opt_lower_elf,
+    regalloc::opt_x86_64_register_allocation, stack_layout::opt_stack_layout_generation,
+    types_layout::c11_compute_alignments,
+};
+
 /// Security / taint compositions — the surgec-facing op surface.
 /// Every op registers via `inventory::submit!` and lives under a
 /// stable op id. The implementations compose graph and dataflow
@@ -233,9 +260,15 @@ pub mod security;
 /// Library component.
 pub mod visual;
 
-// Dataflow primitives moved out of vyre-libs into the standalone
-// `weir` crate (libs/dataflow/weir). The vyre-libs surface no
-// longer re-exports them — consumers depend on `weir` directly.
+/// GPU dataflow compositions used by security and compiler frontends.
+/// These are concrete vyre `Program` builders over graph, bitset, and
+/// fixpoint primitives; higher-level consumers can still use `weir`
+/// for rule-level orchestration.
+pub mod dataflow;
+
+mod primitive_catalog;
+
+pub use dataflow::{Soundness, SoundnessTagged};
 
 // vyre-libs::hardware removed (audit 2026-04-21 BLOCKER-1/6).
 // Canonical Cat-C intrinsics live exclusively in the `vyre-intrinsics`
@@ -282,9 +315,18 @@ pub use signatures::{
     U32_OUTPUTS, U32_U32_INPUTS,
 };
 /// Pre-sweep shader snapshot migration entries, collected via inventory.
-/// Library component.
-/// Library component.
-pub mod test_migration;
+/// `pub(crate)` because the registry is an internal pre-sweep tool —
+/// downstream dialects do not submit through this path.
+pub(crate) mod test_migration;
+/// Test support components for vyre-libs.
+pub mod test_support;
+
+/// Driver-tier observability re-export so vyre-libs consumers can
+/// snapshot substrate counters + decision histograms without taking a
+/// direct vyre-driver dependency.
+pub mod observability {
+    pub use vyre_driver::observability::{BackendObservabilityProvider, DriverObservability};
+}
 
 /// Re-export the small set of vyre types every composition function
 /// returns. Consumers can `use vyre_libs::prelude::*` and get the API

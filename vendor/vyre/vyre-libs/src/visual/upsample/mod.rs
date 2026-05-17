@@ -68,15 +68,16 @@ inventory::submit! {
         id: OP_ID,
         build: || upsample_2x("input", "output", 4, 4),
         test_inputs: Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
             // 2×2 all-white → 4×4 all-white
             let input = vec![0xFFFF_FFFFu32; 4];
-            vec![vec![to_bytes(&input), vec![0u8; 64]]]
+            vec![vec![
+                crate::visual::byte_helpers::u32_words_to_le_bytes(&input),
+                vec![0u8; 64],
+            ]]
         }),
         expected_output: Some(|| {
-            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
             let expected = vec![0xFFFF_FFFFu32; 16];
-            vec![vec![to_bytes(&expected)]]
+            vec![vec![crate::visual::byte_helpers::u32_words_to_le_bytes(&expected)]]
         }),
     }
 }

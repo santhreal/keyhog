@@ -7,4 +7,5 @@ pub mod ast_walk_postorder;
 pub mod ast_walk_preorder;
 
 pub use ast_walk_postorder::ast_walk_postorder;
+pub use ast_walk_postorder::ast_walk_postorder_nodes;
 pub use ast_walk_preorder::ast_walk_preorder;

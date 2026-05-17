@@ -41,7 +41,7 @@ pub(crate) fn check_store(
         }
         // L.1.18: V013 was historically enforced only on `Expr::Atomic`,
         // leaving `Node::Store` targeting a `Bytes` buffer to pass
-        // validation silently and then fail lower in WGSL emission.
+        // validation silently and then fail lower in target-text emission.
         // Extend V013 here so the error surfaces at validate() time.
         if buf.element == DataType::Bytes && !buf.bytes_extraction {
             errors.push(err(format!(
@@ -86,7 +86,7 @@ pub(crate) fn check_load(
         // L.1.18: V013 coverage extends to `Expr::Load` — loading from
         // a `Bytes` buffer gives the caller an opaque multi-byte blob
         // that no scalar arithmetic in the IR knows how to consume.
-        // Catch it here rather than letting WGSL lowering fail with a
+        // Catch it here rather than letting target-text lowering fail with a
         // generic "unexpected Bytes type" diagnostic.
         Some(buf) if buf.element == DataType::Bytes && !buf.bytes_extraction => {
             errors.push(err(format!(
@@ -94,5 +94,63 @@ pub(crate) fn check_load(
             )));
         }
         Some(_) => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ir::BufferDecl;
+
+    fn buf_map(decl: &BufferDecl) -> FxHashMap<&str, &BufferDecl> {
+        let mut m = FxHashMap::default();
+        m.insert(decl.name(), decl);
+        m
+    }
+
+    #[test]
+    fn store_to_unknown_buffer_errors() {
+        let buffers: FxHashMap<&str, &BufferDecl> = FxHashMap::default();
+        let mut errors = Vec::new();
+        check_store("missing", &buffers, &mut errors);
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].message().contains("unknown buffer"));
+    }
+
+    #[test]
+    fn store_to_readonly_errors() {
+        let decl = BufferDecl::read("buf", 0, DataType::U32).with_count(4);
+        let buffers = buf_map(&decl);
+        let mut errors = Vec::new();
+        check_store("buf", &buffers, &mut errors);
+        assert!(errors.iter().any(|e| e.message().contains("non-writable")));
+    }
+
+    #[test]
+    fn store_to_readwrite_passes() {
+        let decl =
+            BufferDecl::storage("buf", 0, BufferAccess::ReadWrite, DataType::U32).with_count(4);
+        let buffers = buf_map(&decl);
+        let mut errors = Vec::new();
+        check_store("buf", &buffers, &mut errors);
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn load_from_unknown_buffer_errors() {
+        let buffers: FxHashMap<&str, &BufferDecl> = FxHashMap::default();
+        let mut errors = Vec::new();
+        check_load("missing", &buffers, &mut errors);
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].message().contains("unknown buffer"));
+    }
+
+    #[test]
+    fn load_from_declared_buffer_passes() {
+        let decl = BufferDecl::read("buf", 0, DataType::U32).with_count(4);
+        let buffers = buf_map(&decl);
+        let mut errors = Vec::new();
+        check_load("buf", &buffers, &mut errors);
+        assert!(errors.is_empty());
     }
 }

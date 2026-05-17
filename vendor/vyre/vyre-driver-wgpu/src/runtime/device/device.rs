@@ -14,8 +14,12 @@ use vyre_driver::error::{Error, Result};
 pub struct EnabledFeatures {
     /// Wgpu timestamp queries feature.
     pub timestamp_query: bool,
+    /// Wgpu timestamp writes directly on command encoders.
+    pub timestamp_query_inside_encoders: bool,
     /// Wgpu subgroup feature.
     pub subgroup: bool,
+    /// Wgpu subgroup barrier feature.
+    pub subgroup_barrier: bool,
     /// Wgpu shader f16 feature.
     pub shader_f16: bool,
     /// Wgpu pipeline cache feature.
@@ -36,8 +40,29 @@ pub struct EnabledFeatures {
     pub min_subgroup_size: u32,
 }
 
-static CACHED_DEVICE: OnceLock<Result<Arc<(wgpu::Device, wgpu::Queue)>>> = OnceLock::new();
-static CACHED_ADAPTER_INFO: OnceLock<Result<wgpu::AdapterInfo>> = OnceLock::new();
+struct CachedRuntime {
+    device_queue: Arc<(wgpu::Device, wgpu::Queue)>,
+    adapter_info: wgpu::AdapterInfo,
+    #[cfg(test)]
+    enabled_features: EnabledFeatures,
+}
+
+static CACHED_RUNTIME: OnceLock<Result<CachedRuntime>> = OnceLock::new();
+
+fn cached_runtime() -> &'static Result<CachedRuntime> {
+    CACHED_RUNTIME.get_or_init(|| {
+        #[cfg(test)]
+        let ((device, queue), adapter_info, enabled_features) = init_device()?;
+        #[cfg(not(test))]
+        let ((device, queue), adapter_info, _enabled_features) = init_device()?;
+        Ok(CachedRuntime {
+            device_queue: Arc::new((device, queue)),
+            adapter_info,
+            #[cfg(test)]
+            enabled_features,
+        })
+    })
+}
 
 /// Acquire the singleton device/queue pair.
 ///
@@ -65,12 +90,10 @@ static CACHED_ADAPTER_INFO: OnceLock<Result<wgpu::AdapterInfo>> = OnceLock::new(
 /// Returns an error if the GPU adapter or device cannot be initialized.
 #[inline]
 pub fn cached_device() -> Result<Arc<(wgpu::Device, wgpu::Queue)>> {
-    CACHED_DEVICE
-        .get_or_init(|| {
-            let ((device, queue), _info, _enabled) = init_device()?;
-            Ok(Arc::new((device, queue)))
-        })
-        .clone()
+    cached_runtime()
+        .as_ref()
+        .map(|runtime| Arc::clone(&runtime.device_queue))
+        .map_err(Clone::clone)
 }
 
 /// Acquire adapter info for the singleton runtime device.
@@ -80,12 +103,18 @@ pub fn cached_device() -> Result<Arc<(wgpu::Device, wgpu::Queue)>> {
 /// Returns an error if the GPU adapter or device cannot be initialized.
 #[inline]
 pub fn cached_adapter_info() -> Result<&'static wgpu::AdapterInfo> {
-    CACHED_ADAPTER_INFO
-        .get_or_init(|| {
-            let (_pair, info, _enabled) = init_device()?;
-            Ok(info)
-        })
+    cached_runtime()
         .as_ref()
+        .map(|runtime| &runtime.adapter_info)
+        .map_err(Clone::clone)
+}
+
+/// Acquire the enabled feature snapshot for the singleton runtime device.
+#[cfg(test)]
+pub(crate) fn cached_enabled_features() -> Result<&'static EnabledFeatures> {
+    cached_runtime()
+        .as_ref()
+        .map(|runtime| &runtime.enabled_features)
         .map_err(Clone::clone)
 }
 
@@ -93,10 +122,10 @@ pub fn cached_adapter_info() -> Result<&'static wgpu::AdapterInfo> {
 #[cfg(test)]
 #[inline]
 pub(crate) fn is_cached_device(device: &wgpu::Device) -> bool {
-    CACHED_DEVICE
+    CACHED_RUNTIME
         .get()
         .and_then(|res| res.as_ref().ok())
-        .map(|arc| &arc.0 == device)
+        .map(|runtime| &runtime.device_queue.0 == device)
         .unwrap_or(false)
 }
 
@@ -144,7 +173,7 @@ pub async fn acquire_gpu() -> Result<(
         .collect::<Vec<_>>();
     candidates.sort_by(|left, right| right.2.cmp(&left.2));
 
-    let mut failures = Vec::new();
+    let mut failures = Vec::with_capacity(candidates.len());
     for (adapter, info, _) in candidates {
         match request_device_for_adapter(adapter, "vyre device").await {
             Ok(device) => return Ok(device),
@@ -209,6 +238,14 @@ pub(super) async fn request_device_for_adapter(
                     max_compute_workgroup_storage_size: adapter_limits
                         .max_compute_workgroup_storage_size,
                     max_storage_buffer_binding_size: adapter_limits.max_storage_buffer_binding_size,
+                    // Modern adapters expose multi-GiB per-buffer caps; the
+                    // wgpu spec floor is 256 MiB which is too small for
+                    // batch-amortized scanners (surgec's `MAX_BATCH × num_rules
+                    // × 65 536 × 4` packed-output buffer scales beyond that
+                    // when MAX_BATCH grows past ~50). Take whatever the
+                    // adapter reports — falls back to the spec floor on
+                    // adapters that don't expose more.
+                    max_buffer_size: adapter_limits.max_buffer_size,
                     min_subgroup_size: if enabled.subgroup {
                         adapter_limits.min_subgroup_size
                     } else {
@@ -269,9 +306,18 @@ pub(super) fn enabled_features_for_adapter(
         features |= wgpu::Features::TIMESTAMP_QUERY;
         enabled.timestamp_query = true;
     }
+    if adapter_features.contains(wgpu::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS) {
+        features |= wgpu::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS;
+        enabled.timestamp_query = true;
+        enabled.timestamp_query_inside_encoders = true;
+    }
     if crate::capabilities::supports_subgroup_for_adapter(adapter_features, adapter_limits) {
         features |= wgpu::Features::SUBGROUP;
         enabled.subgroup = true;
+    }
+    if adapter_features.contains(wgpu::Features::SUBGROUP_BARRIER) {
+        features |= wgpu::Features::SUBGROUP_BARRIER;
+        enabled.subgroup_barrier = true;
     }
     if adapter_features.contains(wgpu::Features::SHADER_F16) {
         features |= wgpu::Features::SHADER_F16;
@@ -335,17 +381,20 @@ fn main(@builtin(subgroup_invocation_id) lane: u32, @builtin(subgroup_size) size
         compilation_options: wgpu::PipelineCompilationOptions::default(),
         cache: None,
     });
-    #[allow(unreachable_patterns)]
-    match device.poll(wgpu::Maintain::Wait) {
-        wgpu::MaintainResult::Ok | wgpu::MaintainResult::SubmissionQueueEmpty => {}
-        _other => {
-            tracing::error!(
-                "subgroup capability probe poll returned unexpected result (maintain failed)"
+    match pop_error_scope_now(device) {
+        Ok(None) => true,
+        Ok(Some(error)) => {
+            tracing::warn!(
+                ?error,
+                "subgroup capability probe failed validation; reporting subgroup support as disabled"
             );
-            return false;
+            false
+        }
+        Err(error) => {
+            tracing::error!("{error}");
+            false
         }
     }
-    pollster::block_on(device.pop_error_scope()).is_none()
 }
 
 struct ThreadWaker(Thread);
@@ -360,7 +409,32 @@ impl Wake for ThreadWaker {
     }
 }
 
-fn wait_for_gpu<T>(future: impl Future<Output = T>) -> T {
+struct NoopWaker;
+
+impl Wake for NoopWaker {
+    fn wake(self: Arc<Self>) {}
+
+    fn wake_by_ref(self: &Arc<Self>) {}
+}
+
+pub(crate) fn pop_error_scope_now(
+    device: &wgpu::Device,
+) -> std::result::Result<Option<wgpu::Error>, &'static str> {
+    match device.poll(wgpu::Maintain::Poll) {
+        wgpu::MaintainResult::Ok | wgpu::MaintainResult::SubmissionQueueEmpty => {}
+    }
+    let waker = Waker::from(Arc::new(NoopWaker));
+    let mut context = Context::from_waker(&waker);
+    let mut future = Box::pin(device.pop_error_scope());
+    match Future::poll(Pin::as_mut(&mut future), &mut context) {
+        Poll::Ready(error) => Ok(error),
+        Poll::Pending => Err(
+            "wgpu error scope did not resolve after a nonblocking device poll. Fix: inspect the backend event loop; validation must not require a hot-path host wait.",
+        ),
+    }
+}
+
+pub(super) fn wait_for_gpu<T>(future: impl Future<Output = T>) -> T {
     let waker = Waker::from(Arc::new(ThreadWaker(thread::current())));
     let mut context = Context::from_waker(&waker);
     let mut future = Box::pin(future);
@@ -388,6 +462,26 @@ mod tests {
         assert!(
             is_cached_device(&first.0),
             "legacy shared APIs must still recognize cached_device-created devices"
+        );
+    }
+
+    #[test]
+    fn cached_adapter_info_uses_cached_runtime() {
+        let info = cached_adapter_info().expect("Fix: cached adapter info must share GPU init");
+        let enabled =
+            cached_enabled_features().expect("Fix: cached runtime must retain capability snapshot");
+        let device_queue = cached_device().expect("Fix: GPU must be available for runtime tests");
+        assert!(
+            !info.name.is_empty(),
+            "cached adapter info must come from the initialized runtime adapter"
+        );
+        assert!(
+            enabled.max_workgroup_size.iter().all(|axis| *axis > 0),
+            "cached runtime must retain nonzero device workgroup limits for capability reporting"
+        );
+        assert!(
+            is_cached_device(&device_queue.0),
+            "cached adapter info must not replace the cached device with a second init"
         );
     }
 }

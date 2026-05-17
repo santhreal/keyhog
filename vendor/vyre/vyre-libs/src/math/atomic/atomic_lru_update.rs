@@ -4,6 +4,7 @@
 
 use crate::region::wrap_anonymous;
 use vyre::ir::{AtomicOp, BufferAccess, BufferDecl, DataType, Expr, Node, Program};
+use vyre::memory_model::MemoryOrdering;
 
 /// Build a Program that atomically updates an LRU slot.
 #[must_use]
@@ -19,6 +20,7 @@ pub fn atomic_lru_update_u32(buffer: &str, index: Expr, timestamp: Expr) -> Prog
                 index: Box::new(Expr::var("idx")),
                 expected: None,
                 value: Box::new(Expr::var("ts")),
+                ordering: MemoryOrdering::SeqCst,
             },
         ),
     ];

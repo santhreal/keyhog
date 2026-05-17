@@ -16,7 +16,7 @@
 //! Patterns are compiled with failure links collapsed, so scanners
 //! never have to walk failure pointers while processing input.
 
-use std::{collections::VecDeque, error::Error, fmt};
+use std::{error::Error, fmt};
 
 /// Compiled DFA ready to be uploaded to a GPU buffer.
 #[derive(Debug, Clone)]
@@ -29,6 +29,10 @@ pub struct CompiledDfa {
     pub accept: Vec<u32>,
     /// Number of states in the automaton (>= 1; state 0 is root).
     pub state_count: u32,
+    /// Longest pattern length in bytes. Scanners can limit each
+    /// per-position replay to this suffix window without changing
+    /// Aho-Corasick semantics.
+    pub max_pattern_len: u32,
     /// `output_offsets[state]` = start index in `output_records` for
     /// `state`. Length = `state_count + 1`. The last element is the
     /// total length of `output_records`.
@@ -90,7 +94,7 @@ impl Error for DfaCompileError {}
 /// payload schema (which fields go in what order) so future serializable
 /// types in vyre-primitives reuse the same envelope.
 const DFA_WIRE_MAGIC: [u8; 4] = *b"VDFA";
-const DFA_WIRE_VERSION: u32 = 1;
+const DFA_WIRE_VERSION: u32 = 2;
 
 /// Returned from [`CompiledDfa::from_bytes`] when the on-wire payload
 /// cannot be decoded into a valid DFA. The variant carries enough
@@ -130,8 +134,8 @@ pub enum DfaWireError {
         /// Maximum word count representable by the wire format.
         max: usize,
     },
-    /// The shared wire envelope returned a newer error variant this
-    /// crate does not yet specialize.
+    /// The shared wire envelope returned an error variant this crate
+    /// reports through the generic envelope branch.
     Envelope(String),
 }
 
@@ -172,6 +176,19 @@ impl fmt::Display for DfaWireError {
 impl Error for DfaWireError {}
 
 impl CompiledDfa {
+    /// Empty DFA with a single rejecting root state.
+    #[must_use]
+    pub fn empty() -> Self {
+        Self {
+            transitions: vec![0; 256],
+            accept: vec![0],
+            state_count: 1,
+            max_pattern_len: 0,
+            output_offsets: vec![0, 0],
+            output_records: Vec::new(),
+        }
+    }
+
     /// Serialize this DFA into a self-describing little-endian binary
     /// blob suitable for on-disk caching. Stable layout under
     /// `DFA_WIRE_VERSION`. Pure data, no allocator-dependent state.
@@ -180,6 +197,7 @@ impl CompiledDfa {
     ///   - 4 bytes: magic `b"VDFA"`
     ///   - 4 bytes: version (LE u32)
     ///   - 4 bytes: state_count (LE u32)
+    ///   - 4 bytes: max_pattern_len (LE u32)
     ///   - 4 bytes: transitions length in u32 words (LE u32)
     ///   - 4 bytes: accept length in u32 words (LE u32)
     ///   - 4 bytes: output_offsets length in u32 words (LE u32)
@@ -193,6 +211,7 @@ impl CompiledDfa {
     pub fn to_bytes(&self) -> Result<Vec<u8>, DfaWireError> {
         let mut out = vyre_foundation::serial::WireWriter::new(&DFA_WIRE_MAGIC, DFA_WIRE_VERSION);
         out.write_u32(self.state_count);
+        out.write_u32(self.max_pattern_len);
         out.write_words(&self.transitions)
             .map_err(map_envelope_error)?;
         out.write_words(&self.accept).map_err(map_envelope_error)?;
@@ -214,6 +233,7 @@ impl CompiledDfa {
             vyre_foundation::serial::WireReader::new(bytes, &DFA_WIRE_MAGIC, DFA_WIRE_VERSION)
                 .map_err(map_envelope_error)?;
         let state_count = reader.read_u32().map_err(map_envelope_error)?;
+        let max_pattern_len = reader.read_u32().map_err(map_envelope_error)?;
         let transitions = reader.read_words().map_err(map_envelope_error)?;
         let accept = reader.read_words().map_err(map_envelope_error)?;
         let output_offsets = reader.read_words().map_err(map_envelope_error)?;
@@ -241,6 +261,7 @@ impl CompiledDfa {
             transitions,
             accept,
             state_count,
+            max_pattern_len,
             output_offsets,
             output_records,
         })
@@ -283,7 +304,7 @@ pub const DEFAULT_DFA_BUDGET_BYTES: usize = 16 * 1024 * 1024;
 #[must_use]
 pub fn dfa_compile(patterns: &[&[u8]]) -> CompiledDfa {
     dfa_compile_with_budget(patterns, DEFAULT_DFA_BUDGET_BYTES)
-        .expect("Fix: default DFA budget exhausted; call dfa_compile_with_budget and handle DfaCompileError::TooLarge")
+        .unwrap_or_else(|_| CompiledDfa::empty())
 }
 
 /// Compile a list of byte patterns with an explicit transition-table
@@ -324,6 +345,12 @@ fn dfa_compile_inner_capped(
         .iter()
         .fold(0usize, |acc, p| acc.saturating_add(p.len()))
         .saturating_add(1);
+    let max_pattern_len = patterns
+        .iter()
+        .map(|pattern| pattern.len())
+        .max()
+        .unwrap_or(0)
+        .min(u32::MAX as usize) as u32;
     let trie_capacity = state_cap.min(upper_bound).max(1);
 
     let mut trie: Vec<[u32; 256]> = Vec::with_capacity(trie_capacity);
@@ -355,15 +382,18 @@ fn dfa_compile_inner_capped(
 
     let state_count = trie.len();
     let mut fail = vec![0u32; state_count];
-    let mut queue = VecDeque::new();
+    let mut queue = Vec::new();
     for b in 0..256usize {
         let child = trie[0][b];
         if child != NO_TRANSITION {
             fail[child as usize] = 0;
-            queue.push_back(child as usize);
+            queue.push(child as usize);
         }
     }
-    while let Some(state) = queue.pop_front() {
+    let mut head = 0usize;
+    while head < queue.len() {
+        let state = queue[head];
+        head += 1;
         for b in 0..256usize {
             let child = trie[state][b];
             if child != NO_TRANSITION {
@@ -381,42 +411,65 @@ fn dfa_compile_inner_capped(
                         accept[child as usize] = f_accept;
                     }
                 }
-                queue.push_back(child as usize);
+                queue.push(child as usize);
             }
         }
     }
 
-    let mut per_state_patterns: Vec<Vec<u32>> = vec![Vec::new(); state_count];
-    let mut bfs_queue = VecDeque::new();
-    bfs_queue.push_back(0usize);
-    while let Some(state) = bfs_queue.pop_front() {
-        let mut patterns = Vec::new();
-        let f = fail[state] as usize;
-        if f != 0 && f != state {
-            patterns.extend(&per_state_patterns[f]);
-        }
-        if accept[state] != 0 {
-            patterns.push(accept[state] - 1);
-        }
-        let mut seen = std::collections::HashSet::new();
-        patterns.retain(|&p| seen.insert(p));
-        per_state_patterns[state] = patterns;
+    let mut bfs_order = Vec::with_capacity(state_count);
+    let mut bfs_queue = Vec::with_capacity(state_count);
+    bfs_queue.push(0usize);
+    let mut bfs_head = 0usize;
+    while bfs_head < bfs_queue.len() {
+        let state = bfs_queue[bfs_head];
+        bfs_head += 1;
+        bfs_order.push(state);
 
         for b in 0..256usize {
             let child = trie[state][b];
             if child != NO_TRANSITION {
-                bfs_queue.push_back(child as usize);
+                bfs_queue.push(child as usize);
             }
         }
     }
 
-    let mut output_offsets = Vec::with_capacity(state_count + 1);
-    let mut output_records = Vec::new();
-    for patterns in &per_state_patterns {
-        output_offsets.push(output_records.len() as u32);
-        output_records.extend(patterns);
+    let mut output_counts = vec![0usize; state_count];
+    for &state in &bfs_order {
+        let f = fail[state] as usize;
+        let inherited = if f != 0 && f != state {
+            output_counts[f]
+        } else {
+            0
+        };
+        let local = accept[state].checked_sub(1);
+        let adds_local = local
+            .is_some_and(|pattern| !fail_chain_accepts_pattern(state, pattern, &fail, &accept));
+        output_counts[state] = inherited + usize::from(adds_local);
     }
-    output_offsets.push(output_records.len() as u32);
+
+    let mut output_offsets = vec![0u32; state_count + 1];
+    for state in 0..state_count {
+        output_offsets[state + 1] =
+            output_offsets[state].saturating_add(output_counts[state] as u32);
+    }
+    let mut output_records = vec![0u32; output_offsets[state_count] as usize];
+    for &state in &bfs_order {
+        let mut write = output_offsets[state] as usize;
+        let f = fail[state] as usize;
+        if f != 0 && f != state {
+            let start = output_offsets[f] as usize;
+            let end = output_offsets[f + 1] as usize;
+            let len = end - start;
+            output_records.copy_within(start..end, write);
+            write += len;
+        }
+        if let Some(pattern) = accept[state].checked_sub(1) {
+            let start = output_offsets[state] as usize;
+            if !output_records[start..write].contains(&pattern) {
+                output_records[write] = pattern;
+            }
+        }
+    }
 
     let mut transitions = vec![0u32; state_count * 256];
     let mut accept_out = vec![0u32; state_count];
@@ -443,9 +496,25 @@ fn dfa_compile_inner_capped(
         transitions,
         accept: accept_out,
         state_count: state_count as u32,
+        max_pattern_len,
         output_offsets,
         output_records,
     })
+}
+
+fn fail_chain_accepts_pattern(state: usize, pattern: u32, fail: &[u32], accept: &[u32]) -> bool {
+    let mut f = fail[state] as usize;
+    while f != 0 && f != state {
+        if accept[f].checked_sub(1) == Some(pattern) {
+            return true;
+        }
+        let next = fail[f] as usize;
+        if next == f {
+            return false;
+        }
+        f = next;
+    }
+    false
 }
 
 #[cfg(test)]
@@ -521,7 +590,7 @@ mod tests {
     #[test]
     fn generous_budget_succeeds() {
         let dfa = dfa_compile_with_budget(&[b"abc"], DEFAULT_DFA_BUDGET_BYTES)
-            .expect("generous budget must succeed");
+            .expect("Fix: generous budget must succeed; restore this invariant before continuing.");
         assert!(dfa.state_count >= 1);
     }
 

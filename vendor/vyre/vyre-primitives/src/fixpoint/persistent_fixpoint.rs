@@ -102,6 +102,9 @@ pub fn persistent_fixpoint(
         Expr::eq(t.clone(), Expr::u32(0)),
         vec![Node::store(changed, Expr::u32(0), Expr::u32(0))],
     ));
+    iter_body.push(Node::Barrier {
+        ordering: vyre_foundation::MemoryOrdering::SeqCst,
+    });
     iter_body.extend(transfer_body);
     iter_body.push(Node::if_then(
         Expr::lt(t.clone(), Expr::u32(words)),
@@ -118,11 +121,18 @@ pub fn persistent_fixpoint(
             Node::store(current, t.clone(), Expr::var("n")),
         ],
     ));
+    iter_body.push(Node::Barrier {
+        ordering: vyre_foundation::MemoryOrdering::SeqCst,
+    });
     // Termination: after the per-iteration body, lane 0 reads changed;
     // if it's 0, set a private termination flag and break the outer
     // forever-loop. The forever-loop here uses the standard pattern:
     // wrap in a bounded for-loop with max_iterations + an inner break
     // when changed reads 0.
+    iter_body.push(Node::Barrier {
+        ordering: vyre_foundation::MemoryOrdering::SeqCst,
+    });
+
     let outer = vec![Node::loop_for(
         "__pf_iter__",
         Expr::u32(0),
@@ -162,17 +172,44 @@ pub fn cpu_ref<F>(seed: &[u32], max_iterations: u32, mut transfer_step: F) -> (V
 where
     F: FnMut(&[u32], &mut [u32]),
 {
-    let mut current = seed.to_vec();
-    let mut next = vec![0u32; current.len()];
+    let mut current = Vec::new();
+    let mut next = Vec::new();
+    let iters = cpu_ref_into(
+        seed,
+        max_iterations,
+        &mut transfer_step,
+        &mut current,
+        &mut next,
+    );
+    (current, iters)
+}
+
+/// CPU oracle using caller-owned buffers.
+///
+/// `current` receives the final fixpoint state and `next` is retained as
+/// ping-pong scratch for subsequent calls.
+pub fn cpu_ref_into<F>(
+    seed: &[u32],
+    max_iterations: u32,
+    transfer_step: &mut F,
+    current: &mut Vec<u32>,
+    next: &mut Vec<u32>,
+) -> u32
+where
+    F: FnMut(&[u32], &mut [u32]),
+{
+    current.clear();
+    current.extend_from_slice(seed);
+    next.resize(seed.len(), 0);
     for iter in 0..max_iterations {
         next.fill(0);
-        transfer_step(&current, &mut next);
+        transfer_step(current, next);
         if next == current {
-            return (current, iter);
+            return iter;
         }
-        std::mem::swap(&mut current, &mut next);
+        std::mem::swap(current, next);
     }
-    (current, max_iterations)
+    max_iterations
 }
 
 #[cfg(test)]
@@ -210,6 +247,24 @@ mod tests {
             next[0] = cur[0].wrapping_add(1);
         });
         assert_eq!(iters, max);
+    }
+
+    #[test]
+    fn cpu_ref_into_reuses_ping_pong_buffers() {
+        let seed = vec![0u32];
+        let mut current = Vec::with_capacity(16);
+        let mut next = Vec::with_capacity(16);
+        let current_ptr = current.as_ptr();
+        let next_ptr = next.as_ptr();
+        let mut transfer = |cur: &[u32], out: &mut [u32]| {
+            out[0] = cur[0] | 0b1010;
+        };
+        let iters = cpu_ref_into(&seed, 16, &mut transfer, &mut current, &mut next);
+        assert!(iters < 5);
+        assert_eq!(current, vec![0b1010]);
+        assert!(current.as_ptr() == current_ptr || current.as_ptr() == next_ptr);
+        assert!(next.as_ptr() == current_ptr || next.as_ptr() == next_ptr);
+        assert_ne!(current.as_ptr(), next.as_ptr());
     }
 
     #[test]

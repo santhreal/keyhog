@@ -9,7 +9,7 @@ use std::convert::Infallible;
 use std::ops::ControlFlow::{self, Continue};
 use std::sync::Arc;
 
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 #[cfg(test)]
 use vyre::ir::BufferAccess;
@@ -166,9 +166,13 @@ impl Memory {
     /// Return the byte payload for canonical primitive evaluators.
     #[must_use]
     pub fn bytes(&self) -> Vec<u8> {
-        self.storage
-            .get("__value")
-            .map_or_else(Vec::new, |buffer| buffer.bytes.read().unwrap().clone())
+        self.storage.get("__value").map_or_else(Vec::new, |buffer| {
+            buffer
+                .bytes
+                .read()
+                .unwrap_or_else(|error| error.into_inner())
+                .clone()
+        })
     }
 
     /// Consume this memory and return the byte payload for canonical primitives.
@@ -179,8 +183,10 @@ impl Memory {
             .find_map(|(name, buffer)| {
                 (name.as_ref() == "__value").then(|| {
                     std::sync::Arc::try_unwrap(buffer.bytes)
-                        .map(|rw| rw.into_inner().unwrap())
-                        .unwrap_or_else(|a| a.read().unwrap().clone())
+                        .map(|rw| rw.into_inner().unwrap_or_else(|error| error.into_inner()))
+                        .unwrap_or_else(|a| {
+                            a.read().unwrap_or_else(|error| error.into_inner()).clone()
+                        })
                 })
             })
             .unwrap_or_default()
@@ -234,160 +240,7 @@ impl LocalSlots {
 }
 
 impl ExprVisitor for LocalSlots {
-    fn visit_subgroup_local_id(
-        &mut self,
-        _: &vyre::ir::Expr,
-    ) -> std::ops::ControlFlow<Self::Break> {
-        std::ops::ControlFlow::Continue(())
-    }
-    fn visit_subgroup_size(&mut self, _: &vyre::ir::Expr) -> std::ops::ControlFlow<Self::Break> {
-        std::ops::ControlFlow::Continue(())
-    }
-
     type Break = Infallible;
-
-    fn visit_lit_u32(&mut self, _: &Expr, _: u32) -> ControlFlow<Self::Break> {
-        Continue(())
-    }
-
-    fn visit_lit_i32(&mut self, _: &Expr, _: i32) -> ControlFlow<Self::Break> {
-        Continue(())
-    }
-
-    fn visit_lit_f32(&mut self, _: &Expr, _: f32) -> ControlFlow<Self::Break> {
-        Continue(())
-    }
-
-    fn visit_lit_bool(&mut self, _: &Expr, _: bool) -> ControlFlow<Self::Break> {
-        Continue(())
-    }
-
-    fn visit_var(&mut self, _: &Expr, _: &vyre::ir::Ident) -> ControlFlow<Self::Break> {
-        Continue(())
-    }
-
-    fn visit_load(
-        &mut self,
-        expr: &Expr,
-        _: &vyre::ir::Ident,
-        _: &Expr,
-    ) -> ControlFlow<Self::Break> {
-        let _ = expr;
-        Continue(())
-    }
-
-    fn visit_buf_len(&mut self, _: &Expr, _: &vyre::ir::Ident) -> ControlFlow<Self::Break> {
-        Continue(())
-    }
-
-    fn visit_invocation_id(&mut self, _: &Expr, _: u32) -> ControlFlow<Self::Break> {
-        Continue(())
-    }
-
-    fn visit_workgroup_id(&mut self, _: &Expr, _: u32) -> ControlFlow<Self::Break> {
-        Continue(())
-    }
-
-    fn visit_local_id(&mut self, _: &Expr, _: u32) -> ControlFlow<Self::Break> {
-        Continue(())
-    }
-
-    fn visit_bin_op(
-        &mut self,
-        expr: &Expr,
-        _: &vyre::ir::BinOp,
-        _: &Expr,
-        _: &Expr,
-    ) -> ControlFlow<Self::Break> {
-        let _ = expr;
-        Continue(())
-    }
-
-    fn visit_un_op(
-        &mut self,
-        expr: &Expr,
-        _: &vyre::ir::UnOp,
-        _: &Expr,
-    ) -> ControlFlow<Self::Break> {
-        let _ = expr;
-        Continue(())
-    }
-
-    fn visit_call(&mut self, expr: &Expr, _: &str, _: &[Expr]) -> ControlFlow<Self::Break> {
-        let _ = expr;
-        Continue(())
-    }
-
-    fn visit_sequence(&mut self, _: &[Expr]) -> ControlFlow<Self::Break> {
-        Continue(())
-    }
-
-    fn visit_fma(&mut self, expr: &Expr, _: &Expr, _: &Expr, _: &Expr) -> ControlFlow<Self::Break> {
-        let _ = expr;
-        Continue(())
-    }
-
-    fn visit_select(
-        &mut self,
-        expr: &Expr,
-        _: &Expr,
-        _: &Expr,
-        _: &Expr,
-    ) -> ControlFlow<Self::Break> {
-        let _ = expr;
-        Continue(())
-    }
-
-    fn visit_cast(
-        &mut self,
-        expr: &Expr,
-        _: &vyre::ir::DataType,
-        _: &Expr,
-    ) -> ControlFlow<Self::Break> {
-        let _ = expr;
-        Continue(())
-    }
-
-    fn visit_atomic(
-        &mut self,
-        expr: &Expr,
-        _: &vyre::ir::AtomicOp,
-        _: &vyre::ir::Ident,
-        _: &Expr,
-        _: Option<&Expr>,
-        _: &Expr,
-    ) -> ControlFlow<Self::Break> {
-        let _ = expr;
-        Continue(())
-    }
-
-    fn visit_subgroup_ballot(&mut self, expr: &Expr, _: &Expr) -> ControlFlow<Self::Break> {
-        let _ = expr;
-        Continue(())
-    }
-
-    fn visit_subgroup_shuffle(
-        &mut self,
-        expr: &Expr,
-        _: &Expr,
-        _: &Expr,
-    ) -> ControlFlow<Self::Break> {
-        let _ = expr;
-        Continue(())
-    }
-
-    fn visit_subgroup_add(&mut self, expr: &Expr, _: &Expr) -> ControlFlow<Self::Break> {
-        let _ = expr;
-        Continue(())
-    }
-
-    fn visit_opaque_expr(
-        &mut self,
-        _: &Expr,
-        _: &dyn vyre::ir::ExprNode,
-    ) -> ControlFlow<Self::Break> {
-        Continue(())
-    }
 }
 
 impl NodeVisitor for LocalSlots {
@@ -395,55 +248,47 @@ impl NodeVisitor for LocalSlots {
 
     fn visit_let(
         &mut self,
-        node: &Node,
+        _: &Node,
         name: &vyre::ir::Ident,
         value: &Expr,
     ) -> ControlFlow<Self::Break> {
         self.intern(name);
-        visit_preorder(self, value)?;
-        let _ = node;
-        Continue(())
+        visit_preorder(self, value)
     }
 
     fn visit_assign(
         &mut self,
-        node: &Node,
+        _: &Node,
         _: &vyre::ir::Ident,
         value: &Expr,
     ) -> ControlFlow<Self::Break> {
-        visit_preorder(self, value)?;
-        let _ = node;
-        Continue(())
+        visit_preorder(self, value)
     }
 
     fn visit_store(
         &mut self,
-        node: &Node,
+        _: &Node,
         _: &vyre::ir::Ident,
         index: &Expr,
         value: &Expr,
     ) -> ControlFlow<Self::Break> {
         visit_preorder(self, index)?;
-        visit_preorder(self, value)?;
-        let _ = node;
-        Continue(())
+        visit_preorder(self, value)
     }
 
     fn visit_if(
         &mut self,
-        node: &Node,
+        _: &Node,
         cond: &Expr,
         _: &[Node],
         _: &[Node],
     ) -> ControlFlow<Self::Break> {
-        visit_preorder(self, cond)?;
-        let _ = node;
-        Continue(())
+        visit_preorder(self, cond)
     }
 
     fn visit_loop(
         &mut self,
-        node: &Node,
+        _: &Node,
         var: &vyre::ir::Ident,
         from: &Expr,
         to: &Expr,
@@ -451,9 +296,7 @@ impl NodeVisitor for LocalSlots {
     ) -> ControlFlow<Self::Break> {
         self.intern(var);
         visit_preorder(self, from)?;
-        visit_preorder(self, to)?;
-        let _ = node;
-        Continue(())
+        visit_preorder(self, to)
     }
 
     fn visit_indirect_dispatch(
@@ -516,19 +359,17 @@ impl NodeVisitor for LocalSlots {
         Continue(())
     }
 
-    fn visit_block(&mut self, node: &Node, _: &[Node]) -> ControlFlow<Self::Break> {
-        let _ = node;
+    fn visit_block(&mut self, _: &Node, _: &[Node]) -> ControlFlow<Self::Break> {
         Continue(())
     }
 
     fn visit_region(
         &mut self,
-        node: &Node,
+        _: &Node,
         _: &vyre::ir::Ident,
         _: &Option<GeneratorRef>,
         _: &[Node],
     ) -> ControlFlow<Self::Break> {
-        let _ = node;
         Continue(())
     }
 
@@ -556,8 +397,9 @@ pub struct Invocation<'a> {
     pub waiting_at_barrier: bool,
     /// Uniform-if observations for branches that contain a barrier.
     pub uniform_checks: Vec<(usize, bool)>,
-    /// Async tags started by `AsyncLoad` and not yet observed by `AsyncWait`.
-    pub pending_async: FxHashSet<Arc<str>>,
+    /// Async transfers started by `AsyncLoad`/`AsyncStore` and pending
+    /// observation by `AsyncWait`.
+    pub(crate) pending_async: FxHashMap<Arc<str>, AsyncTransfer>,
     pub(crate) op_cache: FxHashMap<*const Expr, ResolvedCall>,
 }
 
@@ -617,7 +459,7 @@ impl<'a> Invocation<'a> {
             returned: false,
             waiting_at_barrier: false,
             uniform_checks: Vec::new(),
-            pending_async: FxHashSet::default(),
+            pending_async: FxHashMap::default(),
             op_cache: FxHashMap::default(),
         }
     }
@@ -656,9 +498,9 @@ impl<'a> Invocation<'a> {
         }
     }
 
-    pub(crate) fn begin_async(&mut self, tag: &str) -> Result<(), Error> {
+    pub(crate) fn begin_async(&mut self, tag: &str, transfer: AsyncTransfer) -> Result<(), Error> {
         let tag: Arc<str> = Arc::from(tag);
-        if !self.pending_async.insert(tag.clone()) {
+        if self.pending_async.insert(tag.clone(), transfer).is_some() {
             return Err(Error::interp(format!(
                 "async tag `{}` was started more than once before a matching wait. \
                  Fix: reuse the tag only after AsyncWait completes.",
@@ -668,11 +510,8 @@ impl<'a> Invocation<'a> {
         Ok(())
     }
 
-    pub(crate) fn finish_async(&mut self, tag: &str) -> Result<(), Error> {
-        if self.pending_async.remove(tag) {
-            return Ok(());
-        }
-        Err(Error::interp(format!(
+    pub(crate) fn finish_async(&mut self, tag: &str) -> Result<AsyncTransfer, Error> {
+        self.pending_async.remove(tag).ok_or_else(|| Error::interp(format!(
             "async wait for tag `{tag}` has no matching async load. Fix: emit AsyncLoad before AsyncWait."
         )))
     }
@@ -727,7 +566,11 @@ impl<'a> Invocation<'a> {
     /// ```
     pub fn bind_loop_var(&mut self, name: &str, value: Value) -> Result<(), vyre::Error> {
         self.bind(name, value)?;
-        let slot = self.slots.slot(name).expect("Fix: slot exists after bind");
+        let slot = self.slots.slot(name).ok_or_else(|| {
+            Error::interp(format!(
+                "local binding `{name}` disappeared after bind. Fix: keep local slot layout immutable during interpretation."
+            ))
+        })?;
         self.immutable[slot] = true;
         Ok(())
     }
@@ -756,6 +599,16 @@ impl<'a> Invocation<'a> {
     pub(crate) fn frames_mut(&mut self) -> &mut Vec<Frame<'a>> {
         &mut self.frames
     }
+}
+
+/// Deferred byte-copy transfer for the workgroup reference scheduler.
+pub(crate) enum AsyncTransfer {
+    /// Copy `payload` into `destination` starting at byte offset `start`.
+    Copy {
+        destination: Arc<str>,
+        start: usize,
+        payload: Vec<u8>,
+    },
 }
 
 #[cfg(test)]

@@ -4,7 +4,7 @@
 //! expressions are all iterative dataflow to a fixed point over a control-flow
 //! graph.  Vyre provides that sequential coordination as a first-class
 //! primitive.  The CPU reference performs a classic bitwise-OR forward
-//! iteration with a bounded sweep count; the WGSL kernel performs the exact
+//! iteration with a bounded sweep count; the target-text kernel performs the exact
 //! same lattice join in workgroup-local SRAM, stopping when the change bit
 //! goes cold.  This lets a model emit `dataflow_fixpoint` as an IR node
 //! instead of hand-writing warp-synchronized shader loops.
@@ -13,10 +13,10 @@ use crate::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 use thiserror::Error;
 use vyre_spec::AlgebraicLaw;
 
-/// Portable WGSL source for the dataflow fixpoint primitive.
+/// Registered device source for the dataflow fixpoint primitive.
 #[must_use]
-pub const fn source() -> &'static str {
-    include_str!("wgsl/dataflow_fixpoint.wgsl")
+pub fn source() -> Option<&'static str> {
+    crate::transform::compiler::shader_provider::source("dataflow_fixpoint")
 }
 
 /// Build a vyre IR Program that runs ONE dataflow relaxation step
@@ -282,7 +282,7 @@ pub fn validate_graph(
     Ok(())
 }
 
-/// Workgroup size used by the reference WGSL lowering.
+/// Workgroup size used by the reference target-text lowering.
 pub const WORKGROUP_SIZE: [u32; 3] = [64, 1, 1];
 
 #[cfg(test)]
@@ -305,8 +305,11 @@ mod ir_program_tests {
     #[test]
     fn relax_step_program_wire_round_trips() {
         let prog = relax_step_program("s", "t", "o", "sc", "cf");
-        let bytes = prog.to_wire().expect("serialize");
-        let decoded = Program::from_wire(&bytes).expect("decode");
+        let bytes = prog
+            .to_wire()
+            .expect("Fix: serialize; restore this invariant before continuing.");
+        let decoded = Program::from_wire(&bytes)
+            .expect("Fix: decode; restore this invariant before continuing.");
         assert_eq!(decoded.buffers().len(), 5);
         assert_eq!(decoded.workgroup_size(), [64, 1, 1]);
     }

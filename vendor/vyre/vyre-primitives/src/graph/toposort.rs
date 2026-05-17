@@ -2,16 +2,13 @@
 //! single-invocation GPU `Program` builder.
 //!
 //! Consumed by the optimizer's reaching-defs pass, surgec
-//! `dominator_tree`, and any future graph-IR analysis that needs a
-//! DAG walk.
+//! `dominator_tree`, and graph-IR analyses that need a DAG walk.
 //!
 //! AUDIT_2026-04-24 F-TS-04: `toposort_program` emits a single-invocation
-//! Program that runs Kahn's algorithm serially on lane 0. Parallel topo
-//! sort remains a research problem with no workload evidence justifying
-//! the engineering cost on vyre's current traffic; the serial builder
-//! satisfies the Tier-2.5 primitive requirement. Callers that need a
-//! GPU toposort on large graphs should benchmark this serial kernel
-//! against chaining `scc_decompose` over SCC traversals.
+//! Program that runs Kahn's algorithm serially on lane 0. The serial
+//! lane-0 builder is the current Tier-2.5 contract because topological
+//! ordering has a loop-carried dependency; callers that need large-DAG
+//! throughput compose this with graph partitioning or SCC batching.
 //!
 //! AUDIT_2026-04-24 F-TS-02: the classical Kahn presentation uses a
 //! FIFO queue (BFS-ish). This module uses a stack (LIFO) via
@@ -63,9 +60,16 @@ pub enum ToposortError {
 /// `ToposortError::UnknownNode` when an edge names a node id
 /// outside `0..node_count`.
 pub fn toposort(node_count: u32, edges: &[(u32, u32)]) -> Result<Vec<u32>, ToposortError> {
+    const NONE: usize = usize::MAX;
+
     let n = node_count as usize;
     let mut indeg = vec![0u32; n];
-    let mut adj: Vec<Vec<u32>> = vec![Vec::new(); n];
+    let mut outgoing_head = vec![NONE; n];
+    let mut outgoing_to = Vec::with_capacity(edges.len());
+    let mut outgoing_next = Vec::with_capacity(edges.len());
+    let mut depends_head = vec![NONE; n];
+    let mut depends_to = Vec::with_capacity(edges.len());
+    let mut depends_next = Vec::with_capacity(edges.len());
 
     for (edge_idx, &(from, to)) in edges.iter().enumerate() {
         if (from as usize) >= n {
@@ -80,7 +84,16 @@ pub fn toposort(node_count: u32, edges: &[(u32, u32)]) -> Result<Vec<u32>, Topos
                 node: to,
             });
         }
-        adj[to as usize].push(from);
+        let outgoing_idx = outgoing_to.len();
+        outgoing_to.push(from);
+        outgoing_next.push(outgoing_head[to as usize]);
+        outgoing_head[to as usize] = outgoing_idx;
+
+        let depends_idx = depends_to.len();
+        depends_to.push(to);
+        depends_next.push(depends_head[from as usize]);
+        depends_head[from as usize] = depends_idx;
+
         // AUDIT_2026-04-24 F-TS-01: saturating_add so pathological
         // graphs with > u32::MAX in-edges per node don't wrap
         // silently (yielding 0, which then falsely indicates a root
@@ -96,12 +109,15 @@ pub fn toposort(node_count: u32, edges: &[(u32, u32)]) -> Result<Vec<u32>, Topos
     while let Some(&v) = queue.last() {
         queue.pop();
         out.push(v);
-        for &u in &adj[v as usize] {
+        let mut edge = outgoing_head[v as usize];
+        while edge != NONE {
+            let u = outgoing_to[edge];
             let slot = &mut indeg[u as usize];
-            *slot -= 1;
+            *slot = slot.saturating_sub(1);
             if *slot == 0 {
                 queue.push(u);
             }
+            edge = outgoing_next[edge];
         }
     }
 
@@ -118,12 +134,6 @@ pub fn toposort(node_count: u32, edges: &[(u32, u32)]) -> Result<Vec<u32>, Topos
             .find(|(_, &deg)| deg > 0)
             .map(|(i, _)| i as u32)
             .unwrap_or(0);
-        // Build a forward adjacency on the fly (from -> list of tos).
-        // Size guarded by earlier UnknownNode validation.
-        let mut depends_on: Vec<Vec<u32>> = vec![Vec::new(); n];
-        for &(from, to) in edges {
-            depends_on[from as usize].push(to);
-        }
         let mut on_stack = vec![false; n];
         let mut cursor = seed;
         let cycle_node = loop {
@@ -131,10 +141,16 @@ pub fn toposort(node_count: u32, edges: &[(u32, u32)]) -> Result<Vec<u32>, Topos
                 break cursor;
             }
             on_stack[cursor as usize] = true;
-            let next = depends_on[cursor as usize]
-                .iter()
-                .copied()
-                .find(|&next| indeg[next as usize] > 0);
+            let mut edge = depends_head[cursor as usize];
+            let mut next = None;
+            while edge != NONE {
+                let candidate = depends_to[edge];
+                if indeg[candidate as usize] > 0 {
+                    next = Some(candidate);
+                    break;
+                }
+                edge = depends_next[edge];
+            }
             match next {
                 Some(n) => cursor = n,
                 // No unemitted successor — defensive fallback. This
@@ -296,7 +312,8 @@ mod tests {
 
     #[test]
     fn no_edges_returns_all_nodes() {
-        let got = toposort(3, &[]).expect("no-cycle case");
+        let got = toposort(3, &[])
+            .expect("Fix: no-cycle case; restore this invariant before continuing.");
         assert_eq!(got.len(), 3);
         let mut sorted = got.clone();
         sorted.sort_unstable();
@@ -306,7 +323,8 @@ mod tests {
     #[test]
     fn linear_chain_respects_order() {
         // 0 depends on 1 depends on 2 → sort places 2 before 1 before 0.
-        let got = toposort(3, &[(0, 1), (1, 2)]).expect("linear chain is acyclic");
+        let got = toposort(3, &[(0, 1), (1, 2)])
+            .expect("Fix: linear chain is acyclic; restore this invariant before continuing.");
         let pos = |v: u32| got.iter().position(|&x| x == v).unwrap();
         assert!(pos(2) < pos(1));
         assert!(pos(1) < pos(0));
@@ -353,7 +371,8 @@ mod tests {
     #[test]
     fn diamond_graph_sorts() {
         // 0 depends on 1 and 2; both depend on 3.
-        let got = toposort(4, &[(0, 1), (0, 2), (1, 3), (2, 3)]).expect("diamond is acyclic");
+        let got = toposort(4, &[(0, 1), (0, 2), (1, 3), (2, 3)])
+            .expect("Fix: diamond is acyclic; restore this invariant before continuing.");
         let pos = |v: u32| got.iter().position(|&x| x == v).unwrap();
         assert!(pos(3) < pos(1));
         assert!(pos(3) < pos(2));
@@ -371,5 +390,57 @@ mod tests {
         assert_eq!(p.buffers[2].count(), 4); // node_count
         assert_eq!(p.buffers[3].count(), 4); // node_count
         assert_eq!(p.buffers[4].count(), 4); // node_count
+    }
+
+    // ------------------------------------------------------------------
+    // Adversarial fixtures — empty/single/disconnected/self-loop/max-size.
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn single_node_no_edges() {
+        assert_eq!(toposort(1, &[]), Ok(vec![0]));
+    }
+
+    #[test]
+    fn self_loops_only_rejected() {
+        // Every node has a self-loop — each is a 1-cycle.
+        let err = toposort(3, &[(0, 0), (1, 1), (2, 2)]).expect_err("self-loops are cycles");
+        assert!(matches!(err, ToposortError::Cycle { .. }));
+    }
+
+    #[test]
+    fn disconnected_components_sorts_all() {
+        // Component A: 0 depends on 1. Component B: 2 depends on 3.
+        let got = toposort(4, &[(0, 1), (2, 3)]).unwrap();
+        assert_eq!(got.len(), 4);
+        let pos = |v: u32| got.iter().position(|&x| x == v).unwrap();
+        assert!(pos(1) < pos(0), "1 must come before 0");
+        assert!(pos(3) < pos(2), "3 must come before 2");
+    }
+
+    #[test]
+    fn max_node_count_min_edges() {
+        // 1000 nodes, one chain edge 0→1.
+        let got = toposort(1000, &[(0, 1)]).unwrap();
+        assert_eq!(got.len(), 1000);
+        let pos = |v: u32| got.iter().position(|&x| x == v).unwrap();
+        assert!(pos(1) < pos(0), "1 must come before 0");
+    }
+
+    #[test]
+    fn cycle_on_large_graph_diagnostic_is_on_cycle() {
+        // 100 nodes in a line, back-edge creating cycle 50→51→…→99→50.
+        let mut edges: Vec<(u32, u32)> = (0..99).map(|i| (i, i + 1)).collect();
+        edges.push((99, 50));
+        let err = toposort(100, &edges).expect_err("cycle must be detected");
+        match err {
+            ToposortError::Cycle { node } => {
+                assert!(
+                    (50..=99).contains(&node),
+                    "cycle node {node} must be on the back-edge cycle"
+                );
+            }
+            other => panic!("expected Cycle, got {other:?}"),
+        }
     }
 }

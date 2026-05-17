@@ -54,6 +54,7 @@ pub(crate) fn bin_op_from_tag(tag: u8) -> Result<BinOp, String> {
         0x1E => Ok(BinOp::RotateRight),
         0x1F => Ok(BinOp::WrappingAdd),
         0x20 => Ok(BinOp::WrappingSub),
+        0x21 => Ok(BinOp::MulHigh),
         _ => Err(format!(
             "Fix: unknown binary op tag {tag}; use a compatible IR serializer."
         )),

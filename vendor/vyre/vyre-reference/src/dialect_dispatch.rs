@@ -1,11 +1,9 @@
 //! Dispatch entry point that routes through the `DialectRegistry`.
 //!
-//! B-B4 migrates the CPU reference interpreter onto the dialect
-//! registry. Existing callers in `interp.rs` and `hashmap_interp.rs`
-//! keep their direct match path while this module provides
-//! the new dispatch contract that future callers (cross-backend
-//! comparison, extensibility demos, third-party dialect crates)
-//! consume.
+//! B-B4 routes CPU reference calls through the dialect registry. The
+//! execution tree keeps the direct fast path for built-ins while this
+//! module provides the extensible dispatch contract that cross-backend
+//! comparison, demos, and third-party dialect crates consume.
 //!
 //! The registry-driven path gives one concrete benefit: external
 //! dialect crates can
@@ -19,13 +17,14 @@
 //! unsupported dialects surface a clean `Unsupported` error
 //! instead of panicking at dispatch time.
 
+use crate::execution::call::invoke_cpu_ref;
 use vyre::{cpu_op::is_fallback_cpu_ref, Error, OpDef};
 
 /// Run a single op against its registered CPU reference.
 ///
 /// Category C IO ops and foundation's structured CPU fallback are rejected
 /// before invocation so the reference backend reports unsupported capability
-/// instead of executing a no-op-looking placeholder.
+/// instead of executing a non-executable structured fallback.
 ///
 /// # Errors
 ///
@@ -49,9 +48,7 @@ pub fn dispatch_op(op_id: &str, input: &[u8], output: &mut Vec<u8>) -> Result<()
 
     reject_unsupported_cpu_dispatch(op_id, op_def)?;
 
-    let cpu_ref = op_def.lowerings.cpu_ref;
-    cpu_ref(input, output);
-    Ok(())
+    invoke_cpu_ref(op_id, op_def.lowerings.cpu_ref, input, output)
 }
 
 fn reject_unsupported_cpu_dispatch(op_id: &str, op_def: &OpDef) -> Result<(), Error> {
@@ -93,9 +90,15 @@ mod tests {
         output.extend_from_slice(input);
     }
 
+    fn panic_ref(_: &[u8], output: &mut Vec<u8>) {
+        output.extend_from_slice(&[0xDE, 0xAD]);
+        panic!("malformed primitive input");
+    }
+
     static IO_DEF: std::sync::OnceLock<OpDef> = std::sync::OnceLock::new();
     static ECHO_DEF: std::sync::OnceLock<OpDef> = std::sync::OnceLock::new();
     static FALLBACK_DEF: std::sync::OnceLock<OpDef> = std::sync::OnceLock::new();
+    static PANIC_DEF: std::sync::OnceLock<OpDef> = std::sync::OnceLock::new();
 
     impl vyre_foundation::dialect_lookup::private::Sealed for TestLookup {}
 
@@ -133,12 +136,21 @@ mod tests {
                     ..OpDef::default()
                 }));
             }
+            if id == intern_string("test.panics") {
+                return Some(PANIC_DEF.get_or_init(|| OpDef {
+                    id: "test.panics",
+                    dialect: "test",
+                    lowerings: LoweringTable::new(panic_ref),
+                    ..OpDef::default()
+                }));
+            }
             None
         }
     }
 
     fn install_test_lookup() {
-        install_dialect_lookup(Arc::new(TestLookup));
+        install_dialect_lookup(Arc::new(TestLookup))
+            .expect("Fix: test dialect lookup install should succeed or be idempotent");
     }
 
     #[test]
@@ -161,8 +173,27 @@ mod tests {
     fn registered_executable_cpu_ref_dispatches() {
         install_test_lookup();
         let mut out = Vec::new();
-        dispatch_op("test.echo", &[9, 8, 7], &mut out).expect("echo has executable cpu_ref");
+        dispatch_op("test.echo", &[9, 8, 7], &mut out)
+            .expect("Fix: echo has executable cpu_ref; restore this invariant before continuing.");
         assert_eq!(out, [9, 8, 7]);
+    }
+
+    #[test]
+    fn panicking_cpu_ref_returns_structured_error_without_output_drift() {
+        install_test_lookup();
+        let mut out = vec![0xAA];
+        let err = dispatch_op("test.panics", &[1, 2, 3], &mut out)
+            .expect_err("panicking cpu_ref must become a structured interpreter error");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("test.panics") && msg.contains("panicked") && msg.contains("Fix:"),
+            "panic error must name the op and stay actionable: {msg}"
+        );
+        assert_eq!(
+            out,
+            vec![0xAA],
+            "failed CPU refs must not leak partial output bytes"
+        );
     }
 
     #[test]
@@ -191,7 +222,7 @@ mod tests {
         assert_eq!(
             out,
             vec![0xAA],
-            "dispatcher must reject before invoking a CPU placeholder"
+            "dispatcher must reject before invoking the CPU sentinel"
         );
     }
 

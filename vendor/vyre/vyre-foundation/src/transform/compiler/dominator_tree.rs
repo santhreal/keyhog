@@ -5,7 +5,7 @@
 //! region inference, loop detection, and code motion all depend on it.  Vyre
 //! provides `dominator_tree` as a first-class workgroup-local primitive.  The
 //! CPU reference implements the classic Cooper-Harvey-Kennedy iterative
-//! algorithm over a CSR CFG; the WGSL kernel performs the exact same
+//! algorithm over a CSR CFG; the target-text kernel performs the exact same
 //! reverse-postorder walk and intersection in workgroup SRAM.  This is the
 //! sequential-coordination abstraction that lets a model emit borrow-check
 //! logic without ever writing a shader.
@@ -14,10 +14,10 @@ use crate::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 use thiserror::Error;
 use vyre_spec::AlgebraicLaw;
 
-/// Portable WGSL source for the dominator-tree primitive.
+/// Registered device source for the dominator-tree primitive.
 #[must_use]
-pub const fn source() -> &'static str {
-    include_str!("wgsl/dominator_tree.wgsl")
+pub fn source() -> Option<&'static str> {
+    crate::transform::compiler::shader_provider::source("dominator_tree")
 }
 
 /// Sentinel used by `idom[...] == IDOM_UNDEFINED` to mark "no
@@ -333,7 +333,7 @@ pub fn predecessors(
 ///
 /// The CHK algorithm converges faster when nodes are processed in RPO.
 /// This routine uses an explicit stack so the traversal bound is controlled
-/// and mirrored by the WGSL reference.
+/// and mirrored by the target-text reference.
 #[must_use]
 pub fn reverse_postorder(
     entry: usize,
@@ -341,8 +341,9 @@ pub fn reverse_postorder(
     successors: &[u32],
 ) -> Result<Vec<usize>, DominatorTreeError> {
     let mut seen = vec![false; offsets.len() - 1];
-    let mut stack = vec![(entry, false)];
-    let mut postorder = Vec::new();
+    let mut stack = Vec::with_capacity(offsets.len());
+    stack.push((entry, false));
+    let mut postorder = Vec::with_capacity(offsets.len().saturating_sub(1));
     while let Some((node, expanded)) = stack.pop() {
         if expanded {
             postorder.push(node);
@@ -400,7 +401,7 @@ pub fn validate_graph(
     Ok(())
 }
 
-/// Workgroup size used by the reference WGSL lowering.
+/// Workgroup size used by the reference target-text lowering.
 pub const WORKGROUP_SIZE: [u32; 3] = [64, 1, 1];
 
 #[cfg(test)]
@@ -417,8 +418,11 @@ mod ir_program_tests {
     #[test]
     fn relax_step_program_wire_round_trips() {
         let prog = relax_step_program("idom", "po", "preds", "rpo", "cf");
-        let bytes = prog.to_wire().expect("serialize");
-        let decoded = Program::from_wire(&bytes).expect("decode");
+        let bytes = prog
+            .to_wire()
+            .expect("Fix: serialize; restore this invariant before continuing.");
+        let decoded = Program::from_wire(&bytes)
+            .expect("Fix: decode; restore this invariant before continuing.");
         assert_eq!(decoded.buffers().len(), 5);
     }
 
