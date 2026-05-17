@@ -1,4 +1,13 @@
 use super::support::*;
+use std::sync::{Mutex, OnceLock};
+
+/// Tests that touch the process-global `keyhog_scanner::telemetry` state
+/// must serialise against each other or `cargo test`'s parallel runner
+/// causes them to drain each other's events / share `enable_dogfood`.
+fn telemetry_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
 
 #[test]
 fn pure_placeholder_not_flagged() {
@@ -34,6 +43,7 @@ fn pure_placeholder_not_flagged() {
 /// distinguish "clean" from "saw a known example".
 #[test]
 fn example_suppression_is_recorded_in_telemetry() {
+    let _guard = telemetry_lock().lock().unwrap_or_else(|e| e.into_inner());
     keyhog_scanner::telemetry::reset();
     let detector = DetectorSpec {
         id: "aws-key".into(),
@@ -61,6 +71,7 @@ fn example_suppression_is_recorded_in_telemetry() {
 
 #[test]
 fn dogfood_captures_redacted_event() {
+    let _guard = telemetry_lock().lock().unwrap_or_else(|e| e.into_inner());
     keyhog_scanner::telemetry::reset();
     keyhog_scanner::telemetry::enable_dogfood();
     let detector = DetectorSpec {
@@ -81,8 +92,14 @@ fn dogfood_captures_redacted_event() {
     let chunk = make_chunk("AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE\n");
     let _ = scanner.scan(&chunk);
     let events = keyhog_scanner::telemetry::drain_events();
-    assert!(!events.is_empty(), "--dogfood must capture the suppression event");
-    let serialized = serde_json::to_string(&events[0]).unwrap();
+    // Other tests may run concurrently and fire their own suppressions
+    // while dogfood is globally enabled, so don't assume index 0 is ours
+    // — find the AKIAIO event explicitly.
+    let aws_event = events
+        .iter()
+        .find(|e| serde_json::to_string(e).unwrap().contains("AKIAIO"))
+        .expect("--dogfood must capture this AKIA suppression event");
+    let serialized = serde_json::to_string(aws_event).unwrap();
     assert!(
         !serialized.contains("AKIAIOSFODNN7EXAMPLE"),
         "redacted output must NOT contain the full credential: {serialized}"

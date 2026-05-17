@@ -124,9 +124,17 @@ fn redact_credential(credential: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    /// Tests in this module touch the process-global `Telemetry` cell.
+    /// `cargo test`'s parallel runner would let them step on each other
+    /// (one's `reset()` blowing away another's events), so serialise
+    /// every test that touches global state behind this lock.
+    static T_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn counter_increments_without_dogfood() {
+        let _g = T_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         reset();
         record_example_suppression("aws", None, "AKIAEXAMPLE", "ends_with_EXAMPLE");
         record_example_suppression("aws", None, "AKIAEXAMPLE2", "ends_with_EXAMPLE");
@@ -136,6 +144,7 @@ mod tests {
 
     #[test]
     fn dogfood_captures_events() {
+        let _g = T_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         reset();
         enable_dogfood();
         record_example_suppression(
