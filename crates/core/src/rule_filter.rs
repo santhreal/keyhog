@@ -141,12 +141,12 @@ impl RuleSuppressor {
         let doc: Doc = toml::from_str(toml_text).map_err(RuleSuppressorError::Toml)?;
         let mut rules = Vec::with_capacity(doc.suppress.len());
         for (idx, entry) in doc.suppress.into_iter().enumerate() {
-            rules.push(entry_to_formula(&entry).map_err(|e| {
-                RuleSuppressorError::Schema {
+            rules.push(
+                entry_to_formula(&entry).map_err(|e| RuleSuppressorError::Schema {
                     rule_index: idx,
                     message: e,
-                }
-            })?);
+                })?,
+            );
         }
         Ok(Self { rules })
     }
@@ -163,7 +163,6 @@ impl RuleSuppressor {
             .location
             .file_path
             .as_deref()
-            .map(|s| s.as_ref())
             .unwrap_or("");
         let ctx = FindingContext {
             detector_id: finding.detector_id.as_ref(),
@@ -172,9 +171,7 @@ impl RuleSuppressor {
             path,
             credential_hash: finding.credential_hash.as_str(),
         };
-        self.rules
-            .iter()
-            .any(|rule| evaluate_formula(rule, &ctx))
+        self.rules.iter().any(|rule| evaluate_formula(rule, &ctx))
     }
 
     /// Number of compiled rules.
@@ -202,9 +199,8 @@ fn entry_to_formula(entry: &SuppressEntry) -> Result<RuleFormula, String> {
     if let Some(s) = entry.severity_lte.as_deref() {
         // severity_lte over the curated rank set.
         let max = severity_rank(&normalise_severity(s)?)?;
-        let allowed: smallvec::SmallVec<[Arc<str>; 4]> = (0..=max)
-            .map(|r| Arc::from(severity_label(r)))
-            .collect();
+        let allowed: smallvec::SmallVec<[Arc<str>; 4]> =
+            (0..=max).map(|r| Arc::from(severity_label(r))).collect();
         conditions.push(RuleCondition::FieldInSet {
             field: "severity".into(),
             set: allowed,
@@ -247,12 +243,10 @@ fn entry_to_formula(entry: &SuppressEntry) -> Result<RuleFormula, String> {
     if conditions.is_empty() {
         // Empty `[[suppress]]` table is almost always a typo. Refuse
         // rather than silently matching every finding.
-        return Err(
-            "no conditions specified in [[suppress]] entry; \
+        return Err("no conditions specified in [[suppress]] entry; \
              use `[[suppress]]\\nliteral_true = true` if you really want \
              to drop every finding"
-                .into(),
-        );
+            .into());
     }
 
     // AND of all conditions inside one [[suppress]] table.
@@ -324,7 +318,10 @@ impl std::fmt::Display for RuleSuppressorError {
         match self {
             Self::Io(e) => write!(f, "reading .keyhogignore.toml: {e}"),
             Self::Toml(e) => write!(f, "parsing .keyhogignore.toml: {e}"),
-            Self::Schema { rule_index, message } => write!(
+            Self::Schema {
+                rule_index,
+                message,
+            } => write!(
                 f,
                 "schema error in [[suppress]] entry {rule_index}: {message}"
             ),
@@ -340,7 +337,13 @@ mod tests {
     use crate::{MatchLocation, VerificationResult};
     use std::collections::HashMap;
 
-    fn finding(detector: &str, service: &str, sev: Severity, path: &str, hash: &str) -> VerifiedFinding {
+    fn finding(
+        detector: &str,
+        service: &str,
+        sev: Severity,
+        path: &str,
+        hash: &str,
+    ) -> VerifiedFinding {
         VerifiedFinding {
             detector_id: Arc::from(detector),
             detector_name: Arc::from(detector),
@@ -367,7 +370,13 @@ mod tests {
     #[test]
     fn empty_suppressor_matches_nothing() {
         let s = RuleSuppressor::empty();
-        let f = finding("aws-access-key", "aws", Severity::Critical, "src/a.rs", "h1");
+        let f = finding(
+            "aws-access-key",
+            "aws",
+            Severity::Critical,
+            "src/a.rs",
+            "h1",
+        );
         assert!(!s.matches(&f));
     }
 
@@ -429,8 +438,20 @@ detector = "github-pat"
 "#;
         let s = RuleSuppressor::parse(toml).expect("parse");
         assert_eq!(s.len(), 2);
-        assert!(s.matches(&finding("aws-access-key", "aws", Severity::Critical, "x", "h1")));
-        assert!(s.matches(&finding("github-pat", "github", Severity::Critical, "x", "h2")));
+        assert!(s.matches(&finding(
+            "aws-access-key",
+            "aws",
+            Severity::Critical,
+            "x",
+            "h1"
+        )));
+        assert!(s.matches(&finding(
+            "github-pat",
+            "github",
+            Severity::Critical,
+            "x",
+            "h2"
+        )));
         assert!(!s.matches(&finding("stripe", "stripe", Severity::Critical, "x", "h3")));
     }
 
@@ -482,9 +503,19 @@ credential_hash = "deadbeefdeadbeefdeadbeefdeadbeef"
 "#;
         let s = RuleSuppressor::parse(toml).expect("parse");
         assert!(s.matches(&finding(
-            "x", "x", Severity::High, "p", "deadbeefdeadbeefdeadbeefdeadbeef"
+            "x",
+            "x",
+            Severity::High,
+            "p",
+            "deadbeefdeadbeefdeadbeefdeadbeef"
         )));
-        assert!(!s.matches(&finding("x", "x", Severity::High, "p", "feedfacefeedfacefeedfacefeedface")));
+        assert!(!s.matches(&finding(
+            "x",
+            "x",
+            Severity::High,
+            "p",
+            "feedfacefeedfacefeedfacefeedface"
+        )));
     }
 
     #[test]
@@ -514,7 +545,10 @@ not_a_field = "x"
         let msg = format!("{err}");
         // serde's deny_unknown_fields produces a message naming the
         // bad field; just verify it errors.
-        assert!(msg.contains("not_a_field") || msg.contains("unknown"), "got: {msg}");
+        assert!(
+            msg.contains("not_a_field") || msg.contains("unknown"),
+            "got: {msg}"
+        );
     }
 
     #[test]

@@ -378,8 +378,7 @@ mod hostile_metadata_tests {
         // controlled filenames. JSON must escape rather than emit
         // raw control bytes (which would corrupt log scrapers /
         // SARIF readers).
-        let finding =
-            finding_with_hostile_path("path\r\nwith\x1b[31mANSI\x1bcontrol\tchars");
+        let finding = finding_with_hostile_path("path\r\nwith\x1b[31mANSI\x1bcontrol\tchars");
         let json = serde_json::to_string(&finding).expect("serialize ok");
         assert!(json.contains("\\r"));
         assert!(json.contains("\\n"));

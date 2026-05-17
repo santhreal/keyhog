@@ -216,11 +216,7 @@ fn run_fix(args: &DetectorArgs) -> Result<ExitCode> {
         } else {
             atomic_write(&entry, &rewritten)
                 .with_context(|| format!("writing fixed {}", entry.display()))?;
-            println!(
-                "fixed {}: {} rewrite(s)",
-                entry.display(),
-                count
-            );
+            println!("fixed {}: {} rewrite(s)", entry.display(), count);
         }
     }
 
@@ -240,8 +236,8 @@ fn run_fix(args: &DetectorArgs) -> Result<ExitCode> {
 
 fn list_toml_files(dir: &Path) -> Result<Vec<PathBuf>> {
     let mut out = Vec::new();
-    let read = std::fs::read_dir(dir)
-        .with_context(|| format!("reading directory {}", dir.display()))?;
+    let read =
+        std::fs::read_dir(dir).with_context(|| format!("reading directory {}", dir.display()))?;
     for entry in read {
         let entry = entry.with_context(|| format!("reading entry under {}", dir.display()))?;
         let path = entry.path();
@@ -502,7 +498,10 @@ url = "https://api.example.com/{shop}/orders"
 "#;
         let (out, n) = fix_single_brace_in_verify_blocks(toml);
         assert_eq!(n, 1, "only the verify URL should be rewritten");
-        assert!(out.contains("regex = \"[A-Z]{4}\""), "regex quantifier untouched");
+        assert!(
+            out.contains("regex = \"[A-Z]{4}\""),
+            "regex quantifier untouched"
+        );
         assert!(out.contains("/{{shop}}/orders"), "verify URL rewritten");
     }
 

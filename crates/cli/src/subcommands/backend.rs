@@ -112,7 +112,10 @@ fn print_backend_report(args: &BackendArgs) -> Result<()> {
         (1024 * 1024, "1 MiB chunk"),
         (2 * 1024 * 1024, "2 MiB chunk (high-tier min)"),
         (4 * 1024 * 1024, "4 MiB chunk"),
-        (16 * 1024 * 1024, "16 MiB chunk (high-tier solo / mid-tier min)"),
+        (
+            16 * 1024 * 1024,
+            "16 MiB chunk (high-tier solo / mid-tier min)",
+        ),
         (active_min.saturating_sub(1), "just under tier min_bytes"),
         (active_min, "tier min_bytes exactly"),
         (active_solo.saturating_sub(1), "just under tier solo cap"),
@@ -174,7 +177,9 @@ fn print_backend_report(args: &BackendArgs) -> Result<()> {
 
     println!();
     let cur = ScanBackend::Gpu.label();
-    println!("Force a backend with: KEYHOG_BACKEND={{gpu|simd|cpu}}  (or `keyhog scan --backend ...`)");
+    println!(
+        "Force a backend with: KEYHOG_BACKEND={{gpu|simd|cpu}}  (or `keyhog scan --backend ...`)"
+    );
     let _ = cur;
     Ok(())
 }
