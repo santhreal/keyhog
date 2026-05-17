@@ -2,6 +2,37 @@
 
 All notable changes to KeyHog. Versions follow [Semantic Versioning](https://semver.org/).
 
+## v0.5.6 — 2026-05-17
+
+### Added — dogfooding-driven UX
+
+- **`--dogfood`** — opt-in JSON trace on stderr after the scan. Each
+  example/test/placeholder credential that was matched and then
+  suppressed gets a redacted-prefix event with the algorithmic reason
+  (`contains_EXAMPLE_token`, `algorithmic_placeholder`). Closes the
+  "did the scanner miss this, or silence it?" question without a debug
+  rebuild. Full credentials are never emitted — `--dogfood` is a
+  decision tracer, not a credential exfil channel.
+- **Honest scan summary when only example keys were found.** Previously,
+  scanning `demo-secret.env` (which holds `AKIAIOSFODNN7EXAMPLE`)
+  printed *"No secrets found. Your code is clean."* — identical to a
+  genuinely clean repo. Now the summary distinguishes:
+  - 0 findings, 0 suppressed → "0 secrets in 0.12s. You are secure!"
+  - 0 findings, N suppressed → "0 real secrets, N example/test key(s) suppressed (pass --dogfood to see them)."
+
+### Internal
+
+- New `keyhog_scanner::telemetry` module: per-scan atomic counters +
+  optional event log. Engines call `record_example_suppression(...)`
+  from the existing `should_suppress_known_example_credential_*` paths;
+  the orchestrator drains events at the end of `run()`. Zero new
+  state threaded through engine boundaries — single `OnceLock`
+  process-local container with a `reset()` for tests.
+- Two regression tests pinning the demo-secret.env case + the dogfood
+  redaction contract. Telemetry-touching tests serialise behind a
+  module-local `Mutex` so `cargo test`'s parallel runner doesn't let
+  them step on each other.
+
 ## v0.5.5 — 2026-05-09
 
 GPU foundations + vyre composition pass. The session wires keyhog
