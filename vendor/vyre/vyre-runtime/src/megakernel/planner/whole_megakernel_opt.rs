@@ -1,17 +1,17 @@
-//! C1 substrate: whole-megakernel optimization domain.
+﻿//! C1 substrate: whole-megakernel optimization domain.
 //!
 //! Per-arm optimization (the existing CSE/DCE per arm, then fuse) is
-//! conservative — it can't see structural redundancy ACROSS arms.
+//! conservative â€” it can't see structural redundancy ACROSS arms.
 //! When two adjacent arms produce the same intermediate result the
 //! first arm could compute it once and the second arm could just
 //! read it.
 //!
 //! This substrate owns the *cross-arm redundancy detector*: given a
 //! per-arm sequence of `MegakernelWorkItem`s, identify pairs of arms that
-//! emit the same op→input→output triple. The dispatcher uses the
+//! emit the same opâ†’inputâ†’output triple. The dispatcher uses the
 //! verdict to skip the redundant compute.
 //!
-//! Pure substrate — no Program walk, no allocation outside the
+//! Pure substrate â€” no Program walk, no allocation outside the
 //! returned redundancy report. The actual rewrite (collapse
 //! redundant arms into one + rewire downstream readers) is the
 //! Codex-side runtime work; this substrate just names the
@@ -44,7 +44,7 @@ pub struct CrossArmRedundancy {
 }
 
 impl CrossArmRedundancy {
-    /// Empty report — no redundancy across arms.
+    /// Empty report â€” no redundancy across arms.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
@@ -63,14 +63,14 @@ impl CrossArmRedundancy {
 /// substrate sees in arm N, it remembers which arm produced it. If
 /// an identical triple appears in a later arm M > N, the substrate
 /// records `(N, M, op_idx_in_M)`. WorkItems are compared by the
-/// `(op_handle, input_handle, output_handle)` triple alone — the
+/// `(op_handle, input_handle, output_handle)` triple alone â€” the
 /// `param` field is treated as separate launch metadata.
 ///
-/// O(total_ops) — uses one pass + one hash table. Allocation only
+/// O(total_ops) â€” uses one pass + one hash table. Allocation only
 /// for the redundancy report and the seen-set.
 #[must_use]
 pub fn detect_cross_arm_redundancy(arms: &[&[MegakernelWorkItem]]) -> CrossArmRedundancy {
-    // (op_handle, input_handle, output_handle) → (arm_idx, op_idx)
+    // (op_handle, input_handle, output_handle) â†’ (arm_idx, op_idx)
     let total_ops = arms.iter().map(|arm| arm.len()).sum();
     if total_ops <= 1 {
         return CrossArmRedundancy::new();
@@ -84,7 +84,6 @@ pub fn detect_cross_arm_redundancy(arms: &[&[MegakernelWorkItem]]) -> CrossArmRe
     for (arm_idx, arm) in arms.iter().enumerate() {
         for (op_idx, item) in arm.iter().enumerate() {
             let key = (item.op_handle, item.input_handle, item.output_handle);
-            match first_seen.entry(key) {
             match first_seen.entry(key) {
                 Entry::Occupied(entry) => {
                     if *entry.get() < arm_idx {
@@ -251,7 +250,7 @@ mod tests {
 
     #[test]
     fn redundancy_uses_first_seen_arm_index() {
-        // Op appears in arms 0, 2, 3 — both 2 and 3 should reference 0.
+        // Op appears in arms 0, 2, 3 â€” both 2 and 3 should reference 0.
         let a = vec![item(1, 0, 5)];
         let b = vec![item(99, 0, 0)];
         let c = vec![item(1, 0, 5)];
@@ -264,7 +263,7 @@ mod tests {
 
     #[test]
     fn param_field_does_not_affect_redundancy() {
-        // Same (op, in, out) triple but different param — still
+        // Same (op, in, out) triple but different param â€” still
         // cross-arm redundant by this substrate's contract.
         let a = vec![MegakernelWorkItem {
             op_handle: 1,

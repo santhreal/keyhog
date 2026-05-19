@@ -101,32 +101,19 @@ fn rewrite_node(node: Node, report: &mut BarrierElisionReport) -> Node {
 fn elide_barrier_siblings(nodes: Vec<Node>, report: &mut BarrierElisionReport) -> Vec<Node> {
     let mut out = Vec::with_capacity(nodes.len());
     let mut iter = nodes.into_iter().peekable();
-    let mut left_access: Option<AccessSet> = None;
     while let Some(node) = iter.next() {
-    if matches!(&node, Node::Barrier { .. }) {
+        if matches!(&node, Node::Barrier { .. }) {
             if let (Some(left), Some(right)) = (out.last(), iter.peek()) {
-                if is_runtime_arm(left)
-                    && is_runtime_arm(right)
-                    && left_access.as_ref().is_some_and(|left_access| {
-                        let mut right_access = AccessSet::default();
-                        collect_node_access(right, &mut right_access);
-                        accesses_are_independent(left_access, &right_access)
-                    })
-                {
-                    report.removed += 1;
-                    continue;
+                if is_runtime_arm(left) && is_runtime_arm(right) {
+                    let mut left_access = AccessSet::default();
+                    collect_node_access(left, &mut left_access);
+                    let mut right_access = AccessSet::default();
+                    collect_node_access(right, &mut right_access);
+                    if accesses_are_independent(&left_access, &right_access) {
+                        report.removed += 1;
+                        continue;
+                    }
                 }
-            }
-            left_access = None;
-        }
-        match &node {
-            node if is_runtime_arm(node) => {
-                let mut access = AccessSet::default();
-                collect_node_access(node, &mut access);
-                left_access = Some(access);
-            }
-            _ => {
-                left_access = None;
             }
         }
         out.push(node);
@@ -145,7 +132,7 @@ fn is_runtime_arm(node: &Node) -> bool {
     matches!(node, Node::Block(_) | Node::Region { .. })
 }
 
-fn accesses_are_independent(left: &AccessSet, right: &AccessSet) -> bool {
+fn accesses_are_independent<'a>(left: &AccessSet<'a>, right: &AccessSet<'a>) -> bool {
     !left.unknown && !right.unknown && !left.conflicts_with(right)
 }
 
