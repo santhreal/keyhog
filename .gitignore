@@ -64,3 +64,56 @@ prove_sb.py
 ast_dump.txt
 crates/scanner/ast_dump.txt
 crates/scanner/src/engine/scan_gpu.rs.patch
+
+# ── Santh-internal artifacts (BEGIN — managed; do not edit between markers) ──
+# Operator-private working notes, plans, audits, scoreboards, status
+# trackers, and "legendary" markers leak workflow context and must never
+# ship publicly. The only governance artifacts that DO ship publicly are
+# CODE_OF_CONDUCT.md, SECURITY.md, CONTRIBUTING.md, and LICENSE-* — those
+# are explicitly allow-listed. Everything else internal is denied here.
+
+# Internal working dirs
+.internal/
+jules_tickets/
+
+# AI/agent tool artefacts (operator-private)
+CLAUDE.md
+AGENTS.md
+AGENT.md
+agents.md
+GEMINI.md
+.claude/
+.agents/
+.codex/
+.cursor/
+.cursorrules
+.windsurf/
+.windsurfrules
+.aider*
+
+# Plans, TODOs, audits, backlogs, scoreboards, "legendary" markers
+*LEGENDARY*
+*_PLAN.md
+*_PLAN_*.md
+*_AUDIT.md
+*_AUDIT_*.md
+*_BACKLOG.md
+*_BACKLOG_*.md
+TODO.md
+NOTES.md
+SCRATCH.md
+*_TODO.md
+*_NOTES.md
+ENGINE_GAPS.md
+SCOREBOARD*.md
+*_status_*.md
+.audits/
+
+# Allow-list: governance artifacts that ARE public
+!CODE_OF_CONDUCT.md
+!SECURITY.md
+!CONTRIBUTING.md
+!LICENSE
+!LICENSE-APACHE
+!LICENSE-MIT
+# ── Santh-internal artifacts (END) ──
