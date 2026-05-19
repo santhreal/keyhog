@@ -96,25 +96,40 @@ fn bfs_dense_queue(
     use std::collections::VecDeque;
 
     let total_nodes = row_ptr.len().saturating_sub(1);
+    if total_nodes == 0 {
+        return Vec::new();
+    }
+    let total_nodes = total_nodes as usize;
     let mut visited = vec![false; total_nodes];
-    let mut queue: VecDeque<u32> = seed_facts
-        .iter()
-        .map(|&(p, b, f)| dense_idx(p, b, f, blocks_per_proc, facts_per_proc))
-        .collect();
-    for &n in &queue {
-        if (n as usize) < total_nodes {
-            visited[n as usize] = true;
+    let mut queue: VecDeque<u32> = VecDeque::with_capacity(seed_facts.len());
+    let mut result: Vec<u32> = Vec::with_capacity(seed_facts.len().min(total_nodes));
+    for &(p, b, f) in seed_facts {
+        let node = dense_idx(p, b, f, blocks_per_proc, facts_per_proc);
+        let n = match usize::try_from(node) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        if n < total_nodes && !visited[n] {
+            visited[n] = true;
+            queue.push_back(node);
+            result.push(node);
         }
     }
-    let mut result: Vec<u32> = queue.iter().copied().collect();
     while let Some(node) = queue.pop_front() {
-        if (node as usize) >= total_nodes {
+        let node = match usize::try_from(node) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        if node >= total_nodes {
             continue;
         }
-        let start = row_ptr[node as usize] as usize;
-        let end = row_ptr[node as usize + 1] as usize;
+        let start = row_ptr[node] as usize;
+        let end = row_ptr[node + 1] as usize;
         for &neighbour in &col_idx[start..end] {
-            let idx = neighbour as usize;
+            let idx = match usize::try_from(neighbour) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
             if idx < total_nodes && !visited[idx] {
                 visited[idx] = true;
                 queue.push_back(neighbour);

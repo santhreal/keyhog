@@ -17,6 +17,8 @@ pub struct FusionSelectionScratch {
     order: Vec<usize>,
     result: Vec<u32>,
     conflict_degrees: Vec<u32>,
+    conflict_masks: Vec<u64>,
+    selected_chunks: Vec<u64>,
 }
 
 impl FusionSelectionScratch {
@@ -39,6 +41,8 @@ impl FusionSelectionScratch {
         self.result.resize(n, 0);
         self.conflict_degrees.clear();
         self.conflict_degrees.resize(n, 0);
+        self.conflict_masks.clear();
+        self.selected_chunks.clear();
     }
 }
 
@@ -307,7 +311,14 @@ pub fn select_fused_subset_checked_into(
             .then_with(|| scratch.conflict_degrees[a].cmp(&scratch.conflict_degrees[b]))
             .then_with(|| a.cmp(&b))
     });
-    select_ordered_maximal(exchange_adj, n_usize, &scratch.order, &mut scratch.result);
+    select_ordered_maximal(
+        exchange_adj,
+        n_usize,
+        &scratch.order,
+        &mut scratch.conflict_masks,
+        &mut scratch.selected_chunks,
+        &mut scratch.result,
+    );
     Ok(())
 }
 
@@ -352,7 +363,14 @@ pub fn select_fused_subset_compact_checked_into(
             .then_with(|| scratch.conflict_degrees[a].cmp(&scratch.conflict_degrees[b]))
             .then_with(|| a.cmp(&b))
     });
-    select_ordered_maximal(exchange_adj, n_usize, &scratch.order, &mut scratch.result);
+    select_ordered_maximal(
+        exchange_adj,
+        n_usize,
+        &scratch.order,
+        &mut scratch.conflict_masks,
+        &mut scratch.selected_chunks,
+        &mut scratch.result,
+    );
     Ok(())
 }
 
@@ -461,11 +479,62 @@ fn compatible_with_selection(exchange_adj: &[u32], n: usize, result: &[u32], ite
     true
 }
 
-fn select_ordered_maximal(exchange_adj: &[u32], n: usize, order: &[usize], result: &mut [u32]) {
+fn select_ordered_maximal(
+    exchange_adj: &[u32],
+    n: usize,
+    order: &[usize],
+    conflict_masks: &mut Vec<u64>,
+    selected_chunks: &mut Vec<u64>,
+    result: &mut [u32],
+) {
     result.fill(0);
+    if n <= 256 {
+        for &item in order {
+            if item < n && compatible_with_selection(exchange_adj, n, result, item) {
+                result[item] = 1;
+            }
+        }
+        return;
+    }
+
+    let words = n.div_ceil(64);
+    conflict_masks.clear();
+    let needed_masks = words.checked_mul(n).unwrap_or(0);
+    conflict_masks.resize(needed_masks, 0);
+    for i in 0..n {
+        let row_start = i * n;
+        for j in (i + 1)..n {
+            if exchange_adj[row_start + j] == 0 && exchange_adj[j * n + i] == 0 {
+                continue;
+            }
+            let j_word = j / 64;
+            let j_bit = j % 64;
+            conflict_masks[i * words + j_word] |= 1_u64 << j_bit;
+
+            let i_word = i / 64;
+            let i_bit = i % 64;
+            conflict_masks[j * words + i_word] |= 1_u64 << i_bit;
+        }
+    }
+
+    selected_chunks.clear();
+    selected_chunks.resize(words, 0);
     for &item in order {
-        if item < n && compatible_with_selection(exchange_adj, n, result, item) {
+        if item >= n {
+            continue;
+        }
+        let mut conflicted = false;
+        let base = item * words;
+        for chunk_idx in 0..words {
+            if (conflict_masks[base + chunk_idx] & selected_chunks[chunk_idx]) != 0 {
+                conflicted = true;
+                break;
+            }
+        }
+        if !conflicted {
             result[item] = 1;
+            let word = item / 64;
+            selected_chunks[word] |= 1_u64 << (item % 64);
         }
     }
 }

@@ -213,3 +213,49 @@ fn checked_selector_reports_shape_errors() {
         }
     );
 }
+
+#[test]
+fn selector_large_n_with_forced_conflict_skips_one_selected_arm() {
+    let n = 257_usize;
+    let mut costs = vec![10.0_f64; n];
+    costs[n - 2] = 1.0;
+    costs[n - 1] = 2.0;
+
+    let mut exchange_adj = vec![0_u32; n * n];
+    exchange_adj[(n - 2) * n + (n - 1)] = 1;
+    exchange_adj[(n - 1) * n + (n - 2)] = 1;
+
+    let selected = select_fused_subset(&costs, n as u32, &exchange_adj);
+
+    assert_eq!(selected[n - 2], 1);
+    assert_eq!(selected[n - 1], 0);
+    assert_eq!(selected.iter().filter(|&&x| x == 1).count(), n - 1);
+}
+
+#[test]
+fn selector_large_n_without_conflict_returns_all_selected() {
+    let n = 300_usize;
+    let costs: Vec<f64> = (0..n).map(|idx| idx as f64).collect();
+    let exchange_adj = vec![0_u32; n * n];
+
+    let selected = select_fused_subset(&costs, n as u32, &exchange_adj);
+
+    assert_eq!(selected.len(), n);
+    assert!(selected.iter().all(|&value| value == 1));
+}
+
+#[test]
+fn selector_large_n_with_asymmetric_conflict_treats_as_conflict() {
+    let n = 300_usize;
+    let mut costs = vec![10.0_f64; n];
+    costs[255] = 1.0;
+    costs[1] = 1000.0;
+
+    let mut exchange_adj = vec![0_u32; n * n];
+    exchange_adj[255 * n + 1] = 1;
+
+    let selected = select_fused_subset(&costs, n as u32, &exchange_adj);
+
+    assert_eq!(selected[255], 1);
+    assert_eq!(selected[1], 0);
+}

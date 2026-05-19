@@ -18,6 +18,7 @@
 //! optimization opportunity.
 
 use crate::megakernel::planner::MegakernelWorkItem;
+use std::collections::hash_map::Entry;
 use rustc_hash::FxHashMap;
 
 const DENSE_OUTPUT_UNIQUE_BITS: usize = 4096;
@@ -71,6 +72,9 @@ impl CrossArmRedundancy {
 pub fn detect_cross_arm_redundancy(arms: &[&[MegakernelWorkItem]]) -> CrossArmRedundancy {
     // (op_handle, input_handle, output_handle) → (arm_idx, op_idx)
     let total_ops = arms.iter().map(|arm| arm.len()).sum();
+    if total_ops <= 1 {
+        return CrossArmRedundancy::new();
+    }
     let mut first_seen: FxHashMap<(u32, u32, u32), usize> =
         FxHashMap::with_capacity_and_hasher(total_ops, Default::default());
     let mut report = CrossArmRedundancy {
@@ -80,17 +84,17 @@ pub fn detect_cross_arm_redundancy(arms: &[&[MegakernelWorkItem]]) -> CrossArmRe
     for (arm_idx, arm) in arms.iter().enumerate() {
         for (op_idx, item) in arm.iter().enumerate() {
             let key = (item.op_handle, item.input_handle, item.output_handle);
-            match first_seen.get(&key) {
-                Some(&early_arm_idx) if early_arm_idx < arm_idx => {
-                    report
-                        .redundant_pairs
-                        .push((early_arm_idx, arm_idx, op_idx));
+            match first_seen.entry(key) {
+            match first_seen.entry(key) {
+                Entry::Occupied(entry) => {
+                    if *entry.get() < arm_idx {
+                        report
+                            .redundant_pairs
+                            .push((*entry.get(), arm_idx, op_idx));
+                    }
                 }
-                Some(_) => {
-                    // Same arm — not a cross-arm redundancy.
-                }
-                None => {
-                    first_seen.insert(key, arm_idx);
+                Entry::Vacant(vacant) => {
+                    vacant.insert(arm_idx);
                 }
             }
         }
@@ -119,6 +123,9 @@ pub fn prune_redundant_work_items_into(
     out: &mut Vec<MegakernelWorkItem>,
 ) -> CrossArmRedundancy {
     out.clear();
+    if items.len() <= 1 {
+        return CrossArmRedundancy::new();
+    }
 
     if output_handles_are_dense_unique(items) {
         return CrossArmRedundancy::new();
@@ -139,18 +146,21 @@ pub fn prune_redundant_work_items_into(
             item.output_handle,
             item.param,
         );
-        if let Some(&early_idx) = first_seen.get(&key) {
-            if !found_duplicate {
-                out.reserve(items.len().saturating_sub(1));
-                out.extend_from_slice(&items[..idx]);
-                found_duplicate = true;
+        match first_seen.entry(key) {
+            Entry::Occupied(entry) => {
+                if !found_duplicate {
+                    out.reserve(items.len().saturating_sub(1));
+                    out.extend_from_slice(&items[..idx]);
+                    found_duplicate = true;
+                }
+                report.redundant_pairs.push((*entry.get(), idx, 0));
             }
-            report.redundant_pairs.push((early_idx, idx, 0));
-            continue;
-        }
-        first_seen.insert(key, idx);
-        if found_duplicate {
-            out.push(item);
+            Entry::Vacant(vacant) => {
+                vacant.insert(idx);
+                if found_duplicate {
+                    out.push(item);
+                }
+            }
         }
     }
 

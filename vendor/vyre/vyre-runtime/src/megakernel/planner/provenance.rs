@@ -21,6 +21,21 @@ pub fn build_scallop_lineage_with_program_and_scratch(
     if n_items == 0 {
         return Ok(Vec::new());
     }
+    if n_items == 1 {
+        let Some(first) = work_items.first() else {
+            return Err(BackendError::new(
+                "megakernel lineage item count requires at least one work item. Fix: pass a non-empty work item slice for n_items=1.",
+            ));
+        };
+        changed[0] = 0;
+        return Ok(vec![1u32 << (first.op_handle % 32)]);
+    }
+    if work_items.len() < n_items {
+        return Err(BackendError::new(format!(
+            "provided work_items len {} is smaller than n_items={n_items}. Fix: pass matching work item and n_items values.",
+            work_items.len()
+        )));
+    }
     let cell_count = n_items.checked_mul(n_items).ok_or_else(|| {
         BackendError::new(
             "megakernel lineage matrix size overflowed usize. Fix: shard the work queue before provenance closure.",

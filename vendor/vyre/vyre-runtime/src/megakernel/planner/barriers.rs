@@ -101,14 +101,32 @@ fn rewrite_node(node: Node, report: &mut BarrierElisionReport) -> Node {
 fn elide_barrier_siblings(nodes: Vec<Node>, report: &mut BarrierElisionReport) -> Vec<Node> {
     let mut out = Vec::with_capacity(nodes.len());
     let mut iter = nodes.into_iter().peekable();
+    let mut left_access: Option<AccessSet> = None;
     while let Some(node) = iter.next() {
-        if matches!(&node, Node::Barrier { .. }) {
+    if matches!(&node, Node::Barrier { .. }) {
             if let (Some(left), Some(right)) = (out.last(), iter.peek()) {
-                if is_runtime_arm(left) && is_runtime_arm(right) && arms_are_independent(left, right)
+                if is_runtime_arm(left)
+                    && is_runtime_arm(right)
+                    && left_access.as_ref().is_some_and(|left_access| {
+                        let mut right_access = AccessSet::default();
+                        collect_node_access(right, &mut right_access);
+                        accesses_are_independent(left_access, &right_access)
+                    })
                 {
                     report.removed += 1;
                     continue;
                 }
+            }
+            left_access = None;
+        }
+        match &node {
+            node if is_runtime_arm(node) => {
+                let mut access = AccessSet::default();
+                collect_node_access(node, &mut access);
+                left_access = Some(access);
+            }
+            _ => {
+                left_access = None;
             }
         }
         out.push(node);
@@ -127,12 +145,8 @@ fn is_runtime_arm(node: &Node) -> bool {
     matches!(node, Node::Block(_) | Node::Region { .. })
 }
 
-fn arms_are_independent(left: &Node, right: &Node) -> bool {
-    let mut left_access = AccessSet::default();
-    let mut right_access = AccessSet::default();
-    collect_node_access(left, &mut left_access);
-    collect_node_access(right, &mut right_access);
-    !left_access.unknown && !right_access.unknown && !left_access.conflicts_with(&right_access)
+fn accesses_are_independent(left: &AccessSet, right: &AccessSet) -> bool {
+    !left.unknown && !right.unknown && !left.conflicts_with(right)
 }
 
 #[derive(Debug, Default)]
@@ -181,6 +195,9 @@ fn intersects(left: &[&Ident], right: &[&Ident]) -> bool {
 }
 
 fn collect_node_access<'a>(node: &'a Node, out: &mut AccessSet<'a>) {
+    if out.unknown {
+        return;
+    }
     match node {
         Node::Let { value, .. } | Node::Assign { value, .. } => collect_expr_access(value, out),
         Node::Store {
@@ -244,12 +261,21 @@ fn collect_node_access<'a>(node: &'a Node, out: &mut AccessSet<'a>) {
 }
 
 fn collect_nodes_access<'a>(nodes: &'a [Node], out: &mut AccessSet<'a>) {
+    if out.unknown {
+        return;
+    }
     for node in nodes {
+        if out.unknown {
+            return;
+        }
         collect_node_access(node, out);
     }
 }
 
 fn collect_expr_access<'a>(expr: &'a Expr, out: &mut AccessSet<'a>) {
+    if out.unknown {
+        return;
+    }
     match expr {
         Expr::Load { buffer, index } => {
             out.read(buffer);
