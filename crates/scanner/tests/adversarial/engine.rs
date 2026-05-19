@@ -3,6 +3,10 @@
 //! These tests exercise edge cases, evasion techniques, and boundary
 //! conditions that real-world credential scanners must handle correctly.
 
+#[path = "engine_cases/corpus_support.rs"]
+mod corpus_support;
+#[path = "engine_cases/scanner_stress.rs"]
+mod scanner_stress;
 #[path = "engine_cases/backtracking.rs"]
 mod backtracking;
 #[path = "engine_cases/boundary.rs"]

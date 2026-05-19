@@ -5,3 +5,4 @@
 //! per-archive-entry size cap, dropped io_uring single-op path, etc.
 
 mod gzip_bomb_caps;
+mod nested_archive;

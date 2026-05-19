@@ -1,0 +1,2 @@
+# Cyrillic 'а' (U+0430) in PAT body — normalizes to ASCII
+token=ghp_aBcDeFgHiJkLmNоPqRsTuVwXyZ1234567890ab

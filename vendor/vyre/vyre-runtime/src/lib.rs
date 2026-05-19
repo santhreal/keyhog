@@ -125,10 +125,12 @@ pub mod uring;
 
 /// Handle to an orchestrated pipeline. Couples a compiled megakernel
 /// to its submission + completion infrastructure.
+#[cfg_attr(not(target_os = "linux"), allow(unused_lifetimes))]
 pub struct GpuStream<'a> {
     #[cfg(target_os = "linux")]
     uring: Option<uring::AsyncUringStream<'a>>,
     shutdown_requested: bool,
+    _marker: std::marker::PhantomData<&'a ()>,
 }
 
 impl Default for GpuStream<'_> {
@@ -155,6 +157,7 @@ impl<'a> GpuStream<'a> {
             #[cfg(target_os = "linux")]
             uring: None,
             shutdown_requested: false,
+            _marker: std::marker::PhantomData,
         }
     }
 
