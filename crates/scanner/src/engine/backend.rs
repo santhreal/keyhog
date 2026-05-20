@@ -156,6 +156,266 @@ impl CompiledScanner {
         }
     }
 
+    /// Like [`scan_prepared_with_triggered`], but extraction is anchored
+    /// at the byte positions the GPU literal-set engine reported. Each
+    /// hit produces at most one regex confirmation pass restricted to a
+    /// small window around the literal — avoiding the
+    /// triggered-bitmap → full-chunk-rescan path that turned the GPU
+    /// path into a 60× regression vs SIMD on dense corpora
+    /// (320k literal hits × 2000 distinct patterns × 64 MiB chunk =
+    /// 128 GB of regex work).
+    ///
+    /// When the multiline / unicode preprocessor altered the chunk
+    /// text the raw-chunk offsets the GPU returned no longer line up
+    /// with `prepared.preprocessed.text` — in that case the
+    /// implementation transparently falls back to the legacy
+    /// triggered-bitmap path so correctness is preserved.
+    pub(crate) fn scan_prepared_with_pattern_hits(
+        &self,
+        prepared: PreparedChunk,
+        per_pattern_hits: Vec<(u32, u32, u32)>,
+        deadline: Option<std::time::Instant>,
+    ) -> Vec<RawMatch> {
+        let line_offsets = compute_line_offsets(&prepared.preprocessed.text);
+        let code_lines: Vec<&str> = prepared.chunk.data.lines().collect();
+        let mut scan_state = ScanState::with_static_intern(self.static_intern.clone());
+
+        #[cfg(feature = "simdsieve")]
+        self.scan_hot_patterns_fast(
+            &prepared.preprocessed.text,
+            &line_offsets,
+            &prepared.chunk,
+            &mut scan_state,
+        );
+
+        // Preprocessor offset-invariance check: if multiline reassembly
+        // or unicode normalization changed the text length, raw-chunk
+        // offsets no longer map 1:1 to preprocessed-text offsets and
+        // anchored extraction would emit matches at the wrong column.
+        // For small drift (~hundreds of bytes on a 64 MiB chunk —
+        // typical for Rust/Go/Python source after multiline string
+        // reassembly), we still run the cheap-filter against
+        // `chunk.data` (which IS the GPU's coordinate system) and let
+        // the downstream `extract_confirmed_patterns` recover the
+        // multiline-reassembled positions via its own full-chunk
+        // sweep. We only fall all the way back to the legacy bitmap
+        // path when drift exceeds the largest credential we expect
+        // (matches the literal-set engine would have triggered on
+        // the multiline-reassembled credential alone).
+        let offset_drift = prepared
+            .chunk
+            .data
+            .len()
+            .abs_diff(prepared.preprocessed.text.len());
+        // ~10 KiB drift bound — covers heavy multiline reassembly on
+        // a 64 MiB file (vendor/vyre source drifts ~0.0005% of the
+        // chunk).
+        const MAX_TOLERATED_DRIFT: usize = 10 * 1024;
+        let drift_tolerable = offset_drift <= MAX_TOLERATED_DRIFT;
+        let scan_text = if prepared.preprocessed.text.len() == prepared.chunk.data.len() {
+            // Strict offset parity — scan the preprocessed text (the
+            // same one extract_confirmed_patterns will walk later).
+            prepared.preprocessed.text.as_str()
+        } else {
+            // Drift present — the cheap-filter needs to scan the
+            // chunk.data coordinate system the GPU returned, so the
+            // literal-hit positions land inside the right window.
+            // Extraction still uses preprocessed.text downstream,
+            // so it remains the source of truth for credentials.
+            prepared.chunk.data.as_ref()
+        };
+        let offsets_safe = drift_tolerable;
+        let start_ts = std::time::Instant::now();
+        tracing::debug!(
+            target: "keyhog::routing",
+            hits = per_pattern_hits.len(),
+            offsets_safe,
+            chunk_bytes = prepared.chunk.data.len(),
+            preprocessed_bytes = prepared.preprocessed.text.len(),
+            "scan_prepared_with_pattern_hits",
+        );
+
+        if !per_pattern_hits.is_empty() {
+            let total_patterns = self.ac_map.len() + self.fallback.len();
+            let documentation_lines = context::documentation_line_flags(&code_lines);
+
+            if offsets_safe {
+                // Cheap per-pattern pre-filter to shrink the bitmap
+                // before the (still whole-chunk) regex extraction
+                // pass. The GPU literal-set matches *prefixes* with
+                // weaker discrimination than Hyperscan's NFA match —
+                // on a 64 MiB random alphanumeric blob ~2 k distinct
+                // detector prefixes fire spuriously and feed
+                // `extract_confirmed_patterns` ~128 GB of redundant
+                // regex work (60× slower than SIMD). For each unique
+                // hit position we ask the pattern's own regex
+                // anchored at the literal: did this prefix actually
+                // belong to a match? Only patterns that pass make it
+                // into the bitmap, so extract walks ~10-50 patterns
+                // (Hyperscan-equivalent) instead of ~2 000.
+                const PRE_MARGIN: u32 = 128;
+                const POST_MARGIN: u32 = 1024;
+                // A pattern's *first* literal hit may sit at a
+                // position where the full regex doesn't match yet —
+                // e.g. `z85` appearing in random alphanumerics at
+                // mid-line vs at end-of-line where the regex
+                // `(?:z85)[=:\s]+[…]{20,}` actually fires. Earlier
+                // versions of the filter `Rejected` a pattern on the
+                // first window miss and skipped its remaining hits;
+                // that collapsed Corpus B recall from 207 → 23. The
+                // current scheme is "confirm once, then skip": every
+                // remaining hit of a pattern is checked until one
+                // returns true OR the hit list is exhausted. Worst
+                // case = 320 k `is_match` calls on 1 KiB windows
+                // (~3 s); typical case = ~2 k confirms quickly and
+                // the rest of the hits short-circuit on
+                // `confirmed[pat_idx]`.
+                let mut tight_bitmap = vec![0u64; total_patterns.div_ceil(64)];
+                let mut confirmed = vec![false; total_patterns];
+                let text = scan_text;
+                let text_len = text.len();
+                for &(pid, start, end) in &per_pattern_hits {
+                    let pat_idx = pid as usize;
+                    if pat_idx >= total_patterns || confirmed[pat_idx] {
+                        continue;
+                    }
+                    let entry = if pat_idx < self.ac_map.len() {
+                        &self.ac_map[pat_idx]
+                    } else {
+                        let fb = pat_idx - self.ac_map.len();
+                        if fb >= self.fallback.len() {
+                            // Skip — out-of-range pids stay Unconfirmed
+                            // forever, no further hits will help.
+                            confirmed[pat_idx] = true;
+                            continue;
+                        }
+                        &self.fallback[fb].0
+                    };
+                    let scan_start = start.saturating_sub(PRE_MARGIN) as usize;
+                    let window_end =
+                        (end.saturating_add(POST_MARGIN) as usize).min(text_len);
+                    if scan_start >= window_end {
+                        continue;
+                    }
+                    // `find_at` would scan the entire chunk past
+                    // `scan_start` until a match is found OR until
+                    // it hits EOF — that's exactly the whole-chunk
+                    // sweep we were trying to avoid. Slice down to
+                    // the literal-hit's window first; cost is now
+                    // O(window_size) per pattern instead of
+                    // O(chunk_size). Char-boundary snap protects
+                    // against panics on multi-byte UTF-8.
+                    let mut snap_start = scan_start;
+                    while snap_start > 0 && !text.is_char_boundary(snap_start) {
+                        snap_start -= 1;
+                    }
+                    let mut snap_end = window_end;
+                    while snap_end < text_len && !text.is_char_boundary(snap_end) {
+                        snap_end += 1;
+                    }
+                    let window = &text[snap_start..snap_end];
+                    if entry.regex.is_match(window) {
+                        tight_bitmap[pat_idx / 64] |= 1u64 << (pat_idx % 64);
+                        confirmed[pat_idx] = true;
+                    }
+                    // No `else` branch: if this window didn't match,
+                    // a later hit of the same pattern might. Don't
+                    // mark Rejected — we'd lose recall on patterns
+                    // whose first literal hit was a spurious anchor.
+                }
+                // Expand the cheap-filter-confirmed roots to their
+                // AC prefix siblings before extract. The cheap-filter
+                // already filtered out spurious literal hits whose
+                // own regex doesn't match; the resulting tight_bitmap
+                // is a strict *root set*, not the final pattern set.
+                // SIMD's path always fans these roots out via
+                // `same_prefix_patterns` so that a literal anchor
+                // shared between (e.g.) a tight Stripe-secret detector
+                // and a permissive generic-high-entropy detector
+                // surfaces both. Without this fan-out, the cheap
+                // filter loses recall against SIMD on multi-detector
+                // credentials (gpu_parity test: missed the Stripe
+                // finding on the third chunk because the generic
+                // sibling never made it into the bitmap).
+                //
+                // The 142× over-broadening the original
+                // skip-expand was guarding against came from
+                // expand FIRST → extract on the whole expanded set
+                // (~2 k AC-roots × all-siblings = ~20 k patterns
+                // walked over 64 MiB). Cheap-filter FIRST → expand
+                // confirmed roots produces a much smaller working
+                // set (~5 confirmed roots × siblings = ~50 patterns)
+                // because the cheap-filter already discards the
+                // ~99 % of literal hits whose regex doesn't match.
+                if tight_bitmap.iter().any(|&w| w != 0) {
+                    let expanded = self.expand_triggered_patterns(&tight_bitmap);
+                    let confirmed_patterns: Vec<usize> = (0..self.ac_map.len())
+                        .filter(|&i| (expanded[i / 64] & (1 << (i % 64))) != 0)
+                        .collect();
+                    self.extract_confirmed_patterns(
+                        &confirmed_patterns,
+                        &prepared.preprocessed,
+                        &line_offsets,
+                        &code_lines,
+                        &documentation_lines,
+                        &prepared.chunk,
+                        &mut scan_state,
+                        deadline,
+                    );
+                }
+            } else {
+                // Offset-unsafe fallback: rebuild the bitmap from the
+                // hit list and route through the legacy path so the
+                // same chunk still gets every confirmed credential.
+                let mut triggered: Vec<u64> = vec![0u64; total_patterns.div_ceil(64)];
+                for &(pid, _start, _end) in &per_pattern_hits {
+                    let pat_idx = pid as usize;
+                    if pat_idx < total_patterns {
+                        triggered[pat_idx / 64] |= 1u64 << (pat_idx % 64);
+                    }
+                }
+                let expanded_patterns = self.expand_triggered_patterns(&triggered);
+                if expanded_patterns.iter().any(|&w| w != 0) {
+                    let confirmed_patterns: Vec<usize> = (0..self.ac_map.len())
+                        .filter(|&i| (expanded_patterns[i / 64] & (1 << (i % 64))) != 0)
+                        .collect();
+                    self.extract_confirmed_patterns(
+                        &confirmed_patterns,
+                        &prepared.preprocessed,
+                        &line_offsets,
+                        &code_lines,
+                        &documentation_lines,
+                        &prepared.chunk,
+                        &mut scan_state,
+                        deadline,
+                    );
+                }
+            }
+        }
+
+        self.scan_generic_assignments(&code_lines, &line_offsets, &prepared.chunk, &mut scan_state);
+
+        #[cfg(feature = "entropy")]
+        self.scan_entropy_fallback(
+            &prepared.preprocessed,
+            &line_offsets,
+            &prepared.chunk,
+            &mut scan_state,
+        );
+
+        #[cfg(feature = "ml")]
+        self.apply_ml_batch_scores(&mut scan_state);
+
+        let matches = scan_state.into_matches();
+        tracing::debug!(
+            target: "keyhog::routing",
+            elapsed_ms = start_ts.elapsed().as_millis() as u64,
+            matches = matches.len(),
+            "scan_prepared_with_pattern_hits done",
+        );
+        matches
+    }
+
     pub(crate) fn scan_prepared_with_triggered(
         &self,
         prepared: PreparedChunk,

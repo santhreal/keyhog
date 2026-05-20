@@ -529,6 +529,18 @@ pub struct ScanArgs {
     #[arg(long)]
     pub no_ml: bool,
 
+    /// Opt out of the bundled test-fixture suppression list. By default
+    /// keyhog suppresses well-known public demo credentials (Stripe's
+    /// docs example `sk_live_4eC39...`, GitHub's docs example
+    /// `ghp_aBcD...`, the keyhog test fixtures, etc.) so the report
+    /// stays focused on real leaks rather than tutorial copies. Pass
+    /// this flag when you intentionally want those surfaced — useful
+    /// for differential benchmarking against gitleaks / trufflehog
+    /// (which do NOT suppress these), or for auditing the suppression
+    /// list itself.
+    #[arg(long)]
+    pub no_suppress_test_fixtures: bool,
+
     /// Run the built-in backend benchmark corpus and exit.
     #[arg(long)]
     pub benchmark: bool,
@@ -593,6 +605,17 @@ pub struct DetectorArgs {
     /// unless `--fix` is also set.
     #[arg(long, requires = "fix")]
     pub dry_run: bool,
+    /// Emit the detector listing as a JSON array on stdout instead of the
+    /// human-readable grouped summary. Pairs with `--search` for filtered
+    /// programmatic discovery (CI gates, bench harnesses, IDE plugins).
+    /// Mutually exclusive with `--audit` / `--fix` since those emit their
+    /// own structured output formats. JSON shape mirrors the human surface:
+    /// `[{ "id", "name", "service", "severity", "keywords": [..],
+    /// "patterns": [{ "regex", "description", "group" }, ..],
+    /// "companions": [{ "name", "regex", "within_lines", "required" }, ..],
+    /// "verify": <bool> }, ..]`.
+    #[arg(long, conflicts_with_all = ["audit", "fix"])]
+    pub json: bool,
 }
 
 #[derive(Clone, ValueEnum)]

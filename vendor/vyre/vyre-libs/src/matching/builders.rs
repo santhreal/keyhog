@@ -23,6 +23,24 @@ pub fn load_packed_byte(haystack: &str, idx: Expr) -> (Node, Expr) {
 ///
 /// Use \`append_match_subgroup\` for production paths that benefit from
 /// subgroup-coalesced atomics (Innovation I.17).
+///
+/// **Invariant**: the atomic slot reservation MUST be computed once,
+/// then re-used as a bound variable across all three stores. The
+/// previous implementation expressed the slot as a fresh
+/// `Expr::atomic_add(...)` and cloned it four times (one `Expr::lt`
+/// + three store indices); vyre lowers each clone to a separate
+/// `atomicAdd` op, so the counter raced ahead by 4 per call and the
+/// three stores landed in three *different* slots — producing
+/// shredded triples like `(tag, 0, 0)`, `(0, start, 0)`,
+/// `(0, 0, end)` instead of one well-formed `(tag, start, end)`
+/// record. Caught by `gpu_ac_smoke::ushers_overlapping_patterns`
+/// when `classic_ac_bounded_ranges_program` became the first
+/// production consumer of this lego block.
+///
+/// The fix wraps the body in a `Node::Block` that let-binds
+/// `_vyre_match_slot` once, then uses `Expr::var` everywhere the
+/// slot value is read — same pattern `append_match_subgroup` uses
+/// for `_vyre_match_ballot`/`_vyre_match_rank` for the same reason.
 pub fn append_match(
     hits_buffer: &str,
     count_buffer: &str,
@@ -30,30 +48,49 @@ pub fn append_match(
     start: impl Into<Expr>,
     end: impl Into<Expr>,
 ) -> Node {
-    let slot = Expr::atomic_add(count_buffer, Expr::u32(0), Expr::u32(1));
     let max_hits = Expr::div(Expr::buf_len(hits_buffer), Expr::u32(3));
+    let slot = Expr::var("_vyre_match_slot");
 
-    Node::if_then(
-        Expr::lt(slot.clone(), max_hits),
-        vec![
-            Node::store(
-                hits_buffer,
-                Expr::mul(slot.clone(), Expr::u32(3)),
-                tag.into(),
-            ),
-            Node::store(
-                hits_buffer,
-                Expr::add(Expr::mul(slot.clone(), Expr::u32(3)), Expr::u32(1)),
-                start.into(),
-            ),
-            Node::store(
-                hits_buffer,
-                Expr::add(Expr::mul(slot, Expr::u32(3)), Expr::u32(2)),
-                end.into(),
-            ),
-        ],
-    )
+    Node::Block(vec![
+        Node::let_bind(
+            "_vyre_match_slot",
+            Expr::atomic_add(count_buffer, Expr::u32(0), Expr::u32(1)),
+        ),
+        Node::if_then(
+            Expr::lt(slot.clone(), max_hits),
+            vec![
+                Node::store(
+                    hits_buffer,
+                    Expr::mul(slot.clone(), Expr::u32(3)),
+                    tag.into(),
+                ),
+                Node::store(
+                    hits_buffer,
+                    Expr::add(Expr::mul(slot.clone(), Expr::u32(3)), Expr::u32(1)),
+                    start.into(),
+                ),
+                Node::store(
+                    hits_buffer,
+                    Expr::add(Expr::mul(slot, Expr::u32(3)), Expr::u32(2)),
+                    end.into(),
+                ),
+            ],
+        ),
+    ])
 }
+
+// `append_match_workgroup` would coalesce one global atomic_add per
+// WORKGROUP using a workgroup-shared atomic counter, removing the 4
+// global atomics per workgroup that `append_match_subgroup` issues at
+// workgroup_size=128. It is NOT shipped here because vyre's memory
+// model validator V025 (`validate/atomic_rules.rs:79`) explicitly
+// rejects atomic operations on `BufferAccess::Workgroup` buffers
+// ("Workgroup atomics require additional OOB and ordering
+// specification before they can be validated"). The primitive needs
+// either a memory-model extension that admits workgroup atomics, OR a
+// storage-backed per-workgroup scratch buffer indexed by
+// `workgroup_id` (~num_workgroups × 2 u32 of allocated scratch). Both
+// are valid follow-ups; neither is a single-file lego block.
 
 /// Innovation I.17: Subgroup-Coalesced Match Append.
 ///

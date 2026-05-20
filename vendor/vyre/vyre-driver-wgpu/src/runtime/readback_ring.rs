@@ -19,8 +19,25 @@ use std::sync::Arc;
 use vyre_driver::backend::BackendError;
 
 const MIN_RING_SIZE: usize = 2;
-const MAX_RING_SIZE: usize = 256;
-const DEFAULT_RING_SLOTS: usize = 256;
+// Lifted from 256 → 4096 so consumers (megakernel, keyhog's
+// `dispatch_borrowed_batch` literal-set sub-batches, surgec
+// kernels) can issue larger batched dispatches without
+// "readback ring slot N wrapped before collection" forcing them
+// to chunk into ring-sized sub-batches and serialize sub-batch
+// waits. Each ring slot's staging buffer is allocated lazily on
+// first use and reused after collection, so the 16× cap bump
+// only translates into 16× MORE concurrent live readbacks
+// during heavy bursts — peak GPU memory rises by N × slot_size,
+// where slot_size matches the actual readback (typically a few
+// KiB to a few MiB).
+const MAX_RING_SIZE: usize = 4096;
+// Default must move with the cap or every consumer that doesn't
+// know to set `VYRE_WGPU_READBACK_RING_SLOTS` keeps hitting the
+// old 256-slot wrap. 2048 is the conservative production
+// default — half the new max — so we leave headroom for env
+// overrides without bumping baseline GPU memory by 16× in
+// single-shot dispatch workloads.
+const DEFAULT_RING_SLOTS: usize = 2048;
 const RING_CAPACITY_GRANULARITY: u64 = 4096;
 const SLOT_FREE: u8 = 0;
 const SLOT_PENDING: u8 = 1;

@@ -2800,6 +2800,7 @@ dependencies = [
  "urlencoding",
  "wait-timeout",
  "ziftsieve",
+ "zip",
 ]
 
 [[package]]

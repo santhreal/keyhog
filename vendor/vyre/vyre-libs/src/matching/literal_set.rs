@@ -2,7 +2,7 @@
 //!
 //! Composed entirely from \`vyre-libs\` LEGO blocks with Innovation I.17.
 
-use crate::matching::builders::append_match_subgroup;
+use crate::matching::builders::{append_match_subgroup, load_packed_byte};
 use crate::matching::dfa::{dfa_compile, CompiledDfa};
 use crate::matching::hit_buffer::HIT_BUFFER_OVERFLOW_COUNT;
 use crate::region::wrap_anonymous;
@@ -285,19 +285,30 @@ fn build_literal_set_program(
     pattern_byte_count: u32,
 ) -> Program {
     let idx = Expr::InvocationId { axis: 0 };
+    // workgroup_size_x — one NVIDIA warp / one AMD wave.
+    //
+    // Attempted to lift to 128 (keyhog 2026-05-19, parity test
+    // `gpu_parity::gpu_and_simd_produce_identical_findings_on_same_corpus`)
+    // and caught a real bug: `append_match_subgroup` issues an
+    // atomic append per matching THREAD, but only one warp can
+    // safely race-coalesce into `match_count` / `matches`. With
+    // 128-thread workgroups, 4 warps race independently and the
+    // coalescing primitive drops findings on dense corpora
+    // (missed `sb_4bZ39EnIvgTAxogqQ1wam7az` on the canonical
+    // stripe_aws fixture). Until `append_match_subgroup` learns
+    // multi-warp coalescing (workgroup-scope `atomicAdd` to
+    // reserve a slab + per-warp fill), this stays at 32.
+    //
+    // Consumers that need 4× more bytes per dispatch should
+    // shard at a higher level (keyhog does this via
+    // `dispatch_borrowed_batch` and an enlarged readback ring).
     let subgroup_size = 32u32;
 
-    fn packed_byte(haystack: &str, index: Expr) -> Expr {
-        Expr::bitand(
-            Expr::shr(
-                Expr::load(haystack, Expr::div(index.clone(), Expr::u32(4))),
-                Expr::mul(Expr::rem(index, Expr::u32(4)), Expr::u32(8)),
-            ),
-            Expr::u32(0xFF),
-        )
-    }
-
     let offset_at_end = Expr::add(idx.clone(), Expr::u32(1));
+    let (load_h_byte, h_byte) = load_packed_byte(
+        haystack,
+        Expr::add(Expr::var("_candidate_start"), Expr::var("_j")),
+    );
     let lane_body = vec![Node::Loop {
         var: "_pid".into(),
         from: Expr::u32(0),
@@ -327,23 +338,23 @@ fn build_literal_set_program(
                 var: "_j".into(),
                 from: Expr::u32(0),
                 to: Expr::var("_len"),
-                body: vec![Node::If {
-                    cond: Expr::ne(
-                        packed_byte(
-                            haystack,
-                            Expr::add(Expr::var("_candidate_start"), Expr::var("_j")),
+                body: vec![
+                    load_h_byte,
+                    Node::If {
+                        cond: Expr::ne(
+                            h_byte,
+                            Expr::load(
+                                pattern_bytes,
+                                Expr::add(Expr::var("_pattern_start"), Expr::var("_j")),
+                            ),
                         ),
-                        Expr::load(
-                            pattern_bytes,
-                            Expr::add(Expr::var("_pattern_start"), Expr::var("_j")),
-                        ),
-                    ),
-                    then: vec![Node::Assign {
-                        name: "_literal_matched".into(),
-                        value: Expr::bool(false),
-                    }],
-                    otherwise: vec![],
-                }],
+                        then: vec![Node::Assign {
+                            name: "_literal_matched".into(),
+                            value: Expr::bool(false),
+                        }],
+                        otherwise: vec![],
+                    },
+                ],
             },
             Node::Block(append_match_subgroup(
                 matches,

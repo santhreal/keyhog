@@ -22,6 +22,26 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
 
+/// Returns the backend the user explicitly forced via `KEYHOG_BACKEND`
+/// or `--backend <name>`. Returns `None` when no override is active,
+/// in which case the orchestrator stays on `scan_coalesced` (the
+/// production-tuned Hyperscan/SimdCpu path). The `--backend` flag is
+/// propagated into `KEYHOG_BACKEND` early in `run()` so a single env
+/// lookup covers both paths.
+fn explicit_backend_override() -> Option<keyhog_scanner::hw_probe::ScanBackend> {
+    let raw = std::env::var("KEYHOG_BACKEND").ok()?;
+    use keyhog_scanner::hw_probe::ScanBackend;
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "gpu" | "gpu-zero-copy" | "literal-set" => Some(ScanBackend::Gpu),
+        "mega-scan" | "gpu-mega-scan" | "regex-nfa" | "rule-pipeline" => {
+            Some(ScanBackend::MegaScan)
+        }
+        "simd" | "simd-regex" | "hyperscan" => Some(ScanBackend::SimdCpu),
+        "cpu" | "cpu-fallback" | "scalar" => Some(ScanBackend::CpuFallback),
+        _ => None,
+    }
+}
+
 const EXIT_LIVE_CREDENTIALS: u8 = 10;
 /// Set when the scanner worker thread panicked mid-scan. Surfaced as
 /// a distinct exit code so a CI pipeline can tell "scan completed
@@ -43,6 +63,7 @@ pub struct ScanOrchestrator {
     detectors: Vec<DetectorSpec>,
     scanner: Arc<CompiledScanner>,
     signatures: std::collections::HashSet<Arc<str>>,
+    test_fixture_suppressions: crate::test_fixture_suppressions::TestFixtureSuppressions,
 }
 
 impl ScanOrchestrator {
@@ -105,11 +126,18 @@ impl ScanOrchestrator {
             )
             .collect();
 
+        let test_fixture_suppressions = if args.no_suppress_test_fixtures {
+            crate::test_fixture_suppressions::TestFixtureSuppressions::empty()
+        } else {
+            crate::test_fixture_suppressions::TestFixtureSuppressions::bundled()
+        };
+
         Ok(Self {
             args,
             detectors,
             scanner,
             signatures,
+            test_fixture_suppressions,
         })
     }
 
@@ -534,7 +562,43 @@ impl ScanOrchestrator {
                     continue;
                 }
                 let scanned_count = batch.len();
-                let per_chunk = scanner.scan_coalesced(&batch);
+                // Per-batch backend routing. Default = `scan_coalesced`,
+                // which runs the amortized Hyperscan/SimdCpu Phase-1
+                // prefilter — the production-tuned high-throughput
+                // path. When the operator *explicitly* selects a GPU
+                // backend via `KEYHOG_BACKEND=gpu|mega-scan` or
+                // `--backend gpu|mega-scan`, dispatch instead through
+                // `scan_chunks_with_backend` so the GPU dispatch path
+                // (`scan_coalesced_gpu` / `scan_coalesced_megascan`)
+                // actually fires. Pre-fix the orchestrator hard-wired
+                // `scan_coalesced` and the `--backend` flag silently
+                // selected nothing in the scan loop — the env var was
+                // observed only by the warm-up + banner.
+                //
+                // Auto-route is intentionally conservative: GPU
+                // literal-set is fast on the device but still requires
+                // CPU-side regex confirmation per triggered pattern, so
+                // on the full 3000+ detector corpus it is currently
+                // dominated by Hyperscan + SIMD prefilter. Once GPU
+                // regex-NFA (MegaScan) closes that gap on the full
+                // corpus, this branch can broaden.
+                let explicit_backend = explicit_backend_override();
+                let per_chunk = match explicit_backend {
+                    Some(backend @ (keyhog_scanner::hw_probe::ScanBackend::Gpu
+                        | keyhog_scanner::hw_probe::ScanBackend::MegaScan)) => {
+                        let batch_bytes: u64 =
+                            batch.iter().map(|c| c.data.len() as u64).sum();
+                        tracing::debug!(
+                            target: "keyhog::routing",
+                            backend = backend.label(),
+                            batch_bytes,
+                            chunks = scanned_count,
+                            "batch dispatched (explicit gpu override)",
+                        );
+                        scanner.scan_chunks_with_backend(&batch, backend)
+                    }
+                    _ => scanner.scan_coalesced(&batch),
+                };
                 crate::SCANNED_CHUNKS.fetch_add(scanned_count, Ordering::Relaxed);
                 let mut batch_findings = 0usize;
                 for chunk_findings in per_chunk {
@@ -681,22 +745,16 @@ impl ScanOrchestrator {
             .filter(|m| {
                 let cred = m.credential.as_ref();
 
-                // Self-suppression of well-known public test fixtures that
-                // routinely show up in repos. The literals are split via
-                // `concat!` because GitHub Push Protection scans for
-                // contiguous `sk_live_<base64>` strings even when used as
-                // filter targets — splitting the source-file representation
-                // defeats the byte-level scan without changing what the
-                // compiler emits.
-                if self.signatures.contains(cred)
-                    || cred == "parameter"
-                    || cred == concat!("sk_", "live_", "4eC39HqLyjWDarjtT1zdp7dc")
-                    || cred == concat!("ghp_", "aBcD1234EFgh5678ijklMNop9012qrSTuvWX")
-                    || cred == concat!("xoxb", "-123456789012-1234567890123")
-                    || cred == concat!("XX_", "FAKE_v040BOUNDARYTESTSECRET67890XYZ")
-                    || cred.contains("EXAMPLE")
-                    || cred.contains("PLACEHOLDER")
-                {
+                // Self-suppression of detector regex strings used
+                // verbatim as credentials — these are documentation
+                // strings of the regex itself, not real leaks.
+                if self.signatures.contains(cred) {
+                    return false;
+                }
+                // Tier-B configurable test-fixture suppression
+                // (data/suppressions/test-fixtures.toml; opt out
+                // via `--no-suppress-test-fixtures`).
+                if self.test_fixture_suppressions.suppresses(cred) {
                     return false;
                 }
 
@@ -1099,6 +1157,8 @@ mod pipeline_tests {
             detectors,
             scanner,
             signatures,
+            test_fixture_suppressions:
+                crate::test_fixture_suppressions::TestFixtureSuppressions::bundled(),
         }
     }
 

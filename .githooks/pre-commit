@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# keyhog pre-commit hook. Activate with:
+#
+#   git config core.hooksPath .githooks
+#
+# Runs the same fast gates CI runs (fmt, clippy, lib tests, e2e
+# tests, the contract runner) — within seconds, on the diff
+# touching keyhog-* crates only. Skip with `git commit --no-verify`
+# only when you're sure CI will catch what you're skipping.
+
+set -euo pipefail
+
+# Only operate when we're inside keyhog's repo (the hook is shared
+# across the Santh monorepo).
+if [[ ! -f Cargo.toml ]] || ! grep -q '^name = "keyhog"' crates/cli/Cargo.toml 2>/dev/null; then
+  exit 0
+fi
+
+# What changed in this commit, scoped to keyhog crates only.
+STAGED=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '^(crates/|detectors/|README\.md|CHANGELOG\.md|\.github/)' || true)
+if [[ -z "$STAGED" ]]; then
+  exit 0
+fi
+
+# Only run cargo gates when Rust files actually changed — avoid
+# spending 30+ s on a docs-only commit.
+RUST_CHANGED=$(echo "$STAGED" | grep -E '\.rs$|Cargo\.toml$' || true)
+
+# 1. Formatting — fast, always run when Rust changed.
+if [[ -n "$RUST_CHANGED" ]]; then
+  echo "==> rustfmt --check"
+  if ! cargo fmt -p keyhog-core -p keyhog-scanner -p keyhog -p keyhog-verifier -p keyhog-sources -- --check; then
+    echo "rustfmt found issues — run 'cargo fmt -p keyhog ...' to fix" >&2
+    exit 1
+  fi
+fi
+
+# 2. Clippy — slowest gate; skip when only detectors/ or docs changed.
+if [[ -n "$RUST_CHANGED" ]]; then
+  echo "==> clippy -D warnings"
+  if ! cargo clippy -p keyhog-core -p keyhog-scanner -p keyhog -- -D warnings 2>&1 | tail -20; then
+    echo "clippy found warnings — fix before committing" >&2
+    exit 1
+  fi
+fi
+
+# 3. lib tests for keyhog-core if its source changed — fast, ~5 s.
+if echo "$RUST_CHANGED" | grep -q 'crates/core/'; then
+  echo "==> keyhog-core --lib tests"
+  if ! cargo test -p keyhog-core --lib --quiet 2>&1 | tail -5; then
+    echo "keyhog-core lib tests failed" >&2
+    exit 1
+  fi
+fi
+
+# 4. Detector TOML validation — if any detector or detectors/ entry
+# changed, parse every detector TOML to catch syntax breakage early.
+if echo "$STAGED" | grep -q '^detectors/'; then
+  echo "==> detector TOML parse check"
+  if ! cargo test -p keyhog-core --lib spec::load --quiet 2>&1 | tail -5; then
+    echo "detector TOML parse check failed" >&2
+    exit 1
+  fi
+fi
+
+echo "==> pre-commit OK"

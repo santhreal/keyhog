@@ -132,6 +132,16 @@ pub fn rule_pipeline_cached(
 /// Batches larger than this fall back to the literal-set path.
 pub const MEGASCAN_INPUT_LEN: usize = 256 * 1024 * 1024;
 
+/// Output buffer cap for the AC GPU kernel, per shard dispatch.
+/// Matches the implicit ~10 000-match ceiling the existing
+/// `GpuLiteralSet` program declares; on overflow keyhog detects the
+/// count > cap condition and falls back to CPU for the affected
+/// shard (same protocol as the literal-set path). Per-buffer size
+/// = `1_000_000 × 3 × 4 = 12 MiB` of VRAM per concurrent dispatch,
+/// well within the wgpu storage-buffer limits on every device the
+/// runtime activates.
+pub const AC_GPU_MAX_MATCHES_PER_DISPATCH: u32 = 1_000_000;
+
 /// On-disk cache for `GpuLiteralSet`. The compiled matcher is keyed by a
 /// SHA-256 of the literal set + the vyre wire version (which is bumped
 /// whenever the IR layout changes), so bumping vyre to a new minor
@@ -187,6 +197,15 @@ pub struct CompiledScanner {
     /// Literal prefixes supplied to Vyre's GPU Aho-Corasick engine.
     pub(crate) gpu_literals: Option<Arc<Vec<Vec<u8>>>>,
     pub(crate) gpu_matcher: OnceLock<Option<vyre_libs::matching::GpuLiteralSet>>,
+    /// Lazily-compiled Aho-Corasick bounded-ranges Program built from
+    /// the SAME DFA the `gpu_matcher` holds. Two scan kernels share one
+    /// DFA: `GpuLiteralSet` walks per-byte × per-pattern (O(N×L)/byte)
+    /// and `classic_ac_bounded_ranges_program` walks per-byte using
+    /// the AC transition table (O(L_max)/byte, ~1000× fewer per-byte
+    /// ops for keyhog's pattern count). Selected at scan time via
+    /// `KEYHOG_GPU_KERNEL=ac`. `None` once the OnceLock fires means
+    /// no GPU matcher is available, same auto-degrade as `gpu_matcher`.
+    pub(crate) ac_gpu_program: OnceLock<Option<vyre::Program>>,
 
     /// Frozen static-string interner built from detector metadata at
     /// scanner construction. Hands out shared `Arc<str>` for every
@@ -317,6 +336,7 @@ impl CompiledScanner {
             wgpu_backend,
             gpu_literals,
             gpu_matcher: OnceLock::new(),
+            ac_gpu_program: OnceLock::new(),
 
             rule_pipeline: OnceLock::new(),
             static_intern,
@@ -391,8 +411,49 @@ impl CompiledScanner {
             .as_ref()
     }
 
-
-
+    /// Lazily build the Aho-Corasick bounded-ranges dispatch Program
+    /// from the GpuLiteralSet's CompiledDfa. The two engines share the
+    /// same DFA — only the dispatch Program (and therefore the
+    /// per-byte algorithm) differs:
+    ///
+    /// * `gpu_matcher().program` — `build_literal_set_program`:
+    ///   walks every pattern × every literal byte per haystack
+    ///   position. `O(N × L) per byte`. Works for any pattern set
+    ///   that fits the DFA budget.
+    /// * `ac_gpu_program()` — `classic_ac_bounded_ranges_program`:
+    ///   walks the AC transition table forward `L_max` bytes per
+    ///   position, emits every pattern in the accepting state's
+    ///   flat output_links. `O(L_max) per byte` regardless of N.
+    ///
+    /// Selected at scan time via `KEYHOG_GPU_KERNEL=ac`. Returns
+    /// `None` when no GPU matcher is available; callers fall through
+    /// to the literal-set path or non-GPU backend.
+    ///
+    /// Cap of `AC_GPU_MAX_MATCHES_PER_DISPATCH` triples per shard
+    /// dispatch matches the existing literal-set output-buffer cap.
+    /// Truncation (count > cap on readback) is handled by the same
+    /// fall-back-to-CPU branch the literal-set path uses.
+    pub fn ac_gpu_program(&self) -> Option<&vyre::Program> {
+        self.ac_gpu_program
+            .get_or_init(|| {
+                let matcher = self.gpu_matcher()?;
+                let pattern_count = matcher.pattern_lengths.len() as u32;
+                let program = vyre_libs::matching::classic_ac::build_ac_bounded_ranges_program(
+                    &matcher.dfa,
+                    pattern_count,
+                    AC_GPU_MAX_MATCHES_PER_DISPATCH,
+                );
+                tracing::debug!(
+                    target: "keyhog::routing",
+                    pattern_count,
+                    state_count = matcher.dfa.state_count,
+                    max_pattern_len = matcher.dfa.max_pattern_len,
+                    "AC GPU dispatch Program built"
+                );
+                Some(program)
+            })
+            .as_ref()
+    }
 
     /// Lazily compile the regex-NFA `RulePipeline` on first call.
     /// Returns `None` once the OnceLock has fired when the regex
@@ -455,6 +516,18 @@ impl CompiledScanner {
     /// Total number of patterns (AC + fallback).
     pub fn pattern_count(&self) -> usize {
         self.ac_map.len() + self.fallback.len()
+    }
+
+    /// Iterator over the FINAL regex source strings (post anchoring /
+    /// group extraction / normalization) the scanner uses. Exposed
+    /// for the sharded `RulePipeline` planner: callers need the same
+    /// byte string the scanner runs against to bin patterns by
+    /// compiled-NFA state count.
+    pub fn pattern_regex_strs(&self) -> Vec<&str> {
+        let mut out = Vec::with_capacity(self.ac_map.len() + self.fallback.len());
+        out.extend(self.ac_map.iter().map(|p| p.regex.as_str()));
+        out.extend(self.fallback.iter().map(|(p, _)| p.regex.as_str()));
+        out
     }
 
     /// Return the preferred backend for a file of the given size.
@@ -607,6 +680,7 @@ impl CompiledScanner {
         matches: &mut Vec<RawMatch>,
         deadline: Option<std::time::Instant>,
     ) {
+        let pp_start = std::time::Instant::now();
         self.scan_cross_chunk_fragments(chunk, matches, deadline);
 
         #[cfg(feature = "decode")]
@@ -642,8 +716,28 @@ impl CompiledScanner {
                 let decoded_matches = if decoded_chunk.data.len() > MAX_SCAN_CHUNK_BYTES {
                     self.scan_windowed(&decoded_chunk, deadline)
                 } else {
-                    let decoded_backend =
-                        self.select_backend_for_file(decoded_chunk.data.len() as u64);
+                    // Decoded sub-chunks are post-process recursion;
+                    // they're typically tiny (base64/hex/url payloads
+                    // sliced out of the outer chunk). NEVER route them
+                    // to the GPU literal-set: per-dispatch overhead
+                    // (driver init + queue submit + sync) is 10-100 ms,
+                    // and `KEYHOG_BACKEND=gpu` would otherwise force
+                    // every decoded chunk through that path. On a
+                    // 64 MiB chunk that decodes into 1 000 sub-chunks
+                    // that's a 50-second tax — exactly the wall-clock
+                    // delta keyhog used to show vs SIMD on messy
+                    // corpora. Force a CPU backend here regardless of
+                    // env override.
+                    let decoded_backend = {
+                        #[cfg(feature = "simd")]
+                        {
+                            crate::hw_probe::ScanBackend::SimdCpu
+                        }
+                        #[cfg(not(feature = "simd"))]
+                        {
+                            crate::hw_probe::ScanBackend::CpuFallback
+                        }
+                    };
                     self.scan_inner(&decoded_chunk, decoded_backend, deadline)
                 };
                 for m in decoded_matches {
@@ -654,6 +748,13 @@ impl CompiledScanner {
                 }
             }
         }
+        tracing::debug!(
+            target: "keyhog::routing",
+            chunk_bytes = chunk.data.len(),
+            matches = matches.len(),
+            elapsed_ms = pp_start.elapsed().as_millis() as u64,
+            "post_process_matches_inner done",
+        );
     }
 
     fn scan_cross_chunk_fragments(
@@ -716,7 +817,24 @@ impl CompiledScanner {
                         metadata: chunk.metadata.clone(),
                     };
 
-                    let backend = self.select_backend_for_file(dummy_chunk.data.len() as u64);
+                    // Tiny synthesized chunk — NEVER dispatch through
+                    // GPU even if `KEYHOG_BACKEND=gpu` is set; the
+                    // per-dispatch overhead (~10-100 ms) is orders of
+                    // magnitude larger than scanning ~50 bytes on the
+                    // CPU. The previous flow leaked the env override
+                    // into `select_backend_for_file` and turned a
+                    // 64 MiB messy-corpus scan into ~60 s of dummy
+                    // GPU launches.
+                    let backend = {
+                        #[cfg(feature = "simd")]
+                        {
+                            crate::hw_probe::ScanBackend::SimdCpu
+                        }
+                        #[cfg(not(feature = "simd"))]
+                        {
+                            crate::hw_probe::ScanBackend::CpuFallback
+                        }
+                    };
                     let mut reassembled_matches = self.scan_inner(&dummy_chunk, backend, deadline);
                     for m in &mut reassembled_matches {
                         m.detector_id = format!("{}:reassembled", m.detector_id).into();

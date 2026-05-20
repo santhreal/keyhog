@@ -22,6 +22,25 @@ jobs:
       - run: cargo test -p keyhog-scanner --lib
       - run: cargo test -p keyhog --lib
 
+      # End-to-end tests against the built binary. Exercises the
+      # full CLI surface (JSON shape, exit codes, --no-suppress-
+      # test-fixtures Tier-B flag, README banner count pin).
+      - name: E2E binary tests
+        run: cargo test -p keyhog --test e2e_binary --profile release-fast
+
+      # Per-detector contract gate. Walks tests/contracts/*.toml
+      # and asserts positives fire, negatives don't, evasions
+      # still fire, scale budget holds, README claim is present.
+      - name: Per-detector contract gate
+        run: cargo test -p keyhog-scanner --test contracts_runner --profile release-fast
+
+      # Property tests (10 000+ cases per invariant). The proptest
+      # regression file (scanner_fuzz.proptest-regressions) re-runs
+      # every historical failure first — adding a new failure mode
+      # there permanently gates the suite.
+      - name: Property tests
+        run: cargo test -p keyhog-scanner property::scanner_fuzz --profile release-fast
+
   macos-build:
     name: macOS Build
     runs-on: macos-latest
@@ -102,7 +121,15 @@ jobs:
       - name: Smoke test
         run: |
           set +e
-          echo 'API_KEY="sk_live_4eC39HqLyjWDarjtT1zdp7dc"' | ./target/release/keyhog scan --stdin --min-confidence 0.0
+          # The Stripe demo key is on the bundled test-fixture
+          # suppression list (data/suppressions/test-fixtures.toml),
+          # so the smoke test must opt out via
+          # --no-suppress-test-fixtures to surface the finding —
+          # otherwise default-mode correctly returns zero matches
+          # and the smoke test would mis-assert "scanner broken."
+          echo 'API_KEY="sk_live_4eC39HqLyjWDarjtT1zdp7dc"' \
+            | ./target/release/keyhog scan --stdin --min-confidence 0.0 \
+                --no-suppress-test-fixtures
           test $? -eq 1  # exit 1 = findings detected (expected)
 
   publish:

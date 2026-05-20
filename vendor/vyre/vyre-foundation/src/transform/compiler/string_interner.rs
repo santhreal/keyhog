@@ -120,14 +120,13 @@ pub struct Entry {
 }
 
 /// FNV-1a 32-bit hash used by CPU and target-text references.
+/// Delegates to [`crate::hash::fnv1a32`] — the canonical home as of
+/// the 2026-05-20 dedup sweep. Kept at this path because the
+/// `fnv1a_program` builder below and the string-interner tests both
+/// import `fnv1a32` from this module.
 #[must_use]
 pub fn fnv1a32(bytes: &[u8]) -> u32 {
-    let mut hash = 0x811c_9dc5u32;
-    for &byte in bytes {
-        hash ^= u32::from(byte);
-        hash = hash.wrapping_mul(0x0100_0193);
-    }
-    hash
+    crate::hash::fnv1a32(bytes)
 }
 
 impl StringInterner {

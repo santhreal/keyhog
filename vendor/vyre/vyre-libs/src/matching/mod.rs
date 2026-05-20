@@ -81,6 +81,50 @@ pub const API_INDEX: &[(&str, ApiKind, Option<&str>)] = &[
         Some("matching-dfa"),
     ),
     ("DirectGpuScanner", ApiKind::Struct, Some("matching-dfa")),
+    // classic_ac module — flat output_links AC scanner. Module
+    // path is `vyre_libs::matching::classic_ac::*`, so the symbols
+    // are not re-exported at `matching` root; surfacing them here
+    // keeps `api_index_covers_every_export` honest.
+    (
+        "classic_ac::ClassicAcAutomaton",
+        ApiKind::Struct,
+        Some("matching-dfa"),
+    ),
+    (
+        "classic_ac::classic_ac_compile",
+        ApiKind::Function,
+        Some("matching-dfa"),
+    ),
+    (
+        "classic_ac::classic_ac_scan",
+        ApiKind::Function,
+        Some("matching-dfa"),
+    ),
+    (
+        "classic_ac::classic_ac_scan_counts",
+        ApiKind::Function,
+        Some("matching-dfa"),
+    ),
+    (
+        "classic_ac::classic_ac_program",
+        ApiKind::Function,
+        Some("matching-dfa"),
+    ),
+    (
+        "classic_ac::classic_ac_bounded_ranges_program",
+        ApiKind::Function,
+        Some("matching-dfa"),
+    ),
+    (
+        "classic_ac::build_ac_bounded_ranges_program",
+        ApiKind::Function,
+        Some("matching-dfa"),
+    ),
+    (
+        "classic_ac::classic_ac_bounded_ranges_scan",
+        ApiKind::Function,
+        Some("matching-dfa"),
+    ),
     // matching-nfa.
     (
         "build_rule_pipeline",
@@ -155,10 +199,13 @@ pub mod substring;
 #[cfg(feature = "matching-dfa")]
 pub mod dfa;
 
-/// Classic Aho-Corasick with precomputed flat `output_links`.
-/// Scans in O(matches) per position, not O(states × n).
+/// Back-compat alias: `classic_ac` is now in [`dfa::classic_ac`].
+/// External consumers (keyhog, surgec, conform) keep their existing
+/// `vyre_libs::matching::classic_ac::...` paths working without a
+/// breaking rename — the canonical home is the `dfa/` submodule per
+/// the 2026-05-20 organisation sweep.
 #[cfg(feature = "matching-dfa")]
-pub mod classic_ac;
+pub use dfa::classic_ac;
 
 /// Subgroup-cooperative NFA scan helper (G1). Composes
 /// `vyre_primitives::nfa::subgroup_nfa::nfa_step` into a multi-byte /

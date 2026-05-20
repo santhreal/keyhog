@@ -35,28 +35,25 @@ use vyre::{BackendError, DispatchConfig};
 ///
 /// This is the layout every vyre matcher's `BufferDecl::storage(..,
 /// DataType::U32, ReadOnly)` haystack input expects.
+///
+/// Delegates to [`vyre_foundation::byte_pack::pack_haystack_u32`] —
+/// the canonical implementation hoisted in the 2026-05-20 cross-crate
+/// dedup sweep. Kept at this path for back-compat: every consumer
+/// already imports `vyre_libs::matching::dispatch_io::pack_haystack_u32`
+/// and the API_INDEX surfaces it here.
 #[must_use]
 pub fn pack_haystack_u32(haystack: &[u8]) -> Vec<u8> {
-    let mut packed: Vec<u32> = Vec::with_capacity(haystack.len().div_ceil(4));
-    for chunk in haystack.chunks(4) {
-        let mut word = 0u32;
-        for (i, &b) in chunk.iter().enumerate() {
-            word |= (b as u32) << (i * 8);
-        }
-        packed.push(word);
-    }
-    pack_u32_slice(&packed)
+    vyre_foundation::byte_pack::pack_haystack_u32(haystack)
 }
 
 /// Pack a `&[u32]` into a little-endian `Vec<u8>` suitable for upload
 /// to a storage buffer of type `DataType::U32`.
+///
+/// Delegates to [`vyre_foundation::byte_pack::pack_u32_slice_le`].
+/// See [`pack_haystack_u32`] for the dedup history.
 #[must_use]
 pub fn pack_u32_slice(words: &[u32]) -> Vec<u8> {
-    let mut out = Vec::with_capacity(words.len() * 4);
-    for &w in words {
-        out.extend_from_slice(&w.to_le_bytes());
-    }
-    out
+    vyre_foundation::byte_pack::pack_u32_slice_le(words)
 }
 
 /// Validate that `haystack.len()` fits in a `u32` and return it. Vyre's

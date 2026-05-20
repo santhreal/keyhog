@@ -484,13 +484,12 @@ pub(super) fn compiler_words_from_sections(
     Ok(words)
 }
 
+// Thin wrapper around the canonical `vyre_foundation::hash::fnv1a32`
+// (2026-05-20 dedup sweep). Kept module-local under the original name
+// so the in-file call sites don't have to migrate; this is byte-for-byte
+// the same hash the foundation helper produces.
 fn fnv1a32_packed_u32_bytes(bytes: &[u8]) -> u32 {
-    let mut hash = 0x811c_9dc5u32;
-    for byte in bytes {
-        hash ^= u32::from(*byte);
-        hash = hash.wrapping_mul(0x0100_0193);
-    }
-    hash
+    vyre_foundation::hash::fnv1a32(bytes)
 }
 
 pub(super) fn c11_statement_bounds_host(tokens: &[u32], n_tokens: u32) -> (Vec<u32>, u32) {

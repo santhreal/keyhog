@@ -61,6 +61,11 @@ fn run_list(args: DetectorArgs) -> Result<()> {
         })
         .collect();
 
+    if args.json {
+        print_detectors_json(&filtered)?;
+        return Ok(());
+    }
+
     if let Some(q) = args.search.as_deref() {
         println!(
             "Loaded {} detectors ({source}); {} match '{q}':",
@@ -94,6 +99,55 @@ fn run_list(args: DetectorArgs) -> Result<()> {
         }
     }
 
+    Ok(())
+}
+
+/// Programmatic detector discovery: emits a JSON array on stdout in
+/// schema-stable form. Same field shape as `print_detector_verbose`
+/// so the human and machine views stay in sync.
+fn print_detectors_json(detectors: &[&DetectorSpec]) -> Result<()> {
+    use serde_json::{json, Value};
+    let items: Vec<Value> = detectors
+        .iter()
+        .map(|d| {
+            let patterns: Vec<Value> = d
+                .patterns
+                .iter()
+                .map(|p| {
+                    json!({
+                        "regex": p.regex,
+                        "description": p.description,
+                        "group": p.group,
+                    })
+                })
+                .collect();
+            let companions: Vec<Value> = d
+                .companions
+                .iter()
+                .map(|c| {
+                    json!({
+                        "name": c.name,
+                        "regex": c.regex,
+                        "within_lines": c.within_lines,
+                        "required": c.required,
+                    })
+                })
+                .collect();
+            json!({
+                "id": d.id,
+                "name": d.name,
+                "service": d.service,
+                "severity": format!("{:?}", d.severity),
+                "keywords": d.keywords,
+                "patterns": patterns,
+                "companions": companions,
+                "verify": d.verify.is_some(),
+            })
+        })
+        .collect();
+    let out = serde_json::to_string_pretty(&items)
+        .context("serializing detector listing to JSON")?;
+    println!("{out}");
     Ok(())
 }
 
