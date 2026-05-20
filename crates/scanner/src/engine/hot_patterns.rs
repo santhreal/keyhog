@@ -51,7 +51,41 @@ impl CompiledScanner {
                     .unwrap_or(candidate.len());
 
                 let credential = std::str::from_utf8(&candidate[..cred_end]).unwrap_or("");
-                if credential.len() < 8
+
+                // Per-pattern minimum credential length, in bytes.
+                // The 8-byte blanket floor would let `AKIA12345`
+                // (9 bytes, only 5 after the 4-byte `AKIA` prefix)
+                // through as a "real" AWS access key. Real AKIA
+                // tokens are AKIA + 16 = 20 bytes minimum — tighten
+                // the floor per-pattern so the fast-path never emits
+                // a credential the matching detector's regex would
+                // reject. See
+                // tests/adversarial/engine_cases/scanner_stress.rs::
+                // stress_minified_js_finds_real_pat_not_truncated_aws.
+                //
+                // The other hot patterns keep the loose 8-byte floor
+                // because tightening them speculatively breaks the
+                // base64 / hex / multi-line-split evasion-corpus
+                // tests that exercise SHORT decoded fragments. Each
+                // additional tightening needs its own per-pattern
+                // regression gate first.
+                //
+                // Index aligns with simdsieve_prefilter::HOT_PATTERNS:
+                //   0 ghp_      8
+                //   1 sk-proj-  8
+                //   2 AKIA     20  (tightened — see scanner_stress)
+                //   3 ASIA     20  (tightened — see scanner_stress)
+                //   4 SG.       8
+                //   5 xoxb-     8
+                //   6 xoxp-     8
+                //   7 sq0csp-   8
+                const PER_PATTERN_MIN_LEN: &[usize] =
+                    &[8, 8, 20, 20, 8, 8, 8, 8];
+                let min_len = PER_PATTERN_MIN_LEN
+                    .get(pattern_idx)
+                    .copied()
+                    .unwrap_or(8);
+                if credential.len() < min_len
                     || crate::pipeline::should_suppress_known_example_credential_with_source(
                         credential,
                         chunk.metadata.path.as_deref(),
