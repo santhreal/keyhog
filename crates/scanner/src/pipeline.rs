@@ -221,6 +221,20 @@ pub fn should_suppress_known_example_credential_with_source(
         return false;
     }
 
+    // PEM-framed credentials (private keys, certificates) get a hard
+    // bypass on the body-entropy heuristics below: the BEGIN/END
+    // frame IS the high-confidence signal, and base64-encoded
+    // structured data (notably the `openssh-key-v1\0\0\0\0…` prefix
+    // every OPENSSH PRIVATE KEY starts with) legitimately contains
+    // long runs of identical characters like `AAAAAAAA` from
+    // zero-padding. Without this carve-out, real OPENSSH keys get
+    // suppressed by `has_n_or_more_consecutive_identical` and the
+    // PEM `private-key` detector silently misses them — see
+    // `tests/contracts/private-key.toml` OPENSSH positive.
+    if credential.starts_with("-----BEGIN") {
+        return false;
+    }
+
     // ── 3. Repetitive masking patterns ──
     // 5+ consecutive 'x' or 'X' (e.g., xxxxx, XXXXXXX) — masks and placeholders.
     // 3x can appear in real base64/hex, so only suppress longer runs.

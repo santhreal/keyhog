@@ -25,6 +25,14 @@ const KNOWN_PREFIXES: &[&str] = &[
     "glpat-",
     "dop_v1_",
     "PRIVATE KEY",
+    // PEM-framed private key blocks captured by the `private-key`
+    // detector start with `-----BEGIN` (e.g. `-----BEGIN RSA PRIVATE KEY-----`)
+    // so the literal `PRIVATE KEY` prefix above doesn't match the
+    // full-block credential. Add the PEM frame explicitly — the
+    // upstream regex already gated on `…PRIVATE KEY…` so this
+    // confidence floor doesn't lift non-credential PEM blocks
+    // (certificates, public keys) since those aren't captured at all.
+    "-----BEGIN",
     "eyJ",
     "TESTKEY_",
 ];

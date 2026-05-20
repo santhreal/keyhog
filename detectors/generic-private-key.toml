@@ -1,15 +1,34 @@
-# Docs: https://en.wikipedia.org/wiki/PKCS_8
-# Format: PEM-encoded private key block (-----BEGIN (RSA |EC |DSA |)PRIVATE KEY-----)
-# Verify: no verification endpoint (private keys are not API-callable)
+# Docs: https://en.wikipedia.org/wiki/PKCS_8, RFC 7468
+# Format: PEM-encoded private key block, e.g.
+#   -----BEGIN RSA PRIVATE KEY-----
+#   <base64 body, multi-line>
+#   -----END RSA PRIVATE KEY-----
+# Verify: no API endpoint (private keys are not call-time verifiable).
 # Prefix: -----BEGIN
 
+# The detector ID is intentionally `private-key`, NOT `generic-private-key` —
+# the `generic-` prefix routes findings through the probabilistic-gate
+# entropy floor in `scan_filters.rs`, which (correctly) rejects short
+# credentials like the bare literal string `PRIVATE KEY`. PEM markers ARE
+# the high-confidence signal for this class; we do not want the gate.
+
 [detector]
-id = "generic-private-key"
+id = "private-key"
 name = "Private Key (PEM)"
 service = "crypto"
 severity = "critical"
-keywords = ["PRIVATE KEY", "BEGIN"]
+keywords = ["BEGIN", "PRIVATE KEY"]
 
+# Multi-line PEM body capture. `[\s\S]*?` (lazy) keeps the match bounded
+# to one BEGIN/END pair — without `?` a file containing two adjacent
+# PEM blocks would be captured as one giant credential including the
+# `END … BEGIN` text between them. Algorithms enumerated rather than
+# captured via `[A-Z ]*` because Hyperscan's NFA can drop OPENSSH
+# matches when a greedy character class straddles `PRIVATE` — the
+# explicit alternation gives the compiler a fixed branching factor.
+# `PGP PRIVATE KEY BLOCK` is the only variant that uses the literal
+# `BLOCK` suffix; the `(?: BLOCK)?` group handles it without a
+# separate pattern.
 [[detector.patterns]]
-regex = 'PRIVATE KEY'
-description = "Private key marker"
+regex = '-----BEGIN (?:RSA |EC |DSA |OPENSSH |ENCRYPTED |PGP )?PRIVATE KEY(?: BLOCK)?-----[\s\S]*?-----END (?:RSA |EC |DSA |OPENSSH |ENCRYPTED |PGP )?PRIVATE KEY(?: BLOCK)?-----'
+description = "Full PEM private-key block (BEGIN…END)"
