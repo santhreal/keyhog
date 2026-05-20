@@ -1,0 +1,18 @@
+# GitHub-published example fine-grained PAT shape. GitHub's docs and
+# their advisory database cite this exact `github_pat_…` shape when
+# describing the fine-grained PAT format. Keyhog's regex + CRC32
+# checksum gate MUST both pass for this entry. The fixture below uses
+# a CRC32-valid synthetic PAT (same one ginned up for the contract
+# runner) — the public GHSA references the SHAPE not a real
+# credential, so this is the honest test.
+
+schema_version = 1
+cve_id = "GH-DOCS-FINE-GRAINED-PAT-SHAPE"
+source_url = "https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens"
+detectors = ["github-pat-fine-grained"]
+service = "github"
+description = "GitHub fine-grained PAT shape from GitHub's official PAT documentation."
+leaked_text = """
+# Authenticate to GitHub with fine-grained PAT.
+git push https://oauth2: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@github.com/me/repo.git
+"""
