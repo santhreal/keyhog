@@ -8,11 +8,19 @@ repository = "https://github.com/santhsecurity/keyhog"
 [package.metadata]
 cargo-fuzz = true
 
+# Standalone — NOT part of the keyhog workspace. cargo-fuzz drives
+# this crate with its own rustflags (asan + sancov + extra `-Cpasses`)
+# that conflict with the workspace's normal release profile.
+[workspace]
+
 [dependencies]
 libfuzzer-sys = "0.4"
 
 [dependencies.keyhog-core]
-path = ".."
+path = "../crates/core"
+
+[dependencies.keyhog-scanner]
+path = "../crates/scanner"
 
 [[bin]]
 name = "fuzz_target_1"
@@ -24,6 +32,30 @@ bench = false
 [[bin]]
 name = "decode_target"
 path = "fuzz_targets/decode_target.rs"
+test = false
+doc = false
+bench = false
+
+# scanner_target — fuzz the full `CompiledScanner::scan` pipeline.
+# This is the most product-relevant fuzz: it exercises detector
+# loading, regex compilation, AC pre-filter, regex confirmation,
+# suppression heuristics, and credential extraction. A panic OR a
+# hang here is a real bug a user can hit by feeding keyhog a
+# pathological file.
+[[bin]]
+name = "scanner_target"
+path = "fuzz_targets/scanner_target.rs"
+test = false
+doc = false
+bench = false
+
+# regex_compile_target — fuzz the detector-regex compiler. The
+# 888 detector regexes are user-extensible via TOML, so a bad
+# regex string MUST NOT panic the compiler — it must return a
+# typed Err and let the loader skip that detector.
+[[bin]]
+name = "regex_compile_target"
+path = "fuzz_targets/regex_compile_target.rs"
 test = false
 doc = false
 bench = false
