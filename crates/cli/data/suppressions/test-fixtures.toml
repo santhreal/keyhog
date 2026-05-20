@@ -1,0 +1,64 @@
+# Tier-B configurable suppression list: well-known public test
+# fixtures that routinely show up in code samples + tutorials and
+# generate noise without representing a real leak. Differential
+# bench harness against gitleaks / trufflehog uses this same list
+# to excuse intentional disagreements.
+#
+# Each entry is matched on the EXACT credential string (after
+# regex extraction). Substring filters live in the `substring`
+# table at the bottom because they're inherently fuzzier.
+#
+# To disable this list entirely at scan time, pass
+# `--no-suppress-test-fixtures` on the CLI.
+
+schema_version = 1
+
+[[exact]]
+# Stripe's public-documentation demo key. Appears verbatim in
+# Stripe's API docs, every Stripe SDK tutorial, and keyhog's own
+# regression fixtures. Gitleaks + trufflehog both surface it on
+# the demo corpus (differential SHA: 78a08441f4314f0a…); we
+# suppress to keep the report focused on real leaks.
+credential = "sk_live_4eC39HqLyjWDarjtT1zdp7dc"
+service = "stripe"
+source = "https://docs.stripe.com/api/authentication"
+
+[[exact]]
+# GitHub's docs example PAT format. Used in keyhog's own boundary
+# regression tests; not a real token (the suffix is generated to
+# pass the regex without being a live secret).
+credential = "ghp_aBcD1234EFgh5678ijklMNop9012qrSTuvWX"
+service = "github"
+source = "keyhog regression fixtures"
+
+[[exact]]
+# Slack docs example bot token. Same shape rationale as above.
+credential = "xoxb-123456789012-1234567890123"
+service = "slack"
+source = "https://api.slack.com/authentication/token-types"
+
+[[exact]]
+# Keyhog's own v0.4.0 cross-chunk-boundary test secret. Self-
+# suppressed so a recursive `keyhog scan keyhog/` doesn't fire
+# on the fixture line itself.
+credential = "XX_FAKE_v040BOUNDARYTESTSECRET67890XYZ"
+service = "keyhog-self-test"
+source = "crates/scanner/tests/window_boundary.rs"
+
+[[exact]]
+# The literal `"parameter"` placeholder that the regex engine
+# occasionally surfaces from `key=parameter` template strings.
+credential = "parameter"
+service = "placeholder"
+source = "extracted from `key=parameter` template strings"
+
+[[substring]]
+# Anything literally containing EXAMPLE or PLACEHOLDER is almost
+# never a real secret. This is a fuzzy filter and the most likely
+# place for false negatives (an actual secret with EXAMPLE in
+# its label would be suppressed), but the historical rate of true
+# leaks containing this substring is zero.
+needle = "EXAMPLE"
+
+[[substring]]
+needle = "PLACEHOLDER"

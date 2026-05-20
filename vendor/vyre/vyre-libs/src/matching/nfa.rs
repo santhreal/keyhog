@@ -32,6 +32,8 @@ use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Ident, Node,
 
 use vyre_primitives::nfa::subgroup_nfa::{LANES_PER_SUBGROUP, MAX_STATES_PER_SUBGROUP};
 
+use crate::matching::builders::load_packed_byte;
+
 /// Canonical op id for the end-to-end scan kernel.
 pub const OP_ID: &str = "vyre-libs::matching::nfa_scan";
 
@@ -117,20 +119,10 @@ pub fn nfa_scan_with_plan(
 
     // Per-cursor body. Runs inside the byte loop.
     let mut cursor_body: Vec<Node> = Vec::new();
-    fn packed_byte(input_buf: &str, index: Expr) -> Expr {
-        Expr::bitand(
-            Expr::shr(
-                Expr::load(input_buf, Expr::div(index.clone(), Expr::u32(4))),
-                Expr::mul(Expr::rem(index, Expr::u32(4)), Expr::u32(8)),
-            ),
-            Expr::u32(0xFF),
-        )
-    }
-
-    cursor_body.push(Node::let_bind(
-        "byte",
-        packed_byte(input_buf, Expr::var("cursor")),
-    ));
+    let (load_cursor_byte, cursor_byte_expr) =
+        load_packed_byte(input_buf, Expr::var("cursor"));
+    cursor_body.push(load_cursor_byte);
+    cursor_body.push(Node::let_bind("byte", cursor_byte_expr));
     cursor_body.push(Node::let_bind("next_state", Expr::u32(0)));
 
     // Transition. Lane-major gather matching `subgroup_nfa::nfa_step`:

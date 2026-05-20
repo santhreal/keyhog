@@ -221,6 +221,22 @@ pub use runtime::program_caps;
 pub mod error;
 pub use error::{Error, Result};
 
+/// Canonical little-endian byte-packing helpers. Single home for
+/// `pack_u32_slice_le` and `pack_haystack_u32`; the matching layer,
+/// the C frontend pipelines, and the primitives library all re-export
+/// or call into these from one place. Replaces five parallel
+/// implementations identified in the 2026-05-20 cross-crate audit.
+pub mod byte_pack;
+pub use byte_pack::{pack_haystack_u32, pack_u32_slice_le};
+
+/// Canonical hash helpers (FNV-1a 32-bit, byte- and word-shaped).
+/// Replaces three parallel implementations across vyre-foundation
+/// (string_interner), vyre-cc (pipeline::buffers), and
+/// vyre-frontend-c (pipeline::buffers); see `hash.rs` for the
+/// audit notes.
+pub mod hash;
+pub use hash::{fnv1a32, fnv1a32_words};
+
 /// Test utilities shared across optimizer and transform test suites.
 /// `pub(crate)` because they are an internal contract — no consumer
 /// outside vyre-foundation should depend on these helpers.

@@ -180,9 +180,14 @@ pub fn cpu_ref(source: &[u8], table: &[u32; 256]) -> Vec<u32> {
 }
 
 /// Pack a `[u32]` slice into the LE-byte layout the harness uses.
+/// Delegates to [`vyre_foundation::byte_pack::pack_u32_slice_le`] —
+/// the canonical fast implementation (pre-allocated + extend_from_slice).
+/// Pre-2026-05-20 this used the iterator `flat_map().collect()` form,
+/// which paid per-element overhead on million-element streams; the
+/// hoisted version is documented as ~2-3× faster on those workloads.
 #[must_use]
 pub fn pack_u32(words: &[u32]) -> Vec<u8> {
-    words.iter().flat_map(|word| word.to_le_bytes()).collect()
+    vyre_foundation::byte_pack::pack_u32_slice_le(words)
 }
 
 /// Pack a `[u8]` source slice into the per-element u32 layout the GPU

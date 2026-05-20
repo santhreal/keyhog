@@ -133,14 +133,14 @@ pub fn cpu_ref(kinds: &[u32], max_depth: u32) -> Vec<u32> {
     match_pairs
 }
 
-/// Pack `[u32]` into the LE-byte layout the harness uses.
+/// Pack `[u32]` into the LE-byte layout the harness uses. Thin
+/// wrapper around [`vyre_foundation::byte_pack::pack_u32_slice_le`] —
+/// the canonical home after the 2026-05-20 cross-crate dedup sweep.
+/// Kept at this path so the `inventory::submit!` below and existing
+/// `bracket_match::pack_u32` call sites stay intact.
 #[must_use]
 pub fn pack_u32(words: &[u32]) -> Vec<u8> {
-    let mut bytes = Vec::with_capacity(words.len().saturating_mul(4));
-    for word in words {
-        bytes.extend_from_slice(&word.to_le_bytes());
-    }
-    bytes
+    vyre_foundation::byte_pack::pack_u32_slice_le(words)
 }
 
 #[cfg(feature = "inventory-registry")]

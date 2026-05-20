@@ -219,8 +219,21 @@ impl CompiledScanner {
                                 data: dummy_data.into(),
                                 metadata: chunk.metadata.clone(),
                             };
-                            let backend =
-                                self.select_backend_for_file(dummy_chunk.data.len() as u64);
+                            // Tiny synthesized chunk for the reassembled
+                            // candidate — same rationale as
+                            // `scan_cross_chunk_fragments`: skip GPU
+                            // unconditionally because per-dispatch
+                            // overhead dwarfs the work.
+                            let backend = {
+                                #[cfg(feature = "simd")]
+                                {
+                                    crate::hw_probe::ScanBackend::SimdCpu
+                                }
+                                #[cfg(not(feature = "simd"))]
+                                {
+                                    crate::hw_probe::ScanBackend::CpuFallback
+                                }
+                            };
                             let mut reassembled_matches =
                                 self.scan_inner(&dummy_chunk, backend, None);
                             matches.append(&mut reassembled_matches);
@@ -274,6 +287,85 @@ impl CompiledScanner {
         // those chunks. Threaded down to the inner loops below.
         deadline: Option<std::time::Instant>,
     ) {
+        self.extract_matches_inner(
+            entry,
+            preprocessed,
+            line_offsets,
+            code_lines,
+            documentation_lines,
+            chunk,
+            scan_state,
+            base_line,
+            base_offset,
+            None,
+            deadline,
+        );
+    }
+
+    /// Extract matches restricted to a `[cursor_start, cursor_end)` byte
+    /// window of the preprocessed text. Used by the GPU/MegaScan path to
+    /// run anchored regex confirmation at the literal-hit positions
+    /// returned by `vyre_libs::matching::GpuLiteralSet::scan`, instead
+    /// of re-scanning the entire 64 MiB+ chunk per triggered pattern.
+    ///
+    /// `cursor_end` is treated as the upper bound for *match start*; a
+    /// regex match whose start ≥ `cursor_end` is treated the same as
+    /// "no match" for the purposes of breaking out of the cursor loop.
+    ///
+    /// Currently unused — the GPU pipeline went with the
+    /// `scan_prepared_with_pattern_hits` cheap-filter approach which
+    /// uses `regex.is_match` on the same window and then defers to the
+    /// legacy extract path with a tightened bitmap. Kept available
+    /// because the per-hit anchored variant is the obvious next step
+    /// once `regex.is_match` stops being precise enough — moving the
+    /// confirm into `extract_matches_in_range` collapses two regex
+    /// walks into one.
+    #[allow(dead_code)]
+    pub(crate) fn extract_matches_in_range(
+        &self,
+        entry: &CompiledPattern,
+        preprocessed: &ScannerPreprocessedText,
+        line_offsets: &[usize],
+        code_lines: &[&str],
+        documentation_lines: &[bool],
+        chunk: &Chunk,
+        scan_state: &mut ScanState,
+        base_line: usize,
+        base_offset: usize,
+        cursor_start: usize,
+        cursor_end: usize,
+        deadline: Option<std::time::Instant>,
+    ) {
+        self.extract_matches_inner(
+            entry,
+            preprocessed,
+            line_offsets,
+            code_lines,
+            documentation_lines,
+            chunk,
+            scan_state,
+            base_line,
+            base_offset,
+            Some((cursor_start, cursor_end)),
+            deadline,
+        );
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn extract_matches_inner(
+        &self,
+        entry: &CompiledPattern,
+        preprocessed: &ScannerPreprocessedText,
+        line_offsets: &[usize],
+        code_lines: &[&str],
+        documentation_lines: &[bool],
+        chunk: &Chunk,
+        scan_state: &mut ScanState,
+        base_line: usize,
+        base_offset: usize,
+        cursor_range: Option<(usize, usize)>,
+        deadline: Option<std::time::Instant>,
+    ) {
         // Resilient lookup: a malformed `entry.detector_index` would otherwise
         // panic mid-scan and abort the whole rayon worker. The compiler should
         // never produce out-of-range indices, but this is the kind of
@@ -301,6 +393,7 @@ impl CompiledScanner {
                 scan_state,
                 base_line,
                 base_offset,
+                cursor_range,
                 deadline,
             );
             return;
@@ -316,6 +409,7 @@ impl CompiledScanner {
             scan_state,
             base_line,
             base_offset,
+            cursor_range,
             deadline,
         );
     }
@@ -334,6 +428,7 @@ impl CompiledScanner {
         scan_state: &mut ScanState,
         base_line: usize,
         base_offset: usize,
+        cursor_range: Option<(usize, usize)>,
         deadline: Option<std::time::Instant>,
     ) {
         let search_text = &preprocessed.text;
@@ -354,8 +449,24 @@ impl CompiledScanner {
         // of thousands of avoided allocations per scan.
         let mut locs = entry.regex.capture_locations();
         let groups_total = locs.len();
-        let mut cursor = 0usize;
         let bytes_total = search_text.len();
+        // GPU-anchored path: caller restricts the scan to a small
+        // window around a literal hit. `cursor_end` is the upper
+        // bound for match *starts* — a regex match whose start lies
+        // past `cursor_end` is treated as "no match" for window
+        // termination. We still let a match *end* past `cursor_end`
+        // because credentials are typically longer than the literal
+        // prefix that anchored them.
+        let (mut cursor, cursor_end) = match cursor_range {
+            Some((start, end)) => (
+                start.min(bytes_total),
+                end.min(bytes_total),
+            ),
+            None => (0usize, bytes_total),
+        };
+        while cursor < cursor_end && cursor > 0 && !search_text.is_char_boundary(cursor) {
+            cursor -= 1;
+        }
         // Inner-loop deadline check counter. Same `is_multiple_of(64)`
         // cadence as `scan_fallback_patterns` — frequent enough that
         // a hung pattern aborts within a few ms, infrequent enough
@@ -364,7 +475,7 @@ impl CompiledScanner {
         // adversarial chunk (false_prefix_storm, regex catastrophic
         // backtracking) would run unboundedly even with --timeout.
         let mut match_count: usize = 0;
-        while cursor <= bytes_total {
+        while cursor <= cursor_end {
             if let Some(deadline) = deadline {
                 if match_count.is_multiple_of(64)
                     && match_count > 0
@@ -379,6 +490,14 @@ impl CompiledScanner {
             };
             let full_start = whole.start();
             let full_end = whole.end();
+            // Anchored-window termination: a regex match whose
+            // *start* is past the caller's window means we've walked
+            // off the literal hit that brought us here. Stop instead
+            // of paying for the full-chunk scan we were trying to
+            // avoid.
+            if full_start > cursor_end {
+                break;
+            }
             // Advance the cursor up front so any `continue` below keeps the
             // loop progressing. Zero-width matches bump by one byte (and
             // align onto a UTF-8 boundary) to avoid an infinite loop.
@@ -463,12 +582,21 @@ impl CompiledScanner {
         scan_state: &mut ScanState,
         base_line: usize,
         base_offset: usize,
+        cursor_range: Option<(usize, usize)>,
         deadline: Option<std::time::Instant>,
     ) {
         let search_text = &preprocessed.text;
         // Same lazy-on-first-match dedup as `extract_grouped_matches`;
         // see that function's doc-comment for the rationale.
         let signals = std::cell::OnceCell::<(bool, bool)>::new();
+        let bytes_total = search_text.len();
+        // GPU-anchored path: same contract as `extract_grouped_matches`.
+        // None ⇒ legacy whole-text scan. Some((start, end)) ⇒ run
+        // anchored at `start`, stop once a match starts past `end`.
+        let (range_start, range_end) = match cursor_range {
+            Some((start, end)) => (start.min(bytes_total), end.min(bytes_total)),
+            None => (0usize, bytes_total),
+        };
         // Inner-loop deadline counter — same `is_multiple_of(64)`
         // cadence as the grouped path so --timeout aborts cleanly
         // even on patterns that fire 100k+ matches per chunk.
@@ -477,7 +605,12 @@ impl CompiledScanner {
         // enumerator); the function-level `clippy::explicit_counter_loop`
         // allow keeps that clearer naming.
         let mut match_count: usize = 0;
-        for matched in entry.regex.find_iter(search_text) {
+        // `find_iter` doesn't take a start position; walk it manually
+        // via `find_at` so the anchored-window path stays cheap. The
+        // legacy path (range_start=0, range_end=bytes_total) behaves
+        // identically to the prior `find_iter` loop.
+        let mut cursor = range_start;
+        while cursor <= range_end {
             if let Some(deadline) = deadline {
                 if match_count.is_multiple_of(64)
                     && match_count > 0
@@ -486,6 +619,23 @@ impl CompiledScanner {
                     break;
                 }
             }
+            let Some(matched) = entry.regex.find_at(search_text, cursor) else {
+                break;
+            };
+            if matched.start() > range_end {
+                break;
+            }
+            // Advance cursor before any early-continue so zero-width
+            // matches don't loop forever.
+            let mut next = if matched.end() == cursor {
+                matched.end() + 1
+            } else {
+                matched.end()
+            };
+            while next < bytes_total && !search_text.is_char_boundary(next) {
+                next += 1;
+            }
+            cursor = next;
             match_count += 1;
             let &(keyword_nearby, sensitive_file) =
                 signals.get_or_init(|| compute_pattern_signals(detector, chunk));

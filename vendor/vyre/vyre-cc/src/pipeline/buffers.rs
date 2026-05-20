@@ -258,15 +258,13 @@ pub(super) fn compiler_words_from_sections(
     Ok(words)
 }
 
+// Thin wrapper around the canonical
+// `vyre_foundation::hash::fnv1a32_words` (2026-05-20 dedup sweep).
+// Kept module-local so the existing call sites in this file don't
+// need to be rewritten; deletion would force consumer churn beyond
+// this dedup's intended scope.
 fn fnv1a32_words(words: &[u32]) -> u32 {
-    let mut hash = 0x811c_9dc5u32;
-    for word in words {
-        for byte in word.to_le_bytes() {
-            hash ^= u32::from(byte);
-            hash = hash.wrapping_mul(0x0100_0193);
-        }
-    }
-    hash
+    vyre_foundation::hash::fnv1a32_words(words)
 }
 
 pub(super) fn pad_tok_scan(mut v: Vec<u32>) -> Vec<u32> {
