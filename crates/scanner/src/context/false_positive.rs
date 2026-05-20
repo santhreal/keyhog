@@ -49,45 +49,37 @@ pub fn is_false_positive_match_context_with_path(
 ///
 /// Anchored to a comment marker first so we don't accidentally suppress
 /// real findings on lines that happen to mention "fake" in prose.
+/// Disclaimer-phrase list loaded once from the embedded Tier-B TOML
+/// at `crates/scanner/data/disclaimer-phrases.toml`. Lifting this
+/// list out of source code lets the community PR new phrases
+/// without touching Rust — the moat under CLAUDE.md's Tier-B rule.
+static DISCLAIMER_PHRASES: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(|| {
+    #[derive(serde::Deserialize)]
+    struct DisclaimerFile {
+        phrases: Vec<String>,
+    }
+    let raw = include_str!("../../data/disclaimer-phrases.toml");
+    let parsed: DisclaimerFile = toml::from_str(raw)
+        .expect("crates/scanner/data/disclaimer-phrases.toml must be valid TOML");
+    // Normalize to lowercase once — `lower` haystack lookups never
+    // need to re-lower at hot-path call time.
+    parsed
+        .phrases
+        .into_iter()
+        .map(|p| p.to_ascii_lowercase())
+        .collect()
+});
+
 fn has_disclaimer_comment(lower: &str) -> bool {
     const COMMENT_MARKERS: &[&str] = &["//", "#", "--", "/*", "<!--", "rem "];
-    const DISCLAIMER_PHRASES: &[&str] = &[
-        "not a real",
-        "not real",
-        "not a secret",
-        "not a key",
-        "not a password",
-        "not a token",
-        "not an api",
-        "not valid",
-        "fake credential",
-        "fake key",
-        "fake token",
-        "fake secret",
-        "fake password",
-        "dummy credential",
-        "dummy key",
-        "dummy token",
-        "dummy secret",
-        "for demo",
-        "demo only",
-        "for testing",
-        "test only",
-        "for example",
-        "example only",
-        "do not use",
-        "replace this",
-        "replace with",
-        "fill in your",
-        "put your",
-    ];
+    let phrases: &[String] = &DISCLAIMER_PHRASES;
     let bytes = lower.as_bytes();
     for marker in COMMENT_MARKERS {
         let mut search_from = 0usize;
         while let Some(rel) = memchr::memmem::find(&bytes[search_from..], marker.as_bytes()) {
             let comment_start = search_from + rel + marker.len();
             let comment_tail = &lower[comment_start..];
-            for phrase in DISCLAIMER_PHRASES {
+            for phrase in phrases {
                 if memchr::memmem::find(comment_tail.as_bytes(), phrase.as_bytes()).is_some() {
                     return true;
                 }

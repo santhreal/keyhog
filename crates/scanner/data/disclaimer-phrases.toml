@@ -1,0 +1,57 @@
+# Community-extensible Tier-B disclaimer-phrase list.
+#
+# Used by `crates/scanner/src/context/false_positive.rs::has_disclaimer_comment`
+# to suppress findings on lines where a code comment explicitly
+# declares the credential is not real (e.g. `// not a real key`,
+# `# fake credential`, `<!-- for demo only -->`).
+#
+# Contributors: add a new phrase by appending to the `phrases` array.
+# Phrases are matched case-insensitive AFTER a comment marker; the
+# marker list (`//`, `#`, `--`, `/*`, `<!--`, `rem`) is fixed in
+# code because it tracks language syntax, not community knowledge.
+#
+# Wording style: prefer DECLARATIVE phrasings ("not a real key"),
+# IMPERATIVE markers ("do not use"), and INSTRUCTIONAL fragments
+# ("replace this with"). Avoid generic words on their own — `fake`,
+# `dummy`, `test` standalone would over-suppress real credentials
+# that happen to be in test code. Always pair with the asset type
+# (key / secret / token / password / credential).
+
+schema_version = 1
+phrases = [
+    # Negation-style
+    "not a real",
+    "not real",
+    "not a secret",
+    "not a key",
+    "not a password",
+    "not a token",
+    "not an api",
+    "not valid",
+
+    # Fake / dummy markers (paired with asset type to avoid false-positives in real test code)
+    "fake credential",
+    "fake key",
+    "fake token",
+    "fake secret",
+    "fake password",
+    "dummy credential",
+    "dummy key",
+    "dummy token",
+    "dummy secret",
+
+    # Documentation / demo / example
+    "for demo",
+    "demo only",
+    "for testing",
+    "test only",
+    "for example",
+    "example only",
+
+    # Instructional ("user should replace this")
+    "do not use",
+    "replace this",
+    "replace with",
+    "fill in your",
+    "put your",
+]
