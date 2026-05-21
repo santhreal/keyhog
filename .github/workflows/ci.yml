@@ -14,6 +14,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # crates/scanner/tests/contracts/*.toml and
+          # crates/scanner/tests/readme_claims.rs are LFS-tracked (the
+          # fixtures look like real secrets to push-protection; storing
+          # them as LFS pointers is the only way to keep the contract
+          # corpus pushable). Without this checkout option the working
+          # tree has 3-line LFS pointer files instead of the actual
+          # fixture content and contracts_runner crashes parsing them
+          # as TOML.
+          lfs: true
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Install Vectorscan
