@@ -279,35 +279,15 @@ impl CompiledScanner {
                 let text_len = text.len();
                 for &(pid, start, end) in &per_pattern_hits {
                     let pat_idx = pid as usize;
-                    if pat_idx >= total_patterns || confirmed[pat_idx] {
+                    if pat_idx >= total_patterns {
                         continue;
                     }
-                    let entry = if pat_idx < self.ac_map.len() {
-                        &self.ac_map[pat_idx]
-                    } else {
-                        let fb = pat_idx - self.ac_map.len();
-                        if fb >= self.fallback.len() {
-                            // Skip — out-of-range pids stay Unconfirmed
-                            // forever, no further hits will help.
-                            confirmed[pat_idx] = true;
-                            continue;
-                        }
-                        &self.fallback[fb].0
-                    };
                     let scan_start = start.saturating_sub(PRE_MARGIN) as usize;
                     let window_end =
                         (end.saturating_add(POST_MARGIN) as usize).min(text_len);
                     if scan_start >= window_end {
                         continue;
                     }
-                    // `find_at` would scan the entire chunk past
-                    // `scan_start` until a match is found OR until
-                    // it hits EOF — that's exactly the whole-chunk
-                    // sweep we were trying to avoid. Slice down to
-                    // the literal-hit's window first; cost is now
-                    // O(window_size) per pattern instead of
-                    // O(chunk_size). Char-boundary snap protects
-                    // against panics on multi-byte UTF-8.
                     let mut snap_start = scan_start;
                     while snap_start > 0 && !text.is_char_boundary(snap_start) {
                         snap_start -= 1;
@@ -317,14 +297,52 @@ impl CompiledScanner {
                         snap_end += 1;
                     }
                     let window = &text[snap_start..snap_end];
-                    if entry.regex.is_match(window) {
-                        tight_bitmap[pat_idx / 64] |= 1u64 << (pat_idx % 64);
-                        confirmed[pat_idx] = true;
+
+                    // The GPU AC DFA folds patterns that share a literal
+                    // prefix into one trie node — only one pid is emitted
+                    // per literal hit. If that one's regex doesn't match,
+                    // siblings (via same_prefix_patterns) never get
+                    // checked. Task #56 reproducer: keyhog has both
+                    // `sb_(?:publishable|secret)_…` and stackblitz's
+                    // `sb_[a-zA-Z0-9_-]{20,}`; the kernel emits only the
+                    // first pid, and its regex doesn't match the
+                    // stackblitz token. So we check `pid` AND every
+                    // `same_prefix_patterns[pid]` sibling against this
+                    // hit's window — the first sibling whose regex
+                    // matches gets confirmed (its own bit), and the
+                    // downstream `expand_triggered_patterns` then fans
+                    // out to the rest of the sibling set. Correctness:
+                    // bitmap is by-pid, never by-literal, so we cannot
+                    // confuse two pids that share a prefix.
+                    let siblings = if pat_idx < self.same_prefix_patterns.len() {
+                        self.same_prefix_patterns[pat_idx].as_slice()
+                    } else {
+                        &[]
+                    };
+                    let candidates =
+                        std::iter::once(pat_idx).chain(siblings.iter().copied());
+                    for cand_idx in candidates {
+                        if cand_idx >= total_patterns {
+                            continue;
+                        }
+                        if confirmed[cand_idx] {
+                            continue;
+                        }
+                        let entry = if cand_idx < self.ac_map.len() {
+                            &self.ac_map[cand_idx]
+                        } else {
+                            let fb = cand_idx - self.ac_map.len();
+                            if fb >= self.fallback.len() {
+                                confirmed[cand_idx] = true;
+                                continue;
+                            }
+                            &self.fallback[fb].0
+                        };
+                        if entry.regex.is_match(window) {
+                            tight_bitmap[cand_idx / 64] |= 1u64 << (cand_idx % 64);
+                            confirmed[cand_idx] = true;
+                        }
                     }
-                    // No `else` branch: if this window didn't match,
-                    // a later hit of the same pattern might. Don't
-                    // mark Rejected — we'd lose recall on patterns
-                    // whose first literal hit was a spurious anchor.
                 }
                 // Expand the cheap-filter-confirmed roots to their
                 // AC prefix siblings before extract. The cheap-filter
