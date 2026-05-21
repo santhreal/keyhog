@@ -7,7 +7,7 @@ id = "github-user-to-server-token"
 name = "GitHub User-to-Server Token"
 service = "github"
 severity = "critical"
-keywords = ["ghu_"]
+keywords = ["ghu_", "GITHUB_TOKEN", "github_token"]
 
 [[detector.patterns]]
 regex = 'ghu_[A-Za-z0-9]{36}'
