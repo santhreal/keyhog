@@ -1,0 +1,31 @@
+# Docs: https://kubernetes.io/docs/reference/access-authn-authz/bootstrap-tokens/
+# Format: <6 chars>.<16 chars> all lowercase alphanumeric (token-id.token-secret).
+#   Bootstrap tokens authenticate a node joining a cluster — leaking one lets
+#   an attacker register a new control-plane node and execute arbitrary code
+#   in the cluster, so the severity is critical.
+# Verify: no public endpoint (cluster-internal authentication); marked unverified.
+# Prefix: none. The format is distinctive enough that the regex alone is high-precision.
+
+[detector]
+id = "kubernetes-bootstrap-token"
+name = "Kubernetes Bootstrap Token"
+service = "kubernetes"
+severity = "critical"
+keywords = [
+    "bootstrap-token",
+    "bootstrap_token",
+    "bootstrapToken",
+    "BOOTSTRAP_TOKEN",
+    "tokenID",
+    "token-id",
+    "kubeadm",
+    "kubelet",
+    "kube-controller-manager",
+]
+
+[[detector.patterns]]
+# Format spec: `[a-z0-9]{6}\.[a-z0-9]{16}` — 6-char token-id, 16-char token-secret,
+# joined by a literal dot. \b boundaries reject substrings of longer identifiers.
+regex = '\b([a-z0-9]{6}\.[a-z0-9]{16})\b'
+description = "Kubernetes bootstrap token (token-id.token-secret, lowercase alnum)"
+group = 1
