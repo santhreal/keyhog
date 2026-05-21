@@ -414,6 +414,24 @@ impl CompiledScanner {
             }
         }
 
+        // Patterns without a usable literal prefix live in `self.fallback`
+        // and never enter the cheap-filter trigger bitmap — task #69
+        // caught asana-pat, mailchimp pattern 3, and likely a long tail
+        // of similar prefix-less detectors silently failing here. Run
+        // the keyword-AC-gated fallback sweep on every chunk; the AC
+        // pre-filter keeps the cost bounded to detectors whose ≥4-char
+        // keyword actually appears in the chunk.
+        let documentation_lines = context::documentation_line_flags(&code_lines);
+        self.scan_fallback_patterns(
+            &prepared.preprocessed,
+            &line_offsets,
+            &code_lines,
+            &documentation_lines,
+            &prepared.chunk,
+            &mut scan_state,
+            deadline,
+        );
+
         self.scan_generic_assignments(&code_lines, &line_offsets, &prepared.chunk, &mut scan_state);
 
         #[cfg(feature = "entropy")]
@@ -465,7 +483,7 @@ impl CompiledScanner {
         // call. The downstream fallbacks (`scan_generic_assignments`,
         // `scan_entropy_fallback`, `apply_ml_batch_scores`) run
         // unchanged since they have their own input shapes.
-        if expanded_patterns.iter().any(|&w| w != 0) {
+        let documentation_lines = if expanded_patterns.iter().any(|&w| w != 0) {
             let confirmed_patterns: Vec<usize> = (0..self.ac_map.len())
                 .filter(|&i| (expanded_patterns[i / 64] & (1 << (i % 64))) != 0)
                 .collect();
@@ -481,7 +499,29 @@ impl CompiledScanner {
                 &mut scan_state,
                 deadline,
             );
-        }
+            documentation_lines
+        } else {
+            context::documentation_line_flags(&code_lines)
+        };
+
+        // Fallback patterns (no usable literal prefix; e.g. asana-pat
+        // shaped `1/[0-9]{16,20}/...`) never enter the AC-trigger
+        // bitmap, so they would never extract via the path above.
+        // Task #69 — these detectors were silently dead in EVERY hot
+        // code path that builds a triggered bitmap. The keyword-AC
+        // pre-filter inside `scan_fallback_patterns` keeps cost
+        // bounded to detectors whose ≥4-char keyword appears in the
+        // chunk; fallback patterns with no usable keyword are marked
+        // `fallback_always_active = true` so they run on every chunk.
+        self.scan_fallback_patterns(
+            &prepared.preprocessed,
+            &line_offsets,
+            &code_lines,
+            &documentation_lines,
+            &prepared.chunk,
+            &mut scan_state,
+            deadline,
+        );
 
         self.scan_generic_assignments(&code_lines, &line_offsets, &prepared.chunk, &mut scan_state);
 

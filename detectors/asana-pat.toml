@@ -8,7 +8,14 @@ id = "asana-pat"
 name = "Asana Personal Access Token"
 service = "asana"
 severity = "high"
-keywords = ["1/", "asana"]
+keywords = [
+    "asana",
+    "ASANA_ACCESS_TOKEN",
+    "ASANA_PAT",
+    "ASANA_TOKEN",
+    "app.asana.com",
+    "asana.com/api",
+]
 
 [[detector.patterns]]
 regex = '1/[0-9]{16,20}/[a-zA-Z0-9]{32,48}'

@@ -404,11 +404,27 @@ impl ScanState {
         }
     }
 
-    /// Drain all matches into a sorted vector.
+    /// Drain all matches into a sorted vector. Dedups identical findings
+    /// (same detector + same credential + same offset) — two engines can
+    /// produce the same finding for the same pattern (e.g. ac_map's
+    /// literal hit + homoglyph fallback variant both fire on plain ASCII
+    /// because the homoglyph char-class includes the original char). The
+    /// caller only wants one of them in the result set.
     pub fn into_matches(self) -> Vec<keyhog_core::RawMatch> {
         let mut matches: Vec<_> = self.matches.into_iter().map(|r| r.0).collect();
         // Sort descending by confidence for final output
         matches.sort_by(|a, b| b.cmp(a));
+        // Dedup identical findings. Stable: keeps the highest-confidence
+        // entry of any duplicate set thanks to the sort above.
+        let mut seen: std::collections::HashSet<(std::sync::Arc<str>, std::sync::Arc<str>, usize)> =
+            std::collections::HashSet::with_capacity(matches.len());
+        matches.retain(|m| {
+            seen.insert((
+                std::sync::Arc::clone(&m.detector_id),
+                std::sync::Arc::clone(&m.credential),
+                m.location.offset,
+            ))
+        });
         matches
     }
 }

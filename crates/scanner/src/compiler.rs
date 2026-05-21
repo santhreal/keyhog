@@ -79,20 +79,42 @@ pub fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileState> {
         {
             let prefixes = extract_literal_prefixes(&pattern.regex);
 
-            // Homoglyph expansion for high-confidence patterns
+            // Homoglyph expansion for high-confidence patterns: catches
+            // tokens where the literal prefix has been visually spoofed
+            // with Cyrillic/Greek/full-width lookalikes. Earlier code
+            // dropped just the expanded PREFIX into fallback as
+            // `Regex::new("^[hh][ff]_")` — anchored to start, but with
+            // NO body constraint, so any string beginning with the
+            // prefix would match. Combined with the task #69 fallback
+            // wire fix that finally runs these patterns, that turned
+            // every prefix-anchored detector into "fires on `<prefix>*`."
+            // Fix: substitute the expanded prefix into the FULL regex so
+            // the homoglyph variant still requires the rest of the
+            // pattern to match.
             for prefix in &prefixes {
-                if prefix.len() >= 3 {
-                    let expanded_prefix = crate::homoglyph::expand_homoglyphs(prefix);
-                    if expanded_prefix != *prefix {
-                        if let Ok(re) = Regex::new(&format!("^{}", expanded_prefix)) {
-                            let expanded_pattern = CompiledPattern {
-                                detector_index,
-                                regex: std::sync::Arc::new(re),
-                                group: pattern.group,
-                            };
-                            fallback.push((expanded_pattern, detector.keywords.clone()));
-                        }
-                    }
+                if prefix.len() < 3 {
+                    continue;
+                }
+                let expanded_prefix = crate::homoglyph::expand_homoglyphs(prefix);
+                if expanded_prefix == *prefix {
+                    continue;
+                }
+                let Some(suffix) = pattern.regex.strip_prefix(prefix.as_str()) else {
+                    // Prefix appears in the regex parse tree but isn't a
+                    // leading literal slice (e.g. inside an alternation).
+                    // Skip — there's no safe text rewrite we can do.
+                    continue;
+                };
+                let full_homoglyph_regex = format!("{expanded_prefix}{suffix}");
+                if let Ok(re) = Regex::new(&full_homoglyph_regex) {
+                    fallback.push((
+                        CompiledPattern {
+                            detector_index,
+                            regex: std::sync::Arc::new(re),
+                            group: pattern.group,
+                        },
+                        detector.keywords.clone(),
+                    ));
                 }
             }
 

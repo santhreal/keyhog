@@ -12,5 +12,14 @@ keywords = ["MTA", "MTE", "MTI", "MTM", "MTQ", "MTU", "MTY", "MTc", "MTg", "MTk"
 
 
 [[detector.patterns]]
-regex = '([MN][A-Za-z0-9_-]{21,24}\.){2}[A-Za-z0-9_-]{27,38}'
-description = "Discord bot token (base64-encoded JWT format)"
+# Real Discord token shape: <user_id_b64>.<timestamp_b64>.<signature_b64>
+# - user_id (snowflake, big enough that the b64 of it always starts with M/N)
+#   → 23-25 chars beginning with [MN]
+# - timestamp (token issued-at; smaller integer)
+#   → 6-8 chars, NO [MN] anchor
+# - signature
+#   → 27-38 chars, NO [MN] anchor
+# Issue #70: the prior regex required BOTH dot-segments to start with
+# [MN], which only matched a vanishingly small subset of bot tokens.
+regex = '[MN][A-Za-z0-9_-]{22,24}\.[A-Za-z0-9_-]{6,8}\.[A-Za-z0-9_-]{27,38}'
+description = "Discord bot token (user_id.timestamp.signature, base64-encoded segments)"
