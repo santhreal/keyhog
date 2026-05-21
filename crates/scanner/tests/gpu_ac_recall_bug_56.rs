@@ -168,6 +168,133 @@ fn gpu_ac_kernel_finds_stackblitz_token_in_narrow_window() {
     );
 }
 
+/// Bisection: feed the AC dispatch progressively larger windows
+/// around the FIRST stackblitz occurrence (corpus byte 1_801_050)
+/// and report which window size loses the finding. Pinpoints the
+/// shard-count / coalesced-buffer-length threshold at which the
+/// kernel-or-routing pipeline silently drops the match.
+///
+/// Sizes intentionally span the WGSL workgroup-count ceiling of
+/// 65 535 (≈ 4 194 240 bytes at wg64): 1 MiB, 2 MiB, 4 MiB, 5 MiB,
+/// 8 MiB, 16 MiB, 32 MiB. If recall drops between two adjacent sizes,
+/// the threshold is in that interval and the fix is whatever
+/// pipeline stage's bound is crossed.
+#[test]
+fn bisect_gpu_ac_recall_by_window_size() {
+    let path = bench_corpus_path();
+    if !path.exists() {
+        eprintln!("SKIP: bench corpus not present at {:?}", path);
+        return;
+    }
+    let bytes = match std::fs::read(&path) {
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!("SKIP: bench corpus unreadable: {e}");
+            return;
+        }
+    };
+    let needle = STACKBLITZ_TOKEN.as_bytes();
+    let Some(needle_off) = bytes.windows(needle.len()).position(|w| w == needle) else {
+        eprintln!("SKIP: corpus missing planted token");
+        return;
+    };
+
+    let detectors = match keyhog_core::load_detectors(&detector_dir()) {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("SKIP: detectors unavailable: {e}");
+            return;
+        }
+    };
+    let scanner = CompiledScanner::compile(detectors).expect("scanner compile");
+    let Ok(_dq) = vyre_driver_wgpu::runtime::cached_device() else {
+        eprintln!("SKIP: no wgpu adapter available");
+        return;
+    };
+
+    const MIB: usize = 1024 * 1024;
+    // Sizes around the 1-shard / 2-shard boundary (max single-shard
+    // bytes = 65 535 × 64 = 4 194 240). 3 MiB, 4 194 240, 4 194 241,
+    // and 5 MiB pinpoint whether the regression is shard-count
+    // (single vs split) or content-position (where in the buffer
+    // the planted token lands).
+    let sizes = [
+        1 * MIB,
+        2 * MIB,
+        3 * MIB,
+        4_194_240,          // exactly 1 shard at the WGSL workgroup cap
+        4_194_240 + 64,     // first byte over → 2 shards
+        4 * MIB,
+        5 * MIB,
+        8 * MIB,
+        16 * MIB,
+        32 * MIB,
+    ];
+
+    let mut report = Vec::new();
+    for &size in &sizes {
+        // Center the window on the planted offset so the token lives
+        // at window-local offset ≈ size/2 — never at a shard boundary
+        // unless the window itself crosses one.
+        let win_start = needle_off.saturating_sub(size / 2);
+        let win_end = (win_start + size).min(bytes.len());
+        let window = bytes[win_start..win_end].to_vec();
+        let chunk = make_chunk(window.clone());
+
+        // Drive both backends over the SAME bytes. If SIMD finds it
+        // and AC misses it, the bug is purely AC-side. If both miss
+        // it, the chunk-coalesce + dedup downstream is dropping it.
+        let ac_results = scanner.scan_coalesced_gpu_ac(&[chunk.clone()]);
+        let ac_flat: Vec<_> = ac_results.into_iter().flatten().collect();
+        let ac_hit = finds_stackblitz(&ac_flat);
+        let ac_stackblitz_count = ac_flat
+            .iter()
+            .filter(|m| m.detector_id.as_ref() == "stackblitz-credentials")
+            .count();
+
+        let simd_matches = scanner.scan(&chunk);
+        let simd_hit = finds_stackblitz(&simd_matches);
+        let simd_stackblitz_count = simd_matches
+            .iter()
+            .filter(|m| m.detector_id.as_ref() == "stackblitz-credentials")
+            .count();
+
+        let expected_shards =
+            (win_end - win_start).div_ceil(65_535 * 64);
+        report.push((size, ac_flat.len(), ac_hit, expected_shards));
+        eprintln!(
+            "bisect {:>10} bytes win_start={:>10} stackblitz_local={:>10} \
+             ac={:>5} hit={} ac_sb={} | simd={:>5} hit={} simd_sb={} | shards={}",
+            size,
+            win_start,
+            needle_off - win_start,
+            ac_flat.len(),
+            ac_hit,
+            ac_stackblitz_count,
+            simd_matches.len(),
+            simd_hit,
+            simd_stackblitz_count,
+            expected_shards,
+        );
+    }
+
+    // Find the smallest size where recall breaks. The bisection
+    // surfaces a real defect when ANY size > 0 misses the planted
+    // token, since the narrow_window test already confirms the
+    // kernel can find it in isolation.
+    let first_miss = report.iter().find(|(_, _, hit, _)| !hit);
+    if let Some((size, n, _, shards)) = first_miss {
+        panic!(
+            "TASK #56 bisection: recall broke at window size {} bytes \
+             ({} matches, {} shards). Narrow 64 KiB window finds the \
+             same token via the same dispatch, so the bug lives in \
+             whatever pipeline stage's bound is crossed between the \
+             narrow-window size and this size.",
+            size, n, shards,
+        );
+    }
+}
+
 /// Full-corpus repro: ingests the entire 64 MiB bench corpus as a
 /// single `Chunk` (mirrors how `keyhog scan big_with_secrets.txt`
 /// chunks it — the default `window_size` is 64 MiB, so a 64-MiB

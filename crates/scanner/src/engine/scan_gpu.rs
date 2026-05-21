@@ -662,7 +662,11 @@ impl CompiledScanner {
         }
 
         let workgroup_x = program.workgroup_size[0] as usize;
-        let gpu_dispatch_max_bytes: usize = 65_535 * workgroup_x;
+        // WGSL workgroups-per-dim ceiling is 65 535. At workgroup_x = 64
+        // that's a ~4 MiB shard. The shard cap is here so we never feed
+        // the dispatch a workgroup count > 65 535 (validation error).
+        const GPU_DISPATCH_MAX_WORKGROUPS_AC: usize = 65_535;
+        let gpu_dispatch_max_bytes: usize = GPU_DISPATCH_MAX_WORKGROUPS_AC * workgroup_x;
         let started = std::time::Instant::now();
 
         let mut shard_ranges: Vec<(usize, usize)> = Vec::new();
@@ -738,13 +742,7 @@ impl CompiledScanner {
         for sub_start in (0..shard_count).step_by(MAX_SHARDS_PER_GPU_BATCH) {
             let sub_end = (sub_start + MAX_SHARDS_PER_GPU_BATCH).min(shard_count);
             let jobs: Vec<_> = (sub_start..sub_end)
-                .map(|i| {
-                    (
-                        program,
-                        &shard_input_arrays[i][..],
-                        &shard_owned[i].config,
-                    )
-                })
+                .map(|i| (program, &shard_input_arrays[i][..], &shard_owned[i].config))
                 .collect();
 
             let batch_results = match backend.dispatch_borrowed_batch(&jobs) {
