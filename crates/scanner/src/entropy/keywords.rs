@@ -246,8 +246,57 @@ fn passes_strict_secret_checks(value: &str) -> bool {
     if value.len() > 16 && second_half_entropy(value) < 2.5 {
         return false;
     }
+    // Defect #81: entropy-api-key was firing on Java/Go camelCase and
+    // PascalCase identifiers like `BulkUpdateApiKeyResponse`,
+    // `convertSearchHitToVersionedApiKeyDoc`, `targetVersionedDocs`
+    // (149 FPs in one ApiKeyService.java alone). These pass every
+    // other check — high entropy, mixed case, decent length, no
+    // placeholder words — but they're clearly source-code symbols,
+    // not credentials. Reject strings that look like programming-
+    // language identifiers: only letters/underscore, no digits, and
+    // a camelCase / PascalCase shape (at least one internal
+    // uppercase boundary). Real secrets virtually always include
+    // digits or special characters.
+    if looks_like_program_identifier(value) {
+        return false;
+    }
 
     shannon_entropy(value.as_bytes()) >= HIGH_ENTROPY_THRESHOLD
+}
+
+/// Heuristic: is this string a likely source-code identifier rather
+/// than a credential? Identifiers in mainstream languages are all
+/// `[A-Za-z_]` (no digits) with camelCase / PascalCase / snake_case
+/// shape. Real API keys almost always include at least one digit (the
+/// few that don't are short — `<8` chars — and rejected upstream by
+/// length gates).
+fn looks_like_program_identifier(value: &str) -> bool {
+    // Letters + underscore only. Any digit, hyphen, slash, or special
+    // char means it's not a typical identifier.
+    if !value
+        .chars()
+        .all(|ch| ch.is_ascii_alphabetic() || ch == '_')
+    {
+        return false;
+    }
+    // snake_case (lowercase + underscore segments) — `my_long_helper_name`.
+    if value.contains('_')
+        && value
+            .chars()
+            .all(|ch| ch.is_ascii_lowercase() || ch == '_')
+    {
+        return true;
+    }
+    // camelCase / PascalCase — at least one internal lower→Upper
+    // boundary. `BulkUpdateApiKeyResponse` has many; `Foo` has none.
+    let bytes = value.as_bytes();
+    let mut transitions = 0usize;
+    for pair in bytes.windows(2) {
+        if pair[0].is_ascii_lowercase() && pair[1].is_ascii_uppercase() {
+            transitions += 1;
+        }
+    }
+    transitions >= 1
 }
 
 fn unique_char_count(value: &str) -> usize {
@@ -300,4 +349,68 @@ fn is_placeholder_ci(bytes: &[u8], placeholder_keywords: &[String]) -> bool {
             bytes,
             b"null" | b"none" | b"undefined" | b"empty" | b"default" | b"secret" | b"password"
         )
+}
+
+#[cfg(test)]
+mod identifier_rejection_tests {
+    use super::*;
+
+    // Defect #81 regression: real-world Java/Go/TS identifiers that
+    // were firing as entropy-api-key in the 2026-05-21 dogfood pass.
+    #[test]
+    fn pascalcase_java_class_rejected() {
+        assert!(looks_like_program_identifier("BulkUpdateApiKeyResponse"));
+        assert!(looks_like_program_identifier("VersionedApiKeyDoc"));
+        assert!(looks_like_program_identifier("ApiKeyService"));
+    }
+
+    #[test]
+    fn camelcase_method_rejected() {
+        assert!(looks_like_program_identifier(
+            "convertSearchHitToVersionedApiKeyDoc"
+        ));
+        assert!(looks_like_program_identifier("targetVersionedDocs"));
+        assert!(looks_like_program_identifier("apiKeyDocCache"));
+    }
+
+    #[test]
+    fn snake_case_method_rejected() {
+        assert!(looks_like_program_identifier(
+            "my_long_helper_function_name"
+        ));
+    }
+
+    #[test]
+    fn all_caps_constant_not_flagged_as_identifier() {
+        // CONSTANT_NAME — could legitimately also be a secret. Don't
+        // reject via this filter; let other gates judge.
+        assert!(!looks_like_program_identifier("ALLOWED_HOSTS"));
+    }
+
+    #[test]
+    fn real_secret_with_digits_not_flagged() {
+        // AWS access keys, GitHub PATs, Slack tokens all contain digits
+        // — the identifier check must not reject them.
+        assert!(!looks_like_program_identifier(
+            "AKIAIOSFODNN7EXAMPLE"
+        ));
+        assert!(!looks_like_program_identifier(
+            "ghp_K9pV2nL3xB5cD7eF8gH0iJ1kL2mN3oP4qR5sT"
+        ));
+    }
+
+    #[test]
+    fn short_pascal_word_not_an_identifier_pattern() {
+        // Single-segment PascalCase like `Foo` has no internal lower→Upper
+        // boundary — it might be an env-var, accept it.
+        assert!(!looks_like_program_identifier("Foo"));
+        assert!(!looks_like_program_identifier("Bar"));
+    }
+
+    #[test]
+    fn special_chars_disqualify_identifier_match() {
+        // A real-looking credential with hyphens/dots is not an identifier.
+        assert!(!looks_like_program_identifier("xoxb-1234-secret"));
+        assert!(!looks_like_program_identifier("my.dotted.value"));
+    }
 }

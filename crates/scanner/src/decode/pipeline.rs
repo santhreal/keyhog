@@ -177,7 +177,18 @@ pub(super) fn push_decoded_text_chunk(
     decoded_chunks.push(Chunk {
         data: text.into(),
         metadata: ChunkMetadata {
-            base_offset: 0,
+            // Defect #80 (root cause D): decoded-chunk findings used to
+            // report `offset: 0` regardless of where the encoded blob
+            // sat in the parent file — a Z85-decoded credential at
+            // offset 166332 of a 156955-byte file is meaningless to
+            // anyone trying to navigate to it. Inherit the parent's
+            // `base_offset` so the reported file offset is at least
+            // anchored to the parent window/file, not the decoded
+            // synthetic stream. Per-blob precision (offset OF the
+            // encoded blob in parent) would need `extract_encoded_values`
+            // to return positions too — a follow-up. This is strictly
+            // closer to the truth.
+            base_offset: chunk.metadata.base_offset,
             source_type: format!("{}/{}", chunk.metadata.source_type, decoder_name),
             path: chunk.metadata.path.clone(),
             commit: chunk.metadata.commit.clone(),

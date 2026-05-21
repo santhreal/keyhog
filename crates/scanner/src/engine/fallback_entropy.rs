@@ -68,11 +68,20 @@ impl CompiledScanner {
             } else {
                 base_confidence
             };
-            let offset = if entropy_match.line > 0 && entropy_match.line <= line_offsets.len() {
-                line_offsets[entropy_match.line - 1] + entropy_match.offset
-            } else {
-                entropy_match.offset
-            };
+            // `entropy_match.offset` is ALREADY the byte offset of the
+            // start of the containing line (set by `collect_line_candidates`
+            // from the same `line_offsets` table). The earlier
+            // `line_offsets[entropy_match.line - 1] + entropy_match.offset`
+            // double-counted that base, producing offsets ~2× the file
+            // size for findings late in the file — defect #80, 130+
+            // corrupted finding offsets across the dogfood corpora. Use
+            // the value directly. `_line_offsets` retained as a
+            // parameter for the windowed/multiline paths that still need
+            // it. `chunk.metadata.base_offset` is added for windowed
+            // chunks (>64 MiB files) so the reported offset is the
+            // absolute file offset, not the per-window one.
+            let _ = line_offsets;
+            let offset = entropy_match.offset + chunk.metadata.base_offset;
 
             let detector_id = scan_state.intern_metadata(detector_id_value);
             let detector_name = scan_state.intern_metadata(detector_name_value);
