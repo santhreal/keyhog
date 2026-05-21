@@ -406,6 +406,13 @@ fn known_prefix_body(credential: &str) -> Option<&str> {
 }
 
 fn looks_like_prefixed_masked_sequence(body: &str) -> bool {
+    // Trailing-ellipsis is an unambiguous placeholder signal: real secrets
+    // never end in `...`. UI prompt strings like `ghp_1a2b3c4...` (vscode
+    // input-box placeholder) and docs snippets like `sk_live_abcd1234...`
+    // are the dominant failure mode. Same for unicode horizontal ellipsis.
+    if body.ends_with("...") || body.ends_with('…') {
+        return true;
+    }
     let upper = body.to_ascii_uppercase();
     let starts_with_mask = upper.starts_with("XXX") || upper.starts_with("***");
     let contains_fake_sequence = ["1234567890", "0123456789", "ABCDEFGH", "ABCDEFGHIJ"]
@@ -695,6 +702,37 @@ fn fallback_entropy(data: &[u8]) -> f64 {
         }
     }
     entropy
+}
+
+#[cfg(test)]
+mod placeholder_suppression_tests {
+    //! Regression coverage for the prefix-trust suppression carve-outs.
+    //! Without these, vscode/ide UI strings like `ghp_1a2b3c4...` get
+    //! reported as critical findings (kimi dogfood-2 finding #4) — see
+    //! task #82 for the original repro.
+    use super::*;
+
+    #[test]
+    fn ascii_ellipsis_in_body_suppresses_ghp_placeholder() {
+        // body of `ghp_1a2b3c4...` after stripping the known prefix.
+        assert!(looks_like_prefixed_masked_sequence("1a2b3c4..."));
+        assert!(looks_like_prefixed_masked_sequence("sk_live_abcd1234..."));
+    }
+
+    #[test]
+    fn unicode_ellipsis_in_body_suppresses_placeholder() {
+        // Real-world placeholder forms — some IDEs / Word-style autocorrect
+        // emit U+2026 (HORIZONTAL ELLIPSIS) instead of three ASCII dots.
+        assert!(looks_like_prefixed_masked_sequence("1a2b3c4\u{2026}"));
+    }
+
+    #[test]
+    fn dot_inside_body_does_not_suppress_real_credential() {
+        // Negative: a real token body that happens to contain a dot in
+        // the middle (e.g. some JWT-style structured tokens) must NOT
+        // be suppressed by the trailing-ellipsis carve-out.
+        assert!(!looks_like_prefixed_masked_sequence("eyJhbGciOiJIUzI1NiJ9.payloadX"));
+    }
 }
 
 #[cfg(test)]
