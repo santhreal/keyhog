@@ -1,0 +1,1 @@
+crates/scanner/tests/contracts/*.toml filter=lfs diff=lfs merge=lfs -text
