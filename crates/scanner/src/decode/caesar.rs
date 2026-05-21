@@ -16,10 +16,33 @@ use keyhog_core::Chunk;
 ///      contiguous run (matches AWS / GitHub / Slack token shapes).
 ///
 /// Both checks together keep the chunk count flat on prose-heavy inputs.
+///
+/// Source-code files are skipped entirely. Real secrets are never Caesar-
+/// encoded inside source — the 25-shift fan-out on every prose-comment in
+/// a codebase just hallucinates detector matches from random letter runs
+/// (helicone-api-key on a `//! Source trait` doc comment was the original
+/// reproducer; see dogfood-2026-05-21.md finding #5).
 pub(super) struct CaesarDecoder;
 
 const MIN_CAESAR_LEN: usize = 16;
 const MIN_ALNUM_RUN: usize = 8;
+
+/// File extensions where Caesar-decoding is pure noise. Matched against the
+/// suffix of `chunk.metadata.path` (lower-cased). Kept short — only the
+/// dominant source-code extensions a scanner is realistically pointed at.
+const SOURCE_CODE_EXTENSIONS: &[&str] = &[
+    ".rs", ".py", ".go", ".js", ".jsx", ".ts", ".tsx", ".java", ".kt", ".scala",
+    ".c", ".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp", ".cs", ".rb", ".php",
+    ".swift", ".m", ".mm", ".sh", ".bash", ".zsh", ".fish", ".lua", ".pl", ".pm",
+    ".sql", ".html", ".htm", ".css", ".scss", ".sass", ".vue", ".svelte",
+    ".md", ".rst", ".txt", ".adoc",
+];
+
+fn is_source_code_path(path: Option<&str>) -> bool {
+    let Some(p) = path else { return false };
+    let lower = p.to_ascii_lowercase();
+    SOURCE_CODE_EXTENSIONS.iter().any(|ext| lower.ends_with(ext))
+}
 
 impl Decoder for CaesarDecoder {
     fn name(&self) -> &'static str {
@@ -32,6 +55,9 @@ impl Decoder for CaesarDecoder {
         // (one of those 25 covers it) and trip evasion-aware downstream
         // logic. One pass per input is enough.
         if chunk.metadata.source_type.contains("/caesar") {
+            return Vec::new();
+        }
+        if is_source_code_path(chunk.metadata.path.as_deref()) {
             return Vec::new();
         }
         let mut out = Vec::new();
@@ -112,6 +138,39 @@ mod tests {
         assert!(looks_credential_shaped("AKIA64ABDEFSEWKR"));
         assert!(!looks_credential_shaped("HELLOWORLDFOOBAR")); // no digit
         assert!(!looks_credential_shaped("12-34-56-78-")); // no 8-alnum run
+    }
+
+    #[test]
+    fn is_source_code_path_matches_known_extensions() {
+        assert!(is_source_code_path(Some("src/foo.rs")));
+        assert!(is_source_code_path(Some("/abs/path/bar.py")));
+        assert!(is_source_code_path(Some("RELATIVE.GO")));
+        assert!(is_source_code_path(Some("docs/README.md")));
+        assert!(!is_source_code_path(Some("config/secrets.env")));
+        assert!(!is_source_code_path(Some("blob.bin")));
+        assert!(!is_source_code_path(None));
+    }
+
+    #[test]
+    fn source_code_path_skips_caesar_decoder() {
+        use keyhog_core::{Chunk, ChunkMetadata};
+        // Comment in a Rust file that should never be Caesar-shifted — was the
+        // source.rs:1 false positive that fired helicone-api-key in production.
+        let chunk = Chunk {
+            data: "//! Source trait and chunk types: pluggable input backends.".into(),
+            metadata: ChunkMetadata {
+                base_offset: 0,
+                source_type: "filesystem".into(),
+                path: Some("crates/core/src/source.rs".into()),
+                ..Default::default()
+            },
+        };
+        let decoded = CaesarDecoder.decode_chunk(&chunk);
+        assert!(
+            decoded.is_empty(),
+            "Caesar decoder must not run on .rs source files; got {} decoded variants",
+            decoded.len()
+        );
     }
 
     #[test]
