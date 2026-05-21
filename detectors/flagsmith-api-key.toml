@@ -10,9 +10,14 @@ service = "flagsmith"
 severity = "high"
 keywords = ["ser.", "FLAGSMITH_KEY", "FLAGSMITH_API_KEY"]
 
+# Defect #74: the original regex `ser\.[a-zA-Z0-9]{40,}` matched the
+# substring `ser.` anywhere — INCLUDING `parser.handleSomethingLongMethod`
+# (the `ser.` inside `parser.…`). Word-boundary anchor `\b` requires the
+# `s` to start a new word (preceded by non-word char or string start),
+# so `parser.foo` no longer matches but `KEY=ser.<token>` still does.
 [[detector.patterns]]
-regex = 'ser\.[a-zA-Z0-9]{40,}'
-description = "Flagsmith server-side API key (ser. prefix)"
+regex = '\bser\.[a-zA-Z0-9]{40,}'
+description = "Flagsmith server-side API key (ser. prefix, word-boundary anchored)"
 
 [detector.verify]
 method = "GET"

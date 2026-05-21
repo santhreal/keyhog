@@ -298,209 +298,262 @@ impl Source for FilesystemSource {
         let window_size = self.window_size;
         let window_overlap = self.window_overlap;
 
-        Box::new(entries.into_iter().flat_map(move |entry| {
-            let path = entry.path;
-            let file_size = entry.size;
-
-            let ext = path
-                .extension()
-                .and_then(|e| e.to_str())
-                .unwrap_or("")
-                .to_lowercase();
-
-            if SKIP_EXTENSIONS.contains(&ext.as_str()) {
-                return vec![];
-            }
-
-            // Fast-path skip: stat the file once, ask the cache "have I
-            // seen this exact (path, mtime, size) tuple?" If yes, never
-            // open() or read() — the dominant cost on cold-cache disk.
-            // Stored alongside the chunk so the orchestrator can refresh
-            // the index entry post-scan without a second stat.
-            let live_mtime_ns = file_mtime_ns(&path);
-            if let (Some(idx), Some(mtime_ns)) = (merkle.as_ref(), live_mtime_ns) {
-                if idx.metadata_unchanged(&path, mtime_ns, file_size) {
-                    skipped.fetch_add(1, Ordering::Relaxed);
-                    return vec![];
-                }
-            }
-
-            if ext == "zip" || ext == "apk" || ext == "ipa" || ext == "crx" || ext == "jar" {
-                // Per-entry uncompressed-size cap to defeat zip-bomb DoS.
-                // openpack's central directory exposes uncompressed_size; skip
-                // any entry that exceeds max_size (per-file cap) and the total
-                // uncompressed budget.
-                let mut archive_chunks = Vec::new();
-                let mut total_uncompressed: u64 = 0;
-                let total_budget: u64 = max_size.saturating_mul(4); // 4x file cap budget for archives
-                if let Ok(pack) = openpack::OpenPack::open_default(&path) {
-                    if let Ok(entries) = pack.entries() {
-                        for archive_entry in entries {
-                            if archive_entry.is_dir || is_default_excluded(&archive_entry.name) {
-                                continue;
-                            }
-                            if archive_entry.uncompressed_size > max_size {
-                                tracing::warn!(
-                                    archive = %path.display(),
-                                    entry = %archive_entry.name,
-                                    size = archive_entry.uncompressed_size,
-                                    "skipping archive entry: uncompressed size exceeds per-file cap"
-                                );
-                                continue;
-                            }
-                            total_uncompressed = total_uncompressed
-                                .saturating_add(archive_entry.uncompressed_size);
-                            if total_uncompressed > total_budget {
-                                tracing::warn!(
-                                    archive = %path.display(),
-                                    "aborting archive extraction: total uncompressed size exceeds 4x file cap (zip-bomb guard)"
-                                );
-                                break;
-                            }
-                            if let Ok(content) = pack.read_entry(&archive_entry.name) {
-                                if let Ok(s) = String::from_utf8(content.clone()) {
-                                    archive_chunks.push(Ok(Chunk {
-                                        data: s.into(),
-                                        metadata: ChunkMetadata {
-                                            source_type: "filesystem/archive".into(),
-                                            path: Some(format!(
-                                                "{}//{}",
-                                                path.display(),
-                                                archive_entry.name
-                                            )),
-                                            ..Default::default()
-                                        },
-                                    }));
-                                } else {
-                                    let strings =
-                                        crate::strings::extract_printable_strings(&content, 8);
-                                    if !strings.is_empty() {
-                                        archive_chunks.push(Ok(Chunk {
-                                            data: keyhog_core::SensitiveString::join(&strings, "\n"),
-                                            metadata: ChunkMetadata {
-                                                source_type: "filesystem/archive-binary".into(),
-                                                path: Some(format!(
-                                                    "{}//{}",
-                                                    path.display(),
-                                                    archive_entry.name
-                                                )),
-                                                ..Default::default()
-                                            },
-                                        }));
-                                    }
-                                }
-                            }
-                        }
+        // Parallel file producer: walker enumeration is fast (dir tree
+        // syscalls amortize cheaply), but per-file I/O + decode + chunk
+        // assembly was previously serial — at ~16 MiB/s/core that meant a
+        // 16-core box scanned at the speed of one core. Now a spawned
+        // producer thread fans the entry list across the rayon pool
+        // (which the CLI sizes to `--threads`/physical cores), and each
+        // worker pushes finished chunks through a bounded channel. The
+        // bound (64) caps peak in-flight memory at ~64 × max-chunk-size
+        // independent of corpus size; backpressure is automatic — when
+        // the scanner thread (downstream) falls behind, workers block on
+        // `send` and stop reading new files. Nosey Parker uses the same
+        // pattern (ignore::WalkBuilder::build_parallel); the gap was
+        // never throughput, it was concurrency.
+        let (tx, rx) = std::sync::mpsc::sync_channel::<Result<Chunk, SourceError>>(64);
+        std::thread::spawn(move || {
+            use rayon::prelude::*;
+            entries.into_par_iter().for_each_with(tx, |tx, entry| {
+                for chunk in process_entry(
+                    entry,
+                    &merkle,
+                    &skipped,
+                    max_size,
+                    window_size,
+                    window_overlap,
+                ) {
+                    if tx.send(chunk).is_err() {
+                        // Receiver dropped (scan cancelled / orchestrator
+                        // shut down). Bail out instead of churning on
+                        // entries no one will read.
+                        return;
                     }
                 }
-                return archive_chunks;
-            } else if ext == "gz" || ext == "zst" || ext == "lz4" || ext == "sz" {
-                return extract_compressed_chunks(&path, max_size);
-            }
+            });
+        });
 
-            let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            if is_default_excluded(filename) {
-                return vec![];
-            }
-            if filename.contains(".min.")
-                || filename.contains(".bundle.")
-                || filename.ends_with(".chunk.js")
-            {
-                return vec![];
-            }
-
-            if file_size > window_size as u64 {
-                // Fast path: mmap once and slice zero-copy into
-                // overlapping `window_size` views with `window_overlap`
-                // shared bytes between neighbours. Replaces a 64 MiB
-                // heap buffer + per-window `seek-back+re-read`
-                // round-trip with a single mmap + madvise(SEQUENTIAL).
-                if let Some(windows) =
-                    read::read_file_windowed_mmap(&path, window_size, window_overlap)
-                {
-                    return windows
-                        .into_iter()
-                        .map(|w| {
-                            Ok(Chunk {
-                                data: w.text.into(),
-                                metadata: ChunkMetadata {
-                                    source_type: "filesystem/windowed".to_string(),
-                                    path: Some(path.display().to_string()),
-                                    base_offset: w.offset,
-                                    mtime_ns: live_mtime_ns,
-                                    size_bytes: Some(file_size),
-                                    ..Default::default()
-                                },
-                            })
-                        })
-                        .collect();
-                }
-                // Buffered fallback: mmap refused (locked writer,
-                // unsupported filesystem). Same semantics as before —
-                // working buffer + seek-back overlap. Sized to the
-                // configured window so test overrides apply here too.
-                let mut window_chunks = Vec::new();
-                if let Ok(mut file) = std::fs::File::open(&path) {
-                    let mut current_offset = 0;
-                    let mut buffer = vec![0u8; window_size];
-                    while let Ok(n) = file.read(&mut buffer) {
-                        if n == 0 { break; }
-                        let data = String::from_utf8_lossy(&buffer[..n]).into_owned();
-                        window_chunks.push(Ok(Chunk {
-                            data: data.into(),
-                            metadata: ChunkMetadata {
-                                source_type: "filesystem/windowed".to_string(),
-                                path: Some(path.display().to_string()),
-                                base_offset: current_offset,
-                                mtime_ns: live_mtime_ns,
-                                size_bytes: Some(file_size),
-                                ..Default::default()
-                            },
-                        }));
-                        if n < window_size { break; }
-                        let _ = file.seek(SeekFrom::Current(-(window_overlap as i64)));
-                        current_offset += n - window_overlap;
-                    }
-                }
-                return window_chunks;
-            }
-            let file_text = if file_size >= MMAP_THRESHOLD {
-                read::read_file_mmap(&path)
-            } else {
-                read::read_file_buffered(&path)
-            };
-
-            let (content, source_type) = match file_text {
-                Some(text) if !text.is_empty() => (text.into(), "filesystem"),
-                _ => {
-                    if let Ok(bytes) = read::read_file_safe(&path) {
-                        let strings = crate::strings::extract_printable_strings(&bytes, 8);
-                        if strings.is_empty() {
-                            return vec![];
-                        }
-                        (keyhog_core::SensitiveString::join(&strings, "\n"), "filesystem:binary-strings")
-                    } else {
-                        return vec![];
-                    }
-                }
-            };
-
-            vec![Ok(Chunk {
-                data: content,
-                metadata: ChunkMetadata {
-                    source_type: source_type.to_string(),
-                    path: Some(path.display().to_string()),
-                    mtime_ns: live_mtime_ns,
-                    size_bytes: Some(file_size),
-                    ..Default::default()
-                },
-            })]
-        }))
+        Box::new(rx.into_iter())
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
+}
+
+/// Per-entry chunk extraction. Extracted from the inline `chunks()`
+/// closure so it can run on a rayon worker via
+/// `into_par_iter().for_each_with`. Reads the file (or archive, or
+/// compressed stream) and returns the resulting `Chunk`s in one batch
+/// — the parallel producer fans calls out across the rayon pool so
+/// per-file I/O overlaps freely.
+///
+/// Pure function — captures nothing; all state arrives via parameters
+/// so the rayon closure stays `Sync` and free of `&'_ self` borrows.
+fn process_entry(
+    entry: codewalk::FileEntry,
+    merkle: &Option<Arc<MerkleIndex>>,
+    skipped: &Arc<AtomicUsize>,
+    max_size: u64,
+    window_size: usize,
+    window_overlap: usize,
+) -> Vec<Result<Chunk, SourceError>> {
+    let path = entry.path;
+    let file_size = entry.size;
+
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+
+    if SKIP_EXTENSIONS.contains(&ext.as_str()) {
+        return vec![];
+    }
+
+    // Fast-path skip: stat the file once, ask the cache "have I
+    // seen this exact (path, mtime, size) tuple?" If yes, never
+    // open() or read() — the dominant cost on cold-cache disk.
+    // Stored alongside the chunk so the orchestrator can refresh
+    // the index entry post-scan without a second stat.
+    let live_mtime_ns = file_mtime_ns(&path);
+    if let (Some(idx), Some(mtime_ns)) = (merkle.as_ref(), live_mtime_ns) {
+        if idx.metadata_unchanged(&path, mtime_ns, file_size) {
+            skipped.fetch_add(1, Ordering::Relaxed);
+            return vec![];
+        }
+    }
+
+    if ext == "zip" || ext == "apk" || ext == "ipa" || ext == "crx" || ext == "jar" {
+        // Per-entry uncompressed-size cap to defeat zip-bomb DoS.
+        // openpack's central directory exposes uncompressed_size; skip
+        // any entry that exceeds max_size (per-file cap) and the total
+        // uncompressed budget.
+        let mut archive_chunks = Vec::new();
+        let mut total_uncompressed: u64 = 0;
+        let total_budget: u64 = max_size.saturating_mul(4); // 4x file cap budget for archives
+        if let Ok(pack) = openpack::OpenPack::open_default(&path) {
+            if let Ok(entries) = pack.entries() {
+                for archive_entry in entries {
+                    if archive_entry.is_dir || is_default_excluded(&archive_entry.name) {
+                        continue;
+                    }
+                    if archive_entry.uncompressed_size > max_size {
+                        tracing::warn!(
+                            archive = %path.display(),
+                            entry = %archive_entry.name,
+                            size = archive_entry.uncompressed_size,
+                            "skipping archive entry: uncompressed size exceeds per-file cap"
+                        );
+                        continue;
+                    }
+                    total_uncompressed = total_uncompressed
+                        .saturating_add(archive_entry.uncompressed_size);
+                    if total_uncompressed > total_budget {
+                        tracing::warn!(
+                            archive = %path.display(),
+                            "aborting archive extraction: total uncompressed size exceeds 4x file cap (zip-bomb guard)"
+                        );
+                        break;
+                    }
+                    if let Ok(content) = pack.read_entry(&archive_entry.name) {
+                        if let Ok(s) = String::from_utf8(content.clone()) {
+                            archive_chunks.push(Ok(Chunk {
+                                data: s.into(),
+                                metadata: ChunkMetadata {
+                                    source_type: "filesystem/archive".into(),
+                                    path: Some(format!(
+                                        "{}//{}",
+                                        path.display(),
+                                        archive_entry.name
+                                    )),
+                                    ..Default::default()
+                                },
+                            }));
+                        } else {
+                            let strings =
+                                crate::strings::extract_printable_strings(&content, 8);
+                            if !strings.is_empty() {
+                                archive_chunks.push(Ok(Chunk {
+                                    data: keyhog_core::SensitiveString::join(&strings, "\n"),
+                                    metadata: ChunkMetadata {
+                                        source_type: "filesystem/archive-binary".into(),
+                                        path: Some(format!(
+                                            "{}//{}",
+                                            path.display(),
+                                            archive_entry.name
+                                        )),
+                                        ..Default::default()
+                                    },
+                                }));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return archive_chunks;
+    } else if ext == "gz" || ext == "zst" || ext == "lz4" || ext == "sz" {
+        return extract_compressed_chunks(&path, max_size);
+    }
+
+    let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    if is_default_excluded(filename) {
+        return vec![];
+    }
+    if filename.contains(".min.")
+        || filename.contains(".bundle.")
+        || filename.ends_with(".chunk.js")
+    {
+        return vec![];
+    }
+
+    if file_size > window_size as u64 {
+        // Fast path: mmap once and slice zero-copy into overlapping
+        // `window_size` views with `window_overlap` shared bytes
+        // between neighbours. Replaces a 64 MiB heap buffer +
+        // per-window `seek-back+re-read` round-trip with a single
+        // mmap + madvise(SEQUENTIAL).
+        if let Some(windows) =
+            read::read_file_windowed_mmap(&path, window_size, window_overlap)
+        {
+            return windows
+                .into_iter()
+                .map(|w| {
+                    Ok(Chunk {
+                        data: w.text.into(),
+                        metadata: ChunkMetadata {
+                            source_type: "filesystem/windowed".to_string(),
+                            path: Some(path.display().to_string()),
+                            base_offset: w.offset,
+                            mtime_ns: live_mtime_ns,
+                            size_bytes: Some(file_size),
+                            ..Default::default()
+                        },
+                    })
+                })
+                .collect();
+        }
+        // Buffered fallback: mmap refused (locked writer, unsupported
+        // filesystem). Same semantics as before — working buffer +
+        // seek-back overlap. Sized to the configured window so test
+        // overrides apply here too.
+        let mut window_chunks = Vec::new();
+        if let Ok(mut file) = std::fs::File::open(&path) {
+            let mut current_offset = 0;
+            let mut buffer = vec![0u8; window_size];
+            while let Ok(n) = file.read(&mut buffer) {
+                if n == 0 { break; }
+                let data = String::from_utf8_lossy(&buffer[..n]).into_owned();
+                window_chunks.push(Ok(Chunk {
+                    data: data.into(),
+                    metadata: ChunkMetadata {
+                        source_type: "filesystem/windowed".to_string(),
+                        path: Some(path.display().to_string()),
+                        base_offset: current_offset,
+                        mtime_ns: live_mtime_ns,
+                        size_bytes: Some(file_size),
+                        ..Default::default()
+                    },
+                }));
+                if n < window_size { break; }
+                let _ = file.seek(SeekFrom::Current(-(window_overlap as i64)));
+                current_offset += n - window_overlap;
+            }
+        }
+        return window_chunks;
+    }
+    let file_text = if file_size >= MMAP_THRESHOLD {
+        read::read_file_mmap(&path)
+    } else {
+        read::read_file_buffered(&path)
+    };
+
+    let (content, source_type) = match file_text {
+        Some(text) if !text.is_empty() => (text.into(), "filesystem"),
+        _ => {
+            if let Ok(bytes) = read::read_file_safe(&path) {
+                let strings = crate::strings::extract_printable_strings(&bytes, 8);
+                if strings.is_empty() {
+                    return vec![];
+                }
+                (keyhog_core::SensitiveString::join(&strings, "\n"), "filesystem:binary-strings")
+            } else {
+                return vec![];
+            }
+        }
+    };
+
+    vec![Ok(Chunk {
+        data: content,
+        metadata: ChunkMetadata {
+            source_type: source_type.to_string(),
+            path: Some(path.display().to_string()),
+            mtime_ns: live_mtime_ns,
+            size_bytes: Some(file_size),
+            ..Default::default()
+        },
+    })]
 }
 
 fn extract_compressed_chunks(path: &Path, max_size: u64) -> Vec<Result<Chunk, SourceError>> {

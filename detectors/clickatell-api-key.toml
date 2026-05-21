@@ -15,10 +15,15 @@ regex = '''(?:clickatell|CLICKATELL)[_.-]?(?:api|API)?[_.-]?(?:key|KEY)?[=:\s"\'
 description = "Clickatell API Key with context anchor"
 group = 1
 
-[[detector.patterns]]
-regex = '''Authorization[=:\s"\' ]+([a-zA-Z0-9_-]{20,})'''
-description = "Clickatell API Key in Authorization header (One API)"
-group = 1
+# Defect #75: the original `Authorization[=:\s"\' ]+([a-zA-Z0-9_-]{20,})`
+# was completely service-agnostic — anything in an HTTP Authorization
+# header anywhere in any source tree would match (Rails Ruby files
+# triggered it on `Authorization: 'ALLOWED_HOSTS_IN_DEVELOPMENT'`-shaped
+# config). A Clickatell token has no distinguishing shape from any
+# other bearer token in an Authorization header, so this rule has zero
+# Clickatell-specific signal. Removing it; the keyword-anchored
+# pattern above still catches the standard `CLICKATELL_API_KEY=xxx`
+# form, which is the actual high-precision detection surface.
 
 [[detector.patterns]]
 regex = '''(?:clickatell|CLICKATELL)[_.-]?(?:api|API)?[_.-]?(?:id|ID)?[=:\s"\' ]+(\d{6,8})'''

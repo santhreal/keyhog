@@ -144,11 +144,23 @@ impl CompiledScanner {
                 }
                 // Allow dots ONLY in JWT-like patterns (exactly 2 dots separating
                 // base64 segments). Reject other dotted values (method chains, FQDNs).
+                //
+                // Defect #76: the old "is_jwt_like" check passed any
+                // 3-segment dotted string where each segment was 4+
+                // base64-alphabet chars — which matches every
+                // `this.someService.copilotToken` property access in
+                // TS/JS/Java/etc. Real JWTs always begin with `eyJ`
+                // (base64 of `{"`, the first two bytes of a JSON
+                // header); requiring that prefix on the first segment
+                // eliminates property-access FPs without losing any
+                // real JWT — the base64 alphabet only produces those
+                // three characters from a `{"` header.
                 if value.contains('.') {
                     let dot_count = value.chars().filter(|&c| c == '.').count();
                     let segments: Vec<&str> = value.split('.').collect();
                     let is_jwt_like = dot_count == 2
                         && segments.len() == 3
+                        && segments[0].starts_with("eyJ")
                         && segments.iter().all(|s| {
                             s.len() >= 4
                                 && s.chars().all(|c| {
@@ -207,6 +219,17 @@ impl CompiledScanner {
                     continue;
                 }
 
+                // Defect #80: this branch hard-coded `offset: 0` for every
+                // generic-secret finding, so a `KEY = <secret>` on line 845
+                // of a 137 KiB file reported offset 0 — the start of the
+                // file — making the JSON impossible to navigate or grep.
+                // The real offset is the start of the value within the
+                // line, plus the line's start in the chunk, plus the
+                // chunk's base offset in the original file (non-zero on
+                // windowed >64 MiB scans).
+                let chunk_line_offset = line_offsets.get(line_idx).copied().unwrap_or(0);
+                let absolute_offset =
+                    chunk.metadata.base_offset + chunk_line_offset + value_match.start();
                 let raw = keyhog_core::RawMatch {
                     credential_hash: crate::sha256_hash(value),
                     detector_id: Arc::from("generic-secret"),
@@ -219,7 +242,7 @@ impl CompiledScanner {
                         source: Arc::from(chunk.metadata.source_type.as_str()),
                         file_path: chunk.metadata.path.as_deref().map(Arc::from),
                         line: Some(line_num),
-                        offset: 0,
+                        offset: absolute_offset,
                         commit: chunk.metadata.commit.as_deref().map(Arc::from),
                         author: chunk.metadata.author.as_deref().map(Arc::from),
                         date: chunk.metadata.date.as_deref().map(Arc::from),
