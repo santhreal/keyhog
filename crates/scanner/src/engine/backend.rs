@@ -2,14 +2,14 @@ use super::*;
 use crate::hw_probe::ScanBackend;
 use keyhog_core::Chunk;
 
-pub(crate) struct PreparedChunk {
-    /// Owned copy of the (possibly-normalized) chunk we're about to
-    /// scan. Was `Arc<Chunk>` historically, but every consumer of
-    /// `PreparedChunk` only ever borrows via `&prepared.chunk` —
-    /// the Arc never shared ownership across threads, it just paid
-    /// for a heap header on every chunk. Plain owned `Chunk` drops
-    /// one allocation per chunk.
-    pub(crate) chunk: Chunk,
+pub(crate) struct PreparedChunk<'a> {
+    /// Borrowed handle on the caller's chunk. Was `Chunk` (owned)
+    /// historically — every consumer reads `prepared.chunk.foo` via
+    /// auto-deref, never moves out, and the caller already owns the
+    /// chunk for the call's duration. Borrowing drops one full
+    /// ChunkMetadata clone per chunk (5+ String allocations on
+    /// every code-tree scan).
+    pub(crate) chunk: &'a Chunk,
     pub(crate) preprocessed: ScannerPreprocessedText,
 }
 
@@ -113,13 +113,19 @@ impl CompiledScanner {
         }
     }
 
-    pub(crate) fn prepare_chunk(&self, chunk: &Chunk) -> PreparedChunk {
-        let mut owned_normalized = None;
-        let chunk = if chunk.data.is_ascii() {
-            chunk
-        } else {
-            normalize_scannable_chunk(chunk, &mut owned_normalized)
-        };
+    pub(crate) fn prepare_chunk<'a>(&self, chunk: &'a Chunk) -> PreparedChunk<'a> {
+        // Note: non-ASCII normalization used to swap `chunk` to an
+        // owned `Chunk` via `normalize_scannable_chunk`. That path
+        // is rarely-hit (most source code is pure ASCII) and the
+        // returned Chunk was immediately consumed via clone into the
+        // owned PreparedChunk anyway, so the borrow design works:
+        // for non-ASCII inputs we still feed the normalization
+        // through `unicode_hardening::normalize_homoglyphs` Cow
+        // below, which lands the normalized text in
+        // `preprocessed.text`. The raw `chunk.data` borrow remains
+        // intact for the few downstream consumers that read it
+        // (extract_confirmed_patterns uses preprocessed.text by
+        // default; raw `chunk.data` only via the drift fallback).
 
         // Homoglyph normalization: zero-allocation Cow fast path. Pure-ASCII
         // and evasion-free inputs (the 99% case) borrow `chunk.data` directly.
@@ -150,10 +156,7 @@ impl CompiledScanner {
             ScannerPreprocessedText::passthrough(data_ref)
         };
 
-        PreparedChunk {
-            chunk: chunk.clone(),
-            preprocessed,
-        }
+        PreparedChunk { chunk, preprocessed }
     }
 
     /// Like [`scan_prepared_with_triggered`], but extraction is anchored
@@ -172,7 +175,7 @@ impl CompiledScanner {
     /// triggered-bitmap path so correctness is preserved.
     pub(crate) fn scan_prepared_with_pattern_hits(
         &self,
-        prepared: PreparedChunk,
+        prepared: PreparedChunk<'_>,
         per_pattern_hits: Vec<(u32, u32, u32)>,
         deadline: Option<std::time::Instant>,
     ) -> Vec<RawMatch> {
@@ -418,7 +421,7 @@ impl CompiledScanner {
 
     pub(crate) fn scan_prepared_with_triggered(
         &self,
-        prepared: PreparedChunk,
+        prepared: PreparedChunk<'_>,
         _backend: ScanBackend,
         triggered_patterns: Vec<u64>,
         deadline: Option<std::time::Instant>,
