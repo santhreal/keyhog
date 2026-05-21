@@ -1,0 +1,25 @@
+"""Workspace-root BUILD file for keyhog.
+
+No targets at root yet — each crate has its own BUILD.bazel under
+crates/<name>/. This file exists so Bazel recognizes the directory
+as a package; filegroups for cross-crate shared assets (detectors/,
+contracts/) live here.
+"""
+
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library")
+
+# Detector TOML corpus — shared by core (embedded at build time)
+# and scanner (loaded at test time). Filegroup so any crate can
+# `data = ["//:detectors"]`.
+filegroup(
+    name = "detectors",
+    srcs = glob(["detectors/*.toml"]),
+    visibility = ["//visibility:public"],
+)
+
+# Workspace status placeholder; populated by --workspace_status_command
+# in .bazelrc. Used to stamp the cli --version output.
+exports_files([
+    "Cargo.toml",
+    "Cargo.lock",
+])

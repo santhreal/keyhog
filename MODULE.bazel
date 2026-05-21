@@ -1,0 +1,53 @@
+"""keyhog Bazel module.
+
+Initial Bzlmod definition for the keyhog repo. Uses rules_rust +
+crate_universe to consume Cargo.toml dependency graphs without
+manually re-declaring 200+ deps.
+
+Status: PoC. Replacing cargo build/test with `bazel build //...` /
+`bazel test //...` is the long-term goal (see throttle incident
+2026-05-21). Native deps (Hyperscan, mold linker), vendored vyre,
+and the LFS-tracked contracts test inputs are the known sharp edges.
+"""
+
+module(
+    name = "keyhog",
+    version = "0.5.7",
+)
+
+# Pin rules_rust to a known-working release. Bump deliberately, never
+# blindly — rules_rust changelogs sometimes change semantics around
+# build.rs handling and crate_universe lockfile format.
+bazel_dep(name = "rules_rust", version = "0.62.0")
+bazel_dep(name = "platforms", version = "1.0.0")
+bazel_dep(name = "bazel_skylib", version = "1.8.2")
+
+# Rust toolchain (must match the rust-toolchain.toml pin: 1.89).
+# rules_rust downloads the official toolchain into the Bazel sandbox
+# so builds are reproducible across machines.
+rust = use_extension("@rules_rust//rust:extensions.bzl", "rust")
+rust.toolchain(
+    edition = "2021",
+    versions = ["1.89.0"],
+)
+use_repo(rust, "rust_toolchains")
+
+register_toolchains("@rust_toolchains//:all")
+
+# crate_universe = "read Cargo.toml + Cargo.lock, generate Bazel
+# repos for every transitive crate dependency." This is the
+# automated path; the manual path would be hundreds of BUILD files.
+crate = use_extension("@rules_rust//crate_universe:extensions.bzl", "crate")
+crate.from_cargo(
+    name = "crates",
+    cargo_lockfile = "//:Cargo.lock",
+    manifests = [
+        "//:Cargo.toml",
+        "//crates/core:Cargo.toml",
+        "//crates/scanner:Cargo.toml",
+        "//crates/verifier:Cargo.toml",
+        "//crates/sources:Cargo.toml",
+        "//crates/cli:Cargo.toml",
+    ],
+)
+use_repo(crate, "crates")

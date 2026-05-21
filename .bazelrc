@@ -1,0 +1,33 @@
+# Bazel workspace flags for keyhog.
+#
+# Conservative defaults; tighten as we learn what works. The 2026-05-21
+# throttle incident motivated this migration — every flag below is in
+# service of "concurrent Bazel + cargo invocations don't cripple the
+# dev box."
+
+# Bzlmod is the modern dependency-graph system (replaces WORKSPACE).
+# rules_rust 0.55+ supports Bzlmod natively.
+common --enable_bzlmod
+
+# Cap parallel build/test jobs to half-cores. 9950X has 32 logical;
+# 16 lets a concurrent cargo+Bazel session each saturate half the
+# machine without thrashing.
+build --jobs=16
+test --jobs=16
+
+# Stamp builds with workspace status (git SHA, dirty flag, etc.) — for
+# the cli binary's --version output.
+build --workspace_status_command="git -C $(pwd) rev-parse --short HEAD"
+
+# Make rust diagnostics legible.
+build --@rules_rust//rust/settings:experimental_use_global_allocator=False
+build --@rules_rust//rust/settings:experimental_use_cc_common_link=False
+
+# Local disk cache for repeat builds. Lives in repo so multiple
+# checkouts share it; bound to 16 GiB to not eat all of SanthData.
+build --disk_cache=/media/mukund-thiru/SanthData/.bazel-disk-cache
+test  --disk_cache=/media/mukund-thiru/SanthData/.bazel-disk-cache
+
+# Verbose-on-failure so a flaky test shows its full stderr.
+test --test_output=errors
+test --test_summary=detailed

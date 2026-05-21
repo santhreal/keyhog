@@ -1,0 +1,6 @@
+"""Stub BUILD.bazel for keyhog-sources.
+
+Real targets land once crate_universe + vendored vyre deps resolve.
+This file exists so bazel mod tidy / crate.from_cargo can watch the
+Cargo.toml in this directory.
+"""
