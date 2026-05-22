@@ -42,8 +42,12 @@ impl CompiledScanner {
             ));
         };
         // CUDA / generic-trait path. rayon par_iter lets host threads
-        // submit kernel launches concurrently — the CUDA driver serializes
-        // them on the default stream while overlapping prep work.
+        // submit kernel launches concurrently. The fire-async-then-
+        // await-all variant was measured slower on 1 GiB on RTX 5090
+        // (23.5 s vs 21.9 s for plain par_iter) because vyre's
+        // dispatch_borrowed_async sequentially queues onto the
+        // default CUDA stream — no real device-side concurrency until
+        // a multi-stream API is exposed at this layer.
         use rayon::prelude::*;
         let results: Vec<std::result::Result<Vec<Vec<u8>>, vyre::BackendError>> = shard_inputs
             .par_iter()
