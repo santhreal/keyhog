@@ -166,8 +166,17 @@ proptest! {
     #[test]
     fn p1_simd_matches_cpu_fallback_on_ascii(input in arb_chunk_text()) {
         let scanner = scanner();
+        // Clear cross-file fragment_cache between the two backend scans
+        // so each starts from an identical (empty) state. Without this,
+        // the FIRST backend's scan populates fragments that the SECOND
+        // backend's scan then reads, producing different cross-file
+        // reassembly findings. That's a TEST-isolation issue, not an
+        // engine bug — production callers scan once per process so the
+        // cache only accumulates within a single intentional scan run.
+        scanner.clear_fragment_cache();
         let chunks = vec![make_chunk(&input)];
         let simd = collect_keys(&scanner.scan_chunks_with_backend(&chunks, ScanBackend::SimdCpu));
+        scanner.clear_fragment_cache();
         let cpu = collect_keys(&scanner.scan_chunks_with_backend(&chunks, ScanBackend::CpuFallback));
         prop_assert_eq!(
             &simd, &cpu,
@@ -180,8 +189,10 @@ proptest! {
     #[test]
     fn p1b_simd_matches_cpu_fallback_with_prefix_seeds(input in arb_chunk_text_with_prefix_seeds()) {
         let scanner = scanner();
+        scanner.clear_fragment_cache();
         let chunks = vec![make_chunk(&input)];
         let simd = collect_keys(&scanner.scan_chunks_with_backend(&chunks, ScanBackend::SimdCpu));
+        scanner.clear_fragment_cache();
         let cpu = collect_keys(&scanner.scan_chunks_with_backend(&chunks, ScanBackend::CpuFallback));
         prop_assert_eq!(
             &simd, &cpu,
@@ -199,6 +210,7 @@ proptest! {
         split_frac in 1u32..=99u32,
     ) {
         let scanner = scanner();
+        scanner.clear_fragment_cache();
         let single = collect_keys(&scanner.scan_chunks_with_backend(
             &[make_chunk(&input)],
             ScanBackend::SimdCpu,
