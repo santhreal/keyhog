@@ -12,7 +12,7 @@
 
 ---
 
-KeyHog scans source trees, git history, Docker images, S3 buckets, and web assets for leaked credentials. It compiles **888 embedded detectors** into a single Hyperscan NFA database, decodes nested encodings before matching, scores findings with ML confidence + Bayesian Beta(α,β) calibration, and routes scans to the fastest hardware backend available:
+KeyHog scans source trees, git history, Docker images, S3 buckets, and web assets for leaked credentials. It compiles **889 embedded detectors** into a single Hyperscan NFA database, decodes nested encodings before matching, scores findings with ML confidence + Bayesian Beta(α,β) calibration, and routes scans to the fastest hardware backend available:
 
 | Backend | When | How |
 |---|---|---|
@@ -23,7 +23,7 @@ KeyHog scans source trees, git history, Docker images, S3 buckets, and web asset
 Selection is automatic. On startup:
 
 ```
-KeyHog v0.5.7 | 16 cores | SIMD: AVX-512 | Hyperscan | 888 detectors (1697 patterns)
+KeyHog v0.5.7 | 16 cores | SIMD: AVX-512 | Hyperscan | 889 detectors (1697 patterns)
 ```
 
 ## Performance
@@ -46,7 +46,7 @@ KeyHog finds **33% more real secrets** than the next-best tool while maintaining
 - **Multiline reassembly** detects secrets split across lines (`"sk-proj-" + \` continuation)
 - **Decode-through scanning** finds base64-encoded secrets in Kubernetes manifests, CI configs, and minified JS
 - **Entropy fallback** catches secrets near `password`, `token`, `secret` keywords even without a named detector
-- **888 service-specific detectors** with checksum validation (GitHub CRC32, npm, Slack, PyPI)
+- **889 service-specific detectors** with checksum validation (GitHub CRC32, npm, Slack, PyPI)
 
 ### Why fewer false positives
 
@@ -131,7 +131,7 @@ keyhog scan . --update-baseline .keyhog-baseline.json   # Add new, keep old
 ### Other subcommands
 
 ```bash
-# Inspect detectors (888 in the embedded corpus)
+# Inspect detectors (889 in the embedded corpus)
 keyhog detectors --search aws --verbose       # Filter + spec dump
 keyhog explain aws-access-key                  # Spec, regex, severity, rotation guide
 
