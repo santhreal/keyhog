@@ -98,6 +98,10 @@ simdsieve = "=0.1.1"
 vyre = { version = "0.4.2", path = "../../libs/performance/matching/vyre/vyre-core" }
 vyre_libs = { package = "vyre-libs", version = "0.4.2", path = "../../libs/performance/matching/vyre/vyre-libs" }
 vyre-driver-wgpu = { package = "vyre-driver-wgpu", version = "0.4.2", path = "../../libs/performance/matching/vyre/vyre-driver-wgpu" }
+# CUDA backend — wired in keyhog-scanner behind the `cuda` feature
+# (default on). On hosts without libcuda.so the backend's `acquire()`
+# call fails cleanly and the scanner falls back to wgpu.
+vyre-driver-cuda = { package = "vyre-driver-cuda", version = "0.4.2", path = "../../libs/performance/matching/vyre/vyre-driver-cuda" }
 vyre-runtime = { version = "0.4.2", path = "../../libs/performance/matching/vyre/vyre-runtime" }
 wgpu = "=24.0.5"
 pollster = "=0.4.0"

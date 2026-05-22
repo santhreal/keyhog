@@ -814,6 +814,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "cudarc"
+version = "0.18.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ef0cfc5e22a6b6f7d04ee45b0151232ca236ede8ca3534210fd4072bdead0d60"
+dependencies = [
+ "libloading",
+]
+
+[[package]]
 name = "darling"
 version = "0.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2756,6 +2765,7 @@ dependencies = [
  "tracing",
  "unicode-normalization",
  "vyre",
+ "vyre-driver-cuda",
  "vyre-driver-wgpu",
  "vyre-libs",
  "vyre-runtime",
@@ -5080,6 +5090,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "vyre-driver-cuda"
+version = "0.4.2"
+dependencies = [
+ "blake3",
+ "crossbeam-queue",
+ "cudarc",
+ "dashmap",
+ "inventory",
+ "rustc-hash",
+ "smallvec",
+ "tracing",
+ "vyre-driver",
+ "vyre-emit-ptx",
+ "vyre-foundation",
+ "vyre-lower",
+ "vyre-self-substrate",
+ "vyre-spec",
+]
+
+[[package]]
 name = "vyre-driver-wgpu"
 version = "0.4.2"
 dependencies = [
@@ -5128,6 +5158,18 @@ dependencies = [
  "vyre-foundation",
  "vyre-lower",
  "vyre-spec",
+]
+
+[[package]]
+name = "vyre-emit-ptx"
+version = "0.4.2"
+dependencies = [
+ "rustc-hash",
+ "serde",
+ "smallvec",
+ "thiserror 2.0.18",
+ "vyre-foundation",
+ "vyre-lower",
 ]
 
 [[package]]

@@ -20,7 +20,7 @@ status = "alpha"
 # GPU is ALWAYS compiled in — keyhog auto-routes to GPU/SIMD/CPU based on
 # hardware probe, OS, and workload size. There is no "no-GPU" build profile;
 # the runtime gracefully degrades when no compatible adapter is found.
-default = ["ml", "entropy", "decode", "multiline", "simdsieve", "simd"]
+default = ["ml", "entropy", "decode", "multiline", "simdsieve", "simd", "cuda"]
 ml = []
 entropy = []
 decode = []
@@ -29,6 +29,11 @@ simd = ["dep:hyperscan"]  # Vectorscan/Hyperscan SIMD regex compilation (builds 
 simd_scan = ["simd"]      # Enable SIMD scan path (experimental — AC+fallback is faster for <2K patterns)
 simdsieve = ["dep:simdsieve"]  # SIMD-accelerated prefilter for top 8 patterns (50 GB/s)
 gpu = []  # GPU stack is mandatory; feature exists for CLI compatibility
+# CUDA accelerator. Enabled by default — on machines without libcuda.so the
+# runtime probe falls through to wgpu (which works on any GPU vendor) and
+# then to SIMD/CPU. Building this crate without CUDA available at link time
+# requires `--no-default-features --features ml,entropy,decode,multiline,simdsieve,simd`.
+cuda = ["dep:vyre-driver-cuda", "vyre-driver-cuda/cuda"]
 
 [dependencies]
 keyhog-core = { workspace = true }
@@ -58,6 +63,7 @@ hyperscan = { workspace = true, optional = true }
 vyre = { workspace = true }
 vyre_libs = { workspace = true, features = ["matching-nfa", "matching-regex", "intern"] }
 vyre-driver-wgpu = { workspace = true }
+vyre-driver-cuda = { workspace = true, optional = true }
 vyre-runtime = { workspace = true, features = ["megakernel-batch"] }
 
 simdsieve = { workspace = true, optional = true }

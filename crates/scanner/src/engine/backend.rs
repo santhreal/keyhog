@@ -115,7 +115,7 @@ impl CompiledScanner {
         // RawMatch results in one device dispatch + parallel post-process.
         // The previous `populate_gpu_batch_triggers` was a comment-only TODO
         // that threw the GPU results away — see audit release-2026-04-26.
-        if self.gpu_literals.is_none() || self.wgpu_backend.is_none() {
+        if self.gpu_literals.is_none() || self.gpu_backend.is_none() {
             let fallback_backend = self.degraded_backend_after_gpu_failure();
             use rayon::prelude::*;
             return chunks
@@ -574,13 +574,7 @@ impl CompiledScanner {
 
     fn collect_triggered_patterns_gpu(&self, text: &str) -> Vec<u64> {
         if let Some(matcher) = self.gpu_matcher() {
-            // Graceful fallback if the GPU device went away mid-scan
-            // (driver reset, suspend/resume) — never panic.
-            let Ok(_dq) = vyre_driver_wgpu::runtime::cached_device() else {
-                tracing::debug!("gpu device unavailable, falling back to simd");
-                return self.collect_triggered_patterns_simd(text);
-            };
-            let Some(backend) = self.wgpu_backend.as_ref() else {
+            let Some(backend) = self.gpu_backend.as_ref() else {
                 return self.collect_triggered_patterns_simd(text);
             };
             match matcher.scan(&**backend, text.as_bytes(), 10000) {

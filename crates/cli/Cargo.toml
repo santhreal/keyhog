@@ -56,6 +56,7 @@ web = ["keyhog-sources/web"]
 verify = ["keyhog-verifier/live"]
 gpu = ["keyhog-scanner/gpu"]           # wgpu compute shader inference (heavy)
 simd = ["keyhog-scanner/simd"]         # Vectorscan/Hyperscan SIMD regex (system lib required)
+cuda = ["keyhog-scanner/cuda"]         # CUDA backend (NVIDIA-only, libcuda.so required)
 
 [dependencies]
 keyhog-core = { workspace = true }

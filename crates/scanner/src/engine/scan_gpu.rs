@@ -1,6 +1,58 @@
 use super::*;
 
 impl CompiledScanner {
+    /// Dispatch `N` shards of the same program through whichever GPU
+    /// backend is active.
+    ///
+    /// - wgpu path: `WgpuBackend::dispatch_borrowed_batch` records all
+    ///   shards into one command encoder, one submit, one poll.
+    /// - CUDA path: `rayon::par_iter` over per-shard sync
+    ///   `dispatch_borrowed` calls — CUDA's driver pipelines kernel
+    ///   launches on the default stream while host threads enqueue
+    ///   the next shard, giving roughly the same overlap with no
+    ///   wgpu-specific batched API on the trait.
+    ///
+    /// Returns one `Result<Vec<Vec<u8>>>` per shard in input order.
+    /// The outer `Result` is `Err` only on a setup-time failure
+    /// (e.g. no backend); per-shard dispatch errors land inside the
+    /// inner Result so partial-failure handling stays per-shard.
+    pub(crate) fn dispatch_gpu_shards(
+        &self,
+        program: &vyre::Program,
+        shard_inputs: &[&[&[u8]]],
+        configs: &[vyre::DispatchConfig],
+    ) -> std::result::Result<
+        Vec<std::result::Result<Vec<Vec<u8>>, vyre::BackendError>>,
+        vyre::BackendError,
+    > {
+        debug_assert_eq!(shard_inputs.len(), configs.len());
+        if let Some(wgpu) = &self.wgpu_backend {
+            let jobs: Vec<(&vyre::Program, &[&[u8]], &vyre::DispatchConfig)> = shard_inputs
+                .iter()
+                .zip(configs.iter())
+                .map(|(inputs, config)| (program, *inputs, config))
+                .collect();
+            return wgpu.dispatch_borrowed_batch(&jobs);
+        }
+        let Some(backend) = self.gpu_backend.as_ref() else {
+            return Err(vyre::BackendError::new(
+                "no GPU backend acquired — keyhog should have routed to non-GPU before dispatch_gpu_shards. \
+                 Fix: check select_backend() and the gpu_backend field after compile()."
+                    .to_string(),
+            ));
+        };
+        // CUDA / generic-trait path. rayon par_iter lets host threads
+        // submit kernel launches concurrently — the CUDA driver serializes
+        // them on the default stream while overlapping prep work.
+        use rayon::prelude::*;
+        let results: Vec<std::result::Result<Vec<Vec<u8>>, vyre::BackendError>> = shard_inputs
+            .par_iter()
+            .zip(configs.par_iter())
+            .map(|(inputs, config)| backend.dispatch_borrowed(program, *inputs, config))
+            .collect();
+        Ok(results)
+    }
+
     /// GPU coalesced scan via one vyre `RulePipeline` (regex-NFA)
     /// dispatch. When the regex compile failed (vyre's
     /// per-subgroup state cap or unsupported regex syntax) or the
@@ -22,10 +74,7 @@ impl CompiledScanner {
             );
             return self.scan_coalesced_gpu(chunks);
         };
-        let Ok(_dq) = vyre_driver_wgpu::runtime::cached_device() else {
-            return self.scan_coalesced_gpu(chunks);
-        };
-        let Some(backend) = self.wgpu_backend.as_ref() else {
+        let Some(backend) = self.gpu_backend.as_ref() else {
             return self.scan_coalesced_gpu(chunks);
         };
 
@@ -184,12 +233,23 @@ impl CompiledScanner {
 
         // Per-call kernel select. `KEYHOG_GPU_KERNEL=ac` swaps the
         // O(N×L) literal-set program for the O(L_max) AC kernel that
-        // shares the same DFA. Default stays on literal_set until the
-        // bench shows AC wins on real corpora; once it does, this gate
-        // flips. Bottom-of-call cost only — the kernel choice doesn't
-        // change coalesce/post-process behaviour, so flipping it back
-        // is a one-env-var rollback if recall ever drifts.
-        if matches!(std::env::var("KEYHOG_GPU_KERNEL").as_deref(), Ok("ac")) {
+        // shares the same DFA. When the active backend is CUDA, the
+        // AC kernel is forced ON regardless of the env var because
+        // the literal_set program embeds `append_match_subgroup`
+        // (subgroup_ballot + subgroup_shuffle) and vyre-driver-cuda's
+        // canonical pre-emit lowering currently rejects that form
+        // ("variable `_vyre_match_leader` is referenced before
+        // binding"). The AC kernel exposes a `use_subgroup_coalesce`
+        // selector and is built with `false` on CUDA — same recall,
+        // different atomic-coalescing strategy.
+        let backend_is_cuda = self
+            .gpu_backend
+            .as_ref()
+            .map(|b| b.id() == "cuda")
+            .unwrap_or(false);
+        let kernel_env_ac =
+            matches!(std::env::var("KEYHOG_GPU_KERNEL").as_deref(), Ok("ac"));
+        if kernel_env_ac || backend_is_cuda {
             return self.scan_coalesced_gpu_ac(chunks);
         }
 
@@ -199,13 +259,9 @@ impl CompiledScanner {
         let Some(matcher) = self.gpu_matcher() else {
             return self.scan_coalesced_non_gpu(chunks);
         };
-        let Ok(_dq) = vyre_driver_wgpu::runtime::cached_device() else {
-            tracing::debug!("gpu device unavailable, falling back to non-gpu coalesced scan");
+        if self.gpu_backend.is_none() {
             return self.scan_coalesced_non_gpu(chunks);
-        };
-        let Some(backend) = self.wgpu_backend.as_ref() else {
-            return self.scan_coalesced_non_gpu(chunks);
-        };
+        }
 
         let (entries, mut buffer) = coalesce_chunks(chunks);
 
@@ -411,17 +467,18 @@ impl CompiledScanner {
         let mut matches: Vec<vyre_libs::matching::LiteralMatch> = Vec::new();
         for sub_start in (0..shard_count).step_by(MAX_SHARDS_PER_GPU_BATCH) {
             let sub_end = (sub_start + MAX_SHARDS_PER_GPU_BATCH).min(shard_count);
-            let jobs: Vec<_> = (sub_start..sub_end)
-                .map(|i| {
-                    (
-                        &matcher.program,
-                        &shard_input_arrays[i][..],
-                        &shard_owned[i].config,
-                    )
-                })
+            let sub_inputs: Vec<&[&[u8]]> = (sub_start..sub_end)
+                .map(|i| &shard_input_arrays[i][..])
+                .collect();
+            let sub_configs: Vec<vyre::DispatchConfig> = (sub_start..sub_end)
+                .map(|i| shard_owned[i].config.clone())
                 .collect();
 
-            let batch_results = match backend.dispatch_borrowed_batch(&jobs) {
+            let batch_results = match self.dispatch_gpu_shards(
+                &matcher.program,
+                &sub_inputs,
+                &sub_configs,
+            ) {
                 Ok(r) => r,
                 Err(e) => {
                     tracing::error!(
@@ -651,13 +708,9 @@ impl CompiledScanner {
         let Some(program) = self.ac_gpu_program() else {
             return self.scan_coalesced_non_gpu(chunks);
         };
-        let Ok(_dq) = vyre_driver_wgpu::runtime::cached_device() else {
-            tracing::debug!("AC gpu: device unavailable, falling back to non-gpu coalesced scan");
+        if self.gpu_backend.is_none() {
             return self.scan_coalesced_non_gpu(chunks);
-        };
-        let Some(backend) = self.wgpu_backend.as_ref() else {
-            return self.scan_coalesced_non_gpu(chunks);
-        };
+        }
 
         let (entries, mut buffer) = coalesce_chunks(chunks);
 
@@ -772,11 +825,15 @@ impl CompiledScanner {
         let mut matches: Vec<vyre_libs::matching::LiteralMatch> = Vec::new();
         for sub_start in (0..shard_count).step_by(MAX_SHARDS_PER_GPU_BATCH) {
             let sub_end = (sub_start + MAX_SHARDS_PER_GPU_BATCH).min(shard_count);
-            let jobs: Vec<_> = (sub_start..sub_end)
-                .map(|i| (program, &shard_input_arrays[i][..], &shard_owned[i].config))
+            let sub_inputs: Vec<&[&[u8]]> = (sub_start..sub_end)
+                .map(|i| &shard_input_arrays[i][..])
+                .collect();
+            let sub_configs: Vec<vyre::DispatchConfig> = (sub_start..sub_end)
+                .map(|i| shard_owned[i].config.clone())
                 .collect();
 
-            let batch_results = match backend.dispatch_borrowed_batch(&jobs) {
+            let batch_results = match self.dispatch_gpu_shards(program, &sub_inputs, &sub_configs)
+            {
                 Ok(r) => r,
                 Err(e) => {
                     tracing::error!(
