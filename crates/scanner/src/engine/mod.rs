@@ -587,6 +587,21 @@ impl CompiledScanner {
         self.scan_chunks_with_backend_internal(chunks, backend)
     }
 
+    /// Reset the cross-file fragment-reassembly cache.
+    ///
+    /// The cache accumulates fragments across every scan invocation on
+    /// this scanner instance so a credential split across two files
+    /// (`a.env` has `key=...`, `b.env` has the value) reassembles when
+    /// the second file is scanned. That accumulation is intentional for
+    /// a one-shot `keyhog scan /dir` run, but tests that reuse a scanner
+    /// across independent fixtures see cross-fixture state leak — call
+    /// this between fixtures to isolate them. Production callers
+    /// generally do NOT need to call this; the cache lives for the scan
+    /// process anyway.
+    pub fn clear_fragment_cache(&self) {
+        self.fragment_cache.clear();
+    }
+
     /// Scan a chunk of text against all compiled detectors.
     pub fn scan_with_deadline(
         &self,
