@@ -175,6 +175,28 @@ fn gpu_matcher_cache_key(literals: &[&[u8]]) -> String {
     }
     hex
 }
+/// Cached per-process GPU input constants — pre-packed LE byte streams
+/// for the four pattern-shape inputs the GpuLiteralSet kernel reads on
+/// every dispatch. Filled on first scan, borrowed thereafter.
+pub struct GpuConstPacks {
+    pub pattern_offsets: Vec<u8>,
+    pub pattern_lengths: Vec<u8>,
+    pub pattern_bytes: Vec<u8>,
+    pub pattern_count: Vec<u8>,
+}
+
+/// Cached per-process AC-kernel input constants — pre-packed LE byte
+/// streams for the four DFA-shape inputs the AC bounded-ranges kernel
+/// reads on every dispatch. Separate from `GpuConstPacks` because the
+/// AC kernel binds different fields (`dfa.transitions`,
+/// `dfa.output_offsets`, `dfa.output_records`, `pattern_lengths`).
+pub struct AcConstPacks {
+    pub transitions: Vec<u8>,
+    pub output_offsets: Vec<u8>,
+    pub output_records: Vec<u8>,
+    pub pattern_lengths: Vec<u8>,
+}
+
 pub enum MlScoreResult {
     /// Score is final and the match can be pushed immediately.
     Final(f64),
@@ -197,6 +219,18 @@ pub struct CompiledScanner {
     /// Literal prefixes supplied to Vyre's GPU Aho-Corasick engine.
     pub(crate) gpu_literals: Option<Arc<Vec<Vec<u8>>>>,
     pub(crate) gpu_matcher: OnceLock<Option<vyre_libs::matching::GpuLiteralSet>>,
+    /// Pre-packed constant input bytes for every GPU literal-set dispatch.
+    /// `(pattern_offsets, pattern_lengths, pattern_bytes, pattern_count)`
+    /// all serialised to little-endian u32 byte streams once at first
+    /// scan, then borrowed by every shard's bind-group input array.
+    /// Before this cache, `scan_coalesced_gpu` called `pack_u32_slice`
+    /// four times PER SCAN producing identical bytes — for a process
+    /// scanning 10 k files that's 40 k throwaway Vec<u8> allocations
+    /// when the data never changes after compile.
+    pub(crate) gpu_const_packs: OnceLock<GpuConstPacks>,
+    /// Same intent as `gpu_const_packs` but for the AC bounded-ranges
+    /// kernel inputs (`KEYHOG_GPU_KERNEL=ac`).
+    pub(crate) gpu_ac_const_packs: OnceLock<AcConstPacks>,
     /// Lazily-compiled Aho-Corasick bounded-ranges Program built from
     /// the SAME DFA the `gpu_matcher` holds. Two scan kernels share one
     /// DFA: `GpuLiteralSet` walks per-byte × per-pattern (O(N×L)/byte)
@@ -336,6 +370,8 @@ impl CompiledScanner {
             wgpu_backend,
             gpu_literals,
             gpu_matcher: OnceLock::new(),
+            gpu_const_packs: OnceLock::new(),
+            gpu_ac_const_packs: OnceLock::new(),
             ac_gpu_program: OnceLock::new(),
 
             rule_pipeline: OnceLock::new(),

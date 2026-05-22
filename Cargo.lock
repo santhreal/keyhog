@@ -5047,7 +5047,7 @@ checksum = "5c3082ca00d5a5ef149bb8b555a72ae84c9c59f7250f013ac822ac2e49b19c64"
 
 [[package]]
 name = "vyre"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "blake3",
  "vyre-driver",
@@ -5057,7 +5057,7 @@ dependencies = [
 
 [[package]]
 name = "vyre-driver"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "arc-swap",
  "blake3",
@@ -5081,7 +5081,7 @@ dependencies = [
 
 [[package]]
 name = "vyre-driver-wgpu"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "arc-swap",
  "bincode",
@@ -5108,14 +5108,16 @@ dependencies = [
  "vyre-foundation",
  "vyre-lower",
  "vyre-runtime",
+ "vyre-self-substrate",
  "vyre-spec",
  "wgpu",
 ]
 
 [[package]]
 name = "vyre-emit-naga"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
+ "blake3",
  "inventory",
  "naga 25.0.1",
  "rustc-hash",
@@ -5130,7 +5132,7 @@ dependencies = [
 
 [[package]]
 name = "vyre-foundation"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "arrayvec",
  "blake3",
@@ -5157,7 +5159,7 @@ dependencies = [
 
 [[package]]
 name = "vyre-harness"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "inventory",
  "vyre",
@@ -5166,9 +5168,10 @@ dependencies = [
 
 [[package]]
 name = "vyre-libs"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "blake3",
+ "bytemuck",
  "inventory",
  "libm",
  "rayon",
@@ -5189,7 +5192,7 @@ dependencies = [
 
 [[package]]
 name = "vyre-lower"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "im",
  "rustc-hash",
@@ -5201,7 +5204,7 @@ dependencies = [
 
 [[package]]
 name = "vyre-macros"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -5210,7 +5213,7 @@ dependencies = [
 
 [[package]]
 name = "vyre-primitives"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "inventory",
  "vyre-foundation",
@@ -5219,7 +5222,7 @@ dependencies = [
 
 [[package]]
 name = "vyre-runtime"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "arc-swap",
  "blake3",
@@ -5237,7 +5240,7 @@ dependencies = [
 
 [[package]]
 name = "vyre-self-substrate"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "rustc-hash",
  "tracing",
@@ -5247,7 +5250,7 @@ dependencies = [
 
 [[package]]
 name = "vyre-spec"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "serde",
  "smallvec",

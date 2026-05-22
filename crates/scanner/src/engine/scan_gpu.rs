@@ -222,7 +222,24 @@ impl CompiledScanner {
             return self.scan_coalesced_non_gpu(chunks);
         };
 
-        let (entries, buffer) = coalesce_chunks(chunks);
+        let (entries, mut buffer) = coalesce_chunks(chunks);
+
+        // 4-byte align the coalesced buffer so every shard slice can be
+        // passed to vyre's u32-typed haystack input WITHOUT a per-shard
+        // `pack_haystack_u32` call. The pack helper is a 2x memcopy
+        // (Vec<u32> intermediate + Vec<u8> output) that produces bytes
+        // byte-identical to the input on 4-aligned slices (see
+        // `vyre_foundation::byte_pack::pack_haystack_u32`). On a 1 GiB
+        // scan with 2 MiB shards that's 512 shards x 2x = ~4 GiB of
+        // throwaway allocations — load-bearing on the 25s gap GPU
+        // currently loses to SIMD at scale. Padding the source buffer
+        // once and slicing each shard collapses that to zero alloc per
+        // shard. Padding bytes are NUL, which no detector literal can
+        // match (extract_literal_prefixes drops NUL), so the trailing
+        // zero-extension is recall-safe.
+        while !buffer.len().is_multiple_of(4) {
+            buffer.push(0);
+        }
 
         #[cfg(target_os = "linux")]
         // SAFETY: `buffer` is a live `Vec<u8>` whose `as_ptr()` and
@@ -315,27 +332,35 @@ impl CompiledScanner {
         let shard_count = shard_ranges.len();
 
         // Constants across all shards: pattern offsets/lengths/bytes
-        // and pattern_count. Packed once, borrowed by every job in
-        // the batch so the encoder can re-use them as bind-group
-        // bytes.
-        let const_offsets = vyre_libs::matching::dispatch_io::pack_u32_slice(
-            &matcher.pattern_offsets,
-        );
-        let const_lengths = vyre_libs::matching::dispatch_io::pack_u32_slice(
-            &matcher.pattern_lengths,
-        );
-        let const_pat_bytes = vyre_libs::matching::dispatch_io::pack_u32_slice(
-            &matcher.pattern_bytes,
-        );
-        let pattern_count = matcher.pattern_lengths.len() as u32;
-        let const_pattern_count =
-            vyre_libs::matching::dispatch_io::pack_u32_slice(&[pattern_count]);
+        // and pattern_count. Pre-packed ONCE per process via the
+        // CompiledScanner-level OnceLock and borrowed every dispatch.
+        // Before this cache, `pack_u32_slice` ran four times per scan
+        // producing identical bytes; a process scanning 10 k files
+        // burned 40 k throwaway Vec<u8> allocations on data that never
+        // changes after compile.
+        let const_packs = self.gpu_const_packs.get_or_init(|| {
+            crate::engine::GpuConstPacks {
+                pattern_offsets: vyre_libs::matching::dispatch_io::pack_u32_slice(
+                    &matcher.pattern_offsets,
+                ),
+                pattern_lengths: vyre_libs::matching::dispatch_io::pack_u32_slice(
+                    &matcher.pattern_lengths,
+                ),
+                pattern_bytes: vyre_libs::matching::dispatch_io::pack_u32_slice(
+                    &matcher.pattern_bytes,
+                ),
+                pattern_count: vyre_libs::matching::dispatch_io::pack_u32_slice(&[
+                    matcher.pattern_lengths.len() as u32,
+                ]),
+            }
+        });
 
-        // Per-shard owned bytes (haystack packing + per-shard scalars
-        // + the two atomic counters). Held alive for the lifetime of
-        // the batch dispatch via `shard_owned`.
+        // Per-shard tiny bytes (shard_len scalar + the two atomic
+        // counters + dispatch config). The haystack input is the
+        // 4-byte-aligned source buffer sliced in place — no Vec<u8>
+        // packing allocation per shard (see the buffer padding above
+        // for the rationale).
         struct ShardOwned {
-            haystack: Vec<u8>,
             haystack_len: Vec<u8>,
             atomic_count: Vec<u8>,
             atomic_overflow: Vec<u8>,
@@ -344,13 +369,11 @@ impl CompiledScanner {
         }
         let mut shard_owned: Vec<ShardOwned> = Vec::with_capacity(shard_count);
         for (start, end) in &shard_ranges {
-            let shard = &buffer[*start..*end];
-            let shard_len = shard.len() as u32;
-            let shard_cap_u64 = (shard.len() / 64) as u64;
+            let shard_len = (*end - *start) as u32;
+            let shard_cap_u64 = ((*end - *start) / 64) as u64;
             let shard_cap =
                 shard_cap_u64.clamp(MIN_CAP as u64, MAX_CAP as u64) as u32;
             shard_owned.push(ShardOwned {
-                haystack: vyre_libs::matching::dispatch_io::pack_haystack_u32(shard),
                 haystack_len: vyre_libs::matching::dispatch_io::pack_u32_slice(
                     &[shard_len],
                 ),
@@ -366,17 +389,20 @@ impl CompiledScanner {
 
         // Build borrowed input arrays per shard. Order must match
         // `GpuLiteralSet::scan` because the buffer-decl order is the
-        // contract between host inputs and GPU kernel binding.
+        // contract between host inputs and GPU kernel binding. The
+        // haystack slot is now a direct slice into the padded source
+        // buffer — no per-shard packing allocation.
         let shard_input_arrays: Vec<[&[u8]; 8]> = shard_owned
             .iter()
-            .map(|s| {
+            .zip(shard_ranges.iter())
+            .map(|(s, (start, end))| {
                 [
-                    s.haystack.as_slice(),
-                    const_offsets.as_slice(),
-                    const_lengths.as_slice(),
-                    const_pat_bytes.as_slice(),
+                    &buffer[*start..*end],
+                    const_packs.pattern_offsets.as_slice(),
+                    const_packs.pattern_lengths.as_slice(),
+                    const_packs.pattern_bytes.as_slice(),
                     s.haystack_len.as_slice(),
-                    const_pattern_count.as_slice(),
+                    const_packs.pattern_count.as_slice(),
                     s.atomic_count.as_slice(),
                     s.atomic_overflow.as_slice(),
                 ]
@@ -648,7 +674,18 @@ impl CompiledScanner {
             return self.scan_coalesced_non_gpu(chunks);
         };
 
-        let (entries, buffer) = coalesce_chunks(chunks);
+        let (entries, mut buffer) = coalesce_chunks(chunks);
+
+        // Same buffer 4-alignment trick as `scan_coalesced_gpu`: lets
+        // every shard pass `&buffer[start..end]` straight to vyre's
+        // u32-typed haystack input instead of running pack_haystack_u32
+        // (a 2x memcopy producing byte-identical output for aligned
+        // slices). Eliminates ~2x buffer.len() of transient allocations
+        // per scan. NUL padding is recall-safe (literals can't contain
+        // NUL).
+        while !buffer.len().is_multiple_of(4) {
+            buffer.push(0);
+        }
 
         #[cfg(target_os = "linux")]
         // SAFETY: same contract as scan_coalesced_gpu — `buffer` is a
@@ -678,9 +715,12 @@ impl CompiledScanner {
         }
         let shard_count = shard_ranges.len();
 
-        // Constants packed once, borrowed by every shard dispatch.
+        // Constants packed ONCE per process via the scanner-level
+        // OnceLock. Same rationale as `scan_coalesced_gpu`: AC kernel
+        // re-ran four `pack_u32_slice` calls on identical bytes every
+        // dispatch.
         // The AC program's binding layout:
-        //   0: haystack (per shard, packed)
+        //   0: haystack (per shard, slice into padded buffer)
         //   1: transitions
         //   2: output_offsets
         //   3: output_records
@@ -688,27 +728,32 @@ impl CompiledScanner {
         //   5: haystack_len (per shard, packed)
         //   6: match_count (per shard, atomic counter)
         //   7: matches (output, backend-allocated from BufferDecl)
-        let const_transitions =
-            vyre_libs::matching::dispatch_io::pack_u32_slice(&matcher.dfa.transitions);
-        let const_output_offsets =
-            vyre_libs::matching::dispatch_io::pack_u32_slice(&matcher.dfa.output_offsets);
-        let const_output_records =
-            vyre_libs::matching::dispatch_io::pack_u32_slice(&matcher.dfa.output_records);
-        let const_pattern_lengths =
-            vyre_libs::matching::dispatch_io::pack_u32_slice(&matcher.pattern_lengths);
+        let ac_packs = self.gpu_ac_const_packs.get_or_init(|| {
+            crate::engine::AcConstPacks {
+                transitions: vyre_libs::matching::dispatch_io::pack_u32_slice(
+                    &matcher.dfa.transitions,
+                ),
+                output_offsets: vyre_libs::matching::dispatch_io::pack_u32_slice(
+                    &matcher.dfa.output_offsets,
+                ),
+                output_records: vyre_libs::matching::dispatch_io::pack_u32_slice(
+                    &matcher.dfa.output_records,
+                ),
+                pattern_lengths: vyre_libs::matching::dispatch_io::pack_u32_slice(
+                    &matcher.pattern_lengths,
+                ),
+            }
+        });
 
         struct ShardOwnedAc {
-            haystack: Vec<u8>,
             haystack_len: Vec<u8>,
             atomic_count: Vec<u8>,
             config: vyre::DispatchConfig,
         }
         let mut shard_owned: Vec<ShardOwnedAc> = Vec::with_capacity(shard_count);
         for &(s_start, s_end) in &shard_ranges {
-            let shard = &buffer[s_start..s_end];
-            let shard_len = shard.len() as u32;
+            let shard_len = (s_end - s_start) as u32;
             shard_owned.push(ShardOwnedAc {
-                haystack: vyre_libs::matching::dispatch_io::pack_haystack_u32(shard),
                 haystack_len: vyre_libs::matching::dispatch_io::pack_u32_slice(&[shard_len]),
                 atomic_count: vec![0u8; 4],
                 config: vyre_libs::matching::dispatch_io::byte_scan_dispatch_config(
@@ -720,13 +765,14 @@ impl CompiledScanner {
 
         let shard_input_arrays: Vec<[&[u8]; 7]> = shard_owned
             .iter()
-            .map(|s| {
+            .zip(shard_ranges.iter())
+            .map(|(s, &(start, end))| {
                 [
-                    s.haystack.as_slice(),
-                    const_transitions.as_slice(),
-                    const_output_offsets.as_slice(),
-                    const_output_records.as_slice(),
-                    const_pattern_lengths.as_slice(),
+                    &buffer[start..end],
+                    ac_packs.transitions.as_slice(),
+                    ac_packs.output_offsets.as_slice(),
+                    ac_packs.output_records.as_slice(),
+                    ac_packs.pattern_lengths.as_slice(),
                     s.haystack_len.as_slice(),
                     s.atomic_count.as_slice(),
                 ]
