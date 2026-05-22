@@ -237,6 +237,10 @@ proptest! {
                 ..Default::default()
             },
         };
+        // Clear cache between single-chunk scan and split-chunk scan so
+        // both start from the same empty state; otherwise the split
+        // scan reads fragments left over from the single-chunk scan.
+        scanner.clear_fragment_cache();
         let split = collect_keys(&scanner.scan_chunks_with_backend(
             &[chunk_a, chunk_b],
             ScanBackend::SimdCpu,
