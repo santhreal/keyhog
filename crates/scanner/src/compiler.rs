@@ -162,7 +162,20 @@ pub fn build_ac_pattern_set(literals: &[String]) -> Result<Option<AhoCorasick>> 
     if literals.is_empty() {
         return Ok(None);
     }
-    Ok(Some(AhoCorasick::new(literals)?))
+    // ASCII case-insensitive to match Hyperscan's PatternFlags::CASELESS
+    // (see simd.rs). Without this, the CpuFallback backend misses literal
+    // hits on case-varied text (e.g. random base containing `akia` or
+    // `AKia`) that the SimdCpu backend finds, producing per-backend
+    // finding divergence visible in proptest gpu_proptest_invariants
+    // P1b. Detector keywords also rely on caseless matching for env-var
+    // shapes like `AWS_KEY_ID` vs `aws_key_id` — the existing
+    // fallback_keyword_ac at build_fallback_keyword_ac (this file)
+    // already uses ascii_case_insensitive(true) for the same reason.
+    Ok(Some(
+        AhoCorasickBuilder::new()
+            .ascii_case_insensitive(true)
+            .build(literals)?,
+    ))
 }
 
 /// Keep GPU literal inputs in Keyhog order so Vyre match pattern IDs map back
