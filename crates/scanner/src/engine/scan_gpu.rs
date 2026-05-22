@@ -176,21 +176,6 @@ impl CompiledScanner {
         results
     }
 
-    /// GPU coalesced scan — legacy megakernel entry point.
-    ///
-    /// Previously attempted to dispatch via a `MegakernelScanner` stub
-    /// that always returned `None`, falling through to `scan_coalesced_gpu`.
-    /// The stub has been removed (see audit 2026-05-11); this function
-    /// now delegates directly. Kept as a named entry point so the
-    /// `scan_chunks_with_backend` routing table and the megakernel
-    /// parity test continue to compile without churn.
-    pub fn scan_coalesced_megakernel(
-        &self,
-        chunks: &[keyhog_core::Chunk],
-    ) -> Vec<Vec<keyhog_core::RawMatch>> {
-        self.scan_coalesced_gpu(chunks)
-    }
-
     /// GPU coalesced scan via one Vyre literal-set dispatch.
     pub fn scan_coalesced_gpu(
         &self,

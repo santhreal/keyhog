@@ -97,7 +97,7 @@ impl CompiledScanner {
             // chunks from the same file is invisible — both halves are
             // too short to match the regex on their own. The GPU paths
             // below call `scan_chunk_boundaries` after their batch
-            // dispatch (see `scan_coalesced_megakernel`/`scan_coalesced`);
+            // dispatch (see `scan_coalesced_megascan`/`scan_coalesced_gpu`);
             // the CPU path historically did NOT, so callers using
             // `scan_chunks_with_backend(_, SimdCpu | CpuFallback)` lost
             // boundary recall silently. P3 proptest regression: a 38-byte
@@ -126,7 +126,7 @@ impl CompiledScanner {
 
         match backend {
             ScanBackend::MegaScan => self.scan_coalesced_megascan(chunks),
-            _ => self.scan_coalesced_megakernel(chunks),
+            _ => self.scan_coalesced_gpu(chunks),
         }
     }
 
