@@ -1,3 +1,4 @@
 crates/scanner/tests/contracts/*.toml filter=lfs diff=lfs merge=lfs -text
 crates/scanner/tests/readme_claims.rs filter=lfs diff=lfs merge=lfs -text
 crates/scanner/tests/*.proptest-regressions filter=lfs diff=lfs merge=lfs -text
+crates/scanner/tests/diagnose_*.rs filter=lfs diff=lfs merge=lfs -text

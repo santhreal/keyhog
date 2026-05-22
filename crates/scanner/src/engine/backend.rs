@@ -88,10 +88,27 @@ impl CompiledScanner {
             // — was previously a serial iter().map() that pinned to one
             // worker even on 32-core boxes.
             use rayon::prelude::*;
-            return chunks
+            let mut results: Vec<Vec<RawMatch>> = chunks
                 .par_iter()
                 .map(|chunk| self.scan_with_backend(chunk, backend))
                 .collect();
+            // Cross-chunk window-boundary reassembly. Without this, a
+            // secret straddling the seam between two adjacent gapless
+            // chunks from the same file is invisible — both halves are
+            // too short to match the regex on their own. The GPU paths
+            // below call `scan_chunk_boundaries` after their batch
+            // dispatch (see `scan_coalesced_megakernel`/`scan_coalesced`);
+            // the CPU path historically did NOT, so callers using
+            // `scan_chunks_with_backend(_, SimdCpu | CpuFallback)` lost
+            // boundary recall silently. P3 proptest regression: a 38-byte
+            // tail chunk plus 911-byte head chunk dropped an ASIA…
+            // credential that straddled byte 911. Boundary scan
+            // synthesises a 2 KiB tail+head buffer per adjacent pair
+            // (`MAX_BOUNDARY` per side) and runs a fresh in-chunk scan;
+            // cost is `(N-1) × ~2 KiB` total, negligible vs per-chunk
+            // scan cost on the same dataset.
+            super::boundary::scan_chunk_boundaries(self, chunks, &mut results);
+            return results;
         }
 
         // GPU batch path: `scan_coalesced_gpu` produces full per-chunk
