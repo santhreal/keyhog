@@ -803,6 +803,23 @@ impl CompiledScanner {
                 };
 
                 let fragment_line = line_idx + 1;
+                // Compute the trigger value's byte offset within chunk.data.
+                // `line` borrows from chunk.data so pointer arithmetic gives
+                // the line's offset; value_match.start() is offset within
+                // `line`. Used below to give reassembled findings a REAL
+                // source-file position instead of the synthetic
+                // dummy_chunk offset (which used to read ~19 — the length
+                // of the `reassembled_key = "` prefix). Synthetic offsets
+                // broke the chunk-boundary recall invariant (proptest
+                // gpu_proptest_invariants P3): identical credentials got
+                // different offsets depending on whether the source was
+                // scanned as one chunk or two, making the test see false
+                // "drops". Real-source-offset removes that asymmetry.
+                let fragment_value_offset = {
+                    let line_offset = line.as_ptr() as usize
+                        - chunk.data.as_ref().as_ptr() as usize;
+                    line_offset + value_match.start()
+                };
                 let fragment = crate::fragment_cache::SecretFragment {
                     prefix: crate::multiline::extract_prefix(var_name_match.as_str()),
                     var_name: var_name_match.as_str().to_string(),
@@ -853,9 +870,17 @@ impl CompiledScanner {
                     let mut reassembled_matches = self.scan_inner(&dummy_chunk, backend, deadline);
                     for m in &mut reassembled_matches {
                         m.detector_id = format!("{}:reassembled", m.detector_id).into();
-                        // FIX: Point the finding to the line where the trigger fragment was found.
-                        // Better than pointing to line 1 of a virtual chunk.
+                        // Point the finding to the trigger fragment's
+                        // line AND byte offset in the source chunk.
+                        // Previously offset was the synthetic position
+                        // inside `"reassembled_key = \"…\""` (~19 bytes
+                        // from dummy_chunk start), which broke the
+                        // chunk-boundary recall invariant since the
+                        // same credential got different synthetic
+                        // offsets depending on chunk topology.
                         m.location.line = Some(fragment_line);
+                        m.location.offset = fragment_value_offset
+                            + chunk.metadata.base_offset;
                     }
                     matches.append(&mut reassembled_matches);
                     // Zeroized automatically on drop (SensitiveString)
