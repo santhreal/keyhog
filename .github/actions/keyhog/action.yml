@@ -175,11 +175,17 @@ runs:
             sarif)
               findings=$(jq '[.runs[].results[]] | length' "$report" 2>/dev/null || echo 0) ;;
             json)
-              findings=$(jq '.findings | length' "$report" 2>/dev/null || echo 0) ;;
+              # JsonArrayReporter emits a top-level array of findings.
+              findings=$(jq 'length' "$report" 2>/dev/null || echo 0) ;;
             jsonl)
               findings=$(wc -l < "$report" | tr -d ' ') ;;
             text)
-              findings=$(grep -c '^Finding ' "$report" 2>/dev/null || echo 0) ;;
+              # Text format starts each finding with a box-drawing top:
+              # `  ┌ <severity> ─── <detector>`. Counting that line is
+              # the only stable signal short of re-parsing colored
+              # output. For machine-counted exact tallies prefer
+              # format=json or format=sarif.
+              findings=$(grep -cE '^[[:space:]]+\xe2\x94\x8c' "$report" 2>/dev/null || echo 0) ;;
           esac
         fi
         echo "findings=$findings" >> "$GITHUB_OUTPUT"
@@ -192,13 +198,26 @@ runs:
           exit $keyhog_exit
         fi
 
+    - name: Check report exists before SARIF upload
+      id: report-check
+      if: always()
+      shell: bash
+      run: |
+        if [[ -f "${{ steps.outfile.outputs.name }}" ]]; then
+          echo "exists=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "exists=false" >> "$GITHUB_OUTPUT"
+          echo "::warning title=KeyHog::Scan report '${{ steps.outfile.outputs.name }}' missing; skipping SARIF + artifact upload."
+        fi
+
     - name: Upload SARIF to code-scanning
-      if: inputs.format == 'sarif' && inputs.upload-sarif == 'true'
+      if: inputs.format == 'sarif' && inputs.upload-sarif == 'true' && steps.report-check.outputs.exists == 'true'
       uses: github/codeql-action/upload-sarif@v3
       with:
         sarif_file: ${{ steps.outfile.outputs.name }}
 
     - name: Upload scan report as workflow artifact
+      if: steps.report-check.outputs.exists == 'true'
       uses: actions/upload-artifact@v4
       with:
         name: keyhog-report
