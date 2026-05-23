@@ -179,7 +179,29 @@ fn read_stdin_to_string() -> Result<String> {
 
 fn unwrap_scan_results(resp: Response) -> Result<Vec<RawMatch>> {
     match resp {
-        Response::ScanResults { matches, .. } => Ok(matches),
+        Response::ScanResults {
+            matches,
+            engine_example_suppressions,
+            dogfood_events,
+            ..
+        } => {
+            // Merge daemon-side telemetry into the CLI's process-local
+            // counters. The reporter and `dump_dogfood_trace()` both
+            // read these, so without the merge the count would stay
+            // at 0 (the OnceLock cell here is distinct from the
+            // daemon's). Wire v2 is what makes this field non-zero;
+            // a v1 daemon returns the serde defaults and the merge
+            // is a no-op.
+            if engine_example_suppressions > 0 {
+                keyhog_scanner::telemetry::add_example_suppressions(
+                    engine_example_suppressions as usize,
+                );
+            }
+            if !dogfood_events.is_empty() {
+                keyhog_scanner::telemetry::append_events(dogfood_events);
+            }
+            Ok(matches)
+        }
         Response::Error { message } => bail!("daemon: {message}"),
         other => bail!("daemon route: expected ScanResults, got {other:?}"),
     }

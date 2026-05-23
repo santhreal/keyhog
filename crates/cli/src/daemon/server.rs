@@ -67,6 +67,17 @@ pub async fn run(socket_path: PathBuf, detectors: Vec<DetectorSpec>) -> Result<(
     let scanner = CompiledScanner::compile(detectors)
         .context("daemon: compiling scanner from detector specs")?;
 
+    // Process-wide dogfood capture is gated by the `KEYHOG_DOGFOOD`
+    // env var on the daemon side. Per-request toggling would require a
+    // protocol bump (and could let one client's debug session inflate
+    // another client's payload), so the env-var path is the conservative
+    // wiring: an operator who wants `keyhog scan --dogfood` to work
+    // against the daemon runs `KEYHOG_DOGFOOD=1 keyhog daemon start`.
+    if std::env::var_os("KEYHOG_DOGFOOD").is_some() {
+        keyhog_scanner::telemetry::enable_dogfood();
+        tracing::info!("daemon: dogfood event capture enabled (KEYHOG_DOGFOOD set)");
+    }
+
     // Remove a stale socket file from a previous crashed instance.
     // If the file exists AND a daemon is still listening on it, the
     // bind below will fail loudly — we don't unlink blindly.
@@ -212,14 +223,28 @@ async fn scan_text(state: &ServerState, path: Option<String>, text: String) -> R
                 ..Default::default()
             },
         };
-        scanner.scan(&chunk)
+        let matches = scanner.scan(&chunk);
+        // Drain telemetry alongside the matches so the client can
+        // merge per-scan counts into its own process-local counters
+        // (telemetry lives in a OnceLock and doesn't cross the IPC
+        // boundary on its own).
+        let engine_example_suppressions =
+            keyhog_scanner::telemetry::example_suppression_count() as u64;
+        let dogfood_events = keyhog_scanner::telemetry::drain_events();
+        keyhog_scanner::telemetry::reset_example_suppression_count();
+        (matches, engine_example_suppressions, dogfood_events)
     })
     .await;
     state.active_scans.fetch_sub(1, Ordering::Relaxed);
     state.scans_served.fetch_add(1, Ordering::Relaxed);
 
     match res {
-        Ok(matches) => Response::ScanResults { path, matches },
+        Ok((matches, engine_example_suppressions, dogfood_events)) => Response::ScanResults {
+            path,
+            matches,
+            engine_example_suppressions,
+            dogfood_events,
+        },
         Err(e) => Response::Error {
             message: format!("daemon: scan task panicked or was cancelled: {e}"),
         },
@@ -238,7 +263,12 @@ async fn scan_path(state: &ServerState, path: String, working_dir: Option<String
     state.active_scans.fetch_add(1, Ordering::Relaxed);
     let scanner = state.scanner.clone();
     let resolved_owned = resolved.clone();
-    let res = tokio::task::spawn_blocking(move || -> Result<Vec<keyhog_core::RawMatch>> {
+    type ScanOutput = (
+        Vec<keyhog_core::RawMatch>,
+        u64,
+        Vec<keyhog_scanner::telemetry::DogfoodEvent>,
+    );
+    let res = tokio::task::spawn_blocking(move || -> Result<ScanOutput> {
         let bytes = std::fs::read(&resolved_owned)
             .with_context(|| format!("daemon: reading {}", resolved_owned.display()))?;
         let text = String::from_utf8_lossy(&bytes).into_owned();
@@ -250,16 +280,23 @@ async fn scan_path(state: &ServerState, path: String, working_dir: Option<String
                 ..Default::default()
             },
         };
-        Ok(scanner.scan(&chunk))
+        let matches = scanner.scan(&chunk);
+        let engine_example_suppressions =
+            keyhog_scanner::telemetry::example_suppression_count() as u64;
+        let dogfood_events = keyhog_scanner::telemetry::drain_events();
+        keyhog_scanner::telemetry::reset_example_suppression_count();
+        Ok((matches, engine_example_suppressions, dogfood_events))
     })
     .await;
     state.active_scans.fetch_sub(1, Ordering::Relaxed);
     state.scans_served.fetch_add(1, Ordering::Relaxed);
 
     match res {
-        Ok(Ok(matches)) => Response::ScanResults {
+        Ok(Ok((matches, engine_example_suppressions, dogfood_events))) => Response::ScanResults {
             path: Some(resolved.to_string_lossy().into_owned()),
             matches,
+            engine_example_suppressions,
+            dogfood_events,
         },
         Ok(Err(e)) => Response::Error {
             message: format!("daemon: scan_path failed: {e:#}"),
