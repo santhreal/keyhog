@@ -2,12 +2,14 @@
 
 All notable changes to KeyHog. Versions follow [Semantic Versioning](https://semver.org/).
 
-## Unreleased — kimi-dogfood sweep + daemon mode
+## Unreleased
+
+## v0.5.8 — 2026-05-23 — daemon wire-v2, GitHub Action, contracts gate
 
 ### Added
 
 - **GitHub Action that actually works.** `uses:
-  santhsecurity/keyhog/.github/actions/keyhog@v0.5.7` now installs
+  santhsecurity/keyhog/.github/actions/keyhog@v0.5.8` now installs
   the Rust toolchain + Vectorscan/Hyperscan and builds keyhog,
   *or* downloads a prebuilt binary from the matching GitHub
   Release when one exists. Previously the action ran
@@ -73,6 +75,22 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Fixed
 
+- **`contracts_runner` was flaky across CI vs local.** The 341-fixture
+  loop reused a single `CompiledScanner` and never called
+  `clear_fragment_cache()` between scans, so the cross-file
+  reassembly cache accumulated. CI's filesystem-iteration order put
+  braintree's `sandbox_…` positive ahead of blur-api-key's evasion
+  and the sandbox credential surfaced as the only finding on
+  `"blur key = \"Kp4Q…\""` — a non-deterministic failure invisible
+  locally. Fix: clear the cache before every scan in
+  `contracts_runner.rs` (5 sites) and `companion_contracts_runner.rs`
+  (3 sites) per the documented test-isolation API in
+  `engine/mod.rs:747-760`.
+- **`blur-api-key` regex required uppercase `KEY`** while the
+  contract evasion uses lowercase `key`. Prepended `(?i)` and
+  lower-cased the literals; the contract evasion now hits the
+  intended case-variant path. Tests assert truth, not shape —
+  weakening the test would have masked the engine gap.
 - **Daemon-mode `--dogfood` was inert.** Engine-side telemetry
   (`record_example_suppression` calls from
   `pipeline.rs::should_suppress_known_example_credential_*`) fired
