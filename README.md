@@ -227,8 +227,23 @@ applies the always-on hardening, even outside `--lockdown`.
 
 ### `.keyhogignore` allowlist
 
-Suppress known false positives by hash, detector, or path glob, with optional
-governance metadata enforced at parse time:
+Two syntaxes coexist. Use whichever is shorter for the case:
+
+**Gitignore-style shorthand** — bare path globs and bare 64-char hex hashes,
+just like `.gitignore`. The common case is dropping a copied-over `.gitignore`
+and having it work:
+
+```
+# Just the glob — interpreted as path:
+*.log
+node_modules/
+vendor/**/*.json
+# Bare 64-char hex — interpreted as hash:
+9d6060e21ef8d5daec9cfe4a44b1b1bc9792246bfad28210edaaa1782a8a676a
+```
+
+**Explicit prefixes** — keep these when you want the governance metadata
+(`reason` / `expires` / `approved_by`) or to suppress by detector id:
 
 ```
 hash:9f86d081…    ; reason="rotated 2026-04-25"; expires=2026-07-01; approved_by="security@acme"
@@ -311,8 +326,39 @@ repos:
 
 ## Roadmap
 
-Where keyhog is going next. Feedback / PRs welcome: file an issue to argue scope.
+### Recently shipped
 
+- **Gitignore-style `.keyhogignore`.** Bare globs (`*.log`, `node_modules/`)
+  and bare 64-char hex hashes are accepted alongside the prefixed forms; lines
+  that previously WARN'd + dropped now Just Work.
+- **`--max-file-size` skip summary.** Files dropped by the size cap now emit a
+  per-file WARN and an end-of-scan summary line ("N file(s) skipped: exceeded
+  --max-file-size"), instead of vanishing silently into the walker's filter.
+- **Live progress ticker.** Long scans paint a self-overwriting
+  `scanning N/M chunks · K findings · t.t s` line on stderr every 250 ms;
+  suppressed under `--stream` or when stderr isn't a TTY.
+- **GPU as the default backend.** Auto-router picks `gpu` on hosts with a
+  real (non-software) adapter; `--backend simd|cpu|mega-scan` are still
+  available, `--backend invalid` is now rejected by clap with a clear
+  PossibleValues error instead of being silently ignored.
+- **Strict exit-code contract.** Nonexistent paths, unreadable files
+  (`chmod 000`), and non-UTF-8 filenames all exit 2 with an actionable
+  message, instead of WARN'ing + exit 0 (the prior behavior misled CI gates
+  into reporting clean scans on bad inputs).
+- **MegaScan no longer blows up on tiny inputs.** A 19-byte file used to
+  trigger ~570 shard compiles × 256 MiB GPU upload = ~20 GB RSS; the
+  small-buffer guard now degrades to the literal-set GPU dispatch for
+  batches under 64 KiB (60× faster, 50× less memory).
+
+### Next
+
+Feedback / PRs welcome: file an issue to argue scope.
+
+- **Daemon mode (re-land).** Prior session built `keyhog daemon
+  start/stop/status` + `keyhog scan --daemon` for sub-10 ms repeat scans
+  amortizing the ~3 s `CompiledScanner::compile` cold start. Working-tree
+  changes were lost before the commit landed; re-create the daemon crate
+  (server + client + protocol + frame) and wire the route in `scan.rs`.
 - **Hyperscan on Windows out of the box.** Today the `simd` feature is opt-in
   on Windows because `hyperscan-sys` requires a vcpkg/MSVC build of the
   upstream Hyperscan/Vectorscan C library (Linux/macOS users get it for free
@@ -326,6 +372,14 @@ Where keyhog is going next. Feedback / PRs welcome: file an issue to argue scope
 - **Native Apple-silicon / aarch64 binaries** in the GitHub release artifact
   matrix (currently x86_64-only). The code already compiles cleanly on
   aarch64 (NEON path tested in CI); the gap is the release pipeline.
+- **Hyperscan stream mode + cross-process DB cache.** Today the database
+  recompiles on every cold scanner; persistent cache exists for vyre's
+  programs but not for Hyperscan. Stream mode would let large single files
+  (HAR, multi-MB logs) scan incrementally instead of read-into-memory.
+- **GPU↔CPU streaming pipeline.** Current orchestrator runs GPU dispatch on
+  a batch, then CPU post-process on the same batch; the two phases are
+  serial. Streaming would fork the post-process onto CPU as soon as a
+  chunk's GPU dispatch finishes, overlapping GPU + CPU work.
 
 ## License
 
