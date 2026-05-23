@@ -20,8 +20,8 @@ inputs:
   version:
     description: |
       KeyHog version to use. Matched against a published GitHub Release tag
-      (e.g. "0.5.7" expects asset `keyhog-linux-x86_64` on tag `v0.5.7`).
-      When unset, derives from the action ref (`@v0.5.7` → "0.5.7"); when no
+      (e.g. "0.5.10" expects asset `keyhog-linux-x86_64` on tag `v0.5.10`).
+      When unset, derives from the action ref (`@v0.5.10` → "0.5.10"); when no
       matching release asset exists, falls back to a source build.
     default: ''
   upload-sarif:
@@ -39,7 +39,7 @@ runs:
         if [[ -n "${{ inputs.version }}" ]]; then
           v="${{ inputs.version }}"
         else
-          # GITHUB_ACTION_REF is e.g. "v0.5.7", "main", a SHA, or a branch.
+          # GITHUB_ACTION_REF is e.g. "v0.5.10", "main", a SHA, or a branch.
           # Tagged refs: strip the leading "v"; everything else falls
           # through and the download will miss, triggering source build.
           ref="${GITHUB_ACTION_REF:-main}"
