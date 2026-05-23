@@ -54,7 +54,14 @@ async fn main() -> ExitCode {
         }
     });
 
-    let is_version = std::env::args().any(|a| a == "-V" || a == "--version");
+    // `env::args()` panics on non-UTF-8 args (Linux allows raw-byte
+    // paths). The version check only needs to recognize literal ASCII
+    // flags, so iterate args_os() and lossy-compare; non-UTF-8 args
+    // could not possibly be the `-V` / `--version` literal.
+    // kimi-dogfood-2 #134.
+    let is_version = std::env::args_os().any(|a| {
+        a.to_str().map(|s| s == "-V" || s == "--version").unwrap_or(false)
+    });
 
     tracing_subscriber::fmt()
         .with_writer(std::io::stderr)

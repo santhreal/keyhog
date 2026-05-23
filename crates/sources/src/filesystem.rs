@@ -361,6 +361,24 @@ fn process_entry(
     let path = entry.path;
     let file_size = entry.size;
 
+    // Over-size audit. codewalk used to silently drop files past
+    // `max_file_size` (filter.rs:46) — the user only saw a smaller
+    // findings list with no signal about which files were suppressed.
+    // We now disable codewalk's own cap (walker_config sets it to 0
+    // = unlimited) and gate here so each over-size skip emits a warn
+    // and increments the SKIPPED_OVER_MAX_SIZE counter the orchestrator
+    // surfaces at end of scan. kimi-1 dogfood #130.
+    if max_size > 0 && file_size > max_size {
+        tracing::warn!(
+            path = %path.display(),
+            size_bytes = file_size,
+            max_size,
+            "skipping file: size exceeds --max-file-size cap"
+        );
+        crate::SKIPPED_OVER_MAX_SIZE.fetch_add(1, Ordering::Relaxed);
+        return vec![];
+    }
+
     let ext = path
         .extension()
         .and_then(|e| e.to_str())
@@ -758,8 +776,17 @@ fn walker_config(max_file_size: u64, ignore_paths: &[String]) -> WalkConfig {
         })
         .collect();
 
+    // Pass max_file_size=0 (unlimited) to codewalk so the cap is
+    // enforced inside keyhog instead. That moves the silent walker
+    // skip into `process_entry` where we can warn + count it
+    // (kimi-1 dogfood #130). codewalk's size filter runs before its
+    // binary-detect read, so disabling it adds ~4 KiB of extra read
+    // per over-size file — negligible at the scale where users hit
+    // the cap.
+    let _ = max_file_size;
+
     WalkConfig::default()
-        .max_file_size(max_file_size)
+        .max_file_size(0)
         .follow_symlinks(false)
         .respect_gitignore(true)
         .skip_hidden(false)
