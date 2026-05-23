@@ -6,6 +6,14 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Added
 
+- **`KEYHOG_DOGFOOD=1`** — daemon-side dogfood capture. Set when
+  starting the daemon (`KEYHOG_DOGFOOD=1 keyhog daemon start`) to
+  enable per-scan event capture inside the daemon; the events
+  cross the wire to the client and flow into `--dogfood` output.
+  Per-request toggling is not wired — env-var gating keeps one
+  client's debug session from bleeding into another client's
+  payload on a shared daemon, which a per-request flag would
+  break without additional isolation work.
 - **Daemon mode.** `keyhog daemon start | stop | status` runs a long-
   lived scanner over a Unix socket (default
   `$XDG_RUNTIME_DIR/keyhog.sock`, falls back to
@@ -47,6 +55,34 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Fixed
 
+- **Daemon-mode `--dogfood` was inert.** Engine-side telemetry
+  (`record_example_suppression` calls from
+  `pipeline.rs::should_suppress_known_example_credential_*`) fired
+  inside the daemon process — the client never saw any of it, so
+  `keyhog scan --dogfood demo-secret.env` against a daemon silently
+  dropped every suppression event and the reporter counter stayed
+  at 0. Wire protocol bumped 1 → 2: `Response::ScanResults` now
+  carries `engine_example_suppressions: u64` and
+  `dogfood_events: Vec<DogfoodEvent>` (both `#[serde(default)]`,
+  so a v2 client tolerates a v1 daemon). Daemon drains its
+  per-scan telemetry after each `scanner.scan(...)` and resets;
+  client merges the values into its own `OnceLock<Telemetry>` via
+  two new public helpers (`add_example_suppressions(n)`,
+  `append_events(iter)`). Verified locally: `--no-daemon` AND a
+  fresh daemon both emit "No real secrets — but 6 example/test
+  keys suppressed. Pass --dogfood to see them."
+- **`demo-secret.env` summary regressed to the clean-repo
+  message.** The v0.5.7 fix wired `TextReporter` to read the
+  suppression count, but the orchestrator's
+  `test_fixture_suppressions.suppresses()` branch ran *before*
+  any telemetry write — `AKIAIOSFODNN7EXAMPLE` matched the
+  bundled substring suppression list and returned `false` without
+  incrementing the counter, so the reporter still saw 0 and
+  printed "Your code is clean." Now bumps
+  `record_example_suppression(..., "test_fixture_suppression")`
+  before returning. Same patch in the daemon-side
+  `finalize_for_report` filter. Locked by
+  `e2e_binary::demo_secret_aws_example_summary_distinguishes_suppression_from_clean`.
 - **Mega-scan allocated ~20 GB RSS on tiny inputs.** Every shard's
   static input/state buffers were sized for
   `MEGASCAN_INPUT_LEN=256 MiB`. Forcing `--backend mega-scan` on a
@@ -100,6 +136,19 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Improved
 
+- **CUDA driver is opt-in.** The `cuda` feature was on by default,
+  which made `cargo build` fail on any host without
+  `libcuda.so` / `libnvrtc.so` / `libcudart.so` — including macOS,
+  most CI runners, and any Linux box without an NVIDIA driver
+  stack. The default scanner build now uses `wgpu` (Vulkan on
+  Linux, Metal on macOS) for GPU dispatch. CUDA users opt in with
+  `--features cuda` when they want the CUDA backend specifically.
+  Drops the link-time CUDA requirement from every default build.
+- **`scripts/publish.sh` reads the version from `Cargo.toml`.**
+  Renamed from `publish-0.5.6.sh` (which would silently emit "All
+  v0.5.6 crates published" even when publishing v0.5.7). The new
+  script `awk`s `[workspace.package].version` and uses that
+  everywhere — no per-release rename or message edit.
 - **LayeredPipelineCache short-circuits compile on warm hits.** The
   prior `rule_pipeline_cached` always called
   `build_rule_pipeline` upfront to keep typed-error semantics for
