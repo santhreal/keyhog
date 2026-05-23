@@ -6,6 +6,10 @@ use super::layout::{layout_prefix_len, span_in_bounds, table_byte_len};
 use super::node::{VastFile, VastNode, NODE_STRIDE_U32, SENTINEL};
 
 /// Validate magic, version, exact byte length, tree edge indices, and blob spans.
+///
+/// # Errors
+///
+/// Returns [`VastError`] when any structural invariant is violated.
 pub fn validate_vast(bytes: &[u8]) -> Result<VastHeader, VastError> {
     let hdr = VastHeader::decode(bytes)?;
     let expected = hdr.total_byte_len().ok_or(VastError::LengthMismatch {
@@ -109,22 +113,27 @@ fn validate_blob_spans(
             }
             continue;
         }
-        if node.src_file >= hdr.file_count {
+        let effective_src_file = if node.src_file < hdr.file_count {
+            node.src_file
+        } else if is_c_internal_previous_sibling_field(node_idx, node.src_file, hdr) {
+            0
+        } else {
             return Err(VastError::BadSourceFile {
                 node: node_idx,
                 file: node.src_file,
                 file_count: hdr.file_count,
             });
-        }
-        let file =
-            VastFile::read_row_bytes(file_bytes, node.src_file).ok_or(VastError::TooShort {
+        };
+        let file = VastFile::read_row_bytes(file_bytes, effective_src_file).ok_or(
+            VastError::TooShort {
                 need: layout_prefix,
                 got: HEADER_LEN + node_bytes.len() + file_bytes.len(),
-            })?;
+            },
+        )?;
         if !span_in_bounds(node.src_byte_off, node.src_byte_len, file.size) {
             return Err(VastError::BadSourceSpan {
                 node: node_idx,
-                file: node.src_file,
+                file: effective_src_file,
                 off: node.src_byte_off,
                 len: node.src_byte_len,
                 file_size: file.size,
@@ -132,6 +141,10 @@ fn validate_blob_spans(
         }
     }
     Ok(())
+}
+
+fn is_c_internal_previous_sibling_field(node_idx: u32, field: u32, hdr: VastHeader) -> bool {
+    hdr.file_count == 1 && (field == SENTINEL || field < node_idx)
 }
 
 fn validate_tree_edges(node_bytes: &[u8], node_count: u32) -> Result<(), VastError> {

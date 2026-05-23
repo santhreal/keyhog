@@ -115,6 +115,7 @@ pub fn radix_sort(input: &str, output: &str, count: u32, bits: u32) -> Program {
 
 /// CPU-reference stable u32 sort over the lowest `bits` key bits.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref(input: &[u32], bits: u32) -> Vec<u32> {
     let mut out = Vec::new();
     let mut scratch = Vec::new();
@@ -123,6 +124,7 @@ pub fn cpu_ref(input: &[u32], bits: u32) -> Vec<u32> {
 }
 
 /// CPU-reference stable u32 sort into caller-owned storage.
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref_into(input: &[u32], bits: u32, out: &mut Vec<u32>, scratch: &mut Vec<u32>) {
     let bits = bits.min(32);
 
@@ -152,6 +154,7 @@ pub fn cpu_ref_into(input: &[u32], bits: u32, out: &mut Vec<u32>, scratch: &mut 
     }
 }
 
+#[cfg(any(test, feature = "cpu-parity"))]
 fn radix_pass(src: &[u32], dst: &mut [u32], bits: u32, pass: usize) {
     let shift = pass * 8;
     let mask = if shift + 8 >= bits as usize {
@@ -179,6 +182,25 @@ fn radix_pass(src: &[u32], dst: &mut [u32], bits: u32, pass: usize) {
         dst[dest] = key;
         counts[digit] += 1;
     }
+}
+
+#[cfg(feature = "inventory-registry")]
+inventory::submit! {
+    crate::harness::OpEntry::new(
+        OP_ID,
+        || radix_sort("input", "output", 4, 8),
+        Some(|| {
+            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            vec![vec![
+                to_bytes(&[3, 1, 4, 2]),
+                to_bytes(&[0, 0, 0, 0]),
+            ]]
+        }),
+        Some(|| {
+            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            vec![vec![to_bytes(&[1, 2, 3, 4])]]
+        }),
+    )
 }
 
 #[cfg(test)]

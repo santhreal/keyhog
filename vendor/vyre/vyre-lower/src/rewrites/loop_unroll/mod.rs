@@ -13,7 +13,7 @@
 //!   `child_bodies` table, and result ids are freshened across the
 //!   whole duplicated subtree.
 
-use std::collections::BTreeMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::{KernelBody, KernelDescriptor, KernelOp, KernelOpKind, LiteralValue};
 
@@ -28,7 +28,7 @@ pub fn loop_unroll(desc: &KernelDescriptor) -> KernelDescriptor {
 
 fn unroll_body(body: &KernelBody) -> KernelBody {
     // Map result-id → constant U32 value (for ops whose op is Literal(U32)).
-    let lit_u32: BTreeMap<u32, u32> = body
+    let lit_u32: FxHashMap<u32, u32> = body
         .ops
         .iter()
         .filter_map(|op| match (&op.kind, op.result, op.operands.first()) {
@@ -133,7 +133,7 @@ fn unroll_body(body: &KernelBody) -> KernelBody {
                     next_id = new_next;
                     let child_offset = new_children.len() as u32;
                     new_children.extend(renumbered.child_bodies);
-                    let mut pool_map: BTreeMap<u32, u32> = BTreeMap::new();
+                    let mut pool_map: FxHashMap<u32, u32> = FxHashMap::default();
                     let child_literals = child.literals.clone();
                     // Allocate one parent literal-pool slot per
                     // unrolled iteration to hold this iteration's
@@ -166,10 +166,7 @@ fn unroll_body(body: &KernelBody) -> KernelBody {
                                 }
                             }
                         } else if let KernelOpKind::LoopIndex { loop_var } = &op.kind {
-                            if unroll_loop_var
-                                .as_ref()
-                                .is_some_and(|v| v == loop_var)
-                            {
+                            if unroll_loop_var.as_ref().is_some_and(|v| v == loop_var) {
                                 // Replace this iteration's LoopIndex
                                 // op with a Literal op carrying the
                                 // current iteration value. Result id
@@ -229,12 +226,12 @@ fn safe_to_unroll(child: &KernelBody) -> bool {
     if !valid_child_refs {
         return false;
     }
-    let mut produced = std::collections::BTreeSet::new();
+    let mut produced = FxHashSet::default();
     collect_produced_ids_inclusive(child, &mut produced);
     body_refs_only(child, &produced)
 }
 
-fn collect_produced_ids_inclusive(body: &KernelBody, out: &mut std::collections::BTreeSet<u32>) {
+fn collect_produced_ids_inclusive(body: &KernelBody, out: &mut FxHashSet<u32>) {
     for op in &body.ops {
         for r in op.result_ids() {
             out.insert(r);
@@ -245,7 +242,7 @@ fn collect_produced_ids_inclusive(body: &KernelBody, out: &mut std::collections:
     }
 }
 
-fn body_refs_only(body: &KernelBody, produced: &std::collections::BTreeSet<u32>) -> bool {
+fn body_refs_only(body: &KernelBody, produced: &FxHashSet<u32>) -> bool {
     for op in &body.ops {
         for (pos, &operand) in op.operands.iter().enumerate() {
             if !operand_is_result_reference(&op.kind, pos) {
@@ -268,12 +265,12 @@ fn body_refs_only(body: &KernelBody, produced: &std::collections::BTreeSet<u32>)
 /// references that match an old result-id are rewritten to the new id.
 /// Returns the renumbered body + the next free id after the rename.
 fn renumber_body(body: &KernelBody, mut next_id: u32) -> (KernelBody, u32) {
-    let mut id_map = BTreeMap::<u32, u32>::new();
+    let mut id_map = FxHashMap::<u32, u32>::default();
     collect_result_renames(body, &mut id_map, &mut next_id);
     (rewrite_body_with_renames(body, &id_map), next_id)
 }
 
-fn collect_result_renames(body: &KernelBody, id_map: &mut BTreeMap<u32, u32>, next_id: &mut u32) {
+fn collect_result_renames(body: &KernelBody, id_map: &mut FxHashMap<u32, u32>, next_id: &mut u32) {
     for op in &body.ops {
         for result in op.result_ids() {
             id_map.insert(result, *next_id);
@@ -285,7 +282,7 @@ fn collect_result_renames(body: &KernelBody, id_map: &mut BTreeMap<u32, u32>, ne
     }
 }
 
-fn rewrite_body_with_renames(body: &KernelBody, id_map: &BTreeMap<u32, u32>) -> KernelBody {
+fn rewrite_body_with_renames(body: &KernelBody, id_map: &FxHashMap<u32, u32>) -> KernelBody {
     let new_ops: Vec<KernelOp> = body
         .ops
         .iter()
@@ -303,7 +300,7 @@ fn rewrite_body_with_renames(body: &KernelBody, id_map: &BTreeMap<u32, u32>) -> 
     }
 }
 
-fn rewrite_op_with_renames(op: &KernelOp, id_map: &BTreeMap<u32, u32>) -> KernelOp {
+fn rewrite_op_with_renames(op: &KernelOp, id_map: &FxHashMap<u32, u32>) -> KernelOp {
     let operands: Vec<u32> = op
         .operands
         .iter()

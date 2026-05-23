@@ -104,10 +104,10 @@ pub(super) fn run_case(
 
             // Only capture hardware telemetry on the final sample to avoid jitter
             if sample_index == target_samples - 1 {
-                run_result
-                    .metrics
-                    .gpu_counter
-                    .extend(crate::probes::capture_nvml_telemetry());
+                let nvml_counters = crate::probes::capture_nvml_telemetry().map_err(|error| {
+                    format!("NVML telemetry error on sample {sample_index}: {error}")
+                })?;
+                run_result.metrics.gpu_counter.extend(nvml_counters);
             }
 
             let collect_baseline = sample_index >= config.baseline_warmup_runs
@@ -378,10 +378,9 @@ fn infer_optimization_passes_applied(
     if metrics.contains_key("kernel_launches") {
         passes.push("single-dispatch-launch-plan".to_string());
     }
-    if metrics
-        .keys()
-        .any(|key| key.starts_with("lower_") || key.starts_with("alias_") || key.starts_with("egraph_"))
-    {
+    if metrics.keys().any(|key| {
+        key.starts_with("lower_") || key.starts_with("alias_") || key.starts_with("egraph_")
+    }) {
         passes.push("measured-lower-optimization-family".to_string());
     }
     passes.sort();
@@ -407,7 +406,11 @@ pub(super) fn evaluate_contract(
     metrics: &BTreeMap<String, MetricStats>,
     backend_id: &str,
 ) -> PerformanceEvaluation {
-    let speedup_x = match (metrics.get("wall_ns"), metrics.get("baseline_wall_ns")) {
+    let active_gpu = metrics
+        .get("dispatch_ns")
+        .or_else(|| metrics.get("kernel_execute_ns"))
+        .or_else(|| metrics.get("wall_ns"));
+    let speedup_x = match (active_gpu, metrics.get("baseline_wall_ns")) {
         (Some(gpu), Some(cpu)) if gpu.p50 > 0 => Some(cpu.p50 as f64 / gpu.p50 as f64),
         _ => None,
     };
@@ -428,7 +431,7 @@ pub(super) fn evaluate_contract(
                 contract.primitive, baseline.min_speedup_x, baseline.name, speedup
             )),
             None => violations.push(format!(
-                "{} requires an end-to-end measured speedup over {}, but wall_ns/baseline_wall_ns were incomplete",
+                "{} requires a measured steady-state speedup over {}, but dispatch_ns/kernel_execute_ns/wall_ns or baseline_wall_ns were incomplete",
                 contract.primitive, baseline.name
             )),
         }

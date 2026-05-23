@@ -5,6 +5,7 @@
 //! only with the `parity-testing` feature and are not part of the production
 //! dispatch path.
 
+use crate::numeric::usize_to_u64;
 use crate::WgpuBackend;
 use crossbeam_channel::RecvTimeoutError;
 use std::sync::{
@@ -140,8 +141,8 @@ fn dispatch_probe_wgsl(
     output_words: u32,
 ) -> Result<Vec<u8>, vyre_driver::BackendError> {
     let (device, queue) = &**device_queue;
-    let input_size = input.len().max(F32_BYTES) as u64;
-    let output_size_u64 = output_size.max(F32_BYTES) as u64;
+    let input_size = usize_to_u64(input.len().max(F32_BYTES), "parity probe input size")?;
+    let output_size_u64 = usize_to_u64(output_size.max(F32_BYTES), "parity probe output size")?;
     let input_buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("vyre parity probe input"),
         size: input_size,
@@ -161,10 +162,24 @@ fn dispatch_probe_wgsl(
         usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
-    let params = [input.len() as u32, output_words, 0_u32, 0_u32];
+    let input_len = u32::try_from(input.len()).map_err(|_| {
+        vyre_driver::BackendError::new(
+            "parity probe input length exceeds u32::MAX bytes. Fix: split the probe input before dispatch.",
+        )
+    })?;
+    let params = [input_len, output_words, 0_u32, 0_u32];
     let params_buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("vyre parity probe params"),
-        size: (params.len() * std::mem::size_of::<u32>()) as u64,
+        size: usize_to_u64(
+            params.len()
+                .checked_mul(std::mem::size_of::<u32>())
+                .ok_or_else(|| {
+                    vyre_driver::BackendError::new(
+                        "parity probe params byte length overflowed usize. Fix: reduce parameter words before probe dispatch.",
+                    )
+                })?,
+            "parity probe params size",
+        )?,
         usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
@@ -235,18 +250,26 @@ fn dispatch_probe_wgsl(
     });
 
     let deadline = Instant::now() + PROBE_TIMEOUT;
+    let mut backoff = crate::wait_backoff::AdaptiveWaitBackoff::from_micros(64, 2, 50, 5);
     while !ready.load(Ordering::Acquire) {
         match device.poll(wgpu::Maintain::Poll) {
             wgpu::MaintainResult::Ok | wgpu::MaintainResult::SubmissionQueueEmpty => {}
         }
-        if Instant::now() >= deadline {
+        let now = Instant::now();
+        if now >= deadline {
             return Err(vyre_driver::BackendError::new(
                 "parity probe readback did not complete within 30s. Fix: inspect wgpu device polling and direct-dispatch readback liveness.",
             ));
         }
-        std::thread::yield_now();
+        backoff.idle_for(deadline.duration_since(now));
     }
-    let remaining = deadline.saturating_duration_since(Instant::now());
+    let remaining = deadline
+        .checked_duration_since(Instant::now())
+        .ok_or_else(|| {
+            vyre_driver::BackendError::new(
+                "parity probe readback became ready after its receive deadline. Fix: inspect wgpu callback scheduling latency and raise the probe timeout deliberately.",
+            )
+        })?;
     receiver
         .recv_timeout(remaining)
         .map_err(|error| match error {
@@ -274,14 +297,25 @@ fn decode_f32_batch(
     output: &[u8],
     expected_words: u32,
 ) -> Result<Vec<f32>, vyre_driver::BackendError> {
-    let expected_bytes = expected_words as usize * F32_BYTES;
+    let expected_words = usize::try_from(expected_words).map_err(|_| {
+        vyre_driver::BackendError::new(
+            "parity probe expected word count cannot fit host usize. Fix: split probe readback into smaller batches.",
+        )
+    })?;
+    let expected_bytes = expected_words
+        .checked_mul(F32_BYTES)
+        .ok_or_else(|| {
+            vyre_driver::BackendError::new(
+                "parity probe expected byte count overflowed usize. Fix: split probe readback into smaller batches.",
+            )
+        })?;
     if output.len() != expected_bytes {
         return Err(vyre_driver::BackendError::new(format!(
             "batch probe returned {} bytes for {expected_words} f32 samples. Fix: keep dispatch_wgsl readback size synchronized with probe batch length.",
             output.len()
         )));
     }
-    let mut values = Vec::with_capacity(expected_words as usize);
+    let mut values = Vec::with_capacity(expected_words);
     for chunk in output.chunks_exact(F32_BYTES) {
         let mut raw = [0_u8; F32_BYTES];
         raw.copy_from_slice(chunk);

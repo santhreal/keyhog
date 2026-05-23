@@ -24,6 +24,10 @@ pub struct AdjointContrib {
 /// # Errors
 ///
 /// Returns `NotDifferentiable` for integer/bitwise/comparison ops.
+#[expect(
+    clippy::too_many_lines,
+    reason = "binary autodiff rules are a compact mathematical dispatch table and must remain auditable as a complete BinOp surface"
+)]
 pub fn binop_adjoints(
     op: BinOp,
     left: &Expr,
@@ -166,6 +170,10 @@ pub fn binop_adjoints(
 /// # Errors
 ///
 /// Returns `NotDifferentiable` for integer/bitwise ops.
+#[expect(
+    clippy::too_many_lines,
+    reason = "unary autodiff rules are a compact mathematical dispatch table and must remain auditable as a complete UnOp surface"
+)]
 pub fn unop_adjoint(
     op: &UnOp,
     operand: &Expr,
@@ -367,6 +375,7 @@ pub fn unop_adjoint(
 /// Adjoint for `Expr::Fma { a, b, c }` = `a * b + c`.
 ///
 /// `d/da = b * dz`, `d/db = a * dz`, `d/dc = dz`.
+#[must_use]
 pub fn fma_adjoints(a: &Expr, b: &Expr, c: &Expr, adjoint: &Expr) -> Vec<AdjointContrib> {
     vec![
         AdjointContrib {

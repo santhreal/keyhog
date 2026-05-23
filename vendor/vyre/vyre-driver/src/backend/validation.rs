@@ -5,6 +5,30 @@ use std::sync::Arc;
 use vyre_foundation::ir::model::node::Node;
 use vyre_foundation::ir::{OpId, Program, ValidationError};
 
+const CORE_SUPPORTED_OP_IDS: &[&str] = &[
+    "vyre.node.let",
+    "vyre.node.assign",
+    "vyre.node.store",
+    "vyre.node.if",
+    "vyre.node.loop",
+    "vyre.node.return",
+    "vyre.node.block",
+    "vyre.node.barrier",
+    "vyre.node.indirect_dispatch",
+    "vyre.node.async_load",
+    "vyre.node.async_wait",
+    "vyre.node.region",
+    "vyre.lit_u32",
+    "vyre.lit_i32",
+    "vyre.lit_f32",
+    "vyre.lit_bool",
+    "vyre.var",
+    "vyre.bin_op",
+    "vyre.un_op",
+    "vyre.load",
+    "vyre.store",
+];
+
 /// Validate that `backend` supports every operation in `program`.
 pub fn validate_program(program: &Program, backend: &dyn Backend) -> Result<(), ValidationError> {
     for (index, node) in program.entry().iter().enumerate() {
@@ -17,32 +41,16 @@ pub fn validate_program(program: &Program, backend: &dyn Backend) -> Result<(), 
 pub fn default_supported_ops() -> &'static std::collections::HashSet<OpId> {
     static OPS: std::sync::OnceLock<std::collections::HashSet<OpId>> = std::sync::OnceLock::new();
     OPS.get_or_init(|| {
-        [
-            "vyre.node.let",
-            "vyre.node.assign",
-            "vyre.node.store",
-            "vyre.node.if",
-            "vyre.node.loop",
-            "vyre.node.return",
-            "vyre.node.block",
-            "vyre.node.barrier",
-            "vyre.node.indirect_dispatch",
-            "vyre.node.async_load",
-            "vyre.node.async_wait",
-            "vyre.node.region",
-            "vyre.lit_u32",
-            "vyre.lit_i32",
-            "vyre.lit_f32",
-            "vyre.lit_bool",
-            "vyre.var",
-            "vyre.bin_op",
-            "vyre.un_op",
-            "vyre.load",
-            "vyre.store",
-        ]
-        .into_iter()
-        .map(Arc::<str>::from)
-        .collect()
+        let mut ops = std::collections::HashSet::new();
+        ops.try_reserve(CORE_SUPPORTED_OP_IDS.len())
+            .unwrap_or_else(|error| {
+                panic!(
+                    "Vyre default supported-op set could not reserve {} core op slot(s): {error}. Fix: split backend validation support-set construction.",
+                    CORE_SUPPORTED_OP_IDS.len()
+                )
+            });
+        ops.extend(CORE_SUPPORTED_OP_IDS.iter().copied().map(Arc::<str>::from));
+        ops
     })
 }
 
@@ -54,7 +62,19 @@ pub fn default_supported_ops() -> &'static std::collections::HashSet<OpId> {
 pub fn default_supported_ops_with_trap() -> &'static std::collections::HashSet<OpId> {
     static OPS: std::sync::OnceLock<std::collections::HashSet<OpId>> = std::sync::OnceLock::new();
     OPS.get_or_init(|| {
-        let mut ops = default_supported_ops().clone();
+        let base = default_supported_ops();
+        let reserve = base.len().checked_add(1).unwrap_or_else(|| {
+            panic!(
+                "Vyre default supported-op set with trap overflowed while adding Node::Trap. Fix: split backend validation support-set construction."
+            )
+        });
+        let mut ops = std::collections::HashSet::new();
+        ops.try_reserve(reserve).unwrap_or_else(|error| {
+            panic!(
+                "Vyre default supported-op set with trap could not reserve {reserve} op slot(s): {error}. Fix: split backend validation support-set construction."
+            )
+        });
+        ops.extend(base.iter().cloned());
         ops.insert(Arc::<str>::from("vyre.node.trap"));
         ops
     })
@@ -68,11 +88,8 @@ fn validate_node(
 ) -> Result<(), ValidationError> {
     let op = node_op_id(node);
     if !supported.contains(op) {
-        return Err(ValidationError::unsupported_op(
-            backend,
-            Arc::from(op),
-            index,
-        ));
+        let op_id = Arc::<str>::from(op);
+        return Err(ValidationError::unsupported_op(backend, &op_id, index));
     }
     match node {
         Node::If {

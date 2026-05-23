@@ -1,5 +1,5 @@
 //! Universal Cat-A op harness registry — moved into the standalone
-//! `vyre-harness` crate so external wrapper libraries (e.g. `weir`,
+//! `vyre-harness` crate so external wrapper libraries (e.g. `downstream dataflow engine`,
 //! `decodex`, `multimatch`) can publish into the same registry
 //! without depending on the rest of `vyre-libs`. This module is a
 //! thin re-export so existing call sites

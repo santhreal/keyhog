@@ -36,6 +36,9 @@ pub mod program_shape_facts;
 /// by P-1.0-V3.2).
 pub mod shape_facts;
 
+/// Shared algebraic rewrite legality rules consumed by both Program-IR passes
+/// and lowered KernelDescriptor rewrites.
+pub mod algebraic_rules;
 pub mod dsl;
 /// Equality-saturation engine substrate: minimal EGraph, rewrite families,
 /// saturation, and cost-based extraction.
@@ -54,6 +57,11 @@ pub mod eqsat_toml;
 /// `ExprId`s. Additive — does not change the IR shape; passes opt in
 /// via `ExprArena::intern` and operate on `ExprId`s.
 pub mod expr_arena;
+/// Program-level analysis built on the [`expr_arena`] substrate.
+/// Walks every `Expr` in a `Program` and returns aggregate stats +
+/// stable structural fingerprint usable as a cheap structural-
+/// similarity key. T020 SEED-2 first concrete consumer.
+pub mod expr_arena_analysis;
 /// Bounded LRU store of per-region dispatch performance
 /// records. Backends populate via `record(region, kernel_ns,
 /// bytes_touched)`; the optimizer queries `is_hot(region)` /
@@ -61,18 +69,24 @@ pub mod expr_arena;
 /// region. Default-empty so passes that consume the hint must
 /// remain correct on the cold path.
 pub mod hot_path_hints;
-/// Shared algebraic rewrite legality rules consumed by both Program-IR passes
-/// and lowered KernelDescriptor rewrites.
-pub mod algebraic_rules;
 /// Megakernel-fusion-scheduler subsystem (homotopy weight oracle +
 /// matroid subset selection). Hoisted from `pass_substrate/` in audit
 /// cleanup A9 (2026-04-30) so megakernel scheduling lives in one place.
 pub mod megakernel;
+/// Contributor-facing optimizer catalog derived from the live pass registry.
+pub mod pass_catalog;
+/// Stable pass-explanation records derived from scheduler metrics and the live
+/// optimizer catalog.
+pub mod pass_explain;
 /// Pass verifier: runs every registered pass against a synthetic corpus
 /// and asserts cost-monotone-down plus structural validity. Surfaces
 /// contract violations at test time so they're caught before merge instead
 /// of at the scheduler's runtime gate.
 pub mod pass_invariants;
+/// Machine-checkable pass-order validation for release gates and contributors.
+pub mod pass_order;
+/// Benchmark/hot-path-driven pass selection.
+pub mod pass_selection;
 pub mod passes;
 /// Pre-lowering optimization pipeline — stable composed `optimize(program)`
 /// entry every backend calls before lowering. Replaces the old
@@ -97,13 +111,25 @@ mod tests;
 
 pub use ctx::{scheduling_error_to_diagnostic, AdapterCaps, AnalysisCache, PassCtx};
 pub use fusion_cert::FusionCertificate;
+pub use pass_explain::{
+    explain_optimizer_report, explain_optimizer_report_with_catalog, CatalogLookupStatus,
+    PassExplanation, PassMetricDelta,
+};
+pub use pass_order::{
+    validate_registered_pass_order, validate_scheduled_pass_order, PassOrderValidation,
+};
+pub use pass_selection::{
+    registered_passes_for_profile_and_program, select_pass_metadata_for_program,
+    PassSelectionDecision, PassSelectionReason,
+};
 // ProgramPassKind is now a newtype over `Box<dyn ProgramPass>`; built-in passes are
 // auto-discovered via `inventory::iter::<ProgramPassRegistration>` (the same
 // mechanism external passes already use). The hand-maintained import
 // block was removed in audit cleanup A4 (2026-04-30) — adding a new
 // pass no longer requires editing this file.
 pub use scheduler::{
-    schedule_passes, OptimizerRunReport, PassRunMetric, PassScheduler, PassSchedulingError,
+    schedule_passes, OptimizerRunReport, PassRunDecision, PassRunMetric, PassScheduler,
+    PassSchedulingError,
 };
 pub use vyre_macros::vyre_pass;
 
@@ -116,6 +142,105 @@ pub struct PassMetadata {
     pub requires: &'static [&'static str],
     /// Capabilities invalidated when this pass rewrites the program.
     pub invalidates: &'static [&'static str],
+    /// Scheduler phase this pass belongs to.
+    pub phase: PassPhase,
+    /// Architectural boundary this pass is allowed to cross.
+    pub boundary_class: PassBoundaryClass,
+    /// Backend/runtime capabilities required before this pass may run.
+    pub requires_caps: &'static [&'static str],
+    /// Whether this pass preserves the program's externally visible buffer ABI.
+    pub preserves_abi: bool,
+    /// Cost model family used to interpret pass deltas.
+    pub cost_model_family: CostModelFamily,
+}
+
+impl PassMetadata {
+    /// Construct metadata for legacy/simple tests and passes.
+    #[must_use]
+    pub const fn new(
+        name: &'static str,
+        requires: &'static [&'static str],
+        invalidates: &'static [&'static str],
+    ) -> Self {
+        Self {
+            name,
+            requires,
+            invalidates,
+            phase: PassPhase::Unclassified,
+            boundary_class: PassBoundaryClass::Unknown,
+            requires_caps: &[],
+            preserves_abi: true,
+            cost_model_family: CostModelFamily::Unknown,
+        }
+    }
+}
+
+/// Coarse optimizer phase used by profile selectors.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum PassPhase {
+    /// Temporary default for passes that have not been classified yet.
+    Unclassified,
+    /// Deterministic IR normalization.
+    Canonicalization,
+    /// Scalar algebraic rewrites.
+    ScalarAlgebra,
+    /// Loop normalization and loop transforms.
+    Loop,
+    /// Memory, buffer, and load/store transforms.
+    Memory,
+    /// Fusion, CSE, and DCE.
+    FusionCse,
+    /// Synchronization and barrier transforms.
+    Sync,
+    /// Backend-capability-aware specialization.
+    Specialization,
+    /// Structural cleanup that should not change semantics.
+    Cleanup,
+    /// Dataflow-specific profile pass.
+    Dataflow,
+    /// Megakernel/runtime-residency profile pass.
+    Megakernel,
+}
+
+/// Boundary a pass may legally cross.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum PassBoundaryClass {
+    /// Temporary default for unclassified passes.
+    Unknown,
+    /// Preserves public program ABI and backend-neutral semantics.
+    AbiPreserving,
+    /// May change public buffer ABI and requires caller opt-in.
+    AbiChanging,
+    /// Requires backend capabilities but not backend identity checks.
+    BackendAware,
+    /// Owns runtime/megakernel/residency decisions.
+    RuntimeAware,
+    /// Belongs to a domain layer, not generic core IR.
+    DomainSpecific,
+}
+
+/// Cost family used by reports and profile selectors.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum CostModelFamily {
+    /// Temporary default for unclassified passes.
+    Unknown,
+    /// Scalar instruction and expression cost.
+    Scalar,
+    /// Loop trip count and loop-body cost.
+    Loop,
+    /// Memory bandwidth, buffer traffic, and readback cost.
+    Memory,
+    /// Launch count, fusion legality, and redundant work cost.
+    Fusion,
+    /// Barrier, atomic, and synchronization cost.
+    Sync,
+    /// Dataflow frontier/fixpoint cost.
+    Dataflow,
+    /// Megakernel slot, queue, residency, and divergence cost.
+    Megakernel,
 }
 
 /// Lightweight pass analysis result.
@@ -162,16 +287,16 @@ pub enum RefusalReason {
     },
     /// The effect lattice composition rule forbids the rewrite. Surfaced when a pass would
     /// fuse two ops whose effect profiles don't compose (e.g. `Pure ∘ Diverging` without an
-    /// explicit GridSync). Carries a suggested fix string the user can act on.
+    /// explicit `GridSync`). Carries a suggested fix string the user can act on.
     EffectLatticeViolation {
-        /// Producer op_id whose effect is incompatible with the consumer.
+        /// Producer `op_id` whose effect is incompatible with the consumer.
         producer: &'static str,
-        /// Consumer op_id whose effect is incompatible with the producer.
+        /// Consumer `op_id` whose effect is incompatible with the producer.
         consumer: &'static str,
         /// Concrete fix the user can apply (insert barrier, refuse to fuse, etc.).
         suggested_fix: &'static str,
     },
-    /// The pass would break the wire contract — op_id drift, Region-chain break, or any
+    /// The pass would break the wire contract — `op_id` drift, Region-chain break, or any
     /// invariant the scheduler enforces by construction. The scheduler converts this into a
     /// hard error (the pass is buggy), not a soft refusal.
     WireContractViolation {
@@ -230,9 +355,9 @@ impl PassResult {
         Self { program, changed }
     }
 
-    /// Declare the pass left the program unchanged. VYRE_IR_HOTSPOTS
+    /// Declare the pass left the program unchanged. `VYRE_IR_HOTSPOTS`
     /// CRIT-2/CRIT-3: `from_programs(&program, program.clone())` pays
-    /// a full `Program` clone + O(N) PartialEq comparison on every
+    /// a full `Program` clone + O(N) `PartialEq` comparison on every
     /// no-op call. When a pass has already proven it will not rewrite
     /// the program, it should `return PassResult::unchanged(program)`
     /// to move the input through without cloning or comparing.
@@ -295,6 +420,11 @@ pub trait ProgramPass: private::Sealed + Send + Sync {
     /// effect lattice forbids the fusion, etc.) override this and return
     /// [`Err(RefusalReason)`]. The scheduler treats refusals as a no-op rewrite plus a
     /// telemetry record naming the reason — never silently miscompiles.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RefusalReason`] when the pass proves that applying its rewrite
+    /// would violate cost, effect, or wire-contract constraints.
     fn try_transform(&self, program: Program) -> Result<PassResult, RefusalReason> {
         Ok(self.transform(program))
     }
@@ -374,6 +504,54 @@ impl ProgramPassKind {
     }
 }
 
+/// High-level optimizer profile used to select registered passes without
+/// centralizing ownership of the passes themselves.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum OptimizerProfile {
+    /// Backend-neutral release path: only ABI-preserving passes that require
+    /// no special backend/runtime capabilities.
+    Release,
+    /// Dataflow profile for frontier/fixpoint workloads.
+    Dataflow,
+    /// Runtime profile for megakernel queue, slot, and resident-buffer work.
+    Megakernel,
+}
+
+impl OptimizerProfile {
+    /// Return true when `metadata` belongs in this profile.
+    #[must_use]
+    pub fn accepts(self, metadata: PassMetadata) -> bool {
+        match self {
+            Self::Release => {
+                metadata.preserves_abi
+                    && metadata.boundary_class == PassBoundaryClass::AbiPreserving
+                    && metadata.requires_caps.is_empty()
+                    && !matches!(
+                        metadata.phase,
+                        PassPhase::Dataflow | PassPhase::Megakernel | PassPhase::Unclassified
+                    )
+            }
+            Self::Dataflow => {
+                metadata.preserves_abi
+                    && matches!(
+                        metadata.boundary_class,
+                        PassBoundaryClass::AbiPreserving | PassBoundaryClass::DomainSpecific
+                    )
+                    && metadata.phase == PassPhase::Dataflow
+            }
+            Self::Megakernel => {
+                metadata.preserves_abi
+                    && matches!(
+                        metadata.boundary_class,
+                        PassBoundaryClass::AbiPreserving | PassBoundaryClass::RuntimeAware
+                    )
+                    && metadata.phase == PassPhase::Megakernel
+            }
+        }
+    }
+}
+
 /// Error returned by the pass scheduler.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
@@ -432,6 +610,43 @@ pub fn registered_passes() -> Result<Vec<ProgramPassKind>, OptimizerError> {
     Ok(passes)
 }
 
+/// Return registered passes accepted by `profile` in scheduled order.
+///
+/// # Errors
+/// Returns [`OptimizerError::Scheduling`] when the global pass inventory is
+/// invalid.
+pub fn registered_passes_for_profile(
+    profile: OptimizerProfile,
+) -> Result<Vec<ProgramPassKind>, OptimizerError> {
+    let registrations = registered_pass_registrations()?;
+    let mut passes = Vec::with_capacity(registrations.len());
+    for registration in registrations.iter() {
+        if profile.accepts(registration.metadata) {
+            passes.push(ProgramPassKind::from_boxed((registration.factory)()));
+        }
+    }
+    Ok(passes)
+}
+
+/// Return scheduled metadata for passes accepted by `profile`.
+///
+/// This is the lightweight inventory/reporting surface used by release gates
+/// and docs generators. It does not instantiate pass objects beyond the
+/// already-registered static metadata.
+///
+/// # Errors
+/// Returns [`OptimizerError::Scheduling`] when the global pass inventory is
+/// invalid.
+pub fn registered_pass_metadata_for_profile(
+    profile: OptimizerProfile,
+) -> Result<Vec<PassMetadata>, OptimizerError> {
+    Ok(registered_pass_registrations()?
+        .iter()
+        .map(|registration| registration.metadata)
+        .filter(|&metadata| profile.accepts(metadata))
+        .collect())
+}
+
 /// Return registered pass metadata in scheduled execution order.
 ///
 /// # Errors
@@ -461,7 +676,36 @@ pub fn registered_pass_registrations(
 /// Returns [`OptimizerError`] when requirements cannot be satisfied or when
 /// the pass pipeline oscillates past the configured iteration cap.
 pub fn optimize(program: Program) -> Result<Program, OptimizerError> {
-    PassScheduler::default().run(program)
+    // Cache the default scheduler so the box-per-pass instantiation
+    // (~120 boxed `ProgramPassKind`s, plus FxHashMap pass_index construction
+    // and topological execution_order vector) only runs once per process.
+    // PassScheduler::run takes &self and is stateless across runs, so a
+    // single instance is safe to share across optimize() invocations.
+    static DEFAULT_SCHEDULER: LazyLock<Result<PassScheduler, OptimizerError>> =
+        LazyLock::new(PassScheduler::try_default);
+    match &*DEFAULT_SCHEDULER {
+        Ok(scheduler) => scheduler.run(program),
+        Err(err) => Err(err.clone()),
+    }
+}
+
+/// Run selected optimizer passes for `program` using hot-path telemetry.
+///
+/// Expensive pass families are instantiated only when the Program's shape or
+/// recorded dispatch telemetry justifies them; required dependencies are kept
+/// automatically so scheduler invariants remain intact.
+///
+/// # Errors
+/// Returns [`OptimizerError`] when selection or scheduling fails, or when the
+/// selected pass pipeline does not converge.
+pub fn optimize_with_hot_path_hints(
+    program: Program,
+    profile: OptimizerProfile,
+    hints: &hot_path_hints::HotPathHints,
+) -> Result<Program, OptimizerError> {
+    let passes =
+        pass_selection::registered_passes_for_profile_and_program(profile, &program, hints)?;
+    PassScheduler::with_passes(passes).run(program)
 }
 
 /// 32-byte BLAKE3 fingerprint of a Program for content-addressed pipeline
@@ -542,11 +786,7 @@ mod optimizer_framework_tests {
 
     #[test]
     fn pass_metadata_construction() {
-        let meta = PassMetadata {
-            name: "test_pass",
-            requires: &["dead_buffer_elim"],
-            invalidates: &["fusion"],
-        };
+        let meta = PassMetadata::new("test_pass", &["dead_buffer_elim"], &["fusion"]);
         assert_eq!(meta.name, "test_pass");
         assert_eq!(meta.requires.len(), 1);
         assert_eq!(meta.invalidates.len(), 1);
@@ -598,22 +838,14 @@ mod optimizer_framework_tests {
 
     #[test]
     fn requirements_satisfied_empty_requires() {
-        let meta = PassMetadata {
-            name: "trivial",
-            requires: &[],
-            invalidates: &[],
-        };
+        let meta = PassMetadata::new("trivial", &[], &[]);
         let available = FxHashSet::default();
         assert!(requirements_satisfied(meta, &available));
     }
 
     #[test]
     fn requirements_satisfied_missing_dep() {
-        let meta = PassMetadata {
-            name: "needs_stuff",
-            requires: &["missing"],
-            invalidates: &[],
-        };
+        let meta = PassMetadata::new("needs_stuff", &["missing"], &[]);
         let available = FxHashSet::default();
         assert!(!requirements_satisfied(meta, &available));
     }

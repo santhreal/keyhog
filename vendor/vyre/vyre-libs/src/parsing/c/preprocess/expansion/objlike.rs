@@ -1,4 +1,4 @@
-//! Audit-fix A35 `expansion/objlike.rs` extract.
+//! Object-like macro expansion builder.
 
 use crate::parsing::c::lex::tokens::*;
 use vyre::ir::{Expr, Node};

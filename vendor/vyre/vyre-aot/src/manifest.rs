@@ -55,7 +55,7 @@ pub struct Manifest {
     pub notes: String,
 
     /// VSA fingerprint of the optimized Program (8-lane u32 hypervector)
-    /// produced by `vyre_self_substrate::vsa_fingerprint`. Two
+    /// produced by `vyre_driver::program_vsa_fingerprint`. Two
     /// bundles emitted from semantically-equivalent Programs (modulo
     /// instruction order, commutative-operand swaps) share this
     /// fingerprint, so external caches can dedup without inspecting

@@ -85,6 +85,7 @@ pub fn qsvt_block_encode(a: &str, norm: &str, a_scaled: &str, n: u32) -> Program
 
 /// CPU reference: scale `A` by `1 / ||A||_F`.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn qsvt_block_encode_cpu(a: &[f64], n: u32) -> (Vec<f64>, f64) {
     let mut out = Vec::new();
     let frob = qsvt_block_encode_cpu_into(a, n, &mut out);
@@ -92,6 +93,7 @@ pub fn qsvt_block_encode_cpu(a: &[f64], n: u32) -> (Vec<f64>, f64) {
 }
 
 /// CPU reference: scale `A` by `1 / ||A||_F` using caller-owned output.
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn qsvt_block_encode_cpu_into(a: &[f64], n: u32, out: &mut Vec<f64>) -> f64 {
     let n = n as usize;
     let frob: f64 = a.iter().map(|&v| v * v).sum::<f64>().sqrt();
@@ -106,6 +108,7 @@ pub fn qsvt_block_encode_cpu_into(a: &[f64], n: u32, out: &mut Vec<f64>) -> f64 
 /// is the k-th Chebyshev coefficient of `f` (caller computes via numerical
 /// integration). Operates on already-scaled `A`.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn qsvt_apply_cpu(a_scaled: &[f64], v: &[f64], coeffs: &[f64], n: u32) -> Vec<f64> {
     let mut out = Vec::new();
     let mut t_prev = Vec::new();
@@ -126,6 +129,7 @@ pub fn qsvt_apply_cpu(a_scaled: &[f64], v: &[f64], coeffs: &[f64], n: u32) -> Ve
 
 /// CPU reference: evaluate `f(A) · v` using caller-owned recurrence buffers.
 #[allow(clippy::too_many_arguments)]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn qsvt_apply_cpu_into(
     a_scaled: &[f64],
     v: &[f64],
@@ -179,6 +183,7 @@ pub fn qsvt_apply_cpu_into(
     }
 }
 
+#[cfg(any(test, feature = "cpu-parity"))]
 fn mat_vec_into(matrix: &[f64], vector: &[f64], n: usize, out: &mut [f64]) {
     for i in 0..n {
         let mut sum = 0.0;
@@ -187,6 +192,16 @@ fn mat_vec_into(matrix: &[f64], vector: &[f64], n: usize, out: &mut [f64]) {
         }
         out[i] = sum;
     }
+}
+
+#[cfg(feature = "inventory-registry")]
+inventory::submit! {
+    crate::harness::OpEntry::new(
+        OP_ID,
+        || qsvt_block_encode("a", "norm", "a_scaled", 4),
+        None,
+        None,
+    )
 }
 
 #[cfg(test)]

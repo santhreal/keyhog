@@ -28,11 +28,54 @@ impl BodyBuilder<'_> {
             },
             Span::UNDEFINED,
         );
-        let first_word = self.append_expr(Expression::AccessIndex {
-            base: result,
-            index: 0,
-        });
-        self.bind_result_typed(op, first_word, self.types.u32_ty)
+        let target_ty = self
+            .value_types
+            .get(&op.result.unwrap())
+            .copied()
+            .unwrap_or(self.types.u32_ty);
+        if target_ty == self.types.u64_ty {
+            let low = self.append_expr(Expression::AccessIndex {
+                base: result,
+                index: 0,
+            });
+            let high = self.append_expr(Expression::AccessIndex {
+                base: result,
+                index: 1,
+            });
+            let low_u64 = self.append_expr(Expression::As {
+                expr: low,
+                kind: naga::ScalarKind::Uint,
+                convert: Some(8),
+            });
+            let high_u64 = self.append_expr(Expression::As {
+                expr: high,
+                kind: naga::ScalarKind::Uint,
+                convert: Some(8),
+            });
+            let thirty_two = self.literal_u32(32);
+            let thirty_two_u64 = self.append_expr(Expression::As {
+                expr: thirty_two,
+                kind: naga::ScalarKind::Uint,
+                convert: Some(8),
+            });
+            let high_shl = self.append_expr(Expression::Binary {
+                op: naga::BinaryOperator::ShiftLeft,
+                left: high_u64,
+                right: thirty_two_u64,
+            });
+            let final_u64 = self.append_expr(Expression::Binary {
+                op: naga::BinaryOperator::InclusiveOr,
+                left: low_u64,
+                right: high_shl,
+            });
+            self.bind_result_typed(op, final_u64, self.types.u64_ty)
+        } else {
+            let first_word = self.append_expr(Expression::AccessIndex {
+                base: result,
+                index: 0,
+            });
+            self.bind_result_typed(op, first_word, self.types.u32_ty)
+        }
     }
 
     pub(super) fn emit_subgroup_add(&mut self, op: &KernelOp) -> Result<(), EmitError> {
@@ -45,7 +88,7 @@ impl BodyBuilder<'_> {
         })?;
         let result = self.function.expressions.append(
             Expression::SubgroupOperationResult {
-                ty: self.types.u32_ty,
+                ty: self.value_type_operand(op, 0)?,
             },
             Span::UNDEFINED,
         );
@@ -83,7 +126,7 @@ impl BodyBuilder<'_> {
         })?;
         let result = self.function.expressions.append(
             Expression::SubgroupOperationResult {
-                ty: self.types.u32_ty,
+                ty: self.value_type_operand(op, 0)?,
             },
             Span::UNDEFINED,
         );

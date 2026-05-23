@@ -68,9 +68,9 @@ pub fn score_denoise_step(
     let b = Expr::load(beta, Expr::u32(0));
     let s = Expr::load(sigma, Expr::u32(0));
 
-    let term_x = Expr::shr(Expr::mul(a, Expr::load(x, t.clone())), Expr::u32(16));
-    let term_score = Expr::shr(Expr::mul(b, Expr::load(score, t.clone())), Expr::u32(16));
-    let term_noise = Expr::shr(Expr::mul(s, Expr::load(noise, t.clone())), Expr::u32(16));
+    let term_x = crate::fixed_mul_16_16_expr(a, Expr::load(x, t.clone()));
+    let term_score = crate::fixed_mul_16_16_expr(b, Expr::load(score, t.clone()));
+    let term_noise = crate::fixed_mul_16_16_expr(s, Expr::load(noise, t.clone()));
     let value = Expr::add(Expr::add(term_x, term_score), term_noise);
 
     let body = vec![Node::if_then(
@@ -99,6 +99,7 @@ pub fn score_denoise_step(
 
 /// CPU reference. f64 for clarity; callers convert at the boundary.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn score_denoise_step_cpu(
     x: &[f64],
     score: &[f64],

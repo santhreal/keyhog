@@ -34,9 +34,9 @@ pub const EMPTY_STRING_ID: u32 = 0;
 /// without rewriting the probe logic.
 ///
 /// Buffers:
-/// - `input`: ReadOnly u32 array (bytes packed little-endian into
+/// - `input`: `ReadOnly` u32 array (bytes packed little-endian into
 ///   u32 words — `byte(i) = (input[i/4] >> (8 * (i % 4))) & 0xff`).
-/// - `out`: ReadWrite u32 array with space for at least one word;
+/// - `out`: `ReadWrite` u32 array with space for at least one word;
 ///   the Program writes the hash into `out[0]`. When `len == 0`
 ///   the Program writes [`EMPTY_STRING_ID`] (= 0) — matching the
 ///   CPU reference's empty-string contract.
@@ -120,13 +120,14 @@ pub struct Entry {
 }
 
 /// FNV-1a 32-bit hash used by CPU and target-text references.
-/// Delegates to [`crate::hash::fnv1a32`] — the canonical home as of
-/// the 2026-05-20 dedup sweep. Kept at this path because the
-/// `fnv1a_program` builder below and the string-interner tests both
-/// import `fnv1a32` from this module.
 #[must_use]
 pub fn fnv1a32(bytes: &[u8]) -> u32 {
-    crate::hash::fnv1a32(bytes)
+    let mut hash = 0x811c_9dc5u32;
+    for &byte in bytes {
+        hash ^= u32::from(byte);
+        hash = hash.wrapping_mul(0x0100_0193);
+    }
+    hash
 }
 
 impl StringInterner {

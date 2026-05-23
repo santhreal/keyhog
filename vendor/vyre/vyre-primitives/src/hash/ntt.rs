@@ -158,6 +158,7 @@ fn mod_mul_expr(left: Expr, right: Expr) -> Expr {
 /// CPU reference: in-place forward NTT of length `n` (power of two,
 /// `n ≤ MAX_LEN`). Iterative Cooley-Tukey (decimation-in-time) with
 /// bit-reversal permutation up front.
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn ntt_forward_cpu(a: &mut [u32]) {
     let n = a.len() as u32;
     if !n.is_power_of_two() || n > MAX_LEN {
@@ -190,6 +191,7 @@ pub fn ntt_forward_cpu(a: &mut [u32]) {
 }
 
 /// CPU reference: in-place inverse NTT.
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn ntt_inverse_cpu(a: &mut [u32]) {
     let n = a.len() as u32;
     if !n.is_power_of_two() || n > MAX_LEN {
@@ -342,6 +344,22 @@ pub fn ntt_butterfly_stage(data: &str, twiddles: &str, n: u32, stage_log: u32) -
             source_region: None,
             body: Arc::new(body),
         }],
+    )
+}
+
+#[cfg(feature = "inventory-registry")]
+inventory::submit! {
+    crate::harness::OpEntry::new(
+        OP_ID,
+        || ntt_butterfly_stage("data", "twiddles", 4, 0),
+        Some(|| {
+            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            vec![vec![
+                to_bytes(&[1, 2, 3, 4]),
+                to_bytes(&[1, mod_pow(GENERATOR_G, (PRIME_P - 1) / 4)]),
+            ]]
+        }),
+        None,
     )
 }
 

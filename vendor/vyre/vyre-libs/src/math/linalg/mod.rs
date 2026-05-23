@@ -3,7 +3,7 @@
 mod dot;
 mod matmul;
 mod matmul_strassen;
-mod matmul_tiled;
+pub(crate) mod matmul_tiled;
 
 pub use dot::{dot, Dot};
 pub use matmul::{matmul, matmul_bias, Matmul, MatmulBias};

@@ -17,7 +17,7 @@
 
 use rustc_hash::FxHashSet;
 use std::sync::Arc;
-use vyre::ir::{BufferDecl, Program};
+use vyre::ir::{BufferDecl, Node, Program};
 use vyre_foundation::ir::model::expr::GeneratorRef;
 
 use super::core::{c11_lexer, c11_lexer_regular};
@@ -72,10 +72,15 @@ pub fn c11_lex_single_pass(
         }
     }
 
-    let mut combined_body =
-        Vec::with_capacity(lex_program.entry().len() + digraph_program.entry().len());
-    combined_body.extend(lex_program.into_entry_vec());
-    combined_body.extend(digraph_program.into_entry_vec());
+    // Each sub-program emits Let bindings at its own outer scope. If
+    // we flatten both into one Vec, overlapping names trigger V032
+    // duplicate-sibling-let. Wrap each in its own Block so the
+    // bindings live in disjoint scopes and the combined body sees
+    // only the two opaque Block nodes.
+    let combined_body = vec![
+        Node::Block(lex_program.into_entry_vec()),
+        Node::Block(digraph_program.into_entry_vec()),
+    ];
 
     Program::wrapped(
         buffers,
@@ -133,10 +138,15 @@ pub fn c11_lex_regular_single_pass(
         }
     }
 
-    let mut combined_body =
-        Vec::with_capacity(lex_program.entry().len() + digraph_program.entry().len());
-    combined_body.extend(lex_program.into_entry_vec());
-    combined_body.extend(digraph_program.into_entry_vec());
+    // Each sub-program emits Let bindings at its own outer scope. If
+    // we flatten both into one Vec, overlapping names trigger V032
+    // duplicate-sibling-let. Wrap each in its own Block so the
+    // bindings live in disjoint scopes and the combined body sees
+    // only the two opaque Block nodes.
+    let combined_body = vec![
+        Node::Block(lex_program.into_entry_vec()),
+        Node::Block(digraph_program.into_entry_vec()),
+    ];
 
     Program::wrapped(
         buffers,
@@ -165,6 +175,7 @@ inventory::submit! {
         ),
         test_inputs: Some(single_pass_inputs),
         expected_output: Some(single_pass_expected),
+        category: Some("parsing"),
     }
 }
 

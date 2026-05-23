@@ -6,6 +6,8 @@
 //! `dispatch` owns the `CudaBackend` struct, launch geometry, and
 //! kernel-launch orchestration. The public surface is re-exported below.
 
+/// Shared non-wrapping atomic accounting primitives.
+pub(crate) mod accounting;
 /// Device-side allocation pools, pinned-host pools, and `cuda_check`.
 pub mod allocations;
 /// Capability, feature-flag, and validation-cache policy.
@@ -24,6 +26,8 @@ pub mod dispatch;
 pub(crate) mod host_dispatch;
 /// Raw CUDA kernel launch boundary.
 pub(crate) mod launch;
+/// Checked launch-parameter byte sizing.
+pub(crate) mod launch_params;
 /// Loaded PTX module cache and submodular eviction policy.
 pub(crate) mod module_cache;
 /// CUDA output readback range handling.
@@ -36,15 +40,23 @@ pub(crate) mod ptx_target;
 pub(crate) mod resident;
 /// Resident-buffer dispatch path.
 pub(crate) mod resident_dispatch;
+/// Shared resident-dispatch contracts and checked accounting.
+pub(crate) mod resident_dispatch_support;
 /// Host and device copies for resident buffers.
 pub(crate) mod resident_io;
+/// Shared fallible staging reservation helpers for backend hot paths.
+pub(crate) mod staging_reserve;
+/// Atomic CUDA runtime telemetry counters.
+pub(crate) mod telemetry;
 
 pub(crate) use allocations::*;
 pub(crate) use module_cache::ModuleCacheKey;
 pub(crate) use plan::CudaDispatchPlan;
 pub(crate) use resident::ResidentUseGuard;
+pub(crate) use resident_dispatch_support::CudaResidentDispatchStep;
 // Public surface — these names appear on the crate root.
 pub use cuda_graph::CachedCudaGraph;
 pub use dispatch::CudaBackend;
 pub use module_cache::CudaPtxSourceCacheSnapshot;
 pub use resident::CudaResidentBuffer;
+pub use telemetry::CudaTelemetrySnapshot;

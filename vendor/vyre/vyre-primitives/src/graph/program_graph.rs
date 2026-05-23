@@ -1,7 +1,7 @@
 //! Canonical ProgramGraph ABI — the 5-buffer CSR bundle every graph
 //! primitive in Tier 2.5 consumes.
 //!
-//! Surgec emits a `ProgramGraph` from `surge::ast::Document`. Every
+//! Downstream analyzer emits a `ProgramGraph` from `surge::ast::Document`. Every
 //! vyre graph primitive takes exactly this buffer shape so a new
 //! primitive is "here's the transfer body," not "redeclare the four
 //! buffers you want." One ABI makes the primitives composable —
@@ -65,7 +65,7 @@ pub const BINDING_PRIMITIVE_START: u32 = 5;
 
 /// Canonical buffer name constants — primitives refer to these so
 /// every graph-consuming Program shares a single ABI symbol set.
-/// Surgec emits CSR blobs under the same names.
+/// Downstream analyzer emits CSR blobs under the same names.
 pub const NAME_NODES: &str = "pg_nodes";
 /// Canonical name for `edge_offsets`.
 pub const NAME_EDGE_OFFSETS: &str = "pg_edge_offsets";
@@ -102,44 +102,80 @@ impl ProgramGraphShape {
     /// own RW output buffers starting at [`BINDING_PRIMITIVE_START`].
     #[must_use]
     pub fn read_only_buffers(&self) -> Vec<BufferDecl> {
-        vec![
-            BufferDecl::storage(
-                NAME_NODES,
-                BINDING_NODES,
-                BufferAccess::ReadOnly,
-                DataType::U32,
-            )
-            .with_count(self.node_count),
-            BufferDecl::storage(
-                NAME_EDGE_OFFSETS,
-                BINDING_EDGE_OFFSETS,
-                BufferAccess::ReadOnly,
-                DataType::U32,
-            )
-            .with_count(self.node_count.saturating_add(1)),
-            BufferDecl::storage(
-                NAME_EDGE_TARGETS,
-                BINDING_EDGE_TARGETS,
-                BufferAccess::ReadOnly,
-                DataType::U32,
-            )
-            .with_count(self.edge_count.max(1)),
-            BufferDecl::storage(
-                NAME_EDGE_KIND_MASK,
-                BINDING_EDGE_KIND_MASK,
-                BufferAccess::ReadOnly,
-                DataType::U32,
-            )
-            .with_count(self.edge_count.max(1)),
-            BufferDecl::storage(
-                NAME_NODE_TAGS,
-                BINDING_NODE_TAGS,
-                BufferAccess::ReadOnly,
-                DataType::U32,
-            )
-            .with_count(self.node_count),
-        ]
+        match self.try_read_only_buffers() {
+            Ok(buffers) => buffers,
+            Err(error) => {
+                eprintln!("{error}");
+                self.inert_read_only_buffers()
+            }
+        }
     }
+
+    /// Emit the canonical read-only ProgramGraph bindings with checked
+    /// offset-buffer sizing.
+    pub fn try_read_only_buffers(&self) -> Result<Vec<BufferDecl>, String> {
+        let edge_offset_count = self.node_count.checked_add(1).ok_or_else(|| {
+            format!(
+                "ProgramGraphShape node_count={} overflows edge-offset buffer count. Fix: shard the graph before GPU dispatch.",
+                self.node_count
+            )
+        })?;
+        Ok(read_only_buffers_with_counts(
+            self.node_count,
+            edge_offset_count,
+            self.edge_count,
+            self.node_count,
+        ))
+    }
+
+    fn inert_read_only_buffers(&self) -> Vec<BufferDecl> {
+        read_only_buffers_with_counts(1, 1, 1, 1)
+    }
+}
+
+fn read_only_buffers_with_counts(
+    node_count: u32,
+    edge_offset_count: u32,
+    edge_count: u32,
+    node_tag_count: u32,
+) -> Vec<BufferDecl> {
+    vec![
+        BufferDecl::storage(
+            NAME_NODES,
+            BINDING_NODES,
+            BufferAccess::ReadOnly,
+            DataType::U32,
+        )
+        .with_count(node_count),
+        BufferDecl::storage(
+            NAME_EDGE_OFFSETS,
+            BINDING_EDGE_OFFSETS,
+            BufferAccess::ReadOnly,
+            DataType::U32,
+        )
+        .with_count(edge_offset_count),
+        BufferDecl::storage(
+            NAME_EDGE_TARGETS,
+            BINDING_EDGE_TARGETS,
+            BufferAccess::ReadOnly,
+            DataType::U32,
+        )
+        .with_count(edge_count.max(1)),
+        BufferDecl::storage(
+            NAME_EDGE_KIND_MASK,
+            BINDING_EDGE_KIND_MASK,
+            BufferAccess::ReadOnly,
+            DataType::U32,
+        )
+        .with_count(edge_count.max(1)),
+        BufferDecl::storage(
+            NAME_NODE_TAGS,
+            BINDING_NODE_TAGS,
+            BufferAccess::ReadOnly,
+            DataType::U32,
+        )
+        .with_count(node_tag_count),
+    ]
 }
 
 /// Error kinds surfaced by [`validate_program_graph`].
@@ -205,7 +241,7 @@ pub enum GraphValidationError {
 
 /// Validate an in-memory `ProgramGraph` against the wire invariants.
 ///
-/// Called by conform harnesses on synthetic fixtures and by surgec on
+/// Called by conform harnesses on synthetic fixtures and by downstream analyzer on
 /// freshly-emitted graphs before dispatch. The backend dispatcher
 /// rejects any graph whose CSR breaks these invariants.
 pub fn validate_program_graph(
@@ -294,6 +330,43 @@ mod tests {
         assert_eq!(bufs[4].name(), NAME_NODE_TAGS);
         assert_eq!(bufs[1].count(), 5); // node_count + 1
         assert_eq!(bufs[2].count(), 6); // edge_count
+    }
+
+    #[test]
+    fn checked_read_only_buffers_rejects_edge_offset_overflow() {
+        let error = ProgramGraphShape::new(u32::MAX, 0)
+            .try_read_only_buffers()
+            .expect_err("checked ProgramGraphShape buffers must reject offset overflow");
+
+        assert!(
+            error.contains("overflows edge-offset buffer count"),
+            "error should describe the graph shape overflow: {error}"
+        );
+    }
+
+    #[test]
+    fn legacy_read_only_buffers_do_not_panic_on_edge_offset_overflow() {
+        let bufs = ProgramGraphShape::new(u32::MAX, 0).read_only_buffers();
+
+        assert_eq!(bufs.len(), 5);
+        assert_eq!(bufs[0].count(), 1);
+        assert_eq!(bufs[1].count(), 1);
+    }
+
+    #[test]
+    fn program_graph_shape_source_has_checked_buffers_without_panics() {
+        let source = include_str!("program_graph.rs");
+        let production = source
+            .split("/// Error kinds surfaced")
+            .next()
+            .expect("ProgramGraphShape source must precede validation errors");
+
+        assert!(
+            production.contains("pub fn try_read_only_buffers(")
+                && !production.contains(concat!("panic", "!("))
+                && !production.contains(".unwrap_or_else("),
+            "Fix: ProgramGraphShape buffer ABI must expose checked sizing and avoid production panics."
+        );
     }
 
     #[test]

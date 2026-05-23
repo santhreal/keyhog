@@ -56,7 +56,11 @@ pub fn segment_reduce_sum(
         vec![
             BufferDecl::storage(input, 0, BufferAccess::ReadOnly, DataType::U32),
             BufferDecl::storage(segment_offsets, 1, BufferAccess::ReadOnly, DataType::U32)
-                .with_count(num_segments + 1),
+                .with_count(num_segments.checked_add(1).unwrap_or_else(|| {
+                    panic!(
+                        "segment_reduce_sum num_segments={num_segments} overflows offsets buffer count. Fix: tile the segment reduction before GPU dispatch."
+                    )
+                })),
             BufferDecl::storage(output, 2, BufferAccess::ReadWrite, DataType::U32)
                 .with_count(num_segments),
         ],
@@ -74,10 +78,10 @@ pub fn segment_reduce_sum(
 
 /// CPU reference.
 ///
-/// `segment_offsets` must contain `num_segments + 1` entries in
-/// non-decreasing order and the last entry must not exceed
-/// `input.len()`.
+/// Malformed segment bounds fail loudly; this oracle is only for parity tests
+/// with valid CSR-style segment metadata and must not hide bad host fixtures.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref(input: &[u32], segment_offsets: &[u32]) -> Vec<u32> {
     let mut out = Vec::new();
     cpu_ref_into(input, segment_offsets, &mut out);
@@ -86,16 +90,23 @@ pub fn cpu_ref(input: &[u32], segment_offsets: &[u32]) -> Vec<u32> {
 
 /// CPU reference using a caller-owned output buffer.
 ///
-/// `segment_offsets` must contain `num_segments + 1` entries in
-/// non-decreasing order and the last entry must not exceed
-/// `input.len()`.
+/// Malformed segment bounds fail loudly so CPU parity cannot hide truncated or
+/// non-monotonic segment metadata as an all-zero segment.
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref_into(input: &[u32], segment_offsets: &[u32], out: &mut Vec<u32>) {
-    let num_segments = segment_offsets.len().saturating_sub(1);
+    let num_segments = segment_offsets.len().checked_sub(1).unwrap_or_else(|| {
+        panic!("segment_reduce_sum CPU oracle received empty segment_offsets. Fix: pass at least one CSR-style offset.")
+    });
     out.clear();
     out.reserve(num_segments);
     for seg in 0..num_segments {
         let start = segment_offsets[seg] as usize;
         let end = segment_offsets[seg + 1] as usize;
+        assert!(
+            start <= end && end <= input.len(),
+            "segment_reduce_sum CPU oracle received malformed segment {seg}: start={start}, end={end}, input_len={}. Fix: rebuild monotonic in-bounds segment offsets before parity comparison.",
+            input.len()
+        );
         let sum = input[start..end]
             .iter()
             .copied()

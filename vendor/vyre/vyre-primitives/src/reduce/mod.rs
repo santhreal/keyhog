@@ -15,6 +15,8 @@ pub mod gather;
 pub mod histogram;
 pub mod max;
 pub mod min;
+#[cfg(feature = "math")]
+pub mod multi_block_prefix_scan;
 pub mod radix_sort;
 pub mod range_counts;
 pub mod scatter;

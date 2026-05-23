@@ -46,12 +46,12 @@ inventory::submit! {
             vec![vec![
                 to_f32(&[1.0, 2.0, 3.0, 4.0]),  // input (post-LN)
                 to_f32(&[0.5, 2.0, 1.0, 0.1]),  // scale
-                vec![0u8; 4 * 4],
             ]]
         }),
         expected_output: Some(|| {
             let to_f32 = |w: &[f32]| w.iter().flat_map(|v| v.to_bits().to_le_bytes()).collect::<Vec<u8>>();
             vec![vec![to_f32(&[0.5, 4.0, 3.0, 0.4])]]
         }),
+        category: Some("nn"),
     }
 }

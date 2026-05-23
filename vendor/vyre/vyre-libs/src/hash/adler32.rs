@@ -92,10 +92,11 @@ inventory::submit! {
         test_inputs: Some(|| {
             let mut bytes = Vec::with_capacity(12);
             for &b in b"abc" { bytes.extend_from_slice(&u32::from(b).to_le_bytes()); }
-            vec![vec![bytes, vec![0u8; 4]]]
+            vec![vec![bytes]]
         }),
         // Adler-32("abc") = 0x024D0127 (a = 295, b = 589).
         expected_output: Some(|| vec![vec![0x024D_0127u32.to_le_bytes().to_vec()]]),
+        category: None,
     }
 }
 
@@ -108,10 +109,7 @@ mod tests {
     fn run(bytes: &[u8]) -> u32 {
         let n = bytes.len().max(1) as u32;
         let program = adler32("input", "out", n);
-        let inputs = vec![
-            Value::Bytes(pack_bytes_as_u32(bytes).into()),
-            Value::Bytes(vec![0u8; 4].into()),
-        ];
+        let inputs = vec![Value::Bytes(pack_bytes_as_u32(bytes).into())];
         let outputs = vyre_reference::reference_eval(&program, &inputs)
             .expect("Fix: adler32 must run; restore this invariant before continuing.");
         let raw = outputs[0].to_bytes();

@@ -27,6 +27,31 @@ impl Megakernel {
         MegakernelReadback::from_outputs(outputs, self.slot_count)
     }
 
+    /// Dispatch owned buffers with a caller-supplied IO queue and decode the
+    /// strict megakernel readback ABI into caller-owned storage.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PipelineError`] when dispatch or readback validation fails.
+    pub fn dispatch_with_io_queue_readback_into(
+        &self,
+        control_bytes: Vec<u8>,
+        ring_bytes: Vec<u8>,
+        debug_log_bytes: Vec<u8>,
+        io_queue_bytes: Vec<u8>,
+        readback: &mut MegakernelReadback,
+        outputs: &mut OutputBuffers,
+    ) -> Result<MegakernelDispatchStats, PipelineError> {
+        self.dispatch_with_io_queue_readback_borrowed_into(
+            &control_bytes,
+            &ring_bytes,
+            &debug_log_bytes,
+            &io_queue_bytes,
+            readback,
+            outputs,
+        )
+    }
+
     /// Dispatch borrowed buffers with a caller-supplied IO queue and decode
     /// the strict megakernel readback ABI.
     ///

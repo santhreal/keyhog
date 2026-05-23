@@ -4,12 +4,12 @@ Persistent megakernel + io_uring GPU-ingest runtime for vyre.
 
 ## What this crate provides
 
-The execution runtime layer — the bridge between "I have a compiled
+The execution runtime layer: the bridge between "I have a compiled
 `Program`" and "bytes flow through the GPU continuously."
 
 | Module | Purpose |
 |--------|---------|
-| `megakernel/` | Persistent GPU process — ring buffer, CAS protocol, opcode dispatch, JIT fusion |
+| `megakernel/` | Persistent GPU process: ring buffer, CAS protocol, opcode dispatch, JIT fusion |
 | `megakernel/protocol` | Slot layout, control words, opcode constants |
 | `megakernel/opcode` | Built-in opcode handlers + `OpcodeHandler` extension |
 | `megakernel/builder` | IR `Program` construction (interpreted + JIT variants) |

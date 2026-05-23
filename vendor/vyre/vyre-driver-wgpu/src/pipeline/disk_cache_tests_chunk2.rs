@@ -26,11 +26,7 @@ fn cache_misses_are_traced_on_fresh_temp_dir() {
     let _guard = tracing::subscriber::set_default(subscriber);
 
     let dir = tempfile::tempdir().unwrap();
-    let old_cache_dir = std::env::var_os("VYRE_CACHE_DIR");
-    let old_kill = std::env::var_os("VYRE_PIPELINE_CACHE");
-    std::env::set_var("VYRE_CACHE_DIR", dir.path());
-    std::env::remove_var("VYRE_PIPELINE_CACHE");
-    reset_pipeline_cache_switch_for_test();
+    let old_cache_root = set_test_disk_pipeline_cache_root(Some(dir.path().to_path_buf()));
 
     let adapter_info = wgpu::AdapterInfo {
         name: "test-adapter".to_string(),
@@ -81,16 +77,5 @@ fn cache_misses_are_traced_on_fresh_temp_dir() {
         "expected compiled-pipeline cache miss warn log, got:\n{logs}"
     );
 
-    // Restore env
-    if let Some(val) = old_cache_dir {
-        std::env::set_var("VYRE_CACHE_DIR", val);
-    } else {
-        std::env::remove_var("VYRE_CACHE_DIR");
-    }
-    if let Some(val) = old_kill {
-        std::env::set_var("VYRE_PIPELINE_CACHE", val);
-    } else {
-        std::env::remove_var("VYRE_PIPELINE_CACHE");
-    }
-    reset_pipeline_cache_switch_for_test();
+    set_test_disk_pipeline_cache_root(old_cache_root);
 }

@@ -61,7 +61,6 @@ inventory::submit! {
             let to_bytes = |w: &[f32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
             vec![vec![
                 to_bytes(&[0.0_f32, 15.0, -60.0, 100.0]),
-                vec![0u8; 4 * 4],
             ]]
         }),
         expected_output: Some(|| {
@@ -74,6 +73,7 @@ inventory::submit! {
             let bytes = out.iter().flat_map(|v| v.to_bits().to_le_bytes()).collect::<Vec<u8>>();
             vec![vec![bytes]]
         }),
+        category: Some("nn"),
     }
 }
 
@@ -116,7 +116,10 @@ mod tests {
         // +Inf → tanh(+Inf) * cap = 1.0 * cap = cap
         let outputs = vyre_reference::reference_eval(
             &program,
-            &[Value::from(f32_bytes(&[f32::INFINITY, 0.0])), Value::from(vec![0u8; 8])],
+            &[
+                Value::from(f32_bytes(&[f32::INFINITY, 0.0])),
+                Value::from(vec![0u8; 8]),
+            ],
         )
         .expect("Fix: logit_softcap must not panic on +Inf input");
         let out = decode_f32(&outputs[0].to_bytes());
@@ -125,7 +128,10 @@ mod tests {
         // -Inf → tanh(-Inf) * cap = -1.0 * cap = -cap
         let outputs = vyre_reference::reference_eval(
             &program,
-            &[Value::from(f32_bytes(&[f32::NEG_INFINITY, 0.0])), Value::from(vec![0u8; 8])],
+            &[
+                Value::from(f32_bytes(&[f32::NEG_INFINITY, 0.0])),
+                Value::from(vec![0u8; 8]),
+            ],
         )
         .expect("Fix: logit_softcap must not panic on -Inf input");
         let out = decode_f32(&outputs[0].to_bytes());
@@ -137,13 +143,20 @@ mod tests {
         let program = logit_softcap("input", "output", 2, 30.0);
         let outputs = vyre_reference::reference_eval(
             &program,
-            &[Value::from(f32_bytes(&[0.0f32, -0.0f32])), Value::from(vec![0u8; 8])],
+            &[
+                Value::from(f32_bytes(&[0.0f32, -0.0f32])),
+                Value::from(vec![0u8; 8]),
+            ],
         )
         .expect("Fix: logit_softcap must handle -0.0");
         let out = decode_f32(&outputs[0].to_bytes());
         assert_eq!(out[0].to_bits(), 0.0f32.to_bits());
         // tanh(-0.0/cap) = -0.0, -0.0 * cap = -0.0, but flush_tiny may flush
-        assert_eq!(out[1].to_bits(), 0.0f32.to_bits(), "logit_softcap(-0.0) must be +0.0 after flush_tiny");
+        assert_eq!(
+            out[1].to_bits(),
+            0.0f32.to_bits(),
+            "logit_softcap(-0.0) must be +0.0 after flush_tiny"
+        );
     }
 
     #[test]
@@ -156,7 +169,11 @@ mod tests {
         )
         .expect("Fix: logit_softcap must not panic on subnormal input");
         let out = decode_f32(&outputs[0].to_bytes());
-        assert_eq!(out[0].to_bits(), 0.0f32.to_bits(), "logit_softcap must flush tiny subnormal to +0.0");
+        assert_eq!(
+            out[0].to_bits(),
+            0.0f32.to_bits(),
+            "logit_softcap must flush tiny subnormal to +0.0"
+        );
     }
 
     #[test]
@@ -184,7 +201,10 @@ mod tests {
         let out = decode_f32(&outputs[0].to_bytes());
         let expected = softcap_ref(1.0, 30.0);
         for (i, &v) in out.iter().enumerate() {
-            assert!((v - expected).abs() <= 1.0e-5, "logit_softcap all-ones mismatch at {i}: {v}");
+            assert!(
+                (v - expected).abs() <= 1.0e-5,
+                "logit_softcap all-ones mismatch at {i}: {v}"
+            );
         }
     }
 
@@ -199,7 +219,10 @@ mod tests {
         .expect("Fix: logit_softcap all-max-f32 must not panic");
         let out = decode_f32(&outputs[0].to_bytes());
         for (i, &v) in out.iter().enumerate() {
-            assert_eq!(v, 30.0, "logit_softcap(f32::MAX) must clamp to cap at {i}: got {v}");
+            assert_eq!(
+                v, 30.0,
+                "logit_softcap(f32::MAX) must clamp to cap at {i}: got {v}"
+            );
         }
     }
 
@@ -214,17 +237,18 @@ mod tests {
         .expect("Fix: logit_softcap single element must execute");
         let out = decode_f32(&outputs[0].to_bytes());
         let expected = softcap_ref(15.0, 30.0);
-        assert!((out[0] - expected).abs() <= 1.0e-5, "logit_softcap single element mismatch");
+        assert!(
+            (out[0] - expected).abs() <= 1.0e-5,
+            "logit_softcap single element mismatch"
+        );
     }
 
     #[test]
     fn logit_softcap_empty_tensor() {
         let program = logit_softcap("input", "output", 0, 30.0);
-        let outputs = vyre_reference::reference_eval(
-            &program,
-            &[Value::from(vec![]), Value::from(vec![])],
-        )
-        .expect("Fix: logit_softcap n=0 must not panic");
+        let outputs =
+            vyre_reference::reference_eval(&program, &[Value::from(vec![]), Value::from(vec![])])
+                .expect("Fix: logit_softcap n=0 must not panic");
         assert!(outputs[0].to_bytes().is_empty());
     }
 }

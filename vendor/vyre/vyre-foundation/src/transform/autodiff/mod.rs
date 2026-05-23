@@ -28,4 +28,4 @@ pub mod grad;
 pub mod rules;
 
 pub use error::AutodiffError;
-pub use grad::grad;
+pub use grad::{grad, grad_with_pullback, PullbackMap};

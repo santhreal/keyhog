@@ -18,8 +18,8 @@ use crate::ir::BufferAccess;
 /// registered tag. This prevents silent data loss: an unmapped variant
 /// fails serialization loudly rather than producing an invalid blob.
 #[inline]
-pub(crate) fn access_tag(value: BufferAccess) -> Result<u8, String> {
-    match value {
+pub(crate) fn access_tag(value: &BufferAccess) -> Result<u8, String> {
+    match *value {
         BufferAccess::ReadOnly => Ok(0),
         BufferAccess::ReadWrite => Ok(1),
         BufferAccess::Uniform => Ok(2),

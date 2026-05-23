@@ -3,7 +3,7 @@ use super::*;
 pub(super) fn extend(
     out: &mut Vec<Node>,
     vast_nodes: &str,
-    out_typed_vast_nodes: &str,
+    _out_typed_vast_nodes: &str,
     num_nodes: Expr,
     t: Expr,
     base: Expr,
@@ -123,47 +123,77 @@ pub(super) fn extend(
                 Expr::u32(SENTINEL),
             ),
         ),
-        Node::let_bind("cur_parent_prev_sibling_kind", Expr::u32(SENTINEL)),
-        Node::let_bind("cur_parent_prev_prev_sibling_kind", Expr::u32(SENTINEL)),
-        Node::loop_for(
-            "cur_parent_prev_scan",
-            Expr::u32(0),
-            Expr::var("safe_cur_parent_idx"),
-            vec![
-                Node::let_bind(
-                    "cur_parent_prev_scan_base",
+        Node::let_bind(
+            "cur_parent_prev_sibling_idx",
+            Expr::select(
+                Expr::var("cur_parent_valid"),
+                Expr::load(
+                    vast_nodes,
+                    Expr::add(
+                        Expr::var("cur_parent_base"),
+                        Expr::u32(VAST_PREVIOUS_SIBLING_FIELD),
+                    ),
+                ),
+                Expr::u32(SENTINEL),
+            ),
+        ),
+        Node::let_bind(
+            "cur_parent_prev_sibling_valid",
+            Expr::lt(Expr::var("cur_parent_prev_sibling_idx"), num_nodes.clone()),
+        ),
+        Node::let_bind(
+            "cur_parent_prev_sibling_base",
+            Expr::mul(
+                Expr::select(
+                    Expr::var("cur_parent_prev_sibling_valid"),
+                    Expr::var("cur_parent_prev_sibling_idx"),
+                    t.clone(),
+                ),
+                Expr::u32(VAST_NODE_STRIDE_U32),
+            ),
+        ),
+        Node::let_bind(
+            "cur_parent_prev_sibling_kind",
+            Expr::select(
+                Expr::var("cur_parent_prev_sibling_valid"),
+                Expr::load(vast_nodes, Expr::var("cur_parent_prev_sibling_base")),
+                Expr::u32(SENTINEL),
+            ),
+        ),
+        Node::let_bind(
+            "cur_parent_prev_prev_sibling_idx",
+            Expr::select(
+                Expr::var("cur_parent_prev_sibling_valid"),
+                Expr::load(
+                    vast_nodes,
+                    Expr::add(
+                        Expr::var("cur_parent_prev_sibling_base"),
+                        Expr::u32(VAST_PREVIOUS_SIBLING_FIELD),
+                    ),
+                ),
+                Expr::u32(SENTINEL),
+            ),
+        ),
+        Node::let_bind(
+            "cur_parent_prev_prev_sibling_valid",
+            Expr::lt(
+                Expr::var("cur_parent_prev_prev_sibling_idx"),
+                num_nodes.clone(),
+            ),
+        ),
+        Node::let_bind(
+            "cur_parent_prev_prev_sibling_kind",
+            Expr::select(
+                Expr::var("cur_parent_prev_prev_sibling_valid"),
+                Expr::load(
+                    vast_nodes,
                     Expr::mul(
-                        Expr::var("cur_parent_prev_scan"),
+                        Expr::var("cur_parent_prev_prev_sibling_idx"),
                         Expr::u32(VAST_NODE_STRIDE_U32),
                     ),
                 ),
-                Node::let_bind(
-                    "cur_parent_prev_scan_parent",
-                    Expr::load(
-                        vast_nodes,
-                        Expr::add(Expr::var("cur_parent_prev_scan_base"), Expr::u32(1)),
-                    ),
-                ),
-                Node::if_then(
-                    Expr::and(
-                        Expr::var("cur_parent_valid"),
-                        Expr::eq(
-                            Expr::var("cur_parent_prev_scan_parent"),
-                            Expr::var("cur_parent_parent"),
-                        ),
-                    ),
-                    vec![
-                        Node::assign(
-                            "cur_parent_prev_prev_sibling_kind",
-                            Expr::var("cur_parent_prev_sibling_kind"),
-                        ),
-                        Node::assign(
-                            "cur_parent_prev_sibling_kind",
-                            Expr::load(vast_nodes, Expr::var("cur_parent_prev_scan_base")),
-                        ),
-                    ],
-                ),
-            ],
+                Expr::u32(SENTINEL),
+            ),
         ),
         Node::let_bind(
             "cur_parent_parent_safe_idx",
@@ -173,40 +203,40 @@ pub(super) fn extend(
                 t.clone(),
             ),
         ),
-        Node::let_bind("cur_grandparent_prev_sibling_kind", Expr::u32(SENTINEL)),
-        Node::loop_for(
-            "cur_grandparent_prev_scan",
-            Expr::u32(0),
-            Expr::var("cur_parent_parent_safe_idx"),
-            vec![
-                Node::let_bind(
-                    "cur_grandparent_prev_scan_base",
+        Node::let_bind(
+            "cur_grandparent_prev_sibling_idx",
+            Expr::select(
+                Expr::var("cur_parent_parent_valid"),
+                Expr::load(
+                    vast_nodes,
+                    Expr::add(
+                        Expr::var("cur_parent_parent_base"),
+                        Expr::u32(VAST_PREVIOUS_SIBLING_FIELD),
+                    ),
+                ),
+                Expr::u32(SENTINEL),
+            ),
+        ),
+        Node::let_bind(
+            "cur_grandparent_prev_sibling_valid",
+            Expr::lt(
+                Expr::var("cur_grandparent_prev_sibling_idx"),
+                num_nodes.clone(),
+            ),
+        ),
+        Node::let_bind(
+            "cur_grandparent_prev_sibling_kind",
+            Expr::select(
+                Expr::var("cur_grandparent_prev_sibling_valid"),
+                Expr::load(
+                    vast_nodes,
                     Expr::mul(
-                        Expr::var("cur_grandparent_prev_scan"),
+                        Expr::var("cur_grandparent_prev_sibling_idx"),
                         Expr::u32(VAST_NODE_STRIDE_U32),
                     ),
                 ),
-                Node::let_bind(
-                    "cur_grandparent_prev_scan_parent",
-                    Expr::load(
-                        vast_nodes,
-                        Expr::add(Expr::var("cur_grandparent_prev_scan_base"), Expr::u32(1)),
-                    ),
-                ),
-                Node::if_then(
-                    Expr::and(
-                        Expr::var("cur_parent_parent_valid"),
-                        Expr::eq(
-                            Expr::var("cur_grandparent_prev_scan_parent"),
-                            Expr::var("cur_parent_parent_parent"),
-                        ),
-                    ),
-                    vec![Node::assign(
-                        "cur_grandparent_prev_sibling_kind",
-                        Expr::load(vast_nodes, Expr::var("cur_grandparent_prev_scan_base")),
-                    )],
-                ),
-            ],
+                Expr::u32(SENTINEL),
+            ),
         ),
         Node::let_bind(
             "cur_parent_parent_prev_adjacent_valid",
@@ -238,43 +268,109 @@ pub(super) fn extend(
             ),
         ),
         Node::let_bind("colon_count_before", Expr::u32(0)),
-        Node::loop_for(
-            "colon_count_scan",
-            Expr::u32(0),
-            t.clone(),
-            vec![
-                Node::let_bind(
-                    "colon_count_scan_base",
-                    Expr::mul(
-                        Expr::var("colon_count_scan"),
-                        Expr::u32(VAST_NODE_STRIDE_U32),
-                    ),
+        Node::let_bind(
+            "colon_count_needed",
+            Expr::and(
+                any_token_eq(
+                    Expr::var("raw_kind"),
+                    &[TOK_STRING, TOK_LPAREN, TOK_IDENTIFIER],
                 ),
-                Node::let_bind(
-                    "colon_count_scan_parent",
-                    Expr::load(
-                        vast_nodes,
-                        Expr::add(Expr::var("colon_count_scan_base"), Expr::u32(1)),
-                    ),
-                ),
-                Node::let_bind(
-                    "colon_count_scan_kind",
-                    Expr::load(vast_nodes, Expr::var("colon_count_scan_base")),
-                ),
-                Node::if_then(
-                    Expr::and(
+                Expr::and(
+                    Expr::eq(Expr::var("cur_parent_kind"), Expr::u32(TOK_LPAREN)),
+                    Expr::or(
                         Expr::eq(
-                            Expr::var("colon_count_scan_parent"),
-                            Expr::var("cur_parent"),
+                            Expr::var("cur_parent_prev_sibling_kind"),
+                            Expr::u32(TOK_GNU_ASM),
                         ),
-                        Expr::eq(Expr::var("colon_count_scan_kind"), Expr::u32(TOK_COLON)),
+                        Expr::or(
+                            Expr::and(
+                                any_token_eq(
+                                    Expr::var("cur_parent_prev_sibling_kind"),
+                                    &[TOK_VOLATILE, TOK_GOTO],
+                                ),
+                                Expr::eq(
+                                    Expr::var("cur_parent_prev_prev_sibling_kind"),
+                                    Expr::u32(TOK_GNU_ASM),
+                                ),
+                            ),
+                            Expr::and(
+                                Expr::eq(
+                                    Expr::var("cur_parent_prev_sibling_kind"),
+                                    Expr::u32(TOK_GOTO),
+                                ),
+                                Expr::eq(
+                                    Expr::var("cur_parent_prev_prev_sibling_kind"),
+                                    Expr::u32(TOK_VOLATILE),
+                                ),
+                            ),
+                        ),
                     ),
-                    vec![Node::assign(
-                        "colon_count_before",
-                        Expr::add(Expr::var("colon_count_before"), Expr::u32(1)),
-                    )],
                 ),
-            ],
+            ),
+        ),
+        Node::let_bind(
+            "colon_count_cursor",
+            Expr::load(
+                vast_nodes,
+                Expr::add(base.clone(), Expr::u32(VAST_PREVIOUS_SIBLING_FIELD)),
+            ),
+        ),
+        Node::if_then(
+            Expr::var("colon_count_needed"),
+            vec![Node::loop_for(
+                "colon_count_scan",
+                Expr::u32(0),
+                t.clone(),
+                vec![
+                    Node::let_bind(
+                        "colon_count_cursor_valid",
+                        Expr::lt(Expr::var("colon_count_cursor"), num_nodes.clone()),
+                    ),
+                    Node::let_bind(
+                        "colon_count_safe_cursor",
+                        Expr::select(
+                            Expr::var("colon_count_cursor_valid"),
+                            Expr::var("colon_count_cursor"),
+                            Expr::u32(0),
+                        ),
+                    ),
+                    Node::let_bind(
+                        "colon_count_scan_base",
+                        Expr::mul(
+                            Expr::var("colon_count_safe_cursor"),
+                            Expr::u32(VAST_NODE_STRIDE_U32),
+                        ),
+                    ),
+                    Node::let_bind(
+                        "colon_count_scan_kind",
+                        Expr::load(vast_nodes, Expr::var("colon_count_scan_base")),
+                    ),
+                    Node::if_then(
+                        Expr::and(
+                            Expr::var("colon_count_cursor_valid"),
+                            Expr::eq(Expr::var("colon_count_scan_kind"), Expr::u32(TOK_COLON)),
+                        ),
+                        vec![Node::assign(
+                            "colon_count_before",
+                            Expr::add(Expr::var("colon_count_before"), Expr::u32(1)),
+                        )],
+                    ),
+                    Node::assign(
+                        "colon_count_cursor",
+                        Expr::select(
+                            Expr::var("colon_count_cursor_valid"),
+                            Expr::load(
+                                vast_nodes,
+                                Expr::add(
+                                    Expr::var("colon_count_scan_base"),
+                                    Expr::u32(VAST_PREVIOUS_SIBLING_FIELD),
+                                ),
+                            ),
+                            Expr::u32(SENTINEL),
+                        ),
+                    ),
+                ],
+            )],
         ),
         Node::let_bind(
             "cur_parent_next_idx",

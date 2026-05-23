@@ -191,8 +191,7 @@ impl BodyCtx<'_> {
                     memory_class,
                 )?;
                 let load_space = self.load_space_for(binding_slot, memory_class);
-                let val_reg =
-                    self.emit_load_value(address, load_space, &element_type, elem_ty)?;
+                let val_reg = self.emit_load_value(address, load_space, &element_type, elem_ty)?;
                 self.bind_result(op, val_reg)?;
             }
             BufferLength => {
@@ -233,6 +232,28 @@ impl BodyCtx<'_> {
                     .ok_or_else(|| EmitError::InvalidDescriptor("BinOp missing right".into()))?;
                 let left = self.lookup_operand(left_id)?;
                 let right = self.lookup_operand(right_id)?;
+                if matches!(bin_op, vyre_foundation::ir::BinOp::Mul) {
+                    if let Some(constant) = self.u32_literals.get(&right_id).copied() {
+                        if let Some(result) = self.emit_small_u32_const_mul(left, constant) {
+                            self.bind_result(op, result)?;
+                            return Ok(());
+                        }
+                    }
+                    if let Some(constant) = self.u32_literals.get(&left_id).copied() {
+                        if let Some(result) = self.emit_small_u32_const_mul(right, constant) {
+                            self.bind_result(op, result)?;
+                            return Ok(());
+                        }
+                    }
+                }
+                if matches!(bin_op, vyre_foundation::ir::BinOp::Div) {
+                    if let Some(divisor) = self.u32_literals.get(&right_id).copied() {
+                        if let Some(result) = self.emit_fast_u32_const_div(left, divisor) {
+                            self.bind_result(op, result)?;
+                            return Ok(());
+                        }
+                    }
+                }
                 let (result, _result_ty) = self.emit_binop(*bin_op, left, right)?;
                 self.bind_result(op, result)?;
             }
@@ -248,7 +269,13 @@ impl BodyCtx<'_> {
             Return => {
                 // Handled by finish_with_return; per-op Return is a no-op here.
             }
-            Barrier { ordering: _ } => {
+            Barrier { ordering } => {
+                if ordering.requires_grid_sync() {
+                    return Err(EmitError::InvalidDescriptor(
+                        "MemoryOrdering::GridSync cannot be emitted as PTX bar.sync 0. Fix: route this Program through native CUDA cooperative-grid lowering or explicit kernel-split orchestration before PTX emission."
+                            .to_string(),
+                    ));
+                }
                 let _ = writeln!(self.text, "    bar.sync 0;");
             }
             Region { generator } => {
@@ -542,6 +569,13 @@ impl BodyCtx<'_> {
             }
             Resume { tag } => {
                 let _ = writeln!(self.text, "    // resume tag: {tag}");
+            }
+            IndirectDispatch { .. } => {
+                return Err(EmitError::UnsupportedOp(KernelOp {
+                    kind: op.kind.clone(),
+                    operands: op.operands.clone(),
+                    result: op.result,
+                }));
             }
             other => {
                 return Err(EmitError::UnsupportedOp(KernelOp {

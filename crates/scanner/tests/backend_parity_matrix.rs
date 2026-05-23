@@ -213,7 +213,8 @@ fn backend_parity_matrix_all_fixtures_all_backends() {
 
     for fixture in &fixtures {
         // SimdCpu is the reference for this fixture.
-        let reference_results = scanner.scan_chunks_with_backend(&fixture.chunks, ScanBackend::SimdCpu);
+        let reference_results =
+            scanner.scan_chunks_with_backend(&fixture.chunks, ScanBackend::SimdCpu);
         let reference_keys = collect_keys(&reference_results);
 
         for backend in backends {

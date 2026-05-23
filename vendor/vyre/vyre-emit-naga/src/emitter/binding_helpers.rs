@@ -167,30 +167,7 @@ impl BodyBuilder<'_> {
     /// `LocalVariable` + `Load` pair in the current block (so the
     /// `Statement::Emit` lands where the consumer needs it).  Otherwise
     /// returns whatever was cached in `self.values`.
-    pub(super) fn value_handle_for_id(
-        &mut self,
-        id: u32,
-    ) -> Option<naga::Handle<Expression>> {
-        // Named loop carrier read: emit a fresh `Load` from the
-        // function-scope `LocalVariable` named for the source-level
-        // carrier, in the consumer's current block. Bypasses the
-        // block-scoped local publish path because routing every
-        // consumer through a single block-scoped local lets
-        // downstream wgpu/naga optimizers hoist the per-iteration
-        // Load out of the loop, which silently loses the carrier's
-        // per-iteration update and pins reads to the seed value.
-        if let Some(name) = self.named_carrier_result_ids.get(&id).cloned() {
-            if let Some(local) = self.named_carrier_locals.get(&name).copied() {
-                let pointer = self.append_expr(Expression::LocalVariable(local));
-                let load = self.append_expr(Expression::Load { pointer });
-                let expected = self.value_types.get(&id).copied();
-                let coerced = match expected {
-                    Some(t) => self.coerce_value_to_type(load, t),
-                    None => load,
-                };
-                return Some(coerced);
-            }
-        }
+    pub(super) fn value_handle_for_id(&mut self, id: u32) -> Option<naga::Handle<Expression>> {
         // If the cached carrier local was allocated with a different
         // scalar type than the authoritative `value_types[id]` (a
         // later `bind_result_typed` rebound the same vyre id to a
@@ -203,15 +180,11 @@ impl BodyBuilder<'_> {
         // the scope-safety of the LocalVariable round-trip while
         // honoring the consumer's expected type.
         let expected_ty = self.value_types.get(&id).copied();
-        if let Some(local) = self.loop_carrier_locals.get(&id).copied() {
-            let pointer = self.append_expr(Expression::LocalVariable(local));
-            let load = self.append_expr(Expression::Load { pointer });
-            let coerced = match expected_ty {
-                Some(t) => self.coerce_value_to_type(load, t),
-                None => load,
-            };
-            return Some(coerced);
-        }
+        // A descriptor can reuse a numeric id across distinct SSA values after
+        // control-flow lowering. When that happens, a later block-scoped bind
+        // is the current SSA value and must shadow an older loop-carrier local;
+        // otherwise consumers reload stale carrier state, as in
+        // utf8_shape_counts resetting `expected` from a literal carrier.
         if let Some(local) = self.block_scoped_locals.get(&id).copied() {
             let pointer = self.append_expr(Expression::LocalVariable(local));
             let load = self.append_expr(Expression::Load { pointer });
@@ -221,7 +194,35 @@ impl BodyBuilder<'_> {
             };
             return Some(coerced);
         }
-        self.values.get(&id).copied()
+        if let Some(local) = self.loop_carrier_locals.get(&id).copied() {
+            let pointer = self.append_expr(Expression::LocalVariable(local));
+            let load = self.append_expr(Expression::Load { pointer });
+            let coerced = match expected_ty {
+                Some(t) => self.coerce_value_to_type(load, t),
+                None => load,
+            };
+            return Some(coerced);
+        }
+        if let Some(value) = self.values.get(&id).copied() {
+            return Some(value);
+        }
+        // Last-resort recovery for a malformed descriptor path that
+        // references a named carrier result without a bound snapshot.
+        // Correct descriptors bind every `LoopCarrier` result through
+        // `emit_loop_carrier_read`; consumers must see that SSA snapshot,
+        // not a fresh carrier reload after later `LoopCarrierEnd` writes.
+        if let Some(name) = self.named_carrier_result_ids.get(&id).cloned() {
+            if let Some(local) = self.named_carrier_locals.get(&name).copied() {
+                let pointer = self.append_expr(Expression::LocalVariable(local));
+                let load = self.append_expr(Expression::Load { pointer });
+                let coerced = match expected_ty {
+                    Some(t) => self.coerce_value_to_type(load, t),
+                    None => load,
+                };
+                return Some(coerced);
+            }
+        }
+        None
     }
 
     pub(super) fn bind_result(
@@ -242,6 +243,17 @@ impl BodyBuilder<'_> {
         // updated value (rather than the just-computed expression
         // handle, which would shadow later iterations).
         if self.loop_carrier_targets.contains(&result) {
+            // Numeric descriptor ids are not globally unique after structured
+            // lowering. A previous child block may have allocated a
+            // block-scoped local for the same number, but this bind is the
+            // current loop-carried SSA value. If the stale block local stays
+            // in the map, value_handle_for_id resolves future accumulator
+            // reads to the older block constant before it ever reaches the
+            // live loop carrier. Sinkhorn's GEMM accumulator hit exactly that:
+            // id 99 first denoted matrix width `2`, then the accumulator
+            // snapshot, causing every sum to start at 2. Drop the stale block
+            // shadow when a real carrier owns the id.
+            self.block_scoped_locals.remove(&result);
             let init = value;
             if std::env::var("VYRE_PUBLISH_TRACE").is_ok() {
                 let underlying = self.resolve_underlying_local_kind(init);
@@ -297,6 +309,12 @@ impl BodyBuilder<'_> {
             });
             self.values.insert(result, load);
         } else {
+            // A top-level rebind is authoritative in the current SSA scope.
+            // Clear older function-local shadows for the same numeric id so
+            // later operands do not prefer a stale child-block or loop-carrier
+            // value over the freshly inserted inline handle.
+            self.block_scoped_locals.remove(&result);
+            self.loop_carrier_locals.remove(&result);
             self.values.insert(result, value);
         }
 
@@ -305,7 +323,9 @@ impl BodyBuilder<'_> {
                 vyre_op_id: result,
                 op_kind: format!("{:?}", op.kind),
                 init_handle: value.index() as u32,
-                init_scalar_kind: self.scalar_kind_of_expression(value, 0).map(|s| format!("{:?}", s)),
+                init_scalar_kind: self
+                    .scalar_kind_of_expression(value, 0)
+                    .map(|s| format!("{:?}", s)),
                 child_body_depth: self.child_body_depth,
                 value_types_at_call: self.value_types.get(&result).map(|t| t.index() as u32),
                 publish_path: if self.loop_carrier_targets.contains(&result) {
@@ -316,16 +336,32 @@ impl BodyBuilder<'_> {
                     "Inline".to_string()
                 },
                 local_allocated_ty: if self.loop_carrier_targets.contains(&result) {
-                    Some(self.function.local_variables[self.loop_carrier_locals[&result]].ty.index() as u32)
+                    Some(
+                        self.function.local_variables[self.loop_carrier_locals[&result]]
+                            .ty
+                            .index() as u32,
+                    )
                 } else if self.child_body_depth > 0 {
-                    Some(self.function.local_variables[self.block_scoped_locals[&result]].ty.index() as u32)
+                    Some(
+                        self.function.local_variables[self.block_scoped_locals[&result]]
+                            .ty
+                            .index() as u32,
+                    )
                 } else {
                     None
                 },
             };
             use std::io::Write;
-            if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(log_path) {
-                let _ = writeln!(file, "{}", serde_json::to_string(&entry).unwrap());
+            if let Ok(mut file) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(log_path)
+            {
+                let _ = writeln!(
+                    file,
+                    "{}",
+                    serde_json::to_string(&entry).unwrap_or_else(|_| unreachable!("unwrap site"))
+                );
             }
         }
 
@@ -387,7 +423,9 @@ impl BodyBuilder<'_> {
         match data_type {
             DataType::Bool => Ok(self.types.bool_ty),
             DataType::U8 | DataType::U16 | DataType::U32 | DataType::Bytes => Ok(self.types.u32_ty),
+            DataType::U64 => Ok(self.types.u64_ty),
             DataType::I8 | DataType::I16 | DataType::I32 => Ok(self.types.i32_ty),
+            DataType::I64 => Ok(self.types.i64_ty),
             DataType::F32 => Ok(self.types.f32_ty),
             other => Err(EmitError::NagaConstructionFailed(format!(
                 "data type `{other:?}` has no scalar Naga descriptor type"

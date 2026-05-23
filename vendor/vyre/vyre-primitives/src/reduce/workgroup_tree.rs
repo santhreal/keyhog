@@ -372,7 +372,10 @@ mod tests {
             ],
         )
         .expect("Fix: workgroup_sum_f32 must execute in the reference interpreter.");
-        assert_eq!(decode_f32(&outputs[0].to_bytes()), values.iter().sum());
+        assert_eq!(
+            decode_f32(&outputs[0].to_bytes()),
+            values.iter().copied().sum::<f32>()
+        );
     }
 
     #[test]

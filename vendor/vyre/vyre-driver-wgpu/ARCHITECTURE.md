@@ -72,9 +72,8 @@ Standalone binaries (debug helpers, conform probes).
 
 ## Integration points
 
-- Default backend for surgec (`feature = "gpu"`).
+- Default portable GPU backend.
 - The conform runner uses this backend's CPU reference as the
   oracle.
-- Surgec's fused-dispatch path
-  (`compile/fuse_dispatch.rs::FusedDispatch`) targets this
-  backend's standard binding layout.
+- Downstream fused-dispatch paths target this backend's standard
+  binding layout.

@@ -17,11 +17,53 @@ use super::module_cache::{
 use super::plan::{compute_ordered_output_indices, CudaDispatchPlan};
 use super::ptx_target::select_loadable_ptx_target_sm;
 use super::resident::{CudaResidentBuffer, CudaResidentStore, ResidentBufferView};
-use crate::device::CudaDeviceCaps;
+use super::staging_reserve::reserve_smallvec;
+use super::telemetry::{CudaTelemetry, CudaTelemetrySnapshot};
+use crate::device::{CudaDeviceCaps, CudaDeviceHandle};
 
 const TRANSIENT_ALLOCATION_POOL_BYTES: usize = 256 * 1024 * 1024;
 const PINNED_HOST_POOL_BYTES: usize = 128 * 1024 * 1024;
 const CUDA_LAUNCH_RESOURCE_CACHE: usize = 128;
+
+fn resolve_fixpoint_iterations(config: &DispatchConfig) -> Result<u32, BackendError> {
+    match config.fixpoint_iterations {
+        Some(0) => Err(BackendError::InvalidProgram {
+            fix: "Fix: DispatchConfig::fixpoint_iterations must be at least 1 when set; CUDA must not silently rewrite an explicit zero-iteration dispatch.".to_string(),
+        }),
+        Some(iterations) => Ok(iterations),
+        None => Ok(1),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn resident_dispatch_input_lengths_reserve_fallibly() {
+        let source = include_str!("dispatch.rs");
+        assert!(
+            source.contains("use super::staging_reserve::reserve_smallvec;"),
+            "Fix: CUDA resident dispatch staging must use the shared fallible staging reservation contract."
+        );
+        assert!(
+            source.contains("reserve_smallvec(")
+                && source.contains("&mut input_lengths")
+                && source.contains("static_bindings.input_indices.len()")
+                && source.contains("\"resident dispatch input lengths\"")
+                && !source.contains(concat!(
+                    "SmallVec::<[usize; 8]>::",
+                    "with_capacity(static_bindings.input_indices.len())"
+                ))
+                && !source.contains(concat!("input_lengths", ".resize(")),
+            "Fix: CUDA resident dispatch input-length staging must reserve fallibly instead of using infallible SmallVec capacity growth."
+        );
+        assert!(
+            source.contains(
+                "input_lengths.extend(std::iter::repeat_n(0, static_bindings.input_indices.len()))"
+            ),
+            "Fix: CUDA resident dispatch input lengths must extend after fallible reserve without resize-driven growth."
+        );
+    }
+}
 
 /// A live CUDA backend handle bound to a specific device.
 #[derive(Debug, Clone)]
@@ -37,6 +79,8 @@ pub struct CudaBackend {
     pub(crate) resident_store: Arc<CudaResidentStore>,
     pub(crate) validation_cache: Arc<ValidationCache>,
     pub(crate) graph_capture_lock: Arc<Mutex<()>>,
+    pub(crate) async_upload_stream: Arc<Mutex<Option<crate::stream::CudaStream>>>,
+    pub(crate) telemetry: Arc<CudaTelemetry>,
     pub(crate) ctx: Arc<CudaContext>,
 }
 
@@ -58,12 +102,9 @@ impl CudaBackend {
         // does on a previously-seen kernel hits the on-disk cuBIN
         // instead of re-JITing. Idempotent and respectful of operator
         // overrides via the CUDA_CACHE_* env vars.
-        crate::jit_cache::configure_jit_cache_default();
-        let caps = CudaDeviceCaps::probe(ordinal)?;
-        let ctx =
-            CudaContext::new(ordinal).map_err(|e| format!("CUDA context init failed: {e}"))?;
-        ctx.bind_to_thread()
-            .map_err(|e| format!("CUDA context bind failed during PTX target probe: {e}"))?;
+        crate::jit_cache::configure_jit_cache_default()?;
+        let device = CudaDeviceHandle::acquire_ordinal(ordinal)?;
+        let caps = device.caps;
         let ptx_target_sm = select_loadable_ptx_target_sm(caps.ptx_target_sm())?;
         Ok(Self {
             caps,
@@ -78,7 +119,9 @@ impl CudaBackend {
             resident_store: Arc::new(CudaResidentStore::new()),
             validation_cache: Arc::new(ValidationCache::default()),
             graph_capture_lock: Arc::new(Mutex::new(())),
-            ctx,
+            async_upload_stream: Arc::new(Mutex::new(None)),
+            telemetry: Arc::new(CudaTelemetry::default()),
+            ctx: device.ctx,
         })
     }
 
@@ -102,8 +145,8 @@ impl CudaBackend {
         let launch = self.prepare_launch_plan(program, &bindings, config)?;
         self.validate_program_cached(program)?;
         let cooperative = self.resolve_cooperative_flag(config)?;
-        let output_binding_indices = compute_ordered_output_indices(&bindings);
-        let fixpoint_iterations = config.fixpoint_iterations.unwrap_or(1).max(1);
+        let output_binding_indices = compute_ordered_output_indices(&bindings)?;
+        let fixpoint_iterations = resolve_fixpoint_iterations(config)?;
         Ok(CudaDispatchPlan {
             bindings,
             output_binding_indices,
@@ -122,8 +165,8 @@ impl CudaBackend {
         let launch = self.prepare_launch_plan(program, &bindings, config)?;
         self.validate_program_cached(program)?;
         let cooperative = self.resolve_cooperative_flag(config)?;
-        let output_binding_indices = compute_ordered_output_indices(&bindings);
-        let fixpoint_iterations = config.fixpoint_iterations.unwrap_or(1).max(1);
+        let output_binding_indices = compute_ordered_output_indices(&bindings)?;
+        let fixpoint_iterations = resolve_fixpoint_iterations(config)?;
         Ok(CudaDispatchPlan {
             bindings,
             output_binding_indices,
@@ -142,9 +185,15 @@ impl CudaBackend {
         let static_bindings = BindingPlan::build(program)?;
         let required_handles = static_bindings
             .bindings
-            .iter()
-            .filter(|binding| binding.role != BindingRole::Shared)
-            .count();
+            .len()
+            .checked_sub(static_bindings.shared_indices.len())
+            .ok_or_else(|| BackendError::InvalidProgram {
+                fix: format!(
+                    "Fix: CUDA resident binding plan has {} binding(s) but {} shared binding index(es). Rebuild the dispatch plan before launching.",
+                    static_bindings.bindings.len(),
+                    static_bindings.shared_indices.len()
+                ),
+            })?;
         if handles.len() != required_handles {
             return Err(BackendError::InvalidProgram {
                 fix: format!(
@@ -154,9 +203,13 @@ impl CudaBackend {
             });
         }
 
-        let mut input_lengths =
-            SmallVec::<[usize; 8]>::with_capacity(static_bindings.input_indices.len());
-        input_lengths.resize(static_bindings.input_indices.len(), 0);
+        let mut input_lengths = SmallVec::<[usize; 8]>::new();
+        reserve_smallvec(
+            &mut input_lengths,
+            static_bindings.input_indices.len(),
+            "resident dispatch input lengths",
+        )?;
+        input_lengths.extend(std::iter::repeat_n(0, static_bindings.input_indices.len()));
         let mut next_handle = 0usize;
         for binding in &static_bindings.bindings {
             if binding.role == BindingRole::Shared {
@@ -174,8 +227,8 @@ impl CudaBackend {
         let launch = self.prepare_launch_plan(program, &bindings, config)?;
         self.validate_program_cached(program)?;
         let cooperative = self.resolve_cooperative_flag(config)?;
-        let output_binding_indices = compute_ordered_output_indices(&bindings);
-        let fixpoint_iterations = config.fixpoint_iterations.unwrap_or(1).max(1);
+        let output_binding_indices = compute_ordered_output_indices(&bindings)?;
+        let fixpoint_iterations = resolve_fixpoint_iterations(config)?;
         Ok(CudaDispatchPlan {
             bindings,
             output_binding_indices,
@@ -263,6 +316,13 @@ impl CudaBackend {
         self.resident_store.handles_from_resources(resources)
     }
 
+    pub(crate) fn resident_handle_from_resource(
+        &self,
+        resource: &vyre_driver::Resource,
+    ) -> Result<CudaResidentBuffer, BackendError> {
+        self.resident_store.handle_from_resource(resource)
+    }
+
     pub(crate) fn module_cache_key(&self, ptx_src: &str) -> ModuleCacheKey {
         self.module_cache
             .key_for_ptx(ptx_src, self.caps.compute_capability)
@@ -298,6 +358,17 @@ impl CudaBackend {
         self.ptx_source_cache.snapshot()
     }
 
+    /// Runtime CUDA telemetry counters for launches, copies, readbacks, and syncs.
+    #[must_use]
+    pub fn telemetry_snapshot(&self) -> CudaTelemetrySnapshot {
+        self.telemetry.snapshot()
+    }
+
+    /// Reset runtime CUDA telemetry counters without clearing caches or resident buffers.
+    pub fn reset_telemetry(&self) {
+        self.telemetry.reset();
+    }
+
     /// Bytes of transient CUDA device memory retained for dispatch reuse.
     ///
     /// # Errors
@@ -307,6 +378,17 @@ impl CudaBackend {
         self.transient_pool.cached_bytes()
     }
 
+    /// Bytes of transient CUDA device memory currently owned by the transient pool.
+    ///
+    /// This includes both checked-out allocations and cached allocations retained for reuse.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BackendError`] if allocation accounting cannot be read.
+    pub fn allocated_transient_allocation_bytes(&self) -> Result<usize, BackendError> {
+        self.transient_pool.allocated_bytes()
+    }
+
     /// Cached CUDA streams/events retained for dispatch reuse.
     ///
     /// # Errors
@@ -314,6 +396,18 @@ impl CudaBackend {
     /// Returns [`BackendError`] if a launch-resource pool lock is poisoned.
     pub fn cached_launch_resource_counts(&self) -> Result<(usize, usize), BackendError> {
         self.launch_resources.cached_counts()
+    }
+
+    /// Detailed cached CUDA launch resources retained for dispatch reuse,
+    /// including timing-enabled events used by CUDA graph replay telemetry.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BackendError`] if launch-resource accounting cannot be read.
+    pub fn cached_launch_resource_counts_detailed(
+        &self,
+    ) -> Result<crate::CudaLaunchResourceCounts, BackendError> {
+        self.launch_resources.cached_counts_detailed()
     }
 
     /// Snapshot the driver-tier observability surface
@@ -334,11 +428,30 @@ impl CudaBackend {
     ///
     /// P-CUDA-2: PTX/CUBIN blobs persist across runs in this directory
     /// so first-run compile cost amortizes over the cluster.
-    #[must_use]
-    pub fn ptx_disk_cache_dir() -> std::path::PathBuf {
-        std::env::var_os("VYRE_PTX_CACHE_DIR")
-            .map(std::path::PathBuf::from)
-            .unwrap_or_else(|| std::env::temp_dir().join("vyre-ptx-cache"))
+    pub fn ptx_disk_cache_dir() -> Result<std::path::PathBuf, BackendError> {
+        if let Some(path) = std::env::var_os("VYRE_PTX_CACHE_DIR") {
+            let path = std::path::PathBuf::from(path);
+            if path.as_os_str().is_empty() {
+                return Err(BackendError::InvalidProgram {
+                    fix: "Fix: VYRE_PTX_CACHE_DIR is empty. Set it to a writable persistent directory or unset it so XDG/HOME cache discovery can run."
+                        .to_string(),
+                });
+            }
+            return Ok(path);
+        }
+        if let Some(xdg) = std::env::var_os("XDG_CACHE_HOME") {
+            return Ok(std::path::PathBuf::from(xdg).join("vyre").join("ptx-cache"));
+        }
+        if let Some(home) = std::env::var_os("HOME") {
+            return Ok(std::path::PathBuf::from(home)
+                .join(".cache")
+                .join("vyre")
+                .join("ptx-cache"));
+        }
+        Err(BackendError::InvalidProgram {
+            fix: "Fix: CUDA PTX disk cache has no VYRE_PTX_CACHE_DIR, XDG_CACHE_HOME, or HOME. Configure a writable persistent cache root; temporary fallback is forbidden for production compile performance."
+                .to_string(),
+        })
     }
 
     /// Pre-lower and preload a CUDA pipeline for repeated dispatch.
@@ -365,11 +478,45 @@ impl CudaBackend {
         program: std::sync::Arc<Program>,
         config: &DispatchConfig,
     ) -> Result<std::sync::Arc<dyn vyre_driver::CompiledPipeline>, BackendError> {
+        let trace = std::env::var_os("VYRE_CUDA_STAGE_TRACE").is_some();
+        let started = std::time::Instant::now();
+        if trace {
+            eprintln!(
+                "[cuda-compile] start entry={}",
+                program.entry_op_id.as_deref().unwrap_or("<anonymous>")
+            );
+        }
         let prepared = self.prepare_static_dispatch(program.as_ref(), config)?;
+        if trace {
+            eprintln!(
+                "[cuda-compile] +{}ms prepare_static_dispatch buffers={} outputs={} elements={} grid={:?}",
+                started.elapsed().as_millis(),
+                prepared.bindings.bindings.len(),
+                prepared.output_binding_indices.len(),
+                prepared.launch.element_count,
+                prepared.launch.grid
+            );
+        }
         let ptx_src = self.ptx_for_program_cached(program.as_ref(), config)?;
+        if trace {
+            eprintln!(
+                "[cuda-compile] +{}ms ptx_source bytes={}",
+                started.elapsed().as_millis(),
+                ptx_src.len()
+            );
+        }
         let module_key = self.module_cache_key(&ptx_src);
         self.warmup()?;
+        if trace {
+            eprintln!("[cuda-compile] +{}ms warmup", started.elapsed().as_millis());
+        }
         self.module_for_ptx_with_key(&ptx_src, module_key)?;
+        if trace {
+            eprintln!(
+                "[cuda-compile] +{}ms module ready",
+                started.elapsed().as_millis()
+            );
+        }
         Ok(std::sync::Arc::new(
             crate::pipeline::CudaCompiledPipeline::new(
                 self.clone(),

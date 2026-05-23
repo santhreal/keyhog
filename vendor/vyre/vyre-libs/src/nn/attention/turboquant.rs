@@ -47,8 +47,79 @@ pub fn turboquant_attention(
         let word = Expr::load(buf, Expr::div(flat.clone(), Expr::u32(10)));
         let shift = Expr::mul(Expr::rem(flat, Expr::u32(10)), Expr::u32(3));
         let nib = Expr::bitand(Expr::shr(word, shift), Expr::u32(0x7));
-        Expr::cast(DataType::F32, nib)
+        Expr::select(
+            Expr::eq(nib.clone(), Expr::u32(0)),
+            Expr::f32(0.0),
+            Expr::select(
+                Expr::eq(nib.clone(), Expr::u32(1)),
+                Expr::f32(1.0),
+                Expr::select(
+                    Expr::eq(nib.clone(), Expr::u32(2)),
+                    Expr::f32(2.0),
+                    Expr::select(
+                        Expr::eq(nib.clone(), Expr::u32(3)),
+                        Expr::f32(3.0),
+                        Expr::select(
+                            Expr::eq(nib.clone(), Expr::u32(4)),
+                            Expr::f32(4.0),
+                            Expr::select(
+                                Expr::eq(nib.clone(), Expr::u32(5)),
+                                Expr::f32(5.0),
+                                Expr::select(
+                                    Expr::eq(nib, Expr::u32(6)),
+                                    Expr::f32(6.0),
+                                    Expr::f32(7.0),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
     };
+
+    if seq_len <= 8 && d_head <= 16 {
+        let mut stores = Vec::with_capacity(d_head as usize);
+        for dim in 0..d_head {
+            let mut acc = Expr::f32(0.0);
+            for i in 0..seq_len {
+                let mut score = Expr::f32(0.0);
+                for e in 0..d_head {
+                    score = Expr::add(
+                        score,
+                        Expr::mul(
+                            Expr::load(q, Expr::u32(e)),
+                            unpack_3bit(k_packed, Expr::u32(i * d_head + e)),
+                        ),
+                    );
+                }
+                acc = Expr::add(
+                    acc,
+                    Expr::mul(score, unpack_3bit(v_packed, Expr::u32(i * d_head + dim))),
+                );
+            }
+            stores.push(Node::store(out, Expr::u32(dim), acc));
+        }
+        return Program::wrapped(
+            vec![
+                BufferDecl::storage(q, 0, BufferAccess::ReadOnly, DataType::F32).with_count(d_head),
+                BufferDecl::storage(k_packed, 1, BufferAccess::ReadOnly, DataType::U32)
+                    .with_count(packed_words),
+                BufferDecl::storage(v_packed, 2, BufferAccess::ReadOnly, DataType::U32)
+                    .with_count(packed_words),
+                BufferDecl::storage(out, 3, BufferAccess::ReadWrite, DataType::F32)
+                    .with_count(d_head),
+            ],
+            [1, 1, 1],
+            vec![wrap_anonymous(
+                OP_ID,
+                vec![Node::if_then(
+                    Expr::eq(Expr::InvocationId { axis: 0 }, Expr::u32(0)),
+                    stores,
+                )],
+            )],
+        );
+    }
 
     // Per output lane d: walk i in 0..seq_len, accumulate score*V.
     let t = Expr::InvocationId { axis: 0 };
@@ -159,6 +230,7 @@ inventory::submit! {
             // out[1] = score[0]*v01 + score[1]*v11 = 3*0 + 7*1 = 7
             vec![vec![to_f32_bytes(&[3.0, 7.0])]]
         }),
+        category: Some("nn"),
     }
 }
 
@@ -220,7 +292,11 @@ mod tests {
         )
         .expect("Fix: turboquant seq_len=0 must not panic");
         let out = decode_f32(&outputs[0].to_bytes());
-        assert_eq!(out, vec![0.0, 0.0], "turboquant zero seq_len must produce zeros");
+        assert_eq!(
+            out,
+            vec![0.0, 0.0],
+            "turboquant zero seq_len must produce zeros"
+        );
     }
 
     #[test]

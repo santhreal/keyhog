@@ -30,6 +30,7 @@
 //! × 4 bytes × 32 lanes = 512 bytes per warp).
 
 use rustc_hash::FxHashMap;
+use std::hash::BuildHasherDefault;
 use std::sync::Arc;
 
 use super::eqsat::{EClassId, EGraph, ENodeLang};
@@ -50,7 +51,7 @@ pub struct SnapshotRow {
 }
 
 /// One discovered equivalence (e-class merge candidate) produced by a
-/// saturation pass. The CPU merges these back into the EGraph.
+/// saturation pass. The CPU merges these back into the `EGraph`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub struct Equivalence {
     /// Left e-class id.
@@ -86,7 +87,7 @@ impl OpIdRegistry {
         if let Some(&id) = self.by_name.get(name) {
             return id;
         }
-        let id = self.names.len() as u32;
+        let id = u32_len(self.names.len(), "op-id registry");
         let name: Arc<str> = Arc::from(name);
         self.names.push(Arc::clone(&name));
         self.by_name.insert(name, id);
@@ -116,7 +117,7 @@ impl GpuEGraphSnapshot {
     /// Build a snapshot from a sequence of `(eclass_id, op_name,
     /// children: &[u32])` triples. Caller-driven construction so
     /// this module doesn't depend on the exact `eqsat::EGraph`
-    /// internal shape; the EGraph crate's adapter calls this
+    /// internal shape; the `EGraph` crate's adapter calls this
     /// builder to materialise the GPU mirror.
     #[must_use]
     pub fn build<'a, I>(rows: I) -> Self
@@ -129,8 +130,8 @@ impl GpuEGraphSnapshot {
         snapshot.rows.reserve(lower_bound);
         for (eclass_id, op_name, kids) in rows {
             let language_op_id = snapshot.op_ids.intern(op_name);
-            let children_offset = snapshot.children.len() as u32;
-            let children_len = kids.len() as u32;
+            let children_offset = u32_len(snapshot.children.len(), "GPU egraph children offset");
+            let children_len = u32_len(kids.len(), "GPU egraph row child count");
             snapshot.children.extend_from_slice(kids);
             snapshot.rows.push(SnapshotRow {
                 eclass_id,
@@ -142,7 +143,7 @@ impl GpuEGraphSnapshot {
         snapshot
     }
 
-    /// Materialise a snapshot directly from the CPU EGraph.
+    /// Materialise a snapshot directly from the CPU `EGraph`.
     ///
     /// The caller supplies the stable operation-name projection because
     /// `ENodeLang` is intentionally domain-generic and does not require
@@ -160,8 +161,8 @@ impl GpuEGraphSnapshot {
         for (eclass_id, node) in egraph.iter_nodes() {
             let language_op_id = snapshot.op_ids.intern(op_name(node).as_ref());
             let children = node.children();
-            let children_offset = snapshot.children.len() as u32;
-            let children_len = children.len() as u32;
+            let children_offset = u32_len(snapshot.children.len(), "GPU egraph children offset");
+            let children_len = u32_len(children.len(), "GPU egraph row child count");
             snapshot
                 .children
                 .extend(children.iter().map(|child| egraph.find_immut(*child).0));
@@ -209,7 +210,7 @@ impl GpuEGraphSnapshot {
     #[must_use]
     pub fn rows_by_eclass(&self) -> FxHashMap<u32, Vec<usize>> {
         let mut out: FxHashMap<u32, Vec<usize>> =
-            FxHashMap::with_capacity_and_hasher(self.rows.len(), Default::default());
+            FxHashMap::with_capacity_and_hasher(self.rows.len(), BuildHasherDefault::default());
         for (i, row) in self.rows.iter().enumerate() {
             out.entry(row.eclass_id).or_default().push(i);
         }
@@ -217,12 +218,12 @@ impl GpuEGraphSnapshot {
     }
 }
 
-/// Report returned after applying discovered equivalences to an EGraph.
+/// Report returned after applying discovered equivalences to an `EGraph`.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct ApplyEquivalencesReport {
     /// Input equivalence count.
     pub requested: usize,
-    /// Equivalences whose e-class ids existed in the target EGraph.
+    /// Equivalences whose e-class ids existed in the target `EGraph`.
     pub valid: usize,
     /// Direct union operations that changed the union-find root.
     pub merged: usize,
@@ -232,7 +233,7 @@ pub struct ApplyEquivalencesReport {
 
 /// Apply a batch of GPU-discovered equivalences to a CPU-side
 /// merge sink. The `merger` closure receives `(left, right)` and
-/// performs the canonical EGraph merge. Returns the number of
+/// performs the canonical `EGraph` merge. Returns the number of
 /// merges that actually changed the union-find state (the merger
 /// returns `true` for a state-changing merge, `false` for a no-op
 /// where left and right were already in the same e-class).
@@ -249,7 +250,7 @@ where
     applied
 }
 
-/// Apply discovered equivalences to the CPU EGraph and rebuild it once.
+/// Apply discovered equivalences to the CPU `EGraph` and rebuild it once.
 ///
 /// Invalid e-class ids are counted as requested but not applied; user input
 /// must not be able to panic the optimizer by returning an out-of-range merge.
@@ -264,7 +265,7 @@ where
         requested: equivalences.len(),
         ..ApplyEquivalencesReport::default()
     };
-    let class_count = egraph.class_count() as u32;
+    let class_count = u32_len(egraph.class_count(), "CPU egraph class count");
     for eq in equivalences {
         if eq.left >= class_count || eq.right >= class_count {
             continue;
@@ -279,6 +280,15 @@ where
     }
     report.rebuild_unions = egraph.rebuild();
     report
+}
+
+#[inline]
+#[expect(
+    clippy::expect_used,
+    reason = "GPU snapshot ABI stores row offsets and ids as u32; exceeding it is a hard capacity breach"
+)]
+fn u32_len(value: usize, _context: &str) -> u32 {
+    u32::try_from(value).expect("Fix: GPU egraph snapshot exceeds u32 encoding capacity")
 }
 
 #[cfg(test)]

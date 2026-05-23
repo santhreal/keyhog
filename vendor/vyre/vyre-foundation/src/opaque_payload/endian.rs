@@ -57,8 +57,14 @@ macro_rules! impl_le_codec {
                                     stringify!($width),
                                     "` bytes of `bytes` as a little-endian `", stringify!($ty),
                                     "`, returning the decoded value and the remaining tail. \
+            # Errors\
+\
             Returns [`OpaquePayloadTruncated`] if `bytes` is shorter than \
             the fixed width.")]
+        #[expect(
+            clippy::missing_errors_doc,
+            reason = "macro-generated endian readers share the doc contract above"
+        )]
         pub fn $read(bytes: &[u8]) -> Result<($ty, &[u8]), OpaquePayloadTruncated> {
             let width = $width;
             if bytes.len() < width {

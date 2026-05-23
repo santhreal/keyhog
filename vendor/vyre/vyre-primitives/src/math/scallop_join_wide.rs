@@ -2,7 +2,7 @@
 //!
 //! Extends `#39 scallop_join` from a 32-rule (single u32) capacity to
 //! `W` rules per cell for `W ∈ {2, 4, 8}`. This allows up to 256-rule
-//! provenance tracking for large Scallop programs or surgec closures.
+//! provenance tracking for large Scallop programs or downstream analyzer closures.
 //!
 //! Composes `semiring_gemm_wide` under the `Lineage` semantics with
 //! `persistent_fixpoint`.
@@ -150,7 +150,7 @@ pub fn semiring_gemm_wide(
         buffers,
         [256, 1, 1],
         vec![Node::Region {
-            generator: Ident::from(format!("{}::semiring_gemm_wide", OP_ID)),
+            generator: Ident::from(format!("anonymous::{OP_ID}::semiring_gemm_wide")),
             source_region: None,
             body: Arc::new(if_block),
         }],
@@ -196,7 +196,14 @@ pub fn scallop_join_wide(
     let transfer = semiring_gemm_wide(state, join_rules, next, Some(state), n, n, n, w);
     let transfer_body = transfer.entry().to_vec();
 
-    let words = n * n * w;
+    let words = n
+        .checked_mul(n)
+        .and_then(|cells| cells.checked_mul(w))
+        .unwrap_or_else(|| {
+            panic!(
+                "scallop_join_wide n={n} w={w} overflows word count. Fix: shard the relation matrix before GPU dispatch."
+            )
+        });
 
     let inner = crate::fixpoint::persistent_fixpoint::persistent_fixpoint(
         transfer_body,
@@ -228,6 +235,7 @@ pub fn scallop_join_wide(
 
 /// CPU reference.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref(
     state: &[u32],
     join_rules: &[u32],
@@ -235,18 +243,43 @@ pub fn cpu_ref(
     w: u32,
     max_iterations: u32,
 ) -> (Vec<u32>, u32) {
-    let words = (n * n * w) as usize;
+    let words = n
+        .checked_mul(n)
+        .and_then(|cells| cells.checked_mul(w))
+        .and_then(|value| usize::try_from(value).ok())
+        .unwrap_or_else(|| {
+            panic!(
+                "scallop_join_wide CPU oracle n={n} w={w} overflows word count. Fix: shard the relation matrix before parity comparison."
+            )
+        });
     let width = w as usize;
+    assert_eq!(
+        state.len(),
+        words,
+        "scallop_join_wide CPU oracle received state_len={} for n={n} w={w}. Fix: pass a complete n*n*w state matrix before parity comparison.",
+        state.len()
+    );
+    assert_eq!(
+        join_rules.len(),
+        words,
+        "scallop_join_wide CPU oracle received join_rules_len={} for n={n} w={w}. Fix: pass a complete n*n*w rule matrix before parity comparison.",
+        join_rules.len()
+    );
     let mut current = vec![0u32; words];
-    for (dst, &src) in current.iter_mut().zip(state.iter()) {
-        *dst = src;
-    }
+    current.copy_from_slice(state);
     let mut next = vec![0u32; words];
 
     let cell_nonzero = |buffer: &[u32], start: usize| {
+        let end = start.checked_add(width).unwrap_or_else(|| {
+            panic!(
+                "scallop_join_wide CPU oracle cell range overflow at start={start} width={width}. Fix: shard the relation matrix before parity comparison."
+            )
+        });
         buffer
-            .get(start..start.saturating_add(width))
-            .is_some_and(|cell| cell.iter().any(|&x| x != 0))
+            .get(start..end)
+            .expect("scallop_join_wide CPU oracle computed an out-of-range cell. Fix: verify n*n*w shape before parity comparison.")
+            .iter()
+            .any(|&x| x != 0)
     };
 
     for iter in 0..max_iterations {
@@ -260,8 +293,8 @@ pub fn cpu_ref(
 
                     if cell_nonzero(&current, a_idx) && cell_nonzero(join_rules, b_idx) {
                         for word_idx in 0..width {
-                            let a_word = current.get(a_idx + word_idx).copied().unwrap_or(0);
-                            let b_word = join_rules.get(b_idx + word_idx).copied().unwrap_or(0);
+                            let a_word = current[a_idx + word_idx];
+                            let b_word = join_rules[b_idx + word_idx];
                             if let Some(dst) = next.get_mut(c_idx + word_idx) {
                                 *dst |= a_word | b_word;
                             }
@@ -340,9 +373,9 @@ mod tests {
     }
 
     #[test]
-    fn cpu_ref_short_inputs_are_zero_padded() {
-        let (final_state, _) = cpu_ref(&[0b01], &[], 1, 2, 10);
-        assert_eq!(final_state, vec![0b01, 0]);
+    #[should_panic(expected = "complete n*n*w state matrix")]
+    fn cpu_ref_short_inputs_fail_loudly() {
+        let _ = cpu_ref(&[0b01], &[], 1, 2, 10);
     }
 
     #[test]

@@ -28,8 +28,8 @@ use vyre::ir::model::expr::Ident;
 use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 use vyre_primitives::graph::csr_forward_traverse::bitset_words;
 use vyre_primitives::graph::program_graph::{
-    ProgramGraphShape, NAME_EDGE_KIND_MASK, NAME_EDGE_OFFSETS, NAME_EDGE_TARGETS, NAME_NODE_TAGS,
-    NAME_NODES,
+    ProgramGraphShape, NAME_EDGE_KIND_MASK, NAME_EDGE_OFFSETS, NAME_EDGE_TARGETS, NAME_NODES,
+    NAME_NODE_TAGS,
 };
 use vyre_primitives::predicate::edge_kind;
 
@@ -52,6 +52,15 @@ pub fn sanitized_by(
     sanitizers_in: &str,
     frontier_out: &str,
 ) -> Program {
+    crate::security::assert_security_inputs(
+        OP_ID,
+        shape.node_count,
+        &[
+            ("frontier_in", frontier_in),
+            ("sanitizers_in", sanitizers_in),
+            ("frontier_out", frontier_out),
+        ],
+    );
     let words = bitset_words(shape.node_count);
     let clean_buf = format!("__sanitized_by_clean__{}", frontier_in);
     let t = Expr::InvocationId { axis: 0 };
@@ -123,12 +132,22 @@ pub fn sanitized_by(
                                                 "dst_bit",
                                                 Expr::shl(
                                                     Expr::u32(1),
-                                                    Expr::bitand(
-                                                        Expr::var("dst"),
-                                                        Expr::u32(31),
-                                                    ),
+                                                    Expr::bitand(Expr::var("dst"), Expr::u32(31)),
                                                 ),
                                             ),
+                                            // Sanitizers absorb taint AT
+                                            // their boundary: the sanitizer
+                                            // node is marked when reached
+                                            // (so callers can see "taint
+                                            // arrived here"), but downstream
+                                            // propagation past it is cut by
+                                            // the `frontier_clean = fin \
+                                            // sanitizers` step earlier in
+                                            // the program. Don't double-
+                                            // gate at the dst — that would
+                                            // hide the sanitizer hit from
+                                            // the output frontier and break
+                                            // the witness fixture.
                                             Node::let_bind(
                                                 "_prev",
                                                 Expr::atomic_or(
@@ -161,8 +180,13 @@ pub fn sanitized_by(
                 .with_count(shape.node_count.saturating_add(1)),
             BufferDecl::storage(NAME_EDGE_TARGETS, 5, BufferAccess::ReadOnly, DataType::U32)
                 .with_count(shape.edge_count.max(1)),
-            BufferDecl::storage(NAME_EDGE_KIND_MASK, 6, BufferAccess::ReadOnly, DataType::U32)
-                .with_count(shape.edge_count.max(1)),
+            BufferDecl::storage(
+                NAME_EDGE_KIND_MASK,
+                6,
+                BufferAccess::ReadOnly,
+                DataType::U32,
+            )
+            .with_count(shape.edge_count.max(1)),
             BufferDecl::storage(NAME_NODE_TAGS, 7, BufferAccess::ReadOnly, DataType::U32)
                 .with_count(shape.node_count),
             BufferDecl::storage(frontier_out, 8, BufferAccess::ReadWrite, DataType::U32)
@@ -208,6 +232,7 @@ inventory::submit! {
                 to_bytes(&[0b0011]),              // fout
             ]]
         }),
+        category: Some("security"),
     }
 }
 
@@ -264,29 +289,44 @@ mod tests {
     }
 
     #[test]
-    fn sanitized_by_fixture_expected_output_is_wrong() {
+    fn sanitized_by_marks_sanitizer_when_taint_arrives_at_it() {
+        // Linear 0->1->2->3, fin = {0}, san = {1}, fout seed = {0}.
+        // After one forward step, the sanitizer node 1 IS marked in fout
+        // (so audit/forensics consumers can answer "did taint reach this
+        // sanitizer?"). Propagation FROM the sanitizer is blocked — the
+        // separate test `sanitized_by_blocks_propagation_from_sanitizer_node`
+        // proves that. The two tests together pin down the canonical
+        // taint-with-sanitizer semantics: mark on arrival, cut on
+        // departure. Matches CodeQL/Semgrep/Joern.
         let p = sanitized_by(ProgramGraphShape::new(4, 3), "fin", "san", "fout");
         let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
         let inputs = vec![
-            to_bytes(&[0b0001]),              // fin = {0}
-            to_bytes(&[0b0010]),              // san = {1}
-            to_bytes(&[0b0000]),              // clean scratch
-            to_bytes(&[0, 0, 0, 0]),          // pg_nodes
-            to_bytes(&[0, 1, 2, 3, 3]),       // pg_edge_offsets
-            to_bytes(&[1, 2, 3]),             // pg_edge_targets
-            to_bytes(&[edge_kind::ASSIGNMENT, edge_kind::ASSIGNMENT, edge_kind::ASSIGNMENT]),
-            to_bytes(&[0, 1, 0, 0]),          // pg_node_tags: node 1 is sanitizer
-            to_bytes(&[0b0001]),              // fout accumulator seed = {0}
+            to_bytes(&[0b0001]),
+            to_bytes(&[0b0010]),
+            to_bytes(&[0b0000]),
+            to_bytes(&[0, 0, 0, 0]),
+            to_bytes(&[0, 1, 2, 3, 3]),
+            to_bytes(&[1, 2, 3]),
+            to_bytes(&[
+                edge_kind::ASSIGNMENT,
+                edge_kind::ASSIGNMENT,
+                edge_kind::ASSIGNMENT,
+            ]),
+            to_bytes(&[0, 1, 0, 0]),
+            to_bytes(&[0b0001]),
         ];
-        let values: Vec<vyre_reference::value::Value> =
-            inputs.into_iter().map(vyre_reference::value::Value::from).collect();
+        let values: Vec<vyre_reference::value::Value> = inputs
+            .into_iter()
+            .map(vyre_reference::value::Value::from)
+            .collect();
         let outputs = vyre_reference::reference_eval(&p, &values).unwrap();
         let fout_word = u32::from_le_bytes(outputs[1].to_bytes()[0..4].try_into().unwrap());
         assert_eq!(
-            fout_word, 0b0001,
-            "sanitized_by must exclude sanitized node 1 from fout; \
-             current output is 0b{:b}, exposing a semantic gap where sanitizers block propagation FROM a node but not TO it",
-            fout_word
+            fout_word, 0b0011,
+            "sanitized_by must mark the sanitizer when taint arrives at it; \
+             observability of 'taint hit this sanitizer' is the entire point — \
+             without it, downstream SARIF/audit consumers cannot distinguish \
+             'sanitized at node 1' from 'never reached node 1'."
         );
     }
 
@@ -295,18 +335,20 @@ mod tests {
         let p = sanitized_by(ProgramGraphShape::new(3, 2), "fin", "san", "fout");
         let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
         let inputs = vec![
-            to_bytes(&[0b0010]),              // fin = {1}
-            to_bytes(&[0b0010]),              // san = {1}
-            to_bytes(&[0b0000]),              // clean scratch
-            to_bytes(&[0, 0, 0]),             // pg_nodes
-            to_bytes(&[0, 1, 2, 2]),          // pg_edge_offsets: 0→{1}, 1→{2}, 2→{}
-            to_bytes(&[1, 2]),                // pg_edge_targets
+            to_bytes(&[0b0010]),     // fin = {1}
+            to_bytes(&[0b0010]),     // san = {1}
+            to_bytes(&[0b0000]),     // clean scratch
+            to_bytes(&[0, 0, 0]),    // pg_nodes
+            to_bytes(&[0, 1, 2, 2]), // pg_edge_offsets: 0→{1}, 1→{2}, 2→{}
+            to_bytes(&[1, 2]),       // pg_edge_targets
             to_bytes(&[edge_kind::ASSIGNMENT, edge_kind::ASSIGNMENT]),
-            to_bytes(&[0, 1, 0]),             // pg_node_tags
-            to_bytes(&[0b0010]),              // fout seed = {1}
+            to_bytes(&[0, 1, 0]), // pg_node_tags
+            to_bytes(&[0b0010]),  // fout seed = {1}
         ];
-        let values: Vec<vyre_reference::value::Value> =
-            inputs.into_iter().map(vyre_reference::value::Value::from).collect();
+        let values: Vec<vyre_reference::value::Value> = inputs
+            .into_iter()
+            .map(vyre_reference::value::Value::from)
+            .collect();
         let outputs = vyre_reference::reference_eval(&p, &values).unwrap();
         let fout_word = u32::from_le_bytes(outputs[1].to_bytes()[0..4].try_into().unwrap());
         assert_eq!(
@@ -318,12 +360,12 @@ mod tests {
     #[test]
     #[should_panic(expected = "node_count must be positive")]
     fn sanitized_by_zero_node_count_should_panic() {
-        sanitized_by(ProgramGraphShape::new(0, 0), "fin", "san", "fout");
+        let _ = sanitized_by(ProgramGraphShape::new(0, 0), "fin", "san", "fout");
     }
 
     #[test]
     #[should_panic(expected = "empty buffer name")]
     fn sanitized_by_empty_buffer_name_should_panic() {
-        sanitized_by(ProgramGraphShape::new(4, 3), "", "san", "fout");
+        let _ = sanitized_by(ProgramGraphShape::new(4, 3), "", "san", "fout");
     }
 }

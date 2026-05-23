@@ -18,13 +18,13 @@
 //! instead of panicking at dispatch time.
 
 use crate::execution::call::invoke_cpu_ref;
-use vyre::{cpu_op::is_fallback_cpu_ref, Error, OpDef};
+use vyre::{cpu_op::is_cpu_reference_sentinel, Error, OpDef};
 
 /// Run a single op against its registered CPU reference.
 ///
-/// Category C IO ops and foundation's structured CPU fallback are rejected
-/// before invocation so the reference backend reports unsupported capability
-/// instead of executing a non-executable structured fallback.
+/// Category C IO ops and foundation's structured CPU reference sentinel are
+/// rejected before invocation so the reference backend reports unsupported
+/// capability instead of executing a non-executable structured oracle marker.
 ///
 /// # Errors
 ///
@@ -32,7 +32,7 @@ use vyre::{cpu_op::is_fallback_cpu_ref, Error, OpDef};
 ///
 /// * The op id is not registered with any dialect.
 /// * The registered op is a Category C IO op, which has no portable CPU path.
-/// * The registered op still points at foundation's structured CPU fallback.
+/// * The registered op still points at foundation's structured CPU reference sentinel.
 pub fn dispatch_op(op_id: &str, input: &[u8], output: &mut Vec<u8>) -> Result<(), Error> {
     let lookup = vyre::dialect_lookup().ok_or_else(|| {
         Error::interp(format!(
@@ -58,9 +58,9 @@ fn reject_unsupported_cpu_dispatch(op_id: &str, op_def: &OpDef) -> Result<(), Er
         )));
     }
 
-    if is_fallback_cpu_ref(op_def.lowerings.cpu_ref) {
+    if is_cpu_reference_sentinel(op_def.lowerings.cpu_ref) {
         return Err(Error::interp(format!(
-            "unsupported CPU reference dispatch for `{op_id}`: the op is registered with foundation's structured intrinsic fallback, not an executable flat-ABI CPU implementation. Fix: implement a typed reference adapter for `{op_id}` or route the program to a backend that declares a native lowering for this capability."
+            "unsupported CPU reference dispatch for `{op_id}`: the op is registered with foundation's structured intrinsic reference sentinel, not an executable flat-ABI CPU implementation. Fix: implement a typed reference adapter for `{op_id}` or route the program to a backend that declares a native lowering for this capability."
         )));
     }
 
@@ -227,19 +227,19 @@ mod tests {
     }
 
     #[test]
-    fn structured_cpu_fallback_refuses_reference_dispatch() {
+    fn structured_cpu_reference_sentinel_refuses_reference_dispatch() {
         install_test_lookup();
         let mut out = vec![0xAA];
         let err = dispatch_op("test.structured_fallback", &[1, 2], &mut out)
-            .expect_err("structured fallback must not look executable");
+            .expect_err("structured reference sentinel must not look executable");
         let msg = format!("{err}");
         assert!(
             msg.contains("test.structured_fallback"),
             "error message must name the op: {msg}"
         );
         assert!(
-            msg.contains("structured intrinsic fallback"),
-            "error must name foundation's fallback path: {msg}"
+            msg.contains("structured intrinsic reference sentinel"),
+            "error must name foundation's reference sentinel: {msg}"
         );
         assert!(
             msg.contains("Fix:"),

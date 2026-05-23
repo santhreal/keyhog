@@ -39,7 +39,7 @@ pub enum CommandReuseDecision {
     RecordAndReplay {
         /// Predicted total time saved (in nanoseconds) vs plain
         /// launches. Positive by construction.
-        savings_ns: u64,
+        savings_ns: u128,
     },
 }
 
@@ -59,14 +59,14 @@ pub fn decide_command_reuse(inputs: CommandReuseInputs) -> CommandReuseDecision 
         // recording costs us bytes for nothing.
         return CommandReuseDecision::PlainLaunches;
     }
-    let per_call_savings = inputs
-        .per_launch_overhead_ns
-        .saturating_sub(inputs.replay_overhead_ns);
-    let total_call_savings = (inputs.repeat_count as u64).saturating_mul(per_call_savings);
-    if total_call_savings <= inputs.record_overhead_ns {
+    let per_call_savings =
+        u128::from(inputs.per_launch_overhead_ns) - u128::from(inputs.replay_overhead_ns);
+    let total_call_savings = u128::from(inputs.repeat_count) * per_call_savings;
+    let record_overhead_ns = u128::from(inputs.record_overhead_ns);
+    if total_call_savings <= record_overhead_ns {
         return CommandReuseDecision::PlainLaunches;
     }
-    let savings_ns = total_call_savings.saturating_sub(inputs.record_overhead_ns);
+    let savings_ns = total_call_savings - record_overhead_ns;
     CommandReuseDecision::RecordAndReplay { savings_ns }
 }
 
@@ -140,12 +140,34 @@ mod tests {
     }
 
     #[test]
-    fn saturating_arithmetic_handles_extreme_inputs() {
+    fn widened_arithmetic_preserves_extreme_savings() {
         // u32::MAX repeats × u64-near-max savings shouldn't panic.
         let dec = decide_command_reuse(inp(u32::MAX, u64::MAX / 2, 25_000, 1));
         match dec {
-            CommandReuseDecision::RecordAndReplay { .. } => {}
+            CommandReuseDecision::RecordAndReplay { savings_ns } => {
+                assert_eq!(
+                    savings_ns,
+                    u128::from(u32::MAX) * (u128::from(u64::MAX / 2) - 1) - 25_000
+                );
+            }
             other => panic!("expected RecordAndReplay; got {:?}", other),
         }
+    }
+
+    #[test]
+    fn command_reuse_policy_source_uses_exact_widened_arithmetic() {
+        let source = include_str!("command_reuse_policy.rs");
+
+        assert!(
+            !source.contains(concat!("saturating", "_mul"))
+                && !source.contains(concat!("saturating", "_sub")),
+            "Fix: command-reuse policy must use exact widened arithmetic, not saturating replay-cost math."
+        );
+        assert!(
+            source.contains("u128::from(inputs.per_launch_overhead_ns)")
+                && source.contains("u128::from(inputs.repeat_count)")
+                && source.contains("total_call_savings - record_overhead_ns"),
+            "Fix: command-reuse savings must stay widened through the verdict."
+        );
     }
 }

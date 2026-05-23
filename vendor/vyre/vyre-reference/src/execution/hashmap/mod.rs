@@ -67,6 +67,23 @@ pub(crate) fn run_hashmap_reference(
         )));
     }
     let mut storage = FxHashMap::default();
+    let backend_allocated_output = |decl: &vyre::ir::BufferDecl| {
+        decl.is_output()
+            || decl.access() == BufferAccess::WriteOnly
+            || (decl.is_pipeline_live_out() && decl.access() == BufferAccess::ReadWrite)
+    };
+    let logical_input_count = program
+        .buffers()
+        .iter()
+        .filter(|decl| decl.access() != BufferAccess::Workgroup && !backend_allocated_output(decl))
+        .count();
+    let legacy_input_count = program
+        .buffers()
+        .iter()
+        .filter(|decl| decl.access() != BufferAccess::Workgroup)
+        .count();
+    let legacy_input_mode =
+        inputs.len() == legacy_input_count && inputs.len() != logical_input_count;
     let mut input_index = 0usize;
     let mut output_decls = Vec::new();
     let mut max_output_elements = 0u32;
@@ -79,9 +96,6 @@ pub(crate) fn run_hashmap_reference(
         if decl.binding() == 0 && decl.name() == "pg_nodes" {
             program_graph_node_count = Some(decl.count());
         }
-        let value = inputs . get (input_index) . ok_or_else (| | { Error :: interp (format ! ("missing input for buffer `{}`. Fix: pass one Value for each non-workgroup buffer in Program::buffers order." , decl . name ())) }) ? ;
-        input_index += 1;
-        let mut bytes = value.to_bytes();
         let stride = decl.element().min_bytes();
         let min_bytes = (decl.count() as usize).checked_mul(stride).ok_or_else(|| {
             Error::interp(format!(
@@ -91,9 +105,28 @@ pub(crate) fn run_hashmap_reference(
                 decl.element()
             ))
         })?;
-        if bytes.len() < min_bytes && decl.is_output() {
-            bytes.resize(min_bytes, 0);
-        }
+        let is_backend_allocated_output = backend_allocated_output(decl);
+        let bytes = if is_backend_allocated_output {
+            if legacy_input_mode {
+                let _legacy_output_initializer = inputs.get(input_index).ok_or_else(|| {
+                    Error::interp(format!(
+                        "missing legacy output initializer for buffer `{}`. Fix: pass one Value for each non-workgroup buffer or migrate to logical inputs only.",
+                        decl.name()
+                    ))
+                })?;
+                input_index += 1;
+            }
+            vec![0u8; min_bytes]
+        } else {
+            let value = inputs.get(input_index).ok_or_else(|| {
+                Error::interp(format!(
+                    "missing input for buffer `{}`. Fix: pass one Value for each non-output, non-workgroup buffer in Program::buffers order.",
+                    decl.name()
+                ))
+            })?;
+            input_index += 1;
+            value.to_bytes()
+        };
         if bytes.len() < min_bytes {
             return Err(Error::interp(format!(
                 "buffer `{}` has {} bytes but requires at least {} bytes ({} elements of {}). Fix: provide a larger input buffer.",
@@ -105,7 +138,7 @@ pub(crate) fn run_hashmap_reference(
             )));
         }
         let elements = element_count(decl, bytes.len())?;
-        if decl.access() == BufferAccess::ReadWrite {
+        if is_backend_allocated_output || decl.access() == BufferAccess::ReadWrite {
             max_output_elements = max_output_elements.max(elements);
             output_decls.push(decl.clone());
         } else {
@@ -144,7 +177,7 @@ pub(crate) fn run_hashmap_reference(
     let active: Vec<usize> = [sx, sy, sz]
         .iter()
         .enumerate()
-        .filter(|(_, &size)| size > 1)
+        .filter(|(_, size)| **size > 1)
         .map(|(i, _)| i)
         .collect();
     let n = active.len().max(1);

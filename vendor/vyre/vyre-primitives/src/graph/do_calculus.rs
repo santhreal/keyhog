@@ -33,6 +33,8 @@ use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Progra
 
 /// Op id.
 pub const OP_ID: &str = "vyre-primitives::graph::do_intervention_delete_incoming";
+/// Rule 2 op id.
+pub const RULE2_OP_ID: &str = "vyre-primitives::graph::do_rule2_reverse_incoming";
 
 /// Emit a Program that zeros all incoming edges to nodes marked
 /// "intervened" in `intervention_mask`. The result is the post-do
@@ -56,16 +58,29 @@ pub fn do_intervention_delete_incoming(
     out_adjacency: &str,
     n: u32,
 ) -> Program {
+    match try_do_intervention_delete_incoming(adjacency, intervention_mask, out_adjacency, n) {
+        Ok(program) => program,
+        Err(error) => {
+            eprintln!("{error}");
+            crate::invalid_output_program(OP_ID, out_adjacency, DataType::U32, error)
+        }
+    }
+}
+
+/// Emit an incoming-edge-deletion Program with checked adjacency matrix shape.
+pub fn try_do_intervention_delete_incoming(
+    adjacency: &str,
+    intervention_mask: &str,
+    out_adjacency: &str,
+    n: u32,
+) -> Result<Program, String> {
     if n == 0 {
-        return crate::invalid_output_program(
-            OP_ID,
-            out_adjacency,
-            DataType::U32,
-            format!("Fix: do_intervention_delete_incoming requires n > 0, got {n}."),
-        );
+        return Err(format!(
+            "Fix: do_intervention_delete_incoming requires n > 0, got {n}."
+        ));
     }
 
-    let cells = n * n;
+    let cells = checked_square_cells(n, OP_ID)?;
     let t = Expr::InvocationId { axis: 0 };
 
     // Decode (i, j) from flat invocation t = i*n + j; only j matters.
@@ -79,7 +94,7 @@ pub fn do_intervention_delete_incoming(
         vec![Node::store(out_adjacency, t, value)],
     )];
 
-    Program::wrapped(
+    Ok(Program::wrapped(
         vec![
             BufferDecl::storage(adjacency, 0, BufferAccess::ReadOnly, DataType::U32)
                 .with_count(cells),
@@ -94,11 +109,12 @@ pub fn do_intervention_delete_incoming(
             source_region: None,
             body: Arc::new(body),
         }],
-    )
+    ))
 }
 
 /// CPU reference.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn do_intervention_delete_incoming_cpu(
     adjacency: &[u32],
     intervention_mask: &[u32],
@@ -110,6 +126,7 @@ pub fn do_intervention_delete_incoming_cpu(
 }
 
 /// CPU reference writing into caller-owned storage.
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn do_intervention_delete_incoming_cpu_into(
     adjacency: &[u32],
     intervention_mask: &[u32],
@@ -117,13 +134,27 @@ pub fn do_intervention_delete_incoming_cpu_into(
     out: &mut Vec<u32>,
 ) {
     let n = n as usize;
+    let cells = n.checked_mul(n).unwrap_or_else(|| {
+        panic!(
+            "do_intervention_delete_incoming CPU oracle n={n} overflows adjacency cell count. Fix: shard the causal graph before parity comparison."
+        )
+    });
+    assert_eq!(
+        adjacency.len(),
+        cells,
+        "do_intervention_delete_incoming CPU oracle received adjacency_len={} for n={n}. Fix: pass a complete n*n adjacency matrix before parity comparison.",
+        adjacency.len()
+    );
+    assert_eq!(
+        intervention_mask.len(),
+        n,
+        "do_intervention_delete_incoming CPU oracle received intervention_mask_len={} for n={n}. Fix: pass one intervention slot per node before parity comparison.",
+        intervention_mask.len()
+    );
     out.clear();
-    out.resize(n * n, 0);
-    for (dst, &src) in out.iter_mut().zip(adjacency.iter()) {
-        *dst = src;
-    }
+    out.extend_from_slice(adjacency);
     for j in 0..n {
-        if intervention_mask.get(j).copied().unwrap_or(0) != 0 {
+        if intervention_mask[j] != 0 {
             for i in 0..n {
                 out[i * n + j] = 0; // zero column j
             }
@@ -185,9 +216,9 @@ mod tests {
     }
 
     #[test]
-    fn cpu_malformed_inputs_are_zero_padded() {
-        let out = do_intervention_delete_incoming_cpu(&[1], &[1], 2);
-        assert_eq!(out, vec![0, 0, 0, 0]);
+    #[should_panic(expected = "complete n*n adjacency matrix")]
+    fn cpu_malformed_inputs_fail_loudly() {
+        let _ = do_intervention_delete_incoming_cpu(&[1], &[1], 2);
     }
 
     #[test]
@@ -205,6 +236,54 @@ mod tests {
     fn zero_n_traps() {
         let p = do_intervention_delete_incoming("a", "m", "o", 0);
         assert!(p.stats().trap());
+    }
+
+    #[test]
+    fn checked_delete_incoming_rejects_zero_n() {
+        let error = try_do_intervention_delete_incoming("a", "m", "out", 0)
+            .expect_err("checked do-intervention builder must reject n=0");
+
+        assert!(
+            error.contains("requires n > 0"),
+            "error should describe the invalid causal graph shape: {error}"
+        );
+    }
+
+    #[test]
+    fn checked_delete_incoming_rejects_adjacency_cell_overflow() {
+        let error = try_do_intervention_delete_incoming("a", "m", "out", u32::MAX)
+            .expect_err("checked do-intervention builder must reject n*n overflow");
+
+        assert!(
+            error.contains("overflows adjacency cell count"),
+            "error should describe the adjacency matrix overflow: {error}"
+        );
+    }
+
+    #[test]
+    fn legacy_delete_incoming_does_not_panic_on_adjacency_cell_overflow() {
+        let program = do_intervention_delete_incoming("a", "m", "out", u32::MAX);
+
+        assert!(program.stats().trap());
+    }
+
+    #[test]
+    fn delete_incoming_builder_source_has_checked_api_without_panics() {
+        let source = include_str!("do_calculus.rs");
+        let builder_source = source
+            .split("/// Emit a Program that zeros all incoming edges")
+            .nth(1)
+            .expect("do-intervention builder source must be present")
+            .split("/// CPU reference.")
+            .next()
+            .expect("do-intervention builder source must precede CPU oracle");
+
+        assert!(
+            builder_source.contains("pub fn try_do_intervention_delete_incoming(")
+                && !builder_source.contains(concat!("panic", "!("))
+                && !builder_source.contains(".unwrap_or_else("),
+            "Fix: do_intervention_delete_incoming must expose checked release API and avoid production panics."
+        );
     }
 }
 
@@ -238,6 +317,90 @@ mod tests {
 ///
 /// Returns the reversed adjacency matrix.
 #[must_use]
+pub fn do_rule2_reverse_incoming(
+    adjacency: &str,
+    treatment_mask: &str,
+    out_adjacency: &str,
+    n: u32,
+) -> Program {
+    match try_do_rule2_reverse_incoming(adjacency, treatment_mask, out_adjacency, n) {
+        Ok(program) => program,
+        Err(error) => {
+            eprintln!("{error}");
+            crate::invalid_output_program(RULE2_OP_ID, out_adjacency, DataType::U32, error)
+        }
+    }
+}
+
+/// Emit a Rule 2 incoming-edge-reversal Program with checked adjacency matrix
+/// shape.
+pub fn try_do_rule2_reverse_incoming(
+    adjacency: &str,
+    treatment_mask: &str,
+    out_adjacency: &str,
+    n: u32,
+) -> Result<Program, String> {
+    if n == 0 {
+        return Err(format!(
+            "Fix: do_rule2_reverse_incoming requires n > 0, got {n}."
+        ));
+    }
+
+    let cells = checked_square_cells(n, RULE2_OP_ID)?;
+    let t = Expr::InvocationId { axis: 0 };
+    let row = Expr::div(t.clone(), Expr::u32(n));
+    let col = Expr::rem(t.clone(), Expr::u32(n));
+    let not_self = Expr::ne(row.clone(), col.clone());
+    let original = Expr::load(adjacency, t.clone());
+    let col_treated = Expr::ne(Expr::load(treatment_mask, col.clone()), Expr::u32(0));
+    let row_treated = Expr::ne(Expr::load(treatment_mask, row.clone()), Expr::u32(0));
+    let reverse_idx = Expr::add(Expr::mul(col, Expr::u32(n)), row);
+    let kept_original = Expr::select(
+        Expr::and(col_treated, not_self.clone()),
+        Expr::u32(0),
+        original,
+    );
+    let reversed_in = Expr::select(
+        Expr::and(row_treated, not_self),
+        Expr::load(adjacency, reverse_idx),
+        Expr::u32(0),
+    );
+    let value = Expr::bitor(kept_original, reversed_in);
+
+    let body = vec![Node::if_then(
+        Expr::lt(t.clone(), Expr::u32(cells)),
+        vec![Node::store(out_adjacency, t, value)],
+    )];
+
+    Ok(Program::wrapped(
+        vec![
+            BufferDecl::storage(adjacency, 0, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(cells),
+            BufferDecl::storage(treatment_mask, 1, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(n),
+            BufferDecl::storage(out_adjacency, 2, BufferAccess::ReadWrite, DataType::U32)
+                .with_count(cells),
+        ],
+        [256, 1, 1],
+        vec![Node::Region {
+            generator: Ident::from(RULE2_OP_ID),
+            source_region: None,
+            body: Arc::new(body),
+        }],
+    ))
+}
+
+fn checked_square_cells(n: u32, op_id: &'static str) -> Result<u32, String> {
+    n.checked_mul(n).ok_or_else(|| {
+        format!(
+            "{op_id} n={n} overflows adjacency cell count. Fix: shard the causal graph before GPU dispatch."
+        )
+    })
+}
+
+/// Rule 2 CPU reference.
+#[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn do_rule2_reverse_incoming_cpu(
     adjacency: &[u32],
     treatment_mask: &[u32],
@@ -249,6 +412,7 @@ pub fn do_rule2_reverse_incoming_cpu(
 }
 
 /// Rule 2 CPU reference writing into caller-owned storage.
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn do_rule2_reverse_incoming_cpu_into(
     adjacency: &[u32],
     treatment_mask: &[u32],
@@ -259,24 +423,22 @@ pub fn do_rule2_reverse_incoming_cpu_into(
     assert_eq!(adjacency.len(), n_us * n_us);
     assert_eq!(treatment_mask.len(), n_us);
     out.clear();
-    out.extend_from_slice(adjacency);
-    for j in 0..n_us {
-        if treatment_mask[j] == 0 {
-            continue;
-        }
-        for i in 0..n_us {
-            if i == j {
+    out.resize(n_us * n_us, 0);
+    for row in 0..n_us {
+        for col in 0..n_us {
+            let idx = row * n_us + col;
+            if row == col {
+                out[idx] = adjacency[idx];
                 continue;
             }
-            let forward = adjacency[i * n_us + j];
-            if forward != 0 {
-                // Move i→j to j→i, OR-merging with any existing
-                // reverse edge. Read from the immutable input matrix
-                // so simultaneous treatment-set reversals are not
-                // affected by earlier writes in this pass.
-                out[j * n_us + i] |= forward;
-                out[i * n_us + j] = 0;
+            let mut value = 0;
+            if treatment_mask[col] == 0 {
+                value |= adjacency[idx];
             }
+            if treatment_mask[row] != 0 {
+                value |= adjacency[col * n_us + row];
+            }
+            out[idx] = value;
         }
     }
 }
@@ -288,6 +450,7 @@ pub fn do_rule2_reverse_incoming_cpu_into(
 ///
 /// Returns `(reduced_adjacency, kept_index_to_original_index)`.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn do_rule3_subgraph_cpu(adjacency: &[u32], keep_mask: &[u32], n: u32) -> (Vec<u32>, Vec<u32>) {
     let mut reduced = Vec::new();
     let mut kept = Vec::new();
@@ -296,6 +459,7 @@ pub fn do_rule3_subgraph_cpu(adjacency: &[u32], keep_mask: &[u32], n: u32) -> (V
 }
 
 /// Rule 3 CPU reference writing into caller-owned storage.
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn do_rule3_subgraph_cpu_into(
     adjacency: &[u32],
     keep_mask: &[u32],
@@ -378,6 +542,62 @@ mod rule2_tests {
         let once = do_rule2_reverse_incoming_cpu(&a, &mask, 3);
         let twice = do_rule2_reverse_incoming_cpu(&once, &mask, 3);
         assert_eq!(twice, a);
+    }
+
+    #[test]
+    fn bidirectional_fully_treated_preserves_both_edges_without_order_loss() {
+        let a = vec![0, 1, 1, 0];
+        let mask = vec![1u32, 1];
+        let out = do_rule2_reverse_incoming_cpu(&a, &mask, 2);
+        assert_eq!(out, a);
+    }
+
+    #[test]
+    fn ir_program_buffer_layout() {
+        let p = do_rule2_reverse_incoming("a", "m", "out", 4);
+        assert_eq!(p.workgroup_size, [256, 1, 1]);
+        let names: Vec<&str> = p.buffers.iter().map(|b| b.name()).collect();
+        assert_eq!(names, vec!["a", "m", "out"]);
+        assert_eq!(p.buffers[0].count(), 16);
+        assert_eq!(p.buffers[1].count(), 4);
+        assert_eq!(p.buffers[2].count(), 16);
+    }
+
+    #[test]
+    fn checked_rule2_builder_rejects_adjacency_cell_overflow() {
+        let error = try_do_rule2_reverse_incoming("a", "m", "out", u32::MAX)
+            .expect_err("checked Rule 2 builder must reject n*n overflow");
+
+        assert!(
+            error.contains("overflows adjacency cell count"),
+            "error should describe the adjacency matrix overflow: {error}"
+        );
+    }
+
+    #[test]
+    fn legacy_rule2_builder_does_not_panic_on_adjacency_cell_overflow() {
+        let program = do_rule2_reverse_incoming("a", "m", "out", u32::MAX);
+
+        assert!(program.stats().trap());
+    }
+
+    #[test]
+    fn rule2_builder_source_has_checked_api_without_panics() {
+        let source = include_str!("do_calculus.rs");
+        let builder_source = source
+            .split("pub fn do_rule2_reverse_incoming(")
+            .nth(1)
+            .expect("Rule 2 builder source must be present")
+            .split("/// Rule 2 CPU reference.")
+            .next()
+            .expect("Rule 2 builder source must precede CPU oracle");
+
+        assert!(
+            builder_source.contains("pub fn try_do_rule2_reverse_incoming(")
+                && !builder_source.contains(concat!("panic", "!("))
+                && !builder_source.contains(".unwrap_or_else("),
+            "Fix: do_rule2_reverse_incoming must expose checked release API and avoid production panics."
+        );
     }
 }
 

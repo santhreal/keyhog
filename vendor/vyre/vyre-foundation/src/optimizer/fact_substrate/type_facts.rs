@@ -80,7 +80,6 @@ impl TypeFactCtx {
 
     fn expr_type(&mut self, expr: &Expr) -> Option<DataType> {
         let ty = match expr {
-            Expr::LitU32(_) => Some(DataType::U32),
             Expr::LitI32(_) => Some(DataType::I32),
             Expr::LitF32(_) => Some(DataType::F32),
             Expr::LitBool(_) => Some(DataType::Bool),
@@ -89,7 +88,8 @@ impl TypeFactCtx {
                 self.record_expr_type(index);
                 self.buffer_types.get(buffer).cloned()
             }
-            Expr::BufLen { .. }
+            Expr::LitU32(_)
+            | Expr::BufLen { .. }
             | Expr::InvocationId { .. }
             | Expr::WorkgroupId { .. }
             | Expr::LocalId { .. }

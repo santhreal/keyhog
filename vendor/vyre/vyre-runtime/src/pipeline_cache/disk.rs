@@ -44,9 +44,9 @@ pub type PersistentPipelineCacheStore = DiskCache;
 // return None so the caller recompiles. Covers torn writes +
 // bit-rot + deliberate tampering.
 pub(super) const CHECKSUM_LEN: usize = 32;
+pub(super) const CHECKSUM_LEN_U64: u64 = 32;
 pub(super) const MAX_PIPELINE_BLOB_BYTES: u64 = 64 * 1024 * 1024;
-pub(super) const MAX_ENCODED_PIPELINE_BLOB_BYTES: u64 =
-    MAX_PIPELINE_BLOB_BYTES + CHECKSUM_LEN as u64;
+pub(super) const MAX_ENCODED_PIPELINE_BLOB_BYTES: u64 = MAX_PIPELINE_BLOB_BYTES + CHECKSUM_LEN_U64;
 
 impl DiskCache {
     /// Construct a cache rooted at `root`. Creates the directory if
@@ -121,7 +121,8 @@ impl PipelineCacheStore for DiskCache {
             self.metrics.misses.fetch_add(1, Ordering::Relaxed);
             return None;
         };
-        let result = read_verified_cache_blob_with_capacity(file, meta.len() as usize);
+        let capacity = usize::try_from(meta.len()).ok()?;
+        let result = read_verified_cache_blob_with_capacity(file, capacity);
         if result.is_some() {
             self.metrics.hits.fetch_add(1, Ordering::Relaxed);
         } else {
@@ -300,7 +301,9 @@ fn read_verified_cache_blob_with_capacity(
     mut reader: impl Read,
     capacity: usize,
 ) -> Option<Vec<u8>> {
-    let mut bytes = Vec::with_capacity(capacity.min(MAX_ENCODED_PIPELINE_BLOB_BYTES as usize));
+    let max_encoded_capacity = usize::try_from(MAX_ENCODED_PIPELINE_BLOB_BYTES)
+        .expect("pipeline cache encoded blob cap must fit host usize");
+    let mut bytes = Vec::with_capacity(capacity.min(max_encoded_capacity));
     reader
         .by_ref()
         .take(MAX_ENCODED_PIPELINE_BLOB_BYTES + 1)
@@ -310,11 +313,12 @@ fn read_verified_cache_blob_with_capacity(
 }
 
 pub(super) fn verify_cache_blob(mut bytes: Vec<u8>) -> Option<Vec<u8>> {
-    if bytes.len() as u64 > MAX_ENCODED_PIPELINE_BLOB_BYTES || bytes.len() < CHECKSUM_LEN {
+    let byte_len = u64::try_from(bytes.len()).ok()?;
+    if byte_len > MAX_ENCODED_PIPELINE_BLOB_BYTES || bytes.len() < CHECKSUM_LEN {
         return None;
     }
     let payload_len = bytes.len() - CHECKSUM_LEN;
-    if payload_len as u64 > MAX_PIPELINE_BLOB_BYTES {
+    if u64::try_from(payload_len).ok()? > MAX_PIPELINE_BLOB_BYTES {
         return None;
     }
     let (payload, footer) = bytes.split_at(payload_len);

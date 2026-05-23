@@ -1,6 +1,6 @@
 [package]
 name = "vyre-bench"
-version = "0.4.1"
+version = "0.4.2"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -26,7 +26,10 @@ vyre-intrinsics = { workspace = true }
 vyre-lower = { workspace = true }
 vyre-emit-ptx = { workspace = true }
 vyre-spec = { workspace = true }
-weir = { workspace = true }
+# Dataflow-engine baselines are opt-in cross-crate comparison benches only.
+# The default benchmark surface stays vyre-only; `external-baselines` pulls the
+# sibling dataflow engine in for explicit comparison measurements.
+weir = { version = "0.1.0", path = "../../../../dataflow/weir", optional = true }
 vyre-frontend-c = { path = "../vyre-frontend-c" }
 blake3 = { workspace = true }
 
@@ -52,6 +55,13 @@ rusqlite = { workspace = true }
 core_affinity = "0.8.3"
 tree-sitter = "0.26.8"
 tree-sitter-c = "0.24.2"
+
+[features]
+default = []
+# Opt-in cross-crate comparison benches. Enables the `weir_dataflow`
+# case (vyre vs weir reaching-def / IFDS / Andersen). Off by default so
+# vyre-bench obeys the LEGO discipline (vyre never imports weir).
+external-baselines = ["dep:weir"]
 
 [dev-dependencies]
 criterion = { workspace = true }

@@ -88,6 +88,7 @@ pub fn interval_merge_program(
 
 /// CPU oracle for interval merge.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_interval_merge(
     mins_a: &[u32],
     maxs_a: &[u32],

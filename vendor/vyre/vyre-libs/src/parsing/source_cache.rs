@@ -9,7 +9,7 @@
 //!
 //! ## Why content hash, not string identity
 //!
-//! In the surgec scan loop the same `.h` header is included from
+//! In the downstream analyzer scan loop the same `.h` header is included from
 //! many translation units. Identity-keyed memoisation misses every
 //! caller because each caller holds its own `String`. Content-hash
 //! lookup lets every translation unit share a single parse.
@@ -19,26 +19,24 @@
 //! Workspace scans touch tens of thousands of distinct files. An
 //! unbounded cache grows without bound; an LRU bounded by entry
 //! count keeps the working set in memory and evicts cold entries
-//! deterministically. Eviction is pay-as-you-go: each `get_or_parse`
-//! call does at most one removal.
+//! deterministically. Hits refresh recency in O(1); eviction scans
+//! only the bounded live set on insert.
 //!
 //! ## Thread safety
 //!
 //! The cache is `Send + Sync` — backed by a `Mutex<...>` so the
-//! parse work proceeds outside the lock and only the lookup /
-//! insert / eviction touches it. Two callers asking for the same
-//! key concurrently each pay the parse cost (no per-key dedup), but
-//! the result of the second writer overwrites the first — both
-//! callers observe the same `Arc<T>` because the value is
-//! deterministic in the input.
+//! parse work proceeds outside the global cache lock and only the lookup /
+//! insert / eviction touches it. Concurrent callers asking for the same key
+//! coalesce through a per-key in-flight slot, so the expensive parse closure
+//! runs once and every waiter receives the same `Arc<T>`.
 
 use blake3::Hasher;
-use std::collections::HashMap;
-use std::collections::VecDeque;
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::cmp::{Ordering, Reverse};
+use std::collections::{BinaryHeap, HashMap};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 
 /// 32-byte BLAKE3 content hash used as the cache key.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct SourceHash(pub [u8; 32]);
 
 impl SourceHash {
@@ -58,8 +56,8 @@ impl SourceHash {
 }
 
 /// Bounded LRU cache mapping `SourceHash` to `Arc<T>`. Eviction is
-/// LRU by last-touched order. Reads and writes are O(1) amortised
-/// (the LRU recency queue uses a `VecDeque<SourceHash>`).
+/// LRU by last-touched order. Hits are O(1); eviction scans the bounded live
+/// set only when an insert needs space.
 pub struct ParsedSourceLru<T> {
     inner: Mutex<LruInner<T>>,
 }
@@ -67,7 +65,46 @@ pub struct ParsedSourceLru<T> {
 struct LruInner<T> {
     capacity: usize,
     entries: HashMap<SourceHash, Arc<T>>,
-    recency: VecDeque<SourceHash>,
+    recency: HashMap<SourceHash, u64>,
+    coldest: BinaryHeap<Reverse<RecencyEntry>>,
+    in_flight: HashMap<SourceHash, Arc<InFlight<T>>>,
+    clock: u64,
+}
+
+struct InFlight<T> {
+    state: Mutex<InFlightState<T>>,
+    ready: Condvar,
+}
+
+struct InFlightState<T> {
+    result: Option<Arc<T>>,
+    panicked: bool,
+}
+
+enum CacheMissAction<T> {
+    Hit(Arc<T>),
+    Parse(Arc<InFlight<T>>),
+    Wait(Arc<InFlight<T>>),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct RecencyEntry {
+    tick: u64,
+    key: SourceHash,
+}
+
+impl Ord for RecencyEntry {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.tick
+            .cmp(&other.tick)
+            .then_with(|| self.key.cmp(&other.key))
+    }
+}
+
+impl PartialOrd for RecencyEntry {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
 }
 
 impl<T> ParsedSourceLru<T> {
@@ -80,7 +117,10 @@ impl<T> ParsedSourceLru<T> {
             inner: Mutex::new(LruInner {
                 capacity,
                 entries: HashMap::with_capacity(capacity),
-                recency: VecDeque::with_capacity(capacity),
+                recency: HashMap::with_capacity(capacity),
+                coldest: BinaryHeap::with_capacity(capacity),
+                in_flight: HashMap::new(),
+                clock: 0,
             }),
         }
     }
@@ -91,7 +131,7 @@ impl<T> ParsedSourceLru<T> {
     pub fn get(&self, key: SourceHash) -> Option<Arc<T>> {
         let mut inner = self.lock_inner();
         let value = inner.entries.get(&key)?.clone();
-        bump_recency(&mut inner.recency, key);
+        bump_recency(&mut inner, key);
         Some(value)
     }
 
@@ -104,12 +144,13 @@ impl<T> ParsedSourceLru<T> {
             return arc;
         }
         if !inner.entries.contains_key(&key) && inner.entries.len() >= inner.capacity {
-            if let Some(evicted) = inner.recency.pop_front() {
+            if let Some(evicted) = pop_coldest_key(&mut inner) {
                 inner.entries.remove(&evicted);
+                inner.recency.remove(&evicted);
             }
         }
         inner.entries.insert(key, arc.clone());
-        bump_recency(&mut inner.recency, key);
+        bump_recency(&mut inner, key);
         arc
     }
 
@@ -121,11 +162,31 @@ impl<T> ParsedSourceLru<T> {
         F: FnOnce(&[u8]) -> T,
     {
         let key = SourceHash::of(source, extra);
-        if let Some(hit) = self.get(key) {
-            return hit;
+        let mut parse = Some(parse);
+        loop {
+            match self.miss_action(key) {
+                CacheMissAction::Hit(hit) => return hit,
+                CacheMissAction::Wait(in_flight) => {
+                    if let Some(result) = wait_for_in_flight(&in_flight) {
+                        return result;
+                    }
+                }
+                CacheMissAction::Parse(in_flight) => {
+                    let parse = parse
+                        .take()
+                        .expect("Fix: only the first get_or_parse miss owner may consume parse");
+                    let parsed =
+                        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| parse(source)));
+                    match parsed {
+                        Ok(value) => return self.finish_parse(key, in_flight, value),
+                        Err(payload) => {
+                            self.finish_panicked_parse(key, &in_flight);
+                            std::panic::resume_unwind(payload);
+                        }
+                    }
+                }
+            }
         }
-        let value = parse(source);
-        self.insert(key, value)
     }
 
     /// Total number of entries currently held.
@@ -141,23 +202,133 @@ impl<T> ParsedSourceLru<T> {
     }
 
     fn lock_inner(&self) -> MutexGuard<'_, LruInner<T>> {
-        self.inner
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+        self.inner.lock().unwrap_or_else(|error| {
+            panic!(
+                "Vyre parsed-source LRU cache lock was poisoned: {error}. Fix: discard this cache instance after a panic; continuing could reuse corrupted parse artifacts."
+            )
+        })
+    }
+
+    #[cfg(test)]
+    fn coldest_heap_len_for_diagnostics(&self) -> usize {
+        self.lock_inner().coldest.len()
+    }
+
+    fn miss_action(&self, key: SourceHash) -> CacheMissAction<T> {
+        let mut inner = self.lock_inner();
+        if let Some(value) = inner.entries.get(&key).cloned() {
+            bump_recency(&mut inner, key);
+            return CacheMissAction::Hit(value);
+        }
+        if let Some(in_flight) = inner.in_flight.get(&key) {
+            return CacheMissAction::Wait(Arc::clone(in_flight));
+        }
+        let in_flight = Arc::new(InFlight {
+            state: Mutex::new(InFlightState {
+                result: None,
+                panicked: false,
+            }),
+            ready: Condvar::new(),
+        });
+        inner.in_flight.insert(key, Arc::clone(&in_flight));
+        CacheMissAction::Parse(in_flight)
+    }
+
+    fn finish_parse(&self, key: SourceHash, in_flight: Arc<InFlight<T>>, value: T) -> Arc<T> {
+        let arc = Arc::new(value);
+        {
+            let mut inner = self.lock_inner();
+            if inner.capacity != 0 {
+                if !inner.entries.contains_key(&key) && inner.entries.len() >= inner.capacity {
+                    if let Some(evicted) = pop_coldest_key(&mut inner) {
+                        inner.entries.remove(&evicted);
+                        inner.recency.remove(&evicted);
+                    }
+                }
+                inner.entries.insert(key, Arc::clone(&arc));
+                bump_recency(&mut inner, key);
+            }
+            inner.in_flight.remove(&key);
+        }
+        let mut state = lock_in_flight_state(&in_flight);
+        state.result = Some(Arc::clone(&arc));
+        in_flight.ready.notify_all();
+        arc
+    }
+
+    fn finish_panicked_parse(&self, key: SourceHash, in_flight: &InFlight<T>) {
+        self.lock_inner().in_flight.remove(&key);
+        let mut state = lock_in_flight_state(in_flight);
+        state.panicked = true;
+        in_flight.ready.notify_all();
     }
 }
 
-fn bump_recency(recency: &mut VecDeque<SourceHash>, key: SourceHash) {
-    if let Some(pos) = recency.iter().position(|k| *k == key) {
-        recency.remove(pos);
+fn wait_for_in_flight<T>(in_flight: &InFlight<T>) -> Option<Arc<T>> {
+    let mut state = lock_in_flight_state(in_flight);
+    loop {
+        if let Some(result) = &state.result {
+            return Some(Arc::clone(result));
+        }
+        if state.panicked {
+            return None;
+        }
+        state = in_flight.ready.wait(state).unwrap_or_else(|error| {
+            panic!(
+                "Vyre parsed-source in-flight parse lock was poisoned: {error}. Fix: discard this cache instance after a panic; continuing could reuse corrupted parse artifacts."
+            )
+        });
     }
-    recency.push_back(key);
+}
+
+fn lock_in_flight_state<T>(in_flight: &InFlight<T>) -> MutexGuard<'_, InFlightState<T>> {
+    in_flight.state.lock().unwrap_or_else(|error| {
+        panic!(
+            "Vyre parsed-source in-flight parse lock was poisoned: {error}. Fix: discard this cache instance after a panic; continuing could reuse corrupted parse artifacts."
+        )
+    })
+}
+
+fn bump_recency<T>(inner: &mut LruInner<T>, key: SourceHash) {
+    inner.clock = inner.clock.saturating_add(1);
+    let tick = inner.clock;
+    inner.recency.insert(key, tick);
+    inner.coldest.push(Reverse(RecencyEntry { tick, key }));
+    compact_coldest_heap_if_needed(inner);
+}
+
+fn pop_coldest_key<T>(inner: &mut LruInner<T>) -> Option<SourceHash> {
+    while let Some(Reverse(entry)) = inner.coldest.pop() {
+        if inner.entries.contains_key(&entry.key)
+            && inner.recency.get(&entry.key).copied() == Some(entry.tick)
+        {
+            return Some(entry.key);
+        }
+    }
+    None
+}
+
+fn compact_coldest_heap_if_needed<T>(inner: &mut LruInner<T>) {
+    let live = inner.entries.len();
+    if inner.coldest.len() <= live.saturating_mul(4).max(8) {
+        return;
+    }
+    inner.coldest.clear();
+    inner.coldest.reserve(live);
+    inner.coldest.extend(
+        inner
+            .recency
+            .iter()
+            .map(|(&key, &tick)| Reverse(RecencyEntry { tick, key })),
+    );
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Barrier;
+    use std::time::Duration;
 
     /// Same content + same extra hash to the same key.
     #[test]
@@ -203,6 +374,54 @@ mod tests {
         assert!(Arc::ptr_eq(&a, &b));
     }
 
+    #[test]
+    fn concurrent_get_or_parse_coalesces_in_flight_parse() {
+        let cache = Arc::new(ParsedSourceLru::<usize>::with_capacity(4));
+        let source = Arc::new(b"same translation unit".to_vec());
+        let workers = 8usize;
+        let barrier = Arc::new(Barrier::new(workers));
+        let parse_calls = Arc::new(AtomicUsize::new(0));
+        let mut handles = Vec::with_capacity(workers);
+
+        for _ in 0..workers {
+            let cache = Arc::clone(&cache);
+            let source = Arc::clone(&source);
+            let barrier = Arc::clone(&barrier);
+            let parse_calls = Arc::clone(&parse_calls);
+            handles.push(std::thread::spawn(move || {
+                barrier.wait();
+                cache.get_or_parse(source.as_slice(), b"", |_| {
+                    parse_calls.fetch_add(1, Ordering::SeqCst);
+                    use std::thread::sleep;
+                    sleep(Duration::from_millis(20));
+                    99usize
+                })
+            }));
+        }
+
+        let results = handles
+            .into_iter()
+            .map(|handle| {
+                handle
+                    .join()
+                    .expect("Fix: source-cache worker must not panic")
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            parse_calls.load(Ordering::SeqCst),
+            1,
+            "Fix: concurrent same-key parse requests must share one in-flight parse"
+        );
+        for result in &results {
+            assert_eq!(**result, 99);
+            assert!(
+                Arc::ptr_eq(result, &results[0]),
+                "Fix: all waiters must receive the same cached Arc"
+            );
+        }
+    }
+
     /// LRU eviction kicks the least-recently-used entry when capacity
     /// is reached.
     #[test]
@@ -231,19 +450,40 @@ mod tests {
         assert!(cache.get(SourceHash::of(b"c", b"")).is_some());
     }
 
+    #[test]
+    fn lru_eviction_does_not_scan_or_retain_stream_length_stale_recency() {
+        let cache: ParsedSourceLru<u32> = ParsedSourceLru::with_capacity(8);
+        for i in 0..128u32 {
+            let source = i.to_le_bytes();
+            let _ = cache.get_or_parse(&source, b"", |_| i);
+        }
+
+        assert_eq!(cache.len(), 8);
+        assert!(
+            cache.coldest_heap_len_for_diagnostics() <= 32,
+            "Fix: parsed-source LRU stale recency heap must stay cache-capacity scale, not corpus-size scale"
+        );
+    }
+
     /// Capacity 0 disables caching: the parse closure runs every call.
     #[test]
     fn capacity_zero_disables_caching() {
         let cache: ParsedSourceLru<u32> = ParsedSourceLru::with_capacity(0);
         let calls = AtomicUsize::new(0);
-        assert_eq!(cache.get_or_parse(b"a", b"", |_| {
-            calls.fetch_add(1, Ordering::SeqCst);
-            7u32
-        }), 7);
-        assert_eq!(cache.get_or_parse(b"a", b"", |_| {
-            calls.fetch_add(1, Ordering::SeqCst);
-            7u32
-        }), 7);
+        assert_eq!(
+            *cache.get_or_parse(b"a", b"", |_| {
+                calls.fetch_add(1, Ordering::SeqCst);
+                7u32
+            }),
+            7
+        );
+        assert_eq!(
+            *cache.get_or_parse(b"a", b"", |_| {
+                calls.fetch_add(1, Ordering::SeqCst);
+                7u32
+            }),
+            7
+        );
         assert_eq!(calls.load(Ordering::SeqCst), 2);
         assert_eq!(cache.len(), 0);
     }
@@ -253,7 +493,7 @@ mod tests {
     fn is_empty_tracks_population() {
         let cache: ParsedSourceLru<u32> = ParsedSourceLru::with_capacity(2);
         assert!(cache.is_empty());
-        assert_eq!(cache.get_or_parse(b"a", b"", |_| 1u32), 1);
+        assert_eq!(*cache.get_or_parse(b"a", b"", |_| 1u32), 1);
         assert!(!cache.is_empty());
     }
 
@@ -262,8 +502,37 @@ mod tests {
     #[test]
     fn insert_existing_key_does_not_evict() {
         let cache: ParsedSourceLru<u32> = ParsedSourceLru::with_capacity(2);
-        assert!(cache.insert(SourceHash::of(b"a", b""), 1).is_none());
-        assert_eq!(cache.insert(SourceHash::of(b"a", b""), 2), Some(1));
+        let key = SourceHash::of(b"a", b"");
+        assert!(cache.get(key).is_none());
+        let _first = cache.insert(key, 1);
+        assert_eq!(*cache.get(key).expect("after first insert"), 1);
+        let _second = cache.insert(key, 2);
+        assert_eq!(*cache.get(key).expect("after second insert"), 2);
         assert_eq!(cache.len(), 1);
+    }
+
+    #[test]
+    fn poisoned_source_cache_lock_is_not_silently_recovered() {
+        let cache = Arc::new(ParsedSourceLru::<u32>::with_capacity(2));
+        let poisoned = Arc::clone(&cache);
+        let _ = std::thread::spawn(move || {
+            let _guard = poisoned.lock_inner();
+            panic!("poison parsed-source cache");
+        })
+        .join();
+
+        let panic = std::panic::catch_unwind(|| {
+            let _ = cache.len();
+        })
+        .expect_err("poisoned parsed-source cache must panic instead of recovering");
+        let message = panic
+            .downcast_ref::<String>()
+            .map(String::as_str)
+            .or_else(|| panic.downcast_ref::<&'static str>().copied())
+            .unwrap_or("<non-string panic>");
+        assert!(
+            message.contains("parsed-source LRU cache lock was poisoned"),
+            "{message}"
+        );
     }
 }

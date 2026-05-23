@@ -20,7 +20,13 @@ pub fn dump_naga_module(module: &Module) -> NagaDump {
     out.push_str("=== globals ===\n");
     for (handle, global) in module.global_variables.iter() {
         let name = global.name.as_deref().unwrap_or("");
-        out.push_str(&format!("[{}] {} : {:?}, space={:?}\n", handle.index(), name, global.ty, global.space));
+        out.push_str(&format!(
+            "[{}] {} : {:?}, space={:?}\n",
+            handle.index(),
+            name,
+            global.ty,
+            global.space
+        ));
     }
     out.push_str("\n");
 
@@ -31,7 +37,12 @@ pub fn dump_naga_module(module: &Module) -> NagaDump {
         out.push_str("=== local_variables ===\n");
         for (handle, local) in func.local_variables.iter() {
             let name = local.name.as_deref().unwrap_or("");
-            out.push_str(&format!("[{}] {:?} : {:?}\n", handle.index(), name, local.ty));
+            out.push_str(&format!(
+                "[{}] {:?} : {:?}\n",
+                handle.index(),
+                name,
+                local.ty
+            ));
         }
         out.push_str("\n");
 
@@ -66,7 +77,11 @@ pub fn dump_naga_module(module: &Module) -> NagaDump {
                         walk_block(b, path, out, indent + 1, block_paths, func);
                         path.pop();
                     }
-                    Statement::If { condition: _, accept, reject } => {
+                    Statement::If {
+                        condition: _,
+                        accept,
+                        reject,
+                    } => {
                         path.push("If.accept".to_string());
                         walk_block(accept, path, out, indent + 1, block_paths, func);
                         path.pop();
@@ -74,7 +89,11 @@ pub fn dump_naga_module(module: &Module) -> NagaDump {
                         walk_block(reject, path, out, indent + 1, block_paths, func);
                         path.pop();
                     }
-                    Statement::Loop { body, continuing, break_if: _ } => {
+                    Statement::Loop {
+                        body,
+                        continuing,
+                        break_if: _,
+                    } => {
                         path.push("Loop.body".to_string());
                         walk_block(body, path, out, indent + 1, block_paths, func);
                         path.pop();
@@ -89,8 +108,18 @@ pub fn dump_naga_module(module: &Module) -> NagaDump {
         }
 
         let mut root_path = vec!["root".to_string()];
-        walk_block(&func.body, &mut root_path, &mut out, 0, &mut block_paths, func);
+        walk_block(
+            &func.body,
+            &mut root_path,
+            &mut out,
+            0,
+            &mut block_paths,
+            func,
+        );
     }
 
-    NagaDump { text: out, block_paths }
+    NagaDump {
+        text: out,
+        block_paths,
+    }
 }

@@ -87,7 +87,6 @@ inventory::submit! {
                 to_f32(&[0.0, 100.0]),  // gate logits (sigmoid(0)=0.5, sigmoid(100)≈1)
                 to_f32(&[10.0, 20.0]),  // branch
                 to_f32(&[30.0, 40.0]),  // skip
-                vec![0u8; 4 * 2],       // output
             ]]
         }),
         expected_output: Some(|| {
@@ -99,6 +98,7 @@ inventory::submit! {
             let bytes = out.iter().flat_map(|v| v.to_bits().to_le_bytes()).collect::<Vec<u8>>();
             vec![vec![bytes]]
         }),
+        category: Some("nn"),
     }
 }
 
@@ -191,7 +191,10 @@ mod tests {
         )
         .expect("Fix: skip_gate must not panic on NaN branch");
         let out = decode_f32(&outputs[0].to_bytes());
-        assert!(out[0].is_nan(), "skip_gate(NaN branch) must be NaN (sigmoid(0)=0.5, 0.5*NaN = NaN)");
+        assert!(
+            out[0].is_nan(),
+            "skip_gate(NaN branch) must be NaN (sigmoid(0)=0.5, 0.5*NaN = NaN)"
+        );
     }
 
     #[test]
@@ -211,7 +214,10 @@ mod tests {
         )
         .expect("Fix: skip_gate must not panic on NaN skip");
         let out = decode_f32(&outputs[0].to_bytes());
-        assert!(out[0].is_nan(), "skip_gate(NaN skip) must be NaN (0.5*NaN = NaN)");
+        assert!(
+            out[0].is_nan(),
+            "skip_gate(NaN skip) must be NaN (0.5*NaN = NaN)"
+        );
     }
 
     #[test]
@@ -248,7 +254,10 @@ mod tests {
         let s = sigmoid(1.0);
         let expected = s * 1.0 + (1.0 - s) * 1.0;
         for (i, &v) in out.iter().enumerate() {
-            assert!((v - expected).abs() <= 1.0e-5, "skip_gate all-ones mismatch at {i}: {v}");
+            assert!(
+                (v - expected).abs() <= 1.0e-5,
+                "skip_gate all-ones mismatch at {i}: {v}"
+            );
         }
     }
 
@@ -268,7 +277,10 @@ mod tests {
         let out = decode_f32(&outputs[0].to_bytes());
         let s = sigmoid(2.0);
         let expected = s * 10.0 + (1.0 - s) * 20.0;
-        assert!((out[0] - expected).abs() <= 1.0e-5, "skip_gate single element mismatch");
+        assert!(
+            (out[0] - expected).abs() <= 1.0e-5,
+            "skip_gate single element mismatch"
+        );
     }
 
     #[test]

@@ -16,13 +16,35 @@ pub fn subgroup_add(values: &str, out: &str, n: u32) -> Program {
             Node::let_bind("idx", Expr::InvocationId { axis: 0 }),
             Node::if_then(
                 Expr::lt(Expr::var("idx"), Expr::buf_len(out)),
-                vec![Node::store(
-                    out,
-                    Expr::var("idx"),
-                    Expr::SubgroupAdd {
-                        value: Box::new(Expr::load(values, Expr::InvocationId { axis: 0 })),
-                    },
-                )],
+                vec![
+                    Node::let_bind(
+                        "group_base",
+                        Expr::mul(Expr::div(Expr::var("idx"), Expr::u32(32)), Expr::u32(32)),
+                    ),
+                    Node::let_bind("sum", Expr::u32(0)),
+                    Node::loop_for(
+                        "lane",
+                        Expr::u32(0),
+                        Expr::u32(32),
+                        vec![
+                            Node::let_bind(
+                                "peer",
+                                Expr::add(Expr::var("group_base"), Expr::var("lane")),
+                            ),
+                            Node::if_then(
+                                Expr::lt(Expr::var("peer"), Expr::buf_len(values)),
+                                vec![Node::assign(
+                                    "sum",
+                                    Expr::add(
+                                        Expr::var("sum"),
+                                        Expr::load(values, Expr::var("peer")),
+                                    ),
+                                )],
+                            ),
+                        ],
+                    ),
+                    Node::store(out, Expr::var("idx"), Expr::var("sum")),
+                ],
             ),
         ],
     )];
@@ -65,6 +87,7 @@ inventory::submit! {
         build: || subgroup_add("values", "out", 4),
         test_inputs: Some(test_inputs),
         expected_output: Some(expected_output),
+        category: Some("hardware"),
     }
 }
 

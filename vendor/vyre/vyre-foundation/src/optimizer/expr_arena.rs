@@ -184,7 +184,12 @@ pub struct OpaqueId(usize);
 /// same input shape return the same [`ExprId`] in O(1) amortised.
 #[derive(Debug, Default)]
 pub struct ExprArena {
-    nodes: Vec<FlatExpr>,
+    /// Interned nodes, addressed by `ExprId.0`. Stored as `Arc<FlatExpr>`
+    /// so the hashcons key shares storage with the node — interning a
+    /// fresh expression performs one heap allocation (the Arc) rather
+    /// than two (one for the Vec push clone + one for the map insert).
+    /// Public `get(id)` still returns `&FlatExpr` via `Arc::as_ref`.
+    nodes: Vec<Arc<FlatExpr>>,
     /// Side-table keeping the original `Arc<dyn ExprNode>` alive for
     /// every `OpaqueId` recorded in `nodes`. Needed because
     /// `OpaqueId` is just a usize fingerprint; `rebuild` reconstructs
@@ -192,7 +197,7 @@ pub struct ExprArena {
     opaques: Vec<Arc<dyn ExprNode>>,
     /// `OpaqueId` already seen → its index into `opaques`.
     opaque_lookup: FxHashMap<OpaqueId, usize>,
-    hashcons: FxHashMap<FlatExpr, ExprId>,
+    hashcons: FxHashMap<Arc<FlatExpr>, ExprId>,
 }
 
 impl ExprArena {
@@ -219,9 +224,10 @@ impl ExprArena {
     /// than producing silently wrong rewrites.
     #[must_use]
     pub fn get(&self, id: ExprId) -> &FlatExpr {
-        self.nodes
-            .get(id.0 as usize)
-            .unwrap_or_else(|| panic!("Fix: ExprId({}) not produced by this arena", id.0))
+        self.nodes.get(id.0 as usize).map_or_else(
+            || unreachable!("Fix: ExprId({}) not produced by this arena", id.0),
+            Arc::as_ref,
+        )
     }
 
     /// Walk `expr` children-first, intern every node, return the
@@ -314,19 +320,26 @@ impl ExprArena {
                     .opaque_lookup
                     .get(&opaque_id)
                     .copied()
-                    .expect("Fix: rebuild saw an OpaqueId not produced by this arena");
+                    .unwrap_or_else(|| {
+                        unreachable!(
+                            "rebuild only sees OpaqueIds produced by intern_flat (this arena)"
+                        )
+                    });
                 Expr::Opaque(Arc::clone(&self.opaques[idx]))
             }
         }
     }
 
     fn intern_flat(&mut self, flat: FlatExpr) -> ExprId {
+        // Lookup-by-borrow: `Arc<FlatExpr>: Borrow<FlatExpr>`, so the
+        // hashcons hits without allocating an Arc on a cache hit.
         if let Some(existing) = self.hashcons.get(&flat) {
             return *existing;
         }
-        let id = ExprId(self.nodes.len() as u32);
-        self.nodes.push(flat.clone());
-        self.hashcons.insert(flat, id);
+        let id = expr_id_from_len(self.nodes.len());
+        let shared: Arc<FlatExpr> = Arc::new(flat);
+        self.nodes.push(Arc::clone(&shared));
+        self.hashcons.insert(shared, id);
         id
     }
 
@@ -406,7 +419,7 @@ impl ExprArena {
             Expr::SubgroupLocalId => FlatExpr::SubgroupLocalId,
             Expr::SubgroupSize => FlatExpr::SubgroupSize,
             Expr::Opaque(arc) => {
-                let opaque_id = OpaqueId(Arc::as_ptr(arc) as *const () as usize);
+                let opaque_id = OpaqueId(Arc::as_ptr(arc).cast::<()>() as usize);
                 self.opaque_lookup.entry(opaque_id).or_insert_with(|| {
                     let idx = self.opaques.len();
                     self.opaques.push(Arc::clone(arc));
@@ -416,6 +429,14 @@ impl ExprArena {
             }
         }
     }
+}
+
+#[expect(
+    clippy::expect_used,
+    reason = "ExprId is the arena's compact u32 handle; exceeding it is a hard capacity breach"
+)]
+fn expr_id_from_len(len: usize) -> ExprId {
+    ExprId(u32::try_from(len).expect("Fix: expression arena exceeds u32 ExprId capacity"))
 }
 
 #[cfg(test)]

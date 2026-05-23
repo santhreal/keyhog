@@ -11,39 +11,59 @@ use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Progra
 
 /// Canonical op id.
 pub const OP_ID: &str = "vyre-primitives::bitset::equal";
+const WORKGROUP_SIZE: u32 = 256;
 
 /// Build a Program: `out_scalar[0] = (forall w: lhs[w] == rhs[w]) ? 1 : 0`.
 ///
-/// One-shot reduction: each thread tests one word; thread 0 then
-/// reduces by reading a `__bitset_equal_diff` flag that all threads
-/// AtomicOr into.
+/// One-dispatch reduction: lane 0 initializes the output to true, then
+/// every lane scans its chunk-strided words and atomically ANDs its
+/// equality predicate into the scalar.
 #[must_use]
 pub fn bitset_equal(lhs: &str, rhs: &str, out_scalar: &str, words: u32) -> Program {
-    let t = Expr::InvocationId { axis: 0 };
+    let lane = Expr::InvocationId { axis: 0 };
+    let chunk_count = Expr::div(
+        Expr::add(Expr::u32(words), Expr::u32(WORKGROUP_SIZE - 1)),
+        Expr::u32(WORKGROUP_SIZE),
+    );
     let body = vec![
-        // Each thread atomically OR-s the per-word inequality flag
-        // into out_scalar[0]. After the dispatch, out_scalar[0] = 1
-        // means "at least one word differed"; we then complement to
-        // produce equality.
         Node::if_then(
-            Expr::lt(t.clone(), Expr::u32(words)),
-            vec![Node::let_bind(
-                "_diff",
-                Expr::atomic_or(
-                    out_scalar,
-                    Expr::u32(0),
-                    Expr::ne(Expr::load(lhs, t.clone()), Expr::load(rhs, t.clone())),
-                ),
-            )],
+            Expr::eq(lane.clone(), Expr::u32(0)),
+            vec![Node::store(out_scalar, Expr::u32(0), Expr::u32(1))],
         ),
-        // Thread 0 finalizes: equality = !diff.
-        Node::if_then(
-            Expr::eq(t.clone(), Expr::u32(0)),
-            vec![Node::store(
-                out_scalar,
-                Expr::u32(0),
-                Expr::eq(Expr::load(out_scalar, Expr::u32(0)), Expr::u32(0)),
-            )],
+        Node::Barrier {
+            ordering: vyre_foundation::MemoryOrdering::SeqCst,
+        },
+        Node::loop_for(
+            "chunk",
+            Expr::u32(0),
+            chunk_count,
+            vec![
+                Node::let_bind(
+                    "w",
+                    Expr::add(
+                        Expr::mul(Expr::var("chunk"), Expr::u32(WORKGROUP_SIZE)),
+                        lane.clone(),
+                    ),
+                ),
+                Node::if_then(
+                    Expr::lt(Expr::var("w"), Expr::u32(words)),
+                    vec![Node::let_bind(
+                        "_eq_prev",
+                        Expr::atomic_and(
+                            out_scalar,
+                            Expr::u32(0),
+                            Expr::select(
+                                Expr::eq(
+                                    Expr::load(lhs, Expr::var("w")),
+                                    Expr::load(rhs, Expr::var("w")),
+                                ),
+                                Expr::u32(1),
+                                Expr::u32(0),
+                            ),
+                        ),
+                    )],
+                ),
+            ],
         ),
     ];
     Program::wrapped(
@@ -53,7 +73,7 @@ pub fn bitset_equal(lhs: &str, rhs: &str, out_scalar: &str, words: u32) -> Progr
             BufferDecl::storage(out_scalar, 2, BufferAccess::ReadWrite, DataType::U32)
                 .with_count(1),
         ],
-        [256, 1, 1],
+        [WORKGROUP_SIZE, 1, 1],
         vec![Node::Region {
             generator: Ident::from(OP_ID),
             source_region: None,
@@ -63,6 +83,7 @@ pub fn bitset_equal(lhs: &str, rhs: &str, out_scalar: &str, words: u32) -> Progr
 }
 
 /// CPU reference: returns 1 iff every word matches, 0 otherwise.
+#[cfg(any(test, feature = "cpu-parity"))]
 #[must_use]
 pub fn cpu_ref(lhs: &[u32], rhs: &[u32]) -> u32 {
     if lhs.len() != rhs.len() {
@@ -73,6 +94,26 @@ pub fn cpu_ref(lhs: &[u32], rhs: &[u32]) -> u32 {
     } else {
         0
     }
+}
+
+#[cfg(feature = "inventory-registry")]
+inventory::submit! {
+    crate::harness::OpEntry::new(
+        OP_ID,
+        || bitset_equal("lhs", "rhs", "out", 2),
+        Some(|| {
+            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            vec![vec![
+                to_bytes(&[0xFFFF, 0xF0F0]),
+                to_bytes(&[0xFFFF, 0xF0F0]),
+                to_bytes(&[0]),
+            ]]
+        }),
+        Some(|| {
+            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            vec![vec![to_bytes(&[1])]]
+        }),
+    )
 }
 
 #[cfg(test)]

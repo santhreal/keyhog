@@ -21,6 +21,23 @@ use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Progra
 /// Canonical op id.
 pub const OP_ID: &str = "vyre-primitives::graph::path_reconstruct";
 
+/// Canonical batched op id.
+pub const BATCHED_OP_ID: &str = "vyre-primitives::graph::batched_path_reconstruct";
+
+/// Workgroup size used by the batched path-reconstruction primitive.
+pub const BATCHED_WORKGROUP_SIZE: u32 = 256;
+
+/// Validated batched path-reconstruction buffer layout.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BatchedPathReconstructLayout {
+    /// Number of target nodes in the batch, narrowed for GPU dispatch lanes.
+    pub target_count: u32,
+    /// Total number of u32 path output words.
+    pub path_words: usize,
+    /// Total number of u32 path output words, narrowed for primitive buffer metadata.
+    pub path_words_u32: u32,
+}
+
 /// Build the IR `Program` for path reconstruction.
 #[must_use]
 ///
@@ -116,6 +133,138 @@ pub fn path_reconstruct(
     )
 }
 
+/// Build the IR `Program` for batched path reconstruction.
+///
+/// Each invocation reconstructs one target's parent chain and writes
+/// a `max_depth`-padded slice at `paths[target_index * max_depth..]`.
+/// `lens[target_index]` receives the valid path length before padding.
+///
+/// # Contract
+///
+/// The caller supplies:
+/// - `parent`: parent-pointer array.
+/// - `targets`: `target_count` target nodes.
+/// - `paths`: `target_count * max_depth` u32 slots.
+/// - `lens`: `target_count` u32 slots.
+///
+/// `max_depth == 0` or `target_count * max_depth` overflow produces a trap
+/// program rather than silently emitting malformed buffer metadata.
+#[must_use]
+pub fn batched_path_reconstruct(target_count: u32, max_depth: u32) -> Program {
+    let layout = match validate_batched_path_reconstruct_layout(target_count as usize, max_depth) {
+        Ok(layout) => layout,
+        Err(error) => {
+            return crate::invalid_output_program(BATCHED_OP_ID, "paths", DataType::U32, error);
+        }
+    };
+    let path_words = layout.path_words_u32;
+
+    let body = vec![
+        Node::let_bind("idx", Expr::InvocationId { axis: 0 }),
+        Node::if_then(
+            Expr::lt(Expr::var("idx"), Expr::u32(target_count)),
+            vec![
+                Node::let_bind("base", Expr::mul(Expr::var("idx"), Expr::u32(max_depth))),
+                Node::let_bind("current", Expr::load("targets", Expr::var("idx"))),
+                Node::let_bind("len", Expr::u32(0)),
+                Node::let_bind("done", Expr::u32(0)),
+                Node::loop_for(
+                    "step",
+                    Expr::u32(0),
+                    Expr::u32(max_depth),
+                    vec![Node::if_then(
+                        Expr::eq(Expr::var("done"), Expr::u32(0)),
+                        vec![
+                            Node::store(
+                                "paths",
+                                Expr::add(Expr::var("base"), Expr::var("len")),
+                                Expr::var("current"),
+                            ),
+                            Node::assign("len", Expr::add(Expr::var("len"), Expr::u32(1))),
+                            Node::let_bind(
+                                "next",
+                                Expr::select(
+                                    Expr::lt(Expr::var("current"), Expr::buf_len("parent")),
+                                    Expr::load("parent", Expr::var("current")),
+                                    Expr::var("current"),
+                                ),
+                            ),
+                            Node::if_then(
+                                Expr::eq(Expr::var("next"), Expr::var("current")),
+                                vec![Node::assign("done", Expr::u32(1))],
+                            ),
+                            Node::assign("current", Expr::var("next")),
+                        ],
+                    )],
+                ),
+                Node::loop_for(
+                    "pad",
+                    Expr::var("len"),
+                    Expr::u32(max_depth),
+                    vec![Node::store(
+                        "paths",
+                        Expr::add(Expr::var("base"), Expr::var("pad")),
+                        Expr::u32(0),
+                    )],
+                ),
+                Node::store("lens", Expr::var("idx"), Expr::var("len")),
+            ],
+        ),
+    ];
+
+    Program::wrapped(
+        vec![
+            BufferDecl::storage("parent", 0, BufferAccess::ReadOnly, DataType::U32),
+            BufferDecl::storage("targets", 1, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(target_count),
+            BufferDecl::storage("paths", 2, BufferAccess::ReadWrite, DataType::U32)
+                .with_count(path_words),
+            BufferDecl::storage("lens", 3, BufferAccess::ReadWrite, DataType::U32)
+                .with_count(target_count),
+        ],
+        [BATCHED_WORKGROUP_SIZE, 1, 1],
+        vec![Node::Region {
+            generator: Ident::from(BATCHED_OP_ID),
+            source_region: None,
+            body: Arc::new(body),
+        }],
+    )
+}
+
+/// Validate batched path-reconstruction output layout.
+///
+/// # Errors
+///
+/// Returns an actionable diagnostic when `max_depth` is zero, target count
+/// exceeds the primitive's u32 lane space, or `target_count * max_depth`
+/// cannot be represented by primitive buffer metadata.
+pub fn validate_batched_path_reconstruct_layout(
+    target_len: usize,
+    max_depth: u32,
+) -> Result<BatchedPathReconstructLayout, String> {
+    if max_depth == 0 {
+        return Err("Fix: batched_path_reconstruct max_depth must be >= 1.".to_string());
+    }
+    let target_count = u32::try_from(target_len).map_err(|_| {
+        format!(
+            "Fix: batched_path_reconstruct target count {target_len} exceeds the primitive u32 lane limit."
+        )
+    })?;
+    let path_words_u32 = target_count.checked_mul(max_depth).ok_or_else(|| {
+        format!(
+            "Fix: batched_path_reconstruct target_count*max_depth overflows u32 for target_count={target_count}, max_depth={max_depth}."
+        )
+    })?;
+    let path_words = usize::try_from(path_words_u32).map_err(|_| {
+        format!("Fix: batched_path_reconstruct path word count {path_words_u32} exceeds usize.")
+    })?;
+    Ok(BatchedPathReconstructLayout {
+        target_count,
+        path_words,
+        path_words_u32,
+    })
+}
+
 /// CPU reference: walks parent pointers up to `max_depth`, writing
 /// the materialized path into `scratch` and returning its length.
 /// Early-terminates when a node's parent points at itself (root
@@ -128,6 +277,7 @@ pub fn path_reconstruct(
 /// `node_count` and reuse it across calls to avoid an allocation per
 /// walk.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref(parent: &[u32], target: u32, max_depth: u32, scratch: &mut Vec<u32>) -> u32 {
     scratch.clear();
     let mut current = target;
@@ -146,6 +296,32 @@ pub fn cpu_ref(parent: &[u32], target: u32, max_depth: u32, scratch: &mut Vec<u3
         scratch.push(0);
     }
     len
+}
+
+/// CPU reference for the batched path-reconstruction contract.
+///
+/// `paths` is rewritten to `targets.len() * max_depth` entries, where each
+/// target owns one zero-padded segment. `lens` is rewritten to one valid
+/// length per target.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn cpu_ref_batched(
+    parent: &[u32],
+    targets: &[u32],
+    max_depth: u32,
+    paths: &mut Vec<u32>,
+    lens: &mut Vec<u32>,
+) {
+    paths.clear();
+    lens.clear();
+    let depth = max_depth as usize;
+    paths.reserve(targets.len().saturating_mul(depth));
+    lens.reserve(targets.len());
+    let mut scratch = Vec::with_capacity(depth);
+    for &target in targets {
+        let len = cpu_ref(parent, target, max_depth, &mut scratch);
+        paths.extend_from_slice(&scratch);
+        lens.push(len);
+    }
 }
 
 #[cfg(feature = "inventory-registry")]
@@ -278,5 +454,73 @@ mod tests {
             has_trap,
             "max_depth == 0 must produce a trap program, not panic"
         );
+    }
+
+    #[test]
+    fn batched_program_has_expected_buffers_and_workgroup() {
+        let p = batched_path_reconstruct(3, 4);
+        assert_eq!(p.workgroup_size, [BATCHED_WORKGROUP_SIZE, 1, 1]);
+        let names: Vec<&str> = p.buffers.iter().map(|b| b.name()).collect();
+        assert_eq!(names, vec!["parent", "targets", "paths", "lens"]);
+        assert_eq!(p.buffers[1].count(), 3);
+        assert_eq!(p.buffers[2].count(), 12);
+        assert_eq!(p.buffers[3].count(), 3);
+    }
+
+    #[test]
+    fn batched_layout_validator_accepts_empty_and_canonical_batches() {
+        assert_eq!(
+            validate_batched_path_reconstruct_layout(0, 4).unwrap(),
+            BatchedPathReconstructLayout {
+                target_count: 0,
+                path_words: 0,
+                path_words_u32: 0,
+            }
+        );
+        assert_eq!(
+            validate_batched_path_reconstruct_layout(3, 4).unwrap(),
+            BatchedPathReconstructLayout {
+                target_count: 3,
+                path_words: 12,
+                path_words_u32: 12,
+            }
+        );
+    }
+
+    #[test]
+    fn batched_layout_validator_rejects_zero_depth_and_overflow() {
+        let err = validate_batched_path_reconstruct_layout(3, 0).unwrap_err();
+        assert!(err.contains("max_depth must be >= 1"));
+
+        let err = validate_batched_path_reconstruct_layout(u32::MAX as usize + 1, 1).unwrap_err();
+        assert!(err.contains("target count"));
+
+        let err = validate_batched_path_reconstruct_layout(u32::MAX as usize, 2).unwrap_err();
+        assert!(err.contains("target_count*max_depth"));
+    }
+
+    #[test]
+    fn batched_cpu_ref_matches_single_target_segments() {
+        let mut paths = Vec::new();
+        let mut lens = Vec::new();
+        cpu_ref_batched(&[0, 0, 1, 2], &[3, 0, 2], 4, &mut paths, &mut lens);
+        assert_eq!(lens, vec![4, 1, 3]);
+        assert_eq!(&paths[0..4], &[3, 2, 1, 0]);
+        assert_eq!(&paths[4..8], &[0, 0, 0, 0]);
+        assert_eq!(&paths[8..12], &[2, 1, 0, 0]);
+    }
+
+    #[test]
+    fn batched_program_zero_depth_emits_trap() {
+        let p = batched_path_reconstruct(3, 0);
+        let entry = p.entry();
+        let has_trap = entry.iter().any(|n| {
+            if let Node::Region { body, .. } = n {
+                body.iter().any(|inner| matches!(inner, Node::Trap { .. }))
+            } else {
+                matches!(n, Node::Trap { .. })
+            }
+        });
+        assert!(has_trap, "zero-depth batched path reconstruction must trap");
     }
 }

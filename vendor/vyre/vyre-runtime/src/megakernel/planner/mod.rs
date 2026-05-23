@@ -16,9 +16,11 @@ mod provenance;
 mod sizing;
 mod whole_megakernel_opt;
 
-pub use barriers::{elide_value_flow_barriers, BarrierElisionReport};
-pub use caps::{MegakernelCaps, MegakernelReport, MegakernelWorkItem};
-pub use config::MegakernelConfig;
+pub use barriers::{
+    elide_value_flow_barriers, try_elide_value_flow_barriers, BarrierElisionReport,
+};
+pub use caps::{MegakernelCaps, MegakernelReport, MegakernelTelemetry, MegakernelWorkItem};
+pub use config::{MegakernelConfig, MegakernelWorkloadHints};
 pub use cross_pipeline::{
     plan_cross_pipeline_fusion, CrossPipelineFusionPlan, PipelineFusionBreak, PipelineFusionSegment,
 };
@@ -46,13 +48,16 @@ pub use provenance::build_scallop_lineage_with_program_and_scratch;
 pub use provenance::build_scallop_lineage_with_scratch;
 pub use sizing::MegakernelSizingPolicy;
 pub use whole_megakernel_opt::{
-    detect_cross_arm_redundancy, prune_redundant_work_items_into, CrossArmRedundancy,
+    detect_cross_arm_redundancy, prune_redundant_work_items_into,
+    prune_redundant_work_items_with_scratch_into, try_detect_cross_arm_redundancy,
+    try_prune_redundant_work_items_into, try_prune_redundant_work_items_with_scratch_into,
+    CrossArmRedundancy, RedundantWorkItemPruneScratch,
 };
 
 #[cfg(test)]
 use super::task::TaskWorkItem;
 
 #[cfg(test)]
-    mod tests {
-        include!("../core_tests.rs");
-    }
+mod tests {
+    include!("../core_tests.rs");
+}

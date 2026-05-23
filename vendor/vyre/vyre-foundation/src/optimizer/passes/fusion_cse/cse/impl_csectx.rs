@@ -88,6 +88,10 @@ impl CseCtx {
     }
 
     #[inline]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "CSE node rewrite keeps visible-value state transitions adjacent to Node variant handling"
+    )]
     pub(crate) fn node(&mut self, node: &Node) -> Node {
         match node {
             Node::Let { name, value } => {
@@ -102,7 +106,11 @@ impl CseCtx {
                 // reassigned later while the literal stays constant.
                 if matches!(
                     value.as_ref(),
-                    Expr::LitU32(_) | Expr::LitI32(_) | Expr::LitBool(_)
+                    Expr::Var(_)
+                        | Expr::LitU32(_)
+                        | Expr::LitI32(_)
+                        | Expr::LitF32(_)
+                        | Expr::LitBool(_)
                 ) {
                     return Node::let_bind(name, value.into_owned());
                 }
@@ -323,9 +331,10 @@ impl CseCtx {
             | Expr::LocalId { .. }
             | Expr::SubgroupBallot { .. }
             | Expr::SubgroupShuffle { .. }
-            | Expr::SubgroupAdd { .. } => Cow::Borrowed(expr),
-            Expr::SubgroupLocalId | Expr::SubgroupSize => Cow::Borrowed(expr),
-            Expr::Opaque(_) => Cow::Borrowed(expr),
+            | Expr::SubgroupAdd { .. }
+            | Expr::SubgroupLocalId
+            | Expr::SubgroupSize
+            | Expr::Opaque(_) => Cow::Borrowed(expr),
         };
 
         if matches!(rewritten.as_ref(), Expr::Var(_)) || expr_has_effect(rewritten.as_ref()) {

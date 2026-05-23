@@ -24,6 +24,10 @@ pub enum CompileError {
     /// The backend rejected the Program with a structured message.
     #[error("vyre-aot: backend rejected Program: {0}")]
     BackendError(String),
+
+    /// The Program cannot be represented accurately in the AOT artifact schema.
+    #[error("vyre-aot: artifact layout rejected Program: {0}")]
+    ArtifactLayout(String),
 }
 
 /// Compile a `Program` into a self-contained artifact for a chosen target.
@@ -84,12 +88,13 @@ pub fn compile_with_resolver(
     // differ only in non-semantic detail (instruction order,
     // commutative-operand ordering) collide on the same VSA
     // fingerprint, letting AOT toolchains skip redundant emit.
-    // Computed via the substrate vsa_fingerprint primitive — the
+    // Computed via the driver-level canonical VSA fingerprint — the
     // same approximate-match cache key that driver validation caches
-    // use, so AOT and JIT share artifact-identity.
-    let vsa = vyre_self_substrate::vsa_fingerprint::vsa_fingerprint_cpu(&optimized);
+    // use, so AOT and JIT share artifact-identity without reaching
+    // into a CPU-named substrate helper.
+    let vsa = vyre_driver::program_vsa_fingerprint(&optimized);
 
-    let buffers = collect_buffer_entries(&optimized);
+    let buffers = collect_buffer_entries(&optimized)?;
 
     let dispatch_config = vyre_driver::DispatchConfig::default();
     let kernel_bytes =
@@ -101,12 +106,7 @@ pub fn compile_with_resolver(
                 other => CompileError::BackendError(other.to_string()),
             })?;
 
-    let dispatch = DispatchGeometry {
-        workgroup_size: optimized.workgroup_size,
-        // Grid size of [0; 3] is the convention for "host computes from control".
-        grid_size: [0, 0, 0],
-        dynamic_shared_bytes: 0,
-    };
+    let dispatch = derive_dispatch_geometry(&optimized)?;
 
     Ok(CompiledArtifact {
         target,
@@ -119,32 +119,55 @@ pub fn compile_with_resolver(
     })
 }
 
-fn collect_buffer_entries(program: &Program) -> Vec<BufferEntry> {
+fn derive_dispatch_geometry(program: &Program) -> Result<DispatchGeometry, CompileError> {
+    let plan = vyre_driver::binding::BindingPlan::build(program)
+        .map_err(|error| CompileError::BackendError(error.to_string()))?;
+    let element_count =
+        vyre_driver::program_walks::dispatch_element_count_for_program(program, &plan.bindings);
+    let grid_size =
+        vyre_driver::infer_dispatch_grid_for_count(element_count, program.workgroup_size)
+            .map_err(|error| CompileError::BackendError(error.to_string()))?;
+    Ok(DispatchGeometry {
+        workgroup_size: program.workgroup_size,
+        grid_size,
+        dynamic_shared_bytes: 0,
+    })
+}
+
+fn collect_buffer_entries(program: &Program) -> Result<Vec<BufferEntry>, CompileError> {
     program
         .buffers()
         .iter()
-        .map(|buf| BufferEntry {
-            name: buf.name().to_string(),
-            binding: buf.binding(),
-            element_count: buf.count(),
-            element_size_bytes: element_size_bytes(buf.element()),
-            memory_kind: convert_memory_kind(buf.kind()),
-            access: convert_access(buf.access()),
+        .map(|buf| {
+            Ok(BufferEntry {
+                name: buf.name().to_string(),
+                binding: buf.binding(),
+                element_count: buf.count(),
+                element_size_bytes: element_size_bytes(buf.name(), buf.element())?,
+                memory_kind: convert_memory_kind(buf.kind()),
+                access: convert_access(buf.access()),
+            })
         })
         .collect()
 }
 
-fn element_size_bytes(ty: vyre_foundation::ir::DataType) -> u32 {
-    use vyre_foundation::ir::DataType;
-    match ty {
-        DataType::Bool => 1,
-        DataType::U8 | DataType::I8 => 1,
-        DataType::U16 | DataType::I16 | DataType::F16 | DataType::BF16 => 2,
-        DataType::U32 | DataType::I32 | DataType::F32 => 4,
-        DataType::U64 | DataType::I64 | DataType::F64 => 8,
-        // Bytes/struct/opaque: caller must supply size; default to 4.
-        _ => 4,
-    }
+fn element_size_bytes(name: &str, ty: vyre_foundation::ir::DataType) -> Result<u32, CompileError> {
+    // Delegate to the canonical size table on `DataType` so every
+    // variant (Vec2U32 = 8, Vec4U32 = 16, Bytes = 1, Array = element
+    // size, F8/F4/I4/NF4 = 1, etc.) round-trips correctly into the AOT
+    // artifact. The previous hand-written match defaulted to 4 for any
+    // unenumerated variant, mis-sizing Bytes (1 byte/element treated
+    // as 4) and the vector / quantized families.
+    let raw = ty.size_bytes().ok_or_else(|| {
+        CompileError::ArtifactLayout(format!(
+            "buffer `{name}` uses runtime-sized element type {ty:?}. Fix: lower this buffer to a concrete fixed-width ABI type before AOT emission; do not encode a guessed element size."
+        ))
+    })?;
+    u32::try_from(raw).map_err(|_| {
+        CompileError::ArtifactLayout(format!(
+            "buffer `{name}` element type {ty:?} has {raw} bytes per element, which exceeds the AOT artifact u32 size field. Fix: shard or specialize the buffer layout before AOT emission."
+        ))
+    })
 }
 
 fn convert_memory_kind(k: vyre_foundation::ir::MemoryKind) -> BufferMemoryKind {
@@ -163,5 +186,61 @@ fn convert_access(a: vyre_foundation::ir::BufferAccess) -> BufferAccessKind {
         BufferAccess::WriteOnly => BufferAccessKind::WriteOnly,
         BufferAccess::ReadWrite => BufferAccessKind::ReadWrite,
         _ => BufferAccessKind::ReadWrite,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use vyre_foundation::ir::{BufferDecl, DataType, Expr, Node};
+
+    #[test]
+    fn dispatch_geometry_is_explicit_not_runtime_grid_placeholder() {
+        let program = Program::wrapped(
+            vec![
+                BufferDecl::read("input", 0, DataType::U32).with_count(1024),
+                BufferDecl::read_write("out", 1, DataType::U32).with_count(1024),
+            ],
+            [128, 1, 1],
+            vec![
+                Node::let_bind("idx", Expr::u32(0)),
+                Node::store(
+                    "out",
+                    Expr::var("idx"),
+                    Expr::load("input", Expr::var("idx")),
+                ),
+            ],
+        );
+
+        let dispatch = derive_dispatch_geometry(&program)
+            .expect("Fix: AOT dispatch geometry derivation must accept finite buffer shapes.");
+
+        assert_eq!(dispatch.workgroup_size, [128, 1, 1]);
+        assert_eq!(
+            dispatch.grid_size,
+            [8, 1, 1],
+            "Fix: vyre-aot must emit explicit finite grid geometry for CUDA launchers, not [0,0,0]."
+        );
+    }
+
+    #[test]
+    fn dispatch_geometry_rejects_zero_workgroup_axes_before_artifact_emission() {
+        let program = Program::wrapped(
+            vec![BufferDecl::read_write("out", 0, DataType::U32).with_count(16)],
+            [0, 1, 1],
+            vec![
+                Node::let_bind("idx", Expr::u32(0)),
+                Node::store("out", Expr::var("idx"), Expr::u32(1)),
+            ],
+        );
+
+        let err = derive_dispatch_geometry(&program).expect_err(
+            "Fix: AOT must reject zero workgroup axes instead of emitting a poisoned manifest.",
+        );
+
+        assert!(
+            err.to_string().contains("workgroup dimensions must be non-zero"),
+            "Fix: zero-workgroup AOT rejection must point at the dispatch shape contract, got {err}."
+        );
     }
 }

@@ -10,10 +10,13 @@
 //! 4. Prolong: $x = x + P x_c$
 //! 5. Post-smooth: $x = \text{smooth}(A, b, x, \omega)$
 
-use crate::math::multigrid::{jacobi_smooth_step, jacobi_smooth_step_cpu_into};
+use crate::math::multigrid::jacobi_smooth_step;
+#[cfg(any(test, feature = "cpu-parity"))]
+use crate::math::multigrid::jacobi_smooth_step_cpu_into;
 use std::sync::Arc;
 use vyre_foundation::ir::model::expr::{GeneratorRef, Ident};
 use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
+use vyre_foundation::MemoryOrdering;
 
 /// Op id.
 pub const OP_ID: &str = "vyre-primitives::math::amg_v_cycle";
@@ -60,12 +63,39 @@ pub fn amg_v_cycle(
             format!("Fix: amg_v_cycle requires n_coarse < n_fine, got n_coarse={n_coarse}, n_fine={n_fine}."),
         );
     }
+    let Some(fine_cells) = n_fine.checked_mul(n_fine) else {
+        return crate::invalid_output_program(
+            OP_ID,
+            x,
+            DataType::U32,
+            format!("Fix: amg_v_cycle fine matrix cells overflow u32: n_fine={n_fine}."),
+        );
+    };
+    let Some(transfer_cells) = n_fine.checked_mul(n_coarse) else {
+        return crate::invalid_output_program(
+            OP_ID,
+            x,
+            DataType::U32,
+            format!(
+                "Fix: amg_v_cycle transfer matrix cells overflow u32: n_fine={n_fine}, n_coarse={n_coarse}."
+            ),
+        );
+    };
+    let Some(coarse_cells) = n_coarse.checked_mul(n_coarse) else {
+        return crate::invalid_output_program(
+            OP_ID,
+            x,
+            DataType::U32,
+            format!("Fix: amg_v_cycle coarse matrix cells overflow u32: n_coarse={n_coarse}."),
+        );
+    };
 
     let mut nodes = Vec::new();
 
     // 1. Pre-smooth
     let pre_smooth = jacobi_smooth_step(a, b, x, omega, scratch_fine, n_fine);
     nodes.extend(pre_smooth.entry().to_vec());
+    nodes.push(Node::barrier_with_ordering(MemoryOrdering::GridSync));
     // Copy scratch_fine back to x
     nodes.push(Node::loop_for(
         "__i",
@@ -77,6 +107,7 @@ pub fn amg_v_cycle(
             Expr::load(scratch_fine, Expr::var("__i")),
         )],
     ));
+    nodes.push(Node::barrier_with_ordering(MemoryOrdering::GridSync));
 
     // 2. Restrict: r = b - Ax; b_c = R r
     nodes.push(Node::loop_for(
@@ -116,6 +147,7 @@ pub fn amg_v_cycle(
             ),
         ],
     ));
+    nodes.push(Node::barrier_with_ordering(MemoryOrdering::GridSync));
 
     // b_c = R * r
     nodes.push(Node::loop_for(
@@ -151,9 +183,11 @@ pub fn amg_v_cycle(
             Node::store(scratch_coarse_b, Expr::var("ic"), Expr::var("bc_i")),
         ],
     ));
+    nodes.push(Node::barrier_with_ordering(MemoryOrdering::GridSync));
 
     // 3. Coarse solve
     nodes.push(Node::store(scratch_coarse_x, Expr::u32(0), Expr::u32(0)));
+    nodes.push(Node::barrier_with_ordering(MemoryOrdering::GridSync));
     for _ in 0..4 {
         let coarse_smooth = jacobi_smooth_step(
             a_c,
@@ -164,6 +198,7 @@ pub fn amg_v_cycle(
             n_coarse,
         );
         nodes.extend(coarse_smooth.entry().to_vec());
+        nodes.push(Node::barrier_with_ordering(MemoryOrdering::GridSync));
         nodes.push(Node::loop_for(
             "__k",
             Expr::u32(0),
@@ -174,6 +209,7 @@ pub fn amg_v_cycle(
                 Expr::load("temp_coarse", Expr::var("__k")),
             )],
         ));
+        nodes.push(Node::barrier_with_ordering(MemoryOrdering::GridSync));
     }
 
     // 4. Prolong: x = x + P * x_c
@@ -214,10 +250,12 @@ pub fn amg_v_cycle(
             ),
         ],
     ));
+    nodes.push(Node::barrier_with_ordering(MemoryOrdering::GridSync));
 
     // 5. Post-smooth
     let post_smooth = jacobi_smooth_step(a, b, x, omega, scratch_fine, n_fine);
     nodes.extend(post_smooth.entry().to_vec());
+    nodes.push(Node::barrier_with_ordering(MemoryOrdering::GridSync));
     nodes.push(Node::loop_for(
         "__m",
         Expr::u32(0),
@@ -231,16 +269,15 @@ pub fn amg_v_cycle(
 
     Program::wrapped(
         vec![
-            BufferDecl::storage(a, 0, BufferAccess::ReadOnly, DataType::U32)
-                .with_count(n_fine * n_fine),
+            BufferDecl::storage(a, 0, BufferAccess::ReadOnly, DataType::U32).with_count(fine_cells),
             BufferDecl::storage(b, 1, BufferAccess::ReadOnly, DataType::U32).with_count(n_fine),
             BufferDecl::storage(x, 2, BufferAccess::ReadWrite, DataType::U32).with_count(n_fine),
             BufferDecl::storage(r_mat, 3, BufferAccess::ReadOnly, DataType::U32)
-                .with_count(n_coarse * n_fine),
+                .with_count(transfer_cells),
             BufferDecl::storage(p_mat, 4, BufferAccess::ReadOnly, DataType::U32)
-                .with_count(n_fine * n_coarse),
+                .with_count(transfer_cells),
             BufferDecl::storage(a_c, 5, BufferAccess::ReadOnly, DataType::U32)
-                .with_count(n_coarse * n_coarse),
+                .with_count(coarse_cells),
             BufferDecl::storage(omega, 6, BufferAccess::ReadOnly, DataType::U32).with_count(1),
             BufferDecl::storage(scratch_fine, 7, BufferAccess::ReadWrite, DataType::U32)
                 .with_count(n_fine),
@@ -268,6 +305,7 @@ pub fn amg_v_cycle(
 
 /// CPU reference: 2-level AMG V-cycle in f64.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 #[allow(clippy::too_many_arguments)]
 pub fn cpu_ref(
     a: &[f64],
@@ -300,6 +338,7 @@ pub fn cpu_ref(
 
 /// Reusable scratch for [`cpu_ref_into`].
 #[derive(Debug, Default, Clone)]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub struct AmgVcycleScratch {
     x_curr: Vec<f64>,
     residual: Vec<f64>,
@@ -310,6 +349,7 @@ pub struct AmgVcycleScratch {
 
 /// CPU reference: 2-level AMG V-cycle in f64, writing into caller-owned storage.
 #[allow(clippy::too_many_arguments)]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref_into(
     a: &[f64],
     b: &[f64],

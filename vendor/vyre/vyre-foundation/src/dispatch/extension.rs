@@ -69,7 +69,7 @@ pub trait NodeNode: Debug + Send + Sync + 'static {
 }
 
 /// Opaque rule condition extension — lets third-party rule-engine crates
-/// compose bespoke predicates without editing vyre-core's RuleCondition.
+/// compose bespoke predicates without editing vyre-core's `RuleCondition`.
 pub trait RuleConditionExt: Debug + Send + Sync + 'static {
     /// Stable extension id.
     fn extension_id(&self) -> ExtensionRuleConditionId;
@@ -126,7 +126,7 @@ pub struct ExtensionAtomicOpRegistration {
     pub vtable: &'static dyn ExtensionAtomicOp,
 }
 
-/// Legacy `Expr`/`Node`/`RuleCondition` registration (generic ExtensionId).
+/// Legacy `Expr`/`Node`/`RuleCondition` registration (generic `ExtensionId`).
 ///
 /// Retained while the wire decoder and visitor migration still consume
 /// the generic id; will be split into per-kind registrations when those

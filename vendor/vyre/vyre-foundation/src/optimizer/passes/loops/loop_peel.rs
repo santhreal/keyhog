@@ -38,6 +38,10 @@ impl LoopPeelPass {
     /// Quick scan: skip programs without any peelable loop.
     #[must_use]
     fn analyze_impl(program: &Program) -> PassAnalysis {
+        // O(1) fast-path via the cached node-kind bitset.
+        if !program.stats().has_node_loop() {
+            return PassAnalysis::SKIP;
+        }
         if program
             .entry()
             .iter()
@@ -52,18 +56,16 @@ impl LoopPeelPass {
     /// Walk the entry tree; peel every peelable loop.
     #[must_use]
     pub fn transform(program: Program) -> PassResult {
-        let scaffold = program.with_rewritten_entry(Vec::new());
         let mut changed = false;
-        let entry: Vec<Node> = program
-            .into_entry_vec()
-            .into_iter()
-            .flat_map(|node| peel_node(node, &mut changed))
-            .collect();
-        PassResult {
-            program: scaffold.with_rewritten_entry(entry),
-            changed,
-        }
-    }}
+        let program = program.map_entry(|entry| {
+            entry
+                .into_iter()
+                .flat_map(|node| peel_node(node, &mut changed))
+                .collect()
+        });
+        PassResult { program, changed }
+    }
+}
 
 /// Recurse into `node`'s descendants, then try to peel this node itself.
 /// Returns one or two nodes (peeled body + remaining loop).
@@ -101,7 +103,7 @@ fn peel_node(node: Node, changed: &mut bool) -> Vec<Node> {
 
 /// Try to match the A28 peeling pattern:
 /// - from = LitU32(0), to = LitU32(N) with N > 1
-/// - first body node = If(Eq(Var(loop_var), LitU32(0)), then, [])
+/// - first body node = `If(Eq(Var(loop_var), LitU32(0)), then, [])`
 /// - peeled body does not contain an Assign to the loop var
 ///
 /// Returns `Some((peeled_body, rest_of_loop_body))` on success.
@@ -168,21 +170,11 @@ fn assigns_to_name(nodes: &[Node], name: &Ident) -> bool {
             } if assign_name == name => return true,
             Node::If {
                 then, otherwise, ..
-            } => {
-                if assigns_to_name(then, name) || assigns_to_name(otherwise, name) {
-                    return true;
-                }
+            } if assigns_to_name(then, name) || assigns_to_name(otherwise, name) => return true,
+            Node::Loop { body, .. } | Node::Block(body) if assigns_to_name(body, name) => {
+                return true
             }
-            Node::Loop { body, .. } | Node::Block(body) => {
-                if assigns_to_name(body, name) {
-                    return true;
-                }
-            }
-            Node::Region { body, .. } => {
-                if assigns_to_name(body, name) {
-                    return true;
-                }
-            }
+            Node::Region { body, .. } if assigns_to_name(body, name) => return true,
             _ => {}
         }
     }

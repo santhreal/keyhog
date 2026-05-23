@@ -36,61 +36,96 @@
 
 use std::hash::{Hash, Hasher};
 
+pub mod add_combine;
+pub mod add_sub_cancel;
 pub mod aos_to_soa_promote;
 pub mod bank_conflict_pad;
+pub mod bitwise_combine;
+pub mod bitwise_idemp;
+pub mod boolean_simplify;
 pub mod branch_collapse;
 pub mod canonicalize;
+pub mod cmp_normalize;
+pub mod cmp_self_false;
 pub mod const_buffer_promote;
 pub mod dead_store;
 pub mod descriptor_const_fold;
 pub mod descriptor_cse;
 pub mod descriptor_dce;
+pub mod div_combine;
 pub mod drop_unused_bindings;
 pub mod drop_unused_child_bodies;
 pub mod drop_unused_literals;
 pub mod egraph_saturation;
+pub mod emit_order;
 pub mod identity_elim;
 pub mod licm;
 pub mod load_forwarding;
 pub mod loop_fission;
 pub mod loop_fusion;
 pub mod loop_unroll;
+pub mod loop_zero_iter;
 pub mod matmul_promote;
+pub mod min_max_idemp;
+pub mod mod_idemp;
+pub mod mul_add_to_fma;
+pub mod mul_combine;
+pub mod negate_cancel;
+pub mod select_fold;
 pub mod shared_mem_promote;
+pub mod shift_combine;
 pub mod strength_reduce;
+pub mod sub_combine;
 pub mod tail_mask;
+pub mod unary_idemp;
+pub mod xor_self_zero;
 
+pub use add_combine::add_combine;
+pub use add_sub_cancel::add_sub_cancel;
 pub use aos_to_soa_promote::{promote as aos_to_soa_promote, LayoutHint as AosSoaLayoutHint};
 pub use bank_conflict_pad::bank_conflict_pad;
+pub use bitwise_combine::bitwise_combine;
+pub use bitwise_idemp::bitwise_idemp;
+pub use boolean_simplify::boolean_simplify;
 pub use branch_collapse::branch_collapse;
 pub use canonicalize::canonicalize;
+pub use cmp_normalize::cmp_normalize;
+pub use cmp_self_false::cmp_self_false;
 pub use const_buffer_promote::const_buffer_promote;
-pub use dead_store::{
-    dead_store, dead_store_with_weir_alias_facts, dead_store_with_weir_dataflow_facts,
-};
+pub use dead_store::{dead_store, dead_store_with_alias_facts, dead_store_with_dataflow_facts};
 pub use descriptor_const_fold::descriptor_const_fold;
 pub use descriptor_cse::descriptor_cse;
 pub use descriptor_dce::descriptor_dce;
+pub use div_combine::div_combine;
 pub use drop_unused_bindings::drop_unused_bindings;
 pub use drop_unused_child_bodies::drop_unused_child_bodies;
 pub use drop_unused_literals::drop_unused_literals;
+pub use emit_order::emit_order;
 pub use identity_elim::identity_elim;
-pub use licm::{licm, licm_with_weir_alias_facts, licm_with_weir_dataflow_facts};
+pub use licm::{licm, licm_with_alias_facts, licm_with_dataflow_facts};
 pub use load_forwarding::{
-    load_forwarding, load_forwarding_with_weir_alias_facts,
-    load_forwarding_with_weir_dataflow_facts,
+    load_forwarding, load_forwarding_with_alias_facts, load_forwarding_with_dataflow_facts,
 };
 pub use loop_fission::{
-    loop_fission, loop_fission_with_weir_alias_facts, loop_fission_with_weir_dataflow_facts,
+    loop_fission, loop_fission_with_alias_facts, loop_fission_with_dataflow_facts,
 };
-pub use loop_fusion::{
-    loop_fusion, loop_fusion_with_weir_alias_facts, loop_fusion_with_weir_dataflow_facts,
-};
+pub use loop_fusion::{loop_fusion, loop_fusion_with_alias_facts, loop_fusion_with_dataflow_facts};
 pub use loop_unroll::loop_unroll;
+pub use loop_zero_iter::loop_zero_iter;
 pub use matmul_promote::{infer_matmul_tile_loops, matmul_promote, MatmulTileLoopPlan};
+pub use min_max_idemp::min_max_idemp;
+pub use mod_idemp::mod_idemp;
+pub use mul_add_to_fma::mul_add_to_fma;
+pub use mul_combine::mul_combine;
+pub use negate_cancel::negate_cancel;
+pub use select_fold::select_fold;
 pub use shared_mem_promote::shared_mem_promote;
+pub use shift_combine::shift_combine;
 pub use strength_reduce::strength_reduce;
+pub use sub_combine::sub_combine;
 pub use tail_mask::apply_tail_mask;
+pub use unary_idemp::unary_idemp;
+pub use xor_self_zero::xor_self_zero;
 
 /// One substrate-neutral lowered-IR rewrite in the canonical pipeline.
 #[derive(Debug, Clone, Copy)]
@@ -113,31 +148,194 @@ fn egraph_saturation_pass(desc: &crate::KernelDescriptor) -> crate::KernelDescri
 }
 
 const CANONICAL_REWRITE_PASSES: &[DescriptorRewritePass] = &[
-    DescriptorRewritePass { name: "strength_reduce", rewrite: strength_reduce },
-    DescriptorRewritePass { name: "shared_mem_promote", rewrite: shared_mem_promote },
-    DescriptorRewritePass { name: "bank_conflict_pad", rewrite: bank_conflict_pad },
-    DescriptorRewritePass { name: "const_buffer_promote", rewrite: const_buffer_promote },
-    DescriptorRewritePass { name: "descriptor_const_fold", rewrite: descriptor_const_fold },
-    DescriptorRewritePass { name: "identity_elim", rewrite: identity_elim },
-    DescriptorRewritePass { name: "branch_collapse", rewrite: branch_collapse },
-    DescriptorRewritePass { name: "loop_fusion", rewrite: loop_fusion },
-    DescriptorRewritePass { name: "loop_unroll", rewrite: loop_unroll },
-    DescriptorRewritePass { name: "licm", rewrite: licm },
-    DescriptorRewritePass { name: "load_forwarding", rewrite: load_forwarding },
-    DescriptorRewritePass { name: "descriptor_dce_after_forwarding", rewrite: descriptor_dce },
-    DescriptorRewritePass { name: "dead_store", rewrite: dead_store },
-    DescriptorRewritePass { name: "descriptor_dce", rewrite: descriptor_dce },
-    DescriptorRewritePass { name: "canonicalize", rewrite: canonicalize },
-    DescriptorRewritePass { name: "descriptor_cse", rewrite: descriptor_cse },
-    DescriptorRewritePass { name: "egraph_saturation", rewrite: egraph_saturation_pass },
-    DescriptorRewritePass { name: "descriptor_const_fold_post_saturation", rewrite: descriptor_const_fold },
-    DescriptorRewritePass { name: "identity_elim_post_saturation", rewrite: identity_elim },
-    DescriptorRewritePass { name: "descriptor_dce_post_saturation", rewrite: descriptor_dce },
-    DescriptorRewritePass { name: "canonicalize_post_saturation", rewrite: canonicalize },
-    DescriptorRewritePass { name: "descriptor_cse_post_saturation", rewrite: descriptor_cse },
-    DescriptorRewritePass { name: "drop_unused_bindings", rewrite: drop_unused_bindings },
-    DescriptorRewritePass { name: "drop_unused_literals", rewrite: drop_unused_literals },
-    DescriptorRewritePass { name: "drop_unused_child_bodies", rewrite: drop_unused_child_bodies },
+    DescriptorRewritePass {
+        name: "strength_reduce",
+        rewrite: strength_reduce,
+    },
+    DescriptorRewritePass {
+        name: "shift_combine",
+        rewrite: shift_combine,
+    },
+    DescriptorRewritePass {
+        name: "shared_mem_promote",
+        rewrite: shared_mem_promote,
+    },
+    DescriptorRewritePass {
+        name: "bank_conflict_pad",
+        rewrite: bank_conflict_pad,
+    },
+    DescriptorRewritePass {
+        name: "const_buffer_promote",
+        rewrite: const_buffer_promote,
+    },
+    DescriptorRewritePass {
+        name: "descriptor_const_fold",
+        rewrite: descriptor_const_fold,
+    },
+    DescriptorRewritePass {
+        name: "add_combine",
+        rewrite: add_combine,
+    },
+    DescriptorRewritePass {
+        name: "sub_combine",
+        rewrite: sub_combine,
+    },
+    DescriptorRewritePass {
+        name: "mul_combine",
+        rewrite: mul_combine,
+    },
+    DescriptorRewritePass {
+        name: "div_combine",
+        rewrite: div_combine,
+    },
+    DescriptorRewritePass {
+        name: "mod_idemp",
+        rewrite: mod_idemp,
+    },
+    DescriptorRewritePass {
+        name: "add_sub_cancel",
+        rewrite: add_sub_cancel,
+    },
+    DescriptorRewritePass {
+        name: "bitwise_combine",
+        rewrite: bitwise_combine,
+    },
+    DescriptorRewritePass {
+        name: "identity_elim",
+        rewrite: identity_elim,
+    },
+    DescriptorRewritePass {
+        name: "boolean_simplify",
+        rewrite: boolean_simplify,
+    },
+    DescriptorRewritePass {
+        name: "negate_cancel",
+        rewrite: negate_cancel,
+    },
+    DescriptorRewritePass {
+        name: "unary_idemp",
+        rewrite: unary_idemp,
+    },
+    DescriptorRewritePass {
+        name: "select_fold",
+        rewrite: select_fold,
+    },
+    DescriptorRewritePass {
+        name: "min_max_idemp",
+        rewrite: min_max_idemp,
+    },
+    DescriptorRewritePass {
+        name: "bitwise_idemp",
+        rewrite: bitwise_idemp,
+    },
+    DescriptorRewritePass {
+        name: "branch_collapse",
+        rewrite: branch_collapse,
+    },
+    DescriptorRewritePass {
+        name: "loop_fusion",
+        rewrite: loop_fusion,
+    },
+    DescriptorRewritePass {
+        name: "loop_unroll",
+        rewrite: loop_unroll,
+    },
+    DescriptorRewritePass {
+        name: "loop_zero_iter",
+        rewrite: loop_zero_iter,
+    },
+    DescriptorRewritePass {
+        name: "licm",
+        rewrite: licm,
+    },
+    DescriptorRewritePass {
+        name: "load_forwarding",
+        rewrite: load_forwarding,
+    },
+    DescriptorRewritePass {
+        name: "mul_add_to_fma",
+        rewrite: mul_add_to_fma,
+    },
+    DescriptorRewritePass {
+        name: "matmul_promote",
+        rewrite: matmul_promote,
+    },
+    DescriptorRewritePass {
+        name: "descriptor_dce_after_forwarding",
+        rewrite: descriptor_dce,
+    },
+    DescriptorRewritePass {
+        name: "dead_store",
+        rewrite: dead_store,
+    },
+    DescriptorRewritePass {
+        name: "descriptor_dce",
+        rewrite: descriptor_dce,
+    },
+    DescriptorRewritePass {
+        name: "cmp_normalize",
+        rewrite: cmp_normalize,
+    },
+    DescriptorRewritePass {
+        name: "cmp_self_false",
+        rewrite: cmp_self_false,
+    },
+    DescriptorRewritePass {
+        name: "xor_self_zero",
+        rewrite: xor_self_zero,
+    },
+    DescriptorRewritePass {
+        name: "canonicalize",
+        rewrite: canonicalize,
+    },
+    DescriptorRewritePass {
+        name: "descriptor_cse",
+        rewrite: descriptor_cse,
+    },
+    DescriptorRewritePass {
+        name: "egraph_saturation",
+        rewrite: egraph_saturation_pass,
+    },
+    DescriptorRewritePass {
+        name: "descriptor_const_fold_post_saturation",
+        rewrite: descriptor_const_fold,
+    },
+    DescriptorRewritePass {
+        name: "identity_elim_post_saturation",
+        rewrite: identity_elim,
+    },
+    DescriptorRewritePass {
+        name: "descriptor_dce_post_saturation",
+        rewrite: descriptor_dce,
+    },
+    DescriptorRewritePass {
+        name: "cmp_normalize_post_saturation",
+        rewrite: cmp_normalize,
+    },
+    DescriptorRewritePass {
+        name: "canonicalize_post_saturation",
+        rewrite: canonicalize,
+    },
+    DescriptorRewritePass {
+        name: "descriptor_cse_post_saturation",
+        rewrite: descriptor_cse,
+    },
+    DescriptorRewritePass {
+        name: "drop_unused_bindings",
+        rewrite: drop_unused_bindings,
+    },
+    DescriptorRewritePass {
+        name: "drop_unused_literals",
+        rewrite: drop_unused_literals,
+    },
+    DescriptorRewritePass {
+        name: "drop_unused_child_bodies",
+        rewrite: drop_unused_child_bodies,
+    },
+    DescriptorRewritePass {
+        name: "emit_order",
+        rewrite: emit_order,
+    },
 ];
 
 /// Canonical lowered-IR rewrite pipeline as data, not a second hand-coded compiler.
@@ -239,13 +437,13 @@ fn debug_verify_after_rewrite(desc: &crate::KernelDescriptor, pass: &str) {
     }
 }
 
-/// Single canonical pass sequence using Weir-provided alias and
+/// Single canonical pass sequence using External alias and
 /// reaching-definition facts where they unlock stronger legality.
 #[must_use]
-pub fn run_all_once_with_weir_dataflow_facts(
+pub fn run_all_once_with_dataflow_facts(
     desc: &crate::KernelDescriptor,
-    alias_facts: &crate::analyses::weir_alias::AliasFactSet,
-    reaching_defs: &crate::analyses::weir_reaching_def::ReachingDefFactSet,
+    alias_facts: &crate::analyses::alias_facts::AliasFactSet,
+    reaching_defs: &crate::analyses::reaching_def_facts::ReachingDefFactSet,
 ) -> crate::KernelDescriptor {
     let reduced = strength_reduce(desc);
     let shared_promoted = shared_mem_promote(&reduced);
@@ -254,12 +452,12 @@ pub fn run_all_once_with_weir_dataflow_facts(
     let folded = descriptor_const_fold(&const_promoted);
     let identified = identity_elim(&folded);
     let collapsed = branch_collapse(&identified);
-    let fused = loop_fusion_with_weir_dataflow_facts(&collapsed, alias_facts, reaching_defs);
+    let fused = loop_fusion_with_dataflow_facts(&collapsed, alias_facts, reaching_defs);
     let unrolled = loop_unroll(&fused);
-    let hoisted = licm_with_weir_dataflow_facts(&unrolled, alias_facts, reaching_defs);
-    let forwarded = load_forwarding_with_weir_dataflow_facts(&hoisted, alias_facts, reaching_defs);
+    let hoisted = licm_with_dataflow_facts(&unrolled, alias_facts, reaching_defs);
+    let forwarded = load_forwarding_with_dataflow_facts(&hoisted, alias_facts, reaching_defs);
     let cleaned = descriptor_dce(&forwarded);
-    let dse_done = dead_store_with_weir_dataflow_facts(&cleaned, alias_facts, reaching_defs);
+    let dse_done = dead_store_with_dataflow_facts(&cleaned, alias_facts, reaching_defs);
     let dced = descriptor_dce(&dse_done);
     let canon = canonicalize(&dced);
     let merged = descriptor_cse(&canon);
@@ -271,7 +469,8 @@ pub fn run_all_once_with_weir_dataflow_facts(
     let saturated_merged = descriptor_cse(&saturated_canon);
     let pruned_bindings = drop_unused_bindings(&saturated_merged);
     let pruned_literals = drop_unused_literals(&pruned_bindings);
-    drop_unused_child_bodies(&pruned_literals)
+    let pruned_children = drop_unused_child_bodies(&pruned_literals);
+    emit_order(&pruned_children)
 }
 
 /// Maximum number of `run_all_once` iterations before giving up and
@@ -293,12 +492,12 @@ pub fn run_all(desc: &crate::KernelDescriptor) -> crate::KernelDescriptor {
 
 /// Apply the canonical fixed-point rewrite pipeline with Weir facts.
 #[must_use]
-pub fn run_all_with_weir_dataflow_facts(
+pub fn run_all_with_dataflow_facts(
     desc: &crate::KernelDescriptor,
-    alias_facts: &crate::analyses::weir_alias::AliasFactSet,
-    reaching_defs: &crate::analyses::weir_reaching_def::ReachingDefFactSet,
+    alias_facts: &crate::analyses::alias_facts::AliasFactSet,
+    reaching_defs: &crate::analyses::reaching_def_facts::ReachingDefFactSet,
 ) -> crate::KernelDescriptor {
-    run_all_with_weir_dataflow_stats(desc, alias_facts, reaching_defs).0
+    run_all_with_dataflow_stats(desc, alias_facts, reaching_defs).0
 }
 
 /// Per-pipeline-run statistics. Useful for benchmarks, regression
@@ -459,24 +658,24 @@ pub fn run_all_with_stats(
     (current, stats)
 }
 
-/// Like [`run_all_with_weir_dataflow_facts`] but also returns
+/// Like [`run_all_with_dataflow_facts`] but also returns
 /// [`OptimizationStats`].
 #[must_use]
-pub fn run_all_with_weir_dataflow_stats(
+pub fn run_all_with_dataflow_stats(
     desc: &crate::KernelDescriptor,
-    alias_facts: &crate::analyses::weir_alias::AliasFactSet,
-    reaching_defs: &crate::analyses::weir_reaching_def::ReachingDefFactSet,
+    alias_facts: &crate::analyses::alias_facts::AliasFactSet,
+    reaching_defs: &crate::analyses::reaching_def_facts::ReachingDefFactSet,
 ) -> (crate::KernelDescriptor, OptimizationStats) {
     let ops_before = desc.body.ops.len();
     let bindings_before = desc.bindings.slots.len();
     let literals_before = desc.body.literals.len();
 
-    let mut current = run_all_once_with_weir_dataflow_facts(desc, alias_facts, reaching_defs);
+    let mut current = run_all_once_with_dataflow_facts(desc, alias_facts, reaching_defs);
     let mut iterations = 1usize;
     let mut current_hash = descriptor_hash(&current);
     let mut converged = current_hash == descriptor_hash(desc) && current == *desc;
     while !converged && iterations < RUN_ALL_MAX_ITERS {
-        let next = run_all_once_with_weir_dataflow_facts(&current, alias_facts, reaching_defs);
+        let next = run_all_once_with_dataflow_facts(&current, alias_facts, reaching_defs);
         iterations += 1;
         let next_hash = descriptor_hash(&next);
         converged = next_hash == current_hash && next == current;

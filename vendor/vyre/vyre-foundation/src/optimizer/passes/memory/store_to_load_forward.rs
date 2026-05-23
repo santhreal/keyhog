@@ -28,7 +28,7 @@
 //!
 //! - Both operations must live in the same `Vec<Node>` body. Cross-
 //!   container forwarding (across an If branch boundary, into a Loop
-//!   body, etc.) needs reaching-store analysis (weir-driven, future).
+//!   body, etc.) needs downstream reaching-store analysis.
 //! - The `index` expressions must be structurally equal (`Expr` PartialEq).
 //!   Dynamic indexes that happen to coincide at runtime are conservatively
 //!   left alone.
@@ -44,13 +44,16 @@ use crate::ir::{Expr, Ident, Node, Program};
 use crate::optimizer::{vyre_pass, PassAnalysis, PassResult};
 use crate::visit::node_map;
 
-/// ProgramPass registration for the store-to-load forwarding rewrite
+/// `ProgramPass` registration for the store-to-load forwarding rewrite
 /// (ROADMAP A22).
 #[derive(Debug, Default)]
 #[vyre_pass(
     name = "store_to_load_forward",
     requires = [],
-    invalidates = []
+    invalidates = [],
+    phase = "memory",
+    boundary_class = "abi_preserving",
+    cost_model_family = "memory"
 )]
 pub struct StoreToLoadForward;
 
@@ -60,6 +63,13 @@ impl StoreToLoadForward {
     /// `Store` / `Let(Load)` pair under the conservative rule.
     #[must_use]
     fn analyze_impl(program: &Program) -> PassAnalysis {
+        // Forwarding requires both a Store AND a Let; either missing
+        // means the recursive walk would find no forwardable pair.
+        use crate::ir::stats::{NODE_KIND_LET, NODE_KIND_STORE};
+        let stats = program.stats();
+        if !stats.has_any_node_kind(NODE_KIND_STORE) || !stats.has_any_node_kind(NODE_KIND_LET) {
+            return PassAnalysis::SKIP;
+        }
         if program
             .entry()
             .iter()
@@ -75,19 +85,17 @@ impl StoreToLoadForward {
     /// the value of its preceding `Store`.
     #[must_use]
     pub fn transform(program: Program) -> PassResult {
-        let scaffold = program.with_rewritten_entry(Vec::new());
         let mut changed = false;
-        let entry: Vec<Node> = program
-            .into_entry_vec()
-            .into_iter()
-            .map(|n| rewrite_node(n, &mut changed))
-            .collect();
-        let entry = forward_in_body(entry, &mut changed);
-        PassResult {
-            program: scaffold.with_rewritten_entry(entry),
-            changed,
-        }
-    }}
+        let program = program.map_entry(|entry| {
+            let mapped: Vec<Node> = entry
+                .into_iter()
+                .map(|n| rewrite_node(n, &mut changed))
+                .collect();
+            forward_in_body(mapped, &mut changed)
+        });
+        PassResult { program, changed }
+    }
+}
 
 fn rewrite_node(node: Node, changed: &mut bool) -> Node {
     let recursed = node_map::map_children(node, &mut |child| rewrite_node(child, changed));
@@ -96,31 +104,41 @@ fn rewrite_node(node: Node, changed: &mut bool) -> Node {
 
 fn forward_in_body(body: Vec<Node>, changed: &mut bool) -> Vec<Node> {
     let mut out: Vec<Node> = Vec::with_capacity(body.len());
-    for (idx, node) in body.iter().enumerate() {
+    // Take `body` by value and walk it once, moving each node into `out`
+    // unchanged unless it's a forwardable Let. The previous shape iterated
+    // by reference (`body.iter().enumerate()`) and unconditionally cloned
+    // every Node into `out` even when no forwarding fired — so a body of
+    // 1000 nodes with no opportunities still paid 1000 deep clones.
+    //
+    // Forwarding lookback now scans the partially-built `out` instead of
+    // `body[..idx]`. Since we only rewrite Let-of-Load (never Store), and
+    // find_forwarding_store only inspects Store nodes (which we never
+    // rewrite), `out` carries the same Store-position information as the
+    // original prefix did.
+    for node in body {
         let Node::Let { name, value } = node else {
-            out.push(node.clone());
+            out.push(node);
             continue;
         };
         let Expr::Load {
             buffer: load_buffer,
             index: load_index,
-        } = value
+        } = &value
         else {
-            out.push(node.clone());
+            out.push(Node::Let { name, value });
             continue;
         };
-        let Some(forwarded_value) = find_forwarding_store(&body[..idx], load_buffer, load_index)
-        else {
-            out.push(node.clone());
+        let Some(forwarded_value) = find_forwarding_store(&out, load_buffer, load_index) else {
+            out.push(Node::Let { name, value });
             continue;
         };
         if !value_is_observably_free(&forwarded_value) {
-            out.push(node.clone());
+            out.push(Node::Let { name, value });
             continue;
         }
         *changed = true;
         out.push(Node::Let {
-            name: name.clone(),
+            name,
             value: forwarded_value,
         });
     }
@@ -186,7 +204,11 @@ fn node_blocks_forwarding(node: &Node, buffer: &Ident) -> bool {
         }
         Node::Block(body) => body.iter().any(|n| node_blocks_forwarding(n, buffer)),
         Node::Region { body, .. } => body.iter().any(|n| node_blocks_forwarding(n, buffer)),
-        Node::Barrier { .. } => true,
+        Node::Barrier { .. }
+        | Node::AsyncWait { .. }
+        | Node::Resume { .. }
+        | Node::Return
+        | Node::Opaque(_) => true,
         Node::AsyncLoad {
             source,
             destination,
@@ -206,10 +228,8 @@ fn node_blocks_forwarding(node: &Node, buffer: &Ident) -> bool {
                 || expr_touches_buffer(offset, buffer)
                 || expr_touches_buffer(size, buffer)
         }
-        Node::AsyncWait { .. } => true,
         Node::IndirectDispatch { count_buffer, .. } => count_buffer == buffer,
         Node::Trap { address, .. } => expr_touches_buffer(address, buffer),
-        Node::Resume { .. } | Node::Return | Node::Opaque(_) => true,
     }
 }
 

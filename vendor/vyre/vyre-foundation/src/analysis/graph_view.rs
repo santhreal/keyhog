@@ -60,22 +60,19 @@ impl fmt::Display for GraphValidateError {
             Self::Cycle { path } => {
                 write!(
                     f,
-                    "graph contains a cycle involving nodes {:?}. Fix: remove cyclic dependencies so the graph is a valid DAG.",
-                    path
+                    "graph contains a cycle involving nodes {path:?}. Fix: remove cyclic dependencies so the graph is a valid DAG."
                 )
             }
             Self::DanglingEdge { from, to } => {
                 write!(
                     f,
-                    "edge from {} to {} references a non-existent node. Fix: ensure all edge endpoints exist in the graph's node list.",
-                    from, to
+                    "edge from {from} to {to} references a non-existent node. Fix: ensure all edge endpoints exist in the graph's node list."
                 )
             }
             Self::OrphanPhi { node_id } => {
                 write!(
                     f,
-                    "Phi node {} has no valid predecessors. Fix: ensure every Phi node references at least one existing predecessor node.",
-                    node_id
+                    "Phi node {node_id} has no valid predecessors. Fix: ensure every Phi node references at least one existing predecessor node."
                 )
             }
         }
@@ -174,7 +171,7 @@ impl NodeGraph {
     /// Used by external tooling that synthesizes graphs without
     /// going through `from_program` (V7-EXT-027).
     ///
-    /// workgroup_size defaults to [1, 1, 1] and buffers defaults to
+    /// `workgroup_size` defaults to [1, 1, 1] and buffers defaults to
     /// empty. For full control use struct-literal syntax inside the
     /// defining crate.
     #[must_use]
@@ -194,7 +191,7 @@ impl NodeGraph {
     /// document order. Later passes refine edges with reaching-
     /// definition / control-flow / dataflow analyses.
     ///
-    /// VYRE_IR_HOTSPOTS HIGH (graph_view.rs:205): the previous
+    /// `VYRE_IR_HOTSPOTS` HIGH (`graph_view.rs:205`): the previous
     /// implementation cloned every top-level node via `n.clone()`.
     /// This helper now delegates to `from_program_owned` after
     /// cloning the inner structure cheaply via `Arc` refcount bumps,
@@ -250,8 +247,12 @@ impl NodeGraph {
     /// a non-existent node id, `GraphValidateError::Cycle` if the graph
     /// contains a directed cycle, or `GraphValidateError::OrphanPhi` if
     /// a Phi node has no predecessors.
+    #[expect(
+        clippy::items_after_statements,
+        reason = "local DFS keeps cycle validation state private to graph lowering"
+    )]
     pub fn try_into_program(self) -> Result<Program, GraphValidateError> {
-        let node_count = self.nodes.len() as u32;
+        let node_count = u32::try_from(self.nodes.len()).unwrap_or(u32::MAX);
 
         // 1. Check for dangling edges.
         for edge in &self.edges {
@@ -312,7 +313,7 @@ impl NodeGraph {
             None
         }
 
-        for i in 0..self.nodes.len() as u32 {
+        for i in 0..node_count {
             if state[i as usize] == 0 {
                 if let Some(cycle_path) = dfs(i, &adj, &mut state, &mut path) {
                     return Err(GraphValidateError::Cycle { path: cycle_path });

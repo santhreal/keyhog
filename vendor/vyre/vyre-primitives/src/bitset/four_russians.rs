@@ -151,6 +151,7 @@ pub fn four_russians_apply_byte_lut(
 
 /// CPU reference for [`four_russians_apply_byte_lut`].
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref(lhs: &[u32], rhs: &[u32], lut: &[u32]) -> Vec<u32> {
     let mut out = Vec::new();
     cpu_ref_into(lhs, rhs, lut, &mut out);
@@ -158,9 +159,22 @@ pub fn cpu_ref(lhs: &[u32], rhs: &[u32], lut: &[u32]) -> Vec<u32> {
 }
 
 /// CPU reference for [`four_russians_apply_byte_lut`] into caller-owned storage.
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref_into(lhs: &[u32], rhs: &[u32], lut: &[u32], out: &mut Vec<u32>) {
+    assert_eq!(
+        lhs.len(),
+        rhs.len(),
+        "four_russians_apply_byte_lut CPU oracle received lhs_len={} rhs_len={}. Fix: pass equal-width bitset words before parity comparison.",
+        lhs.len(),
+        rhs.len()
+    );
+    assert!(
+        lut.len() >= 65_536,
+        "four_russians_apply_byte_lut CPU oracle received lut_len={}. Fix: pass the complete 256x256 byte LUT before parity comparison.",
+        lut.len()
+    );
     out.clear();
-    out.reserve(lhs.len().min(rhs.len()));
+    out.reserve(lhs.len());
     out.extend(lhs.iter().zip(rhs.iter()).map(|(left, right)| {
         let mut word = 0u32;
         for lane in 0..4 {
@@ -168,7 +182,7 @@ pub fn cpu_ref_into(lhs: &[u32], rhs: &[u32], lut: &[u32], out: &mut Vec<u32>) {
             let left_byte = (left >> shift) & 0xFF;
             let right_byte = (right >> shift) & 0xFF;
             let idx = ((left_byte << 8) | right_byte) as usize;
-            let byte = lut.get(idx).copied().unwrap_or_default() & 0xFF;
+            let byte = lut[idx] & 0xFF;
             word |= byte << shift;
         }
         word

@@ -8,6 +8,11 @@ use crate::ir::Expr;
 
 /// Algebraic simplifications of unary operators that don't require
 /// the operand to be a literal — these are always valid rewrites.
+#[expect(
+    clippy::too_many_lines,
+    clippy::match_same_arms,
+    reason = "unary constant-fold table keeps exact mathematical identities auditable"
+)]
 pub(super) fn simplify_unop(op: &crate::ir::UnOp, operand: &Expr) -> Option<Expr> {
     use crate::ir::{BinOp, UnOp};
     match (op, operand) {
@@ -122,29 +127,29 @@ pub(super) fn simplify_unop(op: &crate::ir::UnOp, operand: &Expr) -> Option<Expr
         // InverseSqrt(InverseSqrt(x)) is not identity, but
         // Sqrt(Sqrt(x)) is x^(1/4) — no simplification.
         // However: InverseSqrt of a literal 1.0 → 1.0
-        (UnOp::InverseSqrt, Expr::LitF32(v)) if *v == 1.0 => Some(Expr::f32(1.0)),
-        (UnOp::Reciprocal, Expr::LitF32(v)) if *v == 1.0 => Some(Expr::f32(1.0)),
-        (UnOp::Sqrt, Expr::LitF32(v)) if *v == 1.0 => Some(Expr::f32(1.0)),
-        (UnOp::Sqrt, Expr::LitF32(v)) if *v == 0.0 => Some(Expr::f32(0.0)),
+        (UnOp::InverseSqrt, Expr::LitF32(v)) if lit_f32_eq(*v, 1.0) => Some(Expr::f32(1.0)),
+        (UnOp::Reciprocal, Expr::LitF32(v)) if lit_f32_eq(*v, 1.0) => Some(Expr::f32(1.0)),
+        (UnOp::Sqrt, Expr::LitF32(v)) if lit_f32_eq(*v, 1.0) => Some(Expr::f32(1.0)),
+        (UnOp::Sqrt, Expr::LitF32(v)) if lit_f32_eq(*v, 0.0) => Some(Expr::f32(0.0)),
 
         // ─── Trig constants ──────────────────────────────────
-        (UnOp::Sin, Expr::LitF32(v)) if *v == 0.0 => Some(Expr::f32(0.0)),
-        (UnOp::Cos, Expr::LitF32(v)) if *v == 0.0 => Some(Expr::f32(1.0)),
-        (UnOp::Tan, Expr::LitF32(v)) if *v == 0.0 => Some(Expr::f32(0.0)),
-        (UnOp::Exp, Expr::LitF32(v)) if *v == 0.0 => Some(Expr::f32(1.0)),
-        (UnOp::Exp2, Expr::LitF32(v)) if *v == 0.0 => Some(Expr::f32(1.0)),
-        (UnOp::Log, Expr::LitF32(v)) if *v == 1.0 => Some(Expr::f32(0.0)),
-        (UnOp::Log2, Expr::LitF32(v)) if *v == 1.0 => Some(Expr::f32(0.0)),
+        (UnOp::Sin, Expr::LitF32(v)) if lit_f32_eq(*v, 0.0) => Some(Expr::f32(0.0)),
+        (UnOp::Cos, Expr::LitF32(v)) if lit_f32_eq(*v, 0.0) => Some(Expr::f32(1.0)),
+        (UnOp::Tan, Expr::LitF32(v)) if lit_f32_eq(*v, 0.0) => Some(Expr::f32(0.0)),
+        (UnOp::Exp, Expr::LitF32(v)) if lit_f32_eq(*v, 0.0) => Some(Expr::f32(1.0)),
+        (UnOp::Exp2, Expr::LitF32(v)) if lit_f32_eq(*v, 0.0) => Some(Expr::f32(1.0)),
+        (UnOp::Log, Expr::LitF32(v)) if lit_f32_eq(*v, 1.0) => Some(Expr::f32(0.0)),
+        (UnOp::Log2, Expr::LitF32(v)) if lit_f32_eq(*v, 1.0) => Some(Expr::f32(0.0)),
         // Inverse / hyperbolic trig at exact-result arguments. PI and
         // PI/2 cases are skipped because the IR has no canonical PI
         // literal; the caller would need to write the constant out
         // explicitly and the next const-fold pass can pick it up.
-        (UnOp::Asin, Expr::LitF32(v)) if *v == 0.0 => Some(Expr::f32(0.0)),
-        (UnOp::Acos, Expr::LitF32(v)) if *v == 1.0 => Some(Expr::f32(0.0)),
-        (UnOp::Atan, Expr::LitF32(v)) if *v == 0.0 => Some(Expr::f32(0.0)),
-        (UnOp::Tanh, Expr::LitF32(v)) if *v == 0.0 => Some(Expr::f32(0.0)),
-        (UnOp::Sinh, Expr::LitF32(v)) if *v == 0.0 => Some(Expr::f32(0.0)),
-        (UnOp::Cosh, Expr::LitF32(v)) if *v == 0.0 => Some(Expr::f32(1.0)),
+        (UnOp::Asin, Expr::LitF32(v)) if lit_f32_eq(*v, 0.0) => Some(Expr::f32(0.0)),
+        (UnOp::Acos, Expr::LitF32(v)) if lit_f32_eq(*v, 1.0) => Some(Expr::f32(0.0)),
+        (UnOp::Atan, Expr::LitF32(v)) if lit_f32_eq(*v, 0.0) => Some(Expr::f32(0.0)),
+        (UnOp::Tanh, Expr::LitF32(v)) if lit_f32_eq(*v, 0.0) => Some(Expr::f32(0.0)),
+        (UnOp::Sinh, Expr::LitF32(v)) if lit_f32_eq(*v, 0.0) => Some(Expr::f32(0.0)),
+        (UnOp::Cosh, Expr::LitF32(v)) if lit_f32_eq(*v, 0.0) => Some(Expr::f32(1.0)),
 
         // ─── Popcount/Clz/Ctz of zero literal ────────────────
         (UnOp::Popcount, Expr::LitU32(0)) => Some(Expr::u32(0)),
@@ -174,4 +179,9 @@ pub(super) fn simplify_unop(op: &crate::ir::UnOp, operand: &Expr) -> Option<Expr
 
         _ => None,
     }
+}
+
+#[inline]
+fn lit_f32_eq(value: f32, expected: f32) -> bool {
+    value.to_bits() == expected.to_bits()
 }

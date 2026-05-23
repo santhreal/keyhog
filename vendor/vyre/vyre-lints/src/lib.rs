@@ -21,6 +21,7 @@
 
 pub mod allowlist;
 pub mod drift;
+pub mod production_cpu_fallbacks;
 pub mod raw_ir_in_libs;
 
 use anyhow::Result;
@@ -43,6 +44,9 @@ pub enum ViolationKind {
     /// `Expr::SomeVariant { .. }` or `Expr::some_method(..)` outside
     /// `vyre-primitives` and outside test modules.
     RawExprConstruction,
+    /// Production code reached into CPU/reference execution instead of an
+    /// explicit parity-test oracle.
+    ProductionCpuFallback,
 }
 
 /// Run the `raw_ir_in_libs` lint over a directory tree.
@@ -63,6 +67,24 @@ pub fn run_raw_ir_in_libs(
     for root in roots {
         all.extend(raw_ir_in_libs::scan_tree(root, &allow)?);
     }
-    all.sort_by(|a, b| (a.file.clone(), a.line).cmp(&(b.file.clone(), b.line)));
+    // Compare by (file, line) without cloning either field — the old
+    // `(a.file.clone(), a.line).cmp(&(b.file.clone(), b.line))` cloned
+    // two strings per compare (O(N log N) × 2 clones) which is wasted
+    // work on a sort that fires on every audit.
+    all.sort_by(|a, b| a.file.cmp(&b.file).then(a.line.cmp(&b.line)));
+    Ok(all)
+}
+
+/// Run the production CPU fallback guard over selected crate roots.
+///
+/// This is intentionally separate from `raw_ir_in_libs`: CPU/reference
+/// execution is allowed in explicit oracle crates and tests, but not in
+/// production Vyre, Weir, or Vyrec dispatch paths.
+pub fn run_production_cpu_fallbacks(roots: &[&Path]) -> Result<Vec<Violation>> {
+    let mut all = Vec::new();
+    for root in roots {
+        all.extend(production_cpu_fallbacks::scan_tree(root)?);
+    }
+    all.sort_by(|a, b| a.file.cmp(&b.file).then(a.line.cmp(&b.line)));
     Ok(all)
 }

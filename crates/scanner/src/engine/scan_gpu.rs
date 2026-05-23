@@ -1,5 +1,10 @@
 use super::*;
 
+/// One per-shard dispatch outcome: `Vec<Vec<u8>>` is the bound
+/// per-shard outputs (one buffer per output binding), wrapped in
+/// `BackendError` so per-shard failures don't poison the whole batch.
+type ShardDispatchResult = std::result::Result<Vec<Vec<u8>>, vyre::BackendError>;
+
 impl CompiledScanner {
     /// Dispatch `N` shards of the same program through whichever GPU
     /// backend is active.
@@ -21,10 +26,7 @@ impl CompiledScanner {
         program: &vyre::Program,
         shard_inputs: &[&[&[u8]]],
         configs: &[vyre::DispatchConfig],
-    ) -> std::result::Result<
-        Vec<std::result::Result<Vec<Vec<u8>>, vyre::BackendError>>,
-        vyre::BackendError,
-    > {
+    ) -> std::result::Result<Vec<ShardDispatchResult>, vyre::BackendError> {
         debug_assert_eq!(shard_inputs.len(), configs.len());
         if let Some(wgpu) = &self.wgpu_backend {
             let jobs: Vec<(&vyre::Program, &[&[u8]], &vyre::DispatchConfig)> = shard_inputs
@@ -49,10 +51,10 @@ impl CompiledScanner {
         // default CUDA stream — no real device-side concurrency until
         // a multi-stream API is exposed at this layer.
         use rayon::prelude::*;
-        let results: Vec<std::result::Result<Vec<Vec<u8>>, vyre::BackendError>> = shard_inputs
+        let results: Vec<ShardDispatchResult> = shard_inputs
             .par_iter()
             .zip(configs.par_iter())
-            .map(|(inputs, config)| backend.dispatch_borrowed(program, *inputs, config))
+            .map(|(inputs, config)| backend.dispatch_borrowed(program, inputs, config))
             .collect();
         Ok(results)
     }
@@ -150,7 +152,8 @@ impl CompiledScanner {
             .collect();
         // In-place dedup: sort by (pattern_id, start, end) and fold overlapping spans.
         matches.sort_unstable_by(|a, b| {
-            a.pattern_id.cmp(&b.pattern_id)
+            a.pattern_id
+                .cmp(&b.pattern_id)
                 .then(a.start.cmp(&b.start))
                 .then(a.end.cmp(&b.end))
         });
@@ -234,7 +237,6 @@ impl CompiledScanner {
         &self,
         chunks: &[keyhog_core::Chunk],
     ) -> Vec<Vec<keyhog_core::RawMatch>> {
-
         // Per-call kernel select. `KEYHOG_GPU_KERNEL=ac` swaps the
         // O(N×L) literal-set program for the O(L_max) AC kernel that
         // shares the same DFA. When the active backend is CUDA, the
@@ -251,8 +253,7 @@ impl CompiledScanner {
             .as_ref()
             .map(|b| b.id() == "cuda")
             .unwrap_or(false);
-        let kernel_env_ac =
-            matches!(std::env::var("KEYHOG_GPU_KERNEL").as_deref(), Ok("ac"));
+        let kernel_env_ac = matches!(std::env::var("KEYHOG_GPU_KERNEL").as_deref(), Ok("ac"));
         if kernel_env_ac || backend_is_cuda {
             return self.scan_coalesced_gpu_ac(chunks);
         }
@@ -383,8 +384,9 @@ impl CompiledScanner {
         // producing identical bytes; a process scanning 10 k files
         // burned 40 k throwaway Vec<u8> allocations on data that never
         // changes after compile.
-        let const_packs = self.gpu_const_packs.get_or_init(|| {
-            crate::engine::GpuConstPacks {
+        let const_packs = self
+            .gpu_const_packs
+            .get_or_init(|| crate::engine::GpuConstPacks {
                 pattern_offsets: vyre_libs::matching::dispatch_io::pack_u32_slice(
                     &matcher.pattern_offsets,
                 ),
@@ -394,11 +396,11 @@ impl CompiledScanner {
                 pattern_bytes: vyre_libs::matching::dispatch_io::pack_u32_slice(
                     &matcher.pattern_bytes,
                 ),
-                pattern_count: vyre_libs::matching::dispatch_io::pack_u32_slice(&[
-                    matcher.pattern_lengths.len() as u32,
-                ]),
-            }
-        });
+                pattern_count: vyre_libs::matching::dispatch_io::pack_u32_slice(&[matcher
+                    .pattern_lengths
+                    .len()
+                    as u32]),
+            });
 
         // Per-shard tiny bytes (shard_len scalar + the two atomic
         // counters + dispatch config). The haystack input is the
@@ -416,12 +418,9 @@ impl CompiledScanner {
         for (start, end) in &shard_ranges {
             let shard_len = (*end - *start) as u32;
             let shard_cap_u64 = ((*end - *start) / 64) as u64;
-            let shard_cap =
-                shard_cap_u64.clamp(MIN_CAP as u64, MAX_CAP as u64) as u32;
+            let shard_cap = shard_cap_u64.clamp(MIN_CAP as u64, MAX_CAP as u64) as u32;
             shard_owned.push(ShardOwned {
-                haystack_len: vyre_libs::matching::dispatch_io::pack_u32_slice(
-                    &[shard_len],
-                ),
+                haystack_len: vyre_libs::matching::dispatch_io::pack_u32_slice(&[shard_len]),
                 atomic_count: vec![0u8; 4],
                 atomic_overflow: vec![0u8; 4],
                 config: vyre_libs::matching::dispatch_io::byte_scan_dispatch_config(
@@ -478,20 +477,17 @@ impl CompiledScanner {
                 .map(|i| shard_owned[i].config.clone())
                 .collect();
 
-            let batch_results = match self.dispatch_gpu_shards(
-                &matcher.program,
-                &sub_inputs,
-                &sub_configs,
-            ) {
-                Ok(r) => r,
-                Err(e) => {
-                    tracing::error!(
-                        shards = sub_end - sub_start,
-                        "GPU batched dispatch failed, falling back to CPU: {e}"
-                    );
-                    return self.scan_coalesced_non_gpu(chunks);
-                }
-            };
+            let batch_results =
+                match self.dispatch_gpu_shards(&matcher.program, &sub_inputs, &sub_configs) {
+                    Ok(r) => r,
+                    Err(e) => {
+                        tracing::error!(
+                            shards = sub_end - sub_start,
+                            "GPU batched dispatch failed, falling back to CPU: {e}"
+                        );
+                        return self.scan_coalesced_non_gpu(chunks);
+                    }
+                };
 
             for (offset_in_sub, result) in batch_results.into_iter().enumerate() {
                 let i = sub_start + offset_in_sub;
@@ -538,11 +534,10 @@ impl CompiledScanner {
                     );
                     return self.scan_coalesced_non_gpu(chunks);
                 }
-                let shard_matches =
-                    vyre_libs::matching::dispatch_io::unpack_match_triples(
-                        matches_bytes,
-                        count.min(shard_cap),
-                    );
+                let shard_matches = vyre_libs::matching::dispatch_io::unpack_match_triples(
+                    matches_bytes,
+                    count.min(shard_cap),
+                );
                 let offset = shard_ranges[i].0 as u32;
                 for m in &shard_matches {
                     matches.push(vyre_libs::matching::LiteralMatch::new(
@@ -579,7 +574,8 @@ impl CompiledScanner {
         // the allocation cost of this path.
         {
             matches.sort_unstable_by(|a, b| {
-                a.pattern_id.cmp(&b.pattern_id)
+                a.pattern_id
+                    .cmp(&b.pattern_id)
                     .then(a.start.cmp(&b.start))
                     .then(a.end.cmp(&b.end))
             });
@@ -650,8 +646,7 @@ impl CompiledScanner {
             .zip(per_chunk_hits.into_par_iter())
             .map(|(chunk, hits)| {
                 let prepared = self.prepare_chunk(chunk);
-                let mut matches =
-                    self.scan_prepared_with_pattern_hits(prepared, hits, None);
+                let mut matches = self.scan_prepared_with_pattern_hits(prepared, hits, None);
                 // Parity with SIMD's `scan_chunks_with_backend` path:
                 // `scan_with_backend` → `scan_with_deadline_and_backend`
                 // calls `post_process_matches` after the in-chunk scan,
@@ -770,8 +765,9 @@ impl CompiledScanner {
         //   5: haystack_len (per shard, packed)
         //   6: match_count (per shard, atomic counter)
         //   7: matches (output, backend-allocated from BufferDecl)
-        let ac_packs = self.gpu_ac_const_packs.get_or_init(|| {
-            crate::engine::AcConstPacks {
+        let ac_packs = self
+            .gpu_ac_const_packs
+            .get_or_init(|| crate::engine::AcConstPacks {
                 transitions: vyre_libs::matching::dispatch_io::pack_u32_slice(
                     &matcher.dfa.transitions,
                 ),
@@ -784,8 +780,7 @@ impl CompiledScanner {
                 pattern_lengths: vyre_libs::matching::dispatch_io::pack_u32_slice(
                     &matcher.pattern_lengths,
                 ),
-            }
-        });
+            });
 
         struct ShardOwnedAc {
             haystack_len: Vec<u8>,
@@ -836,8 +831,7 @@ impl CompiledScanner {
                 .map(|i| shard_owned[i].config.clone())
                 .collect();
 
-            let batch_results = match self.dispatch_gpu_shards(program, &sub_inputs, &sub_configs)
-            {
+            let batch_results = match self.dispatch_gpu_shards(program, &sub_inputs, &sub_configs) {
                 Ok(r) => r,
                 Err(e) => {
                     tracing::error!(

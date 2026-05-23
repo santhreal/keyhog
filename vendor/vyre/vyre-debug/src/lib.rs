@@ -24,15 +24,15 @@ pub mod dangling;
 pub mod descriptor_diff;
 pub mod descriptor_dump;
 pub mod fixtures;
-pub mod source_walker;
-pub mod wgsl;
 pub mod naga_dump;
 pub mod naga_trace;
+pub mod source_walker;
+pub mod wgsl;
 
 pub use carriers::{carrier_summary, find_uncarriered_assigns, CarrierSummary, UncarrieredAssign};
 pub use dangling::{find_dangling_refs, DanglingRef};
 pub use descriptor_diff::{bisect_rewrites, diff_descriptors, DescriptorDiff, RewriteBisectResult};
 pub use descriptor_dump::{dump_descriptor, DescriptorDump, DescriptorDumpOptions};
-pub use wgsl::{dump_wgsl, dump_wgsl_with_lines, WgslDump};
 pub use naga_dump::{dump_naga_module, NagaDump};
 pub use naga_trace::{failure_trace, failure_trace_wgsl, load_bind_result_log, FailureTrace};
+pub use wgsl::{dump_wgsl, dump_wgsl_with_lines, WgslDump};

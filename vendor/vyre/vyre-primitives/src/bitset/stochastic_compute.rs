@@ -85,6 +85,16 @@ pub fn decode_bitstream(bs: &[u32], len_bits: usize) -> f64 {
     count as f64 / len_bits as f64
 }
 
+#[cfg(feature = "inventory-registry")]
+inventory::submit! {
+    crate::harness::OpEntry::new(
+        OP_ID,
+        || stochastic_and_mul("a", "b", "out", 2),
+        None,
+        None,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

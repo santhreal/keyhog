@@ -50,6 +50,7 @@ inventory::submit! {
             // Single lane writes timestamp 12345 into slot 0.
             vec![vec![to_bytes(&[12345u32])]]
         }),
+        category: Some("math"),
     }
 }
 

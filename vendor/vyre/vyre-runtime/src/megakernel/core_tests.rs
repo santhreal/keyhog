@@ -1,6 +1,5 @@
-//! Tests for `core.rs`. Split out per audit item #85 to keep the
-//! parent file focused on production code.
-#![allow(missing_docs)]
+// Tests for `core.rs`. Split out per audit item #85 to keep the
+// parent file focused on production code.
 
 use super::*;
 use crate::megakernel::{diffuse_priority_across_siblings, MegakernelLaunchPolicy};
@@ -149,4 +148,23 @@ fn priority_diffusion_and_natural_gradient_are_runtime_local() {
         0.5,
     );
     assert_eq!(delta, vec![-1.5, 1.0]);
+}
+
+#[test]
+fn natural_gradient_rejects_invalid_shape_before_output_growth() {
+    let mut out = Vec::with_capacity(2);
+    out.extend_from_slice(&[99.0, 100.0]);
+    let ptr = out.as_ptr();
+
+    MegakernelLaunchPolicy::natural_gradient_autotune_step_into(
+        &[1.0, 0.0],
+        &[3.0],
+        2,
+        0.5,
+        &mut out,
+    );
+
+    assert!(out.is_empty());
+    assert_eq!(out.capacity(), 2);
+    assert_eq!(out.as_ptr(), ptr);
 }

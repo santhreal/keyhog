@@ -47,7 +47,7 @@ impl ExprArena {
     #[must_use]
     pub fn alloc(&self, expr: Expr) -> ExprRef {
         let index = self.len.get();
-        let ptr = self.bump.alloc(expr) as *const Expr;
+        let ptr = std::ptr::from_ref::<Expr>(self.bump.alloc(expr));
         // SAFETY: ExprArena is a single-writer builder and never shared across writer threads.
         unsafe {
             (*self.exprs.get()).push(ptr);
@@ -69,7 +69,15 @@ impl ExprArena {
 
     /// Clear allocated expressions.
     pub fn reset(&mut self) {
-        self.exprs.get_mut().clear();
+        // SAFETY: we have exclusive mutable access to the arena, so it is safe to
+        // drop all allocated expressions in place.
+        unsafe {
+            let vec = self.exprs.get_mut();
+            for &ptr in vec.iter() {
+                std::ptr::drop_in_place(ptr as *mut Expr);
+            }
+            vec.clear();
+        }
         self.len.set(0);
         self.bump.reset();
     }
@@ -86,6 +94,19 @@ impl ExprArena {
     #[inline]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
+    }
+}
+
+impl Drop for ExprArena {
+    fn drop(&mut self) {
+        // SAFETY: during destruction, we have exclusive access to the arena, so it is safe
+        // to drop all allocated expressions in place.
+        unsafe {
+            let vec = self.exprs.get_mut();
+            for &ptr in vec.iter() {
+                std::ptr::drop_in_place(ptr as *mut Expr);
+            }
+        }
     }
 }
 

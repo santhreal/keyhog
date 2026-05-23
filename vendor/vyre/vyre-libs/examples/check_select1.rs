@@ -5,7 +5,7 @@ fn main() {
     let bits = [0b1011u32, 0x8000_0000, 0xFFFF_0000, 0u32];
     let queries = [1u32, 2, 3, 4, 5];
     let to_bytes = |w: &[u32]| w.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<u8>>();
-    let inputs = vec![to_bytes(&bits), to_bytes(&queries), vec![0u8; 5 * 4]];
+    let inputs = [to_bytes(&bits), to_bytes(&queries), vec![0u8; 5 * 4]];
 
     let program = vyre_primitives::bitset::select::select1_query("bits", "queries", "out", 4, 5);
     let optimized = vyre_foundation::optimizer::pre_lowering::optimize(program.clone());

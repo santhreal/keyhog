@@ -8,6 +8,11 @@ use super::MegakernelWorkItem;
 mod prologue;
 pub use prologue::shared_prologue_length;
 
+/// Hard cap for dense exchange-graph planning.
+///
+/// This avoids dense O(n*n) matrix growth in pathological batches.
+pub(super) const MAX_DENSE_FUSION_ITEMS: usize = 4096;
+
 /// Reusable buffers for megakernel fusion-subset selection.
 ///
 /// Runtime schedulers can keep one scratch object per worker and avoid
@@ -17,8 +22,7 @@ pub struct FusionSelectionScratch {
     order: Vec<usize>,
     result: Vec<u32>,
     conflict_degrees: Vec<u32>,
-    conflict_masks: Vec<u64>,
-    selected_chunks: Vec<u64>,
+    selected: Vec<usize>,
 }
 
 impl FusionSelectionScratch {
@@ -41,8 +45,7 @@ impl FusionSelectionScratch {
         self.result.resize(n, 0);
         self.conflict_degrees.clear();
         self.conflict_degrees.resize(n, 0);
-        self.conflict_masks.clear();
-        self.selected_chunks.clear();
+        self.selected.clear();
     }
 }
 
@@ -96,7 +99,8 @@ fn validate_selector_shape(
     n: u32,
     exchange_adj_len: usize,
 ) -> Result<(usize, usize), FusionSelectionError> {
-    let n_usize = n as usize;
+    let n_usize = usize::try_from(n)
+        .map_err(|_| FusionSelectionError::ExchangeSizeOverflow { n: usize::MAX })?;
     let cells = n_usize
         .checked_mul(n_usize)
         .ok_or(FusionSelectionError::ExchangeSizeOverflow { n: n_usize })?;
@@ -128,6 +132,7 @@ pub struct CompactFusionPlanningScratch {
     deltas: Vec<f32>,
     sorted_deltas: Vec<f32>,
     exchange_adj: Vec<u32>,
+    order: Vec<usize>,
     selection: FusionSelectionScratch,
 }
 
@@ -154,6 +159,13 @@ pub fn plan_compact_fusion_into<'a>(
     scratch: &'a mut CompactFusionPlanningScratch,
 ) -> &'a [u32] {
     let n = work_items.len();
+    if n > MAX_DENSE_FUSION_ITEMS {
+        scratch.selection.prepare(n);
+        scratch.selection.result.fill(1);
+        scratch.exchange_adj.clear();
+        return scratch.selection.result();
+    }
+
     if n == 0 {
         scratch.costs_q16.clear();
         scratch.stalks.clear();
@@ -168,21 +180,13 @@ pub fn plan_compact_fusion_into<'a>(
 
     scratch.costs_q16.clear();
     scratch.costs_q16.resize(n, u16::MAX);
-    if n <= 32 {
-        for i in 0..n {
-            for j in 0..n {
-                if i != j && work_items[i].op_handle == work_items[j].op_handle {
-                    scratch.costs_q16[i] = scratch.costs_q16[i].saturating_sub(3_276);
-                }
-            }
-        }
-    }
 
     scratch.stalks.clear();
     scratch.stalks.extend(
         work_items
             .iter()
-            .map(|item| (item.op_handle as f32) * 0.001),
+            .enumerate()
+            .map(|(item_idx, _item)| (item_idx as f32) * 0.001),
     );
     scratch.diffused_stalks.clear();
     scratch.diffused_stalks.extend_from_slice(&scratch.stalks);
@@ -193,18 +197,24 @@ pub fn plan_compact_fusion_into<'a>(
     }
 
     let divergence_threshold = 0.05_f32;
+    let mut delta_sum = 0.0_f32;
+    let mut delta_max = 0.0_f32;
     scratch.effective_divergence.clear();
-    scratch.effective_divergence.extend(
+    for (&initial, &diffused) in scratch.stalks.iter().zip(scratch.diffused_stalks.iter()) {
+        let delta = (initial - diffused).abs();
+        delta_sum += delta;
+        delta_max = delta_max.max(delta);
         scratch
-            .stalks
-            .iter()
-            .zip(scratch.diffused_stalks.iter())
-            .map(|(&initial, &diffused)| {
-                u32::from((initial - diffused).abs() > divergence_threshold)
-            }),
-    );
+            .effective_divergence
+            .push(u32::from(delta > divergence_threshold));
+    }
 
-    let gap_signal = 1.0_f32;
+    let n_f32 = n as f32;
+    let gap_signal = if delta_max > 0.0_f32 && n_f32 > 0.0_f32 {
+        delta_sum / (n_f32 * delta_max)
+    } else {
+        1.0_f32
+    };
     if gap_signal < 0.3 {
         scratch.deltas.clear();
         scratch.deltas.extend(
@@ -236,34 +246,94 @@ pub fn plan_compact_fusion_into<'a>(
     }
 
     scratch.exchange_adj.clear();
-    scratch.exchange_adj.resize(n.saturating_mul(n), 0);
-    for i in 0..n {
-        let row_start = i * n;
-        for j in 0..n {
-            if i == j {
-                continue;
-            }
-            let same_op = work_items[i].op_handle == work_items[j].op_handle;
-            let stalk_drift =
-                scratch.effective_divergence[i] != 0 && scratch.effective_divergence[j] != 0;
-            if same_op || stalk_drift {
-                scratch.exchange_adj[row_start + j] = 1;
-            }
+    let dense_cells = n.checked_mul(n).unwrap_or_else(|| {
+        panic!(
+            "megakernel compact fusion exchange graph overflowed usize. Fix: shard the work batch before fusion planning."
+        )
+    });
+    scratch.exchange_adj.resize(dense_cells, 0);
+    let mut has_exchange_conflict = false;
+
+    let mut has_op_conflict = false;
+    scratch.order.clear();
+    scratch.order.extend(0..n);
+    if scratch.order.len() > 1 {
+        scratch
+            .order
+            .sort_unstable_by_key(|&item_idx| work_items[item_idx].op_handle);
+        if scratch
+            .order
+            .windows(2)
+            .any(|window| work_items[window[0]].op_handle == work_items[window[1]].op_handle)
+        {
+            has_op_conflict = true;
         }
     }
-    if (0..n.saturating_sub(1)).any(|i| {
+    let has_output_input_chain = (0..n.checked_sub(1).unwrap_or(0)).any(|i| {
         work_items.get(i).map(|w| w.output_handle) == work_items.get(i + 1).map(|w| w.input_handle)
-    }) {
-        for cost in scratch.costs_q16.iter_mut() {
-            *cost = cost.saturating_sub(3_276);
+    });
+    let has_divergence_conflict = scratch.effective_divergence.iter().any(|&v| v != 0);
+    scratch.selection.prepare(n);
+
+    if !has_op_conflict && !has_divergence_conflict {
+        if has_output_input_chain {
+            for cost in scratch.costs_q16.iter_mut() {
+                *cost = discount_q16(*cost, 3_276);
+            }
         }
+
+        scratch.selection.result.fill(1);
+        return scratch.selection.result();
     }
 
-    select_fused_subset_compact_into(
-        &scratch.costs_q16,
-        n as u32,
+    {
+        let conflict_degrees = &mut scratch.selection.conflict_degrees;
+        for i in 0..n {
+            let row_start = i * n;
+            for j in 0..n {
+                if i == j {
+                    continue;
+                }
+                let same_op = work_items[i].op_handle == work_items[j].op_handle;
+                if n <= 32 && same_op {
+                    scratch.costs_q16[i] = discount_q16(scratch.costs_q16[i], 3_276);
+                }
+                let divergent =
+                    scratch.effective_divergence[i] != 0 && scratch.effective_divergence[j] != 0;
+                if same_op || divergent {
+                    scratch.exchange_adj[row_start + j] = 1;
+                    if i < j {
+                        conflict_degrees[i] = increment_degree(conflict_degrees[i]);
+                        conflict_degrees[j] = increment_degree(conflict_degrees[j]);
+                    }
+                    has_exchange_conflict = true;
+                }
+            }
+        }
+    }
+    if has_output_input_chain {
+        for cost in scratch.costs_q16.iter_mut() {
+            *cost = discount_q16(*cost, 3_276);
+        }
+    }
+    if !has_exchange_conflict {
+        scratch.selection.result.fill(1);
+        return scratch.selection.result();
+    }
+
+    let conflict_degrees = &scratch.selection.conflict_degrees;
+    scratch.selection.order.sort_unstable_by(|&a, &b| {
+        scratch.costs_q16[a]
+            .cmp(&scratch.costs_q16[b])
+            .then_with(|| conflict_degrees[a].cmp(&conflict_degrees[b]))
+            .then_with(|| a.cmp(&b))
+    });
+    select_ordered_maximal(
         &scratch.exchange_adj,
-        &mut scratch.selection,
+        n,
+        &scratch.selection.order,
+        &mut scratch.selection.selected,
+        &mut scratch.selection.result,
     );
     scratch.selection.result()
 }
@@ -289,9 +359,15 @@ pub fn select_fused_subset_into(
     exchange_adj: &[u32],
     scratch: &mut FusionSelectionScratch,
 ) {
+    if let Ok((n_usize, _cells)) = validate_selector_shape(costs.len(), n, exchange_adj.len()) {
+        if n_usize <= MAX_DENSE_FUSION_ITEMS && exchange_adj.iter().all(|&edge| edge == 0) {
+            scratch.prepare(n_usize);
+            scratch.result.fill(1);
+            return;
+        }
+    }
     if select_fused_subset_checked_into(costs, n, exchange_adj, scratch).is_err() {
-        scratch.result.clear();
-        scratch.order.clear();
+        scratch.prepare(0);
     }
 }
 
@@ -303,8 +379,21 @@ pub fn select_fused_subset_checked_into(
     scratch: &mut FusionSelectionScratch,
 ) -> Result<(), FusionSelectionError> {
     let (n_usize, _cells) = validate_selector_shape(costs.len(), n, exchange_adj.len())?;
+    if n_usize > MAX_DENSE_FUSION_ITEMS {
+        scratch.prepare(n_usize);
+        scratch.result.fill(1);
+        return Ok(());
+    }
     scratch.prepare(n_usize);
-    compute_conflict_degrees(exchange_adj, n_usize, &mut scratch.conflict_degrees);
+    if exchange_adj.iter().all(|&edge| edge == 0) {
+        scratch.result.fill(1);
+        return Ok(());
+    }
+    if !compute_conflict_degrees_with_conflict(exchange_adj, n_usize, &mut scratch.conflict_degrees)
+    {
+        scratch.result.fill(1);
+        return Ok(());
+    }
     scratch.order.sort_unstable_by(|&a, &b| {
         costs[a]
             .total_cmp(&costs[b])
@@ -315,8 +404,7 @@ pub fn select_fused_subset_checked_into(
         exchange_adj,
         n_usize,
         &scratch.order,
-        &mut scratch.conflict_masks,
-        &mut scratch.selected_chunks,
+        &mut scratch.selected,
         &mut scratch.result,
     );
     Ok(())
@@ -341,9 +429,15 @@ pub fn select_fused_subset_compact_into(
     exchange_adj: &[u32],
     scratch: &mut FusionSelectionScratch,
 ) {
+    if let Ok((n_usize, _cells)) = validate_selector_shape(costs_q16.len(), n, exchange_adj.len()) {
+        if n_usize <= MAX_DENSE_FUSION_ITEMS && exchange_adj.iter().all(|&edge| edge == 0) {
+            scratch.prepare(n_usize);
+            scratch.result.fill(1);
+            return;
+        }
+    }
     if select_fused_subset_compact_checked_into(costs_q16, n, exchange_adj, scratch).is_err() {
-        scratch.result.clear();
-        scratch.order.clear();
+        scratch.prepare(0);
     }
 }
 
@@ -355,8 +449,21 @@ pub fn select_fused_subset_compact_checked_into(
     scratch: &mut FusionSelectionScratch,
 ) -> Result<(), FusionSelectionError> {
     let (n_usize, _cells) = validate_selector_shape(costs_q16.len(), n, exchange_adj.len())?;
+    if n_usize > MAX_DENSE_FUSION_ITEMS {
+        scratch.prepare(n_usize);
+        scratch.result.fill(1);
+        return Ok(());
+    }
     scratch.prepare(n_usize);
-    compute_conflict_degrees(exchange_adj, n_usize, &mut scratch.conflict_degrees);
+    if exchange_adj.iter().all(|&edge| edge == 0) {
+        scratch.result.fill(1);
+        return Ok(());
+    }
+    if !compute_conflict_degrees_with_conflict(exchange_adj, n_usize, &mut scratch.conflict_degrees)
+    {
+        scratch.result.fill(1);
+        return Ok(());
+    }
     scratch.order.sort_unstable_by(|&a, &b| {
         costs_q16[a]
             .cmp(&costs_q16[b])
@@ -367,8 +474,7 @@ pub fn select_fused_subset_compact_checked_into(
         exchange_adj,
         n_usize,
         &scratch.order,
-        &mut scratch.conflict_masks,
-        &mut scratch.selected_chunks,
+        &mut scratch.selected,
         &mut scratch.result,
     );
     Ok(())
@@ -427,11 +533,10 @@ pub fn select_fused_subset_pruned_into(
 /// place. Returns the number of arms eliminated so the caller can
 /// log/telemeter the win.
 ///
-/// Length mismatch returns `0` and leaves the selection untouched —
-/// the caller is responsible for passing matching slices. The
-/// substrate is pure: it does not allocate, panic, or call into any
-/// other planner subsystem; the dispatcher consumes the modified
-/// selection unchanged.
+/// Length mismatch is a caller contract violation. The function leaves the
+/// selection untouched and returns zero so reusable planner scratch is never
+/// abandoned through a panic while a checked caller records the malformed
+/// planner input.
 ///
 /// Example: an inference megakernel where arm 1 is a `mask × value`
 /// step that's gated `mask != 0`. If the static analyzer proves the
@@ -447,94 +552,281 @@ pub fn prune_dead_arms_inplace(selection: &mut [u32], dead_mask: &[bool]) -> u32
     for (slot, &dead) in selection.iter_mut().zip(dead_mask.iter()) {
         if dead && *slot != 0 {
             *slot = 0;
-            eliminated = eliminated.saturating_add(1);
+            eliminated = eliminated.checked_add(1).unwrap_or_else(|| {
+                panic!(
+                    "megakernel dead-arm elimination count overflowed u32. Fix: shard the fusion selection before pruning."
+                )
+            });
         }
     }
     eliminated
 }
 
-fn compute_conflict_degrees(exchange_adj: &[u32], n: usize, out: &mut [u32]) {
+fn compute_conflict_degrees_with_conflict(exchange_adj: &[u32], n: usize, out: &mut [u32]) -> bool {
     debug_assert_eq!(out.len(), n);
     out.fill(0);
+    let mut has_conflict = false;
     for i in 0..n {
         let row = i * n;
         for j in (i + 1)..n {
             if exchange_adj[row + j] != 0 || exchange_adj[j * n + i] != 0 {
-                out[i] = out[i].saturating_add(1);
-                out[j] = out[j].saturating_add(1);
+                out[i] = increment_degree(out[i]);
+                out[j] = increment_degree(out[j]);
+                has_conflict = true;
             }
         }
     }
+    has_conflict
 }
 
-fn compatible_with_selection(exchange_adj: &[u32], n: usize, result: &[u32], item: usize) -> bool {
-    for selected in 0..n {
-        if result[selected] == 0 {
-            continue;
-        }
-        if exchange_adj[item * n + selected] != 0 || exchange_adj[selected * n + item] != 0 {
-            return false;
-        }
-    }
-    true
+fn discount_q16(value: u16, amount: u16) -> u16 {
+    value.checked_sub(amount).unwrap_or_else(|| {
+        panic!(
+            "megakernel fusion cost discount underflowed q16 score. Fix: normalize costs before applying fusion discounts."
+        )
+    })
+}
+
+fn increment_degree(value: u32) -> u32 {
+    value.checked_add(1).unwrap_or_else(|| {
+        panic!(
+            "megakernel fusion conflict degree overflowed u32. Fix: shard the exchange graph before planning."
+        )
+    })
 }
 
 fn select_ordered_maximal(
     exchange_adj: &[u32],
     n: usize,
     order: &[usize],
-    conflict_masks: &mut Vec<u64>,
-    selected_chunks: &mut Vec<u64>,
+    selected: &mut Vec<usize>,
     result: &mut [u32],
 ) {
     result.fill(0);
-    if n <= 256 {
+    selected.clear();
+
+    if n == 0 {
+        return;
+    }
+
+    if n <= 64 {
+        let mut conflict_masks = [0_u64; 64];
+        for i in 0..n {
+            let row = i * n;
+            let mut mask = 0_u64;
+            for j in 0..n {
+                if i == j {
+                    continue;
+                }
+                if exchange_adj[row + j] != 0 || exchange_adj[j * n + i] != 0 {
+                    mask |= 1_u64 << j;
+                }
+            }
+            conflict_masks[i] = mask;
+        }
+
+        let mut selected_mask = 0_u64;
         for &item in order {
-            if item < n && compatible_with_selection(exchange_adj, n, result, item) {
+            if item >= n {
+                continue;
+            }
+            if conflict_masks[item] & selected_mask == 0 {
                 result[item] = 1;
+                selected_mask |= 1_u64 << item;
+                selected.push(item);
             }
         }
         return;
     }
 
-    let words = n.div_ceil(64);
-    conflict_masks.clear();
-    let needed_masks = words.checked_mul(n).unwrap_or(0);
-    conflict_masks.resize(needed_masks, 0);
-    for i in 0..n {
-        let row_start = i * n;
-        for j in (i + 1)..n {
-            if exchange_adj[row_start + j] == 0 && exchange_adj[j * n + i] == 0 {
+    if n <= 128 {
+        let mut conflict_masks_lo = [0_u64; 128];
+        let mut conflict_masks_hi = [0_u64; 128];
+        for i in 0..n {
+            let row = i * n;
+            let mut mask_lo = 0_u64;
+            let mut mask_hi = 0_u64;
+            for j in 0..n {
+                if i == j {
+                    continue;
+                }
+                if exchange_adj[row + j] != 0 || exchange_adj[j * n + i] != 0 {
+                    if j < 64 {
+                        mask_lo |= 1_u64 << j;
+                    } else {
+                        mask_hi |= 1_u64 << (j - 64);
+                    }
+                }
+            }
+            conflict_masks_lo[i] = mask_lo;
+            conflict_masks_hi[i] = mask_hi;
+        }
+
+        let mut selected_lo = 0_u64;
+        let mut selected_hi = 0_u64;
+        for &item in order {
+            if item >= n {
                 continue;
             }
-            let j_word = j / 64;
-            let j_bit = j % 64;
-            conflict_masks[i * words + j_word] |= 1_u64 << j_bit;
+            let conflict = (conflict_masks_lo[item] & selected_lo) != 0
+                || (conflict_masks_hi[item] & selected_hi) != 0;
+            if !conflict {
+                result[item] = 1;
+                if item < 64 {
+                    selected_lo |= 1_u64 << item;
+                } else {
+                    selected_hi |= 1_u64 << (item - 64);
+                }
+                selected.push(item);
+            }
+        }
+        return;
+    }
 
-            let i_word = i / 64;
-            let i_bit = i % 64;
-            conflict_masks[j * words + i_word] |= 1_u64 << i_bit;
+    if n <= 192 {
+        let mut conflict_masks_0 = [0_u64; 192];
+        let mut conflict_masks_1 = [0_u64; 192];
+        let mut conflict_masks_2 = [0_u64; 192];
+        for i in 0..n {
+            let row = i * n;
+            let mut mask_0 = 0_u64;
+            let mut mask_1 = 0_u64;
+            let mut mask_2 = 0_u64;
+            for j in 0..n {
+                if i == j {
+                    continue;
+                }
+                if exchange_adj[row + j] != 0 || exchange_adj[j * n + i] != 0 {
+                    match j / 64 {
+                        0 => mask_0 |= 1_u64 << (j % 64),
+                        1 => mask_1 |= 1_u64 << (j % 64),
+                        2 => mask_2 |= 1_u64 << (j % 64),
+                        _ => {}
+                    }
+                }
+            }
+            conflict_masks_0[i] = mask_0;
+            conflict_masks_1[i] = mask_1;
+            conflict_masks_2[i] = mask_2;
+        }
+
+        let mut selected_0 = 0_u64;
+        let mut selected_1 = 0_u64;
+        let mut selected_2 = 0_u64;
+        for &item in order {
+            if item >= n {
+                continue;
+            }
+            let conflict = (conflict_masks_0[item] & selected_0 != 0)
+                || (conflict_masks_1[item] & selected_1 != 0)
+                || (conflict_masks_2[item] & selected_2 != 0);
+            if !conflict {
+                result[item] = 1;
+                let bit = 1_u64 << (item % 64);
+                match item / 64 {
+                    0 => selected_0 |= bit,
+                    1 => selected_1 |= bit,
+                    2 => selected_2 |= bit,
+                    _ => {}
+                }
+                selected.push(item);
+            }
+        }
+        return;
+    }
+
+    if n <= 256 {
+        let mut conflict_masks_0 = [0_u64; 256];
+        let mut conflict_masks_1 = [0_u64; 256];
+        let mut conflict_masks_2 = [0_u64; 256];
+        let mut conflict_masks_3 = [0_u64; 256];
+        for i in 0..n {
+            let row = i * n;
+            let mut mask_0 = 0_u64;
+            let mut mask_1 = 0_u64;
+            let mut mask_2 = 0_u64;
+            let mut mask_3 = 0_u64;
+            for j in 0..n {
+                if i == j {
+                    continue;
+                }
+                if exchange_adj[row + j] != 0 || exchange_adj[j * n + i] != 0 {
+                    match j / 64 {
+                        0 => mask_0 |= 1_u64 << (j % 64),
+                        1 => mask_1 |= 1_u64 << (j % 64),
+                        2 => mask_2 |= 1_u64 << (j % 64),
+                        _ => mask_3 |= 1_u64 << (j % 64),
+                    }
+                }
+            }
+            conflict_masks_0[i] = mask_0;
+            conflict_masks_1[i] = mask_1;
+            conflict_masks_2[i] = mask_2;
+            conflict_masks_3[i] = mask_3;
+        }
+
+        let mut selected_0 = 0_u64;
+        let mut selected_1 = 0_u64;
+        let mut selected_2 = 0_u64;
+        let mut selected_3 = 0_u64;
+        for &item in order {
+            if item >= n {
+                continue;
+            }
+            let conflict = (conflict_masks_0[item] & selected_0 != 0)
+                || (conflict_masks_1[item] & selected_1 != 0)
+                || (conflict_masks_2[item] & selected_2 != 0)
+                || (conflict_masks_3[item] & selected_3 != 0);
+            if !conflict {
+                result[item] = 1;
+                let bit = 1_u64 << (item % 64);
+                match item / 64 {
+                    0 => selected_0 |= bit,
+                    1 => selected_1 |= bit,
+                    2 => selected_2 |= bit,
+                    _ => selected_3 |= bit,
+                }
+                selected.push(item);
+            }
+        }
+        return;
+    }
+
+    let chunks = n.div_ceil(64);
+    let mut conflict_masks = vec![0_u64; n * chunks];
+    for i in 0..n {
+        for j in (i + 1)..n {
+            if exchange_adj[i * n + j] != 0 || exchange_adj[j * n + i] != 0 {
+                let i_word = i / 64;
+                let i_bit = 1_u64 << (i % 64);
+                let j_word = j / 64;
+                let j_bit = 1_u64 << (j % 64);
+
+                let i_base = i * chunks;
+                let j_base = j * chunks;
+                conflict_masks[i_base + j_word] |= j_bit;
+                conflict_masks[j_base + i_word] |= i_bit;
+            }
         }
     }
 
-    selected_chunks.clear();
-    selected_chunks.resize(words, 0);
+    let mut selected_mask = vec![0_u64; chunks];
     for &item in order {
         if item >= n {
             continue;
         }
-        let mut conflicted = false;
-        let base = item * words;
-        for chunk_idx in 0..words {
-            if (conflict_masks[base + chunk_idx] & selected_chunks[chunk_idx]) != 0 {
-                conflicted = true;
+        let base = item * chunks;
+        let mut conflict = false;
+        for chunk in 0..chunks {
+            if conflict_masks[base + chunk] & selected_mask[chunk] != 0 {
+                conflict = true;
                 break;
             }
         }
-        if !conflicted {
+        if !conflict {
             result[item] = 1;
-            let word = item / 64;
-            selected_chunks[word] |= 1_u64 << (item % 64);
+            selected.push(item);
+            selected_mask[item / 64] |= 1_u64 << (item % 64);
         }
     }
 }

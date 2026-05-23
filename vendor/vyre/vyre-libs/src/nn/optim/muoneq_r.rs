@@ -87,7 +87,6 @@ inventory::submit! {
                 to_f32(&[1.0, 2.0, 3.0, 4.0]),
                 to_f32(&[0.1, 0.2, 0.3, 0.4]),
                 to_f32(&[0.0, 0.0, 0.0, 0.0]),
-                vec![0u8; 4 * 4],
             ]]
         }),
         expected_output: Some(|| {
@@ -100,5 +99,6 @@ inventory::submit! {
                 ],
             ]]
         }),
+        category: Some("nn"),
     }
 }

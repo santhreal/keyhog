@@ -76,6 +76,15 @@ pub struct AdapterCriteria {
     pub power: Option<wgpu::PowerPreference>,
 }
 
+/// Human-readable adapter probe details for GPU acquisition failures.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct AdapterProbeReport {
+    /// Adapters visible to wgpu during the centralized probe.
+    pub probed: Vec<String>,
+    /// Feature, limit, or device-request reasons that prevented use.
+    pub missing: Vec<String>,
+}
+
 impl AdapterCriteria {
     /// Build criteria for a high-performance discrete GPU.
     #[must_use]
@@ -103,11 +112,127 @@ impl AdapterCriteria {
 #[must_use]
 pub fn enumerate_adapters() -> Vec<wgpu::AdapterInfo> {
     let instance = wgpu::Instance::default();
+    let adapters = instance.enumerate_adapters(wgpu::Backends::all());
+    let mut infos = Vec::with_capacity(adapters.len());
+    infos.extend(adapters.iter().map(wgpu::Adapter::get_info));
+    infos
+}
+
+/// Report whether the centralized adapter probe can see at least one real GPU.
+#[must_use]
+pub fn has_real_gpu_adapter() -> bool {
+    let instance = wgpu::Instance::default();
     instance
         .enumerate_adapters(wgpu::Backends::all())
         .iter()
-        .map(wgpu::Adapter::get_info)
-        .collect()
+        .any(|adapter| crate::capabilities::is_real_gpu(&adapter.get_info()))
+}
+
+/// Re-open the live wgpu adapter matching a previously selected adapter info.
+///
+/// Tests and capability probes use this instead of directly constructing their
+/// own `wgpu::Instance` so adapter identity and failure diagnostics stay in the
+/// runtime device contract.
+///
+/// # Errors
+///
+/// Returns `Error::Gpu` when the adapter is no longer visible.
+pub fn adapter_for_info(expected: &wgpu::AdapterInfo) -> Result<wgpu::Adapter> {
+    let instance = wgpu::Instance::default();
+    let adapters = instance.enumerate_adapters(wgpu::Backends::all());
+    let mut probed = Vec::with_capacity(adapters.len());
+    for adapter in adapters {
+        let candidate = adapter.get_info();
+        if adapter_info_matches(&candidate, expected) {
+            return Ok(adapter);
+        }
+        probed.push(format!(
+            "{} ({:?}, backend={:?}, vendor={:08x}, device={:08x})",
+            candidate.name,
+            candidate.device_type,
+            candidate.backend,
+            candidate.vendor,
+            candidate.device
+        ));
+    }
+
+    Err(Error::Gpu {
+        message: format!(
+            "selected adapter `{}` ({:?}, backend={:?}, vendor={:08x}, device={:08x}) is no longer enumerable. Probed adapters: [{}]. Fix: repair GPU visibility or reacquire the WGPU backend.",
+            expected.name,
+            expected.device_type,
+            expected.backend,
+            expected.vendor,
+            expected.device,
+            probed.join(", ")
+        ),
+    })
+}
+
+fn adapter_info_matches(candidate: &wgpu::AdapterInfo, expected: &wgpu::AdapterInfo) -> bool {
+    candidate.name == expected.name
+        && candidate.vendor == expected.vendor
+        && candidate.device == expected.device
+        && candidate.device_type == expected.device_type
+        && candidate.driver == expected.driver
+        && candidate.driver_info == expected.driver_info
+        && candidate.backend == expected.backend
+}
+
+/// Build the centralized adapter diagnostic report used by acquisition errors.
+#[must_use]
+pub fn adapter_probe_report() -> AdapterProbeReport {
+    let instance = wgpu::Instance::default();
+    let adapters = instance.enumerate_adapters(wgpu::Backends::all());
+    let mut report = AdapterProbeReport {
+        probed: Vec::with_capacity(adapters.len()),
+        missing: Vec::new(),
+    };
+
+    for adapter in adapters {
+        let info = adapter.get_info();
+        report.probed.push(format!(
+            "{} ({:?}, backend={:?})",
+            info.name, info.device_type, info.backend
+        ));
+        if matches!(
+            info.device_type,
+            wgpu::DeviceType::Cpu | wgpu::DeviceType::Other
+        ) {
+            continue;
+        }
+        if !adapter.features().contains(wgpu::Features::TIMESTAMP_QUERY) {
+            report.missing.push("TIMESTAMP_QUERY".to_string());
+        }
+        if !adapter
+            .features()
+            .contains(wgpu::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS)
+        {
+            report
+                .missing
+                .push("TIMESTAMP_QUERY_INSIDE_ENCODERS".to_string());
+        }
+        let adapter_limits = adapter.limits();
+        if let Err(error) = pollster::block_on(adapter.request_device(
+            &wgpu::DeviceDescriptor {
+                label: Some("vyre probe"),
+                required_features: wgpu::Features::empty(),
+                required_limits: wgpu::Limits {
+                    max_storage_buffers_per_shader_stage:
+                        adapter_limits.max_storage_buffers_per_shader_stage,
+                    ..wgpu::Limits::default()
+                },
+                memory_hints: wgpu::MemoryHints::default(),
+            },
+            None,
+        )) {
+            report
+                .missing
+                .push(format!("device request failed on {}: {error}", info.name));
+        }
+    }
+
+    report
 }
 
 /// Select the first adapter matching `criteria`. Returns its index
@@ -121,15 +246,19 @@ pub fn select_adapter(criteria: &AdapterCriteria) -> Result<(usize, wgpu::Adapte
     let adapters = instance.enumerate_adapters(wgpu::Backends::all());
     for (idx, adapter) in adapters.iter().enumerate() {
         let info = adapter.get_info();
-        if adapter_matches(&info, criteria) {
+        if adapter_is_selectable(&info, criteria) {
             return Ok((idx, info));
         }
     }
     Err(Error::Gpu {
         message: format!(
-            "no adapter matches criteria {criteria:?}. Fix: loosen the criteria or install drivers exposing the requested GPU class."
+            "no real GPU adapter matches criteria {criteria:?}. Fix: loosen the criteria or install drivers exposing the requested GPU class."
         ),
     })
+}
+
+fn adapter_is_selectable(info: &wgpu::AdapterInfo, criteria: &AdapterCriteria) -> bool {
+    crate::capabilities::is_real_gpu(info) && adapter_matches(info, criteria)
 }
 
 fn adapter_matches(info: &wgpu::AdapterInfo, criteria: &AdapterCriteria) -> bool {
@@ -211,16 +340,14 @@ async fn acquire_gpu_for_adapter_identity(
         }
     }
 
-    let probed = adapters
-        .iter()
-        .map(|adapter| {
-            let info = adapter.get_info();
-            format!(
-                "{} ({:?}, backend={:?}, vendor={:08x}, device={:08x})",
-                info.name, info.device_type, info.backend, info.vendor, info.device
-            )
-        })
-        .collect::<Vec<_>>();
+    let mut probed = Vec::with_capacity(adapters.len());
+    probed.extend(adapters.iter().map(|adapter| {
+        let info = adapter.get_info();
+        format!(
+            "{} ({:?}, backend={:?}, vendor={:08x}, device={:08x})",
+            info.name, info.device_type, info.backend, info.vendor, info.device
+        )
+    }));
     Err(Error::Gpu {
         message: format!(
             "original recovery adapter was not found. Target: {:?}. Probed adapters: [{}]. Fix: restore the original GPU or create a new WgpuBackend for the available adapter.",
@@ -263,13 +390,27 @@ pub async fn acquire_gpu_for_adapter(
     super::device::request_device_for_adapter(adapter, "vyre device (selected)").await
 }
 
-/// Read the `VYRE_ADAPTER_INDEX` env override. `None` when unset or
-/// unparseable.
+/// Read the `VYRE_ADAPTER_INDEX` env override. `None` when unset.
+///
+/// # Errors
+///
+/// Returns an actionable GPU configuration error when the env var is
+/// set but cannot be parsed. A typoed adapter override must not
+/// silently fall back to automatic GPU selection.
 #[must_use]
-pub fn adapter_index_from_env() -> Option<usize> {
-    std::env::var("VYRE_ADAPTER_INDEX")
-        .ok()
-        .and_then(|s| s.parse::<usize>().ok())
+pub fn adapter_index_from_env() -> Result<Option<usize>> {
+    adapter_index_from_raw(std::env::var("VYRE_ADAPTER_INDEX").ok().as_deref())
+}
+
+fn adapter_index_from_raw(raw: Option<&str>) -> Result<Option<usize>> {
+    let Some(raw) = raw else {
+        return Ok(None);
+    };
+    raw.parse::<usize>().map(Some).map_err(|error| Error::Gpu {
+        message: format!(
+            "VYRE_ADAPTER_INDEX={raw:?} is not a valid adapter index: {error}. Fix: set VYRE_ADAPTER_INDEX to a non-negative integer from enumerate_adapters(), or unset it for automatic GPU selection."
+        ),
+    })
 }
 
 #[cfg(test)]
@@ -298,31 +439,48 @@ mod tests {
         assert_eq!(c.device_type, Some(wgpu::DeviceType::IntegratedGpu));
     }
 
-    // `std::env` is process-global, so the two tests that manipulate
-    // `VYRE_ADAPTER_INDEX` serialize through a shared `Mutex`. Without
-    // this they race under `cargo test`'s thread-pooled runner and one
-    // test sees the other's `remove_var` between its `set_var` and
-    // assertion, producing a flaky failure.
-    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
     #[test]
     fn env_override_parses_valid_index() {
-        let _guard = ENV_LOCK
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        std::env::set_var("VYRE_ADAPTER_INDEX", "3");
-        assert_eq!(adapter_index_from_env(), Some(3));
-        std::env::remove_var("VYRE_ADAPTER_INDEX");
+        assert_eq!(adapter_index_from_raw(Some("3")).unwrap(), Some(3));
     }
 
     #[test]
     fn env_override_rejects_garbage() {
-        let _guard = ENV_LOCK
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        std::env::set_var("VYRE_ADAPTER_INDEX", "not-a-number");
-        assert_eq!(adapter_index_from_env(), None);
-        std::env::remove_var("VYRE_ADAPTER_INDEX");
+        let error = adapter_index_from_raw(Some("not-a-number"))
+            .expect_err("invalid VYRE_ADAPTER_INDEX must error");
+        assert!(
+            error.to_string().contains("VYRE_ADAPTER_INDEX"),
+            "Fix: invalid adapter-index errors must name the misconfigured env var"
+        );
+    }
+
+    #[test]
+    fn selection_rejects_cpu_adapters_before_device_acquisition() {
+        let cpu_info = wgpu::AdapterInfo {
+            name: "llvmpipe".to_string(),
+            vendor: 0,
+            device: 0,
+            device_type: wgpu::DeviceType::Cpu,
+            driver: "software".to_string(),
+            driver_info: "cpu".to_string(),
+            backend: wgpu::Backend::Vulkan,
+        };
+        let gpu_info = wgpu::AdapterInfo {
+            name: "RTX 5090".to_string(),
+            vendor: 0x10de,
+            device: 0x2c02,
+            device_type: wgpu::DeviceType::DiscreteGpu,
+            driver: "nvidia".to_string(),
+            driver_info: "gpu".to_string(),
+            backend: wgpu::Backend::Vulkan,
+        };
+        let criteria = AdapterCriteria::default();
+
+        assert!(
+            !adapter_is_selectable(&cpu_info, &criteria),
+            "Fix: adapter selection must never return CPU/Other devices for later fallback handling."
+        );
+        assert!(adapter_is_selectable(&gpu_info, &criteria));
     }
 
     #[test]

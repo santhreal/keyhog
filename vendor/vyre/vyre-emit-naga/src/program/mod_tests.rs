@@ -1,6 +1,6 @@
-//! Tests for `mod.rs`. Split out per audit item #85 to keep the
-//! parent file focused on production code.
-#![allow(missing_docs)]
+// Tests for `mod.rs`. Split out per audit item #85 to keep the
+// parent file focused on production code.
+// (allow(missing_docs) belongs on the enclosing tests module, not this include!()-d chunk.)
 
 use super::atomic_scanner::scan_atomic_targets;
 use super::{extension_ops, LoweringError};

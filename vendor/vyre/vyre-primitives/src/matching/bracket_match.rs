@@ -31,7 +31,8 @@ pub const MATCH_NONE: u32 = u32::MAX;
 ///
 /// `kinds[i]` is `OTHER`, `OPEN_BRACE`, or `CLOSE_BRACE`.
 /// `stack` is scratch storage with `max_depth` entries.
-/// `match_pairs` must be initialized to [`MATCH_NONE`] before dispatch.
+/// Initializes unmatched entries to [`MATCH_NONE`] and writes bidirectional
+/// links for every matched brace pair.
 #[must_use]
 pub fn bracket_match(
     kinds: &str,
@@ -53,6 +54,7 @@ pub fn bracket_match(
                     Expr::u32(n),
                     vec![
                         Node::let_bind("k", Expr::load(kinds, Expr::var("i"))),
+                        Node::store(match_pairs, Expr::var("i"), Expr::u32(MATCH_NONE)),
                         Node::if_then_else(
                             Expr::eq(Expr::var("k"), Expr::u32(OPEN_BRACE)),
                             vec![Node::if_then(
@@ -111,6 +113,7 @@ pub fn bracket_match(
 
 /// CPU reference: bounded-stack pair-matching walk over `kinds`.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref(kinds: &[u32], max_depth: u32) -> Vec<u32> {
     let mut match_pairs = vec![MATCH_NONE; kinds.len()];
     let mut stack = Vec::with_capacity(max_depth as usize);
@@ -133,14 +136,14 @@ pub fn cpu_ref(kinds: &[u32], max_depth: u32) -> Vec<u32> {
     match_pairs
 }
 
-/// Pack `[u32]` into the LE-byte layout the harness uses. Thin
-/// wrapper around [`vyre_foundation::byte_pack::pack_u32_slice_le`] —
-/// the canonical home after the 2026-05-20 cross-crate dedup sweep.
-/// Kept at this path so the `inventory::submit!` below and existing
-/// `bracket_match::pack_u32` call sites stay intact.
+/// Pack `[u32]` into the LE-byte layout the harness uses.
 #[must_use]
 pub fn pack_u32(words: &[u32]) -> Vec<u8> {
-    vyre_foundation::byte_pack::pack_u32_slice_le(words)
+    let mut bytes = Vec::with_capacity(words.len().saturating_mul(4));
+    for word in words {
+        bytes.extend_from_slice(&word.to_le_bytes());
+    }
+    bytes
 }
 
 #[cfg(feature = "inventory-registry")]

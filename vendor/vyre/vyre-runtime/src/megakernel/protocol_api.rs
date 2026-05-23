@@ -121,6 +121,29 @@ impl Megakernel {
         protocol::read_done_count(control_bytes)
     }
 
+    /// Strictly decode the kernel's `done_count` from a control buffer.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PipelineError`] when the control buffer is malformed or too
+    /// short to contain the done counter.
+    pub fn try_read_done_count(control_bytes: &[u8]) -> Result<u32, PipelineError> {
+        protocol::try_read_done_count(control_bytes).map_err(protocol_error)
+    }
+
+    /// Strictly count DONE slots in a ring-buffer readback.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PipelineError`] when the ring readback is malformed or too
+    /// short for `item_count` complete protocol slots.
+    pub fn try_count_done_ring_slots(
+        ring_bytes: &[u8],
+        item_count: usize,
+    ) -> Result<u64, PipelineError> {
+        protocol::try_count_done_ring_slots(ring_bytes, item_count).map_err(protocol_error)
+    }
+
     /// Decode PRINTF records out of the debug-log buffer.
     #[must_use]
     pub fn read_debug_log(debug_bytes: &[u8]) -> Vec<DebugRecord> {
@@ -161,6 +184,16 @@ impl Megakernel {
     #[must_use]
     pub fn read_epoch(control_bytes: &[u8]) -> u32 {
         protocol::read_epoch(control_bytes)
+    }
+
+    /// Strictly read the epoch counter from a control buffer.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PipelineError`] when the control buffer is malformed or too
+    /// short to contain the epoch counter.
+    pub fn try_read_epoch(control_bytes: &[u8]) -> Result<u32, PipelineError> {
+        protocol::try_read_epoch(control_bytes).map_err(protocol_error)
     }
 
     /// Read an observable result word from a control buffer.

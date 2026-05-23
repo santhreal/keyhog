@@ -195,7 +195,7 @@ impl BodyCtx<'_> {
         memory_class: MemoryClass,
     ) -> Result<MemAddress, EmitError> {
         match memory_class {
-            MemoryClass::Global | MemoryClass::Constant => {
+            MemoryClass::Global | MemoryClass::Constant | MemoryClass::Uniform => {
                 let global_ptr = *self.slot_to_ptr.get(&binding_slot).ok_or_else(|| {
                     EmitError::InvalidBinding {
                         slot: binding_slot,
@@ -274,11 +274,11 @@ impl BodyCtx<'_> {
                     operand: MemOperand::Reg(reg),
                 })
             }
-            MemoryClass::Constant => {
+            MemoryClass::Constant | MemoryClass::Uniform => {
                 let global_ptr = *self.slot_to_ptr.get(&binding_slot).ok_or_else(|| {
                     EmitError::InvalidBinding {
                         slot: binding_slot,
-                        reason: "constant pointer not preloaded".into(),
+                        reason: "constant/uniform pointer not preloaded".into(),
                     }
                 })?;
                 let safe_index = self.clamp_index_to_buffer_length(binding_slot, index_reg);

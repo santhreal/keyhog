@@ -130,7 +130,9 @@ async fn run_via_daemon(args: &ScanArgs) -> Result<ExitCode> {
 
     let matches = if args.stdin {
         let text = read_stdin_to_string()?;
-        let resp = conn.round_trip(&Request::ScanText { path: None, text }).await?;
+        let resp = conn
+            .round_trip(&Request::ScanText { path: None, text })
+            .await?;
         unwrap_scan_results(resp)?
     } else if let Some(path) = effective_single_file_path(args) {
         let working_dir = std::env::current_dir()

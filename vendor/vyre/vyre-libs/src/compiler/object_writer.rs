@@ -295,5 +295,6 @@ inventory::submit! {
             offsets[0] = TEXT_SECTION_WORD_OFFSET + 4;
             vec![vec![to_bytes(&obj), to_bytes(&offsets)]]
         }),
+        category: Some("compiler"),
     }
 }

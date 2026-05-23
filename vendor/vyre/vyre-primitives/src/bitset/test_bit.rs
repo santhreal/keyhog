@@ -39,6 +39,7 @@ pub fn bitset_test_bit(buf: &str, bit_idx: u32, out_scalar: &str) -> Program {
 
 /// CPU reference.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref(buf: &[u32], bit_idx: u32) -> u32 {
     let w = (bit_idx / 32) as usize;
     let b = bit_idx % 32;
@@ -47,6 +48,25 @@ pub fn cpu_ref(buf: &[u32], bit_idx: u32) -> u32 {
     } else {
         (buf[w] >> b) & 1
     }
+}
+
+#[cfg(feature = "inventory-registry")]
+inventory::submit! {
+    crate::harness::OpEntry::new(
+        OP_ID,
+        || bitset_test_bit("buf", 0, "out"),
+        Some(|| {
+            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            vec![vec![
+                to_bytes(&[1]),
+                to_bytes(&[0]),
+            ]]
+        }),
+        Some(|| {
+            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            vec![vec![to_bytes(&[1])]]
+        }),
+    )
 }
 
 #[cfg(test)]
@@ -90,7 +110,11 @@ mod tests {
     fn single_word_all_bits() {
         let word = 0xFFFF_FFFF;
         for bit in 0..32 {
-            assert_eq!(cpu_ref(&[word], bit), 1, "bit {bit} must be 1 in all-ones word");
+            assert_eq!(
+                cpu_ref(&[word], bit),
+                1,
+                "bit {bit} must be 1 in all-ones word"
+            );
         }
     }
 

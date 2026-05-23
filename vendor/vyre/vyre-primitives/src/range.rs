@@ -68,7 +68,10 @@ impl ByteRange {
     /// every range-containment predicate answering the wrong way).
     #[must_use]
     pub const fn new(tag: u32, start: u32, end: u32) -> Self {
-        let end = if end < start { start } else { end };
+        assert!(
+            end >= start,
+            "ByteRange end must be greater than or equal to start"
+        );
         Self { tag, start, end }
     }
 

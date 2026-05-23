@@ -33,28 +33,55 @@ pub struct PipelineCacheMetrics {
 impl PipelineCacheMetrics {
     /// Cache-hit rate in parts per million.
     #[must_use]
-    pub const fn hit_rate_ppm(&self) -> u32 {
+    pub fn hit_rate_ppm(&self) -> u32 {
         if self.lookups == 0 {
             return 0;
         }
-        ((self.hits.saturating_mul(1_000_000)) / self.lookups) as u32
+        let Some(numerator) = self.hits.checked_mul(1_000_000) else {
+            panic!("pipeline cache hit-rate numerator overflowed u64. Fix: reset cache metrics before counters wrap.");
+        };
+        let value = numerator / self.lookups;
+        if value > u64::from(u32::MAX) {
+            panic!("pipeline cache hit-rate ppm cannot fit u32. Fix: reset cache metrics before counters wrap.");
+        }
+        u32::try_from(value).unwrap_or_else(|source| {
+            panic!(
+                "pipeline cache hit-rate ppm cannot fit u32 after range check: {source}. Fix: reset cache metrics before counters wrap."
+            )
+        })
     }
 
-    pub(super) fn saturating_add(self, rhs: Self) -> Self {
+    pub(super) fn checked_add(self, rhs: Self) -> Self {
         Self {
-            lookups: self.lookups.saturating_add(rhs.lookups),
-            hits: self.hits.saturating_add(rhs.hits),
-            misses: self.misses.saturating_add(rhs.misses),
-            puts: self.puts.saturating_add(rhs.puts),
-            rejected_puts: self.rejected_puts.saturating_add(rhs.rejected_puts),
-            evictions: self.evictions.saturating_add(rhs.evictions),
-            evicted_bytes: self.evicted_bytes.saturating_add(rhs.evicted_bytes),
-            flushes: self.flushes.saturating_add(rhs.flushes),
-            flush_errors: self.flush_errors.saturating_add(rhs.flush_errors),
-            cached_bytes: self.cached_bytes.saturating_add(rhs.cached_bytes),
-            entries: self.entries.saturating_add(rhs.entries),
+            lookups: checked_metric_add(self.lookups, rhs.lookups, "lookups"),
+            hits: checked_metric_add(self.hits, rhs.hits, "hits"),
+            misses: checked_metric_add(self.misses, rhs.misses, "misses"),
+            puts: checked_metric_add(self.puts, rhs.puts, "puts"),
+            rejected_puts: checked_metric_add(
+                self.rejected_puts,
+                rhs.rejected_puts,
+                "rejected puts",
+            ),
+            evictions: checked_metric_add(self.evictions, rhs.evictions, "evictions"),
+            evicted_bytes: checked_metric_add(
+                self.evicted_bytes,
+                rhs.evicted_bytes,
+                "evicted bytes",
+            ),
+            flushes: checked_metric_add(self.flushes, rhs.flushes, "flushes"),
+            flush_errors: checked_metric_add(self.flush_errors, rhs.flush_errors, "flush errors"),
+            cached_bytes: checked_metric_add(self.cached_bytes, rhs.cached_bytes, "cached bytes"),
+            entries: checked_metric_add(self.entries, rhs.entries, "entries"),
         }
     }
+}
+
+fn checked_metric_add(lhs: u64, rhs: u64, label: &'static str) -> u64 {
+    lhs.checked_add(rhs).unwrap_or_else(|| {
+        panic!(
+            "pipeline cache metric {label} overflowed u64. Fix: reset or shard pipeline cache metrics before aggregation."
+        )
+    })
 }
 
 #[derive(Debug, Default)]
@@ -71,6 +98,29 @@ pub(super) struct PipelineCacheCounters {
 }
 
 impl PipelineCacheCounters {
+    pub(super) fn increment(counter: &AtomicU64, label: &'static str) {
+        Self::add(counter, 1, label);
+    }
+
+    pub(super) fn add(counter: &AtomicU64, value: u64, label: &'static str) {
+        if value == 0 {
+            return;
+        }
+        let mut current = counter.load(Ordering::Relaxed);
+        loop {
+            let next = current.checked_add(value).unwrap_or_else(|| {
+                panic!(
+                    "pipeline cache counter {label} overflowed u64. Fix: reset cache metrics before counters wrap."
+                )
+            });
+            match counter.compare_exchange_weak(current, next, Ordering::Relaxed, Ordering::Relaxed)
+            {
+                Ok(_) => return,
+                Err(observed) => current = observed,
+            }
+        }
+    }
+
     pub(super) fn snapshot(&self, cached_bytes: u64, entries: u64) -> PipelineCacheMetrics {
         PipelineCacheMetrics {
             lookups: self.lookups.load(Ordering::Relaxed),

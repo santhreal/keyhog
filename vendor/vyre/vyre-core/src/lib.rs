@@ -76,7 +76,7 @@
 //! # vyre — LLVM-for-GPU
 //!
 //! Vyre is a GPU compute substrate centered on the `Program` type. Just as
-//! LLVM lets frontends emit a single IR that lowers to many CPU backends,
+//! LLVM lets frontends emit a single IR that lowers to many processor targets,
 //! vyre lets frontends emit a single `Program` that lowers through any
 //! registered backend or the pure-Rust reference interpreter. The crate root
 //! re-exports the frozen public API: the `Program` type, the `VyreBackend`
@@ -95,6 +95,12 @@
 /// libraries.
 /// Public API re-export.
 pub use vyre_foundation::ir;
+
+/// Soundness lattice for dataflow primitives. Canonical home is
+/// `vyre-foundation`; re-exported here so vyre-libs (and any downstream
+/// consumer) reaches it via `vyre::soundness`. Per the LEGO discipline,
+/// vyre never imports from domain dataflow crates — this is the originating definition.
+pub use vyre_foundation::soundness;
 
 // Layer 1 and Layer 2 operation specifications live in vyre-libs.
 // The crate root remains the single stable import surface for consumers.
@@ -122,9 +128,11 @@ pub use vyre_foundation::optimizer;
 
 /// Wire-format CPU-reference byte ABI contract.
 /// Public API re-export.
+#[cfg(any(test, feature = "cpu-parity"))]
 pub use vyre_foundation::cpu_op;
 /// CPU reference implementations shared across backends.
 /// Public API re-export.
+#[cfg(any(test, feature = "cpu-parity"))]
 pub use vyre_foundation::cpu_references;
 /// Substrate-neutral memory ordering model.
 /// Public API re-export.
@@ -173,7 +181,8 @@ pub use vyre_driver::pipeline;
 
 pub use vyre_driver::{
     BackendError, BackendRegistration, CompiledPipeline, DispatchConfig, Error, Executable, Memory,
-    MemoryRef, OutputBuffers, TypedDispatchExt, VyreBackend,
+    MemoryRef, OutputBuffers, ResidentGraphReuseTelemetry, ResidentGraphReuseTelemetryError,
+    TypedDispatchExt, VyreBackend,
 };
 
 /// Persistent-thread dispatch policy for dispatch paths.
@@ -198,9 +207,8 @@ pub use vyre_foundation::ByteRange;
 
 /// R2: single canonical pre-lowering optimize entry point.
 ///
-/// Bundles the canonical pre-lowering pipeline so every consumer
-/// (surgec, pyrograph, warpscan, in-tree benches) wires one function
-/// instead of three. Today every consumer separately calls
+/// Bundles the canonical pre-lowering pipeline so every consumer wires one
+/// function instead of three. Today consumers separately call
 /// `pre_lowering::optimize`, then `vyre_lower::lower`, then a
 /// backend-specific emit. This wrapper keeps the optimization stage —
 /// the part that's stable across backends — behind one symbol so
@@ -258,12 +266,11 @@ pub fn optimize_for_device(
     if let Some(cached) = optimize_cache::get_device(&key) {
         return Ok(cached);
     }
-    let tuned =
-        vyre_foundation::optimizer::passes::autotune::Autotune::transform_for_adapter(
-            program,
-            &profile.adapter_caps(),
-        )
-        .program;
+    let tuned = vyre_foundation::optimizer::passes::autotune::Autotune::transform_for_adapter(
+        program,
+        &profile.adapter_caps(),
+    )
+    .program;
     let optimized = optimize(tuned)?;
     optimize_cache::put_device(key, &optimized);
     Ok(optimized)
@@ -304,7 +311,7 @@ fn device_optimize_key(program: &Program, profile: &vyre_driver::DeviceProfile) 
 /// N9 cache capacity (entries). Sized to hold the working set of a
 /// long-running scanner without unbounded growth — each entry is
 /// roughly the size of one optimized `Program`. 256 entries is
-/// `~10MB` worst-case for typical surgec-shaped Programs.
+/// `~10MB` worst-case for typical scanner-shaped Programs.
 pub const OPTIMIZE_CACHE_CAPACITY: usize = 256;
 
 /// Process-local fingerprint -> Program cache for [`optimize`].
@@ -397,10 +404,7 @@ mod optimize_cache {
 
     #[cfg(test)]
     pub(super) fn len_device() -> usize {
-        cache()
-            .lock()
-            .map(|c| c.device_entries.len())
-            .unwrap_or(0)
+        cache().lock().map(|c| c.device_entries.len()).unwrap_or(0)
     }
 }
 
@@ -435,11 +439,17 @@ mod optimize_tests {
         optimize_cache::clear();
         let p1 = sample_program();
         let p2 = sample_program();
-        let first = optimize(p1);
-        assert!(!first.entry().is_empty(), "optimized program must retain work");
+        let first = optimize(p1).expect("optimize must succeed on sample_program");
+        assert!(
+            !first.entry().is_empty(),
+            "optimized program must retain work"
+        );
         let before = optimize_cache::len();
-        let second = optimize(p2);
-        assert!(!second.entry().is_empty(), "cached optimized program must retain work");
+        let second = optimize(p2).expect("optimize must succeed on cache-hit path");
+        assert!(
+            !second.entry().is_empty(),
+            "cached optimized program must retain work"
+        );
         let after = optimize_cache::len();
         assert_eq!(
             before, after,
@@ -453,8 +463,8 @@ mod optimize_tests {
         let _g = serial();
         optimize_cache::clear();
         let p = sample_program();
-        let first = optimize(p.clone());
-        let second = optimize(p);
+        let first = optimize(p.clone()).expect("optimize must succeed on sample_program");
+        let second = optimize(p).expect("optimize must succeed on cache-hit path");
         assert_eq!(
             first.fingerprint(),
             second.fingerprint(),
@@ -474,7 +484,7 @@ mod optimize_tests {
                 [1, 1, 1],
                 vec![Node::store("out", Expr::u32(0), Expr::u32(i as u32))],
             );
-            let optimized = optimize(prog);
+            let optimized = optimize(prog).expect("optimize must succeed on cache-eviction probe");
             assert!(
                 !optimized.entry().is_empty(),
                 "optimized cache-entry program must retain work"
@@ -496,8 +506,9 @@ mod optimize_tests {
         profile.max_invocations_per_workgroup = 256;
         let p1 = sample_program();
         let p2 = sample_program();
-        let first = optimize_for_device(p1, &profile);
-        let second = optimize_for_device(p2, &profile);
+        let first = optimize_for_device(p1, &profile).expect("optimize_for_device must succeed");
+        let second = optimize_for_device(p2, &profile)
+            .expect("optimize_for_device must succeed on cache hit");
         assert_eq!(first.fingerprint(), second.fingerprint());
         assert_eq!(
             optimize_cache::len_device(),

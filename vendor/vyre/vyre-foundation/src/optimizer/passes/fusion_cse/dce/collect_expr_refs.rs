@@ -57,18 +57,11 @@ pub(crate) fn collect_expr_refs(expr: &Expr, refs: &mut HashSet<Ident>) {
             | Expr::WorkgroupId { .. }
             | Expr::LocalId { .. }
             | Expr::SubgroupLocalId
-            | Expr::SubgroupSize => {}
-            Expr::SubgroupBallot { cond } => {
-                stack.push(cond);
-            }
-            Expr::SubgroupShuffle { value, lane } => {
-                stack.push(value);
-                stack.push(lane);
-            }
-            Expr::SubgroupAdd { value } => {
-                stack.push(value);
-            }
-            Expr::Opaque(_) => {}
+            | Expr::SubgroupSize
+            | Expr::SubgroupBallot { .. }
+            | Expr::SubgroupShuffle { .. }
+            | Expr::SubgroupAdd { .. }
+            | Expr::Opaque(_) => {}
         }
     }
 }

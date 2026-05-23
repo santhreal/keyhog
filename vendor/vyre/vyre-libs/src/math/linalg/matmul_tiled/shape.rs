@@ -6,23 +6,25 @@ use vyre::ir::Expr;
 use crate::tensor_ref::TensorRefError;
 
 #[derive(Copy, Clone)]
-pub(super) struct MatrixShape {
-    pub(super) m: u32,
-    pub(super) k: u32,
-    pub(super) n: u32,
+pub(crate) struct MatrixShape {
+    pub(crate) m: u32,
+    pub(crate) k: u32,
+    pub(crate) n: u32,
 }
 
 #[derive(Copy, Clone)]
-pub(super) struct TileShape {
-    pub(super) k_tile: u32,
-    pub(super) out_rows: u32,
-    pub(super) out_cols: u32,
-    pub(super) lanes: u32,
-    pub(super) a_values: u32,
-    pub(super) b_values: u32,
+pub(crate) struct TileShape {
+    pub(crate) k_tile: u32,
+    pub(crate) out_rows: u32,
+    pub(crate) out_cols: u32,
+    pub(crate) x_lanes: u32,
+    pub(crate) y_lanes: u32,
+    pub(crate) lanes: u32,
+    pub(crate) a_values: u32,
+    pub(crate) b_values: u32,
 }
 
-pub(super) fn output_tile_shape(workgroup: [u32; 3]) -> Result<(u32, u32, u32), TensorRefError> {
+pub(crate) fn output_tile_shape(workgroup: [u32; 3]) -> Result<(u32, u32, u32), TensorRefError> {
     let out_cols = workgroup[0].max(1);
     let out_rows = workgroup[1].max(1).saturating_mul(workgroup[2].max(1));
     let lanes =
@@ -35,7 +37,7 @@ pub(super) fn output_tile_shape(workgroup: [u32; 3]) -> Result<(u32, u32, u32), 
     Ok((out_cols, out_rows, lanes))
 }
 
-pub(super) fn padded_tile_lane_count(
+pub(crate) fn padded_tile_lane_count(
     m: u32,
     n: u32,
     out_rows: u32,
@@ -53,7 +55,7 @@ pub(super) fn padded_tile_lane_count(
         })
 }
 
-pub(super) fn in_output_bounds(row: Expr, col: Expr, shape: MatrixShape) -> Expr {
+pub(crate) fn in_output_bounds(row: Expr, col: Expr, shape: MatrixShape) -> Expr {
     Expr::and(
         Expr::lt(row, Expr::u32(shape.m)),
         Expr::lt(col, Expr::u32(shape.n)),

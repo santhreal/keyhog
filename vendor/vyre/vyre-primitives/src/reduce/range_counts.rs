@@ -71,6 +71,7 @@ pub fn range_counts_u32(histogram: &str, out: &str, start: u32, end: u32) -> Pro
 
 /// CPU reference for [`range_counts_u32`].
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref(histogram: &[u32], start: u32, end: u32) -> u32 {
     let start = start as usize;
     let end = (end as usize).min(histogram.len());

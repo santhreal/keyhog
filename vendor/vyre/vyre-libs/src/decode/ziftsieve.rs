@@ -152,16 +152,6 @@ pub fn ziftsieve_reference_extract_literals(
     Ok(literals)
 }
 
-/// Compatibility alias for older callers.
-///
-/// This is a host-side reference/oracle helper, not a GPU execution fallback.
-pub fn ziftsieve_cpu_extract_literals(
-    compressed: &[u8],
-    max_output: usize,
-) -> Result<Vec<u8>, String> {
-    ziftsieve_reference_extract_literals(compressed, max_output)
-}
-
 fn decode_length(data: &[u8], pos: &mut usize, initial: usize) -> Result<usize, String> {
     let mut len = initial;
     loop {
@@ -325,13 +315,11 @@ fn fixture_inputs() -> Vec<Vec<Vec<u8>>> {
     let seq_literal_start = pack_words(&[1, 3]);
     let seq_literal_len = pack_words(&[1, 2]);
     let seq_literal_offset = pack_words(&[0, 1]);
-    let output = vec![0u8; 3 * 4];
     vec![vec![
         input,
         seq_literal_start,
         seq_literal_len,
         seq_literal_offset,
-        output,
     ]]
 }
 

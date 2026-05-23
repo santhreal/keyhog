@@ -19,6 +19,7 @@ pub fn in_package(node_tags: &str, nodeset_out: &str, node_count: u32) -> Progra
 
 /// CPU reference.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref(node_tags: &[u32]) -> Vec<u32> {
     crate::label::resolve_family::cpu_ref(node_tags, tag_family::PACKAGE)
 }

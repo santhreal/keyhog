@@ -73,7 +73,26 @@ use crate::serial::wire::encode::{put_node, put_nodes};
 /// child changes the parent's hash.
 pub fn node_subtree_hash(node: &Node) -> Result<[u8; 32], String> {
     let mut buf = Vec::with_capacity(64);
-    put_node(&mut buf, node).map_err(|e| String::from(e))?;
+    put_node(&mut buf, node).map_err(String::from)?;
+    Ok(*blake3::hash(&buf).as_bytes())
+}
+
+/// 32-byte BLAKE3 content hash of an entire `Node` slice as a single unit.
+///
+/// Use this when you want one hash that covers a body's exact ordered
+/// contents — the natural granularity for hashing a `Node::Region`'s
+/// inner body, an `If` branch arm, or a `Loop` body without wrapping it
+/// in a synthetic enclosing Node. The hash matches the canonical wire
+/// encoding of the slice (length prefix + per-node serialization), so
+/// equal slices encode to equal bytes and produce equal hashes.
+///
+/// # Errors
+///
+/// Returns `Err(String)` only when the underlying canonical wire encoder
+/// rejects any node in `body`; signals a substrate bug.
+pub fn nodes_subtree_hash(body: &[Node]) -> Result<[u8; 32], String> {
+    let mut buf = Vec::with_capacity(64usize.saturating_mul(body.len().max(1)));
+    put_nodes(&mut buf, body).map_err(String::from)?;
     Ok(*blake3::hash(&buf).as_bytes())
 }
 
@@ -180,15 +199,6 @@ pub enum Diff {
     },
 }
 
-// `put_nodes` is currently unused at the module top level (only `put_node`
-// is on the public-API surface for now), but reserved for the future
-// `region_hash` extension that hashes the full body via put_nodes once we
-// expose a Region as a first-class hashable entity.
-#[allow(dead_code)]
-fn _reserved_put_nodes_marker(buf: &mut Vec<u8>, body: &[Node]) -> Result<(), String> {
-    put_nodes(buf, body).map_err(String::from)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -211,6 +221,39 @@ mod tests {
         let h1 = node_subtree_hash(&n1).expect("encoding must succeed for valid Node");
         let h2 = node_subtree_hash(&n2).expect("encoding must succeed for valid Node");
         assert_eq!(h1, h2, "identical nodes must produce identical hashes");
+    }
+
+    #[test]
+    fn nodes_subtree_hash_matches_for_identical_bodies() {
+        let body_a = vec![
+            Node::store("buf", Expr::u32(0), Expr::u32(7)),
+            Node::store("buf", Expr::u32(1), Expr::u32(8)),
+        ];
+        let body_b = vec![
+            Node::store("buf", Expr::u32(0), Expr::u32(7)),
+            Node::store("buf", Expr::u32(1), Expr::u32(8)),
+        ];
+        let h_a = nodes_subtree_hash(&body_a).expect("encoding must succeed");
+        let h_b = nodes_subtree_hash(&body_b).expect("encoding must succeed");
+        assert_eq!(h_a, h_b);
+    }
+
+    #[test]
+    fn nodes_subtree_hash_differs_when_order_changes() {
+        let body_in_order = vec![
+            Node::store("buf", Expr::u32(0), Expr::u32(7)),
+            Node::store("buf", Expr::u32(1), Expr::u32(8)),
+        ];
+        let body_swapped = vec![
+            Node::store("buf", Expr::u32(1), Expr::u32(8)),
+            Node::store("buf", Expr::u32(0), Expr::u32(7)),
+        ];
+        let h_in_order = nodes_subtree_hash(&body_in_order).expect("encoding must succeed");
+        let h_swapped = nodes_subtree_hash(&body_swapped).expect("encoding must succeed");
+        assert_ne!(
+            h_in_order, h_swapped,
+            "ordered slice contents must affect the hash — backends rely on body order being load-bearing"
+        );
     }
 
     #[test]

@@ -1,8 +1,8 @@
 //! `reduce_histogram` — parallel atomic histogram over a u32 ValueSet.
 //!
-//! Each global invocation loads one input index and atomically increments
-//! the corresponding output bin.  Used by radix_sort, frequency analysis,
-//! and label distribution.
+//! Each global invocation owns one output bin and scans the input stream,
+//! storing that bin's count. Used by radix_sort, frequency analysis, and label
+//! distribution.
 //!
 //! # Algorithm
 //!
@@ -11,13 +11,13 @@
 //!
 //! ```text
 //! if global_id < count:
-//!     bin = input[global_id]
-//!     if bin < num_bins:
-//!         atomic_add(output[bin], 1)
+//!     total = 0
+//!     for i in 0..count:
+//!         total += input[i] == global_id
+//!     output[global_id] = total
 //! ```
 //!
-//! Out-of-range indices are silently dropped — at internet scale an
-//! unguarded atomic would corrupt adjacent buffers.
+//! Out-of-range indices are silently dropped because no lane owns them.
 
 use std::sync::Arc;
 
@@ -27,7 +27,7 @@ use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Progra
 /// Canonical op id.
 pub const OP_ID: &str = "vyre-primitives::reduce::histogram";
 
-/// Build a Program: `output[input[i]] += 1` for every `i < count`.
+/// Build a Program: `output[bin] = count(input[i] == bin)` for each bin.
 ///
 /// Invalid zero dimensions lower to an explicit trap program.
 #[must_use]
@@ -51,6 +51,67 @@ pub fn histogram(input: &str, output: &str, count: u32, num_bins: u32) -> Progra
 
     let t = Expr::InvocationId { axis: 0 };
 
+    let body = vec![Node::if_then(
+        Expr::lt(t.clone(), Expr::u32(num_bins)),
+        vec![
+            Node::let_bind("total", Expr::u32(0)),
+            Node::loop_for(
+                "i",
+                Expr::u32(0),
+                Expr::u32(count),
+                vec![Node::assign(
+                    "total",
+                    Expr::add(
+                        Expr::var("total"),
+                        Expr::select(
+                            Expr::eq(Expr::load(input, Expr::var("i")), t.clone()),
+                            Expr::u32(1),
+                            Expr::u32(0),
+                        ),
+                    ),
+                )],
+            ),
+            Node::store(output, t.clone(), Expr::var("total")),
+        ],
+    )];
+
+    Program::wrapped(
+        vec![
+            BufferDecl::storage(input, 0, BufferAccess::ReadOnly, DataType::U32).with_count(count),
+            BufferDecl::storage(output, 1, BufferAccess::ReadWrite, DataType::U32)
+                .with_count(num_bins),
+        ],
+        [256, 1, 1],
+        vec![Node::Region {
+            generator: Ident::from(OP_ID),
+            source_region: None,
+            body: Arc::new(body),
+        }],
+    )
+}
+
+/// Build the legacy atomic scatter variant for callers that can prove backend
+/// atomic-add semantics and want input-parallel execution.
+#[must_use]
+pub fn histogram_atomic_scatter(input: &str, output: &str, count: u32, num_bins: u32) -> Program {
+    if count == 0 {
+        return crate::invalid_output_program(
+            OP_ID,
+            output,
+            DataType::U32,
+            format!("Fix: histogram_atomic_scatter requires count > 0, got {count}."),
+        );
+    }
+    if num_bins == 0 {
+        return crate::invalid_output_program(
+            OP_ID,
+            output,
+            DataType::U32,
+            format!("Fix: histogram_atomic_scatter requires num_bins > 0, got {num_bins}."),
+        );
+    }
+
+    let t = Expr::InvocationId { axis: 0 };
     let body = vec![
         Node::let_bind("bin", Expr::load(input, t.clone())),
         Node::if_then(
@@ -85,6 +146,7 @@ pub fn histogram(input: &str, output: &str, count: u32, num_bins: u32) -> Progra
 /// Returns a `Vec<u32>` of length `num_bins`.  Out-of-range input
 /// values are ignored (matches the GPU drop behaviour).
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref(input: &[u32], num_bins: u32) -> Vec<u32> {
     let mut out = Vec::new();
     cpu_ref_into(input, num_bins, &mut out);
@@ -92,6 +154,7 @@ pub fn cpu_ref(input: &[u32], num_bins: u32) -> Vec<u32> {
 }
 
 /// CPU reference into caller-owned storage.
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref_into(input: &[u32], num_bins: u32, out: &mut Vec<u32>) {
     out.clear();
     out.resize(num_bins as usize, 0);

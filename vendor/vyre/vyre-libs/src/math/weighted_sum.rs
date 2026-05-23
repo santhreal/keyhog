@@ -89,7 +89,7 @@ inventory::submit! {
             };
             let weights = f32_bytes(&[0.5, 0.25, 0.125, 0.125]);
             let values = f32_bytes(&[1.0, 2.0, 4.0, 8.0]);
-            vec![vec![weights, values, vec![0u8; 4]]]
+            vec![vec![weights, values]]
         }),
         expected_output: Some(|| {
             let f32_bytes = |w: &[f32]| {
@@ -98,6 +98,7 @@ inventory::submit! {
             // 0.5*1 + 0.25*2 + 0.125*4 + 0.125*8 = 0.5 + 0.5 + 0.5 + 1.0 = 2.5
             vec![vec![f32_bytes(&[2.5_f32])]]
         }),
+        category: Some("math"),
     }
 }
 
@@ -205,10 +206,7 @@ mod tests {
         let weights = [3.0_f32];
         let values = [4.0_f32];
         let actual = run(&weights, &values);
-        assert!(
-            (actual - 12.0).abs() <= 1.0e-5,
-            "3*4 = 12, got {actual}"
-        );
+        assert!((actual - 12.0).abs() <= 1.0e-5, "3*4 = 12, got {actual}");
     }
 
     /// NaN in weights must propagate to the output.

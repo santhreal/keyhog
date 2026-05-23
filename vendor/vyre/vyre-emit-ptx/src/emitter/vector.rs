@@ -12,6 +12,10 @@ use crate::reg::PtxType;
 use crate::EmitError;
 
 type VectorChain = SmallVec<[usize; 4]>;
+const PTX_VECTOR_WIDTH_V2: usize = 2;
+const PTX_VECTOR_WIDTH_V4: usize = 4;
+const PTX_VECTOR_LOAD_GLOBAL_PREFIX: &str = "ld.global";
+const PTX_VECTOR_LOAD_SHARED_PREFIX: &str = "ld.shared";
 
 impl BodyCtx<'_> {
     pub(super) fn collect_vec_load_chain(
@@ -34,7 +38,7 @@ impl BodyCtx<'_> {
         chain.truncate(1);
         let mut prev_idx_id = base_idx_id;
         let mut scan_idx = start_idx + 1;
-        while scan_idx < body.ops.len() && chain.len() < 4 {
+        while scan_idx < body.ops.len() && chain.len() < PTX_VECTOR_WIDTH_V4 {
             let mut next_idx = scan_idx;
             let next = &body.ops[next_idx];
             if matches!(next.kind, KernelOpKind::BinOpKind(BinOp::Add)) {
@@ -86,7 +90,7 @@ impl BodyCtx<'_> {
         chain.truncate(1);
         let mut prev_idx_id = base_idx_id;
         let mut scan_idx = start_idx + 1;
-        while scan_idx < body.ops.len() && chain.len() < 4 {
+        while scan_idx < body.ops.len() && chain.len() < PTX_VECTOR_WIDTH_V4 {
             let mut next_idx = scan_idx;
             let next = &body.ops[next_idx];
             if matches!(next.kind, KernelOpKind::BinOpKind(BinOp::Add)) {
@@ -137,9 +141,15 @@ impl BodyCtx<'_> {
             regs.push(reg);
             self.bind_result(&body.ops[op_idx], reg)?;
         }
+        let (mnemonic_prefix, cache_suffix) =
+            vector_load_mnemonic_parts(load_space).ok_or_else(|| {
+                EmitError::InvalidDescriptor(format!(
+                    "unsupported PTX vector load space `{load_space}` for fused vector load"
+                ))
+            })?;
         let _ = write!(
             self.text,
-            "    ld.{load_space}.v{}.{}    ",
+            "    {mnemonic_prefix}{cache_suffix}.v{}.{}    ",
             chain.len(),
             elem_ty.ptx_type_str()
         );
@@ -234,14 +244,23 @@ impl BodyCtx<'_> {
 }
 
 fn truncate_vector_chain(mut chain: VectorChain) -> Result<Option<VectorChain>, EmitError> {
-    if chain.len() >= 4 {
-        chain.truncate(4);
+    if chain.len() >= PTX_VECTOR_WIDTH_V4 {
+        chain.truncate(PTX_VECTOR_WIDTH_V4);
         Ok(Some(chain))
-    } else if chain.len() >= 2 {
-        chain.truncate(2);
+    } else if chain.len() >= PTX_VECTOR_WIDTH_V2 {
+        chain.truncate(PTX_VECTOR_WIDTH_V2);
         Ok(Some(chain))
     } else {
         Ok(None)
+    }
+}
+
+fn vector_load_mnemonic_parts(load_space: &str) -> Option<(&'static str, &'static str)> {
+    match load_space {
+        "global" => Some((PTX_VECTOR_LOAD_GLOBAL_PREFIX, "")),
+        "global.nc" => Some((PTX_VECTOR_LOAD_GLOBAL_PREFIX, ".nc")),
+        "shared" => Some((PTX_VECTOR_LOAD_SHARED_PREFIX, "")),
+        _ => None,
     }
 }
 

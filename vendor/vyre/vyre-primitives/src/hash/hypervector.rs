@@ -112,6 +112,11 @@ pub fn hypervector_majority_bundle(stacked: &str, out: &str, dim_words: u32, k: 
             "Fix: hypervector_majority_bundle requires k > 0, got 0.".to_string(),
         );
     }
+    let stacked_words = k.checked_mul(dim_words).unwrap_or_else(|| {
+        panic!(
+            "hypervector_majority_bundle k*dim_words overflows stacked input count for k={k}, dim_words={dim_words}. Fix: shard the hypervector bundle before GPU dispatch."
+        )
+    });
 
     let t = Expr::InvocationId { axis: 0 };
     let threshold = k / 2; // ties (count == threshold) round to 0.
@@ -175,7 +180,7 @@ pub fn hypervector_majority_bundle(stacked: &str, out: &str, dim_words: u32, k: 
     Program::wrapped(
         vec![
             BufferDecl::storage(stacked, 0, BufferAccess::ReadOnly, DataType::U32)
-                .with_count(k * dim_words),
+                .with_count(stacked_words),
             BufferDecl::storage(out, 1, BufferAccess::ReadWrite, DataType::U32)
                 .with_count(dim_words),
         ],
@@ -192,6 +197,7 @@ pub fn hypervector_majority_bundle(stacked: &str, out: &str, dim_words: u32, k: 
 
 /// CPU reference for [`hypervector_xor_bind`].
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn xor_bind_cpu(a: &[u32], b: &[u32]) -> Vec<u32> {
     let mut out = Vec::new();
     xor_bind_cpu_into(a, b, &mut out);
@@ -199,6 +205,7 @@ pub fn xor_bind_cpu(a: &[u32], b: &[u32]) -> Vec<u32> {
 }
 
 /// CPU reference for [`hypervector_xor_bind`] using a caller-owned buffer.
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn xor_bind_cpu_into(a: &[u32], b: &[u32], out: &mut Vec<u32>) {
     let dim_words = a.len().min(b.len());
     out.clear();
@@ -208,6 +215,7 @@ pub fn xor_bind_cpu_into(a: &[u32], b: &[u32], out: &mut Vec<u32>) {
 
 /// CPU reference for [`hypervector_majority_bundle`].
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn majority_bundle_cpu(hvs: &[Vec<u32>]) -> Vec<u32> {
     let mut out = Vec::new();
     majority_bundle_cpu_into(hvs, &mut out);
@@ -215,6 +223,7 @@ pub fn majority_bundle_cpu(hvs: &[Vec<u32>]) -> Vec<u32> {
 }
 
 /// CPU reference for [`hypervector_majority_bundle`] using a caller-owned buffer.
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn majority_bundle_cpu_into(hvs: &[Vec<u32>], out: &mut Vec<u32>) {
     out.clear();
     let Some(dim_words) = hvs.iter().map(Vec::len).min() else {

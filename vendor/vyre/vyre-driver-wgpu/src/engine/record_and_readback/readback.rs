@@ -1,7 +1,7 @@
 use super::timestamp::{emit_timestamp_profile, PendingTimestampProfile};
 use super::trap;
-use crate::pipeline::OutputBindingLayout;
 use crate::buffer::GpuBufferHandle;
+use crate::pipeline::OutputBindingLayout;
 use crossbeam_channel::Receiver;
 use smallvec::SmallVec;
 use std::ops::Range;
@@ -196,6 +196,68 @@ impl PendingReadback {
         buf.unmap();
         Ok((buffer, result?))
     }
+
+    fn collect_trap_readback(
+        self,
+        device: &wgpu::Device,
+        deadline: Instant,
+        trap_tags: &[TrapTag],
+    ) -> Result<(), BackendError> {
+        match self {
+            Self::Pooled {
+                buffer,
+                receiver,
+                mapped_range,
+                ready,
+                ..
+            } => {
+                let (readback_buffer, trap_flag) = PendingReadback::with_pooled_mapped_bytes(
+                    Self::Pooled {
+                        buffer,
+                        receiver,
+                        mapped_range,
+                        ready,
+                    },
+                    deadline,
+                    trap::sidecar_flag_set,
+                )?;
+                if trap_flag {
+                    if let Some(error) =
+                        trap::map_full_sidecar(device, &readback_buffer, deadline, trap_tags)?
+                    {
+                        return Err(error);
+                    }
+                }
+            }
+            Self::Ring {
+                ring,
+                ticket,
+                receiver,
+                ready,
+            } => {
+                let trap_error = PendingReadback::with_mapped_bytes(
+                    Self::Ring {
+                        ring,
+                        ticket,
+                        receiver,
+                        ready,
+                    },
+                    deadline,
+                    |mapped| {
+                        if trap::sidecar_flag_set(mapped)? {
+                            trap::sidecar_error_from_mapped(mapped, trap_tags)
+                        } else {
+                            Ok(None)
+                        }
+                    },
+                )?;
+                if let Some(error) = trap_error {
+                    return Err(error);
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 /// Handle for submitted wgpu work whose readback maps are still in flight.
@@ -232,6 +294,16 @@ impl WgpuPendingReadback {
         Ok(outputs)
     }
 
+    /// Wait until `deadline` for the GPU submission and collect trimmed output buffers.
+    pub(crate) fn await_result_until(
+        mut self,
+        deadline: Instant,
+    ) -> Result<vyre_driver::OutputBuffers, BackendError> {
+        let mut outputs = std::mem::take(&mut self.outputs);
+        self.await_into_until(&mut outputs, deadline)?;
+        Ok(outputs)
+    }
+
     /// Wait for the GPU submission and collect trimmed output buffers into
     /// caller-owned storage.
     pub(crate) fn await_into(
@@ -239,6 +311,15 @@ impl WgpuPendingReadback {
         outputs: &mut vyre_driver::OutputBuffers,
     ) -> Result<(), BackendError> {
         let deadline = Instant::now() + Duration::from_secs(30);
+        self.await_into_until(outputs, deadline)
+    }
+
+    /// Wait until `deadline` for the GPU submission and collect into caller-owned storage.
+    pub(crate) fn await_into_until(
+        self,
+        outputs: &mut vyre_driver::OutputBuffers,
+        deadline: Instant,
+    ) -> Result<(), BackendError> {
         self.poll_until_ready(deadline)?;
         self.collect_after_submission_wait(outputs, deadline)
     }
@@ -250,6 +331,18 @@ impl WgpuPendingReadback {
         F: FnMut(usize, &[u8]) -> Result<(), BackendError>,
     {
         let deadline = Instant::now() + Duration::from_secs(30);
+        self.await_mapped_outputs_until(visitor, deadline)
+    }
+
+    /// Wait until `deadline` and expose each trimmed mapped output slice.
+    pub(crate) fn await_mapped_outputs_until<F>(
+        self,
+        visitor: F,
+        deadline: Instant,
+    ) -> Result<(), BackendError>
+    where
+        F: FnMut(usize, &[u8]) -> Result<(), BackendError>,
+    {
         self.poll_until_ready(deadline)?;
         self.collect_mapped_after_submission_wait(visitor, deadline)
     }
@@ -329,7 +422,7 @@ impl WgpuPendingReadback {
             backoff.idle(deadline);
         }
         Err(BackendError::new(
-            "GPU readback callbacks did not complete within 30s. Fix: inspect wgpu device polling, driver health, and command-buffer liveness.",
+            "GPU readback callbacks did not complete before the dispatch deadline. Fix: raise DispatchConfig.timeout or split the program into smaller chunks.",
         ))
     }
 
@@ -347,6 +440,15 @@ impl WgpuPendingReadback {
         let trap_tags = self.trap_tags;
         let timestamp_profile = self.timestamp_profile;
         if outputs.len() < output_count {
+            if outputs.capacity() < output_count {
+                outputs
+                    .try_reserve_exact(output_count - outputs.capacity())
+                    .map_err(|source| {
+                        BackendError::new(format!(
+                            "readback output slot vector could not reserve {output_count} slots exactly: {source}. Fix: split the dispatch output set before collection."
+                        ))
+                    })?;
+            }
             outputs.resize_with(output_count, Vec::new);
         } else {
             outputs.truncate(output_count);
@@ -360,32 +462,33 @@ impl WgpuPendingReadback {
                     ))
                 })?;
                 pending.with_mapped_bytes(deadline, |mapped| {
-                    let trim = output.layout.trim_start;
-                    let end = trim.saturating_add(output.layout.read_size);
-                    if end > mapped.len() {
-                        return Err(BackendError::new(format!(
-                            "readback slice for output `{}` is out of bounds. Fix: verify OutputLayout against actual GPU readback size.",
-                            output.name
-                        )));
-                    }
-                    let read_len = end - trim;
+                    let bytes = trimmed_output_bytes(output, mapped)?;
+                    let read_len = bytes.len();
                     let out = &mut outputs[output_index];
-                    out.clear();
-                    out.reserve(read_len);
-                    out.extend_from_slice(&mapped[trim..end]);
+                    if out.len() == read_len {
+                        out.copy_from_slice(bytes);
+                    } else {
+                        out.clear();
+                        if read_len > out.capacity() {
+                            let additional = read_len - out.capacity();
+                            out.try_reserve_exact(additional).map_err(|source| {
+                                BackendError::new(format!(
+                                    "readback output `{}` could not reserve {read_len} bytes exactly: {source}. Fix: lower max_output_bytes or split the output buffer.",
+                                    output.name
+                                ))
+                            })?;
+                        }
+                        out.extend_from_slice(bytes);
+                    }
                     Ok(())
                 })?;
-                output_index = output_index.saturating_add(1);
+                output_index = output_index.checked_add(1).ok_or_else(|| {
+                    BackendError::new(
+                        "readback output index overflowed host usize. Fix: split the dispatch output set before collection.",
+                    )
+                })?;
             } else {
-                let (readback_buffer, trap_flag) =
-                    pending.with_pooled_mapped_bytes(deadline, trap::sidecar_flag_set)?;
-                if trap_flag {
-                    if let Some(error) =
-                        trap::map_full_sidecar(device, &readback_buffer, deadline, &trap_tags)?
-                    {
-                        return Err(error);
-                    }
-                }
+                pending.collect_trap_readback(device, deadline, &trap_tags)?;
                 continue;
             }
         }
@@ -414,28 +517,16 @@ impl WgpuPendingReadback {
                     ))
                 })?;
                 let visitor_result = pending.with_mapped_bytes(deadline, |mapped| {
-                    let trim = output.layout.trim_start;
-                    let end = trim.saturating_add(output.layout.read_size);
-                    if end > mapped.len() {
-                        return Err(BackendError::new(format!(
-                            "readback slice for output `{}` is out of bounds. Fix: verify OutputLayout against actual GPU readback size.",
-                            output.name
-                        )));
-                    }
-                    visitor(output_index, &mapped[trim..end])
+                    visitor(output_index, trimmed_output_bytes(output, mapped)?)
                 });
-                output_index = output_index.saturating_add(1);
+                output_index = output_index.checked_add(1).ok_or_else(|| {
+                    BackendError::new(
+                        "readback output index overflowed host usize. Fix: split the dispatch output set before collection.",
+                    )
+                })?;
                 visitor_result?;
             } else {
-                let (readback_buffer, trap_flag) =
-                    pending.with_pooled_mapped_bytes(deadline, trap::sidecar_flag_set)?;
-                if trap_flag {
-                    if let Some(error) =
-                        trap::map_full_sidecar(device, &readback_buffer, deadline, &trap_tags)?
-                    {
-                        return Err(error);
-                    }
-                }
+                pending.collect_trap_readback(device, deadline, &trap_tags)?;
                 continue;
             }
         }
@@ -445,36 +536,38 @@ impl WgpuPendingReadback {
     }
 }
 
+fn trimmed_output_bytes<'a>(
+    output: &OutputBindingLayout,
+    mapped: &'a [u8],
+) -> Result<&'a [u8], BackendError> {
+    let trim = output.layout.trim_start;
+    let end = trim.checked_add(output.layout.read_size).ok_or_else(|| {
+        BackendError::new(format!(
+            "readback slice for output `{}` overflows host indexing. Fix: verify OutputLayout trim_start/read_size before GPU submission.",
+            output.name
+        ))
+    })?;
+    if end > mapped.len() {
+        return Err(BackendError::new(format!(
+            "readback slice for output `{}` is out of bounds. Fix: verify OutputLayout against actual GPU readback size.",
+            output.name
+        )));
+    }
+    Ok(&mapped[trim..end])
+}
+
 pub(super) struct ReadbackPollBackoff {
-    idle_polls: u32,
+    backoff: crate::wait_backoff::AdaptiveWaitBackoff,
 }
 
 impl ReadbackPollBackoff {
-    const SPIN_POLLS: u32 = 32;
-    const MIN_PARK: Duration = Duration::from_micros(2);
-    const MAX_PARK: Duration = Duration::from_micros(50);
-
     pub(super) fn new() -> Self {
-        Self { idle_polls: 0 }
+        Self {
+            backoff: crate::wait_backoff::AdaptiveWaitBackoff::from_micros(32, 2, 50, 5),
+        }
     }
 
     pub(super) fn idle(&mut self, deadline: Instant) {
-        self.idle_polls = self.idle_polls.saturating_add(1);
-        if self.idle_polls <= Self::SPIN_POLLS {
-            std::hint::spin_loop();
-            return;
-        }
-        if self.idle_polls <= Self::SPIN_POLLS * 2 {
-            std::thread::yield_now();
-            return;
-        }
-        let shift = (self.idle_polls - (Self::SPIN_POLLS * 2)).min(5);
-        let park = Self::MIN_PARK
-            .saturating_mul(1u32 << shift)
-            .min(Self::MAX_PARK)
-            .min(deadline.saturating_duration_since(Instant::now()));
-        if !park.is_zero() {
-            std::thread::park_timeout(park);
-        }
+        self.backoff.idle_until(deadline);
     }
 }

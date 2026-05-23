@@ -15,12 +15,17 @@ pub(super) fn build_bind_groups(
     let mut bind_groups: SmallVec<[Arc<wgpu::BindGroup>; 4]> =
         SmallVec::with_capacity(request.bind_group_layouts.len());
     for (group_index, layout) in request.bind_group_layouts.iter().enumerate() {
+        let group_index_u32 = u32::try_from(group_index).map_err(|_| {
+            BackendError::new(
+                "record-and-readback bind group index exceeds u32::MAX. Fix: reduce bind group fanout before dispatch.",
+            )
+        })?;
         buffer_ids.clear();
         bound_indices.clear();
         for info in request
             .buffer_bindings
             .iter()
-            .filter(|b| b.group == group_index as u32)
+            .filter(|b| b.group == group_index_u32)
         {
             if info.kind == vyre_foundation::ir::MemoryKind::Shared {
                 continue;
@@ -40,9 +45,12 @@ pub(super) fn build_bind_groups(
                             "GPU buffer for binding {} (`{}`) missing. Fix: ensure all declared buffers are allocated.",
                             info.binding, info.name
                         ))
-                    })?;
+            })?;
             buffer_ids.push(buffer.id());
-            buffer_ids.push((*logical_size_bytes).max(4).next_multiple_of(4));
+            buffer_ids.push(padded_wgpu_u64(
+                *logical_size_bytes,
+                "record-and-readback bind-group cache key byte length",
+            )?);
             bound_indices.push(idx);
         }
         let layout_id = Arc::as_ptr(layout).addr();
@@ -63,7 +71,10 @@ pub(super) fn build_bind_groups(
                 ))
             })?;
             let buffer_arc = buffer.buffer();
-            let bind_size = wgpu::BufferSize::new((*logical_size_bytes).max(4).next_multiple_of(4));
+            let bind_size = wgpu::BufferSize::new(padded_wgpu_u64(
+                *logical_size_bytes,
+                "record-and-readback bind-group binding size",
+            )?);
             entries.push(wgpu::BindGroupEntry {
                 binding: *binding,
                 resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
@@ -93,4 +104,17 @@ pub(super) fn build_bind_groups(
         bind_groups.push(bind_group);
     }
     Ok(bind_groups)
+}
+
+fn padded_wgpu_u64(size: u64, label: &'static str) -> Result<u64, BackendError> {
+    let normalized = size.max(4);
+    let remainder = normalized % 4;
+    if remainder == 0 {
+        return Ok(normalized);
+    }
+    normalized.checked_add(4 - remainder).ok_or_else(|| {
+        BackendError::new(format!(
+            "{label} overflows u64 while padding to WGPU's 4-byte buffer alignment. Fix: split the dispatch buffer."
+        ))
+    })
 }

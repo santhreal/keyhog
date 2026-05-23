@@ -2,13 +2,13 @@
 //!
 //! This module is the single source of truth for algebraic decisions that apply
 //! at more than one IR level. `vyre-foundation` Program passes and `vyre-lower`
-//! KernelDescriptor rewrites adapt their local value representation into these
+//! Lowered-descriptor (`vyre-lower`) rewrites adapt their local value representation into these
 //! small rule inputs instead of independently re-encoding what `x + 0`, `x * 1`,
 //! or division by a power of two means.
 
 use crate::ir::BinOp;
 
-/// Literal scalar value normalized across Program IR and KernelDescriptor IR.
+/// Literal scalar value normalized across Program IR and lowered descriptor IR.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ScalarLiteral {
     /// Unsigned 32-bit integer.
@@ -27,7 +27,7 @@ impl ScalarLiteral {
     pub fn is_numeric_zero(self) -> bool {
         match self {
             Self::U32(0) | Self::I32(0) => true,
-            Self::F32(value) => value == 0.0,
+            Self::F32(value) => value.to_bits() == 0.0f32.to_bits(),
             _ => false,
         }
     }
@@ -47,7 +47,7 @@ impl ScalarLiteral {
     pub fn is_numeric_one(self) -> bool {
         match self {
             Self::U32(1) | Self::I32(1) => true,
-            Self::F32(value) => value == 1.0,
+            Self::F32(value) => value.to_bits() == 1.0f32.to_bits(),
             _ => false,
         }
     }
@@ -82,10 +82,14 @@ pub enum IdentityReplacement {
 
 /// Decide a substitution-only binary identity/absorber rewrite.
 ///
-/// Returns which existing operand should replace the BinOp result. This function
+/// Returns which existing operand should replace the `BinOp` result. This function
 /// never asks callers to synthesize a new literal, so it is safe for descriptor
 /// passes that only rewrite result-id references.
 #[must_use]
+#[expect(
+    clippy::too_many_lines,
+    reason = "binary identity legality table stays contiguous so Program and lowered descriptor rewrites share one auditable contract"
+)]
 pub fn binop_identity_replacement(
     op: BinOp,
     lhs_same_as_rhs: bool,
@@ -101,28 +105,16 @@ pub fn binop_identity_replacement(
         }
     }
 
-    let lhs_is_zero = lhs_lit
-        .map(ScalarLiteral::is_numeric_zero)
-        .unwrap_or(false);
-    let rhs_is_zero = rhs_lit
-        .map(ScalarLiteral::is_numeric_zero)
-        .unwrap_or(false);
-    let lhs_is_one = lhs_lit
-        .map(ScalarLiteral::is_numeric_one)
-        .unwrap_or(false);
-    let rhs_is_one = rhs_lit
-        .map(ScalarLiteral::is_numeric_one)
-        .unwrap_or(false);
-    let lhs_is_all_ones = lhs_lit
-        .map(ScalarLiteral::is_bit_all_ones)
-        .unwrap_or(false);
-    let rhs_is_all_ones = rhs_lit
-        .map(ScalarLiteral::is_bit_all_ones)
-        .unwrap_or(false);
-    let lhs_is_true = lhs_lit.map(ScalarLiteral::is_true).unwrap_or(false);
-    let rhs_is_true = rhs_lit.map(ScalarLiteral::is_true).unwrap_or(false);
-    let lhs_is_false = lhs_lit.map(ScalarLiteral::is_false).unwrap_or(false);
-    let rhs_is_false = rhs_lit.map(ScalarLiteral::is_false).unwrap_or(false);
+    let lhs_is_zero = lhs_lit.is_some_and(ScalarLiteral::is_numeric_zero);
+    let rhs_is_zero = rhs_lit.is_some_and(ScalarLiteral::is_numeric_zero);
+    let lhs_is_one = lhs_lit.is_some_and(ScalarLiteral::is_numeric_one);
+    let rhs_is_one = rhs_lit.is_some_and(ScalarLiteral::is_numeric_one);
+    let lhs_is_all_ones = lhs_lit.is_some_and(ScalarLiteral::is_bit_all_ones);
+    let rhs_is_all_ones = rhs_lit.is_some_and(ScalarLiteral::is_bit_all_ones);
+    let lhs_is_true = lhs_lit.is_some_and(ScalarLiteral::is_true);
+    let rhs_is_true = rhs_lit.is_some_and(ScalarLiteral::is_true);
+    let lhs_is_false = lhs_lit.is_some_and(ScalarLiteral::is_false);
+    let rhs_is_false = rhs_lit.is_some_and(ScalarLiteral::is_false);
 
     match op {
         BinOp::And => {
@@ -204,12 +196,8 @@ pub fn binop_identity_replacement(
     // Mul/SaturatingMul absorber is restricted to *integer* zero because
     // float 0.0 × NaN = NaN, not 0.0 — folding would change semantics.
     // BitAnd is fine with any zero (bitwise, type-safe).
-    let lhs_is_int_zero = lhs_lit
-        .map(ScalarLiteral::is_integer_zero)
-        .unwrap_or(false);
-    let rhs_is_int_zero = rhs_lit
-        .map(ScalarLiteral::is_integer_zero)
-        .unwrap_or(false);
+    let lhs_is_int_zero = lhs_lit.is_some_and(ScalarLiteral::is_integer_zero);
+    let rhs_is_int_zero = rhs_lit.is_some_and(ScalarLiteral::is_integer_zero);
     let absorbs_mul_to_zero = matches!(op, BinOp::Mul | BinOp::SaturatingMul);
     if absorbs_mul_to_zero {
         if rhs_is_int_zero {
@@ -238,37 +226,5 @@ pub fn strength_reduce_power_of_two_shift(value: u32) -> Option<u32> {
         Some(value.trailing_zeros())
     } else {
         None
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn identity_rules_cover_bool_and_integer_absorbers() {
-        assert_eq!(
-            binop_identity_replacement(BinOp::And, false, None, Some(ScalarLiteral::Bool(true))),
-            Some(IdentityReplacement::Left)
-        );
-        assert_eq!(
-            binop_identity_replacement(BinOp::Or, false, Some(ScalarLiteral::Bool(true)), None),
-            Some(IdentityReplacement::Left)
-        );
-        assert_eq!(
-            binop_identity_replacement(BinOp::BitAnd, false, None, Some(ScalarLiteral::U32(u32::MAX))),
-            Some(IdentityReplacement::Left)
-        );
-        assert_eq!(
-            binop_identity_replacement(BinOp::Mul, false, None, Some(ScalarLiteral::U32(0))),
-            Some(IdentityReplacement::Right)
-        );
-    }
-
-    #[test]
-    fn strength_reduce_power_of_two_excludes_one_and_zero() {
-        assert_eq!(strength_reduce_power_of_two_shift(0), None);
-        assert_eq!(strength_reduce_power_of_two_shift(1), None);
-        assert_eq!(strength_reduce_power_of_two_shift(8), Some(3));
     }
 }

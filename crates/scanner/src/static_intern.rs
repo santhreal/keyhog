@@ -119,8 +119,6 @@ impl StaticInterner {
     }
 }
 
-
-
 #[cfg(test)]
 mod tests {
     use super::*;

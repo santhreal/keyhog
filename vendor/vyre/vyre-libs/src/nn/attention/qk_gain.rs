@@ -26,6 +26,24 @@ pub fn qk_gain(
     let total = num_heads * seq_len * head_dim;
     let per_head = seq_len * head_dim;
 
+    // Empty-tensor short circuit: a zero-sized total or per_head means
+    // there is no work to do. Building the IR anyway would inject a
+    // statically-zero divisor (V044) for `i / per_head`. Return a noop
+    // Program that declares the buffers but writes nothing.
+    if total == 0 || per_head == 0 {
+        return Program::wrapped(
+            vec![
+                BufferDecl::storage(q_in, 0, BufferAccess::ReadOnly, DataType::F32)
+                    .with_count(total),
+                BufferDecl::output(q_out, 1, DataType::F32).with_count(total),
+                BufferDecl::storage(gain, 2, BufferAccess::ReadOnly, DataType::F32)
+                    .with_count(num_heads),
+            ],
+            [64, 1, 1],
+            vec![wrap_anonymous(OP_ID, vec![])],
+        );
+    }
+
     let i = Expr::var("i");
     // head_idx = i / (seq_len * head_dim)
     let head_idx = Expr::BinOp {
@@ -79,6 +97,7 @@ inventory::submit! {
             // h1: [3*3.0, 4*3.0] = [9.0, 12.0]
             vec![vec![to_f32(&[5.25, 10.5, 9.0, 12.0])]]
         }),
+        category: Some("nn"),
     }
 }
 
@@ -113,8 +132,14 @@ mod tests {
         )
         .expect("Fix: qk_gain must not panic on NaN gain");
         let out = decode_f32(&outputs[0].to_bytes());
-        assert!(out[0].is_nan(), "qk_gain NaN gain head-0 lane-0 must be NaN");
-        assert!(out[1].is_nan(), "qk_gain NaN gain head-0 lane-1 must be NaN");
+        assert!(
+            out[0].is_nan(),
+            "qk_gain NaN gain head-0 lane-0 must be NaN"
+        );
+        assert!(
+            out[1].is_nan(),
+            "qk_gain NaN gain head-0 lane-1 must be NaN"
+        );
         assert_eq!(out[2], 3.0, "qk_gain finite gain head-1 lane-0 must be 3.0");
         assert_eq!(out[3], 4.0, "qk_gain finite gain head-1 lane-1 must be 4.0");
     }

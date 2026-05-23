@@ -1,7 +1,7 @@
 //! `bitset_contains` — query one bit at a given index.
 //!
 //! `out[0] = (input[index / 32] >> (index % 32)) & 1`. Single-lane
-//! Program. Consumed by surgec's point-lookup predicates (e.g.
+//! Program. Consumed by a downstream analyzer's point-lookup predicates (e.g.
 //! `target ∈ frontier`).
 
 use std::sync::Arc;
@@ -63,6 +63,7 @@ pub fn bitset_contains(input: &str, index_buffer: &str, out: &str, words: u32) -
 
 /// CPU reference.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref(input: &[u32], index: u32) -> u32 {
     let w = (index / 32) as usize;
     let b = index % 32;

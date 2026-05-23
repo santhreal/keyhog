@@ -116,7 +116,7 @@ impl Hash for Ident {
     /// `<str as Hash>::hash` for the same hasher (which writes bytes + a
     /// length terminator), so any `FxHashMap<Ident, V>::get(&str)` lookup
     /// silently missed the inserted entry. Callers that want the cached
-    /// FxHash for a fast equality-check key call [`Ident::cached_hash`]
+    /// `FxHash` for a fast equality-check key call [`Ident::cached_hash`]
     /// directly.
     #[inline]
     fn hash<H: Hasher>(&self, state: &mut H) {

@@ -120,6 +120,7 @@ pub fn dp_clip_per_sample(
 
 /// CPU reference. f64 for clarity.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn dp_clip_per_sample_cpu(
     grads: &[f64],
     norms: &[f64],

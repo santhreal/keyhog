@@ -47,7 +47,11 @@ pub(super) fn has_divergent_invocation_gated_store(
 /// These are the canonical "this thread is special" predicates.
 fn cond_depends_on_invocation_id(expr: &Expr) -> bool {
     match expr {
-        Expr::InvocationId { .. } | Expr::WorkgroupId { .. } | Expr::LocalId { .. } => true,
+        Expr::InvocationId { .. }
+        | Expr::WorkgroupId { .. }
+        | Expr::LocalId { .. }
+        | Expr::SubgroupLocalId
+        | Expr::SubgroupSize => true,
         Expr::BinOp { left, right, .. } => {
             cond_depends_on_invocation_id(left) || cond_depends_on_invocation_id(right)
         }
@@ -61,7 +65,9 @@ fn cond_depends_on_invocation_id(expr: &Expr) -> bool {
                 || cond_depends_on_invocation_id(true_val)
                 || cond_depends_on_invocation_id(false_val)
         }
-        Expr::Cast { value, .. } => cond_depends_on_invocation_id(value),
+        Expr::Cast { value, .. } | Expr::SubgroupAdd { value } => {
+            cond_depends_on_invocation_id(value)
+        }
         Expr::Fma { a, b, c } => {
             cond_depends_on_invocation_id(a)
                 || cond_depends_on_invocation_id(b)
@@ -85,8 +91,6 @@ fn cond_depends_on_invocation_id(expr: &Expr) -> bool {
         Expr::SubgroupShuffle { value, lane } => {
             cond_depends_on_invocation_id(value) || cond_depends_on_invocation_id(lane)
         }
-        Expr::SubgroupAdd { value } => cond_depends_on_invocation_id(value),
-        Expr::SubgroupLocalId | Expr::SubgroupSize => true,
         Expr::LitU32(_)
         | Expr::LitI32(_)
         | Expr::LitF32(_)
@@ -100,7 +104,7 @@ fn cond_depends_on_invocation_id(expr: &Expr) -> bool {
 /// `true` when `expr` is an atomic operation (which writes memory).
 /// Used by the divergent-gate detector to pick up `Let { value:
 /// Atomic { ... } }` / `Assign { value: Atomic { ... } }` patterns —
-/// the canonical lower_call_to atomic_or shape.
+/// the canonical `lower_call_to` `atomic_or` shape.
 pub(super) fn expr_writes_atomic(expr: &Expr) -> bool {
     match expr {
         Expr::Atomic { .. } => true,
@@ -115,7 +119,7 @@ pub(super) fn expr_writes_atomic(expr: &Expr) -> bool {
                 || expr_writes_atomic(true_val)
                 || expr_writes_atomic(false_val)
         }
-        Expr::Cast { value, .. } => expr_writes_atomic(value),
+        Expr::Cast { value, .. } | Expr::SubgroupAdd { value } => expr_writes_atomic(value),
         Expr::Fma { a, b, c } => {
             expr_writes_atomic(a) || expr_writes_atomic(b) || expr_writes_atomic(c)
         }
@@ -125,7 +129,6 @@ pub(super) fn expr_writes_atomic(expr: &Expr) -> bool {
         Expr::SubgroupShuffle { value, lane } => {
             expr_writes_atomic(value) || expr_writes_atomic(lane)
         }
-        Expr::SubgroupAdd { value } => expr_writes_atomic(value),
         Expr::LitU32(_)
         | Expr::LitI32(_)
         | Expr::LitF32(_)

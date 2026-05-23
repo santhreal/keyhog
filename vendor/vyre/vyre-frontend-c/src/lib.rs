@@ -3,10 +3,11 @@
 //!
 //! **Implemented:** bounded include/macro/conditional TU preparation → lex → digraph rewrite →
 //! `opt_conditional_mask` → macro-token snapshot → `bracket_match` (paren + brace) → function shapes
-//! → call sites → ABI layout → `ast_shunting_yard`
-//! → CFG / goto → `opt_lower_elf`; artifacts are embedded in **Linux ET_REL** `.o` files (`object` crate)
-//! plus a `VYRECOB2` v3 payload in a `.vyrecob2.*` section. **Link mode** (`vyrec` without `-c`) runs
-//! `cc -nostdlib` with a tiny `_start` object. Roadmap: `docs/COMPILER_E2E_PLAN.md`.
+//! → call sites → ABI layout → `ast_shunting_yard` → typed VAST → ProgramGraph → semantic
+//! ProgramGraph + semantic scope → CFG / goto → `opt_lower_elf`; artifacts are embedded in
+//! **Linux ET_REL** `.o` files (`object` crate) plus a `VYRECOB2` v3 payload in a `.vyrecob2.*`
+//! section. **Link mode** (`vyrec` without `-c`) is rejected in this CUDA-first release path;
+//! object emission is the supported contract.
 //!
 //! The CLI entry point is the `vyrec` binary in the repo workspace (`tools/vyrec`).
 
@@ -14,18 +15,21 @@
 pub mod api;
 /// ELF-on-Linux ET_REL writer: emits `.o` artifacts that hold the embedded VYRECOB2 payload.
 pub mod elf_linux;
+mod gpu_backend;
+mod hash;
 /// VYRECOB2 v3 object container: section table, header, and the readers/writers used by
 /// `vyrec` and the link step.
 pub mod object_format;
 /// Bounded TU preparation → lex → digraph → AST → CFG → ELF lowering pipeline used by `vyrec`.
 pub mod pipeline;
-/// Host-side translation-unit driver: include/macro/conditional resolution before the GPU pipeline runs.
+/// Host orchestration for the GPU-resident translation-unit preprocessor: file I/O,
+/// include-path lookup, cache keys, and dependency invalidation only.
 pub mod tu_host;
 
 /// VSA-fingerprint a Program through the shared driver substrate.
 #[must_use]
 pub fn program_fingerprint(program: &vyre::ir::Program) -> Vec<u32> {
-    vyre_self_substrate::vsa_fingerprint::vsa_fingerprint_cpu(program)
+    vyre_driver::program_vsa_fingerprint(program)
 }
 
 /// Compute the natural-gradient autotune step for vyre-frontend-c's compile

@@ -7,10 +7,10 @@ pub const DEFAULT_MAX_CALL_DEPTH: usize = 32;
 pub const DEFAULT_MAX_NESTING_DEPTH: usize = 64;
 
 /// Default maximum statement node count accepted by validation.
-pub const DEFAULT_MAX_NODE_COUNT: usize = 100_000;
+pub const DEFAULT_MAX_NODE_COUNT: usize = 8_192;
 
 /// Default maximum expression nesting accepted by validation.
-pub const DEFAULT_MAX_EXPR_DEPTH: usize = 1_024;
+pub const DEFAULT_MAX_EXPR_DEPTH: usize = 128;
 
 /// Mutable state used while checking program size and nesting limits.
 #[derive(Debug, Default)]
@@ -30,7 +30,7 @@ pub fn check_limits(limits: &mut LimitState, depth: usize, errors: &mut Vec<Vali
     if limits.node_count > DEFAULT_MAX_NODE_COUNT && !limits.node_count_reported {
         limits.node_count_reported = true;
         errors.push(err(format!(
-            "V019: program has more than {DEFAULT_MAX_NODE_COUNT} statement nodes. Fix: split the program into smaller kernels or run an optimization pass before lowering."
+            "V019: program node count exceeds limit {DEFAULT_MAX_NODE_COUNT}. Fix: split the program into smaller kernels or run an optimization pass before lowering."
         )));
     }
     if depth > DEFAULT_MAX_NESTING_DEPTH && !limits.nesting_reported {
@@ -58,6 +58,10 @@ pub fn check_expr_depth(depth: usize, errors: &mut Vec<ValidationError>) -> bool
 ///
 /// Returns `Ok(max_depth)` when within [`DEFAULT_MAX_CALL_DEPTH`], or
 /// `Err(depth)` if the limit is exceeded.
+///
+/// # Errors
+///
+/// Returns the offending `depth` when it exceeds [`DEFAULT_MAX_CALL_DEPTH`].
 #[inline]
 #[must_use]
 pub fn max_call_depth(_op_id: &str, depth: usize) -> Result<usize, usize> {

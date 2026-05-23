@@ -1,11 +1,13 @@
-//! Tests for `telemetry.rs`. Split out per audit item #85 to keep the
-//! parent file focused on production code.
+// Tests for `telemetry.rs`. Split out per audit item #85 to keep the
+// parent file focused on production code.
 
 use super::*;
 use crate::megakernel::descriptor::WindowClass;
-use crate::megakernel::protocol::opcode;
+use crate::megakernel::protocol::{opcode, SLOT_WORDS};
 use crate::megakernel::Megakernel;
-use crate::megakernel::{MegakernelExecutionMode, MegakernelLaunchRequest};
+use crate::megakernel::{
+    MegakernelDispatchTopology, MegakernelExecutionMode, MegakernelLaunchRequest,
+};
 
 #[test]
 fn decode_empty_ring_counts_slots() {
@@ -92,6 +94,12 @@ fn decode_window_opcodes_groups_ticketed_slots() {
     assert!(window.is_active());
     assert_eq!(telemetry.active_windows().len(), 1);
     assert_eq!(telemetry.active_slots_for_opcode(window_opcode).len(), 3);
+    assert_eq!(
+        telemetry
+            .active_slots_for_opcode_iter(window_opcode)
+            .count(),
+        3
+    );
     let mut active_windows = Vec::with_capacity(4);
     let mut active_slots = Vec::with_capacity(4);
     let windows_ptr = active_windows.as_ptr();
@@ -102,6 +110,44 @@ fn decode_window_opcodes_groups_ticketed_slots() {
     assert_eq!(active_slots.len(), 3);
     assert_eq!(active_windows.as_ptr(), windows_ptr);
     assert_eq!(active_slots.as_ptr(), slots_ptr);
+}
+
+#[test]
+fn decode_window_opcodes_matches_dense_bitmap_opcodes() {
+    let control = Megakernel::try_encode_control(false, 1, 0).unwrap();
+    let mut ring = Megakernel::try_encode_empty_ring(4).unwrap();
+    let first_window_opcode = 3u32;
+    let second_window_opcode = 9u32;
+    Megakernel::publish_slot(
+        &mut ring,
+        0,
+        3,
+        first_window_opcode,
+        &[11, WindowClass::Required.into_wire(), 42],
+    )
+    .unwrap();
+    Megakernel::publish_slot(
+        &mut ring,
+        1,
+        3,
+        second_window_opcode,
+        &[11, WindowClass::Lookahead.into_wire(), 99],
+    )
+    .unwrap();
+    let telemetry = RingTelemetry::decode_with_window_opcodes(
+        &control,
+        &ring,
+        &[first_window_opcode, second_window_opcode],
+    );
+    assert_eq!(telemetry.windows.len(), 2);
+    assert_eq!(
+        telemetry.active_slots_for_opcode(first_window_opcode).len(),
+        1
+    );
+    assert_eq!(
+        telemetry.active_slots_for_opcode(second_window_opcode).len(),
+        1
+    );
 }
 
 #[test]
@@ -168,6 +214,67 @@ fn decode_with_scratch_reuses_snapshot_storage() {
     assert_eq!(telemetry.windows.as_ptr(), windows_ptr);
     assert_eq!(telemetry.windows.len(), 1);
     assert_eq!(telemetry.slots.len(), 4);
+}
+
+#[test]
+fn decode_sorted_window_opcodes_reuses_scratch_without_resort_growth() {
+    let control = Megakernel::try_encode_control(false, 1, 0).unwrap();
+    let mut ring = Megakernel::try_encode_empty_ring(4).unwrap();
+    let first_opcode = 0xF101;
+    let second_opcode = 0xF102;
+    Megakernel::publish_slot(
+        &mut ring,
+        0,
+        3,
+        first_opcode,
+        &[7, WindowClass::Required.into_wire(), 42],
+    )
+    .unwrap();
+    Megakernel::publish_slot(
+        &mut ring,
+        1,
+        3,
+        second_opcode,
+        &[9, WindowClass::Lookahead.into_wire(), 99],
+    )
+    .unwrap();
+
+    let mut telemetry = RingTelemetry::default();
+    let mut scratch = TelemetryDecodeScratch::new();
+    let sorted_unique = [first_opcode, second_opcode];
+    RingTelemetry::decode_with_window_opcodes_into(
+        &control,
+        &ring,
+        &sorted_unique,
+        &mut telemetry,
+        &mut scratch,
+    );
+    let opcode_capacity = scratch.window_opcodes.capacity();
+    let window_capacity = scratch.windows.capacity();
+
+    RingTelemetry::decode_with_window_opcodes_into(
+        &control,
+        &ring,
+        &sorted_unique,
+        &mut telemetry,
+        &mut scratch,
+    );
+
+    assert_eq!(scratch.window_opcodes.capacity(), opcode_capacity);
+    assert_eq!(scratch.windows.capacity(), window_capacity);
+    assert_eq!(telemetry.windows.len(), 2);
+    assert!(
+        telemetry
+            .windows
+            .iter()
+            .any(|window| window.opcode == first_opcode && window.ticket == 7)
+    );
+    assert!(
+        telemetry
+            .windows
+            .iter()
+            .any(|window| window.opcode == second_opcode && window.ticket == 9)
+    );
 }
 
 #[test]
@@ -250,12 +357,32 @@ fn runtime_counters_report_queue_idle_fairness_and_drain() {
     assert_eq!(counters.queue_depth, 2);
     assert_eq!(counters.gpu_idle_slots, 1);
     assert_eq!(counters.gpu_idle_ppm, 250_000);
+    assert_eq!(counters.frontier_density_bps, 5_000);
+    assert_eq!(counters.occupancy_proxy_bps, 7_500);
     assert_eq!(counters.drained_slots, 7);
     assert_eq!(counters.unreclaimed_done_slots, 1);
     assert_eq!(counters.tenant_fairness_total, 12);
     assert_eq!(counters.tenant_fairness_skew, 6);
     assert_eq!(counters.priority_fairness_total, 5);
     assert_eq!(counters.requeue_slots, 1);
+}
+
+#[test]
+fn telemetry_launch_recommendation_uses_frontier_density_for_topology() {
+    let control = Megakernel::try_encode_control(false, 1, 0).unwrap();
+    let mut ring = Megakernel::try_encode_empty_ring(8).unwrap();
+    Megakernel::publish_slot(&mut ring, 0, 7, opcode::ATOMIC_ADD, &[1, 2, 3]).unwrap();
+    Megakernel::publish_slot(&mut ring, 1, 7, opcode::ATOMIC_ADD, &[1, 2, 3]).unwrap();
+    Megakernel::publish_slot(&mut ring, 2, 7, opcode::ATOMIC_ADD, &[1, 2, 3]).unwrap();
+    Megakernel::publish_slot(&mut ring, 3, 7, opcode::ATOMIC_ADD, &[1, 2, 3]).unwrap();
+
+    let telemetry = RingTelemetry::decode(&control, &ring);
+    let rec = telemetry
+        .recommend_launch(MegakernelLaunchRequest::direct(8, 64, 256))
+        .expect("Fix: telemetry launch recommendation must accept valid limits");
+
+    assert_eq!(telemetry.runtime_counters().frontier_density_bps, 5_000);
+    assert_eq!(rec.topology, MegakernelDispatchTopology::DenseFrontier);
 }
 
 #[test]

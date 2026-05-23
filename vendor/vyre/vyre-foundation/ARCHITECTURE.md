@@ -24,7 +24,7 @@ PassScheduler core. Currently mid-edit.
 
 ### `execution_plan/`
 Cross-pass plan: `fuse_programs`, `fuse_programs_vec`,
-`FusionError`. Used by surgec's fused-dispatch path.
+`FusionError`. Used by downstream fused-dispatch paths.
 
 ### `validate/`
 Wire-format + structural validation. `validate(&Program)` returns

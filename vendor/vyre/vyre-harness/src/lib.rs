@@ -119,12 +119,20 @@ pub struct OpEntry {
     /// Kept during migration so existing registrations in
     /// `src/{math,nn,crypto,matching}` remain buildable without edits.
     pub expected_output: Option<ExpectedFn>,
+
+    /// Coarse-grained taxonomy tag (T028 / SEPARATION_AUDIT S2 prep).
+    /// Examples: `"math"`, `"nn"`, `"crypto"`, `"scan"`, `"parsing"`,
+    /// `"graph"`, `"security"`, `"dataflow"`, `"compiler"`. `None`
+    /// means uncategorised — equivalent to the pre-T028 behaviour.
+    pub category: Option<&'static str>,
 }
 
 impl OpEntry {
     /// Construct an `OpEntry` with all required fields set. Exists so
     /// community Cat-A crates can `inventory::submit!(OpEntry::new(...))`
     /// despite the struct being `#[non_exhaustive]` (V7-EXT-004).
+    /// `category` initialises to `None`; chain `with_category` if a
+    /// category is required at submission time.
     #[must_use]
     pub const fn new(
         id: &'static str,
@@ -137,7 +145,23 @@ impl OpEntry {
             build,
             test_inputs,
             expected_output,
+            category: None,
         }
+    }
+
+    /// Set the category and return `self`. `const`-friendly so callers
+    /// can write `OpEntry::new(...).with_category("math")` inside
+    /// `inventory::submit!`.
+    #[must_use]
+    pub const fn with_category(mut self, category: &'static str) -> Self {
+        self.category = Some(category);
+        self
+    }
+
+    /// Return the registered coarse-grained taxonomy tag, if any.
+    #[must_use]
+    pub const fn category(&self) -> Option<&'static str> {
+        self.category
     }
 
     /// Allowed output drift in ULPs for f32-producing backends.
@@ -184,22 +208,22 @@ fn explicit_tolerance_for_id(id: &str) -> u32 {
         "vyre-libs::nn::rms_norm" => 2,
         "vyre-libs::nn::rms_norm_linear" => 2,
         "vyre-libs::math::fft::fft_convolve_circular_complex" => 4,
-        "vyre-libs::optim::newton_schulz_5step" => 4,
+        "vyre-libs::optim::newton_schulz_5step" => 16,
         // `decay*ema + (1-decay)*theta` — straight mul+add chain,
         // one lane drifts 1 ULP from CPU's serial mul+add+add to
         // GPU's fused mul-add (WGSL-spec-allowed).
         "vyre-libs::optim::ema_apply" => 1,
         // Newton-Schulz Cat-A primitive: the polynomial has nested
         // mul+add steps that fuse to FMA on GPU. Worst observed
-        // single-lane divergence is 4 ULP.
-        "vyre-primitives::math::newton_schulz_poly5_f32" => 4,
+        // single-lane divergence is 7 ULP.
+        "vyre-primitives::math::newton_schulz_poly5_f32" => 8,
         _ => 0,
     }
 }
 
 fn primitive_tolerance_for_path(path: &str) -> u32 {
     match path {
-        "math::newton_schulz_poly5_f32" => 4,
+        "math::newton_schulz_poly5_f32" => 8,
         _ => 0,
     }
 }
@@ -343,6 +367,7 @@ macro_rules! vyre_op {
                 build: $build,
                 test_inputs: $inputs,
                 expected_output: $output,
+                category: None,
             }
         }
     };

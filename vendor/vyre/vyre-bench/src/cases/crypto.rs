@@ -246,8 +246,14 @@ fn counter_word_expr() -> Expr {
             Expr::bitand(Expr::shr(Expr::var("tid"), Expr::u32(8)), Expr::u32(0xff00)),
         ),
         Expr::bitor(
-            Expr::bitand(Expr::shl(Expr::var("tid"), Expr::u32(8)), Expr::u32(0xff0000)),
-            Expr::shl(Expr::bitand(Expr::var("tid"), Expr::u32(0xff)), Expr::u32(24)),
+            Expr::bitand(
+                Expr::shl(Expr::var("tid"), Expr::u32(8)),
+                Expr::u32(0xff0000),
+            ),
+            Expr::shl(
+                Expr::bitand(Expr::var("tid"), Expr::u32(0xff)),
+                Expr::u32(24),
+            ),
         ),
     )
 }
@@ -257,9 +263,18 @@ fn aes_t_round_loop_body() -> Vec<Node> {
     for col in 0..4 {
         let expr = xor5(
             table_load(AES_TE0_OFFSET, word_byte_expr(column_word(col), 0)),
-            table_load(AES_TE1_OFFSET, word_byte_expr(column_word((col + 1) % 4), 1)),
-            table_load(AES_TE2_OFFSET, word_byte_expr(column_word((col + 2) % 4), 2)),
-            table_load(AES_TE3_OFFSET, word_byte_expr(column_word((col + 3) % 4), 3)),
+            table_load(
+                AES_TE1_OFFSET,
+                word_byte_expr(column_word((col + 1) % 4), 1),
+            ),
+            table_load(
+                AES_TE2_OFFSET,
+                word_byte_expr(column_word((col + 2) % 4), 2),
+            ),
+            table_load(
+                AES_TE3_OFFSET,
+                word_byte_expr(column_word((col + 3) % 4), 3),
+            ),
             round_key_load(Expr::add(
                 Expr::mul(Expr::var("round"), Expr::u32(4)),
                 Expr::u32(col as u32),
@@ -280,9 +295,18 @@ fn aes_final_round_nodes(nodes: &mut Vec<Node>) {
     for col in 0..4 {
         let packed = pack_word([
             table_load(AES_SBOX_OFFSET, word_byte_expr(column_word(col), 0)),
-            table_load(AES_SBOX_OFFSET, word_byte_expr(column_word((col + 1) % 4), 1)),
-            table_load(AES_SBOX_OFFSET, word_byte_expr(column_word((col + 2) % 4), 2)),
-            table_load(AES_SBOX_OFFSET, word_byte_expr(column_word((col + 3) % 4), 3)),
+            table_load(
+                AES_SBOX_OFFSET,
+                word_byte_expr(column_word((col + 1) % 4), 1),
+            ),
+            table_load(
+                AES_SBOX_OFFSET,
+                word_byte_expr(column_word((col + 2) % 4), 2),
+            ),
+            table_load(
+                AES_SBOX_OFFSET,
+                word_byte_expr(column_word((col + 3) % 4), 3),
+            ),
         ]);
         nodes.push(Node::let_bind(
             format!("final_w{col}"),
@@ -313,10 +337,7 @@ fn round_key_load(index: Expr) -> Expr {
 }
 
 fn table_load(offset: usize, index: Expr) -> Expr {
-    Expr::load(
-        "aes_tables",
-        Expr::add(Expr::u32(offset as u32), index),
-    )
+    Expr::load("aes_tables", Expr::add(Expr::u32(offset as u32), index))
 }
 
 fn xor5(a: Expr, b: Expr, c: Expr, d: Expr, e: Expr) -> Expr {

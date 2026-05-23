@@ -34,8 +34,12 @@ pub(crate) fn is_uniform(expr: &Expr, scope: &FxHashMap<crate::ir::Ident, Bindin
     stack.push(expr);
     while let Some(expr) = stack.pop() {
         match expr {
-            Expr::LitU32(_) | Expr::LitI32(_) | Expr::LitF32(_) | Expr::LitBool(_) => {}
-            Expr::BufLen { .. } | Expr::WorkgroupId { .. } => {}
+            Expr::LitU32(_)
+            | Expr::LitI32(_)
+            | Expr::LitF32(_)
+            | Expr::LitBool(_)
+            | Expr::BufLen { .. }
+            | Expr::WorkgroupId { .. } => {}
             Expr::Var(name) if scope.get(name.as_str()).is_some_and(|b| b.uniform) => {}
             Expr::BinOp { left, right, .. } => {
                 stack.push(right);

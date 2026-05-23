@@ -25,6 +25,28 @@ mod stream_shard;
 pub use partition::{partition_work_stealing, DeviceLoad, Partition, WeightedWorkItem};
 pub use stream_shard::{shard_by_blake3, StreamShardAllocator};
 
+fn empty_gpu_work_result_slots(
+    len: usize,
+) -> Vec<Option<Result<GpuWorkOutput, vyre_driver::BackendError>>> {
+    let mut slots = Vec::with_capacity(len);
+    slots.resize_with(len, || None);
+    slots
+}
+
+fn finalize_gpu_work_results(
+    slots: Vec<Option<Result<GpuWorkOutput, vyre_driver::BackendError>>>,
+) -> Vec<Result<GpuWorkOutput, vyre_driver::BackendError>> {
+    let mut results = Vec::with_capacity(slots.len());
+    for slot in slots {
+        results.push(slot.unwrap_or_else(|| {
+            Err(vyre_driver::BackendError::new(
+                "multi-GPU borrowed dispatch result slot was not filled. Fix: ensure partitioning assigns every job exactly once.",
+            ))
+        }));
+    }
+    results
+}
+
 /// Enumerate live wgpu GPU adapters as zero-load scheduling targets.
 ///
 /// # Errors
@@ -117,15 +139,17 @@ impl MultiGpuExecutor {
     /// Enumerate real GPU adapters visible to wgpu.
     #[must_use]
     pub fn enumerate_live_gpus() -> Vec<LiveGpu> {
-        crate::runtime::device::enumerate_adapters()
-            .into_iter()
-            .enumerate()
-            .filter(|(_, info)| crate::capabilities::is_real_gpu(info))
-            .map(|(adapter_index, info)| LiveGpu {
-                adapter_index,
-                info,
-            })
-            .collect()
+        let adapters = crate::runtime::device::enumerate_adapters();
+        let mut live = Vec::with_capacity(adapters.len());
+        for (adapter_index, info) in adapters.into_iter().enumerate() {
+            if crate::capabilities::is_real_gpu(&info) {
+                live.push(LiveGpu {
+                    adapter_index,
+                    info,
+                });
+            }
+        }
+        live
     }
 
     /// Build an executor over every real adapter that can create a device.
@@ -165,7 +189,8 @@ impl MultiGpuExecutor {
                 "no adapter indices supplied for multi-GPU execution. Fix: pass indices returned by runtime::device::enumerate_adapters().",
             ));
         }
-        let mut seen = rustc_hash::FxHashSet::default();
+        let mut seen =
+            rustc_hash::FxHashSet::with_capacity_and_hasher(indices.len(), Default::default());
         let mut devices = Vec::with_capacity(indices.len());
         for &index in indices {
             if !seen.insert(index) {
@@ -198,10 +223,9 @@ impl MultiGpuExecutor {
     /// Adapter indices owned by this executor.
     #[must_use]
     pub fn adapter_indices(&self) -> Vec<usize> {
-        self.devices
-            .iter()
-            .map(|device| device.adapter_index)
-            .collect()
+        let mut indices = Vec::with_capacity(self.devices.len());
+        indices.extend(self.devices.iter().map(|device| device.adapter_index));
+        indices
     }
 
     /// Dispatch a batch across the selected adapters using the LPT partitioner.
@@ -213,12 +237,12 @@ impl MultiGpuExecutor {
         &mut self,
         items: Vec<GpuWorkItem>,
     ) -> Result<Vec<GpuWorkOutput>, vyre_driver::BackendError> {
-        let mut devices = Vec::with_capacity(self.devices.len());
+        let mut devices = smallvec::SmallVec::<[DeviceLoad; 8]>::with_capacity(self.devices.len());
         devices.extend(self.devices.iter().map(|device| DeviceLoad {
             device_index: device.adapter_index,
             queued_cost: device.queued_cost,
         }));
-        let mut work = Vec::with_capacity(items.len());
+        let mut work = smallvec::SmallVec::<[WeightedWorkItem; 32]>::with_capacity(items.len());
         work.extend(items.iter().map(|item| WeightedWorkItem {
             id: item.id,
             cost: item.cost,
@@ -302,12 +326,12 @@ impl MultiGpuExecutor {
         if items.is_empty() {
             return Ok(Vec::new());
         }
-        let mut devices = Vec::with_capacity(self.devices.len());
+        let mut devices = smallvec::SmallVec::<[DeviceLoad; 8]>::with_capacity(self.devices.len());
         devices.extend(self.devices.iter().map(|device| DeviceLoad {
             device_index: device.adapter_index,
             queued_cost: device.queued_cost,
         }));
-        let mut work = Vec::with_capacity(items.len());
+        let mut work = smallvec::SmallVec::<[WeightedWorkItem; 32]>::with_capacity(items.len());
         work.extend(items.iter().map(|item| WeightedWorkItem {
             id: item.id,
             cost: item.cost,
@@ -317,8 +341,7 @@ impl MultiGpuExecutor {
         let mut by_id =
             rustc_hash::FxHashMap::with_capacity_and_hasher(items.len(), Default::default());
         by_id.extend(items.iter().enumerate().map(|(slot, item)| (item.id, slot)));
-        let mut results: Vec<Option<Result<GpuWorkOutput, vyre_driver::BackendError>>> =
-            std::iter::repeat_with(|| None).take(items.len()).collect();
+        let mut results = empty_gpu_work_result_slots(items.len());
 
         std::thread::scope(|scope| {
             let mut handles = smallvec::SmallVec::<[_; 8]>::with_capacity(partitions.len());
@@ -335,7 +358,7 @@ impl MultiGpuExecutor {
                 let mut assigned_slots =
                     smallvec::SmallVec::<[_; 8]>::with_capacity(partition.item_ids.len());
                 for id in partition.item_ids {
-                    let slot = *by_id.get(&id).ok_or_else(|| {
+                    let slot = by_id.remove(&id).ok_or_else(|| {
                         vyre_driver::BackendError::new(format!(
                             "partition referenced unknown work item {id}. Fix: partition only ids from the submitted batch."
                         ))
@@ -343,19 +366,18 @@ impl MultiGpuExecutor {
                     assigned_slots.push(slot);
                 }
                 handles.push(scope.spawn(move || {
-                    let backend_jobs: smallvec::SmallVec<
-                        [(
-                            &vyre_foundation::ir::Program,
-                            &[&[u8]],
-                            &vyre_driver::DispatchConfig,
-                        ); 8],
-                    > = assigned_slots
-                        .iter()
-                        .map(|&slot| {
-                            let item = &items[slot];
-                            (item.program, item.inputs, item.config)
-                        })
-                        .collect();
+                    let mut backend_jobs =
+                        smallvec::SmallVec::<
+                            [(
+                                &vyre_foundation::ir::Program,
+                                &[&[u8]],
+                                &vyre_driver::DispatchConfig,
+                            ); 8],
+                        >::with_capacity(assigned_slots.len());
+                    backend_jobs.extend(assigned_slots.iter().map(|&slot| {
+                        let item = &items[slot];
+                        (item.program, item.inputs, item.config)
+                    }));
                     let local = backend.dispatch_borrowed_batch(&backend_jobs)?;
                     Ok::<_, vyre_driver::BackendError>((adapter_index, assigned_slots, local))
                 }));
@@ -384,17 +406,13 @@ impl MultiGpuExecutor {
             }
             Ok::<_, vyre_driver::BackendError>(())
         })?;
+        if !by_id.is_empty() {
+            return Err(vyre_driver::BackendError::new(
+                "multi-GPU borrowed partition left unassigned work items. Fix: partition every submitted item exactly once.",
+            ));
+        }
 
-        Ok(results
-            .into_iter()
-            .map(|result| {
-                result.unwrap_or_else(|| {
-                    Err(vyre_driver::BackendError::new(
-                        "multi-GPU borrowed dispatch result slot was not filled. Fix: ensure partitioning assigns every job exactly once.",
-                    ))
-                })
-            })
-            .collect())
+        Ok(finalize_gpu_work_results(results))
     }
 }
 

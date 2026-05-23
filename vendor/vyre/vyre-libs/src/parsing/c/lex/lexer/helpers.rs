@@ -1,4 +1,3 @@
-use crate::parsing::c::lex::tokens::*;
 use vyre::ir::{Expr, Node};
 
 pub(super) fn byte_load(buffer: &str, index: Expr) -> Expr {
@@ -80,7 +79,7 @@ pub(super) fn is_valid_escape_byte(
     haystack_len: u32,
 ) -> Expr {
     let simple_escape = [
-        b'\'', b'"', b'?', b'\\', b'a', b'b', b'f', b'n', b'r', b't', b'v', b'\n', b'\r',
+        b'\'', b'"', b'?', b'\\', b'a', b'b', b'e', b'f', b'n', b'r', b't', b'v', b'\n', b'\r',
     ]
     .into_iter()
     .fold(Expr::bool(false), |acc, byte| {
@@ -120,120 +119,6 @@ pub(super) fn is_ident_start(value: Expr) -> Expr {
 
 pub(super) fn is_ident_continue(value: Expr) -> Expr {
     Expr::or(is_ident_start(value.clone()), is_digit(value))
-}
-
-pub(super) fn keyword_match(haystack: &str, base: Expr, word: &[u8]) -> Expr {
-    let mut expr = Expr::eq(Expr::var("tok_len"), Expr::u32(word.len() as u32));
-    for (offset, byte) in word.iter().enumerate() {
-        expr = Expr::and(
-            expr,
-            Expr::eq(
-                byte_load(haystack, Expr::add(base.clone(), Expr::u32(offset as u32))),
-                ascii(*byte),
-            ),
-        );
-    }
-    expr
-}
-
-pub(super) fn classify_keyword(haystack: &str, base: Expr) -> Vec<Node> {
-    const KEYWORDS: &[(&[u8], u32)] = &[
-        (b"auto", TOK_AUTO),
-        (b"break", TOK_BREAK),
-        (b"case", TOK_CASE),
-        (b"char", TOK_CHAR_KW),
-        (b"const", TOK_CONST),
-        (b"__const", TOK_CONST),
-        (b"__const__", TOK_CONST),
-        (b"continue", TOK_CONTINUE),
-        (b"default", TOK_DEFAULT),
-        (b"do", TOK_DO),
-        (b"double", TOK_DOUBLE),
-        (b"else", TOK_ELSE),
-        (b"enum", TOK_ENUM),
-        (b"extern", TOK_EXTERN),
-        (b"float", TOK_FLOAT_KW),
-        (b"for", TOK_FOR),
-        (b"goto", TOK_GOTO),
-        (b"if", TOK_IF),
-        (b"inline", TOK_INLINE),
-        (b"int", TOK_INT),
-        (b"long", TOK_LONG),
-        (b"register", TOK_REGISTER),
-        (b"restrict", TOK_RESTRICT),
-        (b"__restrict", TOK_RESTRICT),
-        (b"__restrict__", TOK_RESTRICT),
-        (b"return", TOK_RETURN),
-        (b"short", TOK_SHORT),
-        (b"signed", TOK_SIGNED),
-        (b"__signed", TOK_SIGNED),
-        (b"__signed__", TOK_SIGNED),
-        (b"sizeof", TOK_SIZEOF),
-        (b"static", TOK_STATIC),
-        (b"struct", TOK_STRUCT),
-        (b"switch", TOK_SWITCH),
-        (b"typedef", TOK_TYPEDEF),
-        (b"union", TOK_UNION),
-        (b"unsigned", TOK_UNSIGNED),
-        (b"void", TOK_VOID),
-        (b"volatile", TOK_VOLATILE),
-        (b"__volatile", TOK_VOLATILE),
-        (b"while", TOK_WHILE),
-        (b"_Alignas", TOK_ALIGNAS),
-        (b"_Alignof", TOK_ALIGNOF),
-        (b"_Atomic", TOK_ATOMIC),
-        (b"_Bool", TOK_BOOL),
-        (b"_Complex", TOK_COMPLEX),
-        (b"_Generic", TOK_GENERIC),
-        (b"_Imaginary", TOK_IMAGINARY),
-        (b"_Noreturn", TOK_NORETURN),
-        (b"_Static_assert", TOK_STATIC_ASSERT),
-        (b"_Thread_local", TOK_THREAD_LOCAL),
-        (b"__thread", TOK_THREAD_LOCAL),
-        (b"asm", TOK_GNU_ASM),
-        (b"__asm", TOK_GNU_ASM),
-        (b"__asm__", TOK_GNU_ASM),
-        (b"__attribute", TOK_GNU_ATTRIBUTE),
-        (b"__attribute__", TOK_GNU_ATTRIBUTE),
-        (b"typeof", TOK_GNU_TYPEOF),
-        (b"__typeof", TOK_GNU_TYPEOF),
-        (b"__typeof__", TOK_GNU_TYPEOF),
-        (b"typeof_unqual", TOK_GNU_TYPEOF_UNQUAL),
-        (b"__typeof_unqual", TOK_GNU_TYPEOF_UNQUAL),
-        (b"__typeof_unqual__", TOK_GNU_TYPEOF_UNQUAL),
-        (b"__extension__", TOK_GNU_EXTENSION),
-        (b"__alignof", TOK_ALIGNOF),
-        (b"__alignof__", TOK_ALIGNOF),
-        (b"__inline", TOK_INLINE),
-        (b"__inline__", TOK_INLINE),
-        (b"__complex__", TOK_COMPLEX),
-        (b"__real__", TOK_GNU_REAL),
-        (b"__imag__", TOK_GNU_IMAG),
-        (b"__volatile__", TOK_VOLATILE),
-        (b"__builtin_constant_p", TOK_BUILTIN_CONSTANT_P),
-        (b"__builtin_choose_expr", TOK_BUILTIN_CHOOSE_EXPR),
-        (
-            b"__builtin_types_compatible_p",
-            TOK_BUILTIN_TYPES_COMPATIBLE_P,
-        ),
-        (b"__auto_type", TOK_GNU_AUTO_TYPE),
-        (b"__int128", TOK_GNU_INT128),
-        (b"__int128_t", TOK_GNU_INT128),
-        (b"__uint128_t", TOK_GNU_INT128),
-        (b"__builtin_va_list", TOK_GNU_BUILTIN_VA_LIST),
-        (b"__seg_gs", TOK_GNU_ADDRESS_SPACE),
-        (b"__seg_fs", TOK_GNU_ADDRESS_SPACE),
-        (b"__label__", TOK_GNU_LABEL),
-    ];
-    KEYWORDS
-        .iter()
-        .map(|(word, token)| {
-            Node::if_then(
-                keyword_match(haystack, base.clone(), word),
-                vec![Node::assign("tok_type", Expr::u32(*token))],
-            )
-        })
-        .collect()
 }
 
 pub(super) fn set_token(condition: Expr, token: u32, len: Expr) -> Node {

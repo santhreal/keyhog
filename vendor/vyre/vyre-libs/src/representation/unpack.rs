@@ -51,7 +51,6 @@ inventory::submit! {
             // u32[0] = 0x76543210, u32[1] = 0xFEDCBA98
             vec![vec![
                 crate::test_support::byte_pack::u32_bytes(&[0x7654_3210, 0xFEDC_BA98]), // input: 2 packed u32s
-                vec![0u8; 16 * 4],                          // output: 16 f32s
             ]]
         }),
         expected_output: Some(|| {
@@ -67,5 +66,6 @@ inventory::submit! {
                 .collect::<Vec<u8>>();
             vec![vec![bytes]]
         }),
+        category: None,
     }
 }

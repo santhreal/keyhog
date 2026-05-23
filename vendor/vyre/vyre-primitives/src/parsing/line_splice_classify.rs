@@ -2,9 +2,9 @@
 //! phase 2 (`\<newline>` deletion).
 //!
 //! Op id: `vyre-primitives::parsing::line_splice_classify`. Soundness:
-//! `Exact` against the C11 phase-2 spec (and the existing CPU reference
+//! `Exact` against the C11 phase-2 spec (and the existing Reference oracle
 //! `c_translation_phase_line_splice` in
-//! `vyre-libs::parsing::c::preprocess::mod`). The CPU reference at the
+//! `vyre-libs::parsing::c::preprocess::mod`). The Reference oracle at the
 //! bottom of this file is the contract; the GPU `Program` matches it
 //! byte-for-byte.
 //!
@@ -12,9 +12,9 @@
 //!
 //! Phase 2 of C11 translation deletes every `\<LF>`, `\<CR>`, and
 //! `\<CR><LF>` triple. Every C tokenization path must see the same
-//! phase-2 byte stream; a CPU one-shot is the only obstacle to a fully
+//! phase-2 byte stream; a reference one-shot is the only obstacle to a fully
 //! GPU-resident preprocessor pipeline. This primitive is the parallel
-//! kernel that replaces the byte-at-a-time CPU loop.
+//! kernel that replaces the byte-at-a-time reference loop.
 //!
 //! ## Wire layout
 //!
@@ -59,7 +59,7 @@ const CR: u32 = 0x0D; // '\r'
 /// `[i-2, i-1, i, i+1, i+2]` (0 outside the buffer) and emits `0` to
 /// `kept_mask_out[i]` if `byte_in[i]` is part of any deletable sequence.
 ///
-/// The five deletion cases — corresponding 1:1 to the CPU reference
+/// The five deletion cases — corresponding 1:1 to the Reference oracle
 /// `c_translation_phase_line_splice`:
 /// 1. `byte[i] == '\\' && byte[i+1] == '\n'` — `\` of `\<LF>`.
 /// 2. `byte[i] == '\\' && byte[i+1] == '\r'` — `\` of `\<CR>` /
@@ -95,18 +95,12 @@ pub fn line_splice_classify(byte_count: u32) -> Program {
         match off {
             0 => load_u32(i.clone()),
             1 => Expr::select(
-                Expr::lt(
-                    Expr::add(i.clone(), Expr::u32(1)),
-                    Expr::u32(byte_count),
-                ),
+                Expr::lt(Expr::add(i.clone(), Expr::u32(1)), Expr::u32(byte_count)),
                 load_u32(Expr::add(i.clone(), Expr::u32(1))),
                 Expr::u32(0),
             ),
             2 => Expr::select(
-                Expr::lt(
-                    Expr::add(i.clone(), Expr::u32(2)),
-                    Expr::u32(byte_count),
-                ),
+                Expr::lt(Expr::add(i.clone(), Expr::u32(2)), Expr::u32(byte_count)),
                 load_u32(Expr::add(i.clone(), Expr::u32(2))),
                 Expr::u32(0),
             ),
@@ -198,8 +192,13 @@ pub fn line_splice_classify(byte_count: u32) -> Program {
 
     Program::wrapped(
         vec![
-            BufferDecl::storage("bytes_in", BINDING_BYTES_IN, BufferAccess::ReadOnly, DataType::U32)
-                .with_count(byte_count.div_ceil(4).max(1)),
+            BufferDecl::storage(
+                "bytes_in",
+                BINDING_BYTES_IN,
+                BufferAccess::ReadOnly,
+                DataType::U32,
+            )
+            .with_count(byte_count.div_ceil(4).max(1)),
             BufferDecl::storage(
                 "kept_mask_out",
                 BINDING_KEPT_MASK_OUT,
@@ -214,19 +213,21 @@ pub fn line_splice_classify(byte_count: u32) -> Program {
     .with_entry_op_id(OP_ID)
 }
 
-// ---------- CPU reference contract ----------
+// ---------- reference oracle contract ----------
 
-/// CPU reference for `line_splice_classify`. Returns one `u32 ∈ {0, 1}`
+/// Reference oracle for `line_splice_classify`. Returns one `u32 ∈ {0, 1}`
 /// per input byte. The GPU `Program` MUST emit the same vector.
 #[must_use]
-pub fn line_splice_classify_cpu(source: &[u8]) -> Vec<u32> {
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn reference_line_splice_classify(source: &[u8]) -> Vec<u32> {
     let mut out = Vec::with_capacity(source.len());
-    line_splice_classify_cpu_into(source, &mut out);
+    reference_line_splice_classify_into(source, &mut out);
     out
 }
 
-/// Capacity-reusing variant of `line_splice_classify_cpu`.
-pub fn line_splice_classify_cpu_into(source: &[u8], out: &mut Vec<u32>) {
+/// Capacity-reusing variant of `reference_line_splice_classify`.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn reference_line_splice_classify_into(source: &[u8], out: &mut Vec<u32>) {
     out.clear();
     out.reserve(source.len());
     for i in 0..source.len() {
@@ -244,19 +245,29 @@ pub fn line_splice_classify_cpu_into(source: &[u8], out: &mut Vec<u32>) {
     }
 }
 
+#[cfg(feature = "inventory-registry")]
+inventory::submit! {
+    crate::harness::OpEntry::new(
+        OP_ID,
+        || line_splice_classify(256),
+        None,
+        None,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn empty_input_emits_empty_output() {
-        assert!(line_splice_classify_cpu(b"").is_empty());
+        assert!(reference_line_splice_classify(b"").is_empty());
     }
 
     #[test]
     fn no_backslashes_keeps_every_byte() {
         let src = b"int main(void) { return 0; }";
-        let mask = line_splice_classify_cpu(src);
+        let mask = reference_line_splice_classify(src);
         assert_eq!(mask, vec![1; src.len()]);
     }
 
@@ -264,14 +275,14 @@ mod tests {
     fn lone_backslash_with_no_newline_is_kept() {
         // Backslash followed by space is not a splice — both bytes survive.
         let src = b"a\\ b";
-        let mask = line_splice_classify_cpu(src);
+        let mask = reference_line_splice_classify(src);
         assert_eq!(mask, vec![1, 1, 1, 1]);
     }
 
     #[test]
     fn backslash_lf_pair_drops_both_bytes() {
         let src = b"a\\\nb";
-        let mask = line_splice_classify_cpu(src);
+        let mask = reference_line_splice_classify(src);
         // 'a' kept, '\\' dropped, '\n' dropped, 'b' kept.
         assert_eq!(mask, vec![1, 0, 0, 1]);
     }
@@ -279,7 +290,7 @@ mod tests {
     #[test]
     fn backslash_cr_lf_triple_drops_all_three() {
         let src = b"a\\\r\nb";
-        let mask = line_splice_classify_cpu(src);
+        let mask = reference_line_splice_classify(src);
         // 'a' kept, '\\' dropped, '\r' dropped, '\n' dropped, 'b' kept.
         assert_eq!(mask, vec![1, 0, 0, 0, 1]);
     }
@@ -289,7 +300,7 @@ mod tests {
         // \<CR> with no following LF — still a splice on classic
         // Mac-style line endings.
         let src = b"a\\\rb";
-        let mask = line_splice_classify_cpu(src);
+        let mask = reference_line_splice_classify(src);
         assert_eq!(mask, vec![1, 0, 0, 1]);
     }
 
@@ -297,7 +308,7 @@ mod tests {
     fn back_to_back_splices_each_drop_their_pair() {
         // a\\\nb\\\nc — two splices.
         let src = b"a\\\nb\\\nc";
-        let mask = line_splice_classify_cpu(src);
+        let mask = reference_line_splice_classify(src);
         assert_eq!(mask, vec![1, 0, 0, 1, 0, 0, 1]);
     }
 
@@ -305,7 +316,7 @@ mod tests {
     fn splice_at_start_of_buffer_is_handled() {
         // Buffer starts with \\\n — both dropped.
         let src = b"\\\nx";
-        let mask = line_splice_classify_cpu(src);
+        let mask = reference_line_splice_classify(src);
         assert_eq!(mask, vec![0, 0, 1]);
     }
 
@@ -313,7 +324,7 @@ mod tests {
     fn splice_at_end_of_buffer_is_handled() {
         // Buffer ends with \\\n — both dropped.
         let src = b"x\\\n";
-        let mask = line_splice_classify_cpu(src);
+        let mask = reference_line_splice_classify(src);
         assert_eq!(mask, vec![1, 0, 0]);
     }
 
@@ -322,7 +333,7 @@ mod tests {
         // Backslash at end of buffer with nothing following — keeps it
         // (there's no newline to splice with).
         let src = b"x\\";
-        let mask = line_splice_classify_cpu(src);
+        let mask = reference_line_splice_classify(src);
         assert_eq!(mask, vec![1, 1]);
     }
 
@@ -331,21 +342,21 @@ mod tests {
         // a\\\\\nb — `\\\\` is two backslashes; only the second `\\` and
         // the `\n` form a splice.
         let src = b"a\\\\\nb";
-        let mask = line_splice_classify_cpu(src);
+        let mask = reference_line_splice_classify(src);
         assert_eq!(mask, vec![1, 1, 0, 0, 1]);
     }
 
     #[test]
     fn cr_alone_without_backslash_is_kept() {
         let src = b"a\rb";
-        let mask = line_splice_classify_cpu(src);
+        let mask = reference_line_splice_classify(src);
         assert_eq!(mask, vec![1, 1, 1]);
     }
 
     #[test]
     fn lf_alone_without_backslash_is_kept() {
         let src = b"a\nb";
-        let mask = line_splice_classify_cpu(src);
+        let mask = reference_line_splice_classify(src);
         assert_eq!(mask, vec![1, 1, 1]);
     }
 
@@ -378,8 +389,8 @@ mod tests {
     #[test]
     fn cpu_reference_is_deterministic() {
         let src = b"a\\\nb\\\r\nc\\\rd";
-        let m1 = line_splice_classify_cpu(src);
-        let m2 = line_splice_classify_cpu(src);
+        let m1 = reference_line_splice_classify(src);
+        let m2 = reference_line_splice_classify(src);
         assert_eq!(m1, m2);
     }
 
@@ -388,7 +399,7 @@ mod tests {
         let src = b"a\\\nb";
         let mut out = Vec::with_capacity(64);
         let cap = out.capacity();
-        line_splice_classify_cpu_into(src, &mut out);
+        reference_line_splice_classify_into(src, &mut out);
         assert_eq!(out, vec![1, 0, 0, 1]);
         assert_eq!(out.capacity(), cap);
     }

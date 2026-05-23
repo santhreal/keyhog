@@ -210,7 +210,10 @@ mod tests {
         let data = [42u8];
         let expected = reference_entropy(&data);
         let actual = super::super::entropy_fast::shannon_entropy_scalar(&data);
-        assert!((actual - expected).abs() < 1e-9, "expected {expected}, got {actual}");
+        assert!(
+            (actual - expected).abs() < 1e-9,
+            "expected {expected}, got {actual}"
+        );
     }
 
     #[test]
@@ -219,7 +222,10 @@ mod tests {
         let data: Vec<u8> = (0..=255).collect();
         let expected = reference_entropy(&data);
         let actual = super::super::entropy_fast::shannon_entropy_scalar(&data);
-        assert!((actual - expected).abs() < 1e-6, "expected {expected}, got {actual}");
+        assert!(
+            (actual - expected).abs() < 1e-6,
+            "expected {expected}, got {actual}"
+        );
     }
 
     #[test]
@@ -228,7 +234,10 @@ mod tests {
         let data = vec![0xAA; 1024];
         let expected = reference_entropy(&data);
         let actual = super::super::entropy_fast::shannon_entropy_scalar(&data);
-        assert!((actual - expected).abs() < 1e-9, "expected {expected}, got {actual}");
+        assert!(
+            (actual - expected).abs() < 1e-9,
+            "expected {expected}, got {actual}"
+        );
     }
 
     #[test]
@@ -236,7 +245,10 @@ mod tests {
         let secret = b"ghp_R0FGZk5qTXhPcUxaWDR0U1ByT2xKM0ZhRGVTYkVwOFJwNndsZXhF";
         let expected = reference_entropy(secret);
         let actual = super::super::entropy_fast::shannon_entropy_scalar(secret);
-        assert!((actual - expected).abs() < 1e-9, "expected {expected}, got {actual}");
+        assert!(
+            (actual - expected).abs() < 1e-9,
+            "expected {expected}, got {actual}"
+        );
     }
 
     #[test]
@@ -246,7 +258,9 @@ mod tests {
             return; // skip on hardware without AVX-512
         }
         // Test various sizes including non-aligned
-        for size in [0, 1, 15, 16, 17, 31, 32, 63, 64, 100, 255, 256, 512, 1024, 4096] {
+        for size in [
+            0, 1, 15, 16, 17, 31, 32, 63, 64, 100, 255, 256, 512, 1024, 4096,
+        ] {
             let data: Vec<u8> = (0..size).map(|i| (i * 37 + 13) as u8).collect();
             let expected = reference_entropy(&data);
             let actual = unsafe { super::calculate_shannon_entropy(&data) };

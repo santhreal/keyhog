@@ -7,7 +7,8 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use std::sync::OnceLock;
 
 use super::{
-    estimate_ir_allocations, IrAllocationEstimate, OptimizerRunReport, PassRunMetric, PassScheduler,
+    estimate_ir_allocations, IrAllocationEstimate, OptimizerRunReport, PassRunDecision,
+    PassRunMetric, PassScheduler,
 };
 use crate::ir::{BufferDecl, Expr, Node};
 use crate::ir_inner::model::program::Program;
@@ -18,35 +19,77 @@ use crate::optimizer::{
 use crate::runtime::perf::PerfScope;
 
 impl PassScheduler {
+    /// `tag → pass names that depend on it` (their own name OR a `requires`
+    /// entry equals the tag). Computed once per scheduler. Replaces the
+    /// linear pass-list scan that the previous implementation ran on every
+    /// invalidation event.
+    fn dirty_trigger_index(&self) -> &FxHashMap<&'static str, Vec<usize>> {
+        self.dirty_trigger_index_cache.get_or_init(|| {
+            let mut index: FxHashMap<&'static str, Vec<usize>> = FxHashMap::default();
+            index.reserve(self.passes.len() * 2);
+            for (pass_index, pass) in self.passes.iter().enumerate() {
+                let metadata = pass.metadata();
+                index.entry(metadata.name).or_default().push(pass_index);
+                for &req in metadata.requires {
+                    index.entry(req).or_default().push(pass_index);
+                }
+            }
+            index
+        })
+    }
+
+    #[cfg(test)]
     pub(crate) fn mark_invalidated_passes(
         &self,
         invalidated: &[&'static str],
         next_dirty: &mut FxHashSet<&'static str>,
     ) {
-        for pass in &self.passes {
-            let metadata = pass.metadata();
-            if invalidated
-                .iter()
-                .any(|tag| metadata.name == *tag || metadata.requires.iter().any(|req| req == tag))
-            {
-                next_dirty.insert(metadata.name);
+        let index = self.dirty_trigger_index();
+        for &tag in invalidated {
+            if let Some(triggered) = index.get(tag) {
+                for &pass_index in triggered {
+                    if let Some(pass) = self.passes.get(pass_index) {
+                        next_dirty.insert(pass.metadata().name);
+                    }
+                }
+            }
+        }
+    }
+
+    fn mark_invalidated_pass_flags(&self, invalidated: &[&'static str], next_dirty: &mut [bool]) {
+        let index = self.dirty_trigger_index();
+        for &tag in invalidated {
+            if let Some(triggered) = index.get(tag) {
+                for &pass_index in triggered {
+                    if let Some(slot) = next_dirty.get_mut(pass_index) {
+                        *slot = true;
+                    }
+                }
             }
         }
     }
 
     /// Execute the scheduled passes repeatedly until convergence or max iterations are reached.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OptimizerError`] if pass dependencies are unsatisfied or the
+    /// scheduler fails to converge within the configured iteration bound.
     pub fn run(&self, program: Program) -> Result<Program, OptimizerError> {
         let mut program = program;
         let mut last_pass = "<none>";
-        let mut dirty = self.initial_dirty_set();
+        let mut dirty = self.initial_dirty_flags();
+        let mut next_dirty = vec![false; self.passes.len()];
 
         for _ in 0..self.max_iterations {
-            let (next, changed, changed_by, next_dirty) = self.run_once(program, &dirty)?;
+            next_dirty.fill(false);
+            let (next, changed, changed_by) =
+                self.run_once_flags(program, &dirty, &mut next_dirty)?;
             program = next;
             if let Some(name) = changed_by {
                 last_pass = name;
             }
-            dirty = next_dirty;
+            std::mem::swap(&mut dirty, &mut next_dirty);
             if !changed {
                 return Ok(program.reconcile_runnable_top_level());
             }
@@ -61,10 +104,16 @@ impl PassScheduler {
     ///
     /// This mirrors [`Self::run`] but retains counters that identify expensive
     /// or clone-heavy passes without requiring a profiler.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OptimizerError`] if pass dependencies are unsatisfied or the
+    /// scheduler fails to converge within the configured iteration bound.
     pub fn run_with_metrics(&self, program: Program) -> Result<OptimizerRunReport, OptimizerError> {
         let mut program = program;
         let mut last_pass = "<none>";
-        let mut dirty = self.initial_dirty_set();
+        let mut dirty = self.initial_dirty_flags();
+        let mut next_dirty = vec![false; self.passes.len()];
         let mut metrics = Vec::with_capacity(
             self.execution_order
                 .len()
@@ -72,13 +121,19 @@ impl PassScheduler {
         );
 
         for iteration in 0..self.max_iterations {
-            let (next, changed, changed_by, next_dirty) =
-                self.run_once_with_metrics(program, &dirty, iteration, &mut metrics)?;
+            next_dirty.fill(false);
+            let (next, changed, changed_by) = self.run_once_with_metrics(
+                program,
+                &dirty,
+                &mut next_dirty,
+                iteration,
+                &mut metrics,
+            )?;
             program = next;
             if let Some(name) = changed_by {
                 last_pass = name;
             }
-            dirty = next_dirty;
+            std::mem::swap(&mut dirty, &mut next_dirty);
             if !changed {
                 return Ok(OptimizerRunReport {
                     program: program.reconcile_runnable_top_level(),
@@ -92,87 +147,102 @@ impl PassScheduler {
         })
     }
 
-    pub(crate) fn run_once(
+    fn run_once_flags(
         &self,
         mut program: Program,
-        dirty: &FxHashSet<&'static str>,
-    ) -> Result<(Program, bool, Option<&'static str>, FxHashSet<&'static str>), OptimizerError>
-    {
-        let mut available = FxHashSet::default();
-        available.reserve(self.execution_order.len());
+        dirty: &[bool],
+        next_dirty: &mut [bool],
+    ) -> Result<(Program, bool, Option<&'static str>), OptimizerError> {
+        let mut available = (!self.requirements_prevalidated).then(|| {
+            let mut available = FxHashSet::default();
+            available.reserve(self.execution_order.len());
+            available
+        });
         let mut changed = false;
         let mut changed_by = None;
-        let mut next_dirty = FxHashSet::default();
-        next_dirty.reserve(self.passes.len());
         for &pass_index in &self.execution_order {
             let Some(pass) = self.passes.get(pass_index) else {
                 continue;
             };
             let metadata = pass.metadata();
-            if !requirements_satisfied(metadata, &available) {
-                let missing = metadata
-                    .requires
-                    .iter()
-                    .copied()
-                    .find(|requirement| !available.contains(requirement))
-                    .unwrap_or("<unknown>");
-                return Err(OptimizerError::UnsatisfiedRequirement {
-                    pass: metadata.name,
-                    missing,
-                });
+            if let Some(available) = available.as_ref() {
+                if !requirements_satisfied(metadata, available) {
+                    let missing = metadata
+                        .requires
+                        .iter()
+                        .copied()
+                        .find(|requirement| !available.contains(requirement))
+                        .unwrap_or("<unknown>");
+                    return Err(OptimizerError::UnsatisfiedRequirement {
+                        pass: metadata.name,
+                        missing,
+                    });
+                }
             }
 
-            if dirty.contains(metadata.name) && pass.analyze(&program).should_run {
+            if dirty.get(pass_index).copied().unwrap_or(false) && pass.analyze(&program).should_run
+            {
                 program = if self.enforce_cost_monotone {
                     let pre_cost = crate::optimizer::cost::CostCertificate::for_program(&program);
-                    let pre_snapshot = program.clone();
-                    let result = pass.transform(program);
-                    let post_cost =
-                        crate::optimizer::cost::CostCertificate::for_program(&result.program);
-                    if result.changed && !post_cost.dominates_or_equal(&pre_cost) {
-                        // Pass landed a rewrite that increased a tracked cost
-                        // dimension without explicitly declining via
-                        // `ProgramPass::try_transform`. Revert to the pre-snapshot;
-                        // the change does NOT propagate into the next pass.
-                        pre_snapshot
-                    } else {
-                        if result.changed {
-                            changed = true;
-                            changed_by = Some(pass.pass_id());
-                            self.mark_invalidated_passes(metadata.invalidates, &mut next_dirty);
+                    let pre_snapshot = Clone::clone(&program);
+                    match pass.try_transform(program) {
+                        Ok(result) => {
+                            let post_cost = crate::optimizer::cost::CostCertificate::for_program(
+                                &result.program,
+                            );
+                            if result.changed && !post_cost.dominates_or_equal(&pre_cost) {
+                                pre_snapshot
+                            } else {
+                                if result.changed {
+                                    changed = true;
+                                    changed_by = Some(pass.pass_id());
+                                    self.mark_invalidated_pass_flags(
+                                        metadata.invalidates,
+                                        next_dirty,
+                                    );
+                                }
+                                result.program
+                            }
                         }
-                        result.program
+                        Err(_refusal) => pre_snapshot,
                     }
                 } else {
                     let result = pass.transform(program);
                     if result.changed {
                         changed = true;
                         changed_by = Some(pass.pass_id());
-                        self.mark_invalidated_passes(metadata.invalidates, &mut next_dirty);
+                        self.mark_invalidated_pass_flags(metadata.invalidates, next_dirty);
                     }
                     result.program
                 };
             }
-            available.insert(metadata.name);
+            if let Some(available) = available.as_mut() {
+                available.insert(metadata.name);
+            }
         }
 
-        Ok((program, changed, changed_by, next_dirty))
+        Ok((program, changed, changed_by))
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "scheduler metric collection keeps before/after counters colocated with pass execution"
+    )]
     pub(crate) fn run_once_with_metrics(
         &self,
         mut program: Program,
-        dirty: &FxHashSet<&'static str>,
+        dirty: &[bool],
+        next_dirty: &mut [bool],
         iteration: usize,
         metrics: &mut Vec<PassRunMetric>,
-    ) -> Result<(Program, bool, Option<&'static str>, FxHashSet<&'static str>), OptimizerError>
-    {
-        let mut available = FxHashSet::default();
-        available.reserve(self.execution_order.len());
+    ) -> Result<(Program, bool, Option<&'static str>), OptimizerError> {
+        let mut available = (!self.requirements_prevalidated).then(|| {
+            let mut available = FxHashSet::default();
+            available.reserve(self.execution_order.len());
+            available
+        });
         let mut changed = false;
         let mut changed_by = None;
-        let mut next_dirty = FxHashSet::default();
-        next_dirty.reserve(self.passes.len());
         let mut cached_allocation_estimate: Option<IrAllocationEstimate> = None;
 
         for &pass_index in &self.execution_order {
@@ -180,17 +250,19 @@ impl PassScheduler {
                 continue;
             };
             let metadata = pass.metadata();
-            if !requirements_satisfied(metadata, &available) {
-                let missing = metadata
-                    .requires
-                    .iter()
-                    .copied()
-                    .find(|requirement| !available.contains(requirement))
-                    .unwrap_or("<unknown>");
-                return Err(OptimizerError::UnsatisfiedRequirement {
-                    pass: metadata.name,
-                    missing,
-                });
+            if let Some(available) = available.as_ref() {
+                if !requirements_satisfied(metadata, available) {
+                    let missing = metadata
+                        .requires
+                        .iter()
+                        .copied()
+                        .find(|requirement| !available.contains(requirement))
+                        .unwrap_or("<unknown>");
+                    return Err(OptimizerError::UnsatisfiedRequirement {
+                        pass: metadata.name,
+                        missing,
+                    });
+                }
             }
 
             let before_stats = *program.stats();
@@ -202,6 +274,8 @@ impl PassScheduler {
                 pass: metadata.name,
                 ran: false,
                 changed: false,
+                decision: PassRunDecision::CleanSkipped,
+                refusal_kind: None,
                 runtime_ns: 0,
                 nodes_before: before_stats.node_count,
                 nodes_after: before_stats.node_count,
@@ -223,32 +297,63 @@ impl PassScheduler {
                 ir_heap_bytes_after: before_allocations.bytes,
             };
 
-            if dirty.contains(metadata.name) && pass.analyze(&program).should_run {
+            if dirty.get(pass_index).copied().unwrap_or(false) {
+                if !pass.analyze(&program).should_run {
+                    metric.decision = PassRunDecision::AnalysisSkipped;
+                    metrics.push(metric);
+                    if let Some(available) = available.as_mut() {
+                        available.insert(metadata.name);
+                    }
+                    continue;
+                }
                 metric.ran = true;
                 let perf_scope = PerfScope::start("vyre-foundation", metadata.name);
                 let pre_cost_for_gate = self
                     .enforce_cost_monotone
                     .then(|| crate::optimizer::cost::CostCertificate::for_program(&program));
-                let pre_snapshot_for_gate = self.enforce_cost_monotone.then(|| program.clone());
-                let result = pass.transform(program);
+                let pre_snapshot_for_gate =
+                    self.enforce_cost_monotone.then(|| Clone::clone(&program));
+                let result = if self.enforce_cost_monotone {
+                    pass.try_transform(program)
+                } else {
+                    Ok(pass.transform(program))
+                };
                 metric.runtime_ns = u128::from(perf_scope.finish().elapsed_ns);
-                let mut landed_changed = result.changed;
-                program = match (pre_cost_for_gate, pre_snapshot_for_gate) {
-                    (Some(pre_cost), Some(pre_snapshot)) if result.changed => {
+                let mut landed_changed = false;
+                program = match (result, pre_cost_for_gate, pre_snapshot_for_gate) {
+                    (Ok(result), Some(pre_cost), Some(pre_snapshot)) if result.changed => {
                         let post_cost =
                             crate::optimizer::cost::CostCertificate::for_program(&result.program);
                         if post_cost.dominates_or_equal(&pre_cost) {
+                            landed_changed = true;
+                            metric.decision = PassRunDecision::Changed;
                             result.program
                         } else {
                             // Cost-monotone-down violation: a tracked dimension
                             // increased without an explicit refusal. Drop the
                             // rewrite, restore the pre-snapshot. The metrics
                             // captured below reflect the post-revert shape.
-                            landed_changed = false;
+                            metric.decision = PassRunDecision::CostReverted;
                             pre_snapshot
                         }
                     }
-                    _ => result.program,
+                    (Ok(result), _, _) => {
+                        landed_changed = result.changed;
+                        metric.decision = if result.changed {
+                            PassRunDecision::Changed
+                        } else {
+                            PassRunDecision::RanUnchanged
+                        };
+                        result.program
+                    }
+                    (Err(refusal), _, Some(pre_snapshot)) => {
+                        metric.decision = PassRunDecision::Refused;
+                        metric.refusal_kind = Some(refusal.kind());
+                        pre_snapshot
+                    }
+                    (Err(_refusal), _, None) => {
+                        unreachable!("cost-monotone refusal requires a pre-gate snapshot")
+                    }
                 };
                 let after_stats = *program.stats();
                 let after_allocations = if landed_changed {
@@ -272,20 +377,21 @@ impl PassScheduler {
                 if metric.changed {
                     changed = true;
                     changed_by = Some(pass.pass_id());
-                    self.mark_invalidated_passes(metadata.invalidates, &mut next_dirty);
+                    self.mark_invalidated_pass_flags(metadata.invalidates, next_dirty);
                 }
             }
             metrics.push(metric);
-            available.insert(metadata.name);
+            if let Some(available) = available.as_mut() {
+                available.insert(metadata.name);
+            }
         }
 
-        Ok((program, changed, changed_by, next_dirty))
+        Ok((program, changed, changed_by))
     }
 
-    fn initial_dirty_set(&self) -> FxHashSet<&'static str> {
-        let mut dirty = FxHashSet::default();
-        dirty.reserve(self.passes.len());
-        dirty.extend(self.passes.iter().map(|pass| pass.metadata().name));
-        dirty
+    fn initial_dirty_flags(&self) -> Vec<bool> {
+        self.initial_dirty_flags_cache
+            .get_or_init(|| vec![true; self.passes.len()])
+            .clone()
     }
 }

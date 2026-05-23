@@ -100,5 +100,6 @@ inventory::submit! {
                 .collect::<Vec<u8>>();
             vec![vec![bytes]]
         }),
+        category: Some("parsing"),
     }
 }

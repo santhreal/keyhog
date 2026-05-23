@@ -173,7 +173,7 @@ inventory::submit! {
             // A = [[1, 2], [3, 4]], B = [[5, 6], [7, 8]]
             let a = f32_bytes(&[1.0, 2.0, 3.0, 4.0]);
             let b = f32_bytes(&[5.0, 6.0, 7.0, 8.0]);
-            vec![vec![a, b, vec![0u8; 16]]]
+            vec![vec![a, b]]
         }),
         expected_output: Some(|| {
             let f32_bytes = |w: &[f32]| {
@@ -182,6 +182,7 @@ inventory::submit! {
             // C = A · B = [[19, 22], [43, 50]]
             vec![vec![f32_bytes(&[19.0, 22.0, 43.0, 50.0])]]
         }),
+        category: Some("math"),
     }
 }
 

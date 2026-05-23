@@ -18,7 +18,8 @@ pub fn validate_io_queue_bytes(io_queue_bytes: &[u8]) -> Result<(), PipelineErro
 /// the compiled megakernel poll window, or overflows the host byte length.
 pub fn try_encode_empty_io_queue(slot_count: u32) -> Result<Vec<u8>, PipelineError> {
     let byte_count = empty_io_queue_byte_len(slot_count)?;
-    let mut out = Vec::with_capacity(byte_count);
+    let mut out = Vec::new();
+    reserve_io_queue_bytes(&mut out, byte_count)?;
     out.resize(byte_count, 0);
     Ok(out)
 }
@@ -35,7 +36,20 @@ pub fn try_encode_empty_io_queue_into(
 ) -> Result<(), PipelineError> {
     let byte_count = empty_io_queue_byte_len(slot_count)?;
     dst.clear();
+    reserve_io_queue_bytes(dst, byte_count)?;
     dst.resize(byte_count, 0);
+    Ok(())
+}
+
+fn reserve_io_queue_bytes(dst: &mut Vec<u8>, byte_count: usize) -> Result<(), PipelineError> {
+    if dst.capacity() < byte_count {
+        dst.try_reserve_exact(byte_count - dst.capacity())
+            .map_err(|source| {
+                PipelineError::Backend(format!(
+                    "megakernel io_queue byte reservation failed for {byte_count} bytes: {source}. Fix: shard IO queue encoding or reuse a larger caller-owned queue buffer."
+                ))
+            })?;
+    }
     Ok(())
 }
 

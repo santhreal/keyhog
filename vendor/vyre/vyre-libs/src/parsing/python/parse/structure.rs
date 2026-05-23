@@ -587,6 +587,7 @@ inventory::submit! {
         build: || python312_extract_structure("tok_types", "tok_starts", "tok_lens", "out_records", "out_counts", 16),
         test_inputs: Some(structure_fixture_inputs),
         expected_output: Some(structure_fixture_expected),
+        category: Some("parsing"),
     }
 }
 
@@ -596,6 +597,7 @@ inventory::submit! {
         build: || python312_extract_imports("tok_types", "tok_starts", "tok_lens", "out_records", "out_counts", 16),
         test_inputs: Some(import_fixture_inputs),
         expected_output: Some(import_fixture_expected),
+        category: Some("parsing"),
     }
 }
 
@@ -605,6 +607,7 @@ inventory::submit! {
         build: || python312_extract_with_blocks("tok_types", "tok_starts", "tok_lens", "out_records", "out_counts", 16),
         test_inputs: Some(with_fixture_inputs),
         expected_output: Some(with_fixture_expected),
+        category: Some("parsing"),
     }
 }
 

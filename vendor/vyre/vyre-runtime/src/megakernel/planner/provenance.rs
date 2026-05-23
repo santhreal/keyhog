@@ -21,21 +21,6 @@ pub fn build_scallop_lineage_with_program_and_scratch(
     if n_items == 0 {
         return Ok(Vec::new());
     }
-    if n_items == 1 {
-        let Some(first) = work_items.first() else {
-            return Err(BackendError::new(
-                "megakernel lineage item count requires at least one work item. Fix: pass a non-empty work item slice for n_items=1.",
-            ));
-        };
-        changed[0] = 0;
-        return Ok(vec![1u32 << (first.op_handle % 32)]);
-    }
-    if work_items.len() < n_items {
-        return Err(BackendError::new(format!(
-            "provided work_items len {} is smaller than n_items={n_items}. Fix: pass matching work item and n_items values.",
-            work_items.len()
-        )));
-    }
     let cell_count = n_items.checked_mul(n_items).ok_or_else(|| {
         BackendError::new(
             "megakernel lineage matrix size overflowed usize. Fix: shard the work queue before provenance closure.",
@@ -53,11 +38,13 @@ pub fn build_scallop_lineage_with_program_and_scratch(
         )
     })?;
     state.clear();
+    reserve_u32_staging(state, cell_count, "provenance state")?;
     state.resize(cell_count, 0);
     for (i, item) in work_items.iter().enumerate().take(n_items) {
         state[i * n_items + i] = 1u32 << (item.op_handle % 32);
     }
     next.clear();
+    reserve_u32_staging(next, cell_count, "provenance next-state")?;
     next.resize(cell_count, 0);
     changed[0] = 0;
 
@@ -89,7 +76,8 @@ pub fn build_scallop_lineage_with_program_and_scratch(
             closure.len()
         )));
     }
-    let mut lineage = Vec::with_capacity(n_items);
+    let mut lineage = Vec::new();
+    reserve_u32_staging(&mut lineage, n_items, "provenance lineage")?;
     for i in 0..n_items {
         let byte_offset = (i * n_items + i) * 4;
         lineage.push(u32::from_le_bytes(
@@ -112,13 +100,34 @@ pub fn build_scallop_lineage_with_program_and_scratch(
     Ok(lineage)
 }
 
+fn reserve_u32_staging(
+    values: &mut Vec<u32>,
+    capacity: usize,
+    label: &'static str,
+) -> Result<(), BackendError> {
+    if values.capacity() < capacity {
+        values
+            .try_reserve_exact(capacity - values.capacity())
+            .map_err(|source| {
+                BackendError::new(format!(
+                    "megakernel {label} reservation failed for {capacity} u32 cell(s): {source}. Fix: shard the work queue before provenance closure."
+                ))
+            })?;
+    }
+    Ok(())
+}
+
 #[cfg(feature = "self-substrate-adapters")]
 fn record_provenance(nonempty_fraction: f64) {
     vyre_self_substrate::decision_telemetry::record_provenance(nonempty_fraction);
 }
 
 #[cfg(not(feature = "self-substrate-adapters"))]
-fn record_provenance(_nonempty_fraction: f64) {}
+fn record_provenance(_nonempty_fraction: f64) {
+    panic!(
+        "vyre-runtime megakernel provenance telemetry requires the `self-substrate-adapters` feature. Fix: enable the feature; production builds must not silently disable provenance telemetry."
+    );
+}
 
 /// Build per-region lineage bitsets through the optional self-substrate adapter.
 #[cfg(feature = "self-substrate-adapters")]

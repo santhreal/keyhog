@@ -289,14 +289,24 @@ pub fn has_high_entropy_fast(data: &[u8], threshold: f64) -> bool {
     let mut seen = [0u64; 4];
     let mid = data.len() / 2;
     let samples = [
-        data[0], data[1], data[2], data[3],
-        data[mid], data[mid + 1], data[mid + 2], data[mid + 3],
-        data[data.len() - 4], data[data.len() - 3], data[data.len() - 2], data[data.len() - 1],
+        data[0],
+        data[1],
+        data[2],
+        data[3],
+        data[mid],
+        data[mid + 1],
+        data[mid + 2],
+        data[mid + 3],
+        data[data.len() - 4],
+        data[data.len() - 3],
+        data[data.len() - 2],
+        data[data.len() - 1],
     ];
     for &b in &samples {
         seen[b as usize / 64] |= 1u64 << (b % 64);
     }
-    let unique = seen[0].count_ones() + seen[1].count_ones() + seen[2].count_ones() + seen[3].count_ones();
+    let unique =
+        seen[0].count_ones() + seen[1].count_ones() + seen[2].count_ones() + seen[3].count_ones();
 
     if unique < 4 {
         // Low variation in sample; still verify with full calculation

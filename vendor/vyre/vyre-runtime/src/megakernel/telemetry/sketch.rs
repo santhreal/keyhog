@@ -32,10 +32,13 @@ impl CountMinSketch {
             queue: "telemetry",
             fix: "Count-Min sketch dimensions overflowed host address space; reduce depth or width",
         })?;
+        let mut counters = Vec::new();
+        reserve_counter_capacity(&mut counters, len)?;
+        counters.resize(len, 0);
         Ok(Self {
             depth,
             width,
-            counters: vec![0; len],
+            counters,
         })
     }
 
@@ -86,19 +89,36 @@ impl CountMinSketch {
         self.depth = depth;
         self.width = width;
         self.counters.clear();
+        reserve_counter_capacity(&mut self.counters, len)?;
         self.counters.resize(len, 0);
         Ok(())
     }
 
     /// Add `amount` to every row bucket selected for `key`.
     pub fn add(&mut self, key: u32, amount: u64) {
+        if let Err(error) = self.try_add(key, amount) {
+            panic!("{error}");
+        }
+    }
+
+    /// Checked add of `amount` to every row bucket selected for `key`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PipelineError`] when a counter would overflow u64.
+    pub fn try_add(&mut self, key: u32, amount: u64) -> Result<(), PipelineError> {
         if amount == 0 {
-            return;
+            return Ok(());
         }
         for row in 0..self.depth {
             let idx = self.bucket(row, key);
-            self.counters[idx] = self.counters[idx].saturating_add(amount);
+            self.counters[idx] = self.counters[idx].checked_add(amount).ok_or_else(|| {
+                PipelineError::Backend(format!(
+                    "Count-Min sketch counter overflowed for row {row}, key {key}. Fix: snapshot and clear telemetry before counters reach u64::MAX."
+                ))
+            })?;
         }
+        Ok(())
     }
 
     /// Conservative point estimate for `key`.
@@ -123,15 +143,50 @@ impl CountMinSketch {
             )));
         }
         for (left, right) in self.counters.iter_mut().zip(&other.counters) {
-            *left = left.saturating_add(*right);
+            *left = left.checked_add(*right).ok_or_else(|| {
+                PipelineError::Backend(
+                    "Count-Min sketch merge overflowed u64. Fix: merge and clear telemetry more frequently."
+                        .to_string(),
+                )
+            })?;
         }
         Ok(())
     }
 
     fn bucket(&self, row: usize, key: u32) -> usize {
-        let hash = splitmix64(u64::from(key) ^ ((row as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)));
-        row * self.width + (hash as usize % self.width)
+        let row_u64 = u64::try_from(row).unwrap_or_else(|error| {
+            panic!("Count-Min sketch row cannot fit u64: {error}. Fix: reduce sketch depth.")
+        });
+        let hash = splitmix64(u64::from(key) ^ row_u64.wrapping_mul(0x9E37_79B9_7F4A_7C15));
+        let bucket = usize::try_from(
+            hash % u64::try_from(self.width).unwrap_or_else(|error| {
+                panic!("Count-Min sketch width cannot fit u64: {error}. Fix: reduce sketch width.")
+            }),
+        )
+        .unwrap_or_else(|error| {
+            panic!("Count-Min sketch bucket cannot fit usize: {error}. Fix: reduce sketch width.")
+        });
+        row.checked_mul(self.width)
+            .and_then(|base| base.checked_add(bucket))
+            .unwrap_or_else(|| {
+                panic!(
+                    "Count-Min sketch bucket index overflowed usize. Fix: reduce sketch depth or width."
+                )
+            })
     }
+}
+
+fn reserve_counter_capacity(counters: &mut Vec<u64>, len: usize) -> Result<(), PipelineError> {
+    if counters.capacity() >= len {
+        return Ok(());
+    }
+    counters
+        .try_reserve_exact(len - counters.capacity())
+        .map_err(|source| {
+            PipelineError::Backend(format!(
+                "Count-Min sketch could not reserve {len} counters: {source}. Fix: reduce telemetry sketch depth or width."
+            ))
+        })
 }
 
 /// Compact sketch summary derived from a megakernel telemetry snapshot.
@@ -261,19 +316,30 @@ impl RingTelemetry {
         scratch.reset(depth, width)?;
 
         for slot in &self.slots {
-            scratch.ring_opcode.add(slot.opcode, 1);
-            scratch.tenant.add(slot.tenant_id, 1);
-            scratch.status.add(slot.status.raw(), 1);
+            scratch.ring_opcode.try_add(slot.opcode, 1)?;
+            scratch.tenant.try_add(slot.tenant_id, 1)?;
+            scratch.status.try_add(slot.status.raw(), 1)?;
             if slot.status.is_active() {
-                scratch.active_slots = scratch.active_slots.saturating_add(1);
-                scratch.active_opcode.add(slot.opcode, 1);
+                scratch.active_slots = scratch.active_slots.checked_add(1).ok_or_else(|| {
+                    PipelineError::Backend(
+                        "active megakernel telemetry slot count overflowed u64. Fix: snapshot telemetry before counters reach u64::MAX."
+                            .to_string(),
+                    )
+                })?;
+                scratch.active_opcode.try_add(slot.opcode, 1)?;
             }
         }
 
         for (opcode_idx, count) in &self.control.metrics {
-            scratch.dispatch_metrics.add(*opcode_idx, u64::from(*count));
+            scratch
+                .dispatch_metrics
+                .try_add(*opcode_idx, u64::from(*count))?;
         }
-        scratch.total_slots = self.slots.len() as u64;
+        scratch.total_slots = u64::try_from(self.slots.len()).map_err(|error| {
+            PipelineError::Backend(format!(
+                "megakernel telemetry slot count cannot fit u64: {error}. Fix: shard telemetry snapshots before sketching."
+            ))
+        })?;
         Ok(())
     }
 }

@@ -70,11 +70,7 @@ pub fn local_context_window(text: &str, line: usize, radius: usize) -> String {
     // approach skips lines before the window and takes only what's needed.
     let start = line.saturating_sub(radius).saturating_sub(1);
     let end = line + radius;
-    let window: Vec<&str> = text
-        .lines()
-        .skip(start)
-        .take(end - start)
-        .collect();
+    let window: Vec<&str> = text.lines().skip(start).take(end - start).collect();
     window.join("\n")
 }
 
@@ -262,9 +258,7 @@ pub fn should_suppress_known_example_credential_with_source(
     // Purely symbolic strings that look like filler/placeholder
     // (e.g., "********", "--------") — NOT real passwords like "!@#$%^&*()"
     // Check for ≤2 unique chars without heap allocation.
-    if credential.len() >= 8
-        && credential.chars().all(|c| !c.is_alphanumeric())
-    {
+    if credential.len() >= 8 && credential.chars().all(|c| !c.is_alphanumeric()) {
         let bytes = credential.as_bytes();
         let first = bytes[0];
         let mut second = first;
@@ -731,7 +725,9 @@ mod placeholder_suppression_tests {
         // Negative: a real token body that happens to contain a dot in
         // the middle (e.g. some JWT-style structured tokens) must NOT
         // be suppressed by the trailing-ellipsis carve-out.
-        assert!(!looks_like_prefixed_masked_sequence("eyJhbGciOiJIUzI1NiJ9.payloadX"));
+        assert!(!looks_like_prefixed_masked_sequence(
+            "eyJhbGciOiJIUzI1NiJ9.payloadX"
+        ));
     }
 }
 

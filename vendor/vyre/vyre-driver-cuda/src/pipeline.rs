@@ -3,13 +3,18 @@
 use std::sync::{Arc, Mutex};
 
 use smallvec::SmallVec;
-use vyre_driver::{
-    backend::private, BackendError, CompiledPipeline, DispatchConfig, OutputBuffers, Resource,
-};
+use vyre_driver::binding::BindingRole;
+use vyre_driver::{backend::private, BackendError, DispatchConfig};
 use vyre_foundation::ir::Program;
 
-use crate::backend::allocations::{cuda_check, DeviceAllocation, HostTransferAllocations};
+use crate::backend::allocations::DeviceAllocation;
 use crate::backend::{CachedCudaGraph, CudaBackend, CudaDispatchPlan, ModuleCacheKey};
+use crate::device::CudaDeviceCaps;
+
+mod compiled_dispatch;
+mod static_params;
+
+use static_params::upload_static_launch_params;
 
 /// CUDA pipeline with PTX already lowered and loaded into the backend cache.
 #[derive(Debug)]
@@ -25,7 +30,10 @@ pub(crate) struct CudaCompiledPipeline {
     id: String,
 }
 
-const MAX_GRAPH_CACHE_ENTRIES_PER_PIPELINE: usize = 4;
+pub(crate) const MAX_GRAPH_CACHE_ENTRIES_PER_PIPELINE: usize = 32;
+const CUDA_GRAPH_REPLAY_SMS_PER_LANE: usize = 8;
+const CUDA_GRAPH_REPLAY_MIN_CONCURRENT_LANES: usize = 2;
+const CUDA_GRAPH_REPLAY_VRAM_FRACTION_DENOMINATOR: u64 = 64;
 
 impl CudaCompiledPipeline {
     /// Construct a compiled CUDA pipeline.
@@ -37,10 +45,24 @@ impl CudaCompiledPipeline {
         config: &DispatchConfig,
         prepared: CudaDispatchPlan,
     ) -> Result<Self, BackendError> {
+        let trace = std::env::var_os("VYRE_CUDA_STAGE_TRACE").is_some();
+        let started = std::time::Instant::now();
+        if trace {
+            eprintln!(
+                "[cuda-pipeline] start entry={}",
+                program.entry_op_id.as_deref().unwrap_or("<anonymous>")
+            );
+        }
         let mut hasher = blake3::Hasher::new();
-        hasher.update(&vyre_driver::pipeline::normalized_program_cache_digest(
+        let normalized_digest = vyre_driver::pipeline::try_normalized_program_cache_digest(
             &program,
-        ));
+        )
+        .map_err(|error| {
+            BackendError::new(format!(
+                "CUDA compiled-pipeline cache digest failed: {error}"
+            ))
+        })?;
+        hasher.update(&normalized_digest);
         for lane in vyre_driver::program_vsa_fingerprint_words(&program) {
             hasher.update(&lane.to_le_bytes());
         }
@@ -60,7 +82,20 @@ impl CudaCompiledPipeline {
         }
         hasher.update(&backend.pipeline_feature_flags().bits().to_le_bytes());
         let digest = hasher.finalize();
+        if trace {
+            eprintln!(
+                "[cuda-pipeline] +{}ms digest ready",
+                started.elapsed().as_millis()
+            );
+        }
         let static_params = upload_static_launch_params(&backend, &prepared.launch.param_words)?;
+        if trace {
+            eprintln!(
+                "[cuda-pipeline] +{}ms static params ready bytes={}",
+                started.elapsed().as_millis(),
+                static_params.byte_len
+            );
+        }
         Ok(Self {
             backend,
             program,
@@ -85,363 +120,12 @@ impl Drop for CudaCompiledPipeline {
 
 impl private::Sealed for CudaCompiledPipeline {}
 
-impl CompiledPipeline for CudaCompiledPipeline {
-    fn id(&self) -> &str {
-        &self.id
-    }
-
-    fn dispatch(
-        &self,
-        inputs: &[Vec<u8>],
-        config: &DispatchConfig,
-    ) -> Result<Vec<Vec<u8>>, BackendError> {
-        let borrowed: SmallVec<[&[u8]; 8]> = inputs.iter().map(Vec::as_slice).collect();
-        self.dispatch_borrowed(&borrowed, config)
-    }
-
-    fn dispatch_borrowed(
-        &self,
-        inputs: &[&[u8]],
-        config: &DispatchConfig,
-    ) -> Result<Vec<Vec<u8>>, BackendError> {
-        if !same_launch_shape(&self.compiled_config, config) {
-            return self
-                .backend
-                .dispatch_borrowed_async_with_ptx_key(
-                    &self.program,
-                    inputs,
-                    config,
-                    &self.ptx_src,
-                    self.module_key,
-                )?
-                .await_result();
-        }
-        let mut outputs = Vec::with_capacity(self.prepared.output_binding_indices.len());
-        self.dispatch_borrowed_into(inputs, config, &mut outputs)?;
-        Ok(outputs)
-    }
-
-    fn dispatch_borrowed_timed(
-        &self,
-        inputs: &[&[u8]],
-        config: &DispatchConfig,
-    ) -> Result<vyre_driver::TimedDispatchResult, BackendError> {
-        if !same_launch_shape(&self.compiled_config, config) {
-            return self.backend.dispatch_borrowed_timed_with_ptx_key(
-                &self.program,
-                inputs,
-                config,
-                &self.ptx_src,
-                self.module_key,
-            );
-        }
-        if !cuda_graph_replay_enabled() {
-            return self.backend.dispatch_borrowed_timed_with_ptx_key(
-                &self.program,
-                inputs,
-                config,
-                &self.ptx_src,
-                self.module_key,
-            );
-        }
-        let started = std::time::Instant::now();
-        let mut outputs = Vec::with_capacity(self.prepared.output_binding_indices.len());
-        let mut cached = match self.take_cached_graph(inputs)? {
-            Some(cached) => cached,
-            None => self
-                .backend
-                .record_cuda_graph_borrowed(&self.program, inputs, config)?,
-        };
-        let replay_result =
-            self.backend
-                .dispatch_via_cuda_graph_timed_into(&mut cached, inputs, &mut outputs);
-        if replay_result.is_ok() {
-            self.return_cached_graph(cached)?;
-        }
-        let device_ns = replay_result?;
-        Ok(vyre_driver::TimedDispatchResult {
-            outputs,
-            wall_ns: started.elapsed().as_nanos() as u64,
-            device_ns: Some(device_ns),
-            enqueue_ns: None,
-            wait_ns: None,
-        })
-    }
-
-    fn dispatch_borrowed_into(
-        &self,
-        inputs: &[&[u8]],
-        config: &DispatchConfig,
-        outputs: &mut OutputBuffers,
-    ) -> Result<(), BackendError> {
-        if !same_launch_shape(&self.compiled_config, config) {
-            let result = self
-                .backend
-                .dispatch_borrowed_async_with_ptx_key(
-                    &self.program,
-                    inputs,
-                    config,
-                    &self.ptx_src,
-                    self.module_key,
-                )?
-                .await_result()?;
-            outputs.clear();
-            reserve_target_capacity(outputs, result.len());
-            outputs.extend(result);
-            return Ok(());
-        }
-        if !cuda_graph_replay_enabled() {
-            let result = self
-                .backend
-                .dispatch_borrowed_async_with_ptx_key(
-                    &self.program,
-                    inputs,
-                    config,
-                    &self.ptx_src,
-                    self.module_key,
-                )?
-                .await_result()?;
-            outputs.clear();
-            reserve_target_capacity(outputs, result.len());
-            outputs.extend(result);
-            return Ok(());
-        }
-        let mut cached = match self.take_cached_graph(inputs)? {
-            Some(cached) => cached,
-            None => self
-                .backend
-                .record_cuda_graph_borrowed(&self.program, inputs, config)?,
-        };
-        let replay_result = self
-            .backend
-            .dispatch_via_cuda_graph_into(&mut cached, inputs, outputs);
-        if replay_result.is_ok() {
-            self.return_cached_graph(cached)?;
-        }
-        replay_result
-    }
-
-    fn dispatch_borrowed_batched(
-        &self,
-        batches: &[&[&[u8]]],
-        config: &DispatchConfig,
-    ) -> Result<Vec<OutputBuffers>, BackendError> {
-        if batches.is_empty() {
-            return Ok(Vec::new());
-        }
-        if same_launch_shape(&self.compiled_config, config)
-            && batches
-                .iter()
-                .all(|batch| borrowed_input_shape_matches(batches[0], batch))
-        {
-            let mut cached = match self.take_cached_graph(batches[0])? {
-                Some(cached) => cached,
-                None => self
-                    .backend
-                    .record_cuda_graph_borrowed(&self.program, batches[0], config)?,
-            };
-            let mut outputs = Vec::with_capacity(batches.len());
-            for inputs in batches {
-                let mut item_outputs = Vec::with_capacity(cached.output_lens.len());
-                self.backend
-                    .dispatch_via_cuda_graph_into(&mut cached, inputs, &mut item_outputs)?;
-                outputs.push(item_outputs);
-            }
-            self.return_cached_graph(cached)?;
-            return Ok(outputs);
-        }
-        let mut pending = SmallVec::<[_; 8]>::with_capacity(batches.len());
-        if same_launch_shape(&self.compiled_config, config) {
-            for inputs in batches {
-                pending.push(self.backend.dispatch_prepared_borrowed_async_with_ptx_key(
-                    &self.program,
-                    inputs,
-                    &self.ptx_src,
-                    self.module_key,
-                    &self.prepared,
-                )?);
-            }
-        } else {
-            for inputs in batches {
-                pending.push(self.backend.dispatch_borrowed_async_with_ptx_key(
-                    &self.program,
-                    inputs,
-                    config,
-                    &self.ptx_src,
-                    self.module_key,
-                )?);
-            }
-        }
-
-        let mut outputs = Vec::with_capacity(pending.len());
-        for dispatch in pending {
-            outputs.push(dispatch.await_result()?);
-        }
-        Ok(outputs)
-    }
-
-    fn dispatch_persistent_handles(
-        &self,
-        inputs: &[Resource],
-        config: &DispatchConfig,
-    ) -> Result<OutputBuffers, BackendError> {
-        let handles = self.backend.resident_handles_from_resources(inputs)?;
-        if same_launch_shape(&self.compiled_config, config) {
-            let resident_dispatch = self.backend.dispatch_resident_async_concrete_with_ptx_key(
-                &self.program,
-                &handles,
-                config,
-                &self.ptx_src,
-                self.module_key,
-                false,
-                (self.static_params.ptr != 0).then_some(self.static_params.ptr),
-                &self.prepared,
-            )?;
-            let output_handles = resident_dispatch.output_handles;
-            let output_readbacks = resident_dispatch.output_readbacks;
-            resident_dispatch.pending.await_timed_result()?;
-            return self
-                .backend
-                .download_resident_readbacks_many(&output_handles, &output_readbacks);
-        }
-        self.backend.dispatch_resident_outputs_with_ptx_key(
-            &self.program,
-            &handles,
-            config,
-            &self.ptx_src,
-            self.module_key,
-        )
-    }
-
-    fn dispatch_persistent_handles_batched(
-        &self,
-        batches: &[&[Resource]],
-        config: &DispatchConfig,
-    ) -> Result<Vec<OutputBuffers>, BackendError> {
-        if batches.is_empty() {
-            return Ok(Vec::new());
-        }
-        if !same_launch_shape(&self.compiled_config, config) {
-            let mut outputs = Vec::with_capacity(batches.len());
-            for batch in batches {
-                outputs.push(self.dispatch_persistent_handles(batch, config)?);
-            }
-            return Ok(outputs);
-        }
-
-        let mut resident_batches = SmallVec::<[SmallVec<[crate::backend::CudaResidentBuffer; 8]>; 8]>::with_capacity(batches.len());
-        for batch in batches {
-            resident_batches.push(self.backend.resident_handles_from_resources(batch)?);
-        }
-
-        let resident_dispatch = self.backend.dispatch_resident_batch_async_concrete_with_ptx_key(
-            &self.program,
-            &resident_batches,
-            config,
-            &self.ptx_src,
-            self.module_key,
-            (self.static_params.ptr != 0).then_some(self.static_params.ptr),
-            &self.prepared,
-        )?;
-        let output_handles = resident_dispatch.output_handles;
-        let output_readbacks = resident_dispatch.output_readbacks;
-        resident_dispatch.pending.await_timed_result()?;
-        self.backend
-            .download_resident_readback_batches_many(&output_handles, &output_readbacks)
-    }
-}
-
-impl CudaCompiledPipeline {
-    fn take_cached_graph(&self, inputs: &[&[u8]]) -> Result<Option<CachedCudaGraph>, BackendError> {
-        let mut graphs = self.graph_cache.lock().map_err(|_| {
-            BackendError::DispatchFailed {
-                code: None,
-                message: "CUDA compiled-pipeline graph cache lock poisoned. Fix: rebuild the compiled pipeline after a panic during graph replay.".to_string(),
-            }
-        })?;
-        Ok(graphs
-            .iter()
-            .position(|cached| cached.input_shape_matches(inputs))
-            .map(|index| graphs.swap_remove(index)))
-    }
-
-    fn return_cached_graph(&self, cached: CachedCudaGraph) -> Result<(), BackendError> {
-        let mut graphs = self.graph_cache.lock().map_err(|_| {
-            BackendError::DispatchFailed {
-                code: None,
-                message: "CUDA compiled-pipeline graph cache lock poisoned while returning a graph. Fix: rebuild the compiled pipeline after a panic during graph replay.".to_string(),
-            }
-        })?;
-        if graphs.len() < MAX_GRAPH_CACHE_ENTRIES_PER_PIPELINE {
-            graphs.push(cached);
-        }
-        Ok(())
-    }
-}
-
-fn reserve_target_capacity<T>(out: &mut Vec<T>, target_capacity: usize) {
-    if out.capacity() < target_capacity {
-        out.reserve_exact(target_capacity);
-    }
-}
-
 fn borrowed_input_shape_matches(left: &[&[u8]], right: &[&[u8]]) -> bool {
     left.len() == right.len()
         && left
             .iter()
             .zip(right.iter())
             .all(|(left, right)| left.len() == right.len())
-}
-
-fn upload_static_launch_params(
-    backend: &CudaBackend,
-    param_words: &[u32],
-) -> Result<DeviceAllocation, BackendError> {
-    if param_words.is_empty() {
-        return Ok(DeviceAllocation::default());
-    }
-    let param_bytes = std::mem::size_of_val(param_words);
-    let allocation = backend.transient_pool.acquire(param_bytes)?;
-    let stream = match backend.launch_resources.acquire_stream() {
-        Ok(stream) => stream,
-        Err(err) => {
-            backend.transient_pool.release(allocation);
-            return Err(err);
-        }
-    };
-    let mut host_transfers =
-        HostTransferAllocations::with_capacity(std::sync::Arc::clone(&backend.host_pool), 1, 0);
-    let param_host_ptr = match host_transfers.push_u32_words(param_words) {
-        Ok(ptr) => ptr,
-        Err(err) => {
-            backend.launch_resources.release_stream(stream);
-            backend.transient_pool.release(allocation);
-            return Err(err);
-        }
-    };
-    let copy_result = unsafe {
-        cuda_check(
-            cudarc::driver::sys::cuMemcpyHtoDAsync_v2(
-                allocation.ptr,
-                param_host_ptr,
-                param_bytes,
-                stream.raw(),
-            ),
-            "cuMemcpyHtoDAsync_v2",
-        )
-    };
-    if let Err(err) = copy_result {
-        backend.launch_resources.release_stream(stream);
-        backend.transient_pool.release(allocation);
-        return Err(err);
-    }
-    let sync_result = stream.synchronize();
-    backend.launch_resources.release_stream(stream);
-    if let Err(err) = sync_result {
-        backend.transient_pool.release(allocation);
-        return Err(err);
-    }
-    Ok(allocation)
 }
 
 fn same_launch_shape(compiled: &DispatchConfig, runtime: &DispatchConfig) -> bool {
@@ -457,5 +141,116 @@ fn same_launch_shape(compiled: &DispatchConfig, runtime: &DispatchConfig) -> boo
 }
 
 fn cuda_graph_replay_enabled() -> bool {
-    std::env::var_os("VYRE_CUDA_GRAPH_REPLAY").is_some()
+    !matches!(
+        std::env::var("VYRE_CUDA_GRAPH_REPLAY").as_deref(),
+        Ok("0" | "false" | "FALSE" | "off" | "OFF")
+    )
 }
+
+pub(crate) fn cuda_graph_lane_count_for_batch(
+    caps: &CudaDeviceCaps,
+    prepared: &CudaDispatchPlan,
+    batches: &[&[&[u8]]],
+) -> Result<usize, BackendError> {
+    if batches.is_empty() {
+        return Ok(0);
+    }
+    let hardware_lanes = cuda_graph_hardware_lane_capacity(caps)?;
+    let shape_bytes = cuda_graph_shape_cached_bytes(prepared, batches[0])?;
+    let shape_bytes_u64 = u64::try_from(shape_bytes).map_err(|_| BackendError::InvalidProgram {
+        fix: "Fix: CUDA graph replay shape byte count exceeds u64; split the replay batch before lane planning.".to_string(),
+    })?;
+    let host_memory_budget_cap = u64::try_from(usize::MAX).map_err(|source| {
+        BackendError::InvalidProgram {
+            fix: format!(
+                "Fix: host usize::MAX cannot fit u64 while planning CUDA graph lanes: {source}; use a supported host pointer width."
+            ),
+        }
+    })?;
+    let memory_budget_u64 = (caps.total_memory / CUDA_GRAPH_REPLAY_VRAM_FRACTION_DENOMINATOR)
+        .max(shape_bytes_u64)
+        .min(host_memory_budget_cap);
+    let memory_budget = usize::try_from(memory_budget_u64).map_err(|source| {
+        BackendError::InvalidProgram {
+            fix: format!(
+                "Fix: CUDA graph replay memory budget {memory_budget_u64} cannot fit usize: {source}; split the replay batch before lane planning."
+            ),
+        }
+    })?;
+    let memory_lanes = if shape_bytes == 0 {
+        MAX_GRAPH_CACHE_ENTRIES_PER_PIPELINE
+    } else {
+        (memory_budget / shape_bytes)
+            .max(1)
+            .min(MAX_GRAPH_CACHE_ENTRIES_PER_PIPELINE)
+    };
+    Ok(batches.len().min(hardware_lanes).min(memory_lanes).max(1))
+}
+
+fn cuda_graph_hardware_lane_capacity(caps: &CudaDeviceCaps) -> Result<usize, BackendError> {
+    if !caps.concurrent_kernels {
+        return Ok(1);
+    }
+    let sms = usize::try_from(caps.multi_processor_count_u32()).map_err(|source| {
+        BackendError::InvalidProgram {
+            fix: format!(
+                "Fix: CUDA multiprocessor count cannot fit usize during graph lane planning: {source}; reject corrupt device capabilities before compiling graph replay."
+            ),
+        }
+    });
+    let sms = sms?;
+    let lanes = sms.div_ceil(CUDA_GRAPH_REPLAY_SMS_PER_LANE);
+    Ok(lanes
+        .max(CUDA_GRAPH_REPLAY_MIN_CONCURRENT_LANES)
+        .min(MAX_GRAPH_CACHE_ENTRIES_PER_PIPELINE))
+}
+
+fn cuda_graph_shape_cached_bytes(
+    prepared: &CudaDispatchPlan,
+    inputs: &[&[u8]],
+) -> Result<usize, BackendError> {
+    let mut bytes = bucketed_len(std::mem::size_of_val(
+        prepared.launch.param_words.as_slice(),
+    ))?;
+    for binding in &prepared.bindings.bindings {
+        if binding.role == BindingRole::Shared {
+            continue;
+        }
+        let byte_len = binding
+            .input_index
+            .and_then(|input_index| inputs.get(input_index).map(|input| input.len()))
+            .or(binding.static_byte_len)
+            .ok_or_else(|| BackendError::InvalidProgram {
+                fix: format!(
+                    "Fix: CUDA graph replay shape cache found binding `{}` without a runtime input or static byte length. Preserve concrete binding byte lengths during dispatch planning instead of treating missing sizes as zero.",
+                    binding.name
+                ),
+            })?;
+        bytes = add_shape_bytes(bytes, bucketed_len(byte_len)?)?;
+        if binding.input_index.is_some() {
+            bytes = add_shape_bytes(bytes, bucketed_len(byte_len)?)?;
+        }
+        if binding.output_index.is_some() {
+            bytes = add_shape_bytes(bytes, bucketed_len(byte_len)?)?;
+        }
+    }
+    Ok(bytes)
+}
+
+fn add_shape_bytes(total: usize, component: usize) -> Result<usize, BackendError> {
+    total.checked_add(component).ok_or_else(|| BackendError::InvalidProgram {
+        fix: "Fix: CUDA graph replay cached shape byte count overflowed; split the replay batch before graph-cache lane planning.".to_string(),
+    })
+}
+
+fn bucketed_len(byte_len: usize) -> Result<usize, BackendError> {
+    byte_len
+        .max(1)
+        .checked_next_power_of_two()
+        .ok_or_else(|| BackendError::InvalidProgram {
+            fix: "Fix: CUDA graph replay bucketed shape byte count overflowed; split the oversized input or disable graph replay for this shape.".to_string(),
+        })
+}
+
+#[cfg(test)]
+mod tests;

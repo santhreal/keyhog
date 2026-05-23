@@ -1,5 +1,6 @@
-//! Audit-fix A35 `expansion/paste_branch.rs` extract.
+//! Token-paste branch builder for macro replacement.
 
+use crate::parsing::c::lex::tokens::TOK_COMMA;
 use crate::parsing::c::preprocess::materialization::*;
 use vyre::ir::{Expr, Node};
 
@@ -112,40 +113,31 @@ pub(super) fn emit_materialized_function_paste_branch(
                 Node::assign("macro_paste_arg_start", arg_start),
                 Node::assign("macro_paste_arg_end", arg_end),
                 Node::if_then(
-                    Expr::ge(
+                    Expr::lt(
                         Expr::var("macro_paste_arg_start"),
                         Expr::var("macro_paste_arg_end"),
                     ),
-                    vec![Node::trap(
-                        Expr::var("macro_paste_next_param"),
-                        "function-like-token-paste-empty-argument",
-                    )],
+                    vec![
+                        Node::assign(
+                            "macro_paste_right_tok",
+                            Expr::load(in_tok_types, Expr::var("macro_paste_arg_start")),
+                        ),
+                        Node::assign(
+                            "macro_paste_right_start",
+                            Expr::load(in_tok_starts, Expr::var("macro_paste_arg_start")),
+                        ),
+                        Node::assign(
+                            "macro_paste_right_len",
+                            Expr::load(in_tok_lens, Expr::var("macro_paste_arg_start")),
+                        ),
+                        Node::assign("macro_paste_right_source_limit", source_len.clone()),
+                        Node::assign("macro_paste_right_from_argument", Expr::u32(1)),
+                    ],
                 ),
-                Node::assign(
-                    "macro_paste_right_tok",
-                    Expr::load(in_tok_types, Expr::var("macro_paste_arg_start")),
-                ),
-                Node::assign(
-                    "macro_paste_right_start",
-                    Expr::load(in_tok_starts, Expr::var("macro_paste_arg_start")),
-                ),
-                Node::assign(
-                    "macro_paste_right_len",
-                    Expr::load(in_tok_lens, Expr::var("macro_paste_arg_start")),
-                ),
-                Node::assign("macro_paste_right_source_limit", source_len.clone()),
-                Node::assign("macro_paste_right_from_argument", Expr::u32(1)),
             ]
         },
     ));
-    paste.extend([
-        Node::if_then(
-            Expr::eq(Expr::var("macro_paste_right_len"), Expr::u32(0)),
-            vec![Node::trap(
-                Expr::var("macro_paste_next_offset"),
-                "function-like-token-paste-right-token-has-no-source-bytes",
-            )],
-        ),
+    let mut nonempty_rhs = vec![
         Node::let_bind(
             "macro_paste_left_tok",
             Expr::load(
@@ -175,8 +167,8 @@ pub(super) fn emit_materialized_function_paste_branch(
             Expr::sub(Expr::var("named_out_idx"), Expr::u32(1)),
             Expr::var("macro_paste_synth_tok"),
         ),
-    ]);
-    paste.push(Node::if_then_else(
+    ];
+    nonempty_rhs.push(Node::if_then_else(
         Expr::eq(Expr::var("macro_paste_right_from_argument"), Expr::u32(1)),
         append_to_previous_output_token(
             "function_paste_arg_rhs",
@@ -203,7 +195,7 @@ pub(super) fn emit_materialized_function_paste_branch(
             "function-like-token-paste-literal-source-span-out-of-bounds",
         ),
     ));
-    paste.push(Node::if_then(
+    nonempty_rhs.push(Node::if_then(
         Expr::eq(Expr::var("macro_paste_right_from_argument"), Expr::u32(1)),
         vec![Node::loop_for(
             "macro_paste_rhs_rest_rel",
@@ -245,6 +237,34 @@ pub(super) fn emit_materialized_function_paste_branch(
             )],
         )],
     ));
-    paste.push(Node::assign("named_skip_repl", Expr::u32(1)));
+    nonempty_rhs.push(Node::assign("named_skip_repl", Expr::u32(1)));
+    paste.push(Node::if_then_else(
+        Expr::eq(Expr::var("macro_paste_right_len"), Expr::u32(0)),
+        vec![
+            Node::let_bind(
+                "macro_paste_empty_prev_idx",
+                Expr::sub(Expr::var("named_out_idx"), Expr::u32(1)),
+            ),
+            Node::let_bind(
+                "macro_paste_empty_prev_tok",
+                Expr::load(out_tok_types, Expr::var("macro_paste_empty_prev_idx")),
+            ),
+            Node::if_then(
+                Expr::eq(
+                    Expr::var("macro_paste_empty_prev_tok"),
+                    Expr::u32(TOK_COMMA),
+                ),
+                vec![
+                    Node::assign(
+                        "named_source_out_idx",
+                        Expr::load(out_tok_starts, Expr::var("macro_paste_empty_prev_idx")),
+                    ),
+                    Node::assign("named_out_idx", Expr::var("macro_paste_empty_prev_idx")),
+                ],
+            ),
+            Node::assign("named_skip_repl", Expr::u32(1)),
+        ],
+        nonempty_rhs,
+    ));
     paste
 }

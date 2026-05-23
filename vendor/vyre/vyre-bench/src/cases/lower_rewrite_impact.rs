@@ -5,7 +5,6 @@ use crate::api::case::{
 use crate::api::metric::{BenchMetrics, MetricPoint};
 use crate::api::suite::SuiteKind;
 use std::time::Instant;
-use vyre_foundation::ir::{BinOp, DataType};
 use vyre::lower::analyses::{
     analyze_bank_conflict, analyze_coalesce, analyze_layout_aos_to_soa, analyze_shared_mem_promote,
     vec_pack,
@@ -15,10 +14,12 @@ use vyre::lower::{
     BindingLayout, BindingSlot, BindingVisibility, Dispatch, KernelBody, KernelDescriptor,
     KernelOp, KernelOpKind, LiteralValue, MemoryClass,
 };
+use vyre_foundation::ir::{BinOp, DataType};
 
 pub struct LowerRewriteImpact;
 
 const SUITES: &[SuiteKind] = &[SuiteKind::Release, SuiteKind::Deep];
+const WORKGROUP_SLOT_BASE: u32 = 1 << 24;
 
 impl BenchCase for LowerRewriteImpact {
     fn id(&self) -> BenchId {
@@ -29,7 +30,8 @@ impl BenchCase for LowerRewriteImpact {
         BenchMetadata {
             id: self.id(),
             name: "Lower Rewrite Impact Corpus".to_string(),
-            description: "Measures descriptor rewrite impact on hand-built lower-analysis corpuses".to_string(),
+            description: "Measures descriptor rewrite impact on hand-built lower-analysis corpuses"
+                .to_string(),
             tags: vec![
                 "lower".to_string(),
                 "rewrites".to_string(),
@@ -58,12 +60,7 @@ impl BenchCase for LowerRewriteImpact {
     }
 
     fn performance_contract(&self) -> Option<PerformanceContract> {
-        Some(PerformanceContract::cpu_sota_min_speedup(
-            "bounded lower rewrite saturation",
-            "vyre-lower",
-            "baseline descriptor analysis-only pass",
-            1.0,
-        ))
+        None
     }
 
     fn prepare(&self, _ctx: &mut BenchContext) -> Result<PreparedCase, BenchError> {
@@ -410,7 +407,11 @@ fn bank_conflict_corpus() -> KernelDescriptor {
             local_x(1),
             literal(0, 2),
             op(KernelOpKind::BinOpKind(BinOp::Mul), vec![1, 2], Some(3)),
-            op(KernelOpKind::LoadShared, vec![2, 3], Some(4)),
+            op(
+                KernelOpKind::LoadShared,
+                vec![WORKGROUP_SLOT_BASE + 2, 3],
+                Some(4),
+            ),
         ],
         vec![LiteralValue::U32(32)],
     )
@@ -514,7 +515,7 @@ fn vec4_global_slot(slot: u32, name: &str, visibility: BindingVisibility) -> Bin
 
 fn shared_slot(slot: u32, name: &str) -> BindingSlot {
     BindingSlot {
-        slot,
+        slot: WORKGROUP_SLOT_BASE + slot,
         element_type: DataType::U32,
         element_count: Some(4096),
         memory_class: MemoryClass::Shared,

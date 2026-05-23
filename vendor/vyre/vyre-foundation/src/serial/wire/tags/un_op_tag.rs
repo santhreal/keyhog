@@ -23,8 +23,8 @@ use crate::serial::wire::encode::WireEncodeErr;
 /// L.1.27 / I4: remaining f32 unary ops had no wire tags, breaking roundtrip
 /// serialization for any Program that declared them. They now map to `11..=18`.
 #[inline]
-pub(crate) fn un_op_tag(value: UnOp) -> Result<u8, WireEncodeErr> {
-    match value {
+pub(crate) fn un_op_tag(value: &UnOp) -> Result<u8, WireEncodeErr> {
+    match *value {
         UnOp::Negate => Ok(0x01),
         UnOp::BitNot => Ok(0x02),
         UnOp::LogicalNot => Ok(0x03),

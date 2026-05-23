@@ -36,7 +36,7 @@
 //! - Only adjacent siblings inside the same container body.
 //! - Buffer sets must be disjoint — any shared buffer would need an
 //!   alias / cross-iteration-dependency proof we do not have without
-//!   the weir analysis.
+//!   the downstream dataflow analysis.
 //! - The second loop's body is rewritten so every `Expr::Var(j)`
 //!   becomes `Expr::Var(i)`. A Let in body_a whose name shadows `j`
 //!   (or vice versa) blocks the fusion to keep the rewrite local.
@@ -52,18 +52,29 @@ use rustc_hash::FxHashSet;
 #[vyre_pass(
     name = "loop_fusion",
     requires = [],
-    invalidates = []
+    invalidates = [],
+    phase = "loop",
+    boundary_class = "abi_preserving",
+    cost_model_family = "loop"
 )]
 pub struct LoopFusion;
 
 impl LoopFusion {
-    /// Skip when no body has a fusable pair.
+    /// Skip when no body has a fusable pair. Checks both the
+    /// top-level entry vec (transform fuses adjacent siblings there
+    /// too) and every nested If/Loop/Block/Region body.
     #[must_use]
     fn analyze_impl(program: &Program) -> PassAnalysis {
-        if program
-            .entry()
-            .iter()
-            .any(|n| node_map::any_descendant(n, &mut has_fusable_pair))
+        // Fusion needs at least two adjacent Loops; absent any Loop
+        // at all the recursive walk has nothing to find.
+        if !program.stats().has_node_loop() {
+            return PassAnalysis::SKIP;
+        }
+        if body_has_fusable_pair(program.entry())
+            || program
+                .entry()
+                .iter()
+                .any(|n| node_map::any_descendant(n, &mut has_fusable_pair))
         {
             PassAnalysis::RUN
         } else {
@@ -74,14 +85,11 @@ impl LoopFusion {
     /// Walk the program; fuse every fusable adjacent Loop pair found.
     #[must_use]
     pub fn transform(program: Program) -> PassResult {
-        let scaffold = program.with_rewritten_entry(Vec::new());
         let mut changed = false;
-        let entry: Vec<Node> = fuse_in_body(program.into_entry_vec(), &mut changed);
-        PassResult {
-            program: scaffold.with_rewritten_entry(entry),
-            changed,
-        }
-    }}
+        let program = program.map_entry(|entry| fuse_in_body(entry, &mut changed));
+        PassResult { program, changed }
+    }
+}
 
 fn fuse_in_body(body: Vec<Node>, changed: &mut bool) -> Vec<Node> {
     let body: Vec<Node> = body.into_iter().map(|n| recurse(n, changed)).collect();
@@ -804,7 +812,10 @@ mod tests {
             Expr::u32(8),
             vec![Node::store("a", Expr::var("i"), Expr::u32(1))],
         )];
-        assert_eq!(crate::optimizer::ProgramPass::analyze(&LoopFusion, &program(entry)), PassAnalysis::SKIP);
+        assert_eq!(
+            crate::optimizer::ProgramPass::analyze(&LoopFusion, &program(entry)),
+            PassAnalysis::SKIP
+        );
     }
 
     #[test]
@@ -823,6 +834,9 @@ mod tests {
                 vec![Node::store("b", Expr::var("j"), Expr::u32(2))],
             ),
         ];
-        assert_eq!(crate::optimizer::ProgramPass::analyze(&LoopFusion, &program(entry)), PassAnalysis::RUN);
+        assert_eq!(
+            crate::optimizer::ProgramPass::analyze(&LoopFusion, &program(entry)),
+            PassAnalysis::RUN
+        );
     }
 }

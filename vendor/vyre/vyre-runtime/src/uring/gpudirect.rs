@@ -96,7 +96,13 @@ fn read_nvidia_fs_stats() -> std::io::Result<String> {
     file.by_ref()
         .take(MAX_NVIDIA_FS_STATS_BYTES + 1)
         .read_to_string(&mut stats)?;
-    if stats.len() as u64 > MAX_NVIDIA_FS_STATS_BYTES {
+    let stats_len = u64::try_from(stats.len()).map_err(|error| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("nvidia-fs stats length cannot fit u64: {error}"),
+        )
+    })?;
+    if stats_len > MAX_NVIDIA_FS_STATS_BYTES {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
             "nvidia-fs stats exceeded bounded read limit",
@@ -139,13 +145,17 @@ pub fn encode_nvme_read_sqe(
     blocks: u32,
     dest_bar1_ptr: u64,
 ) -> [u8; 64] {
+    assert!(
+        blocks > 0,
+        "NVMe read SQE cannot encode zero blocks; validate read length before submitting GPU-direct ingest"
+    );
     let mut buf = [0u8; 64];
     buf[0] = NVME_CMD_READ;
     buf[4..8].copy_from_slice(&namespace_id.to_le_bytes());
     buf[32..40].copy_from_slice(&dest_bar1_ptr.to_le_bytes());
     buf[40..48].copy_from_slice(&starting_lba.to_le_bytes());
     // NVMe encodes "number of logical blocks" as zero-based: 0 = 1 block.
-    let zero_based = blocks.saturating_sub(1);
+    let zero_based = blocks - 1;
     buf[48..52].copy_from_slice(&zero_based.to_le_bytes());
     buf
 }

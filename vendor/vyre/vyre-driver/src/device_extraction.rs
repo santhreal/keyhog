@@ -132,10 +132,10 @@ fn extraction_bias_bps(device: ExtractionDevice<'_>, hints: NodeHints) -> u32 {
     let mut bps = 10_000u32;
     if let Some(record) = device.autotune_record {
         if hints.compile_time_constant && record.unroll > 1 {
-            bps = bps.saturating_mul(8_000) / 10_000;
+            bps = scale_bps(bps, 8_000);
         }
         if hints.fp16_eligible && record.tile.iter().any(|dim| *dim > 1) {
-            bps = bps.saturating_mul(9_500) / 10_000;
+            bps = scale_bps(bps, 9_500);
         }
     }
     if hints.compile_time_constant {
@@ -144,18 +144,23 @@ fn extraction_bias_bps(device: ExtractionDevice<'_>, hints: NodeHints) -> u32 {
                 decide_trace_jit_speculation(counters),
                 TraceJitDecision::Speculate { .. }
             ) {
-                bps = bps.saturating_mul(7_000) / 10_000;
+                bps = scale_bps(bps, 7_000);
             }
         }
     }
     bps.max(1)
 }
 
+fn scale_bps(lhs_bps: u32, rhs_bps: u32) -> u32 {
+    let scaled = (u64::from(lhs_bps) * u64::from(rhs_bps)) / 10_000u64;
+    u32::try_from(scaled).unwrap_or(u32::MAX)
+}
+
 fn apply_context_bias(cost: u64, bps: u32) -> u64 {
     if bps >= 10_000 {
         return cost;
     }
-    let scaled = (cost as u128).saturating_mul(bps as u128) / 10_000u128;
+    let scaled = (u128::from(cost) * u128::from(bps)) / 10_000u128;
     u64::try_from(scaled).unwrap_or(u64::MAX).max(1)
 }
 

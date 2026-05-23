@@ -35,14 +35,20 @@ impl CseCtx {
                 }
                 match op {
                     BinOp::Opaque(id) => ExprKey::BinOpOpaque(id.as_u32(), l, r),
-                    _ => ExprKey::BinOp(bin_op_key(op), l, r),
+                    _ => match bin_op_key(*op) {
+                        Some(key) => ExprKey::BinOp(key, l, r),
+                        None => self.unique_uncached_key(),
+                    },
                 }
             }
             Expr::UnOp { op, operand } => {
                 let operand_id = self.intern_expr(operand);
                 match op {
                     UnOp::Opaque(id) => ExprKey::UnOpOpaque(id.as_u32(), operand_id),
-                    _ => ExprKey::UnOp(un_op_key(op), operand_id),
+                    _ => match un_op_key(op) {
+                        Some(key) => ExprKey::UnOp(key, operand_id),
+                        None => self.unique_uncached_key(),
+                    },
                 }
             }
             Expr::Call { op_id, args } => ExprKey::Call(
@@ -86,16 +92,23 @@ impl CseCtx {
         if let Some(&id) = self.deduplication.get(&key) {
             id
         } else {
-            let id = ExprId(self.arena.len() as u32);
+            let id = ExprId(u32::try_from(self.arena.len()).map_or(u32::MAX, |value| value));
             self.arena.push(key.clone());
             self.deduplication.insert(key, id);
             id
         }
     }
+
+    #[inline]
+    fn unique_uncached_key(&mut self) -> ExprKey {
+        let id = self.subgroup_counter;
+        self.subgroup_counter = self.subgroup_counter.wrapping_add(1);
+        ExprKey::Subgroup(id)
+    }
 }
 
 #[inline]
-fn bin_op_key(op: &BinOp) -> u8 {
+fn bin_op_key(op: BinOp) -> Option<u8> {
     // Soundness: every concrete BinOp variant gets a distinct tag so
     // CSE never merges semantically distinct ops. The previous
     // `_ => 255` fallback collapsed WrappingSub / RotateLeft /
@@ -104,91 +117,87 @@ fn bin_op_key(op: &BinOp) -> u8 {
     // separately via `ExprKey::BinOpOpaque` (carries the extension u32
     // id) so the integer table below covers only built-in variants.
     match op {
-        BinOp::Add => 0,
-        BinOp::Sub => 1,
-        BinOp::Mul => 2,
-        BinOp::Div => 3,
-        BinOp::Mod => 4,
-        BinOp::BitAnd => 5,
-        BinOp::BitOr => 6,
-        BinOp::BitXor => 7,
-        BinOp::Shl => 8,
-        BinOp::Shr => 9,
-        BinOp::Eq => 10,
-        BinOp::Ne => 11,
-        BinOp::Lt => 12,
-        BinOp::Gt => 13,
-        BinOp::Le => 14,
-        BinOp::Ge => 15,
-        BinOp::And => 16,
-        BinOp::Or => 17,
-        BinOp::AbsDiff => 18,
-        BinOp::Min => 19,
-        BinOp::Max => 20,
-        BinOp::SaturatingAdd => 21,
-        BinOp::SaturatingSub => 22,
-        BinOp::SaturatingMul => 23,
-        BinOp::Shuffle => 24,
-        BinOp::Ballot => 25,
-        BinOp::WaveReduce => 26,
-        BinOp::WaveBroadcast => 27,
-        BinOp::WrappingAdd => 28,
-        BinOp::WrappingSub => 29,
-        BinOp::RotateLeft => 30,
-        BinOp::RotateRight => 31,
-        BinOp::MulHigh => 32,
+        BinOp::Add => Some(0),
+        BinOp::Sub => Some(1),
+        BinOp::Mul => Some(2),
+        BinOp::Div => Some(3),
+        BinOp::Mod => Some(4),
+        BinOp::BitAnd => Some(5),
+        BinOp::BitOr => Some(6),
+        BinOp::BitXor => Some(7),
+        BinOp::Shl => Some(8),
+        BinOp::Shr => Some(9),
+        BinOp::Eq => Some(10),
+        BinOp::Ne => Some(11),
+        BinOp::Lt => Some(12),
+        BinOp::Gt => Some(13),
+        BinOp::Le => Some(14),
+        BinOp::Ge => Some(15),
+        BinOp::And => Some(16),
+        BinOp::Or => Some(17),
+        BinOp::AbsDiff => Some(18),
+        BinOp::Min => Some(19),
+        BinOp::Max => Some(20),
+        BinOp::SaturatingAdd => Some(21),
+        BinOp::SaturatingSub => Some(22),
+        BinOp::SaturatingMul => Some(23),
+        BinOp::Shuffle => Some(24),
+        BinOp::Ballot => Some(25),
+        BinOp::WaveReduce => Some(26),
+        BinOp::WaveBroadcast => Some(27),
+        BinOp::WrappingAdd => Some(28),
+        BinOp::WrappingSub => Some(29),
+        BinOp::RotateLeft => Some(30),
+        BinOp::RotateRight => Some(31),
+        BinOp::MulHigh => Some(32),
         // Opaque is handled via ExprKey::BinOpOpaque before this
         // function is called; reaching this arm is a soundness bug.
-        BinOp::Opaque(_) => unreachable!(
-            "bin_op_key called on BinOp::Opaque; route through ExprKey::BinOpOpaque instead"
-        ),
-        // Catch new BinOp variants explicitly. Adding a variant
-        // without extending this table would silently reuse tag 255
-        // and merge unrelated ops in CSE. Update the match the moment
-        // a new variant lands.
-        _ => panic!("bin_op_key missing an arm for BinOp variant `{op:?}` — assign a unique tag"),
+        _ => None,
     }
 }
 
 #[inline]
-fn un_op_key(op: &UnOp) -> u8 {
+fn un_op_key(op: &UnOp) -> Option<u8> {
     // Same soundness contract as bin_op_key: every concrete UnOp
     // variant gets a distinct tag. `UnOp::Opaque` is keyed separately
     // via `ExprKey::UnOpOpaque`, so the table covers only built-ins.
     match op {
-        UnOp::Negate => 0,
-        UnOp::BitNot => 1,
-        UnOp::LogicalNot => 2,
-        UnOp::Popcount => 3,
-        UnOp::Clz => 4,
-        UnOp::Ctz => 5,
-        UnOp::ReverseBits => 6,
-        UnOp::Sin => 7,
-        UnOp::Cos => 8,
-        UnOp::Abs => 9,
-        UnOp::Sqrt => 10,
-        UnOp::InverseSqrt => 11,
-        UnOp::Reciprocal => 12,
-        UnOp::Floor => 13,
-        UnOp::Ceil => 14,
-        UnOp::Round => 15,
-        UnOp::Trunc => 16,
-        UnOp::Sign => 17,
-        UnOp::IsNan => 18,
-        UnOp::IsInf => 19,
-        UnOp::IsFinite => 20,
-        UnOp::Exp => 21,
-        UnOp::Log => 22,
-        UnOp::Tan => 23,
-        UnOp::Acos => 24,
-        UnOp::Asin => 25,
-        UnOp::Atan => 26,
-        UnOp::Tanh => 27,
-        UnOp::Sinh => 28,
-        UnOp::Cosh => 29,
-        UnOp::Opaque(_) => unreachable!(
-            "un_op_key called on UnOp::Opaque; route through ExprKey::UnOpOpaque instead"
-        ),
-        _ => panic!("un_op_key missing an arm for UnOp variant `{op:?}` — assign a unique tag"),
+        UnOp::Negate => Some(0),
+        UnOp::BitNot => Some(1),
+        UnOp::LogicalNot => Some(2),
+        UnOp::Popcount => Some(3),
+        UnOp::Clz => Some(4),
+        UnOp::Ctz => Some(5),
+        UnOp::ReverseBits => Some(6),
+        UnOp::Sin => Some(7),
+        UnOp::Cos => Some(8),
+        UnOp::Abs => Some(9),
+        UnOp::Sqrt => Some(10),
+        UnOp::InverseSqrt => Some(11),
+        UnOp::Reciprocal => Some(12),
+        UnOp::Floor => Some(13),
+        UnOp::Ceil => Some(14),
+        UnOp::Round => Some(15),
+        UnOp::Trunc => Some(16),
+        UnOp::Sign => Some(17),
+        UnOp::IsNan => Some(18),
+        UnOp::IsInf => Some(19),
+        UnOp::IsFinite => Some(20),
+        UnOp::Exp => Some(21),
+        UnOp::Log => Some(22),
+        UnOp::Log2 => Some(23),
+        UnOp::Exp2 => Some(24),
+        UnOp::Tan => Some(25),
+        UnOp::Acos => Some(26),
+        UnOp::Asin => Some(27),
+        UnOp::Atan => Some(28),
+        UnOp::Tanh => Some(29),
+        UnOp::Sinh => Some(30),
+        UnOp::Cosh => Some(31),
+        UnOp::Unpack4Low => Some(32),
+        UnOp::Unpack4High => Some(33),
+        UnOp::Unpack8Low => Some(34),
+        UnOp::Unpack8High => Some(35),
+        _ => None,
     }
 }

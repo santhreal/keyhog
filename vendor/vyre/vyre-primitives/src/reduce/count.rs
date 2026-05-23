@@ -16,6 +16,7 @@ pub fn reduce_count(bitset: &str, out: &str, words: u32) -> Program {
 
 /// CPU reference.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref(bitset: &[u32]) -> u32 {
     bitset.iter().map(|w| w.count_ones()).sum()
 }

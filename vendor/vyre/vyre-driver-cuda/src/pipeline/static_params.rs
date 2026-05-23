@@ -1,0 +1,77 @@
+//! Static CUDA launch-parameter upload for compiled pipelines.
+//!
+//! The parent pipeline module constructs compiled state. This module owns the
+//! one device-copy duty for static launch parameters so `src/pipeline.rs`
+//! remains orchestration-only.
+
+use vyre_driver::BackendError;
+
+use crate::backend::allocations::{cuda_check, DeviceAllocation, HostTransferAllocations};
+use crate::backend::launch_params::launch_param_byte_len;
+use crate::backend::CudaBackend;
+use crate::numeric::usize_to_u64;
+
+pub(crate) fn upload_static_launch_params(
+    backend: &CudaBackend,
+    param_words: &[u32],
+) -> Result<DeviceAllocation, BackendError> {
+    if param_words.is_empty() {
+        return Ok(DeviceAllocation::default());
+    }
+    let param_bytes = launch_param_byte_len(param_words, "compiled-pipeline static")?;
+    backend.validate_transient_allocation_memory_budget(
+        param_bytes,
+        "CUDA compiled-pipeline static parameter bytes",
+        "CUDA compiled-pipeline static parameter upload",
+    )?;
+    let allocation = backend.transient_pool.acquire(param_bytes)?;
+    backend
+        .telemetry
+        .record_transient_allocation_bytes(usize_to_u64(
+            allocation.byte_len,
+            "static launch parameter allocation byte count",
+        )?);
+    let mut host_transfers =
+        HostTransferAllocations::with_capacity(std::sync::Arc::clone(&backend.host_pool), 1, 0)?;
+    let upload_result = (|| {
+        let stream = backend.launch_resources.acquire_stream()?;
+        let result = (|| {
+            let param_host_ptr = host_transfers.push_u32_words(param_words)?;
+            // SAFETY: FFI to libcuda.so. Pointer args were validated by the matching
+            // alloc / store API; lifetimes are documented in the surrounding function.
+            // cuda_check propagates non-success codes as BackendError.
+            unsafe {
+                cuda_check(
+                    cudarc::driver::sys::cuMemcpyHtoDAsync_v2(
+                        allocation.ptr,
+                        param_host_ptr,
+                        param_bytes,
+                        stream.raw(),
+                    ),
+                    "cuMemcpyHtoDAsync_v2",
+                )?;
+            }
+            let result = stream.synchronize();
+            if result.is_ok() {
+                backend.telemetry.record_sync_point();
+            }
+            result
+        })();
+        backend.launch_resources.release_stream(stream);
+        result
+    })();
+    if let Err(err) = upload_result {
+        backend.transient_pool.release(allocation);
+        return Err(err);
+    }
+    backend.telemetry.record_host_to_device_bytes(usize_to_u64(
+        param_bytes,
+        "static launch parameter upload byte count",
+    )?);
+    backend.telemetry.record_host_upload_operations(1);
+    backend.telemetry.record_param_upload_bytes(usize_to_u64(
+        param_bytes,
+        "static launch parameter upload byte count",
+    )?);
+    Ok(allocation)
+}

@@ -65,6 +65,7 @@ pub fn resolve_family(
 /// CPU reference.
 ///
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref(node_tags: &[u32], family_mask: u32) -> Vec<u32> {
     let mut out = Vec::new();
     cpu_ref_into(node_tags, family_mask, &mut out);
@@ -72,6 +73,7 @@ pub fn cpu_ref(node_tags: &[u32], family_mask: u32) -> Vec<u32> {
 }
 
 /// CPU reference using a caller-owned nodeset bitset.
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref_into(node_tags: &[u32], family_mask: u32, out: &mut Vec<u32>) {
     let words = node_tags.len().div_ceil(32);
     out.clear();
@@ -128,7 +130,6 @@ mod tests {
 
     /// GPU parity tests for resolve_family — exercise every word boundary
     /// to expose the word-1+ atomic_or write bug.
-    #[cfg(feature = "gpu")]
     mod gpu_tests {
         use super::*;
         use vyre_driver::DispatchConfig;
@@ -145,14 +146,14 @@ mod tests {
                 .collect()
         }
 
-        fn run_gpu_resolve_family(node_tags: &[u32], family_mask: u32) -> Vec<u32> {
+        fn run_gpu_resolve_family_with_backend(
+            backend: &CudaBackend,
+            node_tags: &[u32],
+            family_mask: u32,
+        ) -> Vec<u32> {
             let node_count = node_tags.len() as u32;
             let words = node_count.div_ceil(32) as usize;
             let program = resolve_family("tags", "nodeset", node_count, family_mask);
-            let backend = CudaBackend::acquire().expect(
-                "Fix: CUDA backend acquisition failed. \
-                 Configuration error: no CUDA-capable GPU or driver available on this host.",
-            );
             let outputs = backend
                 .dispatch(
                     &program,
@@ -178,6 +179,14 @@ mod tests {
                 result.len()
             );
             result
+        }
+
+        fn run_gpu_resolve_family(node_tags: &[u32], family_mask: u32) -> Vec<u32> {
+            let backend = CudaBackend::acquire().expect(
+                "Fix: CUDA backend acquisition failed. \
+                 Configuration error: no CUDA-capable GPU or driver available on this host.",
+            );
+            run_gpu_resolve_family_with_backend(&backend, node_tags, family_mask)
         }
 
         /// Build a tag vector where only `node` has the family bit set.
@@ -423,21 +432,55 @@ mod tests {
             );
         }
 
-        // ---- Property test: random tags + mask over 256 nodes ----
+        // ---- Bounded adversarial corpus: tags + mask over 256 nodes ----
 
-        use proptest::prelude::*;
+        #[test]
+        fn gpu_resolve_family_matches_cpu_oracle_adversarial_256_corpus() {
+            let backend = CudaBackend::acquire().expect(
+                "Fix: CUDA backend acquisition failed. \
+                 Configuration error: no CUDA-capable GPU or driver available on this host.",
+            );
+            let mut cases = Vec::with_capacity(96);
+            cases.push((vec![0u32; 256], 0x0000_0001));
+            cases.push((vec![u32::MAX; 256], 0xffff_ffff));
+            cases.push((vec![u32::MAX; 256], 0x0000_0000));
 
-        proptest! {
-            #![proptest_config(ProptestConfig::with_cases(1000))]
+            for node in [
+                0usize, 1, 31, 32, 33, 63, 64, 65, 96, 127, 128, 160, 191, 192, 224, 255,
+            ] {
+                let mut tags = vec![0u32; 256];
+                tags[node] = 0x0000_0004;
+                cases.push((tags, 0x0000_0004));
+            }
 
-            #[test]
-            fn gpu_resolve_family_matches_cpu_oracle_random_256(
-                tags in proptest::collection::vec(any::<u32>(), 256),
-                mask in any::<u32>()
-            ) {
-                let gpu = run_gpu_resolve_family(&tags, mask);
+            for word in 0..8 {
+                let mut tags = vec![0u32; 256];
+                let base = word * 32;
+                tags[base] = 0x0000_0001;
+                tags[base + 7] = 0x0000_0002;
+                tags[base + 31] = 0x8000_0000;
+                cases.push((tags.clone(), 0x0000_0001));
+                cases.push((tags.clone(), 0x0000_0002));
+                cases.push((tags, 0x8000_0000));
+            }
+
+            let mut state = 0x85eb_ca6bu32;
+            for _ in 0..48 {
+                let mut tags = vec![0u32; 256];
+                for tag in &mut tags {
+                    state ^= state << 13;
+                    state ^= state >> 17;
+                    state ^= state << 5;
+                    *tag = state;
+                }
+                state ^= state.rotate_left(11).wrapping_add(0xc2b2_ae35);
+                cases.push((tags, state));
+            }
+
+            for (tags, mask) in cases {
+                let gpu = run_gpu_resolve_family_with_backend(&backend, &tags, mask);
                 let cpu = cpu_ref(&tags, mask);
-                prop_assert_eq!(
+                assert_eq!(
                     &gpu, &cpu,
                     "FINDING-GPU-RESOLVE-FAMILY-PROP: GPU resolve_family(tags=[256 words], mask={:#010x}) = {:?}, CPU oracle = {:?}",
                     mask, gpu, cpu

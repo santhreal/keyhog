@@ -19,7 +19,6 @@
 
 use crate::OpDefRegistration;
 use crate::{Category, OpDef, Signature, TypedParam};
-use vyre_foundation::cpu_op::structured_intrinsic_cpu;
 
 const OP_ID: &str = "core.indirect_dispatch";
 
@@ -39,10 +38,7 @@ inventory::submit! {
         dialect: "core",
         category: Category::Intrinsic,
         signature: SIG,
-        lowerings: vyre_foundation::LoweringTable {
-            cpu_ref: structured_intrinsic_cpu,
-            ..vyre_foundation::LoweringTable::empty()
-        },
+        lowerings: vyre_foundation::LoweringTable::empty(),
         laws: &[],
         compose: None,
     })
@@ -58,6 +54,8 @@ mod tests {
 
     #[test]
     fn indirect_dispatch_registers_in_core_dialect() {
+        let _lock = crate::registry::registry_test_lock();
+        DialectRegistry::install(DialectRegistry::from_inventory());
         let reg = DialectRegistry::global();
         let id = reg.intern_op(OP_ID);
         let def = reg
@@ -69,6 +67,8 @@ mod tests {
 
     #[test]
     fn indirect_dispatch_has_no_portable_lowering() {
+        let _lock = crate::registry::registry_test_lock();
+        DialectRegistry::install(DialectRegistry::from_inventory());
         let reg = DialectRegistry::global();
         let id = reg.intern_op(OP_ID);
         let def = reg.lookup(id).unwrap();

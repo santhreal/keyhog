@@ -154,7 +154,6 @@ inventory::submit! {
                 to_bytes(&input),
                 to_bytes(&weights),
                 vec![0u8; 4 * 4],
-                vec![0u8; 4 * 4],
             ]]
         }),
         expected_output: Some(|| {
@@ -173,5 +172,6 @@ inventory::submit! {
             }
             vec![vec![to_bytes(&out)]]
         }),
+        category: Some("nn"),
     }
 }

@@ -28,6 +28,7 @@
 //! callers (rewrite tests, fuzz harnesses) can call `verify()` to
 //! turn quiet bugs into loud ones.
 
+use rustc_hash::FxHashSet;
 use serde::{Deserialize, Serialize};
 
 use crate::{KernelBody, KernelDescriptor, KernelOpKind};
@@ -76,11 +77,29 @@ pub enum VerifyErrorKind {
     DuplicateBindingSlotId {
         slot: u32,
     },
+    /// A host-bound binding (`Global` / `Constant` / `Uniform`) sits
+    /// in the workgroup-reserved slot range (`>= 1<<24`). Backend
+    /// bind-group layouts cap at 1000 bindings on wgpu and similar
+    /// limits elsewhere; a host slot in the reserved range fails
+    /// layout creation with a "binding index N greater than maximum"
+    /// validator error. Earlier rewrites should have allocated the
+    /// new slot in the host range.
+    HostBindingInWorkgroupRange {
+        slot: u32,
+    },
+    /// A workgroup binding (`Shared` / `Scratch`) sits in the
+    /// host-bindable slot range (`< 1<<24`). The host dispatch path
+    /// addresses host bindings by slot id; a workgroup binding in
+    /// that range can collide with a Global binding's slot id and
+    /// silently steer load/store ops to the wrong memory class.
+    WorkgroupBindingInHostRange {
+        slot: u32,
+    },
 }
 
 #[must_use]
 pub fn verify(desc: &KernelDescriptor) -> VerifyResult {
-    use std::collections::BTreeSet;
+    use rustc_hash::FxHashSet;
     let mut errors = Vec::new();
     // Dispatch-level checks (don't have a body_path).
     for (axis, &dim) in desc.dispatch.workgroup_size.iter().enumerate() {
@@ -92,8 +111,10 @@ pub fn verify(desc: &KernelDescriptor) -> VerifyResult {
             });
         }
     }
-    // Binding-layout checks: no two slots share `.slot` field.
-    let mut seen_slots: BTreeSet<u32> = BTreeSet::new();
+    // Binding-layout checks: no two slots share `.slot` field; host vs
+    // workgroup ranges stay segregated.
+    use crate::descriptor::MemoryClass;
+    let mut seen_slots: FxHashSet<u32> = FxHashSet::default();
     for s in &desc.bindings.slots {
         if !seen_slots.insert(s.slot) {
             errors.push(VerifyError {
@@ -102,8 +123,30 @@ pub fn verify(desc: &KernelDescriptor) -> VerifyResult {
                 kind: VerifyErrorKind::DuplicateBindingSlotId { slot: s.slot },
             });
         }
+        let in_workgroup_range = s.slot >= crate::lower::WORKGROUP_SLOT_BASE;
+        let is_workgroup_class =
+            matches!(s.memory_class, MemoryClass::Shared | MemoryClass::Scratch,);
+        if in_workgroup_range && !is_workgroup_class {
+            errors.push(VerifyError {
+                body_path: vec![],
+                op_index: 0,
+                kind: VerifyErrorKind::HostBindingInWorkgroupRange { slot: s.slot },
+            });
+        }
+        if !in_workgroup_range && is_workgroup_class {
+            errors.push(VerifyError {
+                body_path: vec![],
+                op_index: 0,
+                kind: VerifyErrorKind::WorkgroupBindingInHostRange { slot: s.slot },
+            });
+        }
     }
-    verify_body(&desc.body, &mut Vec::new(), &BTreeSet::new(), &mut errors);
+    verify_body(
+        &desc.body,
+        &mut Vec::new(),
+        &FxHashSet::default(),
+        &mut errors,
+    );
     if errors.is_empty() {
         Ok(())
     } else {
@@ -114,13 +157,13 @@ pub fn verify(desc: &KernelDescriptor) -> VerifyResult {
 fn verify_body(
     body: &KernelBody,
     path: &mut Vec<usize>,
-    inherited_results: &std::collections::BTreeSet<u32>,
+    inherited_results: &FxHashSet<u32>,
     errors: &mut Vec<VerifyError>,
 ) {
-    use std::collections::BTreeSet;
+    use rustc_hash::FxHashSet;
 
     // 1. Collect produced result-ids, flagging duplicates.
-    let mut produced: BTreeSet<u32> = BTreeSet::new();
+    let mut produced: FxHashSet<u32> = FxHashSet::default();
     for (i, op) in body.ops.iter().enumerate() {
         for r in op.result_ids() {
             if !produced.insert(r) {
@@ -134,11 +177,11 @@ fn verify_body(
     }
 
     // 2 & 3 & 4 & 5: per-op operand checks.
-    let mut produced_so_far: BTreeSet<u32> = BTreeSet::new();
-    let child_results: Vec<BTreeSet<u32>> =
+    let mut produced_so_far: FxHashSet<u32> = FxHashSet::default();
+    let child_results: Vec<FxHashSet<u32>> =
         body.child_bodies.iter().map(collect_body_results).collect();
-    let mut completed_child_results: BTreeSet<u32> = BTreeSet::new();
-    let mut child_scopes = vec![BTreeSet::new(); body.child_bodies.len()];
+    let mut completed_child_results: FxHashSet<u32> = FxHashSet::default();
+    let mut child_scopes = vec![FxHashSet::default(); body.child_bodies.len()];
     for (i, op) in body.ops.iter().enumerate() {
         // Literal ops must have at least one operand (pool index).
         if matches!(op.kind, KernelOpKind::Literal) {
@@ -251,8 +294,8 @@ fn verify_body(
     }
 }
 
-fn collect_body_results(body: &KernelBody) -> std::collections::BTreeSet<u32> {
-    let mut results = std::collections::BTreeSet::new();
+fn collect_body_results(body: &KernelBody) -> FxHashSet<u32> {
+    let mut results = FxHashSet::default();
     for op in &body.ops {
         for result in op.result_ids() {
             results.insert(result);
@@ -382,7 +425,9 @@ pub fn classify_operand(kind: &KernelOpKind, pos: usize) -> OperandClass {
         IndirectDispatch { .. } => OperandClass::Other,
         Call { .. } => OperandClass::ResultRef,
         OpaqueExpr(..) | OpaqueNode(..) => OperandClass::ResultRef,
-        LoopCarrierInit { .. } | LoopCarrier { .. } | LoopCarrierEnd { .. } => OperandClass::ResultRef,
+        LoopCarrierInit { .. } | LoopCarrier { .. } | LoopCarrierEnd { .. } => {
+            OperandClass::ResultRef
+        }
     }
 }
 
@@ -922,5 +967,61 @@ mod tests {
             },
         };
         assert_eq!(verify(&desc), Ok(()));
+    }
+
+    #[test]
+    fn host_binding_in_workgroup_range_is_rejected() {
+        use crate::{BindingSlot, BindingVisibility, MemoryClass};
+        use vyre_foundation::ir::DataType;
+        let bad = BindingSlot {
+            slot: crate::lower::WORKGROUP_SLOT_BASE + 7,
+            element_type: DataType::U32,
+            element_count: None,
+            memory_class: MemoryClass::Global,
+            visibility: BindingVisibility::ReadWrite,
+            name: "host_in_high_range".into(),
+        };
+        let desc = KernelDescriptor {
+            id: "k".into(),
+            bindings: BindingLayout { slots: vec![bad] },
+            dispatch: Dispatch::new(64, 1, 1),
+            body: KernelBody {
+                ops: vec![],
+                child_bodies: vec![],
+                literals: vec![],
+            },
+        };
+        let errs = verify(&desc).unwrap_err();
+        assert!(errs
+            .iter()
+            .any(|e| matches!(e.kind, VerifyErrorKind::HostBindingInWorkgroupRange { .. })));
+    }
+
+    #[test]
+    fn workgroup_binding_in_host_range_is_rejected() {
+        use crate::{BindingSlot, BindingVisibility, MemoryClass};
+        use vyre_foundation::ir::DataType;
+        let bad = BindingSlot {
+            slot: 5,
+            element_type: DataType::U32,
+            element_count: Some(64),
+            memory_class: MemoryClass::Shared,
+            visibility: BindingVisibility::ReadWrite,
+            name: "shared_in_low_range".into(),
+        };
+        let desc = KernelDescriptor {
+            id: "k".into(),
+            bindings: BindingLayout { slots: vec![bad] },
+            dispatch: Dispatch::new(64, 1, 1),
+            body: KernelBody {
+                ops: vec![],
+                child_bodies: vec![],
+                literals: vec![],
+            },
+        };
+        let errs = verify(&desc).unwrap_err();
+        assert!(errs
+            .iter()
+            .any(|e| matches!(e.kind, VerifyErrorKind::WorkgroupBindingInHostRange { .. })));
     }
 }

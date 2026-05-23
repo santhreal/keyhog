@@ -20,16 +20,17 @@ pub fn lock_dominates(
 }
 
 #[must_use]
+#[cfg(test)]
 /// CPU oracle for [`lock_dominates`].
-pub fn cpu_ref(lock_doms: &[u32], shared_access_set: &[u32]) -> Vec<u32> {
+pub(crate) fn cpu_ref(lock_doms: &[u32], shared_access_set: &[u32]) -> Vec<u32> {
     vyre_primitives::bitset::and::cpu_ref(lock_doms, shared_access_set)
 }
 
 /// Soundness marker for [`lock_dominates`].
 pub struct LockDominates;
-impl weir::soundness::SoundnessTagged for LockDominates {
-    fn soundness(&self) -> weir::soundness::Soundness {
-        weir::soundness::Soundness::Exact
+impl vyre::soundness::SoundnessTagged for LockDominates {
+    fn soundness(&self) -> vyre::soundness::Soundness {
+        vyre::soundness::Soundness::Exact
     }
 }
 

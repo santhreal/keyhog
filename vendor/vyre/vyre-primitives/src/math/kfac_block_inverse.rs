@@ -42,6 +42,22 @@ pub fn kfac_block_inverse(
             "Fix: kfac_block_inverse requires n > 0, got 0.".to_string(),
         );
     }
+    let Some(block_cells) = n.checked_mul(n) else {
+        return crate::invalid_output_program(
+            OP_ID,
+            blocks_out,
+            DataType::F32,
+            format!("Fix: kfac_block_inverse n*n overflows u32 for n={n}."),
+        );
+    };
+    let Some(total_cells) = num_blocks.checked_mul(block_cells) else {
+        return crate::invalid_output_program(
+            OP_ID,
+            blocks_out,
+            DataType::F32,
+            format!("Fix: kfac_block_inverse num_blocks*n*n overflows u32: {num_blocks}*{n}*{n}."),
+        );
+    };
 
     let t = Expr::InvocationId { axis: 0 };
     let n_expr = Expr::u32(n);
@@ -175,11 +191,11 @@ pub fn kfac_block_inverse(
     Program::wrapped(
         vec![
             BufferDecl::storage(blocks_out, 0, BufferAccess::ReadWrite, DataType::F32)
-                .with_count(num_blocks * n * n),
+                .with_count(total_cells),
             BufferDecl::storage(blocks_in, 1, BufferAccess::ReadOnly, DataType::F32)
-                .with_count(num_blocks * n * n),
+                .with_count(total_cells),
             BufferDecl::storage(scratch, 2, BufferAccess::ReadWrite, DataType::F32)
-                .with_count(num_blocks * n * n),
+                .with_count(total_cells),
         ],
         [256, 1, 1],
         vec![Node::Region {
@@ -191,6 +207,7 @@ pub fn kfac_block_inverse(
 }
 
 /// CPU reference.
+#[cfg(any(test, feature = "cpu-parity"))]
 #[must_use]
 pub fn cpu_ref(blocks_in: &[f32], num_blocks: u32, n: u32) -> Vec<f32> {
     let n = n as usize;

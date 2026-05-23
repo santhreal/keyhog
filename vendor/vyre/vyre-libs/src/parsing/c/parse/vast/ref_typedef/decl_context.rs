@@ -13,21 +13,17 @@ pub(super) fn decl_context_before(
     let mut last_kind = SENTINEL;
     let mut prev_kind = SENTINEL;
     for scan_idx in 0..node_idx {
-        let base = scan_idx * VAST_NODE_STRIDE_U32 as usize;
-        let scan_parent = vast_nodes.get(base + 1).copied().unwrap_or(SENTINEL);
+        let scan_parent = parent_at(vast_nodes, scan_idx);
         if scan_parent != cur_parent {
             continue;
         }
-        let scan_kind = vast_nodes.get(base).copied().unwrap_or_default();
+        let scan_kind = kind_at(vast_nodes, scan_idx);
         let aggregate_body_open =
             is_aggregate_specifier_body_open_raw(scan_kind, last_kind, prev_kind);
         if is_decl_prefix_reset_raw(scan_kind) {
             has_decl_prefix = false;
         }
-        let scan_typedef_flags = vast_nodes
-            .get(base + VAST_TYPEDEF_FLAGS_FIELD as usize)
-            .copied()
-            .unwrap_or_default();
+        let scan_typedef_flags = flags_at(vast_nodes, scan_idx);
         if is_decl_prefix_at(vast_nodes, scan_idx)
             || aggregate_body_open
             || (scan_kind == TOK_IDENTIFIER
@@ -50,11 +46,10 @@ pub(super) fn declaration_initializer_prefix_before(
 ) -> bool {
     let mut has_decl_prefix = false;
     for scan_idx in 0..node_idx {
-        let base = scan_idx * VAST_NODE_STRIDE_U32 as usize;
-        if vast_nodes.get(base + 1).copied().unwrap_or(SENTINEL) != cur_parent {
+        if parent_at(vast_nodes, scan_idx) != cur_parent {
             continue;
         }
-        let scan_kind = vast_nodes.get(base).copied().unwrap_or_default();
+        let scan_kind = kind_at(vast_nodes, scan_idx);
         if matches!(scan_kind, TOK_SEMICOLON | TOK_LBRACE | TOK_RBRACE) {
             has_decl_prefix = false;
         }
@@ -79,18 +74,14 @@ pub(super) fn suffix_function_boundary_kind(
         if idx >= node_count {
             return SENTINEL;
         }
-        let base = idx * VAST_NODE_STRIDE_U32 as usize;
-        let scan_kind = vast_nodes.get(base).copied().unwrap_or_default();
+        let scan_kind = kind_at(vast_nodes, idx);
         if matches!(scan_kind, TOK_LBRACE | TOK_SEMICOLON) {
             return scan_kind;
         }
         if scan_kind == TOK_RPAREN {
-            let scan_parent = vast_nodes.get(base + 1).copied().unwrap_or(SENTINEL);
+            let scan_parent = parent_at(vast_nodes, idx);
             if let Ok(parent_idx) = usize::try_from(scan_parent) {
-                let parent_next = vast_nodes
-                    .get(parent_idx * VAST_NODE_STRIDE_U32 as usize + 3)
-                    .copied()
-                    .unwrap_or(SENTINEL);
+                let parent_next = next_sibling_at(vast_nodes, parent_idx);
                 if let Ok(parent_next_idx) = usize::try_from(parent_next) {
                     if parent_next_idx < node_count {
                         let parent_next_kind = kind_at(vast_nodes, parent_next_idx);
@@ -98,16 +89,11 @@ pub(super) fn suffix_function_boundary_kind(
                             return parent_next_kind;
                         }
                         if parent_next_kind == TOK_RPAREN {
-                            let parent_next_parent = vast_nodes
-                                .get(parent_next_idx * VAST_NODE_STRIDE_U32 as usize + 1)
-                                .copied()
-                                .unwrap_or(SENTINEL);
+                            let parent_next_parent = parent_at(vast_nodes, parent_next_idx);
                             if let Ok(parent_next_parent_idx) = usize::try_from(parent_next_parent)
                             {
-                                let outer_next = vast_nodes
-                                    .get(parent_next_parent_idx * VAST_NODE_STRIDE_U32 as usize + 3)
-                                    .copied()
-                                    .unwrap_or(SENTINEL);
+                                let outer_next =
+                                    next_sibling_at(vast_nodes, parent_next_parent_idx);
                                 if let Ok(outer_next_idx) = usize::try_from(outer_next) {
                                     if outer_next_idx < node_count {
                                         let outer_next_kind = kind_at(vast_nodes, outer_next_idx);
@@ -125,7 +111,7 @@ pub(super) fn suffix_function_boundary_kind(
                 }
             }
         }
-        scan_idx = vast_nodes.get(base + 3).copied().unwrap_or(SENTINEL);
+        scan_idx = next_sibling_at(vast_nodes, idx);
     }
     SENTINEL
 }

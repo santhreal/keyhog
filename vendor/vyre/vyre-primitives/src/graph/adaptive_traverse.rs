@@ -8,9 +8,10 @@
 //! × its frontier bitset is one vectorised OR over a pair of 32-bit
 //! words, with contiguous DRAM access patterns that outrun CSR.
 //!
-//! This primitive picks which representation to use per tile. The
-//! selector is host logic; given the frontier popcount as a fraction
-//! of `node_count`, choose CSR or dense:
+//! This module exposes both a dense step and a hybrid sparse/dense
+//! step. The hybrid step consumes a device-resident frontier popcount
+//! buffer, so a prior GPU reduction can select CSR or dense execution
+//! without reading the frontier back to the CPU:
 //!
 //! ```text
 //!   density_pct = 100 * popcount(frontier_in) / node_count
@@ -34,6 +35,10 @@
 //!
 //! - `frontier_in`  — ReadOnly, packed bitset, `bitset_words(n)` u32.
 //! - `frontier_out` — ReadWrite, same shape.
+//! - `frontier_popcount` — ReadOnly, one u32 set-bit count for
+//!   device-side sparse/dense selection in the hybrid step.
+//! - `edge_offsets`, `edge_targets`, `edge_kind_mask` — CSR graph
+//!   buffers for sparse expansion in the hybrid step.
 //! - `adj_rows_dense` — ReadOnly, `node_count × bitset_words(n)` u32.
 //!   Row `d` is the bitset of predecessors of node `d`.
 
@@ -51,13 +56,74 @@ pub const DENSE_THRESHOLD_PCT: u32 = 25;
 
 /// Canonical op id for the dense step.
 pub const OP_ID: &str = "vyre-primitives::graph::adaptive_traverse_dense";
+/// Canonical op id for the device-selected sparse/dense step.
+pub const HYBRID_OP_ID: &str = "vyre-primitives::graph::adaptive_traverse_sparse_dense";
 
 /// Canonical input-frontier buffer name.
 pub const NAME_FRONTIER_IN: &str = "adap_frontier_in";
 /// Canonical output-frontier buffer name.
 pub const NAME_FRONTIER_OUT: &str = "adap_frontier_out";
+/// Canonical frontier-popcount buffer name.
+pub const NAME_FRONTIER_POPCOUNT: &str = "adap_frontier_popcount";
+/// Canonical CSR row-offset buffer name.
+pub const NAME_EDGE_OFFSETS: &str = "adap_edge_offsets";
+/// Canonical CSR edge-target buffer name.
+pub const NAME_EDGE_TARGETS: &str = "adap_edge_targets";
+/// Canonical CSR edge-kind mask buffer name.
+pub const NAME_EDGE_KIND_MASK: &str = "adap_edge_kind_mask";
 /// Canonical dense adjacency-row buffer name.
 pub const NAME_ADJ_ROWS_DENSE: &str = "adap_adj_rows_dense";
+
+/// Runtime traversal strategy selected from frontier and graph statistics.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AdaptiveTraversalMode {
+    /// Materialize active source nodes into a device queue, then consume only
+    /// queued CSR rows. Best for low-density frontiers.
+    SparseQueue,
+    /// Let the GPU selector choose sparse CSR vs dense reverse-bitmatrix from
+    /// a device-resident frontier popcount.
+    SparseDense,
+}
+
+/// Validated adaptive traversal graph layout metadata.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AdaptiveTraversalLayout {
+    /// Number of logical CSR edges.
+    pub edge_count: u32,
+    /// Number of u32 words required by physical edge buffers after padding.
+    pub edge_storage_words: usize,
+    /// Number of u32 words in one frontier bitset.
+    pub words: usize,
+    /// Number of u32 words in the dense reverse-adjacency matrix.
+    pub dense_words: usize,
+}
+
+/// Validated frontier bitset shape for adaptive traversal.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AdaptiveFrontierLayout {
+    /// Number of u32 words in one frontier bitset.
+    pub words: usize,
+    /// Number of u32 words in one frontier bitset, narrowed for primitive metadata.
+    pub words_u32: u32,
+}
+
+#[must_use]
+fn dense_cutover_nodes(node_count: u32, threshold_pct: u32) -> u32 {
+    if node_count == 0 {
+        return u32::MAX;
+    }
+    let numerator = u64::from(node_count).saturating_mul(u64::from(threshold_pct));
+    let cutover = numerator.div_ceil(100);
+    cutover.min(u64::from(u32::MAX)) as u32
+}
+
+#[must_use]
+fn should_use_dense_with_popcount(popcount: u32, node_count: u32, threshold_pct: u32) -> bool {
+    if node_count == 0 {
+        return false;
+    }
+    popcount >= dense_cutover_nodes(node_count, threshold_pct)
+}
 
 /// Host-side density probe. Returns `true` iff
 /// `popcount(frontier_in) / node_count ≥ DENSE_THRESHOLD_PCT / 100`.
@@ -71,7 +137,146 @@ pub fn should_use_dense(frontier_in: &[u32], node_count: u32) -> bool {
         return false;
     }
     let popcount: u32 = frontier_in.iter().map(|w| w.count_ones()).sum();
-    (popcount as u64) * 100 >= (DENSE_THRESHOLD_PCT as u64) * (node_count as u64)
+    should_use_dense_with_popcount(popcount, node_count, DENSE_THRESHOLD_PCT)
+}
+
+/// Select an adaptive traversal mode from measured frontier/graph statistics.
+///
+/// The sparse queue path removes whole-graph lane waste, but pays an extra
+/// queue zero/upload and one atomic append per active source. The sparse/dense
+/// path is better once the frontier is broad enough that scanning node lanes is
+/// not mostly empty or when graph average degree makes queue materialization
+/// less decisive than dense row coalescing.
+#[must_use]
+pub fn select_adaptive_traversal_mode(
+    node_count: u32,
+    edge_count: u32,
+    frontier_popcount: u32,
+    dense_threshold_pct: u32,
+) -> AdaptiveTraversalMode {
+    if node_count == 0 || frontier_popcount == 0 {
+        return AdaptiveTraversalMode::SparseQueue;
+    }
+    let frontier_bps = (u64::from(frontier_popcount) * 10_000) / u64::from(node_count);
+    let dense_cutover_bps = u64::from(dense_threshold_pct).saturating_mul(100);
+    if frontier_bps >= dense_cutover_bps {
+        return AdaptiveTraversalMode::SparseDense;
+    }
+    let avg_degree_x100 = (u64::from(edge_count) * 100) / u64::from(node_count);
+    if frontier_bps <= 625 || (frontier_bps <= 1_250 && avg_degree_x100 >= 400) {
+        AdaptiveTraversalMode::SparseQueue
+    } else {
+        AdaptiveTraversalMode::SparseDense
+    }
+}
+
+/// Validate CSR plus dense reverse-adjacency rows for adaptive traversal.
+///
+/// # Errors
+///
+/// Returns an actionable diagnostic when the layout is empty, malformed,
+/// exceeds u32 edge-count indexing, has non-monotonic offsets, contains
+/// out-of-range CSR targets, or has the wrong dense matrix length.
+pub fn validate_adaptive_traversal_layout(
+    node_count: u32,
+    edge_offsets: &[u32],
+    edge_targets: &[u32],
+    edge_kind_mask: &[u32],
+    adj_rows_dense: &[u32],
+) -> Result<AdaptiveTraversalLayout, String> {
+    if node_count == 0 {
+        return Err("Fix: adaptive traversal requires node_count > 0.".to_string());
+    }
+    let expected_offsets = (node_count as usize).checked_add(1).ok_or_else(|| {
+        format!(
+            "Fix: adaptive traversal node_count + 1 overflows usize for node_count={node_count}."
+        )
+    })?;
+    if edge_offsets.len() != expected_offsets {
+        return Err(format!(
+            "Fix: adaptive traversal expected {expected_offsets} CSR offsets for {node_count} nodes, got {}.",
+            edge_offsets.len()
+        ));
+    }
+    if edge_targets.len() != edge_kind_mask.len() {
+        return Err(format!(
+            "Fix: adaptive traversal target/mask length mismatch: {} targets, {} masks.",
+            edge_targets.len(),
+            edge_kind_mask.len()
+        ));
+    }
+    let edge_count = u32::try_from(edge_targets.len()).map_err(|_| {
+        format!(
+            "Fix: adaptive traversal edge count {} exceeds u32 index space.",
+            edge_targets.len()
+        )
+    })?;
+    let final_offset = edge_offsets[expected_offsets - 1] as usize;
+    if final_offset != edge_targets.len() {
+        return Err(format!(
+            "Fix: adaptive traversal final CSR offset {final_offset} must equal edge_count {}.",
+            edge_targets.len()
+        ));
+    }
+    for (row, pair) in edge_offsets.windows(2).enumerate() {
+        if pair[0] > pair[1] {
+            return Err(format!(
+                "Fix: adaptive traversal CSR offsets are non-monotonic at row {row}: {} > {}.",
+                pair[0], pair[1]
+            ));
+        }
+    }
+    for (idx, &target) in edge_targets.iter().enumerate() {
+        if target >= node_count {
+            return Err(format!(
+                "Fix: adaptive traversal CSR target[{idx}]={target} is outside node_count {node_count}."
+            ));
+        }
+    }
+
+    let words = bitset_words(node_count) as usize;
+    let dense_words = (node_count as usize).checked_mul(words).ok_or_else(|| {
+        format!(
+            "Fix: adaptive traversal dense adjacency word count overflows usize for {node_count} nodes and {words} words."
+        )
+    })?;
+    if adj_rows_dense.len() != dense_words {
+        return Err(format!(
+            "Fix: adaptive traversal expected {dense_words} dense adjacency words, got {}.",
+            adj_rows_dense.len()
+        ));
+    }
+
+    Ok(AdaptiveTraversalLayout {
+        edge_count,
+        edge_storage_words: edge_targets.len().max(1),
+        words,
+        dense_words,
+    })
+}
+
+/// Validate a packed frontier bitset for adaptive traversal.
+///
+/// # Errors
+///
+/// Returns an actionable diagnostic when `node_count` is zero or the frontier
+/// slice length does not match `bitset_words(node_count)`.
+pub fn validate_adaptive_frontier(
+    node_count: u32,
+    frontier_in: &[u32],
+) -> Result<AdaptiveFrontierLayout, String> {
+    if node_count == 0 {
+        return Err("Fix: adaptive traversal frontier requires node_count > 0.".to_string());
+    }
+    let words_u32 = bitset_words(node_count);
+    let words = words_u32 as usize;
+    if frontier_in.len() != words {
+        return Err(format!(
+            "Fix: adaptive traversal frontier expected {words} word(s) for node_count={node_count}, got {}.",
+            frontier_in.len()
+        ));
+    }
+    Ok(AdaptiveFrontierLayout { words, words_u32 })
 }
 
 /// Build the GPU Program for one dense step. Invocation `d`
@@ -176,10 +381,235 @@ pub fn adaptive_dense_step(
     )
 }
 
+/// Build the GPU Program for one adaptive sparse/dense step.
+///
+/// Each invocation uses the device-resident `frontier_popcount[0]` to choose
+/// the path. Below `dense_threshold_pct`, invocation `src` expands the CSR row
+/// for one active source node. At or above the threshold, invocation `dst`
+/// scans the dense reverse-adjacency row for one destination node.
+///
+/// This is intentionally a single primitive contract: callers can keep
+/// `frontier_in`, `frontier_popcount`, CSR buffers, dense rows, and
+/// `frontier_out` resident across fixpoint iterations, eliminating the old
+/// CPU branch/readback boundary from the release path.
+#[must_use]
+pub fn adaptive_sparse_dense_step(
+    frontier_in: &str,
+    frontier_out: &str,
+    frontier_popcount: &str,
+    edge_offsets: &str,
+    edge_targets: &str,
+    edge_kind_mask: &str,
+    adj_rows_dense: &str,
+    node_count: u32,
+    edge_count: u32,
+    allow_mask: u32,
+    dense_threshold_pct: u32,
+) -> Program {
+    if node_count == 0 {
+        return crate::invalid_output_program(
+            HYBRID_OP_ID,
+            frontier_out,
+            DataType::U32,
+            "Fix: adaptive_sparse_dense_step requires node_count > 0, got 0.".to_string(),
+        );
+    }
+
+    let words = bitset_words(node_count);
+    let Some(adj_count) = u64::from(node_count).checked_mul(u64::from(words)) else {
+        return crate::invalid_output_program(
+            HYBRID_OP_ID,
+            frontier_out,
+            DataType::U32,
+            format!("Fix: adaptive_sparse_dense_step dense buffer size overflows u64 ({node_count} nodes x {words} words)."),
+        );
+    };
+    if adj_count > u64::from(u32::MAX) {
+        return crate::invalid_output_program(
+            HYBRID_OP_ID,
+            frontier_out,
+            DataType::U32,
+            format!("Fix: adaptive_sparse_dense_step dense buffer size {adj_count} exceeds u32::MAX ({node_count} nodes x {words} words). Partition the graph."),
+        );
+    }
+    let Some(offset_count) = node_count.checked_add(1) else {
+        return crate::invalid_output_program(
+            HYBRID_OP_ID,
+            frontier_out,
+            DataType::U32,
+            "Fix: adaptive_sparse_dense_step CSR offset count overflows u32. Partition the graph."
+                .to_string(),
+        );
+    };
+    let physical_edge_count = edge_count.max(1);
+
+    let lane = Expr::InvocationId { axis: 0 };
+    let dense_cutover = dense_cutover_nodes(node_count, dense_threshold_pct);
+    let dense_body: Vec<Node> = vec![
+        Node::let_bind("dense_row_start", Expr::mul(lane.clone(), Expr::u32(words))),
+        Node::let_bind("dense_hit", Expr::u32(0)),
+        Node::loop_for(
+            "dense_w",
+            Expr::u32(0),
+            Expr::u32(words),
+            vec![Node::assign(
+                "dense_hit",
+                Expr::bitor(
+                    Expr::var("dense_hit"),
+                    Expr::bitand(
+                        Expr::load(
+                            adj_rows_dense,
+                            Expr::add(Expr::var("dense_row_start"), Expr::var("dense_w")),
+                        ),
+                        Expr::load(frontier_in, Expr::var("dense_w")),
+                    ),
+                ),
+            )],
+        ),
+        Node::if_then(
+            Expr::ne(Expr::var("dense_hit"), Expr::u32(0)),
+            vec![
+                Node::let_bind("dense_word_idx", Expr::shr(lane.clone(), Expr::u32(5))),
+                Node::let_bind(
+                    "dense_bit_mask",
+                    Expr::shl(Expr::u32(1), Expr::bitand(lane.clone(), Expr::u32(31))),
+                ),
+                Node::let_bind(
+                    "_dense_prev",
+                    Expr::atomic_or(
+                        frontier_out,
+                        Expr::var("dense_word_idx"),
+                        Expr::var("dense_bit_mask"),
+                    ),
+                ),
+            ],
+        ),
+    ];
+
+    let sparse_body: Vec<Node> = vec![
+        Node::let_bind("sparse_word_idx", Expr::shr(lane.clone(), Expr::u32(5))),
+        Node::let_bind(
+            "sparse_bit_mask",
+            Expr::shl(Expr::u32(1), Expr::bitand(lane.clone(), Expr::u32(31))),
+        ),
+        Node::let_bind(
+            "sparse_src_word",
+            Expr::load(frontier_in, Expr::var("sparse_word_idx")),
+        ),
+        Node::if_then(
+            Expr::ne(
+                Expr::bitand(Expr::var("sparse_src_word"), Expr::var("sparse_bit_mask")),
+                Expr::u32(0),
+            ),
+            vec![
+                Node::let_bind("sparse_edge_start", Expr::load(edge_offsets, lane.clone())),
+                Node::let_bind(
+                    "sparse_edge_end",
+                    Expr::load(edge_offsets, Expr::add(lane.clone(), Expr::u32(1))),
+                ),
+                Node::loop_for(
+                    "sparse_e",
+                    Expr::var("sparse_edge_start"),
+                    Expr::var("sparse_edge_end"),
+                    vec![
+                        Node::let_bind(
+                            "sparse_kind_mask",
+                            Expr::load(edge_kind_mask, Expr::var("sparse_e")),
+                        ),
+                        Node::if_then(
+                            Expr::ne(
+                                Expr::bitand(Expr::var("sparse_kind_mask"), Expr::u32(allow_mask)),
+                                Expr::u32(0),
+                            ),
+                            vec![
+                                Node::let_bind(
+                                    "sparse_dst",
+                                    Expr::load(edge_targets, Expr::var("sparse_e")),
+                                ),
+                                Node::if_then(
+                                    Expr::lt(Expr::var("sparse_dst"), Expr::u32(node_count)),
+                                    vec![
+                                        Node::let_bind(
+                                            "sparse_dst_word_idx",
+                                            Expr::shr(Expr::var("sparse_dst"), Expr::u32(5)),
+                                        ),
+                                        Node::let_bind(
+                                            "sparse_dst_bit",
+                                            Expr::shl(
+                                                Expr::u32(1),
+                                                Expr::bitand(
+                                                    Expr::var("sparse_dst"),
+                                                    Expr::u32(31),
+                                                ),
+                                            ),
+                                        ),
+                                        Node::let_bind(
+                                            "_sparse_prev",
+                                            Expr::atomic_or(
+                                                frontier_out,
+                                                Expr::var("sparse_dst_word_idx"),
+                                                Expr::var("sparse_dst_bit"),
+                                            ),
+                                        ),
+                                    ],
+                                ),
+                            ],
+                        ),
+                    ],
+                ),
+            ],
+        ),
+    ];
+
+    let body = vec![
+        Node::let_bind(
+            "frontier_popcount_total",
+            Expr::load(frontier_popcount, Expr::u32(0)),
+        ),
+        Node::if_then_else(
+            Expr::ge(
+                Expr::var("frontier_popcount_total"),
+                Expr::u32(dense_cutover),
+            ),
+            dense_body,
+            sparse_body,
+        ),
+    ];
+
+    Program::wrapped(
+        vec![
+            BufferDecl::storage(frontier_in, 0, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(words),
+            BufferDecl::storage(frontier_out, 1, BufferAccess::ReadWrite, DataType::U32)
+                .with_count(words),
+            BufferDecl::storage(frontier_popcount, 2, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(1),
+            BufferDecl::storage(edge_offsets, 3, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(offset_count),
+            BufferDecl::storage(edge_targets, 4, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(physical_edge_count),
+            BufferDecl::storage(edge_kind_mask, 5, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(physical_edge_count),
+            BufferDecl::storage(adj_rows_dense, 6, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(adj_count as u32),
+        ],
+        [1, 1, 1],
+        vec![Node::Region {
+            generator: Ident::from(HYBRID_OP_ID),
+            source_region: None,
+            body: Arc::new(vec![Node::if_then(
+                Expr::lt(lane.clone(), Expr::u32(node_count)),
+                body,
+            )]),
+        }],
+    )
+}
+
 /// CPU reference for the dense step. `frontier_in` is a packed
 /// bitset over `node_count` nodes; `adj_rows_dense` is the reverse
 /// adjacency laid out as `node_count × bitset_words(node_count)`.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_dense_step(frontier_in: &[u32], adj_rows_dense: &[u32], node_count: u32) -> Vec<u32> {
     let words = bitset_words(node_count) as usize;
 
@@ -194,6 +624,52 @@ pub fn cpu_dense_step(frontier_in: &[u32], adj_rows_dense: &[u32], node_count: u
         }
         if hit != 0 {
             out[d / 32] |= 1 << (d % 32);
+        }
+    }
+    out
+}
+
+/// CPU reference for the adaptive sparse/dense step.
+#[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn cpu_sparse_dense_step(
+    frontier_in: &[u32],
+    frontier_popcount: u32,
+    edge_offsets: &[u32],
+    edge_targets: &[u32],
+    edge_kind_mask: &[u32],
+    adj_rows_dense: &[u32],
+    node_count: u32,
+    allow_mask: u32,
+    dense_threshold_pct: u32,
+) -> Vec<u32> {
+    if should_use_dense_with_popcount(frontier_popcount, node_count, dense_threshold_pct) {
+        return cpu_dense_step(frontier_in, adj_rows_dense, node_count);
+    }
+
+    let words = bitset_words(node_count) as usize;
+    let mut out = vec![0_u32; words];
+    for src in 0..node_count as usize {
+        let word_idx = src / 32;
+        let bit_mask = 1_u32 << (src % 32);
+        if frontier_in.get(word_idx).copied().unwrap_or(0) & bit_mask == 0 {
+            continue;
+        }
+        let edge_start = edge_offsets.get(src).copied().unwrap_or(0) as usize;
+        let edge_end = edge_offsets
+            .get(src + 1)
+            .copied()
+            .unwrap_or(edge_start as u32) as usize;
+        for e in edge_start..edge_end {
+            if edge_kind_mask.get(e).copied().unwrap_or(0) & allow_mask == 0 {
+                continue;
+            }
+            let Some(dst) = edge_targets.get(e).copied() else {
+                continue;
+            };
+            if dst < node_count {
+                out[dst as usize / 32] |= 1_u32 << (dst % 32);
+            }
         }
     }
     out
@@ -247,6 +723,13 @@ mod tests {
     fn should_use_dense_just_under_threshold_is_false() {
         // 32 nodes, 7 bits set = ~21%, below 25%.
         assert!(!should_use_dense(&[0x7F_u32], 32));
+    }
+
+    #[test]
+    fn dense_cutover_rounds_up_without_u32_multiply_overflow() {
+        assert_eq!(dense_cutover_nodes(32, 25), 8);
+        assert_eq!(dense_cutover_nodes(33, 25), 9);
+        assert_eq!(dense_cutover_nodes(u32::MAX, 100), u32::MAX);
     }
 
     #[test]
@@ -322,6 +805,50 @@ mod tests {
     }
 
     #[test]
+    fn emitted_hybrid_program_has_device_selector_and_both_graph_layouts() {
+        let p = adaptive_sparse_dense_step(
+            "fin", "fout", "count", "offs", "tgts", "kinds", "adj", 64, 7, 1, 25,
+        );
+        assert_eq!(p.workgroup_size, [1, 1, 1]);
+        let names: Vec<&str> = p.buffers.iter().map(|b| b.name()).collect();
+        assert_eq!(
+            names,
+            vec!["fin", "fout", "count", "offs", "tgts", "kinds", "adj"]
+        );
+        let find = |name: &str| p.buffers.iter().find(|b| b.name() == name).unwrap().count;
+        let words = bitset_words(64);
+        assert_eq!(find("fin"), words);
+        assert_eq!(find("fout"), words);
+        assert_eq!(find("count"), 1);
+        assert_eq!(find("offs"), 65);
+        assert_eq!(find("tgts"), 7);
+        assert_eq!(find("kinds"), 7);
+        assert_eq!(find("adj"), 64 * words);
+    }
+
+    #[test]
+    fn cpu_hybrid_sparse_branch_uses_csr_not_dense_rows() {
+        let frontier = pack_nodes(&[0], 8);
+        let offsets = vec![0, 1, 1, 1, 1, 1, 1, 1, 1];
+        let targets = vec![1];
+        let kinds = vec![1];
+        let dense = build_dense_adj(&[(0, 2)], 8);
+        let out = cpu_sparse_dense_step(&frontier, 1, &offsets, &targets, &kinds, &dense, 8, 1, 50);
+        assert_eq!(out, pack_nodes(&[1], 8));
+    }
+
+    #[test]
+    fn cpu_hybrid_dense_branch_uses_dense_rows_not_csr() {
+        let frontier = pack_nodes(&[0, 1, 2, 3], 8);
+        let offsets = vec![0, 1, 1, 1, 1, 1, 1, 1, 1];
+        let targets = vec![1];
+        let kinds = vec![1];
+        let dense = build_dense_adj(&[(0, 5)], 8);
+        let out = cpu_sparse_dense_step(&frontier, 4, &offsets, &targets, &kinds, &dense, 8, 1, 50);
+        assert_eq!(out, pack_nodes(&[5], 8));
+    }
+
+    #[test]
     fn selector_roundtrip_common_density_profiles() {
         // Sparse (1% density) → CSR.
         assert!(!should_use_dense(&pack_nodes(&[5], 512), 512));
@@ -332,5 +859,72 @@ mod tests {
             f[b as usize / 32] |= 1 << (b % 32);
         }
         assert!(should_use_dense(&f, 512));
+    }
+
+    #[test]
+    fn mode_selector_keeps_ultra_sparse_frontiers_on_queue_path() {
+        assert_eq!(
+            select_adaptive_traversal_mode(1_000, 10_000, 3, 25),
+            AdaptiveTraversalMode::SparseQueue
+        );
+        assert_eq!(
+            select_adaptive_traversal_mode(1_000, 10_000, 250, 25),
+            AdaptiveTraversalMode::SparseDense
+        );
+        assert_eq!(
+            select_adaptive_traversal_mode(1_000, 1_000, 100, 25),
+            AdaptiveTraversalMode::SparseDense
+        );
+    }
+
+    #[test]
+    fn adaptive_layout_validation_accepts_valid_csr_and_dense_rows() {
+        let layout = validate_adaptive_traversal_layout(
+            3,
+            &[0, 1, 2, 2],
+            &[1, 2],
+            &[1, 1],
+            &build_dense_adj(&[(0, 1), (1, 2)], 3),
+        )
+        .unwrap();
+        assert_eq!(layout.edge_count, 2);
+        assert_eq!(layout.edge_storage_words, 2);
+        assert_eq!(layout.words, 1);
+        assert_eq!(layout.dense_words, 3);
+    }
+
+    #[test]
+    fn adaptive_layout_validation_rejects_malformed_layouts() {
+        let dense = build_dense_adj(&[(0, 1)], 2);
+        let err =
+            validate_adaptive_traversal_layout(2, &[0, 2, 1], &[1], &[1], &dense).unwrap_err();
+        assert!(err.contains("final CSR offset") || err.contains("non-monotonic"));
+
+        let err =
+            validate_adaptive_traversal_layout(2, &[0, 1, 1], &[2], &[1], &dense).unwrap_err();
+        assert!(err.contains("outside node_count"));
+
+        let err = validate_adaptive_traversal_layout(2, &[0, 1, 1], &[1], &[1], &[]).unwrap_err();
+        assert!(err.contains("dense adjacency words"));
+    }
+
+    #[test]
+    fn adaptive_frontier_validation_accepts_canonical_frontier() {
+        assert_eq!(
+            validate_adaptive_frontier(64, &[1, 0]).unwrap(),
+            AdaptiveFrontierLayout {
+                words: 2,
+                words_u32: 2,
+            }
+        );
+    }
+
+    #[test]
+    fn adaptive_frontier_validation_rejects_zero_nodes_and_wrong_width() {
+        let err = validate_adaptive_frontier(0, &[]).unwrap_err();
+        assert!(err.contains("node_count > 0"));
+
+        let err = validate_adaptive_frontier(64, &[1]).unwrap_err();
+        assert!(err.contains("expected 2 word"));
     }
 }

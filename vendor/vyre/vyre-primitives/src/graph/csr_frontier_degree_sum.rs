@@ -123,11 +123,44 @@ pub fn csr_frontier_degree_sum(shape: ProgramGraphShape) -> Program {
 /// array of length `node_count + 1`. Returns the total outgoing-edge
 /// count over active frontier nodes.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn csr_frontier_degree_sum_cpu(
     frontier_in: &[u32],
     edge_offsets: &[u32],
     node_count: u32,
 ) -> u32 {
+    match try_csr_frontier_degree_sum_cpu(frontier_in, edge_offsets, node_count) {
+        Ok(total) => total,
+        Err(error) => {
+            eprintln!("{error}");
+            u32::MAX
+        }
+    }
+}
+
+/// CPU reference with checked degree-sum accumulation.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn try_csr_frontier_degree_sum_cpu(
+    frontier_in: &[u32],
+    edge_offsets: &[u32],
+    node_count: u32,
+) -> Result<u32, String> {
+    let expected_offsets = node_count as usize + 1;
+    if edge_offsets.len() != expected_offsets {
+        return Err(format!(
+            "csr_frontier_degree_sum CPU oracle received {} row offsets for node_count={node_count}; Fix: pass exactly node_count + 1 CSR offsets.",
+            edge_offsets.len()
+        ));
+    }
+    for (index, pair) in edge_offsets.windows(2).enumerate() {
+        if pair[0] > pair[1] {
+            return Err(format!(
+                "csr_frontier_degree_sum CPU oracle received non-monotonic CSR offsets at row {index}: {} > {}. Fix: rebuild CSR row pointers before parity comparison.",
+                pair[0],
+                pair[1]
+            ));
+        }
+    }
     let mut total = 0u32;
     for src in 0..node_count {
         let word = (src / 32) as usize;
@@ -135,11 +168,25 @@ pub fn csr_frontier_degree_sum_cpu(
         if frontier_in.get(word).copied().unwrap_or(0) & (1u32 << bit) == 0 {
             continue;
         }
-        let lo = edge_offsets.get(src as usize).copied().unwrap_or(0);
-        let hi = edge_offsets.get((src + 1) as usize).copied().unwrap_or(lo);
-        total = total.saturating_add(hi.saturating_sub(lo));
+        let lo = edge_offsets[src as usize];
+        let hi = edge_offsets[(src + 1) as usize];
+        total = total.checked_add(hi - lo).ok_or_else(|| {
+            format!(
+                "csr_frontier_degree_sum CPU oracle overflowed degree sum at src={src}. Fix: shard the frontier or graph before parity comparison."
+            )
+        })?;
     }
-    total
+    Ok(total)
+}
+
+#[cfg(feature = "inventory-registry")]
+inventory::submit! {
+    crate::harness::OpEntry::new(
+        OP_ID,
+        || csr_frontier_degree_sum(ProgramGraphShape::new(4, 4)),
+        None,
+        None,
+    )
 }
 
 #[cfg(test)]
@@ -208,6 +255,51 @@ mod tests {
             "expects pg buffers + frontier_in + degree_sum_out"
         );
         assert_eq!(program.workgroup_size(), [256, 1, 1]);
+    }
+
+    #[test]
+    fn checked_cpu_ref_reports_non_monotonic_offsets() {
+        let frontier = [0b11u32];
+        let edge_offsets = [0, 9, 3];
+        let error = try_csr_frontier_degree_sum_cpu(&frontier, &edge_offsets, 2)
+            .expect_err("checked degree sum oracle must reject malformed CSR offsets");
+
+        assert!(
+            error.contains("non-monotonic CSR offsets"),
+            "error should describe the malformed CSR offsets: {error}"
+        );
+    }
+
+    #[test]
+    fn legacy_cpu_ref_pins_degree_sum_on_malformed_offsets() {
+        let frontier = [0b11u32];
+        let edge_offsets = [0, 9, 3];
+
+        assert_eq!(
+            csr_frontier_degree_sum_cpu(&frontier, &edge_offsets, 2),
+            u32::MAX
+        );
+    }
+
+    #[test]
+    fn degree_sum_cpu_source_has_checked_api_without_panics() {
+        let source = include_str!("csr_frontier_degree_sum.rs");
+        let oracle_source = source
+            .split("/// CPU reference.")
+            .nth(1)
+            .expect("degree-sum CPU oracle source must be present")
+            .split("#[cfg(test)]")
+            .next()
+            .expect("degree-sum CPU oracle source must precede tests");
+
+        assert!(
+            oracle_source.contains("pub fn try_csr_frontier_degree_sum_cpu(")
+                && !oracle_source.contains(concat!("panic", "!("))
+                && !oracle_source.contains("assert!(")
+                && !oracle_source.contains("assert_eq!(")
+                && !oracle_source.contains(".unwrap_or_else("),
+            "Fix: degree-sum CPU parity oracle must expose checked accumulation and avoid panics."
+        );
     }
 
     #[test]

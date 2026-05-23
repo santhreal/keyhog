@@ -1,3 +1,5 @@
+#![allow(deprecated)]
+
 use super::reference::{
     brace_scope_id_for_node, brace_scope_parent_id_for_node, function_parameter_scope,
     reference_scope_tree,
@@ -95,7 +97,12 @@ fn witness_fixture() -> (Vec<u32>, Vec<u32>, Vec<u32>, Vec<u32>) {
     let mut lens = Vec::with_capacity(atoms.len());
     let mut max_end = 0usize;
     for atom in atoms {
-        let end = usize::try_from(atom.start.saturating_add(atom.len)).unwrap_or(0);
+        let end_u32 = atom.start.checked_add(atom.len).expect(
+            "C semantic registry witness span overflows u32. Fix: keep fixture spans bounded.",
+        );
+        let end = usize::try_from(end_u32).expect(
+            "C semantic registry witness span exceeds usize. Fix: keep fixture spans bounded.",
+        );
         max_end = max_end.max(end);
         tokens.push(atom.token);
         starts.push(atom.start);
@@ -193,18 +200,22 @@ inventory::submit! {
         id: "vyre-libs::parsing::c_sema_scope",
         build: || {
             let (tokens, _, _, _) = witness_fixture();
+            let token_count = u32::try_from(tokens.len()).expect(
+                "C semantic registry witness token count exceeds u32. Fix: split the fixture.",
+            );
             c_sema_scope(
                 "tok_types",
                 "tok_starts",
                 "tok_lens",
                 "haystack",
                 Expr::u32(16),
-                Expr::u32(u32::try_from(tokens.len()).unwrap_or(0)),
+                Expr::u32(token_count),
                 "out_scope_tree",
             )
         },
         test_inputs: Some(witness_inputs),
         expected_output: Some(witness_expected),
+        category: Some("parsing"),
     }
 }
 
@@ -213,6 +224,9 @@ inventory::submit! {
         id: SCOPE_PHASE_OP_ID,
         build: || {
             let (tokens, _, _, _) = witness_fixture();
+            let token_count = u32::try_from(tokens.len()).expect(
+                "C semantic scope witness token count exceeds u32. Fix: split the fixture.",
+            );
             c_sema_scope_phase(
                 CScopePhase::Scope,
                 SCOPE_PHASE_OP_ID,
@@ -221,12 +235,13 @@ inventory::submit! {
                 "tok_lens",
                 "haystack",
                 Expr::u32(16),
-                Expr::u32(u32::try_from(tokens.len()).unwrap_or(0)),
+                Expr::u32(token_count),
                 "out_scope_tree",
             )
         },
         test_inputs: Some(witness_inputs),
         expected_output: Some(witness_expected_scope_phase),
+        category: Some("parsing"),
     }
 }
 
@@ -235,6 +250,9 @@ inventory::submit! {
         id: SCOPE_BRACE_PHASE_OP_ID,
         build: || {
             let (tokens, _, _, _) = witness_fixture();
+            let token_count = u32::try_from(tokens.len()).expect(
+                "C semantic scope-brace witness token count exceeds u32. Fix: split the fixture.",
+            );
             c_sema_scope_phase(
                 CScopePhase::ScopeBrace,
                 SCOPE_BRACE_PHASE_OP_ID,
@@ -243,12 +261,13 @@ inventory::submit! {
                 "tok_lens",
                 "haystack",
                 Expr::u32(16),
-                Expr::u32(u32::try_from(tokens.len()).unwrap_or(0)),
+                Expr::u32(token_count),
                 "out_scope_tree",
             )
         },
         test_inputs: Some(witness_inputs),
         expected_output: Some(witness_expected_scope_brace_phase),
+        category: Some("parsing"),
     }
 }
 
@@ -257,6 +276,9 @@ inventory::submit! {
         id: SCOPE_FUNCTION_PARAMS_PHASE_OP_ID,
         build: || {
             let (tokens, _, _, _) = witness_fixture();
+            let token_count = u32::try_from(tokens.len()).expect(
+                "C semantic function-parameter witness token count exceeds u32. Fix: split the fixture.",
+            );
             c_sema_scope_phase(
                 CScopePhase::ScopeFunctionParameters,
                 SCOPE_FUNCTION_PARAMS_PHASE_OP_ID,
@@ -265,12 +287,13 @@ inventory::submit! {
                 "tok_lens",
                 "haystack",
                 Expr::u32(16),
-                Expr::u32(u32::try_from(tokens.len()).unwrap_or(0)),
+                Expr::u32(token_count),
                 "out_scope_tree",
             )
         },
         test_inputs: Some(witness_inputs),
         expected_output: Some(witness_expected_scope_function_parameters_phase),
+        category: Some("parsing"),
     }
 }
 
@@ -279,6 +302,9 @@ inventory::submit! {
         id: DECL_PHASE_OP_ID,
         build: || {
             let (tokens, _, _, _) = witness_fixture();
+            let token_count = u32::try_from(tokens.len()).expect(
+                "C semantic declaration witness token count exceeds u32. Fix: split the fixture.",
+            );
             c_sema_scope_phase(
                 CScopePhase::Decl,
                 DECL_PHASE_OP_ID,
@@ -287,12 +313,13 @@ inventory::submit! {
                 "tok_lens",
                 "haystack",
                 Expr::u32(16),
-                Expr::u32(u32::try_from(tokens.len()).unwrap_or(0)),
+                Expr::u32(token_count),
                 "out_scope_tree",
             )
         },
         test_inputs: Some(witness_inputs),
         expected_output: Some(witness_expected_decl_phase),
+        category: Some("parsing"),
     }
 }
 
@@ -301,6 +328,9 @@ inventory::submit! {
         id: IDENTIFIER_INTERN_PHASE_OP_ID,
         build: || {
             let (tokens, _, _, _) = witness_fixture();
+            let token_count = u32::try_from(tokens.len()).expect(
+                "C semantic identifier-intern witness token count exceeds u32. Fix: split the fixture.",
+            );
             c_sema_scope_phase(
                 CScopePhase::IdentifierIntern,
                 IDENTIFIER_INTERN_PHASE_OP_ID,
@@ -309,11 +339,12 @@ inventory::submit! {
                 "tok_lens",
                 "haystack",
                 Expr::u32(16),
-                Expr::u32(u32::try_from(tokens.len()).unwrap_or(0)),
+                Expr::u32(token_count),
                 "out_scope_tree",
             )
         },
         test_inputs: Some(witness_inputs),
         expected_output: Some(witness_expected_identifier_intern_phase),
+        category: Some("parsing"),
     }
 }

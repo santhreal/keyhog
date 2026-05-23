@@ -1,9 +1,7 @@
 use crate::parsing::c::parse::vast_kinds::{
-    C_AST_KIND_BUILTIN_CHOOSE_EXPR, C_AST_KIND_BUILTIN_CLASSIFY_TYPE_EXPR,
-    C_AST_KIND_BUILTIN_CONSTANT_P_EXPR, C_AST_KIND_BUILTIN_EXPECT_EXPR,
+    C_AST_KIND_BUILTIN_CHOOSE_EXPR, C_AST_KIND_BUILTIN_EXPECT_EXPR,
     C_AST_KIND_BUILTIN_OBJECT_SIZE_EXPR, C_AST_KIND_BUILTIN_OFFSETOF_EXPR,
-    C_AST_KIND_BUILTIN_OVERFLOW_EXPR, C_AST_KIND_BUILTIN_PREFETCH_EXPR,
-    C_AST_KIND_BUILTIN_TYPES_COMPATIBLE_P_EXPR, C_AST_KIND_BUILTIN_UNREACHABLE_STMT,
+    C_AST_KIND_BUILTIN_PREFETCH_EXPR, C_AST_KIND_BUILTIN_UNREACHABLE_STMT,
 };
 use crate::region::wrap_anonymous;
 use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
@@ -48,29 +46,40 @@ impl std::error::Error for GnuBuiltinError {}
 ///
 /// Returns an actionable error for unsupported GNU builtin names.
 pub fn try_classify_gnu_builtin_name(name: &[u8]) -> Result<Option<u32>, GnuBuiltinError> {
-    let kind = match name {
-        b"__builtin_constant_p" => C_AST_KIND_BUILTIN_CONSTANT_P_EXPR,
-        b"__builtin_choose_expr" => C_AST_KIND_BUILTIN_CHOOSE_EXPR,
-        b"__builtin_types_compatible_p" => C_AST_KIND_BUILTIN_TYPES_COMPATIBLE_P_EXPR,
-        b"__builtin_expect" => C_AST_KIND_BUILTIN_EXPECT_EXPR,
-        b"__builtin_offsetof" => C_AST_KIND_BUILTIN_OFFSETOF_EXPR,
-        b"__builtin_object_size" => C_AST_KIND_BUILTIN_OBJECT_SIZE_EXPR,
-        b"__builtin_prefetch" => C_AST_KIND_BUILTIN_PREFETCH_EXPR,
-        b"__builtin_unreachable" => C_AST_KIND_BUILTIN_UNREACHABLE_STMT,
-        b"__builtin_add_overflow" | b"__builtin_sub_overflow" | b"__builtin_mul_overflow" => {
-            C_AST_KIND_BUILTIN_OVERFLOW_EXPR
-        }
-        b"__builtin_classify_type" => C_AST_KIND_BUILTIN_CLASSIFY_TYPE_EXPR,
-        _ if name.starts_with(b"__builtin_") => {
-            return Err(GnuBuiltinError {
-                len: name.len(),
-                message: "Fix: add explicit GNU builtin semantics before accepting this intrinsic",
-            });
-        }
-        _ => return Ok(None),
-    };
+    if let Some(kind) = super::gnu_builtin_catalog::classify_gnu_builtin_name(name) {
+        return Ok(Some(kind));
+    }
+    if name.starts_with(b"__builtin_") {
+        return Err(GnuBuiltinError {
+            len: name.len(),
+            message: "Fix: add explicit GNU builtin semantics before accepting this intrinsic",
+        });
+    }
+    Ok(None)
+}
 
-    Ok(Some(kind))
+/// Multiplicative seed for the GPU `__has_builtin` perfect-hash table.
+pub const GPU_BUILTIN_HASH_TABLE_SEED: u32 = 0x27b4;
+/// Entry count for the GPU `__has_builtin` perfect-hash table.
+pub const GPU_BUILTIN_HASH_TABLE_SIZE: usize = 5003;
+
+/// Return the canonical GPU perfect-hash table for `__has_builtin` lookup.
+#[must_use]
+pub fn gpu_builtin_hash_table_words() -> Vec<u32> {
+    let mut table = vec![0u32; GPU_BUILTIN_HASH_TABLE_SIZE];
+    for entry in super::gnu_builtin_catalog::GNU_BUILTIN_NAME_KINDS {
+        let slot = gpu_builtin_hash_slot(entry.hash);
+        assert_eq!(
+            table[slot], 0,
+            "Fix: GPU builtin hash table seed must keep catalog hashes collision-free"
+        );
+        table[slot] = entry.hash;
+    }
+    table
+}
+
+fn gpu_builtin_hash_slot(hash: u32) -> usize {
+    (hash.wrapping_mul(GPU_BUILTIN_HASH_TABLE_SEED) % GPU_BUILTIN_HASH_TABLE_SIZE as u32) as usize
 }
 
 /// GNU builtin front-end normalization pass.
@@ -194,5 +203,91 @@ inventory::submit! {
                 .collect::<Vec<u8>>();
             vec![vec![out_bytes]]
         }),
+        category: Some("parsing"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::parsing::c::parse::vast_kinds::{
+        C_AST_KIND_BUILTIN_ASSUME_INTRIN_EXPR, C_AST_KIND_BUILTIN_BPF_CORE_INTRIN_EXPR,
+        C_AST_KIND_BUILTIN_FRAME_INTRIN_EXPR, C_AST_KIND_BUILTIN_LIBC_INTRIN_EXPR,
+        C_AST_KIND_BUILTIN_VA_INTRIN_EXPR,
+    };
+
+    #[test]
+    fn classifier_accepts_common_real_header_gnu_builtins() {
+        let cases: &[(&[u8], u32)] = &[
+            (b"__builtin_memchr", C_AST_KIND_BUILTIN_LIBC_INTRIN_EXPR),
+            (b"__builtin_strnlen", C_AST_KIND_BUILTIN_LIBC_INTRIN_EXPR),
+            (
+                b"__builtin___memcpy_chk",
+                C_AST_KIND_BUILTIN_LIBC_INTRIN_EXPR,
+            ),
+            (
+                b"__builtin___strcpy_chk",
+                C_AST_KIND_BUILTIN_LIBC_INTRIN_EXPR,
+            ),
+            (b"__builtin_ms_va_start", C_AST_KIND_BUILTIN_VA_INTRIN_EXPR),
+            (b"__builtin_next_arg", C_AST_KIND_BUILTIN_VA_INTRIN_EXPR),
+            (
+                b"__builtin_frob_return_addr",
+                C_AST_KIND_BUILTIN_FRAME_INTRIN_EXPR,
+            ),
+            (
+                b"__builtin_unwind_init",
+                C_AST_KIND_BUILTIN_FRAME_INTRIN_EXPR,
+            ),
+            (
+                b"__builtin_speculation_safe_value",
+                C_AST_KIND_BUILTIN_ASSUME_INTRIN_EXPR,
+            ),
+            (
+                b"__builtin_is_aligned",
+                C_AST_KIND_BUILTIN_ASSUME_INTRIN_EXPR,
+            ),
+            (b"__builtin_align_up", C_AST_KIND_BUILTIN_ASSUME_INTRIN_EXPR),
+            (
+                b"__builtin_align_down",
+                C_AST_KIND_BUILTIN_ASSUME_INTRIN_EXPR,
+            ),
+            (
+                b"__builtin_preserve_access_index",
+                C_AST_KIND_BUILTIN_BPF_CORE_INTRIN_EXPR,
+            ),
+            (
+                b"__builtin_btf_type_id",
+                C_AST_KIND_BUILTIN_BPF_CORE_INTRIN_EXPR,
+            ),
+        ];
+
+        for (name, expected) in cases {
+            assert_eq!(
+                try_classify_gnu_builtin_name(name).unwrap(),
+                Some(*expected),
+                "{}",
+                String::from_utf8_lossy(name)
+            );
+        }
+    }
+
+    #[test]
+    fn classifier_still_rejects_unknown_builtin_names() {
+        let error = try_classify_gnu_builtin_name(b"__builtin_vyre_unknown")
+            .expect_err("unknown compiler builtins must not become ordinary calls");
+        assert_eq!(error.len, b"__builtin_vyre_unknown".len());
+    }
+
+    #[test]
+    fn gpu_hash_table_is_exact_for_catalog_hashes() {
+        let table = gpu_builtin_hash_table_words();
+        assert!(
+            table.len() == GPU_BUILTIN_HASH_TABLE_SIZE,
+            "Fix: GPU __has_builtin table size must match its shader slot mask"
+        );
+        for entry in super::super::gnu_builtin_catalog::GNU_BUILTIN_NAME_KINDS {
+            assert_eq!(table[gpu_builtin_hash_slot(entry.hash)], entry.hash);
+        }
     }
 }

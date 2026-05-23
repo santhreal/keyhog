@@ -40,7 +40,26 @@ pub fn sheaf_laplacian_eigenvalue(
     d: u32,
     iterations: u32,
 ) -> Program {
-    let cells = n_nodes * d;
+    if n_nodes == 0 || d == 0 {
+        return crate::invalid_output_program(
+            OP_ID,
+            lambda,
+            DataType::U32,
+            format!(
+                "Fix: sheaf_laplacian_eigenvalue requires n_nodes > 0 and d > 0, got n_nodes={n_nodes}, d={d}."
+            ),
+        );
+    }
+    let Some(cells) = n_nodes.checked_mul(d) else {
+        return crate::invalid_output_program(
+            OP_ID,
+            lambda,
+            DataType::U32,
+            format!(
+                "Fix: sheaf_laplacian_eigenvalue n_nodes*d overflows vector cell count for n_nodes={n_nodes}, d={d}; shard the sheaf spectrum before GPU dispatch."
+            ),
+        );
+    };
     let mut nodes = Vec::new();
 
     // Constant damping = -1.0 (in 16.16: 0xFFFF0000 but we'll use Expr)
@@ -177,6 +196,7 @@ pub fn sheaf_laplacian_eigenvalue(
 
 /// CPU reference: Power iteration on sheaf Laplacian diagonal.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref(restriction_diag: &[f64], v_init: &[f64], iterations: u32) -> (f64, Vec<f64>) {
     let mut v = Vec::new();
     let mut v_next = Vec::new();
@@ -185,6 +205,7 @@ pub fn cpu_ref(restriction_diag: &[f64], v_init: &[f64], iterations: u32) -> (f6
 }
 
 /// CPU reference writing the final eigenvector into caller-owned storage.
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref_into(
     restriction_diag: &[f64],
     v_init: &[f64],

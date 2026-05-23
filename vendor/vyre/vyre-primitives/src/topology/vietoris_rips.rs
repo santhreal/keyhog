@@ -99,6 +99,7 @@ pub fn vietoris_rips_edge_filter(
 
 /// CPU reference: emit edge mask as a flat row-major `n × n` array.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn vietoris_rips_edge_filter_cpu(dist_matrix: &[f64], epsilon: f64, n: u32) -> Vec<u32> {
     let n = n as usize;
     let mut out = vec![0u32; n * n];
@@ -116,6 +117,7 @@ pub fn vietoris_rips_edge_filter_cpu(dist_matrix: &[f64], epsilon: f64, n: u32) 
 /// CPU helper: extract the edge list from a mask. Returns
 /// `Vec<(u_vertex, v_vertex)>`.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn extract_edges_cpu(edge_mask: &[u32], n: u32) -> Vec<(u32, u32)> {
     let n = n as usize;
     let mut edges = Vec::new();

@@ -51,14 +51,38 @@ pub fn matroid_exchange_bfs_step(
     any_change: &str,
     n: u32,
 ) -> Program {
-    if n == 0 {
-        return crate::invalid_output_program(
-            OP_ID,
-            frontier_out,
-            DataType::U32,
-            format!("Fix: matroid_exchange_bfs_step requires n > 0, got {n}."),
-        );
+    match try_matroid_exchange_bfs_step(
+        frontier_in,
+        exchange_adj,
+        visited,
+        frontier_out,
+        any_change,
+        n,
+    ) {
+        Ok(program) => program,
+        Err(error) => {
+            eprintln!("{error}");
+            crate::invalid_output_program(OP_ID, frontier_out, DataType::U32, error)
+        }
     }
+}
+
+/// Emit one BFS layer of the matroid-exchange graph with checked dense-matrix
+/// sizing.
+pub fn try_matroid_exchange_bfs_step(
+    frontier_in: &str,
+    exchange_adj: &str,
+    visited: &str,
+    frontier_out: &str,
+    any_change: &str,
+    n: u32,
+) -> Result<Program, String> {
+    if n == 0 {
+        return Err(format!(
+            "Fix: matroid_exchange_bfs_step requires n > 0, got {n}."
+        ));
+    }
+    let dense_cells = checked_dense_cells(n, OP_ID)?;
 
     let t = Expr::InvocationId { axis: 0 };
 
@@ -112,12 +136,12 @@ pub fn matroid_exchange_bfs_step(
         ],
     )];
 
-    Program::wrapped(
+    Ok(Program::wrapped(
         vec![
             BufferDecl::storage(frontier_in, 0, BufferAccess::ReadOnly, DataType::U32)
                 .with_count(n),
             BufferDecl::storage(exchange_adj, 1, BufferAccess::ReadOnly, DataType::U32)
-                .with_count(n * n),
+                .with_count(dense_cells),
             BufferDecl::storage(visited, 2, BufferAccess::ReadOnly, DataType::U32).with_count(n),
             BufferDecl::storage(frontier_out, 3, BufferAccess::ReadWrite, DataType::U32)
                 .with_count(n),
@@ -130,26 +154,58 @@ pub fn matroid_exchange_bfs_step(
             source_region: None,
             body: Arc::new(body),
         }],
-    )
+    ))
+}
+
+fn checked_dense_cells(n: u32, op_id: &'static str) -> Result<u32, String> {
+    n.checked_mul(n).ok_or_else(|| {
+        format!(
+            "{op_id} n={n} overflows dense exchange matrix size. Fix: shard the exchange graph before GPU dispatch."
+        )
+    })
 }
 
 /// CPU reference for one BFS layer.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn matroid_exchange_bfs_step_cpu(
     frontier_in: &[u32],
     exchange_adj: &[u32],
     visited: &[u32],
     n: usize,
 ) -> (Vec<u32>, bool) {
+    assert_eq!(
+        frontier_in.len(),
+        n,
+        "matroid_exchange_bfs_step CPU oracle received frontier_len={} for n={n}. Fix: pass one frontier slot per matroid element.",
+        frontier_in.len()
+    );
+    assert_eq!(
+        visited.len(),
+        n,
+        "matroid_exchange_bfs_step CPU oracle received visited_len={} for n={n}. Fix: pass one visited slot per matroid element.",
+        visited.len()
+    );
+    let expected_adj = n.checked_mul(n).unwrap_or_else(|| {
+        panic!(
+            "matroid_exchange_bfs_step CPU oracle n={n} overflows dense exchange matrix size. Fix: shard the exchange graph before parity comparison."
+        )
+    });
+    assert_eq!(
+        exchange_adj.len(),
+        expected_adj,
+        "matroid_exchange_bfs_step CPU oracle received exchange_adj_len={} for n={n}. Fix: pass a complete n*n dense exchange matrix.",
+        exchange_adj.len()
+    );
     let mut out = vec![0u32; n];
     let mut any = false;
     for j in 0..n {
-        if visited.get(j).copied().unwrap_or(0) != 0 {
+        if visited[j] != 0 {
             continue;
         }
         for k in 0..n {
-            let frontier = frontier_in.get(k).copied().unwrap_or(0);
-            let exchange = exchange_adj.get(k * n + j).copied().unwrap_or(0);
+            let frontier = frontier_in[k];
+            let exchange = exchange_adj[k * n + j];
             if frontier != 0 && exchange != 0 {
                 out[j] = 1;
                 any = true;
@@ -199,10 +255,9 @@ mod tests {
     }
 
     #[test]
-    fn cpu_malformed_inputs_treat_missing_entries_as_zero() {
-        let (out, any) = matroid_exchange_bfs_step_cpu(&[1], &[], &[], 2);
-        assert_eq!(out, vec![0, 0]);
-        assert!(!any);
+    #[should_panic(expected = "one frontier slot per matroid element")]
+    fn cpu_malformed_inputs_fail_loudly() {
+        let _ = matroid_exchange_bfs_step_cpu(&[1], &[], &[], 2);
     }
 
     #[test]
@@ -236,5 +291,42 @@ mod tests {
     fn zero_n_traps() {
         let p = matroid_exchange_bfs_step("fi", "adj", "v", "fo", "ch", 0);
         assert!(p.stats().trap());
+    }
+
+    #[test]
+    fn checked_builder_rejects_dense_matrix_overflow() {
+        let error = try_matroid_exchange_bfs_step("fi", "adj", "v", "fo", "ch", u32::MAX)
+            .expect_err("checked matroid exchange BFS builder must reject n*n overflow");
+
+        assert!(
+            error.contains("overflows dense exchange matrix size"),
+            "error should describe the dense matrix overflow: {error}"
+        );
+    }
+
+    #[test]
+    fn legacy_builder_does_not_panic_on_dense_matrix_overflow() {
+        let program = matroid_exchange_bfs_step("fi", "adj", "v", "fo", "ch", u32::MAX);
+
+        assert!(program.stats().trap());
+    }
+
+    #[test]
+    fn matroid_builder_source_has_checked_api_without_panics() {
+        let source = include_str!("matroid.rs");
+        let builder_source = source
+            .split("/// Emit one BFS layer of the matroid-exchange graph.")
+            .nth(1)
+            .expect("matroid exchange BFS builder source must be present")
+            .split("/// CPU reference for one BFS layer.")
+            .next()
+            .expect("matroid exchange BFS builder source must precede CPU oracle");
+
+        assert!(
+            builder_source.contains("pub fn try_matroid_exchange_bfs_step(")
+                && !builder_source.contains(concat!("panic", "!("))
+                && !builder_source.contains(".unwrap_or_else("),
+            "Fix: matroid_exchange_bfs_step must expose checked release API and avoid production panics."
+        );
     }
 }

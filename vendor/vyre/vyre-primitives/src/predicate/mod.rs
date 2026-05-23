@@ -1,6 +1,6 @@
 //! Frozen predicate primitives — the ~10 engine primitives listed in
-//! surgec's vision as "the engine has ≈10 true primitives; everything
-//! else is SURGE stdlib." Each is a thin wrapper that emits a vyre
+//! a downstream analyzer's vision as "the engine has ≈10 true primitives; everything
+//! else is source-query dialect stdlib." Each is a thin wrapper that emits a vyre
 //! Program composing [`crate::graph`] + [`crate::bitset`] +
 //! [`crate::label`] primitives with a specific edge-kind mask, tag
 //! mask, or node-kind constant.
@@ -17,7 +17,7 @@
 //! - `literal_of` — `nodes[v] == NODE_KIND_LITERAL` AND value matches.
 //! - `node_kind` — `nodes[v] == kind`.
 
-/// Canonical edge-kind bitmasks matching surgec's
+/// Canonical edge-kind bitmasks matching a downstream analyzer's
 /// `ProgramGraph::EdgeKind`. One bit per kind; multiple bits can
 /// coexist in the same `edge_kind_mask[e]` word.
 pub mod edge_kind {
@@ -127,7 +127,7 @@ pub mod edge_kind {
     }
 }
 
-/// Canonical tag-family bitmasks matching surgec's `TagFamily`.
+/// Canonical tag-family bitmasks matching a downstream analyzer's `TagFamily`.
 pub mod tag_family {
     /// `in_function` mask.
     pub const FUNCTION: u32 = 1 << 0;
@@ -137,7 +137,7 @@ pub mod tag_family {
     pub const PACKAGE: u32 = 1 << 2;
 }
 
-/// Canonical `NodeKind` constants mirroring surgec's enum.
+/// Canonical `NodeKind` constants mirroring a downstream analyzer's enum.
 pub mod node_kind {
     /// `Variable`.
     pub const VARIABLE: u32 = 1;

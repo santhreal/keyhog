@@ -162,8 +162,8 @@ impl CalleeExpander<'_> {
             | Expr::BufLen { .. }
             | Expr::SubgroupBallot { .. }
             | Expr::SubgroupShuffle { .. }
-            | Expr::SubgroupAdd { .. } => values.push(expr.clone()),
-            Expr::Opaque(_) => values.push(expr.clone()),
+            | Expr::SubgroupAdd { .. }
+            | Expr::Opaque(_) => values.push(expr.clone()),
         }
     }
 }

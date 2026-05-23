@@ -34,6 +34,7 @@ impl InventoryShaderProvider {
     /// Return the registered target-text source for the given compiler primitive,
     /// or `None` when no driver crate has registered one.
     #[inline]
+    #[must_use]
     pub fn source(op: &str) -> Option<&'static str> {
         source(op)
     }

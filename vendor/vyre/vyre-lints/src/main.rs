@@ -9,7 +9,7 @@
 use anyhow::{Context, Result};
 use clap::Parser;
 use std::path::PathBuf;
-use vyre_lints::{run_raw_ir_in_libs, Violation};
+use vyre_lints::{run_production_cpu_fallbacks, run_raw_ir_in_libs, Violation};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -47,6 +47,15 @@ struct Cli {
     /// Today's date in YYYY-MM-DD form. Defaults to the OS clock.
     #[arg(long)]
     today: Option<String>,
+
+    /// Run the production CPU fallback guard instead of the raw-IR lint.
+    #[arg(long)]
+    check_production_cpu_fallbacks: bool,
+
+    /// Override production roots scanned by `--check-production-cpu-fallbacks`.
+    /// Defaults to the main production crates, excluding reference/conform crates.
+    #[arg(long)]
+    production_root: Vec<PathBuf>,
 }
 
 #[derive(Clone, Debug, clap::ValueEnum)]
@@ -64,6 +73,10 @@ fn main() -> Result<()> {
 
     if cli.check_drift {
         return run_drift(&allowlist, cli.drift_budget_days, cli.today.as_deref());
+    }
+
+    if cli.check_production_cpu_fallbacks {
+        return run_production_cpu_fallbacks_cli(&cli);
     }
 
     let lib_root = cli
@@ -93,7 +106,11 @@ fn main() -> Result<()> {
     }
 }
 
-fn run_drift(allowlist: &std::path::Path, budget_days: i64, today_override: Option<&str>) -> Result<()> {
+fn run_drift(
+    allowlist: &std::path::Path,
+    budget_days: i64,
+    today_override: Option<&str>,
+) -> Result<()> {
     if !allowlist.exists() {
         anyhow::bail!("allowlist not found: {}", allowlist.display());
     }
@@ -116,6 +133,54 @@ fn run_drift(allowlist: &std::path::Path, budget_days: i64, today_override: Opti
         println!("{}", vyre_lints::drift::format_finding(f, budget_days));
     }
     std::process::exit(1);
+}
+
+fn run_production_cpu_fallbacks_cli(cli: &Cli) -> Result<()> {
+    let roots = if cli.production_root.is_empty() {
+        default_production_roots(&cli.workspace_root)
+    } else {
+        cli.production_root.clone()
+    };
+    for root in &roots {
+        if !root.exists() {
+            anyhow::bail!(
+                "production root not found: {}. Fix: update the release CPU fallback guard roots instead of silently skipping this source tree.",
+                root.display()
+            );
+        }
+    }
+    let root_refs: Vec<&std::path::Path> = roots.iter().map(|root| root.as_path()).collect();
+    let violations = run_production_cpu_fallbacks(&root_refs)
+        .context("running production CPU fallback guard")?;
+    match cli.format {
+        Format::Text => emit_text(&violations),
+        Format::Json => emit_json(&violations)?,
+    }
+    if violations.is_empty() {
+        Ok(())
+    } else {
+        std::process::exit(1);
+    }
+}
+
+fn default_production_roots(workspace_root: &std::path::Path) -> Vec<PathBuf> {
+    [
+        "vyre-aot/src",
+        "vyre-core/src",
+        "vyre-driver/src",
+        "vyre-driver-cuda/src",
+        "vyre-driver-wgpu/src",
+        "vyre-frontend-c/src",
+        "vyre-libs/src",
+        "vyre-lower/src",
+        "vyre-runtime/src",
+        "vyre-self-substrate/src",
+        "../../../dataflow/weir/src",
+        "../../../../tools/vyrec/src",
+    ]
+    .into_iter()
+    .map(|root| workspace_root.join(root))
+    .collect()
 }
 
 fn current_iso_date() -> String {
@@ -169,6 +234,7 @@ fn emit_json(violations: &[Violation]) -> Result<()> {
         let kind = match v.kind {
             vyre_lints::ViolationKind::RawNodeConstruction => "raw_node_construction",
             vyre_lints::ViolationKind::RawExprConstruction => "raw_expr_construction",
+            vyre_lints::ViolationKind::ProductionCpuFallback => "production_cpu_fallback",
         };
         if i > 0 {
             out.push_str(",\n");

@@ -344,22 +344,26 @@ fn lead4_validation_body(source: &str, n: u32) -> Vec<Node> {
     )]
 }
 
-/// CPU reference: validate and classify each byte the same way the GPU kernel does.
+/// Reference oracle: validate and classify each byte the same way the GPU kernel does.
 #[must_use]
-pub fn cpu_ref(source: &[u8]) -> Vec<u32> {
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn reference_utf8_validate(source: &[u8]) -> Vec<u32> {
     (0..source.len())
         .map(|idx| cpu_class_at(source, idx))
         .collect()
 }
 
+#[cfg(any(test, feature = "cpu-parity"))]
 fn cpu_is_cont(byte: u8) -> bool {
     matches!(byte, 0x80..=0xBF)
 }
 
+#[cfg(any(test, feature = "cpu-parity"))]
 fn cpu_valid_lead2(source: &[u8], idx: usize) -> bool {
     matches!(source[idx], 0xC2..=0xDF) && source.get(idx + 1).copied().is_some_and(cpu_is_cont)
 }
 
+#[cfg(any(test, feature = "cpu-parity"))]
 fn cpu_valid_lead3(source: &[u8], idx: usize) -> bool {
     let Some(&b1) = source.get(idx + 1) else {
         return false;
@@ -376,6 +380,7 @@ fn cpu_valid_lead3(source: &[u8], idx: usize) -> bool {
     first_ok && cpu_is_cont(b2)
 }
 
+#[cfg(any(test, feature = "cpu-parity"))]
 fn cpu_valid_lead4(source: &[u8], idx: usize) -> bool {
     let Some(&b1) = source.get(idx + 1) else {
         return false;
@@ -395,6 +400,7 @@ fn cpu_valid_lead4(source: &[u8], idx: usize) -> bool {
     first_ok && cpu_is_cont(b2) && cpu_is_cont(b3)
 }
 
+#[cfg(any(test, feature = "cpu-parity"))]
 fn cpu_valid_cont_position(source: &[u8], idx: usize) -> bool {
     idx.checked_sub(1).is_some_and(|lead| {
         cpu_valid_lead2(source, lead)
@@ -408,6 +414,7 @@ fn cpu_valid_cont_position(source: &[u8], idx: usize) -> bool {
             .is_some_and(|lead| cpu_valid_lead4(source, lead))
 }
 
+#[cfg(any(test, feature = "cpu-parity"))]
 fn cpu_class_at(source: &[u8], idx: usize) -> u32 {
     match source[idx] {
         0x00..=0x7F => UTF8_ASCII,
@@ -444,73 +451,91 @@ mod tests {
     use super::*;
 
     #[test]
-    fn cpu_ref_ascii() {
-        assert_eq!(cpu_ref(b"Hello"), vec![UTF8_ASCII; 5]);
+    fn reference_ascii() {
+        assert_eq!(reference_utf8_validate(b"Hello"), vec![UTF8_ASCII; 5]);
     }
 
     #[test]
-    fn cpu_ref_2_byte_sequence() {
+    fn reference_2_byte_sequence() {
         // U+00E9 (é) = 0xC3 0xA9 — LEAD_2 + CONT
-        assert_eq!(cpu_ref(&[0xC3, 0xA9]), vec![UTF8_LEAD_2, UTF8_CONT]);
+        assert_eq!(
+            reference_utf8_validate(&[0xC3, 0xA9]),
+            vec![UTF8_LEAD_2, UTF8_CONT]
+        );
     }
 
     #[test]
-    fn cpu_ref_3_byte_sequence() {
+    fn reference_3_byte_sequence() {
         // U+20AC (€) = 0xE2 0x82 0xAC — LEAD_3 + CONT + CONT
         assert_eq!(
-            cpu_ref(&[0xE2, 0x82, 0xAC]),
+            reference_utf8_validate(&[0xE2, 0x82, 0xAC]),
             vec![UTF8_LEAD_3, UTF8_CONT, UTF8_CONT]
         );
     }
 
     #[test]
-    fn cpu_ref_4_byte_sequence() {
+    fn reference_4_byte_sequence() {
         // U+1F600 (😀) = 0xF0 0x9F 0x98 0x80 — LEAD_4 + CONT × 3
         assert_eq!(
-            cpu_ref(&[0xF0, 0x9F, 0x98, 0x80]),
+            reference_utf8_validate(&[0xF0, 0x9F, 0x98, 0x80]),
             vec![UTF8_LEAD_4, UTF8_CONT, UTF8_CONT, UTF8_CONT]
         );
     }
 
     #[test]
-    fn cpu_ref_overlong_lead_invalid() {
+    fn reference_overlong_lead_invalid() {
         // 0xC0/0xC1 are forbidden lead bytes (overlong 2-byte
         // encodings of ASCII).
-        assert_eq!(cpu_ref(&[0xC0, 0xC1]), vec![UTF8_INVALID, UTF8_INVALID]);
+        assert_eq!(
+            reference_utf8_validate(&[0xC0, 0xC1]),
+            vec![UTF8_INVALID, UTF8_INVALID]
+        );
     }
 
     #[test]
-    fn cpu_ref_out_of_range_lead_invalid() {
+    fn reference_out_of_range_lead_invalid() {
         // 0xF8..0xFF would imply 5+ byte sequences — banned since RFC 3629.
         assert_eq!(
-            cpu_ref(&[0xF8, 0xFC, 0xFF]),
+            reference_utf8_validate(&[0xF8, 0xFC, 0xFF]),
             vec![UTF8_INVALID, UTF8_INVALID, UTF8_INVALID]
         );
     }
 
     #[test]
-    fn cpu_ref_rejects_stray_continuation() {
-        assert_eq!(cpu_ref(&[0x80]), vec![UTF8_INVALID]);
-        assert_eq!(cpu_ref(&[b'a', 0xBF]), vec![UTF8_ASCII, UTF8_INVALID]);
-    }
-
-    #[test]
-    fn cpu_ref_rejects_truncated_sequences() {
-        assert_eq!(cpu_ref(&[0xC3]), vec![UTF8_INVALID]);
-        assert_eq!(cpu_ref(&[0xE2, 0x82]), vec![UTF8_INVALID, UTF8_INVALID]);
+    fn reference_rejects_stray_continuation() {
+        assert_eq!(reference_utf8_validate(&[0x80]), vec![UTF8_INVALID]);
         assert_eq!(
-            cpu_ref(&[0xF0, 0x9F, 0x98]),
+            reference_utf8_validate(&[b'a', 0xBF]),
+            vec![UTF8_ASCII, UTF8_INVALID]
+        );
+    }
+
+    #[test]
+    fn reference_rejects_truncated_sequences() {
+        assert_eq!(reference_utf8_validate(&[0xC3]), vec![UTF8_INVALID]);
+        assert_eq!(
+            reference_utf8_validate(&[0xE2, 0x82]),
+            vec![UTF8_INVALID, UTF8_INVALID]
+        );
+        assert_eq!(
+            reference_utf8_validate(&[0xF0, 0x9F, 0x98]),
             vec![UTF8_INVALID, UTF8_INVALID, UTF8_INVALID]
         );
     }
 
     #[test]
-    fn cpu_ref_rejects_surrogate_and_overlong_sequences() {
+    fn reference_rejects_surrogate_and_overlong_sequences() {
         assert_eq!(
-            cpu_ref(&[0xED, 0xA0, 0x80]),
+            reference_utf8_validate(&[0xED, 0xA0, 0x80]),
             vec![UTF8_INVALID, UTF8_INVALID, UTF8_INVALID]
         );
-        assert_eq!(cpu_ref(&[0xE0, 0x80, 0x80]), vec![UTF8_INVALID; 3]);
-        assert_eq!(cpu_ref(&[0xF0, 0x80, 0x80, 0x80]), vec![UTF8_INVALID; 4]);
+        assert_eq!(
+            reference_utf8_validate(&[0xE0, 0x80, 0x80]),
+            vec![UTF8_INVALID; 3]
+        );
+        assert_eq!(
+            reference_utf8_validate(&[0xF0, 0x80, 0x80, 0x80]),
+            vec![UTF8_INVALID; 4]
+        );
     }
 }

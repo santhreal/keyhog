@@ -62,7 +62,10 @@ fn example_suppression_is_recorded_in_telemetry() {
     let scanner = CompiledScanner::compile(vec![detector]).unwrap();
     let chunk = make_chunk("AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE\n");
     let matches = scanner.scan(&chunk);
-    assert!(matches.is_empty(), "still suppressed (this is the bug we're closing the messaging gap on)");
+    assert!(
+        matches.is_empty(),
+        "still suppressed (this is the bug we're closing the messaging gap on)"
+    );
     assert!(
         keyhog_scanner::telemetry::example_suppression_count() >= 1,
         "telemetry must count the EXAMPLE suppression so the reporter can surface it"

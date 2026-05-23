@@ -167,9 +167,9 @@ pub(super) fn push_decoded_text_chunk(
     // Byte-level iteration avoids UTF-8 decode overhead.
     let bytes = text.as_bytes();
     if text.is_empty()
-        || bytes.iter().any(|&b| {
-            b < 0x20 && b != b'\n' && b != b'\r' && b != b'\t'
-        })
+        || bytes
+            .iter()
+            .any(|&b| b < 0x20 && b != b'\n' && b != b'\r' && b != b'\t')
     {
         return;
     }

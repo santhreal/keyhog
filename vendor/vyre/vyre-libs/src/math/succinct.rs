@@ -331,13 +331,14 @@ inventory::submit! {
         test_inputs: Some(|| {
             let bits = [0b1011u32, 0x8000_0000, 0xFFFF_0000, 0u32];
             let to_bytes = |w: &[u32]| w.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<u8>>();
-            vec![vec![to_bytes(&bits), vec![0u8; 3 * 4]]]
+            vec![vec![to_bytes(&bits)]]
         }),
         expected_output: Some(|| {
             let expected = [0u32, 4, 20];
             let bytes = expected.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<u8>>();
             vec![vec![bytes]]
         }),
+        category: Some("math"),
     }
 }
 
@@ -349,13 +350,14 @@ inventory::submit! {
             let bits = [0b1011u32, 0x8000_0000, 0xFFFF_0000, 0u32];
             let queries = [1u32, 2, 3, 4, 5];
             let to_bytes = |w: &[u32]| w.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<u8>>();
-            vec![vec![to_bytes(&bits), to_bytes(&queries), vec![0u8; 5 * 4]]]
+            vec![vec![to_bytes(&bits), to_bytes(&queries)]]
         }),
         expected_output: Some(|| {
             let expected = [0u32, 1, 3, 63, 80];
             let bytes = expected.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<u8>>();
             vec![vec![bytes]]
         }),
+        category: Some("math"),
     }
 }
 
@@ -368,12 +370,13 @@ inventory::submit! {
             let superblocks = [0u32, 4, 20];
             let queries = [0u32, 1, 4, 63, 80];
             let to_bytes = |w: &[u32]| w.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<u8>>();
-            vec![vec![to_bytes(&bits), to_bytes(&superblocks), to_bytes(&queries), vec![0u8; 5 * 4]]]
+            vec![vec![to_bytes(&bits), to_bytes(&superblocks), to_bytes(&queries)]]
         }),
         expected_output: Some(|| {
             let expected = [0u32, 1, 3, 3, 4];
             let bytes = expected.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<u8>>();
             vec![vec![bytes]]
         }),
+        category: Some("math"),
     }
 }

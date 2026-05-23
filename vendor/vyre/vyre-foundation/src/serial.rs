@@ -27,7 +27,7 @@ pub mod output_set;
 /// Reusable on-wire envelope: magic + version + length-prefixed
 /// sections / word arrays. Higher-layer types (`CompiledDfa` in
 /// vyre-primitives, `GpuLiteralSet` / `RulePipeline` in vyre-libs,
-/// consumer-side caches in keyhog/surgec) compose this primitive
+/// downstream consumer-side caches compose this primitive
 /// instead of re-implementing magic / version / truncation handling.
 /// One implementation, one set of typed errors, one suite of round-trip
 /// tests — every consumer adopts it and its fixes propagate.

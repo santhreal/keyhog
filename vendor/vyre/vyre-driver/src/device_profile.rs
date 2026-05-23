@@ -212,7 +212,6 @@ impl From<DeviceProfile> for validate::BackendCapabilities {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::DeviceProfile;

@@ -24,7 +24,9 @@ impl PipelineFusionSegment {
     /// Number of pipelines in this segment.
     #[must_use]
     pub fn len(&self) -> usize {
-        self.end.saturating_sub(self.start)
+        self.end
+            .checked_sub(self.start)
+            .expect("pipeline fusion segment has end before start")
     }
 
     /// True when this segment contains no pipelines.
@@ -74,8 +76,6 @@ pub fn plan_cross_pipeline_fusion(summaries: &[ArmBindingSummary]) -> CrossPipel
 
     let mut segments = SmallVec::new();
     let mut breaks = SmallVec::new();
-    segments.reserve(summaries.len());
-    breaks.reserve(summaries.len());
     let mut start = 0usize;
     for idx in 1..summaries.len() {
         match decide_cross_pipeline_fusion(&summaries[idx - 1], &summaries[idx]) {

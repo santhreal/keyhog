@@ -248,7 +248,7 @@ impl RingLog {
     ///
     /// Propagates [`ReplayLogError::Io`] on any file I/O failure.
     pub fn append(&mut self, slot: RecordedSlot) -> Result<(), ReplayLogError> {
-        let record_offset = HEADER_BYTES + self.next_slot * RECORD_BYTES;
+        let record_offset = log_record_offset(self.next_slot)?;
         self.file
             .seek(SeekFrom::Start(record_offset))
             .map_err(|e| self.io_err("seek", e))?;
@@ -293,10 +293,15 @@ impl RingLog {
     ///
     /// Propagates [`ReplayLogError::Io`] on read failure.
     pub fn replay_all(&mut self) -> Result<Vec<RecordedSlot>, ReplayLogError> {
-        let mut out = Vec::with_capacity(self.capacity as usize);
+        let capacity =
+            usize::try_from(self.capacity).map_err(|_| ReplayLogError::CapacityOverflow {
+                count: self.capacity,
+                max: MAX_REPLAY_RECORDS,
+            })?;
+        let mut out = Vec::with_capacity(capacity);
         for step in 0..self.capacity {
             let slot_index = (self.next_slot + step) % self.capacity;
-            let offset = HEADER_BYTES + slot_index * RECORD_BYTES;
+            let offset = log_record_offset(slot_index)?;
             self.file
                 .seek(SeekFrom::Start(offset))
                 .map_err(|e| self.io_err("seek", e))?;
@@ -371,6 +376,16 @@ fn log_file_len(capacity: u64) -> Result<u64, ReplayLogError> {
         .and_then(|record_bytes| HEADER_BYTES.checked_add(record_bytes))
         .ok_or(ReplayLogError::CapacityOverflow {
             count: capacity,
+            max: MAX_REPLAY_RECORDS,
+        })
+}
+
+fn log_record_offset(slot_index: u64) -> Result<u64, ReplayLogError> {
+    slot_index
+        .checked_mul(RECORD_BYTES)
+        .and_then(|record_bytes| HEADER_BYTES.checked_add(record_bytes))
+        .ok_or(ReplayLogError::CapacityOverflow {
+            count: slot_index,
             max: MAX_REPLAY_RECORDS,
         })
 }

@@ -58,7 +58,9 @@ pub fn drop_unused_bindings(desc: &KernelDescriptor) -> KernelDescriptor {
         referenced.contains(&s.slot)
             || matches!(
                 s.memory_class,
-                crate::MemoryClass::Global | crate::MemoryClass::Constant
+                crate::MemoryClass::Global
+                    | crate::MemoryClass::Constant
+                    | crate::MemoryClass::Uniform
             )
     });
     out

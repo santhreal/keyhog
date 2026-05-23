@@ -59,7 +59,7 @@ impl Reader<'_> {
     ///
     /// Increments `Reader::depth` on entry and decrements on exit.
     /// If the depth already equals `MAX_DECODE_DEPTH`, the blob is rejected
-    /// **before** any further decode to prevent stack-overflow DoS from
+    /// **before** any further decode to prevent stack-overflow `DoS` from
     /// deeply nested `Block`, `If`, or `Loop` bodies.
     ///
     /// # Return semantics
@@ -201,7 +201,7 @@ impl Reader<'_> {
     /// Increments the shared `Reader::depth` counter on entry and decrements
     /// on exit. If the depth already equals `MAX_DECODE_DEPTH`, the blob is
     /// rejected **before** any nested expression is decoded. This prevents
-    /// stack-overflow DoS from arbitrarily nested `BinOp`, `UnOp`, `Select`,
+    /// stack-overflow `DoS` from arbitrarily nested `BinOp`, `UnOp`, `Select`,
     /// `Cast`, or `Call` argument trees.
     ///
     /// # Return semantics
@@ -277,6 +277,36 @@ impl Reader<'_> {
             }
             return Ok(DataType::TensorShaped { element, shape });
         }
+        if tag == 0x16 {
+            let element = Box::new(self.data_type()?);
+            return Ok(DataType::SparseCsr { element });
+        }
+        if tag == 0x17 {
+            let element = Box::new(self.data_type()?);
+            return Ok(DataType::SparseCoo { element });
+        }
+        if tag == 0x18 {
+            let element = Box::new(self.data_type()?);
+            let block_rows = self.u32()?;
+            let block_cols = self.u32()?;
+            return Ok(DataType::SparseBsr {
+                element,
+                block_rows,
+                block_cols,
+            });
+        }
+        if tag == 0x1E {
+            let len = usize::try_from(self.u32()?).map_err(|err| {
+                format!(
+                    "Fix: device-mesh axes count cannot fit usize on this target ({err}); reject this VIR0 blob."
+                )
+            })?;
+            let mut axes = smallvec::SmallVec::<[u32; 3]>::new();
+            for _ in 0..len {
+                axes.push(self.u32()?);
+            }
+            return Ok(DataType::DeviceMesh { axes });
+        }
         if tag == 0x80 {
             // Opaque: u32 extension id follows.
             let id = reject_reserved_extension_id(self.u32()?, "DataType")?;
@@ -287,6 +317,10 @@ impl Reader<'_> {
         data_type_from_tag(tag)
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "wire discriminant table is an ABI contract and must remain auditable in one decoder"
+    )]
     fn expr_inner(&mut self) -> Result<Expr, String> {
         match self.u8()? {
             0 => Ok(Expr::LitU32(self.u32()?)),

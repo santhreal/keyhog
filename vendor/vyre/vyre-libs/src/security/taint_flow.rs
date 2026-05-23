@@ -1,8 +1,8 @@
 //! `taint_flow` — alias for [`crate::security::flows_to::flows_to`],
 //! exposed under a separate op id for conformance-harness coverage of
-//! the surgec `taint_flow` / `taint_flow_unsanitized` predicates.
+//! the downstream analyzer `taint_flow` / `taint_flow_unsanitized` predicates.
 //!
-//! Surgec's predicate lowering routes both `taint_flow` and `flows_to`
+//! Downstream analyzer's predicate lowering routes both `taint_flow` and `flows_to`
 //! through `BinaryGraphKind::FlowsToForward`, which calls the
 //! `flows_to` builder; there is no semantic difference. Keeping a
 //! separate file used to mean a duplicated body — the body has been
@@ -10,20 +10,31 @@
 //! authoritative in `flows_to.rs`.
 
 use vyre::ir::Program;
+use vyre_primitives::graph::csr_forward_traverse::csr_forward_traverse;
 use vyre_primitives::graph::program_graph::ProgramGraphShape;
 use vyre_primitives::predicate::edge_kind;
 
-use crate::security::flows_to::flows_to;
+use crate::security::flows_to::FLOWS_TO_MASK;
 
 const OP_ID: &str = "vyre-libs::security::taint_flow";
 
 /// Build one forward-traversal step over DATAFLOW edges only.
-/// Delegates to [`flows_to`]; the standalone op id is retained so the
-/// conformance harness covers both predicate names.
-#[inline]
+/// Mirrors [`crate::security::flows_to::flows_to`]'s semantics
+/// (same edge mask, same substrate kernel) but tags the program with
+/// its own op id so the conformance harness covers both predicate
+/// names with structurally distinct IR. Downstream analyzer routes both ids
+/// through the identical kernel.
 #[must_use]
 pub fn taint_flow(shape: ProgramGraphShape, frontier_in: &str, frontier_out: &str) -> Program {
-    flows_to(shape, frontier_in, frontier_out)
+    crate::security::assert_security_inputs(
+        OP_ID,
+        shape.node_count,
+        &[("frontier_in", frontier_in), ("frontier_out", frontier_out)],
+    );
+    crate::region::tag_program(
+        OP_ID,
+        csr_forward_traverse(shape, frontier_in, frontier_out, FLOWS_TO_MASK),
+    )
 }
 
 inventory::submit! {
@@ -53,6 +64,7 @@ inventory::submit! {
             // One forward step writes {1} into the accumulator.
             vec![vec![to_bytes(&[0b0011])]]
         }),
+        category: Some("security"),
     }
 }
 
@@ -104,7 +116,8 @@ mod tests {
 
     #[test]
     fn taint_flow_delegation_produces_byte_identical_ir_to_flows_to() {
-        let p_flows = crate::security::flows_to::flows_to(ProgramGraphShape::new(4, 3), "fin", "fout");
+        let p_flows =
+            crate::security::flows_to::flows_to(ProgramGraphShape::new(4, 3), "fin", "fout");
         let p_taint = taint_flow(ProgramGraphShape::new(4, 3), "fin", "fout");
         let bytes_flows = p_flows.to_bytes();
         let bytes_taint = p_taint.to_bytes();
@@ -118,12 +131,12 @@ mod tests {
     #[test]
     #[should_panic(expected = "node_count must be positive")]
     fn taint_flow_zero_node_count_should_panic() {
-        taint_flow(ProgramGraphShape::new(0, 0), "fin", "fout");
+        let _ = taint_flow(ProgramGraphShape::new(0, 0), "fin", "fout");
     }
 
     #[test]
     #[should_panic(expected = "empty buffer name")]
     fn taint_flow_empty_buffer_name_should_panic() {
-        taint_flow(ProgramGraphShape::new(4, 3), "", "fout");
+        let _ = taint_flow(ProgramGraphShape::new(4, 3), "", "fout");
     }
 }

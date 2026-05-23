@@ -166,3 +166,35 @@ fn custom_opcode_is_optimized_inside_whole_megakernel_program() {
             "Fix: megakernel builders must optimize the assembled Program, including custom opcode handlers, before backend lowering."
         );
 }
+
+#[test]
+fn self_loading_miss_handler_program_contains_load_miss_bindings() {
+    let program = build_program_with_self_loading_miss_handler(64, 256, &[]);
+    let mut names = Vec::new();
+    collect_let_names_preorder(program.entry(), &mut names);
+    assert!(
+        names.iter().any(|n| *n == "resource_id"),
+        "Fix: self-loading miss handler must bind resource_id (the \
+         opaque consumer-defined identifier the IO queue carries)"
+    );
+    assert!(
+        names.iter().any(|n| *n == "found_io_slot"),
+        "Fix: self-loading miss handler must scan for an empty IO slot"
+    );
+    assert!(
+        names.iter().any(|n| *n == "poll_done"),
+        "Fix: self-loading miss handler must poll for DMA completion"
+    );
+}
+
+#[test]
+fn self_loading_miss_handler_does_not_include_async_load_nodes() {
+    let program = build_program_with_self_loading_miss_handler(64, 256, &[]);
+    let mut bindings = Vec::new();
+    async_load_bindings(program.entry(), &mut bindings);
+    assert_eq!(
+        bindings.len(),
+        0,
+        "Fix: self-loading miss handler must not introduce AsyncLoad nodes; it writes to the IO queue and polls instead."
+    );
+}

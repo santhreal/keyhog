@@ -1,5 +1,7 @@
 //! Witness fixtures for AST→PG lowering tests.
 
+#![allow(deprecated)]
+
 use crate::parsing::c::parse::vast::*;
 
 use super::reference::*;
@@ -201,7 +203,9 @@ fn witness_nodes() -> Vec<u32> {
 }
 
 fn witness_node_count() -> u32 {
-    u32::try_from(witness_nodes().len() / VAST_NODE_STRIDE_U32 as usize).unwrap_or_default()
+    u32::try_from(witness_nodes().len() / VAST_NODE_STRIDE_U32 as usize).expect(
+        "AST-to-PG witness node count exceeds u32. Fix: split the fixture instead of truncating it.",
+    )
 }
 
 fn witness_inputs() -> Vec<Vec<Vec<u8>>> {

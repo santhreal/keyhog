@@ -33,8 +33,40 @@
 
 use rustc_hash::{FxHashMap, FxHashSet};
 
-use crate::ir::{BufferAccess, BufferDecl, Ident, Program};
+use crate::ir::{BufferAccess, BufferDecl, DataType, Ident, Program};
 use crate::optimizer::{fingerprint_program, vyre_pass, PassAnalysis, PassResult};
+
+/// Conservative ceiling on workgroup-promoted buffer size.
+///
+/// vyre-driver's `DeviceCaps::wgpu_like_default` reports 16 KiB of
+/// shared memory on the wgpu fallback path; CUDA/SPIR-V get 48 KiB+.
+/// Without a target backend at this stage, we use the wgpu floor so a
+/// program that compiles after this pass on any reachable backend.
+const MAX_WORKGROUP_PROMOTION_BYTES: u64 = 16 * 1024;
+
+/// Bytes-per-element for the destination workgroup buffer. Delegates
+/// to the canonical [`DataType::size_bytes`] table so every variant
+/// (U8/I8/Bool/Bytes = 1, U16/I16/F16/BF16 = 2, U32/I32/F32 = 4,
+/// U64/I64/F64/Vec2U32 = 8, `Vec4U32` = 16, Vec/Array follow the
+/// element/lane math, F8/F4/I4/NF4 = 1) is sized correctly.
+///
+/// `size_bytes` returns None for dynamically-sized variants (Tensor,
+/// `TensorShaped`, SparseCsr/SparseCoo/SparseBsr, Opaque). Those cannot
+/// be promoted to fixed-size workgroup storage because any guessed size
+/// can understate shared-memory pressure and corrupt dispatch layout.
+fn element_bytes(element: &DataType) -> Option<u64> {
+    element.size_bytes().map(|bytes| bytes as u64)
+}
+
+fn fits_workgroup_budget(buf: &BufferDecl) -> bool {
+    let Some(element_bytes) = element_bytes(&buf.element()) else {
+        return false;
+    };
+    let Some(bytes) = u64::from(buf.count()).checked_mul(element_bytes) else {
+        return false;
+    };
+    bytes > 0 && bytes <= MAX_WORKGROUP_PROMOTION_BYTES
+}
 
 /// Built-in optimizer pass for in-program decode/scan handoff fusion.
 #[derive(Debug, Default)]
@@ -65,7 +97,8 @@ impl DecodeScanFuse {
             changed: fingerprint_program(&optimized) != before,
             program: optimized,
         }
-    }}
+    }
+}
 
 /// Run the decode→scan fusion over a Program.
 ///
@@ -78,11 +111,14 @@ pub fn run(program: Program) -> Program {
         .buffers
         .iter()
         .filter(|b| {
-            // Promotability criteria: ReadWrite (written then read within
+            // Promotability criteria: `ReadWrite` (written then read within
             // one dispatch), static count (workgroup allocs must be compile-
             // time sized), and not externally observed (workgroup buffers
             // don't survive past dispatch end).
-            b.access() == BufferAccess::ReadWrite && b.count() > 0 && !b.is_pipeline_live_out()
+            b.access() == BufferAccess::ReadWrite
+                && b.count() > 0
+                && !b.is_pipeline_live_out()
+                && fits_workgroup_budget(b)
         })
         .map(|b| Ident::from(b.name()))
         .collect();
@@ -121,7 +157,10 @@ pub fn count_opportunities(program: &Program) -> usize {
         .iter()
         .filter(|b| {
             // Same promotability criteria as `run`.
-            b.access() == BufferAccess::ReadWrite && b.count() > 0 && !b.is_pipeline_live_out()
+            b.access() == BufferAccess::ReadWrite
+                && b.count() > 0
+                && !b.is_pipeline_live_out()
+                && fits_workgroup_budget(b)
         })
         .count()
 }
@@ -241,6 +280,57 @@ mod tests {
     #[test]
     fn count_opportunities_finds_one_candidate() {
         assert_eq!(count_opportunities(&decoder_like()), 1);
+    }
+
+    /// A ReadWrite handoff that exceeds 16 KiB stays in storage memory
+    /// — wgpu's shared-memory floor would reject the workgroup decl on
+    /// the fallback path. 4097 u32 elements = 16388 bytes, just above
+    /// the 16384-byte budget.
+    #[test]
+    fn run_leaves_oversize_handoff_in_storage() {
+        let p = Program::wrapped(
+            vec![
+                BufferDecl::storage("input", 0, BufferAccess::ReadOnly, DataType::U32)
+                    .with_count(64),
+                BufferDecl::storage("decoded", 1, BufferAccess::ReadWrite, DataType::U32)
+                    .with_count(4097),
+            ],
+            [64, 1, 1],
+            vec![],
+        );
+        assert_eq!(count_opportunities(&p), 0);
+        let after = run(p);
+        let decoded = after
+            .buffers
+            .iter()
+            .find(|b| b.name() == "decoded")
+            .unwrap();
+        assert_eq!(
+            decoded.access(),
+            BufferAccess::ReadWrite,
+            "oversize handoff must not be promoted; would exceed 16 KiB shared-memory floor"
+        );
+    }
+
+    /// Twin of the above: a 4096-element buffer (exactly at 16 KiB) is
+    /// still promotable.
+    #[test]
+    fn run_promotes_at_workgroup_byte_ceiling() {
+        let p = Program::wrapped(
+            vec![
+                BufferDecl::storage("decoded", 1, BufferAccess::ReadWrite, DataType::U32)
+                    .with_count(4096),
+            ],
+            [64, 1, 1],
+            vec![],
+        );
+        let after = run(p);
+        let decoded = after
+            .buffers
+            .iter()
+            .find(|b| b.name() == "decoded")
+            .unwrap();
+        assert_eq!(decoded.access(), BufferAccess::Workgroup);
     }
 
     #[test]

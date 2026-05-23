@@ -120,7 +120,7 @@ where
                 sample_timeout: std::time::Duration::from_secs(*sample_timeout_secs),
                 determinism_runs: *determinism_runs,
                 workgroup_override: workgroup_size.map(|size| [size, 1, 1]),
-                baseline_warmup_runs: 5,
+                baseline_warmup_runs: 0,
                 snapshot_on_pass: *snapshot_on_pass,
             };
             let reports = execute_run_matrix(&registry, suite_kind, &config)?;
@@ -412,7 +412,9 @@ fn read_report_bounded(path: &std::path::Path) -> std::io::Result<Vec<u8>> {
         ));
     }
     let mut bytes = Vec::with_capacity(metadata.len() as usize);
-    file.by_ref().take(MAX_REPORT_INPUT_BYTES + 1).read_to_end(&mut bytes)?;
+    file.by_ref()
+        .take(MAX_REPORT_INPUT_BYTES + 1)
+        .read_to_end(&mut bytes)?;
     if bytes.len() as u64 > MAX_REPORT_INPUT_BYTES {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,

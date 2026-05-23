@@ -25,7 +25,9 @@ impl BenchCase for EgraphSaturation {
         BenchMetadata {
             id: self.id(),
             name: "Lower E-Graph Saturation".to_string(),
-            description: "Measures bounded descriptor saturation against the release optimization corpus".to_string(),
+            description:
+                "Measures bounded descriptor saturation against the release optimization corpus"
+                    .to_string(),
             tags: vec![
                 "lower".to_string(),
                 "egraph".to_string(),
@@ -80,8 +82,14 @@ impl BenchCase for EgraphSaturation {
             })?;
 
         let baseline_start = Instant::now();
-        let bitwise_case_count = corpus.iter().filter(|desc| is_bitwise_egraph_case(desc)).count() as u64;
-        let boolean_case_count = corpus.iter().filter(|desc| is_boolean_egraph_case(desc)).count() as u64;
+        let bitwise_case_count = corpus
+            .iter()
+            .filter(|desc| is_bitwise_egraph_case(desc))
+            .count() as u64;
+        let boolean_case_count = corpus
+            .iter()
+            .filter(|desc| is_boolean_egraph_case(desc))
+            .count() as u64;
         let mut baseline_ops_after = 0u64;
         for desc in corpus {
             let (rewritten, _) = rewrites::run_all_with_stats(desc);

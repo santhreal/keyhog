@@ -1,12 +1,14 @@
 //! `edge` — raw forward traversal with caller-supplied edge mask.
 //!
 //! Primitive escape hatch for rules that match on non-canonical
-//! edge-kind combinations. Surgec lowers arbitrary
+//! edge-kind combinations. Downstream analyzer lowers arbitrary
 //! `edge(frontier, kind_mask)` expressions directly through this.
 
 use vyre_foundation::ir::Program;
 
-use crate::graph::csr_forward_traverse::{cpu_ref as csr_forward_cpu_ref, csr_forward_traverse};
+#[cfg(any(test, feature = "cpu-parity"))]
+use crate::graph::csr_forward_traverse::cpu_ref as csr_forward_cpu_ref;
+use crate::graph::csr_forward_traverse::csr_forward_traverse;
 use crate::graph::program_graph::ProgramGraphShape;
 
 /// Canonical op id.
@@ -14,7 +16,7 @@ pub const OP_ID: &str = "vyre-primitives::predicate::edge";
 
 /// Build a Program. The body is a `Region { generator: edge::OP_ID }`
 /// wrapping the underlying `csr_forward_traverse` so callers (the
-/// surgec motif lowerer in particular) can locate the edge dispatch
+/// downstream analyzer motif lowerer in particular) can locate the edge dispatch
 /// by its own op id rather than the delegate's.
 #[must_use]
 pub fn edge(
@@ -50,6 +52,7 @@ pub fn edge(
 /// alias for forward traversal, so forwarding to the delegate's
 /// cpu_ref is the exact semantic match.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref(
     node_count: u32,
     edge_offsets: &[u32],

@@ -8,25 +8,15 @@
 
 use std::sync::Arc;
 
-use vyre::ir::{Node, Program};
+use vyre::ir::{BufferAccess, Node, Program};
 use vyre_foundation::ir::model::expr::{GeneratorRef, Ident};
 
 fn primitive_program(wrapper_id: &str, primitive_id: &str) -> Program {
     let Some(entry) =
         vyre_primitives::harness::all_entries().find(|entry| entry.id == primitive_id)
     else {
-        return Program::wrapped(
-            Vec::new(),
-            [1, 1, 1],
-            vec![crate::region::wrap_anonymous(
-                wrapper_id,
-                vec![Node::trap(
-                    vyre::ir::Expr::u32(0),
-                    format!(
-                "Fix: primitive catalog wrapper `{wrapper_id}` targets unregistered primitive `{primitive_id}`"
-                    ),
-                )],
-            )],
+        panic!(
+            "vyre-libs primitive catalog wrapper `{wrapper_id}` targets unregistered primitive `{primitive_id}`. Fix: register the primitive harness entry or remove the stale wrapper."
         );
     };
     let primitive = (entry.build)();
@@ -47,6 +37,73 @@ fn primitive_program(wrapper_id: &str, primitive_id: &str) -> Program {
     )
 }
 
+fn backend_owned_output(access: BufferAccess, is_output: bool, is_pipeline_live_out: bool) -> bool {
+    matches!(access, BufferAccess::WriteOnly)
+        || is_output
+        || (is_pipeline_live_out && matches!(access, BufferAccess::ReadWrite))
+}
+
+fn catalog_inputs_for(entry: &vyre_primitives::harness::OpEntry) -> Vec<Vec<Vec<u8>>> {
+    let program = (entry.build)();
+    let logical_input_count = program
+        .buffers()
+        .iter()
+        .filter(|buffer| {
+            !matches!(buffer.access(), BufferAccess::Workgroup)
+                && !backend_owned_output(
+                    buffer.access(),
+                    buffer.is_output(),
+                    buffer.is_pipeline_live_out(),
+                )
+        })
+        .count();
+    let legacy_input_count = program
+        .buffers()
+        .iter()
+        .filter(|buffer| !matches!(buffer.access(), BufferAccess::Workgroup))
+        .count();
+    let raw_cases = entry.test_inputs.map(|build| build()).unwrap_or_else(|| {
+        panic!(
+            "vyre-libs primitive catalog fixture targets primitive `{}` without test inputs. Fix: add primitive harness inputs before wrapping it.",
+            entry.id
+        )
+    });
+    raw_cases
+        .into_iter()
+        .map(|case| {
+            if case.len() == logical_input_count {
+                return case;
+            }
+            if case.len() != legacy_input_count {
+                panic!(
+                    "vyre-libs primitive catalog fixture `{}` has {} input buffers but program expects {} logical inputs or {} legacy non-workgroup buffers. Fix: repair the primitive harness fixture.",
+                    entry.id,
+                    case.len(),
+                    logical_input_count,
+                    legacy_input_count
+                );
+            }
+            program
+                .buffers()
+                .iter()
+                .filter(|buffer| !matches!(buffer.access(), BufferAccess::Workgroup))
+                .zip(case)
+                .filter_map(|(buffer, value)| {
+                    if backend_owned_output(
+                        buffer.access(),
+                        buffer.is_output(),
+                        buffer.is_pipeline_live_out(),
+                    ) {
+                        None
+                    } else {
+                        Some(value)
+                    }
+                })
+                .collect()
+        })
+        .collect()
+}
+
 macro_rules! catalog_pair {
     ($base:literal, $primitive:literal) => {
         const _: () = {
@@ -54,20 +111,34 @@ macro_rules! catalog_pair {
                 let Some(entry) =
                     vyre_primitives::harness::all_entries().find(|entry| entry.id == $primitive)
                 else {
-                    return Vec::new();
+                    panic!(
+                        "vyre-libs primitive catalog fixture `{}` targets unregistered primitive `{}`. Fix: register the primitive harness entry or remove the stale wrapper.",
+                        concat!($base, "::consumer_a"),
+                        $primitive
+                    );
                 };
-                entry.test_inputs.map(|build| build()).unwrap_or_default()
+                catalog_inputs_for(entry)
             }
             fn expected() -> Vec<Vec<Vec<u8>>> {
                 let Some(entry) =
                     vyre_primitives::harness::all_entries().find(|entry| entry.id == $primitive)
                 else {
-                    return Vec::new();
+                    panic!(
+                        "vyre-libs primitive catalog fixture `{}` targets unregistered primitive `{}`. Fix: register the primitive harness entry or remove the stale wrapper.",
+                        concat!($base, "::consumer_a"),
+                        $primitive
+                    );
                 };
                 entry
                     .expected_output
                     .map(|build| build())
-                    .unwrap_or_default()
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "vyre-libs primitive catalog fixture `{}` targets primitive `{}` without expected outputs. Fix: add primitive harness expected outputs before wrapping it.",
+                            concat!($base, "::consumer_a"),
+                            $primitive
+                        )
+                    })
             }
 
             inventory::submit! {
@@ -76,6 +147,7 @@ macro_rules! catalog_pair {
                     build: || primitive_program(concat!($base, "::consumer_a"), $primitive),
                     test_inputs: Some(inputs),
                     expected_output: Some(expected),
+                    category: None,
                 }
             }
             inventory::submit! {
@@ -84,6 +156,7 @@ macro_rules! catalog_pair {
                     build: || primitive_program(concat!($base, "::consumer_b"), $primitive),
                     test_inputs: Some(inputs),
                     expected_output: Some(expected),
+                    category: None,
                 }
             }
         };

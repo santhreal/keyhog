@@ -64,7 +64,9 @@ fn scanner_finds(text: &str, needle: &str) -> bool {
             .map(|m| (m.detector_id.as_ref(), m.credential.as_ref()))
             .collect::<Vec<_>>(),
     );
-    matches.iter().any(|m| m.credential.as_ref().contains(needle))
+    matches
+        .iter()
+        .any(|m| m.credential.as_ref().contains(needle))
 }
 
 /// Realistic leak shape: a developer comments out a config line with

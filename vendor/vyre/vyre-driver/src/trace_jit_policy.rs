@@ -48,7 +48,7 @@ pub enum TraceJitDecision {
         /// Predicted savings (nanoseconds) from avoiding the next
         /// miss, after netting out the speculative spec cost.
         /// Positive by construction.
-        expected_savings_ns: u64,
+        expected_savings_ns: u128,
     },
 }
 
@@ -76,16 +76,15 @@ pub fn decide_trace_jit_speculation(inputs: TraceJitInputs) -> TraceJitDecision 
     if inputs.miss_cost_ns == 0 {
         return TraceJitDecision::HoldSteady;
     }
-    // Weighted-savings = miss_cost * confidence / 10000. Use u128 for
-    // the multiplication to keep precision on adversarial inputs.
-    let weighted = (inputs.miss_cost_ns as u128)
-        .saturating_mul(inputs.prediction_confidence_bps as u128)
+    // Weighted-savings = miss_cost * confidence / 10000. Widen before
+    // multiplying so release-path adoption decisions never clamp.
+    let weighted = (u128::from(inputs.miss_cost_ns) * u128::from(inputs.prediction_confidence_bps))
         / 10_000u128;
-    let weighted_u64 = u64::try_from(weighted).unwrap_or(u64::MAX);
-    if weighted_u64 <= inputs.speculative_spec_cost_ns {
+    let speculative_spec_cost_ns = u128::from(inputs.speculative_spec_cost_ns);
+    if weighted <= speculative_spec_cost_ns {
         return TraceJitDecision::HoldSteady;
     }
-    let expected_savings_ns = weighted_u64.saturating_sub(inputs.speculative_spec_cost_ns);
+    let expected_savings_ns = weighted - speculative_spec_cost_ns;
     TraceJitDecision::Speculate {
         expected_savings_ns,
     }
@@ -188,13 +187,32 @@ mod tests {
     }
 
     #[test]
-    fn extreme_inputs_use_saturating_arithmetic() {
+    fn extreme_inputs_use_widened_arithmetic() {
         // u64::MAX miss_cost × 10000 confidence shouldn't panic.
         let dec = decide_trace_jit_speculation(inp(100, 10_000, 1_000, u64::MAX));
         match dec {
-            TraceJitDecision::Speculate { .. } => {}
+            TraceJitDecision::Speculate {
+                expected_savings_ns,
+            } => assert_eq!(expected_savings_ns, u128::from(u64::MAX) - 1_000),
             other => panic!("expected Speculate; got {:?}", other),
         }
+    }
+
+    #[test]
+    fn source_uses_exact_widened_arithmetic_not_saturation() {
+        let source = include_str!("trace_jit_policy.rs");
+
+        assert!(
+            !source.contains(concat!("saturating", "_mul"))
+                && !source.contains(concat!("saturating", "_sub")),
+            "Fix: trace-JIT speculation policy must use exact widened arithmetic, not saturating math that hides cost corruption."
+        );
+        assert!(
+            source.contains("u128::from(inputs.miss_cost_ns)")
+                && source.contains("u128::from(inputs.prediction_confidence_bps)")
+                && source.contains("weighted - speculative_spec_cost_ns"),
+            "Fix: trace-JIT expected savings must stay widened through the decision."
+        );
     }
 
     #[test]

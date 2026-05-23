@@ -129,7 +129,7 @@ impl Node {
 
     /// Effectively-infinite loop used by persistent kernels (megakernel,
     /// event loops, streaming). Lowers to `Node::Loop` with
-    /// `from: 0, to: u32::MAX`. At 1 µs per iteration u32::MAX is ~68
+    /// `from: 0, to: u32::MAX`. At 1 µs per iteration `u32::MAX` is ~68
     /// years — for all practical purposes infinite. The inner body
     /// drives termination via `Node::Return` or by observing an
     /// atomic shutdown flag the host sets.

@@ -1,6 +1,6 @@
 //! IR cleanup catalog.
 //!
-//! Cost-monotone-down structural simplifications: deterministic BufferDecl
+//! Cost-monotone-down structural simplifications: deterministic `BufferDecl`
 //! order, empty Block collapse, Region body inline, singleton Region block
 //! promotion, constant-condition If branch elimination, and self-assignment
 //! Assign elimination.

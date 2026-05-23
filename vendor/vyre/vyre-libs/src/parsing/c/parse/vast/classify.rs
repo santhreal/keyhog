@@ -1,6 +1,6 @@
-//! Audit-fix A36 `vast/classify.rs` extract.
+//! GPU VAST node-kind classification builders.
 
-#![allow(missing_docs)] // c-parser feature: A33-A36 split lost some leading doc comments; lint loud, fix surgically when revisiting docs.
+#![allow(missing_docs)] // Internal VAST-builder helpers are documented at the owning module boundary.
 use crate::parsing::c::lex::tokens::*;
 use crate::parsing::composition::child_phase;
 use crate::region::wrap_anonymous;
@@ -24,6 +24,46 @@ pub fn c11_classify_vast_node_kinds(
     vast_nodes: &str,
     num_nodes: Expr,
     out_typed_vast_nodes: &str,
+) -> Program {
+    c11_classify_vast_node_kinds_impl(vast_nodes, None, num_nodes, out_typed_vast_nodes, false)
+}
+
+pub fn c11_classify_vast_node_kinds_precomputed_context(
+    vast_nodes: &str,
+    decl_contexts: &str,
+    num_nodes: Expr,
+    out_typed_vast_nodes: &str,
+) -> Program {
+    c11_classify_vast_node_kinds_impl(
+        vast_nodes,
+        Some(decl_contexts),
+        num_nodes,
+        out_typed_vast_nodes,
+        false,
+    )
+}
+
+pub fn c11_classify_annotated_vast_node_kinds_precomputed_context(
+    vast_nodes: &str,
+    decl_contexts: &str,
+    num_nodes: Expr,
+    out_typed_vast_nodes: &str,
+) -> Program {
+    c11_classify_vast_node_kinds_impl(
+        vast_nodes,
+        Some(decl_contexts),
+        num_nodes,
+        out_typed_vast_nodes,
+        true,
+    )
+}
+
+fn c11_classify_vast_node_kinds_impl(
+    vast_nodes: &str,
+    decl_contexts: Option<&str>,
+    num_nodes: Expr,
+    out_typed_vast_nodes: &str,
+    typedef_annotations_available: bool,
 ) -> Program {
     let t = Expr::InvocationId { axis: 0 };
     let base = Expr::mul(t.clone(), Expr::u32(VAST_NODE_STRIDE_U32));
@@ -52,6 +92,7 @@ pub fn c11_classify_vast_node_kinds(
         num_nodes.clone(),
         t.clone(),
         base.clone(),
+        decl_contexts,
     );
     nodes_03::extend(
         &mut loop_body,
@@ -60,6 +101,7 @@ pub fn c11_classify_vast_node_kinds(
         num_nodes.clone(),
         t.clone(),
         base.clone(),
+        decl_contexts,
     );
     nodes_04::extend(
         &mut loop_body,
@@ -76,6 +118,7 @@ pub fn c11_classify_vast_node_kinds(
         num_nodes.clone(),
         t.clone(),
         base.clone(),
+        typedef_annotations_available,
     );
     nodes_06::extend(
         &mut loop_body,
@@ -124,18 +167,27 @@ pub fn c11_classify_vast_node_kinds(
     }
 
     let n = node_count(&num_nodes).max(1);
-    Program::wrapped(
+    let mut buffers =
         vec![
             BufferDecl::storage(vast_nodes, 0, BufferAccess::ReadOnly, DataType::U32)
                 .with_count(n.saturating_mul(VAST_NODE_STRIDE_U32)),
-            BufferDecl::storage(
-                out_typed_vast_nodes,
-                1,
-                BufferAccess::ReadWrite,
-                DataType::U32,
-            )
+        ];
+    let out_binding = if let Some(decl_contexts) = decl_contexts {
+        buffers.push(
+            BufferDecl::storage(decl_contexts, 1, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(n.saturating_mul(VAST_DECL_CONTEXT_STRIDE_U32)),
+        );
+        2
+    } else {
+        1
+    };
+    buffers.push(
+        BufferDecl::output(out_typed_vast_nodes, out_binding, DataType::U32)
             .with_count(n.saturating_mul(VAST_NODE_STRIDE_U32)),
-        ],
+    );
+
+    Program::wrapped(
+        buffers,
         [256, 1, 1],
         vec![wrap_anonymous(
             CLASSIFY_VAST_OP_ID,

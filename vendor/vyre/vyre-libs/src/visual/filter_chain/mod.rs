@@ -293,5 +293,6 @@ inventory::submit! {
             let pixels = [0xFF_804020u32, 0xFF_FF0000, 0xFF_00FF00, 0xFF_0000FF];
             vec![vec![crate::visual::byte_helpers::u32_words_to_le_bytes(&pixels)]]
         }),
+        category: Some("visual"),
     }
 }

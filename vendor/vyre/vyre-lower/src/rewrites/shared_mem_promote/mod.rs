@@ -22,14 +22,28 @@ use vyre_foundation::ir::{BinOp, DataType, MemoryOrdering};
 #[must_use]
 pub fn shared_mem_promote(desc: &KernelDescriptor) -> KernelDescriptor {
     let mut out = desc.clone();
-    let mut next_slot = out
+    // Newly-promoted bindings are `MemoryClass::Shared` and must live in the
+    // workgroup slot range so they cannot collide with host-bound slots
+    // already in `out.bindings.slots`. Seed `next_slot` to the higher of
+    // (a) WORKGROUP_SLOT_BASE — guarantees we are above every host slot —
+    // and (b) max-existing-Shared/Scratch + 1 — picks a fresh shared slot
+    // when prior runs of this rewrite already placed bindings in the range.
+    let max_shared = out
         .bindings
         .slots
         .iter()
+        .filter(|binding| {
+            matches!(
+                binding.memory_class,
+                MemoryClass::Shared | MemoryClass::Scratch,
+            )
+        })
         .map(|binding| binding.slot)
-        .max()
-        .unwrap_or(0)
-        .saturating_add(1);
+        .max();
+    let mut next_slot = max_shared
+        .map(|slot| slot.saturating_add(1))
+        .unwrap_or(crate::lower::WORKGROUP_SLOT_BASE)
+        .max(crate::lower::WORKGROUP_SLOT_BASE);
     let mut shared_slots = Vec::new();
     let changed = rewrite_body(
         &mut out.body,

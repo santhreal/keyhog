@@ -4,16 +4,16 @@
 //! subdirs aligned with the Phase 4 catalog buckets so the directory scales
 //! to ~250 named transforms without becoming an unreviewable flat dir:
 //!
-//! - `algebraic/` (Phase 4A) — const_fold, strength_reduce,
-//!   canonicalize, normalize_atomics
-//! - `loops/` (Phase 4B) — loop_unroll, loop_trip_zero_eliminate
-//! - `memory/` (Phase 4C) — const_buffer_fold, dead_buffer_elim,
-//!   read_only_load_hoist, vectorization, decode_scan_fuse
-//! - `sync/` (Phase 4D) — barrier_coalesce
-//! - `fusion_cse/` — fusion, fuse_cse, cse, dce
-//! - `cleanup/` — empty_block_collapse, region_inline,
-//!   if_constant_branch_eliminate, noop_assign_eliminate,
-//!   region_promote_singleton_block, buffer_decl_sort
+//! - `algebraic/` (Phase 4A) — `const_fold`, `strength_reduce`,
+//!   canonicalize, `normalize_atomics`
+//! - `loops/` (Phase 4B) — `loop_unroll`, `loop_trip_zero_eliminate`
+//! - `memory/` (Phase 4C) — `const_buffer_fold`, `dead_buffer_elim`,
+//!   `read_only_load_hoist`, `vectorization`, `decode_scan_fuse`
+//! - `sync/` (Phase 4D) — `barrier_coalesce`
+//! - `fusion_cse/` — fusion, `fuse_cse`, cse, dce
+//! - `cleanup/` — `empty_block_collapse`, `region_inline`,
+//!   `if_constant_branch_eliminate`, `noop_assign_eliminate`,
+//!   `region_promote_singleton_block`, `buffer_decl_sort`
 //! - `specialization/` (Phase 4G) — autotune
 //!
 //! Backend-specific lowering strategy code belongs in the concrete driver
@@ -37,17 +37,22 @@ pub mod sync;
 // `passes::<pass_name>` path while the scheduler discovers runnable passes
 // from the inventory registry.
 
-pub use algebraic::{canonicalize, const_fold, normalize_atomics, strength_reduce};
+pub use algebraic::{
+    atomic_minimize, canonicalize, const_fold, normalize_atomics, strength_reduce,
+};
 pub use cleanup::{
-    buffer_decl_sort, empty_block_collapse, if_constant_branch_eliminate, noop_assign_eliminate,
-    region_inline, region_promote_singleton_block,
+    branch_coalesce, branch_value_hoist, buffer_decl_sort, empty_block_collapse,
+    if_constant_branch_eliminate, noop_assign_eliminate, region_fusion_hint, region_inline,
+    region_promote_singleton_block, rematerialize_cheap_let, tail_duplication,
 };
 pub use fusion_cse::{cse, dce, fuse_cse, fusion};
 pub use loops::{
-    loop_redundant_bound_check_elide, loop_strip_mine, loop_trip_zero_eliminate, loop_unroll,
+    loop_bound_tighten, loop_fusion, loop_licm, loop_redundant_bound_check_elide,
+    loop_software_pipeline, loop_strip_mine, loop_trip_zero_eliminate, loop_unroll,
 };
 pub use memory::{
-    const_buffer_fold, dead_buffer_elim, decode_scan_fuse, read_only_load_hoist, vectorization,
+    const_buffer_fold, dead_buffer_elim, dead_store_elim, decode_scan_fuse, read_only_load_hoist,
+    store_to_load_forward, vectorization,
 };
 pub use specialization::autotune;
 pub use sync::barrier_coalesce;

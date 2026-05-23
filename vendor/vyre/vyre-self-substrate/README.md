@@ -7,7 +7,7 @@ model problems.
 Audit cleanup A10 (2026-04-30) extracted this from
 `vyre-driver/src/self_substrate/` into a dedicated crate so the
 substrate-self-uses live at a layer that depends only on
-`vyre-foundation` + `vyre-primitives` — eliminating the layering
+`vyre-foundation` + `vyre-primitives`: eliminating the layering
 muddle where backend-specific dispatch code and substrate self-uses
 shared one home in `vyre-driver`.
 

@@ -4,8 +4,14 @@ use crate::cpu_references::monoidal_compose_cpu;
 
 /// Compose arrows `f: A -> B` and `g: B -> C` as dense matrices.
 #[must_use]
-pub fn compose_ir_arrows(f: &[f64], g: &[f64], a: u32, b: u32, c: u32) -> Vec<f64> {
-    monoidal_compose_cpu(f, g, a, b, c)
+pub fn compose_ir_arrows(
+    first: &[f64],
+    second: &[f64],
+    source_dim: u32,
+    middle_dim: u32,
+    target_dim: u32,
+) -> Vec<f64> {
+    monoidal_compose_cpu(first, second, source_dim, middle_dim, target_dim)
 }
 
 /// Identity arrow for an `n`-object diagram.
@@ -22,21 +28,46 @@ pub fn identity_arrow(n: u32) -> Vec<f64> {
 #[must_use]
 #[allow(clippy::too_many_arguments)]
 pub fn composition_associates(
-    f: &[f64],
-    g: &[f64],
-    h: &[f64],
-    a: u32,
-    b: u32,
-    c: u32,
-    d: u32,
+    first: &[f64],
+    second: &[f64],
+    third: &[f64],
+    source_dim: u32,
+    first_target_dim: u32,
+    second_target_dim: u32,
+    final_target_dim: u32,
 ) -> bool {
-    let gf = compose_ir_arrows(f, g, a, b, c);
-    let h_gf = compose_ir_arrows(&gf, h, a, c, d);
-    let hg = compose_ir_arrows(g, h, b, c, d);
-    let hg_f = compose_ir_arrows(f, &hg, a, b, d);
-    h_gf.iter()
-        .zip(hg_f.iter())
-        .all(|(x, y)| (x - y).abs() < 1e-9 * (1.0 + x.abs() + y.abs()))
+    let second_after_first = compose_ir_arrows(
+        first,
+        second,
+        source_dim,
+        first_target_dim,
+        second_target_dim,
+    );
+    let third_after_pair = compose_ir_arrows(
+        &second_after_first,
+        third,
+        source_dim,
+        second_target_dim,
+        final_target_dim,
+    );
+    let third_after_second = compose_ir_arrows(
+        second,
+        third,
+        first_target_dim,
+        second_target_dim,
+        final_target_dim,
+    );
+    let pair_after_first = compose_ir_arrows(
+        first,
+        &third_after_second,
+        source_dim,
+        first_target_dim,
+        final_target_dim,
+    );
+    third_after_pair
+        .iter()
+        .zip(pair_after_first.iter())
+        .all(|(left, right)| (left - right).abs() < 1e-9 * (1.0 + left.abs() + right.abs()))
 }
 
 #[cfg(test)]

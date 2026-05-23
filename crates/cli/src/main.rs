@@ -60,7 +60,9 @@ async fn main() -> ExitCode {
     // could not possibly be the `-V` / `--version` literal.
     // kimi-dogfood-2 #134.
     let is_version = std::env::args_os().any(|a| {
-        a.to_str().map(|s| s == "-V" || s == "--version").unwrap_or(false)
+        a.to_str()
+            .map(|s| s == "-V" || s == "--version")
+            .unwrap_or(false)
     });
 
     tracing_subscriber::fmt()

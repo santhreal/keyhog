@@ -24,8 +24,11 @@
 //!
 //! Rewrites with structural / control-flow effects (LICM,
 //! dead-code cleanup, `dead_store`, `branch_collapse`) live outside
-//! QF_BV; their proofs are deferred to a future SMT-LIA / SMT-array
-//! extension and are documented in their module docstrings only.
+//! the QF_BV proof surface — they require SMT-LIA or SMT-array
+//! reasoning the current solver layer does not export. Their
+//! soundness is documented in each pass's module docstring under the
+//! "soundness" / "correctness" sections; this registry is not the
+//! source of truth for them.
 //!
 //! ## Stability contract
 //!
@@ -120,59 +123,4 @@ pub fn shipped_obligations() -> Vec<RewriteProofObligation> {
             ProofExpr::bvmul(bv_var("y"), bv_var("x")),
         ),
     ]
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn registry_is_non_empty() {
-        assert!(!shipped_obligations().is_empty());
-    }
-
-    #[test]
-    fn every_obligation_has_unique_name() {
-        let obligations = shipped_obligations();
-        let mut names: Vec<&str> = obligations.iter().map(|o| &*o.rewrite).collect();
-        let original = names.len();
-        names.sort_unstable();
-        names.dedup();
-        assert_eq!(
-            names.len(),
-            original,
-            "rewrite-name collision in shipped_obligations"
-        );
-    }
-
-    #[test]
-    fn every_obligation_emits_well_formed_smt2() {
-        for o in shipped_obligations() {
-            let smt = o.to_smt2();
-            assert!(
-                smt.contains("(set-logic QF_BV)"),
-                "{} missing QF_BV header",
-                o.rewrite
-            );
-            assert!(smt.contains("(check-sat)"), "{} missing check-sat", o.rewrite);
-            // Sanity: the script never emits the literal `0u - 1u` or
-            // any obvious malformed token.
-            assert!(
-                !smt.contains("0u - 1u"),
-                "{} emits malformed SMT2 token",
-                o.rewrite
-            );
-        }
-    }
-
-    #[test]
-    fn add_zero_obligation_negation_is_x_plus_zero_eq_x() {
-        let smt = shipped_obligations()
-            .into_iter()
-            .find(|o| &*o.rewrite == "identity_elim_add_zero")
-            .unwrap()
-            .to_smt2();
-        assert!(smt.contains("bvadd"));
-        assert!(smt.contains("x"));
-    }
 }

@@ -116,6 +116,7 @@ pub fn sinkhorn_scale(target: &str, divisor: &str, out: &str, count: u32) -> Pro
 /// `(u_init, v_init)`.
 ///
 /// `k` is the kernel `exp(-C/ε)` of shape `m × n` row-major.
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn sinkhorn_iter_cpu(
     k: &[f64],
     a: &[f64],
@@ -132,6 +133,7 @@ pub fn sinkhorn_iter_cpu(
 
 /// CPU reference using caller-owned temporary vectors.
 #[allow(clippy::too_many_arguments)]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn sinkhorn_iter_cpu_into(
     k: &[f64],
     a: &[f64],
@@ -174,6 +176,18 @@ pub fn sinkhorn_iter_cpu_into(
             *v_j = b.get(j).copied().unwrap_or(0.0) / ktu[j].max(1e-30);
         }
     }
+}
+
+#[cfg(feature = "inventory-registry")]
+inventory::submit! {
+    crate::harness::OpEntry::new(
+        OP_ID,
+        || {
+            sinkhorn_scale("a", "b", "out", 4)
+        },
+        None,
+        None,
+    )
 }
 
 #[cfg(test)]

@@ -93,7 +93,10 @@ fn finds_stackblitz(matches: &[keyhog_core::RawMatch]) -> bool {
 #[test]
 fn baseline_simd_finds_stackblitz_token() {
     let Some(window) = read_window() else {
-        eprintln!("SKIP: bench corpus not present at {:?}", bench_corpus_path());
+        eprintln!(
+            "SKIP: bench corpus not present at {:?}",
+            bench_corpus_path()
+        );
         return;
     };
     // Sanity: the window must actually contain the planted token,
@@ -119,7 +122,10 @@ fn baseline_simd_finds_stackblitz_token() {
         finds_stackblitz(&matches),
         "SIMD/CPU baseline must find {STACKBLITZ_TOKEN}; got {} matches: {:?}",
         matches.len(),
-        matches.iter().map(|m| m.detector_id.as_ref()).collect::<Vec<_>>(),
+        matches
+            .iter()
+            .map(|m| m.detector_id.as_ref())
+            .collect::<Vec<_>>(),
     );
 }
 
@@ -130,7 +136,10 @@ fn baseline_simd_finds_stackblitz_token() {
 #[test]
 fn gpu_ac_kernel_finds_stackblitz_token_in_narrow_window() {
     let Some(window) = read_window() else {
-        eprintln!("SKIP: bench corpus not present at {:?}", bench_corpus_path());
+        eprintln!(
+            "SKIP: bench corpus not present at {:?}",
+            bench_corpus_path()
+        );
         return;
     };
     let detectors = match keyhog_core::load_detectors(&detector_dir()) {
@@ -164,7 +173,10 @@ fn gpu_ac_kernel_finds_stackblitz_token_in_narrow_window() {
         "GPU AC kernel missed {STACKBLITZ_TOKEN} at corpus offset \
          {STACKBLITZ_OFFSET} in narrow window. Found {} matches: {:?}",
         ac_flat.len(),
-        ac_flat.iter().map(|m| (m.detector_id.as_ref(), m.location.offset)).collect::<Vec<_>>(),
+        ac_flat
+            .iter()
+            .map(|m| (m.detector_id.as_ref(), m.location.offset))
+            .collect::<Vec<_>>(),
     );
 }
 
@@ -222,8 +234,8 @@ fn bisect_gpu_ac_recall_by_window_size() {
         1 * MIB,
         2 * MIB,
         3 * MIB,
-        4_194_240,          // exactly 1 shard at the WGSL workgroup cap
-        4_194_240 + 64,     // first byte over → 2 shards
+        4_194_240,      // exactly 1 shard at the WGSL workgroup cap
+        4_194_240 + 64, // first byte over → 2 shards
         4 * MIB,
         5 * MIB,
         8 * MIB,
@@ -259,8 +271,7 @@ fn bisect_gpu_ac_recall_by_window_size() {
             .filter(|m| m.detector_id.as_ref() == "stackblitz-credentials")
             .count();
 
-        let expected_shards =
-            (win_end - win_start).div_ceil(65_535 * 64);
+        let expected_shards = (win_end - win_start).div_ceil(65_535 * 64);
         report.push((size, ac_flat.len(), ac_hit, expected_shards));
         eprintln!(
             "bisect {:>10} bytes win_start={:>10} stackblitz_local={:>10} \

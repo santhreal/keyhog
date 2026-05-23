@@ -7,7 +7,7 @@
 //!
 //! This is the symmetric counterpart to `bitset_or_into`'s "merge
 //! reach" pattern: where `bitset_or_into` accumulates positives,
-//! `taint_kill` removes negatives. Surgec's `sanitized_by` uses this
+//! `taint_kill` removes negatives. Downstream analyzer's `sanitized_by` uses this
 //! as its first stage; the iterated taint-fixpoint loop applies it
 //! after each step to guarantee sanitizer nodes never re-enter the
 //! frontier.
@@ -45,16 +45,17 @@ pub fn taint_kill(
 
 /// CPU oracle. Mirrors the per-word semantic exactly.
 #[must_use]
-pub fn cpu_ref(frontier_in: &[u32], kill_set: &[u32]) -> Vec<u32> {
+#[cfg(test)]
+pub(crate) fn cpu_ref(frontier_in: &[u32], kill_set: &[u32]) -> Vec<u32> {
     vyre_primitives::bitset::and_not::cpu_ref(frontier_in, kill_set)
 }
 
 /// Marker type for the taint_kill dataflow primitive.
 pub struct TaintKill;
 
-impl weir::soundness::SoundnessTagged for TaintKill {
-    fn soundness(&self) -> weir::soundness::Soundness {
-        weir::soundness::Soundness::Exact
+impl vyre::soundness::SoundnessTagged for TaintKill {
+    fn soundness(&self) -> vyre::soundness::Soundness {
+        vyre::soundness::Soundness::Exact
     }
 }
 

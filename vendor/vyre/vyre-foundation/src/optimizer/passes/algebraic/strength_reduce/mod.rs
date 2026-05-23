@@ -1,6 +1,6 @@
 use crate::ir::{BinOp, Expr, Program, UnOp};
 use crate::optimizer::rewrite::rewrite_program;
-use crate::optimizer::{vyre_pass, PassResult};
+use crate::optimizer::{vyre_pass, PassAnalysis, PassResult};
 
 mod arithmetic;
 
@@ -14,12 +14,31 @@ use arithmetic::{
 #[vyre_pass(
     name = "strength_reduce",
     requires = ["const_fold"],
-    invalidates = ["value_numbering"],
-    analyze = "always"
+    invalidates = ["const_fold", "reaching_def_propagate", "value_numbering"],
+    phase = "scalar_algebra",
+    boundary_class = "abi_preserving",
+    cost_model_family = "scalar"
 )]
 pub struct StrengthReduce;
 
 impl StrengthReduce {
+    /// O(1) gate: strength reduction only fires on expressions, which only
+    /// live inside Let / Assign / Store / If-cond / Loop bound / Trap nodes.
+    /// A program that is just Return / Barrier / `IndirectDispatch` / `AsyncWait`
+    /// has no expression tree to rewrite. The bitset mask covers every
+    /// expression-bearing node kind so SKIP fires on truly expression-free
+    /// programs without false negatives.
+    #[must_use]
+    fn analyze_impl(program: &Program) -> PassAnalysis {
+        if !program
+            .stats()
+            .has_any_node_kind(crate::ir::stats::NODE_KIND_EXPRESSION_BEARING_MASK)
+        {
+            return PassAnalysis::SKIP;
+        }
+        PassAnalysis::RUN
+    }
+
     /// Rewrite multiply-by-power-of-two expressions into left shifts.
     ///
     /// AUDIT_2026-04-24 F-SR-01 (closed): `rewrite_program` already
@@ -28,12 +47,14 @@ impl StrengthReduce {
     #[must_use]
     pub fn transform(program: Program) -> PassResult {
         let (program, changed) = rewrite_program(program, reduce_expr);
-        PassResult {
-            program,
-            changed,
-        }
-    }}
+        PassResult { program, changed }
+    }
+}
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "strength-reduction table keeps algebraic rewrite precedence auditable"
+)]
 fn reduce_expr(expr: &Expr) -> Option<Expr> {
     if let Some(reduced) = horner_quadratic_u32(expr) {
         return Some(reduced);
@@ -75,17 +96,17 @@ fn reduce_expr(expr: &Expr) -> Option<Expr> {
                 return Some(decomposed);
             }
             // Float: x * 2.0 → x + x (saves a mul, uses cheaper add).
-            if matches!(right.as_ref(), Expr::LitF32(v) if *v == 2.0) {
+            if matches!(right.as_ref(), Expr::LitF32(v) if lit_f32_eq(*v, 2.0)) {
                 return Some(Expr::add(left.as_ref().clone(), left.as_ref().clone()));
             }
-            if matches!(left.as_ref(), Expr::LitF32(v) if *v == 2.0) {
+            if matches!(left.as_ref(), Expr::LitF32(v) if lit_f32_eq(*v, 2.0)) {
                 return Some(Expr::add(right.as_ref().clone(), right.as_ref().clone()));
             }
             // Float: x * 1.0 → x (multiplicative identity).
-            if matches!(right.as_ref(), Expr::LitF32(v) if *v == 1.0) {
+            if matches!(right.as_ref(), Expr::LitF32(v) if lit_f32_eq(*v, 1.0)) {
                 return Some(left.as_ref().clone());
             }
-            if matches!(left.as_ref(), Expr::LitF32(v) if *v == 1.0) {
+            if matches!(left.as_ref(), Expr::LitF32(v) if lit_f32_eq(*v, 1.0)) {
                 return Some(right.as_ref().clone());
             }
             None
@@ -102,12 +123,13 @@ fn reduce_expr(expr: &Expr) -> Option<Expr> {
             // a first-class IR op lets strict backends emit precise rcp and
             // ULP-budgeted backends emit approximate rcp without re-discovering
             // the expression shape in every driver.
-            if matches!(left.as_ref(), Expr::LitF32(v) if *v == 1.0)
+            if matches!(left.as_ref(), Expr::LitF32(v) if lit_f32_eq(*v, 1.0))
                 && !matches!(right.as_ref(), Expr::LitF32(_))
             {
                 return Some(Expr::reciprocal(right.as_ref().clone()));
             }
             match right.as_ref() {
+                Expr::LitU32(1) => Some(left.as_ref().clone()),
                 Expr::LitU32(value) if value.is_power_of_two() => Some(Expr::shr(
                     left.as_ref().clone(),
                     Expr::u32(value.trailing_zeros()),
@@ -119,16 +141,16 @@ fn reduce_expr(expr: &Expr) -> Option<Expr> {
                     granlund_montgomery_div(left.as_ref(), *d)
                 }
                 // Float: x / 2.0 → x * 0.5 (mul is cheaper than div).
-                Expr::LitF32(v) if *v == 2.0 => {
+                Expr::LitF32(v) if lit_f32_eq(*v, 2.0) => {
                     Some(Expr::mul(left.as_ref().clone(), Expr::f32(0.5)))
                 }
                 // Float: x / 1.0 → x (identity).
-                Expr::LitF32(v) if *v == 1.0 => Some(left.as_ref().clone()),
+                Expr::LitF32(v) if lit_f32_eq(*v, 1.0) => Some(left.as_ref().clone()),
                 // Float: x / C → x * (1/C) for any non-zero finite constant.
                 // GPU fdiv is 4-8× slower than fmul; on training workloads
                 // with per-element normalization (LayerNorm, RMSNorm) this
                 // turns a ~32-cycle instruction into a ~4-cycle one.
-                Expr::LitF32(v) if v.is_finite() && *v != 0.0 => {
+                Expr::LitF32(v) if v.is_finite() && f32_nonzero(*v) => {
                     Some(Expr::mul(left.as_ref().clone(), Expr::f32(1.0 / v)))
                 }
                 _ => None,
@@ -139,6 +161,9 @@ fn reduce_expr(expr: &Expr) -> Option<Expr> {
             let Expr::LitU32(value) = right.as_ref() else {
                 return None;
             };
+            if *value == 1 {
+                return Some(Expr::u32(0));
+            }
             if !value.is_power_of_two() {
                 return None;
             }
@@ -206,6 +231,10 @@ fn reduce_expr(expr: &Expr) -> Option<Expr> {
         // (x << a) << b → x << (a + b) when a,b are literal.
         // x << 0 → x,  x >> 0 → x.
         BinOp::Shl | BinOp::Shr => {
+            // Zero shifted by any amount is still zero.
+            if matches!(left.as_ref(), Expr::LitU32(0) | Expr::LitI32(0)) {
+                return Some(left.as_ref().clone());
+            }
             // Shift by zero → identity.
             if matches!(right.as_ref(), Expr::LitU32(0)) {
                 return Some(left.as_ref().clone());
@@ -266,31 +295,7 @@ fn reduce_expr(expr: &Expr) -> Option<Expr> {
 
         // ── BitOr complement → all-ones ─────────────────────────
         // x | ~x → 0xFFFFFFFF,  ~x | x → 0xFFFFFFFF
-        BinOp::BitOr => {
-            if let Expr::UnOp {
-                op: UnOp::BitNot,
-                operand: inner,
-            } = right.as_ref()
-            {
-                if inner.as_ref() == left.as_ref() {
-                    return Some(Expr::u32(u32::MAX));
-                }
-            }
-            if let Expr::UnOp {
-                op: UnOp::BitNot,
-                operand: inner,
-            } = left.as_ref()
-            {
-                if inner.as_ref() == right.as_ref() {
-                    return Some(Expr::u32(u32::MAX));
-                }
-            }
-            None
-        }
-
-        // ── BitXor complement → all-ones ────────────────────────
-        // x ^ ~x → 0xFFFFFFFF
-        BinOp::BitXor => {
+        BinOp::BitOr | BinOp::BitXor => {
             if let Expr::UnOp {
                 op: UnOp::BitNot,
                 operand: inner,
@@ -357,6 +362,16 @@ fn reduce_expr(expr: &Expr) -> Option<Expr> {
 
         _ => None,
     }
+}
+
+#[inline]
+fn lit_f32_eq(value: f32, expected: f32) -> bool {
+    value.to_bits() == expected.to_bits()
+}
+
+#[inline]
+fn f32_nonzero(value: f32) -> bool {
+    value.to_bits() & 0x7FFF_FFFF != 0
 }
 
 #[cfg(test)]

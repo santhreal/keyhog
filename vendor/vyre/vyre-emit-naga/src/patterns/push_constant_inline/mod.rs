@@ -57,7 +57,10 @@ pub fn analyze(desc: &KernelDescriptor) -> PushConstantPlan {
 
 #[must_use]
 pub fn analyze_with_budget(desc: &KernelDescriptor, budget_bytes: u32) -> PushConstantPlan {
-    let mut candidates = Vec::new();
+    // Upper bound on candidates is the binding-slot count: each slot
+    // either qualifies (one push) or doesn't (no push). Pre-sizing
+    // keeps the typical small-binding-set case to a single allocation.
+    let mut candidates = Vec::with_capacity(desc.bindings.slots.len());
     let mut total: u32 = 0;
     for binding in &desc.bindings.slots {
         if let Some(bytes) = qualifies(binding) {

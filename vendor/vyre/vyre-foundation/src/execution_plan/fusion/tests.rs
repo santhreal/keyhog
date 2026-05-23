@@ -121,6 +121,60 @@ fn divergent_invocation_gated_writer_upgrades_barrier_to_grid_sync() {
 }
 
 #[test]
+fn uniform_cross_arm_writer_uses_workgroup_barrier() {
+    let writer = Program::wrapped(
+        vec![BufferDecl::read_write("state", 0, DataType::U32).with_count(1)],
+        [128, 1, 1],
+        vec![Node::store(
+            "state",
+            crate::ir::Expr::u32(0),
+            crate::ir::Expr::u32(7),
+        )],
+    );
+    let reader = Program::wrapped(
+        vec![BufferDecl::read("state", 0, DataType::U32).with_count(1)],
+        [128, 1, 1],
+        vec![Node::let_bind(
+            "snap",
+            crate::ir::Expr::load("state", crate::ir::Expr::u32(0)),
+        )],
+    );
+
+    let fused = fuse_programs(&[writer, reader]).unwrap();
+    let body = match fused.entry() {
+        [Node::Region { body, .. }] => body.as_ref(),
+        entry => panic!("Fix: fused entry must be wrapped in a root Region, got {entry:?}"),
+    };
+    let has_workgroup_barrier = body.iter().any(|node| {
+        matches!(
+            node,
+            Node::Barrier {
+                ordering: crate::memory_model::MemoryOrdering::SeqCst,
+                ..
+            }
+        )
+    });
+    let has_grid_sync = body.iter().any(|node| {
+        matches!(
+            node,
+            Node::Barrier {
+                ordering: crate::memory_model::MemoryOrdering::GridSync,
+                ..
+            }
+        )
+    });
+
+    assert!(
+        has_workgroup_barrier,
+        "Fix: uniform cross-arm writes must still get a workgroup memory barrier"
+    );
+    assert!(
+        !has_grid_sync,
+        "Fix: fusion must not force a global kernel split for uniform cross-arm writes"
+    );
+}
+
+#[test]
 fn self_composing_parser_rejected() {
     let parser = Program::wrapped(
         vec![BufferDecl::read("in", 0, DataType::U32)],
@@ -193,11 +247,9 @@ fn count_stores(node: &Node) -> usize {
         Node::Store { .. } => 1,
         Node::Block(nodes) => nodes.iter().map(count_stores).sum(),
         Node::Region { body, .. } => body.iter().map(count_stores).sum(),
-        Node::If { then, otherwise, .. } => then
-            .iter()
-            .chain(otherwise.iter())
-            .map(count_stores)
-            .sum(),
+        Node::If {
+            then, otherwise, ..
+        } => then.iter().chain(otherwise.iter()).map(count_stores).sum(),
         Node::Loop { body, .. } => body.iter().map(count_stores).sum(),
         _ => 0,
     }

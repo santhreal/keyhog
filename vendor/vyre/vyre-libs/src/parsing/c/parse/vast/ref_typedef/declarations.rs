@@ -57,8 +57,10 @@ pub(super) fn scope_is_visible_from(
         let Ok(scope_idx) = usize::try_from(scope) else {
             return false;
         };
-        let parent_word = scope_idx * VAST_NODE_STRIDE_U32 as usize + 1;
-        scope = vast_nodes.get(parent_word).copied().unwrap_or(SENTINEL);
+        if scope_idx >= node_count {
+            return false;
+        }
+        scope = parent_at(vast_nodes, scope_idx);
     }
     false
 }
@@ -99,12 +101,7 @@ pub(super) fn declaration_kind_at(vast_nodes: &[u32], node_idx: usize, haystack:
     {
         return 0;
     }
-    if parent_context(
-        vast_nodes,
-        vast_nodes[node_idx * VAST_NODE_STRIDE_U32 as usize + 1],
-    )
-    .is_record_body
-    {
+    if parent_context(vast_nodes, parent_at(vast_nodes, node_idx)).is_record_body {
         return 0;
     }
 

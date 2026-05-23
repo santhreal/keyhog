@@ -9,6 +9,8 @@ use crate::PipelineError;
 
 use smallvec::SmallVec;
 
+const ARGS_PER_SLOT_USIZE: usize = 12;
+
 use super::{protocol, Megakernel};
 
 /// Built-in megakernel opcodes exposed as a typed host API.
@@ -187,17 +189,15 @@ impl BatchDescriptor {
                     fix: "batch start plus item count overflows u32; split the descriptor batch before publishing",
                 })?;
         }
-        for (index, item) in self.items.iter().enumerate() {
-            let slot_idx =
-                self.start_slot
-                    .checked_add(u32::try_from(index).map_err(|_| PipelineError::QueueFull {
-                        queue: "submission",
-                        fix: "batch size exceeds u32::MAX slots",
-                    })?)
-                    .ok_or(PipelineError::QueueFull {
-                        queue: "submission",
-                        fix: "batch slot index overflowed u32; split the descriptor batch before publishing",
-                    })?;
+        for (slot_offset, item) in (0..item_count).zip(self.items.iter()) {
+            let slot_idx = self
+                .start_slot
+                .checked_add(slot_offset)
+                .ok_or(PipelineError::QueueFull {
+                queue: "submission",
+                fix:
+                    "batch slot index overflowed u32; split the descriptor batch before publishing",
+            })?;
             item.publish_into(ring_bytes, slot_idx)?;
         }
         Ok(item_count)
@@ -269,22 +269,39 @@ impl WindowDescriptor {
     /// Convert the window into a typed batch publication.
     #[must_use]
     pub fn into_batch(&self) -> BatchDescriptor {
-        let mut items = Vec::with_capacity(self.required.len() + self.lookahead.len());
+        self.try_into_batch()
+            .expect("window descriptor batch materialization failed in legacy infallible caller")
+    }
+
+    /// Convert the window into a typed batch publication with explicit staging
+    /// and ABI-bound errors.
+    pub fn try_into_batch(&self) -> Result<BatchDescriptor, PipelineError> {
+        let item_count = self
+            .required
+            .len()
+            .checked_add(self.lookahead.len())
+            .ok_or(PipelineError::QueueFull {
+            queue: "submission",
+            fix:
+                "window item count overflowed usize; split the window before materializing a batch",
+        })?;
+        let mut items = Vec::new();
+        reserve_descriptor_vec(&mut items, item_count, "window batch item")?;
         for payload in &self.required {
-            let mut args = Vec::with_capacity(payload.len() + 2);
+            let mut args = window_payload_args(self.ticket, WindowClass::Required, payload)?;
             args.push(self.ticket);
             args.push(WindowClass::Required.into_wire());
             args.extend(payload.iter().copied());
             items.push(SlotDescriptor::single(self.tenant_id, self.opcode, args));
         }
         for payload in &self.lookahead {
-            let mut args = Vec::with_capacity(payload.len() + 2);
+            let mut args = window_payload_args(self.ticket, WindowClass::Lookahead, payload)?;
             args.push(self.ticket);
             args.push(WindowClass::Lookahead.into_wire());
             args.extend(payload.iter().copied());
             items.push(SlotDescriptor::single(self.tenant_id, self.opcode, args));
         }
-        BatchDescriptor::new(self.start_slot, items)
+        Ok(BatchDescriptor::new(self.start_slot, items))
     }
 
     /// Publish the full window into the ring and return the number of emitted slots.
@@ -312,7 +329,7 @@ impl WindowDescriptor {
             })?;
 
         let mut slot_offset = 0u32;
-        let mut args = SmallVec::<[u32; protocol::ARGS_PER_SLOT as usize]>::new();
+        let mut args = SmallVec::<[u32; ARGS_PER_SLOT_USIZE]>::new();
         for payload in &self.required {
             publish_window_payload(
                 ring_bytes,
@@ -343,6 +360,46 @@ impl WindowDescriptor {
     }
 }
 
+fn window_payload_args(
+    _ticket: u32,
+    _class: WindowClass,
+    payload: &[u32],
+) -> Result<Vec<u32>, PipelineError> {
+    let required_args = payload
+        .len()
+        .checked_add(2)
+        .ok_or(PipelineError::QueueFull {
+            queue: "submission",
+            fix: "window payload argument count overflowed usize; split the payload before materializing a batch",
+        })?;
+    if required_args > ARGS_PER_SLOT_USIZE {
+        return Err(PipelineError::QueueFull {
+            queue: "submission",
+            fix: "too many args for one window payload; ticket plus class plus payload must fit in 12 u32 args",
+        });
+    }
+    let mut args = Vec::new();
+    reserve_descriptor_vec(&mut args, required_args, "window payload arg")?;
+    Ok(args)
+}
+
+fn reserve_descriptor_vec<T>(
+    values: &mut Vec<T>,
+    capacity: usize,
+    label: &'static str,
+) -> Result<(), PipelineError> {
+    if values.capacity() < capacity {
+        values
+            .try_reserve_exact(capacity - values.capacity())
+            .map_err(|source| {
+                PipelineError::Backend(format!(
+                    "megakernel descriptor {label} reservation failed for {capacity} slot(s): {source}. Fix: split descriptor windows before materialization."
+                ))
+            })?;
+    }
+    Ok(())
+}
+
 fn publish_window_payload(
     ring_bytes: &mut [u8],
     start_slot: u32,
@@ -352,7 +409,7 @@ fn publish_window_payload(
     ticket: u32,
     class: WindowClass,
     payload: &[u32],
-    args: &mut SmallVec<[u32; protocol::ARGS_PER_SLOT as usize]>,
+    args: &mut SmallVec<[u32; ARGS_PER_SLOT_USIZE]>,
 ) -> Result<(), PipelineError> {
     let slot_idx = start_slot
         .checked_add(*slot_offset)
@@ -368,7 +425,7 @@ fn publish_window_payload(
         queue: "submission",
         fix: "window payload argument count overflowed usize; split the payload before publishing",
     })?;
-    if required_args > protocol::ARGS_PER_SLOT as usize {
+    if required_args > ARGS_PER_SLOT_USIZE {
         return Err(PipelineError::QueueFull {
             queue: "submission",
             fix: "too many args for one window payload; ticket plus class plus payload must fit in 12 u32 args",

@@ -1,49 +1,25 @@
-use super::{
-    debug, debug_log_record_capacity, read_required_word, read_word_from_optional_words,
-    reserve_target_capacity, validate_word_aligned,
-};
+use super::{debug, read_required_word, read_word_from_optional_words, validate_word_aligned};
 use super::{DebugRecord, ProtocolError};
 
 /// Decode PRINTF records out of the debug-log buffer.
 #[must_use]
 pub fn read_debug_log(debug_bytes: &[u8]) -> Vec<DebugRecord> {
-    let mut records = Vec::with_capacity(debug_log_record_capacity(debug_bytes));
-    read_debug_log_into(debug_bytes, &mut records);
-    records
+    try_read_debug_log(debug_bytes).unwrap_or_else(|source| {
+        panic!(
+            "megakernel debug-log decode failed: {source}. Fix: use a complete debug-log readback produced by the matching megakernel protocol encoder."
+        )
+    })
 }
 
 /// Decode PRINTF records into caller-owned storage.
 ///
 /// Clears `out`, then reuses its allocation.
 pub fn read_debug_log_into(debug_bytes: &[u8], out: &mut Vec<DebugRecord>) {
-    out.clear();
-    let words = bytemuck::try_cast_slice::<u8, u32>(debug_bytes).ok();
-    let Some(cursor) =
-        read_word_from_optional_words(words, debug_bytes, debug::CURSOR_WORD as usize)
-    else {
-        return;
-    };
-    let record_words = debug::RECORD_WORDS as usize;
-    let records_start = debug::RECORDS_BASE as usize;
-    let total_word_capacity = debug_bytes.len() / 4;
-    let available = core::cmp::min(
-        cursor as usize,
-        total_word_capacity.saturating_sub(records_start),
-    );
-    let record_count = available / record_words;
-    reserve_target_capacity(out, record_count);
-
-    for i in 0..record_count {
-        let w = records_start + i * record_words;
-        out.push(DebugRecord {
-            fmt_id: read_word_from_optional_words(words, debug_bytes, w).unwrap_or(0),
-            args: [
-                read_word_from_optional_words(words, debug_bytes, w + 1).unwrap_or(0),
-                read_word_from_optional_words(words, debug_bytes, w + 2).unwrap_or(0),
-                read_word_from_optional_words(words, debug_bytes, w + 3).unwrap_or(0),
-            ],
-        });
-    }
+    try_read_debug_log_into(debug_bytes, out).unwrap_or_else(|source| {
+        panic!(
+            "megakernel debug-log decode failed: {source}. Fix: use a complete debug-log readback produced by the matching megakernel protocol encoder."
+        )
+    });
 }
 
 /// Strictly decode PRINTF records out of the debug-log buffer.
@@ -53,7 +29,7 @@ pub fn read_debug_log_into(debug_bytes: &[u8], out: &mut Vec<DebugRecord>) {
 /// Returns [`ProtocolError`] when the buffer is not word-aligned, too short for
 /// the cursor word, or the cursor points at a partial record.
 pub fn try_read_debug_log(debug_bytes: &[u8]) -> Result<Vec<DebugRecord>, ProtocolError> {
-    let mut records = Vec::with_capacity(debug_log_record_capacity(debug_bytes));
+    let mut records = Vec::new();
     try_read_debug_log_into(debug_bytes, &mut records)?;
     Ok(records)
 }
@@ -71,9 +47,13 @@ pub fn try_read_debug_log_into(
     out: &mut Vec<DebugRecord>,
 ) -> Result<(), ProtocolError> {
     validate_word_aligned("debug_log", debug_bytes)?;
-    let cursor = read_required_word("debug_log", debug_bytes, debug::CURSOR_WORD as usize)?;
-    let record_words = debug::RECORD_WORDS as usize;
-    let records_start = debug::RECORDS_BASE as usize;
+    let cursor = read_required_word(
+        "debug_log",
+        debug_bytes,
+        debug_word_index(debug::CURSOR_WORD, "cursor word")?,
+    )?;
+    let record_words = debug_word_index(debug::RECORD_WORDS, "record word count")?;
+    let records_start = debug_word_index(debug::RECORDS_BASE, "records base word")?;
     let total_word_capacity = debug_bytes.len() / 4;
     if total_word_capacity < records_start {
         return Err(ProtocolError::MissingWord {
@@ -83,16 +63,22 @@ pub fn try_read_debug_log_into(
             fix: "build debug-log bytes with encode_empty_debug_log",
         });
     }
-    let capacity_words = total_word_capacity.saturating_sub(records_start);
-    if cursor as usize > capacity_words {
+    let capacity_words = total_word_capacity
+        .checked_sub(records_start)
+        .expect("debug-log capacity precheck must guarantee records_start is in range");
+    let cursor = usize::try_from(cursor).map_err(|_| ProtocolError::ByteLengthOverflow {
+        buffer: "debug_log",
+        fix: "debug-log cursor does not fit host usize; keep protocol buffers within host addressable range",
+    })?;
+    if cursor > capacity_words {
         return Err(ProtocolError::MissingWord {
             buffer: "debug_log",
-            word_idx: records_start + cursor as usize,
+            word_idx: records_start + cursor,
             byte_len: debug_bytes.len(),
             fix: "debug-log cursor must stay within the encoded record capacity",
         });
     }
-    let available = cursor as usize;
+    let available = cursor;
     if available % record_words != 0 {
         return Err(ProtocolError::MissingWord {
             buffer: "debug_log",
@@ -103,7 +89,7 @@ pub fn try_read_debug_log_into(
     }
     let record_count = available / record_words;
     out.clear();
-    reserve_target_capacity(out, record_count);
+    try_reserve_record_capacity(out, record_count)?;
     let words = bytemuck::try_cast_slice::<u8, u32>(debug_bytes).ok();
     for i in 0..record_count {
         let w = records_start + i * record_words;
@@ -139,6 +125,32 @@ pub fn try_read_debug_log_into(
                 })?,
             ],
         });
+    }
+    Ok(())
+}
+
+fn debug_word_index(word: u32, label: &'static str) -> Result<usize, ProtocolError> {
+    usize::try_from(word).map_err(|_| ProtocolError::ByteLengthOverflow {
+        buffer: "debug_log",
+        fix: match label {
+            "cursor word" => "debug-log cursor word cannot fit host usize",
+            "record word count" => "debug-log record word count cannot fit host usize",
+            "records base word" => "debug-log records base word cannot fit host usize",
+            _ => "debug-log word index cannot fit host usize",
+        },
+    })
+}
+
+fn try_reserve_record_capacity(
+    out: &mut Vec<DebugRecord>,
+    target_capacity: usize,
+) -> Result<(), ProtocolError> {
+    if out.capacity() < target_capacity {
+        out.try_reserve_exact(target_capacity - out.capacity())
+            .map_err(|_| ProtocolError::ByteLengthOverflow {
+                buffer: "debug_log",
+                fix: "host debug-log decode could not reserve output records; reduce debug-log capacity or decode into a reused scratch vector",
+            })?;
     }
     Ok(())
 }

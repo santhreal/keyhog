@@ -1,11 +1,11 @@
 upstream:    /media/mukund-thiru/SanthData/Santh/libs/performance/matching/vyre
-ref:         HEAD
-commit:      ca04e791c3fe2b5ddd8eac976b3d31f6754747c9
-short:       ca04e791c3
-date:        2026-05-08 16:14:23 -0700
-subject:     Fix repository/homepage pointers in 131 leaf crate Cargo.tomls
+ref:         cc0c480d14
+commit:      cc0c480d14ae50b0c847fba8837ccf3ebe41ef9f
+short:       cc0c480d14
+date:        2026-05-21 20:49:19 -0700
+subject:     vyre-libs(classic_ac): add use_subgroup_coalesce selector for CUDA compat
 subdirs:     vyre-aot vyre-bench vyre-core vyre-debug vyre-driver vyre-driver-cuda vyre-driver-reference vyre-driver-spirv vyre-driver-wgpu vyre-emit-naga vyre-emit-ptx vyre-emit-spirv vyre-foundation vyre-frontend-c vyre-harness vyre-intrinsics vyre-libs vyre-lints vyre-lower vyre-macros vyre-primitives vyre-reference vyre-runtime vyre-self-substrate vyre-spec
-vendored_at: 2026-05-09T04:50:02Z
+vendored_at: 2026-05-23T03:08:53Z
 script:      scripts/vendor-vyre.sh
 
 NOTE: only vyre-* subdirectories are managed by this script. Any

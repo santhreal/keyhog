@@ -88,6 +88,7 @@ pub fn scatter(src: &str, indices: &str, dst: &str, count: u32) -> Program {
 /// Returns a `Vec<u32>` of length `dst_len`. Out-of-range indices are
 /// ignored, matching the guarded GPU store contract.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref(src: &[u32], indices: &[u32], dst_len: usize) -> Vec<u32> {
     let mut dst = Vec::new();
     cpu_ref_into(src, indices, dst_len, &mut dst);
@@ -95,6 +96,7 @@ pub fn cpu_ref(src: &[u32], indices: &[u32], dst_len: usize) -> Vec<u32> {
 }
 
 /// CPU reference into caller-owned destination storage.
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref_into(src: &[u32], indices: &[u32], dst_len: usize, dst: &mut Vec<u32>) {
     dst.clear();
     dst.resize(dst_len, 0);

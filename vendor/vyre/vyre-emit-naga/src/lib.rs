@@ -28,11 +28,10 @@
 //! descriptor shaping and substrate-neutral analyses stay in
 //! `vyre-lower`.
 
-use std::collections::{BTreeMap, VecDeque};
-use std::hash::{Hash, Hasher};
+use std::collections::VecDeque;
 use std::sync::{mpsc, Mutex, MutexGuard, OnceLock};
 
-use rustc_hash::FxHasher;
+use rustc_hash::FxHashMap;
 use vyre_lower::KernelDescriptor;
 
 mod emitter;
@@ -57,6 +56,9 @@ pub struct BindResultEntry {
 const MODULE_CACHE_CAPACITY: usize = 64;
 static MODULE_CACHE: OnceLock<Mutex<ModuleCache>> = OnceLock::new();
 
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+struct ModuleCacheKey([u8; 16]);
+
 #[derive(Clone)]
 struct CachedModule {
     descriptor: KernelDescriptor,
@@ -65,14 +67,14 @@ struct CachedModule {
 
 #[derive(Default)]
 struct ModuleCache {
-    entries: BTreeMap<u64, CachedModule>,
-    order: VecDeque<u64>,
+    entries: FxHashMap<ModuleCacheKey, CachedModule>,
+    order: VecDeque<ModuleCacheKey>,
     #[cfg(test)]
     hits: usize,
 }
 
 impl ModuleCache {
-    fn get(&mut self, key: u64, desc: &KernelDescriptor) -> Option<naga::Module> {
+    fn get(&mut self, key: ModuleCacheKey, desc: &KernelDescriptor) -> Option<naga::Module> {
         let cached = self.entries.get(&key)?;
         if cached.descriptor != *desc {
             return None;
@@ -84,7 +86,7 @@ impl ModuleCache {
         Some(cached.module.clone())
     }
 
-    fn insert(&mut self, key: u64, desc: &KernelDescriptor, module: &naga::Module) {
+    fn insert(&mut self, key: ModuleCacheKey, desc: &KernelDescriptor, module: &naga::Module) {
         if self.entries.contains_key(&key) {
             self.entries.insert(
                 key,
@@ -116,15 +118,22 @@ fn module_cache() -> &'static Mutex<ModuleCache> {
 }
 
 fn lock_module_cache() -> MutexGuard<'static, ModuleCache> {
-    module_cache()
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
+    module_cache().lock().unwrap_or_else(|error| {
+        panic!(
+            "Vyre Naga module cache lock was poisoned: {error}. Fix: discard the process-local shader module cache after a panic; continuing could reuse corrupted module state."
+        )
+    })
 }
 
-fn descriptor_cache_key(desc: &KernelDescriptor) -> u64 {
-    let mut hasher = FxHasher::default();
-    desc.hash(&mut hasher);
-    hasher.finish()
+fn descriptor_cache_key(desc: &KernelDescriptor) -> ModuleCacheKey {
+    let mut hasher = blake3::Hasher::new();
+    let stable_debug = format!("{desc:?}");
+    hasher.update(&(stable_debug.len() as u64).to_le_bytes());
+    hasher.update(stable_debug.as_bytes());
+    let digest = hasher.finalize();
+    let mut out = [0u8; 16];
+    out.copy_from_slice(&digest.as_bytes()[..16]);
+    ModuleCacheKey(out)
 }
 
 #[cfg(test)]

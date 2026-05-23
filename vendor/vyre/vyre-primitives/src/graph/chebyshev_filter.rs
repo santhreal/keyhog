@@ -81,22 +81,36 @@ pub fn chebyshev_filter(
     n: u32,
     k_steps: u32,
 ) -> Program {
+    match try_chebyshev_filter(laplacian, signal, coeffs, output, scratch, n, k_steps) {
+        Ok(program) => program,
+        Err(error) => {
+            eprintln!("{error}");
+            crate::invalid_output_program(OP_ID, output, DataType::U32, error)
+        }
+    }
+}
+
+/// Emit a K-step Chebyshev-filter Program with checked dense and scratch
+/// buffer sizing.
+pub fn try_chebyshev_filter(
+    laplacian: &str,
+    signal: &str,
+    coeffs: &str,
+    output: &str,
+    scratch: &str,
+    n: u32,
+    k_steps: u32,
+) -> Result<Program, String> {
     if n == 0 {
-        return crate::invalid_output_program(
-            OP_ID,
-            output,
-            DataType::U32,
-            format!("Fix: chebyshev_filter requires n > 0, got {n}."),
-        );
+        return Err(format!("Fix: chebyshev_filter requires n > 0, got {n}."));
     }
     if k_steps > MAX_K {
-        return crate::invalid_output_program(
-            OP_ID,
-            output,
-            DataType::U32,
-            format!("Fix: chebyshev_filter k_steps must be <= MAX_K={MAX_K}, got {k_steps}."),
-        );
+        return Err(format!(
+            "Fix: chebyshev_filter k_steps must be <= MAX_K={MAX_K}, got {k_steps}."
+        ));
     }
+    let laplacian_cells = checked_square_cells(n)?;
+    let scratch_words = checked_double_words(n)?;
 
     let t = Expr::InvocationId { axis: 0 };
 
@@ -241,16 +255,16 @@ pub fn chebyshev_filter(
         all
     })];
 
-    Program::wrapped(
+    Ok(Program::wrapped(
         vec![
             BufferDecl::storage(laplacian, 0, BufferAccess::ReadOnly, DataType::U32)
-                .with_count(n * n),
+                .with_count(laplacian_cells),
             BufferDecl::storage(signal, 1, BufferAccess::ReadOnly, DataType::U32).with_count(n),
             BufferDecl::storage(coeffs, 2, BufferAccess::ReadOnly, DataType::U32)
                 .with_count(k_steps + 1),
             BufferDecl::storage(output, 3, BufferAccess::ReadWrite, DataType::U32).with_count(n),
             BufferDecl::storage(scratch, 4, BufferAccess::ReadWrite, DataType::U32)
-                .with_count(2 * n),
+                .with_count(scratch_words),
         ],
         [256, 1, 1],
         vec![Node::Region {
@@ -258,13 +272,30 @@ pub fn chebyshev_filter(
             source_region: None,
             body: Arc::new(body_with_bounds),
         }],
-    )
+    ))
+}
+
+fn checked_square_cells(n: u32) -> Result<u32, String> {
+    n.checked_mul(n).ok_or_else(|| {
+        format!(
+            "chebyshev_filter n={n} overflows dense Laplacian cell count. Fix: shard or sparsify the graph before GPU dispatch."
+        )
+    })
+}
+
+fn checked_double_words(n: u32) -> Result<u32, String> {
+    n.checked_mul(2).ok_or_else(|| {
+        format!(
+            "chebyshev_filter n={n} overflows scratch word count. Fix: shard the graph before GPU dispatch."
+        )
+    })
 }
 
 /// CPU reference for [`chebyshev_filter`]. Operates on f32 internally
 /// for parity-test simplicity; the GPU primitive is u32 fixed-point so
 /// callers are responsible for matching scaling.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn chebyshev_filter_cpu(
     laplacian: &[f32],
     signal: &[f32],
@@ -292,6 +323,7 @@ pub fn chebyshev_filter_cpu(
 
 /// CPU reference for [`chebyshev_filter`] using caller-owned buffers.
 #[allow(clippy::too_many_arguments)]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn chebyshev_filter_cpu_into(
     laplacian: &[f32],
     signal: &[f32],
@@ -481,5 +513,44 @@ mod tests {
     fn k_over_max_traps() {
         let p = chebyshev_filter("L", "x", "c", "y", "s", 4, MAX_K + 1);
         assert!(p.stats().trap());
+    }
+
+    #[test]
+    fn checked_builder_rejects_dense_laplacian_overflow() {
+        let error = try_chebyshev_filter("L", "x", "c", "y", "s", u32::MAX, 1)
+            .expect_err("checked Chebyshev builder must reject dense matrix overflow");
+
+        assert!(
+            error.contains("overflows dense Laplacian cell count"),
+            "error should describe the dense Laplacian overflow: {error}"
+        );
+    }
+
+    #[test]
+    fn legacy_builder_does_not_panic_on_dense_laplacian_overflow() {
+        let program = chebyshev_filter("L", "x", "c", "y", "s", u32::MAX, 1);
+
+        assert!(program.stats().trap());
+    }
+
+    #[test]
+    fn chebyshev_builder_source_has_checked_sizing_without_panics() {
+        let source = include_str!("chebyshev_filter.rs");
+        let builder_source = source
+            .split("pub fn chebyshev_filter(")
+            .nth(1)
+            .expect("Chebyshev builder source must be present")
+            .split("/// CPU reference for")
+            .next()
+            .expect("Chebyshev builder source must precede CPU oracle");
+
+        assert!(
+            builder_source.contains("pub fn try_chebyshev_filter(")
+                && builder_source.contains("checked_square_cells")
+                && builder_source.contains("checked_double_words")
+                && !builder_source.contains(concat!("panic", "!("))
+                && !builder_source.contains(".unwrap_or_else("),
+            "Fix: chebyshev_filter must expose checked release sizing and avoid production panics."
+        );
     }
 }

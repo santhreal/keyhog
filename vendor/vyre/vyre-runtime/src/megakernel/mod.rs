@@ -42,6 +42,7 @@ mod protocol_api;
 pub mod readback;
 pub mod recovery;
 pub mod resident;
+pub mod ring;
 #[cfg(feature = "megakernel-batch")]
 pub mod rule_catalog;
 pub mod scaling;
@@ -58,8 +59,9 @@ pub use builder::{
     build_program_priority_slots, build_program_sharded, build_program_sharded_no_io,
     build_program_sharded_once_slots, build_program_sharded_once_slots_control_report_shared,
     build_program_sharded_once_slots_shared, build_program_sharded_slots,
-    build_program_sharded_slots_shared, build_program_sharded_with_io_polling, persistent_body,
-    persistent_body_jit, persistent_body_priority, persistent_body_priority_slots,
+    build_program_sharded_slots_shared, build_program_sharded_with_io_polling,
+    build_program_with_self_loading_miss_handler, persistent_body, persistent_body_jit,
+    persistent_body_priority, persistent_body_priority_slots,
 };
 #[cfg(feature = "c-frontend-adapter")]
 pub use builder::{
@@ -98,45 +100,49 @@ pub use planner::{
 pub use planner::{
     build_scallop_lineage_with_program_and_scratch, default_worker_groups_from_limits,
     dispatch_grid_for, padded_slot_count, plan_compact_fusion_into,
-    prune_redundant_work_items_into, select_fused_subset, select_fused_subset_compact,
-    select_fused_subset_compact_into, select_fused_subset_into, select_fused_subset_with_rate,
-    select_optimal_fused_subset, worker_workgroup_size, CompactFusionPlanningScratch,
-    CrossArmRedundancy, FusionSelectionScratch, MegakernelCaps, MegakernelConfig,
-    MegakernelGridLimits, MegakernelGridPlan, MegakernelGridRequest, MegakernelLaunchGeometry,
-    MegakernelReport, MegakernelSizingPolicy, MegakernelWorkItem,
+    prune_redundant_work_items_into, prune_redundant_work_items_with_scratch_into,
+    select_fused_subset, select_fused_subset_compact, select_fused_subset_compact_into,
+    select_fused_subset_into, select_fused_subset_with_rate, select_optimal_fused_subset,
+    try_detect_cross_arm_redundancy, try_prune_redundant_work_items_into,
+    try_prune_redundant_work_items_with_scratch_into, worker_workgroup_size,
+    CompactFusionPlanningScratch, CrossArmRedundancy, FusionSelectionScratch, MegakernelCaps,
+    MegakernelConfig, MegakernelGridLimits, MegakernelGridPlan, MegakernelGridRequest,
+    MegakernelLaunchGeometry, MegakernelReport, MegakernelSizingPolicy, MegakernelTelemetry,
+    MegakernelWorkItem, MegakernelWorkloadHints, RedundantWorkItemPruneScratch,
 };
 pub use policy::{
     diffuse_priority_across_siblings, diffuse_priority_across_siblings_into,
-    MegakernelExecutionMode, MegakernelLaunchPolicy, MegakernelLaunchRecommendation,
-    MegakernelLaunchRequest, MegakernelQueuePressure, PriorityRequeueAccounting,
+    MegakernelDispatchTopology, MegakernelExecutionMode, MegakernelLaunchCacheStats,
+    MegakernelLaunchPolicy, MegakernelLaunchRecommendation, MegakernelLaunchRequest,
+    MegakernelQueuePressure, PriorityRequeueAccounting,
 };
 pub use protocol::{
     control, control_byte_len, count_done_ring_slots, debug, debug_log_byte_len, encode_control,
     encode_empty_debug_log, encode_empty_ring, opcode, read_debug_log, read_done_count, read_epoch,
-    read_metrics, read_observable, ring_byte_len, slot, try_encode_control,
-    try_encode_control_into, try_encode_empty_debug_log, try_encode_empty_debug_log_into,
-    try_encode_empty_ring, try_encode_empty_ring_into, try_read_debug_log, try_read_done_count,
-    try_read_epoch, try_read_metrics, try_read_observable, DebugRecord, ProtocolError, ARG0_WORD,
-    ARGS_PER_SLOT, CONTROL_MIN_WORDS, OPCODE_WORD, PRIORITY_WORD, SLOT_WORDS, STATUS_WORD,
-    TENANT_WORD,
+    read_metrics, read_observable, ring_byte_len, slot, try_count_done_ring_slots,
+    try_encode_control, try_encode_control_into, try_encode_empty_debug_log,
+    try_encode_empty_debug_log_into, try_encode_empty_ring, try_encode_empty_ring_into,
+    try_read_debug_log, try_read_done_count, try_read_epoch, try_read_metrics, try_read_observable,
+    DebugRecord, ProtocolError, ARG0_WORD, ARGS_PER_SLOT, CONTROL_MIN_WORDS, OPCODE_WORD,
+    PRIORITY_WORD, SLOT_WORDS, STATUS_WORD, TENANT_WORD,
 };
-pub use readback::MegakernelReadback;
+pub use readback::{MegakernelReadback, MegakernelReadbackCounters};
 pub use recovery::{
     backend_error_indicates_device_loss, MegakernelRecoveryDecision, MegakernelRecoveryPolicy,
 };
-pub use resident::MegakernelResidentBuffers;
+pub use resident::{MegakernelResidentBuffers, MegakernelResidentDispatchScratch};
 #[cfg(feature = "megakernel-batch")]
 pub use rule_catalog::{BatchRuleProgram, BatchRuleRejection};
 pub use scheduler::{
     default_priority_offsets, priority_partition_active_lane_count,
     priority_partition_probe_budget, priority_partition_probe_count, priority_scan_body,
-    priority_scan_body_with_stride, write_default_priority_offsets,
+    priority_scan_body_with_stride, try_default_priority_offsets, write_default_priority_offsets,
 };
 pub use speculation::{PairedSpeculationSample, PairedSpeculationUpdate, PairedSpeculationWindow};
 pub use task::{TaskPriority, TaskQueueSnapshot, TaskState, TaskWorkItem};
 pub use telemetry::{
-    ControlSnapshot, CountMinSketch, RingOccupancy, RingSlotSnapshot, RingStatus, RingTelemetry,
-    SketchTelemetry, WindowTelemetry,
+    ControlSnapshot, CountMinSketch, MegakernelRuntimeCounters, RingOccupancy, RingSlotSnapshot,
+    RingStatus, RingTelemetry, SketchTelemetry, WindowTelemetry,
 };
 /// Backend-neutral megakernel dispatch contract.
 pub trait MegakernelDispatch {

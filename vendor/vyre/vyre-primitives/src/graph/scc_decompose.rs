@@ -124,6 +124,7 @@ pub fn scc_decompose(
 /// unassigned slots (or any slot — the scc_decompose composition
 /// walks pivots in descending reach order so re-stamping is safe).
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref(
     node_count: u32,
     forward: &[u32],
@@ -137,6 +138,7 @@ pub fn cpu_ref(
 }
 
 /// CPU reference writing into caller-owned storage.
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref_into(
     node_count: u32,
     forward: &[u32],
@@ -145,13 +147,26 @@ pub fn cpu_ref_into(
     pivot: u32,
     out: &mut Vec<u32>,
 ) {
+    let expected_words = crate::bitset::bitset_words(node_count) as usize;
+    assert!(
+        forward.len() >= expected_words && backward.len() >= expected_words,
+        "scc_decompose CPU oracle received forward_len={} backward_len={} for node_count={node_count} requiring {expected_words} words. Fix: pass complete reachability bitsets before parity comparison.",
+        forward.len(),
+        backward.len()
+    );
+    assert_eq!(
+        component_in.len(),
+        node_count as usize,
+        "scc_decompose CPU oracle received component_len={} for node_count={node_count}. Fix: pass one component slot per node before parity comparison.",
+        component_in.len()
+    );
     out.clear();
     out.extend_from_slice(component_in);
     for v in 0..node_count {
         let word = (v / 32) as usize;
         let bit = 1u32 << (v % 32);
-        let fwd = forward.get(word).copied().unwrap_or(0) & bit != 0;
-        let bwd = backward.get(word).copied().unwrap_or(0) & bit != 0;
+        let fwd = forward[word] & bit != 0;
+        let bwd = backward[word] & bit != 0;
         if fwd && bwd && (v as usize) < out.len() && out[v as usize] == u32::MAX {
             // PHASE7_GRAPH HIGH: first pivot wins. Match the GPU
             // kernel's "only stamp if unassigned" semantics so cpu_ref

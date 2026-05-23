@@ -30,10 +30,12 @@
 //! - `Cast` between scalar types
 //! - `Select`, `Fma`
 //! - `StructuredIfThen`, `StructuredIfThenElse`, `StructuredBlock`,
-//!   `Region`, `Return`, `Barrier`
+//!   `Region`, `Return`, workgroup-scope `Barrier`
 //!
-//! Out of scope (returns `EmitError::UnsupportedOp`): indirect-dispatch
-//! (host concern) and descriptor forms without a PTX-safe lowering.
+//! Out of scope (returns `EmitError::UnsupportedOp` or
+//! `EmitError::InvalidDescriptor`): indirect-dispatch (host concern),
+//! `MemoryOrdering::GridSync` until a native cooperative-grid lowering is
+//! wired, and descriptor forms without a PTX-safe lowering.
 //!
 //! ## PTX output shape
 //!

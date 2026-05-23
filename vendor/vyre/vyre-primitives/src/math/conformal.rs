@@ -112,6 +112,7 @@ pub fn try_conformal_rank(n: u32, alpha: f64) -> Option<u32> {
 /// the threshold value q̂ that the GPU would produce after a sort + the
 /// `conformal_threshold` Program.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn conformal_threshold_cpu(scores: &[u32], alpha: f64) -> u32 {
     let n = scores.len() as u32;
     let Some(k) = try_conformal_rank(n, alpha) else {
@@ -130,6 +131,18 @@ pub fn predict_interval(y: u32, q_hat: u32) -> (u32, u32) {
     let lo = y.saturating_sub(q_hat);
     let hi = y.saturating_add(q_hat);
     (lo, hi)
+}
+
+#[cfg(feature = "inventory-registry")]
+inventory::submit! {
+    crate::harness::OpEntry::new(
+        OP_ID,
+        || {
+            conformal_threshold("scores", "q_hat", 4, 2)
+        },
+        None,
+        None,
+    )
 }
 
 #[cfg(test)]

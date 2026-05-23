@@ -89,6 +89,47 @@ fn poll_io_requests_into_reuses_request_storage() {
 }
 
 #[test]
+fn poll_io_requests_into_reserves_only_published_slots() {
+    let mut buf = encode_empty_io_queue(IO_SLOT_COUNT).unwrap();
+    let base = IO_SLOT_WORDS as usize * 3 * 4;
+    let write_word = |buf: &mut Vec<u8>, word: u32, val: u32| {
+        let off = base + word as usize * 4;
+        buf[off..off + 4].copy_from_slice(&val.to_le_bytes());
+    };
+    write_word(&mut buf, io_word::OP_TYPE, io_op::READ);
+    write_word(&mut buf, io_word::DST_HANDLE, 17);
+    write_word(&mut buf, io_word::BYTE_COUNT, 512);
+    write_word(&mut buf, io_word::STATUS, slot::PUBLISHED);
+
+    let mut requests = Vec::new();
+    try_poll_io_requests_into(&buf, &mut requests)
+        .expect("Fix: sparse IO queue polling must reserve only published requests");
+
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].slot_idx, 3);
+    assert!(
+        requests.capacity() < IO_SLOT_COUNT as usize,
+        "Fix: sparse IO polling must not reserve one request slot for every empty queue slot."
+    );
+}
+
+#[test]
+fn poll_io_requests_into_does_not_allocate_for_empty_queue() {
+    let buf = encode_empty_io_queue(IO_SLOT_COUNT).unwrap();
+    let mut requests = Vec::new();
+
+    try_poll_io_requests_into(&buf, &mut requests)
+        .expect("Fix: empty IO queue polling must not require request storage");
+
+    assert!(requests.is_empty());
+    assert_eq!(
+        requests.capacity(),
+        0,
+        "Fix: empty IO polling must not allocate the full compiled queue window."
+    );
+}
+
+#[test]
 fn claim_io_requests_marks_published_slots_claimed_once() {
     let mut buf = encode_empty_io_queue(4).unwrap();
     let base = IO_SLOT_WORDS as usize * 4;
@@ -146,6 +187,22 @@ fn claim_io_requests_into_reuses_request_storage() {
         .expect("Fix: repeated reusable IO claim must not allocate on a warm buffer");
     assert_eq!(requests.len(), 1);
     assert_eq!(requests.capacity(), initial_capacity);
+}
+
+#[test]
+fn claim_io_requests_into_does_not_allocate_for_empty_queue() {
+    let mut buf = encode_empty_io_queue(IO_SLOT_COUNT).unwrap();
+    let mut requests = Vec::new();
+
+    try_claim_io_requests_into(&mut buf, &mut requests)
+        .expect("Fix: empty IO queue claiming must not require request storage");
+
+    assert!(requests.is_empty());
+    assert_eq!(
+        requests.capacity(),
+        0,
+        "Fix: empty IO claim polling must not allocate the full compiled queue window."
+    );
 }
 
 #[test]
@@ -315,8 +372,8 @@ fn complete_io_request_only_mutates_status_word() {
 
 #[test]
 fn io_module_avoids_byte_width_atomic_types() {
-    // Audit-fix A32 split io.rs into per-concern files; check every prod
-    // source slice (tests excluded) for byte-width atomics.
+    // Check every production I/O source slice (tests excluded) so byte-width
+    // atomics cannot hide in runtime megakernel queue code.
     let prod_files = [
         include_str!("mod.rs"),
         include_str!("queue.rs"),
@@ -335,4 +392,30 @@ fn io_module_avoids_byte_width_atomic_types() {
             "sub-word atomics are forbidden for io_queue protocol words"
         );
     }
+}
+
+#[test]
+fn submit_dma_read_publishes_read_request() {
+    let mut queue = MegakernelIoQueue::new(4).unwrap();
+    queue.submit_dma_read(2, 10, 20, 4096, 99).unwrap();
+
+    let reqs = poll_io_requests(queue.as_bytes()).unwrap();
+    assert_eq!(reqs.len(), 1);
+    assert_eq!(reqs[0].slot_idx, 2);
+    assert_eq!(reqs[0].op_type, io_op::READ);
+    assert_eq!(reqs[0].src_handle, 10);
+    assert_eq!(reqs[0].dst_handle, 20);
+    assert_eq!(reqs[0].byte_count, 4096);
+    assert_eq!(reqs[0].tag, 99);
+}
+
+#[test]
+fn submit_dma_read_rejects_non_empty_slot() {
+    let mut queue = MegakernelIoQueue::new(4).unwrap();
+    queue.submit_dma_read(1, 10, 20, 4096, 99).unwrap();
+    let err = queue.submit_dma_read(1, 11, 21, 8192, 100).unwrap_err();
+    assert!(
+        matches!(err, PipelineError::QueueFull { .. }),
+        "Fix: re-submitting to an in-flight slot must return QueueFull"
+    );
 }

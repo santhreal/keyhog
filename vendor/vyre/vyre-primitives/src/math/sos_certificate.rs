@@ -100,6 +100,7 @@ pub fn sos_gram_construct(
 
 /// CPU reference.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn sos_gram_construct_cpu(monomial_pairs: &[u32], p_coeffs: &[u32], m: u32) -> Vec<u32> {
     let mut out = Vec::new();
     sos_gram_construct_cpu_into(monomial_pairs, p_coeffs, m, &mut out);
@@ -107,6 +108,7 @@ pub fn sos_gram_construct_cpu(monomial_pairs: &[u32], p_coeffs: &[u32], m: u32) 
 }
 
 /// CPU reference into caller-owned storage.
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn sos_gram_construct_cpu_into(
     monomial_pairs: &[u32],
     p_coeffs: &[u32],
@@ -130,6 +132,7 @@ pub fn sos_gram_construct_cpu_into(
 /// Sylvester's criterion (all leading principal minors > 0). Used to
 /// verify SOS feasibility downstream of the Gram construction.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn is_psd_cpu(matrix: &[f64], n: u32) -> bool {
     let n = n as usize;
     if n == 0 {
@@ -149,6 +152,7 @@ pub fn is_psd_cpu(matrix: &[f64], n: u32) -> bool {
     true
 }
 
+#[cfg(any(test, feature = "cpu-parity"))]
 fn leading_principal_det(matrix: &[f64], n: usize, k: usize) -> f64 {
     let mut a = [[0.0_f64; 4]; 4];
     for row in 0..k {

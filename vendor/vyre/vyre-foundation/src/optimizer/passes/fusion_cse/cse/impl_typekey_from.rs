@@ -9,6 +9,13 @@ impl From<DataType> for TypeKey {
 
 impl From<&DataType> for TypeKey {
     fn from(value: &DataType) -> Self {
+        // Discriminant tags mirror the wire-format `data_type_tag`
+        // (0x01..0x80). Parameterised variants pack their parameters
+        // into the high bits so distinct shapes produce distinct
+        // keys — the CSE intern table uses TypeKey for structural
+        // equality, and a collapsing fallback would let CSE merge
+        // semantically distinct typed expressions (e.g. F16 atomics
+        // with F64 atomics) onto the same id.
         match value {
             DataType::U32 => Self(0x01),
             DataType::I32 => Self(0x02),
@@ -34,8 +41,47 @@ impl From<&DataType> for TypeKey {
             DataType::Vec { element, count } => {
                 Self(0x14 | (u64::from(*count) << 8) | (Self::from(element.as_ref()).0 << 16))
             }
-            DataType::TensorShaped { .. } => Self(0x15),
-            _ => Self(255),
+            // TensorShaped's element + shape contribute to the key so
+            // tensor<f32; 32x32> does not CSE-merge with tensor<f16; 8>.
+            DataType::TensorShaped { element, shape } => {
+                let mut h: u64 = 0x15;
+                h |= Self::from(element.as_ref()).0 << 8;
+                let mut shape_acc: u64 = 0xcbf2_9ce4_8422_2325;
+                for dim in shape {
+                    shape_acc ^= u64::from(*dim);
+                    shape_acc = shape_acc.wrapping_mul(0x100_0000_01b3);
+                }
+                Self(h ^ (shape_acc << 24))
+            }
+            DataType::SparseCsr { element } => Self(0x16 | (Self::from(element.as_ref()).0 << 8)),
+            DataType::SparseCoo { element } => Self(0x17 | (Self::from(element.as_ref()).0 << 8)),
+            DataType::SparseBsr {
+                element,
+                block_rows,
+                block_cols,
+            } => Self(
+                0x18 | (Self::from(element.as_ref()).0 << 8)
+                    | ((u64::from(*block_rows) & 0xFFFF) << 32)
+                    | ((u64::from(*block_cols) & 0xFFFF) << 48),
+            ),
+            DataType::F8E4M3 => Self(0x19),
+            DataType::F8E5M2 => Self(0x1A),
+            DataType::I4 => Self(0x1B),
+            DataType::FP4 => Self(0x1C),
+            DataType::NF4 => Self(0x1D),
+            DataType::DeviceMesh { axes } => {
+                let mut acc: u64 = 0xcbf2_9ce4_8422_2325;
+                for axis in axes {
+                    acc ^= u64::from(*axis);
+                    acc = acc.wrapping_mul(0x100_0000_01b3);
+                }
+                Self(0x1E | (acc << 8))
+            }
+            DataType::Opaque(id) => Self(0x80 | (u64::from(id.as_u32()) << 8)),
+            // Any future variant must extend this table — keep the
+            // sentinel as a hard-fail beacon (0xFFFF_FFFF distinguishes
+            // "unknown" from any real assigned tag).
+            _ => Self(0xFFFF_FFFF),
         }
     }
 }

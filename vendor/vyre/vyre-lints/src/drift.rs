@@ -108,8 +108,8 @@ pub fn run<R: AgeResolver>(
 }
 
 fn load_entries(path: &Path) -> Result<Vec<String>> {
-    let bytes =
-        std::fs::read_to_string(path).with_context(|| format!("read allowlist {}", path.display()))?;
+    let bytes = std::fs::read_to_string(path)
+        .with_context(|| format!("read allowlist {}", path.display()))?;
     #[derive(serde::Deserialize)]
     struct Raw {
         #[serde(default)]
@@ -358,18 +358,9 @@ mod tests {
 
     #[test]
     fn days_between_iso_simple_intervals() {
-        assert_eq!(
-            days_between_iso("2026-04-27", "2026-05-02").unwrap(),
-            5
-        );
-        assert_eq!(
-            days_between_iso("2026-05-02", "2026-04-27").unwrap(),
-            -5
-        );
-        assert_eq!(
-            days_between_iso("2026-05-02", "2026-05-02").unwrap(),
-            0
-        );
+        assert_eq!(days_between_iso("2026-04-27", "2026-05-02").unwrap(), 5);
+        assert_eq!(days_between_iso("2026-05-02", "2026-04-27").unwrap(), -5);
+        assert_eq!(days_between_iso("2026-05-02", "2026-05-02").unwrap(), 0);
     }
 
     #[test]

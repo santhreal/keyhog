@@ -26,16 +26,17 @@ pub fn format_string_check(
 }
 
 #[must_use]
+#[cfg(test)]
 /// CPU oracle for [`format_string_check`].
-pub fn cpu_ref(format_arg_pts: &[u32], non_literal_set: &[u32]) -> Vec<u32> {
+pub(crate) fn cpu_ref(format_arg_pts: &[u32], non_literal_set: &[u32]) -> Vec<u32> {
     vyre_primitives::bitset::and_not::cpu_ref(format_arg_pts, non_literal_set)
 }
 
 /// Soundness marker for [`format_string_check`].
 pub struct FormatStringCheck;
-impl weir::soundness::SoundnessTagged for FormatStringCheck {
-    fn soundness(&self) -> weir::soundness::Soundness {
-        weir::soundness::Soundness::Exact
+impl vyre::soundness::SoundnessTagged for FormatStringCheck {
+    fn soundness(&self) -> vyre::soundness::Soundness {
+        vyre::soundness::Soundness::Exact
     }
 }
 

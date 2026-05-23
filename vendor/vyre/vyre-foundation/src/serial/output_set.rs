@@ -22,13 +22,22 @@ impl OutputSet {
         let mut indices = Vec::with_capacity(buffers.len());
         for (index, buffer) in buffers.iter().enumerate() {
             if buffer.access() == BufferAccess::ReadWrite {
-                indices.push(index as u32);
+                if let Ok(index) = u32::try_from(index) {
+                    indices.push(index);
+                } else {
+                    return Self(indices);
+                }
             }
         }
         Self(indices)
     }
 
     /// Encode this output set into `dst`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an actionable diagnostic if the output-set count cannot fit the
+    /// encoded length representation.
     pub fn encode_into(&self, dst: &mut Vec<u8>) -> Result<(), String> {
         let count = u64::try_from(self.0.len()).map_err(|err| {
             format!("Fix: output-set count cannot fit u64 ({err}); split the Program.")
@@ -43,6 +52,11 @@ impl OutputSet {
 
     /// Encode the canonical output set for `buffers` without materialising an
     /// intermediate `Vec<u32>`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an actionable diagnostic if the output-set count or any buffer
+    /// index cannot fit the wire representation.
     pub fn encode_from_buffers_into(
         buffers: &[BufferDecl],
         dst: &mut Vec<u8>,

@@ -63,6 +63,13 @@ impl LoopRedundantBoundCheckElidePass {
     /// Skip programs without any loop containing an inner if-guard.
     #[must_use]
     fn analyze_impl(program: &Program) -> PassAnalysis {
+        // Eliding the redundant guard requires a Loop AND an If
+        // (the guard) inside it. Either missing → no work.
+        use crate::ir::stats::{NODE_KIND_IF, NODE_KIND_LOOP};
+        let stats = program.stats();
+        if !stats.has_any_node_kind(NODE_KIND_LOOP) || !stats.has_any_node_kind(NODE_KIND_IF) {
+            return PassAnalysis::SKIP;
+        }
         if program.entry().iter().any(node_has_redundant_guard) {
             PassAnalysis::RUN
         } else {
@@ -73,18 +80,16 @@ impl LoopRedundantBoundCheckElidePass {
     /// Walk the entry tree and elide redundant bound checks.
     #[must_use]
     pub fn transform(program: Program) -> PassResult {
-        let scaffold = program.with_rewritten_entry(Vec::new());
         let mut changed = false;
-        let entry = program
-            .into_entry_vec()
-            .into_iter()
-            .map(|n| elide_in_node(n, &mut changed))
-            .collect();
-        PassResult {
-            program: scaffold.with_rewritten_entry(entry),
-            changed,
-        }
-    }}
+        let program = program.map_entry(|entry| {
+            entry
+                .into_iter()
+                .map(|n| elide_in_node(n, &mut changed))
+                .collect()
+        });
+        PassResult { program, changed }
+    }
+}
 
 /// Try to extract a literal `u32` from `expr` (matches `Expr::LitU32`).
 fn lit_u32_value(expr: &Expr) -> Option<u32> {
@@ -514,7 +519,7 @@ mod tests {
         )];
         let program = program_with_entry(entry);
         let once = LoopRedundantBoundCheckElidePass::transform(program);
-        let twice = LoopRedundantBoundCheckElidePass::transform(once.program.clone());
+        let twice = LoopRedundantBoundCheckElidePass::transform(Clone::clone(&once.program));
         assert!(once.changed);
         assert!(!twice.changed, "second run must report no change");
     }
@@ -595,8 +600,10 @@ mod tests {
             )],
         )];
         let program = program_with_entry(entry);
-        let fp1 = crate::optimizer::ProgramPass::fingerprint(&LoopRedundantBoundCheckElidePass, &program);
-        let fp2 = crate::optimizer::ProgramPass::fingerprint(&LoopRedundantBoundCheckElidePass, &program);
+        let fp1 =
+            crate::optimizer::ProgramPass::fingerprint(&LoopRedundantBoundCheckElidePass, &program);
+        let fp2 =
+            crate::optimizer::ProgramPass::fingerprint(&LoopRedundantBoundCheckElidePass, &program);
         assert_eq!(fp1, fp2);
     }
 

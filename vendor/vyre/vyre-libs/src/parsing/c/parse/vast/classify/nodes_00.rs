@@ -3,7 +3,7 @@ use super::*;
 pub(super) fn extend(
     out: &mut Vec<Node>,
     vast_nodes: &str,
-    out_typed_vast_nodes: &str,
+    _out_typed_vast_nodes: &str,
     num_nodes: Expr,
     t: Expr,
     base: Expr,
@@ -21,51 +21,81 @@ pub(super) fn extend(
             "cur_parent",
             Expr::load(vast_nodes, Expr::add(base.clone(), Expr::u32(1))),
         ),
-        Node::let_bind("prev_sibling_kind", Expr::u32(SENTINEL)),
-        Node::let_bind("prev_prev_sibling_kind", Expr::u32(SENTINEL)),
-        Node::let_bind("prev_sibling_symbol_hash", Expr::u32(0)),
-        Node::let_bind("prev_sibling_idx", Expr::u32(SENTINEL)),
-        Node::loop_for(
-            "prev_sibling_scan",
-            Expr::u32(0),
-            t.clone(),
-            vec![
-                Node::let_bind(
-                    "prev_scan_base",
+        Node::let_bind(
+            "prev_sibling_idx",
+            Expr::load(
+                vast_nodes,
+                Expr::add(base.clone(), Expr::u32(VAST_PREVIOUS_SIBLING_FIELD)),
+            ),
+        ),
+        Node::let_bind(
+            "prev_sibling_valid_direct",
+            Expr::lt(Expr::var("prev_sibling_idx"), num_nodes.clone()),
+        ),
+        Node::let_bind(
+            "prev_sibling_base_direct",
+            Expr::mul(
+                Expr::select(
+                    Expr::var("prev_sibling_valid_direct"),
+                    Expr::var("prev_sibling_idx"),
+                    t.clone(),
+                ),
+                Expr::u32(VAST_NODE_STRIDE_U32),
+            ),
+        ),
+        Node::let_bind(
+            "prev_sibling_kind",
+            Expr::select(
+                Expr::var("prev_sibling_valid_direct"),
+                Expr::load(vast_nodes, Expr::var("prev_sibling_base_direct")),
+                Expr::u32(SENTINEL),
+            ),
+        ),
+        Node::let_bind(
+            "prev_sibling_symbol_hash",
+            Expr::select(
+                Expr::var("prev_sibling_valid_direct"),
+                Expr::load(
+                    vast_nodes,
+                    Expr::add(
+                        Expr::var("prev_sibling_base_direct"),
+                        Expr::u32(VAST_TYPEDEF_SYMBOL_FIELD),
+                    ),
+                ),
+                Expr::u32(0),
+            ),
+        ),
+        Node::let_bind(
+            "prev_prev_sibling_idx",
+            Expr::select(
+                Expr::var("prev_sibling_valid_direct"),
+                Expr::load(
+                    vast_nodes,
+                    Expr::add(
+                        Expr::var("prev_sibling_base_direct"),
+                        Expr::u32(VAST_PREVIOUS_SIBLING_FIELD),
+                    ),
+                ),
+                Expr::u32(SENTINEL),
+            ),
+        ),
+        Node::let_bind(
+            "prev_prev_sibling_valid",
+            Expr::lt(Expr::var("prev_prev_sibling_idx"), num_nodes.clone()),
+        ),
+        Node::let_bind(
+            "prev_prev_sibling_kind",
+            Expr::select(
+                Expr::var("prev_prev_sibling_valid"),
+                Expr::load(
+                    vast_nodes,
                     Expr::mul(
-                        Expr::var("prev_sibling_scan"),
+                        Expr::var("prev_prev_sibling_idx"),
                         Expr::u32(VAST_NODE_STRIDE_U32),
                     ),
                 ),
-                Node::let_bind(
-                    "prev_scan_parent",
-                    Expr::load(
-                        vast_nodes,
-                        Expr::add(Expr::var("prev_scan_base"), Expr::u32(1)),
-                    ),
-                ),
-                Node::if_then(
-                    Expr::eq(Expr::var("prev_scan_parent"), Expr::var("cur_parent")),
-                    vec![
-                        Node::assign("prev_prev_sibling_kind", Expr::var("prev_sibling_kind")),
-                        Node::assign(
-                            "prev_sibling_kind",
-                            Expr::load(vast_nodes, Expr::var("prev_scan_base")),
-                        ),
-                        Node::assign(
-                            "prev_sibling_symbol_hash",
-                            Expr::load(
-                                vast_nodes,
-                                Expr::add(
-                                    Expr::var("prev_scan_base"),
-                                    Expr::u32(VAST_TYPEDEF_SYMBOL_FIELD),
-                                ),
-                            ),
-                        ),
-                        Node::assign("prev_sibling_idx", Expr::var("prev_sibling_scan")),
-                    ],
-                ),
-            ],
+                Expr::u32(SENTINEL),
+            ),
         ),
         Node::let_bind(
             "first_child_idx",

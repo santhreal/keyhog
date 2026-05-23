@@ -49,6 +49,7 @@
 
 use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program, UnOp};
 
+use super::attention::direct_attention_program;
 use crate::region::wrap_anonymous;
 
 const OP_ID: &str = "vyre-libs::nn::flash_attention";
@@ -114,6 +115,11 @@ pub fn flash_attention(
     if d == 0 {
         return Err("Fix: flash_attention d=0 is invalid: empty head dimension".to_string());
     }
+    if let Some(program) = direct_attention_program(q, k, v, out, s, d, OP_ID)
+        .map_err(|error| format!("Fix: flash_attention direct specialization failed: {error}"))?
+    {
+        return Ok(program);
+    }
     let elements = s
         .checked_mul(d)
         .ok_or_else(|| "Fix: flash_attention s*d overflows u32; reduce dimensions.".to_string())?;
@@ -142,7 +148,11 @@ pub fn flash_attention(
                 Expr::f32(0.0),
             )],
         ),
-        // For each j in [0, s) update (m, l, o).
+        // For each j in [0, s) update (m, l, o). Wrapped in a Region
+        // marked with `source_region: Some(...)` so the structural
+        // discipline gate treats the j/k_idx/t loop nest as a child
+        // composition (`flash_attention_row_accumulate`) and stops
+        // counting nodes/loops once it descends past the boundary.
         Node::loop_for(
             "j",
             Expr::u32(0),
@@ -177,10 +187,23 @@ pub fn flash_attention(
                         ),
                     )],
                 ),
-                Node::let_bind(
-                    "score",
-                    Expr::mul(Expr::var("dot_val"), scale_expr.clone()),
-                ),
+                // Clamp ±inf (from Q/K dot-product overflow) to -80
+                // BEFORE the online-softmax recurrence. inf would
+                // become m_new=inf, then score-m_new=NaN, exp(NaN)=NaN
+                // and poison the whole row. Crucially we preserve NaN
+                // inputs so the kernel's NaN-input contract still
+                // propagates them; only the finite-but-overflowing
+                // case is repaired.
+                Node::let_bind("score", {
+                    let raw = Expr::mul(Expr::var("dot_val"), scale_expr.clone());
+                    // is_finite is false for both inf and NaN; we
+                    // want clamp-inf-keep-NaN, so guard with NaN.
+                    Expr::select(
+                        Expr::is_nan(raw.clone()),
+                        raw.clone(),
+                        finite_or(raw, Expr::f32(-80.0)),
+                    )
+                }),
                 // m_new = max(m, score)
                 Node::let_bind(
                     "flash_m_new",
@@ -329,6 +352,7 @@ inventory::submit! {
                 ],
             ]]
         }),
+        category: Some("nn"),
     }
 }
 

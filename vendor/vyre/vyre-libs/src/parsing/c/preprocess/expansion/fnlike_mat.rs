@@ -1,4 +1,4 @@
-//! Audit-fix A35 `expansion/fnlike_mat.rs` extract.
+//! Materialized function-like macro expansion builder.
 
 use crate::parsing::c::lex::tokens::*;
 use vyre::ir::{Expr, Node};

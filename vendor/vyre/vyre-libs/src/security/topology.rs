@@ -4,7 +4,7 @@
 //! out of this module into the domain-neutral
 //! [`crate::range_ordering`] because its behaviour — byte-range
 //! ordering between two tagged streams — is not security-specific.
-//! A SURGE author writing a non-security program still needed this
+//! A source-query dialect author writing a non-security program still needed this
 //! predicate (e.g., "did lexeme A end before lexeme B?"); pulling
 //! `vyre-libs::security` transitively for that was a vision drift.
 //!

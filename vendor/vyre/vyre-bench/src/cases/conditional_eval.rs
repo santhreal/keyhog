@@ -14,8 +14,8 @@ use crate::api::case::{
 use crate::api::metric::BenchMetrics;
 use crate::api::suite::SuiteKind;
 use rayon::prelude::*;
-use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 use vyre_driver::{BackendError, Resource};
+use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 
 const RULE_COUNT: u32 = 1 << 20;
 const PATTERN_COUNT: u32 = 1 << 14;
@@ -358,7 +358,9 @@ impl BenchCase for ConditionalEval {
             baseline_metrics: Some(BenchMetrics {
                 wall_ns: Some(prepared.baseline_wall_ns),
                 input_bytes: Some(input_bytes),
-                output_bytes: Some(prepared.baseline_output.iter().map(Vec::len).sum::<usize>() as u64),
+                output_bytes: Some(
+                    prepared.baseline_output.iter().map(Vec::len).sum::<usize>() as u64
+                ),
                 ..Default::default()
             }),
             outputs,
@@ -429,9 +431,7 @@ fn read_le_u32(bytes: &[u8], word_index: usize) -> Result<u32, BenchError> {
 }
 
 fn read_u32_prefix(bytes: &[u8], count: usize) -> Result<Vec<u32>, BenchError> {
-    (0..count)
-        .map(|index| read_le_u32(bytes, index))
-        .collect()
+    (0..count).map(|index| read_le_u32(bytes, index)).collect()
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -501,7 +501,9 @@ fn prepare_resident(
     if let Err(error) = result {
         for resource in resources {
             if let Err(cleanup_error) = backend.free_resident(resource) {
-                eprintln!("conditional eval bench resident rollback cleanup failed: {cleanup_error}");
+                eprintln!(
+                    "conditional eval bench resident rollback cleanup failed: {cleanup_error}"
+                );
             }
         }
         return Err(error);

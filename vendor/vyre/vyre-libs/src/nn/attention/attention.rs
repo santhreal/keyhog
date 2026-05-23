@@ -93,6 +93,129 @@ fn attention_score_nodes(q: &str, k: &str, d: u32, scale_expr: Expr) -> Vec<Node
     ]
 }
 
+fn direct_score_expr(q: &str, k: &str, row: u32, col: u32, d: u32, scale_expr: Expr) -> Expr {
+    let mut dot = Expr::f32(0.0);
+    for k_idx in 0..d {
+        dot = Expr::add(
+            dot,
+            Expr::mul(
+                Expr::load(q, Expr::u32(row * d + k_idx)),
+                Expr::load(k, Expr::u32(col * d + k_idx)),
+            ),
+        );
+    }
+    Expr::mul(dot, scale_expr)
+}
+
+pub(crate) fn direct_attention_program(
+    q: &str,
+    k: &str,
+    v: &str,
+    out: &str,
+    s: u32,
+    d: u32,
+    generator: &'static str,
+) -> Result<Option<Program>, TensorRefError> {
+    let elements = s
+        .checked_mul(d)
+        .ok_or_else(|| TensorRefError::ElementCountOverflow {
+            name: out.to_string(),
+            shape: vec![s, d],
+        })?;
+    if s > 8 || d > 16 {
+        return Ok(None);
+    }
+    let scale_expr = Expr::f32(1.0f32 / (d as f32).sqrt());
+    let mut nodes = Vec::with_capacity((s * (s + d + 2)) as usize);
+    for row in 0..s {
+        let mut score_vars = Vec::with_capacity(s as usize);
+        for col in 0..s {
+            let score_var = format!("direct_score_{row}_{col}");
+            nodes.push(Node::let_bind(
+                score_var.clone(),
+                direct_score_expr(q, k, row, col, d, scale_expr.clone()),
+            ));
+            score_vars.push(score_var);
+        }
+        let mut max_val = Expr::f32(f32::MIN);
+        for score_var in &score_vars {
+            let score = Expr::var(score_var.clone());
+            max_val = Expr::select(
+                Expr::is_nan(score.clone()),
+                score.clone(),
+                Expr::select(
+                    Expr::gt(score.clone(), max_val.clone()),
+                    score.clone(),
+                    max_val,
+                ),
+            );
+        }
+        let max_var = format!("direct_max_{row}");
+        nodes.push(Node::let_bind(max_var.clone(), max_val));
+        let max_expr = Expr::var(max_var);
+        let mut denom = Expr::f32(0.0);
+        for score_var in &score_vars {
+            denom = Expr::add(
+                denom,
+                Expr::UnOp {
+                    op: UnOp::Exp,
+                    operand: Box::new(bounded_exp_arg(Expr::sub(
+                        Expr::var(score_var.clone()),
+                        max_expr.clone(),
+                    ))),
+                },
+            );
+        }
+        let denom_var = format!("direct_denom_{row}");
+        nodes.push(Node::let_bind(
+            denom_var.clone(),
+            positive_denominator(denom),
+        ));
+        let denom_expr = Expr::var(denom_var);
+        for dim in 0..d {
+            let mut accum = Expr::f32(0.0);
+            for col in 0..s {
+                let weight = Expr::div(
+                    Expr::UnOp {
+                        op: UnOp::Exp,
+                        operand: Box::new(bounded_exp_arg(Expr::sub(
+                            Expr::var(score_vars[col as usize].clone()),
+                            max_expr.clone(),
+                        ))),
+                    },
+                    denom_expr.clone(),
+                );
+                accum = Expr::add(
+                    accum,
+                    Expr::mul(weight, Expr::load(v, Expr::u32(col * d + dim))),
+                );
+            }
+            nodes.push(Node::store(
+                out,
+                Expr::u32(row * d + dim),
+                flush_tiny(accum),
+            ));
+        }
+    }
+    Ok(Some(Program::wrapped(
+        vec![
+            BufferDecl::storage(q, 0, BufferAccess::ReadOnly, DataType::F32).with_count(elements),
+            BufferDecl::storage(k, 1, BufferAccess::ReadOnly, DataType::F32).with_count(elements),
+            BufferDecl::storage(v, 2, BufferAccess::ReadOnly, DataType::F32).with_count(elements),
+            BufferDecl::output(out, 3, DataType::F32).with_count(elements),
+        ],
+        [1, 1, 1],
+        vec![wrap(
+            generator,
+            vec![Node::if_then(
+                Expr::eq(Expr::InvocationId { axis: 0 }, Expr::u32(0)),
+                nodes,
+            )],
+            None,
+        )],
+    )))
+}
+
 /// Typed Cat-A builder for scaled dot-product attention.
 #[derive(Debug, Clone)]
 pub struct Attention {
@@ -289,6 +412,9 @@ fn attention_program(
     workgroup: [u32; 3],
     generator: &'static str,
 ) -> Result<Program, TensorRefError> {
+    if let Some(program) = direct_attention_program(q, k, v, out, s, d, generator)? {
+        return Ok(program);
+    }
     let scale = 1.0f32 / (d as f32).sqrt();
     let scale_expr = Expr::f32(scale);
     let elements = s
@@ -313,10 +439,6 @@ fn attention_program(
                 name: out.to_string(),
                 shape: vec![total_groups, tile],
             })?;
-    let parent = GeneratorRef {
-        name: generator.to_string(),
-    };
-
     let mut body = vec![
         Node::let_bind("group", Expr::WorkgroupId { axis: 0 }),
         Node::let_bind("lane", Expr::LocalId { axis: 0 }),
@@ -332,10 +454,9 @@ fn attention_program(
             ),
         ),
         Node::let_bind("dim", Expr::add(Expr::var("dim_base"), Expr::var("lane"))),
-        wrap_child(
-            ATTENTION_MAX_PASS_OP_ID,
-            parent.clone(),
-            vec![Node::if_then(Expr::eq(Expr::var("lane"), Expr::u32(0)), {
+        Node::Block(vec![Node::if_then(
+            Expr::eq(Expr::var("lane"), Expr::u32(0)),
+            {
                 let mut scalar_row = vec![Node::let_bind("max_val", Expr::f32(f32::MIN))];
                 scalar_row.push(Node::loop_for("j", Expr::u32(0), Expr::u32(s), {
                     let mut score = attention_score_nodes(q, k, d, scale_expr.clone());
@@ -359,12 +480,11 @@ fn attention_program(
                     Expr::var("max_val"),
                 ));
                 scalar_row
-            })],
-        ),
-        wrap_child(
-            ATTENTION_SUM_PASS_OP_ID,
-            parent.clone(),
-            vec![Node::if_then(Expr::eq(Expr::var("lane"), Expr::u32(0)), {
+            },
+        )]),
+        Node::Block(vec![Node::if_then(
+            Expr::eq(Expr::var("lane"), Expr::u32(0)),
+            {
                 let mut scalar_row = vec![Node::let_bind("sum_val", Expr::f32(0.0))];
                 scalar_row.push(Node::loop_for("j", Expr::u32(0), Expr::u32(s), {
                     let mut score = attention_score_nodes(q, k, d, scale_expr.clone());
@@ -389,8 +509,8 @@ fn attention_program(
                     Expr::var("sum_val"),
                 ));
                 scalar_row
-            })],
-        ),
+            },
+        )]),
         Node::barrier(),
     ];
     body.extend([
@@ -399,61 +519,57 @@ fn attention_program(
             "denom",
             positive_denominator(Expr::load("attention_scratch", Expr::u32(1))),
         ),
-        wrap_child(
-            ATTENTION_WRITE_PASS_OP_ID,
-            parent,
-            vec![Node::if_then(
-                Expr::and(
-                    Expr::lt(Expr::var("row"), Expr::u32(s)),
-                    Expr::lt(Expr::var("dim"), Expr::u32(d)),
-                ),
-                {
-                    let mut output_lane = vec![Node::let_bind("accum", Expr::f32(0.0))];
-                    output_lane.push(Node::loop_for("j", Expr::u32(0), Expr::u32(s), {
-                        let mut score = attention_score_nodes(q, k, d, scale_expr);
-                        score.extend([
-                            Node::let_bind(
-                                "weight",
-                                Expr::div(
-                                    Expr::UnOp {
-                                        op: UnOp::Exp,
-                                        operand: Box::new(bounded_exp_arg(Expr::sub(
-                                            Expr::var("score"),
-                                            Expr::var("max_val"),
-                                        ))),
-                                    },
-                                    Expr::var("denom"),
-                                ),
+        Node::Block(vec![Node::if_then(
+            Expr::and(
+                Expr::lt(Expr::var("row"), Expr::u32(s)),
+                Expr::lt(Expr::var("dim"), Expr::u32(d)),
+            ),
+            {
+                let mut output_lane = vec![Node::let_bind("accum", Expr::f32(0.0))];
+                output_lane.push(Node::loop_for("j", Expr::u32(0), Expr::u32(s), {
+                    let mut score = attention_score_nodes(q, k, d, scale_expr);
+                    score.extend([
+                        Node::let_bind(
+                            "weight",
+                            Expr::div(
+                                Expr::UnOp {
+                                    op: UnOp::Exp,
+                                    operand: Box::new(bounded_exp_arg(Expr::sub(
+                                        Expr::var("score"),
+                                        Expr::var("max_val"),
+                                    ))),
+                                },
+                                Expr::var("denom"),
                             ),
-                            Node::let_bind(
-                                "value",
-                                Expr::load(
-                                    v,
-                                    Expr::add(
-                                        Expr::mul(Expr::var("j"), Expr::u32(d)),
-                                        Expr::var("dim"),
-                                    ),
-                                ),
-                            ),
-                            Node::assign(
-                                "accum",
+                        ),
+                        Node::let_bind(
+                            "value",
+                            Expr::load(
+                                v,
                                 Expr::add(
-                                    Expr::var("accum"),
-                                    Expr::mul(Expr::var("weight"), Expr::var("value")),
+                                    Expr::mul(Expr::var("j"), Expr::u32(d)),
+                                    Expr::var("dim"),
                                 ),
                             ),
-                        ]);
-                        score
-                    }));
-                    output_lane.push(Node::store(
-                        out,
-                        Expr::add(Expr::mul(Expr::var("row"), Expr::u32(d)), Expr::var("dim")),
-                        flush_tiny(Expr::var("accum")),
-                    ));
-                    output_lane
-                },
-            )],
-        ),
+                        ),
+                        Node::assign(
+                            "accum",
+                            Expr::add(
+                                Expr::var("accum"),
+                                Expr::mul(Expr::var("weight"), Expr::var("value")),
+                            ),
+                        ),
+                    ]);
+                    score
+                }));
+                output_lane.push(Node::store(
+                    out,
+                    Expr::add(Expr::mul(Expr::var("row"), Expr::u32(d)), Expr::var("dim")),
+                    flush_tiny(Expr::var("accum")),
+                ));
+                output_lane
+            },
+        )]),
     ]);
 
     let body = vec![Node::if_then(
@@ -580,6 +696,7 @@ inventory::submit! {
                      0x9c, 0xb5, 0x1d, 0x3f, 0x90, 0x79, 0x9c, 0x3d, 0x33, 0xbb, 0x8e, 0x3f, 0x38, 0xc3, 0x31, 0x3e, ],
             ],
         ]),
+        category: Some("nn"),
     }
 }
 

@@ -31,14 +31,37 @@ pub(crate) use binop_identities::is_float_expr;
 use crate::ir::eval::{fold_binary_literal, fold_literal_tree, fold_unary_literal};
 use crate::ir::{Expr, Program};
 use crate::optimizer::rewrite::rewrite_program;
-use crate::optimizer::{vyre_pass, PassResult};
+use crate::optimizer::{vyre_pass, PassAnalysis, PassResult};
 
 /// Fold compile-time-known literal expressions.
 #[derive(Debug, Default)]
-#[vyre_pass(name = "const_fold", requires = [], invalidates = ["value_numbering"], analyze = "always")]
+#[vyre_pass(
+    name = "const_fold",
+    requires = [],
+    invalidates = ["value_numbering"],
+    phase = "scalar_algebra",
+    boundary_class = "abi_preserving",
+    cost_model_family = "scalar"
+)]
 pub struct ConstFold;
 
 impl ConstFold {
+    /// O(1) gate: const-folding only rewrites expressions, which only live
+    /// inside Let / Assign / Store / If-cond / Loop bound / AsyncLoad/Store
+    /// offset+size / Trap address. Programs made of pure structural nodes
+    /// (Return / Barrier / `IndirectDispatch` / `AsyncWait` / Resume) have no
+    /// expression tree to fold.
+    #[must_use]
+    fn analyze_impl(program: &Program) -> PassAnalysis {
+        if !program
+            .stats()
+            .has_any_node_kind(crate::ir::stats::NODE_KIND_EXPRESSION_BEARING_MASK)
+        {
+            return PassAnalysis::SKIP;
+        }
+        PassAnalysis::RUN
+    }
+
     /// Fold literal-only expressions.
     ///
     /// AUDIT_2026-04-24 F-CF-01 (closed): `rewrite_program` already
@@ -63,7 +86,8 @@ impl ConstFold {
             program,
             changed: overall_changed || changed,
         }
-    }}
+    }
+}
 
 pub(crate) fn fold_expr(expr: &Expr) -> Option<Expr> {
     if let Some(folded) = fold_literal_tree(expr) {

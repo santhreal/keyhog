@@ -169,6 +169,192 @@ pub(crate) fn batch_fence_body() -> Vec<Node> {
     ]
 }
 
+/// LOAD_MISS: GPU-initiated DMA request to the IO queue.
+///
+/// Reads the consumer's `resource_id` from `arg0` and `prefetch_flag` from
+/// `arg1`, scans the IO queue for an empty slot, writes a READ request,
+/// and spins until the host/runtime marks it OK. vyre is opaque to the
+/// resource identifier — it's just a u32 the consumer uses to look up
+/// the source and destination of the read.
+pub(crate) fn load_miss_body() -> Vec<Node> {
+    let io_slot_count = super::io::IO_SLOT_COUNT;
+    let io_slot_words = super::io::IO_SLOT_WORDS;
+
+    vec![
+        Node::let_bind(
+            "resource_id",
+            Expr::load(
+                "ring_buffer",
+                Expr::add(
+                    Expr::var("slot_base"),
+                    Expr::u32(super::protocol::ARG0_WORD),
+                ),
+            ),
+        ),
+        Node::let_bind(
+            "prefetch_flag",
+            Expr::load(
+                "ring_buffer",
+                Expr::add(
+                    Expr::var("slot_base"),
+                    Expr::u32(super::protocol::ARG0_WORD + 1),
+                ),
+            ),
+        ),
+        // Scan for an empty IO slot.
+        Node::let_bind("found_io_slot", Expr::u32(io_slot_count)),
+        Node::loop_for(
+            "scan_i",
+            Expr::u32(0),
+            Expr::u32(io_slot_count),
+            vec![
+                Node::if_then(
+                    Expr::ne(Expr::var("found_io_slot"), Expr::u32(io_slot_count)),
+                    vec![], // already found, skip remaining scan iterations
+                ),
+                Node::if_then(
+                    Expr::eq(Expr::var("found_io_slot"), Expr::u32(io_slot_count)),
+                    vec![
+                        Node::let_bind(
+                            "scan_base",
+                            Expr::mul(Expr::var("scan_i"), Expr::u32(io_slot_words)),
+                        ),
+                        Node::let_bind(
+                            "scan_status",
+                            Expr::load(
+                                "io_queue",
+                                Expr::add(
+                                    Expr::var("scan_base"),
+                                    Expr::u32(super::io::io_word::STATUS),
+                                ),
+                            ),
+                        ),
+                        Node::if_then(
+                            Expr::eq(
+                                Expr::var("scan_status"),
+                                Expr::u32(super::protocol::slot::EMPTY),
+                            ),
+                            vec![Node::assign("found_io_slot", Expr::var("scan_i"))],
+                        ),
+                    ],
+                ),
+            ],
+        ),
+        // If a slot was found, write the DMA request and poll for completion.
+        Node::if_then(
+            Expr::ne(Expr::var("found_io_slot"), Expr::u32(io_slot_count)),
+            vec![
+                Node::let_bind(
+                    "io_base",
+                    Expr::mul(Expr::var("found_io_slot"), Expr::u32(io_slot_words)),
+                ),
+                Node::store(
+                    "io_queue",
+                    Expr::add(Expr::var("io_base"), Expr::u32(super::io::io_word::OP_TYPE)),
+                    Expr::u32(super::io::io_op::READ),
+                ),
+                Node::store(
+                    "io_queue",
+                    Expr::add(
+                        Expr::var("io_base"),
+                        Expr::u32(super::io::io_word::SRC_HANDLE),
+                    ),
+                    Expr::var("resource_id"),
+                ),
+                Node::store(
+                    "io_queue",
+                    Expr::add(
+                        Expr::var("io_base"),
+                        Expr::u32(super::io::io_word::DST_HANDLE),
+                    ),
+                    Expr::var("resource_id"),
+                ),
+                Node::store(
+                    "io_queue",
+                    Expr::add(
+                        Expr::var("io_base"),
+                        Expr::u32(super::io::io_word::OFFSET_LO),
+                    ),
+                    Expr::u32(0),
+                ),
+                Node::store(
+                    "io_queue",
+                    Expr::add(
+                        Expr::var("io_base"),
+                        Expr::u32(super::io::io_word::OFFSET_HI),
+                    ),
+                    Expr::u32(0),
+                ),
+                Node::store(
+                    "io_queue",
+                    Expr::add(
+                        Expr::var("io_base"),
+                        Expr::u32(super::io::io_word::BYTE_COUNT),
+                    ),
+                    Expr::u32(0),
+                ),
+                Node::store(
+                    "io_queue",
+                    Expr::add(Expr::var("io_base"), Expr::u32(super::io::io_word::TAG)),
+                    Expr::var("resource_id"),
+                ),
+                // Publish the request.
+                Node::store(
+                    "io_queue",
+                    Expr::add(Expr::var("io_base"), Expr::u32(super::io::io_word::STATUS)),
+                    Expr::u32(super::protocol::slot::PUBLISHED),
+                ),
+                // Poll until the host/runtime marks it OK.
+                Node::let_bind("poll_done", Expr::u32(0)),
+                Node::let_bind("poll_max_iters", Expr::u32(u32::MAX)),
+                Node::loop_for(
+                    "poll_i",
+                    Expr::u32(0),
+                    Expr::var("poll_max_iters"),
+                    vec![
+                        Node::if_then(
+                            Expr::eq(Expr::var("poll_done"), Expr::u32(1)),
+                            vec![], // skip once done
+                        ),
+                        Node::if_then(
+                            Expr::ne(Expr::var("poll_done"), Expr::u32(1)),
+                            vec![
+                                Node::let_bind(
+                                    "poll_status",
+                                    Expr::load(
+                                        "io_queue",
+                                        Expr::add(
+                                            Expr::var("io_base"),
+                                            Expr::u32(super::io::io_word::STATUS),
+                                        ),
+                                    ),
+                                ),
+                                Node::if_then(
+                                    Expr::eq(
+                                        Expr::var("poll_status"),
+                                        Expr::u32(super::io::io_status::OK),
+                                    ),
+                                    vec![
+                                        Node::store(
+                                            "io_queue",
+                                            Expr::add(
+                                                Expr::var("io_base"),
+                                                Expr::u32(super::io::io_word::STATUS),
+                                            ),
+                                            Expr::u32(super::protocol::slot::EMPTY),
+                                        ),
+                                        Node::assign("poll_done", Expr::u32(1)),
+                                    ],
+                                ),
+                            ],
+                        ),
+                    ],
+                ),
+            ],
+        ),
+    ]
+}
+
 fn packed_payload_byte(byte_offset: Expr) -> Expr {
     let word_offset = Expr::div(byte_offset.clone(), Expr::u32(4));
     let bit_shift = Expr::mul(Expr::rem(byte_offset, Expr::u32(4)), Expr::u32(8));

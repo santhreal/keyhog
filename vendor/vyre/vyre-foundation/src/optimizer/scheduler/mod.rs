@@ -29,9 +29,25 @@ pub struct PassScheduler {
     passes: Vec<ProgramPassKind>,
     pass_index: FxHashMap<&'static str, usize>,
     execution_order: Vec<usize>,
+    /// True when `execution_order` was produced by the topological scheduler.
+    /// In that case per-iteration requirement hash-set reconstruction is
+    /// redundant: unsatisfied requirements were already rejected while building
+    /// the scheduler. Explicit malformed `with_passes` inputs keep this false
+    /// so tests and diagnostics still surface `UnsatisfiedRequirement`.
+    requirements_prevalidated: bool,
     max_iterations: usize,
     invalidation_adjacency_cache: OnceLock<Vec<u32>>,
     invalidation_closure_cache: OnceLock<FxHashMap<&'static str, FxHashSet<&'static str>>>,
+    /// Tag → pass indices that should be re-marked dirty when the tag is
+    /// invalidated. A tag matches a pass if it equals the pass's `name`
+    /// OR appears in its `requires` list. Replaces the per-iteration
+    /// O(passes × invalidates × requires) scan inside
+    /// `mark_invalidated_passes` with O(invalidates × dependents).
+    dirty_trigger_index_cache: OnceLock<FxHashMap<&'static str, Vec<usize>>>,
+    /// Indexed variant of `initial_dirty_cache` used by the hot `run()` path.
+    /// This avoids rebuilding/cloning a string hash set and turns dirty checks
+    /// into direct indexed loads.
+    initial_dirty_flags_cache: OnceLock<Vec<bool>>,
     /// When `true`, the scheduler enforces a cost-monotone-down post-condition
     /// on every `ProgramPass::transform` invocation: after the rewrite, the new
     /// `CostCertificate` must dominate-or-equal the old on every tracked
@@ -67,6 +83,10 @@ pub struct PassRunMetric {
     pub ran: bool,
     /// Whether transform changed the program.
     pub changed: bool,
+    /// Stable explanation for the scheduler decision on this pass.
+    pub decision: PassRunDecision,
+    /// Refusal kind when [`PassRunDecision::Refused`] applies.
+    pub refusal_kind: Option<&'static str>,
     /// Transform wall-clock runtime in nanoseconds. Zero when skipped.
     pub runtime_ns: u128,
     /// Node count before the pass.
@@ -105,6 +125,23 @@ pub struct PassRunMetric {
     pub ir_heap_bytes_before: usize,
     /// Estimated bytes owned by heap-backed IR containers after the pass.
     pub ir_heap_bytes_after: usize,
+}
+
+/// Stable explanation code for one pass scheduler metric row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PassRunDecision {
+    /// Pass was not dirty, so the scheduler did not analyze or run it.
+    CleanSkipped,
+    /// Pass was dirty, but its analysis hook returned [`crate::optimizer::PassAnalysis::SKIP`].
+    AnalysisSkipped,
+    /// Pass ran and returned `changed = false`.
+    RanUnchanged,
+    /// Pass ran and landed a rewrite.
+    Changed,
+    /// Cost-monotone enforcement rejected the produced rewrite.
+    CostReverted,
+    /// Pass explicitly refused through [`crate::optimizer::ProgramPass::try_transform`].
+    Refused,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -286,7 +323,12 @@ fn estimate_expr_allocations(expr: &Expr, estimate: &mut IrAllocationEstimate) {
 }
 
 impl PassScheduler {
-    /// Attempt to build a PassScheduler using the default registered passes.
+    /// Attempt to build a `PassScheduler` using the default registered passes.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OptimizerError`] when built-in pass metadata cannot be
+    /// registered into a valid scheduler.
     pub fn try_default() -> Result<Self, OptimizerError> {
         let passes = registered_passes()?;
         let pass_index = passes
@@ -299,9 +341,12 @@ impl PassScheduler {
             passes,
             pass_index,
             execution_order,
+            requirements_prevalidated: true,
             max_iterations: DEFAULT_MAX_ITERATIONS,
             invalidation_adjacency_cache: OnceLock::new(),
             invalidation_closure_cache: OnceLock::new(),
+            dirty_trigger_index_cache: OnceLock::new(),
+            initial_dirty_flags_cache: OnceLock::new(),
             enforce_cost_monotone: false,
         })
     }
@@ -324,11 +369,16 @@ impl PassScheduler {
 
 impl Default for PassScheduler {
     fn default() -> Self {
-        Self::try_default().unwrap_or_else(|error| {
-            panic!(
-                "Fix: built-in optimizer pass metadata is invalid; this is a vyre-foundation bug: {error}"
-            )
-        })
+        match Self::try_default() {
+            Ok(scheduler) => scheduler,
+            Err(error) => {
+                tracing::error!(
+                    error = %error,
+                    "Fix: built-in optimizer pass metadata is invalid; defaulting to an empty scheduler."
+                );
+                Self::with_passes(Vec::new())
+            }
+        }
     }
 }
 

@@ -18,13 +18,15 @@ pub async fn connect(socket_path: &Path) -> Result<Client> {
     // fails fast instead of blocking the CLI for the kernel's
     // default connect timeout (which on Linux ranges into multiple
     // seconds).
-    let stream = tokio::time::timeout(
-        Duration::from_secs(1),
-        UnixStream::connect(socket_path),
-    )
-    .await
-    .with_context(|| format!("daemon client: connect timeout to {}", socket_path.display()))?
-    .with_context(|| format!("daemon client: connect to {}", socket_path.display()))?;
+    let stream = tokio::time::timeout(Duration::from_secs(1), UnixStream::connect(socket_path))
+        .await
+        .with_context(|| {
+            format!(
+                "daemon client: connect timeout to {}",
+                socket_path.display()
+            )
+        })?
+        .with_context(|| format!("daemon client: connect to {}", socket_path.display()))?;
 
     let (reader, writer) = stream.into_split();
     let mut client = Client {

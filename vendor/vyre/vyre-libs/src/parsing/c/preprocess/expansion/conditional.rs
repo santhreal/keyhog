@@ -1,6 +1,6 @@
-//! Audit-fix A35 `expansion/conditional.rs` extract.
+//! Conditional-compilation mask builders for macro expansion.
 
-#![allow(missing_docs)] // c-parser feature: A33-A36 split lost some leading doc comments; lint loud, fix surgically when revisiting docs.
+#![allow(missing_docs)] // Internal macro-expansion helpers are documented at the owning module boundary.
 use crate::parsing::c::lex::tokens::*;
 use crate::parsing::composition::child_phase;
 use crate::region::wrap_anonymous;
@@ -379,6 +379,7 @@ inventory::submit! {
                     .collect()
             ]]
         }),
+        category: Some("parsing"),
     }
 }
 
@@ -391,6 +392,7 @@ inventory::submit! {
         ),
         test_inputs: Some(dynamic_macro_fixture_inputs),
         expected_output: Some(dynamic_macro_fixture_expected),
+        category: Some("parsing"),
     }
 }
 

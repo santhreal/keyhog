@@ -593,10 +593,7 @@ mod tests {
             TensorRef::u32_2d("out", 0, 4),
         )
         .build();
-        assert!(
-            result.is_err(),
-            "Matmul builder must reject M=0"
-        );
+        assert!(result.is_err(), "Matmul builder must reject M=0");
     }
 
     #[test]
@@ -608,16 +605,13 @@ mod tests {
             TensorRef::u32_2d("out", 0, 4),
         )
         .build();
-        assert!(
-            result.is_err(),
-            "MatmulBias builder must reject M=0"
-        );
+        assert!(result.is_err(), "MatmulBias builder must reject M=0");
     }
 
     #[test]
     fn matmul_zero_k_traps() {
-        let a = vec![];
-        let b = vec![];
+        let a: Vec<u32> = vec![];
+        let b: Vec<u32> = vec![];
         let program = matmul("a", "b", "out", 2, 0, 3);
         let result = vyre_reference::reference_eval(
             &program,
@@ -755,7 +749,6 @@ inventory::submit! {
             vec![vec![
                 crate::test_support::byte_pack::u32_bytes(&a),
                 crate::test_support::byte_pack::u32_bytes(&b),
-                vec![0u8; 4 * 4 * 4],
             ]]
         }),
         expected_output: Some(|| {
@@ -776,6 +769,7 @@ inventory::submit! {
             let bytes = out.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<u8>>();
             vec![vec![bytes]]
         }),
+        category: Some("math"),
     }
 }
 
@@ -789,13 +783,13 @@ inventory::submit! {
                 crate::test_support::byte_pack::u32_bytes(&[1, 2, 3, 4]),
                 crate::test_support::byte_pack::u32_bytes(&[5, 6, 7, 8]),
                 crate::test_support::byte_pack::u32_bytes(&[10, 20]),
-                vec![0_u8; 4 * 4],
             ]]
         }),
         expected_output: Some(|| {
 
             vec![vec![crate::test_support::byte_pack::u32_bytes(&[29, 42, 53, 70])]]
         }),
+        category: Some("math"),
     }
 }
 
@@ -808,11 +802,11 @@ inventory::submit! {
                 crate::test_support::byte_pack::u32_bytes(&[2]),
                 crate::test_support::byte_pack::u32_bytes(&[3]),
                 crate::test_support::byte_pack::u32_bytes(&[5]),
-                vec![0_u8; 4],
             ]]
         }),
         expected_output: Some(|| {
             vec![vec![crate::test_support::byte_pack::u32_bytes(&[11])]]
         }),
+        category: Some("math"),
     }
 }

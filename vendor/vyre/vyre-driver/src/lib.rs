@@ -88,6 +88,8 @@ pub mod pipeline;
 pub mod pipeline_fusion;
 /// Dialect registry, OpDef registration, lowering tables, and interner.
 pub mod registry;
+/// Backend-neutral resident-resource reuse telemetry.
+pub mod residency;
 /// Runtime routing: profile-guided variant selection, algorithm heuristics.
 pub mod routing;
 /// Sampled CPU-reference shadow execution of live dispatches.
@@ -153,9 +155,11 @@ pub use vyre_foundation::error;
 
 pub use aot::{emit_aot_target, registered_aot_emitters, AotEmitter, AotTargetId};
 pub use backend::{
-    validate_program_for_backend, BackendError, BackendRegistration, CompiledPipeline,
-    DispatchConfig, Executable, Memory, MemoryRef, OutputBuffers, PendingDispatch, Resource,
-    TimedDispatchResult, TypedDispatchExt, VyreBackend,
+    default_dispatch_with_device_buffers, replace_output_buffers_preserving_slots,
+    validate_buffer_ownership, validate_program_for_backend, BackendError, BackendRegistration,
+    CompiledPipeline, DeviceBuffer, DispatchConfig, Executable, HostShimBuffer, Memory, MemoryRef,
+    OutputBuffers, PendingDispatch, ResidentDispatchStep, ResidentReadRange, Resource,
+    TimedDispatchResult, TypedDispatchExt, VyreBackend, DEVICE_BUFFER_FEATURE,
 };
 pub use binding::{
     binding_plans_share_layout, BackendLayoutClass, BackendLayoutFingerprint, BackendLayoutSlot,
@@ -177,10 +181,11 @@ pub use pipeline::{
 };
 pub use program_walks::{
     coerce_to_pow2_with_tail_mask, dispatch_element_count, dispatch_param_words,
-    element_size_bytes, enforce_actual_output_budget, find_indirect_dispatch, infer_dispatch_grid,
-    infer_dispatch_grid_for_count, output_binding_layout, output_binding_layouts,
-    output_layout_from_program, IndirectDispatch, OutputBindingLayout, OutputLayout,
-    TailMaskPolicy,
+    dispatch_param_words_into, element_size_bytes, enforce_actual_output_budget,
+    find_indirect_dispatch, infer_dispatch_grid, infer_dispatch_grid_for_count,
+    output_binding_layout, output_binding_layouts, output_layout_from_program,
+    try_coerce_to_pow2_with_tail_mask, try_dispatch_param_words, try_dispatch_param_words_into,
+    IndirectDispatch, OutputBindingLayout, OutputLayout, TailMaskPolicy,
 };
 pub use registry::{
     default_validator, intern_string, AttrSchema, AttrType, Category, Chain, Dialect,
@@ -189,6 +194,7 @@ pub use registry::{
     OpBackendTarget, OpDef, OpDefRegistration, PrimaryBinaryBuilder, PrimaryTextBuilder,
     ReferenceKind, SecondaryTextBuilder, Signature, Target, TextModule, TypedParam,
 };
+pub use residency::{ResidentGraphReuseTelemetry, ResidentGraphReuseTelemetryError};
 pub use routing::{select_sort_backend, Distribution, RoutingTable, SortBackend};
 pub use specialization::{SpecCacheKey, SpecMap, SpecValue};
 pub use speculate::{

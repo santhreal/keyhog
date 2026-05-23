@@ -99,6 +99,7 @@ pub fn count_sketch_update(table: &str, hashes: &str, signs: &str, d: u32, w: u3
 /// CPU helper: apply `(hashes, signs)` for one item to a (d × w) sketch.
 /// Encoding: `signs[i]` is `+1` or `-1` as `i32`; we cast through `u32`
 /// for the table representation.
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn count_sketch_update_cpu(table: &mut [u32], hashes: &[u32], signs: &[i32], d: u32, w: u32) {
     if w == 0
         || table.len() != d.saturating_mul(w) as usize
@@ -122,12 +123,14 @@ pub fn count_sketch_update_cpu(table: &mut [u32], hashes: &[u32], signs: &[i32],
 /// CPU helper: estimate item frequency from sketch (median of
 /// `sign[r] * table[r * w + hash[r]]` across the d rows).
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn count_sketch_query_cpu(table: &[u32], hashes: &[u32], signs: &[i32], d: u32, w: u32) -> i32 {
     let mut estimates = Vec::new();
     count_sketch_query_cpu_into(table, hashes, signs, d, w, &mut estimates)
 }
 
 /// Caller-owned variant of [`count_sketch_query_cpu`].
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn count_sketch_query_cpu_into(
     table: &[u32],
     hashes: &[u32],

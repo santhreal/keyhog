@@ -288,7 +288,9 @@ fn eval_indirect_dispatch(
             "indirect dispatch buffer `{count_buffer}` is too short for a 3-word dispatch tuple at byte offset {count_offset}. Fix: provide 12 readable bytes starting at that offset."
         )));
     }
-    Ok(())
+    Err(Error::interp(format!(
+        "Node::IndirectDispatch cannot execute in the sequential reference interpreter because dynamic indirect dispatch requires runtime queue scheduling. Fix: run this program on a backend/runtime that supports indirect dispatch or lower `{count_buffer}` at byte offset {count_offset} to a static workgroup grid before reference execution."
+    )))
 }
 
 struct AsyncLoadEval<'a> {

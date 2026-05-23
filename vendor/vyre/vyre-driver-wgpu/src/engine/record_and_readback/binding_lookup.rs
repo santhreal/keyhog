@@ -29,8 +29,8 @@ impl BindingLookup {
             if let Some(index) = self.index.as_mut() {
                 index.insert(binding, value);
             } else {
-                let mut index = FxHashMap::default();
-                index.reserve(self.entries.len());
+                let mut index =
+                    FxHashMap::with_capacity_and_hasher(self.entries.len(), Default::default());
                 for (existing_binding, existing_value) in self.entries.iter().copied() {
                     index.insert(existing_binding, existing_value);
                 }

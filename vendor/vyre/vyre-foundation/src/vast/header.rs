@@ -29,6 +29,11 @@ pub struct VastHeader {
 
 impl VastHeader {
     /// Decode header from the first 24 bytes.
+    /// Decode header from the first 24 bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`VastError`] when the buffer is too short or the header fields are invalid.
     pub fn decode(bytes: &[u8]) -> Result<Self, VastError> {
         if bytes.len() < HEADER_LEN {
             return Err(VastError::TooShort {

@@ -1,8 +1,8 @@
 //! `bitset_copy` — per-word bitwise copy (`target = source`).
 //!
-//! Replaces the `bitset_or_into` "OR-into-zero" idiom that surgec was
+//! Replaces the `bitset_or_into` "OR-into-zero" idiom that downstream analyzer was
 //! using as a structural copy. Explicit primitive: doc-clear,
-//! semantics obvious, kernel one assignment per word. Surgec's
+//! semantics obvious, kernel one assignment per word. Downstream analyzer's
 //! lower_expr's BindingRef arm (and any other "structural copy
 //! between two same-shape bitset buffers") consumes this directly.
 
@@ -42,9 +42,29 @@ pub fn bitset_copy(target: &str, source: &str, words: u32) -> Program {
 }
 
 /// CPU reference. Copies `source` into `target` word-for-word.
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref(target: &mut [u32], source: &[u32]) {
     let n = target.len().min(source.len());
     target[..n].copy_from_slice(&source[..n]);
+}
+
+#[cfg(feature = "inventory-registry")]
+inventory::submit! {
+    crate::harness::OpEntry::new(
+        OP_ID,
+        || bitset_copy("target", "source", 2),
+        Some(|| {
+            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            vec![vec![
+                to_bytes(&[0, 0]),
+                to_bytes(&[0xDEAD, 0xBEEF]),
+            ]]
+        }),
+        Some(|| {
+            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            vec![vec![to_bytes(&[0xDEAD, 0xBEEF])]]
+        }),
+    )
 }
 
 #[cfg(test)]

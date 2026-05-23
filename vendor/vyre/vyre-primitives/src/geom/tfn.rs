@@ -118,6 +118,7 @@ pub fn tfn_scalar_mix(
 
 /// CPU reference, f64.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn tfn_scalar_mix_cpu(
     features: &[f64],
     weights: &[f64],

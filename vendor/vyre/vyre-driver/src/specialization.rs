@@ -62,17 +62,51 @@ impl SpecValue {
 /// `SpecValue::DType` into the F1 cache hash deterministically.
 /// Adding a new `DataType` variant must extend this table; the
 /// `dtype_tag_covers_every_data_type` test enforces it.
+///
+/// Tags mirror the wire-format `data_type_tag` table so the cache
+/// key, the on-disk artifact, and the conformance metadata all
+/// agree. Parameterised variants (`Vec`, `TensorShaped`, `Array`,
+/// `Handle`, `Opaque`, `Sparse*`, `DeviceMesh`) hash by their
+/// outer-discriminant tag; consumers that need parameter-aware
+/// keys must extend `SpecValue` rather than collapsing distinct
+/// shapes here.
 fn dtype_tag(dtype: &DataType) -> u32 {
     match dtype {
-        DataType::Bool => 1,
-        DataType::U8 => 2,
-        DataType::U16 => 3,
-        DataType::U32 => 4,
-        DataType::I8 => 5,
-        DataType::I16 => 6,
-        DataType::I32 => 7,
-        DataType::F32 => 8,
-        DataType::Bytes => 9,
+        DataType::U32 => 0x01,
+        DataType::I32 => 0x02,
+        DataType::U64 => 0x03,
+        DataType::Vec2U32 => 0x04,
+        DataType::Vec4U32 => 0x05,
+        DataType::Bool => 0x06,
+        DataType::Bytes => 0x07,
+        DataType::Array { .. } => 0x08,
+        DataType::F16 => 0x09,
+        DataType::BF16 => 0x0A,
+        DataType::F32 => 0x0B,
+        DataType::F64 => 0x0C,
+        DataType::Tensor => 0x0D,
+        DataType::U8 => 0x0E,
+        DataType::U16 => 0x0F,
+        DataType::I8 => 0x10,
+        DataType::I16 => 0x11,
+        DataType::I64 => 0x12,
+        DataType::Handle(_) => 0x13,
+        DataType::Vec { .. } => 0x14,
+        DataType::TensorShaped { .. } => 0x15,
+        DataType::SparseCsr { .. } => 0x16,
+        DataType::SparseCoo { .. } => 0x17,
+        DataType::SparseBsr { .. } => 0x18,
+        DataType::F8E4M3 => 0x19,
+        DataType::F8E5M2 => 0x1A,
+        DataType::I4 => 0x1B,
+        DataType::FP4 => 0x1C,
+        DataType::NF4 => 0x1D,
+        DataType::DeviceMesh { .. } => 0x1E,
+        DataType::Opaque(_) => 0x80,
+        // Truly unknown variant — sentinel collision is a soundness
+        // bug at the spec-cache layer (different DType values would
+        // collapse onto one cache key and serve the wrong shader),
+        // so any future variant MUST get an explicit tag here.
         _ => 0xFFFF_FFFF,
     }
 }
@@ -220,7 +254,17 @@ pub fn versioned_specialization_artifact_key(
 
 fn push_lower_hex(bytes: &[u8], out: &mut String) {
     const HEX: &[u8; 16] = b"0123456789abcdef";
-    out.reserve(bytes.len().saturating_mul(2));
+    let additional = bytes.len().checked_mul(2).unwrap_or_else(|| {
+        panic!(
+            "hex encoding input length {} overflows output capacity. Fix: shard artifact-key material before encoding.",
+            bytes.len()
+        )
+    });
+    out.try_reserve(additional).unwrap_or_else(|error| {
+        panic!(
+            "hex encoding could not reserve {additional} output byte(s): {error}. Fix: shard artifact-key material before encoding."
+        )
+    });
     for &byte in bytes {
         out.push(HEX[(byte >> 4) as usize] as char);
         out.push(HEX[(byte & 0x0f) as usize] as char);
@@ -350,18 +394,55 @@ mod tests {
     #[test]
     fn dtype_tag_covers_every_data_type() {
         // Soundness gate: any new DataType variant must extend dtype_tag
-        // explicitly. The current shipped variants must each return a
-        // unique non-fallback (≠ 0xFFFF_FFFF) tag.
+        // explicitly. Every shipped variant returns a unique non-fallback
+        // (≠ 0xFFFF_FFFF) tag.
         let known = [
+            DataType::U32,
+            DataType::I32,
+            DataType::U64,
+            DataType::Vec2U32,
+            DataType::Vec4U32,
             DataType::Bool,
+            DataType::Bytes,
+            DataType::Array { element_size: 1 },
+            DataType::F16,
+            DataType::BF16,
+            DataType::F32,
+            DataType::F64,
+            DataType::Tensor,
             DataType::U8,
             DataType::U16,
-            DataType::U32,
             DataType::I8,
             DataType::I16,
-            DataType::I32,
-            DataType::F32,
-            DataType::Bytes,
+            DataType::I64,
+            DataType::Handle(vyre_spec::data_type::TypeId(0)),
+            DataType::Vec {
+                element: Box::new(DataType::U32),
+                count: 1,
+            },
+            DataType::TensorShaped {
+                element: Box::new(DataType::U32),
+                shape: smallvec::smallvec![1],
+            },
+            DataType::SparseCsr {
+                element: Box::new(DataType::U32),
+            },
+            DataType::SparseCoo {
+                element: Box::new(DataType::U32),
+            },
+            DataType::SparseBsr {
+                element: Box::new(DataType::U32),
+                block_rows: 1,
+                block_cols: 1,
+            },
+            DataType::F8E4M3,
+            DataType::F8E5M2,
+            DataType::I4,
+            DataType::FP4,
+            DataType::NF4,
+            DataType::DeviceMesh {
+                axes: smallvec::smallvec![1],
+            },
         ];
         let mut tags = std::collections::BTreeSet::new();
         for dtype in known {

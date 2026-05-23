@@ -7,15 +7,25 @@ use super::engine;
 use crate::ir::Program;
 use crate::optimizer::{fingerprint_program, vyre_pass, PassAnalysis, PassResult};
 
-#[vyre_pass(name = "cse", requires = ["canonicalize"], invalidates = ["fusion"])]
+#[vyre_pass(
+    name = "cse",
+    requires = ["canonicalize"],
+    invalidates = ["fusion"],
+    phase = "fusion_cse",
+    boundary_class = "abi_preserving",
+    cost_model_family = "fusion"
+)]
 /// Built-in CSE pass.
 pub struct CsePass;
 
 impl CsePass {
-    /// Run only when the program has at least one expression node.
+    /// Run only when the program has at least one binding the engine
+    /// could fold into a previous one.
     #[must_use]
     fn analyze_impl(program: &Program) -> PassAnalysis {
-        if program.entry().is_empty() {
+        // CSE folds Let bindings that share a key with an earlier Let.
+        // Without any Let in the program there is nothing to dedup.
+        if program.entry().is_empty() || !program.stats().has_node_let() {
             PassAnalysis::SKIP
         } else {
             PassAnalysis::RUN
@@ -31,7 +41,8 @@ impl CsePass {
             changed: fingerprint_program(&optimized) != before,
             program: optimized,
         }
-    }}
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -41,7 +52,10 @@ mod tests {
     #[test]
     fn cse_analyze_skips_empty() {
         let empty = Program::new_raw(vec![], [1, 1, 1], vec![]);
-        assert_eq!(crate::optimizer::ProgramPass::analyze(&CsePass, &empty), PassAnalysis::SKIP);
+        assert_eq!(
+            crate::optimizer::ProgramPass::analyze(&CsePass, &empty),
+            PassAnalysis::SKIP
+        );
     }
 
     #[test]
@@ -86,7 +100,8 @@ mod tests {
         if let Node::Let { value, .. } = &result.program.entry()[1] {
             assert!(
                 matches!(value, Expr::Var(v) if v.as_ref() == "first"),
-                "CSE must merge commutative Add regardless of operand order. Got: {:?}", value
+                "CSE must merge commutative Add regardless of operand order. Got: {:?}",
+                value
             );
         }
     }
@@ -100,7 +115,10 @@ mod tests {
         let n2 = Node::let_bind("x2", Expr::add(a, c));
         let p = Program::new_raw(vec![], [1, 1, 1], vec![n1, n2]);
         let result = CsePass::transform(p);
-        assert!(!result.changed, "CSE must not change program with no common subexpressions");
+        assert!(
+            !result.changed,
+            "CSE must not change program with no common subexpressions"
+        );
         assert_eq!(result.program.entry().len(), 2);
     }
 
@@ -124,7 +142,10 @@ mod tests {
         let outer2 = Node::let_bind("outer", Expr::add(Expr::var("inner"), inner2));
         let p = Program::new_raw(vec![], [1, 1, 1], vec![outer1, outer2]);
         let result = CsePass::transform(p);
-        assert!(result.changed, "CSE must deduplicate nested identical subtrees");
+        assert!(
+            result.changed,
+            "CSE must deduplicate nested identical subtrees"
+        );
         // outer add should reference "inner" for both operands
         if let Node::Let { value, .. } = &result.program.entry()[1] {
             match value {
@@ -148,7 +169,10 @@ mod tests {
         let p = Program::new_raw(vec![], [1, 1, 1], vec![load1, load2]);
         let result = CsePass::transform(p);
         // Load is effectful; CSE must not merge them.
-        assert!(result.changed, "CSE treats Load as pure and merges identical loads of the same buffer");
+        assert!(
+            result.changed,
+            "CSE treats Load as pure and merges identical loads of the same buffer"
+        );
         // Both bindings should remain as Load expressions
         assert_eq!(result.program.entry().len(), 2);
     }
@@ -162,8 +186,11 @@ mod tests {
         let n2 = Node::let_bind("b", heavy);
         let p = Program::new_raw(vec![], [1, 1, 1], vec![n1, n2]);
         let r1 = CsePass::transform(p);
-        let r2 = CsePass::transform(r1.program.clone());
-        assert!(!r2.changed, "CSE must be idempotent — second pass must not change output");
+        let r2 = CsePass::transform(Clone::clone(&r1.program));
+        assert!(
+            !r2.changed,
+            "CSE must be idempotent — second pass must not change output"
+        );
         assert_eq!(
             r1.program.entry().len(),
             r2.program.entry().len(),
@@ -185,8 +212,9 @@ mod tests {
         };
         let p = Program::new_raw(vec![], [1, 1, 1], vec![if_node]);
         let result = CsePass::transform(p);
-        assert!(!result.changed,
-            "CSE must NOT merge expressions across If branches — scoped separately");
+        assert!(
+            !result.changed,
+            "CSE must NOT merge expressions across If branches — scoped separately"
+        );
     }
-
 }

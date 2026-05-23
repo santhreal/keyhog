@@ -74,6 +74,7 @@
 #![allow(clippy::module_inception)]
 
 /// Build a trap-only program for registry fixtures or infallible composition wrappers.
+#[allow(dead_code)]
 pub(crate) fn invalid_program(
     op_id: &'static str,
     message: impl Into<String>,
@@ -96,7 +97,7 @@ pub mod region;
 
 /// Domain-neutral byte-range ordering predicates. Previously lived inside
 /// `vyre-libs::security::topology`; hoisted out so non-security callers
-/// (surgec's `Before`/`After` predicates, future dialects) do not pull the
+/// (a downstream analyzer's `Before`/`After` predicates, future dialects) do not pull the
 /// security dialect through the import graph. See CRITIQUE_VISION_ALIGNMENT_2026-04-23 V5.
 /// Library component.
 /// Library component.
@@ -181,14 +182,32 @@ pub mod logical;
 /// Library component.
 pub mod nn;
 
-/// Pattern-matching dialect — substring, DFA, Aho-Corasick.
+/// Pattern-scanning dialect — substring, DFA, Aho-Corasick, rule
+/// dispatch, secfinding generation. Renamed from `matching` per
+/// ROADMAP T032 (SEPARATION_AUDIT S7) — "scan" reflects the actual
+/// semantic surface (not just substring matching). The original
+/// `matching` name is kept as a deprecated alias for backwards
+/// compatibility.
 #[cfg(any(
     feature = "matching-substring",
     feature = "matching-dfa",
     feature = "matching-nfa"
 ))]
-/// Library component.
-/// Library component.
+pub mod scan;
+
+/// Backwards-compat alias for [`scan`]. New code should use
+/// `vyre_libs::scan::*`. The alias will be removed in a future
+/// breaking release; until then `vyre_libs::scan::Foo` and
+/// `vyre_libs::scan::Foo` resolve to the same item.
+#[cfg(any(
+    feature = "matching-substring",
+    feature = "matching-dfa",
+    feature = "matching-nfa"
+))]
+#[deprecated(
+    since = "0.4.1",
+    note = "use `vyre_libs::scan` instead — the `matching` name is kept as a transition alias only"
+)]
 pub mod matching;
 
 /// Decode / decompression compositions — base64, hex, DEFLATE (stored),
@@ -221,7 +240,7 @@ pub mod representation;
 
 /// GPU parser infrastructure (Phase L3+): bracket matching, DFA
 /// lexer driver, LR(1) table walker. Grammar tables are generated
-/// host-side by `surgec-grammar-gen` and loaded as ReadOnly buffers.
+/// host-side by `downstream analyzer-grammar-gen` and loaded as ReadOnly buffers.
 /// Library component.
 /// Library component.
 pub mod parsing;
@@ -244,10 +263,11 @@ pub use compiler::{
     types_layout::c11_compute_alignments,
 };
 
-/// Security / taint compositions — the surgec-facing op surface.
+/// Security / taint compositions for static program analysis.
 /// Every op registers via `inventory::submit!` and lives under a
 /// stable op id. The implementations compose graph and dataflow
-/// primitives so surgec lowers to one production GPU-facing surface.
+/// primitives so downstream analyzers lower to one production GPU-facing
+/// surface.
 #[cfg(feature = "security")]
 pub mod security;
 
@@ -260,10 +280,9 @@ pub mod security;
 /// Library component.
 pub mod visual;
 
-/// GPU dataflow compositions used by security and compiler frontends.
-/// These are concrete vyre `Program` builders over graph, bitset, and
-/// fixpoint primitives; higher-level consumers can still use `weir`
-/// for rule-level orchestration.
+/// Compatibility facade for GPU dataflow compositions.
+/// This path remains for older `vyre-libs::dataflow::*` consumers and must
+/// not grow a parallel dataflow implementation tree.
 pub mod dataflow;
 
 mod primitive_catalog;
@@ -358,10 +377,6 @@ pub mod prelude {
     pub use crate::hash::fnv1a32;
     #[cfg(feature = "logical")]
     pub use crate::logical::{and, nand, nor, or, xor};
-    #[cfg(feature = "matching-substring")]
-    pub use crate::matching::substring_search;
-    #[cfg(feature = "matching-dfa")]
-    pub use crate::matching::{aho_corasick, dfa_compile, CompiledDfa, DfaCompileError};
     #[cfg(feature = "math-broadcast")]
     pub use crate::math::broadcast;
     #[cfg(feature = "math-scan")]
@@ -384,4 +399,8 @@ pub mod prelude {
     pub use crate::nn::{attention, softmax, Attention, Softmax};
     #[cfg(feature = "nn-norm")]
     pub use crate::nn::{layer_norm, LayerNorm};
+    #[cfg(feature = "matching-substring")]
+    pub use crate::scan::substring_search;
+    #[cfg(feature = "matching-dfa")]
+    pub use crate::scan::{aho_corasick, dfa_compile, CompiledDfa, DfaCompileError};
 }

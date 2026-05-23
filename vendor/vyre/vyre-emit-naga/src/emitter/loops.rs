@@ -11,6 +11,7 @@
 use naga::{
     BinaryOperator, Block, Expression, Literal, LocalVariable, ScalarKind, Span, Statement, Type,
 };
+use rustc_hash::FxHashSet;
 use vyre_lower::{KernelBody, KernelOp};
 
 use super::BodyBuilder;
@@ -52,12 +53,15 @@ impl<'a> BodyBuilder<'a> {
         let new_targets = if let Some(child) = body.child_bodies.get(child_idx as usize) {
             self.collect_loop_carried_ids(body, op, child)
         } else {
-            std::collections::BTreeSet::new()
+            FxHashSet::default()
         };
         // Pre-loop init for any carrier whose id was bound before the
         // loop in the parent's SSA scope: we need to seed the local
         // with that value so iteration 0 reads the pre-loop initialiser.
-        let mut pre_init: Vec<(u32, naga::Handle<Expression>)> = Vec::new();
+        // Pre-size from `new_targets`: at most one (id, handle) per
+        // tracked carrier, so we never resize during the seed scan.
+        let mut pre_init: Vec<(u32, naga::Handle<Expression>)> =
+            Vec::with_capacity(new_targets.len());
         for id in &new_targets {
             self.loop_carrier_targets.insert(*id);
             // Resolve the pre-loop value of `id` in the CURRENT (parent) scope.

@@ -168,6 +168,12 @@ impl ExtensionBinOpId {
     pub const fn as_u32(self) -> u32 {
         self.0
     }
+
+    /// Is this a reserved extension id (high bit set)?
+    #[must_use]
+    pub const fn is_extension(self) -> bool {
+        (self.0 & Self::EXTENSION_RANGE_MASK) != 0
+    }
 }
 
 /// Stable u32 id for an extension unary operator.
@@ -188,6 +194,12 @@ impl ExtensionUnOpId {
     #[must_use]
     pub const fn as_u32(self) -> u32 {
         self.0
+    }
+
+    /// Is this a reserved extension id (high bit set)?
+    #[must_use]
+    pub const fn is_extension(self) -> bool {
+        (self.0 & Self::EXTENSION_RANGE_MASK) != 0
     }
 }
 
@@ -210,6 +222,12 @@ impl ExtensionAtomicOpId {
     pub const fn as_u32(self) -> u32 {
         self.0
     }
+
+    /// Is this a reserved extension id (high bit set)?
+    #[must_use]
+    pub const fn is_extension(self) -> bool {
+        (self.0 & Self::EXTENSION_RANGE_MASK) != 0
+    }
 }
 
 /// Stable u32 id for an extension ternary operator.
@@ -231,6 +249,12 @@ impl ExtensionTernaryOpId {
     pub const fn as_u32(self) -> u32 {
         self.0
     }
+
+    /// Is this a reserved extension id (high bit set)?
+    #[must_use]
+    pub const fn is_extension(self) -> bool {
+        (self.0 & Self::EXTENSION_RANGE_MASK) != 0
+    }
 }
 
 /// Stable u32 id for an extension rule condition.
@@ -251,6 +275,12 @@ impl ExtensionRuleConditionId {
     #[must_use]
     pub const fn as_u32(self) -> u32 {
         self.0
+    }
+
+    /// Is this a reserved extension id (high bit set)?
+    #[must_use]
+    pub const fn is_extension(self) -> bool {
+        (self.0 & Self::EXTENSION_RANGE_MASK) != 0
     }
 }
 

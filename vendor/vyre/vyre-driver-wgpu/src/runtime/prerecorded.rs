@@ -66,7 +66,13 @@ impl PrerecordedDispatch {
                 self.output_handles.len()
             ))
         })?;
-        let mut bytes = Vec::with_capacity(usize::try_from(output.byte_len()).unwrap_or(0));
+        let mut bytes =
+            Vec::with_capacity(usize::try_from(output.byte_len()).map_err(|error| {
+                BackendError::new(format!(
+                    "pre-recorded output byte length {} does not fit usize on this host: {error}. Fix: shard the GPU output before readback.",
+                    output.byte_len()
+                ))
+            })?);
         output.readback(&self.device, &self.queue, &mut bytes)?;
         Ok(bytes)
     }
@@ -107,34 +113,67 @@ impl WgpuPipeline {
     ) -> Result<PrerecordedDispatch, BackendError> {
         let (device, queue) = &*self.device_queue;
         let bound = bind_handles(&self.buffer_bindings, inputs, outputs, params)?;
+        let mut grouped_bound: Vec<SmallVec<[(&BufferBindingInfo, &GpuBufferHandle); 16]>> =
+            Vec::with_capacity(self.bind_group_layouts.len());
+        grouped_bound.resize_with(self.bind_group_layouts.len(), SmallVec::new);
+        for (info, handle) in &bound {
+            let group = usize::try_from(info.group).map_err(|source| {
+                BackendError::new(format!(
+                    "pre-recorded bind group {} cannot fit usize: {source}. Fix: keep group indices representable on this host.",
+                    info.group
+                ))
+            })?;
+            let Some(slot) = grouped_bound.get_mut(group) else {
+                return Err(BackendError::new(format!(
+                    "pre-recorded binding {} (`{}`) targets group {}, but the pipeline only has {} bind-group layouts. Fix: keep reflection metadata synchronized with bind-group layouts.",
+                    info.binding,
+                    info.name,
+                    info.group,
+                    self.bind_group_layouts.len()
+                )));
+            };
+            slot.push((*info, *handle));
+        }
         let mut bind_groups = Vec::with_capacity(self.bind_group_layouts.len());
         for (group_index, layout) in self.bind_group_layouts.iter().enumerate() {
-            let mut handle_ids: SmallVec<[u64; 16]> = SmallVec::new();
-            for (_, handle) in bound
-                .iter()
-                .filter(|(info, _)| info.group == group_index as u32)
-            {
+            let group_bound = &grouped_bound[group_index];
+            let handle_id_capacity = group_bound.len().checked_mul(2).ok_or_else(|| {
+                BackendError::new(
+                    "pre-recorded bind group handle-id count overflowed usize. Fix: split bind-group resources before recording.",
+                )
+            })?;
+            let mut handle_ids: SmallVec<[u64; 16]> = SmallVec::with_capacity(handle_id_capacity);
+            for (_, handle) in group_bound {
                 handle_ids.push(handle.allocation_identity());
-                handle_ids.push(handle.byte_len().max(4).next_multiple_of(4));
+                handle_ids.push(padded_wgpu_u64(
+                    handle.byte_len(),
+                    "pre-recorded bind-group cache key byte length",
+                )?);
             }
             let layout_id = Arc::as_ptr(layout).addr();
             let bg = self
                 .bind_group_cache
                 .get_or_create_by_ids(layout_id, handle_ids, || {
-                    let entries: SmallVec<[wgpu::BindGroupEntry<'_>; 16]> = bound
-                        .iter()
-                        .filter(|(info, _)| info.group == group_index as u32)
-                        .map(|(info, handle)| wgpu::BindGroupEntry {
+                    let mut entries =
+                        SmallVec::<[wgpu::BindGroupEntry<'_>; 16]>::with_capacity(
+                            group_bound.len(),
+                        );
+                    entries.extend(group_bound.iter().map(|(info, handle)| {
+                        wgpu::BindGroupEntry {
                             binding: info.binding,
                             resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
                                 buffer: handle.buffer(),
                                 offset: 0,
                                 size: wgpu::BufferSize::new(
-                                    handle.byte_len().max(4).next_multiple_of(4),
+                                    padded_wgpu_u64(
+                                        handle.byte_len(),
+                                        "pre-recorded bind-group binding size",
+                                    )
+                                    .expect("pre-recorded bind-group size must match checked cache-key size"),
                                 ),
                             }),
-                        })
-                        .collect();
+                        }
+                    }));
                     device.create_bind_group(&wgpu::BindGroupDescriptor {
                         label: Some("vyre pre-recorded persistent bind group"),
                         layout,
@@ -157,7 +196,12 @@ impl WgpuPipeline {
             });
             pass.set_pipeline(&self.pipeline);
             for (i, bg) in bind_groups.iter().enumerate() {
-                pass.set_bind_group(i as u32, bg.as_ref(), &[]);
+                let bind_group_index = u32::try_from(i).map_err(|_| {
+                    BackendError::new(
+                        "pre-recorded bind group index exceeds u32::MAX. Fix: reduce bind group fanout before recording.",
+                    )
+                })?;
+                pass.set_bind_group(bind_group_index, bg.as_ref(), &[]);
             }
             if let Some(indirect) = &self.indirect {
                 let indirect_handle = bound
@@ -176,15 +220,15 @@ impl WgpuPipeline {
             }
         }
 
-        let handles = bound
-            .iter()
-            .map(|(_, handle)| (*handle).clone())
-            .collect::<Vec<_>>();
+        let mut handles = Vec::with_capacity(bound.len());
+        handles.extend(bound.iter().map(|(_, handle)| (*handle).clone()));
+        let mut output_handles = Vec::with_capacity(outputs.len());
+        output_handles.extend(outputs.iter().cloned());
         Ok(PrerecordedDispatch {
             cb: Mutex::new(Some(encoder.finish())),
             bind_groups,
             handles,
-            output_handles: outputs.to_vec(),
+            output_handles,
             device: device.clone(),
             queue: queue.clone(),
         })
@@ -205,6 +249,19 @@ impl WgpuPipeline {
         let (input_handles, output_handles) = self.legacy_handles_from_inputs(inputs)?;
         self.prerecord_persistent_dispatch(&input_handles, &output_handles, None, workgroups)
     }
+}
+
+fn padded_wgpu_u64(size: u64, label: &'static str) -> Result<u64, BackendError> {
+    let normalized = size.max(4);
+    let remainder = normalized % 4;
+    if remainder == 0 {
+        return Ok(normalized);
+    }
+    normalized.checked_add(4 - remainder).ok_or_else(|| {
+        BackendError::new(format!(
+            "{label} overflows u64 while padding to WGPU's 4-byte buffer alignment. Fix: split the pre-recorded dispatch buffer."
+        ))
+    })
 }
 
 fn bind_handles<'a>(

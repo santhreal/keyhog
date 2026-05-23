@@ -239,7 +239,9 @@ impl RewriteProofObligation {
         self.before.collect_vars(&mut vars);
         self.after.collect_vars(&mut vars);
         let mut vars: Vec<_> = vars.into_iter().collect();
-        vars.sort_by(|(left, _), (right, _)| left.cmp(right));
+        // Var names are unique per (collect_vars) — unstable sort is
+        // sufficient and faster than the stable sort.
+        vars.sort_unstable_by(|(left, _), (right, _)| left.cmp(right));
 
         let mut out = String::with_capacity(256 + vars.len() * 48);
         out.push_str("(set-logic QF_BV)\n");
@@ -270,12 +272,19 @@ fn bv_bin(
     kind: fn(Box<ProofExpr>, Box<ProofExpr>) -> ProofExprKind,
 ) -> ProofExpr {
     assert_sort(right.sort, left.sort, op);
-    match left.sort {
-        ProofSort::BitVec(bits) => ProofExpr {
-            sort: ProofSort::BitVec(bits),
+    let ProofSort::BitVec(bits) = left.sort else {
+        assert!(
+            matches!(left.sort, ProofSort::BitVec(_)),
+            "{op} requires bit-vector operands"
+        );
+        return ProofExpr {
+            sort: left.sort,
             kind: kind(Box::new(left), Box::new(right)),
-        },
-        ProofSort::Bool => panic!("{op} requires bit-vector operands"),
+        };
+    };
+    ProofExpr {
+        sort: ProofSort::BitVec(bits),
+        kind: kind(Box::new(left), Box::new(right)),
     }
 }
 
@@ -337,71 +346,5 @@ fn write_nary(out: &mut String, op: &str, values: &[ProofExpr]) {
             }
             out.push(')');
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn emits_add_zero_equivalence_obligation() {
-        let x = ProofExpr::var("x", ProofSort::BitVec(32));
-        let proof = RewriteProofObligation::equivalence(
-            "u32.add_zero_rhs",
-            [],
-            ProofExpr::bvadd(x.clone(), ProofExpr::bv(0, 32)),
-            x,
-        );
-        let smt = proof.to_smt2();
-
-        assert!(smt.contains("(set-logic QF_BV)"));
-        assert!(smt.contains("(declare-fun x () (_ BitVec 32))"));
-        assert!(smt.contains("(assert (not (= (bvadd x (_ bv0 32)) x)))"));
-        assert!(smt.ends_with("(check-sat)\n"));
-    }
-
-    #[test]
-    fn declarations_are_deterministic() {
-        let z = ProofExpr::var("z", ProofSort::BitVec(32));
-        let a = ProofExpr::var("a", ProofSort::BitVec(32));
-        let proof = RewriteProofObligation::equivalence(
-            "deterministic",
-            [],
-            ProofExpr::bvadd(z, ProofExpr::bv(0, 32)),
-            a,
-        );
-        let smt = proof.to_smt2();
-        let a_pos = smt.find("(declare-fun a").unwrap();
-        let z_pos = smt.find("(declare-fun z").unwrap();
-
-        assert!(a_pos < z_pos);
-    }
-
-    #[test]
-    fn preconditions_are_asserted_before_negated_equivalence() {
-        let x = ProofExpr::var("x", ProofSort::BitVec(32));
-        let y = ProofExpr::var("y", ProofSort::BitVec(32));
-        let pre = ProofExpr::eq(y.clone(), ProofExpr::bv(3, 32));
-        let proof = RewriteProofObligation::equivalence(
-            "with_pre",
-            [pre],
-            ProofExpr::bvadd(x.clone(), y),
-            ProofExpr::bvadd(x, ProofExpr::bv(3, 32)),
-        );
-        let smt = proof.to_smt2();
-        let pre_pos = smt.find("(assert (= y (_ bv3 32)))").unwrap();
-        let proof_pos = smt.find("(assert (not").unwrap();
-
-        assert!(pre_pos < proof_pos);
-    }
-
-    #[test]
-    fn escaped_symbols_are_valid_smt_identifiers() {
-        let x = ProofExpr::var("loop index", ProofSort::BitVec(32));
-        let proof = RewriteProofObligation::equivalence("escape", [], x, ProofExpr::bv(0, 32));
-        let smt = proof.to_smt2();
-
-        assert!(smt.contains("(declare-fun |loop index| () (_ BitVec 32))"));
     }
 }

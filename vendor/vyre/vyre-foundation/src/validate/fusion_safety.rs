@@ -115,7 +115,8 @@ fn report_alias_hazards(
             .cloned(),
     );
     // Sort by string content for deterministic error ordering.
-    hazards.sort_by(|a, b| a.as_str().cmp(b.as_str()));
+    // Hazards are deduped immediately below, so unstable is fine.
+    hazards.sort_unstable_by(|a, b| a.as_str().cmp(b.as_str()));
     hazards.dedup();
 
     for buffer in hazards {

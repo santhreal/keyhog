@@ -49,29 +49,35 @@ pub fn functor_apply_cpu(source_row: &[u32], mapping: &[u32], target_size: u32) 
     out
 }
 
-/// Compose two row-major matrices `f[a,b]` and `g[b,c]` on the CPU.
+/// Compose two row-major matrices `first[source_dim,middle_dim]` and
+/// `second[middle_dim,target_dim]` on the CPU.
 ///
-/// Uses i,k,j loop order so the inner loop scans `g[k*c + j]`
+/// Uses row, scan, col loop order so the inner loop scans `second`
 /// sequentially in row-major layout — 2-4× faster than the naive
-/// i,j,k order on matrices that don't fit L1 (the inner loop reads
-/// `g` linearly instead of striding by `c` bytes per iteration).
+/// row, col, scan order on matrices that don't fit L1.
 #[must_use]
-pub fn monoidal_compose_cpu(f: &[f64], g: &[f64], a: u32, b: u32, c: u32) -> Vec<f64> {
-    let a = a as usize;
-    let b = b as usize;
-    let c = c as usize;
-    assert_eq!(f.len(), a * b);
-    assert_eq!(g.len(), b * c);
-    let mut out = vec![0.0; a * c];
-    // i,k,j order: the inner j-loop touches out[i*c+j] and g[k*c+j]
+pub fn monoidal_compose_cpu(
+    first: &[f64],
+    second: &[f64],
+    source_dim: u32,
+    middle_dim: u32,
+    target_dim: u32,
+) -> Vec<f64> {
+    let source_dim = source_dim as usize;
+    let middle_dim = middle_dim as usize;
+    let target_dim = target_dim as usize;
+    assert_eq!(first.len(), source_dim * middle_dim);
+    assert_eq!(second.len(), middle_dim * target_dim);
+    let mut out = vec![0.0; source_dim * target_dim];
+    // row, scan, col order: the inner col-loop touches output and second
     // sequentially — both are consecutive in memory for row-major.
-    for i in 0..a {
-        let out_row = &mut out[i * c..(i + 1) * c];
-        for k in 0..b {
-            let f_ik = f[i * b + k];
-            let g_row = &g[k * c..(k + 1) * c];
-            for j in 0..c {
-                out_row[j] += f_ik * g_row[j];
+    for row in 0..source_dim {
+        let out_row = &mut out[row * target_dim..(row + 1) * target_dim];
+        for scan in 0..middle_dim {
+            let first_value = first[row * middle_dim + scan];
+            let second_row = &second[scan * target_dim..(scan + 1) * target_dim];
+            for col in 0..target_dim {
+                out_row[col] += first_value * second_row[col];
             }
         }
     }
@@ -134,30 +140,36 @@ pub fn matroid_exchange_bfs_step_cpu(
 /// a fused multiply-add per element. For n>64 this is ~1.5× faster
 /// than recomputing `a[i*n+i]` with a branch per row.
 #[must_use]
-pub fn jacobi_smooth_step_cpu(a: &[f64], b: &[f64], x: &[f64], w: f64, n: u32) -> Vec<f64> {
-    let n = n as usize;
+pub fn jacobi_smooth_step_cpu(
+    matrix: &[f64],
+    rhs: &[f64],
+    estimate: &[f64],
+    weight: f64,
+    dimension: u32,
+) -> Vec<f64> {
+    let dimension = dimension as usize;
     // Pre-extract diagonal reciprocals once (O(n) setup, saves O(n²)
     // redundant index arithmetic + branch in the hot loop).
-    let inv_diag: Vec<f64> = (0..n)
-        .map(|i| {
-            let d = a[i * n + i];
-            if d.abs() > 1e-30 {
-                1.0 / d
+    let inv_diag: Vec<f64> = (0..dimension)
+        .map(|row| {
+            let diagonal = matrix[row * dimension + row];
+            if diagonal.abs() > 1e-30 {
+                1.0 / diagonal
             } else {
                 1.0
             }
         })
         .collect();
-    (0..n)
-        .map(|i| {
-            let row = &a[i * n..i * n + n];
-            let residual: f64 = b[i]
+    (0..dimension)
+        .map(|row_idx| {
+            let row = &matrix[row_idx * dimension..row_idx * dimension + dimension];
+            let residual: f64 = rhs[row_idx]
                 - row
                     .iter()
-                    .zip(x.iter())
-                    .map(|(&aij, &xj)| aij * xj)
+                    .zip(estimate.iter())
+                    .map(|(&coefficient, &value)| coefficient * value)
                     .sum::<f64>();
-            x[i] + w * residual * inv_diag[i]
+            estimate[row_idx] + weight * residual * inv_diag[row_idx]
         })
         .collect()
 }

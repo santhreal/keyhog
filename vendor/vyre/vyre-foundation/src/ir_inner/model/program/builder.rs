@@ -50,7 +50,7 @@ impl Program {
     /// # Examples
     ///
     /// ```
-    /// use vyre::ir::{BufferAccess, BufferDecl, DataType, Program};
+    /// use vyre::ir::{BufferAccess, BufferDecl, DataType, Node, Program};
     ///
     /// let program = Program::wrapped(
     ///     vec![BufferDecl::storage(
@@ -104,13 +104,63 @@ impl Program {
             workgroup_size,
             entry: Arc::new(entry),
             hash: OnceLock::new(),
-            validation_set: Arc::new(dashmap::DashSet::new()),
+            validation_set: OnceLock::new(),
             structural_validated: std::sync::atomic::AtomicBool::new(false),
             fingerprint: OnceLock::new(),
             output_buffer_index: OnceLock::new(),
             has_indirect_dispatch: OnceLock::new(),
             stats: OnceLock::new(),
             non_composable_with_self: false,
+        }
+    }
+
+    /// Same as [`Self::with_rewritten_entry`] but wraps the entry first via
+    /// the runnable-Region root contract (matches [`Self::wrapped`]). Use
+    /// from passes that produce a fully fresh entry body but want to reuse
+    /// the existing buffer Arc instead of paying for a full
+    /// [`Self::wrapped`] (which deep-clones buffers, re-interns names, and
+    /// rebuilds the buffer index).
+    #[must_use]
+    #[inline]
+    pub fn with_rewritten_wrapped_entry(&self, entry: Vec<Node>) -> Self {
+        self.with_rewritten_entry(Self::wrap_entry(entry))
+    }
+
+    /// Consume this program and rebuild it with `f` applied to the owned
+    /// entry vec. Reuses the entry Arc when uniquely owned (the common
+    /// case under the optimizer fixpoint) — no deep clone of the entry
+    /// body and no scaffold allocation. Equivalent to:
+    ///
+    /// ```ignore
+    /// let scaffold = program.with_rewritten_entry(Vec::new());
+    /// let entry = f(program.into_entry_vec());
+    /// scaffold.with_rewritten_entry(entry)
+    /// ```
+    ///
+    /// but produces only one new `Program` value instead of two.
+    #[must_use]
+    #[inline]
+    pub fn map_entry<F: FnOnce(Vec<Node>) -> Vec<Node>>(self, f: F) -> Self {
+        let entry_op_id = self.entry_op_id.clone();
+        let buffers = Arc::clone(&self.buffers);
+        let buffer_index = Arc::clone(&self.buffer_index);
+        let workgroup_size = self.workgroup_size;
+        let non_composable_with_self = self.non_composable_with_self;
+        let entry = f(self.into_entry_vec());
+        Self {
+            entry_op_id,
+            buffers,
+            buffer_index,
+            workgroup_size,
+            entry: Arc::new(entry),
+            hash: OnceLock::new(),
+            validation_set: OnceLock::new(),
+            structural_validated: std::sync::atomic::AtomicBool::new(false),
+            fingerprint: OnceLock::new(),
+            output_buffer_index: OnceLock::new(),
+            has_indirect_dispatch: OnceLock::new(),
+            stats: OnceLock::new(),
+            non_composable_with_self,
         }
     }
 
@@ -126,7 +176,7 @@ impl Program {
             workgroup_size: self.workgroup_size,
             entry: Arc::new(entry),
             hash: OnceLock::new(),
-            validation_set: Arc::new(dashmap::DashSet::new()),
+            validation_set: OnceLock::new(),
             structural_validated: std::sync::atomic::AtomicBool::new(false),
             fingerprint: OnceLock::new(),
             output_buffer_index: OnceLock::new(),
@@ -149,7 +199,7 @@ impl Program {
             workgroup_size: self.workgroup_size,
             entry: Arc::clone(&self.entry),
             hash: OnceLock::new(),
-            validation_set: Arc::new(dashmap::DashSet::new()),
+            validation_set: OnceLock::new(),
             structural_validated: std::sync::atomic::AtomicBool::new(false),
             fingerprint: OnceLock::new(),
             output_buffer_index: OnceLock::new(),
@@ -175,7 +225,7 @@ impl Program {
             workgroup_size,
             entry: Arc::new(entry),
             hash: OnceLock::new(),
-            validation_set: Arc::new(dashmap::DashSet::new()),
+            validation_set: OnceLock::new(),
             structural_validated: std::sync::atomic::AtomicBool::new(false),
             fingerprint: OnceLock::new(),
             output_buffer_index: OnceLock::new(),

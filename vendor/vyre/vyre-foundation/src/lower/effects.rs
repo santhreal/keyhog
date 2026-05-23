@@ -25,6 +25,7 @@ pub struct ProgramEffects(u32);
 
 impl ProgramEffects {
     /// Empty row.
+    #[must_use]
     pub const fn empty() -> Self {
         Self(0)
     }
@@ -126,12 +127,11 @@ fn walk_node(node: &Node, effects: &mut ProgramEffects) {
             walk_expr(offset, effects);
             walk_expr(size, effects);
         }
-        Node::AsyncWait { .. } | Node::Resume { .. } => {}
+        Node::AsyncWait { .. } | Node::Resume { .. } | Node::Return | Node::Opaque(_) => {}
         Node::Trap { address, .. } => {
             *effects |= ProgramEffects::TRAP;
             walk_expr(address, effects);
         }
-        Node::Return => {}
         Node::Barrier { .. } => {
             *effects |= ProgramEffects::BARRIER;
         }
@@ -144,11 +144,6 @@ fn walk_node(node: &Node, effects: &mut ProgramEffects) {
             for n in body.iter() {
                 walk_node(n, effects);
             }
-        }
-        Node::Opaque(_) => {
-            // Opaque nodes don't expose structured contents to the
-            // walker; backends are responsible for tagging their own
-            // effect contributions when they lower opaque variants.
         }
     }
 }
@@ -165,7 +160,8 @@ fn walk_expr(expr: &Expr, effects: &mut ProgramEffects) {
         | Expr::LocalId { .. }
         | Expr::SubgroupLocalId
         | Expr::SubgroupSize
-        | Expr::BufLen { .. } => {}
+        | Expr::BufLen { .. }
+        | Expr::Opaque(_) => {}
         Expr::Load { index, .. } => walk_expr(index, effects),
         Expr::BinOp { left, right, .. } => {
             walk_expr(left, effects);
@@ -186,7 +182,7 @@ fn walk_expr(expr: &Expr, effects: &mut ProgramEffects) {
             walk_expr(true_val, effects);
             walk_expr(false_val, effects);
         }
-        Expr::Cast { value, .. } => walk_expr(value, effects),
+        Expr::Cast { value, .. } | Expr::SubgroupAdd { value } => walk_expr(value, effects),
         Expr::Fma { a, b, c } => {
             walk_expr(a, effects);
             walk_expr(b, effects);
@@ -210,8 +206,6 @@ fn walk_expr(expr: &Expr, effects: &mut ProgramEffects) {
             walk_expr(value, effects);
             walk_expr(lane, effects);
         }
-        Expr::SubgroupAdd { value } => walk_expr(value, effects),
-        Expr::Opaque(_) => {}
     }
 }
 

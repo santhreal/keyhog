@@ -154,7 +154,6 @@ inventory::submit! {
             let to_bytes = |w: &[f32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
             vec![vec![
                 to_bytes(&[1.0_f32, 2.0, 3.0, 4.0]), // input
-                vec![0u8; 4],                         // output (single f32)
             ]]
         }),
         expected_output: Some(|| {
@@ -163,6 +162,7 @@ inventory::submit! {
                 to_bytes(&[2.5_f32]), // mean of [1,2,3,4]
             ]]
         }),
+        category: Some("math"),
     }
 }
 

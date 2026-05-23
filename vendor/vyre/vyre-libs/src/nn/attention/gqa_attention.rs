@@ -179,7 +179,18 @@ pub fn gqa_attention(
             let mut v = make_dot_loop("dot");
             v.push(Node::let_bind(
                 "score",
-                Expr::mul(Expr::var("dot"), Expr::f32(scale)),
+                // Clamp ±inf (overflow on large Q/K) to -80 BEFORE the
+                // softmax recurrence so it doesn't become NaN via inf-inf.
+                // Preserve NaN inputs intact — the NaN-input contract
+                // requires those to flow through to the output.
+                {
+                    let raw = Expr::mul(Expr::var("dot"), Expr::f32(scale));
+                    Expr::select(
+                        Expr::is_nan(raw.clone()),
+                        raw.clone(),
+                        finite_or(raw, Expr::f32(-80.0)),
+                    )
+                },
             ));
             v.push(Node::assign(
                 "max_score",
@@ -302,6 +313,7 @@ inventory::submit! {
                 41, 187, 65, 183, 148, 5, 66, 145, 214, 132, 65, 146, 214, 212, 65,
             ]]]
         }),
+        category: Some("nn"),
     }
 }
 
@@ -323,8 +335,8 @@ mod tests {
 
     #[test]
     fn gqa_attention_zero_sequence_length_rejected() {
-        let err = gqa_attention("q", "k", "v", "out", 2, 1, 0, 4)
-            .expect_err("zero seq_len must error");
+        let err =
+            gqa_attention("q", "k", "v", "out", 2, 1, 0, 4).expect_err("zero seq_len must error");
         assert!(err.contains("seq_len=0") || err.contains("non-zero"));
     }
 

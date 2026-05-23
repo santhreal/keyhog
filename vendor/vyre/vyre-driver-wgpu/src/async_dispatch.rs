@@ -31,7 +31,10 @@ impl WgpuPendingDispatch {
         run_prefetch(prefetch);
         let outputs = match kind {
             WgpuPendingKind::Ready(outputs) => outputs,
-            WgpuPendingKind::Readback(pending) => pending.await_result()?,
+            WgpuPendingKind::Readback(pending) => match dispatch_deadline(started, timeout) {
+                Some(deadline) => pending.await_result_until(deadline)?,
+                None => pending.await_result()?,
+            },
         };
         if let Some(deadline) = timeout {
             let elapsed = started.elapsed();
@@ -58,11 +61,13 @@ impl WgpuPendingDispatch {
         run_prefetch(prefetch);
         match kind {
             WgpuPendingKind::Ready(ready) => {
-                outputs.clear();
-                outputs.extend(ready);
+                vyre_driver::backend::replace_output_buffers_preserving_slots(ready, outputs);
                 Ok(())
             }
-            WgpuPendingKind::Readback(pending) => pending.await_into(outputs),
+            WgpuPendingKind::Readback(pending) => match dispatch_deadline(started, timeout) {
+                Some(deadline) => pending.await_into_until(outputs, deadline),
+                None => pending.await_into(outputs),
+            },
         }?;
         if let Some(deadline) = timeout {
             let elapsed = started.elapsed();
@@ -97,7 +102,10 @@ impl WgpuPendingDispatch {
                 }
                 Ok(())
             }
-            WgpuPendingKind::Readback(pending) => pending.await_mapped_outputs(visitor),
+            WgpuPendingKind::Readback(pending) => match dispatch_deadline(started, timeout) {
+                Some(deadline) => pending.await_mapped_outputs_until(visitor, deadline),
+                None => pending.await_mapped_outputs(visitor),
+            },
         }?;
         Self::enforce_timeout(started, timeout)
     }
@@ -126,6 +134,10 @@ impl WgpuPendingDispatch {
     }
 }
 
+fn dispatch_deadline(started: Instant, timeout: Option<Duration>) -> Option<Instant> {
+    timeout.and_then(|duration| started.checked_add(duration))
+}
+
 impl vyre_driver::PendingDispatch for WgpuPendingDispatch {
     fn is_ready(&self) -> bool {
         self.is_ready_inner()
@@ -149,6 +161,20 @@ impl WgpuBackend {
         let started = Instant::now();
         self.enforce_config_caps(config)?;
         self.validate_with_cache(program)?;
+        if vyre_driver::grid_sync::contains_grid_sync(program)
+            && !vyre_driver::VyreBackend::supports_grid_sync(self)
+        {
+            return Ok(WgpuPendingDispatch {
+                kind: WgpuPendingKind::Ready(
+                    vyre_driver::grid_sync::dispatch_with_grid_sync_split(
+                        self, program, inputs, config,
+                    )?,
+                ),
+                started,
+                timeout: config.timeout,
+                prefetch: None,
+            });
+        }
         self.dispatch_borrowed_async_validated(program, inputs, config, started)
     }
 
@@ -159,7 +185,6 @@ impl WgpuBackend {
         config: &vyre_driver::DispatchConfig,
         started: Instant,
     ) -> Result<WgpuPendingDispatch, vyre_driver::BackendError> {
-        self.enforce_config_caps(config)?;
         if program.is_explicit_noop() {
             return Ok(WgpuPendingDispatch {
                 kind: WgpuPendingKind::Ready(Vec::new()),
@@ -169,13 +194,14 @@ impl WgpuBackend {
             });
         }
 
+        let dispatch_arena = self.dispatch_arena_snapshot();
         let pipeline = crate::pipeline::WgpuPipeline::compile_with_device_queue(
             program,
             config,
             self.adapter_info.clone(),
             self.enabled_features,
             self.current_device_queue(),
-            self.dispatch_arena_snapshot(),
+            Arc::clone(&dispatch_arena),
             self.current_persistent_pool(),
             self.pipeline_cache.clone(),
             self.bind_group_layout_cache.clone(),
@@ -192,7 +218,6 @@ impl WgpuBackend {
         }
 
         let workgroup_count = pipeline.workgroups_for_dispatch(config)?;
-        let dispatch_arena = self.dispatch_arena_snapshot();
         let pending = crate::engine::record_and_readback::record_and_submit_async(
             crate::engine::record_and_readback::RecordAndReadback::for_dispatch(
                 &pipeline,
@@ -202,7 +227,6 @@ impl WgpuBackend {
                 config,
                 timestamp_profile_requested(config),
                 crate::engine::record_and_readback::DispatchLabels {
-                    readback: "vyre dispatch_async readback",
                     bind_group: "vyre dispatch_async bind group",
                     encoder: "vyre dispatch_async",
                     compute: "vyre dispatch_async compute",
@@ -274,6 +298,8 @@ impl WgpuBackend {
                 )
             })?;
             history.record(fingerprint);
+            self.predicted_programs
+                .retain(|candidate, _| history.contains(candidate));
             history.predict_next()
         };
 
@@ -296,4 +322,47 @@ pub(crate) fn timestamp_profile_requested(config: &vyre_driver::DispatchConfig) 
         config.profile.as_deref(),
         Some("gpu-timestamps" | "wgpu-timestamps" | "timestamps")
     ) || std::env::var_os("VYRE_WGPU_TIMESTAMPS").is_some()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ready_pending_await_into_preserves_output_slots() {
+        let mut outputs = vec![Vec::with_capacity(16), Vec::with_capacity(16)];
+        outputs[0].extend_from_slice(&[1]);
+        outputs[1].extend_from_slice(&[2]);
+        let outer = outputs.as_ptr();
+        let first_slot = outputs[0].as_ptr();
+        let second_slot = outputs[1].as_ptr();
+
+        let pending = WgpuPendingDispatch {
+            kind: WgpuPendingKind::Ready(vec![vec![9, 9, 9], vec![8, 8]]),
+            started: Instant::now(),
+            timeout: None,
+            prefetch: None,
+        };
+
+        pending
+            .await_into(&mut outputs)
+            .expect("ready pending dispatch should move bytes into caller outputs");
+
+        assert_eq!(outputs, vec![vec![9, 9, 9], vec![8, 8]]);
+        assert_eq!(
+            outputs.as_ptr(),
+            outer,
+            "Fix: ready pending dispatch must preserve caller-owned output vector storage."
+        );
+        assert_eq!(
+            outputs[0].as_ptr(),
+            first_slot,
+            "Fix: ready pending dispatch must reuse output slot 0 allocation."
+        );
+        assert_eq!(
+            outputs[1].as_ptr(),
+            second_slot,
+            "Fix: ready pending dispatch must reuse output slot 1 allocation."
+        );
+    }
 }

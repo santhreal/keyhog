@@ -85,5 +85,6 @@ inventory::submit! {
             let to_bytes = |s: &[u32]| s.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
             vec![vec![to_bytes(&spills), to_bytes(&frame_size)]]
         }),
+        category: Some("compiler"),
     }
 }

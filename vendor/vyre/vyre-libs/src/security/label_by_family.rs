@@ -14,6 +14,11 @@ pub fn label_by_family(
     node_count: u32,
     family_mask: u32,
 ) -> Program {
+    crate::security::assert_security_inputs(
+        OP_ID,
+        node_count,
+        &[("node_tags", node_tags), ("nodeset_out", nodeset_out)],
+    );
     crate::region::tag_program(
         OP_ID,
         resolve_family(node_tags, nodeset_out, node_count, family_mask),
@@ -35,6 +40,7 @@ inventory::submit! {
             let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
             vec![vec![to_bytes(&[0b0110])]]
         }),
+        category: Some("security"),
     }
 }
 
@@ -69,12 +75,11 @@ mod tests {
     fn label_by_family_empty_tags_returns_empty_nodeset() {
         let p = label_by_family("node_tags", "out", 4, 0b0010);
         let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
-        let inputs = vec![
-            to_bytes(&[0, 0, 0, 0]),
-            to_bytes(&[0]),
-        ];
-        let values: Vec<vyre_reference::value::Value> =
-            inputs.into_iter().map(vyre_reference::value::Value::from).collect();
+        let inputs = vec![to_bytes(&[0, 0, 0, 0]), to_bytes(&[0])];
+        let values: Vec<vyre_reference::value::Value> = inputs
+            .into_iter()
+            .map(vyre_reference::value::Value::from)
+            .collect();
         let outputs = vyre_reference::reference_eval(&p, &values).unwrap();
         let out_word = u32::from_le_bytes(outputs[0].to_bytes()[0..4].try_into().unwrap());
         assert_eq!(out_word, 0, "empty node_tags must produce empty nodeset");
@@ -84,12 +89,11 @@ mod tests {
     fn label_by_family_zero_mask_matches_nothing() {
         let p = label_by_family("node_tags", "out", 4, 0);
         let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
-        let inputs = vec![
-            to_bytes(&[0xFF, 0xFF, 0xFF, 0xFF]),
-            to_bytes(&[0]),
-        ];
-        let values: Vec<vyre_reference::value::Value> =
-            inputs.into_iter().map(vyre_reference::value::Value::from).collect();
+        let inputs = vec![to_bytes(&[0xFF, 0xFF, 0xFF, 0xFF]), to_bytes(&[0])];
+        let values: Vec<vyre_reference::value::Value> = inputs
+            .into_iter()
+            .map(vyre_reference::value::Value::from)
+            .collect();
         let outputs = vyre_reference::reference_eval(&p, &values).unwrap();
         let out_word = u32::from_le_bytes(outputs[0].to_bytes()[0..4].try_into().unwrap());
         assert_eq!(out_word, 0, "family_mask = 0 must match nothing");
@@ -99,27 +103,28 @@ mod tests {
     fn label_by_family_universal_mask_matches_all_nonzero() {
         let p = label_by_family("node_tags", "out", 4, 0xFFFFFFFF);
         let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
-        let inputs = vec![
-            to_bytes(&[0x01, 0x02, 0x04, 0x08]),
-            to_bytes(&[0]),
-        ];
-        let values: Vec<vyre_reference::value::Value> =
-            inputs.into_iter().map(vyre_reference::value::Value::from).collect();
+        let inputs = vec![to_bytes(&[0x01, 0x02, 0x04, 0x08]), to_bytes(&[0])];
+        let values: Vec<vyre_reference::value::Value> = inputs
+            .into_iter()
+            .map(vyre_reference::value::Value::from)
+            .collect();
         let outputs = vyre_reference::reference_eval(&p, &values).unwrap();
         let out_word = u32::from_le_bytes(outputs[0].to_bytes()[0..4].try_into().unwrap());
-        assert_eq!(out_word, 0b1111, "family_mask = 0xFFFFFFFF must match all non-zero tags");
+        assert_eq!(
+            out_word, 0b1111,
+            "family_mask = 0xFFFFFFFF must match all non-zero tags"
+        );
     }
 
     #[test]
     fn label_by_family_max_node_count_does_not_panic() {
         let p = label_by_family("node_tags", "out", 32, 0b0001);
         let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
-        let inputs = vec![
-            to_bytes(&[0xFFFFFFFF; 32]),
-            to_bytes(&[0; 1]),
-        ];
-        let values: Vec<vyre_reference::value::Value> =
-            inputs.into_iter().map(vyre_reference::value::Value::from).collect();
+        let inputs = vec![to_bytes(&[0xFFFFFFFF; 32]), to_bytes(&[0; 1])];
+        let values: Vec<vyre_reference::value::Value> = inputs
+            .into_iter()
+            .map(vyre_reference::value::Value::from)
+            .collect();
         let outputs = vyre_reference::reference_eval(&p, &values).unwrap();
         let out_word = u32::from_le_bytes(outputs[0].to_bytes()[0..4].try_into().unwrap());
         assert_eq!(
@@ -131,13 +136,13 @@ mod tests {
     #[test]
     #[should_panic(expected = "node_count must be positive")]
     fn label_by_family_zero_node_count_should_panic() {
-        label_by_family("node_tags", "out", 0, 0xFF);
+        let _ = label_by_family("node_tags", "out", 0, 0xFF);
     }
 
     #[test]
     #[should_panic(expected = "empty buffer name")]
     fn label_by_family_empty_buffer_name_should_panic() {
-        label_by_family("", "out", 4, 0xFF);
+        let _ = label_by_family("", "out", 4, 0xFF);
     }
 
     proptest! {

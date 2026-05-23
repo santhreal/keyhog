@@ -184,3 +184,76 @@ fn derive_use_counts_handles_large_blocks_in_one_pass() {
     let substrate = FactSubstrate::derive(&program);
     assert_eq!(substrate.use_count_of(&Ident::from("x")), 4096);
 }
+
+#[test]
+fn derive_cached_returns_equivalent_facts() {
+    let program = Program::wrapped(
+        vec![BufferDecl::read_write("out", 0, DataType::U32)],
+        [1, 1, 1],
+        vec![
+            Node::let_bind("x", Expr::u32(1)),
+            Node::store("out", Expr::u32(0), Expr::var("x")),
+        ],
+    );
+    let direct = FactSubstrate::derive(&program);
+    let cached = FactSubstrate::derive_cached(&program);
+    let cached_again = FactSubstrate::derive_cached(&program);
+    assert_eq!(direct.use_count_of(&Ident::from("x")), 1);
+    assert_eq!(cached.use_count_of(&Ident::from("x")), 1);
+    assert_eq!(cached_again.use_count_of(&Ident::from("x")), 1);
+    let direct_use_facts = direct
+        .use_facts()
+        .expect("Fix: derive must populate use_facts");
+    let cached_use_facts = cached
+        .use_facts()
+        .expect("Fix: derive_cached must populate use_facts");
+    assert_eq!(
+        direct_use_facts.buffer_writes,
+        cached_use_facts.buffer_writes
+    );
+}
+
+#[test]
+fn derive_use_only_cached_returns_equivalent_facts() {
+    let program = Program::wrapped(
+        vec![BufferDecl::read_write("out", 0, DataType::U32)],
+        [1, 1, 1],
+        vec![
+            Node::let_bind("a", Expr::u32(7)),
+            Node::let_bind("b", Expr::add(Expr::var("a"), Expr::var("a"))),
+            Node::store("out", Expr::u32(0), Expr::var("b")),
+        ],
+    );
+    let direct = FactSubstrate::derive_use_only(&program);
+    let cached = FactSubstrate::derive_use_only_cached(&program);
+    let cached_again = FactSubstrate::derive_use_only_cached(&program);
+    for (s, label) in [
+        (&direct, "direct"),
+        (&cached, "cached"),
+        (&cached_again, "cached_again"),
+    ] {
+        assert_eq!(s.use_count_of(&Ident::from("a")), 2, "{label}");
+        assert_eq!(s.use_count_of(&Ident::from("b")), 1, "{label}");
+    }
+}
+
+#[test]
+fn derive_shape_and_use_cached_keys_on_program_fingerprint() {
+    let program_a = Program::wrapped(
+        vec![BufferDecl::read_write("out", 0, DataType::U32).with_count(4)],
+        [1, 1, 1],
+        vec![Node::store("out", Expr::u32(0), Expr::u32(1))],
+    );
+    let program_b = Program::wrapped(
+        vec![BufferDecl::read_write("out", 0, DataType::U32).with_count(8)],
+        [1, 1, 1],
+        vec![Node::store("out", Expr::u32(0), Expr::u32(1))],
+    );
+    let cached_a = FactSubstrate::derive_shape_and_use_cached(&program_a);
+    let cached_b = FactSubstrate::derive_shape_and_use_cached(&program_b);
+    let cached_a_again = FactSubstrate::derive_shape_and_use_cached(&program_a);
+    assert_eq!(cached_a.fingerprint, program_a.fingerprint());
+    assert_eq!(cached_b.fingerprint, program_b.fingerprint());
+    assert_eq!(cached_a_again.fingerprint, program_a.fingerprint());
+    assert_ne!(cached_a.fingerprint, cached_b.fingerprint);
+}

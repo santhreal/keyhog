@@ -64,6 +64,12 @@ impl RegionPromoteSingletonBlockPass {
     /// Skip programs without any Region wrapping a singleton Block.
     #[must_use]
     fn analyze_impl(program: &Program) -> PassAnalysis {
+        // Need both a Region AND a Block; either missing → no work.
+        use crate::ir::stats::{NODE_KIND_BLOCK, NODE_KIND_REGION};
+        let stats = program.stats();
+        if !stats.has_any_node_kind(NODE_KIND_REGION) || !stats.has_any_node_kind(NODE_KIND_BLOCK) {
+            return PassAnalysis::SKIP;
+        }
         if program
             .entry()
             .iter()
@@ -78,18 +84,16 @@ impl RegionPromoteSingletonBlockPass {
     /// Walk the entry tree and unwrap every singleton-block Region body.
     #[must_use]
     pub fn transform(program: Program) -> PassResult {
-        let scaffold = program.with_rewritten_entry(Vec::new());
         let mut changed = false;
-        let entry = program
-            .into_entry_vec()
-            .into_iter()
-            .map(|n| promote_node(n, &mut changed))
-            .collect();
-        PassResult {
-            program: scaffold.with_rewritten_entry(entry),
-            changed,
-        }
-    }}
+        let program = program.map_entry(|entry| {
+            entry
+                .into_iter()
+                .map(|n| promote_node(n, &mut changed))
+                .collect()
+        });
+        PassResult { program, changed }
+    }
+}
 
 /// Recurse into `node`'s descendants. After recursion, if `node` is a
 /// `Region` whose body is exactly a single `Block`, lift the Block's
@@ -102,27 +106,33 @@ fn promote_node(node: Node, changed: &mut bool) -> Node {
         body,
     } = recursed
     {
+        // Fast path: peek at the shared Arc first. If it isn't a
+        // singleton Block, we never unwrap or clone the body — just
+        // hand the Arc back to a fresh Region. The previous shape
+        // unconditionally unwrapped (or fully cloned) every Region
+        // body even when the rule did not fire, which is the common
+        // case for any program where most Regions wrap multiple
+        // ops.
+        if !matches!(body.as_slice(), [Node::Block(_)]) {
+            return Node::Region {
+                generator,
+                source_region,
+                body,
+            };
+        }
         let body_vec: Vec<Node> = match Arc::try_unwrap(body) {
             Ok(v) => v,
             Err(arc) => (*arc).clone(),
         };
-        if matches!(body_vec.as_slice(), [Node::Block(_)]) {
-            *changed = true;
-            let mut iter = body_vec.into_iter();
-            let inner = match iter.next() {
-                Some(Node::Block(inner)) => inner,
-                _ => unreachable!("matched [Node::Block(_)] above"),
-            };
-            return Node::Region {
-                generator,
-                source_region,
-                body: Arc::new(inner),
-            };
-        }
+        *changed = true;
+        let mut iter = body_vec.into_iter();
+        let Some(Node::Block(inner)) = iter.next() else {
+            unreachable!("matched [Node::Block(_)] above");
+        };
         return Node::Region {
             generator,
             source_region,
-            body: Arc::new(body_vec),
+            body: Arc::new(inner),
         };
     }
     recursed
@@ -339,7 +349,7 @@ mod tests {
         )])])];
         let program = program_with_entry(entry);
         let once = RegionPromoteSingletonBlockPass::transform(program);
-        let twice_program = once.program.clone();
+        let twice_program = Clone::clone(&once.program);
         let twice = RegionPromoteSingletonBlockPass::transform(twice_program);
         assert!(once.changed);
         assert!(!twice.changed, "second run must report no change");
@@ -434,8 +444,10 @@ mod tests {
             Expr::u32(7),
         )])])];
         let program = program_with_entry(entry);
-        let fp1 = crate::optimizer::ProgramPass::fingerprint(&RegionPromoteSingletonBlockPass, &program);
-        let fp2 = crate::optimizer::ProgramPass::fingerprint(&RegionPromoteSingletonBlockPass, &program);
+        let fp1 =
+            crate::optimizer::ProgramPass::fingerprint(&RegionPromoteSingletonBlockPass, &program);
+        let fp2 =
+            crate::optimizer::ProgramPass::fingerprint(&RegionPromoteSingletonBlockPass, &program);
         assert_eq!(fp1, fp2);
     }
 }

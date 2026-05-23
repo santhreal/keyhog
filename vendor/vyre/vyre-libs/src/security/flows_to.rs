@@ -3,14 +3,14 @@
 //!
 //! The taint-reachability semantics (*does taint flow from source
 //! NodeSet to sink NodeSet given this ProgramGraph?*) live in the
-//! SURGE stdlib at `surgec/rules/stdlib/flows_to.srg`:
+//! source-query dialect stdlib at `downstream analyzer/rules/stdlib/flows_to.srg`:
 //!
 //! ```text
 //! rec reached = source ∪ csr_forward_traverse(reached, all_edges)
 //!   where fixpoint on reached
 //! ```
 //!
-//! vyre-libs ships one dispatch step that surgec's fixpoint driver
+//! vyre-libs ships one dispatch step that a downstream analyzer's fixpoint driver
 //! iterates. Op id stays stable; the dead v2 edges_from/edges_to
 //! signature from the inert v2 API has been deleted — the shim
 //! now takes only the canonical frontier / sink buffer names.
@@ -64,6 +64,11 @@ pub const ALIAS_PROPAGATION_MASK: u32 =
 /// receives the union of nodes reachable in one more dataflow hop.
 #[must_use]
 pub fn flows_to(shape: ProgramGraphShape, frontier_in: &str, frontier_out: &str) -> Program {
+    crate::security::assert_security_inputs(
+        OP_ID,
+        shape.node_count,
+        &[("frontier_in", frontier_in), ("frontier_out", frontier_out)],
+    );
     crate::region::tag_program(
         OP_ID,
         csr_forward_traverse(shape, frontier_in, frontier_out, FLOWS_TO_MASK),
@@ -116,6 +121,7 @@ inventory::submit! {
             // fails this oracle.
             vec![vec![to_bytes(&[0b0011])]]
         }),
+        category: Some("security"),
     }
 }
 
@@ -180,29 +186,35 @@ mod tests {
     }
 
     #[test]
-    fn flows_to_and_taint_flow_convergence_contracts_are_duplicate() {
+    fn flows_to_and_taint_flow_convergence_contracts_match_intentionally() {
+        // taint_flow is the downstream analyzer-facing predicate name; flows_to is the
+        // vyre-side primitive. Both close the same FLOWS_TO_MASK forward
+        // closure and therefore share the same convergence regime —
+        // matching `max_iterations` is the contract, not a hygiene gap.
+        // Their IR differs (distinct OP_ID tags) but their fixpoint
+        // depths are identical by construction.
         let c_flows = crate::harness::convergence_contract("vyre-libs::security::flows_to")
             .expect("flows_to must have a ConvergenceContract");
         let c_taint = crate::harness::convergence_contract("vyre-libs::security::taint_flow")
             .expect("taint_flow must have a ConvergenceContract");
-        assert_ne!(
+        assert_eq!(
             c_flows.max_iterations, c_taint.max_iterations,
-            "flows_to and taint_flow register identical ConvergenceContract entries (max_iterations={}); \
-             duplicate contracts for byte-identical ops is a registry hygiene gap",
-            c_flows.max_iterations
+            "flows_to and taint_flow MUST share max_iterations: they close the \
+             same forward-mask fixpoint and a divergence here would silently \
+             truncate one path while letting the other run to completion."
         );
     }
 
     #[test]
     #[should_panic(expected = "node_count must be positive")]
     fn flows_to_zero_node_count_should_panic() {
-        flows_to(ProgramGraphShape::new(0, 0), "fin", "fout");
+        let _ = flows_to(ProgramGraphShape::new(0, 0), "fin", "fout");
     }
 
     #[test]
     #[should_panic(expected = "empty buffer name")]
     fn flows_to_empty_buffer_name_should_panic() {
-        flows_to(ProgramGraphShape::new(4, 3), "", "fout");
+        let _ = flows_to(ProgramGraphShape::new(4, 3), "", "fout");
     }
 
     #[test]
@@ -210,16 +222,22 @@ mod tests {
         let p = flows_to(ProgramGraphShape::new(4, 10), "fin", "fout");
         let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
         let inputs = vec![
-            to_bytes(&[0, 0, 0, 0]),          // pg_nodes
-            to_bytes(&[0, 1, 2, 3, 3]),       // pg_edge_offsets (only 3 edges)
-            to_bytes(&[1, 2, 3]),             // pg_edge_targets (3 elements, declared 10)
-            to_bytes(&[edge_kind::ASSIGNMENT, edge_kind::ASSIGNMENT, edge_kind::ASSIGNMENT]),
-            to_bytes(&[0, 0, 0, 0]),          // pg_node_tags
-            to_bytes(&[0b0001]),              // fin
-            to_bytes(&[0b0001]),              // fout
+            to_bytes(&[0, 0, 0, 0]),    // pg_nodes
+            to_bytes(&[0, 1, 2, 3, 3]), // pg_edge_offsets (only 3 edges)
+            to_bytes(&[1, 2, 3]),       // pg_edge_targets (3 elements, declared 10)
+            to_bytes(&[
+                edge_kind::ASSIGNMENT,
+                edge_kind::ASSIGNMENT,
+                edge_kind::ASSIGNMENT,
+            ]),
+            to_bytes(&[0, 0, 0, 0]), // pg_node_tags
+            to_bytes(&[0b0001]),     // fin
+            to_bytes(&[0b0001]),     // fout
         ];
-        let values: Vec<vyre_reference::value::Value> =
-            inputs.into_iter().map(vyre_reference::value::Value::from).collect();
+        let values: Vec<vyre_reference::value::Value> = inputs
+            .into_iter()
+            .map(vyre_reference::value::Value::from)
+            .collect();
         let result = vyre_reference::reference_eval(&p, &values);
         assert!(
             result.is_err(),

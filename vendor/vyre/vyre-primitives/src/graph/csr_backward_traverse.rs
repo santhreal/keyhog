@@ -176,6 +176,7 @@ pub fn csr_backward_traverse(
 /// is set iff there exists an edge `u → v` with `allow_mask`-matching
 /// kind AND `v` is set in `frontier_in`.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref(
     node_count: u32,
     edge_offsets: &[u32],
@@ -287,14 +288,7 @@ mod tests {
     #[test]
     fn self_loops_only_predecessor_is_self() {
         // 2 nodes, each has self-loop. frontier {0} → out {0}
-        let got = cpu_ref(
-            2,
-            &[0, 1, 2],
-            &[0, 1],
-            &[1, 1],
-            &[0b0001],
-            0xFFFF_FFFF,
-        );
+        let got = cpu_ref(2, &[0, 1, 2], &[0, 1], &[1, 1], &[0b0001], 0xFFFF_FFFF);
         assert_eq!(got, vec![0b0001], "self-loop: predecessor of 0 is 0");
     }
 

@@ -161,8 +161,7 @@ pub fn opt_propagate_type_specifiers(
                 .with_count(tok_count),
             BufferDecl::storage(tok_depths, 1, BufferAccess::ReadOnly, DataType::U32)
                 .with_count(tok_count),
-            BufferDecl::storage(node_out, 2, BufferAccess::ReadWrite, DataType::U32)
-                .with_count(tok_count),
+            BufferDecl::output(node_out, 2, DataType::U32).with_count(tok_count),
         ],
         [256, 1, 1],
         vec![wrap_anonymous(
@@ -230,6 +229,18 @@ fn is_type_specifier(token: Expr) -> Expr {
             TOK_GNU_AUTO_TYPE,
             TOK_GNU_INT128,
             TOK_GNU_BUILTIN_VA_LIST,
+            // C23 / TS 18661-2 scalar types and clang/GCC half-precision.
+            TOK_BITINT_KW,
+            TOK_FLOAT16_KW,
+            TOK_FLOAT32_KW,
+            TOK_FLOAT64_KW,
+            TOK_FLOAT128_KW,
+            TOK_GNU_FLOAT128_KW,
+            TOK_GNU_BF16_KW,
+            TOK_GNU_FP16_KW,
+            TOK_DECIMAL32_KW,
+            TOK_DECIMAL64_KW,
+            TOK_DECIMAL128_KW,
         ],
     )
 }
@@ -349,5 +360,6 @@ inventory::submit! {
             }
             vec![vec![out]]
         }),
+        category: Some("parsing"),
     }
 }

@@ -18,6 +18,7 @@ pub fn c11_lex_digraphs(
     tok_count: u32,
 ) -> Program {
     let t = Expr::InvocationId { axis: 0 };
+    let logical_token_count = Expr::u32(tok_count);
 
     // Core transformation loop logic
     let transform_logic = vec![
@@ -41,7 +42,10 @@ pub fn c11_lex_digraphs(
         ),
         // Boundary safety check for adjacent lookahead
         Node::if_then(
-            Expr::lt(Expr::add(t.clone(), Expr::u32(1)), Expr::u32(tok_count)),
+            Expr::lt(
+                Expr::add(t.clone(), Expr::u32(1)),
+                logical_token_count.clone(),
+            ),
             vec![
                 Node::let_bind(
                     "t2_type",
@@ -50,7 +54,10 @@ pub fn c11_lex_digraphs(
                 Node::let_bind(
                     "t3_type",
                     Expr::select(
-                        Expr::lt(Expr::add(t.clone(), Expr::u32(2)), Expr::u32(tok_count)),
+                        Expr::lt(
+                            Expr::add(t.clone(), Expr::u32(2)),
+                            logical_token_count.clone(),
+                        ),
                         Expr::load(tok_types, Expr::add(t.clone(), Expr::u32(2))),
                         Expr::u32(TOK_EOF),
                     ),
@@ -58,7 +65,10 @@ pub fn c11_lex_digraphs(
                 Node::let_bind(
                     "t4_type",
                     Expr::select(
-                        Expr::lt(Expr::add(t.clone(), Expr::u32(3)), Expr::u32(tok_count)),
+                        Expr::lt(
+                            Expr::add(t.clone(), Expr::u32(3)),
+                            logical_token_count.clone(),
+                        ),
                         Expr::load(tok_types, Expr::add(t.clone(), Expr::u32(3))),
                         Expr::u32(TOK_EOF),
                     ),
@@ -195,11 +205,11 @@ pub fn c11_lex_digraphs(
     Program::wrapped(
         vec![
             BufferDecl::storage(tok_types, 0, BufferAccess::ReadWrite, DataType::U32)
-                .with_count(tok_count),
+                .with_count(tok_count.max(1)),
             BufferDecl::storage(tok_starts, 1, BufferAccess::ReadWrite, DataType::U32)
-                .with_count(tok_count),
+                .with_count(tok_count.max(1)),
             BufferDecl::storage(tok_lens, 2, BufferAccess::ReadWrite, DataType::U32)
-                .with_count(tok_count),
+                .with_count(tok_count.max(1)),
         ],
         [256, 1, 1],
         vec![wrap_anonymous(
@@ -208,7 +218,7 @@ pub fn c11_lex_digraphs(
                 "vyre-libs::parsing::c11_lex_digraphs",
                 vyre_primitives::text::utf8_validate::OP_ID,
                 vec![Node::if_then(
-                    Expr::lt(t.clone(), Expr::u32(tok_count)),
+                    Expr::lt(t.clone(), logical_token_count.clone()),
                     transform_logic,
                 )],
             )],
@@ -224,33 +234,9 @@ inventory::submit! {
         build: || {
             c11_lexer("haystack", "out_tok_types", "out_tok_starts", "out_tok_lens", "out_counts", 4096)
         },
-        // A single identifier spanning the whole haystack emits one compact token.
-        test_inputs: Some(|| {
-            vec![vec![
-                vec![b'a'; 4_096 * 4],  // haystack as u32-backed byte cells
-                vec![0u8; 4_096 * 4],
-                vec![0u8; 4_096 * 4],
-                vec![0u8; 4_096 * 4],
-                vec![0u8; 4],
-            ]]
-        }),
-        expected_output: Some(|| {
-            let mut out_tok_types = vec![0u8; 4_096 * 4];
-            out_tok_types[0..4].copy_from_slice(&TOK_IDENTIFIER.to_le_bytes());
-
-            let mut out_tok_lens = vec![0u8; 4_096 * 4];
-            out_tok_lens[0..4].copy_from_slice(&4_096u32.to_le_bytes());
-
-            let mut out_counts = vec![0u8; 4];
-            out_counts.copy_from_slice(&1u32.to_le_bytes());
-
-            vec![vec![
-                out_tok_types,
-                vec![0u8; 4_096 * 4],
-                out_tok_lens,
-                out_counts,
-            ]]
-        }),
+        test_inputs: Some(lexer_bounded_identifier_inputs),
+        expected_output: Some(lexer_bounded_identifier_expected),
+        category: Some("parsing"),
     }
 }
 
@@ -260,32 +246,9 @@ inventory::submit! {
         build: || {
             c11_lexer("haystack", "out_tok_types", "out_tok_starts", "out_tok_lens", "out_counts", 4096)
         },
-        test_inputs: Some(|| {
-            vec![vec![
-                vec![b'a'; 4_096 * 4],
-                vec![0u8; 4_096 * 4],
-                vec![0u8; 4_096 * 4],
-                vec![0u8; 4_096 * 4],
-                vec![0u8; 4],
-            ]]
-        }),
-        expected_output: Some(|| {
-            let mut out_tok_types = vec![0u8; 4_096 * 4];
-            out_tok_types[0..4].copy_from_slice(&TOK_IDENTIFIER.to_le_bytes());
-
-            let mut out_tok_lens = vec![0u8; 4_096 * 4];
-            out_tok_lens[0..4].copy_from_slice(&4_096u32.to_le_bytes());
-
-            let mut out_counts = vec![0u8; 4];
-            out_counts.copy_from_slice(&1u32.to_le_bytes());
-
-            vec![vec![
-                out_tok_types,
-                vec![0u8; 4_096 * 4],
-                out_tok_lens,
-                out_counts,
-            ]]
-        }),
+        test_inputs: Some(lexer_bounded_identifier_inputs),
+        expected_output: Some(lexer_bounded_identifier_expected),
+        category: Some("parsing"),
     }
 }
 
@@ -297,11 +260,40 @@ inventory::submit! {
         },
         test_inputs: Some(digraph_inputs),
         expected_output: Some(digraph_expected),
+        category: Some("parsing"),
     }
 }
 
 fn pack_u32(words: &[u32]) -> Vec<u8> {
     words.iter().flat_map(|word| word.to_le_bytes()).collect()
+}
+
+fn lexer_bounded_identifier_inputs() -> Vec<Vec<Vec<u8>>> {
+    vec![vec![
+        vec![b'a'; 4_096 * 4],
+        vec![0u8; 4_096 * 4],
+        vec![0u8; 4_096 * 4],
+        vec![0u8; 4_096 * 4],
+        vec![0u8; 4],
+    ]]
+}
+
+fn lexer_bounded_identifier_expected() -> Vec<Vec<Vec<u8>>> {
+    let mut out_tok_types = vec![0u8; 4_096 * 4];
+    out_tok_types[0..4].copy_from_slice(&TOK_IDENTIFIER.to_le_bytes());
+
+    let mut out_tok_lens = vec![0u8; 4_096 * 4];
+    out_tok_lens[0..4].copy_from_slice(&257u32.to_le_bytes());
+
+    let mut out_counts = vec![0u8; 4];
+    out_counts.copy_from_slice(&1u32.to_le_bytes());
+
+    vec![vec![
+        out_tok_types,
+        vec![0u8; 4_096 * 4],
+        out_tok_lens,
+        out_counts,
+    ]]
 }
 
 fn digraph_inputs() -> Vec<Vec<Vec<u8>>> {

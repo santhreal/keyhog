@@ -16,21 +16,41 @@ pub(super) fn fallback_composition_key(prog: &Program) -> String {
 }
 
 /// Upgrade `buffer.access` to the more permissive of the two modes.
-pub(super) fn upgrade_buffer_access(buffer: &mut BufferDecl, other: BufferAccess) {
-    use BufferAccess::*;
+pub(super) fn upgrade_buffer_access(buffer: &mut BufferDecl, other: &BufferAccess) {
     let current = buffer.access();
     buffer.access = match (&current, &other) {
-        (ReadWrite, _) | (_, ReadWrite) => ReadWrite,
-        (Uniform, _) | (_, Uniform) => Uniform,
-        (Workgroup, _) | (_, Workgroup) => Workgroup,
-        _ => ReadOnly,
+        (BufferAccess::ReadWrite, _)
+        | (_, BufferAccess::ReadWrite)
+        | (BufferAccess::WriteOnly, BufferAccess::ReadOnly | BufferAccess::Uniform)
+        | (BufferAccess::ReadOnly | BufferAccess::Uniform, BufferAccess::WriteOnly) => {
+            BufferAccess::ReadWrite
+        }
+        (BufferAccess::WriteOnly, BufferAccess::WriteOnly) => BufferAccess::WriteOnly,
+        (BufferAccess::Uniform, _) | (_, BufferAccess::Uniform) => BufferAccess::Uniform,
+        (BufferAccess::Workgroup, _) | (_, BufferAccess::Workgroup) => BufferAccess::Workgroup,
+        _ => BufferAccess::ReadOnly,
     };
     // Keep kind in sync with the upgraded access.
     buffer.kind = match buffer.access {
-        ReadOnly => crate::ir::MemoryKind::Readonly,
-        ReadWrite => crate::ir::MemoryKind::Global,
-        Uniform => crate::ir::MemoryKind::Uniform,
-        Workgroup => crate::ir::MemoryKind::Shared,
+        BufferAccess::ReadOnly => crate::ir::MemoryKind::Readonly,
+        BufferAccess::Uniform => crate::ir::MemoryKind::Uniform,
+        BufferAccess::Workgroup => crate::ir::MemoryKind::Shared,
         _ => crate::ir::MemoryKind::Global,
     };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ir::DataType;
+
+    #[test]
+    fn upgrade_write_only_read_only_to_read_write() {
+        let mut buffer = BufferDecl::storage("tmp", 0, BufferAccess::WriteOnly, DataType::U32);
+
+        upgrade_buffer_access(&mut buffer, &BufferAccess::ReadOnly);
+
+        assert_eq!(buffer.access(), BufferAccess::ReadWrite);
+        assert_eq!(buffer.kind(), crate::ir::MemoryKind::Global);
+    }
 }

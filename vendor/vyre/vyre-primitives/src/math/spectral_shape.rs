@@ -82,8 +82,21 @@ pub fn mp_upper_edge(m: u32, n: u32, sigma_sq: f64) -> f64 {
 
 /// CPU reference: clip elementwise to the MP edge.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn mp_edge_clip_cpu(eigenvalues: &[f64], edge: f64) -> Vec<f64> {
     eigenvalues.iter().map(|&v| v.min(edge)).collect()
+}
+
+#[cfg(feature = "inventory-registry")]
+inventory::submit! {
+    crate::harness::OpEntry::new(
+        OP_ID,
+        || {
+            mp_edge_clip("a", "b", "out", 4)
+        },
+        None,
+        None,
+    )
 }
 
 #[cfg(test)]

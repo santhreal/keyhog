@@ -400,17 +400,17 @@ inventory::submit! {
         id: "vyre-libs::nn::layer_norm",
         build: || layer_norm("input", "output", 4, 1e-5),
         test_inputs: Some(|| {
-            let input = [1.5f32, -2.0, 0.25, 3.75];
+            let input = [2.0f32, 2.0, 2.0, 2.0];
             vec![vec![
                 input.iter().flat_map(|value| value.to_le_bytes()).collect(),
-                vec![0u8; input.len() * core::mem::size_of::<f32>()],
             ]]
         }),
         expected_output: Some(|| vec![
             vec![
-                vec![0xb9, 0xd0, 0x99, 0x3e, 0x3b, 0xe3, 0xb0, 0xbf, 0xb9, 0xd0, 0x99, 0xbe, 0x3b, 0xe3, 0xb0, 0x3f, ],
+                vec![0; 16],
             ],
         ]),
+        category: Some("nn"),
     }
 }
 

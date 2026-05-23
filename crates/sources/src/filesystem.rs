@@ -425,8 +425,8 @@ fn process_entry(
                         );
                         continue;
                     }
-                    total_uncompressed = total_uncompressed
-                        .saturating_add(archive_entry.uncompressed_size);
+                    total_uncompressed =
+                        total_uncompressed.saturating_add(archive_entry.uncompressed_size);
                     if total_uncompressed > total_budget {
                         tracing::warn!(
                             archive = %path.display(),
@@ -449,8 +449,7 @@ fn process_entry(
                                 },
                             }));
                         } else {
-                            let strings =
-                                crate::strings::extract_printable_strings(&content, 8);
+                            let strings = crate::strings::extract_printable_strings(&content, 8);
                             if !strings.is_empty() {
                                 archive_chunks.push(Ok(Chunk {
                                     data: keyhog_core::SensitiveString::join(&strings, "\n"),
@@ -492,9 +491,7 @@ fn process_entry(
         // between neighbours. Replaces a 64 MiB heap buffer +
         // per-window `seek-back+re-read` round-trip with a single
         // mmap + madvise(SEQUENTIAL).
-        if let Some(windows) =
-            read::read_file_windowed_mmap(&path, window_size, window_overlap)
-        {
+        if let Some(windows) = read::read_file_windowed_mmap(&path, window_size, window_overlap) {
             return windows
                 .into_iter()
                 .map(|w| {
@@ -521,7 +518,9 @@ fn process_entry(
             let mut current_offset = 0;
             let mut buffer = vec![0u8; window_size];
             while let Ok(n) = file.read(&mut buffer) {
-                if n == 0 { break; }
+                if n == 0 {
+                    break;
+                }
                 let data = String::from_utf8_lossy(&buffer[..n]).into_owned();
                 window_chunks.push(Ok(Chunk {
                     data: data.into(),
@@ -534,7 +533,9 @@ fn process_entry(
                         ..Default::default()
                     },
                 }));
-                if n < window_size { break; }
+                if n < window_size {
+                    break;
+                }
                 let _ = file.seek(SeekFrom::Current(-(window_overlap as i64)));
                 current_offset += n - window_overlap;
             }
@@ -555,7 +556,10 @@ fn process_entry(
                 if strings.is_empty() {
                     return vec![];
                 }
-                (keyhog_core::SensitiveString::join(&strings, "\n"), "filesystem:binary-strings")
+                (
+                    keyhog_core::SensitiveString::join(&strings, "\n"),
+                    "filesystem:binary-strings",
+                )
             } else {
                 return vec![];
             }

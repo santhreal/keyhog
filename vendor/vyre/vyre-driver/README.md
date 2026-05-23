@@ -129,7 +129,7 @@ fn compile_with_shadow(
 }
 ```
 
-## Extension guide — adding a new backend
+## Extension guide: adding a new backend
 
 1. Create a concrete driver crate. Depend on `vyre-foundation`,
    `vyre-driver`, and any backend-neutral shared crate needed by the
@@ -139,7 +139,7 @@ fn compile_with_shadow(
    size, and max workgroup extent your hardware supports.
 3. Implement `CompiledPipeline` for your cached pipeline form. It
    MUST be bit-identical to the trait's `dispatch` path.
-4. Register with `inventory::submit!` — the registry picks it up at
+4. Register with `inventory::submit!`: the registry picks it up at
    link time. No `lazy_static`, no initializer function.
 5. Add your backend to the conformance matrix under
    `conform/vyre-conform-runner` so parity against the reference

@@ -138,6 +138,16 @@ impl BindingPlan {
         Self::build_inner(program, InputLengths::Lengths(input_lengths), true)
     }
 
+    /// Verifies backend-resident input byte lengths match this binding plan.
+    ///
+    /// # Errors
+    ///
+    /// Returns when the caller supplies the wrong number of resident inputs or
+    /// an input length violates the buffer declaration captured in this plan.
+    pub fn validate_input_byte_lengths(&self, input_lengths: &[usize]) -> Result<(), BackendError> {
+        self.validate_input_lengths(InputLengths::Lengths(input_lengths))
+    }
+
     /// Verifies dynamic input slices match the expected plan.
     ///
     /// # Errors
@@ -190,14 +200,53 @@ impl BindingPlan {
         input_lens: InputLengths<'_>,
         validate_inputs_now: bool,
     ) -> Result<Self, BackendError> {
-        let mut ordered: SmallVec<[(usize, &BufferDecl); 16]> =
-            program.buffers().iter().enumerate().collect();
+        let mut ordered = SmallVec::<[(usize, &BufferDecl); 16]>::new();
+        ordered.try_reserve(program.buffers().len()).map_err(|error| {
+            BackendError::InvalidProgram {
+                fix: format!(
+                    "Fix: binding-plan construction could not reserve {} ordered buffer slot(s): {error}. Split the program buffers or construct a smaller pipeline.",
+                    program.buffers().len()
+                ),
+            }
+        })?;
+        ordered.extend(program.buffers().iter().enumerate());
         ordered.sort_by_key(|(_, buffer)| buffer.binding());
 
-        let mut bindings = Vec::with_capacity(ordered.len());
+        let mut bindings = Vec::new();
+        bindings
+            .try_reserve_exact(ordered.len())
+            .map_err(|error| BackendError::InvalidProgram {
+                fix: format!(
+                    "Fix: binding-plan construction could not reserve {} binding descriptor(s): {error}. Split the program buffers or construct a smaller pipeline.",
+                    ordered.len()
+                ),
+            })?;
+        let (input_slot_count, output_slot_count, shared_slot_count) =
+            binding_role_counts(&ordered)?;
         let mut input_indices = SmallVec::<[usize; 8]>::new();
         let mut output_indices = SmallVec::<[usize; 8]>::new();
         let mut shared_indices = SmallVec::<[usize; 4]>::new();
+        input_indices.try_reserve(input_slot_count).map_err(|error| {
+            BackendError::InvalidProgram {
+                fix: format!(
+                    "Fix: binding-plan construction could not reserve {input_slot_count} input index slot(s): {error}. Split the program buffers or construct a smaller pipeline."
+                ),
+            }
+        })?;
+        output_indices.try_reserve(output_slot_count).map_err(|error| {
+            BackendError::InvalidProgram {
+                fix: format!(
+                    "Fix: binding-plan construction could not reserve {output_slot_count} output index slot(s): {error}. Split the program buffers or construct a smaller pipeline."
+                ),
+            }
+        })?;
+        shared_indices.try_reserve(shared_slot_count).map_err(|error| {
+            BackendError::InvalidProgram {
+                fix: format!(
+                    "Fix: binding-plan construction could not reserve {shared_slot_count} shared index slot(s): {error}. Split the program buffers or construct a smaller pipeline."
+                ),
+            }
+        })?;
 
         for (buffer_index, buffer) in ordered {
             let role = role_for_buffer(buffer)?;
@@ -271,6 +320,38 @@ impl BindingPlan {
     }
 }
 
+fn binding_role_counts(
+    ordered: &SmallVec<[(usize, &BufferDecl); 16]>,
+) -> Result<(usize, usize, usize), BackendError> {
+    ordered
+        .iter()
+        .try_fold((0usize, 0usize, 0usize), |(inputs, outputs, shared), (_, buffer)| {
+            let role = role_for_buffer(buffer)?;
+            let next_inputs = inputs
+                .checked_add(usize::from(matches!(
+                    role,
+                    BindingRole::Input | BindingRole::InputOutput | BindingRole::Uniform
+                )))
+                .ok_or_else(|| BackendError::InvalidProgram {
+                    fix: "Fix: binding-plan input role count overflowed usize. Split the program buffers before binding-plan construction.".to_string(),
+                })?;
+            let next_outputs = outputs
+                .checked_add(usize::from(
+                    matches!(role, BindingRole::Output | BindingRole::InputOutput)
+                        || buffer.pipeline_live_out,
+                ))
+                .ok_or_else(|| BackendError::InvalidProgram {
+                    fix: "Fix: binding-plan output role count overflowed usize. Split the program buffers before binding-plan construction.".to_string(),
+                })?;
+            let next_shared = shared
+                .checked_add(usize::from(role == BindingRole::Shared))
+                .ok_or_else(|| BackendError::InvalidProgram {
+                    fix: "Fix: binding-plan shared role count overflowed usize. Split the program buffers before binding-plan construction.".to_string(),
+                })?;
+            Ok((next_inputs, next_outputs, next_shared))
+        })
+}
+
 fn role_for_buffer(buffer: &BufferDecl) -> Result<BindingRole, BackendError> {
     if buffer.kind() == MemoryKind::Shared || buffer.access() == BufferAccess::Workgroup {
         return Ok(BindingRole::Shared);
@@ -278,7 +359,8 @@ fn role_for_buffer(buffer: &BufferDecl) -> Result<BindingRole, BackendError> {
     if buffer.kind() == MemoryKind::Persistent {
         return Ok(BindingRole::Persistent);
     }
-    if buffer.is_output {
+    if buffer.is_output || (buffer.pipeline_live_out && buffer.access() == BufferAccess::ReadWrite)
+    {
         return Ok(BindingRole::Output);
     }
 
@@ -632,5 +714,29 @@ mod tests {
         );
         let plan = BindingPlan::build(&program).expect("default alignment should build");
         assert_eq!(plan.bindings[0].preferred_alignment, 4);
+    }
+
+    #[test]
+    fn binding_plan_validates_cached_resident_input_lengths() {
+        let program = Program::wrapped(
+            vec![
+                BufferDecl::read("in", 0, DataType::U32).with_count(4),
+                BufferDecl::output("out", 1, DataType::U32).with_count(4),
+            ],
+            [4, 1, 1],
+            vec![],
+        );
+        let plan = BindingPlan::from_input_lengths(&program, &[16])
+            .expect("resident input length should match the declared u32[4] input");
+
+        plan.validate_input_byte_lengths(&[16])
+            .expect("cached resident plan should accept the same input byte length");
+        let error = plan
+            .validate_input_byte_lengths(&[12])
+            .expect_err("cached resident plan must reject stale pipeline shape reuse");
+        assert!(
+            format!("{error}").contains("expected 16 bytes"),
+            "wrong resident input length must produce an actionable size mismatch: {error}"
+        );
     }
 }

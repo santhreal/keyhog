@@ -6,20 +6,20 @@ use crate::api::metric::{BenchMetrics, MetricPoint};
 use crate::api::suite::SuiteKind;
 use std::collections::BTreeSet;
 use std::time::Instant;
-use vyre::lower::analyses::weir_alias::{AliasFactSet, NoAliasFact};
-use vyre::lower::analyses::weir_reaching_def::{
+use vyre_foundation::ir::DataType;
+use vyre_lower::analyses::alias_facts::{AliasFactSet, NoAliasFact};
+use vyre_lower::analyses::reaching_def_facts::{
     import_descriptor_reaching_defs, ReachingDefFactSet,
 };
-use vyre::lower::rewrites::{
-    dead_store, dead_store_with_weir_alias_facts, licm, licm_with_weir_dataflow_facts,
-    load_forwarding, load_forwarding_with_weir_dataflow_facts, loop_fission,
-    loop_fission_with_weir_alias_facts, loop_fusion, loop_fusion_with_weir_alias_facts,
+use vyre_lower::rewrites::{
+    dead_store, dead_store_with_alias_facts, licm, licm_with_dataflow_facts, load_forwarding,
+    load_forwarding_with_dataflow_facts, loop_fission, loop_fission_with_alias_facts, loop_fusion,
+    loop_fusion_with_alias_facts,
 };
-use vyre::lower::{
+use vyre_lower::{
     BindingLayout, BindingSlot, BindingVisibility, Dispatch, KernelBody, KernelDescriptor,
     KernelOp, KernelOpKind, LiteralValue, MemoryClass,
 };
-use vyre_foundation::ir::DataType;
 
 pub struct AliasAwareOptimizations;
 
@@ -35,10 +35,10 @@ impl BenchCase for AliasAwareOptimizations {
         BenchMetadata {
             id: self.id(),
             name: "Alias-Aware Lower Optimizations".to_string(),
-            description: "Compares conservative descriptor rewrites against Weir fact-aware DSE, STLF, LICM, loop fusion, and loop fission".to_string(),
+            description: "Compares conservative descriptor rewrites against dataflow fact-aware DSE, STLF, LICM, loop fusion, and loop fission".to_string(),
             tags: vec![
                 "lower".to_string(),
-                "weir".to_string(),
+                "dataflow".to_string(),
                 "alias".to_string(),
                 "optimizer".to_string(),
                 "release".to_string(),
@@ -253,7 +253,7 @@ impl BenchCase for AliasAwareOptimizations {
 
         if fact_count == 0 {
             return Err(BenchError::CorrectnessViolation(
-                "alias-aware optimization benchmark imported zero Weir alias facts".to_string(),
+                "alias-aware optimization benchmark imported zero alias facts".to_string(),
             ));
         }
         if cross_binding_fact_count == 0 {
@@ -264,13 +264,12 @@ impl BenchCase for AliasAwareOptimizations {
         }
         if reaching_fact_count == 0 {
             return Err(BenchError::CorrectnessViolation(
-                "alias-aware optimization benchmark imported zero Weir reaching-def facts"
-                    .to_string(),
+                "alias-aware optimization benchmark imported zero reaching-def facts".to_string(),
             ));
         }
         if pass_wins < 5 {
             return Err(BenchError::CorrectnessViolation(format!(
-                "alias-aware optimization benchmark proved only {pass_wins} pass win(s), expected all five pass families"
+                "alias-aware optimization benchmark proved only {pass_wins} pass win(s), expected all five pass families: dse {conservative_dse_stores}->{alias_dse_stores}, stlf value {conservative_stlf_value}->{alias_stlf_value}, licm loop loads {conservative_licm_loads}->{alias_licm_loads}, fusion loops {conservative_fusion_loops}->{alias_fusion_loops}, fission loops {conservative_fission_loops}->{alias_fission_loops}"
             )));
         }
         if alias_total_ops > conservative_total_ops {
@@ -329,6 +328,12 @@ impl PreparedAliasCorpus {
             NoAliasFact {
                 left_binding: 0,
                 left_index: 0,
+                right_binding: 0,
+                right_index: 1,
+            },
+            NoAliasFact {
+                left_binding: 0,
+                left_index: 0,
                 right_binding: 1,
                 right_index: 1,
             },
@@ -354,8 +359,7 @@ impl PreparedAliasCorpus {
         let fission = fission_descriptor();
         let stlf_reaching_facts = import_descriptor_reaching_defs(&stlf);
         let licm_reaching_facts = import_descriptor_reaching_defs(&licm);
-        let reaching_fact_count =
-            (stlf_reaching_facts.len() + licm_reaching_facts.len()) as u64;
+        let reaching_fact_count = (stlf_reaching_facts.len() + licm_reaching_facts.len()) as u64;
         Self {
             dse,
             stlf,
@@ -391,19 +395,19 @@ fn conservative_eval(corpus: &PreparedAliasCorpus) -> EvalSummary {
 }
 
 fn alias_aware_eval(corpus: &PreparedAliasCorpus) -> EvalSummary {
-    let dse = dead_store_with_weir_alias_facts(&corpus.dse, &corpus.alias_facts);
-    let stlf = load_forwarding_with_weir_dataflow_facts(
+    let dse = dead_store_with_alias_facts(&corpus.dse, &corpus.alias_facts);
+    let stlf = load_forwarding_with_dataflow_facts(
         &corpus.stlf,
         &corpus.alias_facts,
         &corpus.stlf_reaching_facts,
     );
-    let licm_out = licm_with_weir_dataflow_facts(
+    let licm_out = licm_with_dataflow_facts(
         &corpus.licm,
         &corpus.alias_facts,
         &corpus.licm_reaching_facts,
     );
-    let fusion = loop_fusion_with_weir_alias_facts(&corpus.fusion, &corpus.alias_facts);
-    let fission = loop_fission_with_weir_alias_facts(&corpus.fission, &corpus.alias_facts);
+    let fusion = loop_fusion_with_alias_facts(&corpus.fusion, &corpus.alias_facts);
+    let fission = loop_fission_with_alias_facts(&corpus.fission, &corpus.alias_facts);
     summarize(&dse, &stlf, &licm_out, &fusion, &fission)
 }
 
@@ -513,10 +517,7 @@ fn count_kind(desc: &KernelDescriptor, predicate: impl Fn(&KernelOpKind) -> bool
     count_body_kind(&desc.body, predicate)
 }
 
-fn count_body_kind(
-    body: &KernelBody,
-    predicate: impl Fn(&KernelOpKind) -> bool + Copy,
-) -> u64 {
+fn count_body_kind(body: &KernelBody, predicate: impl Fn(&KernelOpKind) -> bool + Copy) -> u64 {
     body.ops.iter().filter(|op| predicate(&op.kind)).count() as u64
         + body
             .child_bodies
@@ -596,7 +597,7 @@ fn stlf_descriptor() -> KernelDescriptor {
                 literal_op(0, 2),
                 literal_op(1, 3),
                 store_op(0, 0, 2),
-                store_op(1, 1, 3),
+                store_op(0, 1, 3),
                 KernelOp {
                     kind: KernelOpKind::LoadGlobal,
                     operands: vec![0, 0],
@@ -650,7 +651,12 @@ fn fusion_descriptor() -> KernelDescriptor {
         bindings: rw_binding_layout(),
         dispatch: Dispatch::new(1, 1, 1),
         body: KernelBody {
-            ops: vec![literal_op(0, 0), literal_op(1, 1), loop_op("i", 0), loop_op("i", 1)],
+            ops: vec![
+                literal_op(0, 0),
+                literal_op(1, 1),
+                loop_op("i", 0),
+                loop_op("i", 1),
+            ],
             child_bodies: vec![store_body(0, 10), store_body(1, 11)],
             literals: vec![LiteralValue::U32(0), LiteralValue::U32(8)],
         },

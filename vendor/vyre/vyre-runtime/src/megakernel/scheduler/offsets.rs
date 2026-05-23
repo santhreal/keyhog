@@ -1,17 +1,41 @@
 use super::{priority, PRIORITY_LEVELS, PRIORITY_OFFSETS_BASE};
 use crate::PipelineError;
 
+const PRIORITY_LEVELS_USIZE: usize = 5;
+const PRIORITY_OFFSETS_WITH_SENTINEL: usize = PRIORITY_LEVELS_USIZE + 1;
+
 /// Encode default priority partition offsets for uniform distribution.
 ///
 /// Each priority level gets `total_slots / PRIORITY_LEVELS` slots.
 /// Any remainder goes to the NORMAL partition.
 #[must_use]
 pub fn default_priority_offsets(total_slots: u32) -> Vec<u32> {
-    let mut offsets = Vec::with_capacity(PRIORITY_LEVELS as usize + 1);
+    try_default_priority_offsets(total_slots).unwrap_or_else(|error| {
+        panic!(
+            "default priority offset allocation failed: {error}. Fix: keep priority partition metadata inside host memory budget."
+        )
+    })
+}
+
+/// Encode default priority partition offsets with fallible host staging.
+///
+/// # Errors
+///
+/// Returns [`PipelineError::Backend`] when the host cannot reserve the small
+/// compatibility vector used by legacy callers.
+pub fn try_default_priority_offsets(total_slots: u32) -> Result<Vec<u32>, PipelineError> {
+    let mut offsets = Vec::new();
+    offsets
+        .try_reserve_exact(PRIORITY_OFFSETS_WITH_SENTINEL)
+        .map_err(|source| {
+            PipelineError::Backend(format!(
+                "priority offset vector reservation failed for {PRIORITY_OFFSETS_WITH_SENTINEL} words: {source}. Fix: use default_priority_offsets_array in hot paths or reduce host memory pressure."
+            ))
+        })?;
     for value in default_priority_offsets_array(total_slots) {
         offsets.push(value);
     }
-    offsets
+    Ok(offsets)
 }
 
 /// Encode default priority partition offsets into a fixed array.
@@ -20,27 +44,39 @@ pub fn default_priority_offsets(total_slots: u32) -> Vec<u32> {
 /// this path to avoid allocating the compatibility `Vec` returned by
 /// [`default_priority_offsets`].
 #[must_use]
-pub fn default_priority_offsets_array(total_slots: u32) -> [u32; PRIORITY_LEVELS as usize + 1] {
-    let mut offsets = [0u32; PRIORITY_LEVELS as usize + 1];
+pub fn default_priority_offsets_array(total_slots: u32) -> [u32; PRIORITY_OFFSETS_WITH_SENTINEL] {
+    let mut offsets = [0u32; PRIORITY_OFFSETS_WITH_SENTINEL];
     write_default_priority_offsets_array(total_slots, &mut offsets);
     offsets
 }
 
-fn write_default_priority_offsets_array(total_slots: u32, offsets: &mut [u32; 6]) {
+fn write_default_priority_offsets_array(
+    total_slots: u32,
+    offsets: &mut [u32; PRIORITY_OFFSETS_WITH_SENTINEL],
+) {
     let base_per_pri = total_slots / PRIORITY_LEVELS;
     let remainder = total_slots % PRIORITY_LEVELS;
     let mut cursor = 0u32;
-    for pri in 0..PRIORITY_LEVELS {
-        offsets[pri as usize] = cursor;
+    for pri in 0..PRIORITY_LEVELS_USIZE {
+        offsets[pri] = cursor;
+        let pri_u32 = u32::try_from(pri).unwrap_or_else(|source| {
+            panic!(
+                "priority index cannot fit u32: {source}. Fix: keep priority level count inside the u32 ABI."
+            )
+        });
         let size = base_per_pri
-            + if pri == priority::NORMAL {
+            + if pri_u32 == priority::NORMAL {
                 remainder
             } else {
                 0
             };
-        cursor += size;
+        cursor = cursor.checked_add(size).unwrap_or_else(|| {
+            panic!(
+                "priority partition cursor overflowed u32. Fix: keep total_slots inside the u32 ring ABI."
+            )
+        });
     }
-    offsets[PRIORITY_LEVELS as usize] = cursor;
+    offsets[PRIORITY_LEVELS_USIZE] = cursor;
 }
 
 /// Write default priority partition offsets into an encoded control buffer.
@@ -59,10 +95,15 @@ pub fn write_default_priority_offsets(
             fix: "control buffer byte length is not 4-byte aligned; rebuild it with Megakernel::encode_control",
         });
     }
-    let mut offsets = [0u32; PRIORITY_LEVELS as usize + 1];
+    let mut offsets = [0u32; PRIORITY_OFFSETS_WITH_SENTINEL];
     write_default_priority_offsets_array(total_slots, &mut offsets);
     for (i, value) in offsets.iter().enumerate() {
-        let word_idx = PRIORITY_OFFSETS_BASE as usize + i;
+        let word_idx = priority_offsets_base_usize()?.checked_add(i).ok_or(
+            PipelineError::QueueFull {
+                queue: "submission",
+                fix: "priority-offset control word index overflowed usize; keep control ABI constants bounded",
+            },
+        )?;
         let start = word_idx.checked_mul(4).ok_or(PipelineError::QueueFull {
             queue: "submission",
             fix: "priority-offset byte index overflowed usize; keep control ABI constants bounded",
@@ -78,4 +119,11 @@ pub fn write_default_priority_offsets(
         dst.copy_from_slice(&value.to_le_bytes());
     }
     Ok(())
+}
+
+fn priority_offsets_base_usize() -> Result<usize, PipelineError> {
+    usize::try_from(PRIORITY_OFFSETS_BASE).map_err(|_| PipelineError::QueueFull {
+        queue: "submission",
+        fix: "priority-offset base word cannot fit host usize; keep control ABI constants bounded",
+    })
 }

@@ -65,13 +65,33 @@ pub fn partition_work_stealing(
     items: &[WeightedWorkItem],
 ) -> Result<Vec<Partition>, String> {
     validate_inputs(devices, items)?;
-    let mut partitions = Vec::with_capacity(devices.len());
-    let mut least_loaded = BinaryHeap::with_capacity(devices.len());
+    let mut partitions = Vec::new();
+    partitions.try_reserve_exact(devices.len()).map_err(|error| {
+        format!(
+            "partition table allocation failed for {} GPU devices: {error}. Fix: lower the adapter fanout or memory pressure before scheduling.",
+            devices.len()
+        )
+    })?;
+    let mut least_loaded = BinaryHeap::new();
+    least_loaded.try_reserve_exact(devices.len()).map_err(|error| {
+        format!(
+            "partition heap allocation failed for {} GPU devices: {error}. Fix: lower the adapter fanout or memory pressure before scheduling.",
+            devices.len()
+        )
+    })?;
+    let target_item_capacity = items.len().div_ceil(devices.len());
     for device in devices {
         let partition_index = partitions.len();
+        let mut item_ids = Vec::new();
+        item_ids.try_reserve_exact(target_item_capacity).map_err(|error| {
+            format!(
+                "partition assignment allocation failed for GPU device {} and {} target work slots: {error}. Fix: split the multi-GPU batch.",
+                device.device_index, target_item_capacity
+            )
+        })?;
         partitions.push(Partition {
             device_index: device.device_index,
-            item_ids: Vec::with_capacity(items.len().div_ceil(devices.len())),
+            item_ids,
             total_cost: device.queued_cost,
         });
         least_loaded.push(Reverse(PartitionHeapEntry {
@@ -81,7 +101,13 @@ pub fn partition_work_stealing(
         }));
     }
 
-    let mut ordered = Vec::with_capacity(items.len());
+    let mut ordered = Vec::new();
+    ordered.try_reserve_exact(items.len()).map_err(|error| {
+        format!(
+            "partition work-order allocation failed for {} items: {error}. Fix: split the multi-GPU batch.",
+            items.len()
+        )
+    })?;
     ordered.extend(items.iter());
     ordered.sort_by(|left, right| {
         right
@@ -98,6 +124,7 @@ pub fn partition_work_stealing(
             );
         };
         let partition = &mut partitions[target.partition_index];
+        ensure_vec_spare(&mut partition.item_ids, 1, "partition assignment list")?;
         partition.item_ids.push(item.id);
         partition.total_cost = partition.total_cost.checked_add(item.cost).ok_or_else(|| {
             "partition cost overflow. Fix: split the batch before multi-GPU scheduling.".to_string()
@@ -115,6 +142,12 @@ fn validate_inputs(devices: &[DeviceLoad], items: &[WeightedWorkItem]) -> Result
         );
     }
     let mut seen = rustc_hash::FxHashSet::default();
+    seen.try_reserve(devices.len()).map_err(|error| {
+        format!(
+            "GPU device validation allocation failed for {} devices: {error}. Fix: lower adapter fanout or memory pressure before scheduling.",
+            devices.len()
+        )
+    })?;
     for device in devices {
         if !seen.insert(device.device_index) {
             return Err(format!(
@@ -132,6 +165,12 @@ fn validate_inputs(devices: &[DeviceLoad], items: &[WeightedWorkItem]) -> Result
         }
     }
     let mut seen_items = rustc_hash::FxHashSet::default();
+    seen_items.try_reserve(items.len()).map_err(|error| {
+        format!(
+            "work item validation allocation failed for {} items: {error}. Fix: split the multi-GPU batch.",
+            items.len()
+        )
+    })?;
     for item in items {
         if !seen_items.insert(item.id) {
             return Err(format!(
@@ -141,6 +180,18 @@ fn validate_inputs(devices: &[DeviceLoad], items: &[WeightedWorkItem]) -> Result
         }
     }
     Ok(())
+}
+
+fn ensure_vec_spare<T>(vec: &mut Vec<T>, additional: usize, label: &str) -> Result<(), String> {
+    let spare = vec.capacity().saturating_sub(vec.len());
+    if spare >= additional {
+        return Ok(());
+    }
+    vec.try_reserve_exact(additional - spare).map_err(|error| {
+        format!(
+            "{label} allocation failed while extending by {additional} entries: {error}. Fix: split the multi-GPU batch."
+        )
+    })
 }
 
 #[cfg(test)]
@@ -209,5 +260,24 @@ mod tests {
         let error = partition_work_stealing(&devices, &[WeightedWorkItem { id: 1, cost: 1 }])
             .expect_err("Fix: duplicate synthetic device indices must be rejected");
         assert!(error.contains("duplicate GPU device index"));
+    }
+
+    #[test]
+    fn partition_source_has_no_release_path_infallible_allocation() {
+        let source = include_str!("partition.rs");
+        let production = source
+            .split("#[cfg(test)]")
+            .next()
+            .expect("partition production source must precede tests");
+        assert!(
+            !production.contains("Vec::with_capacity")
+                && !production.contains("BinaryHeap::with_capacity")
+                && !production.contains("with_capacity_and_hasher"),
+            "Fix: WGPU multi-GPU partitioning must report allocation pressure instead of aborting on infallible capacity constructors."
+        );
+        assert!(
+            production.contains("try_reserve_exact") && production.contains("ensure_vec_spare"),
+            "Fix: WGPU multi-GPU partitioning must use fallible allocation for schedule tables and per-device assignments."
+        );
     }
 }

@@ -1,7 +1,7 @@
 //! Span-region dedup primitive.
 //!
-//! Every multimatch consumer (`vyre-libs::matching` engines, keyhog,
-//! surgec) ends up doing the same operation after the GPU dispatch
+//! Every multimatch consumer (`vyre-libs::matching` engines, secret-scanning consumer,
+//! downstream analyzer) ends up doing the same operation after the GPU dispatch
 //! returns: take the raw `Vec<Match>`, collapse adjacent overlapping
 //! or duplicate spans into a representative, return the deduped set.
 //! Each consumer wrote it differently — some by `(detector_id,
@@ -88,6 +88,7 @@ impl PartialOrd for RegionTriple {
 /// `sort_unstable` is `O(n log n)` worst case, `O(n)` on already-
 /// sorted input.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn dedup_regions_cpu(input: Vec<RegionTriple>) -> Vec<RegionTriple> {
     let mut owned = input;
     dedup_regions_inplace(&mut owned);
@@ -203,6 +204,7 @@ pub fn dedup_regions_flag_program(
 /// only want dedup don't need this helper. It exists for parity tests
 /// against the GPU sort and for pipelines that need the sorted-but-
 /// not-yet-deduped view (e.g. when stream_compact runs separately).
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn sort_regions_cpu(input: &mut [RegionTriple]) {
     input.sort();
 }
@@ -235,7 +237,7 @@ pub fn sort_regions_cpu(input: &mut [RegionTriple]) {
 /// This is a single-dispatch O(n²) rank sort, like
 /// [`crate::reduce::radix_sort`]. The algorithm is correct for any
 /// `count`; bench-scale dispatches (up to ~10K matches per scan
-/// window) are the keyhog/surgec target. The multi-dispatch radix
+/// window) are the secret-scanning consumer/downstream analyzer target. The multi-dispatch radix
 /// pipeline can replace this body once pipeline-level scratch is
 /// available — the function signature is stable.
 #[must_use]

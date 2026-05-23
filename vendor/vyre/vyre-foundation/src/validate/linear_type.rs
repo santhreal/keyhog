@@ -19,87 +19,36 @@
 //! Wired into `validate::validate` so backends never see a program
 //! that violates declared discipline.
 
-use crate::ir_inner::model::expr::Expr;
-use crate::ir_inner::model::node::Node;
 use crate::ir_inner::model::program::{BufferDecl, LinearType, Program};
-use crate::transform::visit::{walk_nodes_and_exprs, ExprVisitor, NodeVisitor};
 use crate::validate::{err, ValidationError};
-use rustc_hash::FxHashMap;
 
 /// Walk `program` and return a list of validation errors describing
 /// every buffer whose declared `linear_type` is violated.
 #[must_use]
 pub fn check_linear_types(program: &Program) -> Vec<ValidationError> {
-    let mut counts: FxHashMap<&str, u32> = FxHashMap::default();
-    for buffer in program.buffers() {
-        if buffer.linear_type() != LinearType::Unrestricted {
-            counts.insert(buffer.name(), 0);
-        }
-    }
-    if counts.is_empty() {
+    // Skip the fact derivation when no buffer has a non-default linear type
+    // (the common case — most kernels do not opt into the linearity gate).
+    if program
+        .buffers()
+        .iter()
+        .all(|b| b.linear_type() == LinearType::Unrestricted)
+    {
         return Vec::new();
     }
 
-    struct Counter<'counts, 'program> {
-        counts: &'counts mut FxHashMap<&'program str, u32>,
-    }
-
-    impl Counter<'_, '_> {
-        #[inline]
-        fn bump(&mut self, buffer: &str) {
-            if let Some(count) = self.counts.get_mut(buffer) {
-                *count += 1;
-            }
-        }
-    }
-
-    impl NodeVisitor for Counter<'_, '_> {
-        fn visit_node(&mut self, node: &Node) {
-            match node {
-                Node::Store { buffer, .. } => self.bump(buffer.as_str()),
-                Node::IndirectDispatch { count_buffer, .. } => self.bump(count_buffer.as_str()),
-                Node::AsyncLoad {
-                    source,
-                    destination,
-                    ..
-                }
-                | Node::AsyncStore {
-                    source,
-                    destination,
-                    ..
-                } => {
-                    self.bump(source.as_str());
-                    self.bump(destination.as_str());
-                }
-                _ => {}
-            }
-        }
-    }
-
-    impl ExprVisitor for Counter<'_, '_> {
-        fn visit_expr(&mut self, expr: &Expr) {
-            match expr {
-                Expr::Load { buffer, .. }
-                | Expr::BufLen { buffer }
-                | Expr::Atomic { buffer, .. } => self.bump(buffer.as_str()),
-                _ => {}
-            }
-        }
-    }
-
-    {
-        let mut counter = Counter {
-            counts: &mut counts,
-        };
-        walk_nodes_and_exprs(program, &mut counter);
-    }
+    // ProgramFacts records every buffer touch (Read / Write / Atomic /
+    // AsyncSource / AsyncDestination / IndirectCount) in one cached
+    // single-pass walk. `buffer_refs_of(name).len()` is the same use-count
+    // the dedicated NodeVisitor + ExprVisitor pair built up — no second
+    // full traversal needed.
+    let facts = crate::optimizer::program_soa::ProgramFacts::build_cached(program);
     let mut errors = Vec::new();
     for buffer in program.buffers() {
         let lt = buffer.linear_type();
         if lt == LinearType::Unrestricted {
             continue;
         }
-        let uses = counts.get(buffer.name()).copied().unwrap_or(0);
+        let uses = u32::try_from(facts.buffer_refs_of(buffer.name()).len()).unwrap_or(u32::MAX);
         if let Some(message) = violation_message(buffer, lt, uses) {
             errors.push(err(message));
         }
@@ -110,13 +59,13 @@ pub fn check_linear_types(program: &Program) -> Vec<ValidationError> {
 fn violation_message(buffer: &BufferDecl, lt: LinearType, uses: u32) -> Option<String> {
     match lt {
         LinearType::Linear => {
-            if uses != 1 {
+            if uses == 1 {
+                None
+            } else {
                 Some(format!(
                     "buffer `{}` declared `LinearType::Linear` must be used exactly once but was used {uses} time(s). Fix: ensure the program reads or writes this buffer exactly once on every path, or change the discipline to Affine / Relevant / Unrestricted.",
                     buffer.name()
                 ))
-            } else {
-                None
             }
         }
         LinearType::Affine => {

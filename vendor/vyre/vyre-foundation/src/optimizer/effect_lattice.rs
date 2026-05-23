@@ -14,7 +14,7 @@
 //! gated store), where lifting one op into the other without an explicit
 //! `MemoryOrdering::GridSync` produces a kernel that races on cross-block reads.
 //! That class of bug shipped as the recall-zero-past-block-zero failure on
-//! surgec — silent miscompile, no error message.
+//! downstream consumers — silent miscompile, no error message.
 //!
 //! This module promotes effects into a checked lattice with composition rules.
 //! When a fusion pass asks "may I fuse producer P into consumer C", the
@@ -72,7 +72,7 @@ pub enum AtomicOrdering {
     Release,
     /// Acquire+Release combined.
     AcqRel,
-    /// Sequentially consistent ordering — total order across all SeqCst ops.
+    /// Sequentially consistent ordering — total order across all `SeqCst` ops.
     SeqCst,
 }
 
@@ -84,8 +84,7 @@ impl AtomicOrdering {
         use AtomicOrdering::{AcqRel, Acquire, Release, SeqCst};
         match (self, other) {
             (SeqCst, _) | (_, SeqCst) => SeqCst,
-            (AcqRel, _) | (_, AcqRel) => AcqRel,
-            (Acquire, Release) | (Release, Acquire) => AcqRel,
+            (AcqRel, _) | (_, AcqRel) | (Acquire, Release) | (Release, Acquire) => AcqRel,
             (Acquire, Acquire) => Acquire,
             (Release, Release) => Release,
         }
@@ -137,15 +136,15 @@ pub enum EffectLevel {
 
 impl EffectLevel {
     /// Lift a single-op `SideEffectClass` declaration into the lattice. Used
-    /// when scanning OpDef metadata to derive an op's lattice point.
+    /// when scanning `OpDef` metadata to derive an op's lattice point.
     #[must_use]
     pub fn from_class(class: SideEffectClass) -> Self {
         match class {
             SideEffectClass::Pure => Self::Pure,
             SideEffectClass::ReadsMemory => Self::ReadAtomic,
-            SideEffectClass::WritesMemory => Self::ReadWriteAtomic(AtomicOrdering::SeqCst),
-            SideEffectClass::Synchronizing => Self::Synchronized(SyncScope::Workgroup),
-            SideEffectClass::Atomic => Self::ReadWriteAtomic(AtomicOrdering::SeqCst),
+            SideEffectClass::WritesMemory | SideEffectClass::Atomic => {
+                Self::ReadWriteAtomic(AtomicOrdering::SeqCst)
+            }
             // `SideEffectClass` is #[non_exhaustive]; future variants default
             // to the strongest non-Diverging level so the lattice never
             // silently accepts an unknown class as Pure.
@@ -262,7 +261,7 @@ pub fn compose(producer: EffectLevel, consumer: EffectLevel) -> Result<EffectLev
 #[must_use]
 pub fn program_effect_level(program: &Program) -> EffectLevel {
     let mut acc = EffectLevel::Pure;
-    for node in program.entry().iter() {
+    for node in program.entry() {
         let node_effect = node_effect_level(node);
         acc = lattice_join(acc, node_effect);
     }
@@ -275,7 +274,7 @@ pub fn program_effect_level(program: &Program) -> EffectLevel {
 /// unsound producer→consumer pairs.
 #[must_use]
 pub fn lattice_join(a: EffectLevel, b: EffectLevel) -> EffectLevel {
-    use EffectLevel::*;
+    use EffectLevel::{Diverging, Pure, ReadAtomic, ReadWriteAtomic, Synchronized};
     match (a, b) {
         (Diverging, _) | (_, Diverging) => Diverging,
         (Synchronized(s1), Synchronized(s2)) => Synchronized(s1.join(s2)),
@@ -312,8 +311,7 @@ pub fn node_effect_level(node: &Node) -> EffectLevel {
             }
             join_arms(then.iter().chain(otherwise.iter()))
         }
-        Node::Loop { body, .. } => join_arms(body.iter()),
-        Node::Block(body) => join_arms(body.iter()),
+        Node::Loop { body, .. } | Node::Block(body) => join_arms(body.iter()),
         Node::Region { body, .. } => join_arms(body.iter()),
         Node::IndirectDispatch { .. } => EffectLevel::Synchronized(SyncScope::Grid),
         Node::Trap { .. } | Node::Resume { .. } | Node::Return | Node::Opaque(_) => {
@@ -347,10 +345,6 @@ fn barrier_effect(ordering: crate::memory_model::MemoryOrdering) -> EffectLevel 
     use crate::memory_model::MemoryOrdering;
     match ordering {
         MemoryOrdering::GridSync => EffectLevel::Synchronized(SyncScope::Grid),
-        MemoryOrdering::Acquire => EffectLevel::Synchronized(SyncScope::Workgroup),
-        MemoryOrdering::Release => EffectLevel::Synchronized(SyncScope::Workgroup),
-        MemoryOrdering::AcqRel => EffectLevel::Synchronized(SyncScope::Workgroup),
-        MemoryOrdering::SeqCst => EffectLevel::Synchronized(SyncScope::Workgroup),
         MemoryOrdering::Relaxed => EffectLevel::ReadWriteAtomic(AtomicOrdering::Acquire),
         // Conservative default — an unrecognized ordering is treated as the
         // strongest available.
@@ -369,7 +363,6 @@ fn is_invocation_id_eq_constant(cond: &Expr) -> bool {
             is_invocation_id_expr(left) && matches!(**right, Expr::LitU32(_))
                 || is_invocation_id_expr(right) && matches!(**left, Expr::LitU32(_))
         }
-        Expr::BinOp { .. } => false,
         _ => false,
     }
 }

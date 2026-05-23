@@ -3,20 +3,41 @@
 //! The canonical-form rewrite (literal hoisting on commutative ops,
 //! idempotent) is the load-bearing pre-lowering normalization. Wrapping
 //! it as a `ProgramPass` puts it on the same scheduler / invalidates / requires
-//! substrate as `const_fold` / `fusion` / `dead_buffer_elim` /
-//! `normalize_atomics` / `strength_reduce` / `autotune` / `spec_driven`.
+//! substrate as ``const_fold`` / `fusion` / `dead_buffer_elim` /
+//! `normalize_atomics` / ``strength_reduce`` / `autotune` / `spec_driven`.
 //! The free [`canonicalize_engine::run`] / [`canonicalize_engine::run_borrowed`]
 //! entry points stay available for hot paths (e.g. pipeline fingerprinting)
 //! that need the canonical form without running the full pass scheduler.
 
 use crate::ir::Program;
-use crate::optimizer::{fingerprint_program, vyre_pass, PassResult};
+use crate::optimizer::{fingerprint_program, vyre_pass, PassAnalysis, PassResult};
 
-#[vyre_pass(name = "canonicalize", requires = [], invalidates = ["fusion", "const_fold"], analyze = "always")]
+#[vyre_pass(
+    name = "canonicalize",
+    requires = [],
+    invalidates = ["fusion"],
+    phase = "canonicalization",
+    boundary_class = "abi_preserving",
+    cost_model_family = "scalar"
+)]
 /// Optimizer pass that rewrites `Program` IR into canonical form.
 pub struct Canonicalize;
 
 impl Canonicalize {
+    /// O(1) gate: canonicalization sorts commutative operands inside Expr
+    /// trees. A program with no expression-bearing nodes has nothing to
+    /// canonicalize. Same eight-kind mask used by `const_fold` and
+    /// `strength_reduce`.
+    fn analyze_impl(program: &Program) -> PassAnalysis {
+        if !program
+            .stats()
+            .has_any_node_kind(crate::ir::stats::NODE_KIND_EXPRESSION_BEARING_MASK)
+        {
+            return PassAnalysis::SKIP;
+        }
+        PassAnalysis::RUN
+    }
+
     /// Run the canonical-form rewrite on `program`.
     pub fn transform(program: Program) -> PassResult {
         let before_fingerprint = fingerprint_program(&program);
@@ -27,12 +48,22 @@ impl Canonicalize {
             program: canonical,
             changed,
         }
-    }}
+    }
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::ir::{BufferDecl, DataType, Expr, Node, Program};
+
+    #[test]
+    fn analyze_skips_program_with_no_expression_bearing_nodes() {
+        let program = Program::wrapped(Vec::new(), [1, 1, 1], vec![Node::Return]);
+        match crate::optimizer::ProgramPass::analyze(&Canonicalize, &program) {
+            PassAnalysis::SKIP => {}
+            other => panic!("expected SKIP for expression-free program, got {other:?}"),
+        }
+    }
 
     #[test]
     fn canonicalize_pass_runs_idempotently() {

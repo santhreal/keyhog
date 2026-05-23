@@ -109,7 +109,7 @@ pub enum ShapePredicate {
 impl ShapePredicate {
     /// Evaluate the predicate against a concrete `count`. Returns
     /// `true` when the predicate holds. P-1.0-V3.2 uses this from
-    /// the validate() pass; P-1.0-V3.3 calls it from optimizer
+    /// the `validate()` pass; P-1.0-V3.3 calls it from optimizer
     /// passes that need a yes/no proof.
     #[must_use]
     pub fn holds(&self, count: u32) -> bool {
@@ -206,7 +206,7 @@ pub struct BufferDecl {
     /// When true, admits `DataType::Bytes` load/store despite V013.
     ///
     /// Bytes-producing or bytes-extraction ops (decode.base64,
-    /// compression.lz4_decompress, match.dfa_scan position emission, etc.)
+    /// `compression.lz4_decompress`, `match.dfa_scan` position emission, etc.)
     /// opt into V013 relaxation per-buffer. Default false keeps scalar
     /// arithmetic protected from accidental bytes-blob reinterpretation.
     pub bytes_extraction: bool,
@@ -227,7 +227,7 @@ pub struct BufferDecl {
     /// [`BufferDecl::with_shape_predicate`]. The validator
     /// ([`crate::validate::shape_predicate::check_shape_predicates`])
     /// evaluates each predicate against the program's static `count`
-    /// at validate() time and rejects programs whose static shape
+    /// at `validate()` time and rejects programs whose static shape
     /// contradicts the declaration.
     pub shape_predicate: Option<ShapePredicate>,
 }
@@ -246,7 +246,6 @@ impl BufferDecl {
     pub fn storage(name: &str, binding: u32, access: BufferAccess, element: DataType) -> Self {
         let kind = match &access {
             BufferAccess::ReadOnly => MemoryKind::Readonly,
-            BufferAccess::ReadWrite => MemoryKind::Global,
             BufferAccess::Uniform => MemoryKind::Uniform,
             BufferAccess::Workgroup => MemoryKind::Shared,
             _ => MemoryKind::Global,

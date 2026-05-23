@@ -3,10 +3,10 @@ use super::*;
 pub(super) fn extend(
     out: &mut Vec<Node>,
     vast_nodes: &str,
-    out_typed_vast_nodes: &str,
-    num_nodes: Expr,
+    _out_typed_vast_nodes: &str,
+    _num_nodes: Expr,
     t: Expr,
-    base: Expr,
+    _base: Expr,
 ) {
     out.extend(vec![
         Node::let_bind(
@@ -94,7 +94,10 @@ pub(super) fn extend(
             "prev_sibling_is_attribute_lparen",
             Expr::and(
                 Expr::eq(Expr::var("prev_sibling_kind"), Expr::u32(TOK_LPAREN)),
-                Expr::eq(Expr::var("prev_prev_sibling_kind"), Expr::u32(TOK_GNU_ATTRIBUTE)),
+                Expr::eq(
+                    Expr::var("prev_prev_sibling_kind"),
+                    Expr::u32(TOK_GNU_ATTRIBUTE),
+                ),
             ),
         ),
         Node::let_bind(

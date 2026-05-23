@@ -13,7 +13,8 @@
 //! invariant intact while still removing pure loop-invariant work from
 //! hot loop bodies.
 
-use std::collections::{BTreeMap, BTreeSet};
+use rustc_hash::FxHashSet;
+use std::collections::BTreeMap;
 
 use crate::{BindingVisibility, KernelBody, KernelDescriptor, KernelOp, KernelOpKind};
 
@@ -27,30 +28,30 @@ use crate::{BindingVisibility, KernelBody, KernelDescriptor, KernelOp, KernelOpK
 /// the parent body's literal pool.
 #[must_use]
 pub fn licm(desc: &KernelDescriptor) -> KernelDescriptor {
-    licm_with_dataflow_facts(desc, None, None)
+    licm_with_optional_dataflow_facts(desc, None, None)
 }
 
 #[must_use]
-pub fn licm_with_weir_alias_facts(
+pub fn licm_with_alias_facts(
     desc: &KernelDescriptor,
-    alias_facts: &crate::analyses::weir_alias::AliasFactSet,
+    alias_facts: &crate::analyses::alias_facts::AliasFactSet,
 ) -> KernelDescriptor {
-    licm_with_dataflow_facts(desc, Some(alias_facts), None)
+    licm_with_optional_dataflow_facts(desc, Some(alias_facts), None)
 }
 
 #[must_use]
-pub fn licm_with_weir_dataflow_facts(
+pub fn licm_with_dataflow_facts(
     desc: &KernelDescriptor,
-    alias_facts: &crate::analyses::weir_alias::AliasFactSet,
-    reaching_defs: &crate::analyses::weir_reaching_def::ReachingDefFactSet,
+    alias_facts: &crate::analyses::alias_facts::AliasFactSet,
+    reaching_defs: &crate::analyses::reaching_def_facts::ReachingDefFactSet,
 ) -> KernelDescriptor {
-    licm_with_dataflow_facts(desc, Some(alias_facts), Some(reaching_defs))
+    licm_with_optional_dataflow_facts(desc, Some(alias_facts), Some(reaching_defs))
 }
 
-fn licm_with_dataflow_facts(
+fn licm_with_optional_dataflow_facts(
     desc: &KernelDescriptor,
-    alias_facts: Option<&crate::analyses::weir_alias::AliasFactSet>,
-    reaching_defs: Option<&crate::analyses::weir_reaching_def::ReachingDefFactSet>,
+    alias_facts: Option<&crate::analyses::alias_facts::AliasFactSet>,
+    reaching_defs: Option<&crate::analyses::reaching_def_facts::ReachingDefFactSet>,
 ) -> KernelDescriptor {
     let mut out = desc.clone();
     let read_only_bindings = desc
@@ -59,7 +60,7 @@ fn licm_with_dataflow_facts(
         .iter()
         .filter(|slot| matches!(slot.visibility, BindingVisibility::ReadOnly))
         .map(|slot| slot.slot)
-        .collect::<BTreeSet<_>>();
+        .collect::<FxHashSet<_>>();
     // Compute the global next-free-id ONCE from the entire descriptor
     // and thread it through every recursive `licm_body` call. Without
     // this, each recursive call computed its own `next_free_id` from
@@ -103,9 +104,9 @@ fn max_result_id(body: &KernelBody) -> Option<u32> {
 fn licm_body(
     body: &KernelBody,
     next_free_id: &mut u32,
-    read_only_bindings: &BTreeSet<u32>,
-    alias_facts: Option<&crate::analyses::weir_alias::AliasFactSet>,
-    reaching_defs: Option<&crate::analyses::weir_reaching_def::ReachingDefFactSet>,
+    read_only_bindings: &FxHashSet<u32>,
+    alias_facts: Option<&crate::analyses::alias_facts::AliasFactSet>,
+    reaching_defs: Option<&crate::analyses::reaching_def_facts::ReachingDefFactSet>,
 ) -> KernelBody {
     let mut new_ops = Vec::with_capacity(body.ops.len());
     let mut new_children = body.child_bodies.clone();
@@ -194,14 +195,13 @@ fn licm_body(
                         // 3. Recurse into the remaining body, then remap
                         //    any references to the old hoisted ids so the
                         //    child body still points at the parent results.
-                        let recursed =
-                            licm_body(
-                                &remaining,
-                                next_free_id,
-                                read_only_bindings,
-                                alias_facts,
-                                reaching_defs,
-                            );
+                        let recursed = licm_body(
+                            &remaining,
+                            next_free_id,
+                            read_only_bindings,
+                            alias_facts,
+                            reaching_defs,
+                        );
                         let remapped = remap_body_ids(&recursed, &id_map);
 
                         new_children[body_idx as usize] = remapped;
@@ -221,14 +221,13 @@ fn licm_body(
                         continue;
                     }
                     // No invariants to hoist — just recurse into child.
-                    let recursed =
-                        licm_body(
-                            &remaining,
-                            next_free_id,
-                            read_only_bindings,
-                            alias_facts,
-                            reaching_defs,
-                        );
+                    let recursed = licm_body(
+                        &remaining,
+                        next_free_id,
+                        read_only_bindings,
+                        alias_facts,
+                        reaching_defs,
+                    );
                     new_children[body_idx as usize] = recursed;
                     new_ops.push(op.clone());
                     continue;
@@ -243,14 +242,13 @@ fn licm_body(
             | KernelOpKind::Region { .. } => {
                 for child_id in op.operands.iter() {
                     if let Some(child) = body.child_bodies.get(*child_id as usize) {
-                        let recursed =
-                            licm_body(
-                                child,
-                                next_free_id,
-                                read_only_bindings,
-                                alias_facts,
-                                reaching_defs,
-                            );
+                        let recursed = licm_body(
+                            child,
+                            next_free_id,
+                            read_only_bindings,
+                            alias_facts,
+                            reaching_defs,
+                        );
                         new_children[*child_id as usize] = recursed;
                     }
                 }
@@ -341,9 +339,9 @@ fn remap_body_ids(body: &KernelBody, id_map: &BTreeMap<u32, u32>) -> KernelBody 
 /// the body, and have no side effects.
 fn hoist_invariants(
     body: &KernelBody,
-    read_only_bindings: &BTreeSet<u32>,
-    alias_facts: Option<&crate::analyses::weir_alias::AliasFactSet>,
-    reaching_defs: Option<&crate::analyses::weir_reaching_def::ReachingDefFactSet>,
+    read_only_bindings: &FxHashSet<u32>,
+    alias_facts: Option<&crate::analyses::alias_facts::AliasFactSet>,
+    reaching_defs: Option<&crate::analyses::reaching_def_facts::ReachingDefFactSet>,
 ) -> (Vec<KernelOp>, KernelBody) {
     // Phase-1 conservative rule: an op is loop-dependent if any of its
     // result-id-position operands references a result-id produced
@@ -355,7 +353,7 @@ fn hoist_invariants(
     // after a StructuredIfThen) would dangle the reference outside the
     // loop. Top-level straight-line ids are handled by `dependent_ids`
     // below so invariant chains can hoist as a batch.
-    fn collect_descendant_ids(body: &KernelBody, out: &mut BTreeSet<u32>) {
+    fn collect_descendant_ids(body: &KernelBody, out: &mut FxHashSet<u32>) {
         for child in &body.child_bodies {
             for op in &child.ops {
                 for r in op.result_ids() {
@@ -365,9 +363,9 @@ fn hoist_invariants(
             collect_descendant_ids(child, out);
         }
     }
-    let mut descendant_ids: BTreeSet<u32> = BTreeSet::new();
+    let mut descendant_ids: FxHashSet<u32> = FxHashSet::default();
     collect_descendant_ids(body, &mut descendant_ids);
-    let mut dependent_ids = BTreeSet::<u32>::new();
+    let mut dependent_ids = FxHashSet::<u32>::default();
 
     let mut invariants = Vec::new();
     let mut remaining_ops = Vec::new();
@@ -406,9 +404,9 @@ fn hoist_invariants(
 fn is_hoistable(
     op: &KernelOp,
     body: &KernelBody,
-    read_only_bindings: &BTreeSet<u32>,
-    alias_facts: Option<&crate::analyses::weir_alias::AliasFactSet>,
-    reaching_defs: Option<&crate::analyses::weir_reaching_def::ReachingDefFactSet>,
+    read_only_bindings: &FxHashSet<u32>,
+    alias_facts: Option<&crate::analyses::alias_facts::AliasFactSet>,
+    reaching_defs: Option<&crate::analyses::reaching_def_facts::ReachingDefFactSet>,
 ) -> bool {
     if is_pure(&op.kind) {
         return true;
@@ -425,19 +423,26 @@ fn is_hoistable(
 fn load_is_loop_invariant_memory(
     load: &KernelOp,
     body: &KernelBody,
-    read_only_bindings: &BTreeSet<u32>,
-    alias_facts: Option<&crate::analyses::weir_alias::AliasFactSet>,
-    reaching_defs: Option<&crate::analyses::weir_reaching_def::ReachingDefFactSet>,
+    read_only_bindings: &FxHashSet<u32>,
+    alias_facts: Option<&crate::analyses::alias_facts::AliasFactSet>,
+    reaching_defs: Option<&crate::analyses::reaching_def_facts::ReachingDefFactSet>,
 ) -> bool {
     if !body.child_bodies.is_empty() || load.operands.len() < 2 {
         return false;
     }
     let load_slot = load.operands[0];
     let load_index = resolve(load.operands[1], reaching_defs);
-    if matches!(load.kind, KernelOpKind::LoadGlobal)
-        && (!read_only_bindings.contains(&load_slot) || alias_facts.is_none())
-    {
-        return false;
+    if matches!(load.kind, KernelOpKind::LoadGlobal) {
+        let is_read_only = read_only_bindings.contains(&load_slot);
+        let has_alias_facts = alias_facts.is_some();
+        let has_reaching_defs = reaching_defs.is_some();
+        // Conservative path: read-only slot + alias facts → safe.
+        // Dataflow path: reaching-defs + alias facts → safe
+        // (Weir can prove non-aliasing even on ReadWrite slots).
+        // Otherwise: reject the hoist.
+        if !(is_read_only && has_alias_facts) && !(has_reaching_defs && has_alias_facts) {
+            return false;
+        }
     }
     body.ops.iter().all(|candidate| {
         let writes_same_space = matches!(
@@ -475,19 +480,18 @@ fn memory_accesses_may_alias(
     load_index: u32,
     store_slot: u32,
     store_index: u32,
-    alias_facts: Option<&crate::analyses::weir_alias::AliasFactSet>,
+    alias_facts: Option<&crate::analyses::alias_facts::AliasFactSet>,
 ) -> bool {
     if load_slot == store_slot && load_index == store_index {
         return true;
     }
-    !alias_facts.is_some_and(|facts| {
-        facts.proves_no_alias(load_slot, load_index, store_slot, store_index)
-    })
+    !alias_facts
+        .is_some_and(|facts| facts.proves_no_alias(load_slot, load_index, store_slot, store_index))
 }
 
 fn resolve(
     id: u32,
-    reaching_defs: Option<&crate::analyses::weir_reaching_def::ReachingDefFactSet>,
+    reaching_defs: Option<&crate::analyses::reaching_def_facts::ReachingDefFactSet>,
 ) -> u32 {
     let Some(facts) = reaching_defs else {
         return id;
@@ -849,8 +853,8 @@ mod tests {
                 literals: vec![LiteralValue::U32(0), LiteralValue::U32(8)],
             },
         };
-        let facts = crate::analyses::weir_alias::AliasFactSet::default();
-        let out = licm_with_weir_alias_facts(&desc, &facts);
+        let facts = crate::analyses::alias_facts::AliasFactSet::default();
+        let out = licm_with_alias_facts(&desc, &facts);
         let loop_body = &out.body.child_bodies[0];
         assert!(
             !loop_body
@@ -862,7 +866,7 @@ mod tests {
     }
 
     #[test]
-    fn different_binding_store_blocks_licm_load_hoist_without_weir_no_alias_fact() {
+    fn different_binding_store_blocks_licm_load_hoist_without_external_no_alias_fact() {
         use crate::{BindingSlot, BindingVisibility, MemoryClass};
         use vyre_foundation::ir::DataType;
         let desc = KernelDescriptor {
@@ -937,14 +941,14 @@ mod tests {
             "cross-binding stores may alias the load without Weir proof, so LICM must keep the load in-loop"
         );
 
-        let mut facts = crate::analyses::weir_alias::AliasFactSet::default();
-        facts.insert_no_alias(crate::analyses::weir_alias::NoAliasFact {
+        let mut facts = crate::analyses::alias_facts::AliasFactSet::default();
+        facts.insert_no_alias(crate::analyses::alias_facts::NoAliasFact {
             left_binding: 0,
             left_index: 0,
             right_binding: 1,
             right_index: 1,
         });
-        let alias_aware = licm_with_weir_alias_facts(&desc, &facts);
+        let alias_aware = licm_with_alias_facts(&desc, &facts);
         assert!(
             !alias_aware.body.child_bodies[0]
                 .ops
@@ -1113,6 +1117,142 @@ mod tests {
             out.body.literals.len(),
             desc.body.literals.len() + 1,
             "parent literals grew by one"
+        );
+    }
+
+    #[test]
+    fn dataflow_licm_hoists_load_from_readwrite_buffer() {
+        // Reproduces the `dataflow-licm.equivalent_alias_indices` corpus:
+        // A ReadWrite buffer with a LoadGlobal(idx=20) and StoreGlobal(idx=40)
+        // inside a loop. Reaching-defs: 20→11, 40→12. Alias facts: (0,11)≠(0,12).
+        // LICM should hoist the Load because the store's resolved index provably
+        // doesn't alias the load's resolved index.
+        use crate::{BindingSlot, BindingVisibility, MemoryClass};
+        use vyre_foundation::ir::DataType;
+
+        let desc = KernelDescriptor {
+            id: "rw_licm".into(),
+            bindings: BindingLayout {
+                slots: vec![BindingSlot {
+                    slot: 0,
+                    element_type: DataType::U32,
+                    element_count: Some(4096),
+                    memory_class: MemoryClass::Global,
+                    visibility: BindingVisibility::ReadWrite,
+                    name: "buf".into(),
+                }],
+            },
+            dispatch: Dispatch::new(64, 1, 1),
+            body: KernelBody {
+                ops: vec![
+                    KernelOp {
+                        kind: KernelOpKind::Literal,
+                        operands: vec![0],
+                        result: Some(0),
+                    },
+                    KernelOp {
+                        kind: KernelOpKind::Literal,
+                        operands: vec![1],
+                        result: Some(1),
+                    },
+                    KernelOp {
+                        kind: KernelOpKind::Literal,
+                        operands: vec![2],
+                        result: Some(11),
+                    },
+                    KernelOp {
+                        kind: KernelOpKind::Copy,
+                        operands: vec![11],
+                        result: Some(20),
+                    },
+                    KernelOp {
+                        kind: KernelOpKind::Literal,
+                        operands: vec![3],
+                        result: Some(12),
+                    },
+                    KernelOp {
+                        kind: KernelOpKind::Copy,
+                        operands: vec![12],
+                        result: Some(40),
+                    },
+                    KernelOp {
+                        kind: KernelOpKind::Literal,
+                        operands: vec![4],
+                        result: Some(31),
+                    },
+                    KernelOp {
+                        kind: KernelOpKind::StructuredForLoop {
+                            loop_var: "i".into(),
+                        },
+                        operands: vec![0, 1, 0],
+                        result: None,
+                    },
+                ],
+                child_bodies: vec![KernelBody {
+                    ops: vec![
+                        KernelOp {
+                            kind: KernelOpKind::LoadGlobal,
+                            operands: vec![0, 20],
+                            result: Some(50),
+                        },
+                        KernelOp {
+                            kind: KernelOpKind::StoreGlobal,
+                            operands: vec![0, 40, 31],
+                            result: None,
+                        },
+                    ],
+                    child_bodies: vec![],
+                    literals: vec![],
+                }],
+                literals: vec![
+                    LiteralValue::U32(0),
+                    LiteralValue::U32(64),
+                    LiteralValue::U32(42),
+                    LiteralValue::U32(13),
+                    LiteralValue::U32(9),
+                ],
+            },
+        };
+
+        let mut alias_facts = crate::analyses::alias_facts::AliasFactSet::default();
+        alias_facts.insert_no_alias(crate::analyses::alias_facts::NoAliasFact {
+            left_binding: 0,
+            left_index: 11,
+            right_binding: 0,
+            right_index: 12,
+        });
+
+        let mut reaching_defs = crate::analyses::reaching_def_facts::ReachingDefFactSet::default();
+        reaching_defs.set_reaching_defs(20, vec![11]);
+        reaching_defs.set_reaching_defs(40, vec![12]);
+
+        let out = licm_with_dataflow_facts(&desc, &alias_facts, &reaching_defs);
+
+        // After hoist, LoadGlobal should be in the parent body, not the loop body.
+        let parent_loads = out
+            .body
+            .ops
+            .iter()
+            .filter(|o| matches!(o.kind, KernelOpKind::LoadGlobal))
+            .count();
+        let child_loads = out.body.child_bodies[0]
+            .ops
+            .iter()
+            .filter(|o| matches!(o.kind, KernelOpKind::LoadGlobal))
+            .count();
+        assert_eq!(
+            child_loads,
+            0,
+            "LoadGlobal should be hoisted out of loop body; child ops: {:?}",
+            out.body.child_bodies[0]
+                .ops
+                .iter()
+                .map(|o| format!("{:?} operands={:?}", o.kind, o.operands))
+                .collect::<Vec<_>>()
+        );
+        assert!(
+            parent_loads > 0,
+            "LoadGlobal should appear in parent body after hoist"
         );
     }
 }

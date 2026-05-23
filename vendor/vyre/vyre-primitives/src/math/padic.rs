@@ -66,8 +66,21 @@ pub fn hensel_lift_step(x: &str, f_x: &str, inv_f_prime: &str, out: &str, n: u32
 
 /// CPU reference (f64) — Hensel iteration single step.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn hensel_lift_step_cpu(x: f64, f_x: f64, inv_f_prime: f64) -> f64 {
     x - f_x * inv_f_prime
+}
+
+#[cfg(feature = "inventory-registry")]
+inventory::submit! {
+    crate::harness::OpEntry::new(
+        OP_ID,
+        || {
+            hensel_lift_step("x", "f_x", "inv_f_prime", "out", 4)
+        },
+        None,
+        None,
+    )
 }
 
 #[cfg(test)]

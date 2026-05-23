@@ -80,6 +80,7 @@ inventory::submit! {
         build: || inverse_sqrt_f32("input", "out", 4),
         test_inputs: Some(test_inputs),
         expected_output: Some(expected_output),
+        category: Some("hardware"),
     }
 }
 

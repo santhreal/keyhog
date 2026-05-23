@@ -116,7 +116,11 @@ fn redact_credential(credential: &str) -> String {
     const PREFIX_KEEP: usize = 6;
     let take = credential.char_indices().nth(PREFIX_KEEP);
     match take {
-        Some((end_byte, _)) => format!("{}…[redacted {} chars]", &credential[..end_byte], credential.chars().count().saturating_sub(PREFIX_KEEP)),
+        Some((end_byte, _)) => format!(
+            "{}…[redacted {} chars]",
+            &credential[..end_byte],
+            credential.chars().count().saturating_sub(PREFIX_KEEP)
+        ),
         None => "[redacted]".to_string(),
     }
 }
@@ -139,7 +143,10 @@ mod tests {
         record_example_suppression("aws", None, "AKIAEXAMPLE", "ends_with_EXAMPLE");
         record_example_suppression("aws", None, "AKIAEXAMPLE2", "ends_with_EXAMPLE");
         assert_eq!(example_suppression_count(), 2);
-        assert!(drain_events().is_empty(), "events only collected with --dogfood");
+        assert!(
+            drain_events().is_empty(),
+            "events only collected with --dogfood"
+        );
     }
 
     #[test]
@@ -164,7 +171,10 @@ mod tests {
             } => {
                 assert_eq!(detector, "aws-access-key");
                 assert!(credential_redacted.starts_with("AKIAIO"));
-                assert!(!credential_redacted.contains("EXAMPLE"), "must not leak the full value");
+                assert!(
+                    !credential_redacted.contains("EXAMPLE"),
+                    "must not leak the full value"
+                );
                 assert_eq!(*reason, "ends_with_EXAMPLE");
             }
         }

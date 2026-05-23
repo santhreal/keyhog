@@ -8,8 +8,8 @@
 //!
 //! ## Invalidation
 //!
-//! Per-slot tracking. Any of these intervening ops invalidate ALL
-//! entries for the relevant slot (or all slots, when scope is unknown):
+//! Per-slot tracking. Any of these intervening ops invalidate mutable-cache
+//! entries for the relevant slot (or all mutable slots, when scope is unknown):
 //! - `Store*` to the same slot at a different index — may alias the
 //!   tracked index, so the cached value is no longer guaranteed.
 //! - `Atomic` — read-modify-writes can change the value.
@@ -31,30 +31,30 @@ use rustc_hash::FxHashMap;
 
 #[must_use]
 pub fn load_forwarding(desc: &KernelDescriptor) -> KernelDescriptor {
-    load_forwarding_with_dataflow_facts(desc, None, None)
+    load_forwarding_with_optional_dataflow_facts(desc, None, None)
 }
 
 #[must_use]
-pub fn load_forwarding_with_weir_alias_facts(
+pub fn load_forwarding_with_alias_facts(
     desc: &KernelDescriptor,
-    alias_facts: &crate::analyses::weir_alias::AliasFactSet,
+    alias_facts: &crate::analyses::alias_facts::AliasFactSet,
 ) -> KernelDescriptor {
-    load_forwarding_with_dataflow_facts(desc, Some(alias_facts), None)
+    load_forwarding_with_optional_dataflow_facts(desc, Some(alias_facts), None)
 }
 
 #[must_use]
-pub fn load_forwarding_with_weir_dataflow_facts(
+pub fn load_forwarding_with_dataflow_facts(
     desc: &KernelDescriptor,
-    alias_facts: &crate::analyses::weir_alias::AliasFactSet,
-    reaching_defs: &crate::analyses::weir_reaching_def::ReachingDefFactSet,
+    alias_facts: &crate::analyses::alias_facts::AliasFactSet,
+    reaching_defs: &crate::analyses::reaching_def_facts::ReachingDefFactSet,
 ) -> KernelDescriptor {
-    load_forwarding_with_dataflow_facts(desc, Some(alias_facts), Some(reaching_defs))
+    load_forwarding_with_optional_dataflow_facts(desc, Some(alias_facts), Some(reaching_defs))
 }
 
-fn load_forwarding_with_dataflow_facts(
+fn load_forwarding_with_optional_dataflow_facts(
     desc: &KernelDescriptor,
-    alias_facts: Option<&crate::analyses::weir_alias::AliasFactSet>,
-    reaching_defs: Option<&crate::analyses::weir_reaching_def::ReachingDefFactSet>,
+    alias_facts: Option<&crate::analyses::alias_facts::AliasFactSet>,
+    reaching_defs: Option<&crate::analyses::reaching_def_facts::ReachingDefFactSet>,
 ) -> KernelDescriptor {
     let mut out = desc.clone();
     out.body = load_forwarding_body(out.body, alias_facts, reaching_defs);
@@ -63,8 +63,8 @@ fn load_forwarding_with_dataflow_facts(
 
 fn load_forwarding_body(
     mut body: KernelBody,
-    alias_facts: Option<&crate::analyses::weir_alias::AliasFactSet>,
-    reaching_defs: Option<&crate::analyses::weir_reaching_def::ReachingDefFactSet>,
+    alias_facts: Option<&crate::analyses::alias_facts::AliasFactSet>,
+    reaching_defs: Option<&crate::analyses::reaching_def_facts::ReachingDefFactSet>,
 ) -> KernelBody {
     let literal_values = literal_u32_by_result(&body);
     // Per memory-space + slot map: (space, slot_id) → (address → val_id).
@@ -79,20 +79,18 @@ fn load_forwarding_body(
                     continue;
                 }
                 let target = match &op.kind {
-                    KernelOpKind::StoreGlobal => MemoryTarget::new(MemorySpace::Global, op.operands[0]),
-                    KernelOpKind::StoreShared => MemoryTarget::new(MemorySpace::Shared, op.operands[0]),
+                    KernelOpKind::StoreGlobal => {
+                        MemoryTarget::new(MemorySpace::Global, op.operands[0])
+                    }
+                    KernelOpKind::StoreShared => {
+                        MemoryTarget::new(MemorySpace::Shared, op.operands[0])
+                    }
                     _ => continue,
                 };
                 let idx = resolve(op.operands[1], &id_remap, reaching_defs);
                 let val = resolve(op.operands[2], &id_remap, reaching_defs);
                 let address = address_key(idx, &literal_values);
-                invalidate_cache_for_write(
-                    &mut cache,
-                    target,
-                    idx,
-                    address,
-                    alias_facts,
-                );
+                invalidate_cache_for_write(&mut cache, target, idx, address, alias_facts);
                 cache.entry(target).or_default().insert(
                     address,
                     CachedValue {
@@ -106,8 +104,12 @@ fn load_forwarding_body(
                     continue;
                 }
                 let target = match &op.kind {
-                    KernelOpKind::LoadGlobal => MemoryTarget::new(MemorySpace::Global, op.operands[0]),
-                    KernelOpKind::LoadShared => MemoryTarget::new(MemorySpace::Shared, op.operands[0]),
+                    KernelOpKind::LoadGlobal => {
+                        MemoryTarget::new(MemorySpace::Global, op.operands[0])
+                    }
+                    KernelOpKind::LoadShared => {
+                        MemoryTarget::new(MemorySpace::Shared, op.operands[0])
+                    }
                     _ => continue,
                 };
                 let idx = resolve(op.operands[1], &id_remap, reaching_defs);
@@ -115,17 +117,15 @@ fn load_forwarding_body(
                 let Some(load_result) = op.result else {
                     continue;
                 };
-                let entry = cache.entry(target).or_default();
-                if let Some(cached) = entry.get(&address) {
-                    // Forward: rewrite this load's result-id refs to point
-                    // at the cached value.
-                    id_remap.insert(load_result, cached.value_id);
-                    // Don't update the cache — the cached value is the
-                    // canonical id; this load is now redundant.
-                } else {
-                    // First time seeing (slot, idx) at this point —
-                    // remember THIS load as the canonical for any later
-                    // duplicate.
+                if let Some(entry) = cache.get_mut(&target) {
+                    if let Some(cached) = entry.get(&address) {
+                        // Forward: rewrite this load's result-id refs to point
+                        // at the cached value.
+                        id_remap.insert(load_result, cached.value_id);
+                        // Don't update the cache — the cached value is the
+                        // canonical id; this load is now redundant.
+                        continue;
+                    }
                     entry.insert(
                         address,
                         CachedValue {
@@ -133,6 +133,16 @@ fn load_forwarding_body(
                             value_id: load_result,
                         },
                     );
+                } else {
+                    let mut entry = FxHashMap::default();
+                    entry.insert(
+                        address,
+                        CachedValue {
+                            index_operand: idx,
+                            value_id: load_result,
+                        },
+                    );
+                    cache.insert(target, entry);
                 }
             }
             KernelOpKind::LoadConstant => {
@@ -146,10 +156,11 @@ fn load_forwarding_body(
                 let Some(load_result) = op.result else {
                     continue;
                 };
-                let entry = cache.entry(target).or_default();
-                if let Some(cached) = entry.get(&address) {
-                    id_remap.insert(load_result, cached.value_id);
-                } else {
+                if let Some(entry) = cache.get_mut(&target) {
+                    if let Some(cached) = entry.get(&address) {
+                        id_remap.insert(load_result, cached.value_id);
+                        continue;
+                    }
                     entry.insert(
                         address,
                         CachedValue {
@@ -157,6 +168,16 @@ fn load_forwarding_body(
                             value_id: load_result,
                         },
                     );
+                } else {
+                    let mut entry = FxHashMap::default();
+                    entry.insert(
+                        address,
+                        CachedValue {
+                            index_operand: idx,
+                            value_id: load_result,
+                        },
+                    );
+                    cache.insert(target, entry);
                 }
             }
             KernelOpKind::Atomic { .. } => {
@@ -173,32 +194,32 @@ fn load_forwarding_body(
                 } else if let Some(&slot) = op.operands.first() {
                     cache.remove(&MemoryTarget::new(MemorySpace::Global, slot));
                 } else {
-                    cache.clear();
+                    clear_mutable_cache(&mut cache);
                 }
             }
             KernelOpKind::Barrier { .. } => {
-                // Barrier republishes other threads' writes — wipe everything.
-                cache.clear();
+                // Barrier republishes other threads' writes — keep constant forwarding.
+                clear_mutable_cache(&mut cache);
             }
             KernelOpKind::AsyncLoad { .. }
             | KernelOpKind::AsyncStore { .. }
             | KernelOpKind::AsyncWait { .. } => {
-                cache.clear();
+                clear_mutable_cache(&mut cache);
             }
             KernelOpKind::StructuredIfThen
             | KernelOpKind::StructuredIfThenElse
             | KernelOpKind::StructuredForLoop { .. }
             | KernelOpKind::StructuredBlock
             | KernelOpKind::Region { .. } => {
-                cache.clear();
+                clear_mutable_cache(&mut cache);
             }
             KernelOpKind::Trap { .. } | KernelOpKind::Resume { .. } | KernelOpKind::Return => {
-                cache.clear();
+                clear_mutable_cache(&mut cache);
             }
             KernelOpKind::Call { .. }
             | KernelOpKind::OpaqueExpr(..)
             | KernelOpKind::OpaqueNode(..) => {
-                cache.clear();
+                clear_mutable_cache(&mut cache);
             }
             // Pure ops — no memory effect.
             _ => {}
@@ -259,7 +280,7 @@ enum AddressKey {
 fn resolve(
     id: u32,
     remap: &FxHashMap<u32, u32>,
-    reaching_defs: Option<&crate::analyses::weir_reaching_def::ReachingDefFactSet>,
+    reaching_defs: Option<&crate::analyses::reaching_def_facts::ReachingDefFactSet>,
 ) -> u32 {
     let mut cur = id;
     let mut hops = 0usize;
@@ -317,7 +338,7 @@ fn may_alias(
     right_target: MemoryTarget,
     right_index_operand: u32,
     right_address: AddressKey,
-    alias_facts: Option<&crate::analyses::weir_alias::AliasFactSet>,
+    alias_facts: Option<&crate::analyses::alias_facts::AliasFactSet>,
 ) -> bool {
     if left_target.space != right_target.space {
         return false;
@@ -333,7 +354,9 @@ fn may_alias(
         return false;
     }
     match (left_address, right_address) {
-        (AddressKey::Const(left), AddressKey::Const(right)) if left_target.slot == right_target.slot => {
+        (AddressKey::Const(left), AddressKey::Const(right))
+            if left_target.slot == right_target.slot =>
+        {
             return left == right;
         }
         (AddressKey::Result(left), AddressKey::Result(right))
@@ -358,22 +381,31 @@ fn invalidate_cache_for_write(
     write_target: MemoryTarget,
     write_index: u32,
     write_address: AddressKey,
-    alias_facts: Option<&crate::analyses::weir_alias::AliasFactSet>,
+    alias_facts: Option<&crate::analyses::alias_facts::AliasFactSet>,
 ) {
-    cache.retain(|cached_target, entries| {
-        entries.retain(|cached_address, cached| {
-            !may_alias(
-                *cached_target,
-                cached.index_operand,
-                *cached_address,
-                write_target,
-                write_index,
-                write_address,
-                alias_facts,
-            )
-        });
-        !entries.is_empty()
+    let Some(entries) = cache.get_mut(&write_target) else {
+        return;
+    };
+
+    entries.retain(|cached_address, cached| {
+        !may_alias(
+            write_target,
+            cached.index_operand,
+            *cached_address,
+            write_target,
+            write_index,
+            write_address,
+            alias_facts,
+        )
     });
+
+    if entries.is_empty() {
+        cache.remove(&write_target);
+    }
+}
+
+fn clear_mutable_cache(cache: &mut FxHashMap<MemoryTarget, FxHashMap<AddressKey, CachedValue>>) {
+    cache.retain(|target, _| matches!(target.space, MemorySpace::Constant));
 }
 
 /// Mirror — must stay in sync with the others.
@@ -476,7 +508,7 @@ mod tests {
     }
 
     #[test]
-    fn weir_no_alias_fact_preserves_forwarding_across_unrelated_store() {
+    fn external_no_alias_fact_preserves_forwarding_across_unrelated_store() {
         let desc = KernelDescriptor {
             id: "alias_aware_stlf".into(),
             bindings: BindingLayout {
@@ -533,19 +565,19 @@ mod tests {
         let conservative = load_forwarding(&desc);
         assert_eq!(conservative.body.ops[7].operands, vec![0, 0, 4]);
 
-        let mut facts = crate::analyses::weir_alias::AliasFactSet::default();
-        facts.insert_no_alias(crate::analyses::weir_alias::NoAliasFact {
+        let mut facts = crate::analyses::alias_facts::AliasFactSet::default();
+        facts.insert_no_alias(crate::analyses::alias_facts::NoAliasFact {
             left_binding: 0,
             left_index: 0,
             right_binding: 0,
             right_index: 1,
         });
-        let alias_aware = load_forwarding_with_weir_alias_facts(&desc, &facts);
+        let alias_aware = load_forwarding_with_alias_facts(&desc, &facts);
         assert_eq!(alias_aware.body.ops[7].operands, vec![0, 0, 2]);
     }
 
     #[test]
-    fn different_binding_store_invalidates_forwarding_without_weir_no_alias_fact() {
+    fn different_binding_store_invalidates_forwarding_without_external_no_alias_fact() {
         let desc = KernelDescriptor {
             id: "cross_binding_alias_conservative_stlf".into(),
             bindings: BindingLayout {
@@ -606,14 +638,14 @@ mod tests {
         let conservative = load_forwarding(&desc);
         assert_eq!(conservative.body.ops[6].operands, vec![0, 0, 3]);
 
-        let mut facts = crate::analyses::weir_alias::AliasFactSet::default();
-        facts.insert_no_alias(crate::analyses::weir_alias::NoAliasFact {
+        let mut facts = crate::analyses::alias_facts::AliasFactSet::default();
+        facts.insert_no_alias(crate::analyses::alias_facts::NoAliasFact {
             left_binding: 0,
             left_index: 0,
             right_binding: 1,
             right_index: 1,
         });
-        let alias_aware = load_forwarding_with_weir_alias_facts(&desc, &facts);
+        let alias_aware = load_forwarding_with_alias_facts(&desc, &facts);
         assert_eq!(alias_aware.body.ops[6].operands, vec![0, 0, 3]);
     }
 
@@ -1148,10 +1180,6 @@ mod tests {
 
     #[test]
     fn loadconstant_is_forwardable_across_arbitrary_ops() {
-        // LoadConstant points at immutable memory — even a Barrier shouldn't
-        // wipe the cached entry. But our impl does (it's slot-keyed and
-        // Barrier wipes everything). This test just documents current
-        // conservative behavior.
         let desc = KernelDescriptor {
             id: "lc".into(),
             bindings: BindingLayout {
@@ -1187,6 +1215,53 @@ mod tests {
         };
         let out = load_forwarding(&desc);
         assert_eq!(out.body.ops[3].operands, vec![0, 0, 1]);
+    }
+
+    #[test]
+    fn loadconstant_survives_barrier_and_reuses_cache() {
+        let desc = KernelDescriptor {
+            id: "lc_barrier".into(),
+            bindings: BindingLayout {
+                slots: vec![rw_slot()],
+            },
+            dispatch: Dispatch::new(64, 1, 1),
+            body: KernelBody {
+                ops: vec![
+                    KernelOp {
+                        kind: KernelOpKind::Literal,
+                        operands: vec![0],
+                        result: Some(0),
+                    },
+                    KernelOp {
+                        kind: KernelOpKind::LoadConstant,
+                        operands: vec![0, 0],
+                        result: Some(1),
+                    },
+                    KernelOp {
+                        kind: KernelOpKind::Barrier {
+                            ordering:
+                                vyre_foundation::runtime::memory_model::MemoryOrdering::SeqCst,
+                        },
+                        operands: vec![],
+                        result: None,
+                    },
+                    KernelOp {
+                        kind: KernelOpKind::LoadConstant,
+                        operands: vec![0, 0],
+                        result: Some(2),
+                    },
+                    KernelOp {
+                        kind: KernelOpKind::StoreGlobal,
+                        operands: vec![0, 0, 2],
+                        result: None,
+                    },
+                ],
+                child_bodies: vec![],
+                literals: vec![LiteralValue::U32(0)],
+            },
+        };
+        let out = load_forwarding(&desc);
+        assert_eq!(out.body.ops[4].operands, vec![0, 0, 1]);
     }
 
     #[test]
@@ -1295,10 +1370,10 @@ mod tests {
                 literals: vec![LiteralValue::U32(7)],
             },
         };
-        let mut reaching = crate::analyses::weir_reaching_def::ReachingDefFactSet::default();
+        let mut reaching = crate::analyses::reaching_def_facts::ReachingDefFactSet::default();
         reaching.set_reaching_defs(2, vec![0]);
-        let aliases = crate::analyses::weir_alias::AliasFactSet::default();
-        let out = load_forwarding_with_weir_dataflow_facts(&desc, &aliases, &reaching);
+        let aliases = crate::analyses::alias_facts::AliasFactSet::default();
+        let out = load_forwarding_with_dataflow_facts(&desc, &aliases, &reaching);
         assert_eq!(out.body.ops[5].operands, vec![0, 0, 1]);
     }
 }

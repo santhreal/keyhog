@@ -13,7 +13,7 @@ use super::c_frontend::{
     c_frontend_phase_dispatch_nodes, c_frontend_phase_machine_guard_nodes,
     c_frontend_workspace_bootstrap_nodes, CFrontendPhaseHandler, CFrontendWorkspaceManifest,
 };
-use super::handlers::{claimed_slot_bindings, claimed_slot_body, OpcodeHandler};
+use super::handlers::{claimed_slot_bindings, claimed_slot_body, load_miss_body, OpcodeHandler};
 use super::io::{
     io_word, IO_DESTINATION_CAPABILITY_TABLE, IO_QUEUE_DMA_TAG, IO_SLOT_COUNT, IO_SLOT_WORDS,
     IO_SOURCE_CAPABILITY_TABLE,
@@ -179,9 +179,15 @@ pub fn build_program_sharded_once_slots_control_report_shared(
     slot_count: u32,
     opcodes: &[OpcodeHandler],
 ) -> Arc<Program> {
+    if opcodes.is_empty() {
+        return cache::cached_empty_sharded_once_control_report_program_shared(
+            workgroup_size_x,
+            slot_count,
+        );
+    }
     let mut buffers = default_buffers(slot_count);
     for buffer in buffers.iter_mut().skip(1) {
-        *buffer = buffer.clone().with_output_byte_range(0..0);
+        buffer.output_byte_range = Some(0..0);
     }
     Arc::new(optimize_megakernel_program(Program::wrapped(
         buffers,
@@ -210,6 +216,39 @@ pub fn build_program_sharded_with_io_polling(
     opcodes: &[OpcodeHandler],
 ) -> Program {
     build_program_sharded_slots_with_io(workgroup_size_x, workgroup_size_x.max(1), opcodes, true)
+}
+
+/// Build the megakernel IR with a self-loading load-miss handler.
+///
+/// The persistent loop is extended with an [`opcode::LOAD_MISS`] handler.
+/// When the GPU sees this opcode it scans the IO queue for an empty slot,
+/// writes a DMA-read request, and polls until the host/runtime marks it
+/// complete. The `arg0` field of the slot is the consumer's opaque
+/// resource identifier; vyre does not interpret it.
+#[must_use]
+pub fn build_program_with_self_loading_miss_handler(
+    workgroup_size_x: u32,
+    slot_count: u32,
+    opcodes: &[OpcodeHandler],
+) -> Program {
+    let mut extended = Vec::new();
+    extended
+        .try_reserve_exact(opcodes.len().checked_add(1).unwrap_or_else(|| {
+            panic!(
+                "megakernel self-loading opcode extension count overflowed usize. Fix: split opcode handler sets before building the megakernel."
+            )
+        }))
+        .expect("megakernel self-loading opcode extension allocation failed. Fix: split opcode handler sets before building the megakernel.");
+    extended.extend_from_slice(opcodes);
+    extended.push(OpcodeHandler {
+        opcode: super::protocol::opcode::LOAD_MISS,
+        body: load_miss_body(),
+    });
+    wrap_persistent_megakernel_program(
+        workgroup_size_x,
+        slot_count,
+        persistent_body_with_io(workgroup_size_x, &extended, false),
+    )
 }
 
 fn build_program_sharded_slots_with_io(
@@ -262,7 +301,13 @@ fn wrap_megakernel_program(workgroup_size_x: u32, slot_count: u32, body: Vec<Nod
 }
 
 fn optimize_megakernel_program(program: Program) -> Program {
-    let (program, _) = super::planner::elide_value_flow_barriers(program);
+    let (program, _) = super::planner::try_elide_value_flow_barriers(program).unwrap_or_else(
+        |error| {
+            panic!(
+                "megakernel program barrier optimization failed: {error}. Fix: reduce fused program size before builder optimization."
+            )
+        },
+    );
     vyre_foundation::optimizer::pre_lowering::optimize(program)
 }
 
@@ -282,8 +327,11 @@ fn optimize_megakernel_program(program: Program) -> Program {
 fn default_buffers(slot_count: u32) -> Vec<BufferDecl> {
     let ring_slots = slot_count.max(1);
     let control = BufferDecl::read_write("control", 0, DataType::U32).with_count(CONTROL_MIN_WORDS);
-    let ring_buffer = BufferDecl::read_write("ring_buffer", 1, DataType::U32)
-        .with_count(ring_slots.saturating_mul(SLOT_WORDS));
+    let ring_buffer = BufferDecl::read_write("ring_buffer", 1, DataType::U32).with_count(
+        ring_slots.checked_mul(SLOT_WORDS).expect(
+            "megakernel ring buffer word count overflowed u32; reduce slot_count or SLOT_WORDS",
+        ),
+    );
     let debug_log =
         BufferDecl::read_write("debug_log", 2, DataType::U32).with_count(debug::BUFFER_WORDS);
     let io_queue = BufferDecl::read_write("io_queue", 3, DataType::U32).with_count(64 * 8);
@@ -313,7 +361,8 @@ fn persistent_body_with_io(
     include_io_polling: bool,
 ) -> Vec<Node> {
     let mut body = persistent_lane_prologue(workgroup_size_x);
-    body.reserve_exact(if include_io_polling { 3 } else { 2 });
+    body.try_reserve_exact(if include_io_polling { 3 } else { 2 })
+        .expect("megakernel persistent body node reservation failed. Fix: reduce fused IO/body staging before building the megakernel.");
     body.push(direct_slot_base_binding());
     body.push(Node::Block(execute_slot_body(opcodes)));
     if include_io_polling {

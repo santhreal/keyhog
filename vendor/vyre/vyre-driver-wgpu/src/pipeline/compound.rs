@@ -2,6 +2,7 @@
 
 use super::binding::usage_for_binding;
 use crate::buffer::{GpuBufferHandle, StagingBufferPool};
+use crate::numeric::usize_to_u64;
 use crate::pipeline::{DispatchItem, OutputLayout, WgpuPipeline};
 use smallvec::SmallVec;
 use std::sync::mpsc::Receiver;
@@ -30,7 +31,8 @@ impl WgpuPipeline {
         inputs: &[Vec<u8>],
         config: &DispatchConfig,
     ) -> Result<Vec<Vec<Vec<u8>>>, BackendError> {
-        let borrowed: SmallVec<[&[u8]; 8]> = inputs.iter().map(Vec::as_slice).collect();
+        let mut borrowed = SmallVec::<[&[u8]; 8]>::with_capacity(inputs.len());
+        borrowed.extend(inputs.iter().map(Vec::as_slice));
         self.dispatch_coalesced_borrowed(&borrowed, config)
     }
 
@@ -49,10 +51,13 @@ impl WgpuPipeline {
         requests: &[(&WgpuPipeline, Resource)],
         config: &DispatchConfig,
     ) -> Result<Vec<Vec<Vec<u8>>>, BackendError> {
-        let borrowed_requests: SmallVec<[(&WgpuPipeline, CompoundResource<'_>); 8]> = requests
-            .iter()
-            .map(|(pipeline, resource)| (*pipeline, CompoundResource::from(resource)))
-            .collect();
+        let mut borrowed_requests =
+            SmallVec::<[(&WgpuPipeline, CompoundResource<'_>); 8]>::with_capacity(requests.len());
+        borrowed_requests.extend(
+            requests
+                .iter()
+                .map(|(pipeline, resource)| (*pipeline, CompoundResource::from(resource))),
+        );
         Self::dispatch_compound_borrowed(&borrowed_requests, config)
     }
 
@@ -161,7 +166,7 @@ impl WgpuPipeline {
             },
         )?;
 
-        let readback_size = self.output.copy_size as u64;
+        let readback_size = usize_to_u64(self.output.copy_size, "compound readback bytes")?;
         let readback_usage = wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ;
         let readback_buffer = self
             .staging_pool
@@ -172,10 +177,10 @@ impl WgpuPipeline {
             .ok_or_else(|| BackendError::new("no output"))?;
         encoder.copy_buffer_to_buffer(
             output.buffer(),
-            self.output.copy_offset as u64,
+            usize_to_u64(self.output.copy_offset, "compound output copy offset")?,
             &readback_buffer,
             0,
-            self.output.copy_size as u64,
+            readback_size,
         );
 
         Ok(PipelineDispatchReadback {
@@ -220,10 +225,10 @@ impl WgpuPipeline {
                     output.name
                 ))
             })?;
-            outputs.push(
-                self.persistent_pool
-                    .acquire(output_bytes as u64, usage_for_binding(info)?)?,
-            );
+            outputs.push(self.persistent_pool.acquire(
+                usize_to_u64(output_bytes, "compound output allocation bytes")?,
+                usage_for_binding(info)?,
+            )?);
         }
         Ok((vec![input], outputs))
     }
@@ -303,7 +308,11 @@ impl PipelineDispatchReadback {
             let mapped = slice.get_mapped_range();
             let trim_start = self.output.trim_start;
             let read_size = self.output.read_size;
-            let end = trim_start + read_size;
+            let end = trim_start.checked_add(read_size).ok_or_else(|| {
+                BackendError::new(format!(
+                    "compound readback slice end overflows usize: trim_start={trim_start}, read_size={read_size}. Fix: verify OutputLayout before readback."
+                ))
+            })?;
             if end > mapped.len() {
                 let mapped_len = mapped.len();
                 Err(BackendError::new(format!(

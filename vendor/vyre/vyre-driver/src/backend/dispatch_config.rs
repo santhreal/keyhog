@@ -57,6 +57,9 @@ pub struct DispatchConfig {
     /// Maximum back-to-back dispatch iterations the backend should run on
     /// the same persistent input/output handles before reading back the
     /// final outputs.
+    ///
+    /// `None` means one iteration. `Some(0)` is invalid: backends must reject
+    /// it instead of silently rewriting caller policy.
     pub fixpoint_iterations: Option<u32>,
     /// Optional speculation policy.
     pub speculation: Option<crate::speculate::SpeculationMode>,

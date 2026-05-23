@@ -185,9 +185,23 @@ fn read_aot_text_bounded(path: &std::path::Path, max_bytes: u64) -> std::io::Res
             format!("AOT cache file exceeds {max_bytes} byte limit"),
         ));
     }
-    let mut text = String::with_capacity(metadata.len() as usize);
-    file.by_ref().take(max_bytes + 1).read_to_string(&mut text)?;
-    if text.len() as u64 > max_bytes {
+    let capacity = usize::try_from(metadata.len()).map_err(|source| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("AOT cache file length cannot fit usize: {source}"),
+        )
+    })?;
+    let bounded_read_limit = max_bytes.checked_add(1).ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "AOT cache max_bytes cannot add sentinel byte without overflowing u64",
+        )
+    })?;
+    let mut text = String::with_capacity(capacity);
+    file.by_ref()
+        .take(bounded_read_limit)
+        .read_to_string(&mut text)?;
+    if u64::try_from(text.len()).map_or(true, |len| len > max_bytes) {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
             "AOT cache file exceeded bounded read limit",
@@ -200,6 +214,10 @@ fn now_unix_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |duration| {
-            duration.as_millis().min(u128::from(u64::MAX)) as u64
+            u64::try_from(duration.as_millis().min(u128::from(u64::MAX))).unwrap_or_else(|source| {
+                panic!(
+                    "clamped UNIX millisecond timestamp cannot fit u64: {source}. Fix: inspect platform integer conversion."
+                )
+            })
         })
 }

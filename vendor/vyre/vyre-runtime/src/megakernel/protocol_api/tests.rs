@@ -1,10 +1,10 @@
 use super::*;
-use crate::megakernel::MegakernelWorkItem;
 use crate::megakernel::protocol::{
     slot, ARG0_WORD, ARGS_PER_SLOT, OPCODE_WORD, PRIORITY_WORD, SLOT_WORDS, STATUS_WORD,
     TENANT_WORD,
 };
 use crate::megakernel::scheduler;
+use crate::megakernel::MegakernelWorkItem;
 
 #[test]
 fn encode_control_produces_aligned_buffer() {
@@ -246,13 +246,88 @@ fn encode_work_items_ring_words_into_reuses_buffer_by_clearing_status_words() {
     Megakernel::encode_work_items_ring_words_into(4, 7, &first, &mut words).unwrap();
     Megakernel::encode_work_items_ring_words_into(4, 7, &second, &mut words).unwrap();
 
-    assert_eq!(read_word_words(&words, 0, STATUS_WORD as usize), slot::PUBLISHED);
+    assert_eq!(
+        read_word_words(&words, 0, STATUS_WORD as usize),
+        slot::PUBLISHED
+    );
     assert_eq!(read_word_words(&words, 0, ARG0_WORD as usize), 70);
     assert_eq!(read_word_words(&words, 0, ARG0_WORD as usize + 1), 80);
     assert_eq!(read_word_words(&words, 0, ARG0_WORD as usize + 2), 90);
-    assert_eq!(read_word_words(&words, 1, STATUS_WORD as usize), slot::EMPTY);
-    assert_eq!(read_word_words(&words, 2, STATUS_WORD as usize), slot::EMPTY);
-    assert_eq!(read_word_words(&words, 3, STATUS_WORD as usize), slot::EMPTY);
+    assert_eq!(
+        read_word_words(&words, 1, STATUS_WORD as usize),
+        slot::EMPTY
+    );
+    assert_eq!(
+        read_word_words(&words, 2, STATUS_WORD as usize),
+        slot::EMPTY
+    );
+    assert_eq!(
+        read_word_words(&words, 3, STATUS_WORD as usize),
+        slot::EMPTY
+    );
+}
+
+#[test]
+fn publish_work_items_updates_window_without_resetting_unrelated_slots() {
+    let mut ring = Megakernel::encode_empty_ring(4).unwrap();
+    write_word(&mut ring, 0, ARG0_WORD as usize, 0xDEAD_BEEF);
+    write_word(&mut ring, 3, ARG0_WORD as usize, 0xABCD_EF01);
+    let items = [
+        MegakernelWorkItem {
+            op_handle: protocol::opcode::STORE_U32,
+            input_handle: 10,
+            output_handle: 20,
+            param: 30,
+        },
+        MegakernelWorkItem {
+            op_handle: protocol::opcode::ATOMIC_ADD,
+            input_handle: 40,
+            output_handle: 50,
+            param: 60,
+        },
+    ];
+
+    let published = Megakernel::publish_work_items(&mut ring, 1, 7, &items).unwrap();
+
+    assert_eq!(published, 2);
+    assert_eq!(read_word(&ring, 0, ARG0_WORD as usize), 0xDEAD_BEEF);
+    assert_eq!(read_word(&ring, 3, ARG0_WORD as usize), 0xABCD_EF01);
+    assert_eq!(read_word(&ring, 1, STATUS_WORD as usize), slot::PUBLISHED);
+    assert_eq!(
+        read_word(&ring, 1, OPCODE_WORD as usize),
+        protocol::opcode::STORE_U32
+    );
+    assert_eq!(read_word(&ring, 1, TENANT_WORD as usize), 7);
+    assert_eq!(read_word(&ring, 1, ARG0_WORD as usize), 10);
+    assert_eq!(read_word(&ring, 1, ARG0_WORD as usize + 1), 20);
+    assert_eq!(read_word(&ring, 1, ARG0_WORD as usize + 2), 30);
+    assert_eq!(read_word(&ring, 2, STATUS_WORD as usize), slot::PUBLISHED);
+    assert_eq!(
+        read_word(&ring, 2, OPCODE_WORD as usize),
+        protocol::opcode::ATOMIC_ADD
+    );
+    assert_eq!(read_word(&ring, 2, ARG0_WORD as usize), 40);
+    assert_eq!(read_word(&ring, 2, ARG0_WORD as usize + 1), 50);
+    assert_eq!(read_word(&ring, 2, ARG0_WORD as usize + 2), 60);
+}
+
+#[test]
+fn publish_work_items_rejects_inflight_window_without_mutating() {
+    let mut ring = Megakernel::encode_empty_ring(4).unwrap();
+    write_word(&mut ring, 1, STATUS_WORD as usize, slot::CLAIMED);
+    let before = ring.clone();
+    let items = [MegakernelWorkItem {
+        op_handle: protocol::opcode::STORE_U32,
+        input_handle: 10,
+        output_handle: 20,
+        param: 30,
+    }];
+
+    let error = Megakernel::publish_work_items(&mut ring, 1, 7, &items)
+        .expect_err("in-flight target slots must be rejected before mutation");
+
+    assert!(error.to_string().contains("not publishable"));
+    assert_eq!(ring, before);
 }
 
 #[test]
@@ -309,6 +384,19 @@ fn batch_publish_writes_items_plus_fence() {
     // Last slot should be BATCH_FENCE.
     let fence_op = read_word(&ring, 2, OPCODE_WORD as usize);
     assert_eq!(fence_op, protocol::opcode::BATCH_FENCE);
+}
+
+#[test]
+fn batch_publish_rejects_fence_collision_without_partial_publish() {
+    let mut ring = Megakernel::encode_empty_ring(4).unwrap();
+    write_word(&mut ring, 1, STATUS_WORD as usize, slot::PUBLISHED);
+    let before = ring.clone();
+    let items: Vec<(u32, Vec<u32>)> = vec![(protocol::opcode::STORE_U32, vec![10, 20])];
+
+    let result = Megakernel::batch_publish(&mut ring, 0, 1, &items, 99);
+
+    assert!(result.is_err(), "fence collision must reject the batch");
+    assert_eq!(ring, before, "rejection must not publish earlier slots");
 }
 
 #[test]

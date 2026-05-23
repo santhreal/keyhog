@@ -50,12 +50,12 @@ inventory::submit! {
         build: || broadcast("src", "dst", 4),
         test_inputs: Some(|| vec![vec![
             42u32.to_le_bytes().to_vec(),                       // src: scalar 42
-            vec![0u8; 4 * 4],                                   // dst: 4 initial slots
         ]]),
         expected_output: Some(|| vec![vec![
             // Only ReadWrite buffer: dst filled with 42
             [42u32, 42, 42, 42].iter().flat_map(|v| v.to_le_bytes()).collect(),
         ]]),
+        category: Some("math"),
     }
 }
 
@@ -80,10 +80,7 @@ mod tests {
         let program = broadcast("src", "dst", 1);
         let outputs = vyre_reference::reference_eval(
             &program,
-            &[
-                Value::from(u32_bytes(&[99u32])),
-                Value::from(vec![0u8; 4]),
-            ],
+            &[Value::from(u32_bytes(&[99u32])), Value::from(vec![0u8; 4])],
         )
         .expect("broadcast n=1 must execute");
         let actual = decode_u32_words(&outputs[0].to_bytes());
@@ -95,10 +92,7 @@ mod tests {
         let program = broadcast("src", "dst", 0);
         let result = vyre_reference::reference_eval(
             &program,
-            &[
-                Value::from(u32_bytes(&[99u32])),
-                Value::from(vec![0u8; 0]),
-            ],
+            &[Value::from(u32_bytes(&[99u32])), Value::from(vec![0u8; 0])],
         );
         assert!(
             result.is_err(),

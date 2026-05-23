@@ -17,6 +17,11 @@ use std::ops::ControlFlow;
 /// Backends report structured errors through their own context type.
 pub trait Lowerable<Ctx: ?Sized> {
     /// Visit this IR structure and emit into the backend-specific context.
+    ///
+    /// # Errors
+    ///
+    /// Returns the backend context's structured error when lowering cannot
+    /// represent this IR structure.
     fn lower(&self, ctx: &mut Ctx) -> Result<()>;
 }
 
@@ -32,6 +37,11 @@ pub trait Evaluatable<Env: ?Sized> {
     type Value;
 
     /// Evaluate this IR structure against the environment.
+    ///
+    /// # Errors
+    ///
+    /// Returns the evaluator's structured error when the environment cannot
+    /// execute this IR structure.
     fn evaluate(&self, env: &mut Env) -> Result<Self::Value>;
 }
 

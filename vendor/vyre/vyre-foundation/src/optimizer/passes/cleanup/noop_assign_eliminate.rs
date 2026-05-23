@@ -32,6 +32,12 @@ impl NoopAssignEliminatePass {
     /// Skip programs without any self-assigning Assign.
     #[must_use]
     fn analyze_impl(program: &Program) -> PassAnalysis {
+        if !program
+            .stats()
+            .has_any_node_kind(crate::ir::stats::NODE_KIND_ASSIGN)
+        {
+            return PassAnalysis::SKIP;
+        }
         if program
             .entry()
             .iter()
@@ -46,21 +52,19 @@ impl NoopAssignEliminatePass {
     /// Walk the entry tree; drop noop self-assignments from sibling sequences.
     #[must_use]
     pub fn transform(program: Program) -> PassResult {
-        let scaffold = program.with_rewritten_entry(Vec::new());
         let mut changed = false;
-        let entry: Vec<Node> = drop_noop_assigns(
-            program
-                .into_entry_vec()
-                .into_iter()
-                .map(|n| rewrite_node(n, &mut changed))
-                .collect(),
-            &mut changed,
-        );
-        PassResult {
-            program: scaffold.with_rewritten_entry(entry),
-            changed,
-        }
-    }}
+        let program = program.map_entry(|entry| {
+            drop_noop_assigns(
+                entry
+                    .into_iter()
+                    .map(|n| rewrite_node(n, &mut changed))
+                    .collect(),
+                &mut changed,
+            )
+        });
+        PassResult { program, changed }
+    }
+}
 
 /// Recurse into `node`'s descendants and drop noop self-assignments
 /// from each container's body sequence.

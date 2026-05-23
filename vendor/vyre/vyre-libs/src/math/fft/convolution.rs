@@ -7,11 +7,15 @@
 
 use std::sync::Arc;
 
+use vyre::ir::model::expr::GeneratorRef;
 use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Ident, Node, Program};
 
 use super::fft_radix2_complex;
+use crate::region::wrap_anonymous;
 
 const OP_ID: &str = "vyre-libs::math::fft::fft_convolve_circular_complex";
+const MULTIPLY_OP_ID: &str = "vyre-libs::math::fft::pointwise_complex_multiply_conjugate";
+const SCALE_OP_ID: &str = "vyre-libs::math::fft::scale_conjugate_inverse";
 
 /// Build a Program that computes the length-`n` circular convolution
 /// of two interleaved complex F32 buffers using FFTs.
@@ -44,12 +48,29 @@ pub fn fft_convolve_circular_complex(
     ])?;
     let elements = validate_len(n, "fft_convolve_circular_complex")?;
 
+    // Each `fft_radix2_complex` body emits Let bindings (`u_re_*`,
+    // `u_im_*`, butterfly twiddles) at the body's outer scope. If we
+    // flatten three of them into the same `entry` Vec they all
+    // collide — V032 catches the duplicate sibling let. Wrap each
+    // FFT body in its own Block so the bindings live in distinct
+    // scopes and the outer entry only sees the Block (not its
+    // internal Let nodes).
     let mut entry = Vec::new();
-    entry.extend(fft_radix2_complex(signal, signal_freq, n)?.into_entry_vec());
-    entry.extend(fft_radix2_complex(kernel, kernel_freq, n)?.into_entry_vec());
+    entry.push(Node::Block(
+        fft_radix2_complex(signal, signal_freq, n)?.into_entry_vec(),
+    ));
+    entry.push(Node::Block(
+        fft_radix2_complex(kernel, kernel_freq, n)?.into_entry_vec(),
+    ));
     entry.push(Node::Region {
-        generator: Ident::from(format!("{OP_ID}::multiply_conjugate")),
-        source_region: None,
+        generator: Ident::from(MULTIPLY_OP_ID),
+        // source_region: Some(...) marks this as a child composition so
+        // the structural-budget gate stops counting nodes once it
+        // descends below this Region. The `multiply + conjugate` step
+        // is a self-contained sub-op of the FFT-convolve composition.
+        source_region: Some(GeneratorRef {
+            name: MULTIPLY_OP_ID.to_string(),
+        }),
         body: Arc::new(multiply_and_conjugate_body(
             signal_freq,
             kernel_freq,
@@ -57,10 +78,14 @@ pub fn fft_convolve_circular_complex(
             n,
         )),
     });
-    entry.extend(fft_radix2_complex(product_freq, output, n)?.into_entry_vec());
+    entry.push(Node::Block(
+        fft_radix2_complex(product_freq, output, n)?.into_entry_vec(),
+    ));
     entry.push(Node::Region {
-        generator: Ident::from(format!("{OP_ID}::scale_conjugate")),
-        source_region: None,
+        generator: Ident::from(SCALE_OP_ID),
+        source_region: Some(GeneratorRef {
+            name: SCALE_OP_ID.to_string(),
+        }),
         body: Arc::new(scale_conjugate_body(output, n)),
     });
 
@@ -76,8 +101,9 @@ pub fn fft_convolve_circular_complex(
             BufferDecl::output(output, 2, DataType::F32).with_count(elements),
         ],
         [1, 1, 1],
-        entry,
-    ))
+        vec![wrap_anonymous(OP_ID, entry)],
+    )
+    .with_entry_op_id(OP_ID))
 }
 
 fn validate_len(n: u32, op: &str) -> Result<u32, String> {
@@ -168,6 +194,10 @@ fn multiply_and_conjugate_body(
 }
 
 fn scale_conjugate_body(output: &str, n: u32) -> Vec<Node> {
+    scale_conjugate_body_from(output, output, n)
+}
+
+fn scale_conjugate_body_from(input: &str, output: &str, n: u32) -> Vec<Node> {
     let inv_n = Expr::f32(1.0 / n as f32);
     let zero_epsilon = Expr::f32(1.0e-6);
     let mut body = Vec::with_capacity(n as usize * 6);
@@ -179,11 +209,11 @@ fn scale_conjugate_body(output: &str, n: u32) -> Vec<Node> {
         let scaled_im_name = format!("ifft_scaled_im_{k}");
         body.push(Node::let_bind(
             re_name.clone(),
-            Expr::load(output, Expr::u32(base)),
+            Expr::load(input, Expr::u32(base)),
         ));
         body.push(Node::let_bind(
             im_name.clone(),
-            Expr::load(output, Expr::u32(base + 1)),
+            Expr::load(input, Expr::u32(base + 1)),
         ));
         body.push(Node::let_bind(
             scaled_re_name.clone(),
@@ -197,7 +227,10 @@ fn scale_conjugate_body(output: &str, n: u32) -> Vec<Node> {
             output,
             Expr::u32(base),
             Expr::select(
-                Expr::lt(Expr::abs(Expr::var(scaled_re_name.clone())), zero_epsilon.clone()),
+                Expr::lt(
+                    Expr::abs(Expr::var(scaled_re_name.clone())),
+                    zero_epsilon.clone(),
+                ),
                 Expr::f32(0.0),
                 Expr::var(scaled_re_name),
             ),
@@ -206,13 +239,106 @@ fn scale_conjugate_body(output: &str, n: u32) -> Vec<Node> {
             output,
             Expr::u32(base + 1),
             Expr::select(
-                Expr::lt(Expr::abs(Expr::var(scaled_im_name.clone())), zero_epsilon.clone()),
+                Expr::lt(
+                    Expr::abs(Expr::var(scaled_im_name.clone())),
+                    zero_epsilon.clone(),
+                ),
                 Expr::f32(0.0),
                 Expr::var(scaled_im_name),
             ),
         ));
     }
     body
+}
+
+fn pointwise_complex_multiply_conjugate_program() -> Program {
+    let n = 4;
+    let elements = n * 2;
+    Program::wrapped(
+        vec![
+            BufferDecl::storage("signal_freq", 0, BufferAccess::ReadOnly, DataType::F32)
+                .with_count(elements),
+            BufferDecl::storage("kernel_freq", 1, BufferAccess::ReadOnly, DataType::F32)
+                .with_count(elements),
+            BufferDecl::output("product_freq", 2, DataType::F32).with_count(elements),
+        ],
+        [1, 1, 1],
+        vec![wrap_anonymous(
+            MULTIPLY_OP_ID,
+            multiply_and_conjugate_body("signal_freq", "kernel_freq", "product_freq", n),
+        )],
+    )
+    .with_entry_op_id(MULTIPLY_OP_ID)
+}
+
+fn scale_conjugate_inverse_program() -> Program {
+    let n = 4;
+    let elements = n * 2;
+    Program::wrapped(
+        vec![
+            BufferDecl::storage("product_freq", 0, BufferAccess::ReadOnly, DataType::F32)
+                .with_count(elements),
+            BufferDecl::output("output", 1, DataType::F32).with_count(elements),
+        ],
+        [1, 1, 1],
+        vec![wrap_anonymous(
+            SCALE_OP_ID,
+            scale_conjugate_body_from("product_freq", "output", n),
+        )],
+    )
+    .with_entry_op_id(SCALE_OP_ID)
+}
+
+fn fixture_f32_bytes(values: &[f32]) -> Vec<u8> {
+    values
+        .iter()
+        .flat_map(|value| value.to_le_bytes())
+        .collect()
+}
+
+fn pointwise_complex_multiply_conjugate_inputs() -> Vec<Vec<Vec<u8>>> {
+    vec![vec![
+        fixture_f32_bytes(&[1.0, 2.0, 3.0, 4.0, -1.0, 0.5, 0.0, -2.0]),
+        fixture_f32_bytes(&[5.0, 6.0, -2.0, 1.0, 0.5, -1.0, 3.0, 0.0]),
+    ]]
+}
+
+fn pointwise_complex_multiply_conjugate_expected() -> Vec<Vec<Vec<u8>>> {
+    vec![vec![fixture_f32_bytes(&[
+        -7.0, -16.0, -10.0, 5.0, 0.0, -1.25, 0.0, 6.0,
+    ])]]
+}
+
+fn scale_conjugate_inverse_inputs() -> Vec<Vec<Vec<u8>>> {
+    vec![vec![fixture_f32_bytes(&[
+        4.0, -8.0, -12.0, 16.0, 0.0, 0.0, 2.0, -4.0,
+    ])]]
+}
+
+fn scale_conjugate_inverse_expected() -> Vec<Vec<Vec<u8>>> {
+    vec![vec![fixture_f32_bytes(&[
+        1.0, 2.0, -3.0, -4.0, 0.0, 0.0, 0.5, 1.0,
+    ])]]
+}
+
+inventory::submit! {
+    crate::harness::OpEntry {
+        id: MULTIPLY_OP_ID,
+        build: pointwise_complex_multiply_conjugate_program,
+        test_inputs: Some(pointwise_complex_multiply_conjugate_inputs),
+        expected_output: Some(pointwise_complex_multiply_conjugate_expected),
+        category: Some("math"),
+    }
+}
+
+inventory::submit! {
+    crate::harness::OpEntry {
+        id: SCALE_OP_ID,
+        build: scale_conjugate_inverse_program,
+        test_inputs: Some(scale_conjugate_inverse_inputs),
+        expected_output: Some(scale_conjugate_inverse_expected),
+        category: Some("math"),
+    }
 }
 
 inventory::submit! {
@@ -226,7 +352,7 @@ inventory::submit! {
             "product_freq",
             "output",
             4,
-        ).expect("Fix: catalog fixture uses valid power-of-two buffers."),
+        ).unwrap_or_else(|_| unreachable!("Fix: catalog fixture uses valid power-of-two buffers.")),
         test_inputs: Some(|| {
             let f32_bytes = |w: &[f32]| {
                 w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>()
@@ -234,7 +360,6 @@ inventory::submit! {
             vec![vec![
                 f32_bytes(&[1.0, 0.0, 2.0, 0.0, 3.0, 0.0, 4.0, 0.0]),
                 f32_bytes(&[1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
-                vec![0u8; 32],
             ]]
         }),
         expected_output: Some(|| {
@@ -243,6 +368,7 @@ inventory::submit! {
             };
             vec![vec![f32_bytes(&[5.0, 0.0, 3.0, 0.0, 5.0, 0.0, 7.0, 0.0])]]
         }),
+        category: Some("math"),
     }
 }
 

@@ -16,7 +16,7 @@
 //! bounds checks (`Lt(x, n)` with known x always < n) and to choose
 //! efficient strength-reduce alternatives based on operand magnitude.
 
-use std::collections::BTreeMap;
+use rustc_hash::FxHashMap;
 
 use serde::{Deserialize, Serialize};
 
@@ -63,7 +63,7 @@ pub struct ValueRangeReport {
     /// range is statically derivable. Per-body id space — child
     /// bodies are walked separately via `analyze_body` if callers
     /// need it.
-    pub ranges: BTreeMap<u32, IntRange>,
+    pub ranges: FxHashMap<u32, IntRange>,
 }
 
 impl ValueRangeReport {
@@ -116,7 +116,7 @@ pub fn analyze(desc: &KernelDescriptor) -> ValueRangeReport {
 
 #[must_use]
 pub fn analyze_body(body: &KernelBody) -> ValueRangeReport {
-    let mut ranges: BTreeMap<u32, IntRange> = BTreeMap::new();
+    let mut ranges: FxHashMap<u32, IntRange> = FxHashMap::default();
 
     // Phase 1a: seed from Literal ops.
     for op in &body.ops {

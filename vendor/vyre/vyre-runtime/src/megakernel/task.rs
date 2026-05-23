@@ -248,7 +248,10 @@ impl TaskWorkItem {
         self.state = TaskState::Yielded.word();
         self.continuation_pc = continuation_pc;
         self.continuation_data = continuation_data;
-        self.yield_count = self.yield_count.saturating_add(1);
+        self.yield_count = match self.yield_count.checked_add(1) {
+            Some(value) => value,
+            None => panic!("megakernel task yield_count overflowed u32"),
+        };
         self.flags |= TASK_FLAG_YIELDED;
         self
     }
@@ -265,8 +268,14 @@ impl TaskWorkItem {
         self.priority = priority.word();
         self.continuation_pc = continuation_pc;
         self.continuation_data = continuation_data;
-        self.requeue_count = self.requeue_count.saturating_add(1);
-        self.age_ticks = self.age_ticks.saturating_add(1);
+        self.requeue_count = match self.requeue_count.checked_add(1) {
+            Some(value) => value,
+            None => panic!("megakernel task requeue_count overflowed u32"),
+        };
+        self.age_ticks = match self.age_ticks.checked_add(1) {
+            Some(value) => value,
+            None => panic!("megakernel task age_ticks overflowed u32"),
+        };
         self.flags |= TASK_FLAG_REQUEUE_REQUESTED;
         self
     }
@@ -322,7 +331,12 @@ impl TaskQueueSnapshot {
             snapshot.max_priority_age = snapshot.max_priority_age.max(task.age_ticks);
             snapshot.total_requeues = snapshot
                 .total_requeues
-                .saturating_add(u64::from(task.requeue_count));
+                .checked_add(u64::from(task.requeue_count))
+                .ok_or_else(|| {
+                    BackendError::new(
+                        "megakernel task total_requeues overflowed u64. Fix: drain or shard the task ring before launch.",
+                    )
+                })?;
             match task.task_state() {
                 Some(TaskState::Empty | TaskState::Done) => {}
                 Some(TaskState::Ready) => checked_increment(&mut snapshot.ready_count)?,
@@ -345,17 +359,52 @@ impl TaskQueueSnapshot {
     /// Number of slots immediately eligible for GPU scheduling.
     #[must_use]
     pub fn schedulable_count(&self) -> u32 {
+        match self.try_schedulable_count() {
+            Ok(value) => value,
+            Err(error) => panic!("{error}"),
+        }
+    }
+
+    /// Checked number of slots immediately eligible for GPU scheduling.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BackendError`] when the summed schedulable count exceeds the
+    /// u32 launch ABI.
+    pub fn try_schedulable_count(&self) -> Result<u32, BackendError> {
         self.ready_count
-            .saturating_add(self.yielded_count)
-            .saturating_add(self.requeued_count)
+            .checked_add(self.yielded_count)
+            .and_then(|value| value.checked_add(self.requeued_count))
+            .ok_or_else(|| {
+                BackendError::new(
+                    "megakernel schedulable task count overflowed u32. Fix: shard the task ring before launch.",
+                )
+            })
     }
 
     /// Number of slots carrying continuation pressure.
     #[must_use]
     pub fn continuation_pressure_count(&self) -> u64 {
+        match self.try_continuation_pressure_count() {
+            Ok(value) => value,
+            Err(error) => panic!("{error}"),
+        }
+    }
+
+    /// Checked number of slots carrying continuation pressure.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BackendError`] when continuation pressure exceeds u64.
+    pub fn try_continuation_pressure_count(&self) -> Result<u64, BackendError> {
         u64::from(self.yielded_count)
-            .saturating_add(u64::from(self.requeued_count))
-            .saturating_add(self.total_requeues)
+            .checked_add(u64::from(self.requeued_count))
+            .and_then(|value| value.checked_add(self.total_requeues))
+            .ok_or_else(|| {
+                BackendError::new(
+                    "megakernel continuation pressure overflowed u64. Fix: drain or shard the task ring before launch.",
+                )
+            })
     }
 
     /// Build a Program that runs a one-shot persistent fixpoint over
@@ -399,12 +448,34 @@ impl TaskQueueSnapshot {
         &self,
         mut request: MegakernelLaunchRequest,
     ) -> MegakernelLaunchRequest {
-        request.queue_len = self.schedulable_count();
+        request = match self.try_apply_to_launch_request(request) {
+            Ok(request) => request,
+            Err(error) => panic!("{error}"),
+        };
+        request
+    }
+
+    /// Checked merge of queue telemetry into a launch request.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BackendError`] when schedulable count or continuation pressure
+    /// cannot fit the launch request ABI.
+    pub fn try_apply_to_launch_request(
+        &self,
+        mut request: MegakernelLaunchRequest,
+    ) -> Result<MegakernelLaunchRequest, BackendError> {
+        request.queue_len = self.try_schedulable_count()?;
         request.requeue_count = request
             .requeue_count
-            .saturating_add(self.continuation_pressure_count());
+            .checked_add(self.try_continuation_pressure_count()?)
+            .ok_or_else(|| {
+                BackendError::new(
+                    "megakernel launch request requeue_count overflowed u64. Fix: drain or shard the task ring before launch.",
+                )
+            })?;
         request.max_priority_age = request.max_priority_age.max(self.max_priority_age);
-        request
+        Ok(request)
     }
 }
 

@@ -41,7 +41,7 @@ impl CacheTier {
             capacity,
             used: 0,
             entries: FxHashMap::default(),
-            lru: IntrusiveLru::new(),
+            lru: IntrusiveLru::with_reserved_capacity(1024),
         }
     }
 }
@@ -105,7 +105,7 @@ impl LruPolicy {
                 return Some(*key);
             }
         }
-        entries.keys().next().copied()
+        entries.keys().copied().next()
     }
 }
 
@@ -117,6 +117,8 @@ pub enum CacheError {
     KeyNotFound,
     /// The entry is too large to fit in any tier.
     EntryTooLarge,
+    /// Tier byte accounting overflowed or underflowed.
+    CapacityAccountingOverflow,
 }
 
 impl std::fmt::Display for CacheError {
@@ -129,6 +131,10 @@ impl std::fmt::Display for CacheError {
             Self::EntryTooLarge => write!(
                 f,
                 "Entry size exceeds the capacity of the largest tier. Fix: reduce the buffer size or increase the tier capacity."
+            ),
+            Self::CapacityAccountingOverflow => write!(
+                f,
+                "Tiered cache byte accounting overflowed. Fix: rebuild the cache or shard entries before continuing."
             ),
         }
     }
@@ -213,7 +219,10 @@ impl TieredCache {
         if !self.policy.should_promote(key, &stats) {
             return Ok(());
         }
-        let target = entry.tier.saturating_add(1);
+        let target = entry
+            .tier
+            .checked_add(1)
+            .ok_or(CacheError::CapacityAccountingOverflow)?;
         if target >= self.tiers.len() {
             return Ok(());
         }
@@ -251,7 +260,7 @@ impl TieredCache {
                 continue;
             }
             if self.make_room(start, size) {
-                self.tiers[start].used = self.tiers[start].used.saturating_add(size);
+                self.tiers[start].used = checked_tier_used_add(self.tiers[start].used, size)?;
                 self.tiers[start].entries.insert(
                     key,
                     CacheEntry {
@@ -280,7 +289,7 @@ impl TieredCache {
         fallback: usize,
     ) -> Result<(), CacheError> {
         if self.make_room(target, size) {
-            self.tiers[target].used = self.tiers[target].used.saturating_add(size);
+            self.tiers[target].used = checked_tier_used_add(self.tiers[target].used, size)?;
             self.tiers[target].entries.insert(
                 key,
                 CacheEntry {
@@ -302,7 +311,7 @@ impl TieredCache {
         loop {
             let used = self.tiers[tier].used;
             let cap = self.tiers[tier].capacity;
-            if used.saturating_add(size) <= cap {
+            if used.checked_add(size).is_some_and(|total| total <= cap) {
                 return true;
             }
             // O(1) fast-path eviction using the tier's own recency
@@ -332,7 +341,7 @@ impl TieredCache {
         let tier = &mut self.tiers[tier_id];
         let entry = tier.entries.remove(&key)?;
         tier.lru.remove(&key);
-        tier.used = tier.used.saturating_sub(entry.size);
+        debit_tier_used(tier, entry.size);
         self.index.remove(&key);
         Some(entry)
     }
@@ -342,7 +351,7 @@ impl TieredCache {
         let tier = &mut self.tiers[tier_id];
         let entry = tier.entries.remove(&key)?;
         tier.lru.remove(&key);
-        tier.used = tier.used.saturating_sub(entry.size);
+        debit_tier_used(tier, entry.size);
         self.index.remove(&key);
         self.tracker.remove(key);
         Some(entry)
@@ -371,9 +380,86 @@ impl TieredCache {
         let tier = &mut self.tiers[tier];
         let entry = tier.entries.remove(&key)?;
         tier.lru.remove(&key);
-        tier.used = tier.used.saturating_sub(entry.size);
+        debit_tier_used(tier, entry.size);
         self.index.remove(&key);
         self.tracker.remove(key);
         Some(entry)
+    }
+}
+
+fn checked_tier_used_add(used: u64, size: u64) -> Result<u64, CacheError> {
+    used.checked_add(size)
+        .ok_or(CacheError::CapacityAccountingOverflow)
+}
+
+fn debit_tier_used(tier: &mut CacheTier, size: u64) {
+    match tier.used.checked_sub(size) {
+        Some(used) => {
+            tier.used = used;
+        }
+        None => {
+            tracing::error!(
+                tier = %tier.name,
+                used = tier.used,
+                removed_size = size,
+                "tiered cache byte accounting underflowed; repairing from live entries. Fix: investigate mismatched cache tier metadata."
+            );
+            tier.used = recompute_tier_used(tier);
+        }
+    }
+}
+
+fn recompute_tier_used(tier: &CacheTier) -> u64 {
+    let mut total = 0_u64;
+    for entry in tier.entries.values() {
+        total = match total.checked_add(entry.size) {
+            Some(next) => next,
+            None => {
+                tracing::error!(
+                    tier = %tier.name,
+                    "tiered cache byte accounting overflowed while repairing from live entries; pinning used bytes to u64::MAX."
+                );
+                return u64::MAX;
+            }
+        };
+    }
+    total
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tiered_cache_repairs_used_bytes_after_underflow_instead_of_panicking() {
+        let mut cache = TieredCache::new(vec![CacheTier::new("gpu", 128)]);
+        cache.insert(1, 64).expect("test insert must fit");
+        cache.tiers[0].used = 0;
+
+        let removed = cache.evict(1).expect("corrupted entry should still evict");
+
+        assert_eq!(removed.size, 64);
+        assert_eq!(cache.tiers[0].used, 0);
+        assert!(cache.get(1).is_none());
+    }
+
+    #[test]
+    fn tiered_cache_source_has_no_release_path_panic_accounting() {
+        let source = include_str!("tiered_cache.rs");
+        let production = source
+            .split("#[cfg(test)]")
+            .next()
+            .expect("tiered cache production source must precede tests");
+        assert!(
+            !production.contains(concat!("panic", "!("))
+                && !production.contains(".unwrap_or_else("),
+            "Fix: tiered cache accounting must repair or return typed errors instead of aborting."
+        );
+        assert!(
+            production.contains("debit_tier_used")
+                && production.contains("recompute_tier_used")
+                && production.contains("repairing from live entries"),
+            "Fix: tiered cache underflow must be repaired from live entry metadata with a loud diagnostic."
+        );
     }
 }

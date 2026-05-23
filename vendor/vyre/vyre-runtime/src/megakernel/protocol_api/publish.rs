@@ -1,10 +1,15 @@
-use crate::megakernel::protocol::{
-    self, slot, ARG0_WORD, ARGS_PER_SLOT, OPCODE_WORD, PRIORITY_WORD, SLOT_WORDS, STATUS_WORD,
-    TENANT_WORD,
-};
 use crate::megakernel::planner::MegakernelWorkItem;
+use crate::megakernel::protocol::{self, slot, SLOT_WORDS};
 use crate::megakernel::{scheduler, Megakernel, PackedOpDescriptor};
 use crate::PipelineError;
+
+const SLOT_WORDS_USIZE: usize = 16;
+const STATUS_WORD_USIZE: usize = 0;
+const OPCODE_WORD_USIZE: usize = 1;
+const TENANT_WORD_USIZE: usize = 2;
+const PRIORITY_WORD_USIZE: usize = 3;
+const ARG0_WORD_USIZE: usize = 4;
+const ARGS_PER_SLOT_USIZE: usize = 12;
 
 #[derive(Debug, Clone, Copy)]
 struct RingPublishView {
@@ -13,8 +18,7 @@ struct RingPublishView {
 }
 
 fn validate_ring_publish_view(ring_bytes: &[u8]) -> Result<RingPublishView, PipelineError> {
-    let words_per_slot = SLOT_WORDS as usize;
-    let slot_bytes = words_per_slot
+    let slot_bytes = SLOT_WORDS_USIZE
         .checked_mul(4)
         .ok_or(PipelineError::QueueFull {
             queue: "submission",
@@ -79,7 +83,7 @@ impl Megakernel {
                 fix: "work item count exceeds ring slot count; enlarge the launch geometry before publishing",
             });
         }
-        if ARGS_PER_SLOT < 3 {
+        if ARGS_PER_SLOT_USIZE < 3 {
             return Err(PipelineError::QueueFull {
                 queue: "submission",
                 fix: "MegakernelWorkItem publication requires three argument words; increase ARGS_PER_SLOT",
@@ -100,26 +104,71 @@ impl Megakernel {
         debug_assert!(items.len() <= view.slot_capacity);
 
         for (slot_idx, item) in items.iter().enumerate() {
-            let base = slot_idx * view.slot_bytes;
-            write_slot_word(ring_bytes, base, OPCODE_WORD as usize, item.op_handle);
-            write_slot_word(ring_bytes, base, TENANT_WORD as usize, tenant_id);
-            write_slot_word(
-                ring_bytes,
-                base,
-                PRIORITY_WORD as usize,
-                scheduler::priority::NORMAL,
-            );
-            write_slot_word(ring_bytes, base, ARG0_WORD as usize, item.input_handle);
-            write_slot_word(
-                ring_bytes,
-                base,
-                ARG0_WORD as usize + 1,
-                item.output_handle,
-            );
-            write_slot_word(ring_bytes, base, ARG0_WORD as usize + 2, item.param);
-            write_slot_word(ring_bytes, base, STATUS_WORD as usize, slot::PUBLISHED);
+            let slot_idx = u32::try_from(slot_idx).map_err(|_| PipelineError::QueueFull {
+                queue: "submission",
+                fix: "work item publish slot index exceeds u32::MAX; split the publish batch",
+            })?;
+            write_work_item_unchecked(ring_bytes, view, slot_idx, tenant_id, item);
         }
         Ok(())
+    }
+
+    /// Publish a contiguous fixed-ABI work-item window into an existing ring
+    /// without resetting unrelated slots.
+    ///
+    /// This is the resident hot path for repeated megakernel queue updates:
+    /// validate the whole target window first, then write each slot once and
+    /// store [`slot::PUBLISHED`] last. Unlike
+    /// [`Megakernel::encode_work_items_ring_into`], this does not clear the
+    /// full ring, so sparse updates scale with `items.len()` rather than
+    /// `slot_count`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PipelineError::QueueFull`] when the target window is outside
+    /// the ring, any slot is still in flight, or an item opcode is not
+    /// publishable.
+    pub fn publish_work_items(
+        ring_bytes: &mut [u8],
+        start_slot: u32,
+        tenant_id: u32,
+        items: &[MegakernelWorkItem],
+    ) -> Result<u32, PipelineError> {
+        validate_work_items(items)?;
+        let item_count = u32::try_from(items.len()).map_err(|_| PipelineError::QueueFull {
+            queue: "submission",
+            fix: "work item count exceeds u32::MAX; shard the megakernel queue before publishing",
+        })?;
+        let view = validate_ring_publish_view(ring_bytes)?;
+        let end_slot = start_slot
+            .checked_add(item_count)
+            .ok_or(PipelineError::QueueFull {
+                queue: "submission",
+                fix: "work item publish slot index overflowed u32; split the publish batch",
+            })?;
+        if u32_to_usize(end_slot)? > view.slot_capacity {
+            return Err(PipelineError::QueueFull {
+                queue: "submission",
+                fix:
+                    "work item publish exceeds ring slot count; enlarge the ring or split the batch",
+            });
+        }
+        for slot_idx in start_slot..end_slot {
+            validate_publishable_slot(ring_bytes, view, slot_idx)?;
+        }
+        for (offset, item) in items.iter().enumerate() {
+            let slot_idx = start_slot
+                .checked_add(u32::try_from(offset).map_err(|_| PipelineError::QueueFull {
+                    queue: "submission",
+                    fix: "work item publish offset exceeds u32::MAX; split the publish batch",
+                })?)
+                .ok_or(PipelineError::QueueFull {
+                    queue: "submission",
+                    fix: "work item publish slot index overflowed u32; split the publish batch",
+                })?;
+            write_work_item_unchecked(ring_bytes, view, slot_idx, tenant_id, item);
+        }
+        Ok(item_count)
     }
 
     /// Reset `ring_words` to an empty ring and publish a contiguous `MegakernelWorkItem`
@@ -143,25 +192,25 @@ impl Megakernel {
         validate_work_item_batch(slot_count, items)?;
         let total_words = encoded_ring_word_count(slot_count)?;
 
-        let words_per_slot = SLOT_WORDS as usize;
         if ring_words.len() != total_words {
             ring_words.clear();
             ring_words.resize(total_words, 0);
         } else {
-            for slot_idx in items.len()..slot_count as usize {
-                ring_words[slot_idx * words_per_slot + STATUS_WORD as usize] = slot::EMPTY;
+            let slot_count = u32_to_usize(slot_count)?;
+            for slot_idx in items.len()..slot_count {
+                ring_words[slot_idx * SLOT_WORDS_USIZE + STATUS_WORD_USIZE] = slot::EMPTY;
             }
         }
 
         for (slot_idx, item) in items.iter().enumerate() {
-            let base = slot_idx * words_per_slot;
-            ring_words[base + OPCODE_WORD as usize] = item.op_handle;
-            ring_words[base + TENANT_WORD as usize] = tenant_id;
-            ring_words[base + PRIORITY_WORD as usize] = scheduler::priority::NORMAL;
-            ring_words[base + ARG0_WORD as usize] = item.input_handle;
-            ring_words[base + ARG0_WORD as usize + 1] = item.output_handle;
-            ring_words[base + ARG0_WORD as usize + 2] = item.param;
-            ring_words[base + STATUS_WORD as usize] = slot::PUBLISHED;
+            let base = slot_idx * SLOT_WORDS_USIZE;
+            ring_words[base + OPCODE_WORD_USIZE] = item.op_handle;
+            ring_words[base + TENANT_WORD_USIZE] = tenant_id;
+            ring_words[base + PRIORITY_WORD_USIZE] = scheduler::priority::NORMAL;
+            ring_words[base + ARG0_WORD_USIZE] = item.input_handle;
+            ring_words[base + ARG0_WORD_USIZE + 1] = item.output_handle;
+            ring_words[base + ARG0_WORD_USIZE + 2] = item.param;
+            ring_words[base + STATUS_WORD_USIZE] = slot::PUBLISHED;
         }
         Ok(())
     }
@@ -174,13 +223,13 @@ impl Megakernel {
         opcode: u32,
         args: &[u32],
     ) -> Result<(), PipelineError> {
-        if (slot_idx as usize) >= view.slot_capacity {
+        if u32_to_usize(slot_idx)? >= view.slot_capacity {
             return Err(PipelineError::QueueFull {
                 queue: "submission",
                 fix: "slot_idx exceeds ring slot count; enlarge the ring via encode_empty_ring",
             });
         }
-        if args.len() > ARGS_PER_SLOT as usize {
+        if args.len() > ARGS_PER_SLOT_USIZE {
             return Err(PipelineError::QueueFull {
                 queue: "submission",
                 fix: "too many args for one slot; 12 u32 args max per slot",
@@ -193,13 +242,7 @@ impl Megakernel {
             });
         }
 
-        let base =
-            (slot_idx as usize)
-                .checked_mul(view.slot_bytes)
-                .ok_or(PipelineError::QueueFull {
-                    queue: "submission",
-                    fix: "slot byte offset overflowed usize; shard the ring before publishing",
-                })?;
+        let base = slot_base(slot_idx, view)?;
         let read_word = |buf: &[u8], word_idx: usize| -> Result<u32, PipelineError> {
             let off = base + word_idx * 4;
             let bytes = buf.get(off..off + 4).ok_or(PipelineError::QueueFull {
@@ -211,7 +254,7 @@ impl Megakernel {
             Ok(u32::from_le_bytes(word))
         };
 
-        let current_status = read_word(ring_bytes, STATUS_WORD as usize)?;
+        let current_status = read_word(ring_bytes, STATUS_WORD_USIZE)?;
         if current_status != slot::EMPTY && current_status != slot::DONE {
             return Err(PipelineError::QueueFull {
                 queue: "submission",
@@ -225,21 +268,17 @@ impl Megakernel {
             buf[off..off + 4].copy_from_slice(&value.to_le_bytes());
         };
 
-        write_word(ring_bytes, OPCODE_WORD as usize, opcode);
-        write_word(ring_bytes, TENANT_WORD as usize, tenant_id);
-        write_word(
-            ring_bytes,
-            PRIORITY_WORD as usize,
-            scheduler::priority::NORMAL,
-        );
-        let args_start = base + (ARG0_WORD as usize) * 4;
-        let args_end = args_start + (ARGS_PER_SLOT as usize) * 4;
+        write_word(ring_bytes, OPCODE_WORD_USIZE, opcode);
+        write_word(ring_bytes, TENANT_WORD_USIZE, tenant_id);
+        write_word(ring_bytes, PRIORITY_WORD_USIZE, scheduler::priority::NORMAL);
+        let args_start = base + ARG0_WORD_USIZE * 4;
+        let args_end = args_start + ARGS_PER_SLOT_USIZE * 4;
         ring_bytes[args_start..args_end].fill(0);
         for (i, arg) in args.iter().enumerate() {
-            write_word(ring_bytes, ARG0_WORD as usize + i, *arg);
+            write_word(ring_bytes, ARG0_WORD_USIZE + i, *arg);
         }
         // Status last — PUBLISH is the publish barrier.
-        write_word(ring_bytes, STATUS_WORD as usize, slot::PUBLISHED);
+        write_word(ring_bytes, STATUS_WORD_USIZE, slot::PUBLISHED);
 
         Ok(())
     }
@@ -299,16 +338,16 @@ impl Megakernel {
                 fix: "packed slot metadata length overflowed usize; reduce packed opcode count",
             })?;
         let metadata_words = metadata_bytes.div_ceil(4);
-        if metadata_words > ARGS_PER_SLOT as usize {
+        if metadata_words > ARGS_PER_SLOT_USIZE {
             return Err(PipelineError::QueueFull {
                 queue: "submission",
                 fix: "packed slot metadata exceeds the 12-word slot argument budget",
             });
         }
 
-        let mut packed_args = [0u32; ARGS_PER_SLOT as usize];
+        let mut packed_args = [0u32; ARGS_PER_SLOT_USIZE];
         let mut packed_arg_words = 0usize;
-        let mut args = [0u32; ARGS_PER_SLOT as usize];
+        let mut args = [0u32; ARGS_PER_SLOT_USIZE];
         write_packed_metadata_byte(&mut args, 0, opcode_count);
         let metadata_payload_bytes =
             metadata_words
@@ -338,7 +377,7 @@ impl Megakernel {
                     queue: "submission",
                     fix: "packed slot total word count overflowed usize; reduce packed args",
                 })?;
-            if total_words > ARGS_PER_SLOT as usize {
+            if total_words > ARGS_PER_SLOT_USIZE {
                 return Err(PipelineError::QueueFull {
                     queue: "submission",
                     fix: "packed slot payload exceeds the 12-word slot argument budget",
@@ -398,31 +437,64 @@ impl Megakernel {
             fix: "batch item count exceeds u32::MAX; split the publish batch",
         })?;
         let view = validate_ring_publish_view(ring_bytes)?;
-        let mut slot_idx = start_slot;
+        let total_slots = item_count.checked_add(1).ok_or(PipelineError::QueueFull {
+            queue: "submission",
+            fix: "batch publish slot count overflowed u32; split the publish batch",
+        })?;
+        let end_slot = start_slot
+            .checked_add(total_slots)
+            .ok_or(PipelineError::QueueFull {
+                queue: "submission",
+                fix: "batch publish slot index overflowed u32; split the publish batch",
+            })?;
+        if u32_to_usize(end_slot)? > view.slot_capacity {
+            return Err(PipelineError::QueueFull {
+                queue: "submission",
+                fix: "batch publish exceeds ring slot count; enlarge the ring or split the batch",
+            });
+        }
         for (opcode, args) in items {
-            Self::publish_slot_validated(
+            validate_publish_payload(*opcode, args.as_ref())?;
+        }
+        validate_publish_payload(protocol::opcode::BATCH_FENCE, &[item_count, batch_tag])?;
+        for slot_idx in start_slot..end_slot {
+            validate_publishable_slot(ring_bytes, view, slot_idx)?;
+        }
+
+        for (offset, (opcode, args)) in items.iter().enumerate() {
+            let slot_idx = start_slot
+                .checked_add(u32::try_from(offset).map_err(|_| PipelineError::QueueFull {
+                    queue: "submission",
+                    fix: "batch publish offset exceeds u32::MAX; split the publish batch",
+                })?)
+                .ok_or(PipelineError::QueueFull {
+                    queue: "submission",
+                    fix: "batch publish slot index overflowed u32; split the publish batch",
+                })?;
+            write_slot_unchecked(
                 ring_bytes,
                 view,
                 slot_idx,
                 tenant_id,
                 *opcode,
                 args.as_ref(),
-            )?;
-            slot_idx = slot_idx.checked_add(1).ok_or(PipelineError::QueueFull {
-                queue: "submission",
-                fix: "batch publish slot index overflowed u32; split the publish batch",
-            })?;
+            );
         }
-        // Publish the fence as the final slot.
-        Self::publish_slot_validated(
+        let fence_slot = start_slot
+            .checked_add(item_count)
+            .ok_or(PipelineError::QueueFull {
+                queue: "submission",
+                fix: "batch publish fence slot overflowed u32; split the publish batch",
+            })?;
+        write_slot_unchecked(
             ring_bytes,
             view,
-            slot_idx,
+            fence_slot,
             tenant_id,
             protocol::opcode::BATCH_FENCE,
             &[item_count, batch_tag],
-        )?;
-        slot_idx
+        );
+        fence_slot
             .checked_add(1)
             .and_then(|end| end.checked_sub(start_slot))
             .ok_or(PipelineError::QueueFull {
@@ -432,7 +504,133 @@ impl Megakernel {
     }
 }
 
-fn validate_work_item_batch(slot_count: u32, items: &[MegakernelWorkItem]) -> Result<(), PipelineError> {
+fn validate_publish_payload(opcode: u32, args: &[u32]) -> Result<(), PipelineError> {
+    if args.len() > ARGS_PER_SLOT_USIZE {
+        return Err(PipelineError::QueueFull {
+            queue: "submission",
+            fix: "too many args for one slot; 12 u32 args max per slot",
+        });
+    }
+    if let Err(fix) = protocol::opcode::validate_publish_opcode(opcode) {
+        return Err(PipelineError::QueueFull {
+            queue: "submission",
+            fix,
+        });
+    }
+    Ok(())
+}
+
+fn u32_to_usize(value: u32) -> Result<usize, PipelineError> {
+    usize::try_from(value).map_err(|_| PipelineError::QueueFull {
+        queue: "submission",
+        fix: "u32 slot index cannot fit host usize; shard the megakernel ring for this target",
+    })
+}
+
+fn slot_base(slot_idx: u32, view: RingPublishView) -> Result<usize, PipelineError> {
+    u32_to_usize(slot_idx)?
+        .checked_mul(view.slot_bytes)
+        .ok_or(PipelineError::QueueFull {
+            queue: "submission",
+            fix: "slot byte offset overflowed usize; shard the ring before publishing",
+        })
+}
+
+fn validate_publishable_slot(
+    ring_bytes: &[u8],
+    view: RingPublishView,
+    slot_idx: u32,
+) -> Result<(), PipelineError> {
+    let base = slot_base(slot_idx, view)?;
+    let status_offset =
+        base.checked_add(STATUS_WORD_USIZE.checked_mul(4).ok_or(
+            PipelineError::QueueFull {
+                queue: "submission",
+                fix: "slot status word byte offset overflowed usize; keep SLOT_WORDS within the u32 ABI",
+            },
+        )?)
+        .ok_or(PipelineError::QueueFull {
+            queue: "submission",
+            fix: "slot status byte offset overflowed usize; shard the ring before publishing",
+        })?;
+    let status_bytes = ring_bytes
+        .get(status_offset..status_offset + 4)
+        .ok_or(PipelineError::QueueFull {
+            queue: "submission",
+            fix: "slot status is outside the validated ring buffer; validate ring length before publishing",
+        })?;
+    let current_status = u32::from_le_bytes([
+        status_bytes[0],
+        status_bytes[1],
+        status_bytes[2],
+        status_bytes[3],
+    ]);
+    if current_status != slot::EMPTY && current_status != slot::DONE {
+        return Err(PipelineError::QueueFull {
+            queue: "submission",
+            fix: "slot is not publishable; only EMPTY and DONE slots may be written by the host",
+        });
+    }
+    Ok(())
+}
+
+fn write_slot_unchecked(
+    ring_bytes: &mut [u8],
+    view: RingPublishView,
+    slot_idx: u32,
+    tenant_id: u32,
+    opcode: u32,
+    args: &[u32],
+) {
+    let base = slot_base(slot_idx, view)
+        .expect("validated publish slot must fit the host byte address space");
+    write_slot_word(ring_bytes, base, OPCODE_WORD_USIZE, opcode);
+    write_slot_word(ring_bytes, base, TENANT_WORD_USIZE, tenant_id);
+    write_slot_word(
+        ring_bytes,
+        base,
+        PRIORITY_WORD_USIZE,
+        scheduler::priority::NORMAL,
+    );
+    let args_start = base + ARG0_WORD_USIZE * 4;
+    let args_end = args_start + ARGS_PER_SLOT_USIZE * 4;
+    ring_bytes[args_start..args_end].fill(0);
+    for (index, arg) in args.iter().enumerate() {
+        write_slot_word(ring_bytes, base, ARG0_WORD_USIZE + index, *arg);
+    }
+    write_slot_word(ring_bytes, base, STATUS_WORD_USIZE, slot::PUBLISHED);
+}
+
+fn write_work_item_unchecked(
+    ring_bytes: &mut [u8],
+    view: RingPublishView,
+    slot_idx: u32,
+    tenant_id: u32,
+    item: &MegakernelWorkItem,
+) {
+    let base = slot_base(slot_idx, view)
+        .expect("validated work-item slot must fit the host byte address space");
+    write_slot_word(ring_bytes, base, OPCODE_WORD_USIZE, item.op_handle);
+    write_slot_word(ring_bytes, base, TENANT_WORD_USIZE, tenant_id);
+    write_slot_word(
+        ring_bytes,
+        base,
+        PRIORITY_WORD_USIZE,
+        scheduler::priority::NORMAL,
+    );
+    let args_start = base + ARG0_WORD_USIZE * 4;
+    let args_end = args_start + ARGS_PER_SLOT_USIZE * 4;
+    ring_bytes[args_start..args_end].fill(0);
+    write_slot_word(ring_bytes, base, ARG0_WORD_USIZE, item.input_handle);
+    write_slot_word(ring_bytes, base, ARG0_WORD_USIZE + 1, item.output_handle);
+    write_slot_word(ring_bytes, base, ARG0_WORD_USIZE + 2, item.param);
+    write_slot_word(ring_bytes, base, STATUS_WORD_USIZE, slot::PUBLISHED);
+}
+
+fn validate_work_item_batch(
+    slot_count: u32,
+    items: &[MegakernelWorkItem],
+) -> Result<(), PipelineError> {
     let item_count = u32::try_from(items.len()).map_err(|_| PipelineError::QueueFull {
         queue: "submission",
         fix: "work item count exceeds u32::MAX; shard the megakernel queue before publishing",
@@ -443,7 +641,11 @@ fn validate_work_item_batch(slot_count: u32, items: &[MegakernelWorkItem]) -> Re
             fix: "work item count exceeds ring slot count; enlarge the launch geometry before publishing",
         });
     }
-    if ARGS_PER_SLOT < 3 {
+    validate_work_items(items)
+}
+
+fn validate_work_items(items: &[MegakernelWorkItem]) -> Result<(), PipelineError> {
+    if ARGS_PER_SLOT_USIZE < 3 {
         return Err(PipelineError::QueueFull {
             queue: "submission",
             fix: "MegakernelWorkItem publication requires three argument words; increase ARGS_PER_SLOT",
@@ -484,12 +686,12 @@ fn write_slot_word(ring_bytes: &mut [u8], slot_base: usize, word_idx: usize, val
     ring_bytes[off..off + 4].copy_from_slice(&value.to_le_bytes());
 }
 
-fn write_packed_metadata_byte(
-    args: &mut [u32; ARGS_PER_SLOT as usize],
-    byte_index: usize,
-    value: u8,
-) {
+fn write_packed_metadata_byte(args: &mut [u32; ARGS_PER_SLOT_USIZE], byte_index: usize, value: u8) {
     let word_index = byte_index / 4;
-    let shift = ((byte_index % 4) * 8) as u32;
+    let shift = u32::try_from((byte_index % 4) * 8).unwrap_or_else(|source| {
+        panic!(
+            "packed metadata byte shift cannot fit u32: {source}. Fix: keep packed metadata byte indices within one u32 word lane."
+        )
+    });
     args[word_index] |= u32::from(value) << shift;
 }

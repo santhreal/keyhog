@@ -71,6 +71,7 @@ inventory::submit! {
             }
             vec![vec![out]]
         }),
+        category: Some("graph"),
     }
 }
 

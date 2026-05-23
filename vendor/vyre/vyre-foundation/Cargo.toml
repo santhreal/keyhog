@@ -1,6 +1,6 @@
 [package]
 name = "vyre-foundation"
-version = "0.4.1"
+version = "0.4.2"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -16,6 +16,10 @@ documentation = "https://docs.rs/vyre-foundation"
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
+
+[features]
+default = []
+serde = []
 
 [dependencies]
 dashmap = "6.1.0"
@@ -52,7 +56,6 @@ vyre = { workspace = true }
 vyre-reference.workspace = true
 proptest.workspace = true
 criterion.workspace = true
-
 
 
 

@@ -79,12 +79,8 @@ impl CompiledScanner {
                 //   5 xoxb-     8
                 //   6 xoxp-     8
                 //   7 sq0csp-   8
-                const PER_PATTERN_MIN_LEN: &[usize] =
-                    &[8, 8, 20, 20, 8, 8, 8, 8];
-                let min_len = PER_PATTERN_MIN_LEN
-                    .get(pattern_idx)
-                    .copied()
-                    .unwrap_or(8);
+                const PER_PATTERN_MIN_LEN: &[usize] = &[8, 8, 20, 20, 8, 8, 8, 8];
+                let min_len = PER_PATTERN_MIN_LEN.get(pattern_idx).copied().unwrap_or(8);
                 if credential.len() < min_len
                     || crate::pipeline::should_suppress_known_example_credential_with_source(
                         credential,

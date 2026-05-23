@@ -6,7 +6,18 @@ pub(crate) fn validate_and_analyze(
     program: &Program,
     target_sm: u32,
 ) -> Result<vyre_lower::KernelDescriptor, String> {
+    // Pre-lowering optimization is handled by the canonical
+    // `prepare_program_for_emit` pipeline in `lower_for_cuda_emit`.
+    // Calling the Program-level optimizer here would violate the
+    // rewrite layer contract (emit/driver crates must not host
+    // Program-IR optimizer passes).
     let descriptor = lower_for_cuda_emit(program)?;
+    if let Err(errors) = vyre_lower::verify::verify(&descriptor) {
+        return Err(format!(
+            "canonical pre-emit lowering failed before CUDA PTX emission: descriptor verification failed for {:?}: {errors:?}. Fix: repair the source Program (workgroup_size axes must be > 0, binding slot ids must be unique, result ids must be unique within each body) before calling the CUDA driver.",
+            descriptor
+        ));
+    }
     if std::env::var_os("VYRE_CUDA_DESCRIPTOR_AUDIT").is_some() {
         let neutral = vyre_lower::audit::audit(&descriptor);
         let concrete =
@@ -23,14 +34,21 @@ pub(crate) fn validate_and_analyze(
 }
 
 fn lower_for_cuda_emit(program: &Program) -> Result<vyre_lower::KernelDescriptor, String> {
-    if std::env::var_os("VYRE_CUDA_CANONICAL_PREEMIT").is_some() {
-        return vyre_lower::lower_for_emit(program)
-            .map(|lowered| lowered.descriptor)
+    if !matches!(
+        std::env::var("VYRE_CUDA_CANONICAL_PREEMIT").as_deref(),
+        Ok("0" | "false" | "FALSE" | "off" | "OFF")
+    ) {
+        let prepared = vyre_lower::prepare_program_for_emit(program)
             .map_err(|error| {
                 format!(
-                    "canonical pre-emit lowering failed before CUDA PTX emission: {error}. Fix: route Programs through vyre-lower::lower_for_emit and add missing neutral mappings there instead of concrete-driver lowering."
+                    "canonical pre-emit Program preparation failed before CUDA PTX emission: {error}. Fix: repair call inlining or semantic Program optimization before concrete CUDA lowering."
                 )
-            });
+            })?;
+        return vyre_lower::lower(&prepared).map_err(|error| {
+            format!(
+                "canonical pre-emit lowering failed before CUDA PTX emission: {error}. Fix: add the missing neutral descriptor mapping before concrete PTX emission."
+            )
+        });
     }
 
     let trace = std::env::var_os("VYRE_CUDA_STAGE_TRACE").is_some();
@@ -40,6 +58,12 @@ fn lower_for_cuda_emit(program: &Program) -> Result<vyre_lower::KernelDescriptor
             "CUDA fast descriptor lowering failed: {error}. Fix: add the missing neutral descriptor mapping before concrete PTX emission."
         )
     })?;
+    if let Err(errors) = vyre_lower::verify::verify(&descriptor) {
+        return Err(format!(
+            "canonical pre-emit lowering failed before CUDA PTX emission: descriptor verification failed for {:?}: {errors:?}. Fix: repair the source Program (workgroup_size axes must be > 0, binding slot ids must be unique, result ids must be unique within each body) before calling the CUDA driver.",
+            descriptor
+        ));
+    }
     if trace {
         eprintln!(
             "[cuda-codegen] +{}ms lower ops={} bindings={}",
@@ -48,10 +72,13 @@ fn lower_for_cuda_emit(program: &Program) -> Result<vyre_lower::KernelDescriptor
             descriptor.bindings.slots.len()
         );
     }
-    if std::env::var_os("VYRE_CUDA_DESCRIPTOR_REWRITES").is_none() {
+    if matches!(
+        std::env::var("VYRE_CUDA_DESCRIPTOR_REWRITES").as_deref(),
+        Ok("0" | "false" | "FALSE" | "off" | "OFF")
+    ) {
         return Ok(descriptor);
     }
-    let optimized = vyre_lower::rewrites::run_all(&descriptor);
+    let optimized = run_cuda_descriptor_rewrites(&descriptor)?;
     if trace {
         eprintln!(
             "[cuda-codegen] +{}ms descriptor_rewrites ops={} bindings={}",
@@ -61,6 +88,35 @@ fn lower_for_cuda_emit(program: &Program) -> Result<vyre_lower::KernelDescriptor
         );
     }
     Ok(optimized)
+}
+
+fn run_cuda_descriptor_rewrites(
+    descriptor: &vyre_lower::KernelDescriptor,
+) -> Result<vyre_lower::KernelDescriptor, String> {
+    let mut current = descriptor.clone();
+    for _ in 0..vyre_lower::rewrites::RUN_ALL_MAX_ITERS {
+        let mut changed = false;
+        for pass in vyre_lower::rewrites::canonical_rewrite_passes() {
+            if matches!(pass.name, "cmp_normalize" | "cmp_normalize_post_saturation") {
+                continue;
+            }
+            let next = (pass.rewrite)(&current);
+            if next != current {
+                if let Err(errors) = vyre_lower::verify::verify(&next) {
+                    return Err(format!(
+                        "CUDA descriptor rewrite `{}` produced an invalid KernelDescriptor: {errors:?}. Fix: repair the rewrite pass or disable it explicitly only while debugging.",
+                        pass.name
+                    ));
+                }
+                current = next;
+                changed = true;
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    Ok(current)
 }
 
 pub(crate) fn compute_capability(target_sm: u32) -> vyre_emit_ptx::ComputeCapability {
@@ -112,5 +168,65 @@ mod tests {
         let cc = compute_capability(89);
         assert_eq!(cc.major, 8);
         assert_eq!(cc.minor, 9);
+    }
+
+    #[test]
+    fn descriptor_rewrites_are_release_default_not_opt_in() {
+        let source = include_str!("descriptor_gate.rs");
+
+        assert!(
+            source.contains("VYRE_CUDA_DESCRIPTOR_REWRITES")
+                && source.contains("Ok(\"0\" | \"false\" | \"FALSE\" | \"off\" | \"OFF\")"),
+            "Fix: CUDA descriptor rewrites must be default-on with only an explicit debug disable."
+        );
+        assert!(
+            !source.contains(concat!(
+                "var_os(\"VYRE_CUDA_DESCRIPTOR_REWRITES\")",
+                ".is_none()"
+            )),
+            "Fix: CUDA descriptor rewrites must not be opt-in on the release path."
+        );
+    }
+
+    #[test]
+    fn canonical_preemit_lowering_is_release_default_not_opt_in() {
+        let source = include_str!("descriptor_gate.rs");
+
+        assert!(
+            source.contains("VYRE_CUDA_CANONICAL_PREEMIT")
+                && source.contains("Ok(\"0\" | \"false\" | \"FALSE\" | \"off\" | \"OFF\")"),
+            "Fix: CUDA canonical pre-emit lowering must be default-on with only an explicit debug disable."
+        );
+        assert!(
+            !source.contains(concat!(
+                "var_os(\"VYRE_CUDA_CANONICAL_PREEMIT\")",
+                ".is_some()"
+            )),
+            "Fix: CUDA canonical pre-emit lowering must not be an opt-in release-path gate."
+        );
+    }
+
+    #[test]
+    fn cuda_descriptor_rewrites_preserve_comparison_opcode_direction() {
+        let source = include_str!("descriptor_gate.rs");
+
+        assert!(
+            source.contains("\"cmp_normalize\" | \"cmp_normalize_post_saturation\""),
+            "Fix: CUDA descriptor rewrites must skip comparison normalization so PTX preserves concrete comparison opcode direction."
+        );
+    }
+
+    #[test]
+    fn descriptor_rewrite_convergence_does_not_clone_whole_descriptor_each_iteration() {
+        let source = include_str!("descriptor_gate.rs");
+
+        assert!(
+            source.contains("let mut changed = false;") && source.contains("if !changed"),
+            "Fix: CUDA descriptor rewrite convergence must use a changed flag, not a full KernelDescriptor clone per iteration."
+        );
+        assert!(
+            !source.contains(concat!("let before = current", ".clone()")),
+            "Fix: descriptor rewrite convergence must not clone the whole descriptor before every pass sweep."
+        );
     }
 }

@@ -1,8 +1,8 @@
-//! Security / taint compositions — the surgec-facing op surface.
+//! Security / taint compositions — the downstream analyzer-facing op surface.
 //!
 //! Each op registers via `inventory::submit!(OpEntry { … })` and
-//! exports a `fn(...) -> Program`. Surgec's lowerer
-//! (`surgec/src/lower/mod.rs`) emits against these paths directly.
+//! exports a `fn(...) -> Program`. Downstream analyzer's lowerer
+//! (`downstream analyzer/src/lower/mod.rs`) emits against these paths directly.
 //!
 //! All security ops compose GPU-parallel graph algorithms over the
 //! vyre IR: forward / backward reachability, dominator walks, and
@@ -77,3 +77,28 @@ pub use taint_kill::taint_kill;
 pub use taint_pollution::taint_pollution;
 pub use unchecked_return::unchecked_return;
 pub use xss_escape::xss_escape;
+
+/// Validate that a security composition's input shape + buffer names
+/// are non-degenerate. Panics with a `Fix:` message on violation so
+/// downstream substrate errors don't surface as cryptic OOB indices.
+///
+/// The contract is: every security op rejects degenerate input rather
+/// than building a Program that traps inside the reference interpreter
+/// (or worse, runs to completion and emits silently-wrong taint sets).
+pub(crate) fn assert_security_inputs(op: &str, node_count: u32, buffers: &[(&str, &str)]) {
+    assert!(
+        node_count > 0,
+        "Fix: {op} node_count must be positive; got 0. \
+         A taint analysis over an empty program graph has no meaningful \
+         result — downstream analyzer must skip empty translation units before lowering."
+    );
+    for (role, name) in buffers {
+        assert!(
+            !name.is_empty(),
+            "Fix: {op} requires non-empty buffer name for {role}. \
+             Empty buffer names alias to the zero-length lookup key in the \
+             validator and produce silent miscompiles. Pass a stable \
+             non-empty buffer identifier."
+        );
+    }
+}

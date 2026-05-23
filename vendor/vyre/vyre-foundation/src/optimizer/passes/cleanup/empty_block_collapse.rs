@@ -44,6 +44,13 @@ impl EmptyBlockCollapsePass {
     /// Skip programs without any empty Block.
     #[must_use]
     fn analyze_impl(program: &Program) -> PassAnalysis {
+        // No Block in the program at all → no empty Block to collapse.
+        if !program
+            .stats()
+            .has_any_node_kind(crate::ir::stats::NODE_KIND_BLOCK)
+        {
+            return PassAnalysis::SKIP;
+        }
         if program.entry().iter().any(|n| {
             node_map::any_descendant(
                 n,
@@ -60,21 +67,19 @@ impl EmptyBlockCollapsePass {
     /// sibling sequences at every nesting level.
     #[must_use]
     pub fn transform(program: Program) -> PassResult {
-        let scaffold = program.with_rewritten_entry(Vec::new());
         let mut changed = false;
-        let entry = drop_empty_blocks(
-            program
-                .into_entry_vec()
-                .into_iter()
-                .map(|n| collapse_node(n, &mut changed))
-                .collect(),
-            &mut changed,
-        );
-        PassResult {
-            program: scaffold.with_rewritten_entry(entry),
-            changed,
-        }
-    }}
+        let program = program.map_entry(|entry| {
+            drop_empty_blocks(
+                entry
+                    .into_iter()
+                    .map(|n| collapse_node(n, &mut changed))
+                    .collect(),
+                &mut changed,
+            )
+        });
+        PassResult { program, changed }
+    }
+}
 
 /// Recurse into `node`'s descendants (via `node_map::map_children`) and
 /// then prune empty Block children from the resulting body sequence.
@@ -244,7 +249,10 @@ mod tests {
     fn analyze_runs_when_empty_block_present() {
         let entry = vec![Node::Block(Vec::new())];
         let program = program_with_entry(entry);
-        assert_eq!(crate::optimizer::ProgramPass::analyze(&EmptyBlockCollapsePass, &program), PassAnalysis::RUN);
+        assert_eq!(
+            crate::optimizer::ProgramPass::analyze(&EmptyBlockCollapsePass, &program),
+            PassAnalysis::RUN
+        );
     }
 
     // ── Task 3: adversarial twins ──────────────────────────────────────

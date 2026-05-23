@@ -94,6 +94,7 @@ pub fn iht_threshold(z: &str, threshold: &str, out: &str, n: u32) -> Program {
 /// CPU reference: keep top-k absolute values; zero the rest. Returns
 /// the kept values + the threshold (k-th largest `|z|`).
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn iht_top_k_cpu(z: &[f64], k: usize) -> (Vec<f64>, f64) {
     let n = z.len();
     if k >= n {
@@ -113,6 +114,7 @@ pub fn iht_top_k_cpu(z: &[f64], k: usize) -> (Vec<f64>, f64) {
     (out, threshold)
 }
 
+#[cfg(any(test, feature = "cpu-parity"))]
 fn finite_abs_score(value: f64) -> f64 {
     let abs = value.abs();
     if abs.is_nan() {
@@ -120,6 +122,18 @@ fn finite_abs_score(value: f64) -> f64 {
     } else {
         abs
     }
+}
+
+#[cfg(feature = "inventory-registry")]
+inventory::submit! {
+    crate::harness::OpEntry::new(
+        OP_ID,
+        || {
+            iht_threshold("a", "b", "out", 4)
+        },
+        None,
+        None,
+    )
 }
 
 #[cfg(test)]

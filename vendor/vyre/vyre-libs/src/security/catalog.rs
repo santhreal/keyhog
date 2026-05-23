@@ -16,6 +16,7 @@ macro_rules! bitset_and_entry {
                     u32s(&[0]),
                 ]]),
                 expected_output: Some(|| vec![vec![u32s(&[0b1000])]]),
+                category: Some("security"),
             }
         }
     };
@@ -33,6 +34,7 @@ macro_rules! bitset_and_not_entry {
                     u32s(&[0]),
                 ]]),
                 expected_output: Some(|| vec![vec![u32s(&[0b0011])]]),
+                category: Some("security"),
             }
         }
     };
@@ -78,11 +80,13 @@ inventory::submit! {
             u32s(&[0b1100]),
             u32s(&[0b1010]),
             u32s(&[0]),
+            u32s(&[0]),
         ]]),
         expected_output: Some(|| vec![vec![
             u32s(&[0b1000]),
             u32s(&[1]),
         ]]),
+        category: Some("security"),
     }
 }
 
@@ -99,10 +103,12 @@ inventory::submit! {
             u32s(&[0b1100]),
             u32s(&[0b1000]),
             u32s(&[0]),
+            u32s(&[0]),
         ]]),
         expected_output: Some(|| vec![vec![
             u32s(&[0b1100]),
             u32s(&[0b0100]),
         ]]),
+        category: Some("security"),
     }
 }

@@ -6,7 +6,14 @@ use std::sync::Arc;
 
 /// Remove buffers whose contents cannot contribute to observable output.
 #[derive(Debug, Default)]
-#[vyre_pass(name = "dead_buffer_elim", requires = [], invalidates = ["buffer_layout"])]
+#[vyre_pass(
+    name = "dead_buffer_elim",
+    requires = ["fusion"],
+    invalidates = ["buffer_layout"],
+    phase = "memory",
+    boundary_class = "abi_preserving",
+    cost_model_family = "memory"
+)]
 pub struct DeadBufferElim;
 
 impl DeadBufferElim {
@@ -14,8 +21,7 @@ impl DeadBufferElim {
     #[must_use]
     #[inline]
     fn analyze_impl(program: &Program) -> PassAnalysis {
-        let mut substrate = FactSubstrate::default();
-        if live_buffers(program, &mut substrate).len() == program.buffers().len() {
+        if live_buffers(program).len() == program.buffers().len() {
             PassAnalysis::SKIP
         } else {
             PassAnalysis::RUN
@@ -25,17 +31,21 @@ impl DeadBufferElim {
     /// Remove dead buffer declarations and stores to dead buffers.
     #[must_use]
     pub fn transform(program: Program) -> PassResult {
-        let mut substrate = FactSubstrate::default();
-        let live = live_buffers(&program, &mut substrate);
+        let live = live_buffers(&program);
         if live.len() == program.buffers().len() {
             return PassResult::unchanged(program);
         }
-        let buffers = program
-            .buffers()
-            .iter()
-            .filter(|buffer| live.contains(buffer.name.as_ref()))
-            .cloned()
-            .collect::<Vec<_>>();
+        // `live.len()` is the exact post-filter buffer count; pre-size
+        // so collect doesn't grow-by-doubling on programs with many
+        // buffers (the launch shapes carry 60+).
+        let mut buffers: Vec<_> = Vec::with_capacity(live.len());
+        buffers.extend(
+            program
+                .buffers()
+                .iter()
+                .filter(|buffer| live.contains(buffer.name.as_ref()))
+                .cloned(),
+        );
         let entry = filter_nodes(program.entry(), &live);
 
         let optimized = Program::wrapped(buffers, program.workgroup_size(), entry)
@@ -45,12 +55,13 @@ impl DeadBufferElim {
             program: optimized,
             changed: true,
         }
-    }}
+    }
+}
 
 type LiveBufferSet<'a> = FxHashSet<&'a str>;
 
-fn live_buffers<'a>(program: &'a Program, substrate: &mut FactSubstrate) -> LiveBufferSet<'a> {
-    let live = cached_live_buffer_idents(program, substrate);
+fn live_buffers(program: &Program) -> LiveBufferSet<'_> {
+    let live = cached_live_buffer_idents(program);
     program
         .buffers()
         .iter()
@@ -61,16 +72,11 @@ fn live_buffers<'a>(program: &'a Program, substrate: &mut FactSubstrate) -> Live
         .collect()
 }
 
-fn cached_live_buffer_idents(
-    program: &Program,
-    substrate: &mut FactSubstrate,
-) -> FxHashSet<Ident> {
-    if !substrate.has_fresh_use_facts_for(program) {
-        *substrate = FactSubstrate::derive_use_only(program);
-    }
-    let use_facts = substrate
-        .use_facts()
-        .expect("Fix: derive_use_only must populate use facts");
+fn cached_live_buffer_idents(program: &Program) -> FxHashSet<Ident> {
+    let substrate = FactSubstrate::derive_use_only_cached(program);
+    let use_facts = substrate.use_facts().unwrap_or_else(|| {
+        unreachable!("derive_use_only_cached contract: use_facts is always populated")
+    });
     compute_live_buffer_idents(program, use_facts)
 }
 
@@ -163,7 +169,6 @@ fn filter_node(node: &Node, live: &LiveBufferSet<'_>) -> Option<Node> {
 mod tests {
     use super::*;
     use crate::ir::{BufferDecl, DataType, Expr};
-    use crate::optimizer::{PassScheduler, ProgramPassKind};
 
     #[test]
     fn unread_buffer_removed() {
@@ -178,9 +183,7 @@ mod tests {
     }
 
     fn run(program: Program) -> Program {
-        PassScheduler::with_passes(vec![ProgramPassKind::new(DeadBufferElim)])
-            .run(program)
-            .expect("Fix: dead buffer elimination should converge")
+        DeadBufferElim::transform(program).program
     }
 
     fn sample_program(read_scratch: bool) -> Program {
@@ -330,12 +333,18 @@ mod tests {
             [1, 1, 1],
             vec![Node::store("out", Expr::u32(0), Expr::u32(1))],
         );
-        assert_eq!(crate::optimizer::ProgramPass::analyze(&DeadBufferElim, &program), PassAnalysis::SKIP);
+        assert_eq!(
+            crate::optimizer::ProgramPass::analyze(&DeadBufferElim, &program),
+            PassAnalysis::SKIP
+        );
     }
 
     #[test]
     fn analyze_runs_when_dead_buffers_present() {
         let program = sample_program(false); // scratch is dead
-        assert_eq!(crate::optimizer::ProgramPass::analyze(&DeadBufferElim, &program), PassAnalysis::RUN);
+        assert_eq!(
+            crate::optimizer::ProgramPass::analyze(&DeadBufferElim, &program),
+            PassAnalysis::RUN
+        );
     }
 }

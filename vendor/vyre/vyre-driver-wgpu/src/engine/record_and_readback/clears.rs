@@ -19,11 +19,7 @@ pub(super) fn record_buffer_clears(
                     binding
                 ))
             })?;
-        encoder.clear_buffer(
-            buf.buffer(),
-            offset,
-            Some(size),
-        );
+        encoder.clear_buffer(buf.buffer(), offset, Some(size));
     }
 
     for output in request.output_bindings.iter() {
@@ -44,17 +40,21 @@ pub(super) fn record_buffer_clears(
             .get(output.binding)
             .and_then(|idx| gpu_buffers.get(idx))
         {
-            let clear_size = (output.word_count as u64).checked_mul(4).ok_or_else(|| {
+            let clear_size = u64::try_from(output.word_count)
+                .map_err(|source| {
+                    BackendError::new(format!(
+                        "output `{}` word count cannot fit u64 for clear_buffer: {source}. Fix: reduce its element count.",
+                        output.name
+                    ))
+                })?
+                .checked_mul(4)
+                .ok_or_else(|| {
                 BackendError::new(format!(
                     "clear_buffer size overflows u64 for output `{}`. Fix: reduce its element count.",
                     output.name
                 ))
             })?;
-            encoder.clear_buffer(
-                buf.buffer(),
-                0,
-                Some(clear_size),
-            );
+            encoder.clear_buffer(buf.buffer(), 0, Some(clear_size));
         }
     }
 

@@ -1,6 +1,8 @@
 //! C semantic analysis passes.
 //!
-//! Currently ships scope-tree extraction from structural tokens.
+//! Production semantic analysis is built as dispatchable IR programs. CPU
+//! reference helpers remain available only as explicit oracle surfaces for
+//! conformance and witness generation.
 
 /// Identifier interning IR fragments.
 pub mod intern;
@@ -14,4 +16,10 @@ pub mod registry;
 pub mod walk;
 
 pub use lazy_scope::{DeclKind, LazyScopeTable, ScopeFrameId};
-pub use registry::{c_sema_scope, reference_scope_tree};
+#[cfg(any(test, feature = "cpu-parity"))]
+#[allow(deprecated)]
+pub use registry::reference_scope_tree;
+#[allow(deprecated)]
+pub use registry::{
+    c_sema_scope, c_sema_scope_packed_haystack, c_sema_scope_symbols_packed_haystack,
+};

@@ -6,7 +6,10 @@
 //! wraps global/shared stores whose index is a global lane id in
 //! `if index < logical_element_count`.
 
-use std::collections::HashSet;
+// Tainted-ids tracking is u32 keys, not adversarial input. FxHash is
+// noticeably faster than std SipHash on small integer keys, and this
+// set is consulted per op + cloned per recursion.
+use rustc_hash::FxHashSet as HashSet;
 
 use vyre_foundation::ir::BinOp;
 
@@ -26,7 +29,7 @@ pub fn apply_tail_mask(desc: &KernelDescriptor, logical_element_count: u32) -> K
     }
     let mut out = desc.clone();
     let mut next_result = next_result_id(&out.body);
-    let inherited = HashSet::new();
+    let inherited = HashSet::default();
     apply_to_body(
         &mut out.body,
         logical_element_count,
@@ -127,8 +130,8 @@ fn mark_tainted_from_parts(
     result: Option<u32>,
     tainted_ids: &mut HashSet<u32>,
 ) {
-    let is_lane_x =
-        matches!(kind, KernelOpKind::GlobalInvocationId) && operands.first().copied().unwrap_or(0) == 0;
+    let is_lane_x = matches!(kind, KernelOpKind::GlobalInvocationId)
+        && operands.first().copied().unwrap_or(0) == 0;
     let flows_from_tainted = operands.iter().any(|operand| tainted_ids.contains(operand));
 
     if is_lane_x || flows_from_tainted {

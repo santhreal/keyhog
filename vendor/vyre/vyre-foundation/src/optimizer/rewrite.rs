@@ -29,7 +29,14 @@ fn rewrite_nodes_cow<'a>(
                 }
             }
             Cow::Owned(owned) => {
-                let out = rewritten.get_or_insert_with(|| nodes[..index].to_vec());
+                let out = rewritten.get_or_insert_with(|| {
+                    // Final length is exactly nodes.len(); pre-size so the
+                    // push loop never reallocates as remaining nodes
+                    // (whether borrowed or owned) are appended.
+                    let mut v = Vec::with_capacity(nodes.len());
+                    v.extend_from_slice(&nodes[..index]);
+                    v
+                });
                 out.push(owned);
             }
         }
@@ -141,6 +148,10 @@ fn rewrite_node_cow<'a>(
     }
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "iterative expression rewrite keeps traversal and reassembly order in one stack machine"
+)]
 pub(crate) fn rewrite_expr<'a>(
     expr: &'a Expr,
     transform: &mut impl FnMut(&Expr) -> Option<Expr>,
@@ -191,7 +202,9 @@ pub(crate) fn rewrite_expr<'a>(
                         stack.push(Frame::Expr(true_val));
                         stack.push(Frame::Expr(cond));
                     }
-                    Expr::Cast { value, .. } => stack.push(Frame::Expr(value)),
+                    Expr::Cast { value, .. } | Expr::SubgroupAdd { value } => {
+                        stack.push(Frame::Expr(value));
+                    }
                     Expr::Fma { a, b, c } => {
                         stack.push(Frame::Expr(c));
                         stack.push(Frame::Expr(b));
@@ -214,7 +227,6 @@ pub(crate) fn rewrite_expr<'a>(
                         stack.push(Frame::Expr(lane));
                         stack.push(Frame::Expr(value));
                     }
-                    Expr::SubgroupAdd { value } => stack.push(Frame::Expr(value)),
                 }
             }
             Frame::Assemble(e) => {

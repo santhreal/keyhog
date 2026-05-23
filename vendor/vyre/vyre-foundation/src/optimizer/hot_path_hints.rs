@@ -65,21 +65,17 @@ impl RegionRecord {
     /// nanoseconds. Returns `0` when no sample has been recorded.
     #[must_use]
     pub fn mean_kernel_ns(&self) -> u64 {
-        if self.dispatch_count == 0 {
-            0
-        } else {
-            self.kernel_ns_total / self.dispatch_count
-        }
+        self.kernel_ns_total
+            .checked_div(self.dispatch_count)
+            .unwrap_or(0)
     }
 
     /// Mean bytes touched per dispatch.
     #[must_use]
     pub fn mean_bytes(&self) -> u64 {
-        if self.dispatch_count == 0 {
-            0
-        } else {
-            self.bytes_total / self.dispatch_count
-        }
+        self.bytes_total
+            .checked_div(self.dispatch_count)
+            .unwrap_or(0)
     }
 }
 
@@ -105,9 +101,7 @@ impl Clone for HotPathHints {
         Self {
             records: self.records.clone(),
             capacity: self.capacity,
-            hot_ns_threshold: AtomicU64::new(
-                self.hot_ns_threshold.load(Ordering::Relaxed),
-            ),
+            hot_ns_threshold: AtomicU64::new(self.hot_ns_threshold.load(Ordering::Relaxed)),
             clock: AtomicU64::new(self.clock.load(Ordering::Relaxed)),
         }
     }
@@ -132,8 +126,7 @@ impl HotPathHints {
     /// region is considered hot. Default is 100µs.
     #[must_use]
     pub fn with_hot_threshold_ns(self, threshold_ns: u64) -> Self {
-        self.hot_ns_threshold
-            .store(threshold_ns, Ordering::Relaxed);
+        self.hot_ns_threshold.store(threshold_ns, Ordering::Relaxed);
         self
     }
 
@@ -156,8 +149,7 @@ impl HotPathHints {
             timestamp,
         });
         entry.record.dispatch_count = entry.record.dispatch_count.saturating_add(1);
-        entry.record.kernel_ns_total =
-            entry.record.kernel_ns_total.saturating_add(kernel_ns);
+        entry.record.kernel_ns_total = entry.record.kernel_ns_total.saturating_add(kernel_ns);
         if kernel_ns > entry.record.kernel_ns_max {
             entry.record.kernel_ns_max = kernel_ns;
         }
@@ -189,8 +181,7 @@ impl HotPathHints {
         let threshold = self.hot_ns_threshold.load(Ordering::Relaxed);
         self.records
             .get(region_generator)
-            .map(|r| r.record.mean_kernel_ns() >= threshold)
-            .unwrap_or(false)
+            .is_some_and(|r| r.record.mean_kernel_ns() >= threshold)
     }
 
     /// Number of dispatch samples recorded for the region. Returns
@@ -199,8 +190,7 @@ impl HotPathHints {
     pub fn dispatch_count(&self, region_generator: &str) -> u64 {
         self.records
             .get(region_generator)
-            .map(|r| r.record.dispatch_count)
-            .unwrap_or(0)
+            .map_or(0, |r| r.record.dispatch_count)
     }
 
     /// Mean kernel-execute time in nanoseconds. Returns `0` for
@@ -209,8 +199,7 @@ impl HotPathHints {
     pub fn mean_kernel_ns(&self, region_generator: &str) -> u64 {
         self.records
             .get(region_generator)
-            .map(|r| r.record.mean_kernel_ns())
-            .unwrap_or(0)
+            .map_or(0, |r| r.record.mean_kernel_ns())
     }
 
     /// Snapshot of the full record for `region_generator`, or
@@ -248,7 +237,7 @@ impl std::fmt::Debug for HotPathHints {
                 &self.hot_ns_threshold.load(Ordering::Relaxed),
             )
             .field("records_len", &self.records.len())
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 

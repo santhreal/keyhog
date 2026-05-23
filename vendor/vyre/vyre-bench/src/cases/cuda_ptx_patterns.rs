@@ -4,6 +4,7 @@ use crate::api::case::{
 };
 use crate::api::metric::{BenchMetrics, MetricPoint};
 use crate::api::suite::SuiteKind;
+use std::collections::HashMap;
 use std::time::Instant;
 use vyre_emit_ptx::{patterns, ComputeCapability};
 use vyre_foundation::ir::{BinOp, DataType};
@@ -38,6 +39,9 @@ struct PtxPatternTotals {
     vector_kernel_scalar_loads: u64,
     vector_kernel_scalar_stores: u64,
     vector_kernel_scalar_index_adds: u64,
+    source_cache_entries: u64,
+    source_cache_hits: u64,
+    source_cache_misses: u64,
     ptx_bytes_emitted: u64,
 }
 
@@ -102,7 +106,7 @@ impl BenchCase for CudaPtxPatterns {
         let totals = measure_corpus(corpus)?;
         let elapsed = started.elapsed().as_nanos() as u64;
 
-        let mut output = Vec::with_capacity(19 * std::mem::size_of::<u64>());
+        let mut output = Vec::with_capacity(22 * std::mem::size_of::<u64>());
         for value in [
             totals.corpus_kernels,
             totals.predication_candidates,
@@ -122,6 +126,9 @@ impl BenchCase for CudaPtxPatterns {
             totals.vector_kernel_scalar_loads,
             totals.vector_kernel_scalar_stores,
             totals.vector_kernel_scalar_index_adds,
+            totals.source_cache_entries,
+            totals.source_cache_hits,
+            totals.source_cache_misses,
             totals.ptx_bytes_emitted,
         ] {
             output.extend_from_slice(&value.to_le_bytes());
@@ -206,6 +213,18 @@ impl BenchCase for CudaPtxPatterns {
                         value: totals.vector_kernel_scalar_index_adds,
                     },
                     MetricPoint {
+                        name: "cuda_ptx_source_cache_entries".to_string(),
+                        value: totals.source_cache_entries,
+                    },
+                    MetricPoint {
+                        name: "cuda_ptx_source_cache_hits".to_string(),
+                        value: totals.source_cache_hits,
+                    },
+                    MetricPoint {
+                        name: "cuda_ptx_source_cache_misses".to_string(),
+                        value: totals.source_cache_misses,
+                    },
+                    MetricPoint {
                         name: "ptx_bytes_emitted".to_string(),
                         value: totals.ptx_bytes_emitted,
                     },
@@ -220,27 +239,8 @@ impl BenchCase for CudaPtxPatterns {
 
     fn verify(&self, _ctx: &mut BenchContext, run: &BenchRun) -> Result<Correctness, BenchError> {
         let words = decode_words(run)?;
-        let [
-            corpus_kernels,
-            predication_candidates,
-            safe_predication_candidates,
-            vec_load_candidates,
-            vec_store_candidates,
-            async_copy_candidates,
-            tensor_core_candidates,
-            ldmatrix_capable_targets,
-            scheduled_fillers,
-            predicated_stores,
-            branch_labels,
-            cp_async_emitted,
-            mma_sync_emitted,
-            vectorized_loads_emitted,
-            vectorized_stores_emitted,
-            vector_kernel_scalar_loads,
-            vector_kernel_scalar_stores,
-            vector_kernel_scalar_index_adds,
-            ptx_bytes_emitted,
-        ] = words.as_slice()
+        let [corpus_kernels, predication_candidates, safe_predication_candidates, vec_load_candidates, vec_store_candidates, async_copy_candidates, tensor_core_candidates, ldmatrix_capable_targets, scheduled_fillers, predicated_stores, branch_labels, cp_async_emitted, mma_sync_emitted, vectorized_loads_emitted, vectorized_stores_emitted, vector_kernel_scalar_loads, vector_kernel_scalar_stores, vector_kernel_scalar_index_adds, source_cache_entries, source_cache_hits, source_cache_misses, ptx_bytes_emitted] =
+            words.as_slice()
         else {
             return Ok(Correctness::Invalid {
                 reason: "CUDA PTX pattern benchmark emitted the wrong metric word count"
@@ -265,11 +265,14 @@ impl BenchCase for CudaPtxPatterns {
             || *vector_kernel_scalar_loads != 0
             || *vector_kernel_scalar_stores != 0
             || *vector_kernel_scalar_index_adds != 0
+            || *source_cache_entries == 0
+            || *source_cache_hits == 0
+            || *source_cache_misses == 0
             || *ptx_bytes_emitted == 0
         {
             return Ok(Correctness::Invalid {
                 reason: format!(
-                    "CUDA PTX release corpus missing fast-path evidence: kernels={corpus_kernels}, pred={predication_candidates}, safe_pred={safe_predication_candidates}, vload={vec_load_candidates}, vstore={vec_store_candidates}, async_copy={async_copy_candidates}, tensor_core={tensor_core_candidates}, ldmatrix_capable={ldmatrix_capable_targets}, fillers={scheduled_fillers}, pred_stores={predicated_stores}, branch_labels={branch_labels}, cp_async={cp_async_emitted}, mma_sync={mma_sync_emitted}, vectorized_loads={vectorized_loads_emitted}, vectorized_stores={vectorized_stores_emitted}, vector_scalar_loads={vector_kernel_scalar_loads}, vector_scalar_stores={vector_kernel_scalar_stores}, vector_scalar_index_adds={vector_kernel_scalar_index_adds}, bytes={ptx_bytes_emitted}"
+                    "CUDA PTX release corpus missing fast-path evidence: kernels={corpus_kernels}, pred={predication_candidates}, safe_pred={safe_predication_candidates}, vload={vec_load_candidates}, vstore={vec_store_candidates}, async_copy={async_copy_candidates}, tensor_core={tensor_core_candidates}, ldmatrix_capable={ldmatrix_capable_targets}, fillers={scheduled_fillers}, pred_stores={predicated_stores}, branch_labels={branch_labels}, cp_async={cp_async_emitted}, mma_sync={mma_sync_emitted}, vectorized_loads={vectorized_loads_emitted}, vectorized_stores={vectorized_stores_emitted}, vector_scalar_loads={vector_kernel_scalar_loads}, vector_scalar_stores={vector_kernel_scalar_stores}, vector_scalar_index_adds={vector_kernel_scalar_index_adds}, source_cache_entries={source_cache_entries}, source_cache_hits={source_cache_hits}, source_cache_misses={source_cache_misses}, bytes={ptx_bytes_emitted}"
                 ),
             });
         }
@@ -297,8 +300,12 @@ fn measure_corpus(corpus: &[KernelDescriptor]) -> Result<PtxPatternTotals, Bench
         vector_kernel_scalar_loads: 0,
         vector_kernel_scalar_stores: 0,
         vector_kernel_scalar_index_adds: 0,
+        source_cache_entries: 0,
+        source_cache_hits: 0,
+        source_cache_misses: 0,
         ptx_bytes_emitted: 0,
     };
+    let mut source_cache = HashMap::<String, String>::new();
     for desc in corpus {
         let audit = patterns::audit(desc, ComputeCapability::SM_90);
         totals.predication_candidates = totals
@@ -319,16 +326,32 @@ fn measure_corpus(corpus: &[KernelDescriptor]) -> Result<PtxPatternTotals, Bench
         totals.tensor_core_candidates = totals
             .tensor_core_candidates
             .saturating_add(audit.tensor_core.candidates.len() as u64);
-        totals.ldmatrix_capable_targets = totals
-            .ldmatrix_capable_targets
-            .saturating_add(if audit.async_copy.target_supports_ldmatrix {
+        totals.ldmatrix_capable_targets = totals.ldmatrix_capable_targets.saturating_add(
+            if audit.async_copy.target_supports_ldmatrix {
                 1
             } else {
                 0
-            });
+            },
+        );
 
-        let ptx = vyre_emit_ptx::emit_with_target(desc, ComputeCapability::SM_90)
-            .map_err(|error| BenchError::ExecutionFailed(error.to_string()))?;
+        let ptx = if let Some(cached) = source_cache.get(&desc.id) {
+            totals.source_cache_hits = totals.source_cache_hits.saturating_add(1);
+            cached.clone()
+        } else {
+            totals.source_cache_misses = totals.source_cache_misses.saturating_add(1);
+            let lowered = vyre_emit_ptx::emit_with_target(desc, ComputeCapability::SM_90)
+                .map_err(|error| BenchError::ExecutionFailed(error.to_string()))?;
+            source_cache.insert(desc.id.clone(), lowered.clone());
+            lowered
+        };
+        if let Some(cached) = source_cache.get(&desc.id) {
+            totals.source_cache_hits = totals.source_cache_hits.saturating_add(1);
+            if cached.len() != ptx.len() {
+                return Err(BenchError::ExecutionFailed(
+                    "CUDA PTX pattern source cache returned divergent source length".to_string(),
+                ));
+            }
+        }
         totals.ptx_bytes_emitted = totals.ptx_bytes_emitted.saturating_add(ptx.len() as u64);
         totals.scheduled_fillers = totals
             .scheduled_fillers
@@ -364,6 +387,7 @@ fn measure_corpus(corpus: &[KernelDescriptor]) -> Result<PtxPatternTotals, Bench
                 .saturating_add(ptx.matches("// scalar-index-increment").count() as u64);
         }
     }
+    totals.source_cache_entries = source_cache.len() as u64;
     Ok(totals)
 }
 
@@ -430,10 +454,7 @@ fn predicated_else_store_kernel() -> KernelDescriptor {
                 op(KernelOpKind::Literal, vec![1], Some(1)),
                 op(KernelOpKind::StructuredIfThenElse, vec![0, 0, 1], None),
             ],
-            child_bodies: vec![
-                store_child(20, 21),
-                store_child(21, 34),
-            ],
+            child_bodies: vec![store_child(20, 21), store_child(21, 34)],
             literals: vec![LiteralValue::Bool(true), LiteralValue::U32(0)],
         },
     }
@@ -573,7 +594,11 @@ fn async_copy_emit_kernel() -> KernelDescriptor {
             ops: vec![
                 op(KernelOpKind::Literal, vec![0], Some(0)),
                 op(KernelOpKind::Literal, vec![1], Some(1)),
-                op(KernelOpKind::AsyncLoad { tag: "tile".into() }, vec![0, 1, 0, 1], None),
+                op(
+                    KernelOpKind::AsyncLoad { tag: "tile".into() },
+                    vec![0, 1, 0, 1],
+                    None,
+                ),
                 op(KernelOpKind::AsyncWait { tag: "tile".into() }, vec![], None),
             ],
             child_bodies: vec![],

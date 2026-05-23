@@ -10,7 +10,7 @@ pub const WORKGROUP_SIZE: [u32; 3] = [64, 1, 1];
 /// call emits one region under this generator so the optimizer + the
 /// universal region-chain discipline test treat the whole rule set as an
 /// atomic compile unit.
-pub const RULE_SET_OP_ID: &str = "rule.rule_set";
+pub const RULE_SET_OP_ID: &str = "vyre-libs::rule::rule_set";
 
 /// Error returned when rule construction cannot lower a condition truthfully.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -243,7 +243,7 @@ pub fn try_condition_expr(condition: &RuleCondition, rule_id: u32) -> Result<Exp
         RuleCondition::FieldInSet { .. } => Err(unsupported_rule_condition(
             rule_id,
             "FieldInSet",
-            "FieldInSet requires per-record field lookup; it is supported only by the CPU evaluator (`vyre_libs::rule::cpu_eval`). Lower against a concrete buffer in an extension-aware builder before calling the core lowering.",
+            "FieldInSet requires per-record field lookup; it is supported only by the reference evaluator (`vyre_libs::rule::reference_eval`). Lower against a concrete buffer in an extension-aware builder before calling the core lowering.",
         )),
         RuleCondition::Opaque(ext) => Err(RuleBuildError::OpaqueCondition {
             rule_id,

@@ -1,5 +1,5 @@
 use crate::ir::{Expr, Ident, Node, Program};
-use crate::optimizer::{vyre_pass, PassResult};
+use crate::optimizer::{vyre_pass, PassAnalysis, PassResult};
 use smallvec::SmallVec;
 use std::borrow::Cow;
 use std::ops::Range;
@@ -14,11 +14,22 @@ const MAX_UNROLLED_BODY_COST: u32 = 64;
     name = "loop_unroll",
     requires = ["const_fold"],
     invalidates = ["const_fold", "value_numbering", "fusion"],
-    analyze = "always"
+    phase = "loop",
+    boundary_class = "abi_preserving",
+    cost_model_family = "loop"
 )]
 pub struct LoopUnroll;
 
 impl LoopUnroll {
+    /// O(1) gate: skip when the program contains no `Node::Loop` at all.
+    #[must_use]
+    fn analyze_impl(program: &Program) -> PassAnalysis {
+        if !program.stats().has_node_loop() {
+            return PassAnalysis::SKIP;
+        }
+        PassAnalysis::RUN
+    }
+
     /// Replace bounded `from..to` loops with repeated bodies when the trip
     /// count is compile-time-known and small enough to avoid code-size blowup.
     #[must_use]
@@ -30,7 +41,8 @@ impl LoopUnroll {
                 changed: true,
             },
         }
-    }}
+    }
+}
 
 fn rewrite_nodes(nodes: &[Node]) -> Cow<'_, [Node]> {
     let mut rewritten: Option<Vec<Node>> = None;
@@ -62,7 +74,7 @@ fn rewrite_node(node: &Node) -> Cow<'_, [Node]> {
             let rewritten_body = rewrite_nodes(body);
             let body_slice = rewritten_body.as_ref();
             if let Some(values) = unroll_values(from, to, body_slice) {
-                if body_writes_loop_var(body_slice, var) {
+                if body_writes_loop_var(body_slice, var) || body_contains_assign(body_slice) {
                     let rebuilt = rebuild_loop_if_needed(node, rewritten_body);
                     return rebuilt.map_or_else(
                         || Cow::Borrowed(std::slice::from_ref(node)),
@@ -182,6 +194,18 @@ fn body_writes_loop_var(nodes: &[Node], var: &Ident) -> bool {
     })
 }
 
+fn body_contains_assign(nodes: &[Node]) -> bool {
+    nodes.iter().any(|node| match node {
+        Node::Assign { .. } => true,
+        Node::If {
+            then, otherwise, ..
+        } => body_contains_assign(then) || body_contains_assign(otherwise),
+        Node::Loop { body, .. } | Node::Block(body) => body_contains_assign(body),
+        Node::Region { body, .. } => body_contains_assign(body),
+        _ => false,
+    })
+}
+
 fn body_declares_locals(nodes: &[Node]) -> bool {
     nodes.iter().any(|node| match node {
         Node::Let { .. } => true,
@@ -189,7 +213,6 @@ fn body_declares_locals(nodes: &[Node]) -> bool {
             then, otherwise, ..
         } => body_declares_locals(then) || body_declares_locals(otherwise),
         Node::Block(body) => body_declares_locals(body),
-        Node::Loop { .. } | Node::Region { .. } => false,
         _ => false,
     })
 }
@@ -265,7 +288,7 @@ fn push_expr_children<'a>(expr: &'a Expr, stack: &mut SmallVec<[&'a Expr; 16]>) 
             stack.push(true_val);
             stack.push(false_val);
         }
-        Expr::Cast { value, .. } => stack.push(value),
+        Expr::Cast { value, .. } | Expr::SubgroupAdd { value } => stack.push(value),
         Expr::Fma { a, b, c } => {
             stack.push(a);
             stack.push(b);
@@ -288,7 +311,6 @@ fn push_expr_children<'a>(expr: &'a Expr, stack: &mut SmallVec<[&'a Expr; 16]>) 
             stack.push(value);
             stack.push(lane);
         }
-        Expr::SubgroupAdd { value } => stack.push(value),
         Expr::LitU32(_)
         | Expr::LitI32(_)
         | Expr::LitF32(_)
@@ -472,6 +494,15 @@ mod tests {
     use crate::ir::{BufferDecl, DataType};
     use crate::optimizer::passes::const_fold::ConstFold;
     use crate::optimizer::{PassScheduler, ProgramPassKind};
+
+    #[test]
+    fn analyze_skips_program_with_no_loop() {
+        let program = Program::wrapped(Vec::new(), [1, 1, 1], vec![Node::Return]);
+        match crate::optimizer::ProgramPass::analyze(&LoopUnroll, &program) {
+            PassAnalysis::SKIP => {}
+            other => panic!("expected SKIP for loop-free program, got {other:?}"),
+        }
+    }
 
     #[test]
     fn unrolls_small_u32_loop_and_substitutes_index() {

@@ -50,7 +50,7 @@ tempfile = "3"
 # (see `crates/core/src/rule_filter.rs`). Pulls in the `rule`
 # feature which compiles the CPU evaluator + the `regex` dep used
 # by `RuleCondition::RegexMatch`.
-vyre_libs = { package = "vyre-libs", version = "0.4.2", path = "../../../../libs/performance/matching/vyre/vyre-libs", features = ["rule"] }
+vyre_libs = { workspace = true, features = ["rule"] }
 smallvec = { version = "1" }
 
 [target.'cfg(unix)'.dependencies]

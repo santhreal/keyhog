@@ -178,6 +178,7 @@ pub fn csr_forward_traverse(
 /// `v` is set iff any predecessor `u` with `frontier_in` bit set has
 /// an edge `u → v` whose `edge_kind_mask[e] & allow_mask != 0`.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref(
     node_count: u32,
     edge_offsets: &[u32],
@@ -201,9 +202,10 @@ pub fn cpu_ref(
 
 /// CPU reference using caller-owned output storage.
 ///
-/// Malformed CSR inputs produce an all-zero frontier instead of
-/// panicking. GPU lowering has bounds checks on target nodes; the
-/// reference must be equally robust for hostile conformance inputs.
+/// Malformed CSR inputs fail loudly. GPU parity evidence must not turn a
+/// truncated row pointer or edge table into an all-zero frontier because that
+/// would bless corrupted graph inputs as valid dataflow results.
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref_into(
     node_count: u32,
     edge_offsets: &[u32],
@@ -217,12 +219,26 @@ pub fn cpu_ref_into(
     out.clear();
     out.resize(words, 0);
     let expected_offsets = node_count as usize + 1;
-    if edge_offsets.len() != expected_offsets {
-        return;
-    }
-    let edge_count = edge_offsets.last().copied().unwrap_or_default() as usize;
-    if edge_targets.len() < edge_count || edge_kind_mask.len() < edge_count {
-        return;
+    assert_eq!(
+        edge_offsets.len(),
+        expected_offsets,
+        "csr_forward_traverse CPU oracle received {} row offsets for node_count={node_count}; Fix: pass exactly node_count + 1 CSR offsets.",
+        edge_offsets.len()
+    );
+    let edge_count = edge_offsets[expected_offsets - 1] as usize;
+    assert!(
+        edge_targets.len() >= edge_count && edge_kind_mask.len() >= edge_count,
+        "csr_forward_traverse CPU oracle received edge_count={edge_count} but targets_len={} kind_mask_len={}. Fix: pass complete CSR edge buffers.",
+        edge_targets.len(),
+        edge_kind_mask.len()
+    );
+    for (index, pair) in edge_offsets.windows(2).enumerate() {
+        assert!(
+            pair[0] <= pair[1],
+            "csr_forward_traverse CPU oracle received non-monotonic CSR offsets at row {index}: {} > {}. Fix: rebuild CSR row pointers before parity comparison.",
+            pair[0],
+            pair[1]
+        );
     }
     for src in 0..node_count {
         let word_idx = (src / 32) as usize;
@@ -324,9 +340,9 @@ mod tests {
     }
 
     #[test]
-    fn malformed_csr_returns_empty_frontier_without_panicking() {
-        let got = cpu_ref(4, &[0, 1], &[1], &[1], &[0b0001], 0xFFFF_FFFF);
-        assert_eq!(got, vec![0]);
+    #[should_panic(expected = "node_count + 1 CSR offsets")]
+    fn malformed_csr_short_offsets_fail_loudly() {
+        let _ = cpu_ref(4, &[0, 1], &[1], &[1], &[0b0001], 0xFFFF_FFFF);
     }
 
     #[test]
@@ -367,14 +383,7 @@ mod tests {
     #[test]
     fn self_loops_only_preserve_frontier() {
         // 2 nodes, each has a self-loop. frontier {0,1} → out {0,1}
-        let got = cpu_ref(
-            2,
-            &[0, 1, 2],
-            &[0, 1],
-            &[1, 1],
-            &[0b0011],
-            0xFFFF_FFFF,
-        );
+        let got = cpu_ref(2, &[0, 1, 2], &[0, 1], &[1, 1], &[0b0011], 0xFFFF_FFFF);
         assert_eq!(got, vec![0b0011]);
     }
 
@@ -440,14 +449,7 @@ mod tests {
         // 0→1 (DOMINANCE=0x01), 0→2 (ASSIGNMENT=0x02).
         // Mask only DOMINANCE → only node 1 reached.
         // A broken implementation that ignores kind_mask would reach BOTH.
-        let got = cpu_ref(
-            4,
-            &[0, 2, 2, 2, 2],
-            &[1, 2],
-            &[0x01, 0x02],
-            &[0b0001],
-            0x01,
-        );
+        let got = cpu_ref(4, &[0, 2, 2, 2, 2], &[1, 2], &[0x01, 0x02], &[0b0001], 0x01);
         assert_eq!(
             got,
             vec![0b0010],
@@ -456,13 +458,16 @@ mod tests {
     }
 
     #[test]
-    fn malformed_csr_non_monotonic_offsets_returns_empty() {
-        // edge_offsets.len() == node_count+1 (5), but the range for node 1
-        // is backwards (edge_end < edge_start), which cpu_ref_into handles
-        // by producing an empty out vector because edge_offsets.len() != expected.
-        // Wait, edge_offsets.len() IS 5 here. Let's make it short instead.
-        let got = cpu_ref(4, &[0, 1], &[1], &[1], &[0b0001], 0xFFFF_FFFF);
-        assert_eq!(got, vec![0], "short edge_offsets must yield empty frontier");
+    #[should_panic(expected = "non-monotonic CSR offsets")]
+    fn malformed_csr_non_monotonic_offsets_fail_loudly() {
+        let _ = cpu_ref(
+            4,
+            &[0, 2, 1, 1, 1],
+            &[1, 2],
+            &[1, 1],
+            &[0b0001],
+            0xFFFF_FFFF,
+        );
     }
 
     #[test]

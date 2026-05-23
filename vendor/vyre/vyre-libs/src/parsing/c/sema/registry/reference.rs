@@ -4,8 +4,13 @@ use crate::parsing::c::sema::lookup::{
     DECL_KIND_NONE, DECL_KIND_TYPEDEF, DECL_KIND_VARIABLE,
 };
 
-/// Compute the same mapping on CPU for conformance and witness generation.
+/// Compute the same mapping in the explicit CPU oracle for conformance and
+/// witness generation.
 #[must_use]
+#[deprecated(
+    note = "CPU oracle only; production C semantic scope analysis must dispatch c_sema_scope* builders"
+)]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn reference_scope_tree(
     tok_types: &[u32],
     tok_starts: &[u32],
@@ -48,7 +53,9 @@ pub(super) fn brace_scope_id_for_node(tok_types: &[u32], node_idx: usize) -> u32
             TOK_RBRACE => depth = depth.saturating_add(1),
             TOK_LBRACE => {
                 if depth == 0 {
-                    return u32::try_from(scan_idx + 1).unwrap_or(0);
+                    return u32::try_from(scan_idx + 1).expect(
+                        "C semantic scope id exceeds u32. Fix: shard the token stream before semantic registry lowering.",
+                    );
                 }
                 if depth > 0 {
                     depth = depth.saturating_sub(1);
@@ -90,7 +97,9 @@ pub(super) fn brace_scope_parent_id_for_node(
             TOK_LBRACE => {
                 if depth == 0 {
                     return if scan_idx < node_idx {
-                        u32::try_from(scan_idx + 1).unwrap_or(0)
+                        u32::try_from(scan_idx + 1).expect(
+                            "C semantic parent scope id exceeds u32. Fix: shard the token stream before semantic registry lowering.",
+                        )
                     } else {
                         0
                     };
@@ -407,17 +416,45 @@ fn identifier_intern_id_for_node(
     if node_idx >= tok_types.len() || tok_types[node_idx] != TOK_IDENTIFIER {
         return 0;
     }
+    assert_eq!(
+        tok_starts.len(),
+        tok_types.len(),
+        "C semantic registry reference received {} token starts for {} token types. Fix: pass aligned token streams.",
+        tok_starts.len(),
+        tok_types.len()
+    );
+    assert_eq!(
+        tok_lens.len(),
+        tok_types.len(),
+        "C semantic registry reference received {} token lengths for {} token types. Fix: pass aligned token streams.",
+        tok_lens.len(),
+        tok_types.len()
+    );
     let start = tok_starts[node_idx];
     let len = tok_lens[node_idx];
-    let max = match start.checked_add(len) {
-        Some(v) => usize::try_from(v).unwrap_or(haystack.len()),
-        None => haystack.len(),
-    };
-    let start_usize = usize::try_from(start).unwrap_or(haystack.len());
-    let end = max.min(haystack.len());
-    if start_usize >= haystack.len() || start_usize >= end {
+    if len == 0 {
         return 0;
     }
+    let end_u32 = start.checked_add(len).unwrap_or_else(|| {
+        panic!(
+            "C semantic identifier span overflows u32 at token {node_idx}: start {start}, len {len}. Fix: repair lexer span emission."
+        )
+    });
+    let start_usize = usize::try_from(start).expect(
+        "C semantic identifier span start exceeds usize. Fix: shard the source before semantic registry lowering.",
+    );
+    let end = usize::try_from(end_u32).expect(
+        "C semantic identifier span end exceeds usize. Fix: shard the source before semantic registry lowering.",
+    );
+    assert!(
+        end <= haystack.len(),
+        "C semantic identifier span {start_usize}..{end} exceeds haystack length {} at token {node_idx}. Fix: pass the same haystack used for lexing.",
+        haystack.len()
+    );
+    assert!(
+        start_usize < end,
+        "C semantic identifier span is empty at token {node_idx}. Fix: repair lexer identifier lengths."
+    );
 
     let mut hash = 0x811c_9dc5u32;
     for &byte in &haystack[start_usize..end] {

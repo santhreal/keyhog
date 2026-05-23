@@ -83,16 +83,34 @@ impl BodyCtx<'_> {
                 let hi = self.alloc(PtxType::U32);
                 let lo = self.alloc(PtxType::U32);
                 let out = self.alloc(PtxType::U32);
-                let _ = writeln!(self.text, "    setp.ge.u32    {left_ge_right}, {left}, {right};");
-                let _ = writeln!(self.text, "    selp.u32    {hi}, {left}, {right}, {left_ge_right};");
-                let _ = writeln!(self.text, "    selp.u32    {lo}, {right}, {left}, {left_ge_right};");
+                let _ = writeln!(
+                    self.text,
+                    "    setp.ge.u32    {left_ge_right}, {left}, {right};"
+                );
+                let _ = writeln!(
+                    self.text,
+                    "    selp.u32    {hi}, {left}, {right}, {left_ge_right};"
+                );
+                let _ = writeln!(
+                    self.text,
+                    "    selp.u32    {lo}, {right}, {left}, {left_ge_right};"
+                );
                 let _ = writeln!(self.text, "    sub.u32    {out}, {hi}, {lo};");
                 Ok((out, PtxType::U32))
             }
-            BinOp::RotateLeft | BinOp::RotateRight if ty == PtxType::U32 || ty == PtxType::I32 || ty == PtxType::Bool => {
+            BinOp::RotateLeft | BinOp::RotateRight
+                if ty == PtxType::U32 || ty == PtxType::I32 || ty == PtxType::Bool =>
+            {
                 let out = self.alloc(ty);
-                let direction = if matches!(op, BinOp::RotateLeft) { "l" } else { "r" };
-                let _ = writeln!(self.text, "    shf.{direction}.wrap.b32    {out}, {left}, {left}, {right};");
+                let direction = if matches!(op, BinOp::RotateLeft) {
+                    "l"
+                } else {
+                    "r"
+                };
+                let _ = writeln!(
+                    self.text,
+                    "    shf.{direction}.wrap.b32    {out}, {left}, {left}, {right};"
+                );
                 Ok((out, ty))
             }
             BinOp::Div if ty == PtxType::U32 || ty == PtxType::Bool => {
@@ -122,14 +140,20 @@ impl BodyCtx<'_> {
                 let out = self.alloc(PtxType::U32);
                 let _ = writeln!(self.text, "    add.u32    {sum}, {left}, {right};");
                 let _ = writeln!(self.text, "    setp.lt.u32    {overflow}, {sum}, {left};");
-                let _ = writeln!(self.text, "    selp.u32    {out}, 0xffffffff, {sum}, {overflow};");
+                let _ = writeln!(
+                    self.text,
+                    "    selp.u32    {out}, 0xffffffff, {sum}, {overflow};"
+                );
                 Ok((out, PtxType::U32))
             }
             BinOp::SaturatingSub if ty == PtxType::U32 || ty == PtxType::Bool => {
                 let underflow = self.alloc(PtxType::Bool);
                 let diff = self.alloc(PtxType::U32);
                 let out = self.alloc(PtxType::U32);
-                let _ = writeln!(self.text, "    setp.lt.u32    {underflow}, {left}, {right};");
+                let _ = writeln!(
+                    self.text,
+                    "    setp.lt.u32    {underflow}, {left}, {right};"
+                );
                 let _ = writeln!(self.text, "    sub.u32    {diff}, {left}, {right};");
                 let _ = writeln!(self.text, "    selp.u32    {out}, 0, {diff}, {underflow};");
                 Ok((out, PtxType::U32))
@@ -173,6 +197,76 @@ impl BodyCtx<'_> {
                 Ok((out, out_ty))
             }
         }
+    }
+
+    pub(super) fn emit_small_u32_const_mul(&mut self, value: Reg, constant: u32) -> Option<Reg> {
+        if !matches!(value.0, PtxType::U32 | PtxType::Bool) {
+            return None;
+        }
+        if constant == 0 {
+            let out = self.alloc(PtxType::U32);
+            let _ = writeln!(self.text, "    mov.u32    {out}, 0;");
+            return Some(out);
+        }
+        if constant == 1 {
+            return Some(value);
+        }
+        if constant.is_power_of_two() {
+            let out = self.alloc(PtxType::U32);
+            let shift = constant.trailing_zeros();
+            let _ = writeln!(self.text, "    shl.b32    {out}, {value}, {shift};");
+            return Some(out);
+        }
+        if constant.count_ones() > 4 {
+            return None;
+        }
+        let mut acc = None;
+        for shift in 0..u32::BITS {
+            if (constant & (1u32 << shift)) == 0 {
+                continue;
+            }
+            let term = if shift == 0 {
+                value
+            } else {
+                let shifted = self.alloc(PtxType::U32);
+                let _ = writeln!(self.text, "    shl.b32    {shifted}, {value}, {shift};");
+                shifted
+            };
+            acc = Some(match acc {
+                Some(prev) => {
+                    let out = self.alloc(PtxType::U32);
+                    let _ = writeln!(self.text, "    add.u32    {out}, {prev}, {term};");
+                    out
+                }
+                None => term,
+            });
+        }
+        acc
+    }
+
+    pub(super) fn emit_fast_u32_const_div(&mut self, value: Reg, divisor: u32) -> Option<Reg> {
+        if !matches!(value.0, PtxType::U32 | PtxType::Bool) || divisor == 0 {
+            return None;
+        }
+        if divisor == 1 {
+            return Some(value);
+        }
+        if divisor.is_power_of_two() {
+            let out = self.alloc(PtxType::U32);
+            let shift = divisor.trailing_zeros();
+            let _ = writeln!(self.text, "    shr.u32    {out}, {value}, {shift};");
+            return Some(out);
+        }
+        if divisor == 3 {
+            let magic = self.alloc(PtxType::U32);
+            let high = self.alloc(PtxType::U32);
+            let out = self.alloc(PtxType::U32);
+            let _ = writeln!(self.text, "    mov.u32    {magic}, 0xaaaaaaab;");
+            let _ = writeln!(self.text, "    mul.hi.u32    {high}, {value}, {magic};");
+            let _ = writeln!(self.text, "    shr.u32    {out}, {high}, 1;");
+            return Some(out);
+        }
+        None
     }
 
     fn emit_total_u32_div(&mut self, left: Reg, right: Reg) -> Reg {
@@ -400,7 +494,10 @@ impl BodyCtx<'_> {
             }
             (UnOp::IsNan, PtxType::F32) => {
                 let out = self.alloc(PtxType::Bool);
-                let _ = writeln!(self.text, "    setp.nan.f32    {out}, {operand}, {operand};");
+                let _ = writeln!(
+                    self.text,
+                    "    setp.nan.f32    {out}, {operand}, {operand};"
+                );
                 out
             }
             (UnOp::IsInf, PtxType::F32) => {
@@ -475,29 +572,14 @@ impl BodyCtx<'_> {
     }
 
     pub(super) fn emit_subgroup_add(&mut self, value: Reg) -> Reg {
-        let acc = value;
+        let result = self.alloc(value.0);
         let mask = self.alloc(PtxType::U32);
-        let tmp = self.alloc(value.0);
-        let lane_mask = self.subgroup_lane_mask();
         let _ = writeln!(self.text, "    activemask.b32    {mask};");
-        let mut delta = self.options.subgroup_size / 2;
-        while delta > 0 {
-            let _ = writeln!(
-                self.text,
-                "    shfl.sync.down.b32    {tmp}, {acc}, {delta}, 0x{lane_mask:x}, {mask};"
-            );
-            let suffix = if value.0 == PtxType::F32 {
-                "f32"
-            } else {
-                "u32"
-            };
-            let _ = writeln!(self.text, "    add.{suffix}    {acc}, {acc}, {tmp};");
-            delta /= 2;
-        }
+        let ptx_type = value.0.ptx_type_str();
         let _ = writeln!(
             self.text,
-            "    shfl.sync.idx.b32    {acc}, {acc}, 0, 0x{lane_mask:x}, {mask};"
+            "    redux.sync.add.{ptx_type}    {result}, {value}, {mask};"
         );
-        acc
+        result
     }
 }

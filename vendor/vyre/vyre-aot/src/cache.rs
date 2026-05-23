@@ -71,21 +71,19 @@ pub fn emit_runtime_cache_blob(
         Ok(())
     };
 
-    write_one_shot().map_err(|source| {
-        match fs::remove_file(&tmp_path) {
-            Ok(()) => RuntimeCacheError::Io {
-                path: final_path.clone(),
-                source,
-            },
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => RuntimeCacheError::Io {
-                path: final_path.clone(),
-                source,
-            },
-            Err(error) => RuntimeCacheError::Io {
-                path: tmp_path.clone(),
-                source: error,
-            },
-        }
+    write_one_shot().map_err(|source| match fs::remove_file(&tmp_path) {
+        Ok(()) => RuntimeCacheError::Io {
+            path: final_path.clone(),
+            source,
+        },
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => RuntimeCacheError::Io {
+            path: final_path.clone(),
+            source,
+        },
+        Err(error) => RuntimeCacheError::Io {
+            path: tmp_path.clone(),
+            source: error,
+        },
     })?;
 
     Ok(final_path)
@@ -95,10 +93,11 @@ pub fn emit_runtime_cache_blob(
 /// cache's path-safe encoding.
 #[must_use]
 pub fn fingerprint_hex(fingerprint: &[u8; 32]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
     let mut out = String::with_capacity(64);
-    for b in fingerprint {
-        use std::fmt::Write;
-        let _ = write!(&mut out, "{b:02x}");
+    for &b in fingerprint {
+        out.push(HEX[(b >> 4) as usize] as char);
+        out.push(HEX[(b & 0x0f) as usize] as char);
     }
     out
 }

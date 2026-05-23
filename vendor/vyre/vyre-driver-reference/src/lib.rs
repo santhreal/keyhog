@@ -66,7 +66,24 @@ fn reference_values(program: &Program, inputs: &[Vec<u8>]) -> Result<Vec<Value>,
         if buffer.access() == BufferAccess::Workgroup {
             continue;
         }
-        let bytes = if let Some(input) = inputs.get(next_input) {
+        let bytes = if buffer.is_output() {
+            let element_size = buffer.element().size_bytes().ok_or_else(|| {
+                BackendError::new(format!(
+                    "cpu-ref cannot synthesize output buffer `{}` because its element type is unsized. Fix: declare a fixed-width output element type.",
+                    buffer.name()
+                ))
+            })?;
+            let byte_len = usize::try_from(buffer.count())
+                .ok()
+                .and_then(|count| count.checked_mul(element_size))
+                .ok_or_else(|| {
+                    BackendError::new(format!(
+                        "cpu-ref output buffer `{}` size overflows usize. Fix: use a representable output buffer size.",
+                        buffer.name()
+                    ))
+                })?;
+            vec![0u8; byte_len]
+        } else if let Some(input) = inputs.get(next_input) {
             next_input += 1;
             input.clone()
         } else {

@@ -130,6 +130,38 @@ pub const TOK_GNU_BUILTIN_VA_LIST: u32 = 156;
 pub const TOK_GNU_ADDRESS_SPACE: u32 = 157;
 pub const TOK_GNU_LABEL: u32 = 158;
 
+// C23 / TS-extension scalar type keywords. Distinct token ids let the
+// parser keep IEEE-binary16 / bfloat16 / fp16 distinct from `float`
+// when lowering to vyre `DataType::F16` / `BF16` / `F32` / `F64`.
+/// `_BitInt(N)` (C23): arbitrary-width signed/unsigned integer.
+pub const TOK_BITINT_KW: u32 = 159;
+/// `_Float16` (TS 18661-3 / C23): IEEE-754 binary16.
+pub const TOK_FLOAT16_KW: u32 = 160;
+/// `_Float32` (TS 18661-3): IEEE-754 binary32 (alias of `float`).
+pub const TOK_FLOAT32_KW: u32 = 161;
+/// `_Float64` (TS 18661-3): IEEE-754 binary64 (alias of `double`).
+pub const TOK_FLOAT64_KW: u32 = 162;
+/// `_Float128` (TS 18661-3 / GCC): IEEE-754 binary128.
+pub const TOK_FLOAT128_KW: u32 = 163;
+/// `__float128` (GCC): IEEE-754 binary128 (synonym of `_Float128`).
+pub const TOK_GNU_FLOAT128_KW: u32 = 164;
+/// `__bf16` (GCC/clang): brain-float16.
+pub const TOK_GNU_BF16_KW: u32 = 165;
+/// `__fp16` (GCC/clang): half-precision float storage type.
+pub const TOK_GNU_FP16_KW: u32 = 166;
+/// `_Decimal32` (TS 18661-2): IEEE-754 decimal32.
+pub const TOK_DECIMAL32_KW: u32 = 167;
+/// `_Decimal64` (TS 18661-2): IEEE-754 decimal64.
+pub const TOK_DECIMAL64_KW: u32 = 168;
+/// `_Decimal128` (TS 18661-2): IEEE-754 decimal128.
+pub const TOK_DECIMAL128_KW: u32 = 169;
+/// MSVC-compatibility `__forceinline` qualifier.
+pub const TOK_FORCEINLINE_KW: u32 = 170;
+/// `_Nonnull` / `_Nullable` / `_Null_unspecified` clang nullability
+/// qualifier family. One token id; downstream sema distinguishes via
+/// the identifier text.
+pub const TOK_NULLABILITY_KW: u32 = 171;
+
 pub const TOK_COMMENT: u32 = 200; // will be stripped
 pub const TOK_WHITESPACE: u32 = 201; // will be stripped
 pub const TOK_PREPROC: u32 = 202; // preprocessor directive
@@ -175,6 +207,16 @@ pub const TOK_PP_EFFECT_WARNING_DIAGNOSTIC: u32 = 230;
 pub const TOK_PP_EFFECT_IDENT: u32 = 231;
 pub const TOK_PP_EFFECT_SCCS: u32 = 232;
 pub const TOK_PP_EFFECT_LINE: u32 = 233;
+
+// C23 + clang directive tokens.
+/// `#embed` (C23): bring binary file contents into the translation unit.
+pub const TOK_PP_EMBED: u32 = 234;
+/// `#elifdef` (C23): shorthand for `#elif defined(...)`.
+pub const TOK_PP_ELIFDEF: u32 = 235;
+/// `#elifndef` (C23): shorthand for `#elif !defined(...)`.
+pub const TOK_PP_ELIFNDEF: u32 = 236;
+/// `#import` (clang/Objective-C): include-once form.
+pub const TOK_PP_IMPORT: u32 = 237;
 
 pub fn is_c_lexer_error_token(token: u32) -> bool {
     matches!(

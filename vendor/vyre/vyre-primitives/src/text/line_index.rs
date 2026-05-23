@@ -48,8 +48,25 @@ pub fn line_index(source: &str, lines: &str, n: u32) -> Program {
                             "byte",
                             Expr::bitand(Expr::load(source, Expr::var("i")), Expr::u32(0xFF)),
                         ),
-                        // Write the current line number BEFORE
-                        // potentially incrementing on this byte.
+                        // Lone-CR catch-up: if the previous byte was a
+                        // bare '\r' and the current byte is NOT '\n',
+                        // the current byte belongs to the next line.
+                        // Apply the increment BEFORE storing so the
+                        // current byte records its new line. (CPU
+                        // does the same — see reference_line_index lines 112-114.)
+                        Node::if_then(
+                            Expr::and(
+                                Expr::eq(Expr::var("prev_was_cr"), Expr::u32(1)),
+                                Expr::ne(Expr::var("byte"), Expr::u32(0x0A)),
+                            ),
+                            vec![
+                                Node::assign("line", Expr::add(Expr::var("line"), Expr::u32(1))),
+                                Node::assign("prev_was_cr", Expr::u32(0)),
+                            ],
+                        ),
+                        // Write the current line number after applying
+                        // the lone-CR catch-up but before any increment
+                        // induced by the current byte itself.
                         Node::store(lines, Expr::var("i"), Expr::var("line")),
                         // Increment when we see '\n' (0x0A) regardless
                         // of prev_was_cr — '\r\n' increments only once
@@ -64,21 +81,14 @@ pub fn line_index(source: &str, lines: &str, n: u32) -> Program {
                                 Expr::eq(Expr::var("byte"), Expr::u32(0x0D)),
                                 vec![
                                     // '\r' marks state but doesn't yet
-                                    // increment only after we know
-                                    // whether '\n' follows.
+                                    // increment — wait until we see what
+                                    // follows.
                                     Node::assign("prev_was_cr", Expr::u32(1)),
                                 ],
                                 vec![
-                                    // Any other byte: if the prior
-                                    // byte was a lone '\r' (not
-                                    // followed by '\n'), increment now.
-                                    Node::if_then(
-                                        Expr::eq(Expr::var("prev_was_cr"), Expr::u32(1)),
-                                        vec![Node::assign(
-                                            "line",
-                                            Expr::add(Expr::var("line"), Expr::u32(1)),
-                                        )],
-                                    ),
+                                    // Any other byte: prev_was_cr is
+                                    // already cleared by the catch-up
+                                    // above.
                                     Node::assign("prev_was_cr", Expr::u32(0)),
                                 ],
                             )],
@@ -99,9 +109,10 @@ pub fn line_index(source: &str, lines: &str, n: u32) -> Program {
     )
 }
 
-/// CPU reference: same line-counting semantics as the GPU kernel.
+/// Reference oracle: same line-counting semantics as the GPU kernel.
 #[must_use]
-pub fn cpu_ref(source: &[u8]) -> Vec<u32> {
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn reference_line_index(source: &[u8]) -> Vec<u32> {
     let mut out = Vec::with_capacity(source.len());
     let mut line: u32 = 0;
     let mut prev_was_cr = false;
@@ -147,37 +158,37 @@ mod tests {
     use super::*;
 
     #[test]
-    fn cpu_ref_no_newlines() {
-        assert_eq!(cpu_ref(b"Hello"), vec![0; 5]);
+    fn reference_no_newlines() {
+        assert_eq!(reference_line_index(b"Hello"), vec![0; 5]);
     }
 
     #[test]
-    fn cpu_ref_unix_lf() {
+    fn reference_unix_lf() {
         // "ab\ncd" → lines [0, 0, 0, 1, 1]
-        assert_eq!(cpu_ref(b"ab\ncd"), vec![0, 0, 0, 1, 1]);
+        assert_eq!(reference_line_index(b"ab\ncd"), vec![0, 0, 0, 1, 1]);
     }
 
     #[test]
-    fn cpu_ref_windows_crlf() {
+    fn reference_windows_crlf() {
         // "ab\r\ncd" → lines [0, 0, 0, 0, 1, 1]
-        assert_eq!(cpu_ref(b"ab\r\ncd"), vec![0, 0, 0, 0, 1, 1]);
+        assert_eq!(reference_line_index(b"ab\r\ncd"), vec![0, 0, 0, 0, 1, 1]);
     }
 
     #[test]
-    fn cpu_ref_mac_classic_cr() {
+    fn reference_mac_classic_cr() {
         // "ab\rcd" → lines [0, 0, 0, 1, 1]
-        assert_eq!(cpu_ref(b"ab\rcd"), vec![0, 0, 0, 1, 1]);
+        assert_eq!(reference_line_index(b"ab\rcd"), vec![0, 0, 0, 1, 1]);
     }
 
     #[test]
-    fn cpu_ref_multiple_newlines() {
+    fn reference_multiple_newlines() {
         // "a\n\nb" → lines [0, 0, 1, 2]
-        assert_eq!(cpu_ref(b"a\n\nb"), vec![0, 0, 1, 2]);
+        assert_eq!(reference_line_index(b"a\n\nb"), vec![0, 0, 1, 2]);
     }
 
     #[test]
-    fn cpu_ref_trailing_lone_cr_does_not_increment_after_eof() {
+    fn reference_trailing_lone_cr_does_not_increment_after_eof() {
         // "ab\r" → lines [0, 0, 0]; we don't see a follow-up byte.
-        assert_eq!(cpu_ref(b"ab\r"), vec![0, 0, 0]);
+        assert_eq!(reference_line_index(b"ab\r"), vec![0, 0, 0]);
     }
 }

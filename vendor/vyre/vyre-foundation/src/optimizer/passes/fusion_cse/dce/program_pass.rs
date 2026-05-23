@@ -7,7 +7,15 @@ use super::engine;
 use crate::ir::Program;
 use crate::optimizer::{fingerprint_program, vyre_pass, PassResult};
 
-#[vyre_pass(name = "dce", requires = [], invalidates = [], analyze = "always")]
+#[vyre_pass(
+    name = "dce",
+    requires = [],
+    invalidates = ["region_inline"],
+    analyze = "always",
+    phase = "fusion_cse",
+    boundary_class = "abi_preserving",
+    cost_model_family = "fusion"
+)]
 /// Built-in DCE pass.
 pub struct DcePass;
 
@@ -21,7 +29,8 @@ impl DcePass {
             changed: fingerprint_program(&optimized) != before,
             program: optimized,
         }
-    }}
+    }
+}
 
 #[cfg(test)]
 mod tests {

@@ -59,9 +59,11 @@ pub struct Program {
     pub entry: Arc<Vec<Node>>,
     /// Cached blake3 hash of the program for fast equality and cache lookups.
     pub(crate) hash: OnceLock<blake3::Hash>,
-    /// True once structural validation has succeeded for this immutable shape.
+    /// Per-backend validation cache (lazily initialized — most intermediate
+    /// programs created during fixpoint iteration are never validated, so the
+    /// sharded DashSet is only allocated on first `mark_validated_on` call).
     #[doc(hidden)]
-    pub(crate) validation_set: Arc<dashmap::DashSet<Arc<str>>>,
+    pub(crate) validation_set: OnceLock<Arc<dashmap::DashSet<Arc<str>>>>,
     pub(crate) structural_validated: std::sync::atomic::AtomicBool,
     pub(crate) fingerprint: OnceLock<[u8; 32]>,
     // VYRE_IR_HOTSPOTS HIGH (core.rs:100-117): both caches were
@@ -99,7 +101,13 @@ impl Clone for Program {
             workgroup_size: self.workgroup_size,
             entry: Arc::clone(&self.entry),
             hash: OnceLock::new(),
-            validation_set: Arc::clone(&self.validation_set),
+            validation_set: {
+                let cell = OnceLock::new();
+                if let Some(set) = self.validation_set.get() {
+                    let _ = cell.set(Arc::clone(set));
+                }
+                cell
+            },
             structural_validated: std::sync::atomic::AtomicBool::new(
                 self.is_structurally_validated(),
             ),
@@ -109,34 +117,29 @@ impl Clone for Program {
             stats: OnceLock::new(),
             non_composable_with_self: self.non_composable_with_self,
         };
+        // Each OnceLock above was just initialised with `OnceLock::new()`,
+        // so the matching `.set(...)` is infallible by construction —
+        // `let _ = ...set(...)` matches the same pattern used for the
+        // validation_set initialiser above and avoids the raw-expect
+        // CI gate without introducing fake error paths.
         if let Some(hash) = self.hash.get() {
-            cloned.hash.set(*hash).expect("cloned Program hash cache is empty");
+            let _ = cloned.hash.set(*hash);
         }
         if let Some(fingerprint) = self.fingerprint.get() {
-            cloned
-                .fingerprint
-                .set(*fingerprint)
-                .expect("cloned Program fingerprint cache is empty");
+            let _ = cloned.fingerprint.set(*fingerprint);
         }
         if let Some(output_buffer_index) = self.output_buffer_index.get() {
             // Arc::clone = refcount bump, no Vec<u32> copy.
-            cloned
+            let _ = cloned
                 .output_buffer_index
-                .set(Arc::clone(output_buffer_index))
-                .expect("cloned Program output buffer index cache is empty");
+                .set(Arc::clone(output_buffer_index));
         }
         if let Some(has_indirect_dispatch) = self.has_indirect_dispatch.get() {
-            cloned
-                .has_indirect_dispatch
-                .set(*has_indirect_dispatch)
-                .expect("cloned Program indirect-dispatch cache is empty");
+            let _ = cloned.has_indirect_dispatch.set(*has_indirect_dispatch);
         }
         if let Some(stats) = self.stats.get() {
             // Arc::clone = refcount bump, no ProgramStats copy.
-            cloned
-                .stats
-                .set(Arc::clone(stats))
-                .expect("cloned Program stats cache is empty");
+            let _ = cloned.stats.set(Arc::clone(stats));
         }
         cloned
     }

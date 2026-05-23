@@ -1,4 +1,4 @@
-//! Audit-fix A35 `expansion/arg_scan.rs` extract.
+//! Function-like macro argument scan builders.
 
 use crate::parsing::c::lex::tokens::*;
 use vyre::ir::{Expr, Node};
@@ -77,14 +77,14 @@ pub(super) fn emit_function_like_argument_scan(
                             "function-like-macro-argument-count-overflow",
                         );
                         comma.extend([
-                            Node::assign(
-                                "macro_arg_index",
+                            Node::let_bind(
+                                "macro_next_arg_index",
                                 Expr::add(Expr::var("macro_arg_index"), Expr::u32(1)),
                             ),
                             Node::if_then(
-                                Expr::ge(Expr::var("macro_arg_index"), num_tokens.clone()),
+                                Expr::ge(Expr::var("macro_next_arg_index"), num_tokens.clone()),
                                 vec![Node::trap(
-                                    Expr::var("macro_arg_index"),
+                                    Expr::var("macro_next_arg_index"),
                                     "function-like-macro-argument-count-overflow",
                                 )],
                             ),
@@ -92,10 +92,11 @@ pub(super) fn emit_function_like_argument_scan(
                                 "macro_current_arg_start",
                                 Expr::add(Expr::var("macro_scan_idx"), Expr::u32(1)),
                             ),
+                            Node::assign("macro_arg_index", Expr::var("macro_next_arg_index")),
                         ]);
                         comma.extend(assign_arg_bound(
                             macro_arg_starts,
-                            Expr::var("macro_arg_index"),
+                            Expr::var("macro_next_arg_index"),
                             Expr::var("macro_current_arg_start"),
                             num_tokens.clone(),
                             "function-like-macro-argument-count-overflow",
@@ -152,21 +153,51 @@ pub(super) fn emit_function_like_argument_scan(
             Expr::and(
                 Expr::and(
                     Expr::eq(Expr::var("macro_close_idx"), Expr::var("macro_scan_base")),
-                    Expr::eq(Expr::var("named_param_count"), Expr::u32(0)),
+                    Expr::eq(Expr::var("named_required_param_count"), Expr::u32(0)),
                 ),
                 Expr::eq(Expr::var("macro_arg_index"), Expr::u32(0)),
             ),
             vec![Node::assign("macro_seen_arg_count", Expr::u32(0))],
         ),
         Node::if_then(
-            Expr::ne(
-                Expr::var("macro_seen_arg_count"),
-                Expr::var("named_param_count"),
+            Expr::and(
+                Expr::ne(
+                    Expr::var("macro_seen_arg_count"),
+                    Expr::var("named_param_count"),
+                ),
+                Expr::not(Expr::and(
+                    Expr::eq(Expr::var("named_is_variadic"), Expr::u32(1)),
+                    Expr::eq(
+                        Expr::var("macro_seen_arg_count"),
+                        Expr::var("named_required_param_count"),
+                    ),
+                )),
             ),
             vec![Node::trap(
                 Expr::var("macro_seen_arg_count"),
                 "function-like-macro-argument-count-mismatch",
             )],
+        ),
+        Node::if_then(
+            Expr::and(
+                Expr::eq(Expr::var("named_is_variadic"), Expr::u32(1)),
+                Expr::eq(
+                    Expr::var("macro_seen_arg_count"),
+                    Expr::var("named_required_param_count"),
+                ),
+            ),
+            vec![
+                Node::store(
+                    macro_arg_starts,
+                    Expr::var("named_required_param_count"),
+                    Expr::var("macro_close_idx"),
+                ),
+                Node::store(
+                    macro_arg_ends,
+                    Expr::var("named_required_param_count"),
+                    Expr::var("macro_close_idx"),
+                ),
+            ],
         ),
     ]);
     nodes

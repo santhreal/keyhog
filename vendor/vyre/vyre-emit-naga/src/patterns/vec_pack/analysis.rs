@@ -38,7 +38,10 @@ pub fn analyze(desc: &KernelDescriptor) -> PackingPlan {
 
 fn walk_body(body: &KernelBody, groups: &mut Vec<PackGroup>) {
     // Phase 1: collect every Load/Store op with its decomposed index.
-    let mut accesses: Vec<AccessRecord> = Vec::new();
+    // Upper bound on accesses is body.ops.len() (one record per op at
+    // most). Pre-sizing avoids three-to-four reallocations on the
+    // typical megakernel body (dozens to hundreds of ops).
+    let mut accesses: Vec<AccessRecord> = Vec::with_capacity(body.ops.len());
     for (op_idx, op) in body.ops.iter().enumerate() {
         if let Some(kind) = access_kind(&op.kind) {
             if op.operands.len() < 2 {

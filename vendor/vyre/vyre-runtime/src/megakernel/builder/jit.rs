@@ -53,7 +53,8 @@ fn execute_slot_body_jit(payload_processor: &[Node]) -> Vec<Node> {
 #[must_use]
 pub fn persistent_body_jit(workgroup_size_x: u32, payload_processor: &[Node]) -> Vec<Node> {
     let mut body = persistent_lane_prologue(workgroup_size_x);
-    body.reserve_exact(3);
+    body.try_reserve_exact(3)
+        .expect("megakernel JIT body node reservation failed. Fix: reduce fused payload/body staging before building the JIT megakernel.");
     body.push(direct_slot_base_binding());
     body.push(Node::Block(execute_slot_body_jit(payload_processor)));
     body.push(Node::Block(process_io_requests()));

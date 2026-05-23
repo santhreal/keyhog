@@ -75,7 +75,10 @@ fn evasion_split_across_lines_reassembles_at_all() {
     assert!(
         any_reassembled || any_high_value,
         "split_across_lines.py: no reassembled or high-value findings; matches={:?}",
-        matches.iter().map(|m| m.detector_id.as_ref()).collect::<Vec<_>>()
+        matches
+            .iter()
+            .map(|m| m.detector_id.as_ref())
+            .collect::<Vec<_>>()
     );
 }
 

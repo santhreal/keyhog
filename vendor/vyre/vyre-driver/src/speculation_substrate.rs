@@ -62,8 +62,8 @@ pub const MIN_DISPATCHES_FOR_VERDICT: u32 = 8;
 pub const MIN_ADOPT_SAVINGS_BPS: u64 = 1500;
 
 /// Decide whether to adopt the speculative variant, reject it, or keep
-/// racing. Pure arithmetic; saturating throughout so adversarial inputs
-/// cannot panic.
+/// racing. Pure arithmetic; widened throughout so adversarial inputs cannot
+/// panic or silently clamp a release-path adoption decision.
 #[must_use]
 pub fn decide_speculation(obs: SpeculationObservation) -> SpeculationVerdict {
     if obs.baseline_dispatches < MIN_DISPATCHES_FOR_VERDICT
@@ -83,20 +83,17 @@ pub fn decide_speculation(obs: SpeculationObservation) -> SpeculationVerdict {
         .side_compile_cost_ns
         .checked_div(u64::from(obs.speculative_dispatches.max(1)))
         .unwrap_or(u64::MAX);
-    let effective_speculative_ns = obs
-        .speculative_mean_ns
-        .saturating_add(amortized_overhead_ns);
+    let effective_speculative_ns =
+        u128::from(obs.speculative_mean_ns) + u128::from(amortized_overhead_ns);
+    let baseline_mean_ns = u128::from(obs.baseline_mean_ns);
 
-    if effective_speculative_ns >= obs.baseline_mean_ns {
+    if effective_speculative_ns >= baseline_mean_ns {
         return SpeculationVerdict::Reject;
     }
-    let savings_ns = obs.baseline_mean_ns - effective_speculative_ns;
+    let savings_ns = baseline_mean_ns - effective_speculative_ns;
     // savings in basis points relative to baseline: (savings * 10000) / baseline.
-    let savings_bps = savings_ns
-        .saturating_mul(10_000)
-        .checked_div(obs.baseline_mean_ns)
-        .unwrap_or(0);
-    if savings_bps >= MIN_ADOPT_SAVINGS_BPS {
+    let savings_bps = (savings_ns * 10_000) / baseline_mean_ns;
+    if savings_bps >= u128::from(MIN_ADOPT_SAVINGS_BPS) {
         SpeculationVerdict::Adopt
     } else {
         // Speculative wins but by less than the threshold — keep
@@ -174,18 +171,37 @@ mod tests {
     #[test]
     fn extreme_inputs_do_not_panic() {
         assert_eq!(
-            decide_speculation(obs(
-                u32::MAX,
-                u64::MAX,
-                u32::MAX,
-                u64::MAX,
-                u64::MAX
-            )),
+            decide_speculation(obs(u32::MAX, u64::MAX, u32::MAX, u64::MAX, u64::MAX)),
             SpeculationVerdict::Reject
         );
         assert_eq!(
             decide_speculation(obs(u32::MAX, 1, u32::MAX, u64::MAX, 0)),
             SpeculationVerdict::Reject
+        );
+    }
+
+    #[test]
+    fn huge_savings_use_widened_arithmetic_not_saturation() {
+        assert_eq!(
+            decide_speculation(obs(u32::MAX, u64::MAX, u32::MAX, 1, 0)),
+            SpeculationVerdict::Adopt
+        );
+    }
+
+    #[test]
+    fn speculation_policy_source_uses_exact_widened_arithmetic() {
+        let source = include_str!("speculation_substrate.rs");
+
+        assert!(
+            !source.contains(concat!("saturating", "_add"))
+                && !source.contains(concat!("saturating", "_mul")),
+            "Fix: speculation adoption policy must use widened exact arithmetic, not saturating math that can hide release-path cost corruption."
+        );
+        assert!(
+            source.contains("u128::from(obs.speculative_mean_ns)")
+                && source.contains("u128::from(obs.baseline_mean_ns)")
+                && source.contains("(savings_ns * 10_000) / baseline_mean_ns"),
+            "Fix: speculation adoption policy must compute effective cost and savings in widened integer space."
         );
     }
 }

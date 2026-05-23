@@ -58,7 +58,8 @@ fn infer_grid_prefers_explicit_output_over_large_inputs() {
 fn infer_grid_uses_full_span_for_shared_memory_reductions() {
     let program = Program::wrapped(
         vec![
-            BufferDecl::storage("values", 0, BufferAccess::ReadOnly, DataType::U32).with_count(1024),
+            BufferDecl::storage("values", 0, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(1024),
             BufferDecl::output("out", 1, DataType::U32).with_count(1),
             BufferDecl::workgroup("scratch", 2, DataType::U32).with_count(256),
         ],

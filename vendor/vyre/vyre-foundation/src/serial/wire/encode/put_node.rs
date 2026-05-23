@@ -37,8 +37,17 @@ use crate::serial::wire::{Node, MAX_OPAQUE_PAYLOAD_LEN};
 /// Same as [`put_expr()`] for expression sub-payloads, plus
 /// [`put_nodes()`] failures for nested statement lists (e.g. node
 /// count exceeds `u32::MAX`).
+///
+/// # Errors
+///
+/// Returns [`WireEncodeErr`] when a node contains an unmapped/oversized nested
+/// payload or a nested statement list that cannot fit the stable wire format.
 #[inline]
 #[must_use]
+#[expect(
+    clippy::too_many_lines,
+    reason = "wire discriminant table is an ABI contract and must remain auditable in one encoder"
+)]
 pub fn put_node(out: &mut Vec<u8>, node: &Node) -> Result<(), WireEncodeErr> {
     match node {
         Node::Let { name, value } => {

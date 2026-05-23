@@ -12,16 +12,16 @@
 //!   any_hit  = bitset_any(hits) → u32
 //! ```
 //!
-//! Surgec rules currently express this composition as a chain of
+//! Downstream analyzer rules currently express this composition as a chain of
 //! three predicates (`flows_to($src, $sink)` AND `not sanitized_by($src, @san)`).
 //! That works but emits three separate dispatches and intermediate
 //! buffers. Centralising it here lets the rule write one `lhs`-shaped
 //! predicate that the optimizer fuses, caches, and CSEs across rules.
 //!
-//! Soundness: [`Exact`](weir::soundness::Soundness::Exact)
+//! Soundness: [`Exact`](vyre::soundness::Soundness::Exact)
 //! when iterated to fixpoint with the same sanitizer mask supplied
 //! at every step. One step alone is
-//! [`MayOver`](weir::soundness::Soundness::MayOver) — the
+//! [`MayOver`](vyre::soundness::Soundness::MayOver) — the
 //! caller is responsible for the fixpoint loop, which is the same
 //! contract every other reachability primitive in this module honours.
 
@@ -29,7 +29,9 @@ use vyre::ir::Program;
 use vyre_primitives::graph::program_graph::ProgramGraphShape;
 use vyre_primitives::predicate::edge_kind;
 
-use crate::security::flow_composition::{sanitized_dataflow_hit, sanitized_dataflow_hit_program};
+#[cfg(test)]
+use crate::security::flow_composition::sanitized_dataflow_hit_cpu_ref;
+use crate::security::flow_composition::sanitized_dataflow_hit_program;
 
 pub(crate) const OP_ID: &str = "vyre-libs::security::flows_to_with_sanitizer";
 
@@ -72,7 +74,8 @@ pub fn flows_to_with_sanitizer(
 /// CPU oracle: full one-step semantic for differential testing
 /// against the GPU emit.
 #[must_use]
-pub fn cpu_ref(
+#[cfg(test)]
+pub(crate) fn cpu_ref(
     node_count: u32,
     edge_offsets: &[u32],
     edge_targets: &[u32],
@@ -81,7 +84,7 @@ pub fn cpu_ref(
     sink: &[u32],
     sanitizer: &[u32],
 ) -> u32 {
-    sanitized_dataflow_hit(
+    sanitized_dataflow_hit_cpu_ref(
         node_count,
         edge_offsets,
         edge_targets,
@@ -128,6 +131,7 @@ inventory::submit! {
                 to_bytes(&[0b0001]),              // out_scalar = 1
             ]]
         }),
+        category: Some("security"),
     }
 }
 

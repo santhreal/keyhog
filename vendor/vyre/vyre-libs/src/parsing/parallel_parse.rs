@@ -19,7 +19,10 @@
 //!   `get_or_parse` once per unique key.
 
 use rayon::prelude::*;
-use std::collections::{HashMap, HashSet};
+// SourceHash is a 32-byte digest — FxHash on byte arrays is materially
+// faster than std SipHash, and these tables are pure-internal scratch
+// (no adversarial-input concern; the hash is already a content digest).
+use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use std::sync::Arc;
 
 use super::source_cache::{ParsedSourceLru, SourceHash};
@@ -69,7 +72,7 @@ where
     // This is O(N) and allocation-light; it guarantees that even on a
     // cold cache the expensive `parse` closure runs once per unique source.
     let mut unique_indices = Vec::with_capacity(keys.len());
-    let mut seen = HashSet::with_capacity(keys.len());
+    let mut seen = HashSet::with_capacity_and_hasher(keys.len(), Default::default());
     for (idx, key) in keys.iter().enumerate() {
         if seen.insert(*key) {
             unique_indices.push(idx);

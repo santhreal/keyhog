@@ -59,7 +59,6 @@ inventory::submit! {
             let to_bytes = |w: &[f32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
             vec![vec![
                 to_bytes(&[0.0_f32, 2.0, -4.0, 1.0]),
-                vec![0u8; 4 * 4],
             ]]
         }),
         expected_output: Some(|| {
@@ -75,6 +74,7 @@ inventory::submit! {
             let bytes = out.iter().flat_map(|v| v.to_bits().to_le_bytes()).collect::<Vec<u8>>();
             vec![vec![bytes]]
         }),
+        category: Some("nn"),
     }
 }
 
@@ -118,7 +118,10 @@ mod tests {
         // +Inf: max(0.5*Inf, Inf) = Inf, Inf*Inf = Inf
         let outputs = vyre_reference::reference_eval(
             &program,
-            &[Value::from(f32_bytes(&[f32::INFINITY, 0.0])), Value::from(vec![0u8; 8])],
+            &[
+                Value::from(f32_bytes(&[f32::INFINITY, 0.0])),
+                Value::from(vec![0u8; 8]),
+            ],
         )
         .expect("Fix: leaky_relu_sq must not panic on +Inf input");
         let out = decode_f32(&outputs[0].to_bytes());
@@ -127,11 +130,18 @@ mod tests {
         // -Inf: max(-0.5*Inf, -Inf) = max(-Inf, -Inf) = -Inf, (-Inf)*(-Inf) = +Inf
         let outputs = vyre_reference::reference_eval(
             &program,
-            &[Value::from(f32_bytes(&[f32::NEG_INFINITY, 0.0])), Value::from(vec![0u8; 8])],
+            &[
+                Value::from(f32_bytes(&[f32::NEG_INFINITY, 0.0])),
+                Value::from(vec![0u8; 8]),
+            ],
         )
         .expect("Fix: leaky_relu_sq must not panic on -Inf input");
         let out = decode_f32(&outputs[0].to_bytes());
-        assert_eq!(out[0], f32::INFINITY, "leaky_relu_sq(-Inf) must be +Inf (square of negative infinity)");
+        assert_eq!(
+            out[0],
+            f32::INFINITY,
+            "leaky_relu_sq(-Inf) must be +Inf (square of negative infinity)"
+        );
     }
 
     #[test]
@@ -139,12 +149,19 @@ mod tests {
         let program = leaky_relu_sq("input", "output", 2);
         let outputs = vyre_reference::reference_eval(
             &program,
-            &[Value::from(f32_bytes(&[0.0f32, -0.0f32])), Value::from(vec![0u8; 8])],
+            &[
+                Value::from(f32_bytes(&[0.0f32, -0.0f32])),
+                Value::from(vec![0u8; 8]),
+            ],
         )
         .expect("Fix: leaky_relu_sq must handle -0.0");
         let out = decode_f32(&outputs[0].to_bytes());
         assert_eq!(out[0].to_bits(), 0.0f32.to_bits());
-        assert_eq!(out[1].to_bits(), 0.0f32.to_bits(), "leaky_relu_sq(-0.0) must be +0.0");
+        assert_eq!(
+            out[1].to_bits(),
+            0.0f32.to_bits(),
+            "leaky_relu_sq(-0.0) must be +0.0"
+        );
     }
 
     #[test]
@@ -158,7 +175,10 @@ mod tests {
         .expect("Fix: leaky_relu_sq must not panic on subnormal input");
         let out = decode_f32(&outputs[0].to_bytes());
         let expected = leaky_relu_sq_ref(sub);
-        assert!((out[0] - expected).abs() <= 1.0e-6, "leaky_relu_sq(subnormal) mismatch");
+        assert!(
+            (out[0] - expected).abs() <= 1.0e-6,
+            "leaky_relu_sq(subnormal) mismatch"
+        );
     }
 
     #[test]
@@ -198,7 +218,11 @@ mod tests {
         .expect("Fix: leaky_relu_sq all-max-f32 must not panic");
         let out = decode_f32(&outputs[0].to_bytes());
         for (i, &v) in out.iter().enumerate() {
-            assert_eq!(v, f32::INFINITY, "leaky_relu_sq(f32::MAX) must overflow to +Inf at {i}: got {v}");
+            assert_eq!(
+                v,
+                f32::INFINITY,
+                "leaky_relu_sq(f32::MAX) must overflow to +Inf at {i}: got {v}"
+            );
         }
     }
 
@@ -213,17 +237,18 @@ mod tests {
         .expect("Fix: leaky_relu_sq single element must execute");
         let out = decode_f32(&outputs[0].to_bytes());
         let expected = leaky_relu_sq_ref(-3.0);
-        assert!((out[0] - expected).abs() <= 1.0e-5, "leaky_relu_sq single element mismatch");
+        assert!(
+            (out[0] - expected).abs() <= 1.0e-5,
+            "leaky_relu_sq single element mismatch"
+        );
     }
 
     #[test]
     fn leaky_relu_sq_empty_tensor() {
         let program = leaky_relu_sq("input", "output", 0);
-        let outputs = vyre_reference::reference_eval(
-            &program,
-            &[Value::from(vec![]), Value::from(vec![])],
-        )
-        .expect("Fix: leaky_relu_sq n=0 must not panic");
+        let outputs =
+            vyre_reference::reference_eval(&program, &[Value::from(vec![]), Value::from(vec![])])
+                .expect("Fix: leaky_relu_sq n=0 must not panic");
         assert!(outputs[0].to_bytes().is_empty());
     }
 

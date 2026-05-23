@@ -99,13 +99,6 @@ pub fn encodex_reference(input: &[u8]) -> u32 {
     classify_from_histogram(&histogram, input.len() as u32)
 }
 
-/// Compatibility alias for older callers.
-///
-/// This is a host-side reference/oracle helper, not a GPU execution fallback.
-pub fn encodex_cpu(input: &[u8]) -> u32 {
-    encodex_reference(input)
-}
-
 // ---------------------------------------------------------------------------
 // Fixtures & harness
 // ---------------------------------------------------------------------------
@@ -126,7 +119,6 @@ fn fixture_inputs() -> Vec<Vec<Vec<u8>>> {
             vec![
                 pack_words(&input.iter().map(|&b| u32::from(b)).collect::<Vec<_>>()),
                 vec![0u8; 256 * 4],
-                vec![0u8; 4],
             ]
         })
         .collect()

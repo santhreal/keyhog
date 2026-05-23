@@ -14,20 +14,19 @@ use std::time::Instant;
 use rustc_hash::FxHashSet;
 use smallvec::SmallVec;
 use std::hash::BuildHasherDefault;
+#[cfg(test)]
+pub(crate) use vyre_driver::program_walks::enforce_actual_output_budget;
 pub(crate) use vyre_driver::program_walks::{element_size_bytes, OutputBindingLayout};
-use vyre_driver::program_walks::{
-    enforce_actual_output_budget, find_indirect_dispatch, infer_dispatch_grid_for_count,
-};
+use vyre_driver::program_walks::{find_indirect_dispatch, infer_dispatch_grid_for_count};
 pub use vyre_driver::program_walks::{output_layout_from_program, IndirectDispatch, OutputLayout};
+use vyre_driver::BackendLayoutFingerprint;
 use vyre_driver::{BackendError, CompiledPipeline, DispatchConfig, OutputBuffers};
-use vyre_driver::{BackendLayoutClass, BackendLayoutFingerprint, BackendLayoutSlot};
 use vyre_foundation::execution_plan::{self, ExecutionPlan};
 use vyre_foundation::ir::Program;
 use vyre_foundation::validate::ValidationOptions;
 
 pub use crate::buffer::BindGroupCacheStats;
 use crate::buffer::{BindGroupCache, StagingBufferPool};
-use crate::pipeline::binding::{usage_for_binding, validate_handle};
 use crate::pipeline::disk_cache::{
     compiled_pipeline_cache_key, create_compiled_pipeline_cache, early_pipeline_cache_key,
     load_or_compile_disk_wgsl, persist_compiled_pipeline_cache,
@@ -37,6 +36,12 @@ use crate::runtime;
 use crate::DispatchArena;
 use vyre_emit_naga::program::TrapTag;
 use vyre_lower::{TRAP_SIDECAR_NAME, TRAP_SIDECAR_WORDS};
+
+pub(crate) use self::descriptor_metadata::BufferBindingInfo;
+use self::descriptor_metadata::{
+    bind_group_layout_fingerprint, create_bind_group_layouts, descriptor_buffer_bindings,
+    descriptor_trap_tags,
+};
 
 pub(crate) type BindGroupLayoutCache = dashmap::DashMap<
     BackendLayoutFingerprint,
@@ -81,37 +86,46 @@ impl CachedPipelineArtifact {
             .iter()
             .map(|output| output.name.len())
             .sum();
-        self.id
-            .len()
-            .saturating_add(binding_names)
-            .saturating_add(output_names)
-            .saturating_add(
-                self.bind_group_layouts
-                    .len()
-                    .saturating_mul(std::mem::size_of::<Arc<wgpu::BindGroupLayout>>()),
-            )
-            .saturating_add(
-                self.buffer_bindings
-                    .len()
-                    .saturating_mul(std::mem::size_of::<BufferBindingInfo>()),
-            )
-            .saturating_add(
-                self.output_bindings
-                    .len()
-                    .saturating_mul(std::mem::size_of::<OutputBindingLayout>()),
-            )
-            .saturating_add(
-                self.trap_tags
-                    .len()
-                    .saturating_mul(std::mem::size_of::<TrapTag>()),
-            )
-            .saturating_add(std::mem::size_of::<Self>())
+        checked_cache_cost_sum(&[
+            self.id.len(),
+            binding_names,
+            output_names,
+            checked_cache_cost_product(
+                self.bind_group_layouts.len(),
+                std::mem::size_of::<Arc<wgpu::BindGroupLayout>>(),
+            ),
+            checked_cache_cost_product(
+                self.buffer_bindings.len(),
+                std::mem::size_of::<BufferBindingInfo>(),
+            ),
+            checked_cache_cost_product(
+                self.output_bindings.len(),
+                std::mem::size_of::<OutputBindingLayout>(),
+            ),
+            checked_cache_cost_product(self.trap_tags.len(), std::mem::size_of::<TrapTag>()),
+            std::mem::size_of::<Self>(),
+        ])
     }
 }
 
-struct ResolvedPersistentResources {
-    inputs: SmallVec<[crate::buffer::GpuBufferHandle; 8]>,
-    outputs: SmallVec<[crate::buffer::GpuBufferHandle; 8]>,
+fn checked_cache_cost_product(count: usize, element_size: usize) -> usize {
+    count.checked_mul(element_size).unwrap_or_else(|| {
+        panic!(
+            "cached pipeline artifact cost product overflowed usize. Fix: split oversized pipeline metadata before caching."
+        )
+    })
+}
+
+fn checked_cache_cost_sum(parts: &[usize]) -> usize {
+    let mut total = 0usize;
+    for &part in parts {
+        total = total.checked_add(part).unwrap_or_else(|| {
+            panic!(
+                "cached pipeline artifact cost sum overflowed usize. Fix: split oversized pipeline metadata before caching."
+            )
+        });
+    }
+    total
 }
 
 /// In-memory pipeline cache (P-27 from `docs/audits/ROADMAP_PERFORMANCE.md`).
@@ -120,206 +134,6 @@ struct ResolvedPersistentResources {
 /// returned as `Arc` so multiple callers share one ComputePipeline.
 /// `WgpuPipeline` is a thin wrapper around an `Arc<CachedPipeline>` plus
 /// per-instance values (id, output_size).
-
-/// Metadata for one buffer binding derived from a `Program` at compile time.
-#[derive(Clone, Debug)]
-pub(crate) struct BufferBindingInfo {
-    /// `group N` slot.
-    pub group: u32,
-    /// `binding slot N` slot.
-    pub binding: u32,
-    /// Buffer name referenced by IR loads/stores.
-    pub name: Arc<str>,
-    /// Access mode.
-    pub access: vyre_foundation::ir::BufferAccess,
-    /// Memory tier.
-    pub kind: vyre_foundation::ir::MemoryKind,
-    /// Non-binding optimization hints.
-    pub hints: vyre_foundation::ir::MemoryHints,
-    /// Element type.
-    pub element: vyre_foundation::ir::DataType,
-    /// Static element count (`0` means runtime-sized).
-    pub count: u32,
-    /// Whether this binding is returned to the caller after dispatch.
-    pub is_output: bool,
-    /// Whether this writable binding must preserve caller-supplied initial bytes.
-    pub preserve_input_contents: bool,
-    /// Backend-owned trap sidecar; not supplied by callers and not returned as
-    /// a public output.
-    pub internal_trap: bool,
-}
-
-fn descriptor_buffer_bindings(
-    descriptor: &vyre_lower::KernelDescriptor,
-    public_output_bindings: &FxHashSet<u32>,
-    explicit_output_bindings: &FxHashSet<u32>,
-) -> Vec<BufferBindingInfo> {
-    descriptor
-        .bindings
-        .slots
-        .iter()
-        .filter_map(|slot| {
-            let group = descriptor_bind_group(slot.memory_class)?;
-            let access = descriptor_access(slot.visibility);
-            let internal_trap = slot.name == TRAP_SIDECAR_NAME;
-            let is_output = public_output_bindings.contains(&slot.slot) && !internal_trap;
-            let explicit_output = explicit_output_bindings.contains(&slot.slot);
-            let preserve_input_contents =
-                access == vyre_foundation::ir::BufferAccess::ReadWrite
-                    && !explicit_output
-                    && !internal_trap;
-            Some(BufferBindingInfo {
-                group,
-                binding: slot.slot,
-                name: Arc::from(slot.name.as_str()),
-                access,
-                kind: descriptor_memory_kind(slot.memory_class),
-                hints: vyre_foundation::ir::MemoryHints::default(),
-                element: slot.element_type.clone(),
-                count: slot.element_count.unwrap_or(0),
-                is_output,
-                preserve_input_contents,
-                internal_trap,
-            })
-        })
-        .collect()
-}
-
-fn bind_group_layout_fingerprint(
-    bindings: &[BufferBindingInfo],
-) -> Result<BackendLayoutFingerprint, BackendError> {
-    let mut slots = Vec::with_capacity(bindings.len());
-    for binding in bindings {
-        let class = match binding.kind {
-            vyre_foundation::ir::MemoryKind::Uniform | vyre_foundation::ir::MemoryKind::Push => {
-                BackendLayoutClass::Uniform
-            }
-            _ => BackendLayoutClass::Storage,
-        };
-        let read_only = matches!(binding.kind, vyre_foundation::ir::MemoryKind::Readonly)
-            || matches!(
-                binding.access,
-                vyre_foundation::ir::BufferAccess::ReadOnly
-                    | vyre_foundation::ir::BufferAccess::Uniform
-            );
-        slots.push(BackendLayoutSlot {
-            group: binding.group,
-            binding: binding.binding,
-            class,
-            read_only,
-            element_size: element_size_bytes(&binding.element)?,
-        });
-    }
-    Ok(BackendLayoutFingerprint::new(slots))
-}
-
-fn create_bind_group_layouts(
-    device: &wgpu::Device,
-    buffer_bindings: &[BufferBindingInfo],
-    max_group: u32,
-) -> Arc<[Arc<wgpu::BindGroupLayout>]> {
-    let mut layouts: Vec<Arc<wgpu::BindGroupLayout>> = Vec::with_capacity((max_group + 1) as usize);
-    for group_index in 0..=max_group {
-        let entries: SmallVec<[wgpu::BindGroupLayoutEntry; 16]> = buffer_bindings
-            .iter()
-            .filter(|b| b.group == group_index)
-            .map(|b| {
-                let ty = match b.kind {
-                    vyre_foundation::ir::MemoryKind::Uniform
-                    | vyre_foundation::ir::MemoryKind::Push => wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    _ => {
-                        let read_only = matches!(b.kind, vyre_foundation::ir::MemoryKind::Readonly)
-                            || matches!(
-                                b.access,
-                                vyre_foundation::ir::BufferAccess::ReadOnly
-                                    | vyre_foundation::ir::BufferAccess::Uniform
-                            );
-                        wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only },
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        }
-                    }
-                };
-                wgpu::BindGroupLayoutEntry {
-                    binding: b.binding,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty,
-                    count: None,
-                }
-            })
-            .collect();
-        layouts.push(Arc::new(device.create_bind_group_layout(
-            &wgpu::BindGroupLayoutDescriptor {
-                label: Some("vyre P-6 bind group layout"),
-                entries: &entries,
-            },
-        )));
-    }
-    layouts.into()
-}
-
-fn descriptor_bind_group(memory_class: vyre_lower::MemoryClass) -> Option<u32> {
-    match memory_class {
-        vyre_lower::MemoryClass::Shared | vyre_lower::MemoryClass::Scratch => None,
-        vyre_lower::MemoryClass::Global | vyre_lower::MemoryClass::Constant => Some(0),
-    }
-}
-
-fn descriptor_access(
-    visibility: vyre_lower::BindingVisibility,
-) -> vyre_foundation::ir::BufferAccess {
-    match visibility {
-        vyre_lower::BindingVisibility::ReadOnly => vyre_foundation::ir::BufferAccess::ReadOnly,
-        vyre_lower::BindingVisibility::WriteOnly => vyre_foundation::ir::BufferAccess::WriteOnly,
-        vyre_lower::BindingVisibility::ReadWrite => vyre_foundation::ir::BufferAccess::ReadWrite,
-    }
-}
-
-fn descriptor_memory_kind(
-    memory_class: vyre_lower::MemoryClass,
-) -> vyre_foundation::ir::MemoryKind {
-    match memory_class {
-        vyre_lower::MemoryClass::Shared => vyre_foundation::ir::MemoryKind::Shared,
-        vyre_lower::MemoryClass::Constant => vyre_foundation::ir::MemoryKind::Readonly,
-        vyre_lower::MemoryClass::Global => vyre_foundation::ir::MemoryKind::Global,
-        vyre_lower::MemoryClass::Scratch => vyre_foundation::ir::MemoryKind::Local,
-    }
-}
-
-fn descriptor_trap_tags(descriptor: &vyre_lower::KernelDescriptor) -> Vec<TrapTag> {
-    fn walk(
-        body: &vyre_lower::KernelBody,
-        seen: &mut FxHashSet<vyre_lower::descriptor::Name>,
-        out: &mut Vec<TrapTag>,
-    ) {
-        for op in &body.ops {
-            if let vyre_lower::KernelOpKind::Trap { tag } = &op.kind {
-                if seen.insert(tag.clone()) {
-                    let code = u32::try_from(out.len())
-                        .unwrap_or(u32::MAX)
-                        .saturating_add(1);
-                    out.push(TrapTag {
-                        code,
-                        tag: Arc::from(tag.as_ref()),
-                    });
-                }
-            }
-        }
-        for child in &body.child_bodies {
-            walk(child, seen, out);
-        }
-    }
-
-    let mut seen = FxHashSet::default();
-    let mut out = Vec::new();
-    walk(&descriptor.body, &mut seen, &mut out);
-    out
-}
 
 /// Cached state for a vyre program on the wgpu backend.
 ///
@@ -492,7 +306,7 @@ impl WgpuPipeline {
                 ))
             })?;
         let staging_pool = StagingBufferPool::new();
-        let trap_tags_vec = descriptor_trap_tags(&descriptor);
+        let trap_tags_vec = descriptor_trap_tags(&descriptor)?;
         if !trap_tags_vec.is_empty()
             && !descriptor
                 .bindings
@@ -521,13 +335,24 @@ impl WgpuPipeline {
             )?,
         );
         let output_bindings: Arc<[OutputBindingLayout]> =
-            vyre_driver::program_walks::output_binding_layouts(program)?.into();
-        let primary_output = output_bindings.first().ok_or_else(|| {
-            BackendError::new(
-                "program has no writable output buffer. Fix: declare at least one read-write/output buffer in the vyre Program.",
-            )
-        })?;
-        let output = primary_output.layout;
+            if program.output_buffer_indices().is_empty() && !trap_tags.is_empty() {
+                Arc::from([])
+            } else {
+                vyre_driver::program_walks::output_binding_layouts(program)?.into()
+            };
+        let (output, output_word_count) = output_bindings.first().map_or(
+            (
+                OutputLayout {
+                    full_size: 0,
+                    read_size: 0,
+                    copy_offset: 0,
+                    copy_size: 0,
+                    trim_start: 0,
+                },
+                0,
+            ),
+            |primary_output| (primary_output.layout, primary_output.word_count),
+        );
         // Preserve the original workgroup shape. Without program-level
         // logical extents, dispatch paths can only derive a safe default grid
         // for 1D kernels; 2D/3D kernels must provide `grid_override`.
@@ -540,28 +365,39 @@ impl WgpuPipeline {
             effective_wg[2].max(1),
         ];
         let workgroup_size = workgroup_shape[0]
-            .saturating_mul(workgroup_shape[1])
-            .saturating_mul(workgroup_shape[2]);
-        let output_word_count = primary_output.word_count;
+            .checked_mul(workgroup_shape[1])
+            .and_then(|xy| xy.checked_mul(workgroup_shape[2]))
+            .ok_or_else(|| {
+                BackendError::new(format!(
+                    "workgroup_size {:?} overflows u32 when flattened. Fix: lower to a valid WGPU workgroup shape instead of saturating launch metadata.",
+                    workgroup_shape
+                ))
+            })?;
         let indirect = find_indirect_dispatch(compile_program)?;
-        let public_output_bindings: FxHashSet<u32> = output_bindings
-            .iter()
-            .map(|output| output.binding)
-            .collect();
-        let explicit_output_bindings: FxHashSet<u32> = program
-            .buffers()
-            .iter()
-            .filter(|buffer| buffer.is_output())
-            .map(|buffer| buffer.binding())
-            .collect();
+        let mut public_output_bindings =
+            FxHashSet::with_capacity_and_hasher(output_bindings.len(), Default::default());
+        public_output_bindings.extend(output_bindings.iter().map(|output| output.binding));
+        let buffers = program.buffers();
+        let mut explicit_output_bindings =
+            FxHashSet::with_capacity_and_hasher(buffers.len(), Default::default());
+        let mut pipeline_live_out_bindings =
+            FxHashSet::with_capacity_and_hasher(buffers.len(), Default::default());
+        for buffer in buffers {
+            if buffer.is_output() {
+                explicit_output_bindings.insert(buffer.binding());
+            }
+            if buffer.is_pipeline_live_out() {
+                pipeline_live_out_bindings.insert(buffer.binding());
+            }
+        }
 
-        let buffer_bindings: Arc<[BufferBindingInfo]> =
-            descriptor_buffer_bindings(
-                &descriptor,
-                &public_output_bindings,
-                &explicit_output_bindings,
-            )
-            .into();
+        let buffer_bindings: Arc<[BufferBindingInfo]> = descriptor_buffer_bindings(
+            &descriptor,
+            &public_output_bindings,
+            &explicit_output_bindings,
+            &pipeline_live_out_bindings,
+        )?
+        .into();
 
         for (group, binding) in bindings_reflection::declared_bindings(&wgsl) {
             if !buffer_bindings
@@ -583,7 +419,7 @@ impl WgpuPipeline {
         let bind_group_layouts = match bind_group_layout_cache.entry(layout_fingerprint) {
             dashmap::mapref::entry::Entry::Occupied(hit) => Arc::clone(hit.get()),
             dashmap::mapref::entry::Entry::Vacant(slot) => Arc::clone(&slot.insert(
-                create_bind_group_layouts(device, &buffer_bindings, max_group),
+                create_bind_group_layouts(device, &buffer_bindings, max_group)?,
             )),
         };
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -718,10 +554,13 @@ impl WgpuPipeline {
                 self.workgroup_shape,
             )));
         }
-        infer_dispatch_grid_for_count(
-            u32::try_from(self.output_word_count).unwrap_or(u32::MAX),
-            self.workgroup_shape,
-        )
+        let output_word_count = u32::try_from(self.output_word_count).map_err(|error| {
+            BackendError::new(format!(
+                "compiled WGPU pipeline output word count {} does not fit u32: {error}. Fix: shard the dispatch before grid inference instead of saturating the launch size.",
+                self.output_word_count
+            ))
+        })?;
+        infer_dispatch_grid_for_count(output_word_count, self.workgroup_shape)
     }
 
     /// Substrate-neutral performance and accuracy plan computed for this
@@ -732,177 +571,18 @@ impl WgpuPipeline {
     }
 }
 
-impl CompiledPipeline for WgpuPipeline {
-    fn dispatch_persistent_handles(
+impl WgpuPipeline {
+    fn readback_persistent_outputs(
         &self,
-        inputs: &[vyre_driver::Resource],
-        config: &DispatchConfig,
-    ) -> Result<OutputBuffers, BackendError> {
-        let outputs = self.dispatch_persistent_handles_batched(&[inputs], config)?;
-        let outputs = outputs.into_iter().next().unwrap_or_default();
-        enforce_actual_output_budget(config, outputs.as_slice())?;
-        Ok(outputs)
-    }
-
-    fn dispatch_persistent_handles_batched(
-        &self,
-        batches: &[&[vyre_driver::Resource]],
-        config: &DispatchConfig,
-    ) -> Result<Vec<OutputBuffers>, BackendError> {
-        if batches.is_empty() {
-            return Ok(Vec::new());
-        }
-        self.enforce_static_output_budget(config)?;
-        let (device, queue) = &*self.device_queue;
-        let workgroup_count = self.workgroups_for_dispatch(config)?;
-        let deadline = config
-            .timeout
-            .and_then(|timeout| Instant::now().checked_add(timeout));
-
-        let mut resolved = SmallVec::<[_; 8]>::with_capacity(batches.len());
-        for batch in batches {
-            resolved.push(self.resolve_persistent_resources(batch, queue)?);
-        }
-
-        let items: SmallVec<[crate::pipeline::persistent::BorrowedDispatchItem<'_>; 8]> = resolved
-            .iter()
-            .map(|item| crate::pipeline::persistent::BorrowedDispatchItem {
-                inputs: item.inputs.iter().collect(),
-                outputs: item.outputs.iter().collect(),
-                params: None,
-                workgroups: workgroup_count,
-            })
-            .collect();
-
-        self.dispatch_borrowed_persistent_batched(&items)?;
-
-        let mut batch_outputs = Vec::with_capacity(resolved.len());
-        for item in &resolved {
-            self.raise_if_trapped(&item.inputs, device, queue, deadline)?;
-            let mut outputs = Vec::with_capacity(item.outputs.len());
-            self.readback_persistent_outputs(&item.outputs, deadline, &mut outputs)?;
-            enforce_actual_output_budget(config, outputs.as_slice())?;
-            batch_outputs.push(outputs);
-        }
-
-        Ok(batch_outputs)
-    }
-
-    fn id(&self) -> &str {
-        &self.id
-    }
-
-    fn dispatch(
-        &self,
-        inputs: &[Vec<u8>],
-        config: &DispatchConfig,
-    ) -> Result<Vec<Vec<u8>>, BackendError> {
-        let borrowed: SmallVec<[&[u8]; 8]> = inputs.iter().map(Vec::as_slice).collect();
-        self.dispatch_borrowed(&borrowed, config)
-    }
-
-    fn dispatch_borrowed(
-        &self,
-        inputs: &[&[u8]],
-        config: &DispatchConfig,
-    ) -> Result<Vec<Vec<u8>>, BackendError> {
-        let mut outputs = Vec::with_capacity(self.output_bindings.len());
-        self.dispatch_borrowed_into(inputs, config, &mut outputs)?;
-        Ok(outputs)
-    }
-
-    fn dispatch_borrowed_batched(
-        &self,
-        batches: &[&[&[u8]]],
-        config: &DispatchConfig,
-    ) -> Result<Vec<OutputBuffers>, BackendError> {
-        if batches.is_empty() {
-            return Ok(Vec::new());
-        }
-        self.enforce_static_output_budget(config)?;
-        let deadline = config
-            .timeout
-            .and_then(|timeout| Instant::now().checked_add(timeout));
-        let workgroup_count = self.workgroups_for_dispatch(config)?;
-
-        let mut resolved = SmallVec::<[_; 8]>::with_capacity(batches.len());
-        for inputs in batches {
-            resolved.push(self.legacy_handles_from_inputs(inputs)?);
-        }
-
-        let items: SmallVec<[crate::pipeline::persistent::BorrowedDispatchItem<'_>; 8]> = resolved
-            .iter()
-            .map(
-                |(inputs, outputs)| crate::pipeline::persistent::BorrowedDispatchItem {
-                    inputs: inputs.iter().collect(),
-                    outputs: outputs.iter().collect(),
-                    params: None,
-                    workgroups: workgroup_count,
-                },
-            )
-            .collect();
-
-        let max_iters = config.fixpoint_iterations.unwrap_or(1).max(1) as usize;
-        for _ in 0..max_iters {
-            self.dispatch_borrowed_persistent_batched(&items)?;
-        }
-
-        let (device, queue) = &*self.device_queue;
-        let mut batch_outputs = Vec::with_capacity(resolved.len());
-        for (inputs, outputs) in &resolved {
-            self.raise_if_trapped(inputs, device, queue, deadline)?;
-            let mut item_outputs = Vec::with_capacity(outputs.len());
-            self.readback_persistent_outputs(outputs, deadline, &mut item_outputs)?;
-            enforce_actual_output_budget(config, item_outputs.as_slice())?;
-            batch_outputs.push(item_outputs);
-        }
-        Ok(batch_outputs)
-    }
-
-    fn dispatch_borrowed_into(
-        &self,
-        inputs: &[&[u8]],
-        config: &DispatchConfig,
+        output_handles: &[crate::buffer::GpuBufferHandle],
+        deadline: Option<Instant>,
         outputs: &mut OutputBuffers,
     ) -> Result<(), BackendError> {
-        self.enforce_static_output_budget(config)?;
-        let deadline = config
-            .timeout
-            .and_then(|timeout| Instant::now().checked_add(timeout));
-        let workgroup_count = self.workgroups_for_dispatch(config)?;
-
-        let (input_handles, mut output_handles) = self.legacy_handles_from_inputs(inputs)?;
-        // Caller may opt into a fixpoint composition: run the same
-        // program K times back-to-back on the SAME persistent input
-        // and output handles, so any ReadWrite intermediate buffers
-        // accumulate state across iterations. This is what lets the
-        // surgec rule chain converge multi-hop reachability — a
-        // single dispatch only finishes one BFS step's worth of work
-        // because cross-workgroup synchronization isn't possible
-        // inside one launch. After each iteration, sample the
-        // primary output buffer; stop early when it stops changing.
-        // This persistent-pipeline loop is the executable fixed-point
-        // contract for ordinary wgpu pipelines: reuse the same GPU
-        // handles across iterations, then observe convergence through
-        // the primary output buffer. The substrate
-        // `persistent_fixpoint` primitive encodes the same state
-        // machine for megakernel programs; both paths report iteration
-        // counts through driver observability.
-        let max_iters = config.fixpoint_iterations.unwrap_or(1).max(1) as usize;
-        for _iter in 0..max_iters {
-            self.dispatch_persistent(&input_handles, &mut output_handles, None, workgroup_count)?;
-        }
-        if max_iters > 1 {
-            tracing::trace!(
-                target: "vyre.dispatch.fixpoint",
-                iters = max_iters,
-                substrate_path = "persistent_pipeline_fixpoint_loop",
-                "persistent pipeline fixpoint loop ran",
-            );
-        }
         let (device, queue) = &*self.device_queue;
-        self.raise_if_trapped(&input_handles, device, queue, deadline)?;
         if outputs.len() < output_handles.len() {
+            if outputs.capacity() < output_handles.len() {
+                outputs.reserve_exact(output_handles.len() - outputs.capacity());
+            }
             outputs.resize_with(output_handles.len(), Vec::new);
         } else {
             outputs.truncate(output_handles.len());
@@ -912,179 +592,16 @@ impl CompiledPipeline for WgpuPipeline {
             .zip(self.output_bindings.iter())
             .zip(outputs.iter_mut())
         {
-            bytes.clear();
-            bytes.reserve(usize::try_from(handle.byte_len()).unwrap_or(0));
-            handle.readback_until(device, Some(&self.staging_pool), queue, bytes, deadline)?;
-            let end = output
-                .layout
-                .trim_start
-                .saturating_add(output.layout.read_size);
-            if end > bytes.len() {
-                return Err(BackendError::new(format!(
-                    "persistent legacy readback slice for `{}` is out of bounds. Fix: verify OutputLayout against the GPU output allocation.",
-                    output.name
-                )));
-            }
-            bytes.truncate(end);
-            if output.layout.trim_start > 0 {
-                bytes.drain(0..output.layout.trim_start);
-            }
-        }
-        enforce_actual_output_budget(config, outputs.as_slice())?;
-        Ok(())
-    }
-}
-
-impl WgpuPipeline {
-    fn resolve_persistent_resources(
-        &self,
-        resources: &[vyre_driver::Resource],
-        queue: &wgpu::Queue,
-    ) -> Result<ResolvedPersistentResources, BackendError> {
-        let mut inputs = SmallVec::<[crate::buffer::GpuBufferHandle; 8]>::new();
-        let mut outputs = SmallVec::<[crate::buffer::GpuBufferHandle; 8]>::new();
-        let mut resource_index = 0usize;
-
-        for info in self.buffer_bindings.iter() {
-            if info.kind == vyre_foundation::ir::MemoryKind::Shared {
-                continue;
-            }
-            if info.internal_trap {
-                inputs.push(self.allocate_internal_trap_handle()?);
-                continue;
-            }
-            let resource = resources.get(resource_index).ok_or_else(|| {
-                BackendError::new(format!(
-                    "persistent handle dispatch missing resource for binding {} (`{}`). Fix: pass one resource per public non-shared binding in BufferDecl order.",
-                    info.binding, info.name
-                ))
-            })?;
-            resource_index += 1;
-            let handle = self.resolve_persistent_resource(info, resource, queue)?;
-            if info.is_output {
-                outputs.push(handle);
-            } else {
-                inputs.push(handle);
-            }
-        }
-
-        if resource_index != resources.len() {
-            return Err(BackendError::new(format!(
-                "persistent handle dispatch received {} resources but consumed {resource_index}. Fix: pass resources in public non-shared BufferDecl order without extra handles.",
-                resources.len()
-            )));
-        }
-
-        Ok(ResolvedPersistentResources { inputs, outputs })
-    }
-
-    fn resolve_persistent_resource(
-        &self,
-        info: &BufferBindingInfo,
-        resource: &vyre_driver::Resource,
-        queue: &wgpu::Queue,
-    ) -> Result<crate::buffer::GpuBufferHandle, BackendError> {
-        match resource {
-            vyre_driver::Resource::Resident(id) => {
-                let handle = crate::buffer::GpuBufferHandle::from_resident_id(*id).ok_or_else(|| {
-                    BackendError::new(format!(
-                        "resident buffer handle {id} for binding {} (`{}`) is not live. Fix: keep resident buffers alive until dispatch and never pass stale Resource::Resident ids.",
-                        info.binding, info.name
-                    ))
-                })?;
-                validate_handle("persistent", info, &handle)?;
-                Ok(handle)
-            }
-            vyre_driver::Resource::Borrowed(bytes) => {
-                let byte_len = self.persistent_resource_byte_len(info, Some(bytes.as_slice()))?;
-                let handle = self
-                    .persistent_pool
-                    .acquire(byte_len as u64, usage_for_binding(info)?)?;
-                if !info.is_output || info.preserve_input_contents {
-                    crate::buffer::write_padded(
-                        queue,
-                        handle.buffer(),
-                        bytes,
-                        handle.allocation_len(),
-                    )?;
-                }
-                validate_handle("persistent", info, &handle)?;
-                Ok(handle)
-            }
-        }
-    }
-
-    fn allocate_internal_trap_handle(
-        &self,
-    ) -> Result<crate::buffer::GpuBufferHandle, BackendError> {
-        self.persistent_pool.acquire(
-            u64::from(TRAP_SIDECAR_WORDS) * 4,
-            wgpu::BufferUsages::STORAGE
-                | wgpu::BufferUsages::COPY_SRC
-                | wgpu::BufferUsages::COPY_DST,
-        )
-    }
-
-    fn persistent_resource_byte_len(
-        &self,
-        info: &BufferBindingInfo,
-        data: Option<&[u8]>,
-    ) -> Result<usize, BackendError> {
-        if info.is_output {
-            let output = self.output_binding(info.binding)?;
-            let byte_len = output.word_count.checked_mul(4).ok_or_else(|| {
-                BackendError::new(format!(
-                    "persistent output `{}` size overflows usize. Fix: reduce its element count.",
-                    output.name
-                ))
-            })?;
-            if let Some(bytes) = data {
-                if bytes.len() > byte_len {
-                    return Err(BackendError::new(format!(
-                        "persistent output `{}` received {} initialization bytes but declares only {byte_len}. Fix: resize the output BufferDecl or pass bytes matching the compiled output layout.",
-                        output.name,
-                        bytes.len()
-                    )));
-                }
-            }
-            return Ok(byte_len);
-        }
-        crate::pipeline::persistent::binding_padded_size(info, data)
-    }
-
-    fn readback_persistent_outputs(
-        &self,
-        output_handles: &[crate::buffer::GpuBufferHandle],
-        deadline: Option<Instant>,
-        outputs: &mut OutputBuffers,
-    ) -> Result<(), BackendError> {
-        let (device, queue) = &*self.device_queue;
-        outputs.clear();
-        outputs.reserve(output_handles.len());
-        for (handle, output) in output_handles.iter().zip(self.output_bindings.iter()) {
-            let mut bytes = Vec::with_capacity(usize::try_from(handle.byte_len()).unwrap_or(0));
-            handle.readback_until(
+            crate::pipeline::output_readback::read_trimmed_output(
+                handle,
+                output,
                 device,
-                Some(&self.staging_pool),
+                &self.staging_pool,
                 queue,
-                &mut bytes,
+                "borrowed persistent output",
                 deadline,
+                bytes,
             )?;
-            let end = output
-                .layout
-                .trim_start
-                .saturating_add(output.layout.read_size);
-            if end > bytes.len() {
-                return Err(BackendError::new(format!(
-                    "persistent readback slice for `{}` is out of bounds. Fix: verify OutputLayout against the GPU output allocation.",
-                    output.name
-                )));
-            }
-            bytes.truncate(end);
-            if output.layout.trim_start > 0 {
-                bytes.drain(0..output.layout.trim_start);
-            }
-            outputs.push(bytes);
         }
         Ok(())
     }
@@ -1110,7 +627,19 @@ impl WgpuPipeline {
                 "internal wgpu trap buffer was not allocated. Fix: keep trap buffer binding metadata synchronized with legacy input handle allocation.",
             ));
         };
-        let mut bytes = Vec::with_capacity((TRAP_SIDECAR_WORDS as usize) * 4);
+        let trap_sidecar_bytes = usize::try_from(TRAP_SIDECAR_WORDS)
+            .map_err(|source| {
+                BackendError::new(format!(
+                    "trap sidecar word count cannot fit usize: {source}. Fix: keep TRAP_SIDECAR_WORDS within the host index ABI."
+                ))
+            })?
+            .checked_mul(4)
+            .ok_or_else(|| {
+                BackendError::new(
+                    "trap sidecar byte length overflowed usize. Fix: keep TRAP_SIDECAR_WORDS within the host index ABI.",
+                )
+            })?;
+        let mut bytes = Vec::with_capacity(trap_sidecar_bytes);
         handle.readback_prefix_until(
             device,
             Some(&self.staging_pool),
@@ -1130,7 +659,6 @@ impl WgpuPipeline {
             return Ok(());
         }
 
-        bytes.clear();
         handle.readback_prefix_until(
             device,
             Some(&self.staging_pool),
@@ -1162,7 +690,14 @@ impl WgpuPipeline {
 }
 
 pub(crate) fn trap_error_from_sidecar(bytes: &[u8], trap_tags: &[TrapTag]) -> Option<BackendError> {
-    let required_len = (TRAP_SIDECAR_WORDS as usize) * 4;
+    let required_len = usize::try_from(TRAP_SIDECAR_WORDS)
+        .ok()
+        .and_then(|words| words.checked_mul(4))
+        .unwrap_or_else(|| {
+            panic!(
+                "trap sidecar byte length overflowed usize. Fix: keep TRAP_SIDECAR_WORDS within the host index ABI."
+            )
+        });
     if bytes.len() < required_len {
         return Some(BackendError::new(format!(
             "internal wgpu trap readback returned {} bytes but {required_len} bytes are required. Fix: allocate the trap sidecar as {TRAP_SIDECAR_WORDS} u32 words.",
@@ -1196,10 +731,18 @@ pub(crate) mod binding;
 /// reusable pipeline wrapper can mirror the layout exactly when
 /// creating bind groups. Misalignment is a validation error.
 pub(crate) mod bindings_reflection;
+/// `CompiledPipeline` trait dispatch entrypoints. Split out so the parent
+/// pipeline module does not own both compilation and execution mechanics.
+pub(crate) mod compiled_dispatch;
 /// Compound-resource binding (multi-program shape with shared GPU
 /// resources). Used by `engine::graph` to compose pipelines without
 /// re-allocating bind groups between dispatches.
 pub(crate) mod compound;
+/// KernelDescriptor-to-WGPU binding metadata and bind-group layout derivation.
+/// Keeping this out of the parent pipeline module preserves the rule that
+/// pipeline files orchestrate compile/dispatch flow rather than owning every
+/// metadata transformation.
+pub(crate) mod descriptor_metadata;
 /// On-disk WGSL + compiled-pipeline cache. Front-end calls
 /// `load_or_compile_disk_wgsl` / `compiled_pipeline_cache_key` /
 /// `persist_compiled_pipeline_cache` to skip Naga + Tint + driver
@@ -1209,6 +752,11 @@ pub(crate) mod disk_cache;
 /// edits, adapter changes, or feature-flag flips.
 #[path = "pipeline/disk_cache_invalidation.rs"]
 pub(crate) mod disk_cache_invalidation;
+/// Trimmed output readback. Owns the contract that `output_byte_range`
+/// transfers only meaningful bytes instead of whole output allocations.
+pub(crate) mod output_readback;
+/// Persistent `Resource` to GPU-handle resolution and trap sidecar allocation.
+pub(crate) mod persistent_resources;
 // Tests for `disk_cache.rs` are declared *inside* `disk_cache.rs`
 // itself (see `#[path = "disk_cache_tests.rs"] mod tests;` near the
 // bottom of that file). The original layout used #[cfg(test)] mod

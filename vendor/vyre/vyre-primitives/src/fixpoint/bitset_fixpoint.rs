@@ -87,6 +87,7 @@ pub fn bitset_fixpoint(current: &str, next: &str, changed: &str, words: u32) -> 
 /// word-for-word, else `0`. Primitive only — doesn't run the
 /// transfer body.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn reference_eval(current: &[u32], next: &[u32]) -> u32 {
     if current == next {
         0
@@ -198,6 +199,7 @@ pub const OP_ID_WARM_START: &str = "vyre-primitives::fixpoint::bitset_fixpoint_w
 /// the transfer step contributed no new bits — compare `current`
 /// directly.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn reference_eval_warm_start(current: &[u32], next: &[u32], seed: &[u32]) -> (Vec<u32>, u32) {
     debug_assert_eq!(current.len(), seed.len());
     debug_assert_eq!(current.len(), next.len());

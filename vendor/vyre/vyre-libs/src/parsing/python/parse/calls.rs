@@ -329,6 +329,7 @@ inventory::submit! {
         ),
         test_inputs: Some(call_fixture_inputs),
         expected_output: Some(call_fixture_expected),
+        category: Some("parsing"),
     }
 }
 

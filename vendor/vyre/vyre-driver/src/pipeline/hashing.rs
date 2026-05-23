@@ -6,7 +6,13 @@ use vyre_foundation::serial::wire::{append_data_type_fingerprint, append_node_li
 use vyre_spec::BackendId;
 
 /// Return the normalized program digest used by backend pipeline caches.
-pub fn normalized_program_cache_digest(program: &Program) -> [u8; 32] {
+///
+/// # Errors
+///
+/// Returns when the program contains an IR type or node shape that cannot be
+/// serialized into stable cache identity. Dispatch admission should surface the
+/// error rather than panic or generate a lossy cache key.
+pub fn try_normalized_program_cache_digest(program: &Program) -> Result<[u8; 32], String> {
     thread_local! {
         static SCRATCH: std::cell::RefCell<Vec<u8>> = std::cell::RefCell::new(Vec::with_capacity(1024));
     }
@@ -30,15 +36,28 @@ pub fn normalized_program_cache_digest(program: &Program) -> [u8; 32] {
             scratch.push(0);
             scratch.push(buffer.kind() as u8);
             scratch.push(buffer.access() as u8);
-            append_data_type_fingerprint(&mut scratch, &buffer.element())
-                .expect("data type fingerprint serialization must be total for cache hashing");
+            append_data_type_fingerprint(&mut scratch, &buffer.element()).map_err(|message| {
+                format!(
+                    "failed to fingerprint pipeline-cache buffer data type `{}`: {message}. Fix: validate and normalize the Program before computing a compiled-pipeline cache key; invalid IR must not enter cache identity.",
+                    buffer.name()
+                )
+            })?;
             scratch.push(0);
         }
         scratch.extend_from_slice(b"\0body\0");
-        append_node_list_fingerprint(&mut scratch, program.entry())
-            .expect("node fingerprint serialization must be total for cache hashing");
-        *blake3::hash(&scratch).as_bytes()
+        append_node_list_fingerprint(&mut scratch, program.entry()).map_err(|message| {
+            format!(
+                "failed to fingerprint pipeline-cache Program body: {message}. Fix: validate and normalize the Program before computing a compiled-pipeline cache key; invalid IR must not enter cache identity."
+            )
+        })?;
+        Ok(*blake3::hash(&scratch).as_bytes())
     })
+}
+
+/// Return the normalized program digest used by backend pipeline caches.
+#[must_use]
+pub fn normalized_program_cache_digest(program: &Program) -> [u8; 32] {
+    try_normalized_program_cache_digest(program).unwrap_or_else(|message| panic!("{message}"))
 }
 
 /// Append dispatch policy fields that alter generated backend code to a cache
@@ -70,7 +89,10 @@ pub fn update_dispatch_policy_cache_hash(hasher: &mut blake3::Hasher, config: &D
 /// Human-readable dispatch policy fingerprint for cache metadata.
 #[must_use]
 pub fn dispatch_policy_cache_string(config: &DispatchConfig) -> String {
-    let mut policy = String::new();
+    // "ulp=" (4) + max u8 decimal (3) + ":wg=" (4) + workgroup repr
+    // (~32) ≈ 64 bytes worst case; pre-size so the 4 push_str calls
+    // do not realloc.
+    let mut policy = String::with_capacity(64);
     policy.push_str("ulp=");
     push_debug_option_u8(&mut policy, config.ulp_budget);
     policy.push_str(":wg=");

@@ -5,13 +5,17 @@
 //! `linear_relu` in `relu.rs`, `rms_norm_linear` in `rms_norm.rs`, and tests
 //! in `tests.rs`.
 
+mod batch_matmul;
 mod builder;
+mod linear_4bit;
 mod relu;
 mod rms_norm;
 mod silu;
 mod tiled;
 
+pub use batch_matmul::batch_matmul;
 pub use builder::{linear, Linear};
+pub use linear_4bit::linear_4bit;
 pub use relu::linear_relu;
 pub use rms_norm::{rms_norm_linear, try_rms_norm_linear};
 pub use silu::linear_silu;

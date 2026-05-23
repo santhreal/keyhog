@@ -145,6 +145,7 @@ pub fn randomized_projection_step(
 
 /// CPU reference: `Y = A · Ω` in f64.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn randomized_projection_step_cpu(
     a: &[f64],
     omega: &[f64],
@@ -158,6 +159,7 @@ pub fn randomized_projection_step_cpu(
 }
 
 /// CPU reference: `Y = A · Ω` in caller-owned storage.
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn randomized_projection_step_cpu_into(
     a: &[f64],
     omega: &[f64],
@@ -188,6 +190,7 @@ pub fn randomized_projection_step_cpu_into(
 /// the QR step). Operates on `m × l` matrix Y in-place, returns Q
 /// (same shape, columns orthonormal).
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn modified_gram_schmidt_cpu(y: &[f64], m: u32, l: u32) -> Vec<f64> {
     let mut q = Vec::new();
     modified_gram_schmidt_cpu_into(y, m, l, &mut q);
@@ -195,6 +198,7 @@ pub fn modified_gram_schmidt_cpu(y: &[f64], m: u32, l: u32) -> Vec<f64> {
 }
 
 /// Modified Gram-Schmidt into caller-owned storage.
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn modified_gram_schmidt_cpu_into(y: &[f64], m: u32, l: u32, q: &mut Vec<f64>) {
     let m = m as usize;
     let l = l as usize;

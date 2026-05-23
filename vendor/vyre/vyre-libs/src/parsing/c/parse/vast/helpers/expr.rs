@@ -1,6 +1,7 @@
 use super::super::*;
 use super::*;
 use crate::parsing::c::lex::tokens::*;
+use crate::parsing::c::parse::gnu_builtin_catalog::GNU_BUILTIN_NAME_KINDS;
 use vyre::ir::Expr;
 
 pub(crate) fn c_effective_expression_prev_kind(prev_kind: Expr, prev_prev_kind: Expr) -> Expr {
@@ -177,44 +178,34 @@ pub(crate) fn c_builtin_identifier_expression_kind(
             fallback,
         )
     };
-    Expr::select(
-        Expr::and(
-            Expr::eq(raw_kind, Expr::u32(TOK_IDENTIFIER)),
-            Expr::eq(next_kind, Expr::u32(TOK_LPAREN)),
-        ),
-        Expr::select(
-            is_gnu_typeof_symbol_hash(symbol_hash.clone()),
-            Expr::u32(C_AST_KIND_SIZEOF_EXPR),
+    let legacy_kind = hash_kind(
+        0x749d_f71e,
+        C_AST_KIND_BUILTIN_EXPECT_EXPR,
+        hash_kind(
+            0xdcec_13f5,
+            C_AST_KIND_BUILTIN_OFFSETOF_EXPR,
             hash_kind(
-                0x749d_f71e,
-                C_AST_KIND_BUILTIN_EXPECT_EXPR,
+                0x7900_03c8,
+                C_AST_KIND_BUILTIN_OBJECT_SIZE_EXPR,
                 hash_kind(
-                    0xdcec_13f5,
-                    C_AST_KIND_BUILTIN_OFFSETOF_EXPR,
+                    0x21a7_53f0,
+                    C_AST_KIND_BUILTIN_PREFETCH_EXPR,
                     hash_kind(
-                        0x7900_03c8,
-                        C_AST_KIND_BUILTIN_OBJECT_SIZE_EXPR,
+                        0x4a9a_c967,
+                        C_AST_KIND_BUILTIN_UNREACHABLE_STMT,
                         hash_kind(
-                            0x21a7_53f0,
-                            C_AST_KIND_BUILTIN_PREFETCH_EXPR,
+                            0x7f55_6bd5,
+                            C_AST_KIND_BUILTIN_OVERFLOW_EXPR,
                             hash_kind(
-                                0x4a9a_c967,
-                                C_AST_KIND_BUILTIN_UNREACHABLE_STMT,
+                                0xb0bc_f282,
+                                C_AST_KIND_BUILTIN_OVERFLOW_EXPR,
                                 hash_kind(
-                                    0x7f55_6bd5,
+                                    0x8cc7_b276,
                                     C_AST_KIND_BUILTIN_OVERFLOW_EXPR,
                                     hash_kind(
-                                        0xb0bc_f282,
-                                        C_AST_KIND_BUILTIN_OVERFLOW_EXPR,
-                                        hash_kind(
-                                            0x8cc7_b276,
-                                            C_AST_KIND_BUILTIN_OVERFLOW_EXPR,
-                                            hash_kind(
-                                                0x3909_1622,
-                                                C_AST_KIND_BUILTIN_CLASSIFY_TYPE_EXPR,
-                                                Expr::u32(0),
-                                            ),
-                                        ),
+                                        0x3909_1622,
+                                        C_AST_KIND_BUILTIN_CLASSIFY_TYPE_EXPR,
+                                        Expr::u32(0),
                                     ),
                                 ),
                             ),
@@ -223,7 +214,48 @@ pub(crate) fn c_builtin_identifier_expression_kind(
                 ),
             ),
         ),
+    );
+    Expr::select(
+        Expr::and(
+            Expr::eq(raw_kind, Expr::u32(TOK_IDENTIFIER)),
+            Expr::eq(next_kind, Expr::u32(TOK_LPAREN)),
+        ),
+        Expr::select(
+            is_gnu_typeof_symbol_hash(symbol_hash.clone()),
+            Expr::u32(C_AST_KIND_SIZEOF_EXPR),
+            c_gnu_builtin_catalog_kind_from_hash(symbol_hash.clone(), legacy_kind),
+        ),
         Expr::u32(0),
+    )
+}
+
+pub(crate) fn c_gnu_builtin_catalog_kind_from_hash(symbol_hash: Expr, fallback: Expr) -> Expr {
+    let mut groups: Vec<(u32, Vec<u32>)> = Vec::new();
+    for entry in GNU_BUILTIN_NAME_KINDS {
+        match groups.iter_mut().find(|(kind, _)| *kind == entry.kind) {
+            Some((_, hashes)) => hashes.push(entry.hash),
+            None => groups.push((entry.kind, vec![entry.hash])),
+        }
+    }
+
+    let mut out = fallback;
+    for (kind, hashes) in groups.into_iter().rev() {
+        out = Expr::select(
+            any_hash_eq(symbol_hash.clone(), &hashes),
+            Expr::u32(kind),
+            out,
+        );
+    }
+    out
+}
+
+fn any_hash_eq(hash: Expr, values: &[u32]) -> Expr {
+    balanced_or(
+        values
+            .iter()
+            .copied()
+            .map(|value| Expr::eq(hash.clone(), Expr::u32(value)))
+            .collect(),
     )
 }
 
@@ -332,7 +364,7 @@ pub(crate) fn c_expr_operator_precedence(raw_kind: Expr, typed_kind: Expr) -> Ex
                 Expr::u32(3),
                 Expr::select(
                     Expr::eq(raw_kind.clone(), Expr::u32(TOK_OR)),
-                    Expr::u32(4),
+                    Expr::u32(VAST_PREVIOUS_SIBLING_FIELD),
                     Expr::select(
                         Expr::eq(raw_kind.clone(), Expr::u32(TOK_AND)),
                         Expr::u32(5),

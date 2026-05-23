@@ -7,7 +7,7 @@ use std::hash::BuildHasherDefault;
 use std::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
-use vyre_driver::cache_eviction_heat::{entries_to_evict, CacheEntryStats};
+use vyre_driver::cache_eviction_heat::CacheEntryStats;
 
 /// Bounded cache for WGPU pipeline artifacts using shared driver-tier
 /// retention policy. Despite the legacy name, this is not LRU.
@@ -62,19 +62,18 @@ impl LruPipelineCache {
     pub(crate) fn get(&self, fingerprint: &[u8; 32]) -> Option<Arc<CachedPipelineArtifact>> {
         if let Some(entry) = self.artifacts.get(fingerprint) {
             let artifact = Arc::clone(&entry.artifact);
-            entry
+            let _ = entry
                 .gain
                 .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |gain| {
-                    Some(gain.saturating_add(1))
-                })
-                .expect("pipeline cache gain update closure always returns Some");
+                    Some(if gain == u32::MAX { u32::MAX } else { gain + 1 })
+                });
             entry
                 .last_hit_time_s
                 .store(f64_to_atomic(now_seconds()), Ordering::Relaxed);
-            self.hits.fetch_add(1, Ordering::Relaxed);
+            rebasing_atomic_add_u64(&self.hits, 1, "pipeline cache hits");
             Some(artifact)
         } else {
-            self.misses.fetch_add(1, Ordering::Relaxed);
+            rebasing_atomic_add_u64(&self.misses, 1, "pipeline cache misses");
             None
         }
     }
@@ -99,24 +98,30 @@ impl LruPipelineCache {
         match previous {
             Some(old) => {
                 if cost >= old.cost {
-                    self.cached_bytes
-                        .fetch_add(cost - old.cost, Ordering::Relaxed);
+                    if !try_atomic_add_usize(&self.cached_bytes, cost - old.cost) {
+                        self.clear();
+                        return;
+                    }
                 } else {
-                    self.cached_bytes
-                        .fetch_sub(old.cost - cost, Ordering::Relaxed);
+                    if !try_atomic_sub_usize(&self.cached_bytes, old.cost - cost) {
+                        self.rebuild_cached_bytes();
+                    }
                 }
             }
             None => {
-                self.cached_bytes.fetch_add(cost, Ordering::Relaxed);
+                if !try_atomic_add_usize(&self.cached_bytes, cost) {
+                    self.clear();
+                    return;
+                }
             }
         }
-        self.insertions.fetch_add(1, Ordering::Relaxed);
+        rebasing_atomic_add_u64(&self.insertions, 1, "pipeline cache insertions");
 
         self.evict_over_capacity();
     }
 
     fn evict_over_capacity(&self) {
-        while self.artifacts.len() > self.max_entries as usize
+        while self.artifacts.len() > self.max_entries()
             || self.cached_bytes.load(Ordering::Relaxed) > self.max_bytes
         {
             let entries = self.eviction_snapshot();
@@ -130,14 +135,24 @@ impl LruPipelineCache {
             let evict = self.eviction_keys(&entries);
             for key in evict {
                 if let Some((_, removed)) = self.artifacts.remove(&key) {
-                    self.cached_bytes.fetch_sub(removed.cost, Ordering::Relaxed);
+                    if !try_atomic_sub_usize(&self.cached_bytes, removed.cost) {
+                        self.rebuild_cached_bytes();
+                    }
+                    if removed_count == u64::MAX {
+                        rebasing_atomic_add_u64(
+                            &self.evictions,
+                            removed_count,
+                            "pipeline cache evictions",
+                        );
+                        removed_count = 0;
+                    }
                     removed_count += 1;
                 }
             }
             if removed_count == 0 {
                 return;
             }
-            self.evictions.fetch_add(removed_count, Ordering::Relaxed);
+            rebasing_atomic_add_u64(&self.evictions, removed_count, "pipeline cache evictions");
             vyre_driver::cache_eviction::record_eviction(
                 removed_count as f64 / entries.len() as f64,
             );
@@ -159,34 +174,65 @@ impl LruPipelineCache {
 
     fn eviction_keys(&self, entries: &[EvictionEntry]) -> Vec<[u8; 32]> {
         let mut retained_len = entries.len();
-        let mut retained_bytes = entries.iter().map(|entry| entry.cost).sum::<usize>();
-        let stats: Vec<CacheEntryStats> = entries
+        let mut retained_bytes = entries
             .iter()
-            .enumerate()
-            .map(|(idx, entry)| CacheEntryStats {
-                id: idx as u64,
+            .try_fold(0usize, |total, entry| total.checked_add(entry.cost))
+            .unwrap_or(usize::MAX);
+        let now = now_seconds();
+        let mut ranked = Vec::with_capacity(entries.len());
+        ranked.extend(entries.iter().enumerate().map(|(idx, entry)| {
+            let id = u64::try_from(idx).unwrap_or(u64::MAX);
+            let stats = CacheEntryStats {
+                id,
                 hit_count: entry.gain,
                 last_hit_time_s: entry.last_hit_time_s,
-            })
-            .collect();
-        let coldest = entries_to_evict(&stats, 0, now_seconds());
-        let mut keys = Vec::new();
-        for cold_idx in coldest {
-            if retained_len <= self.max_entries as usize && retained_bytes <= self.max_bytes {
+            };
+            (idx, stats.heat(now))
+        }));
+        ranked.sort_by(|left, right| {
+            left.1
+                .total_cmp(&right.1)
+                .then_with(|| left.0.cmp(&right.0))
+        });
+        let mut keys = Vec::with_capacity(entries.len());
+        for (cold_idx, _) in ranked {
+            if retained_len <= self.max_entries() && retained_bytes <= self.max_bytes {
                 break;
             }
-            let entry = &entries[cold_idx as usize];
+            let entry = &entries[cold_idx];
             keys.push(entry.key);
-            retained_len = retained_len.saturating_sub(1);
-            retained_bytes = retained_bytes.saturating_sub(entry.cost);
+            retained_len = if retained_len == 0 {
+                0
+            } else {
+                retained_len - 1
+            };
+            retained_bytes = if entry.cost > retained_bytes {
+                0
+            } else {
+                retained_bytes - entry.cost
+            };
         }
         keys
     }
 
     fn remove_key(&self, fingerprint: &[u8; 32]) {
         if let Some((_, removed)) = self.artifacts.remove(fingerprint) {
-            self.cached_bytes.fetch_sub(removed.cost, Ordering::Relaxed);
+            if !try_atomic_sub_usize(&self.cached_bytes, removed.cost) {
+                self.rebuild_cached_bytes();
+            }
         }
+    }
+
+    fn rebuild_cached_bytes(&self) {
+        let mut total = 0usize;
+        for entry in self.artifacts.iter() {
+            let Some(next) = total.checked_add(entry.cost) else {
+                self.clear();
+                return;
+            };
+            total = next;
+        }
+        self.cached_bytes.store(total, Ordering::Relaxed);
     }
 
     /// Remove every cached artifact.
@@ -222,7 +268,7 @@ impl LruPipelineCache {
 
     /// Entry budget.
     pub(crate) fn max_entries(&self) -> usize {
-        self.max_entries as usize
+        usize::try_from(self.max_entries).unwrap_or(usize::MAX)
     }
 
     /// Estimated byte budget.
@@ -309,5 +355,59 @@ mod tests {
             entry(3, 100, 100.0, 2),
         ];
         assert_eq!(cache.eviction_keys(&entries), vec![key(1)]);
+    }
+}
+
+fn try_atomic_add_usize(counter: &AtomicUsize, value: usize) -> bool {
+    if value == 0 {
+        return true;
+    }
+    let mut current = counter.load(Ordering::Relaxed);
+    loop {
+        let Some(next) = current.checked_add(value) else {
+            return false;
+        };
+        match counter.compare_exchange_weak(current, next, Ordering::Relaxed, Ordering::Relaxed) {
+            Ok(_) => return true,
+            Err(observed) => current = observed,
+        }
+    }
+}
+
+fn try_atomic_sub_usize(counter: &AtomicUsize, value: usize) -> bool {
+    if value == 0 {
+        return true;
+    }
+    let mut current = counter.load(Ordering::Relaxed);
+    loop {
+        let Some(next) = current.checked_sub(value) else {
+            return false;
+        };
+        match counter.compare_exchange_weak(current, next, Ordering::Relaxed, Ordering::Relaxed) {
+            Ok(_) => return true,
+            Err(observed) => current = observed,
+        }
+    }
+}
+
+fn rebasing_atomic_add_u64(counter: &AtomicU64, value: u64, label: &'static str) {
+    if value == 0 {
+        return;
+    }
+    let mut current = counter.load(Ordering::Relaxed);
+    loop {
+        let sum = u128::from(current) + u128::from(value);
+        let next = sum as u64;
+        match counter.compare_exchange_weak(current, next, Ordering::Relaxed, Ordering::Relaxed) {
+            Ok(_) => {
+                if sum > u128::from(u64::MAX) {
+                    tracing::error!(
+                        "{label} exceeded u64::MAX and was rebased modulo 2^64. Fix: shard pipeline-cache telemetry collection before wrap."
+                    );
+                }
+                return;
+            }
+            Err(observed) => current = observed,
+        }
     }
 }

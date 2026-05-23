@@ -6,7 +6,7 @@ use super::node::{VastNode, SENTINEL};
 /// Build a minimal valid VAST buffer: one root + optional linear first-child chain.
 #[must_use]
 pub fn pack_spine_vast(node_kinds: &[u32]) -> Vec<u8> {
-    let n = node_kinds.len() as u32;
+    let n = u32::try_from(node_kinds.len()).unwrap_or(u32::MAX);
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&VAST_MAGIC);
     bytes.extend_from_slice(&VAST_VERSION.to_le_bytes());

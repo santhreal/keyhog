@@ -34,8 +34,8 @@ Cross-backend pipeline plumbing. Pre-compiled pipeline cache,
 buffer-binding metadata builder, per-output layout calculation.
 
 ### `diagnostics.rs`
-Backend-emitted diagnostic shaping. Consumed by surgec's
-`scan_skip_note!` and the conform runner.
+Backend-emitted diagnostic shaping. Consumed by downstream diagnostic
+adapters and the conform runner.
 
 ### `observability.rs`
 Counters, histograms, and tracing-level profile hooks.
@@ -92,8 +92,7 @@ Top-level wiring of the routing table + extern dialect bridge.
 
 ## Integration points
 
-- Consumed by surgec's scan path
-  (`crate::scan::dispatch::dispatch_doc`).
+- Consumed by downstream scan paths.
 - Consumed by `vyre-aot` for per-target lowering.
 - Extension point for community backends via the sealed trait
   + the extern-registry bridge in `vyre-foundation`.

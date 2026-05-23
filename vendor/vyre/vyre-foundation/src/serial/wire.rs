@@ -50,11 +50,11 @@ pub const MAX_OPAQUE_PAYLOAD_LEN: usize = MAX_ARGS * 1024;
 /// descends into a `Node::If`/`Loop`/`Block` body or into a nested
 /// [`Expr`] argument tree, counts against the same budget. Depth ≥
 /// `MAX_DECODE_DEPTH` is rejected with a `Fix:`-prefixed error before any
-/// stack frame is pushed, preventing stack-overflow DoS from a blob that
+/// stack frame is pushed, preventing stack-overflow `DoS` from a blob that
 /// nests `Block(Block(... Block(...) ...))` a million times deep.
 ///
 /// Covers audit L.1.35 (HIGH).
-pub const MAX_DECODE_DEPTH: u32 = 256;
+pub const MAX_DECODE_DEPTH: u32 = 64;
 
 /// Hard ceiling on the size of a single wire-encoded Program in bytes.
 ///
@@ -200,6 +200,11 @@ fn wire_err(message: String) -> crate::error::Error {
 /// Append stable VIR0 wire bytes for a [`DataType`] (tag + any payload) into
 /// `buf`. Used by disk-cache fingerprinting where `Debug` output would be
 /// the wrong contract.
+///
+/// # Errors
+///
+/// Returns a wire-format diagnostic when `value` contains a datatype variant
+/// without a stable tag or a payload that cannot fit the VIR0 encoding.
 pub fn append_data_type_fingerprint(buf: &mut Vec<u8>, value: &DataType) -> Result<(), String> {
     tags::data_type_tag::put_data_type(buf, value).map_err(String::from)
 }
@@ -207,6 +212,11 @@ pub fn append_data_type_fingerprint(buf: &mut Vec<u8>, value: &DataType) -> Resu
 /// Append stable VIR0 wire bytes for a `Node` statement list (count + each
 /// node). Matches the statement encoding used in full program wire (`to_wire`)
 /// (without the file envelope, metadata, or buffer table).
+///
+/// # Errors
+///
+/// Returns a wire-format diagnostic when the node list or any nested payload
+/// cannot be represented in VIR0.
 pub fn append_node_list_fingerprint(buf: &mut Vec<u8>, nodes: &[Node]) -> Result<(), String> {
     encode::put_nodes(buf, nodes).map_err(String::from)
 }
@@ -284,53 +294,68 @@ mod tests {
     }
 }
 
+/// OPAQUE-001 regression: encoder and decoder must agree on the
+/// maximum opaque payload length. A payload at MAX_OPAQUE_PAYLOAD_LEN
+/// must encode; a payload one byte larger must fail at encode time.
+#[test]
+pub(crate) fn opaque_payload_limit_is_symmetric() {
+    use crate::ir::{Expr, ExprNode};
+    use std::any::Any;
 
-    /// OPAQUE-001 regression: encoder and decoder must agree on the
-    /// maximum opaque payload length. A payload at MAX_OPAQUE_PAYLOAD_LEN
-    /// must encode; a payload one byte larger must fail at encode time.
-    #[test]
-    pub(crate) fn opaque_payload_limit_is_symmetric() {
-        use crate::ir::{Expr, ExprNode};
-        use std::any::Any;
-
-        #[derive(Debug)]
-        struct BigOpaque(Vec<u8>);
-        impl ExprNode for BigOpaque {
-            fn extension_kind(&self) -> &'static str { "test.big" }
-            fn debug_identity(&self) -> &str { "test.big" }
-            fn result_type(&self) -> Option<DataType> { Some(DataType::U32) }
-            fn cse_safe(&self) -> bool { false }
-            fn stable_fingerprint(&self) -> [u8; 32] { [0; 32] }
-            fn validate_extension(&self) -> Result<(), String> { Ok(()) }
-            fn as_any(&self) -> &dyn Any { self }
-            fn wire_payload(&self) -> Vec<u8> { self.0.clone() }
+    #[derive(Debug)]
+    struct BigOpaque(Vec<u8>);
+    impl ExprNode for BigOpaque {
+        fn extension_kind(&self) -> &'static str {
+            "test.big"
         }
-
-        // At the limit: must encode successfully.
-        let expr_ok = Expr::opaque(BigOpaque(vec![0u8; MAX_OPAQUE_PAYLOAD_LEN]));
-        let program_ok = Program::wrapped(
-            vec![BufferDecl::read_write("out", 0, DataType::U32)],
-            [1, 1, 1],
-            vec![Node::let_bind("_", expr_ok)],
-        );
-        assert!(
-            program_ok.to_wire().is_ok(),
-            "at-limit opaque payload ({MAX_OPAQUE_PAYLOAD_LEN} bytes) must encode"
-        );
-
-        // One byte over: must fail at encode time.
-        let expr_over = Expr::opaque(BigOpaque(vec![0u8; MAX_OPAQUE_PAYLOAD_LEN + 1]));
-        let program_over = Program::wrapped(
-            vec![BufferDecl::read_write("out", 0, DataType::U32)],
-            [1, 1, 1],
-            vec![Node::let_bind("_", expr_over)],
-        );
-        let err = program_over.to_wire().expect_err(
-            "opaque payload exceeding MAX_OPAQUE_PAYLOAD_LEN must fail at encode"
-        );
-        let msg = err.to_string();
-        assert!(
-            msg.contains("MAX_OPAQUE_PAYLOAD_LEN") || msg.contains(&MAX_OPAQUE_PAYLOAD_LEN.to_string()),
-            "error should mention the limit, got: {msg}"
-        );
+        fn debug_identity(&self) -> &str {
+            "test.big"
+        }
+        fn result_type(&self) -> Option<DataType> {
+            Some(DataType::U32)
+        }
+        fn cse_safe(&self) -> bool {
+            false
+        }
+        fn stable_fingerprint(&self) -> [u8; 32] {
+            [0; 32]
+        }
+        fn validate_extension(&self) -> Result<(), String> {
+            Ok(())
+        }
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+        fn wire_payload(&self) -> Vec<u8> {
+            self.0.clone()
+        }
     }
+
+    // At the limit: must encode successfully.
+    let expr_ok = Expr::opaque(BigOpaque(vec![0u8; MAX_OPAQUE_PAYLOAD_LEN]));
+    let program_ok = Program::wrapped(
+        vec![BufferDecl::read_write("out", 0, DataType::U32)],
+        [1, 1, 1],
+        vec![Node::let_bind("_", expr_ok)],
+    );
+    assert!(
+        program_ok.to_wire().is_ok(),
+        "at-limit opaque payload ({MAX_OPAQUE_PAYLOAD_LEN} bytes) must encode"
+    );
+
+    // One byte over: must fail at encode time.
+    let expr_over = Expr::opaque(BigOpaque(vec![0u8; MAX_OPAQUE_PAYLOAD_LEN + 1]));
+    let program_over = Program::wrapped(
+        vec![BufferDecl::read_write("out", 0, DataType::U32)],
+        [1, 1, 1],
+        vec![Node::let_bind("_", expr_over)],
+    );
+    let err = program_over
+        .to_wire()
+        .expect_err("opaque payload exceeding MAX_OPAQUE_PAYLOAD_LEN must fail at encode");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("MAX_OPAQUE_PAYLOAD_LEN") || msg.contains(&MAX_OPAQUE_PAYLOAD_LEN.to_string()),
+        "error should mention the limit, got: {msg}"
+    );
+}

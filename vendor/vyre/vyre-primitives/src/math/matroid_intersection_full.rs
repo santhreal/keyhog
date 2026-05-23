@@ -31,6 +31,22 @@ pub fn matroid_intersection_full(
     n: u32,
     max_augmentations: u32,
 ) -> Program {
+    if n == 0 {
+        return crate::invalid_output_program(
+            OP_ID,
+            set_x,
+            DataType::U32,
+            "Fix: matroid_intersection_full requires n > 0, got 0.".to_string(),
+        );
+    }
+    let Some(adj_count) = n.checked_mul(n) else {
+        return crate::invalid_output_program(
+            OP_ID,
+            set_x,
+            DataType::U32,
+            format!("Fix: matroid_intersection_full exchange adjacency cells overflow u32: n={n}."),
+        );
+    };
     let mut nodes = Vec::new();
 
     for _ in 0..max_augmentations {
@@ -167,7 +183,7 @@ pub fn matroid_intersection_full(
     Program::wrapped(
         vec![
             BufferDecl::storage(exchange_adj, 0, BufferAccess::ReadOnly, DataType::U32)
-                .with_count(n * n),
+                .with_count(adj_count),
             BufferDecl::storage(sources, 1, BufferAccess::ReadOnly, DataType::U32).with_count(n),
             BufferDecl::storage(sinks, 2, BufferAccess::ReadOnly, DataType::U32).with_count(n),
             BufferDecl::storage(set_x, 3, BufferAccess::ReadWrite, DataType::U32).with_count(n),
@@ -198,6 +214,7 @@ pub fn matroid_intersection_full(
 }
 
 /// CPU reference: One full Edmonds augmentation.
+#[cfg(test)]
 #[must_use]
 pub fn cpu_ref(
     exchange_adj: &[u32],
@@ -225,6 +242,7 @@ pub fn cpu_ref(
 }
 
 /// CPU reference using caller-owned BFS scratch.
+#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 pub fn cpu_ref_into(
     exchange_adj: &[u32],

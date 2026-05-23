@@ -4,8 +4,6 @@
 //! carrier and a custom section holding the full `VYRECOB2` blob. Link mode uses a tiny `_start`
 //! object (`exit(0)` syscall) plus `-nostdlib`.
 
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
 use std::path::Path;
 
 use object::write::{Object, StandardSection, Symbol, SymbolSection};
@@ -13,11 +11,17 @@ use object::{
     Architecture, BinaryFormat, Endianness, SectionKind, SymbolFlags, SymbolKind, SymbolScope,
 };
 
+use crate::hash::blake3_128;
+
 fn section_name_for_tu(source: &Path) -> Vec<u8> {
-    let mut h = DefaultHasher::new();
-    source.hash(&mut h);
-    let tag = h.finish();
-    format!(".vyrecob2.{tag:x}").into_bytes()
+    let tag = blake3_128(source.as_os_str().as_encoded_bytes());
+    let mut name = String::from(".vyrecob2.");
+    for byte in tag {
+        use std::fmt::Write as _;
+
+        let _ = write!(&mut name, "{byte:02x}");
+    }
+    name.into_bytes()
 }
 
 /// x86_64 ET_REL: `.text` = `ret`, custom section = `vyrecob2` payload,
@@ -153,5 +157,13 @@ mod tests {
     fn startup_object_has_elf_magic() {
         let bytes = emit_link_startup_relocatable().unwrap();
         assert_eq!(&bytes[0..4], b"\x7fELF");
+    }
+
+    #[test]
+    fn tu_section_name_uses_128_bit_path_tag() {
+        let name = section_name_for_tu(Path::new("src/main.c"));
+        let name = std::str::from_utf8(&name).expect("section name must be ASCII");
+        assert!(name.starts_with(".vyrecob2."));
+        assert_eq!(name.len(), ".vyrecob2.".len() + 32);
     }
 }

@@ -5,6 +5,7 @@ use rustc_hash::FxHashMap;
 
 /// Dense byte alphabet used by the DFA transition table.
 pub const ALPHABET_SIZE: u32 = 256;
+const ALPHABET_SIZE_USIZE: usize = 256;
 
 /// Number of `u32` words per rule metadata entry.
 pub const RULE_META_WORDS: usize = 3;
@@ -78,25 +79,90 @@ pub struct PackedRuleCatalog {
     pub rejected_rules: Vec<BatchRuleRejection>,
 }
 
+/// Caller-owned storage for packing rule catalogs without rebuilding host
+/// allocations on every refresh.
+#[derive(Default)]
+pub struct RuleCatalogPackingScratch {
+    /// Dense per-rule metadata table.
+    pub rule_meta: Vec<RuleMeta>,
+    /// Deduplicated flattened DFA transition storage.
+    pub transitions: Vec<u32>,
+    /// Deduplicated flattened DFA accept storage.
+    pub accept: Vec<u32>,
+    /// Rules rejected during validation or dense-slot assignment.
+    pub rejected_rules: Vec<BatchRuleRejection>,
+    unique_storage: FxHashMap<[u8; 32], (u32, u32, u32)>,
+    occupied: Vec<bool>,
+    addressed: Vec<bool>,
+}
+
 /// Fingerprints for the valid dense catalog entries.
 #[must_use]
 pub fn accepted_rule_fingerprints(
     rules: &[BatchRuleProgram],
 ) -> (Vec<[u8; 32]>, Vec<BatchRuleRejection>) {
-    let mut fingerprints = vec![None; rules.len()];
-    let mut rejections = Vec::with_capacity(rules.len());
-    let mut slots = DenseSlotTracker::new(rules.len());
+    let mut fingerprints = Vec::new();
+    let mut occupied = Vec::new();
+    let mut addressed = Vec::new();
+    let rejections =
+        accepted_rule_fingerprints_into(rules, &mut fingerprints, &mut occupied, &mut addressed);
+    (fingerprints, rejections)
+}
+
+/// Fill caller-owned storage with fingerprints for valid dense catalog entries.
+///
+/// The output fingerprint order matches dense rule-table order, not input
+/// order. `fingerprints`, `occupied`, and `addressed` are cleared and reused so
+/// dispatchers can check resident catalog identity without allocating on every
+/// cache-hit dispatch.
+pub fn accepted_rule_fingerprints_into(
+    rules: &[BatchRuleProgram],
+    fingerprints: &mut Vec<[u8; 32]>,
+    occupied: &mut Vec<bool>,
+    addressed: &mut Vec<bool>,
+) -> Vec<BatchRuleRejection> {
+    let mut rejections = Vec::new();
+    accepted_rule_fingerprints_and_rejections_into(
+        rules,
+        fingerprints,
+        occupied,
+        addressed,
+        &mut rejections,
+    );
+    rejections
+}
+
+/// Fill caller-owned storage with fingerprints and rejection details for valid
+/// dense catalog entries.
+///
+/// This is the allocation-stable form used by hot dispatchers. All scratch
+/// vectors are cleared and reused; valid unchanged catalogs perform no host
+/// allocations while checking resident rule-buffer identity.
+pub fn accepted_rule_fingerprints_and_rejections_into(
+    rules: &[BatchRuleProgram],
+    fingerprints: &mut Vec<[u8; 32]>,
+    occupied: &mut Vec<bool>,
+    addressed: &mut Vec<bool>,
+    rejections: &mut Vec<BatchRuleRejection>,
+) {
+    fingerprints.clear();
+    fingerprints.resize(rules.len(), [0; 32]);
+    occupied.clear();
+    occupied.resize(rules.len(), false);
+    addressed.clear();
+    addressed.resize(rules.len(), false);
+    rejections.clear();
 
     for rule in rules {
-        slots.mark_addressed(rule.rule_idx);
+        mark_addressed(addressed, rule.rule_idx);
         match validate_rule_shape(
             rule.rule_idx,
             &rule.transitions,
             &rule.accept,
             rule.state_count,
         ) {
-            Ok(()) => match slots.claim_index(rule.rule_idx, rules.len()) {
-                Ok(index) => fingerprints[index] = Some(rule_fingerprint(rule)),
+            Ok(()) => match claim_dense_index(occupied, rule.rule_idx, rules.len()) {
+                Ok(index) => fingerprints[index] = rule_fingerprint(rule),
                 Err(rejection) => rejections.push(rejection),
             },
             Err(error) => rejections.push(BatchRuleRejection {
@@ -106,10 +172,15 @@ pub fn accepted_rule_fingerprints(
         }
     }
 
-    slots.extend_missing_rejections(&mut rejections);
-    let mut accepted = Vec::with_capacity(fingerprints.len().saturating_sub(rejections.len()));
-    accepted.extend(fingerprints.into_iter().flatten());
-    (accepted, rejections)
+    extend_missing_rejections(occupied, addressed, rejections);
+    let mut write = 0;
+    for read in 0..occupied.len() {
+        if occupied[read] {
+            fingerprints[write] = fingerprints[read];
+            write += 1;
+        }
+    }
+    fingerprints.truncate(write);
 }
 
 /// Pack valid DFA rules into compact shared device tables.
@@ -117,91 +188,191 @@ pub fn accepted_rule_fingerprints(
 /// Rules with identical `(transitions, accept, state_count)` share backing
 /// transition and accept storage while retaining distinct dense metadata slots.
 pub fn pack_rule_catalog(rules: &[BatchRuleProgram]) -> Result<PackedRuleCatalog, PipelineError> {
-    let mut unique = FxHashMap::<[u8; 32], (u32, u32, u32)>::default();
-    unique.reserve(rules.len());
-    let mut transitions = vec![0; ALPHABET_SIZE as usize];
-    transitions.reserve(saturating_total_len(
-        rules.iter().map(|rule| rule.transitions.len()),
-    ));
-    let mut accept = vec![0];
-    accept.reserve(saturating_total_len(
-        rules.iter().map(|rule| rule.accept.len()),
-    ));
-    let mut rule_meta = vec![
+    let mut scratch = RuleCatalogPackingScratch::default();
+    pack_rule_catalog_into(rules, &mut scratch)?;
+    Ok(PackedRuleCatalog {
+        rule_meta: scratch.rule_meta,
+        transitions: scratch.transitions,
+        accept: scratch.accept,
+        rejected_rules: scratch.rejected_rules,
+    })
+}
+
+/// Pack valid DFA rules into caller-owned storage.
+///
+/// Existing vector and hash-map allocations in `scratch` are reused across
+/// calls. This is the hot-path form for resident megakernel dispatchers that
+/// refresh device rule buffers repeatedly.
+pub fn pack_rule_catalog_into(
+    rules: &[BatchRuleProgram],
+    scratch: &mut RuleCatalogPackingScratch,
+) -> Result<(), PipelineError> {
+    scratch.unique_storage.clear();
+    reserve_catalog_map(
+        &mut scratch.unique_storage,
+        rules.len(),
+        "unique DFA storage",
+    )?;
+    scratch.transitions.clear();
+    reserve_catalog_vec(
+        &mut scratch.transitions,
+        ALPHABET_SIZE_USIZE,
+        "inert transition row",
+    )?;
+    scratch.transitions.resize(ALPHABET_SIZE_USIZE, 0);
+    scratch.accept.clear();
+    reserve_catalog_vec(&mut scratch.accept, 1, "inert accept row")?;
+    scratch.accept.push(0);
+    scratch.rule_meta.clear();
+    reserve_catalog_vec(&mut scratch.rule_meta, rules.len(), "rule metadata")?;
+    scratch.rule_meta.resize(
+        rules.len(),
         RuleMeta {
             transition_base: 0,
             accept_base: 0,
             state_count: 1,
-        };
-        rules.len()
-    ];
-    let mut rejections = Vec::with_capacity(rules.len());
-    let mut slots = DenseSlotTracker::new(rules.len());
+        },
+    );
+    scratch.rejected_rules.clear();
+    reserve_catalog_vec(
+        &mut scratch.rejected_rules,
+        rules.len(),
+        "rule rejection rows",
+    )?;
+    scratch.occupied.clear();
+    reserve_catalog_vec(&mut scratch.occupied, rules.len(), "dense occupancy bitmap")?;
+    scratch.occupied.resize(rules.len(), false);
+    scratch.addressed.clear();
+    reserve_catalog_vec(
+        &mut scratch.addressed,
+        rules.len(),
+        "dense addressed bitmap",
+    )?;
+    scratch.addressed.resize(rules.len(), false);
 
     for rule in rules {
-        slots.mark_addressed(rule.rule_idx);
+        mark_addressed(&mut scratch.addressed, rule.rule_idx);
         if let Err(error) = validate_rule_shape(
             rule.rule_idx,
             &rule.transitions,
             &rule.accept,
             rule.state_count,
         ) {
-            rejections.push(BatchRuleRejection {
+            scratch.rejected_rules.push(BatchRuleRejection {
                 rule_idx: Some(rule.rule_idx),
                 reason: error.to_string(),
             });
             continue;
         }
 
-        let meta_index = match slots.claim_index(rule.rule_idx, rule_meta.len()) {
+        let meta_index = match claim_dense_index(
+            &mut scratch.occupied,
+            rule.rule_idx,
+            scratch.rule_meta.len(),
+        ) {
             Ok(index) => index,
             Err(rejection) => {
-                rejections.push(rejection);
+                scratch.rejected_rules.push(rejection);
                 continue;
             }
         };
 
         let storage_fingerprint = dfa_storage_fingerprint(rule);
         let (transition_base, accept_base, state_count) = if let Some(layout) =
-            unique.get(&storage_fingerprint)
+            scratch.unique_storage.get(&storage_fingerprint)
         {
             *layout
         } else {
             let transition_base =
-                u32::try_from(transitions.len()).map_err(|_| PipelineError::QueueFull {
+                u32::try_from(scratch.transitions.len()).map_err(|_| PipelineError::QueueFull {
                     queue: "submission",
                     fix: "flattened transition table exceeds u32::MAX words; split the rule catalog into smaller groups",
                 })?;
-            let accept_base = u32::try_from(accept.len()).map_err(|_| PipelineError::QueueFull {
+            let accept_base = u32::try_from(scratch.accept.len()).map_err(|_| PipelineError::QueueFull {
                 queue: "submission",
                 fix: "flattened accept table exceeds u32::MAX words; split the rule catalog into smaller groups",
             })?;
-            transitions.extend_from_slice(&rule.transitions);
-            accept.extend_from_slice(&rule.accept);
-            unique.insert(
+            let transition_target = scratch
+                .transitions
+                .len()
+                .checked_add(rule.transitions.len())
+                .ok_or(PipelineError::QueueFull {
+                    queue: "submission",
+                    fix: "flattened transition table length overflows usize; split the rule catalog into smaller groups",
+                })?;
+            reserve_catalog_vec(
+                &mut scratch.transitions,
+                transition_target,
+                "flattened transition storage",
+            )?;
+            let accept_target = scratch
+                .accept
+                .len()
+                .checked_add(rule.accept.len())
+                .ok_or(PipelineError::QueueFull {
+                    queue: "submission",
+                    fix: "flattened accept table length overflows usize; split the rule catalog into smaller groups",
+                })?;
+            reserve_catalog_vec(
+                &mut scratch.accept,
+                accept_target,
+                "flattened accept storage",
+            )?;
+            scratch.transitions.extend_from_slice(&rule.transitions);
+            scratch.accept.extend_from_slice(&rule.accept);
+            scratch.unique_storage.insert(
                 storage_fingerprint,
                 (transition_base, accept_base, rule.state_count),
             );
             (transition_base, accept_base, rule.state_count)
         };
-        rule_meta[meta_index] = RuleMeta {
+        scratch.rule_meta[meta_index] = RuleMeta {
             transition_base,
             accept_base,
             state_count,
         };
     }
 
-    slots.extend_missing_rejections(&mut rejections);
-    Ok(PackedRuleCatalog {
-        rule_meta,
-        transitions,
-        accept,
-        rejected_rules: rejections,
-    })
+    extend_missing_rejections(
+        &scratch.occupied,
+        &scratch.addressed,
+        &mut scratch.rejected_rules,
+    );
+    Ok(())
 }
 
-fn saturating_total_len(lengths: impl Iterator<Item = usize>) -> usize {
-    lengths.fold(0usize, usize::saturating_add)
+fn reserve_catalog_vec<T>(
+    values: &mut Vec<T>,
+    capacity: usize,
+    label: &'static str,
+) -> Result<(), PipelineError> {
+    if values.capacity() < capacity {
+        values
+            .try_reserve_exact(capacity - values.capacity())
+            .map_err(|source| {
+                PipelineError::Backend(format!(
+                    "megakernel rule catalog {label} reservation failed for {capacity} slot(s): {source}. Fix: split the DFA rule catalog before packing."
+                ))
+            })?;
+    }
+    Ok(())
+}
+
+fn reserve_catalog_map(
+    values: &mut FxHashMap<[u8; 32], (u32, u32, u32)>,
+    capacity: usize,
+    label: &'static str,
+) -> Result<(), PipelineError> {
+    if values.capacity() < capacity {
+        values
+            .try_reserve(capacity - values.capacity())
+            .map_err(|source| {
+                PipelineError::Backend(format!(
+                    "megakernel rule catalog {label} reservation failed for {capacity} entry(s): {source}. Fix: split the DFA rule catalog before packing."
+                ))
+            })?;
+    }
+    Ok(())
 }
 
 fn validate_rule_shape(
@@ -212,7 +383,7 @@ fn validate_rule_shape(
 ) -> Result<(), PipelineError> {
     let expected_transitions = usize::try_from(state_count)
         .ok()
-        .and_then(|count| count.checked_mul(ALPHABET_SIZE as usize))
+        .and_then(|count| count.checked_mul(ALPHABET_SIZE_USIZE))
         .ok_or_else(|| {
             PipelineError::Backend("rule transition table size overflowed usize".to_string())
         })?;
@@ -222,7 +393,12 @@ fn validate_rule_shape(
             transitions.len()
         )));
     }
-    if accept.len() != state_count as usize {
+    let state_count_usize = usize::try_from(state_count).map_err(|source| {
+        PipelineError::Backend(format!(
+            "rule {rule_idx} state_count {state_count} cannot fit usize: {source}. Fix: shard the DFA state space before batch dispatch."
+        ))
+    })?;
+    if accept.len() != state_count_usize {
         return Err(PipelineError::Backend(format!(
             "rule {rule_idx} accept table has {} words, expected {state_count}. Fix: emit one accept entry per DFA state before batch dispatch.",
             accept.len()
@@ -248,77 +424,71 @@ fn dfa_storage_fingerprint(rule: &BatchRuleProgram) -> [u8; 32] {
     *hasher.finalize().as_bytes()
 }
 
-struct DenseSlotTracker {
-    occupied: Vec<bool>,
-    addressed: Vec<bool>,
+fn mark_addressed(addressed: &mut [bool], rule_idx: u32) {
+    if let Some(index) = usize::try_from(rule_idx)
+        .ok()
+        .filter(|index| *index < addressed.len())
+    {
+        addressed[index] = true;
+    }
 }
 
-impl DenseSlotTracker {
-    fn new(slot_count: usize) -> Self {
-        Self {
-            occupied: vec![false; slot_count],
-            addressed: vec![false; slot_count],
-        }
+fn claim_dense_index(
+    occupied: &mut [bool],
+    rule_idx: u32,
+    slot_count: usize,
+) -> Result<usize, BatchRuleRejection> {
+    let Some(meta_index) = usize::try_from(rule_idx).ok() else {
+        return Err(BatchRuleRejection {
+            rule_idx: Some(rule_idx),
+            reason: "rule_idx exceeds usize. Fix: rebuild the batch with a smaller rule catalog"
+                .to_string(),
+        });
+    };
+    if meta_index >= slot_count {
+        return Err(BatchRuleRejection {
+            rule_idx: Some(rule_idx),
+            reason: format!(
+                "rule_idx {rule_idx} falls outside 0..{slot_count}. Fix: keep the rule catalog dense so the batch work queue can address every rule"
+            ),
+        });
     }
-
-    fn mark_addressed(&mut self, rule_idx: u32) {
-        if let Some(index) = usize::try_from(rule_idx)
-            .ok()
-            .filter(|index| *index < self.addressed.len())
-        {
-            self.addressed[index] = true;
-        }
+    if occupied[meta_index] {
+        return Err(BatchRuleRejection {
+            rule_idx: Some(rule_idx),
+            reason: format!(
+                "duplicate rule_idx {rule_idx}. Fix: keep exactly one rule per dense rule-table slot"
+            ),
+        });
     }
+    occupied[meta_index] = true;
+    Ok(meta_index)
+}
 
-    fn claim_index(
-        &mut self,
-        rule_idx: u32,
-        slot_count: usize,
-    ) -> Result<usize, BatchRuleRejection> {
-        let Some(meta_index) = usize::try_from(rule_idx).ok() else {
-            return Err(BatchRuleRejection {
-                rule_idx: Some(rule_idx),
-                reason:
-                    "rule_idx exceeds usize. Fix: rebuild the batch with a smaller rule catalog"
-                        .to_string(),
+fn extend_missing_rejections(
+    occupied: &[bool],
+    addressed: &[bool],
+    out: &mut Vec<BatchRuleRejection>,
+) {
+    for (rule_idx, (occupied, addressed)) in occupied
+        .iter()
+        .copied()
+        .zip(addressed.iter().copied())
+        .enumerate()
+    {
+        if !occupied && !addressed {
+            let rule_idx_u32 = u32::try_from(rule_idx).unwrap_or_else(|source| {
+                panic!(
+                    "rule catalog dense index {rule_idx} cannot fit u32: {source}. Fix: shard the rule catalog before rejection reporting."
+                )
             });
-        };
-        if meta_index >= slot_count {
-            return Err(BatchRuleRejection {
-                rule_idx: Some(rule_idx),
-                reason: format!(
-                    "rule_idx {rule_idx} falls outside 0..{slot_count}. Fix: keep the rule catalog dense so the batch work queue can address every rule"
-                ),
-            });
-        }
-        if self.occupied[meta_index] {
-            return Err(BatchRuleRejection {
-                rule_idx: Some(rule_idx),
-                reason: format!(
-                    "duplicate rule_idx {rule_idx}. Fix: keep exactly one rule per dense rule-table slot"
-                ),
-            });
-        }
-        self.occupied[meta_index] = true;
-        Ok(meta_index)
-    }
-
-    fn extend_missing_rejections(&self, out: &mut Vec<BatchRuleRejection>) {
-        out.reserve(self.occupied.len());
-        out.extend(
-            self.occupied
-                .iter()
-                .copied()
-                .zip(self.addressed.iter().copied())
-            .enumerate()
-            .filter(|(_, (occupied, addressed))| !occupied && !addressed)
-            .map(|(rule_idx, _)| BatchRuleRejection {
-                rule_idx: Some(rule_idx as u32),
+            out.push(BatchRuleRejection {
+                rule_idx: Some(rule_idx_u32),
                 reason: format!(
                     "rule_idx {rule_idx} has no valid catalog entry. Fix: provide a well-formed DFA for every dense rule slot before batch dispatch"
                 ),
-            }),
-        );
+            });
+        }
     }
 }
 
@@ -348,6 +518,52 @@ mod tests {
             packed.rule_meta[0].accept_base as usize + 1
         );
         assert!(packed.rejected_rules.is_empty());
+    }
+
+    #[test]
+    fn duplicate_dfas_do_not_reserve_raw_duplicate_storage() {
+        let rules = (0..32)
+            .map(|rule_idx| BatchRuleProgram::new(rule_idx, vec![0; 256], vec![0], 1).unwrap())
+            .collect::<Vec<_>>();
+
+        let packed = pack_rule_catalog(&rules).unwrap();
+
+        assert_eq!(packed.transitions.len(), ALPHABET_SIZE as usize * 2);
+        assert!(
+            packed.transitions.capacity() < ALPHABET_SIZE as usize * rules.len(),
+            "Fix: duplicate DFA catalogs must not reserve memory as if every rule had unique transition storage."
+        );
+        assert_eq!(packed.accept.len(), 2);
+        assert!(
+            packed.accept.capacity() < rules.len(),
+            "Fix: duplicate DFA catalogs must not reserve accept storage for every duplicate rule."
+        );
+    }
+
+    #[test]
+    fn accepted_rule_fingerprints_into_reuses_caller_storage() {
+        let rules = (0..8)
+            .map(|rule_idx| BatchRuleProgram::new(rule_idx, vec![0; 256], vec![0], 1).unwrap())
+            .collect::<Vec<_>>();
+        let mut fingerprints = Vec::with_capacity(16);
+        let mut occupied = Vec::with_capacity(16);
+        let mut addressed = Vec::with_capacity(16);
+        let fingerprint_ptr = fingerprints.as_ptr();
+        let occupied_ptr = occupied.as_ptr();
+        let addressed_ptr = addressed.as_ptr();
+
+        let rejections = accepted_rule_fingerprints_into(
+            &rules,
+            &mut fingerprints,
+            &mut occupied,
+            &mut addressed,
+        );
+
+        assert!(rejections.is_empty());
+        assert_eq!(fingerprints.len(), rules.len());
+        assert_eq!(fingerprints.as_ptr(), fingerprint_ptr);
+        assert_eq!(occupied.as_ptr(), occupied_ptr);
+        assert_eq!(addressed.as_ptr(), addressed_ptr);
     }
 
     #[test]

@@ -188,11 +188,21 @@ mod tests {
         };
 
         let profile = from_backend_profile(&adapter_info, &limits, &enabled);
+        let table = DeviceSignatureTable::builtins().expect("Fix: builtin device signatures load");
+        let signature = table
+            .find_device_name("RTX 5090")
+            .expect("Fix: RTX 5090 must match the builtin Blackwell signature");
 
-        assert_eq!(profile.ideal_unroll_depth, 8);
-        assert_eq!(profile.ideal_vector_pack_bits, 128);
-        assert_eq!(profile.ideal_workgroup_tile, [16, 16, 1]);
-        assert_eq!(profile.shared_memory_bank_width_bytes, 4);
+        assert_eq!(profile.ideal_unroll_depth, signature.ideal_unroll_depth);
+        assert_eq!(
+            profile.ideal_vector_pack_bits,
+            signature.ideal_vector_pack_bits
+        );
+        assert_eq!(profile.ideal_workgroup_tile, signature.ideal_workgroup_tile);
+        assert_eq!(
+            profile.shared_memory_bank_width_bytes,
+            signature.bank_width_bytes
+        );
     }
 
     #[test]

@@ -28,6 +28,10 @@
 //!    registry. A pass that introduces a fresh op_id absent from both is
 //!    a wire-contract violation (the op cannot lower).
 //!
+//! 4. **Declared idempotence.** Passes in `IDEMPOTENCE_REQUIRED` must reach
+//!    their local fixed point after one application on the synthetic corpus.
+//!    The second application must report `changed = false`.
+//!
 //! ## Synthetic corpus
 //!
 //! Three Programs cover the bulk of pass-rewrite shapes:
@@ -77,7 +81,28 @@ pub enum PassInvariantFinding {
         /// Free-form detail (panic message or count discrepancy).
         detail: String,
     },
+    /// A pass that is required to be locally idempotent changed the program on
+    /// its second application.
+    IdempotenceViolation {
+        /// Pass name.
+        pass: &'static str,
+        /// Synthetic corpus program identifier.
+        program: &'static str,
+    },
 }
+
+const IDEMPOTENCE_REQUIRED: &[&str] = &[
+    "buffer_decl_sort",
+    "canonicalize",
+    "const_fold",
+    "cse",
+    "dce",
+    "dead_buffer_elim",
+    "dead_store_elim",
+    "empty_block_collapse",
+    "noop_assign_eliminate",
+    "region_promote_singleton_block",
+];
 
 /// Build the synthetic corpus the verifier runs every pass against.
 fn synthetic_corpus() -> Vec<(&'static str, Program)> {
@@ -153,7 +178,11 @@ pub fn audit_registered_passes() -> Vec<PassInvariantFinding> {
     let mut findings = Vec::new();
     for pass in passes {
         for (program_name, program) in &corpus {
-            findings.extend(audit_pass_on_program(&pass, program_name, program.clone()));
+            findings.extend(audit_pass_on_program(
+                &pass,
+                program_name,
+                Clone::clone(&program),
+            ));
         }
     }
     findings
@@ -197,6 +226,18 @@ fn audit_pass_on_program(
             program: program_name,
             detail: "rewrite produced zero-node program from non-empty input".into(),
         });
+    }
+
+    if IDEMPOTENCE_REQUIRED.contains(&pass_name) {
+        match pass.try_transform(result.program) {
+            Ok(second) if second.changed => {
+                findings.push(PassInvariantFinding::IdempotenceViolation {
+                    pass: pass_name,
+                    program: program_name,
+                })
+            }
+            Ok(_) | Err(_) => {}
+        }
     }
 
     findings
@@ -300,6 +341,19 @@ mod tests {
         assert!(
             invalid.is_empty(),
             "built-in passes must produce structurally-valid Programs; bad outputs: {invalid:#?}"
+        );
+    }
+
+    #[test]
+    fn audit_finds_zero_idempotence_violations_on_required_built_ins() {
+        let findings = audit_registered_passes();
+        let invalid: Vec<_> = findings
+            .iter()
+            .filter(|f| matches!(f, PassInvariantFinding::IdempotenceViolation { .. }))
+            .collect();
+        assert!(
+            invalid.is_empty(),
+            "built-in passes with declared idempotence must reach a local fixed point in one application; bad outputs: {invalid:#?}"
         );
     }
 }

@@ -35,5 +35,6 @@ inventory::submit! {
             // Elementwise a | b on the 4-lane fixture.
             vec![vec![to_bytes(&[0xFFF0_FFF0, 0x0FFF_0FFF, 0xFFFF_FFFF, 0x0000_0000])]]
         }),
+        category: None,
     }
 }

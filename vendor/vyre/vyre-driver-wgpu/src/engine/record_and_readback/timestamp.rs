@@ -1,5 +1,6 @@
 use super::pool_backend_error;
 use crate::buffer::{BufferPool, GpuBufferHandle};
+use crate::numeric::rounded_f64_to_u64;
 use crossbeam_channel::Receiver;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -11,7 +12,7 @@ use vyre_driver::BackendError;
 type MapResult = Result<(), wgpu::BufferAsyncError>;
 
 const TIMESTAMP_QUERY_COUNT: u32 = 4;
-const TIMESTAMP_READBACK_BYTES: u64 = (TIMESTAMP_QUERY_COUNT as u64) * 8;
+const TIMESTAMP_READBACK_BYTES: u64 = 32;
 
 pub(super) struct TimestampRecorder {
     pub(super) query_set: wgpu::QuerySet,
@@ -56,12 +57,14 @@ impl TimestampRecorder {
             count: TIMESTAMP_QUERY_COUNT,
         });
         let resolve_buffer = pool
-            .acquire(TIMESTAMP_READBACK_BYTES,
+            .acquire(
+                TIMESTAMP_READBACK_BYTES,
                 wgpu::BufferUsages::QUERY_RESOLVE | wgpu::BufferUsages::COPY_SRC,
             )
             .map_err(pool_backend_error)?;
         let readback_buffer = pool
-            .acquire(TIMESTAMP_READBACK_BYTES,
+            .acquire(
+                TIMESTAMP_READBACK_BYTES,
                 wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             )
             .map_err(pool_backend_error)?;
@@ -141,9 +144,7 @@ pub(super) fn emit_timestamp_profile(
         ))
     })?;
 
-    let buf = profile
-        .readback_buffer
-        .buffer();
+    let buf = profile.readback_buffer.buffer();
     let slice = buf.slice(0..TIMESTAMP_READBACK_BYTES);
     let mapped = slice.get_mapped_range();
     if mapped.len() < TIMESTAMP_READBACK_BYTES as usize {
@@ -167,12 +168,23 @@ pub(super) fn emit_timestamp_profile(
     drop(mapped);
     buf.unmap();
 
-    let ns = |delta: u64| -> u64 {
-        ((delta as f64) * f64::from(profile.timestamp_period_ns)).round() as u64
+    let ns = |delta: u64| -> Result<u64, BackendError> {
+        rounded_f64_to_u64(
+            (delta as f64) * f64::from(profile.timestamp_period_ns),
+            "GPU timestamp delta nanoseconds",
+        )
     };
-    let dispatch_ns = ns(ticks[1].saturating_sub(ticks[0]));
-    let copy_ns = ns(ticks[3].saturating_sub(ticks[2]));
-    let gpu_total_ns = ns(ticks[3].saturating_sub(ticks[0]));
+    let dispatch_ns = ns(timestamp_delta(
+        ticks[1],
+        ticks[0],
+        "dispatch timestamp delta",
+    )?)?;
+    let copy_ns = ns(timestamp_delta(ticks[3], ticks[2], "copy timestamp delta")?)?;
+    let gpu_total_ns = ns(timestamp_delta(
+        ticks[3],
+        ticks[0],
+        "total GPU timestamp delta",
+    )?)?;
     tracing::info!(
         target: "vyre.wgpu.timestamps",
         host_upload_us = profile.host_upload_us,
@@ -183,4 +195,12 @@ pub(super) fn emit_timestamp_profile(
         "wgpu dispatch timestamp profile"
     );
     Ok(())
+}
+
+fn timestamp_delta(end: u64, start: u64, label: &'static str) -> Result<u64, BackendError> {
+    end.checked_sub(start).ok_or_else(|| {
+        BackendError::new(format!(
+            "{label} underflowed because the end timestamp {end} is earlier than start timestamp {start}. Fix: verify query write order and timestamp resolve layout.",
+        ))
+    })
 }

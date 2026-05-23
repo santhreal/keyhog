@@ -39,12 +39,12 @@ inventory::submit! {
         build: || scan_prefix_sum("input", "output", 4),
         test_inputs: Some(|| vec![vec![
             [1u32, 2, 3, 4].iter().flat_map(|v| v.to_le_bytes()).collect(),
-            vec![0u8; 4 * 4],
         ]]),
         expected_output: Some(|| vec![vec![
             // Only ReadWrite buffer: prefix sum [1, 3, 6, 10]
             [1u32, 3, 6, 10].iter().flat_map(|v| v.to_le_bytes()).collect(),
         ]]),
+        category: Some("math"),
     }
 }
 
@@ -89,10 +89,7 @@ mod tests {
         let program = scan_prefix_sum("input", "output", 0);
         let result = vyre_reference::reference_eval(
             &program,
-            &[
-                Value::from(vec![0u8; 0]),
-                Value::from(vec![0u8; 0]),
-            ],
+            &[Value::from(vec![0u8; 0]), Value::from(vec![0u8; 0])],
         );
         assert!(
             result.is_err(),

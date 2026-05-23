@@ -1,7 +1,7 @@
 //! Release workload matrix for the Vyre/Weir release plan.
 //!
 //! The release plan requires at least twelve proof workload families and at
-//! least seven formerly CPU-only workload families with 100x targets where the
+//! at least ten formerly CPU-only workload families with 100x targets where the
 //! workload exposes enough parallelism. This module makes those
 //! requirements auditable from the benchmark registry.
 
@@ -16,14 +16,18 @@ use crate::api::suite::SuiteKind;
 use crate::registry::BenchRegistry;
 
 const REQUIRED_CLOSED_FAMILIES: usize = 12;
-const REQUIRED_CPU_SOTA_100X_FAMILIES: usize = 7;
+const REQUIRED_CPU_SOTA_100X_FAMILIES: usize = 10;
 const REQUIRED_CPU_SOTA_100X_FAMILY_IDS: &[&str] = &[
     "condition-eval",
     "string-bitmap-scatter",
     "offset-count-aggregation",
     "entropy-window",
     "quantified-condition-loops",
+    "alias-reaching-def",
+    "ifds-witness",
+    "c-ast-traversal",
     "megakernel-queued-batches",
+    "egraph-saturation",
     "sparse-output-compaction",
 ];
 
@@ -429,7 +433,9 @@ fn render_release_matrix(matrix: &ReleaseWorkloadMatrix, format: &str) -> anyhow
         out.push('\n');
         out.push_str(&format!("  dispatch-policy: {}\n", family.dispatch_policy));
         if let Some(justification) = family.non_megakernel_justification {
-            out.push_str(&format!("  non-megakernel-justification: {justification}\n"));
+            out.push_str(&format!(
+                "  non-megakernel-justification: {justification}\n"
+            ));
         }
         for case in &family.matched_cases {
             out.push_str(&format!("  case: {case}\n"));

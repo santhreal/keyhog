@@ -82,9 +82,9 @@ impl BackendRouter {
     ///
     /// * `VYRE_BACKEND` is set to a backend id that is not
     ///   registered.
-    /// * No executable registered GPU backend is found. Vyre does not
-    ///   silently fall back to CPU evaluation; this is a linkage or
-    ///   driver-visibility error.
+    /// * No executable registered GPU backend is found. Vyre reports this as
+    ///   a linkage or driver-visibility error instead of routing into
+    ///   reference evaluation.
     pub fn pick(&self, program: &Program) -> Result<RouterDecision, BackendError> {
         self.pick_with_override(program, Override::FromEnv)
     }
@@ -110,13 +110,9 @@ impl BackendRouter {
         if let Some(forced) = forced {
             let forced = forced.trim();
             if !forced.is_empty() {
-                let hit = registered
-                    .iter()
-                    .find(|r| {
-                        r.id == forced
-                            && backend_dispatches(r.id)
-                            && !is_reference_oracle_backend(r.id)
-                    });
+                let hit = registered.iter().find(|r| {
+                    r.id == forced && backend_dispatches(r.id) && !is_reference_oracle_backend(r.id)
+                });
                 return match hit {
                     Some(reg) => Ok(RouterDecision {
                         backend: reg.id,

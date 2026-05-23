@@ -36,6 +36,14 @@ fn empty_desc_with_workgroup(id: &str, x: u32) -> KernelDescriptor {
     }
 }
 
+#[test]
+fn module_cache_key_is_128_bit_and_descriptor_sensitive() {
+    let a = descriptor_cache_key(&empty_desc_with_workgroup("a", 1));
+    let b = descriptor_cache_key(&empty_desc_with_workgroup("a", 2));
+    assert_eq!(a.0.len(), 16);
+    assert_ne!(a, b);
+}
+
 fn u32_output_slot(slot: u32) -> BindingSlot {
     BindingSlot {
         slot,
@@ -118,6 +126,7 @@ fn block_has_atomic(block: &Block) -> bool {
 }
 
 mod atomics;
+mod byte_element_load;
 mod cache_entry;
 mod descriptor_control;
 mod optimized_errors;

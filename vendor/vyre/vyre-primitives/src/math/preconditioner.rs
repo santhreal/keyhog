@@ -213,6 +213,7 @@ inventory::submit! {
 
 /// CPU reference: one Newton-Schulz Y step. f64 for clarity.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn newton_schulz_y_step_cpu(y_curr: &[f64], yzy: &[f64]) -> Vec<f64> {
     let mut out = Vec::new();
     newton_schulz_y_step_cpu_into(y_curr, yzy, &mut out);
@@ -220,6 +221,7 @@ pub fn newton_schulz_y_step_cpu(y_curr: &[f64], yzy: &[f64]) -> Vec<f64> {
 }
 
 /// CPU reference: one Newton-Schulz Y step into caller-owned storage.
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn newton_schulz_y_step_cpu_into(y_curr: &[f64], yzy: &[f64], out: &mut Vec<f64>) {
     let n = y_curr.len().min(yzy.len());
     out.clear();
@@ -238,6 +240,7 @@ fn matmul_dense(a: &[f64], b: &[f64], n: usize) -> Vec<f64> {
     c
 }
 
+#[cfg(any(test, feature = "cpu-parity"))]
 fn matmul_dense_into(a: &[f64], b: &[f64], n: usize, c: &mut Vec<f64>) {
     c.clear();
     c.resize(n * n, 0.0);
@@ -254,6 +257,7 @@ fn matmul_dense_into(a: &[f64], b: &[f64], n: usize, c: &mut Vec<f64>) {
 
 /// Scratch workspace for repeated Newton-Schulz inverse-square-root references.
 #[derive(Debug, Default)]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub struct NewtonSchulzScratch {
     y: Vec<f64>,
     z: Vec<f64>,
@@ -263,6 +267,7 @@ pub struct NewtonSchulzScratch {
     z_times: Vec<f64>,
 }
 
+#[cfg(any(test, feature = "cpu-parity"))]
 impl NewtonSchulzScratch {
     /// Construct empty Newton-Schulz scratch.
     #[must_use]
@@ -293,6 +298,7 @@ impl NewtonSchulzScratch {
 /// Convergence is quadratic — ~10 iterations gives ~30 digits of
 /// accuracy when the spectrum is close to 1.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn newton_schulz_inverse_sqrt_cpu(m: &[f64], n: usize, iters: u32) -> Vec<f64> {
     let mut out = Vec::new();
     let mut scratch = NewtonSchulzScratch::new();
@@ -301,6 +307,7 @@ pub fn newton_schulz_inverse_sqrt_cpu(m: &[f64], n: usize, iters: u32) -> Vec<f6
 }
 
 /// CPU reference: full Newton-Schulz coupled iteration into caller-owned storage.
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn newton_schulz_inverse_sqrt_cpu_into(
     m: &[f64],
     n: usize,

@@ -84,6 +84,7 @@ pub fn gaussian_rdp_step(alpha: &str, sigma_squared: &str, out: &str, count: u32
 /// CPU reference (f64 for precision, callers convert to/from their
 /// fixed-point convention).
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn gaussian_rdp_step_cpu(alpha: &[f64], sigma_squared: &[f64]) -> Vec<f64> {
     alpha
         .iter()
@@ -101,6 +102,18 @@ pub fn rdp_to_dp(rdp: f64, alpha: f64, delta: f64) -> f64 {
         return f64::INFINITY;
     }
     rdp + (1.0 / delta).ln() / (alpha - 1.0)
+}
+
+#[cfg(feature = "inventory-registry")]
+inventory::submit! {
+    crate::harness::OpEntry::new(
+        OP_ID,
+        || {
+            gaussian_rdp_step("alpha", "sigma_sq", "out", 4)
+        },
+        None,
+        None,
+    )
 }
 
 #[cfg(test)]

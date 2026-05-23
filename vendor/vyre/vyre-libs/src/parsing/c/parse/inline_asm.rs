@@ -211,5 +211,6 @@ inventory::submit! {
             count.copy_from_slice(&1u32.to_le_bytes());
             vec![vec![out, count]]
         }),
+        category: Some("parsing"),
     }
 }

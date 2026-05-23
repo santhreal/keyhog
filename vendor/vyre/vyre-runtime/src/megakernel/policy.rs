@@ -27,6 +27,38 @@ pub enum MegakernelExecutionMode {
     Jit,
 }
 
+/// Scale-aware execution topology selected for one megakernel launch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum MegakernelDispatchTopology {
+    /// Nothing is queued.
+    Empty,
+    /// Low frontier density; prefer sparse frontier expansion and avoid
+    /// block-wide dense scans.
+    SparseFrontier,
+    /// Mid-density frontier; combine sparse frontier queues with dense block
+    /// tiles instead of forcing either extreme.
+    HybridFrontier,
+    /// High frontier density; prefer dense block propagation with coalesced
+    /// scans.
+    DenseFrontier,
+    /// High-density graph with enough hot structure to justify fused waves.
+    FusedDense,
+    /// Memory pressure is high enough that bounded occupancy is more important
+    /// than maximizing active waves.
+    MemoryConstrained,
+}
+
+/// Thread-local launch recommendation cache telemetry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MegakernelLaunchCacheStats {
+    /// Live cache entries retained in the current thread.
+    pub entries: usize,
+    /// Cache hits served without recomputing launch geometry.
+    pub hits: u64,
+    /// Cache misses that required policy recomputation.
+    pub misses: u64,
+}
+
 /// Inputs for one launch-policy recommendation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct MegakernelLaunchRequest {
@@ -52,6 +84,20 @@ pub struct MegakernelLaunchRequest {
     pub requeue_count: u64,
     /// Maximum priority age observed since the last recommendation.
     pub max_priority_age: u32,
+    /// Nodes in the resident dependency graph. Zero means the caller has no
+    /// graph-shape telemetry for this launch.
+    pub graph_node_count: u32,
+    /// Edges in the resident dependency graph. Zero means the caller has no
+    /// graph-shape telemetry for this launch.
+    pub graph_edge_count: u32,
+    /// Active frontier density in basis points relative to graph nodes.
+    pub frontier_density_bps: u16,
+    /// Device-memory pressure in basis points relative to the active budget.
+    pub memory_pressure_bps: u16,
+    /// Device-resident bytes already required by this dispatch family.
+    pub resident_device_bytes: u64,
+    /// Hard device-memory budget for this launch. Zero means unbounded.
+    pub device_memory_budget_bytes: u64,
 }
 
 impl MegakernelLaunchRequest {
@@ -74,6 +120,12 @@ impl MegakernelLaunchRequest {
             hot_window_count: 0,
             requeue_count: 0,
             max_priority_age: 0,
+            graph_node_count: 0,
+            graph_edge_count: 0,
+            frontier_density_bps: 0,
+            memory_pressure_bps: 0,
+            resident_device_bytes: 0,
+            device_memory_budget_bytes: 0,
         }
     }
 }
@@ -91,12 +143,19 @@ pub struct MegakernelLaunchRecommendation {
     pub pressure: MegakernelQueuePressure,
     /// Interpreter or JIT route selected from telemetry.
     pub execution_mode: MegakernelExecutionMode,
+    /// Scale-aware dispatch topology selected from graph shape, frontier
+    /// density, and memory pressure.
+    pub topology: MegakernelDispatchTopology,
     /// True when hot opcode counters justify fused opcode promotion.
     pub promote_hot_opcodes: bool,
     /// True when ticketed route windows justify fused window promotion.
     pub promote_hot_windows: bool,
     /// True when aged/requeued priority work should be lifted on the next publish.
     pub age_priority_work: bool,
+    /// Estimated peak device bytes needed by the resident launch plan.
+    pub estimated_peak_device_bytes: u64,
+    /// Hard device-memory budget applied to this recommendation. Zero means unbounded.
+    pub device_memory_budget_bytes: u64,
 }
 
 /// Requeue and aging counters produced by priority-aware schedulers.
@@ -113,13 +172,17 @@ pub struct PriorityRequeueAccounting {
 impl PriorityRequeueAccounting {
     /// Record one requeue event.
     pub fn record_requeue(&mut self, age_ticks: u32) {
-        self.requeue_count = self.requeue_count.saturating_add(1);
+        self.requeue_count = self.requeue_count.checked_add(1).unwrap_or_else(|| {
+            panic!("megakernel priority requeue_count overflowed u64. Fix: drain scheduler telemetry before counters reach u64::MAX.")
+        });
         self.max_priority_age = self.max_priority_age.max(age_ticks);
     }
 
     /// Record one priority-aging promotion.
     pub fn record_aged_promotion(&mut self, age_ticks: u32) {
-        self.aged_promotions = self.aged_promotions.saturating_add(1);
+        self.aged_promotions = self.aged_promotions.checked_add(1).unwrap_or_else(|| {
+            panic!("megakernel aged_promotions overflowed u64. Fix: drain scheduler telemetry before counters reach u64::MAX.")
+        });
         self.max_priority_age = self.max_priority_age.max(age_ticks);
     }
 }
@@ -144,17 +207,38 @@ pub fn diffuse_priority_across_siblings(
     damping: f64,
     iterations: u32,
 ) -> Vec<f64> {
-    let mut current = Vec::with_capacity(priority_stalks.len());
-    let mut next = Vec::with_capacity(priority_stalks.len());
-    diffuse_priority_across_siblings_into(
+    try_diffuse_priority_across_siblings(priority_stalks, restriction_diag, damping, iterations)
+        .unwrap_or_else(|source| {
+            panic!(
+                "megakernel priority diffusion allocation failed: {source}. Fix: shard the priority sibling set before diffusion."
+            )
+        })
+}
+
+/// Diffuse priority signals across priority-class siblings with fallible
+/// output staging.
+///
+/// # Errors
+///
+/// Returns [`BackendError`] when host staging cannot be reserved for the
+/// priority vector.
+pub fn try_diffuse_priority_across_siblings(
+    priority_stalks: &[f64],
+    restriction_diag: &[f64],
+    damping: f64,
+    iterations: u32,
+) -> Result<Vec<f64>, BackendError> {
+    let mut current = Vec::new();
+    let mut next = Vec::new();
+    try_diffuse_priority_across_siblings_into(
         priority_stalks,
         restriction_diag,
         damping,
         iterations,
         &mut current,
         &mut next,
-    );
-    current
+    )?;
+    Ok(current)
 }
 
 /// Diffuse priority signals into caller-owned storage.
@@ -166,16 +250,47 @@ pub fn diffuse_priority_across_siblings_into(
     out: &mut Vec<f64>,
     scratch: &mut Vec<f64>,
 ) {
+    try_diffuse_priority_across_siblings_into(
+        priority_stalks,
+        restriction_diag,
+        damping,
+        iterations,
+        out,
+        scratch,
+    )
+    .unwrap_or_else(|source| {
+        panic!(
+            "megakernel priority diffusion allocation failed: {source}. Fix: shard the priority sibling set before diffusion."
+        )
+    });
+}
+
+/// Diffuse priority signals into caller-owned storage with fallible staging.
+///
+/// # Errors
+///
+/// Returns [`BackendError`] when host staging cannot be reserved for the
+/// priority vector.
+pub fn try_diffuse_priority_across_siblings_into(
+    priority_stalks: &[f64],
+    restriction_diag: &[f64],
+    damping: f64,
+    iterations: u32,
+    out: &mut Vec<f64>,
+    scratch: &mut Vec<f64>,
+) -> Result<(), BackendError> {
     out.clear();
+    reserve_target_capacity(out, priority_stalks.len(), "priority diffusion output")?;
     out.extend_from_slice(priority_stalks);
     scratch.clear();
     if priority_stalks.len() != restriction_diag.len() {
-        return;
+        return Ok(());
     }
     for _ in 0..iterations {
-        diffuse_step_into(out, restriction_diag, damping, scratch);
+        diffuse_step_into(out, restriction_diag, damping, scratch)?;
         std::mem::swap(out, scratch);
     }
+    Ok(())
 }
 
 /// Single policy surface for megakernel launch sizing and telemetry-driven routing.
@@ -197,6 +312,16 @@ pub struct MegakernelLaunchPolicy {
     pub jit_queue_len_threshold: u32,
     /// Priority age threshold to trigger aging promotions.
     pub priority_age_threshold: u32,
+    /// Frontier density at or below this value uses sparse expansion.
+    pub sparse_frontier_threshold_bps: u16,
+    /// Frontier density at or above this value uses dense propagation.
+    pub dense_frontier_threshold_bps: u16,
+    /// Memory pressure at or above this value uses the memory-constrained path.
+    pub memory_pressure_threshold_bps: u16,
+    /// Minimum graph edge count before dense hot work is eligible for fusion.
+    pub fusion_edge_threshold: u32,
+    /// Conservative resident scratch bytes needed per sparse-hit entry.
+    pub scratch_bytes_per_hit: u32,
 }
 
 impl Default for MegakernelLaunchPolicy {
@@ -204,6 +329,9 @@ impl Default for MegakernelLaunchPolicy {
         Self::standard()
     }
 }
+
+const FRONTIER_TOPOLOGY_HYSTERESIS_BPS: u16 = 250;
+const MEMORY_TOPOLOGY_HYSTERESIS_BPS: u16 = 250;
 
 impl MegakernelLaunchPolicy {
     /// Standard launch policy used by VYRE megakernel dispatchers.
@@ -218,7 +346,23 @@ impl MegakernelLaunchPolicy {
             hot_window_threshold: 4,
             jit_queue_len_threshold: 4096,
             priority_age_threshold: 32,
+            sparse_frontier_threshold_bps: 500,
+            dense_frontier_threshold_bps: 4_000,
+            memory_pressure_threshold_bps: 8_500,
+            fusion_edge_threshold: 65_536,
+            scratch_bytes_per_hit: 16,
         }
+    }
+
+    /// Return launch recommendation cache telemetry for the current thread.
+    #[must_use]
+    pub fn launch_cache_stats() -> MegakernelLaunchCacheStats {
+        cache::LAUNCH_RECOMMENDATION_CACHE.with(|cache| cache.borrow().stats())
+    }
+
+    /// Clear launch recommendation cache entries and counters for this thread.
+    pub fn reset_launch_cache_for_thread() {
+        cache::LAUNCH_RECOMMENDATION_CACHE.with(|cache| cache.borrow_mut().clear());
     }
 
     /// Recommend geometry, hit capacity, and interpreter/JIT route.
@@ -231,42 +375,108 @@ impl MegakernelLaunchPolicy {
         &self,
         request: MegakernelLaunchRequest,
     ) -> Result<MegakernelLaunchRecommendation, BackendError> {
+        self.recommend_inner(request, None)
+    }
+
+    /// Recommend a launch while preserving the previous topology inside a
+    /// narrow hysteresis band.
+    ///
+    /// CUDA resident graphs and long-running dataflow streams should use this
+    /// entry point when they can track the last successful topology. It prevents
+    /// borderline frontier-density or memory-pressure telemetry from repeatedly
+    /// switching kernel variants, invalidating launch plans, and disturbing
+    /// cache locality at scale.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BackendError`] when required adapter limits are zero or derived
+    /// launch values cannot fit the u32 ring protocol.
+    pub fn recommend_with_previous_topology(
+        &self,
+        request: MegakernelLaunchRequest,
+        previous_topology: MegakernelDispatchTopology,
+    ) -> Result<MegakernelLaunchRecommendation, BackendError> {
+        self.recommend_inner(request, Some(previous_topology))
+    }
+
+    fn recommend_inner(
+        &self,
+        request: MegakernelLaunchRequest,
+        previous_topology: Option<MegakernelDispatchTopology>,
+    ) -> Result<MegakernelLaunchRecommendation, BackendError> {
         let cache_key = cache::LaunchRecommendationCacheKey {
             policy: *self,
             request,
         };
-        if let Some(cached) =
-            cache::LAUNCH_RECOMMENDATION_CACHE.with(|cache| cache.borrow().get(&cache_key))
-        {
-            return Ok(cached);
+        if previous_topology.is_none() {
+            if let Some(cached) =
+                cache::LAUNCH_RECOMMENDATION_CACHE.with(|cache| cache.borrow_mut().get(&cache_key))
+            {
+                return Ok(cached);
+            }
         }
 
+        let effective_request = self.infer_missing_scale_signals(request)?;
+        let promote_hot_opcodes = effective_request.hot_opcode_count >= self.hot_opcode_threshold;
+        let promote_hot_windows = effective_request.hot_window_count >= self.hot_window_threshold;
+        let raw_topology =
+            self.dispatch_topology_for(effective_request, promote_hot_opcodes, promote_hot_windows);
+        let topology = self.stabilize_topology(
+            raw_topology,
+            effective_request,
+            previous_topology,
+            promote_hot_opcodes,
+            promote_hot_windows,
+        );
+        let scheduled_request = self.apply_topology_worker_policy(effective_request, topology)?;
         let grid = self.sizing.calculate_optimal_grid(
-            MegakernelGridRequest::new(request.queue_len, request.requested_worker_groups),
+            MegakernelGridRequest::new(
+                scheduled_request.queue_len,
+                scheduled_request.requested_worker_groups,
+            ),
             MegakernelGridLimits::new(
-                request.max_workgroup_size_x,
-                request.max_compute_workgroups_per_dimension,
-                request.max_compute_invocations_per_workgroup,
+                scheduled_request.max_workgroup_size_x,
+                scheduled_request.max_compute_workgroups_per_dimension,
+                scheduled_request.max_compute_invocations_per_workgroup,
             ),
         )?;
         let geometry = grid.geometry;
         let worker_groups = grid.worker_groups;
         let lanes = u64::from(geometry.dispatch_grid[0])
-            .saturating_mul(u64::from(geometry.workgroup_size_x));
-        let pressure = classify_pressure(request.queue_len, lanes, request.requeue_count, self);
-        let hit_capacity = self.hit_capacity_for(request);
-        let promote_hot_opcodes = request.hot_opcode_count >= self.hot_opcode_threshold;
-        let promote_hot_windows = request.hot_window_count >= self.hot_window_threshold;
-        let execution_mode = if request.queue_len >= self.jit_queue_len_threshold
+            .checked_mul(u64::from(geometry.workgroup_size_x))
+            .ok_or_else(|| {
+                BackendError::new(
+                    "megakernel launch lane count overflowed u64. Fix: reduce dispatch grid or workgroup size.",
+                )
+            })?;
+        let pressure = classify_pressure(
+            effective_request.queue_len,
+            lanes,
+            effective_request.requeue_count,
+            self,
+        )?;
+        let hit_capacity = self.hit_capacity_for(effective_request)?;
+        let estimated_peak_device_bytes =
+            self.estimated_peak_device_bytes(effective_request, hit_capacity)?;
+        if effective_request.device_memory_budget_bytes != 0
+            && estimated_peak_device_bytes > effective_request.device_memory_budget_bytes
+        {
+            return Err(BackendError::DeviceOutOfMemory {
+                requested: estimated_peak_device_bytes,
+                available: effective_request.device_memory_budget_bytes,
+            });
+        }
+        let execution_mode = if effective_request.queue_len >= self.jit_queue_len_threshold
             || promote_hot_opcodes
             || promote_hot_windows
+            || topology == MegakernelDispatchTopology::FusedDense
         {
             MegakernelExecutionMode::Jit
         } else {
             MegakernelExecutionMode::Interpreter
         };
-        let age_priority_work =
-            request.requeue_count > 0 || request.max_priority_age >= self.priority_age_threshold;
+        let age_priority_work = effective_request.requeue_count > 0
+            || effective_request.max_priority_age >= self.priority_age_threshold;
 
         let recommendation = MegakernelLaunchRecommendation {
             geometry,
@@ -274,26 +484,318 @@ impl MegakernelLaunchPolicy {
             hit_capacity,
             pressure,
             execution_mode,
+            topology,
             promote_hot_opcodes,
             promote_hot_windows,
             age_priority_work,
+            estimated_peak_device_bytes,
+            device_memory_budget_bytes: effective_request.device_memory_budget_bytes,
         };
-        cache::LAUNCH_RECOMMENDATION_CACHE.with(|cache| {
-            cache.borrow_mut().insert(cache_key, recommendation);
-        });
+        if previous_topology.is_none() {
+            cache::LAUNCH_RECOMMENDATION_CACHE.with(|cache| {
+                cache.borrow_mut().insert(cache_key, recommendation);
+            });
+        }
         Ok(recommendation)
     }
 
-    fn hit_capacity_for(&self, request: MegakernelLaunchRequest) -> u32 {
+    fn hit_capacity_for(&self, request: MegakernelLaunchRequest) -> Result<u32, BackendError> {
         if request.requested_hit_capacity != 0 {
-            return request.requested_hit_capacity;
+            return Ok(request.requested_hit_capacity);
         }
         let expected_hits = request.expected_hits_per_item.max(1);
-        request
+        let multiplier = if request.memory_pressure_bps >= self.memory_pressure_threshold_bps {
+            1
+        } else {
+            self.hit_capacity_multiplier
+        };
+        let derived = request
             .queue_len
-            .saturating_mul(expected_hits)
-            .saturating_mul(self.hit_capacity_multiplier)
-            .max(self.min_hit_capacity)
+            .checked_mul(expected_hits)
+            .and_then(|value| value.checked_mul(multiplier))
+            .ok_or_else(|| {
+                BackendError::new(
+                    "megakernel sparse-hit capacity overflowed u32. Fix: lower queue length, expected_hits_per_item, or hit_capacity_multiplier.",
+                )
+            })?;
+        Ok(derived.max(self.min_hit_capacity))
+    }
+
+    fn estimated_peak_device_bytes(
+        &self,
+        request: MegakernelLaunchRequest,
+        hit_capacity: u32,
+    ) -> Result<u64, BackendError> {
+        let scratch_bytes = u64::from(hit_capacity)
+            .checked_mul(u64::from(self.scratch_bytes_per_hit))
+            .ok_or_else(|| {
+                BackendError::new(
+                    "megakernel scratch byte estimate overflowed u64. Fix: lower hit capacity or scratch_bytes_per_hit.",
+                )
+            })?;
+        request
+            .resident_device_bytes
+            .checked_add(scratch_bytes)
+            .ok_or_else(|| {
+                BackendError::new(
+                    "megakernel peak resident byte estimate overflowed u64. Fix: reduce resident buffers or scratch capacity.",
+                )
+            })
+    }
+
+    fn infer_missing_scale_signals(
+        &self,
+        mut request: MegakernelLaunchRequest,
+    ) -> Result<MegakernelLaunchRequest, BackendError> {
+        if request.frontier_density_bps == 0
+            && request.queue_len != 0
+            && request.graph_node_count != 0
+        {
+            let active_nodes = u64::from(request.queue_len.min(request.graph_node_count));
+            let density = active_nodes
+                .checked_mul(10_000)
+                .ok_or_else(|| {
+                    BackendError::new(
+                        "megakernel frontier-density numerator overflowed u64. Fix: shard the resident graph before launch.",
+                    )
+                })?
+                .checked_div(u64::from(request.graph_node_count))
+                .unwrap_or(0)
+                .clamp(1, 10_000);
+            request.frontier_density_bps = u16::try_from(density).map_err(|error| {
+                BackendError::new(format!(
+                    "megakernel frontier density cannot fit u16: {error}. Fix: clamp density before ABI encoding."
+                ))
+            })?;
+        }
+        if request.memory_pressure_bps == 0
+            && request.device_memory_budget_bytes != 0
+            && request.resident_device_bytes != 0
+        {
+            let pressure = (u128::from(request.resident_device_bytes)
+                .checked_mul(10_000)
+                .ok_or_else(|| {
+                    BackendError::new(
+                        "megakernel memory-pressure numerator overflowed u128. Fix: reduce resident device bytes before launch.",
+                    )
+                })?
+                / u128::from(request.device_memory_budget_bytes))
+            .min(10_000);
+            request.memory_pressure_bps = u16::try_from(pressure).map_err(|error| {
+                BackendError::new(format!(
+                    "megakernel memory pressure cannot fit u16: {error}. Fix: clamp pressure before ABI encoding."
+                ))
+            })?;
+        }
+        Ok(request)
+    }
+
+    fn apply_topology_worker_policy(
+        &self,
+        mut request: MegakernelLaunchRequest,
+        topology: MegakernelDispatchTopology,
+    ) -> Result<MegakernelLaunchRequest, BackendError> {
+        if topology == MegakernelDispatchTopology::MemoryConstrained
+            && request.memory_pressure_bps != 0
+            && request.requested_worker_groups > 1
+        {
+            let pressure_span = u32::from(
+                10_000_u16
+                    .checked_sub(self.memory_pressure_threshold_bps)
+                    .ok_or_else(|| {
+                        BackendError::new(
+                            "megakernel memory-pressure threshold exceeds 10000 bps. Fix: configure threshold in basis points.",
+                        )
+                    })?,
+            )
+            .max(1);
+            let over_threshold = u32::from(
+                match request
+                    .memory_pressure_bps
+                    .checked_sub(self.memory_pressure_threshold_bps)
+                {
+                    Some(value) => value,
+                    None => 0,
+                },
+            )
+            .min(pressure_span);
+            let shed_bps = 2_500_u32
+                .checked_add(
+                    over_threshold
+                        .checked_mul(2_500)
+                        .ok_or_else(|| {
+                            BackendError::new(
+                                "megakernel memory-pressure worker shed overflowed u32. Fix: lower pressure telemetry before launch.",
+                            )
+                        })?
+                        / pressure_span,
+                )
+                .ok_or_else(|| {
+                    BackendError::new(
+                        "megakernel memory-pressure worker shed overflowed u32. Fix: lower pressure telemetry before launch.",
+                    )
+                })?;
+            let keep_bps = 10_000_u32.checked_sub(shed_bps).ok_or_else(|| {
+                BackendError::new(
+                    "megakernel memory-pressure worker keep ratio underflowed. Fix: keep shed_bps within 0..=10000.",
+                )
+            })?;
+            let scaled = u64::from(request.requested_worker_groups)
+                .checked_mul(u64::from(keep_bps))
+                .ok_or_else(|| {
+                    BackendError::new(
+                        "megakernel memory-constrained worker count overflowed u64. Fix: reduce requested worker groups.",
+                    )
+                })?
+                / 10_000;
+            request.requested_worker_groups = u32::try_from(scaled)
+                .map_err(|error| {
+                    BackendError::new(format!(
+                        "megakernel memory-constrained worker count cannot fit u32: {error}. Fix: reduce requested worker groups."
+                    ))
+                })?
+                .max(1);
+        }
+        if topology == MegakernelDispatchTopology::SparseFrontier
+            && request.graph_node_count != 0
+            && request.frontier_density_bps != 0
+            && request.requested_worker_groups > 1
+        {
+            let sparse_span = u32::from(self.sparse_frontier_threshold_bps).max(1);
+            let density = u32::from(request.frontier_density_bps).clamp(1, sparse_span);
+            let scaled = u64::from(request.requested_worker_groups)
+                .checked_mul(u64::from(density))
+                .ok_or_else(|| {
+                    BackendError::new(
+                        "megakernel sparse-frontier worker count overflowed u64. Fix: reduce requested worker groups.",
+                    )
+                })?
+                / u64::from(sparse_span);
+            let warp_floor = request.requested_worker_groups.min(32);
+            request.requested_worker_groups = u32::try_from(scaled)
+                .map_err(|error| {
+                    BackendError::new(format!(
+                        "megakernel sparse-frontier worker count cannot fit u32: {error}. Fix: reduce requested worker groups."
+                    ))
+                })?
+                .max(warp_floor)
+                .min(request.requested_worker_groups);
+        }
+        Ok(request)
+    }
+
+    fn dispatch_topology_for(
+        &self,
+        request: MegakernelLaunchRequest,
+        promote_hot_opcodes: bool,
+        promote_hot_windows: bool,
+    ) -> MegakernelDispatchTopology {
+        if request.queue_len == 0 {
+            return MegakernelDispatchTopology::Empty;
+        }
+        if request.memory_pressure_bps >= self.memory_pressure_threshold_bps {
+            return MegakernelDispatchTopology::MemoryConstrained;
+        }
+        if request.frontier_density_bps <= self.sparse_frontier_threshold_bps {
+            return MegakernelDispatchTopology::SparseFrontier;
+        }
+        let dense = request.frontier_density_bps >= self.dense_frontier_threshold_bps;
+        let graph_is_large =
+            request.graph_node_count > 0 && request.graph_edge_count >= self.fusion_edge_threshold;
+        if dense && graph_is_large && (promote_hot_opcodes || promote_hot_windows) {
+            return MegakernelDispatchTopology::FusedDense;
+        }
+        if dense {
+            return MegakernelDispatchTopology::DenseFrontier;
+        }
+        MegakernelDispatchTopology::HybridFrontier
+    }
+
+    fn stabilize_topology(
+        &self,
+        raw_topology: MegakernelDispatchTopology,
+        request: MegakernelLaunchRequest,
+        previous_topology: Option<MegakernelDispatchTopology>,
+        promote_hot_opcodes: bool,
+        promote_hot_windows: bool,
+    ) -> MegakernelDispatchTopology {
+        if raw_topology == MegakernelDispatchTopology::Empty {
+            return raw_topology;
+        }
+        if raw_topology == MegakernelDispatchTopology::MemoryConstrained {
+            return raw_topology;
+        }
+        let Some(previous_topology) = previous_topology else {
+            return raw_topology;
+        };
+        if previous_topology == MegakernelDispatchTopology::MemoryConstrained
+            && request.memory_pressure_bps
+                >= hysteresis_sub(
+                    self.memory_pressure_threshold_bps,
+                    MEMORY_TOPOLOGY_HYSTERESIS_BPS,
+                )
+        {
+            return MegakernelDispatchTopology::MemoryConstrained;
+        }
+
+        match previous_topology {
+            MegakernelDispatchTopology::SparseFrontier
+                if raw_topology != MegakernelDispatchTopology::SparseFrontier
+                    && request.frontier_density_bps
+                        <= hysteresis_add(
+                            self.sparse_frontier_threshold_bps,
+                            FRONTIER_TOPOLOGY_HYSTERESIS_BPS,
+                        ) =>
+            {
+                MegakernelDispatchTopology::SparseFrontier
+            }
+            MegakernelDispatchTopology::HybridFrontier
+                if raw_topology == MegakernelDispatchTopology::SparseFrontier
+                    && request.frontier_density_bps
+                        >= hysteresis_sub(
+                            self.sparse_frontier_threshold_bps,
+                            FRONTIER_TOPOLOGY_HYSTERESIS_BPS,
+                        ) =>
+            {
+                MegakernelDispatchTopology::HybridFrontier
+            }
+            MegakernelDispatchTopology::HybridFrontier
+                if matches!(
+                    raw_topology,
+                    MegakernelDispatchTopology::DenseFrontier
+                        | MegakernelDispatchTopology::FusedDense
+                ) && request.frontier_density_bps
+                    <= hysteresis_add(
+                        self.dense_frontier_threshold_bps,
+                        FRONTIER_TOPOLOGY_HYSTERESIS_BPS,
+                    ) =>
+            {
+                MegakernelDispatchTopology::HybridFrontier
+            }
+            MegakernelDispatchTopology::DenseFrontier
+                if raw_topology == MegakernelDispatchTopology::HybridFrontier
+                    && request.frontier_density_bps
+                        >= hysteresis_sub(
+                            self.dense_frontier_threshold_bps,
+                            FRONTIER_TOPOLOGY_HYSTERESIS_BPS,
+                        ) =>
+            {
+                MegakernelDispatchTopology::DenseFrontier
+            }
+            MegakernelDispatchTopology::FusedDense
+                if raw_topology == MegakernelDispatchTopology::HybridFrontier
+                    && request.frontier_density_bps
+                        >= hysteresis_sub(
+                            self.dense_frontier_threshold_bps,
+                            FRONTIER_TOPOLOGY_HYSTERESIS_BPS,
+                        )
+                    && request.graph_edge_count >= self.fusion_edge_threshold
+                    && (promote_hot_opcodes || promote_hot_windows) =>
+            {
+                MegakernelDispatchTopology::FusedDense
+            }
+            _ => raw_topology,
+        }
     }
 
     /// Select the best `hit_capacity_multiplier` from a candidate set.
@@ -366,9 +868,35 @@ impl MegakernelLaunchPolicy {
         n: u32,
         learning_rate: f64,
     ) -> Vec<f64> {
-        let mut out = Vec::with_capacity(n as usize);
-        Self::natural_gradient_autotune_step_into(m_inv_sqrt, grad, n, learning_rate, &mut out);
-        out
+        Self::try_natural_gradient_autotune_step(m_inv_sqrt, grad, n, learning_rate)
+            .unwrap_or_else(|source| {
+                panic!(
+                    "megakernel natural-gradient autotune allocation failed: {source}. Fix: shard the autotune surface."
+                )
+            })
+    }
+
+    /// Compute the next-step parameter delta with fallible output staging.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BackendError`] when host staging cannot be reserved for the
+    /// natural-gradient vector.
+    pub fn try_natural_gradient_autotune_step(
+        m_inv_sqrt: &[f64],
+        grad: &[f64],
+        n: u32,
+        learning_rate: f64,
+    ) -> Result<Vec<f64>, BackendError> {
+        let mut out = Vec::new();
+        Self::try_natural_gradient_autotune_step_into(
+            m_inv_sqrt,
+            grad,
+            n,
+            learning_rate,
+            &mut out,
+        )?;
+        Ok(out)
     }
 
     /// Compute the natural-gradient autotune step into caller-owned storage.
@@ -379,15 +907,38 @@ impl MegakernelLaunchPolicy {
         learning_rate: f64,
         out: &mut Vec<f64>,
     ) {
-        let n = n as usize;
+        Self::try_natural_gradient_autotune_step_into(m_inv_sqrt, grad, n, learning_rate, out)
+            .unwrap_or_else(|source| {
+                panic!(
+                    "megakernel natural-gradient autotune allocation failed: {source}. Fix: shard the autotune surface."
+                )
+            });
+    }
+
+    /// Compute the natural-gradient autotune step into caller-owned storage
+    /// with fallible host staging.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BackendError`] when host staging cannot be reserved for the
+    /// natural-gradient vector.
+    pub fn try_natural_gradient_autotune_step_into(
+        m_inv_sqrt: &[f64],
+        grad: &[f64],
+        n: u32,
+        learning_rate: f64,
+        out: &mut Vec<f64>,
+    ) -> Result<(), BackendError> {
+        let n = u32_to_usize_or_panic(n, "natural-gradient dimension");
         out.clear();
-        out.resize(n, 0.0);
         let Some(required_matrix_len) = n.checked_mul(n) else {
-            return;
+            return Ok(());
         };
         if m_inv_sqrt.len() < required_matrix_len || grad.len() < n {
-            return;
+            return Ok(());
         }
+        reserve_target_capacity(out, n, "natural-gradient output")?;
+        out.resize(n, 0.0);
         for row in 0..n {
             let mut acc = 0.0;
             for col in 0..n {
@@ -395,24 +946,43 @@ impl MegakernelLaunchPolicy {
             }
             out[row] = -learning_rate * acc;
         }
+        Ok(())
     }
 }
 
-fn diffuse_step_into(stalks: &[f64], restriction_diag: &[f64], damping: f64, out: &mut Vec<f64>) {
+fn diffuse_step_into(
+    stalks: &[f64],
+    restriction_diag: &[f64],
+    damping: f64,
+    out: &mut Vec<f64>,
+) -> Result<(), BackendError> {
     out.clear();
-    reserve_target_capacity(out, stalks.len());
-    out.extend(
-        stalks
-            .iter()
-            .zip(restriction_diag.iter())
-            .map(|(&stalk, &restriction)| stalk - damping * restriction * stalk),
-    );
+    reserve_target_capacity(out, stalks.len(), "priority diffusion scratch")?;
+    out.resize(stalks.len(), 0.0);
+    for ((slot, &stalk), &restriction) in out
+        .iter_mut()
+        .zip(stalks.iter())
+        .zip(restriction_diag.iter())
+    {
+        *slot = stalk - damping * restriction * stalk;
+    }
+    Ok(())
 }
 
-fn reserve_target_capacity<T>(out: &mut Vec<T>, target_capacity: usize) {
+fn reserve_target_capacity<T>(
+    out: &mut Vec<T>,
+    target_capacity: usize,
+    label: &'static str,
+) -> Result<(), BackendError> {
     if out.capacity() < target_capacity {
-        out.reserve_exact(target_capacity);
+        out.try_reserve_exact(target_capacity - out.capacity())
+            .map_err(|source| {
+                BackendError::new(format!(
+                    "megakernel {label} reservation failed for {target_capacity} element(s): {source}. Fix: shard the policy input before launch-policy math."
+                ))
+            })?;
     }
+    Ok(())
 }
 
 fn best_cost_index(costs: &[f64]) -> usize {
@@ -428,23 +998,55 @@ fn best_cost_index(costs: &[f64]) -> usize {
     best
 }
 
+fn u32_to_usize_or_panic(value: u32, label: &'static str) -> usize {
+    match usize::try_from(value) {
+        Ok(value) => value,
+        Err(error) => {
+            panic!("{label} cannot fit usize: {error}. Fix: shard the autotune surface.")
+        }
+    }
+}
+
+fn hysteresis_add(value: u16, hysteresis: u16) -> u16 {
+    value.checked_add(hysteresis).unwrap_or_else(|| {
+        panic!(
+            "megakernel topology hysteresis upper bound overflowed u16. Fix: lower topology threshold or hysteresis."
+        )
+    })
+}
+
+fn hysteresis_sub(value: u16, hysteresis: u16) -> u16 {
+    value.checked_sub(hysteresis).unwrap_or_else(|| {
+        panic!(
+            "megakernel topology hysteresis lower bound underflowed u16. Fix: lower hysteresis or raise topology threshold."
+        )
+    })
+}
+
 fn classify_pressure(
     queue_len: u32,
     lanes: u64,
     requeue_count: u64,
     policy: &MegakernelLaunchPolicy,
-) -> MegakernelQueuePressure {
+) -> Result<MegakernelQueuePressure, BackendError> {
     if queue_len == 0 {
-        return MegakernelQueuePressure::Empty;
+        return Ok(MegakernelQueuePressure::Empty);
     }
     let lanes = lanes.max(1);
     let queue_len = u64::from(queue_len);
-    if requeue_count > 0 || queue_len >= lanes.saturating_mul(u64::from(policy.saturated_waves)) {
-        MegakernelQueuePressure::Saturated
+    let saturated_lanes = lanes
+        .checked_mul(u64::from(policy.saturated_waves))
+        .ok_or_else(|| {
+            BackendError::new(
+                "megakernel pressure wave threshold overflowed u64. Fix: reduce worker lanes or saturated_waves.",
+            )
+        })?;
+    if requeue_count > 0 || queue_len >= saturated_lanes {
+        Ok(MegakernelQueuePressure::Saturated)
     } else if queue_len >= lanes {
-        MegakernelQueuePressure::Balanced
+        Ok(MegakernelQueuePressure::Balanced)
     } else {
-        MegakernelQueuePressure::Light
+        Ok(MegakernelQueuePressure::Light)
     }
 }
 

@@ -1,6 +1,10 @@
 //! CUDA device probing and capability snapshots.
 
+use std::sync::Arc;
+
 use cudarc::driver::{result, sys::CUdevice_attribute, CudaContext};
+
+use crate::backend::staging_reserve::reserved_vec;
 
 /// Queried physical limits and capabilities of a CUDA GPU.
 #[derive(Debug, Clone)]
@@ -21,6 +25,8 @@ pub struct CudaDeviceCaps {
     pub max_grid_dim: [i32; 3],
     /// Shared memory available per thread block in bytes.
     pub shared_memory_per_block: i32,
+    /// Shared memory available per streaming multiprocessor in bytes.
+    pub shared_memory_per_sm: i32,
     /// Number of threads in a hardware warp.
     pub warp_size: i32,
     /// Whether the device supports cooperative grid launches (megakernel prerequisite).
@@ -29,6 +35,16 @@ pub struct CudaDeviceCaps {
     pub concurrent_kernels: bool,
     /// Number of independent async copy engines available.
     pub async_engine_count: i32,
+    /// Number of streaming multiprocessors. Used by runtime planners that
+    /// need to size concurrent graph-replay lanes against real hardware
+    /// width instead of a fixed host-side constant.
+    pub multi_processor_count: i32,
+    /// Device-wide L2 cache capacity in bytes.
+    pub l2_cache_bytes: i32,
+    /// Memory clock rate in kHz, as reported by the CUDA driver.
+    pub memory_clock_rate_khz: i32,
+    /// Global memory bus width in bits.
+    pub global_memory_bus_width_bits: i32,
     /// Maximum 32-bit registers usable by a single thread block. Required
     /// for occupancy-aware workgroup sizing (I4) — when ptxas reports a
     /// kernel's per-thread register pressure, this caps the largest block
@@ -45,7 +61,64 @@ pub struct CudaDeviceCaps {
     pub max_threads_per_sm: i32,
 }
 
+/// Centralized live CUDA device acquisition result.
+#[derive(Debug, Clone)]
+pub struct CudaDeviceHandle {
+    /// Probed capabilities for the acquired device.
+    pub caps: CudaDeviceCaps,
+    /// Bound CUDA context for dispatch.
+    pub ctx: Arc<CudaContext>,
+}
+
+impl CudaDeviceHandle {
+    /// Acquire and bind a CUDA context for `ordinal`, returning the matching
+    /// capability snapshot from the same CUDA device handle.
+    ///
+    /// # Errors
+    ///
+    /// Returns an actionable error when the CUDA driver cannot initialize, the
+    /// ordinal is invalid, context creation fails, context binding fails, or a
+    /// required device attribute cannot be queried.
+    pub fn acquire_ordinal(ordinal: usize) -> Result<Self, String> {
+        let device_count = CudaDeviceCaps::visible_device_count()?;
+        if ordinal >= device_count {
+            return Err(format!(
+                "CUDA device ordinal {ordinal} is out of range for {device_count} visible device(s). Fix: select a CUDA device ordinal reported by `nvidia-smi`."
+            ));
+        }
+
+        let ctx = CudaContext::new(ordinal).map_err(|e| {
+            format!(
+                "CUDA context init failed for ordinal {ordinal}: {e}. Fix: choose a visible `nvidia-smi -L` ordinal and ensure no exclusive-process compute mode blocks context creation."
+            )
+        })?;
+        ctx.bind_to_thread().map_err(|e| {
+            format!(
+                "CUDA context bind failed for ordinal {ordinal}: {e}. Fix: repair CUDA context ownership before dispatch; GPU-required runs must not continue with an unbound context."
+            )
+        })?;
+        let caps = CudaDeviceCaps::probe_context(ordinal, &ctx)?;
+        Ok(Self { caps, ctx })
+    }
+}
+
 impl CudaDeviceCaps {
+    fn required_u32_capability(&self, name: &str, value: i32) -> u32 {
+        debug_assert!(
+            value > 0,
+            "CUDA device `{}` carried invalid {name}={value} after capability validation",
+            self.name
+        );
+        if value <= 0 {
+            tracing::error!(
+                "CUDA device `{}` carried invalid {name}={value} after capability validation. Fix: reject corrupt capability snapshots during probe.",
+                self.name
+            );
+            return 0;
+        }
+        value as u32
+    }
+
     /// Return the number of CUDA devices visible to the CUDA driver.
     ///
     /// # Errors
@@ -75,7 +148,18 @@ impl CudaDeviceCaps {
     /// Returns an actionable error when any visible device cannot be probed.
     pub fn probe_all() -> Result<Vec<Self>, String> {
         let device_count = Self::visible_device_count()?;
-        (0..device_count).map(Self::probe).collect()
+        if device_count == 0 {
+            return Err(
+                "CUDA device-count query returned zero visible devices. Fix: this is a GPU-required release host; run `nvidia-smi -L`, repair CUDA_VISIBLE_DEVICES/container GPU passthrough, and do not silently continue on a CPU path."
+                    .to_string(),
+            );
+        }
+        let mut devices = reserved_vec(device_count, "cuda visible device probes")
+            .map_err(|error| error.to_string())?;
+        for ordinal in 0..device_count {
+            devices.push(Self::probe(ordinal)?);
+        }
+        Ok(devices)
     }
 
     /// Probe the device using the raw CUDA driver API.
@@ -97,6 +181,10 @@ impl CudaDeviceCaps {
                 "CUDA context init failed for ordinal {ordinal}: {e}. Fix: choose a visible `nvidia-smi -L` ordinal and ensure no exclusive-process compute mode blocks context creation."
             )
         })?;
+        Self::probe_context(ordinal, &ctx)
+    }
+
+    fn probe_context(ordinal: usize, ctx: &CudaContext) -> Result<Self, String> {
         let dev = ctx.cu_device();
 
         let attr = |name: &str, attrib| {
@@ -152,6 +240,10 @@ impl CudaDeviceCaps {
             "shared_memory_per_block",
             CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAX_SHARED_MEMORY_PER_BLOCK,
         )?;
+        let shared_memory_per_sm = attr(
+            "shared_memory_per_sm",
+            CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MAX_SHARED_MEMORY_PER_MULTIPROCESSOR,
+        )?;
         let warp_size = attr(
             "warp_size",
             CUdevice_attribute::CU_DEVICE_ATTRIBUTE_WARP_SIZE,
@@ -167,6 +259,22 @@ impl CudaDeviceCaps {
         let async_engine_count = attr(
             "async_engine_count",
             CUdevice_attribute::CU_DEVICE_ATTRIBUTE_ASYNC_ENGINE_COUNT,
+        )?;
+        let multi_processor_count = attr(
+            "multi_processor_count",
+            CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT,
+        )?;
+        let l2_cache_bytes = attr(
+            "l2_cache_bytes",
+            CUdevice_attribute::CU_DEVICE_ATTRIBUTE_L2_CACHE_SIZE,
+        )?;
+        let memory_clock_rate_khz = attr(
+            "memory_clock_rate_khz",
+            CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MEMORY_CLOCK_RATE,
+        )?;
+        let global_memory_bus_width_bits = attr(
+            "global_memory_bus_width_bits",
+            CUdevice_attribute::CU_DEVICE_ATTRIBUTE_GLOBAL_MEMORY_BUS_WIDTH,
         )?;
         let max_registers_per_block = attr(
             "max_registers_per_block",
@@ -184,16 +292,30 @@ impl CudaDeviceCaps {
         let caps = Self {
             name,
             ordinal,
-            compute_capability: (major as u32, minor as u32),
-            total_memory: total_memory as u64,
+            compute_capability: (
+                u32::try_from(major).map_err(|source| {
+                    format!("CUDA device major compute capability was negative ({major}): {source}. Fix: repair CUDA driver attribute probing before dispatch.")
+                })?,
+                u32::try_from(minor).map_err(|source| {
+                    format!("CUDA device minor compute capability was negative ({minor}): {source}. Fix: repair CUDA driver attribute probing before dispatch.")
+                })?,
+            ),
+            total_memory: u64::try_from(total_memory).map_err(|source| {
+                format!("CUDA total memory value {total_memory} does not fit u64: {source}. Fix: widen CudaDeviceCaps memory telemetry before dispatch.")
+            })?,
             max_threads_per_block,
             max_block_dim: [max_block_dim_x, max_block_dim_y, max_block_dim_z],
             max_grid_dim: [max_grid_dim_x, max_grid_dim_y, max_grid_dim_z],
             shared_memory_per_block,
+            shared_memory_per_sm,
             warp_size,
             cooperative_launch: cooperative_launch != 0,
             concurrent_kernels: concurrent_kernels != 0,
             async_engine_count,
+            multi_processor_count,
+            l2_cache_bytes,
+            memory_clock_rate_khz,
+            global_memory_bus_width_bits,
             max_registers_per_block,
             max_registers_per_sm,
             max_threads_per_sm,
@@ -230,7 +352,15 @@ impl CudaDeviceCaps {
             ("max_grid_dim_y", self.max_grid_dim[1]),
             ("max_grid_dim_z", self.max_grid_dim[2]),
             ("shared_memory_per_block", self.shared_memory_per_block),
+            ("shared_memory_per_sm", self.shared_memory_per_sm),
             ("warp_size", self.warp_size),
+            ("multi_processor_count", self.multi_processor_count),
+            ("l2_cache_bytes", self.l2_cache_bytes),
+            ("memory_clock_rate_khz", self.memory_clock_rate_khz),
+            (
+                "global_memory_bus_width_bits",
+                self.global_memory_bus_width_bits,
+            ),
             ("max_registers_per_block", self.max_registers_per_block),
             ("max_registers_per_sm", self.max_registers_per_sm),
             ("max_threads_per_sm", self.max_threads_per_sm),
@@ -264,35 +394,94 @@ impl CudaDeviceCaps {
     /// Shared memory available per CUDA thread block in bytes.
     #[must_use]
     pub fn shared_memory_per_block_bytes(&self) -> u32 {
-        u32::try_from(self.shared_memory_per_block).unwrap_or(0)
+        self.required_u32_capability("shared_memory_per_block", self.shared_memory_per_block)
+    }
+
+    /// Shared memory available per CUDA streaming multiprocessor in bytes.
+    #[must_use]
+    pub fn shared_memory_per_sm_bytes(&self) -> u32 {
+        self.required_u32_capability("shared_memory_per_sm", self.shared_memory_per_sm)
     }
 
     /// Maximum threads per block as an unsigned launch-limit value.
     #[must_use]
     pub fn max_threads_per_block_u32(&self) -> u32 {
-        u32::try_from(self.max_threads_per_block).unwrap_or(0)
+        self.required_u32_capability("max_threads_per_block", self.max_threads_per_block)
+    }
+
+    /// Maximum 32-bit registers per CUDA thread block.
+    #[must_use]
+    pub fn max_registers_per_block_u32(&self) -> u32 {
+        self.required_u32_capability("max_registers_per_block", self.max_registers_per_block)
+    }
+
+    /// Maximum 32-bit registers per streaming multiprocessor.
+    #[must_use]
+    pub fn max_registers_per_sm_u32(&self) -> u32 {
+        self.required_u32_capability("max_registers_per_sm", self.max_registers_per_sm)
+    }
+
+    /// Maximum resident threads per streaming multiprocessor.
+    #[must_use]
+    pub fn max_threads_per_sm_u32(&self) -> u32 {
+        self.required_u32_capability("max_threads_per_sm", self.max_threads_per_sm)
+    }
+
+    /// Number of streaming multiprocessors as an unsigned runtime-planning value.
+    #[must_use]
+    pub fn multi_processor_count_u32(&self) -> u32 {
+        self.required_u32_capability("multi_processor_count", self.multi_processor_count)
+    }
+
+    /// Device-wide L2 cache capacity in bytes.
+    #[must_use]
+    pub fn l2_cache_bytes_u32(&self) -> u32 {
+        self.required_u32_capability("l2_cache_bytes", self.l2_cache_bytes)
+    }
+
+    /// Approximate peak global-memory bandwidth in decimal GB/s.
+    #[must_use]
+    pub fn memory_bandwidth_gbps(&self) -> u32 {
+        let clock_khz =
+            self.required_u32_capability("memory_clock_rate_khz", self.memory_clock_rate_khz);
+        let bus_bits = self.required_u32_capability(
+            "global_memory_bus_width_bits",
+            self.global_memory_bus_width_bits,
+        );
+        let gbps = (u64::from(clock_khz) * u64::from(bus_bits)) / 4_000_000;
+        gbps.max(1).min(u64::from(u32::MAX)) as u32
+    }
+
+    /// NVIDIA CUDA architectural register ceiling per thread.
+    #[must_use]
+    pub fn max_registers_per_thread_u32(&self) -> u32 {
+        self.max_registers_per_block_u32().min(255)
     }
 
     /// Per-axis block limits as unsigned launch-limit values.
     #[must_use]
     pub fn max_block_dim_u32(&self) -> [u32; 3] {
         self.max_block_dim
-            .map(|value| u32::try_from(value).unwrap_or(0))
+            .map(|value| self.required_u32_capability("max_block_dim axis", value))
     }
 
     /// Per-axis grid limits as unsigned launch-limit values.
     #[must_use]
     pub fn max_grid_dim_u32(&self) -> [u32; 3] {
         self.max_grid_dim
-            .map(|value| u32::try_from(value).unwrap_or(0))
+            .map(|value| self.required_u32_capability("max_grid_dim axis", value))
     }
 
     /// Warp width reported by the CUDA device.
     #[must_use]
     pub fn warp_size_u32(&self) -> Option<u32> {
-        u32::try_from(self.warp_size)
-            .ok()
-            .filter(|value| *value > 0)
+        Some(self.required_warp_size_u32())
+    }
+
+    /// Warp width reported by the CUDA device after probe-time validation.
+    #[must_use]
+    pub fn required_warp_size_u32(&self) -> u32 {
+        self.required_u32_capability("warp_size", self.warp_size)
     }
 
     /// Whether this device generation has native fp16 instructions.
@@ -362,16 +551,16 @@ impl CudaDeviceCaps {
             max_shared_memory_bytes: self.shared_memory_per_block_bytes(),
             max_storage_buffer_binding_size: self.total_memory,
             subgroup_size: subgroup.subgroup_size,
-            compute_units: 0,
-            regs_per_thread_max: 0,
+            compute_units: self.multi_processor_count_u32(),
+            regs_per_thread_max: self.max_registers_per_thread_u32(),
             l1_cache_bytes: 0,
-            l2_cache_bytes: 0,
-            mem_bw_gbps: 0,
+            l2_cache_bytes: self.l2_cache_bytes_u32(),
+            mem_bw_gbps: self.memory_bandwidth_gbps(),
             ideal_unroll_depth: 0,
             ideal_vector_pack_bits: 0,
             ideal_workgroup_tile: [0, 0, 0],
-            shared_memory_bank_count: 0,
-            shared_memory_bank_width_bytes: 0,
+            shared_memory_bank_count: 32,
+            shared_memory_bank_width_bytes: 4,
         };
         vyre_driver::DeviceSignatureTable::builtins().map_or(profile, |table| {
             table.apply_generation_to_profile(self.native_sm(), profile)
@@ -381,9 +570,7 @@ impl CudaDeviceCaps {
     /// Project CUDA warp capabilities into the shared subgroup record.
     #[must_use]
     pub fn subgroup_caps(&self) -> vyre_driver::SubgroupCaps {
-        self.warp_size_u32()
-            .map(vyre_driver::SubgroupCaps::native)
-            .unwrap_or_default()
+        vyre_driver::SubgroupCaps::native(self.required_warp_size_u32())
     }
 }
 
@@ -401,10 +588,15 @@ mod tests {
             max_block_dim: [1024, 1024, 64],
             max_grid_dim: [2_147_483_647, 65_535, 65_535],
             shared_memory_per_block: 128 * 1024,
+            shared_memory_per_sm: 256 * 1024,
             warp_size: 32,
             cooperative_launch: true,
             concurrent_kernels: true,
             async_engine_count: 2,
+            multi_processor_count: 170,
+            l2_cache_bytes: 96 * 1024 * 1024,
+            memory_clock_rate_khz: 14_000_000,
+            global_memory_bus_width_bits: 512,
             // Blackwell SM_120: 65536 32-bit regs/block, 65536 regs/SM,
             // 2048 threads/SM. Real probed values may differ slightly per
             // driver revision; these are SM_120 spec floors.
@@ -417,11 +609,84 @@ mod tests {
     #[test]
     fn cuda_profile_applies_builtin_sm_signature() {
         let profile = blackwell_caps().to_device_profile();
+        let table =
+            vyre_driver::DeviceSignatureTable::builtins().expect("Fix: builtin signatures load");
+        let signature = table
+            .find_architecture_generation(120)
+            .expect("Fix: SM_120 must match the builtin Blackwell signature");
 
         assert_eq!(profile.compute_units, 170);
-        assert_eq!(profile.ideal_unroll_depth, 8);
-        assert_eq!(profile.ideal_vector_pack_bits, 128);
-        assert_eq!(profile.ideal_workgroup_tile, [16, 16, 1]);
+        assert_eq!(profile.ideal_unroll_depth, signature.ideal_unroll_depth);
+        assert_eq!(
+            profile.ideal_vector_pack_bits,
+            signature.ideal_vector_pack_bits
+        );
+        assert_eq!(profile.ideal_workgroup_tile, signature.ideal_workgroup_tile);
+        assert_eq!(profile.shared_memory_bank_count, signature.bank_count);
+    }
+
+    #[test]
+    fn cuda_profile_preserves_probed_compute_units_without_builtin_signature() {
+        let mut caps = blackwell_caps();
+        caps.compute_capability = (99, 0);
+        caps.multi_processor_count = 13;
+
+        let profile = caps.to_device_profile();
+
+        assert_eq!(profile.compute_units, 13);
+        assert_eq!(profile.regs_per_thread_max, 255);
+        assert_eq!(profile.l2_cache_bytes, 96 * 1024 * 1024);
+        assert_eq!(profile.mem_bw_gbps, 1792);
+        assert_eq!(profile.max_invocations_per_workgroup, 1024);
+        assert_eq!(profile.max_shared_memory_bytes, 128 * 1024);
+        assert_eq!(caps.shared_memory_per_sm_bytes(), 256 * 1024);
         assert_eq!(profile.shared_memory_bank_count, 32);
+        assert_eq!(profile.shared_memory_bank_width_bytes, 4);
+    }
+
+    #[test]
+    fn cuda_probe_all_rejects_zero_device_silent_fallback_by_contract() {
+        let source = include_str!("device.rs");
+
+        assert!(
+            source.contains("device_count == 0")
+                && source.contains("do not silently continue on a CPU path"),
+            "Fix: CUDA device discovery must fail loudly when a GPU-required host reports zero visible devices."
+        );
+        assert!(
+            !source.contains(concat!("(0..device_count)", ".map(Self::probe).collect()")),
+            "Fix: CUDA device discovery must not hide zero devices behind an empty successful probe list."
+        );
+    }
+
+    #[test]
+    fn cuda_capability_conversion_has_no_production_panic_path() {
+        let source = include_str!("device.rs");
+        let start = source
+            .find("fn required_u32_capability")
+            .expect("Fix: CUDA capability conversion helper must exist");
+        let end = source[start..]
+            .find("/// Return the number of CUDA devices visible")
+            .expect("Fix: CUDA capability conversion helper must stay before device discovery")
+            + start;
+        let helper = &source[start..end];
+
+        assert!(
+            !helper.contains("panic!("),
+            "Fix: CUDA capability accessors must not abort production dispatch; probe-time validation must reject invalid capability snapshots with typed errors."
+        );
+        assert!(
+            !helper.contains("unwrap_or(1)"),
+            "Fix: CUDA capability accessors must not manufacture fake nonzero defaults after validation."
+        );
+        assert!(
+            source.contains("caps.validate_required_attributes()?"),
+            "Fix: CUDA capability probing must validate launch-critical values before exposing infallible accessors."
+        );
+        assert!(
+            source.contains("CUDA device major compute capability was negative")
+                && source.contains("map_err(|source|"),
+            "Fix: CUDA capability probe must return typed errors for corrupt driver attributes instead of panicking."
+        );
     }
 }

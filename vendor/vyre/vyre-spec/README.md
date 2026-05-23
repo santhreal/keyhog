@@ -13,25 +13,25 @@ conformance without pulling in the compiler or the conform runtime.
 
 ## What you get
 
-- `Category` — operation classification (`A`, `C`, etc.)
-- `AlgebraicLaw` — declarative laws (commutative, associative, identity,
+- `Category`: operation classification (`A`, `C`, etc.)
+- `AlgebraicLaw`: declarative laws (commutative, associative, identity,
   distributive, monotonic, bounded, custom predicates, and more)
-- `OpDef` — frozen operation specification
-- `OpSignature` — input/output type signature for an IR operation
-- `DataType` — IR types (`U32`, `I32`, `U64`, `Vec2U32`, `Vec4U32`, `Bool`,
+- `OpDef`: frozen operation specification
+- `OpSignature`: input/output type signature for an IR operation
+- `DataType`: IR types (`U32`, `I32`, `U64`, `Vec2U32`, `Vec4U32`, `Bool`,
   `Bytes`, `F32`)
-- `Convention` — calling conventions for op dispatch
-- `IntrinsicTable` — hardware intrinsic lookup tables
-- `EngineInvariant` / `Invariant` / `InvariantId` — engine-level invariant
+- `Convention`: calling conventions for op dispatch
+- `IntrinsicTable`: hardware intrinsic lookup tables
+- `EngineInvariant` / `Invariant` / `InvariantId`: engine-level invariant
   declarations and the `I1..I15` catalog
-- `Verification` — verification result types
-- `Layer` — conformance layer declarations (`L0`–`L8`)
-- `BackendAvailability` — per-backend availability predicates
-- `GoldenSample` / `KatVector` / `AdversarialInput` — test vectors and hostile
+- `Verification`: verification result types
+- `Layer`: conformance layer declarations (`L0`–`L8`)
+- `BackendAvailability`: per-backend availability predicates
+- `GoldenSample` / `KatVector` / `AdversarialInput`: test vectors and hostile
   witnesses
-- `BinOp` / `UnOp` / `AtomicOp` — operation descriptors
-- `LawCatalog` / `LAW_CATALOG` — static registry of all declared laws
-- `INVARIANTS` / `by_id` / `by_category` — static invariant registry and
+- `BinOp` / `UnOp` / `AtomicOp`: operation descriptors
+- `LawCatalog` / `LAW_CATALOG`: static registry of all declared laws
+- `INVARIANTS` / `by_id` / `by_category`: static invariant registry and
   lookups
 
 ## Stability
@@ -59,7 +59,7 @@ assert_eq!(sig.output, DataType::U32);
 
 ## See also
 
-- `vyre` (the compiler) — https://crates.io/crates/vyre
+- `vyre` (the compiler): https://crates.io/crates/vyre
 - Book: the vyre book at https://github.com/santhsecurity/vyre
 
 ## License

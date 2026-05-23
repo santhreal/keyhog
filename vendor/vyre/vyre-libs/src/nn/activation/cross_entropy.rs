@@ -290,7 +290,6 @@ inventory::submit! {
                 to_f32(&[1.0, 2.0, 3.0, 0.5,  0.1, 0.2, 0.3, 0.4]),
                 // targets: [2, 0]
                 to_u32(&[2, 0]),
-                vec![0u8; 4 * 2 * CROSS_ENTROPY_TILE as usize],
             ]]
         }),
         expected_output: Some(|| {
@@ -298,6 +297,7 @@ inventory::submit! {
             let targets = [2_u32, 0];
             vec![vec![reference_cross_entropy_bytes(&logits, &targets, 4)]]
         }),
+        category: Some("nn"),
     }
 }
 
@@ -352,14 +352,27 @@ mod tests {
         let targets = [0u32];
         let program = cross_entropy("logits", "targets", "loss", 1, 4);
         let inputs = vec![
-            Value::from(logits.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<_>>()),
-            Value::from(targets.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<_>>()),
+            Value::from(
+                logits
+                    .iter()
+                    .flat_map(|v| v.to_le_bytes())
+                    .collect::<Vec<_>>(),
+            ),
+            Value::from(
+                targets
+                    .iter()
+                    .flat_map(|v| v.to_le_bytes())
+                    .collect::<Vec<_>>(),
+            ),
             Value::from(vec![0u8; 4 * CROSS_ENTROPY_TILE as usize]),
         ];
         let outputs = vyre_reference::reference_eval(&program, &inputs)
             .expect("Fix: cross_entropy must not panic on NaN logits");
         let loss = f32::from_le_bytes(outputs[0].to_bytes()[0..4].try_into().unwrap());
-        assert!(loss.is_nan(), "cross_entropy with NaN logits must produce NaN loss, got {loss}");
+        assert!(
+            loss.is_nan(),
+            "cross_entropy with NaN logits must produce NaN loss, got {loss}"
+        );
     }
 
     #[test]
@@ -370,8 +383,18 @@ mod tests {
         let targets = [0u32];
         let program = cross_entropy("logits", "targets", "loss", 1, 4);
         let inputs = vec![
-            Value::from(logits.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<_>>()),
-            Value::from(targets.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<_>>()),
+            Value::from(
+                logits
+                    .iter()
+                    .flat_map(|v| v.to_le_bytes())
+                    .collect::<Vec<_>>(),
+            ),
+            Value::from(
+                targets
+                    .iter()
+                    .flat_map(|v| v.to_le_bytes())
+                    .collect::<Vec<_>>(),
+            ),
             Value::from(vec![0u8; 4 * CROSS_ENTROPY_TILE as usize]),
         ];
         let outputs = vyre_reference::reference_eval(&program, &inputs)
@@ -389,8 +412,18 @@ mod tests {
         let targets = [0u32];
         let program = cross_entropy("logits", "targets", "loss", 1, 4);
         let inputs = vec![
-            Value::from(logits.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<_>>()),
-            Value::from(targets.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<_>>()),
+            Value::from(
+                logits
+                    .iter()
+                    .flat_map(|v| v.to_le_bytes())
+                    .collect::<Vec<_>>(),
+            ),
+            Value::from(
+                targets
+                    .iter()
+                    .flat_map(|v| v.to_le_bytes())
+                    .collect::<Vec<_>>(),
+            ),
             Value::from(vec![0u8; 4 * CROSS_ENTROPY_TILE as usize]),
         ];
         let outputs = vyre_reference::reference_eval(&program, &inputs)
@@ -410,8 +443,18 @@ mod tests {
         let _targets = [1u32];
         let program = cross_entropy("logits", "targets", "loss", 1, 4);
         let inputs = vec![
-            Value::from(logits.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<_>>()),
-            Value::from([1u32].iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<_>>()),
+            Value::from(
+                logits
+                    .iter()
+                    .flat_map(|v| v.to_le_bytes())
+                    .collect::<Vec<_>>(),
+            ),
+            Value::from(
+                [1u32]
+                    .iter()
+                    .flat_map(|v| v.to_le_bytes())
+                    .collect::<Vec<_>>(),
+            ),
             Value::from(vec![0u8; 4 * CROSS_ENTROPY_TILE as usize]),
         ];
         let outputs = vyre_reference::reference_eval(&program, &inputs)
@@ -430,8 +473,18 @@ mod tests {
         let targets = [0u32];
         let program = cross_entropy("logits", "targets", "loss", 1, 1);
         let inputs = vec![
-            Value::from(logits.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<_>>()),
-            Value::from(targets.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<_>>()),
+            Value::from(
+                logits
+                    .iter()
+                    .flat_map(|v| v.to_le_bytes())
+                    .collect::<Vec<_>>(),
+            ),
+            Value::from(
+                targets
+                    .iter()
+                    .flat_map(|v| v.to_le_bytes())
+                    .collect::<Vec<_>>(),
+            ),
             Value::from(vec![0u8; 4 * CROSS_ENTROPY_TILE as usize]),
         ];
         let outputs = vyre_reference::reference_eval(&program, &inputs)

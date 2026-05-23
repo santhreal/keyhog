@@ -18,13 +18,14 @@
 //!
 //! * Every buffer name that appears in more than one arm is treated as the
 //!   *same* physical GPU buffer. The caller must ensure this is intentional.
-//! * Access-mode upgrades are applied automatically (ReadOnly → ReadWrite)
+//! * Access-mode upgrades are applied automatically (`ReadOnly` -> `ReadWrite`)
 //!   when any arm needs to write.
 //! * A `Node::Barrier` is inserted between arms when a later arm writes a
 //!   buffer that an earlier arm reads, preventing write-after-read corruption.
 //! * Programs marked `non_composable_with_self` cannot be fused with another
 //!   copy of the same `entry_op_id`.
 
+mod alpha_rename;
 mod collectors;
 mod divergence;
 mod fuse;

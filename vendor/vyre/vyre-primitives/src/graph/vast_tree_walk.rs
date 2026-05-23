@@ -14,9 +14,26 @@ pub const POSTORDER_OP_ID: &str = "vyre-primitives::graph::vast_walk_postorder";
 /// Emit preorder node indices for a VAST first-child / next-sibling tree.
 #[must_use]
 pub fn ast_walk_preorder(nodes: &str, out: &str, node_count: u32, out_cap: u32) -> Program {
+    match try_ast_walk_preorder(nodes, out, node_count, out_cap) {
+        Ok(program) => program,
+        Err(error) => {
+            eprintln!("{error}");
+            inert_tree_walk_program(PREORDER_OP_ID, nodes, out)
+        }
+    }
+}
+
+/// Emit preorder node indices for a VAST first-child / next-sibling tree with
+/// checked launch-shape validation.
+pub fn try_ast_walk_preorder(
+    nodes: &str,
+    out: &str,
+    node_count: u32,
+    out_cap: u32,
+) -> Result<Program, String> {
     let stride = NODE_STRIDE_U32 as u32;
-    let node_words = node_count.saturating_mul(stride).max(1);
-    let out_words = out_cap.max(1);
+    let node_words = checked_node_words(node_count, stride, PREORDER_OP_ID)?;
+    let out_words = checked_out_words(out_cap, PREORDER_OP_ID)?;
     let valid_node = |expr: Expr| {
         Expr::and(
             Expr::ne(expr.clone(), Expr::u32(SENTINEL)),
@@ -112,15 +129,39 @@ pub fn ast_walk_preorder(nodes: &str, out: &str, node_count: u32, out_cap: u32) 
         ),
     ];
 
-    tree_walk_program(PREORDER_OP_ID, nodes, out, node_words, out_words, body)
+    Ok(tree_walk_program(
+        PREORDER_OP_ID,
+        nodes,
+        out,
+        node_words,
+        out_words,
+        body,
+    ))
 }
 
 /// Emit postorder node indices for a VAST first-child / next-sibling tree.
 #[must_use]
 pub fn ast_walk_postorder(nodes: &str, out: &str, node_count: u32, out_cap: u32) -> Program {
+    match try_ast_walk_postorder(nodes, out, node_count, out_cap) {
+        Ok(program) => program,
+        Err(error) => {
+            eprintln!("{error}");
+            inert_tree_walk_program(POSTORDER_OP_ID, nodes, out)
+        }
+    }
+}
+
+/// Emit postorder node indices for a VAST first-child / next-sibling tree with
+/// checked launch-shape validation.
+pub fn try_ast_walk_postorder(
+    nodes: &str,
+    out: &str,
+    node_count: u32,
+    out_cap: u32,
+) -> Result<Program, String> {
     let stride = NODE_STRIDE_U32 as u32;
-    let node_words = node_count.saturating_mul(stride).max(1);
-    let out_words = out_cap.max(1);
+    let node_words = checked_node_words(node_count, stride, POSTORDER_OP_ID)?;
+    let out_words = checked_out_words(out_cap, POSTORDER_OP_ID)?;
     let valid_node = |expr: Expr| {
         Expr::and(
             Expr::ne(expr.clone(), Expr::u32(SENTINEL)),
@@ -205,7 +246,35 @@ pub fn ast_walk_postorder(nodes: &str, out: &str, node_count: u32, out_cap: u32)
         ),
     ];
 
-    tree_walk_program(POSTORDER_OP_ID, nodes, out, node_words, out_words, body)
+    Ok(tree_walk_program(
+        POSTORDER_OP_ID,
+        nodes,
+        out,
+        node_words,
+        out_words,
+        body,
+    ))
+}
+
+fn checked_node_words(node_count: u32, stride: u32, op_id: &'static str) -> Result<u32, String> {
+    if node_count == 0 {
+        return Ok(1);
+    }
+    node_count.checked_mul(stride).ok_or_else(|| {
+        format!(
+            "{op_id} node_count={node_count} stride={stride} overflows VAST node buffer words. Fix: shard the tree before GPU dispatch."
+        )
+    })
+}
+
+fn checked_out_words(out_cap: u32, op_id: &'static str) -> Result<u32, String> {
+    if out_cap == 0 {
+        Err(format!(
+            "{op_id} requires out_cap > 0. Fix: allocate traversal output capacity before GPU dispatch."
+        ))
+    } else {
+        Ok(out_cap)
+    }
 }
 
 fn tree_walk_program(
@@ -230,6 +299,63 @@ fn tree_walk_program(
             body: Arc::new(body),
         }],
     )
+}
+
+fn inert_tree_walk_program(op_id: &'static str, nodes: &str, out: &str) -> Program {
+    tree_walk_program(op_id, nodes, out, 1, 1, vec![Node::return_()])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn checked_preorder_rejects_zero_output_capacity() {
+        let error = try_ast_walk_preorder("nodes", "out", 1, 0)
+            .expect_err("checked preorder builder must reject zero output capacity");
+
+        assert!(
+            error.contains("out_cap > 0"),
+            "error should describe the launch-shape fix: {error}"
+        );
+    }
+
+    #[test]
+    fn checked_postorder_rejects_node_word_overflow() {
+        let error = try_ast_walk_postorder("nodes", "out", u32::MAX, 1)
+            .expect_err("checked postorder builder must reject node buffer overflow");
+
+        assert!(
+            error.contains("overflows VAST node buffer words"),
+            "error should describe the VAST buffer overflow: {error}"
+        );
+    }
+
+    #[test]
+    fn legacy_vast_walk_builders_do_not_panic_on_invalid_shape() {
+        let preorder = ast_walk_preorder("nodes", "out", 1, 0);
+        let postorder = ast_walk_postorder("nodes", "out", u32::MAX, 1);
+
+        assert_eq!(preorder.workgroup_size, [1, 1, 1]);
+        assert_eq!(postorder.workgroup_size, [1, 1, 1]);
+    }
+
+    #[test]
+    fn vast_tree_walk_release_source_has_checked_builders_without_panics() {
+        let source = include_str!("vast_tree_walk.rs");
+        let production = source
+            .split("#[cfg(test)]")
+            .next()
+            .expect("VAST tree walk production source must precede tests");
+
+        assert!(
+            production.contains("pub fn try_ast_walk_preorder(")
+                && production.contains("pub fn try_ast_walk_postorder(")
+                && !production.contains(concat!("panic", "!("))
+                && !production.contains(".unwrap_or_else("),
+            "Fix: VAST traversal builders must expose checked release APIs and avoid production panics."
+        );
+    }
 }
 
 #[cfg(feature = "inventory-registry")]

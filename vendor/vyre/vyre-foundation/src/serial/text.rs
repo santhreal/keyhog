@@ -329,7 +329,8 @@ pub(crate) fn push_usize(out: &mut String, value: usize) {
     let mut idx = 0;
     let mut v = value;
     while v > 0 {
-        digits[idx] = b'0' + (v % 10) as u8;
+        let digit = u8::try_from(v % 10).map_or(0, |digit| digit);
+        digits[idx] = b'0' + digit;
         v /= 10;
         idx += 1;
     }

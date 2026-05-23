@@ -201,7 +201,7 @@ fn analyse_expr(expr: &Expr, hints: &PrecisionHints, count: &mut usize) {
                         bound <= std::f32::consts::FRAC_PI_4
                     }
                     TranscendentalOp::Exp => bound <= 1.0,
-                    TranscendentalOp::Ln => literal >= 1.0 && literal <= 2.0,
+                    TranscendentalOp::Ln => (1.0..=2.0).contains(&literal),
                 };
                 if in_range {
                     let digest = digest_of(expr);

@@ -6,10 +6,9 @@
 //! Every op here is a pure Category A composition over vyre-ops primitives.
 
 use crate::builder::{build_elementwise_binary, build_elementwise_unary, BuildOptions};
-use crate::region::{wrap_anonymous, wrap_child};
+use crate::region::wrap_anonymous;
 use crate::tensor_ref::{check_dtype, check_shape, check_unique_names, TensorRef, TensorRefError};
 use vyre::ir::{BinOp, BufferAccess, BufferDecl, DataType, Expr, Node, Program};
-use vyre_foundation::ir::model::expr::GeneratorRef;
 
 const JOIN_OP_ID: &str = "vyre-libs::math::algebra::join";
 const MEET_OP_ID: &str = "vyre-libs::math::algebra::meet";
@@ -197,6 +196,64 @@ pub fn try_bool_semiring_matmul(
                 name: out_ref.name.as_str().to_string(),
                 shape: out_ref.shape.to_vec(),
             })?;
+    if out_count <= 64 && inner <= 64 {
+        let mut stores = Vec::with_capacity(out_count as usize);
+        for row_idx in 0..rows {
+            for col_idx in 0..cols {
+                let mut cell_expr = Expr::u32(0);
+                for k_idx in 0..inner {
+                    let a_idx = row_idx
+                        .checked_mul(inner)
+                        .and_then(|base| base.checked_add(k_idx))
+                        .ok_or_else(|| TensorRefError::ElementCountOverflow {
+                            name: a_ref.name.as_str().to_string(),
+                            shape: a_ref.shape.to_vec(),
+                        })?;
+                    let b_idx = k_idx
+                        .checked_mul(cols)
+                        .and_then(|base| base.checked_add(col_idx))
+                        .ok_or_else(|| TensorRefError::ElementCountOverflow {
+                            name: b_ref.name.as_str().to_string(),
+                            shape: b_ref.shape.to_vec(),
+                        })?;
+                    cell_expr = Expr::bitor(
+                        cell_expr,
+                        Expr::select(
+                            Expr::ne(Expr::load(a, Expr::u32(a_idx)), Expr::u32(0)),
+                            Expr::select(
+                                Expr::ne(Expr::load(b, Expr::u32(b_idx)), Expr::u32(0)),
+                                Expr::u32(1),
+                                Expr::u32(0),
+                            ),
+                            Expr::u32(0),
+                        ),
+                    );
+                }
+                stores.push(Node::store(
+                    out,
+                    Expr::u32(row_idx * cols + col_idx),
+                    cell_expr,
+                ));
+            }
+        }
+        return Ok(Program::wrapped(
+            vec![
+                BufferDecl::storage(a, 0, BufferAccess::ReadOnly, DataType::U32)
+                    .with_count(a_count.max(1)),
+                BufferDecl::storage(b, 1, BufferAccess::ReadOnly, DataType::U32)
+                    .with_count(b_count.max(1)),
+                BufferDecl::output(out, 2, DataType::U32).with_count(out_count.max(1)),
+            ],
+            [1, 1, 1],
+            vec![wrap_anonymous(
+                BOOL_MATMUL_OP_ID,
+                vec![Node::if_then(
+                    Expr::eq(Expr::InvocationId { axis: 0 }, Expr::u32(0)),
+                    stores,
+                )],
+            )],
+        ));
+    }
     let cell = Expr::InvocationId { axis: 0 };
     let row = Expr::div(cell.clone(), Expr::u32(cols.max(1)));
     let col = Expr::rem(cell.clone(), Expr::u32(cols.max(1)));
@@ -259,22 +316,7 @@ pub fn try_bool_semiring_matmul(
             BufferDecl::output(out, 2, DataType::U32).with_count(out_count.max(1)),
         ],
         [64, 1, 1],
-        vec![wrap_anonymous(
-            BOOL_MATMUL_OP_ID,
-            vec![wrap_child(
-                vyre_primitives::math::scallop_join_wide::OP_ID,
-                GeneratorRef {
-                    name: BOOL_MATMUL_OP_ID.to_string(),
-                },
-                vec![wrap_child(
-                    vyre_primitives::math::scallop_join::OP_ID,
-                    GeneratorRef {
-                        name: BOOL_MATMUL_OP_ID.to_string(),
-                    },
-                    body,
-                )],
-            )],
-        )],
+        vec![wrap_anonymous(BOOL_MATMUL_OP_ID, body)],
     ))
 }
 
@@ -330,13 +372,14 @@ inventory::submit! {
             let a = [0x0000FFFFu32, 0xAAAAAAAA, 0x00000000, 0xFFFFFFFF];
             let b = [0xFFFF0000u32, 0x55555555, 0x00000000, 0x00000000];
             let to_bytes = |w: &[u32]| w.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<u8>>();
-            vec![vec![to_bytes(&a), to_bytes(&b), vec![0u8; 16]]]
+            vec![vec![to_bytes(&a), to_bytes(&b)]]
         }),
         expected_output: Some(|| {
             let expected = [0xFFFFFFFFu32, 0xFFFFFFFF, 0x00000000, 0xFFFFFFFF];
             let bytes = expected.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<u8>>();
             vec![vec![bytes]]
         }),
+        category: Some("math"),
     }
 }
 
@@ -348,13 +391,14 @@ inventory::submit! {
             let a = [0x0000FFFFu32, 0xAAAAAAAA, 0x00000000, 0xFFFFFFFF];
             let b = [0xFFFF0000u32, 0x55555555, 0x00000000, 0x00000000];
             let to_bytes = |w: &[u32]| w.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<u8>>();
-            vec![vec![to_bytes(&a), to_bytes(&b), vec![0u8; 16]]]
+            vec![vec![to_bytes(&a), to_bytes(&b)]]
         }),
         expected_output: Some(|| {
             let expected = [0x00000000u32, 0x00000000, 0x00000000, 0x00000000];
             let bytes = expected.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<u8>>();
             vec![vec![bytes]]
         }),
+        category: Some("math"),
     }
 }
 
@@ -366,13 +410,14 @@ inventory::submit! {
             let a = [10u32, 20, u32::MAX, u32::MAX - 1];
             let b = [1u32, 2, 3, 4];
             let to_bytes = |w: &[u32]| w.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<u8>>();
-            vec![vec![to_bytes(&a), to_bytes(&b), vec![0u8; 16]]]
+            vec![vec![to_bytes(&a), to_bytes(&b)]]
         }),
         expected_output: Some(|| {
             let expected = [11u32, 22, u32::MAX, u32::MAX];
             let bytes = expected.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<u8>>();
             vec![vec![bytes]]
         }),
+        category: Some("math"),
     }
 }
 
@@ -384,13 +429,14 @@ inventory::submit! {
             let a = [1u32, 0, 1, 0, 1, 0];
             let b = [0u32, 1, 1, 0, 0, 0];
             let to_bytes = |w: &[u32]| w.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<u8>>();
-            vec![vec![to_bytes(&a), to_bytes(&b), vec![0u8; 4 * 4]]]
+            vec![vec![to_bytes(&a), to_bytes(&b)]]
         }),
         expected_output: Some(|| {
             let expected = [0u32, 1, 1, 0];
             let bytes = expected.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<u8>>();
             vec![vec![bytes]]
         }),
+        category: Some("math"),
     }
 }
 
@@ -401,7 +447,7 @@ inventory::submit! {
         test_inputs: Some(|| {
             let input = [1u32, 2, 3, 4];
             let to_bytes = |w: &[u32]| w.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<u8>>();
-            vec![vec![to_bytes(&input), vec![0u8; 16]]]
+            vec![vec![to_bytes(&input)]]
         }),
         expected_output: Some(|| {
             // We'll let the reference interpreter verify the mix logic matches.
@@ -419,5 +465,6 @@ inventory::submit! {
             let bytes = expected.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<u8>>();
             vec![vec![bytes]]
         }),
+        category: Some("math"),
     }
 }

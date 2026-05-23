@@ -1,6 +1,10 @@
-//! Audit-fix A36 `vast/ref_classify.rs` extract.
+//! Explicit CPU oracle for VAST kind classification.
+//!
+//! Production classification must use the dispatchable `c11_classify_*`
+//! builders. This module exists for parity witnesses, corpus diagnosis, and
+//! conformance fixtures.
 
-#![allow(missing_docs)] // c-parser feature: A33-A36 split lost some leading doc comments; lint loud, fix surgically when revisiting docs.
+#![allow(missing_docs)] // Internal oracle helpers are documented at the owning module boundary.
 use crate::parsing::c::lex::tokens::*;
 
 use super::expr_shape::*;
@@ -8,6 +12,10 @@ use super::ref_decode_err::*;
 use super::ref_typedef::*;
 use super::*;
 
+#[deprecated(
+    note = "CPU oracle only; production VAST classification must dispatch c11_classify_vast_node_kinds* builders"
+)]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn try_reference_c11_classify_vast_node_kinds(
     vast_node_bytes: &[u8],
 ) -> Result<Vec<u8>, CReferenceDecodeError> {
@@ -19,8 +27,15 @@ pub fn try_reference_c11_classify_vast_node_kinds(
 
 /// CPU oracle for `c11_classify_vast_node_kinds`.
 #[must_use]
+#[deprecated(
+    note = "CPU oracle only; production VAST classification must dispatch c11_classify_vast_node_kinds* builders"
+)]
+#[allow(deprecated)]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn reference_c11_classify_vast_node_kinds(vast_node_bytes: &[u8]) -> Vec<u8> {
-    try_reference_c11_classify_vast_node_kinds(vast_node_bytes).unwrap_or_default()
+    try_reference_c11_classify_vast_node_kinds(vast_node_bytes).unwrap_or_else(|error| {
+        panic!("C VAST classify reference oracle received malformed input: {error}")
+    })
 }
 
 fn reference_c11_classify_vast_node_kinds_from_words(raw_vast_nodes: &[u32]) -> Vec<u8> {
@@ -66,6 +81,15 @@ fn reference_declarator_parent_override(
 }
 
 fn previous_sibling_idx(vast_nodes: &[u32], node_idx: usize) -> Option<usize> {
+    let direct = vast_nodes
+        .get(node_idx * VAST_NODE_STRIDE_U32 as usize + VAST_PREVIOUS_SIBLING_FIELD as usize)
+        .copied()
+        .unwrap_or(SENTINEL);
+    if let Ok(idx) = usize::try_from(direct) {
+        if idx < node_idx {
+            return Some(idx);
+        }
+    }
     let parent = vast_nodes
         .get(node_idx * VAST_NODE_STRIDE_U32 as usize + 1)
         .copied()

@@ -152,7 +152,7 @@ inventory::submit! {
             };
             // Real-valued sequence [1, 0, 0, 0] (impulse): all bins = 1+0i
             let input = f32_bytes(&[1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
-            vec![vec![input, vec![0u8; 32]]]
+            vec![vec![input]]
         }),
         expected_output: Some(|| {
             let f32_bytes = |w: &[f32]| {
@@ -161,6 +161,7 @@ inventory::submit! {
             // FFT of impulse = uniform [1, 1, 1, 1] across all bins.
             vec![vec![f32_bytes(&[1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0])]]
         }),
+        category: Some("math"),
     }
 }
 

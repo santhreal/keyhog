@@ -23,7 +23,10 @@ pub const DEFAULT_STRIP_MINE_TILE: u32 = 8;
 #[vyre_pass(
     name = "loop_strip_mine",
     requires = ["const_fold"],
-    invalidates = ["loop_unroll", "vectorization"]
+    invalidates = ["loop_unroll", "vectorization"],
+    phase = "loop",
+    boundary_class = "abi_preserving",
+    cost_model_family = "loop"
 )]
 pub struct LoopStripMine;
 
@@ -31,6 +34,12 @@ impl LoopStripMine {
     /// Skip programs without a strip-mining-eligible loop.
     #[must_use]
     fn analyze_impl(program: &Program) -> PassAnalysis {
+        // O(1) fast-path: no Loop in the cached stats bitset → no
+        // strip-mining work possible. Avoids the per-call recursive
+        // tree walk on programs that contain no loops at all.
+        if !program.stats().has_node_loop() {
+            return PassAnalysis::SKIP;
+        }
         if program
             .entry()
             .iter()
@@ -45,18 +54,16 @@ impl LoopStripMine {
     /// Rewrite every eligible loop.
     #[must_use]
     pub fn transform(program: Program) -> PassResult {
-        let scaffold = program.with_rewritten_entry(Vec::new());
         let mut changed = false;
-        let entry = program
-            .into_entry_vec()
-            .into_iter()
-            .map(|node| rewrite_node(node, &mut changed))
-            .collect();
-        PassResult {
-            program: scaffold.with_rewritten_entry(entry),
-            changed,
-        }
-    }}
+        let program = program.map_entry(|entry| {
+            entry
+                .into_iter()
+                .map(|node| rewrite_node(node, &mut changed))
+                .collect()
+        });
+        PassResult { program, changed }
+    }
+}
 
 fn rewrite_node(node: Node, changed: &mut bool) -> Node {
     let recursed = node_map::map_children(node, &mut |child| rewrite_node(child, changed));
@@ -116,7 +123,10 @@ fn strip_mine_if_eligible(node: Node, changed: &mut bool) -> Node {
     );
     let original_index = Expr::add(Expr::u32(from_lit), tile_offset.clone());
     let tiled_body = substitute_nodes(&body, &var, &original_index);
-    let guarded_body = vec![Node::if_then(Expr::lt(tile_offset, Expr::u32(trip_count)), tiled_body)];
+    let guarded_body = vec![Node::if_then(
+        Expr::lt(tile_offset, Expr::u32(trip_count)),
+        tiled_body,
+    )];
 
     *changed = true;
     Node::loop_for(
@@ -178,7 +188,10 @@ fn fresh_ident(base: &Ident, suffix: &str, used: &[Ident]) -> Ident {
 }
 
 fn names_in_nodes(nodes: &[Node]) -> Vec<Ident> {
-    let mut out = Vec::new();
+    // Lower bound: every Let/Assign at this level pushes one name;
+    // pre-size to the sibling count so the typical small body avoids
+    // grow-by-doubling. collect_names recurses and may push more.
+    let mut out = Vec::with_capacity(nodes.len());
     collect_names(nodes, &mut out);
     out
 }
@@ -255,7 +268,9 @@ fn collect_names_in_expr(expr: &Expr, out: &mut Vec<Ident>) {
             collect_names_in_expr(true_val, out);
             collect_names_in_expr(false_val, out);
         }
-        Expr::Cast { value, .. } => collect_names_in_expr(value, out),
+        Expr::Cast { value, .. } | Expr::SubgroupAdd { value } => {
+            collect_names_in_expr(value, out);
+        }
         Expr::Fma { a, b, c } => {
             collect_names_in_expr(a, out);
             collect_names_in_expr(b, out);
@@ -278,7 +293,6 @@ fn collect_names_in_expr(expr: &Expr, out: &mut Vec<Ident>) {
             collect_names_in_expr(value, out);
             collect_names_in_expr(lane, out);
         }
-        Expr::SubgroupAdd { value } => collect_names_in_expr(value, out),
         Expr::LitU32(_)
         | Expr::LitI32(_)
         | Expr::LitF32(_)
@@ -649,20 +663,22 @@ mod tests {
     #[test]
     fn analyze_skips_without_large_loop_and_runs_with_large_loop() {
         assert_eq!(
-            crate::optimizer::ProgramPass::analyze(&LoopStripMine, &program(vec![Node::store(
-                "out",
-                Expr::u32(0),
-                Expr::u32(1)
-            )])),
+            crate::optimizer::ProgramPass::analyze(
+                &LoopStripMine,
+                &program(vec![Node::store("out", Expr::u32(0), Expr::u32(1))])
+            ),
             PassAnalysis::SKIP
         );
         assert_eq!(
-            crate::optimizer::ProgramPass::analyze(&LoopStripMine, &program(vec![Node::loop_for(
-                "i",
-                Expr::u32(0),
-                Expr::u32(32),
-                vec![Node::store("out", Expr::var("i"), Expr::u32(1))],
-            )])),
+            crate::optimizer::ProgramPass::analyze(
+                &LoopStripMine,
+                &program(vec![Node::loop_for(
+                    "i",
+                    Expr::u32(0),
+                    Expr::u32(32),
+                    vec![Node::store("out", Expr::var("i"), Expr::u32(1))],
+                )])
+            ),
             PassAnalysis::RUN
         );
     }

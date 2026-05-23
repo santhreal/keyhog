@@ -20,11 +20,13 @@ mod async_dispatch;
 mod backend_impl;
 pub mod buffer;
 mod capabilities;
+mod device_buffer;
 pub mod emit;
 pub mod engine;
 mod executable_api;
 pub mod ext;
 pub mod megakernel;
+mod numeric;
 #[cfg(feature = "parity-testing")]
 mod parity_probe;
 pub mod pipeline;
@@ -32,7 +34,9 @@ pub mod runtime;
 pub mod spirv_backend;
 mod stats;
 mod thread_pool;
+mod wait_backoff;
 
+pub use device_buffer::{WgpuDeviceBuffer, WGPU_BACKEND_ID};
 pub use executable_api::WgpuIR;
 pub use stats::WgpuBackendStats;
 use std::hash::BuildHasherDefault;
@@ -66,6 +70,13 @@ pub struct WgpuBackend {
             BuildHasherDefault<rustc_hash::FxHasher>,
         >,
     >,
+    pub(crate) resident_pipeline_cache: Arc<
+        dashmap::DashMap<
+            (u64, u64, usize),
+            Arc<crate::pipeline::WgpuPipeline>,
+            BuildHasherDefault<rustc_hash::FxHasher>,
+        >,
+    >,
     pub(crate) validation_cache: Arc<vyre_driver::validation::ValidationCache>,
     pub(crate) shape_history: Arc<std::sync::Mutex<ShapeHistory>>,
     pub(crate) predicted_programs: Arc<
@@ -79,6 +90,13 @@ pub struct WgpuBackend {
         dashmap::DashMap<
             vyre_driver::BackendLayoutFingerprint,
             Arc<[Arc<wgpu::BindGroupLayout>]>,
+            BuildHasherDefault<rustc_hash::FxHasher>,
+        >,
+    >,
+    pub(crate) resident_handles: Arc<
+        dashmap::DashMap<
+            u64,
+            crate::buffer::GpuBufferHandle,
             BuildHasherDefault<rustc_hash::FxHasher>,
         >,
     >,

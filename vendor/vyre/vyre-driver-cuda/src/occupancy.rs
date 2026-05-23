@@ -63,7 +63,7 @@ impl OccupancyEstimate {
 /// exceeds `max_threads_per_block`). Otherwise the estimator takes the
 /// minimum of:
 ///   - register-pressure cap: `max_registers_per_sm / (regs_per_thread * workgroup_size)`
-///   - shared-memory cap: `shared_per_sm / shared_bytes_per_block` (best-effort)
+///   - shared-memory cap: `shared_per_sm / shared_bytes_per_block`
 ///   - thread-residence cap: `max_threads_per_sm / workgroup_size`
 #[must_use]
 pub fn estimate_occupancy(
@@ -78,9 +78,9 @@ pub fn estimate_occupancy(
     if workgroup_size == 0 || workgroup_size > caps.max_threads_per_block_u32() {
         return OccupancyEstimate::ZERO;
     }
-    let max_regs_block = u32::try_from(caps.max_registers_per_block).unwrap_or(0);
-    let max_regs_sm = u32::try_from(caps.max_registers_per_sm).unwrap_or(0);
-    let max_threads_sm = u32::try_from(caps.max_threads_per_sm).unwrap_or(0);
+    let max_regs_block = caps.max_registers_per_block_u32();
+    let max_regs_sm = caps.max_registers_per_sm_u32();
+    let max_threads_sm = caps.max_threads_per_sm_u32();
     let shared_per_block = caps.shared_memory_per_block_bytes();
 
     if max_regs_block == 0 || max_regs_sm == 0 || max_threads_sm == 0 {
@@ -88,7 +88,9 @@ pub fn estimate_occupancy(
     }
 
     // Per-block register requirement.
-    let regs_per_block = usage.regs_per_thread.saturating_mul(workgroup_size);
+    let Some(regs_per_block) = usage.regs_per_thread.checked_mul(workgroup_size) else {
+        return OccupancyEstimate::ZERO;
+    };
     if regs_per_block > max_regs_block {
         return OccupancyEstimate::ZERO;
     }
@@ -105,13 +107,7 @@ pub fn estimate_occupancy(
     let blocks_by_shared = if usage.shared_bytes_per_block == 0 {
         u32::MAX
     } else {
-        // Approximate per-SM shared budget as 4× per-block on modern
-        // devices (sm_75+). For the tighter bound used in production
-        // autotune the runtime can pass an exact `shared_per_sm` once
-        // probed; the conservative 4× factor keeps the estimate from
-        // being silently wrong on older arches.
-        let shared_per_sm = shared_per_block.saturating_mul(4);
-        shared_per_sm / usage.shared_bytes_per_block
+        caps.shared_memory_per_sm_bytes() / usage.shared_bytes_per_block
     };
 
     let blocks_per_sm = blocks_by_threads.min(blocks_by_regs).min(blocks_by_shared);
@@ -120,12 +116,15 @@ pub fn estimate_occupancy(
     }
 
     let warps_per_block = workgroup_size.div_ceil(warp);
-    let warps_per_sm = blocks_per_sm.saturating_mul(warps_per_block);
+    let Some(warps_per_sm) = blocks_per_sm.checked_mul(warps_per_block) else {
+        return OccupancyEstimate::ZERO;
+    };
     let max_warps_per_sm = max_threads_sm / warp;
     let occupancy_bps = if max_warps_per_sm == 0 {
         0
     } else {
-        ((warps_per_sm as u64 * 10_000) / max_warps_per_sm as u64).min(10_000) as u32
+        let numerator = u64::from(warps_per_sm) * 10_000;
+        (numerator / u64::from(max_warps_per_sm)).min(10_000) as u32
     };
 
     OccupancyEstimate {
@@ -165,6 +164,23 @@ pub fn pick_workgroup_size_for_occupancy(
         }
     }
     best.map(|(size, _)| size)
+}
+
+/// Maximum whole-grid block count that can be resident for a cooperative
+/// launch under the thread-residency ceiling alone.
+///
+/// CUDA cooperative kernels require every block in the grid to be resident at
+/// once. Register and shared-memory pressure can tighten this further at
+/// module-load time, but the thread ceiling is available from the probed device
+/// caps and catches impossible grids before the release path crosses the FFI
+/// boundary into `cuLaunchCooperativeKernel`.
+#[must_use]
+pub fn cooperative_thread_residency_block_limit(caps: &CudaDeviceCaps, workgroup_size: u32) -> u64 {
+    if workgroup_size == 0 || !caps.cooperative_launch || caps.compute_capability < (6, 0) {
+        return 0;
+    }
+    let blocks_per_sm = caps.max_threads_per_sm_u32() / workgroup_size;
+    u64::from(blocks_per_sm) * u64::from(caps.multi_processor_count_u32())
 }
 
 /// Decision returned by [`can_launch_concurrently`].
@@ -243,30 +259,52 @@ pub fn can_launch_concurrently(
             };
         }
     };
-    let max_threads_sm = u32::try_from(caps.max_threads_per_sm).unwrap_or(0);
+    let max_threads_sm = caps.max_threads_per_sm_u32();
     let max_warps_sm = max_threads_sm / warp;
     let warps_a = workgroup_a.div_ceil(warp);
     let warps_b = workgroup_b.div_ceil(warp);
-    if warps_a.saturating_add(warps_b) > max_warps_sm {
+    let Some(total_warps) = warps_a.checked_add(warps_b) else {
+        return ConcurrentLaunchDecision::Serialize {
+            reason: ConcurrentLaunchBlocker::WarpResidency,
+        };
+    };
+    if total_warps > max_warps_sm {
         return ConcurrentLaunchDecision::Serialize {
             reason: ConcurrentLaunchBlocker::WarpResidency,
         };
     }
 
-    let max_regs_sm = u32::try_from(caps.max_registers_per_sm).unwrap_or(0);
-    let regs_a = usage_a.regs_per_thread.saturating_mul(workgroup_a);
-    let regs_b = usage_b.regs_per_thread.saturating_mul(workgroup_b);
-    if regs_a.saturating_add(regs_b) > max_regs_sm {
+    let max_regs_sm = caps.max_registers_per_sm_u32();
+    let Some(regs_a) = usage_a.regs_per_thread.checked_mul(workgroup_a) else {
+        return ConcurrentLaunchDecision::Serialize {
+            reason: ConcurrentLaunchBlocker::RegisterPressure,
+        };
+    };
+    let Some(regs_b) = usage_b.regs_per_thread.checked_mul(workgroup_b) else {
+        return ConcurrentLaunchDecision::Serialize {
+            reason: ConcurrentLaunchBlocker::RegisterPressure,
+        };
+    };
+    let Some(total_regs) = regs_a.checked_add(regs_b) else {
+        return ConcurrentLaunchDecision::Serialize {
+            reason: ConcurrentLaunchBlocker::RegisterPressure,
+        };
+    };
+    if total_regs > max_regs_sm {
         return ConcurrentLaunchDecision::Serialize {
             reason: ConcurrentLaunchBlocker::RegisterPressure,
         };
     }
 
-    let shared_per_block = caps.shared_memory_per_block_bytes();
-    let shared_per_sm = shared_per_block.saturating_mul(4);
+    let shared_per_sm = caps.shared_memory_per_sm_bytes();
     let shared_a = usage_a.shared_bytes_per_block;
     let shared_b = usage_b.shared_bytes_per_block;
-    if shared_a.saturating_add(shared_b) > shared_per_sm {
+    let Some(total_shared) = shared_a.checked_add(shared_b) else {
+        return ConcurrentLaunchDecision::Serialize {
+            reason: ConcurrentLaunchBlocker::SharedMemory,
+        };
+    };
+    if total_shared > shared_per_sm {
         return ConcurrentLaunchDecision::Serialize {
             reason: ConcurrentLaunchBlocker::SharedMemory,
         };
@@ -290,14 +328,40 @@ mod tests {
             max_block_dim: [1024, 1024, 64],
             max_grid_dim: [i32::MAX, 65_535, 65_535],
             shared_memory_per_block: 128 * 1024,
+            shared_memory_per_sm: 256 * 1024,
             warp_size: 32,
             cooperative_launch: true,
             concurrent_kernels: true,
             async_engine_count: 2,
+            multi_processor_count: 170,
+            l2_cache_bytes: 96 * 1024 * 1024,
+            memory_clock_rate_khz: 14_000_000,
+            global_memory_bus_width_bits: 512,
             max_registers_per_block: 65_536,
             max_registers_per_sm: 65_536,
             max_threads_per_sm: 2048,
         }
+    }
+
+    #[test]
+    fn occupancy_production_paths_do_not_panic_on_release_capability_math() {
+        let source = include_str!("occupancy.rs");
+        let production = source
+            .split("#[cfg(test)]")
+            .next()
+            .expect("occupancy source must contain production section");
+        assert!(
+            !production.contains(concat!("panic", "!("))
+                && !production.contains(".unwrap_or_else(")
+                && !production.contains(".expect("),
+            "Fix: CUDA occupancy production arithmetic must return unrunnable/serialized decisions instead of panicking."
+        );
+        assert!(
+            production.contains("OccupancyEstimate::ZERO")
+                && production.contains("ConcurrentLaunchDecision::Serialize")
+                && production.contains("cooperative_thread_residency_block_limit"),
+            "Fix: CUDA occupancy must keep launch selection and cooperative residency on explicit non-panicking decision paths."
+        );
     }
 
     #[test]
@@ -324,6 +388,25 @@ mod tests {
         assert_eq!(busts, OccupancyEstimate::ZERO);
         let fits = estimate_occupancy(&caps, usage, 256);
         assert!(fits.is_runnable());
+    }
+
+    #[test]
+    fn estimate_zero_when_register_requirement_overflows() {
+        let mut caps = sm120_caps();
+        caps.max_threads_per_block = i32::MAX;
+        caps.max_threads_per_sm = i32::MAX;
+        caps.max_registers_per_block = i32::MAX;
+        caps.max_registers_per_sm = i32::MAX;
+        let usage = KernelResourceUsage {
+            regs_per_thread: u32::MAX,
+            shared_bytes_per_block: 0,
+        };
+        let est = estimate_occupancy(&caps, usage, 2);
+        assert_eq!(
+            est,
+            OccupancyEstimate::ZERO,
+            "Fix: CUDA occupancy must reject overflowing register products instead of saturating them into plausible resource pressure."
+        );
     }
 
     #[test]
@@ -379,6 +462,24 @@ mod tests {
     }
 
     #[test]
+    fn estimate_uses_probed_per_sm_shared_memory_not_block_multiplier() {
+        let mut caps = sm120_caps();
+        caps.shared_memory_per_block = 128 * 1024;
+        caps.shared_memory_per_sm = 192 * 1024;
+        let usage = KernelResourceUsage {
+            regs_per_thread: 16,
+            shared_bytes_per_block: 96 * 1024,
+        };
+
+        let est = estimate_occupancy(&caps, usage, 256);
+
+        assert_eq!(
+            est.blocks_per_sm, 2,
+            "Fix: CUDA occupancy must use probed per-SM shared memory instead of assuming a 4x per-block budget."
+        );
+    }
+
+    #[test]
     fn occupancy_bps_is_proportional_to_warps_per_sm() {
         let caps = sm120_caps();
         // High-pressure kernel: 64 regs/thread, 256 threads. Blocks/SM =
@@ -408,6 +509,17 @@ mod tests {
         };
         let chosen = pick_workgroup_size_for_occupancy(&caps, usage, &[32, 256]);
         assert_eq!(chosen, Some(32));
+    }
+
+    #[test]
+    fn cooperative_residency_limit_uses_sm_thread_ceiling() {
+        let caps = sm120_caps();
+        assert_eq!(
+            cooperative_thread_residency_block_limit(&caps, 256),
+            1_360,
+            "Fix: CUDA cooperative launch preflight must reject grids larger than blocks_per_sm * sm_count before calling cuLaunchCooperativeKernel."
+        );
+        assert_eq!(cooperative_thread_residency_block_limit(&caps, 0), 0);
     }
 
     // ── D5: concurrent-launch decision policy tests ─────────────────
@@ -502,5 +614,36 @@ mod tests {
         };
         let decision = can_launch_concurrently(&caps, shared, 128, shared, 128);
         assert_eq!(decision, ConcurrentLaunchDecision::Concurrent);
+    }
+
+    #[test]
+    fn co_launch_shared_memory_uses_exact_per_sm_limit() {
+        let mut caps = sm120_caps();
+        caps.shared_memory_per_sm = 160 * 1024;
+        let shared = KernelResourceUsage {
+            regs_per_thread: 16,
+            shared_bytes_per_block: 96 * 1024,
+        };
+
+        let decision = can_launch_concurrently(&caps, shared, 128, shared, 128);
+
+        assert_eq!(
+            decision,
+            ConcurrentLaunchDecision::Serialize {
+                reason: ConcurrentLaunchBlocker::SharedMemory
+            },
+            "Fix: CUDA concurrent-launch policy must reject co-resident shared-memory pressure using the probed SM budget, not a guessed multiplier."
+        );
+    }
+
+    #[test]
+    fn occupancy_arithmetic_is_checked_not_saturating() {
+        let source = include_str!("occupancy.rs");
+        assert!(
+            !source.contains(concat!(".", "saturating_add"))
+                && !source.contains(concat!(".", "saturating_mul"))
+                && !source.contains(concat!(".", "saturating_sub")),
+            "Fix: CUDA occupancy planning must use checked or proven-exact arithmetic, not saturating math that hides impossible resource states."
+        );
     }
 }

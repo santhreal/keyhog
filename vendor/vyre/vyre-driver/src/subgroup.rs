@@ -84,23 +84,65 @@ impl SubgroupCaps {
 /// Canonical lane offsets for a power-of-two full-subgroup tree reduction.
 #[must_use]
 pub fn reduction_offsets(subgroup_size: u32) -> Vec<u32> {
-    let mut offsets = Vec::with_capacity(if subgroup_size == 0 {
-        0
-    } else {
-        subgroup_size.ilog2() as usize
-    });
+    let mut offsets = Vec::new();
     reduction_offsets_into(subgroup_size, &mut offsets);
     offsets
 }
 
+/// Fallible canonical lane offsets for a full-subgroup tree reduction.
+///
+/// # Errors
+///
+/// Returns an error when the requested subgroup width cannot be rounded to a
+/// power-of-two reduction width or the output vector cannot reserve storage.
+pub fn try_reduction_offsets(subgroup_size: u32) -> Result<Vec<u32>, String> {
+    let mut offsets = Vec::new();
+    try_reduction_offsets_into(subgroup_size, &mut offsets)?;
+    Ok(offsets)
+}
+
 /// Write canonical reduction offsets into caller-owned storage.
 pub fn reduction_offsets_into(subgroup_size: u32, offsets: &mut Vec<u32>) {
+    try_reduction_offsets_into(subgroup_size, offsets)
+        .expect("subgroup reduction offset staging failed; use try_reduction_offsets_into to handle allocator failure or invalid subgroup width");
+}
+
+/// Fallibly write canonical reduction offsets into caller-owned storage.
+///
+/// # Errors
+///
+/// Returns an error when the subgroup width overflows power-of-two rounding or
+/// the output vector cannot reserve the required offsets.
+pub fn try_reduction_offsets_into(
+    subgroup_size: u32,
+    offsets: &mut Vec<u32>,
+) -> Result<(), String> {
     offsets.clear();
-    let mut width = subgroup_size.next_power_of_two() / 2;
+    let Some(rounded_width) = subgroup_size.checked_next_power_of_two() else {
+        return Err(format!(
+            "subgroup reduction width {subgroup_size} cannot be rounded to a power of two. Fix: clamp subgroup size to a valid backend-reported hardware width."
+        ));
+    };
+    let offset_count = if subgroup_size == 0 {
+        0
+    } else {
+        rounded_width.ilog2() as usize
+    };
+    if offsets.capacity() < offset_count {
+        offsets
+            .try_reserve_exact(offset_count - offsets.capacity())
+            .map_err(|error| {
+                format!(
+                    "subgroup reduction offsets could not reserve {offset_count} slot(s): {error}. Fix: reuse caller-owned offset storage or clamp subgroup size."
+                )
+            })?;
+    }
+    let mut width = rounded_width / 2;
     while width > 0 {
         offsets.push(width);
         width /= 2;
     }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -110,5 +152,22 @@ mod tests {
     #[test]
     fn all_enumerates_seven_ops() {
         assert_eq!(SubgroupOp::all().len(), 7);
+    }
+
+    #[test]
+    fn try_reduction_offsets_reuses_storage() {
+        let mut offsets = Vec::with_capacity(8);
+        let ptr = offsets.as_ptr();
+
+        try_reduction_offsets_into(32, &mut offsets).unwrap();
+
+        assert_eq!(offsets, [16, 8, 4, 2, 1]);
+        assert_eq!(offsets.as_ptr(), ptr);
+    }
+
+    #[test]
+    fn try_reduction_offsets_rejects_overflowing_rounding() {
+        let error = try_reduction_offsets(u32::MAX).unwrap_err();
+        assert!(error.contains("cannot be rounded to a power of two"));
     }
 }

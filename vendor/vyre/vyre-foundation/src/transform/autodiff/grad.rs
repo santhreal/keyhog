@@ -7,10 +7,16 @@
 
 use rustc_hash::FxHashMap;
 
-use crate::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
+use crate::ir::{BufferAccess, BufferDecl, DataType, Expr, Ident, Node, Program};
 
 use super::error::AutodiffError;
 use super::rules::{binop_adjoints, fma_adjoints, unop_adjoint};
+
+/// Per-forward-node pullback expression metadata.
+///
+/// Keys are stable per-transform pullback node ids in reverse-walk emission
+/// order. Values are the adjoint expression consumed by that forward statement.
+pub type PullbackMap = FxHashMap<usize, Expr>;
 
 /// Compute reverse-mode gradients for a forward Program.
 ///
@@ -38,101 +44,45 @@ pub fn grad(
     outputs: &[&str],
     inputs: &[&str],
 ) -> Result<Program, AutodiffError> {
-    // Validate buffer names exist.
-    let buf_names: Vec<String> = program
-        .buffers()
-        .iter()
-        .map(|b| b.name().to_string())
-        .collect();
-    for out in outputs {
-        if !buf_names.iter().any(|b| b == out) {
-            return Err(AutodiffError::BufferNotFound {
-                name: (*out).to_string(),
-            });
-        }
-    }
-    for inp in inputs {
-        if !buf_names.iter().any(|b| b == inp) {
-            return Err(AutodiffError::BufferNotFound {
-                name: (*inp).to_string(),
-            });
-        }
-    }
+    grad_with_pullback(program, outputs, inputs).map(|(program, _pullbacks)| program)
+}
 
-    // Build buffer declarations for the backward Program.
-    let mut back_buffers: Vec<BufferDecl> = Vec::new();
-    let mut next_binding = 0u32;
-
-    // Forward buffers become ReadOnly (we read activations + weights).
-    for fwd_buf in program.buffers() {
-        back_buffers.push(
-            BufferDecl::storage(
-                fwd_buf.name(),
-                next_binding,
-                BufferAccess::ReadOnly,
-                fwd_buf.element(),
-            )
-            .with_count(fwd_buf.count()),
-        );
-        next_binding += 1;
-    }
-
-    // Gradient buffers for outputs (seeded with 1.0, read internally).
-    let output_set: Vec<String> = outputs.iter().map(|s| s.to_string()).collect();
-    let mut grad_buf_binding: FxHashMap<String, u32> = FxHashMap::default();
-    for out_name in &output_set {
-        let grad_name = format!("grad_{out_name}");
-        let Some(fwd_buf) = program
-            .buffers()
-            .iter()
-            .find(|b| b.name() == out_name.as_str())
-        else {
-            continue;
-        };
-        back_buffers.push(
-            BufferDecl::storage(
-                &grad_name,
-                next_binding,
-                BufferAccess::ReadWrite,
-                DataType::F32,
-            )
-            .with_count(fwd_buf.count()),
-        );
-        grad_buf_binding.insert(grad_name, next_binding);
-        next_binding += 1;
-    }
-
-    // Gradient buffers for inputs (accumulated output).
-    let input_set: Vec<String> = inputs.iter().map(|s| s.to_string()).collect();
-    for inp_name in &input_set {
-        let grad_name = format!("grad_{inp_name}");
-        if grad_buf_binding.contains_key(&grad_name) {
-            // Input is also an output — already declared.
-            continue;
-        }
-        let Some(fwd_buf) = program
-            .buffers()
-            .iter()
-            .find(|b| b.name() == inp_name.as_str())
-        else {
-            continue;
-        };
-        back_buffers.push(
-            BufferDecl::storage(
-                &grad_name,
-                next_binding,
-                BufferAccess::ReadWrite,
-                DataType::F32,
-            )
-            .with_count(fwd_buf.count()),
-        );
-        grad_buf_binding.insert(grad_name, next_binding);
-        next_binding += 1;
-    }
+/// Compute reverse-mode gradients and return top-level pullback metadata.
+///
+/// # Errors
+///
+/// Returns `AutodiffError` if the Program contains unsupported control flow,
+/// non-differentiable expression nodes, or unknown input/output buffer names.
+pub fn grad_with_pullback(
+    program: &Program,
+    outputs: &[&str],
+    inputs: &[&str],
+) -> Result<(Program, PullbackMap), AutodiffError> {
+    validate_buffer_names(program, outputs, inputs)?;
+    let (back_buffers, output_set, input_set) = build_backward_buffers(program, outputs, inputs);
 
     // Build the backward body.
     let mut body: Vec<Node> = Vec::new();
     let i_expr = Expr::InvocationId { axis: 0 };
+    let mut pullbacks = PullbackMap::default();
+    let forward_nodes = program.entry();
+    let mut adjoint_env: AdjointEnv = AdjointEnv::new(&input_set);
+
+    // Reverse-mode execution must declare every local adjoint before any
+    // reverse contribution assigns to it. A previous implementation declared
+    // `_adj_*` inside the reversed `Let` handler, which meant downstream
+    // `Store` pullbacks could assign a local before declaration and then the
+    // later `Let` reset it to zero. Predeclaring locals makes the generated IR
+    // SSA-validator-friendly and preserves accumulated adjoints.
+    let mut local_targets = Vec::new();
+    collect_adjoint_targets(forward_nodes, &mut local_targets);
+    for name in local_targets {
+        let adj_name = adjoint_env.ensure_adjoint_var(name.as_str());
+        body.push(Node::Let {
+            name: adj_name.into(),
+            value: Expr::f32(0.0),
+        });
+    }
 
     // Phase 1: Seed — store 1.0 into each grad_<output>[i].
     for out_name in &output_set {
@@ -146,12 +96,16 @@ pub fn grad(
 
     // Phase 2: Reverse walk of forward body.
     // Collect the forward nodes, then process them in reverse order.
-    let forward_nodes = program.entry();
-    let mut adjoint_env: AdjointEnv = AdjointEnv::new(&input_set);
-
-    let reversed: Vec<&Node> = forward_nodes.iter().rev().collect();
-    for node in reversed {
-        emit_adjoint_node(node, &mut body, &mut adjoint_env, &output_set)?;
+    let mut next_pullback_id = 0usize;
+    for node in forward_nodes.iter().rev() {
+        emit_adjoint_node(
+            node,
+            &mut body,
+            &mut adjoint_env,
+            &output_set,
+            &mut pullbacks,
+            &mut next_pullback_id,
+        )?;
     }
 
     // Phase 3: Flush accumulated adjoints to grad_<input> buffers.
@@ -166,11 +120,75 @@ pub fn grad(
         }
     }
 
-    Ok(Program::wrapped(
-        back_buffers,
-        program.workgroup_size(),
-        body,
+    Ok((
+        Program::wrapped(back_buffers, program.workgroup_size(), body),
+        pullbacks,
     ))
+}
+
+fn validate_buffer_names(
+    program: &Program,
+    outputs: &[&str],
+    inputs: &[&str],
+) -> Result<(), AutodiffError> {
+    for name in outputs.iter().chain(inputs.iter()) {
+        if program
+            .buffers()
+            .iter()
+            .all(|buffer| buffer.name() != *name)
+        {
+            return Err(AutodiffError::BufferNotFound {
+                name: (*name).to_string(),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn build_backward_buffers(
+    program: &Program,
+    outputs: &[&str],
+    inputs: &[&str],
+) -> (Vec<BufferDecl>, Vec<String>, Vec<String>) {
+    let mut back_buffers = Vec::new();
+    let mut next_binding = 0u32;
+    for fwd_buf in program.buffers() {
+        back_buffers.push(
+            BufferDecl::storage(
+                fwd_buf.name(),
+                next_binding,
+                BufferAccess::ReadOnly,
+                fwd_buf.element(),
+            )
+            .with_count(fwd_buf.count()),
+        );
+        next_binding += 1;
+    }
+
+    let output_set: Vec<String> = outputs.iter().map(ToString::to_string).collect();
+    let input_set: Vec<String> = inputs.iter().map(ToString::to_string).collect();
+    let mut grad_buf_binding = FxHashMap::default();
+    for name in output_set.iter().chain(input_set.iter()) {
+        let grad_name = format!("grad_{name}");
+        if grad_buf_binding.contains_key(&grad_name) {
+            continue;
+        }
+        let Some(fwd_buf) = program
+            .buffers()
+            .iter()
+            .find(|buffer| buffer.name() == name.as_str())
+        else {
+            continue;
+        };
+        back_buffers.push(
+            BufferDecl::read_write(&grad_name, next_binding, DataType::F32)
+                .with_pipeline_live_out(true)
+                .with_count(fwd_buf.count()),
+        );
+        grad_buf_binding.insert(grad_name, next_binding);
+        next_binding += 1;
+    }
+    (back_buffers, output_set, input_set)
 }
 
 /// Environment tracking adjoint accumulation for each variable / buffer load.
@@ -215,12 +233,50 @@ impl AdjointEnv {
     }
 }
 
+fn collect_adjoint_targets(nodes: &[Node], out: &mut Vec<Ident>) {
+    for node in nodes {
+        match node {
+            Node::Let { name, .. } | Node::Assign { name, .. } => push_unique_ident(out, name),
+            Node::If {
+                then, otherwise, ..
+            } => {
+                collect_adjoint_targets(then, out);
+                collect_adjoint_targets(otherwise, out);
+            }
+            Node::Loop { body, .. } | Node::Block(body) => collect_adjoint_targets(body, out),
+            Node::Region { body, .. } => collect_adjoint_targets(body, out),
+            Node::Store { .. }
+            | Node::IndirectDispatch { .. }
+            | Node::AsyncLoad { .. }
+            | Node::AsyncStore { .. }
+            | Node::AsyncWait { .. }
+            | Node::Trap { .. }
+            | Node::Resume { .. }
+            | Node::Return
+            | Node::Barrier { .. }
+            | Node::Opaque(_) => {}
+        }
+    }
+}
+
+fn push_unique_ident(out: &mut Vec<Ident>, name: &Ident) {
+    if !out.iter().any(|existing| existing == name) {
+        out.push(name.clone());
+    }
+}
+
 /// Emit adjoint nodes for a single forward Node.
+#[expect(
+    clippy::too_many_lines,
+    reason = "autodiff node lowering is an exhaustive IR-node dispatch table; splitting it would scatter unsupported-control-flow errors"
+)]
 fn emit_adjoint_node(
     node: &Node,
     body: &mut Vec<Node>,
     env: &mut AdjointEnv,
     output_set: &[String],
+    pullbacks: &mut PullbackMap,
+    next_pullback_id: &mut usize,
 ) -> Result<(), AutodiffError> {
     match node {
         // Forward: let x = value
@@ -228,13 +284,10 @@ fn emit_adjoint_node(
         Node::Let { name, value } => {
             let var_name = name.as_str();
             let adj_var = env.ensure_adjoint_var(var_name);
-            // Initialize adjoint accumulator to 0 when absent.
-            body.push(Node::Let {
-                name: adj_var.clone().into(),
-                value: Expr::f32(0.0),
-            });
+            let adj_expr = Expr::Var(adj_var.into());
+            insert_pullback(pullbacks, next_pullback_id, adj_expr.clone());
             // Propagate adjoint through the expression tree.
-            emit_adjoint_expr(value, &Expr::Var(adj_var.into()), body, env)?;
+            emit_adjoint_expr(value, &adj_expr, body, env)?;
         }
         // Forward: store buf[idx] = value
         // Backward: adjoint of value comes from grad_buf[idx]
@@ -257,13 +310,16 @@ fn emit_adjoint_node(
                     // For now, treat as the accumulated adjoint.
                     Expr::f32(0.0)
                 };
+            insert_pullback(pullbacks, next_pullback_id, adj_expr.clone());
             emit_adjoint_expr(value, &adj_expr, body, env)?;
         }
         // Forward: x = value (reassignment)
         // Same as Let for adjoint purposes.
         Node::Assign { name, value } => {
             let adj_var = env.ensure_adjoint_var(name.as_str());
-            emit_adjoint_expr(value, &Expr::Var(adj_var.into()), body, env)?;
+            let adj_expr = Expr::Var(adj_var.into());
+            insert_pullback(pullbacks, next_pullback_id, adj_expr.clone());
+            emit_adjoint_expr(value, &adj_expr, body, env)?;
         }
         // Forward: if cond { then } else { otherwise }
         // Backward: route adjoint through the branch that was taken.
@@ -274,11 +330,25 @@ fn emit_adjoint_node(
         } => {
             let mut then_body = Vec::new();
             for n in then.iter().rev() {
-                emit_adjoint_node(n, &mut then_body, env, output_set)?;
+                emit_adjoint_node(
+                    n,
+                    &mut then_body,
+                    env,
+                    output_set,
+                    pullbacks,
+                    next_pullback_id,
+                )?;
             }
             let mut else_body = Vec::new();
             for n in otherwise.iter().rev() {
-                emit_adjoint_node(n, &mut else_body, env, output_set)?;
+                emit_adjoint_node(
+                    n,
+                    &mut else_body,
+                    env,
+                    output_set,
+                    pullbacks,
+                    next_pullback_id,
+                )?;
             }
             body.push(Node::If {
                 cond: cond.clone(),
@@ -296,7 +366,14 @@ fn emit_adjoint_node(
         } => {
             let mut adj_body = Vec::new();
             for n in loop_body.iter().rev() {
-                emit_adjoint_node(n, &mut adj_body, env, output_set)?;
+                emit_adjoint_node(
+                    n,
+                    &mut adj_body,
+                    env,
+                    output_set,
+                    pullbacks,
+                    next_pullback_id,
+                )?;
             }
             // Reverse iteration: for var in (to-1) downto from.
             // Emit as a forward loop that maps to reversed index.
@@ -315,7 +392,7 @@ fn emit_adjoint_node(
         // Block — unwrap and recurse.
         Node::Block(nodes) => {
             for n in nodes.iter().rev() {
-                emit_adjoint_node(n, body, env, output_set)?;
+                emit_adjoint_node(n, body, env, output_set, pullbacks, next_pullback_id)?;
             }
         }
         // Region — recurse into body.
@@ -326,7 +403,14 @@ fn emit_adjoint_node(
         } => {
             let mut adj_region_body = Vec::new();
             for n in region_body.iter().rev() {
-                emit_adjoint_node(n, &mut adj_region_body, env, output_set)?;
+                emit_adjoint_node(
+                    n,
+                    &mut adj_region_body,
+                    env,
+                    output_set,
+                    pullbacks,
+                    next_pullback_id,
+                )?;
             }
             body.push(Node::Region {
                 generator: generator.clone(),
@@ -356,7 +440,17 @@ fn emit_adjoint_node(
     Ok(())
 }
 
+fn insert_pullback(pullbacks: &mut PullbackMap, next_pullback_id: &mut usize, expr: Expr) {
+    let id = *next_pullback_id;
+    *next_pullback_id = next_pullback_id.saturating_add(1);
+    pullbacks.insert(id, expr);
+}
+
 /// Propagate adjoint through an expression tree, emitting accumulation nodes.
+#[expect(
+    clippy::too_many_lines,
+    reason = "autodiff expression cases are kept in one exhaustive match so new IR expression variants are reviewed in one place"
+)]
 fn emit_adjoint_expr(
     expr: &Expr,
     adjoint: &Expr,
@@ -394,10 +488,11 @@ fn emit_adjoint_expr(
             }
         }
         // Leaf: literal — zero gradient, nothing to propagate.
-        Expr::LitF32(_) | Expr::LitU32(_) | Expr::LitI32(_) | Expr::LitBool(_) => {}
-        // Leaf: invocation/workgroup/local IDs — not differentiable, but no error
-        // because they're typically used for indexing, not values.
-        Expr::InvocationId { .. }
+        Expr::LitF32(_)
+        | Expr::LitU32(_)
+        | Expr::LitI32(_)
+        | Expr::LitBool(_)
+        | Expr::InvocationId { .. }
         | Expr::WorkgroupId { .. }
         | Expr::LocalId { .. }
         | Expr::SubgroupLocalId

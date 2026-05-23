@@ -16,8 +16,7 @@ use crate::optimizer::algebraic_rules::{
 /// Used by FMA synthesis to avoid integer→float promotion.
 pub(crate) fn is_float_expr(expr: &Expr) -> bool {
     match expr {
-        Expr::LitF32(_) => true,
-        Expr::Fma { .. } => true,
+        Expr::LitF32(_) | Expr::Fma { .. } => true,
         // BinOp with float evidence produces float.
         Expr::BinOp { left, right, .. } => is_float_expr(left) || is_float_expr(right),
         // UnOp preserves type
@@ -80,19 +79,24 @@ pub(super) fn is_simple_pure(expr: &Expr) -> bool {
 ///
 /// Critical for GPU kernels where loop unrolling and index arithmetic
 /// generate patterns like `base + 0`, `stride * 1`, or `mask & 0`.
+#[expect(
+    clippy::too_many_lines,
+    clippy::match_same_arms,
+    reason = "binary identity table intentionally groups algebraic laws by operator family"
+)]
 pub(super) fn simplify_binop(op: crate::ir::BinOp, left: &Expr, right: &Expr) -> Option<Expr> {
     use crate::ir::BinOp;
 
     // Helper: is this a u32/i32/f32 zero?
     let is_zero = |e: &Expr| match e {
         Expr::LitU32(0) | Expr::LitI32(0) => true,
-        Expr::LitF32(v) => *v == 0.0,
+        Expr::LitF32(v) => lit_f32_eq(*v, 0.0),
         _ => false,
     };
     // Helper: is this a u32/i32/f32 one?
     let is_one = |e: &Expr| match e {
         Expr::LitU32(1) | Expr::LitI32(1) => true,
-        Expr::LitF32(v) => *v == 1.0,
+        Expr::LitF32(v) => lit_f32_eq(*v, 1.0),
         _ => false,
     };
 
@@ -330,7 +334,7 @@ pub(super) fn simplify_binop(op: crate::ir::BinOp, left: &Expr, right: &Expr) ->
             // separate multiplications differs from one fused
             // multiply.
             if let (
-                Some(_),
+                Some(()),
                 Expr::BinOp {
                     op: BinOp::Add,
                     left: a,
@@ -351,7 +355,7 @@ pub(super) fn simplify_binop(op: crate::ir::BinOp, left: &Expr, right: &Expr) ->
                     left: a,
                     right: b,
                 },
-                Some(_),
+                Some(()),
             ) = (left, lit_int(right))
             {
                 if lit_int(a).is_some() || lit_int(b).is_some() {
@@ -364,7 +368,7 @@ pub(super) fn simplify_binop(op: crate::ir::BinOp, left: &Expr, right: &Expr) ->
 
             // ─── Sign-preserving distributive expansion for subtraction (ROADMAP A33) ───
             if let (
-                Some(_),
+                Some(()),
                 Expr::BinOp {
                     op: BinOp::Sub,
                     left: a,
@@ -386,7 +390,7 @@ pub(super) fn simplify_binop(op: crate::ir::BinOp, left: &Expr, right: &Expr) ->
                     left: a,
                     right: b,
                 },
-                Some(_),
+                Some(()),
             ) = (left, lit_int(right))
             {
                 if lit_int(a).is_some() || lit_int(b).is_some() {
@@ -414,10 +418,10 @@ pub(super) fn simplify_binop(op: crate::ir::BinOp, left: &Expr, right: &Expr) ->
             if matches!(left, Expr::LitI32(-1)) {
                 return Some(Expr::negate(right.clone()));
             }
-            if matches!(right, Expr::LitF32(v) if *v == -1.0) {
+            if matches!(right, Expr::LitF32(v) if lit_f32_eq(*v, -1.0)) {
                 return Some(Expr::negate(left.clone()));
             }
-            if matches!(left, Expr::LitF32(v) if *v == -1.0) {
+            if matches!(left, Expr::LitF32(v) if lit_f32_eq(*v, -1.0)) {
                 return Some(Expr::negate(right.clone()));
             }
 
@@ -444,7 +448,7 @@ pub(super) fn simplify_binop(op: crate::ir::BinOp, left: &Expr, right: &Expr) ->
         // Maps to a single GPU SFU instruction (4 cycles) instead of
         // sqrt + fdiv (8+32 = 40 cycles). Critical for normalization
         // kernels (LayerNorm, RMSNorm).
-        BinOp::Div if matches!(left, Expr::LitF32(v) if *v == 1.0) => {
+        BinOp::Div if matches!(left, Expr::LitF32(v) if lit_f32_eq(*v, 1.0)) => {
             if let Expr::UnOp {
                 op: crate::ir::UnOp::Sqrt,
                 operand,
@@ -574,7 +578,7 @@ pub(super) fn simplify_binop(op: crate::ir::BinOp, left: &Expr, right: &Expr) ->
         //   max(x, u32::MAX) → u32::MAX
         // These need only the static type bounds, not full range
         // analysis; full range-fact-driven folds will land beside the
-        // weir range pass (A16 / A35 stronger variant) when that
+        // downstream range pass (A16 / A35 stronger variant) when that
         // substrate is wired into the optimizer.
         BinOp::Min if matches!(right, Expr::LitU32(u32::MAX)) => Some(left.clone()),
         BinOp::Min if matches!(left, Expr::LitU32(u32::MAX)) => Some(right.clone()),
@@ -711,11 +715,11 @@ pub(super) fn fold_mod_lookbehind(
     changed: &mut bool,
 ) -> Vec<crate::ir::Node> {
     use crate::ir::{Expr, Node};
-    use std::collections::HashMap;
+    use rustc_hash::FxHashMap;
     use std::sync::Arc;
 
     let mut out = Vec::with_capacity(nodes.len());
-    let mut local_lits = HashMap::new();
+    let mut local_lits: FxHashMap<crate::ir::Ident, u32> = FxHashMap::default();
 
     for node in nodes {
         match node {
@@ -725,7 +729,9 @@ pub(super) fn fold_mod_lookbehind(
                     local_lits.insert(name.clone(), *c);
                 } else if let Expr::LitI32(c) = &new_value {
                     if *c >= 0 {
-                        local_lits.insert(name.clone(), *c as u32);
+                        if let Ok(value) = u32::try_from(*c) {
+                            local_lits.insert(name.clone(), value);
+                        }
                     }
                 }
                 out.push(Node::Let {
@@ -803,7 +809,7 @@ pub(super) fn fold_mod_lookbehind(
 
 fn rewrite_expr_for_mod(
     expr: &crate::ir::Expr,
-    local_lits: &std::collections::HashMap<crate::ir::Ident, u32>,
+    local_lits: &rustc_hash::FxHashMap<crate::ir::Ident, u32>,
     changed: &mut bool,
 ) -> crate::ir::Expr {
     use crate::ir::{BinOp, Expr};
@@ -827,4 +833,9 @@ fn rewrite_expr_for_mod(
     };
     let cow = crate::optimizer::rewrite::rewrite_expr(expr, &mut transformer);
     cow.into_owned()
+}
+
+#[inline]
+fn lit_f32_eq(value: f32, expected: f32) -> bool {
+    value.to_bits() == expected.to_bits()
 }

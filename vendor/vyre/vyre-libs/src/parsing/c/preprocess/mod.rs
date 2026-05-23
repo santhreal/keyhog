@@ -1,69 +1,84 @@
 //! C11 preprocessor passes.
 
+#[cfg(any(test, feature = "cpu-parity"))]
+use crate::parsing::c::lex::tokens::TOK_PREPROC;
 use crate::parsing::c::lex::tokens::{
-    TOK_PP_DEFINE, TOK_PP_ELIF, TOK_PP_ELSE, TOK_PP_ENDIF, TOK_PP_ERROR, TOK_PP_IDENT, TOK_PP_IF,
-    TOK_PP_IFDEF, TOK_PP_IFNDEF, TOK_PP_INCLUDE, TOK_PP_INCLUDE_NEXT, TOK_PP_LINE, TOK_PP_NULL,
-    TOK_PP_PRAGMA, TOK_PP_SCCS, TOK_PP_UNDEF, TOK_PP_WARNING, TOK_PREPROC,
+    TOK_PP_DEFINE, TOK_PP_ELIF, TOK_PP_ELIFDEF, TOK_PP_ELIFNDEF, TOK_PP_ELSE, TOK_PP_EMBED,
+    TOK_PP_ENDIF, TOK_PP_ERROR, TOK_PP_IDENT, TOK_PP_IF, TOK_PP_IFDEF, TOK_PP_IFNDEF,
+    TOK_PP_IMPORT, TOK_PP_INCLUDE, TOK_PP_INCLUDE_NEXT, TOK_PP_LINE, TOK_PP_NULL, TOK_PP_PRAGMA,
+    TOK_PP_SCCS, TOK_PP_UNDEF, TOK_PP_WARNING,
 };
 
 /// Preprocessor side-effect metadata.
 pub mod effects;
 /// Macro-expansion kernel.
 pub mod expansion;
-/// Macro-expansion source-byte materialization helpers.
-pub mod materialization;
-/// Include source-manager ABI.
-pub mod source;
-/// Token synthesis helpers for macro stringification and token paste.
-pub mod synthesis;
-/// GPU directive-metadata kernel — replaces the CPU
-/// `reference_c_preprocessor_directive_metadata` for production paths.
-/// Phase 17a: directive kind classification. Phase 17b will add the
-/// shunting-yard conditional evaluator in the same module.
-pub mod gpu_directive_metadata;
-/// GPU `#ifdef` / `#ifndef` evaluator. Phase 17b.1 of the directive
-/// metadata pipeline. Composes with `gpu_directive_metadata` (which
-/// runs first to populate `directive_kinds`) and runs second to fill
-/// the `ifdef`/`ifndef` rows of `directive_values`.
-pub mod gpu_ifdef_value;
-/// GPU integer-literal scanner. Phase 17b.2: standalone scanner kernel
-/// for testing the literal-parse logic in isolation; phase 17b.4 will
-/// inline the same logic into the `#if` expression evaluator.
-pub mod gpu_int_literal_scan;
 /// GPU char-constant scanner. Phase 17b.3a: prefix tolerance + simple
 /// escape table. 17b.3b adds octal / hex / UCN numeric escapes in the
 /// same kernel.
 pub mod gpu_char_constant_scan;
-/// GPU `#if` / `#elif` expression evaluator. Phase 17b.4: per-thread
-/// iterative shunting-yard parser using fixed-depth value/operator
-/// stacks. Composes the literal scan, char-constant scan, and
-/// defined-name lookup logic. Last piece of 17b.
-pub mod gpu_if_expression;
+#[cfg(test)]
+mod gpu_char_constant_scan_tests;
 /// GPU comment-strip mask. Phase 17b.5: per-byte mask `1=comment,
 /// 0=code` covering `//` line comments and `/*…*/` block comments.
 /// Composes with `gpu_line_splice_classify` via mask-AND for the
 /// pre-lex byte filter.
 pub mod gpu_comment_strip_mask;
+#[cfg(test)]
+mod gpu_comment_strip_mask_tests;
 /// GPU `#define` row parser. Phase 17b.6: per `TOK_PREPROC` token of
 /// kind `TOK_PP_DEFINE`, extracts macro name + optional arg-list +
 /// replacement body byte spans. Per-thread, fully parallel.
 pub mod gpu_define_parse;
+#[cfg(test)]
+mod gpu_define_parse_tests;
+/// GPU directive-metadata kernel — replaces the CPU
+/// `reference_c_preprocessor_directive_metadata` for production paths.
+/// Phase 17a: directive kind classification. Phase 17b will add the
+/// shunting-yard conditional evaluator in the same module.
+pub mod gpu_directive_metadata;
+/// GPU `#if` / `#elif` expression evaluator. Phase 17b.4: per-thread
+/// iterative shunting-yard parser using fixed-depth value/operator
+/// stacks. Composes the literal scan, char-constant scan, and
+/// defined-name lookup logic. Last piece of 17b.
+pub mod gpu_if_expression;
+/// ABI helpers for the GPU `#if` / `#elif` expression evaluator.
+pub mod gpu_if_expression_abi;
+#[cfg(test)]
+mod gpu_if_expression_tests;
+/// GPU `#ifdef` / `#ifndef` evaluator. Phase 17b.1 of the directive
+/// metadata pipeline. Composes with `gpu_directive_metadata` (which
+/// runs first to populate `directive_kinds`) and runs second to fill
+/// the `ifdef`/`ifndef` rows of `directive_values`.
+pub mod gpu_ifdef_value;
+#[cfg(test)]
+mod gpu_ifdef_value_tests;
 /// GPU `#include` row parser. Phase 17b.7: per `TOK_PREPROC` token of
 /// kind `TOK_PP_INCLUDE` / `TOK_PP_INCLUDE_NEXT`, extracts the path
 /// byte span and `<…>` vs `"…"` flag. Per-thread, fully parallel.
 pub mod gpu_include_parse;
-/// GPU `#undef` row parser. Per `TOK_PREPROC` token of kind
-/// `TOK_PP_UNDEF`, extracts the macro-name byte span. Per-thread,
-/// fully parallel. Replaces the previous workaround of routing
-/// `#undef` rows through `gpu_define_parse` (which has a 6-byte
-/// keyword-length offset baked in for `#define`).
-pub mod gpu_undef_parse;
+/// GPU integer-literal scanner. Phase 17b.2: standalone scanner kernel
+/// for testing the literal-parse logic in isolation; phase 17b.4 will
+/// inline the same logic into the `#if` expression evaluator.
+pub mod gpu_int_literal_scan;
 /// GPU-resident preprocessor pipeline orchestration. Phase 18 of the
 /// v0.4 plan: composes every kernel above into the host-side flow that
 /// `vyre-frontend-c::tu_host` calls. Lives here (not in
 /// vyre-frontend-c) so the unit/roundtrip tests don't have to drag in
 /// the wgpu/vyre-debug dev-dep stack.
 pub mod gpu_pipeline;
+/// GPU `#undef` row parser. Per `TOK_PREPROC` token of kind
+/// `TOK_PP_UNDEF`, extracts the macro-name byte span. Per-thread,
+/// fully parallel. Replaces the previous workaround of routing
+/// `#undef` rows through `gpu_define_parse` (which has a 6-byte
+/// keyword-length offset baked in for `#define`).
+pub mod gpu_undef_parse;
+/// Macro-expansion source-byte materialization helpers.
+pub mod materialization;
+/// Include source-manager ABI.
+pub mod source;
+/// Token synthesis helpers for macro stringification and token paste.
+pub mod synthesis;
 
 /// Source bytes after C translation phase 2 line splicing.
 ///
@@ -169,6 +184,14 @@ pub enum CPreprocessorDirectiveKind {
     Ident,
     /// System `#sccs`.
     Sccs,
+    /// `#embed` (C23): bring file contents into the TU as initializers.
+    Embed,
+    /// `#elifdef` (C23): shorthand for `#elif defined(...)`.
+    Elifdef,
+    /// `#elifndef` (C23): shorthand for `#elif !defined(...)`.
+    Elifndef,
+    /// `#import` (clang/Objective-C): include-once form.
+    Import,
 }
 
 impl CPreprocessorDirectiveKind {
@@ -193,6 +216,10 @@ impl CPreprocessorDirectiveKind {
             Self::Warning => TOK_PP_WARNING,
             Self::Ident => TOK_PP_IDENT,
             Self::Sccs => TOK_PP_SCCS,
+            Self::Embed => TOK_PP_EMBED,
+            Self::Elifdef => TOK_PP_ELIFDEF,
+            Self::Elifndef => TOK_PP_ELIFNDEF,
+            Self::Import => TOK_PP_IMPORT,
         }
     }
 }
@@ -228,6 +255,17 @@ impl core::fmt::Display for CPreprocessorError {
 }
 
 impl std::error::Error for CPreprocessorError {}
+
+pub(crate) fn c_directive_payload<'a>(
+    row: &'a [u8],
+    directive: CPreprocessorDirective,
+) -> Result<&'a [u8], CPreprocessorError> {
+    row.get(directive.payload_start..directive.logical_end)
+        .ok_or(CPreprocessorError {
+            offset: directive.payload_start.min(row.len()),
+            message: "preprocessor directive payload span is outside the logical row. Fix: pass phase-2 directive spans from the same row bytes.",
+        })
+}
 
 /// Return the physical byte length of one logical preprocessing directive row.
 ///
@@ -333,6 +371,10 @@ fn classify_phase2_preprocessor_directive(
         b"warning" => CPreprocessorDirectiveKind::Warning,
         b"ident" => CPreprocessorDirectiveKind::Ident,
         b"sccs" => CPreprocessorDirectiveKind::Sccs,
+        b"embed" => CPreprocessorDirectiveKind::Embed,
+        b"elifdef" => CPreprocessorDirectiveKind::Elifdef,
+        b"elifndef" => CPreprocessorDirectiveKind::Elifndef,
+        b"import" => CPreprocessorDirectiveKind::Import,
         _ => {
             return Err(CPreprocessorError {
                 offset: keyword_start,
@@ -360,6 +402,10 @@ fn classify_phase2_preprocessor_directive(
 /// Returns a diagnostic when token streams are inconsistent, a directive span
 /// is outside `source`, or the current payload evaluator cannot parse a
 /// conditional expression.
+#[deprecated(
+    note = "CPU reference oracle only; production C preprocessing must use the GPU directive metadata pipeline"
+)]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn reference_c_preprocessor_directive_metadata(
     tok_types: &[u32],
     tok_starts: &[u32],
@@ -441,9 +487,7 @@ fn conditional_directive_value(
     directive: CPreprocessorDirective,
     defined_macros: &[&[u8]],
 ) -> Result<Option<u32>, CPreprocessorError> {
-    let payload = row
-        .get(directive.payload_start..directive.logical_end)
-        .unwrap_or_default();
+    let payload = c_directive_payload(row, directive)?;
     match directive.kind {
         CPreprocessorDirectiveKind::If | CPreprocessorDirectiveKind::Elif => Ok(Some(u32::from(
             PreprocessorExprParser {
@@ -521,4 +565,27 @@ pub(super) fn is_directive_ident_continue(byte: u8) -> bool {
 #[inline]
 pub(super) fn is_c_ident_start(byte: u8) -> bool {
     byte.is_ascii_alphabetic() || byte == b'_'
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{c_directive_payload, CPreprocessorDirective, CPreprocessorDirectiveKind};
+
+    #[test]
+    fn directive_payload_rejects_corrupt_span_instead_of_defaulting_empty() {
+        let directive = CPreprocessorDirective {
+            kind: CPreprocessorDirectiveKind::If,
+            keyword_start: 1,
+            keyword_len: 2,
+            payload_start: 8,
+            logical_end: 4,
+        };
+        let err = c_directive_payload(b"#if 1", directive)
+            .expect_err("corrupt directive spans must fail loudly");
+        assert_eq!(err.offset, 5);
+        assert!(
+            err.message.contains("payload span is outside"),
+            "error must explain the corrupted payload span"
+        );
+    }
 }

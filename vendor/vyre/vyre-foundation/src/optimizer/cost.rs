@@ -100,8 +100,16 @@ impl CostCertificate {
     pub fn for_program(program: &Program) -> Self {
         let stats = program.stats();
         let mut divergence_score = 0u64;
-        for node in program.entry().iter() {
-            count_divergent_patterns(node, &mut divergence_score);
+        // Divergent shapes are `if invocation_id == K { ... }`. If the
+        // program has no If at all, there is nothing to score and the
+        // O(N) preorder walk can be skipped entirely. CostCertificate
+        // is built per-pass when enforce_cost_monotone is on, so this
+        // saves tens of redundant walks per scheduler iteration on
+        // programs that contain no Ifs.
+        if stats.has_node_if() {
+            for node in program.entry() {
+                count_divergent_patterns(node, &mut divergence_score);
+            }
         }
         Self {
             node_count: stats.node_count,
@@ -159,7 +167,7 @@ impl CostCertificate {
     /// whether a `ProgramPass::transform` rewrite is allowed to land silently.
     ///
     /// A pass that intentionally trades one dimension for another (atomic
-    /// ops down, memory ops up — e.g. fusing two atomic_or RMWs into a single
+    /// ops down, memory ops up — e.g. fusing two `atomic_or` RMWs into a single
     /// gather + or — store) is expected to opt out via
     /// `RefusalReason::CostIncrease`; if it does not, this method's `false`
     /// return is the scheduler's signal to refuse the rewrite.
@@ -242,7 +250,6 @@ fn is_invocation_id_eq_constant(cond: &Expr) -> bool {
             is_invocation_id_expr(left) && matches!(**right, Expr::LitU32(_))
                 || is_invocation_id_expr(right) && matches!(**left, Expr::LitU32(_))
         }
-        Expr::BinOp { .. } => false,
         _ => false,
     }
 }

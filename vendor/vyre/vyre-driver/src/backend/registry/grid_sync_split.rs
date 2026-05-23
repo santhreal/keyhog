@@ -2,13 +2,12 @@
 
 use std::collections::HashSet;
 
-use smallvec::SmallVec;
 use vyre_foundation::ir::OpId;
 use vyre_foundation::ir::Program;
 
 use crate::backend::{
-    BackendError, CompiledPipeline, DispatchConfig, OutputBuffers, PendingDispatch,
-    Resource, TimedDispatchResult, VyreBackend,
+    BackendError, CompiledPipeline, DispatchConfig, OutputBuffers, PendingDispatch, Resource,
+    TimedDispatchResult, VyreBackend,
 };
 
 pub(super) fn wrap_grid_sync_split(backend: Box<dyn VyreBackend>) -> Box<dyn VyreBackend> {
@@ -34,14 +33,18 @@ impl VyreBackend for GridSyncSplitBackend {
         self.inner.supported_ops()
     }
 
+    fn allows_host_grid_sync_split(&self) -> bool {
+        self.inner.allows_host_grid_sync_split()
+    }
+
     fn dispatch(
         &self,
         program: &Program,
         inputs: &[Vec<u8>],
         config: &DispatchConfig,
     ) -> Result<Vec<Vec<u8>>, BackendError> {
-        if crate::grid_sync::contains_grid_sync(program) && !self.inner.supports_grid_sync() {
-            let borrowed: SmallVec<[&[u8]; 8]> = inputs.iter().map(Vec::as_slice).collect();
+        if self.should_split_grid_sync(program) {
+            let borrowed = borrowed_inputs_from_owned(inputs)?;
             return crate::grid_sync::dispatch_with_grid_sync_split(
                 self.inner.as_ref(),
                 program,
@@ -58,7 +61,7 @@ impl VyreBackend for GridSyncSplitBackend {
         inputs: &[&[u8]],
         config: &DispatchConfig,
     ) -> Result<Vec<Vec<u8>>, BackendError> {
-        if crate::grid_sync::contains_grid_sync(program) && !self.inner.supports_grid_sync() {
+        if self.should_split_grid_sync(program) {
             return crate::grid_sync::dispatch_with_grid_sync_split(
                 self.inner.as_ref(),
                 program,
@@ -75,21 +78,13 @@ impl VyreBackend for GridSyncSplitBackend {
         inputs: &[&[u8]],
         config: &DispatchConfig,
     ) -> Result<TimedDispatchResult, BackendError> {
-        if crate::grid_sync::contains_grid_sync(program) && !self.inner.supports_grid_sync() {
-            let started = std::time::Instant::now();
-            let outputs = crate::grid_sync::dispatch_with_grid_sync_split(
+        if self.should_split_grid_sync(program) {
+            return crate::grid_sync::dispatch_with_grid_sync_split_timed(
                 self.inner.as_ref(),
                 program,
                 inputs,
                 config,
-            )?;
-            return Ok(TimedDispatchResult {
-                outputs,
-                wall_ns: started.elapsed().as_nanos() as u64,
-                device_ns: None,
-                enqueue_ns: None,
-                wait_ns: None,
-            });
+            );
         }
         self.inner.dispatch_borrowed_timed(program, inputs, config)
     }
@@ -101,16 +96,14 @@ impl VyreBackend for GridSyncSplitBackend {
         config: &DispatchConfig,
         outputs: &mut OutputBuffers,
     ) -> Result<(), BackendError> {
-        if crate::grid_sync::contains_grid_sync(program) && !self.inner.supports_grid_sync() {
-            let result = crate::grid_sync::dispatch_with_grid_sync_split(
+        if self.should_split_grid_sync(program) {
+            return crate::grid_sync::dispatch_with_grid_sync_split_into(
                 self.inner.as_ref(),
                 program,
                 inputs,
                 config,
-            )?;
-            outputs.clear();
-            outputs.extend(result);
-            return Ok(());
+                outputs,
+            );
         }
         self.inner
             .dispatch_borrowed_into(program, inputs, config, outputs)
@@ -121,7 +114,7 @@ impl VyreBackend for GridSyncSplitBackend {
         program: &Program,
         config: &DispatchConfig,
     ) -> Result<Option<std::sync::Arc<dyn CompiledPipeline>>, BackendError> {
-        if crate::grid_sync::contains_grid_sync(program) && !self.inner.supports_grid_sync() {
+        if self.should_split_grid_sync(program) {
             return Ok(None);
         }
         self.inner.compile_native(program, config)
@@ -143,6 +136,27 @@ impl VyreBackend for GridSyncSplitBackend {
         self.inner.upload_resident(resource, bytes)
     }
 
+    fn upload_resident_many(&self, uploads: &[(&Resource, &[u8])]) -> Result<(), BackendError> {
+        self.inner.upload_resident_many(uploads)
+    }
+
+    fn upload_resident_at(
+        &self,
+        resource: &Resource,
+        dst_offset_bytes: usize,
+        bytes: &[u8],
+    ) -> Result<(), BackendError> {
+        self.inner
+            .upload_resident_at(resource, dst_offset_bytes, bytes)
+    }
+
+    fn upload_resident_at_many(
+        &self,
+        uploads: &[(&Resource, usize, &[u8])],
+    ) -> Result<(), BackendError> {
+        self.inner.upload_resident_at_many(uploads)
+    }
+
     fn free_resident(&self, resource: Resource) -> Result<(), BackendError> {
         self.inner.free_resident(resource)
     }
@@ -153,13 +167,16 @@ impl VyreBackend for GridSyncSplitBackend {
         resources: &[Resource],
         config: &DispatchConfig,
     ) -> Result<TimedDispatchResult, BackendError> {
-        if crate::grid_sync::contains_grid_sync(program) && !self.inner.supports_grid_sync() {
-            return Err(BackendError::UnsupportedFeature {
-                name: "resident grid-sync split dispatch".to_string(),
-                backend: self.inner.id().to_string(),
-            });
+        if self.should_split_grid_sync(program) {
+            return crate::grid_sync::dispatch_resident_with_grid_sync_split_timed(
+                self.inner.as_ref(),
+                program,
+                resources,
+                config,
+            );
         }
-        self.inner.dispatch_resident_timed(program, resources, config)
+        self.inner
+            .dispatch_resident_timed(program, resources, config)
     }
 
     fn dispatch_async(
@@ -168,8 +185,8 @@ impl VyreBackend for GridSyncSplitBackend {
         inputs: &[Vec<u8>],
         config: &DispatchConfig,
     ) -> Result<Box<dyn PendingDispatch>, BackendError> {
-        if crate::grid_sync::contains_grid_sync(program) && !self.inner.supports_grid_sync() {
-            let borrowed: SmallVec<[&[u8]; 8]> = inputs.iter().map(Vec::as_slice).collect();
+        if self.should_split_grid_sync(program) {
+            let borrowed = borrowed_inputs_from_owned(inputs)?;
             let outputs = crate::grid_sync::dispatch_with_grid_sync_split(
                 self.inner.as_ref(),
                 program,
@@ -189,7 +206,7 @@ impl VyreBackend for GridSyncSplitBackend {
         inputs: &[&[u8]],
         config: &DispatchConfig,
     ) -> Result<Box<dyn PendingDispatch>, BackendError> {
-        if crate::grid_sync::contains_grid_sync(program) && !self.inner.supports_grid_sync() {
+        if self.should_split_grid_sync(program) {
             let outputs = crate::grid_sync::dispatch_with_grid_sync_split(
                 self.inner.as_ref(),
                 program,
@@ -284,15 +301,60 @@ impl VyreBackend for GridSyncSplitBackend {
     }
 }
 
+impl GridSyncSplitBackend {
+    fn should_split_grid_sync(&self, program: &Program) -> bool {
+        crate::grid_sync::contains_grid_sync(program)
+            && !self.inner.supports_grid_sync()
+            && self.inner.allows_host_grid_sync_split()
+    }
+}
+
+fn borrowed_inputs_from_owned(inputs: &[Vec<u8>]) -> Result<Vec<&[u8]>, BackendError> {
+    let mut borrowed = Vec::new();
+    if borrowed.capacity() < inputs.len() {
+        borrowed
+            .try_reserve_exact(inputs.len() - borrowed.capacity())
+            .map_err(|error| BackendError::InvalidProgram {
+                fix: format!(
+                    "Fix: failed to reserve {} borrowed grid-sync input views for registry wrapper dispatch: {error}. Use borrowed dispatch directly or shard the host-side split.",
+                    inputs.len()
+                ),
+            })?;
+    }
+    borrowed.extend(inputs.iter().map(Vec::as_slice));
+    Ok(borrowed)
+}
+
 #[cfg(test)]
 mod tests {
     use super::wrap_grid_sync_split;
     use crate::backend::registry::registered_backends;
-    use crate::{BackendError, DispatchConfig, VyreBackend};
+    use crate::{BackendError, DispatchConfig, Resource, VyreBackend};
     use smallvec::SmallVec;
     use std::sync::{Arc, Mutex};
     use vyre_foundation::ir::{BufferDecl, DataType, Node, Program};
     use vyre_foundation::memory_model::MemoryOrdering;
+
+    #[test]
+    fn registry_grid_sync_wrapper_uses_hardened_fallible_split_paths() {
+        let source = include_str!("grid_sync_split.rs");
+        let production = source
+            .split("#[cfg(test)]")
+            .next()
+            .expect("registry grid-sync split production source must precede tests");
+
+        assert!(
+            production.contains("fn borrowed_inputs_from_owned")
+                && production.contains("try_reserve_exact")
+                && production.contains("dispatch_with_grid_sync_split_timed"),
+            "Fix: registry grid-sync wrapper must use fallible borrowed-input staging and the hardened shared timed split path."
+        );
+        assert!(
+            !production.contains("SmallVec::with_capacity")
+                && !production.contains(".as_nanos() as u64"),
+            "Fix: registry grid-sync wrapper must not keep infallible input staging or lossy timing conversion."
+        );
+    }
 
     #[test]
     fn vyre_core_alone_sees_no_backends() {
@@ -451,6 +513,68 @@ mod tests {
         );
     }
 
+    struct ResidentUploadProbe {
+        uploads: Mutex<Vec<(u64, usize, usize)>>,
+    }
+
+    impl super::super::super::private::Sealed for ResidentUploadProbe {}
+
+    impl VyreBackend for ResidentUploadProbe {
+        fn id(&self) -> &'static str {
+            "resident-upload-probe"
+        }
+
+        fn dispatch(
+            &self,
+            _program: &Program,
+            _inputs: &[Vec<u8>],
+            _config: &DispatchConfig,
+        ) -> Result<Vec<Vec<u8>>, BackendError> {
+            Err(BackendError::new(
+                "resident upload forwarding test must not dispatch programs.",
+            ))
+        }
+
+        fn upload_resident_at_many(
+            &self,
+            uploads: &[(&Resource, usize, &[u8])],
+        ) -> Result<(), BackendError> {
+            let mut captured = self.uploads.lock().map_err(BackendError::poisoned_lock)?;
+            for &(resource, offset, bytes) in uploads {
+                let Resource::Resident(handle) = resource else {
+                    return Err(BackendError::new(
+                        "resident upload forwarding test expected resident handles.",
+                    ));
+                };
+                captured.push((*handle, offset, bytes.len()));
+            }
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn registered_backend_wrapper_forwards_ranged_resident_uploads() {
+        let probe = Arc::new(ResidentUploadProbe {
+            uploads: Mutex::new(Vec::new()),
+        });
+        let backend = wrap_grid_sync_split(Box::new(ArcBackend {
+            inner: Arc::clone(&probe),
+        }));
+
+        backend
+            .upload_resident_at_many(&[(&Resource::Resident(7), 12, &[1, 2, 3])])
+            .expect("Fix: grid-sync split wrapper must forward resident ranged uploads");
+
+        assert_eq!(
+            probe
+                .uploads
+                .lock()
+                .expect("Fix: resident upload probe mutex must not be poisoned")
+                .as_slice(),
+            &[(7, 12, 3)]
+        );
+    }
+
     struct ArcBackend<T: VyreBackend + 'static> {
         inner: Arc<T>,
     }
@@ -480,8 +604,83 @@ mod tests {
             self.inner.dispatch_borrowed(program, inputs, config)
         }
 
+        fn upload_resident_at_many(
+            &self,
+            uploads: &[(&Resource, usize, &[u8])],
+        ) -> Result<(), BackendError> {
+            self.inner.upload_resident_at_many(uploads)
+        }
+
         fn supports_grid_sync(&self) -> bool {
             self.inner.supports_grid_sync()
         }
+
+        fn allows_host_grid_sync_split(&self) -> bool {
+            self.inner.allows_host_grid_sync_split()
+        }
+    }
+
+    struct GridSyncSplitOptOutProbe {
+        calls: Mutex<usize>,
+    }
+
+    impl super::super::super::private::Sealed for GridSyncSplitOptOutProbe {}
+
+    impl VyreBackend for GridSyncSplitOptOutProbe {
+        fn id(&self) -> &'static str {
+            "grid-sync-split-opt-out-probe"
+        }
+
+        fn dispatch(
+            &self,
+            _program: &Program,
+            _inputs: &[Vec<u8>],
+            _config: &DispatchConfig,
+        ) -> Result<Vec<Vec<u8>>, BackendError> {
+            Err(BackendError::new(
+                "owned dispatch should not run for this test. Fix: keep the borrowed path selected.",
+            ))
+        }
+
+        fn dispatch_borrowed(
+            &self,
+            program: &Program,
+            _inputs: &[&[u8]],
+            _config: &DispatchConfig,
+        ) -> Result<Vec<Vec<u8>>, BackendError> {
+            assert!(
+                crate::grid_sync::contains_grid_sync(program),
+                "split opt-out backends must receive the original GridSync program"
+            );
+            *self.calls.lock().map_err(BackendError::poisoned_lock)? += 1;
+            Ok(vec![vec![13]])
+        }
+
+        fn allows_host_grid_sync_split(&self) -> bool {
+            false
+        }
+    }
+
+    #[test]
+    fn registered_backend_wrapper_preserves_grid_sync_when_backend_opts_out_of_host_split() {
+        let probe = Arc::new(GridSyncSplitOptOutProbe {
+            calls: Mutex::new(0),
+        });
+        let backend = wrap_grid_sync_split(Box::new(ArcBackend {
+            inner: Arc::clone(&probe),
+        }));
+
+        let outputs = backend
+            .dispatch_borrowed(&grid_sync_program(), &[], &DispatchConfig::default())
+            .expect("Fix: split opt-out backend must receive original dispatch");
+
+        assert_eq!(outputs, vec![vec![13]]);
+        assert_eq!(
+            *probe
+                .calls
+                .lock()
+                .expect("Fix: split opt-out probe mutex must not be poisoned"),
+            1
+        );
     }
 }

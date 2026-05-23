@@ -124,5 +124,6 @@ inventory::submit! {
                 vec![31, 197, 39, 55, 31, 197, 39, 56],
             ]]
         }),
+        category: Some("nn"),
     }
 }

@@ -10,8 +10,9 @@
 //!
 //! 1. **Repeat** — same fingerprint as the immediate predecessor
 //!    (covers tight loops dispatching the same kernel).
-//! 2. **Cycle of length N** — fingerprint = the one N steps ago
-//!    (covers attention's Q, K, V, scale, softmax, attend cycle).
+//! 2. **Cycle of length N** — fingerprint = the one N steps ago, even when
+//!    only a partial next cycle has been observed (covers attention's Q, K, V,
+//!    scale, softmax, attend cycle before the second full cycle completes).
 //! 3. **None** — history too sparse to predict; runtime skips the
 //!    prefetch this iteration.
 //!
@@ -88,6 +89,15 @@ impl ShapeHistory {
         self.len == 0
     }
 
+    /// True when the retained history window contains `fingerprint`.
+    ///
+    /// This lets backend-side prediction caches evict cloned predicted
+    /// programs that can no longer be predicted by the bounded history.
+    #[must_use]
+    pub fn contains(&self, fingerprint: &ShapeFingerprint) -> bool {
+        (0..self.len).any(|idx| self.get(idx) == *fingerprint)
+    }
+
     fn get(&self, logical_idx: usize) -> ShapeFingerprint {
         debug_assert!(logical_idx < self.len);
         self.entries[(self.start + logical_idx) % MAX_HISTORY]
@@ -98,10 +108,10 @@ impl ShapeHistory {
     ///
     /// Strategy:
     /// 1. If the last two entries are equal, predict another repeat.
-    /// 2. Otherwise, look for the smallest cycle length
-    ///    `N in 2..=len/2` such that the last `N` entries equal the
-    ///    `N` before that — predict the entry that started the
-    ///    current cycle (history[len - N]).
+    /// 2. Otherwise, look for the smallest cycle length `N` such that every
+    ///    retained entry with an entry `N` positions earlier matches it.
+    ///    This predicts partial cycles as soon as one lag agrees, e.g.
+    ///    `A,B,C,A,B -> C`, instead of waiting for `A,B,C,A,B,C`.
     /// 3. No prediction.
     #[must_use]
     pub fn predict_next(&self) -> Option<ShapeFingerprint> {
@@ -113,22 +123,19 @@ impl ShapeHistory {
         if n >= 2 && self.get(n - 1) == self.get(n - 2) {
             return Some(self.get(n - 1));
         }
-        // Strategy 2: cycle of length 2..=n/2.
-        for cycle in 2..=(n / 2) {
-            let suffix_start = n - cycle;
-            let prior_start = suffix_start.checked_sub(cycle)?;
+        // Strategy 2: cycle of length 2..n. Partial-cycle detection matters
+        // for prefetch: after A,B,C,A,B the next useful fingerprint is C, and
+        // waiting for A,B,C,A,B,C loses one dispatch worth of overlap.
+        for cycle in 2..n {
             let mut matches = true;
-            for i in 0..cycle {
-                if self.get(suffix_start + i) != self.get(prior_start + i) {
+            for i in cycle..n {
+                if self.get(i) != self.get(i - cycle) {
                     matches = false;
                     break;
                 }
             }
             if matches {
-                // Cycle confirmed; predict the entry one position
-                // into the next cycle (which equals the entry at
-                // prior_start).
-                return Some(self.get(prior_start));
+                return Some(self.get(n - cycle));
             }
         }
         None
@@ -191,6 +198,26 @@ mod tests {
     }
 
     #[test]
+    fn partial_three_step_cycle_is_predicted_before_second_cycle_completes() {
+        let mut h = ShapeHistory::new();
+        h.record(fp(1));
+        h.record(fp(2));
+        h.record(fp(3));
+        h.record(fp(1));
+        h.record(fp(2));
+        assert_eq!(h.predict_next(), Some(fp(3)));
+    }
+
+    #[test]
+    fn partial_long_cycle_prefetches_next_phase() {
+        let mut h = ShapeHistory::new();
+        for seed in [10, 20, 30, 40, 10, 20, 30] {
+            h.record(fp(seed));
+        }
+        assert_eq!(h.predict_next(), Some(fp(40)));
+    }
+
+    #[test]
     fn no_pattern_means_no_prediction() {
         let mut h = ShapeHistory::new();
         h.record(fp(1));
@@ -209,5 +236,8 @@ mod tests {
         assert_eq!(h.len(), MAX_HISTORY);
         // Earliest entry is fp(5), latest is fp(MAX_HISTORY+4).
         assert_eq!(h.latest(), Some(&fp((MAX_HISTORY + 4) as u32)));
+        assert!(!h.contains(&fp(0)));
+        assert!(h.contains(&fp(5)));
+        assert!(h.contains(&fp((MAX_HISTORY + 4) as u32)));
     }
 }

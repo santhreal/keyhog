@@ -2,10 +2,10 @@ use super::*;
 
 pub(super) fn extend(
     out: &mut Vec<Node>,
-    vast_nodes: &str,
+    _vast_nodes: &str,
     out_typed_vast_nodes: &str,
-    num_nodes: Expr,
-    t: Expr,
+    _num_nodes: Expr,
+    _t: Expr,
     base: Expr,
 ) {
     out.extend(vec![

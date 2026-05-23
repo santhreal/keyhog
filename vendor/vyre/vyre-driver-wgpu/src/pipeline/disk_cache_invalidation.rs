@@ -1,7 +1,10 @@
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
+#[cfg(test)]
+use std::sync::{Mutex, OnceLock};
 
 pub(crate) fn invalidate_impacted(
+    dispatcher: &dyn vyre_self_substrate::optimizer::dispatcher::OptimizerDispatcher,
     intervention_mask: &[u32],
     rule_adj: &[u32],
     state: &[u32],
@@ -13,6 +16,7 @@ pub(crate) fn invalidate_impacted(
 ) -> std::io::Result<()> {
     let dir = disk_pipeline_cache_dir();
     let impact_mask = vyre_driver::cache_invalidation::impacted_entries(
+        dispatcher,
         intervention_mask,
         rule_adj,
         state,
@@ -20,7 +24,8 @@ pub(crate) fn invalidate_impacted(
         n,
         max_iterations,
         pipeline_lineage_cell,
-    );
+    )
+    .map_err(|error| std::io::Error::new(std::io::ErrorKind::Other, error.to_string()))?;
 
     for (i, &is_impacted) in impact_mask.iter().enumerate() {
         if is_impacted != 0 {
@@ -55,13 +60,40 @@ fn remove_cache_entry_file(path: &Path) -> std::io::Result<()> {
 }
 
 pub(crate) fn cache_entry_path(dir: &Path, key: &str, suffix: &str) -> PathBuf {
-    let mut file_name = String::with_capacity(key.len() + suffix.len());
+    let file_name_len = key.len().checked_add(suffix.len()).unwrap_or_else(|| {
+        panic!(
+            "pipeline disk-cache file name length overflowed usize. Fix: reject oversized cache keys before path construction."
+        )
+    });
+    let mut file_name = String::with_capacity(file_name_len);
     file_name.push_str(key);
     file_name.push_str(suffix);
     dir.join(file_name)
 }
 
+#[cfg(test)]
+static TEST_DISK_PIPELINE_CACHE_ROOT: OnceLock<Mutex<Option<PathBuf>>> = OnceLock::new();
+
+#[cfg(test)]
+pub(crate) fn set_test_disk_pipeline_cache_root(path: Option<PathBuf>) -> Option<PathBuf> {
+    let mut guard = TEST_DISK_PIPELINE_CACHE_ROOT
+        .get_or_init(|| Mutex::new(None))
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    std::mem::replace(&mut *guard, path)
+}
+
 pub(crate) fn disk_pipeline_cache_dir() -> PathBuf {
+    #[cfg(test)]
+    if let Some(root) = TEST_DISK_PIPELINE_CACHE_ROOT
+        .get_or_init(|| Mutex::new(None))
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone()
+    {
+        return root.join("pipeline");
+    }
+
     std::env::var_os("VYRE_CACHE_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|| {

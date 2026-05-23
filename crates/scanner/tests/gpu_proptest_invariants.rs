@@ -135,11 +135,7 @@ fn collect_keys(results: &[Vec<RawMatch>], input: &str) -> BTreeSet<FindingKey> 
 /// `gpu_ac_smoke.rs`).
 fn arb_chunk_text() -> impl Strategy<Value = String> {
     proptest::collection::vec(
-        prop_oneof![
-            32u8..=126u8,
-            Just(b'\n'),
-            Just(b'\t'),
-        ],
+        prop_oneof![32u8..=126u8, Just(b'\n'), Just(b'\t'),],
         1..=4096,
     )
     .prop_map(|bytes| String::from_utf8(bytes).expect("ASCII bytes are valid UTF-8"))
@@ -150,13 +146,7 @@ fn arb_chunk_text() -> impl Strategy<Value = String> {
 /// hits, regex may or may not confirm" code path.
 fn arb_chunk_text_with_prefix_seeds() -> impl Strategy<Value = String> {
     (
-        proptest::collection::vec(
-            prop_oneof![
-                32u8..=126u8,
-                Just(b'\n'),
-            ],
-            1..=2048,
-        ),
+        proptest::collection::vec(prop_oneof![32u8..=126u8, Just(b'\n'),], 1..=2048),
         proptest::collection::vec(
             proptest::sample::select(vec![
                 "AKIA",
@@ -176,7 +166,9 @@ fn arb_chunk_text_with_prefix_seeds() -> impl Strategy<Value = String> {
         ),
         proptest::collection::vec(
             proptest::collection::vec(
-                proptest::sample::select(vec![b'A', b'B', b'C', b'D', b'E', b'1', b'2', b'3', b'4', b'5']),
+                proptest::sample::select(vec![
+                    b'A', b'B', b'C', b'D', b'E', b'1', b'2', b'3', b'4', b'5',
+                ]),
                 10..=40,
             ),
             0..=10,

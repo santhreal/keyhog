@@ -77,17 +77,17 @@ pub fn record_hit_to_ring_hierarchical_with(
                 Expr::u32(0),
             )),
         ),
-        Node::let_bind(
-            "leader_base_slot",
-            Expr::select(
-                Expr::eq(Expr::invocation_local_x(), Expr::u32(0)),
+        Node::let_bind("leader_base_slot", Expr::u32(0)),
+        Node::if_then(
+            Expr::eq(Expr::subgroup_local_id(), Expr::u32(0)),
+            vec![Node::assign(
+                "leader_base_slot",
                 Expr::atomic_add(
                     bindings.queue_state,
                     Expr::u32(queue_state_word::HIT_HEAD as u32),
                     Expr::var("subgroup_hit_count"),
                 ),
-                Expr::u32(0),
-            ),
+            )],
         ),
         Node::let_bind(
             "global_hit_base",
@@ -96,7 +96,7 @@ pub fn record_hit_to_ring_hierarchical_with(
         Node::let_bind(
             "lane_lower_mask",
             Expr::sub(
-                Expr::shl(Expr::u32(1), Expr::invocation_local_x()),
+                Expr::shl(Expr::u32(1), Expr::subgroup_local_id()),
                 Expr::u32(1),
             ),
         ),
@@ -116,10 +116,9 @@ pub fn record_hit_to_ring_hierarchical_with(
                 Expr::var(is_hit_var),
                 Expr::lt(
                     Expr::var("hit_slot"),
-                    Expr::atomic_add(
+                    Expr::load(
                         bindings.queue_state,
                         Expr::u32(queue_state_word::HIT_CAPACITY as u32),
-                        Expr::u32(0),
                     ),
                 ),
             ),
@@ -164,6 +163,10 @@ mod tests {
         let store_count = count_stores(&nodes);
         assert_eq!(store_count, 4);
         assert!(contains_subgroup(&nodes));
+        assert!(
+            contains_subgroup_local_id(&nodes),
+            "subgroup aggregation must elect one leader per subgroup, not only workgroup lane 0"
+        );
     }
 
     fn count_stores(nodes: &[Node]) -> usize {
@@ -194,5 +197,66 @@ mod tests {
                 }
             )
         })
+    }
+
+    fn contains_subgroup_local_id(nodes: &[Node]) -> bool {
+        nodes.iter().any(|node| match node {
+            Node::Let { value, .. } => expr_contains_subgroup_local_id(value),
+            Node::Store { index, value, .. } => {
+                expr_contains_subgroup_local_id(index) || expr_contains_subgroup_local_id(value)
+            }
+            Node::If {
+                cond,
+                then,
+                otherwise,
+            } => {
+                expr_contains_subgroup_local_id(cond)
+                    || contains_subgroup_local_id(then)
+                    || contains_subgroup_local_id(otherwise)
+            }
+            Node::Block(body) | Node::Loop { body, .. } => contains_subgroup_local_id(body),
+            Node::Region { body, .. } => contains_subgroup_local_id(body),
+            _ => false,
+        })
+    }
+
+    fn expr_contains_subgroup_local_id(expr: &Expr) -> bool {
+        match expr {
+            Expr::SubgroupLocalId => true,
+            Expr::BinOp { left, right, .. } => {
+                expr_contains_subgroup_local_id(left) || expr_contains_subgroup_local_id(right)
+            }
+            Expr::UnOp { operand, .. } => expr_contains_subgroup_local_id(operand),
+            Expr::Select {
+                cond,
+                true_val,
+                false_val,
+            } => {
+                expr_contains_subgroup_local_id(cond)
+                    || expr_contains_subgroup_local_id(true_val)
+                    || expr_contains_subgroup_local_id(false_val)
+            }
+            Expr::Cast { value, .. } | Expr::SubgroupBallot { cond: value } => {
+                expr_contains_subgroup_local_id(value)
+            }
+            Expr::SubgroupShuffle { value, lane } => {
+                expr_contains_subgroup_local_id(value) || expr_contains_subgroup_local_id(lane)
+            }
+            Expr::SubgroupAdd { value } => expr_contains_subgroup_local_id(value),
+            Expr::Load { index, .. } => expr_contains_subgroup_local_id(index),
+            Expr::Atomic {
+                index,
+                expected,
+                value,
+                ..
+            } => {
+                expr_contains_subgroup_local_id(index)
+                    || expected
+                        .as_deref()
+                        .is_some_and(expr_contains_subgroup_local_id)
+                    || expr_contains_subgroup_local_id(value)
+            }
+            _ => false,
+        }
     }
 }

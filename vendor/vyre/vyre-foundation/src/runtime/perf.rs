@@ -1,9 +1,14 @@
+use rustc_hash::FxHashMap;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::time::Instant;
 
 thread_local! {
-    static METRICS: RefCell<HashMap<&'static str, u64>> = RefCell::new(HashMap::new());
+    // FxHashMap (FxHashBuilder) replaces the default SipHash-backed
+    // HashMap so per-PerfScope::finish hashes cost ~10ns instead of
+    // ~50ns. Optimizer pipelines call into roughly two perf scopes per
+    // pass × ~120 passes per optimize() — the savings compound.
+    static METRICS: RefCell<FxHashMap<&'static str, u64>> = RefCell::new(FxHashMap::default());
 }
 
 /// RAII guard returned by [`span`].
@@ -69,7 +74,7 @@ pub fn span(name: &'static str) -> SpanGuard {
 
 /// Retrieve all accumulated metrics for the current thread.
 pub fn get_metrics() -> HashMap<&'static str, u64> {
-    METRICS.with(|metrics| metrics.borrow().clone())
+    METRICS.with(|metrics| metrics.borrow().iter().map(|(k, v)| (*k, *v)).collect())
 }
 
 /// Reset all accumulated metrics for the current thread.

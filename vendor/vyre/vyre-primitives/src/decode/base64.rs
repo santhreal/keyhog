@@ -19,7 +19,11 @@ fn blocks_for_len(input_len: u32) -> u32 {
 /// Decoded capacity for a padded base64 input.
 #[must_use]
 pub fn decoded_capacity(input_len: u32) -> u32 {
-    blocks_for_len(input_len).saturating_mul(3)
+    blocks_for_len(input_len).checked_mul(3).unwrap_or_else(|| {
+        panic!(
+            "vyre base64_decode input_len={input_len} overflows decoded capacity. Fix: shard the payload before GPU dispatch."
+        )
+    })
 }
 
 fn clamp_lookup(name: &str, table: &str) -> Vec<Node> {

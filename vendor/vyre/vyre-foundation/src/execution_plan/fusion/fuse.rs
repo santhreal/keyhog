@@ -1,15 +1,12 @@
 //! Core `fuse_programs` family + multi-program implementation.
 
 use rustc_hash::{FxHashMap, FxHashSet};
-use std::sync::Arc;
 
 use crate::execution_plan::SchedulingPolicy;
-use crate::ir::{BufferAccess, BufferDecl, Expr, Ident, Node, Program};
+use crate::ir::{BufferAccess, BufferDecl, Ident, Node, Program};
 
-use super::collectors::{
-    collect_atomic_targets_from_node, collect_load_targets_from_node,
-    collect_store_targets_from_node,
-};
+use super::alpha_rename::push_alpha_renamed_arm_entry_node;
+use super::collectors::collect_buffer_targets;
 use super::divergence::has_divergent_invocation_gated_store;
 use super::helpers::{fallback_composition_key, upgrade_buffer_access};
 use super::{FusionError, FusionOverDispatchError, FusionSelfAliasingError};
@@ -33,6 +30,10 @@ pub fn fuse_programs(programs: &[Program]) -> Result<Program, FusionError> {
 ///
 /// For a single program this returns that value directly (no deep clone).
 /// Multi-arm batches delegate to the same implementation as [`fuse_programs`].
+///
+/// # Errors
+///
+/// Returns [`FusionError`] under the same conditions as [`fuse_programs`].
 #[inline]
 #[must_use]
 pub fn fuse_programs_vec(mut programs: Vec<Program>) -> Result<Program, FusionError> {
@@ -49,30 +50,7 @@ pub fn fuse_programs_vec(mut programs: Vec<Program>) -> Result<Program, FusionEr
 }
 
 fn fuse_programs_multi(programs: &[Program]) -> Result<Program, FusionError> {
-    // ------------------------------------------------------------------
-    // F-IR-23: self-composition gate  (O(P) single pass)
-    // ------------------------------------------------------------------
-    let mut seen_op_ids: FxHashMap<String, bool> = FxHashMap::default();
-    for prog in programs {
-        let key = prog
-            .entry_op_id()
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| fallback_composition_key(prog));
-        let is_non_comp = prog.is_non_composable_with_self();
-        match seen_op_ids.get_mut(&key) {
-            Some(has_non_comp) => {
-                if *has_non_comp || is_non_comp {
-                    return Err(FusionError::SelfAliasing(FusionSelfAliasingError {
-                        op_id: key,
-                        fix: "rename the second parser's workgroup buffer or split into two separate dispatches",
-                    }));
-                }
-            }
-            None => {
-                seen_op_ids.insert(key, is_non_comp);
-            }
-        }
-    }
+    reject_non_composable_self_fusion(programs)?;
 
     // ------------------------------------------------------------------
     // Single pass over programs: collect entries, atomics, buffers,
@@ -99,8 +77,8 @@ fn fuse_programs_multi(programs: &[Program]) -> Result<Program, FusionError> {
     // store wrote, the barrier MUST upgrade to `MemoryOrdering::GridSync`
     // so the runtime kernel-split fallback flushes globally. This is
     // the recall=37.5% / "node 1000 doesn't fire" failure on the
-    // surgec stack_overflow_gets rule, isolated 2026-04-30 in
-    // `weir/tests/df_three_arm_fusion.rs`.
+    // downstream stack-overflow rule, isolated 2026-04-30 in
+    // a three-arm dataflow fusion integration test.
     let mut divergent_store_arms: FxHashSet<usize> = FxHashSet::default();
 
     let mut fused_workgroup = [1u32, 1, 1];
@@ -126,9 +104,12 @@ fn fuse_programs_multi(programs: &[Program]) -> Result<Program, FusionError> {
         let mut divergent_store_seen = false;
         for node in entry {
             push_alpha_renamed_arm_entry_node(&mut segment, node, arm_idx);
-            collect_atomic_targets_from_node(node, &mut atomic_targets);
-            collect_load_targets_from_node(node, &mut load_targets);
-            collect_store_targets_from_node(node, &mut store_targets);
+            collect_buffer_targets(
+                node,
+                &mut load_targets,
+                &mut store_targets,
+                &mut atomic_targets,
+            );
             if has_divergent_invocation_gated_store(node, false) {
                 divergent_store_seen = true;
             }
@@ -138,49 +119,16 @@ fn fuse_programs_multi(programs: &[Program]) -> Result<Program, FusionError> {
         }
         arm_entries.push(segment);
 
-        // Classify this arm's buffer accesses.
         let mut arm_reads: FxHashSet<Ident> = FxHashSet::default();
         let mut arm_explicit_writes: FxHashSet<Ident> = FxHashSet::default();
-
-        for buf in prog.buffers() {
-            let name = Ident::from(buf.name());
-            match buf.access() {
-                BufferAccess::ReadOnly | BufferAccess::Uniform => {
-                    arm_reads.insert(name.clone());
-                }
-                BufferAccess::ReadWrite => {
-                    arm_explicit_writes.insert(name.clone());
-                }
-                _ => {}
-            }
-
-            // Merge into shared buffer table. Take MAX of declared
-            // counts so a later arm declaring a larger ceiling (e.g.
-            // resolve_family's `pg_node_tags` count=65536) lifts an
-            // earlier under-sized declaration (e.g. standard_buffers
-            // count=0). Ignoring count in the merge silently capped
-            // reads at the first-seen size and dropped recall on
-            // every node id past that ceiling.
-            if let Some(&idx) = name_to_index.get(&name) {
-                let existing = &mut merged_buffers[idx];
-                upgrade_buffer_access(existing, buf.access());
-                if buf.count > existing.count {
-                    existing.count = buf.count;
-                }
-                if buf.is_output() {
-                    existing.is_output = true;
-                    existing.pipeline_live_out = true;
-                }
-            } else {
-                let mut merged = buf.clone();
-                if merged.access() != BufferAccess::Workgroup {
-                    merged.binding = next_binding;
-                    next_binding += 1;
-                }
-                name_to_index.insert(Ident::from(merged.name()), merged_buffers.len());
-                merged_buffers.push(merged);
-            }
-        }
+        classify_and_merge_arm_buffers(
+            prog,
+            &mut arm_reads,
+            &mut arm_explicit_writes,
+            &mut merged_buffers,
+            &mut name_to_index,
+            &mut next_binding,
+        );
 
         // Body-level reads from buffers declared by EARLIER arms.
         // The arm's own buffers().iter() loop already populated
@@ -255,14 +203,102 @@ fn fuse_programs_multi(programs: &[Program]) -> Result<Program, FusionError> {
         max_arm_threads = max_arm_threads.max(arm_threads);
     }
 
-    // ------------------------------------------------------------------
-    // Flatten per-arm segments, splicing barriers where required.
-    // ------------------------------------------------------------------
-    let total_nodes: usize = arm_entries.iter().map(|s| s.len()).sum();
-    let mut combined_entry: Vec<Node> = Vec::with_capacity(total_nodes + programs.len());
+    let combined_entry = flatten_arm_entries(
+        arm_entries,
+        &barrier_after_arm,
+        &divergent_store_arms,
+        programs.len(),
+    );
+    reject_overdispatch(fused_workgroup, max_arm_threads)?;
+    Ok(Program::wrapped(
+        merged_buffers,
+        fused_workgroup,
+        combined_entry,
+    ))
+}
+
+fn classify_and_merge_arm_buffers(
+    prog: &Program,
+    arm_reads: &mut FxHashSet<Ident>,
+    arm_explicit_writes: &mut FxHashSet<Ident>,
+    merged_buffers: &mut Vec<BufferDecl>,
+    name_to_index: &mut FxHashMap<Ident, usize>,
+    next_binding: &mut u32,
+) {
+    for buf in prog.buffers() {
+        let name = Ident::from(buf.name());
+        match buf.access() {
+            BufferAccess::ReadOnly | BufferAccess::Uniform => {
+                arm_reads.insert(name.clone());
+            }
+            BufferAccess::ReadWrite => {
+                arm_explicit_writes.insert(name.clone());
+            }
+            _ => {}
+        }
+        if let Some(&idx) = name_to_index.get(&name) {
+            let existing = &mut merged_buffers[idx];
+            let access = buf.access();
+            upgrade_buffer_access(existing, &access);
+            if buf.count > existing.count {
+                existing.count = buf.count;
+            }
+            if buf.is_output() {
+                existing.is_output = true;
+                existing.pipeline_live_out = true;
+            }
+        } else {
+            let mut merged = buf.clone();
+            if merged.access() != BufferAccess::Workgroup {
+                merged.binding = *next_binding;
+                *next_binding += 1;
+            }
+            name_to_index.insert(Ident::from(merged.name()), merged_buffers.len());
+            merged_buffers.push(merged);
+        }
+    }
+}
+
+fn reject_non_composable_self_fusion(programs: &[Program]) -> Result<(), FusionError> {
+    let mut seen_op_ids: FxHashMap<String, bool> = FxHashMap::default();
+    for prog in programs {
+        let key = prog
+            .entry_op_id()
+            .map_or_else(|| fallback_composition_key(prog), ToString::to_string);
+        let is_non_comp = prog.is_non_composable_with_self();
+        match seen_op_ids.get_mut(&key) {
+            Some(has_non_comp) if *has_non_comp || is_non_comp => {
+                return Err(FusionError::SelfAliasing(FusionSelfAliasingError {
+                    op_id: key,
+                    fix: "rename the second parser's workgroup buffer or split into two separate dispatches",
+                }));
+            }
+            Some(_) => {}
+            None => {
+                seen_op_ids.insert(key, is_non_comp);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn flatten_arm_entries(
+    arm_entries: Vec<Vec<Node>>,
+    barrier_after_arm: &FxHashSet<usize>,
+    divergent_store_arms: &FxHashSet<usize>,
+    program_count: usize,
+) -> Vec<Node> {
+    let total_nodes: usize = arm_entries.iter().map(Vec::len).sum();
+    let mut combined_entry = Vec::with_capacity(total_nodes + program_count);
     for (arm_idx, segment) in arm_entries.into_iter().enumerate() {
         combined_entry.push(Node::Block(segment));
         if barrier_after_arm.contains(&arm_idx) {
+            // Workgroup `SeqCst` (`bar.sync 0`) is sufficient for every
+            // cross-arm hazard except divergent invocation-gated writers.
+            // Those writes are not made globally visible by a block-local
+            // barrier, so the top-level barrier must be `GridSync` where the
+            // runtime split pass can see it and lower the fused program into
+            // globally ordered dispatch segments.
             let ordering = if divergent_store_arms.contains(&arm_idx) {
                 crate::memory_model::MemoryOrdering::GridSync
             } else {
@@ -271,234 +307,20 @@ fn fuse_programs_multi(programs: &[Program]) -> Result<Program, FusionError> {
             combined_entry.push(Node::barrier_with_ordering(ordering));
         }
     }
+    combined_entry
+}
 
-    // CRITIQUE_FIX_REVIEW_2026-04-23 Finding #16: the fused kernel's
-    // launch geometry is not `[1, 1, 1]` — it must cover every
-    // original arm's requested dimensions so none of them under-
-    // dispatch.
-    //
-    // VYRE_OPTIMIZER HIGH-03: the axis-wise max is correct but
-    // pathological when arms are orthogonal — fusing `[1024,1,1]`
-    // with `[1,1024,1]` yields `[1024,1024,1]` = 1 M threads where
-    // the arms each wanted 1024. Reject fusion when the fused
-    // total exceeds the shared scheduling policy's over-dispatch
-    // multiplier relative to the largest
-    // individual arm's thread count so callers fall back to
-    // per-arm dispatch instead of paying a 1000× over-dispatch.
+fn reject_overdispatch(fused_workgroup: [u32; 3], max_arm_threads: u64) -> Result<(), FusionError> {
     let fused_threads = u64::from(fused_workgroup[0])
         * u64::from(fused_workgroup[1])
         * u64::from(fused_workgroup[2]);
     let policy = SchedulingPolicy::standard();
-    if !policy.allow_fused_threads(fused_threads, max_arm_threads) {
-        return Err(FusionError::OverDispatch(FusionOverDispatchError {
-            max_arm_threads,
-            fused_threads,
-            fix: "split the batch or use per-arm dispatch; axis-wise max exceeds the shared over-dispatch policy",
-        }));
+    if policy.allow_fused_threads(fused_threads, max_arm_threads) {
+        return Ok(());
     }
-    Ok(Program::wrapped(
-        merged_buffers,
-        fused_workgroup,
-        combined_entry,
-    ))
-}
-
-fn push_alpha_renamed_arm_entry_node(out: &mut Vec<Node>, node: &Node, arm_idx: usize) {
-    match node {
-        Node::Region { body, .. } => out.extend(alpha_rename_arm_nodes(body, arm_idx)),
-        _ => out.push(alpha_rename_arm_node(node, arm_idx)),
-    }
-}
-
-fn alpha_rename_arm_node(node: &Node, arm_idx: usize) -> Node {
-    match node {
-        Node::Let { name, value } => Node::Let {
-            name: arm_local_ident(arm_idx, name),
-            value: alpha_rename_arm_expr(value, arm_idx),
-        },
-        Node::Assign { name, value } => Node::Assign {
-            name: arm_local_ident(arm_idx, name),
-            value: alpha_rename_arm_expr(value, arm_idx),
-        },
-        Node::Store {
-            buffer,
-            index,
-            value,
-        } => Node::Store {
-            buffer: buffer.clone(),
-            index: alpha_rename_arm_expr(index, arm_idx),
-            value: alpha_rename_arm_expr(value, arm_idx),
-        },
-        Node::If {
-            cond,
-            then,
-            otherwise,
-        } => Node::If {
-            cond: alpha_rename_arm_expr(cond, arm_idx),
-            then: alpha_rename_arm_nodes(then, arm_idx),
-            otherwise: alpha_rename_arm_nodes(otherwise, arm_idx),
-        },
-        Node::Loop {
-            var,
-            from,
-            to,
-            body,
-        } => Node::Loop {
-            var: arm_local_ident(arm_idx, var),
-            from: alpha_rename_arm_expr(from, arm_idx),
-            to: alpha_rename_arm_expr(to, arm_idx),
-            body: alpha_rename_arm_nodes(body, arm_idx),
-        },
-        Node::Block(body) => Node::Block(alpha_rename_arm_nodes(body, arm_idx)),
-        Node::Region {
-            generator,
-            source_region,
-            body,
-        } => Node::Region {
-            generator: generator.clone(),
-            source_region: source_region.clone(),
-            body: Arc::new(alpha_rename_arm_nodes(body, arm_idx)),
-        },
-        Node::AsyncLoad {
-            source,
-            destination,
-            offset,
-            size,
-            tag,
-        } => Node::AsyncLoad {
-            source: source.clone(),
-            destination: destination.clone(),
-            offset: Box::new(alpha_rename_arm_expr(offset, arm_idx)),
-            size: Box::new(alpha_rename_arm_expr(size, arm_idx)),
-            tag: arm_local_ident(arm_idx, tag),
-        },
-        Node::AsyncStore {
-            source,
-            destination,
-            offset,
-            size,
-            tag,
-        } => Node::AsyncStore {
-            source: source.clone(),
-            destination: destination.clone(),
-            offset: Box::new(alpha_rename_arm_expr(offset, arm_idx)),
-            size: Box::new(alpha_rename_arm_expr(size, arm_idx)),
-            tag: arm_local_ident(arm_idx, tag),
-        },
-        Node::AsyncWait { tag } => Node::AsyncWait {
-            tag: arm_local_ident(arm_idx, tag),
-        },
-        Node::Trap { address, tag } => Node::Trap {
-            address: Box::new(alpha_rename_arm_expr(address, arm_idx)),
-            tag: arm_local_ident(arm_idx, tag),
-        },
-        Node::Resume { tag } => Node::Resume {
-            tag: arm_local_ident(arm_idx, tag),
-        },
-        Node::IndirectDispatch {
-            count_buffer,
-            count_offset,
-        } => Node::IndirectDispatch {
-            count_buffer: count_buffer.clone(),
-            count_offset: *count_offset,
-        },
-        Node::Return => Node::Return,
-        Node::Barrier { ordering } => Node::barrier_with_ordering(*ordering),
-        Node::Opaque(extension) => Node::Opaque(Arc::clone(extension)),
-    }
-}
-
-fn alpha_rename_arm_nodes(nodes: &[Node], arm_idx: usize) -> Vec<Node> {
-    nodes
-        .iter()
-        .map(|node| alpha_rename_arm_node(node, arm_idx))
-        .collect()
-}
-
-fn alpha_rename_arm_expr(expr: &Expr, arm_idx: usize) -> Expr {
-    match expr {
-        Expr::Var(name) => Expr::Var(arm_local_ident(arm_idx, name)),
-        Expr::Load { buffer, index } => Expr::Load {
-            buffer: buffer.clone(),
-            index: Box::new(alpha_rename_arm_expr(index, arm_idx)),
-        },
-        Expr::BufLen { buffer } => Expr::BufLen {
-            buffer: buffer.clone(),
-        },
-        Expr::BinOp { op, left, right } => Expr::BinOp {
-            op: *op,
-            left: Box::new(alpha_rename_arm_expr(left, arm_idx)),
-            right: Box::new(alpha_rename_arm_expr(right, arm_idx)),
-        },
-        Expr::UnOp { op, operand } => Expr::UnOp {
-            op: op.clone(),
-            operand: Box::new(alpha_rename_arm_expr(operand, arm_idx)),
-        },
-        Expr::Call { op_id, args } => Expr::Call {
-            op_id: op_id.clone(),
-            args: args
-                .iter()
-                .map(|arg| alpha_rename_arm_expr(arg, arm_idx))
-                .collect(),
-        },
-        Expr::Select {
-            cond,
-            true_val,
-            false_val,
-        } => Expr::Select {
-            cond: Box::new(alpha_rename_arm_expr(cond, arm_idx)),
-            true_val: Box::new(alpha_rename_arm_expr(true_val, arm_idx)),
-            false_val: Box::new(alpha_rename_arm_expr(false_val, arm_idx)),
-        },
-        Expr::Cast { target, value } => Expr::Cast {
-            target: target.clone(),
-            value: Box::new(alpha_rename_arm_expr(value, arm_idx)),
-        },
-        Expr::Fma { a, b, c } => Expr::Fma {
-            a: Box::new(alpha_rename_arm_expr(a, arm_idx)),
-            b: Box::new(alpha_rename_arm_expr(b, arm_idx)),
-            c: Box::new(alpha_rename_arm_expr(c, arm_idx)),
-        },
-        Expr::Atomic {
-            op,
-            buffer,
-            index,
-            expected,
-            value,
-            ordering,
-        } => Expr::Atomic {
-            op: *op,
-            buffer: buffer.clone(),
-            index: Box::new(alpha_rename_arm_expr(index, arm_idx)),
-            expected: expected
-                .as_ref()
-                .map(|expr| Box::new(alpha_rename_arm_expr(expr, arm_idx))),
-            value: Box::new(alpha_rename_arm_expr(value, arm_idx)),
-            ordering: *ordering,
-        },
-        Expr::SubgroupBallot { cond } => Expr::SubgroupBallot {
-            cond: Box::new(alpha_rename_arm_expr(cond, arm_idx)),
-        },
-        Expr::SubgroupShuffle { value, lane } => Expr::SubgroupShuffle {
-            value: Box::new(alpha_rename_arm_expr(value, arm_idx)),
-            lane: Box::new(alpha_rename_arm_expr(lane, arm_idx)),
-        },
-        Expr::SubgroupAdd { value } => Expr::SubgroupAdd {
-            value: Box::new(alpha_rename_arm_expr(value, arm_idx)),
-        },
-        Expr::LitU32(_)
-        | Expr::LitI32(_)
-        | Expr::LitF32(_)
-        | Expr::LitBool(_)
-        | Expr::InvocationId { .. }
-        | Expr::WorkgroupId { .. }
-        | Expr::LocalId { .. }
-        | Expr::SubgroupLocalId
-        | Expr::SubgroupSize
-        | Expr::Opaque(_) => expr.clone(),
-    }
-}
-
-fn arm_local_ident(arm_idx: usize, name: &Ident) -> Ident {
-    Ident::from(format!("__vyre_fuse_a{arm_idx}_{}", name.as_str()))
+    Err(FusionError::OverDispatch(FusionOverDispatchError {
+        max_arm_threads,
+        fused_threads,
+        fix: "split the batch or use per-arm dispatch; axis-wise max exceeds the shared over-dispatch policy",
+    }))
 }

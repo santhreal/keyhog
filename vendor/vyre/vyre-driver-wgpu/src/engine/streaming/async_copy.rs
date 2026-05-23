@@ -6,23 +6,19 @@
 //! is started on a separate host worker and joined only when the matching wait
 //! is reached, so CPU memcpy/staging can overlap compute preparation.
 //!
-//! Backing thread policy: uses `std::thread::spawn` when no tokio runtime is
-//! detected; uses `tokio::task::spawn_blocking` when one is. The tokio path
-//! is important at internet scale — `std::thread::spawn` per AsyncLoad tag
-//! is an OS-thread-per-copy pattern that thrashes the scheduler under heavy
-//! streaming workloads (thousands of concurrent tags). `spawn_blocking`
-//! amortizes across tokio's bounded blocking-thread pool (default 512
-//! threads; configurable) so N copies in flight cost at most N × task-switch,
-//! not N × thread-creation.
-//!
-//! A third option — a pre-built `rayon::ThreadPool` bounded at CPU-parallelism
-//! — was considered and rejected because most vyre callers already run under
-//! tokio and pulling rayon in for this one concern adds a second global pool.
+//! Backing worker policy: uses `tokio::task::spawn_blocking` when a tokio
+//! runtime is active, otherwise uses the crate-global bounded worker pool.
+//! The non-tokio path must not spawn one OS thread per AsyncLoad tag: that
+//! pattern thrashes the scheduler under heavy streaming workloads. The bounded
+//! pool caps worker count and queue depth while preserving overlap semantics.
 
-use std::sync::mpsc;
+use std::sync::{mpsc, LazyLock};
 
+use crossbeam_channel::{bounded, Receiver as CrossbeamReceiver, Sender as CrossbeamSender};
 use rustc_hash::FxHashMap;
 use vyre_driver::BackendError;
+
+use crate::thread_pool::{BoundedWorkerJob, BoundedWorkerPool};
 
 /// Completion reported by a tokio blocking worker.
 enum TokioBlockingCompletion {
@@ -35,11 +31,72 @@ enum TokioBlockingCompletion {
 /// receiver so `async_wait` never has to construct an emergency runtime just to
 /// join a task after the caller's runtime moved or shut down.
 enum InFlight {
-    Thread(std::thread::JoinHandle<Result<(), BackendError>>),
+    Pool {
+        completion: CrossbeamReceiver<Result<(), BackendError>>,
+    },
     TokioBlocking {
         completion: mpsc::Receiver<TokioBlockingCompletion>,
         task: tokio::task::JoinHandle<()>,
     },
+}
+
+struct AsyncCopyJob {
+    copy: Box<dyn FnOnce() -> Result<(), BackendError> + Send + 'static>,
+    response: CrossbeamSender<Result<(), BackendError>>,
+}
+
+impl BoundedWorkerJob for AsyncCopyJob {
+    type Output = ();
+
+    fn response(&self) -> &CrossbeamSender<Result<Self::Output, BackendError>> {
+        &self.response
+    }
+
+    fn run(self) -> Result<Self::Output, BackendError> {
+        (self.copy)()
+    }
+}
+
+struct AsyncCopyPool {
+    pool: BoundedWorkerPool<AsyncCopyJob>,
+}
+
+impl AsyncCopyPool {
+    fn global() -> Result<&'static Self, BackendError> {
+        static POOL: LazyLock<Result<AsyncCopyPool, BackendError>> =
+            LazyLock::new(AsyncCopyPool::new);
+        POOL.as_ref()
+            .map_err(|error| BackendError::new(error.to_string()))
+    }
+
+    fn new() -> Result<Self, BackendError> {
+        Ok(Self {
+            pool: BoundedWorkerPool::new(
+                256,
+                "vyre-wgpu-async-copy",
+                "inspect async copy staging buffer ownership and copy closure invariants.",
+                "reduce process thread count or increase system nproc limit.",
+            )?,
+        })
+    }
+
+    fn submit<F>(
+        &self,
+        copy: F,
+    ) -> Result<CrossbeamReceiver<Result<(), BackendError>>, BackendError>
+    where
+        F: FnOnce() -> Result<(), BackendError> + Send + 'static,
+    {
+        let (response, completion) = bounded(1);
+        self.pool.submit_blocking(
+            AsyncCopyJob {
+                copy: Box::new(copy),
+                response,
+            },
+            "recreate the process; the async-copy worker pool only closes during shutdown.",
+        )?;
+        Ok(completion)
+    }
 }
 
 /// Async copy scheduler keyed by IR stream tags.
@@ -59,9 +116,8 @@ impl AsyncCopyStreams {
     ///
     /// If a tokio runtime handle is available on the current thread the
     /// closure is dispatched to `tokio::task::spawn_blocking` so the
-    /// runtime's blocking-thread pool amortizes scheduling cost. Otherwise
-    /// a fresh OS thread is spawned — the behavior before 0.6, preserved
-    /// for non-tokio callers and for unit tests.
+    /// runtime's blocking-thread pool amortizes scheduling cost. Otherwise the
+    /// crate-global bounded async-copy pool is used.
     ///
     /// # Errors
     ///
@@ -98,7 +154,9 @@ impl AsyncCopyStreams {
                     task,
                 }
             }
-            Err(_) => InFlight::Thread(std::thread::spawn(copy)),
+            Err(_) => InFlight::Pool {
+                completion: AsyncCopyPool::global()?.submit(copy)?,
+            },
         };
         self.in_flight.insert(tag, handle);
         Ok(())
@@ -117,9 +175,9 @@ impl AsyncCopyStreams {
             ))
         })?;
         match handle {
-            InFlight::Thread(join) => join.join().map_err(|_| {
+            InFlight::Pool { completion } => completion.recv().map_err(|error| {
                 BackendError::new(format!(
-                    "async copy worker for `{tag}` panicked. Fix: inspect staging buffer ownership and copy closure invariants."
+                    "async copy worker for `{tag}` exited without publishing completion: {error}. Fix: inspect staging buffer ownership and copy closure invariants."
                 ))
             })?,
             InFlight::TokioBlocking { completion, task } => {
@@ -167,14 +225,7 @@ impl Drop for AsyncCopyStreams {
     fn drop(&mut self) {
         for (_, handle) in self.in_flight.drain() {
             match handle {
-                InFlight::Thread(join) => {
-                    if let Err(payload) = join.join() {
-                        tracing::error!(
-                            panic = %panic_payload(&payload),
-                            "async copy worker panicked while AsyncCopyStreams was being dropped"
-                        );
-                    }
-                }
+                InFlight::Pool { .. } => {}
                 InFlight::TokioBlocking { task, .. } => {
                     // Abort if the blocking task has not started. If it is
                     // already running, tokio lets it finish; the completion

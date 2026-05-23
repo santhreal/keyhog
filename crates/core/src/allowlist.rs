@@ -616,7 +616,11 @@ node_modules/
 ";
         let al = Allowlist::parse(content);
         assert!(al.ignored_detectors.contains("asana-pat"));
-        assert_eq!(al.credential_hashes.len(), 2, "explicit hash: + bare hex both register");
+        assert_eq!(
+            al.credential_hashes.len(),
+            2,
+            "explicit hash: + bare hex both register"
+        );
         assert!(
             al.ignored_paths.iter().any(|p| p == "tests/**/*.fixture"),
             "explicit path: prefix still works; got {:?}",

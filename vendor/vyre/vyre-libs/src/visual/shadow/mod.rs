@@ -203,5 +203,6 @@ inventory::submit! {
                 ],
             ]
         }),
+        category: Some("visual"),
     }
 }

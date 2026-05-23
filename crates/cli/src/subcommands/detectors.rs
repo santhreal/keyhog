@@ -145,8 +145,8 @@ fn print_detectors_json(detectors: &[&DetectorSpec]) -> Result<()> {
             })
         })
         .collect();
-    let out = serde_json::to_string_pretty(&items)
-        .context("serializing detector listing to JSON")?;
+    let out =
+        serde_json::to_string_pretty(&items).context("serializing detector listing to JSON")?;
     println!("{out}");
     Ok(())
 }

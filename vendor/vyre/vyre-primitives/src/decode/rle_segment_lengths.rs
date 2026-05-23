@@ -200,6 +200,7 @@ pub fn pack_rle_segments_into(segments: &[(u32, u8)], out: &mut Vec<u32>) -> Res
 /// CPU reference. Returns `(lengths, values)` matching the GPU `Program`
 /// lane-for-lane.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn rle_segment_lengths_cpu(segments_in: &[u32]) -> (Vec<u32>, Vec<u32>) {
     let mut lengths = Vec::new();
     let mut values = Vec::new();
@@ -210,6 +211,7 @@ pub fn rle_segment_lengths_cpu(segments_in: &[u32]) -> (Vec<u32>, Vec<u32>) {
 /// CPU reference into caller-owned output buffers.
 ///
 /// Clears `lengths` and `values`, then reuses their allocations.
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn rle_segment_lengths_cpu_into(
     segments_in: &[u32],
     lengths: &mut Vec<u32>,
@@ -232,6 +234,7 @@ pub fn rle_segment_lengths_cpu_into(
 ///
 /// Returns `(start_offsets, total_output_length)`.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn rle_segment_start_offsets_cpu(segment_lengths: &[u32]) -> (Vec<u32>, u32) {
     let mut offsets = Vec::new();
     let total = rle_segment_start_offsets_cpu_into(segment_lengths, &mut offsets);
@@ -242,6 +245,7 @@ pub fn rle_segment_start_offsets_cpu(segment_lengths: &[u32]) -> (Vec<u32>, u32)
 ///
 /// Clears `offsets`, then reuses its capacity. Returns the saturated total
 /// output length.
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn rle_segment_start_offsets_cpu_into(segment_lengths: &[u32], offsets: &mut Vec<u32>) -> u32 {
     offsets.clear();
     offsets.reserve(segment_lengths.len());
@@ -257,6 +261,7 @@ pub fn rle_segment_start_offsets_cpu_into(segment_lengths: &[u32], offsets: &mut
 /// the unpack + start-offset + emit-bytes passes. CPU reference for
 /// end-to-end RLE decode used by integration tests.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn rle_decode_cpu(segments_in: &[u32]) -> Vec<u8> {
     let mut output = Vec::new();
     rle_decode_cpu_into(segments_in, &mut output);
@@ -268,6 +273,7 @@ pub fn rle_decode_cpu(segments_in: &[u32]) -> Vec<u8> {
 /// Clears `output`, pre-reserves the saturated decoded byte length, and emits
 /// each run directly from the packed header stream without building temporary
 /// length/value vectors.
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn rle_decode_cpu_into(segments_in: &[u32], output: &mut Vec<u8>) {
     output.clear();
     let total = segments_in
@@ -295,7 +301,7 @@ inventory::submit! {
         || rle_segment_lengths(3),
         Some(|| {
             let packed = pack_rle_segments(&[(2, b'A'), (0, b'X'), (3, b'B')])
-                .expect("fixture RLE segments fit the 24-bit length field");
+                .unwrap_or_else(|_| unreachable!("fixture RLE segments fit the 24-bit length field"));
             vec![vec![
                 fixture_u32(&packed),
                 fixture_u32(&[0, 0, 0]),

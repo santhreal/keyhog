@@ -1,8 +1,8 @@
-//! Equality-saturation engine — minimal EGraph substrate for vyre IR
+//! Equality-saturation engine — minimal `EGraph` substrate for vyre IR
 //! algebraic rewrite families.
 //!
 //! Op id: `vyre-foundation::optimizer::eqsat`. Soundness: every equivalence
-//! added to the EGraph must be a true semantic equality of the underlying
+//! added to the `EGraph` must be a true semantic equality of the underlying
 //! IR. Cost-direction: extraction phase picks the lowest-cost equivalent
 //! representative under a caller-supplied cost function — guaranteed
 //! cost-monotone-down by construction.
@@ -13,19 +13,19 @@
 //! two passes both want to fire on the same expression, one wins
 //! (whichever is scheduled first), even if the other would have unlocked
 //! a much better optimization downstream. Equality saturation sidesteps
-//! this by accumulating all known equivalences into one EGraph, running
+//! this by accumulating all known equivalences into one `EGraph`, running
 //! every rewrite rule to a fixed point, and then extracting the
 //! lowest-cost equivalent at the end.
 //!
-//! This module ships the substrate: a minimal but sound EGraph with
+//! This module ships the substrate: a minimal but sound `EGraph` with
 //! hashcons, union-find, rebuild, saturation, and a `Family` trait
 //! that wraps a set of related rewrite rules.
 //!
-//! ## ENode
+//! ## `ENode`
 //!
-//! ENodes are domain-specific: each family defines its own ENode enum.
+//! `ENodes` are domain-specific: each family defines its own `ENode` enum.
 //! The substrate is generic over `Lang: ENodeLang` which provides the
-//! children-iteration API the EGraph needs to canonicalize and rebuild.
+//! children-iteration API the `EGraph` needs to canonicalize and rebuild.
 //!
 //! ## Why not import egg
 //!
@@ -35,57 +35,58 @@
 //! adds a dependency tree that conflicts with vyre's "every dep is a
 //! supply-chain risk" stance.
 
-use std::hash::{Hash, Hasher};
+use std::hash::{BuildHasherDefault, Hash, Hasher};
 
 use rustc_hash::FxHashMap;
 use rustc_hash::FxHasher;
 use smallvec::SmallVec;
 
-/// Stack-backed child list used by EGraph node APIs. Most IR algebra nodes
+/// Stack-backed child list used by `EGraph` node APIs. Most IR algebra nodes
 /// have 0-3 children; keeping that path inline avoids allocator traffic during
 /// saturation.
 pub type EChildren = SmallVec<[EClassId; 4]>;
 
-/// Identifier of an EClass in the EGraph. EClasses are dense u32-indexed.
+/// Identifier of an `EClass` in the `EGraph`. `EClasses` are dense u32-indexed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct EClassId(pub u32);
 
-/// Domain-specific ENode language. Implementations describe how to
+/// Domain-specific `ENode` language. Implementations describe how to
 /// iterate the children of a node (for canonicalization) and how to
 /// rebuild a node with replacement child ids (for rebuild).
 pub trait ENodeLang: Clone + Eq + Hash {
-    /// Iterate the EClass-child ids referenced by this node, in order.
+    /// Iterate the `EClass`-child ids referenced by this node, in order.
     fn children(&self) -> EChildren;
 
-    /// Rebuild this node with replacement EClass children. The returned
+    /// Rebuild this node with replacement `EClass` children. The returned
     /// node has the same shape as `self` but with each child replaced by
     /// the corresponding entry in `children`. `children.len()` must equal
     /// `self.children().len()`.
+    #[must_use]
     fn with_children(&self, children: &[EClassId]) -> Self;
 }
 
-/// One equivalence class — the set of all ENodes proven equal so far.
+/// One equivalence class — the set of all `ENodes` proven equal so far.
 #[derive(Debug, Clone)]
 pub struct EClass<L: ENodeLang> {
-    /// Every ENode that lives in this class (canonicalized form).
+    /// Every `ENode` that lives in this class (canonicalized form).
     pub nodes: Vec<L>,
-    /// EClasses that have THIS one as a child — used during rebuild to
+    /// `EClasses` that have THIS one as a child — used during rebuild to
     /// propagate canonicalization.
     pub parents: Vec<EClassId>,
 }
 
-/// The EGraph: a union-find of EClasses + a hashcons mapping
-/// canonicalized ENodes to their EClass.
+/// The `EGraph`: a union-find of `EClasses` + a hashcons mapping
+/// canonicalized `ENodes` to their `EClass`.
 #[derive(Debug, Clone)]
 pub struct EGraph<L: ENodeLang> {
     /// Class storage (dense). The class at index `i` is `EClass(i)`.
     classes: Vec<EClass<L>>,
-    /// Hashcons: canonicalized ENode → EClassId. Maintained incrementally
+    /// Hashcons: canonicalized `ENode` → `EClassId`. Maintained incrementally
     /// by `add()` and rebuilt after `union()` operations.
     hashcons: FxHashMap<L, EClassId>,
     /// Union-find parent pointers for path-compression find.
     parent: Vec<EClassId>,
-    /// Set of EClasses that need rebuild after a union — drained by
+    /// Set of `EClasses` that need rebuild after a union — drained by
     /// `rebuild()`.
     pending: Vec<EClassId>,
 }
@@ -97,24 +98,27 @@ impl<L: ENodeLang> Default for EGraph<L> {
 }
 
 impl<L: ENodeLang> EGraph<L> {
-    /// Create an empty EGraph.
+    /// Create an empty `EGraph`.
     #[must_use]
     pub fn new() -> Self {
         Self::with_capacity(0)
     }
 
-    /// Create an EGraph with capacity for an expected number of EClasses.
+    /// Create an `EGraph` with capacity for an expected number of `EClasses`.
     #[must_use]
     pub fn with_capacity(class_capacity: usize) -> Self {
         Self {
             classes: Vec::with_capacity(class_capacity),
-            hashcons: FxHashMap::with_capacity_and_hasher(class_capacity, Default::default()),
+            hashcons: FxHashMap::with_capacity_and_hasher(
+                class_capacity,
+                BuildHasherDefault::default(),
+            ),
             parent: Vec::with_capacity(class_capacity),
             pending: Vec::with_capacity(class_capacity),
         }
     }
 
-    /// Number of EClasses currently in the graph.
+    /// Number of `EClasses` currently in the graph.
     #[must_use]
     pub fn class_count(&self) -> usize {
         self.classes.len()
@@ -148,7 +152,7 @@ impl<L: ENodeLang> EGraph<L> {
     }
 
     /// Canonicalize a node by replacing each child with its current
-    /// canonical EClass.
+    /// canonical `EClass`.
     fn canonicalize(&self, node: &L) -> L {
         let canon_children: EChildren = node
             .children()
@@ -158,14 +162,18 @@ impl<L: ENodeLang> EGraph<L> {
         node.with_children(&canon_children)
     }
 
-    /// Add a node to the EGraph. If an equivalent node already exists,
-    /// return its EClassId; otherwise create a new EClass.
+    /// Add a node to the `EGraph`. If an equivalent node already exists,
+    /// return its `EClassId`; otherwise create a new `EClass`.
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "public insertion API consumes language nodes; canonicalized misses store an owned node"
+    )]
     pub fn add(&mut self, node: L) -> EClassId {
         let canon = self.canonicalize(&node);
         if let Some(&existing) = self.hashcons.get(&canon) {
             return self.find(existing);
         }
-        let new_id = EClassId(self.classes.len() as u32);
+        let new_id = eclass_id_from_index(self.classes.len());
         self.parent.push(new_id);
         // Register `new_id` as a parent of each child class.
         for child in canon.children() {
@@ -183,7 +191,7 @@ impl<L: ENodeLang> EGraph<L> {
         new_id
     }
 
-    /// Equate two EClasses. The returned id is the canonical class for
+    /// Equate two `EClasses`. The returned id is the canonical class for
     /// both inputs after the union. Calls to `add()` on equivalent nodes
     /// will return this same id.
     ///
@@ -255,14 +263,17 @@ impl<L: ENodeLang> EGraph<L> {
         new_unions
     }
 
-    /// Iterate every (EClassId, ENode) pair currently in the graph.
+    /// Iterate every (`EClassId`, `ENode`) pair currently in the graph.
     /// Useful for rule application and extraction.
     pub fn iter_nodes(&self) -> impl Iterator<Item = (EClassId, &L)> {
         self.classes
             .iter()
             .enumerate()
-            .filter(|(idx, _)| self.parent[*idx] == EClassId(*idx as u32))
-            .flat_map(|(idx, class)| class.nodes.iter().map(move |n| (EClassId(idx as u32), n)))
+            .filter_map(|(idx, class)| {
+                let class_id = eclass_id_from_index(idx);
+                (self.parent[idx] == class_id).then_some((class_id, class))
+            })
+            .flat_map(|(class_id, class)| class.nodes.iter().map(move |n| (class_id, n)))
     }
 
     /// Read-only access to a class by id.
@@ -271,6 +282,14 @@ impl<L: ENodeLang> EGraph<L> {
         let canon = self.find_immut(id);
         self.classes.get(canon.0 as usize)
     }
+}
+
+#[expect(
+    clippy::expect_used,
+    reason = "EClassId is the compact u32 egraph handle; exceeding it is a hard capacity breach"
+)]
+fn eclass_id_from_index(index: usize) -> EClassId {
+    EClassId(u32::try_from(index).expect("Fix: egraph class index exceeds u32 EClassId capacity"))
 }
 
 fn dedup_enodes_by_hash<L: ENodeLang>(nodes: &mut Vec<L>) {
@@ -301,9 +320,9 @@ fn stable_enode_hash<L: ENodeLang>(node: &L) -> u64 {
 }
 
 /// One equality-saturation rewrite rule. Returns a list of `(left, right)`
-/// EClass pairs that should be unioned after the rule fires.
+/// `EClass` pairs that should be unioned after the rule fires.
 ///
-/// Implementations walk the EGraph (via `iter_nodes`), pattern-match on
+/// Implementations walk the `EGraph` (via `iter_nodes`), pattern-match on
 /// shapes they recognize, and return the equivalences they want to add.
 pub trait Rule<L: ENodeLang> {
     /// Human-readable rule name for telemetry + tests.
@@ -316,7 +335,7 @@ pub trait Rule<L: ENodeLang> {
 
 /// A family of related rewrite rules.
 pub trait Family<L: ENodeLang> {
-    /// Family name (e.g. "commutative_arith").
+    /// Family name (e.g. "`commutative_arith`").
     fn name(&self) -> &'static str;
 
     /// Vec of rules in this family. Stored as boxed trait objects so a
@@ -421,9 +440,9 @@ pub struct FamilySaturationReport {
 /// starves the other.
 ///
 /// Order: families run in the order they appear in `families`. Earlier
-/// families' merges are visible to later families (the EGraph carries
+/// families' merges are visible to later families (the `EGraph` carries
 /// state across calls). Re-running this wrapper after a third-party
-/// pass mutates the EGraph is safe — each call is independent.
+/// pass mutates the `EGraph` is safe — each call is independent.
 ///
 /// `budget_for` is queried once per family to allow callers to pull
 /// per-family caps from a TOML config or cost model. Returning 0 skips
@@ -457,9 +476,9 @@ pub fn saturate_per_family<L: ENodeLang>(
 }
 
 /// Extract the lowest-cost equivalent representation of `class_id` under
-/// `cost_fn`. Returns the chosen ENode and its computed cost.
+/// `cost_fn`. Returns the chosen `ENode` and its computed cost.
 ///
-/// Greedy bottom-up extraction: cost of each EClass is the min over its
+/// Greedy bottom-up extraction: cost of each `EClass` is the min over its
 /// nodes of `cost_fn(node) + sum(cost_of_child_classes)`. Iterates to
 /// fixed point on the cost map.
 pub fn extract_best<L: ENodeLang>(
@@ -467,20 +486,31 @@ pub fn extract_best<L: ENodeLang>(
     class_id: EClassId,
     cost_fn: impl Fn(&L) -> u64,
 ) -> Option<(L, u64)> {
-    // Iterate cost map to fixed point.
-    let mut costs = FxHashMap::with_capacity_and_hasher(egraph.class_count(), Default::default());
+    // VYRE_IR_HOTSPOTS HIGH: extract_best is the inner loop of every
+    // optimizer extraction (called per device per root by
+    // device_extraction). The previous FxHashMap<EClassId, (L,u64)>
+    // hashed-lookup'd costs three times per node per iteration
+    // (canon_cid, every child, and the insert check). Class ids are
+    // dense u32s in [0, class_count); a direct Vec<Option<(L,u64)>>
+    // cuts every lookup to a u32 deref. Plus iter_nodes already
+    // filters for canonical (parent[idx] == idx), so the find_immut
+    // on `cid` was redundant work — drop it.
+    let class_count = egraph.class_count();
+    let mut costs: Vec<Option<(L, u64)>> = (0..class_count).map(|_| None).collect();
     let mut changed = true;
     let mut iters = 0;
     while changed && iters < 1024 {
         changed = false;
         iters += 1;
         for (cid, node) in egraph.iter_nodes() {
-            let canon_cid = egraph.find_immut(cid);
+            // cid is already canonical — iter_nodes filters parent[idx] == idx.
+            let canon_cid_idx = cid.0 as usize;
             let mut node_cost = cost_fn(node);
             let mut child_overflow = false;
             for child in node.children() {
                 let canon_child = egraph.find_immut(child);
-                if let Some((_, c)) = costs.get(&canon_child) {
+                let canon_child_idx = canon_child.0 as usize;
+                if let Some((_, c)) = costs.get(canon_child_idx).and_then(Option::as_ref) {
                     node_cost = node_cost.saturating_add(*c);
                 } else {
                     child_overflow = true;
@@ -490,17 +520,20 @@ pub fn extract_best<L: ENodeLang>(
             if child_overflow {
                 continue;
             }
-            match costs.get(&canon_cid) {
+            let Some(slot) = costs.get_mut(canon_cid_idx) else {
+                continue;
+            };
+            match slot {
                 Some((_, existing_cost)) if *existing_cost <= node_cost => {}
                 _ => {
-                    costs.insert(canon_cid, (node.clone(), node_cost));
+                    *slot = Some((node.clone(), node_cost));
                     changed = true;
                 }
             }
         }
     }
     let canon = egraph.find_immut(class_id);
-    costs.get(&canon).cloned()
+    costs.get(canon.0 as usize).and_then(Clone::clone)
 }
 
 #[cfg(test)]
@@ -509,7 +542,7 @@ mod tests {
     use rustc_hash::FxHashSet;
     use smallvec::smallvec;
 
-    /// A minimal arithmetic ENode language for engine tests.
+    /// A minimal arithmetic `ENode` language for engine tests.
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     enum Arith {
         Const(u32),
@@ -735,29 +768,49 @@ mod tests {
         }
     }
 
+    /// Rule that pairs every Const id with itself — guaranteed to
+    /// produce at least one match whenever the egraph holds any Const.
+    /// Used purely as a forwarding-test fixture.
+    struct PairConstSelfRule;
+
+    impl Rule<Arith> for PairConstSelfRule {
+        fn name(&self) -> &'static str {
+            "pair_const_self"
+        }
+
+        fn matches(&self, egraph: &EGraph<Arith>) -> Vec<(EClassId, EClassId)> {
+            let mut out = Vec::new();
+            for (cid, node) in egraph.iter_nodes() {
+                if let Arith::Const(_) = node {
+                    out.push((cid, cid));
+                }
+            }
+            out
+        }
+    }
+
     #[test]
     fn device_aware_rule_predicate_true_forwards_matches() {
-        let mut egraph: EGraph<Arith> = EGraph::new();
-        let _ = egraph.add(Arith::Const(1));
-        let _ = egraph.add(Arith::Const(2));
-        let inner: Box<dyn Rule<Arith>> = Box::new(UnionEqualConstsRule);
+        // First half: with no Consts, even the always-on inner rule
+        // produces no matches. The forwarder must propagate that.
+        let egraph: EGraph<Arith> = EGraph::new();
+        let inner: Box<dyn Rule<Arith>> = Box::new(PairConstSelfRule);
         let rule = DeviceAwareRule::new(inner, || true);
-        // Predicate true → inner rule runs. UnionEqualConstsRule returns
-        // pairs of equal-valued ids; with two distinct values there are
-        // no pairs to union.
-        let matches = rule.matches(&egraph);
         assert!(
-            matches.is_empty(),
-            "no duplicate values should produce no matches"
+            rule.matches(&egraph).is_empty(),
+            "empty egraph must yield empty matches even with predicate true"
         );
-        // Add a duplicate to actually trigger a match.
+
+        // Second half: add a Const and confirm the predicate-true
+        // forwarder surfaces the inner rule's hits.
         let mut egraph: EGraph<Arith> = EGraph::new();
         let _a = egraph.add(Arith::Const(7));
-        // Manual second insert via union: make two distinct EClasses
-        // claim Const(7).
-        let inner: Box<dyn Rule<Arith>> = Box::new(UnionEqualConstsRule);
+        let inner: Box<dyn Rule<Arith>> = Box::new(PairConstSelfRule);
         let rule = DeviceAwareRule::new(inner, || true);
-        assert!(!rule.matches(&egraph).is_empty());
+        assert!(
+            !rule.matches(&egraph).is_empty(),
+            "predicate true must forward the inner rule's matches"
+        );
     }
 
     #[test]

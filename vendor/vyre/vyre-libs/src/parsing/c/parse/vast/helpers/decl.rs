@@ -30,6 +30,21 @@ pub(crate) fn is_type_name_start_token(token: Expr) -> Expr {
             TOK_GNU_TYPEOF_UNQUAL,
             TOK_GNU_INT128,
             TOK_GNU_BUILTIN_VA_LIST,
+            // C23 / TS 18661-2 scalar types and clang/GCC half-precision
+            // spellings — every keyword that can begin a type-name must
+            // be in this list, otherwise typeof / sizeof / casts using
+            // these scalars fail the type-name predicate.
+            TOK_BITINT_KW,
+            TOK_FLOAT16_KW,
+            TOK_FLOAT32_KW,
+            TOK_FLOAT64_KW,
+            TOK_FLOAT128_KW,
+            TOK_GNU_FLOAT128_KW,
+            TOK_GNU_BF16_KW,
+            TOK_GNU_FP16_KW,
+            TOK_DECIMAL32_KW,
+            TOK_DECIMAL64_KW,
+            TOK_DECIMAL128_KW,
         ],
     )
 }
@@ -72,6 +87,22 @@ pub(crate) fn is_decl_prefix_token(token: Expr) -> Expr {
             TOK_GNU_BUILTIN_VA_LIST,
             TOK_GNU_ADDRESS_SPACE,
             TOK_GNU_EXTENSION,
+            // C23 / TS 18661-2 scalar types and clang/GCC half-precision.
+            // A `_BitInt(N)` declaration (used in real C code by SQLite,
+            // Postgres, and any sub-word-aligned protocol struct) must be
+            // recognised here as starting a decl prefix.
+            TOK_BITINT_KW,
+            TOK_FLOAT16_KW,
+            TOK_FLOAT32_KW,
+            TOK_FLOAT64_KW,
+            TOK_FLOAT128_KW,
+            TOK_GNU_FLOAT128_KW,
+            TOK_GNU_BF16_KW,
+            TOK_GNU_FP16_KW,
+            TOK_DECIMAL32_KW,
+            TOK_DECIMAL64_KW,
+            TOK_DECIMAL128_KW,
+            TOK_FORCEINLINE_KW,
         ],
     )
 }

@@ -206,7 +206,10 @@ fn every_contract_passes_positives_negatives_evasions() {
                     label,
                     n.text,
                     path.display(),
-                    matches.iter().filter(|m| m.detector_id.as_ref() == label).count(),
+                    matches
+                        .iter()
+                        .filter(|m| m.detector_id.as_ref() == label)
+                        .count(),
                 ));
             }
         }
@@ -327,8 +330,7 @@ fn every_contract_scale_gate_holds() {
             .map(|i| cycle[i % cycle.len()])
             .collect();
         let filler_a = String::from_utf8_lossy(&filler[..half.min(filler.len())]).into_owned();
-        let filler_b =
-            String::from_utf8_lossy(&filler[half.min(filler.len())..]).into_owned();
+        let filler_b = String::from_utf8_lossy(&filler[half.min(filler.len())..]).into_owned();
         let fixture = format!("{filler_a}{}{filler_b}", first.text);
         let chunk = make_chunk(&fixture);
 

@@ -1,5 +1,8 @@
-//! CPU reference paths for the AST→PG lowering. Used by tests and the
-//! offline corpus checker.
+//! Explicit CPU oracle paths for AST→PG lowering.
+//!
+//! These functions exist for parity tests, fixtures, and offline corpus
+//! evidence. Production lowering must use the dispatchable GPU builders in
+//! `gpu_program.rs`.
 
 use crate::parsing::c::lower::semantic_edges::*;
 
@@ -20,12 +23,17 @@ pub(super) fn u32_words_to_bytes(words: &[u32]) -> Vec<u8> {
     words.iter().flat_map(|word| word.to_le_bytes()).collect()
 }
 
-/// Compute the same mapping as `c_lower_ast_to_pg_nodes` in pure-Rust for tests and fixtures.
+/// Compute the same mapping as `c_lower_ast_to_pg_nodes` in the explicit CPU
+/// oracle for tests and fixtures.
 ///
 /// # Errors
 ///
 /// Returns [`PgReferenceDecodeError`] when the input is not aligned to `u32`
 /// words or does not contain complete VAST rows.
+#[deprecated(
+    note = "CPU oracle only; production AST-to-PG lowering must dispatch c_lower_ast_to_pg_nodes"
+)]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn try_reference_ast_to_pg_nodes(
     vast_node_bytes: &[u8],
 ) -> Result<Vec<u8>, PgReferenceDecodeError> {
@@ -39,12 +47,16 @@ pub fn try_reference_ast_to_pg_nodes(
     Ok(reference_ast_to_pg_nodes_from_words(&vast_nodes))
 }
 
-/// Compute semantic PG node and edge witnesses in pure Rust.
+/// Compute semantic PG node and edge witnesses in the explicit CPU oracle.
 ///
 /// # Errors
 ///
 /// Returns [`PgReferenceDecodeError`] when the input is not aligned to `u32`
 /// words or does not contain complete VAST rows.
+#[deprecated(
+    note = "CPU oracle only; production semantic AST-to-PG lowering must dispatch c_lower_ast_to_pg_semantic_graph"
+)]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn try_reference_ast_to_pg_semantic_graph(
     vast_node_bytes: &[u8],
 ) -> Result<SemanticPgReference, PgReferenceDecodeError> {
@@ -58,18 +70,41 @@ pub fn try_reference_ast_to_pg_semantic_graph(
     Ok(reference_ast_to_pg_semantic_graph_from_words(&vast_nodes))
 }
 
-/// Compute the same mapping as `c_lower_ast_to_pg_nodes` in pure-Rust for tests and fixtures.
+/// Compute the same mapping as `c_lower_ast_to_pg_nodes` in the explicit CPU oracle.
 #[must_use]
+#[deprecated(
+    note = "CPU oracle only; production AST-to-PG lowering must dispatch c_lower_ast_to_pg_nodes"
+)]
+#[allow(deprecated)]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn reference_ast_to_pg_nodes(vast_node_bytes: &[u8]) -> Vec<u8> {
-    try_reference_ast_to_pg_nodes(vast_node_bytes).unwrap_or_default()
+    try_reference_ast_to_pg_nodes(vast_node_bytes).unwrap_or_else(|_| {
+        unreachable!("reference_ast_to_pg_nodes requires u32-aligned complete VAST rows")
+    })
 }
 
-/// Compute semantic PG node and edge witnesses in pure Rust.
+/// Compute semantic PG node and edge witnesses in the explicit CPU oracle.
 #[must_use]
+#[deprecated(
+    note = "CPU oracle only; production semantic AST-to-PG lowering must dispatch c_lower_ast_to_pg_semantic_graph"
+)]
+#[allow(deprecated)]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn reference_ast_to_pg_semantic_graph(vast_node_bytes: &[u8]) -> SemanticPgReference {
-    try_reference_ast_to_pg_semantic_graph(vast_node_bytes).unwrap_or(SemanticPgReference {
-        nodes: Vec::new(),
-        edges: Vec::new(),
+    try_reference_ast_to_pg_semantic_graph(vast_node_bytes).unwrap_or_else(|_| {
+        unreachable!("reference_ast_to_pg_semantic_graph requires u32-aligned complete VAST rows")
+    })
+}
+
+fn vast_field(vast_nodes: &[u32], node_idx: usize, field_idx: usize) -> u32 {
+    let word_idx = node_idx
+        .checked_mul(VAST_NODE_STRIDE_U32 as usize)
+        .and_then(|base| base.checked_add(field_idx))
+        .expect("VAST node field index overflow. Fix: pass a bounded complete VAST table to the AST-to-PG reference oracle.");
+    *vast_nodes.get(word_idx).unwrap_or_else(|| {
+        panic!(
+            "VAST node {node_idx} is missing field {field_idx}. Fix: pass complete VAST rows to the AST-to-PG reference oracle."
+        )
     })
 }
 
@@ -80,28 +115,12 @@ fn reference_ast_to_pg_nodes_from_words(vast_nodes: &[u32]) -> Vec<u8> {
 
     let node_count = vast_nodes.len() / VAST_NODE_STRIDE_U32 as usize;
     for node_idx in 0..node_count {
-        let base = node_idx * VAST_NODE_STRIDE_U32 as usize;
-        let kind = vast_nodes.get(base + IDX_KIND).copied().unwrap_or_default();
-        let parent_idx = vast_nodes
-            .get(base + IDX_PARENT)
-            .copied()
-            .unwrap_or_default();
-        let first_child_idx = vast_nodes
-            .get(base + IDX_FIRST_CHILD)
-            .copied()
-            .unwrap_or_default();
-        let next_sibling_idx = vast_nodes
-            .get(base + IDX_NEXT_SIBLING)
-            .copied()
-            .unwrap_or_default();
-        let span_start = vast_nodes
-            .get(base + IDX_SRC_BYTE_OFF)
-            .copied()
-            .unwrap_or_default();
-        let span_len = vast_nodes
-            .get(base + IDX_SRC_BYTE_LEN)
-            .copied()
-            .unwrap_or_default();
+        let kind = vast_field(vast_nodes, node_idx, IDX_KIND);
+        let parent_idx = vast_field(vast_nodes, node_idx, IDX_PARENT);
+        let first_child_idx = vast_field(vast_nodes, node_idx, IDX_FIRST_CHILD);
+        let next_sibling_idx = vast_field(vast_nodes, node_idx, IDX_NEXT_SIBLING);
+        let span_start = vast_field(vast_nodes, node_idx, IDX_SRC_BYTE_OFF);
+        let span_len = vast_field(vast_nodes, node_idx, IDX_SRC_BYTE_LEN);
         let span_end = span_start.wrapping_add(span_len);
 
         out_nodes.push(kind);
@@ -123,36 +142,14 @@ fn reference_ast_to_pg_semantic_graph_from_words(vast_nodes: &[u32]) -> Semantic
     );
 
     for node_idx in 0..node_count {
-        let base = node_idx * VAST_NODE_STRIDE_U32 as usize;
-        let kind = vast_nodes.get(base + IDX_KIND).copied().unwrap_or_default();
-        let parent_idx = vast_nodes
-            .get(base + IDX_PARENT)
-            .copied()
-            .unwrap_or_default();
-        let first_child_idx = vast_nodes
-            .get(base + IDX_FIRST_CHILD)
-            .copied()
-            .unwrap_or_default();
-        let next_sibling_idx = vast_nodes
-            .get(base + IDX_NEXT_SIBLING)
-            .copied()
-            .unwrap_or_default();
-        let span_start = vast_nodes
-            .get(base + IDX_SRC_BYTE_OFF)
-            .copied()
-            .unwrap_or_default();
-        let span_len = vast_nodes
-            .get(base + IDX_SRC_BYTE_LEN)
-            .copied()
-            .unwrap_or_default();
-        let attr_off = vast_nodes
-            .get(base + IDX_ATTR_OFF)
-            .copied()
-            .unwrap_or_default();
-        let attr_len = vast_nodes
-            .get(base + IDX_ATTR_LEN)
-            .copied()
-            .unwrap_or_default();
+        let kind = vast_field(vast_nodes, node_idx, IDX_KIND);
+        let parent_idx = vast_field(vast_nodes, node_idx, IDX_PARENT);
+        let first_child_idx = vast_field(vast_nodes, node_idx, IDX_FIRST_CHILD);
+        let next_sibling_idx = vast_field(vast_nodes, node_idx, IDX_NEXT_SIBLING);
+        let span_start = vast_field(vast_nodes, node_idx, IDX_SRC_BYTE_OFF);
+        let span_len = vast_field(vast_nodes, node_idx, IDX_SRC_BYTE_LEN);
+        let attr_off = vast_field(vast_nodes, node_idx, IDX_ATTR_OFF);
+        let attr_len = vast_field(vast_nodes, node_idx, IDX_ATTR_LEN);
         let semantic_category = semantic_category(kind);
         let parent_kind = related_kind(vast_nodes, parent_idx, node_count);
         let first_child_kind = related_kind(vast_nodes, first_child_idx, node_count);

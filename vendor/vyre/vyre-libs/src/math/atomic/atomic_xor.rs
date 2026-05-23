@@ -21,7 +21,6 @@ inventory::submit! {
             vec![vec![
                 to_bytes(&[0xF0u32, 0x0F, 0xFF, 0x55]),
                 to_bytes(&[0u32]),
-                vec![0u8; 16],
             ]]
         }),
         expected_output: Some(|| {
@@ -34,6 +33,7 @@ inventory::submit! {
                 to_bytes(&[0u32, 0xF0, 0xFF, 0x00]),
             ]]
         }),
+        category: Some("math"),
     }
 }
 

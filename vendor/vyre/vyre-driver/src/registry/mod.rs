@@ -43,3 +43,19 @@ pub use registry::{DialectRegistry, DuplicateOpIdError, Target};
 pub use toml_loader::{
     workspace_dialect_fixture_path, DialectManifest, OpManifest, TomlDialectStore, CODE_PARSE,
 };
+
+/// Process-wide serialization lock for tests that touch the global
+/// `DialectRegistry`. Tests in `registry::registry::tests` use
+/// `DialectRegistry::install(...)` to swap the registry; tests in
+/// `registry::io::tests` and `registry::core_indirect::tests` assert
+/// against the live registry's contents. Without a shared lock, the swap
+/// occasionally races the asserts and the io / core_indirect tests
+/// see a registry snapshot that does not contain their op definitions.
+#[cfg(test)]
+pub(crate) fn registry_test_lock() -> std::sync::MutexGuard<'static, ()> {
+    use std::sync::{Mutex, OnceLock};
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+        .lock()
+        .expect("Fix: registry test lock was poisoned; inspect the earlier failing registry test.")
+}

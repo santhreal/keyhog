@@ -102,6 +102,7 @@ pub fn rk4_step(
 /// CPU reference using f64 internally for precision; callers convert
 /// to/from their fixed-point convention at the boundary.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn rk4_step_cpu(
     y_prev: &[f64],
     k1: &[f64],

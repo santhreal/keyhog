@@ -20,9 +20,13 @@ impl PassScheduler {
     pub fn with_passes(passes: Vec<ProgramPassKind>) -> Self {
         let mut metadata = Vec::with_capacity(passes.len());
         metadata.extend(passes.iter().map(ProgramPassKind::metadata));
-        let execution_order = schedule_pass_metadata_indices(&metadata)
-            .unwrap_or_else(|_| (0..passes.len()).collect());
-        let mut pass_index = FxHashMap::with_capacity_and_hasher(passes.len(), Default::default());
+        let scheduled = schedule_pass_metadata_indices(&metadata);
+        let requirements_prevalidated = scheduled.is_ok();
+        let execution_order = scheduled.unwrap_or_else(|_| (0..passes.len()).collect());
+        let mut pass_index = FxHashMap::with_capacity_and_hasher(
+            passes.len(),
+            std::hash::BuildHasherDefault::default(),
+        );
         pass_index.extend(
             passes
                 .iter()
@@ -33,14 +37,18 @@ impl PassScheduler {
             passes,
             pass_index,
             execution_order,
+            requirements_prevalidated,
             max_iterations: DEFAULT_MAX_ITERATIONS,
             invalidation_adjacency_cache: OnceLock::new(),
             invalidation_closure_cache: OnceLock::new(),
+            dirty_trigger_index_cache: OnceLock::new(),
+            initial_dirty_flags_cache: OnceLock::new(),
             enforce_cost_monotone: false,
         }
     }
 
     /// Set the maximum number of iterations the scheduler will allow before giving up.
+    #[must_use]
     pub fn with_max_iterations(mut self, max_iterations: usize) -> Self {
         self.max_iterations = max_iterations;
         self
@@ -86,7 +94,7 @@ impl PassScheduler {
     /// Reachability check: returns true if pass `from` can transitively
     /// invalidate any capability `to` requires. Computed via the
     /// substrate `dataflow_fixpoint::reachability_closure` with the
-    /// BoolOr semiring over the same invalidation adjacency built by
+    /// `BoolOr` semiring over the same invalidation adjacency built by
     /// [`Self::transitive_dependents`].
     ///
     /// O(1) lookup after one sparse closure pass — caller
@@ -98,10 +106,7 @@ impl PassScheduler {
             return false;
         }
         let closure = self.invalidation_closure_ref();
-        closure
-            .get(from)
-            .map(|set| set.contains(to))
-            .unwrap_or(false)
+        closure.get(from).is_some_and(|set| set.contains(to))
     }
 
     /// Materialize the full pass→pass transitive invalidation closure as a
@@ -193,8 +198,8 @@ impl PassScheduler {
     /// tensor-network ordering — this minimizes the size of
     /// intermediate "stale capability" sets the optimizer must track.
     ///
-    /// Routes through pass_substrate::tensor_network_fusion_order::
-    /// optimal_fusion_order. Returns indices into the input slice
+    /// Routes through `pass_substrate::tensor_network_fusion_order::`
+    /// `optimal_fusion_order`. Returns indices into the input slice
     /// in recommended run order.
     #[must_use]
     pub fn fusion_friendly_order(passes: &[&'static ProgramPassRegistration]) -> Vec<usize> {
@@ -210,8 +215,8 @@ impl PassScheduler {
     }
 
     /// Estimate the contraction cost of running a candidate pass
-    /// ordering. Routes through pass_substrate::
-    /// tensor_network_fusion_order::fusion_order_cost. Lower is
+    /// ordering. Routes through `pass_substrate::`
+    /// `tensor_network_fusion_order::fusion_order_cost`. Lower is
     /// better; callers can use this to compare two orderings (e.g.
     /// the topological order from `schedule_passes` vs the
     /// fusion-friendly order from [`Self::fusion_friendly_order`]).
@@ -231,7 +236,7 @@ impl PassScheduler {
     /// Pairs of registered passes that are independent (neither
     /// reaches the other in the transitive invalidation closure)
     /// and therefore safe to fuse / parallelize. Computed via
-    /// pass_substrate::polyhedral_fusion::fusable_pairs over the
+    /// `pass_substrate::polyhedral_fusion::fusable_pairs` over the
     /// scheduler's invalidation adjacency.
     ///
     /// Returns a flat `Vec<(name_a, name_b)>` of fusable name pairs;
@@ -288,7 +293,7 @@ impl PassScheduler {
 
     /// Maximum independent set of fusable passes via matroid
     /// intersection on the invalidation adjacency. Routes through
-    /// optimizer::megakernel::matroid_subset::max_fusion_subset.
+    /// `optimizer::megakernel::matroid_subset::max_fusion_subset`.
     /// Returns a 0/1 vector indexed by pass position; 1 = pass is
     /// in the maximum-fusion subset.
     ///
@@ -306,7 +311,7 @@ impl PassScheduler {
 
     /// Multigrid Jacobi smoothing step on the pass-influence linear
     /// system. Routes through
-    /// pass_substrate::multigrid_matroid_solver::matroid_solve_step.
+    /// `pass_substrate::multigrid_matroid_solver::matroid_solve_step`.
     /// Lets analyses (cost-prediction, scheduling-bound estimation)
     /// solve `A·x ≈ b` over the n-dimensional pass space using the
     /// substrate's relaxed solver.
@@ -316,11 +321,15 @@ impl PassScheduler {
         if n == 0 || b.len() != n || x_in.len() != n {
             return Vec::new();
         }
-        let adj_u32 = self.invalidation_adjacency();
-        let adj_f64: Vec<f64> = adj_u32.iter().map(|&v| v as f64).collect();
+        let adjacency_words = self.invalidation_adjacency();
+        let adjacency_weights: Vec<f64> = adjacency_words.iter().map(|&v| f64::from(v)).collect();
         let n_u32 = u32::try_from(n).unwrap_or(u32::MAX);
         crate::pass_substrate::multigrid_matroid_solver::matroid_solve_step(
-            &adj_f64, b, x_in, weight, n_u32,
+            &adjacency_weights,
+            b,
+            x_in,
+            weight,
+            n_u32,
         )
     }
 
@@ -343,66 +352,27 @@ impl PassScheduler {
         if a_idx == b_idx {
             return true;
         }
-        // Capability column mapping: each pass projects an N-wide
-        // capability vector through its (requires → invalidates) shape.
-        // Identity means "this pass leaves capability j untouched"; any
-        // non-identity entry is a rewrite. If both pass mappings agree
-        // on the round-trip (a;b == b;a), the passes commute.
-        let mut pass_metas = Vec::with_capacity(self.passes.len());
-        pass_metas.extend(self.passes.iter().map(|p| p.metadata()));
-        let cap_capacity = pass_metas
-            .iter()
-            .map(|metadata| metadata.requires.len() + metadata.invalidates.len())
-            .sum();
-        let mut cap_to_idx = FxHashMap::with_capacity_and_hasher(cap_capacity, Default::default());
-        for m in &pass_metas {
-            for &cap in m.requires.iter().chain(m.invalidates.iter()) {
-                let next = cap_to_idx.len();
-                cap_to_idx.entry(cap).or_insert(next);
-            }
-        }
-        let cap_count = cap_to_idx.len();
-        if cap_count == 0 {
-            return true;
-        }
-        let cap_count_u32 = u32::try_from(cap_count).unwrap_or(u32::MAX);
-
-        let identity =
-            crate::pass_substrate::functorial_pass_composition::identity_functor(cap_count_u32);
-        let mut mapping_a = identity.clone();
-        let mut mapping_b = identity.clone();
-        // Each pass remaps its invalidates to itself. We
-        // model rewriting as a permutation that swaps invalidated capability
-        // slots with the pass's own slot.
-        for &inv in pass_metas[a_idx].invalidates {
-            if let Some(&col) = cap_to_idx.get(inv) {
-                mapping_a[col] = mapping_a[col].saturating_add(1) % cap_count_u32.max(1);
-            }
-        }
-        for &inv in pass_metas[b_idx].invalidates {
-            if let Some(&col) = cap_to_idx.get(inv) {
-                mapping_b[col] = mapping_b[col].saturating_add(1) % cap_count_u32.max(1);
-            }
-        }
-
-        let mut values = Vec::with_capacity(cap_count);
-        values.extend(0..cap_count_u32);
-        crate::pass_substrate::functorial_pass_composition::passes_commute_on(
-            &values,
-            &mapping_a,
-            cap_count_u32,
-            &mapping_b,
-            &mapping_b,
-            cap_count_u32,
-            &mapping_a,
-            cap_count_u32,
-        )
+        let metadata_a = self.passes[a_idx].metadata();
+        let metadata_b = self.passes[b_idx].metadata();
+        let a_invalidates_b_requirement = metadata_a.invalidates.iter().any(|invalidated| {
+            metadata_b
+                .requires
+                .iter()
+                .any(|required| required == invalidated)
+        });
+        let b_invalidates_a_requirement = metadata_b.invalidates.iter().any(|invalidated| {
+            metadata_a
+                .requires
+                .iter()
+                .any(|required| required == invalidated)
+        });
+        !a_invalidates_b_requirement && !b_invalidates_a_requirement
     }
 
     fn invalidation_adjacency(&self) -> &[u32] {
         self.invalidation_adjacency_cache.get_or_init(|| {
             let n = self.passes.len();
-            let pass_metas: Vec<_> = self.passes.iter().map(|p| p.metadata()).collect();
+            let pass_metas: Vec<_> = self.passes.iter().map(ProgramPassKind::metadata).collect();
             let mut adj = vec![0u32; n * n];
             for (i, m_i) in pass_metas.iter().enumerate() {
                 for (j, m_j) in pass_metas.iter().enumerate() {
@@ -422,15 +392,12 @@ impl PassScheduler {
         })
     }
 
-    fn invalidation_closure_ref(
-        &self,
-    ) -> &FxHashMap<&'static str, FxHashSet<&'static str>> {
+    fn invalidation_closure_ref(&self) -> &FxHashMap<&'static str, FxHashSet<&'static str>> {
         self.invalidation_closure_cache.get_or_init(|| {
-            let pass_metas: Vec<_> = self.passes.iter().map(|p| p.metadata()).collect();
+            let pass_metas: Vec<_> = self.passes.iter().map(ProgramPassKind::metadata).collect();
 
             // Sparse adjacency: pass name -> set of directly reachable pass names.
-            let mut adj: FxHashMap<&'static str, FxHashSet<&'static str>> =
-                FxHashMap::default();
+            let mut adj: FxHashMap<&'static str, FxHashSet<&'static str>> = FxHashMap::default();
             for (i, m_i) in pass_metas.iter().enumerate() {
                 for (j, m_j) in pass_metas.iter().enumerate() {
                     if i == j {

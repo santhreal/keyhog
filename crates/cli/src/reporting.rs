@@ -61,7 +61,8 @@ fn report_with<W: std::io::Write + 'static + Send>(
             // formats (JSON/JSONL/SARIF) don't render prose, so the
             // count goes via --dogfood for those callers.
             let mut reporter = TextReporter::with_color(w, color);
-            reporter.set_example_suppressions(keyhog_scanner::telemetry::example_suppression_count());
+            reporter
+                .set_example_suppressions(keyhog_scanner::telemetry::example_suppression_count());
             finish_reporter(reporter, findings)
         }
         OutputFormat::Json => finish_reporter(JsonReporter::new(w)?, findings),

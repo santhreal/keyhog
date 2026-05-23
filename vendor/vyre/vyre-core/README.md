@@ -48,11 +48,11 @@ assert!(vyre::validate(&program).is_empty());
 GPU dispatch and backend-specific readback examples belong in the concrete
 driver crates that own those runtimes.
 
-## Public facade — what `vyre::*` exports
+## Public facade: what `vyre::*` exports
 
 `vyre` is the single user-facing import path. Reaching for `vyre_core::*`,
 `vyre_foundation::*`, `vyre_driver::*`, or any backend crate from a
-consumer is a smell — the gate
+consumer is a smell: the gate
 `scripts/check_examples_public_facade.sh` enforces this for every
 example under `examples/`.
 
@@ -75,7 +75,7 @@ example under `examples/`.
 
 Top-level re-exports also include `BackendError`, `BackendRegistration`,
 `CompiledPipeline`, `DispatchConfig`, `Error`, `Executable`, `Memory`,
-`MemoryRef`, `OutputBuffers`, `TypedDispatchExt`, `VyreBackend` —
+`MemoryRef`, `OutputBuffers`, `TypedDispatchExt`, `VyreBackend`, 
 everything a consumer needs without reaching beyond `vyre`.
 
 ## Why vyre

@@ -20,7 +20,7 @@ use crate::serial::wire::framing::{put_u32, put_u8};
 ///
 /// Returns `Err("unknown DataType variant")` when the variant has no
 /// registered tag, preventing silent data loss on round-trip.
-/// Wire tag reserved for extension DataTypes. The tag byte is 0x80;
+/// Wire tag reserved for extension `DataTypes`. The tag byte is `0x80`;
 /// the u32 extension id follows immediately (little-endian). See
 /// `docs/wire-format.md` §Extensions.
 pub(crate) const DATA_TYPE_TAG_OPAQUE: u8 = 0x80;
@@ -49,6 +49,15 @@ pub(crate) fn data_type_tag(value: &DataType) -> Result<u8, WireEncodeErr> {
         DataType::Handle(_) => Ok(0x13),
         DataType::Vec { .. } => Ok(0x14),
         DataType::TensorShaped { .. } => Ok(0x15),
+        DataType::SparseCsr { .. } => Ok(0x16),
+        DataType::SparseCoo { .. } => Ok(0x17),
+        DataType::SparseBsr { .. } => Ok(0x18),
+        DataType::F8E4M3 => Ok(0x19),
+        DataType::F8E5M2 => Ok(0x1A),
+        DataType::I4 => Ok(0x1B),
+        DataType::FP4 => Ok(0x1C),
+        DataType::NF4 => Ok(0x1D),
+        DataType::DeviceMesh { .. } => Ok(0x1E),
         DataType::Opaque(_) => Ok(DATA_TYPE_TAG_OPAQUE),
         _ => Err(WireEncodeErr::static_msg("unknown DataType variant")),
     }
@@ -110,6 +119,31 @@ pub(crate) fn put_data_type(out: &mut Vec<u8>, value: &DataType) -> Result<(), W
                 put_u32(out, *dim);
             }
         }
+        DataType::SparseCsr { element } | DataType::SparseCoo { element } => {
+            put_data_type(out, element)?;
+        }
+        DataType::SparseBsr {
+            element,
+            block_rows,
+            block_cols,
+        } => {
+            put_data_type(out, element)?;
+            put_u32(out, *block_rows);
+            put_u32(out, *block_cols);
+        }
+        DataType::DeviceMesh { axes } => {
+            let len = u32::try_from(axes.len()).map_err(|_| {
+                WireEncodeErr::fmt_usize(
+                    "Fix: device-mesh axes count ",
+                    axes.len(),
+                    " cannot fit the VIR0 u32 payload; cap mesh rank before serialization.",
+                )
+            })?;
+            put_u32(out, len);
+            for axis in axes {
+                put_u32(out, *axis);
+            }
+        }
         // Fixed-width scalar and vector types consume zero payload bytes
         // beyond the tag byte `data_type_tag` returned above.
         DataType::U8
@@ -128,7 +162,12 @@ pub(crate) fn put_data_type(out: &mut Vec<u8>, value: &DataType) -> Result<(), W
         | DataType::Bytes
         | DataType::Tensor
         | DataType::Vec2U32
-        | DataType::Vec4U32 => {}
+        | DataType::Vec4U32
+        | DataType::F8E4M3
+        | DataType::F8E5M2
+        | DataType::I4
+        | DataType::FP4
+        | DataType::NF4 => {}
         // `DataType` is `#[non_exhaustive]` in vyre-spec; extension
         // variants added there must not break the existing encoder. Any
         // new variant must also add a payload-emission arm above before
@@ -146,6 +185,8 @@ pub(crate) fn put_data_type(out: &mut Vec<u8>, value: &DataType) -> Result<(), W
 mod tests {
     use super::put_data_type;
     use crate::ir::DataType;
+    use crate::serial::wire::Reader;
+    use smallvec::smallvec;
 
     #[test]
     fn bool_data_type_wire_payload_is_single_u8_tag() {
@@ -153,5 +194,88 @@ mod tests {
         put_data_type(&mut encoded, &DataType::Bool)
             .expect("Fix: DataType::Bool must encode as one u8 tag");
         assert_eq!(encoded, vec![0x06]);
+    }
+
+    /// Every DataType variant the encoder accepts must also round-trip
+    /// through the decoder with bit-exact equality. A drift here means
+    /// the on-disk wire format silently corrupts buffer-element types
+    /// across encode/decode — a contract-invariant the optimizer cache
+    /// and AOT artifact format both rely on.
+    #[test]
+    fn every_supported_data_type_round_trips_through_the_wire() {
+        let cases: Vec<DataType> = vec![
+            DataType::U8,
+            DataType::U16,
+            DataType::U32,
+            DataType::U64,
+            DataType::I8,
+            DataType::I16,
+            DataType::I32,
+            DataType::I64,
+            DataType::F16,
+            DataType::BF16,
+            DataType::F32,
+            DataType::F64,
+            DataType::Bool,
+            DataType::Bytes,
+            DataType::Tensor,
+            DataType::Vec2U32,
+            DataType::Vec4U32,
+            DataType::F8E4M3,
+            DataType::F8E5M2,
+            DataType::I4,
+            DataType::FP4,
+            DataType::NF4,
+            DataType::Array { element_size: 16 },
+            DataType::Handle(vyre_spec::data_type::TypeId(0xDEAD_BEEF)),
+            DataType::Vec {
+                element: Box::new(DataType::F32),
+                count: 4,
+            },
+            DataType::TensorShaped {
+                element: Box::new(DataType::F32),
+                shape: smallvec![32, 32],
+            },
+            DataType::SparseCsr {
+                element: Box::new(DataType::F32),
+            },
+            DataType::SparseCoo {
+                element: Box::new(DataType::F32),
+            },
+            DataType::SparseBsr {
+                element: Box::new(DataType::F32),
+                block_rows: 8,
+                block_cols: 8,
+            },
+            DataType::DeviceMesh {
+                axes: smallvec![4, 8, 16],
+            },
+            // Extension ids must have the high bit set per
+            // reject_reserved_extension_id (low half is reserved for core IR).
+            DataType::Opaque(vyre_spec::extension::ExtensionDataTypeId(0x8000_0001)),
+        ];
+
+        for ty in &cases {
+            let mut encoded = Vec::new();
+            put_data_type(&mut encoded, ty)
+                .unwrap_or_else(|e| panic!("encode {ty:?} failed: {e:?}"));
+            let mut reader = Reader {
+                bytes: &encoded,
+                pos: 0,
+                depth: 0,
+            };
+            let decoded = reader
+                .data_type()
+                .unwrap_or_else(|e| panic!("decode {ty:?} failed: {e}"));
+            assert_eq!(
+                &decoded, ty,
+                "round-trip diverged for {ty:?}: re-decoded as {decoded:?}"
+            );
+            assert_eq!(
+                reader.pos,
+                encoded.len(),
+                "encoder produced trailing bytes for {ty:?}"
+            );
+        }
     }
 }

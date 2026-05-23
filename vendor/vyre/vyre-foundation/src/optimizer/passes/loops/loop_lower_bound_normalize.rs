@@ -70,6 +70,9 @@ impl LoopLowerBoundNormalize {
     /// Skip programs that have no normalizable Loop.
     #[must_use]
     fn analyze_impl(program: &Program) -> PassAnalysis {
+        if !program.stats().has_node_loop() {
+            return PassAnalysis::SKIP;
+        }
         if program
             .entry()
             .iter()
@@ -84,18 +87,16 @@ impl LoopLowerBoundNormalize {
     /// Walk the entry tree and normalize every eligible Loop.
     #[must_use]
     pub fn transform(program: Program) -> PassResult {
-        let scaffold = program.with_rewritten_entry(Vec::new());
         let mut changed = false;
-        let entry: Vec<Node> = program
-            .into_entry_vec()
-            .into_iter()
-            .map(|n| recurse(n, &mut changed))
-            .collect();
-        PassResult {
-            program: scaffold.with_rewritten_entry(entry),
-            changed,
-        }
-    }}
+        let program = program.map_entry(|entry| {
+            entry
+                .into_iter()
+                .map(|n| recurse(n, &mut changed))
+                .collect()
+        });
+        PassResult { program, changed }
+    }
+}
 
 fn recurse(node: Node, changed: &mut bool) -> Node {
     let recursed = node_map::map_children(node, &mut |child| recurse(child, changed));
@@ -163,8 +164,7 @@ fn is_normalizable_loop(node: &Node) -> bool {
 fn body_rebinds_var(body: &[Node], var: &Ident) -> bool {
     fn check(node: &Node, var: &Ident) -> bool {
         match node {
-            Node::Assign { name, .. } => name == var,
-            Node::Let { name, .. } => name == var,
+            Node::Assign { name, .. } | Node::Let { name, .. } => name == var,
             Node::Loop {
                 var: inner, body, ..
             } => {
@@ -184,6 +184,10 @@ fn body_rebinds_var(body: &[Node], var: &Ident) -> bool {
     body.iter().any(|n| check(n, var))
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "loop lower-bound substitution keeps Node variant reconstruction in one ownership-preserving pass"
+)]
 fn substitute_var_in_node(node: Node, from: &Ident, to: &Ident, offset: &Expr) -> Node {
     match node {
         Node::Let { name, value } => Node::Let {

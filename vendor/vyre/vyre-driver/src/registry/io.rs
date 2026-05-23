@@ -100,33 +100,13 @@ const SIG_UNMAP: Signature = Signature {
     bytes_extraction: false,
 };
 
-/// Shared unsupported CPU entry for Category C io ops.
-///
-/// Cat C ops have no portable CPU reference: their entire purpose is to keep
-/// payload movement on the zero-copy storage/GPU path. Capability negotiation
-/// must reject these ops before reference dispatch reaches this function. A
-/// direct call is therefore a routing failure; it clears the destination and
-/// emits a structured error log instead of panicking inside the reference path.
-fn unsupported_io_cpu_ref(input: &[u8], output: &mut Vec<u8>) {
-    output.clear();
-    tracing::error!(
-        target: "vyre::io_cpu_ref",
-        input_len = input.len(),
-        "unsupported Category C io CPU reference dispatch. Category C io ops require \
-         a backend with zero-copy NVMe/GDS capability and have no portable CPU/reference \
-         lowering. Fix: select or register a backend that advertises the `io` dialect \
-         lowering, or reject the program during capability negotiation before invoking \
-         cpu_ref."
-    );
-}
-
 inventory::submit! {
     OpDefRegistration::new(|| OpDef {
         id: OP_DMA_FROM_NVME,
         dialect: "io",
         category: Category::Intrinsic,
         signature: SIG_DMA_FROM_NVME,
-        lowerings: crate::LoweringTable::new(unsupported_io_cpu_ref),
+        lowerings: crate::LoweringTable::empty(),
         laws: &[],
         compose: None,
     })
@@ -138,7 +118,7 @@ inventory::submit! {
         dialect: "io",
         category: Category::Intrinsic,
         signature: SIG_WRITE_BACK_TO_NVME,
-        lowerings: crate::LoweringTable::new(unsupported_io_cpu_ref),
+        lowerings: crate::LoweringTable::empty(),
         laws: &[],
         compose: None,
     })
@@ -150,7 +130,7 @@ inventory::submit! {
         dialect: "io",
         category: Category::Intrinsic,
         signature: SIG_ZEROCOPY_MAP,
-        lowerings: crate::LoweringTable::new(unsupported_io_cpu_ref),
+        lowerings: crate::LoweringTable::empty(),
         laws: &[],
         compose: None,
     })
@@ -162,7 +142,7 @@ inventory::submit! {
         dialect: "io",
         category: Category::Intrinsic,
         signature: SIG_UNMAP,
-        lowerings: crate::LoweringTable::new(unsupported_io_cpu_ref),
+        lowerings: crate::LoweringTable::empty(),
         laws: &[],
         compose: None,
     })
@@ -175,6 +155,8 @@ mod tests {
 
     #[test]
     fn every_io_op_registers() -> Result<(), String> {
+        let _lock = crate::registry::registry_test_lock();
+        DialectRegistry::install(DialectRegistry::from_inventory());
         let reg = DialectRegistry::global();
         for op in [
             OP_DMA_FROM_NVME,
@@ -198,6 +180,8 @@ mod tests {
 
     #[test]
     fn io_ops_have_no_gpu_lowering() {
+        let _lock = crate::registry::registry_test_lock();
+        DialectRegistry::install(DialectRegistry::from_inventory());
         let reg = DialectRegistry::global();
         for op in [
             OP_DMA_FROM_NVME,
@@ -219,7 +203,9 @@ mod tests {
     }
 
     #[test]
-    fn io_ops_cpu_ref_clears_output_without_panicking_if_called_directly() {
+    fn io_ops_use_structured_intrinsic_sentinel_not_custom_cpu_paths() {
+        let _lock = crate::registry::registry_test_lock();
+        DialectRegistry::install(DialectRegistry::from_inventory());
         let reg = DialectRegistry::global();
         for op in [
             OP_DMA_FROM_NVME,
@@ -229,20 +215,17 @@ mod tests {
         ] {
             let id = reg.intern_op(op);
             let def = reg.lookup(id).unwrap();
-            let mut out = vec![0xAA];
-            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                (def.lowerings.cpu_ref)(&[1, 2, 3], &mut out);
-            }))
-            .expect("Fix: Category C io cpu_ref must never panic inside reference dispatch; restore this invariant before continuing.");
             assert!(
-                out.is_empty(),
-                "{op} cpu_ref must clear output before failing so callers cannot consume stale bytes"
+                vyre_foundation::cpu_op::is_cpu_reference_sentinel(def.lowerings.cpu_ref),
+                "{op} must not install a custom CPU path; Category C io ops require concrete backend lowering"
             );
         }
     }
 
     #[test]
     fn io_dialect_is_distinct_from_stdlib() {
+        let _lock = crate::registry::registry_test_lock();
+        DialectRegistry::install(DialectRegistry::from_inventory());
         let reg = DialectRegistry::global();
         let id = reg.intern_op(OP_DMA_FROM_NVME);
         let def = reg.lookup(id).unwrap();

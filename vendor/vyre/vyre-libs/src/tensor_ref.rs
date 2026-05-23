@@ -69,6 +69,18 @@ impl TensorRef {
         Self::new(name, DataType::U32, vec![rows, cols])
     }
 
+    /// F16 1-D tensor convenience constructor.
+    #[must_use]
+    pub fn f16_1d(name: impl Into<Ident>, len: u32) -> Self {
+        Self::new(name, DataType::F16, vec![len])
+    }
+
+    /// F16 2-D tensor convenience constructor (rows × cols).
+    #[must_use]
+    pub fn f16_2d(name: impl Into<Ident>, rows: u32, cols: u32) -> Self {
+        Self::new(name, DataType::F16, vec![rows, cols])
+    }
+
     /// F32 2-D tensor convenience constructor (rows × cols).
     #[must_use]
     pub fn f32_2d(name: impl Into<Ident>, rows: u32, cols: u32) -> Self {

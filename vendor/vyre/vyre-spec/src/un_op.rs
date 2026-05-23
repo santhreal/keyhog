@@ -100,3 +100,52 @@ pub enum UnOp {
     /// lowerings. Wire encoding is `0x80 ++ u32 extension_id`.
     Opaque(ExtensionUnOpId),
 }
+
+impl UnOp {
+    /// Frozen builtin wire tag for this unary operation.
+    ///
+    /// Returns `None` for extension-declared opaque operators because their
+    /// wire representation is the high-bit extension id, not a core tag.
+    #[must_use]
+    pub const fn builtin_wire_tag(&self) -> Option<u8> {
+        match self {
+            Self::Negate => Some(0x01),
+            Self::BitNot => Some(0x02),
+            Self::LogicalNot => Some(0x03),
+            Self::Popcount => Some(0x04),
+            Self::Clz => Some(0x05),
+            Self::Ctz => Some(0x06),
+            Self::ReverseBits => Some(0x07),
+            Self::Cos => Some(0x08),
+            Self::Sin => Some(0x09),
+            Self::Abs => Some(0x0A),
+            Self::Sqrt => Some(0x0B),
+            Self::Floor => Some(0x0C),
+            Self::Ceil => Some(0x0D),
+            Self::Round => Some(0x0E),
+            Self::Trunc => Some(0x0F),
+            Self::Sign => Some(0x10),
+            Self::IsNan => Some(0x11),
+            Self::IsInf => Some(0x12),
+            Self::IsFinite => Some(0x13),
+            Self::Exp => Some(0x14),
+            Self::Log => Some(0x15),
+            Self::Log2 => Some(0x16),
+            Self::Exp2 => Some(0x17),
+            Self::Tan => Some(0x18),
+            Self::Acos => Some(0x19),
+            Self::Asin => Some(0x1A),
+            Self::Atan => Some(0x1B),
+            Self::Tanh => Some(0x1C),
+            Self::Sinh => Some(0x1D),
+            Self::Cosh => Some(0x1E),
+            Self::InverseSqrt => Some(0x1F),
+            Self::Unpack4Low => Some(0x20),
+            Self::Unpack4High => Some(0x21),
+            Self::Unpack8Low => Some(0x22),
+            Self::Unpack8High => Some(0x23),
+            Self::Reciprocal => Some(0x24),
+            Self::Opaque(_) => None,
+        }
+    }
+}

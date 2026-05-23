@@ -277,6 +277,7 @@ pub(crate) fn emit_stringified_argument_token(
     let byte = format!("{prefix}_string_byte");
     let needs_escape = format!("{prefix}_string_needs_escape");
     let seen_token = format!("{prefix}_string_seen_token");
+    let quote_byte = format!("{prefix}_string_quote_byte");
 
     let mut nodes = vec![
         Node::if_then(
@@ -308,6 +309,26 @@ pub(crate) fn emit_stringified_argument_token(
     ));
     nodes.extend([
         Node::let_bind(&out_start, Expr::var("named_source_out_idx")),
+        Node::let_bind(&quote_byte, Expr::u32(u32::from(b'"'))),
+        Node::if_then(
+            Expr::gt(
+                Expr::add(Expr::var(&out_start), Expr::u32(1)),
+                Expr::u32(max_out_source_bytes),
+            ),
+            vec![Node::trap(
+                Expr::add(Expr::var(&out_start), Expr::u32(1)),
+                "named-macro-source-arena-overflow",
+            )],
+        ),
+        Node::store(
+            out_source_words,
+            Expr::var(&out_start),
+            Expr::var(&quote_byte),
+        ),
+        Node::assign(
+            "named_source_out_idx",
+            Expr::add(Expr::var(&out_start), Expr::u32(1)),
+        ),
         Node::store(
             out_tok_types,
             Expr::var("named_out_idx"),
@@ -319,11 +340,6 @@ pub(crate) fn emit_stringified_argument_token(
             Expr::var(&out_start),
         ),
     ]);
-    nodes.extend(append_byte(
-        out_source_words,
-        max_out_source_bytes,
-        Expr::u32(u32::from(b'"')),
-    ));
     nodes.push(Node::let_bind(&seen_token, Expr::u32(0)));
     nodes.push(Node::loop_for(
         rel.clone(),
@@ -411,7 +427,7 @@ pub(crate) fn emit_stringified_argument_token(
     nodes.extend(append_byte(
         out_source_words,
         max_out_source_bytes,
-        Expr::u32(u32::from(b'"')),
+        Expr::var(&quote_byte),
     ));
     nodes.extend([
         Node::store(

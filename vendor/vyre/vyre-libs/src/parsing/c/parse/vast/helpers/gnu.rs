@@ -1,14 +1,16 @@
 use super::super::*;
+use super::tokens::balanced_or;
 use crate::parsing::c::lex::tokens::*;
 use vyre::ir::Expr;
 
 pub(crate) fn is_gnu_typeof_symbol_hash(symbol_hash: Expr) -> Expr {
-    C_GNU_TYPEOF_HASHES
-        .iter()
-        .copied()
-        .fold(Expr::bool(false), |acc, hash| {
-            Expr::or(acc, Expr::eq(symbol_hash.clone(), Expr::u32(hash)))
-        })
+    balanced_or(
+        C_GNU_TYPEOF_HASHES
+            .iter()
+            .copied()
+            .map(|hash| Expr::eq(symbol_hash.clone(), Expr::u32(hash)))
+            .collect(),
+    )
 }
 
 pub(crate) fn is_typeof_operator_token(token: Expr, symbol_hash: Expr) -> Expr {
@@ -29,14 +31,32 @@ pub(crate) fn is_gnu_auto_type_symbol_hash(symbol_hash: Expr) -> Expr {
 }
 
 pub(crate) fn c_attribute_kind_from_hash(symbol_hash: Expr) -> Expr {
-    C_ATTRIBUTE_KIND_HASHES
-        .iter()
-        .rev()
-        .fold(Expr::u32(0), |fallback, (hash, kind)| {
+    balanced_attribute_kind_from_hash(&symbol_hash, C_ATTRIBUTE_KIND_HASHES)
+}
+
+fn balanced_attribute_kind_from_hash(symbol_hash: &Expr, entries: &[(u32, u32)]) -> Expr {
+    match entries.len() {
+        0 => Expr::u32(0),
+        1 => {
+            let (hash, kind) = entries[0];
             Expr::select(
-                Expr::eq(symbol_hash.clone(), Expr::u32(*hash)),
-                Expr::u32(*kind),
-                fallback,
+                Expr::eq(symbol_hash.clone(), Expr::u32(hash)),
+                Expr::u32(kind),
+                Expr::u32(0),
             )
-        })
+        }
+        _ => {
+            let (left, right) = entries.split_at(entries.len() / 2);
+            let left_match = balanced_or(
+                left.iter()
+                    .map(|(hash, _)| Expr::eq(symbol_hash.clone(), Expr::u32(*hash)))
+                    .collect(),
+            );
+            Expr::select(
+                left_match,
+                balanced_attribute_kind_from_hash(symbol_hash, left),
+                balanced_attribute_kind_from_hash(symbol_hash, right),
+            )
+        }
+    }
 }

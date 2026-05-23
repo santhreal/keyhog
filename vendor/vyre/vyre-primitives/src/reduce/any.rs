@@ -63,12 +63,29 @@ pub fn reduce_any(values: &str, out: &str, count: u32) -> Program {
 
 /// CPU reference.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref(values: &[u32]) -> u32 {
     if values.iter().any(|&value| value != 0) {
         1
     } else {
         0
     }
+}
+
+#[cfg(feature = "inventory-registry")]
+inventory::submit! {
+    crate::harness::OpEntry::new(
+        OP_ID,
+        || reduce_any("values", "out", 4),
+        Some(|| {
+            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            vec![vec![
+                to_bytes(&[1, 0, 1, 1]),
+                to_bytes(&[0]),
+            ]]
+        }),
+        None,
+    )
 }
 
 #[cfg(test)]

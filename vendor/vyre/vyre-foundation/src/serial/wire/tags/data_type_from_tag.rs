@@ -56,6 +56,27 @@ pub(crate) fn data_type_from_tag(tag: u8) -> Result<DataType, String> {
             "Fix: shaped tensor data type tag requires element and shape payloads; use Reader::data_type instead of data_type_from_tag."
                 .to_string(),
         ),
+        0x16 => Err(
+            "Fix: sparse-CSR data type tag requires an element-tag payload; use Reader::data_type instead of data_type_from_tag."
+                .to_string(),
+        ),
+        0x17 => Err(
+            "Fix: sparse-COO data type tag requires an element-tag payload; use Reader::data_type instead of data_type_from_tag."
+                .to_string(),
+        ),
+        0x18 => Err(
+            "Fix: sparse-BSR data type tag requires element + block_rows + block_cols payloads; use Reader::data_type instead of data_type_from_tag."
+                .to_string(),
+        ),
+        0x19 => Ok(DataType::F8E4M3),
+        0x1A => Ok(DataType::F8E5M2),
+        0x1B => Ok(DataType::I4),
+        0x1C => Ok(DataType::FP4),
+        0x1D => Ok(DataType::NF4),
+        0x1E => Err(
+            "Fix: device-mesh data type tag requires an axes payload; use Reader::data_type instead of data_type_from_tag."
+                .to_string(),
+        ),
         0x80 => Err(
             "Fix: opaque data type tag 0x80 requires a u32 extension id payload; use Reader::data_type instead of data_type_from_tag."
                 .to_string(),

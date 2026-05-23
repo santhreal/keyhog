@@ -334,7 +334,7 @@ pub fn ast_shunting_yard(
     scratch_val_stack: &str,
     scratch_op_stack: &str,
 ) -> Program {
-    ast_shunting_yard_with_capacity(
+    ast_shunting_yard_program(
         tok_types,
         statements,
         num_statements,
@@ -344,14 +344,16 @@ pub fn ast_shunting_yard(
         scratch_val_stack,
         scratch_op_stack,
         MAX_TOK_SCAN,
+        None,
     )
 }
 
-/// Data-parallel shunting-yard AST builder with caller-bounded token capacity.
+/// Data-parallel shunting-yard AST builder with caller-bounded capacities.
 ///
 /// This preserves [`ast_shunting_yard`]'s semantics while avoiding the
 /// release-path cost of uploading and allocating fixed 65k-token buffers for
-/// small translation units.
+/// small translation units. `token_capacity` sizes the four-word AST-node
+/// stream, while `statement_capacity` sizes the per-statement root table.
 #[must_use]
 #[allow(clippy::too_many_arguments)]
 pub fn ast_shunting_yard_with_capacity(
@@ -364,8 +366,37 @@ pub fn ast_shunting_yard_with_capacity(
     scratch_val_stack: &str,
     scratch_op_stack: &str,
     token_capacity: u32,
+    statement_capacity: u32,
+) -> Program {
+    ast_shunting_yard_program(
+        tok_types,
+        statements,
+        num_statements,
+        out_ast_nodes,
+        out_ast_count,
+        out_statement_roots,
+        scratch_val_stack,
+        scratch_op_stack,
+        token_capacity,
+        Some(statement_capacity),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn ast_shunting_yard_program(
+    tok_types: &str,
+    statements: &str,
+    num_statements: Expr,
+    out_ast_nodes: &str,
+    out_ast_count: &str,
+    out_statement_roots: &str,
+    scratch_val_stack: &str,
+    scratch_op_stack: &str,
+    token_capacity: u32,
+    statement_capacity: Option<u32>,
 ) -> Program {
     let token_capacity = token_capacity.clamp(1, MAX_TOK_SCAN);
+    let statement_capacity = statement_capacity.map(|capacity| capacity.clamp(1, MAX_TOK_SCAN));
     let t = Expr::InvocationId { axis: 0 };
     let val_stack_base = Expr::mul(t.clone(), Expr::u32(STACK_SLOTS_PER_STATEMENT));
     let op_stack_base = Expr::mul(t.clone(), Expr::u32(STACK_SLOTS_PER_STATEMENT));
@@ -465,38 +496,55 @@ pub fn ast_shunting_yard_with_capacity(
         ),
     ];
 
-    let num_stmt = match &num_statements {
-        Expr::LitU32(n) => *n,
-        _ => 1,
+    let statement_limit = statement_capacity
+        .map(Expr::u32)
+        .unwrap_or_else(|| num_statements.clone());
+    let out_statement_roots_decl = {
+        let decl = BufferDecl::storage(
+            out_statement_roots,
+            4,
+            BufferAccess::ReadWrite,
+            DataType::U32,
+        );
+        if let Some(statement_capacity) = statement_capacity {
+            decl.with_count(statement_capacity)
+        } else {
+            decl
+        }
     };
-    let scratch_words = num_stmt.saturating_mul(STACK_SLOTS_PER_STATEMENT);
     Program::wrapped(
         vec![
-            BufferDecl::storage(tok_types, 0, BufferAccess::ReadOnly, DataType::U32)
-                .with_count(token_capacity),
-            BufferDecl::storage(statements, 1, BufferAccess::ReadOnly, DataType::U32)
-                .with_count(num_stmt.saturating_mul(2)),
+            BufferDecl::storage(tok_types, 0, BufferAccess::ReadOnly, DataType::U32),
+            BufferDecl::storage(statements, 1, BufferAccess::ReadOnly, DataType::U32),
             BufferDecl::storage(out_ast_nodes, 2, BufferAccess::ReadWrite, DataType::U32)
                 .with_count(token_capacity.saturating_mul(4)),
             BufferDecl::storage(out_ast_count, 3, BufferAccess::ReadWrite, DataType::U32)
                 .with_count(1),
-            BufferDecl::storage(
-                out_statement_roots,
-                4,
-                BufferAccess::ReadWrite,
-                DataType::U32,
-            )
-            .with_count(num_stmt),
+            out_statement_roots_decl,
             BufferDecl::storage(scratch_val_stack, 5, BufferAccess::ReadWrite, DataType::U32)
-                .with_count(scratch_words),
+                .with_count(
+                    statement_capacity
+                        .unwrap_or(MAX_TOK_SCAN)
+                        .saturating_mul(STACK_SLOTS_PER_STATEMENT),
+                ),
             BufferDecl::storage(scratch_op_stack, 6, BufferAccess::ReadWrite, DataType::U32)
-                .with_count(scratch_words),
+                .with_count(
+                    statement_capacity
+                        .unwrap_or(MAX_TOK_SCAN)
+                        .saturating_mul(STACK_SLOTS_PER_STATEMENT),
+                ),
         ],
         [256, 1, 1],
         vec![wrap_anonymous(
             OP_ID,
             vec![Node::if_then(
-                Expr::lt(t.clone(), num_statements),
+                Expr::lt(
+                    t.clone(),
+                    Expr::min(
+                        Expr::div(Expr::buf_len(statements), Expr::u32(2)),
+                        statement_limit,
+                    ),
+                ),
                 vec![child_phase(OP_ID, STATEMENT_PASS_OP_ID, loop_body)],
             )],
         )],
@@ -508,10 +556,11 @@ pub fn ast_shunting_yard_with_capacity(
 inventory::submit! {
     crate::harness::OpEntry {
         id: OP_ID,
-        build: || ast_shunting_yard(
+        build: || ast_shunting_yard_with_capacity(
             "tok_types", "statements", Expr::u32(100),
             "out_ast_nodes", "out_ast_count", "out_statement_roots",
-            "scratch_val_stack", "scratch_op_stack"
+            "scratch_val_stack", "scratch_op_stack",
+            MAX_TOK_SCAN, 100
         ),
         test_inputs: Some(|| vec![vec![
             shunting_token_fixture(),
@@ -523,16 +572,18 @@ inventory::submit! {
             vec![0u8; 6_400 * 4],
         ]]),
         expected_output: Some(shunting_expected_output),
+        category: Some("parsing"),
     }
 }
 
 inventory::submit! {
     crate::harness::OpEntry {
         id: STATEMENT_PASS_OP_ID,
-        build: || ast_shunting_yard(
+        build: || ast_shunting_yard_with_capacity(
             "tok_types", "statements", Expr::u32(100),
             "out_ast_nodes", "out_ast_count", "out_statement_roots",
-            "scratch_val_stack", "scratch_op_stack"
+            "scratch_val_stack", "scratch_op_stack",
+            MAX_TOK_SCAN, 100
         ),
         test_inputs: Some(|| vec![vec![
             shunting_token_fixture(),
@@ -544,6 +595,7 @@ inventory::submit! {
             vec![0u8; 6_400 * 4],
         ]]),
         expected_output: Some(shunting_expected_output),
+        category: Some("parsing"),
     }
 }
 

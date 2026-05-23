@@ -251,10 +251,8 @@ mod cross_file_tests {
             "expected 6 pairwise joins for cluster size 3, got {}",
             candidates.len()
         );
-        let joined: std::collections::BTreeSet<String> = candidates
-            .iter()
-            .map(|c| c.as_str().to_string())
-            .collect();
+        let joined: std::collections::BTreeSet<String> =
+            candidates.iter().map(|c| c.as_str().to_string()).collect();
         for expected in ["111222", "222111", "111333", "333111", "222333", "333222"] {
             assert!(
                 joined.contains(expected),

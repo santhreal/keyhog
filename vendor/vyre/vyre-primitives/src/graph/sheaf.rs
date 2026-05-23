@@ -67,24 +67,41 @@ pub fn sheaf_diffusion_step(
     n_nodes: u32,
     d: u32,
 ) -> Program {
+    match try_sheaf_diffusion_step(
+        stalks,
+        restriction_diag,
+        damping_scaled,
+        stalks_next,
+        n_nodes,
+        d,
+    ) {
+        Ok(program) => program,
+        Err(error) => {
+            eprintln!("{error}");
+            crate::invalid_output_program(OP_ID, stalks_next, DataType::U32, error)
+        }
+    }
+}
+
+/// Emit the diagonal sheaf-Laplacian step with checked stalk tensor sizing.
+pub fn try_sheaf_diffusion_step(
+    stalks: &str,
+    restriction_diag: &str,
+    damping_scaled: &str,
+    stalks_next: &str,
+    n_nodes: u32,
+    d: u32,
+) -> Result<Program, String> {
     if n_nodes == 0 {
-        return crate::invalid_output_program(
-            OP_ID,
-            stalks_next,
-            DataType::U32,
-            "Fix: sheaf_diffusion_step requires n_nodes > 0, got 0.".to_string(),
-        );
+        return Err("Fix: sheaf_diffusion_step requires n_nodes > 0, got 0.".to_string());
     }
     if d == 0 {
-        return crate::invalid_output_program(
-            OP_ID,
-            stalks_next,
-            DataType::U32,
-            format!("Fix: sheaf_diffusion_step requires d > 0, got {d}."),
-        );
+        return Err(format!(
+            "Fix: sheaf_diffusion_step requires d > 0, got {d}."
+        ));
     }
 
-    let cells = n_nodes * d;
+    let cells = checked_stalk_cells(n_nodes, d)?;
     let t = Expr::InvocationId { axis: 0 };
 
     // delta = damping · restriction_diag[t] · stalks[t]
@@ -92,8 +109,8 @@ pub fn sheaf_diffusion_step(
     let s = Expr::load(stalks, t.clone());
     let r = Expr::load(restriction_diag, t.clone());
     let d_v = Expr::load(damping_scaled, Expr::u32(0));
-    let damped_r = Expr::shr(Expr::mul(d_v, r), Expr::u32(16));
-    let delta = Expr::shr(Expr::mul(damped_r, s.clone()), Expr::u32(16));
+    let damped_r = crate::fixed_mul_16_16_expr(d_v, r);
+    let delta = crate::fixed_mul_16_16_expr(damped_r, s.clone());
     let value = Expr::sub(s, delta);
 
     let body = vec![Node::if_then(
@@ -101,7 +118,7 @@ pub fn sheaf_diffusion_step(
         vec![Node::store(stalks_next, t, value)],
     )];
 
-    Program::wrapped(
+    Ok(Program::wrapped(
         vec![
             BufferDecl::storage(stalks, 0, BufferAccess::ReadOnly, DataType::U32).with_count(cells),
             BufferDecl::storage(restriction_diag, 1, BufferAccess::ReadOnly, DataType::U32)
@@ -117,11 +134,20 @@ pub fn sheaf_diffusion_step(
             source_region: None,
             body: Arc::new(body),
         }],
-    )
+    ))
+}
+
+fn checked_stalk_cells(n_nodes: u32, d: u32) -> Result<u32, String> {
+    n_nodes.checked_mul(d).ok_or_else(|| {
+        format!(
+            "sheaf_diffusion_step n_nodes={n_nodes} d={d} overflows stalk tensor cell count. Fix: shard the sheaf domain before GPU dispatch."
+        )
+    })
 }
 
 /// CPU reference (f64).
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn sheaf_diffusion_step_cpu(
     stalks: &[f64],
     restriction_diag: &[f64],
@@ -136,6 +162,7 @@ pub fn sheaf_diffusion_step_cpu(
 ///
 /// Clears `out` and reuses its allocation so iterative diffusion loops do not
 /// allocate a new vector on every step.
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn sheaf_diffusion_step_cpu_into(
     stalks: &[f64],
     restriction_diag: &[f64],
@@ -152,6 +179,27 @@ pub fn sheaf_diffusion_step_cpu_into(
             .take(n)
             .map(|(&s, &r)| s - damping * r * s),
     );
+}
+
+#[cfg(feature = "inventory-registry")]
+inventory::submit! {
+    crate::harness::OpEntry::new(
+        OP_ID,
+        || sheaf_diffusion_step("stalks", "restriction_diag", "damping", "stalks_next", 1, 1),
+        Some(|| {
+            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            vec![vec![
+                to_bytes(&[10u32 << 16]),
+                to_bytes(&[1u32 << 16]),
+                to_bytes(&[1u32 << 15]),
+                to_bytes(&[0]),
+            ]]
+        }),
+        Some(|| {
+            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            vec![vec![to_bytes(&[5u32 << 16])]]
+        }),
+    )
 }
 
 #[cfg(test)]
@@ -228,5 +276,43 @@ mod tests {
     fn zero_d_traps() {
         let p = sheaf_diffusion_step("s", "rd", "dmp", "sn", 1, 0);
         assert!(p.stats().trap());
+    }
+
+    #[test]
+    fn checked_builder_rejects_stalk_tensor_overflow() {
+        let error = try_sheaf_diffusion_step("s", "rd", "dmp", "sn", u32::MAX, 2)
+            .expect_err("checked sheaf builder must reject stalk tensor overflow");
+
+        assert!(
+            error.contains("overflows stalk tensor cell count"),
+            "error should describe the stalk tensor overflow: {error}"
+        );
+    }
+
+    #[test]
+    fn legacy_builder_does_not_panic_on_stalk_tensor_overflow() {
+        let program = sheaf_diffusion_step("s", "rd", "dmp", "sn", u32::MAX, 2);
+
+        assert!(program.stats().trap());
+    }
+
+    #[test]
+    fn sheaf_builder_source_has_checked_sizing_without_panics() {
+        let source = include_str!("sheaf.rs");
+        let builder_source = source
+            .split("pub fn sheaf_diffusion_step(")
+            .nth(1)
+            .expect("sheaf diffusion builder source must be present")
+            .split("/// CPU reference")
+            .next()
+            .expect("sheaf diffusion builder source must precede CPU oracle");
+
+        assert!(
+            builder_source.contains("pub fn try_sheaf_diffusion_step(")
+                && builder_source.contains("checked_stalk_cells")
+                && !builder_source.contains(concat!("panic", "!("))
+                && !builder_source.contains(".unwrap_or_else("),
+            "Fix: sheaf_diffusion_step must expose checked release sizing and avoid production panics."
+        );
     }
 }

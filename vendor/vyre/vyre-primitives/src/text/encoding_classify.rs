@@ -126,7 +126,7 @@ pub fn encoding_classify(histogram: &str, output: &str, count: u32) -> Program {
     )
 }
 
-/// CPU reference for [`encoding_classify`].
+/// Reference oracle for [`encoding_classify`].
 #[must_use]
 pub fn classify_from_histogram(histogram: &[u32; 256], count: u32) -> u32 {
     if count == 0 {

@@ -71,7 +71,7 @@ These benchmarks use CPU baselines that run the same algorithm or contract shape
 
 ## Release Workloads
 
-The `release` suite must cover at least 12 workload families before Vyre `0.4.1` / Weir `0.0.1` can ship. CUDA is the preferred release backend; WGPU is the portable GPU fallback. Every row below has exact output parity against a CPU baseline and a performance contract against a serious CPU baseline class.
+The `release` suite must cover at least 12 workload families before Vyre `0.4.2` / Weir `0.0.1` can ship. CUDA is the preferred release backend; WGPU is the portable GPU fallback. Every row below has exact output parity against a CPU baseline and a performance contract against a serious CPU baseline class.
 
 | Workload family | Case id | Contract |
 |---|---|---|
@@ -134,11 +134,11 @@ The `CompetitorRun` trait in `api/competitor.rs` enables side-by-side A/B compar
 ## Dashboard
 
 `vyre-bench dashboard --output dashboard/` generates:
-- `index.html` — interactive scorecard with dark-mode UI
+- `index.html`: interactive scorecard with dark-mode UI
 - Per-case SVG bar charts (p50/p99/max)
-- `cross-backend.svg` — cross-backend comparison
-- `scorecard.md` — markdown summary
-- `data/results.json` — raw data
+- `cross-backend.svg`: cross-backend comparison
+- `scorecard.md`: markdown summary
+- `data/results.json`: raw data
 
 ## Adding a New Benchmark
 

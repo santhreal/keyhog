@@ -4,7 +4,7 @@ use vyre_foundation::ir::AtomicOp;
 use vyre_lower::KernelOp;
 
 use super::BodyCtx;
-use crate::reg::PtxType;
+use crate::reg::{PtxType, Reg};
 use crate::EmitError;
 
 impl BodyCtx<'_> {
@@ -50,8 +50,8 @@ impl BodyCtx<'_> {
             .operands
             .get(2)
             .ok_or_else(|| EmitError::InvalidDescriptor("Atomic missing value".into()))?;
-        let binding = self.binding_for_slot(binding_slot)?;
-        let elem_ty = PtxType::from_dtype(&binding.element_type)?;
+        let element_type = self.binding_for_slot(binding_slot)?.element_type.clone();
+        let elem_ty = PtxType::from_dtype(&element_type)?;
         let global_ptr =
             *self
                 .slot_to_ptr
@@ -61,11 +61,11 @@ impl BodyCtx<'_> {
                     reason: "global pointer not preloaded".into(),
                 })?;
         let index_reg = self.lookup_operand(index_op_id)?;
-        let value_reg = self.lookup_operand(value_op_id)?;
-        let stride = binding
-            .element_type
+        let value_reg =
+            self.atomic_value_reg(atomic_op, self.lookup_operand(value_op_id)?, elem_ty)?;
+        let stride = element_type
             .size_bytes()
-            .ok_or_else(|| EmitError::UnsupportedDataType(format!("{:?}", binding.element_type)))?;
+            .ok_or_else(|| EmitError::UnsupportedDataType(format!("{element_type:?}")))?;
         let addr_reg = self.alloc(PtxType::U64);
         let _ = writeln!(
             self.text,
@@ -83,6 +83,23 @@ impl BodyCtx<'_> {
             "    atom.global.{mnemonic}.{type_suffix}    {result_reg}, [{final_addr}], {value_reg};"
         );
         self.bind_result(op, result_reg)
+    }
+
+    fn atomic_value_reg(
+        &mut self,
+        atomic_op: AtomicOp,
+        value_reg: Reg,
+        elem_ty: PtxType,
+    ) -> Result<Reg, EmitError> {
+        if value_reg.0 == PtxType::Bool
+            && matches!(
+                atomic_op,
+                AtomicOp::Exchange | AtomicOp::And | AtomicOp::Or | AtomicOp::Xor
+            )
+        {
+            return Ok(self.coerce_for_store(value_reg, elem_ty));
+        }
+        Ok(value_reg)
     }
 
     /// Lower `Atomic { op: CompareExchange | CompareExchangeWeak }` to PTX

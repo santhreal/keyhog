@@ -32,15 +32,16 @@ pub fn sanitizer_dominates(
 
 /// CPU oracle.
 #[must_use]
-pub fn cpu_ref(sanitizer_doms: &[u32], sink_set: &[u32]) -> Vec<u32> {
+#[cfg(test)]
+pub(crate) fn cpu_ref(sanitizer_doms: &[u32], sink_set: &[u32]) -> Vec<u32> {
     vyre_primitives::bitset::and::cpu_ref(sanitizer_doms, sink_set)
 }
 
 /// Soundness marker for [`sanitizer_dominates`].
 pub struct SanitizerDominates;
-impl weir::soundness::SoundnessTagged for SanitizerDominates {
-    fn soundness(&self) -> weir::soundness::Soundness {
-        weir::soundness::Soundness::Exact
+impl vyre::soundness::SoundnessTagged for SanitizerDominates {
+    fn soundness(&self) -> vyre::soundness::Soundness {
+        vyre::soundness::Soundness::Exact
     }
 }
 

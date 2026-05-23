@@ -1,6 +1,6 @@
-//! Audit-fix A35 `expansion/dynamic_pass.rs` extract.
+//! Dynamic macro-expansion pipeline builder.
 
-#![allow(missing_docs)] // c-parser feature: A33-A36 split lost some leading doc comments; lint loud, fix surgically when revisiting docs.
+#![allow(missing_docs)] // Internal macro-expansion helpers are documented at the owning module boundary.
 use crate::parsing::c::lex::tokens::*;
 use crate::parsing::composition::child_phase;
 use crate::region::wrap_anonymous;
