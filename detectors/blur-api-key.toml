@@ -11,6 +11,6 @@ severity = "high"
 keywords = ["blur", "BLUR", "BLUR_API_KEY", "blur.io"]
 
 [[detector.patterns]]
-regex = "(?:blur|BLUR)[_\\s]*(?:API[_\\s]*)?KEY[_\\s]*[=:][\\s]*[\"'']+([a-zA-Z0-9_-]{20,})[\"'']+"
-description = "Blur API key in assignment context"
+regex = "(?i)blur[_\\s]*(?:api[_\\s]*)?key[_\\s]*[=:][\\s]*[\"'']+([a-zA-Z0-9_-]{20,})[\"'']+"
+description = "Blur API key in assignment context (case-insensitive)"
 group = 1

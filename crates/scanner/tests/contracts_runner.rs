@@ -176,6 +176,16 @@ fn every_contract_passes_positives_negatives_evasions() {
         let label = c.detector_id.as_str();
 
         for p in &c.positive {
+            // CompiledScanner accumulates cross-file fragment
+            // reassembly state across every scan() (see
+            // engine/mod.rs:747-760). Tests that reuse one scanner
+            // across independent fixtures see cross-fixture state
+            // leak — e.g. braintree's `sandbox_7b3e5d8c_…` positive
+            // surfacing later as a finding on blur-api-key's
+            // evasion text. Clear before every scan so each fixture
+            // is isolated; cache order is filesystem-dependent and
+            // makes pollution a non-deterministic CI-only flake.
+            scanner.clear_fragment_cache();
             let chunk = make_chunk(&p.text);
             let matches = scanner.scan(&chunk);
             if !any_credential_contains(&matches, &p.credential) {
@@ -193,6 +203,7 @@ fn every_contract_passes_positives_negatives_evasions() {
         }
 
         for n in &c.negative {
+            scanner.clear_fragment_cache();
             let chunk = make_chunk(&n.text);
             let matches = scanner.scan(&chunk);
             // We don't gate on "zero findings" — a fixture line may
@@ -215,6 +226,7 @@ fn every_contract_passes_positives_negatives_evasions() {
         }
 
         for e in &c.evasion {
+            scanner.clear_fragment_cache();
             let chunk = make_chunk(&e.text);
             let matches = scanner.scan(&chunk);
             if !any_credential_contains(&matches, &e.credential) {
@@ -232,6 +244,7 @@ fn every_contract_passes_positives_negatives_evasions() {
         }
 
         for r in &c.cve_replay {
+            scanner.clear_fragment_cache();
             let chunk = make_chunk(&r.text);
             let matches = scanner.scan(&chunk);
             if !any_credential_contains(&matches, &r.credential) {
@@ -276,9 +289,13 @@ fn every_contract_perf_budget_holds() {
         let chunk = make_chunk(&fixture);
 
         // Warm any internal caches first; the budget gates steady-
-        // state, not cold-start.
+        // state, not cold-start. Clear the fragment cache before
+        // the warmup AND before the measured pass so neither one
+        // inherits state from another contract's fixture.
+        scanner.clear_fragment_cache();
         let _ = scanner.scan(&chunk);
 
+        scanner.clear_fragment_cache();
         let start = std::time::Instant::now();
         let _ = scanner.scan(&chunk);
         let elapsed = start.elapsed();

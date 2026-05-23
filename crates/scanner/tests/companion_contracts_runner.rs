@@ -150,6 +150,12 @@ fn every_companion_contract_passes() {
 
         // --- positive_with_companion ---
         let case = &c.positive_with_companion;
+        // See engine/mod.rs:747-760 — the cross-file fragment cache
+        // accumulates across every scan() call on a reused scanner,
+        // so braintree's `sandbox_…` positive can resurface as a
+        // finding for a later detector's fixture in CI's
+        // filesystem-iteration order. Clear before every scan.
+        scanner.clear_fragment_cache();
         let chunk = make_chunk(&case.text);
         let matches = scanner.scan(&chunk);
         for expected in &case.expected_findings {
@@ -184,6 +190,7 @@ fn every_companion_contract_passes() {
 
         // --- positive_primary_only ---
         let case = &c.positive_primary_only;
+        scanner.clear_fragment_cache();
         let chunk = make_chunk(&case.text);
         let matches = scanner.scan(&chunk);
         for expected in &case.expected_findings {
@@ -240,6 +247,7 @@ fn every_companion_contract_passes() {
 
         // --- negative_companion_lookalike ---
         let case = &c.negative_companion_lookalike;
+        scanner.clear_fragment_cache();
         let chunk = make_chunk(&case.text);
         let matches = scanner.scan(&chunk);
         for expected_empty in &case.expected_findings {
