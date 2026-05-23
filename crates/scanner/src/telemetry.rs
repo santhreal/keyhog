@@ -16,6 +16,7 @@
 //! argument. Tests reset state via `reset()`.
 
 use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Mutex, OnceLock};
 
@@ -28,11 +29,16 @@ pub enum DogfoodEvent {
     /// A credential was matched but suppressed as a known example /
     /// placeholder (e.g. ends with `EXAMPLE`, is a sequential
     /// placeholder, contains a `DUMMY`/`FAKE`/`MOCK` token).
+    ///
+    /// `reason` is `Cow<'static, str>` so callers can pass a literal
+    /// without allocating (`Cow::Borrowed("ends_with_EXAMPLE")`),
+    /// while the daemon-protocol deserialize path can also produce
+    /// owned values from over-the-wire JSON.
     ExampleSuppressed {
         detector: String,
         path: Option<String>,
         credential_redacted: String,
-        reason: &'static str,
+        reason: Cow<'static, str>,
     },
 }
 
@@ -74,7 +80,7 @@ pub fn record_example_suppression(
                 detector: detector.to_string(),
                 path: path.map(str::to_string),
                 credential_redacted: redacted,
-                reason,
+                reason: Cow::Borrowed(reason),
             });
         }
     }
@@ -83,6 +89,33 @@ pub fn record_example_suppression(
 /// Count of example/placeholder credentials suppressed during this scan.
 pub fn example_suppression_count() -> usize {
     cell().example_suppressions.load(Ordering::Relaxed)
+}
+
+/// Zero the suppression counter without disturbing the dogfood
+/// enable-flag or any in-flight events. Used by the daemon between
+/// scan requests so per-request counts don't accumulate across
+/// clients — the count we ship over the wire belongs to one scan.
+pub fn reset_example_suppression_count() {
+    cell().example_suppressions.store(0, Ordering::Relaxed);
+}
+
+/// Add `n` to the suppression counter without recording an event.
+/// Used by the daemon client to merge a daemon-side count into the
+/// CLI's own counter so the reporter's empty-findings summary fires
+/// correctly across the IPC boundary.
+pub fn add_example_suppressions(n: usize) {
+    cell().example_suppressions.fetch_add(n, Ordering::Relaxed);
+}
+
+/// Append events into the per-process buffer without going through the
+/// `record_example_suppression` path (no counter bump, no dogfood
+/// enable-check). Used by the daemon client to replay events captured
+/// on the daemon side, so `--dogfood` output works in daemon mode.
+pub fn append_events<I: IntoIterator<Item = DogfoodEvent>>(events: I) {
+    let t = cell();
+    if let Ok(mut buf) = t.events.lock() {
+        buf.extend(events);
+    }
 }
 
 /// Drain and return all captured dogfood events. Returns empty when
@@ -175,7 +208,7 @@ mod tests {
                     !credential_redacted.contains("EXAMPLE"),
                     "must not leak the full value"
                 );
-                assert_eq!(*reason, "ends_with_EXAMPLE");
+                assert_eq!(reason.as_ref(), "ends_with_EXAMPLE");
             }
         }
     }

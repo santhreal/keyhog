@@ -10,12 +10,23 @@
 //! findings payload that has to be JSON-shaped anyway.
 
 use keyhog_core::RawMatch;
+use keyhog_scanner::telemetry::DogfoodEvent;
 use serde::{Deserialize, Serialize};
 
 /// Bump on any incompatible wire-format change. Server replies with
 /// its supported version in the [`Hello`] handshake; the client
 /// refuses to talk to a daemon whose version doesn't match.
-pub const WIRE_VERSION: u32 = 1;
+///
+/// History:
+///
+/// * v1 — initial daemon protocol. `ScanResults { matches }` only.
+/// * v2 — `ScanResults` carries `engine_example_suppressions` and
+///   `dogfood_events` so `--dogfood` and the suppressed-example
+///   reporter summary work in daemon mode (without the bump the
+///   client's telemetry counter stayed at 0 because telemetry lives
+///   in process-local OnceLock cells and the daemon scanner never
+///   propagated its own counts back).
+pub const WIRE_VERSION: u32 = 2;
 
 /// Maximum length of a single framed message body. 64 MiB ceiling
 /// matches `MAX_SCAN_CHUNK_BYTES * 64` so a chunk batch fits, but
@@ -61,9 +72,34 @@ pub enum Response {
     /// scanner's `RawMatch` outputs — same wire shape as
     /// `keyhog scan --format json`, so client code can hand them to
     /// the existing reporter without translation.
+    ///
+    /// `engine_example_suppressions` is the count of credentials the
+    /// scanner pipeline matched and then suppressed as known examples
+    /// (`*EXAMPLE`, `DUMMY`, etc.) inside the daemon's process. The
+    /// client merges this into its own telemetry counter so the
+    /// empty-findings reporter line ("0 real secrets — but N
+    /// example/test keys suppressed") fires even when the suppression
+    /// happened on the other side of the socket.
+    ///
+    /// `dogfood_events` is non-empty only when the daemon was started
+    /// with `KEYHOG_DOGFOOD=1` in its environment, OR when a
+    /// future protocol lets the client toggle dogfood per-request.
+    /// Today we ship the env-var path because it requires zero
+    /// per-request wire change and `keyhog scan --dogfood` users who
+    /// also need daemon mode can `KEYHOG_DOGFOOD=1 keyhog daemon
+    /// start`.
     ScanResults {
         path: Option<String>,
         matches: Vec<RawMatch>,
+        /// Wire-v2: scanner-side example suppression count. Defaults
+        /// to 0 for back-compat with v1 servers (serde default).
+        #[serde(default)]
+        engine_example_suppressions: u64,
+        /// Wire-v2: per-decision dogfood events captured on the
+        /// daemon side. Empty unless the daemon was started with
+        /// `KEYHOG_DOGFOOD=1`.
+        #[serde(default)]
+        dogfood_events: Vec<DogfoodEvent>,
     },
     Health {
         uptime_secs: u64,
