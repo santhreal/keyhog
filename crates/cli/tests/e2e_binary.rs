@@ -127,7 +127,7 @@ fn scan_json_schema_carries_required_fields() {
 /// before it ships.
 ///
 /// README line under audit (root README.md):
-///   `KeyHog vX.Y.Z | ... | 889 detectors (1676 patterns)`
+///   `KeyHog vX.Y.Z | ... | 889 detectors (1674 patterns)`
 ///
 /// When you legitimately change the counts:
 ///   1. Update README.md banner.
@@ -136,7 +136,7 @@ fn scan_json_schema_carries_required_fields() {
 #[test]
 fn readme_banner_counts_match_loaded_corpus() {
     const README_DETECTOR_COUNT: usize = 889;
-    const README_PATTERN_COUNT: usize = 1676;
+    const README_PATTERN_COUNT: usize = 1674;
 
     let output = Command::new(binary())
         .arg("detectors")

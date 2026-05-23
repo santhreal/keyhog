@@ -16,11 +16,6 @@ description = "Databricks personal access token (dapi prefix)"
 group = 1
 
 [[detector.patterns]]
-regex = "(?:DATABRICKS|databricks)[._-]?(?:host|workspace)[=:\\s\"'']+(https?://[a-z0-9-]+\\.cloud\\.databricks\\.com)"
-description = "Databricks workspace URL"
-group = 1
-
-[[detector.patterns]]
 regex = "(?:DATABRICKS|databricks)[._-]?(?:token)[=:\\s\"'']+(dapi[a-f0-9]{32,})"
 description = "Databricks token with context anchor"
 group = 1

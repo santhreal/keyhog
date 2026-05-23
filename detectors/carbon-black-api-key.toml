@@ -15,11 +15,6 @@ regex = "(?:CARBON[_\\s]*BLACK|carbon[_\\s]*black|CB|vmware_cb)[_\\s]*(?:API[_\\
 description = "Carbon Black API key with context anchor"
 group = 1
 
-[[detector.patterns]]
-regex = "(?:CARBON[_\\s]*BLACK|carbon[_\\s]*black|CB)[_\\s]*ORG[_\\s]*KEY[=:\\s\"'']+([A-Z0-9]{8,16})"
-description = "Carbon Black organization key with context anchor"
-group = 1
-
 [[detector.companions]]
 name = "carbon_black_api_id"
 # Anchored to the `CB_API_ID=` declaration; auto-detected capture group

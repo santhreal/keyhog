@@ -4,6 +4,26 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ## Unreleased
 
+## v0.5.11 — 2026-05-23 — dedup carbon-black + databricks
+
+### Fixed
+
+- **carbon-black-api-key**: dropped duplicate org-key primary
+  (kept as required companion). org_key=… alone no longer fires
+  the detector without a CB API KEY primary nearby.
+- **databricks-token**: dropped duplicate workspace-url primary
+  (kept as companion). A bare workspace URL with no `dapi` token
+  nearby no longer fires the detector.
+
+Same SURPLUS shape as the v0.5.9/v0.5.10 sweeps. These two had
+existing main contracts whose positives did NOT depend on the
+dropped primary firing alone — verified before edit.
+
+### Changed
+
+- **Pattern count 1676 → 1674** across README + e2e_binary +
+  readme_claims gate.
+
 ## v0.5.10 — 2026-05-23 — detector dedup sweep + binary/crates alignment
 
 ### Fixed
