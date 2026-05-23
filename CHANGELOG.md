@@ -6,6 +6,24 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Added
 
+- **GitHub Action that actually works.** `uses:
+  santhsecurity/keyhog/.github/actions/keyhog@v0.5.7` now installs
+  the Rust toolchain + Vectorscan/Hyperscan and builds keyhog,
+  *or* downloads a prebuilt binary from the matching GitHub
+  Release when one exists. Previously the action ran
+  `cargo build` without setup, so every downstream Ubuntu run
+  failed with `cargo: command not found` or a hyperscan-sys
+  linker error. SARIF output auto-uploads to code-scanning when
+  `format: sarif`. README example was also pointing at a
+  nonexistent `keyhog/keyhog-action@v1` repo — fixed to the
+  bundled action path.
+- **`.github/workflows/release.yml`** — tag-driven binary build
+  + upload. Pushing a `v*` tag now compiles `keyhog` for
+  `keyhog-linux-x86_64` (default features incl. Hyperscan via
+  apt) and `keyhog-macos-aarch64` (feature subset, no
+  Hyperscan), then attaches the artifacts to the release. The
+  composite action prefers these prebuilt binaries over a
+  cold cargo build whenever the host triple matches.
 - **`KEYHOG_DOGFOOD=1`** — daemon-side dogfood capture. Set when
   starting the daemon (`KEYHOG_DOGFOOD=1 keyhog daemon start`) to
   enable per-scan event capture inside the daemon; the events

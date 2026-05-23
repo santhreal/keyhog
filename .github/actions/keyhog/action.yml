@@ -1,39 +1,148 @@
 name: 'KeyHog Secret Scanner'
-description: 'Scan for secrets in your code with KeyHog'
+description: 'Scan source code for leaked secrets with KeyHog.'
 branding:
   icon: 'shield'
   color: 'red'
+
 inputs:
   path:
-    description: 'Path to scan'
+    description: 'Path to scan (file or directory).'
     default: '.'
   severity:
-    description: 'Minimum severity to report (info, low, medium, high, critical)'
+    description: 'Minimum severity to report: info | low | medium | high | critical.'
     default: 'high'
   format:
-    description: 'Output format (text, json, sarif)'
+    description: 'Output format: text | json | sarif | jsonl.'
     default: 'sarif'
   verify:
-    description: 'Enable live credential verification'
+    description: 'Run live credential verification on findings ("true" enables --verify).'
     default: 'false'
+  version:
+    description: |
+      KeyHog version to use. Matched against a published GitHub Release tag
+      (e.g. "0.5.7" expects asset `keyhog-linux-x86_64` on tag `v0.5.7`).
+      When unset, derives from the action ref (`@v0.5.7` → "0.5.7"); when no
+      matching release asset exists, falls back to a source build.
+    default: ''
+  upload-sarif:
+    description: 'When format=sarif, upload via github/codeql-action/upload-sarif@v3.'
+    default: 'true'
+
 runs:
   using: 'composite'
   steps:
-    - name: Build KeyHog
+    - name: Resolve KeyHog version
+      id: version
       shell: bash
       run: |
-        cargo build --release --manifest-path ${{ github.action_path }}/../../../Cargo.toml
+        set -euo pipefail
+        if [[ -n "${{ inputs.version }}" ]]; then
+          v="${{ inputs.version }}"
+        else
+          # GITHUB_ACTION_REF is e.g. "v0.5.7", "main", a SHA, or a branch.
+          # Tagged refs: strip the leading "v"; everything else falls
+          # through and the download will miss, triggering source build.
+          ref="${GITHUB_ACTION_REF:-main}"
+          v="${ref#v}"
+        fi
+        echo "version=$v" >> "$GITHUB_OUTPUT"
+        echo "Resolved keyhog version: $v"
+
+    - name: Detect platform asset name
+      id: asset
+      shell: bash
+      run: |
+        set -euo pipefail
+        os="$(uname -s)"
+        arch="$(uname -m)"
+        case "$os/$arch" in
+          Linux/x86_64)   name="keyhog-linux-x86_64" ;;
+          Darwin/x86_64)  name="keyhog-macos-x86_64" ;;
+          Darwin/arm64)   name="keyhog-macos-aarch64" ;;
+          *)              name="" ;;
+        esac
+        echo "name=$name" >> "$GITHUB_OUTPUT"
+        echo "Asset name for $os/$arch: ${name:-<none — source build>}"
+
+    - name: Try downloading prebuilt binary
+      id: download
+      shell: bash
+      run: |
+        set -euo pipefail
+        asset="${{ steps.asset.outputs.name }}"
+        version="${{ steps.version.outputs.version }}"
+        if [[ -z "$asset" ]] || [[ -z "$version" ]]; then
+          echo "no asset name / version — skipping download"
+          echo "found=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        url="https://github.com/santhsecurity/keyhog/releases/download/v${version}/${asset}"
+        echo "Trying $url"
+        if curl -fL --retry 2 "$url" -o "$RUNNER_TEMP/keyhog" 2>/dev/null; then
+          chmod +x "$RUNNER_TEMP/keyhog"
+          echo "found=true" >> "$GITHUB_OUTPUT"
+          echo "Downloaded prebuilt $asset for v$version"
+        else
+          echo "Release asset missing at $url — falling back to source build"
+          echo "found=false" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Install Rust toolchain (source-build fallback)
+      if: steps.download.outputs.found != 'true'
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Cache cargo registry/build (source-build fallback)
+      if: steps.download.outputs.found != 'true'
+      uses: Swatinem/rust-cache@v2
+
+    - name: Install Vectorscan/Hyperscan (Linux source-build only)
+      if: steps.download.outputs.found != 'true' && runner.os == 'Linux'
+      shell: bash
+      run: sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config
+
+    - name: Build keyhog from source (fallback)
+      if: steps.download.outputs.found != 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        cd "${{ github.action_path }}/../../.."
+        cargo build --release -p keyhog
+        cp target/release/keyhog "$RUNNER_TEMP/keyhog"
+
+    - name: Add keyhog to PATH
+      shell: bash
+      run: echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+
+    - name: Compute output filename
+      id: outfile
+      shell: bash
+      run: |
+        set -euo pipefail
+        ext="json"
+        case "${{ inputs.format }}" in
+          sarif) ext="sarif" ;;
+          jsonl) ext="jsonl" ;;
+          text)  ext="txt" ;;
+        esac
+        echo "name=keyhog-results.${ext}" >> "$GITHUB_OUTPUT"
+
     - name: Run scan
       shell: bash
       run: |
-        ./target/release/keyhog scan \
-          --path ${{ inputs.path }} \
-          --severity ${{ inputs.severity }} \
-          --format ${{ inputs.format }} \
-          ${{ inputs.verify == 'true' && '--verify' || '' }} \
-          --output keyhog-results.${{ inputs.format == 'sarif' && 'sarif' || 'json' }}
-    - name: Upload SARIF
-      if: inputs.format == 'sarif'
+        set -euo pipefail
+        verify_flag=""
+        if [[ "${{ inputs.verify }}" == "true" ]]; then
+          verify_flag="--verify"
+        fi
+        keyhog scan \
+          --path "${{ inputs.path }}" \
+          --severity "${{ inputs.severity }}" \
+          --format "${{ inputs.format }}" \
+          $verify_flag \
+          --output "${{ steps.outfile.outputs.name }}"
+
+    - name: Upload SARIF to code-scanning
+      if: inputs.format == 'sarif' && inputs.upload-sarif == 'true'
       uses: github/codeql-action/upload-sarif@v3
       with:
-        sarif_file: keyhog-results.sarif
+        sarif_file: ${{ steps.outfile.outputs.name }}

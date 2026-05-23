@@ -1,0 +1,99 @@
+name: Release
+
+# Tag-driven binary build + upload. Push a `v*` tag and this workflow
+# compiles `keyhog` for each supported target and attaches the binary
+# to the existing draft/published GitHub Release for that tag.
+#
+# Downstream consumers of the `.github/actions/keyhog/action.yml`
+# composite action look for these binaries first and only fall back to
+# a source build when an asset is missing.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to build assets for (e.g. v0.5.7). Manual re-run.'
+        required: true
+
+permissions:
+  contents: write  # required by gh release upload to attach assets
+
+jobs:
+  build:
+    name: Build ${{ matrix.asset }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            asset: keyhog-linux-x86_64
+            # libhyperscan-dev is what the `simd` feature links against
+            # on Linux. Ship a default-feature build matching the
+            # crates.io release.
+            install: sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config
+            features: ''
+          # macOS: no `libhyperscan-dev` in the homebrew repo, so the
+          # default `cargo build` fails on the simd feature. We ship a
+          # feature-subset binary (no Hyperscan) for now — it covers
+          # entropy, multiline reassembly, ML scoring, decoding. Users
+          # who need the Hyperscan-accelerated path on macOS still
+          # source-build via the action's fallback.
+          - os: macos-latest
+            asset: keyhog-macos-aarch64
+            install: ''
+            features: '--no-default-features --features "entropy,multiline,ml,decode"'
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Resolve tag
+        id: tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${{ inputs.tag }}" ]]; then
+            tag="${{ inputs.tag }}"
+          else
+            tag="${GITHUB_REF##refs/tags/}"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "Building release assets for $tag"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.tag.outputs.tag }}
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install build deps
+        if: matrix.install != ''
+        shell: bash
+        run: ${{ matrix.install }}
+
+      - name: Build keyhog
+        shell: bash
+        run: cargo build --release -p keyhog ${{ matrix.features }}
+
+      - name: Stage binary
+        shell: bash
+        run: cp target/release/keyhog "${{ matrix.asset }}"
+
+      - name: Upload to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Create the release if it doesn't already exist; `|| true`
+          # silently no-ops the create when the tag-trigger has already
+          # produced a draft release.
+          gh release view "${{ steps.tag.outputs.tag }}" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
+            gh release create "${{ steps.tag.outputs.tag }}" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "${{ steps.tag.outputs.tag }}" \
+              --notes "Prebuilt keyhog binaries for ${{ steps.tag.outputs.tag }}. See CHANGELOG.md."
+          gh release upload "${{ steps.tag.outputs.tag }}" "${{ matrix.asset }}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber

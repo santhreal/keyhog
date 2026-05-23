@@ -308,11 +308,21 @@ The scanner compiles all 896 detector regexes into a single Hyperscan database (
 ### GitHub Actions
 
 ```yaml
-- uses: keyhog/keyhog-action@v1
+- uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.7
   with:
     path: .
-    format: sarif
+    severity: high       # info | low | medium | high | critical
+    format: sarif        # text | json | sarif | jsonl
+    verify: 'false'      # set 'true' to live-verify findings against vendor APIs
 ```
+
+The action auto-downloads a prebuilt linux-x86_64 / macos-aarch64
+binary attached to the matching release tag (see
+[`.github/workflows/release.yml`](.github/workflows/release.yml)) and
+falls back to a `cargo build` from source when no asset matches the
+host triple (e.g. Windows runners, or a ref that isn't a tagged
+release). SARIF output is auto-uploaded to GitHub code-scanning when
+`format: sarif`.
 
 ### Pre-commit
 
