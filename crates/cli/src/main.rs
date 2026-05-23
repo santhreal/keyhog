@@ -104,6 +104,7 @@ async fn main() -> ExitCode {
         Some(Command::ScanSystem(args)) => {
             subcommands::scan_system::run(args).map(|()| ExitCode::SUCCESS)
         }
+        Some(Command::Daemon(args)) => subcommands::daemon::run(args).await,
         None => {
             use clap::CommandFactory;
             let mut cmd = Cli::command();

@@ -64,6 +64,43 @@ pub enum Command {
     /// 🛰  Recursive system-wide scan: every mounted drive, every git history
     #[command(verbatim_doc_comment)]
     ScanSystem(ScanSystemArgs),
+
+    /// 🔌 Manage the long-lived `keyhog daemon` (start, stop, status)
+    #[command(verbatim_doc_comment)]
+    Daemon(DaemonArgs),
+}
+
+/// Subcommand args for `keyhog daemon {start, stop, status}`.
+#[derive(Parser)]
+pub struct DaemonArgs {
+    #[command(subcommand)]
+    pub action: DaemonAction,
+}
+
+#[derive(clap::Subcommand)]
+pub enum DaemonAction {
+    /// Start a daemon process that holds a compiled scanner and
+    /// serves scan requests over a Unix socket. Blocks until
+    /// `daemon stop` is invoked.
+    Start {
+        /// Override the default socket path
+        /// ($XDG_RUNTIME_DIR/keyhog.sock or ~/.cache/keyhog/server.sock).
+        #[arg(long, value_name = "PATH")]
+        socket: Option<PathBuf>,
+        /// Detector directory (same default as `keyhog scan --detectors`).
+        #[arg(long, default_value = "detectors")]
+        detectors: PathBuf,
+    },
+    /// Stop the running daemon by sending it a `Shutdown` over the socket.
+    Stop {
+        #[arg(long, value_name = "PATH")]
+        socket: Option<PathBuf>,
+    },
+    /// Print uptime, scans served, active scans, and detector count.
+    Status {
+        #[arg(long, value_name = "PATH")]
+        socket: Option<PathBuf>,
+    },
 }
 
 #[derive(Parser)]
@@ -404,6 +441,22 @@ pub struct ScanArgs {
         ])
     )]
     pub backend: Option<String>,
+
+    /// Force the scan through a running `keyhog daemon`. Fails if no
+    /// daemon is up. Use this in pre-commit hooks / IDE save handlers
+    /// where the ~3 s in-process cold-start dominates the actual scan;
+    /// the daemon holds a compiled scanner so each invocation is sub-ms
+    /// IPC + scan. See `keyhog daemon start --help`.
+    #[arg(long, conflicts_with = "no_daemon")]
+    pub daemon: bool,
+
+    /// Force in-process scanning even when a daemon is running. Useful
+    /// for debugging, hardware probing, contract tests, or any case
+    /// where you need the orchestrator's full pipeline (baseline /
+    /// merkle skip cache / verification) which the daemon's stdin-
+    /// only fast path does not replicate.
+    #[arg(long, conflicts_with = "daemon")]
+    pub no_daemon: bool,
 
     /// Write findings to file
     #[arg(short, long)]

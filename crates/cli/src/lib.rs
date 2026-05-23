@@ -14,6 +14,7 @@ pub mod args;
 pub mod baseline;
 pub mod benchmark;
 pub mod config;
+pub mod daemon;
 pub mod inline_suppression;
 pub mod orchestrator;
 mod orchestrator_config;

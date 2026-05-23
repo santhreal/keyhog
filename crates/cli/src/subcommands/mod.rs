@@ -3,6 +3,7 @@
 pub mod backend;
 pub mod calibrate;
 pub mod completion;
+pub mod daemon;
 pub mod detectors;
 pub mod diff;
 pub mod explain;
