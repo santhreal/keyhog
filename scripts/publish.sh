@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
-# Publish keyhog v0.5.6 to crates.io.
+# Publish the current workspace version of keyhog to crates.io.
+#
+# Reads `workspace.package.version` from the root Cargo.toml so this
+# script doesn't need a version bump every release; the version is
+# whatever the tree at HEAD says.
 #
 # Run from the workspace root. Each `cargo publish` waits up to 45s
 # between crates so the index has time to settle.
@@ -13,12 +17,23 @@
 #   3. `cargo login` configured for crates.io.
 #
 # Usage:
-#     scripts/publish-0.5.6.sh                 # publish for real
-#     WAIT_BETWEEN_PUBLISH=60 scripts/publish-0.5.6.sh   # slower
+#     scripts/publish.sh                       # publish for real
+#     WAIT_BETWEEN_PUBLISH=60 scripts/publish.sh   # slower
 
 set -euo pipefail
 
 WAIT_BETWEEN_PUBLISH="${WAIT_BETWEEN_PUBLISH:-45}"
+
+# Pull the version out of the workspace Cargo.toml so the echo lines
+# stay accurate without a per-release edit. `awk` over the [workspace.package]
+# table is enough — the version key is unique within Cargo.toml.
+VERSION=$(awk -F'"' '
+    /^\[workspace\.package\]/ { in_pkg = 1; next }
+    in_pkg && /^version[[:space:]]*=/ { print $2; exit }
+' "$(dirname "$0")/../Cargo.toml" 2>/dev/null)
+if [[ -z "${VERSION}" ]]; then
+    VERSION="unknown"
+fi
 
 publish() {
     local crate="$1"
@@ -49,5 +64,5 @@ publish keyhog-scanner
 publish keyhog
 
 echo
-echo "==> All v0.5.6 crates published."
-echo "==> Next: git tag v0.5.6 && git push origin v0.5.6"
+echo "==> All v${VERSION} crates published."
+echo "==> Next: git tag v${VERSION} && git push origin v${VERSION}"
