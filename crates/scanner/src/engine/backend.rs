@@ -11,6 +11,24 @@ pub(crate) struct PreparedChunk<'a> {
     /// every code-tree scan).
     pub(crate) chunk: &'a Chunk,
     pub(crate) preprocessed: ScannerPreprocessedText,
+    /// Cached `compute_line_offsets(&preprocessed.text)`. Both the
+    /// triggered-pattern path and the pattern-hits path used to call
+    /// `compute_line_offsets` separately, walking the entire
+    /// preprocessed text twice per chunk to count newlines. Cache
+    /// it once at first access via OnceLock so the second caller
+    /// hits a memoized Vec instead of re-scanning. Task #93.
+    pub(crate) line_offsets: std::sync::OnceLock<Vec<usize>>,
+}
+
+impl<'a> PreparedChunk<'a> {
+    /// Lazily-computed cumulative line-start offsets for the
+    /// preprocessed text. Cheap to call repeatedly; the first call
+    /// walks the text once, subsequent calls return a borrow into
+    /// the cached Vec.
+    pub(crate) fn line_offsets(&self) -> &[usize] {
+        self.line_offsets
+            .get_or_init(|| compute_line_offsets(&self.preprocessed.text))
+    }
 }
 
 #[cfg(feature = "simd")]
@@ -173,7 +191,11 @@ impl CompiledScanner {
             ScannerPreprocessedText::passthrough(data_ref)
         };
 
-        PreparedChunk { chunk, preprocessed }
+        PreparedChunk {
+            chunk,
+            preprocessed,
+            line_offsets: std::sync::OnceLock::new(),
+        }
     }
 
     /// Like [`scan_prepared_with_triggered`], but extraction is anchored
@@ -196,7 +218,7 @@ impl CompiledScanner {
         per_pattern_hits: Vec<(u32, u32, u32)>,
         deadline: Option<std::time::Instant>,
     ) -> Vec<RawMatch> {
-        let line_offsets = compute_line_offsets(&prepared.preprocessed.text);
+        let line_offsets = prepared.line_offsets().to_vec();
         let code_lines: Vec<&str> = prepared.chunk.data.lines().collect();
         let mut scan_state = ScanState::with_static_intern(self.static_intern.clone());
 
@@ -479,7 +501,7 @@ impl CompiledScanner {
         triggered_patterns: Vec<u64>,
         deadline: Option<std::time::Instant>,
     ) -> Vec<RawMatch> {
-        let line_offsets = compute_line_offsets(&prepared.preprocessed.text);
+        let line_offsets = prepared.line_offsets().to_vec();
         let code_lines: Vec<&str> = prepared.chunk.data.lines().collect();
         let mut scan_state = ScanState::with_static_intern(self.static_intern.clone());
 
