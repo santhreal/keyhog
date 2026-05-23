@@ -472,7 +472,7 @@ pub fn gpu_self_test() -> Result<GpuSelfTest, String> {
 /// rigged-test bug where `coalesced_matches` was hardcoded.
 pub fn vyre_gpu_self_test() -> Result<VyreGpuSelfTest, String> {
     use vyre_driver_wgpu::WgpuBackend;
-    use vyre_libs::matching::GpuLiteralSet;
+    use vyre_libs::scan::GpuLiteralSet;
 
     let patterns: Vec<Vec<u8>> = vec![b"needle".to_vec()];
     let pattern_refs: Vec<&[u8]> = patterns.iter().map(Vec::as_slice).collect();

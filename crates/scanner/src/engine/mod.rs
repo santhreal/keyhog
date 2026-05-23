@@ -32,7 +32,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::OnceLock;
 
-pub use vyre_libs::matching::LiteralMatch;
+pub use vyre_libs::scan::LiteralMatch;
 
 /// Compile a `RulePipeline` (vyre's regex multimatch path) for the
 /// given detector regex sources, sized for `input_len` bytes. Uses
@@ -50,9 +50,9 @@ pub use vyre_libs::matching::LiteralMatch;
 pub fn build_rule_pipeline(
     patterns: &[&str],
     input_len: u32,
-) -> std::result::Result<vyre_libs::matching::RulePipeline, vyre_libs::matching::RegexCompileError>
+) -> std::result::Result<vyre_libs::scan::RulePipeline, vyre_libs::scan::RegexCompileError>
 {
-    vyre_libs::matching::build_rule_pipeline_from_regex(patterns, "input", "hits", input_len)
+    vyre_libs::scan::build_rule_pipeline_from_regex(patterns, "input", "hits", input_len)
 }
 
 /// Persistent cache for `RulePipeline`. Mirrors the GpuLiteralSet
@@ -96,7 +96,7 @@ fn pipeline_cache_key(patterns: &[&str], input_len: u32) -> String {
 pub fn rule_pipeline_cached(
     patterns: &[&str],
     input_len: u32,
-) -> std::result::Result<vyre_libs::matching::RulePipeline, vyre_libs::matching::RegexCompileError>
+) -> std::result::Result<vyre_libs::scan::RulePipeline, vyre_libs::scan::RegexCompileError>
 {
     let started = std::time::Instant::now();
     let Some(cache_dir) = gpu_matcher_cache_dir() else {
@@ -111,9 +111,9 @@ pub fn rule_pipeline_cached(
     // compile already ran by the time we asked the cache anything.
     // Use vyre's `engine_cache_path` + manual load/save instead.
     // Task #94.
-    if let Some(path) = vyre_libs::matching::engine_cache_path(&cache_dir, &cache_key) {
+    if let Some(path) = vyre_libs::scan::engine_cache_path(&cache_dir, &cache_key) {
         if let Ok(bytes) = std::fs::read(&path) {
-            match vyre_libs::matching::RulePipeline::from_bytes(&bytes) {
+            match vyre_libs::scan::RulePipeline::from_bytes(&bytes) {
                 Ok(pipeline) => {
                     tracing::debug!(
                         target: "keyhog::routing",
@@ -136,7 +136,7 @@ pub fn rule_pipeline_cached(
     // Cache miss: pay the typed-fallible compile, then save for the
     // next call. Save failure is logged but never breaks the scan.
     let pipeline = build_rule_pipeline(patterns, input_len)?;
-    if let Some(path) = vyre_libs::matching::engine_cache_path(&cache_dir, &cache_key) {
+    if let Some(path) = vyre_libs::scan::engine_cache_path(&cache_dir, &cache_key) {
         if let Ok(bytes) = pipeline.to_bytes() {
             let tmp = path.with_extension(format!("tmp.{}", std::process::id()));
             if let Some(parent) = path.parent() {
@@ -274,7 +274,7 @@ pub struct CompiledScanner {
     pub(crate) wgpu_backend: Option<Arc<vyre_driver_wgpu::WgpuBackend>>,
     /// Literal prefixes supplied to Vyre's GPU Aho-Corasick engine.
     pub(crate) gpu_literals: Option<Arc<Vec<Vec<u8>>>>,
-    pub(crate) gpu_matcher: OnceLock<Option<vyre_libs::matching::GpuLiteralSet>>,
+    pub(crate) gpu_matcher: OnceLock<Option<vyre_libs::scan::GpuLiteralSet>>,
     /// Pre-packed constant input bytes for every GPU literal-set dispatch.
     /// `(pattern_offsets, pattern_lengths, pattern_bytes, pattern_count)`
     /// all serialised to little-endian u32 byte streams once at first
@@ -308,7 +308,7 @@ pub struct CompiledScanner {
     /// (typically vyre's per-subgroup state cap or an unsupported
     /// regex feature) — MegaScan auto-degrades to the literal-set
     /// path when that happens.
-    pub(crate) rule_pipeline: OnceLock<Option<vyre_libs::matching::RulePipeline>>,
+    pub(crate) rule_pipeline: OnceLock<Option<vyre_libs::scan::RulePipeline>>,
     pub(crate) ac_map: Vec<CompiledPattern>,
     pub(crate) prefix_propagation: Vec<Vec<usize>>,
     pub(crate) fallback: Vec<(CompiledPattern, Vec<String>)>,
@@ -510,7 +510,7 @@ impl CompiledScanner {
     /// `keyhog scan` / `scan-system` runs that re-launch repeatedly.
     /// Cache misses (no file, version-mismatch, corrupt blob) silently
     /// recompile and re-cache.
-    pub fn gpu_matcher(&self) -> Option<&vyre_libs::matching::GpuLiteralSet> {
+    pub fn gpu_matcher(&self) -> Option<&vyre_libs::scan::GpuLiteralSet> {
         self.gpu_matcher
             .get_or_init(|| {
                 let Some(literals) = &self.gpu_literals else {
@@ -521,7 +521,7 @@ impl CompiledScanner {
                 let cache_key = format!("lit-{}", gpu_matcher_cache_key(&literal_refs));
                 let started = std::time::Instant::now();
                 // One-line lego-block cache wiring courtesy of
-                // `vyre_libs::matching::cached_load_or_compile`. The
+                // `vyre_libs::scan::cached_load_or_compile`. The
                 // helper handles atomic-rename, stale-blob deletion,
                 // and silent fall-through on cache-side I/O errors —
                 // every behaviour the previous hand-rolled
@@ -529,8 +529,8 @@ impl CompiledScanner {
                 // here so the operator can still see warm-vs-cold
                 // start latency in `--verbose` output.
                 let matcher =
-                    vyre_libs::matching::cached_load_or_compile(&cache_dir, &cache_key, || {
-                        vyre_libs::matching::GpuLiteralSet::compile(&literal_refs)
+                    vyre_libs::scan::cached_load_or_compile(&cache_dir, &cache_key, || {
+                        vyre_libs::scan::GpuLiteralSet::compile(&literal_refs)
                     });
                 tracing::debug!(
                     target: "keyhog::routing",
@@ -583,7 +583,7 @@ impl CompiledScanner {
                 // is purely atomic-coalescing strategy.
                 let backend_id = self.gpu_backend.as_ref().map(|b| b.id()).unwrap_or("none");
                 let use_subgroup_coalesce = backend_id != "cuda";
-                let program = vyre_libs::matching::classic_ac::build_ac_bounded_ranges_program_ext(
+                let program = vyre_libs::scan::classic_ac::build_ac_bounded_ranges_program_ext(
                     &matcher.dfa,
                     pattern_count,
                     AC_GPU_MAX_MATCHES_PER_DISPATCH,
@@ -616,7 +616,7 @@ impl CompiledScanner {
     /// larger than that must take a different path. The orchestrator
     /// caps batches at 256 MiB which is the chosen size, so this
     /// matches normal scan flow.
-    pub fn rule_pipeline(&self) -> Option<&vyre_libs::matching::RulePipeline> {
+    pub fn rule_pipeline(&self) -> Option<&vyre_libs::scan::RulePipeline> {
         self.rule_pipeline
             .get_or_init(|| {
                 let pattern_strs: Vec<&str> = self

@@ -19,7 +19,7 @@
 
 use keyhog_scanner::CompiledScanner;
 use std::path::PathBuf;
-use vyre_libs::matching::{compile_regex_set, RegexCompileError};
+use vyre_libs::scan::{compile_regex_set, RegexCompileError};
 
 fn detector_dir() -> PathBuf {
     let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));

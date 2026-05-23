@@ -9,10 +9,10 @@
 //! doesn't fake-pass the contract.
 
 use vyre::backend::VyreBackend;
-use vyre_libs::matching::classic_ac::{
+use vyre_libs::scan::classic_ac::{
     build_ac_bounded_ranges_program, classic_ac_bounded_ranges_scan, classic_ac_compile,
 };
-use vyre_libs::matching::dispatch_io;
+use vyre_libs::scan::dispatch_io;
 
 fn pack_u32_slice(words: &[u32]) -> Vec<u8> {
     let mut out = Vec::with_capacity(words.len() * 4);

@@ -146,9 +146,9 @@ impl CompiledScanner {
             return self.scan_coalesced_gpu(chunks);
         }
 
-        let mut matches: Vec<vyre_libs::matching::LiteralMatch> = raw_matches
+        let mut matches: Vec<vyre_libs::scan::LiteralMatch> = raw_matches
             .iter()
-            .map(|m| vyre_libs::matching::LiteralMatch::new(m.pattern_id, m.start, m.end))
+            .map(|m| vyre_libs::scan::LiteralMatch::new(m.pattern_id, m.start, m.end))
             .collect();
         // In-place dedup: sort by (pattern_id, start, end) and fold overlapping spans.
         matches.sort_unstable_by(|a, b| {
@@ -164,7 +164,7 @@ impl CompiledScanner {
                     && matches[read].start <= matches[write].end
                 {
                     if matches[read].end > matches[write].end {
-                        matches[write] = vyre_libs::matching::LiteralMatch::new(
+                        matches[write] = vyre_libs::scan::LiteralMatch::new(
                             matches[write].pattern_id,
                             matches[write].start,
                             matches[read].end,
@@ -387,16 +387,16 @@ impl CompiledScanner {
         let const_packs = self
             .gpu_const_packs
             .get_or_init(|| crate::engine::GpuConstPacks {
-                pattern_offsets: vyre_libs::matching::dispatch_io::pack_u32_slice(
+                pattern_offsets: vyre_libs::scan::dispatch_io::pack_u32_slice(
                     &matcher.pattern_offsets,
                 ),
-                pattern_lengths: vyre_libs::matching::dispatch_io::pack_u32_slice(
+                pattern_lengths: vyre_libs::scan::dispatch_io::pack_u32_slice(
                     &matcher.pattern_lengths,
                 ),
-                pattern_bytes: vyre_libs::matching::dispatch_io::pack_u32_slice(
+                pattern_bytes: vyre_libs::scan::dispatch_io::pack_u32_slice(
                     &matcher.pattern_bytes,
                 ),
-                pattern_count: vyre_libs::matching::dispatch_io::pack_u32_slice(&[matcher
+                pattern_count: vyre_libs::scan::dispatch_io::pack_u32_slice(&[matcher
                     .pattern_lengths
                     .len()
                     as u32]),
@@ -420,10 +420,10 @@ impl CompiledScanner {
             let shard_cap_u64 = ((*end - *start) / 64) as u64;
             let shard_cap = shard_cap_u64.clamp(MIN_CAP as u64, MAX_CAP as u64) as u32;
             shard_owned.push(ShardOwned {
-                haystack_len: vyre_libs::matching::dispatch_io::pack_u32_slice(&[shard_len]),
+                haystack_len: vyre_libs::scan::dispatch_io::pack_u32_slice(&[shard_len]),
                 atomic_count: vec![0u8; 4],
                 atomic_overflow: vec![0u8; 4],
-                config: vyre_libs::matching::dispatch_io::byte_scan_dispatch_config(
+                config: vyre_libs::scan::dispatch_io::byte_scan_dispatch_config(
                     shard_len,
                     matcher.program.workgroup_size[0],
                 ),
@@ -467,7 +467,7 @@ impl CompiledScanner {
         // batched dispatches (vs 512 sequential individual ones
         // pre-fix), which is the practical sweet spot.
         const MAX_SHARDS_PER_GPU_BATCH: usize = 64;
-        let mut matches: Vec<vyre_libs::matching::LiteralMatch> = Vec::new();
+        let mut matches: Vec<vyre_libs::scan::LiteralMatch> = Vec::new();
         for sub_start in (0..shard_count).step_by(MAX_SHARDS_PER_GPU_BATCH) {
             let sub_end = (sub_start + MAX_SHARDS_PER_GPU_BATCH).min(shard_count);
             let sub_inputs: Vec<&[&[u8]]> = (sub_start..sub_end)
@@ -534,13 +534,13 @@ impl CompiledScanner {
                     );
                     return self.scan_coalesced_non_gpu(chunks);
                 }
-                let shard_matches = vyre_libs::matching::dispatch_io::unpack_match_triples(
+                let shard_matches = vyre_libs::scan::dispatch_io::unpack_match_triples(
                     matches_bytes,
                     count.min(shard_cap),
                 );
                 let offset = shard_ranges[i].0 as u32;
                 for m in &shard_matches {
-                    matches.push(vyre_libs::matching::LiteralMatch::new(
+                    matches.push(vyre_libs::scan::LiteralMatch::new(
                         m.pattern_id,
                         m.start.saturating_add(offset),
                         m.end.saturating_add(offset),
@@ -587,7 +587,7 @@ impl CompiledScanner {
                 {
                     // Extend the current region
                     if matches[read].end > matches[write].end {
-                        matches[write] = vyre_libs::matching::LiteralMatch::new(
+                        matches[write] = vyre_libs::scan::LiteralMatch::new(
                             matches[write].pattern_id,
                             matches[write].start,
                             matches[read].end,
@@ -768,16 +768,16 @@ impl CompiledScanner {
         let ac_packs = self
             .gpu_ac_const_packs
             .get_or_init(|| crate::engine::AcConstPacks {
-                transitions: vyre_libs::matching::dispatch_io::pack_u32_slice(
+                transitions: vyre_libs::scan::dispatch_io::pack_u32_slice(
                     &matcher.dfa.transitions,
                 ),
-                output_offsets: vyre_libs::matching::dispatch_io::pack_u32_slice(
+                output_offsets: vyre_libs::scan::dispatch_io::pack_u32_slice(
                     &matcher.dfa.output_offsets,
                 ),
-                output_records: vyre_libs::matching::dispatch_io::pack_u32_slice(
+                output_records: vyre_libs::scan::dispatch_io::pack_u32_slice(
                     &matcher.dfa.output_records,
                 ),
-                pattern_lengths: vyre_libs::matching::dispatch_io::pack_u32_slice(
+                pattern_lengths: vyre_libs::scan::dispatch_io::pack_u32_slice(
                     &matcher.pattern_lengths,
                 ),
             });
@@ -791,9 +791,9 @@ impl CompiledScanner {
         for &(s_start, s_end) in &shard_ranges {
             let shard_len = (s_end - s_start) as u32;
             shard_owned.push(ShardOwnedAc {
-                haystack_len: vyre_libs::matching::dispatch_io::pack_u32_slice(&[shard_len]),
+                haystack_len: vyre_libs::scan::dispatch_io::pack_u32_slice(&[shard_len]),
                 atomic_count: vec![0u8; 4],
-                config: vyre_libs::matching::dispatch_io::byte_scan_dispatch_config(
+                config: vyre_libs::scan::dispatch_io::byte_scan_dispatch_config(
                     shard_len,
                     program.workgroup_size[0],
                 ),
@@ -821,7 +821,7 @@ impl CompiledScanner {
         // memory bounded on multi-GiB scans while leaving vyre's
         // 2048-slot readback ring deeply under-subscribed.
         const MAX_SHARDS_PER_GPU_BATCH: usize = 64;
-        let mut matches: Vec<vyre_libs::matching::LiteralMatch> = Vec::new();
+        let mut matches: Vec<vyre_libs::scan::LiteralMatch> = Vec::new();
         for sub_start in (0..shard_count).step_by(MAX_SHARDS_PER_GPU_BATCH) {
             let sub_end = (sub_start + MAX_SHARDS_PER_GPU_BATCH).min(shard_count);
             let sub_inputs: Vec<&[&[u8]]> = (sub_start..sub_end)
@@ -886,13 +886,13 @@ impl CompiledScanner {
                     );
                     return self.scan_coalesced_non_gpu(chunks);
                 }
-                let shard_matches = vyre_libs::matching::dispatch_io::unpack_match_triples(
+                let shard_matches = vyre_libs::scan::dispatch_io::unpack_match_triples(
                     matches_bytes,
                     count.min(super::AC_GPU_MAX_MATCHES_PER_DISPATCH),
                 );
                 let offset = shard_ranges[i].0 as u32;
                 for m in &shard_matches {
-                    matches.push(vyre_libs::matching::LiteralMatch::new(
+                    matches.push(vyre_libs::scan::LiteralMatch::new(
                         m.pattern_id,
                         m.start.saturating_add(offset),
                         m.end.saturating_add(offset),
@@ -927,7 +927,7 @@ impl CompiledScanner {
                     && matches[read].start <= matches[write].end
                 {
                     if matches[read].end > matches[write].end {
-                        matches[write] = vyre_libs::matching::LiteralMatch::new(
+                        matches[write] = vyre_libs::scan::LiteralMatch::new(
                             matches[write].pattern_id,
                             matches[write].start,
                             matches[read].end,

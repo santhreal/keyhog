@@ -12,7 +12,7 @@
 //! detector by writing data, not code.
 
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::CompiledScanner;
