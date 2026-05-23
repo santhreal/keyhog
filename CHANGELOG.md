@@ -4,12 +4,45 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ## Unreleased
 
+## v0.5.9 — 2026-05-23 — companion contracts gate + LFS coverage
+
+### Fixed
+
+- **Companion contracts gate (12 issues closed).** Five detectors
+  (ringcentral, booking-com, vanta, trulioo, appdynamics) listed
+  the "secret" half as a duplicate primary regex, so the
+  secret-only `negative_companion_lookalike` fixture fired the
+  detector. Removed the duplicate primaries; secret is now
+  companion-only. Akoya / avalara had the same dup-primary shape.
+- **bitbucket-app-password companion regex.** Was
+  `[a-zA-Z0-9._-]+` (matched anything), so primary-only text
+  populated `companion.username` from inside the primary's own
+  assignment line and verification proceeded despite
+  `must_not_verify`. Re-anchored to `bitbucket_username=` shape.
+- **ringcentral companion now anchored to client_secret= shape**
+  so id-only text no longer populates `client_pair` and
+  triggers VERIFY-RISK.
+- **Three twilio companion fixtures** used `xxx` / `fake`
+  placeholders containing non-hex characters that the
+  example-credential filter suppressed; swapped to realistic
+  hex so the gate tests the engine behavior, not the
+  example-credential filter.
+- **rustfmt** — `scan_gpu.rs` + `engine/mod.rs` re-joined now-short
+  calls after the `matching` → `scan` module migration.
+
+### Changed
+
+- **`.gitattributes` now covers `contracts/companion/*.toml`** in
+  LFS. The original LFS rule was non-recursive; companion
+  fixtures with Twilio-shaped strings would otherwise trip
+  GitHub push-protection.
+
 ## v0.5.8 — 2026-05-23 — daemon wire-v2, GitHub Action, contracts gate
 
 ### Added
 
 - **GitHub Action that actually works.** `uses:
-  santhsecurity/keyhog/.github/actions/keyhog@v0.5.8` now installs
+  santhsecurity/keyhog/.github/actions/keyhog@v0.5.9` now installs
   the Rust toolchain + Vectorscan/Hyperscan and builds keyhog,
   *or* downloads a prebuilt binary from the matching GitHub
   Release when one exists. Previously the action ran
