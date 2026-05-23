@@ -1,0 +1,21 @@
+schema_version = 1
+detector_id = "aws-access-key"
+service = "aws"
+severity = "critical"
+
+[positive_with_companion]
+text = "AWS_ACCESS_KEY_ID=AKIAQYLPMN5HFIQR7XYA\nAWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+expected_findings = ["aws-access-key"]
+expected_companions = { secret_key = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY" }
+reason = "AWS documented example access key paired with secret key."
+
+[positive_primary_only]
+text = "AWS_ACCESS_KEY_ID=AKIAQYLPMN5HFIQR7XYA"
+expected_findings = ["aws-access-key"]
+must_not_verify = true
+reason = "Primary found without companion secret_key; verification must NOT proceed."
+
+[negative_companion_lookalike]
+text = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+expected_findings = []
+reason = "Secret key lookalike without AKIA primary."

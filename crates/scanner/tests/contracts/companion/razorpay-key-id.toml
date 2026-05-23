@@ -1,0 +1,21 @@
+schema_version = 1
+detector_id = "razorpay-key-id"
+service = "razorpay"
+severity = "high"
+
+[positive_with_companion]
+text = "RAZORPAY_KEY_ID=rzp_test_4eC39HqLyjWDarjtT1zdp7dc\nRAZORPAY_KEY_SECRET=AbCdEfGhIjKlMnOpQrStUvWxYz1234"
+expected_findings = ["razorpay-key-id"]
+expected_companions = { razorpay_key_secret = "AbCdEfGhIjKlMnOpQrStUvWxYz1234" }
+reason = "Key ID paired with Key Secret."
+
+[positive_primary_only]
+text = "RAZORPAY_KEY_ID=rzp_test_4eC39HqLyjWDarjtT1zdp7dc"
+expected_findings = ["razorpay-key-id"]
+must_not_verify = true
+reason = "Primary found without companion razorpay_key_secret; verification must NOT proceed."
+
+[negative_companion_lookalike]
+text = "RAZORPAY_KEY_SECRET=AbCdEfGhIjKlMnOpQrStUvWxYz1234"
+expected_findings = []
+reason = "Key Secret alone without Key ID."

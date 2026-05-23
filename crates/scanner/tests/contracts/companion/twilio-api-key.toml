@@ -1,0 +1,21 @@
+schema_version = 1
+detector_id = "twilio-api-key"
+service = "twilio"
+severity = "high"
+
+[positive_with_companion]
+text = "TWILIO_API_KEY=SKxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nTWILIO_API_SECRET=00000000fake0000000fake0000000fake"
+expected_findings = ["twilio-api-key"]
+expected_companions = { secret = "00000000fake0000000fake0000000fake" }
+reason = "API Key SK... paired with its secret."
+
+[positive_primary_only]
+text = "TWILIO_API_KEY=SKxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+expected_findings = []
+must_not_verify = true
+reason = "Missing required companion secret; scanner must suppress match."
+
+[negative_companion_lookalike]
+text = "TWILIO_API_SECRET=00000000fake0000000fake0000000fake"
+expected_findings = []
+reason = "Secret alone without SK... API key primary."

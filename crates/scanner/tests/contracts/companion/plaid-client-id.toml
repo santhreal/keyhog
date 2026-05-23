@@ -1,0 +1,21 @@
+schema_version = 1
+detector_id = "plaid-client-id"
+service = "plaid"
+severity = "high"
+
+[positive_with_companion]
+text = "plaid_client_id=7b3e5d8c1a9f4e2b6c8d3a5e\nplaid_secret=a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0"
+expected_findings = ["plaid-client-id"]
+expected_companions = { plaid_secret = "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0" }
+reason = "Client ID paired with Plaid secret."
+
+[positive_primary_only]
+text = "plaid_client_id=7b3e5d8c1a9f4e2b6c8d3a5e"
+expected_findings = ["plaid-client-id"]
+must_not_verify = true
+reason = "Primary found without companion plaid_secret; verification must NOT proceed."
+
+[negative_companion_lookalike]
+text = "plaid_secret=a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0"
+expected_findings = []
+reason = "Secret alone without Client ID."
