@@ -171,7 +171,20 @@ jobs:
           for pkg in keyhog-core keyhog-scanner keyhog-verifier keyhog-sources keyhog; do
             echo "Publishing $pkg..."
             # --no-verify: already tested in the build job above
-            cargo publish -p "$pkg" --no-verify 2>&1 || true
+            # Capture stderr so "already published" is a no-op but
+            # any other failure (network, auth, schema) fails the job
+            # instead of silently swallowing.
+            if out=$(cargo publish -p "$pkg" --no-verify 2>&1); then
+              echo "$out"
+            else
+              echo "$out"
+              if echo "$out" | grep -q "is already uploaded"; then
+                echo "  → $pkg already at this version; continuing"
+              else
+                echo "  → $pkg publish failed with unexpected error"
+                exit 1
+              fi
+            fi
             # Wait for crates.io index propagation between dependent crates
             sleep 30
           done
