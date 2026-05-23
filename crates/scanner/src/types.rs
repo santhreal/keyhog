@@ -129,7 +129,7 @@ pub type ScannerPreprocessedText = PreprocessedText;
 /// A compiled entry: one pattern from one detector.
 ///
 /// `regex` is `Arc<Regex>` so identical pattern strings compile once and
-/// share state across all detectors that use them. The 888-detector corpus
+/// share state across all detectors that use them. The 889-detector corpus
 /// has ~6-15% duplicate regex strings (especially around `AIza...`,
 /// `xoxb-...`, JWT shapes); de-duplicating cuts startup compile time and
 /// memory proportionally — see audits/legendary-2026-04-26.

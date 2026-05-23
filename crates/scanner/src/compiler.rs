@@ -366,7 +366,7 @@ pub fn compile_pattern(
 }
 
 /// Compile a regex once per unique source string and share the compiled
-/// `Arc<Regex>` across every detector that uses it. The 888-detector corpus
+/// `Arc<Regex>` across every detector that uses it. The 889-detector corpus
 /// has ~6-15% duplicate regexes (Google, JWT, Slack shapes); this collapses
 /// each duplicate set into a single compiled instance, cutting startup
 /// compile time and resident memory proportionally — see audits/legendary-
