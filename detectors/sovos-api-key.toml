@@ -15,11 +15,6 @@ regex = "(?:SOVOS|sovos)[._]?(?:API|api)?[._]?(?:KEY|key)[=:\\s\"'']+([a-zA-Z0-9
 description = "Sovos API key with context anchor"
 group = 1
 
-[[detector.patterns]]
-regex = "(?:SOVOS|sovos)[._]?(?:API|api)?[._]?(?:SECRET|secret)[=:\\s\"'']+([a-zA-Z0-9_-]{20,})"
-description = "Sovos API secret with context anchor"
-group = 1
-
 [[detector.companions]]
 name = "sovos_api_secret"
 regex = "(?:SOVOS|sovos)[._]?(?:API|api)?[._]?(?:SECRET|secret)[=:\\s\"'']+([a-zA-Z0-9_-]{20,})"

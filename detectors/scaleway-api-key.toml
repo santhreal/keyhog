@@ -11,11 +11,6 @@ severity = "critical"
 keywords = ["SCW", "SCALEWAY_ACCESS_KEY", "scaleway"]
 
 [[detector.patterns]]
-regex = "(?:SCW|SCALEWAY_ACCESS_KEY|scaleway.access.key)[=:\\s\"'']+(SCW[A-Z0-9]{20})"
-description = "Scaleway access key (SCW prefix)"
-group = 1
-
-[[detector.patterns]]
 regex = "(?:SCW_SECRET_KEY|scaleway_secret_key|secret[_-]key)[=:\\s\"'']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
 description = "Scaleway secret key (UUID format)"
 group = 1

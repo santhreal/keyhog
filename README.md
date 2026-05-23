@@ -23,7 +23,7 @@ KeyHog scans source trees, git history, Docker images, S3 buckets, and web asset
 Selection is automatic. On startup:
 
 ```
-KeyHog v0.5.9 | 16 cores | SIMD: AVX-512 | Hyperscan | 889 detectors (1697 patterns)
+KeyHog v0.5.9 | 16 cores | SIMD: AVX-512 | Hyperscan | 889 detectors (1676 patterns)
 ```
 
 ## Performance
