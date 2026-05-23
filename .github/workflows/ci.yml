@@ -87,6 +87,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # cargo fmt walks every .rs file under tests/, including
+          # readme_claims.rs and diagnose_84_divergence.rs which are
+          # LFS-stored (they contain credential-shaped strings that
+          # push-protection rejects). Without lfs:true those files
+          # arrive as 3-line LFS pointer text starting with
+          # `version https://git-lfs.github.com/spec/v1`, which
+          # rustfmt cannot parse ("expected one of `!` or `::`,
+          # found `https`").
+          lfs: true
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt

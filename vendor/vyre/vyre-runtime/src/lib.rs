@@ -128,6 +128,11 @@ pub mod uring;
 pub struct GpuStream<'a> {
     #[cfg(target_os = "linux")]
     uring: Option<uring::AsyncUringStream<'a>>,
+    // On non-Linux the `uring` field is cfg'd out and `'a` would
+    // otherwise be unused. Carry it via PhantomData so the lifetime
+    // parameter compiles on every platform.
+    #[cfg(not(target_os = "linux"))]
+    _phantom: std::marker::PhantomData<&'a ()>,
     shutdown_requested: bool,
 }
 
@@ -154,6 +159,8 @@ impl<'a> GpuStream<'a> {
         Self {
             #[cfg(target_os = "linux")]
             uring: None,
+            #[cfg(not(target_os = "linux"))]
+            _phantom: std::marker::PhantomData,
             shutdown_requested: false,
         }
     }

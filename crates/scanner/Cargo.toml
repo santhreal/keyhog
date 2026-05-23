@@ -20,7 +20,7 @@ status = "alpha"
 # GPU is ALWAYS compiled in — keyhog auto-routes to GPU/SIMD/CPU based on
 # hardware probe, OS, and workload size. There is no "no-GPU" build profile;
 # the runtime gracefully degrades when no compatible adapter is found.
-default = ["ml", "entropy", "decode", "multiline", "simdsieve", "simd", "cuda"]
+default = ["ml", "entropy", "decode", "multiline", "simdsieve", "simd"]
 ml = []
 entropy = []
 decode = []
@@ -29,10 +29,12 @@ simd = ["dep:hyperscan"]  # Vectorscan/Hyperscan SIMD regex compilation (builds 
 simd_scan = ["simd"]      # Enable SIMD scan path (experimental — AC+fallback is faster for <2K patterns)
 simdsieve = ["dep:simdsieve"]  # SIMD-accelerated prefilter for top 8 patterns (50 GB/s)
 gpu = []  # GPU stack is mandatory; feature exists for CLI compatibility
-# CUDA accelerator. Enabled by default — on machines without libcuda.so the
-# runtime probe falls through to wgpu (which works on any GPU vendor) and
-# then to SIMD/CPU. Building this crate without CUDA available at link time
-# requires `--no-default-features --features ml,entropy,decode,multiline,simdsieve,simd`.
+# CUDA accelerator. NOT in default — requires libcuda.so + libnvrtc.so +
+# libcudart.so present at LINK time, which the average CI host (and macOS
+# entirely) lacks. Users on a CUDA-capable host opt in with
+# `cargo install keyhog --features cuda` to get the dedicated CUDA backend
+# alongside wgpu. Without this feature the runtime still routes to GPU via
+# wgpu on any compatible adapter (NVIDIA, AMD, Intel, Apple Silicon).
 cuda = ["dep:vyre-driver-cuda", "vyre-driver-cuda/cuda"]
 
 [dependencies]
