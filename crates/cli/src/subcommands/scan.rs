@@ -197,9 +197,27 @@ fn finalize_for_report(matches: Vec<RawMatch>, args: &ScanArgs) -> Vec<VerifiedF
         crate::test_fixture_suppressions::TestFixtureSuppressions::bundled()
     };
 
+    // Mirror the in-process orchestrator's behaviour: when this filter
+    // drops a credential, bump the example-suppression telemetry so the
+    // reporter's empty-findings summary distinguishes "no matches at
+    // all" from "matched and suppressed as a known test fixture". The
+    // daemon process runs its own scanner (with its own telemetry
+    // counters that this CLI can't see), so the CLI must record the
+    // suppression itself based on what came back over the wire.
     let mut matches: Vec<RawMatch> = matches
         .into_iter()
-        .filter(|m| !fixtures.suppresses(&m.credential))
+        .filter(|m| {
+            if fixtures.suppresses(&m.credential) {
+                keyhog_scanner::telemetry::record_example_suppression(
+                    m.detector_id.as_ref(),
+                    m.location.file_path.as_deref(),
+                    &m.credential,
+                    "test_fixture_suppression",
+                );
+                return false;
+            }
+            true
+        })
         .collect();
     matches.sort_by_key(|m| std::cmp::Reverse(m.severity));
 

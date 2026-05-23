@@ -302,55 +302,6 @@ impl CompiledScanner {
         );
     }
 
-    /// Extract matches restricted to a `[cursor_start, cursor_end)` byte
-    /// window of the preprocessed text. Used by the GPU/MegaScan path to
-    /// run anchored regex confirmation at the literal-hit positions
-    /// returned by `vyre_libs::matching::GpuLiteralSet::scan`, instead
-    /// of re-scanning the entire 64 MiB+ chunk per triggered pattern.
-    ///
-    /// `cursor_end` is treated as the upper bound for *match start*; a
-    /// regex match whose start ≥ `cursor_end` is treated the same as
-    /// "no match" for the purposes of breaking out of the cursor loop.
-    ///
-    /// Currently unused — the GPU pipeline went with the
-    /// `scan_prepared_with_pattern_hits` cheap-filter approach which
-    /// uses `regex.is_match` on the same window and then defers to the
-    /// legacy extract path with a tightened bitmap. Kept available
-    /// because the per-hit anchored variant is the obvious next step
-    /// once `regex.is_match` stops being precise enough — moving the
-    /// confirm into `extract_matches_in_range` collapses two regex
-    /// walks into one.
-    #[allow(dead_code)]
-    pub(crate) fn extract_matches_in_range(
-        &self,
-        entry: &CompiledPattern,
-        preprocessed: &ScannerPreprocessedText,
-        line_offsets: &[usize],
-        code_lines: &[&str],
-        documentation_lines: &[bool],
-        chunk: &Chunk,
-        scan_state: &mut ScanState,
-        base_line: usize,
-        base_offset: usize,
-        cursor_start: usize,
-        cursor_end: usize,
-        deadline: Option<std::time::Instant>,
-    ) {
-        self.extract_matches_inner(
-            entry,
-            preprocessed,
-            line_offsets,
-            code_lines,
-            documentation_lines,
-            chunk,
-            scan_state,
-            base_line,
-            base_offset,
-            Some((cursor_start, cursor_end)),
-            deadline,
-        );
-    }
-
     #[allow(clippy::too_many_arguments)]
     fn extract_matches_inner(
         &self,

@@ -274,6 +274,58 @@ fn no_suppress_test_fixtures_surfaces_stripe_demo_key() {
     );
 }
 
+/// Regression for the demo-secret.env UX bug originally flagged
+/// in TODO.md (2026-05-17): scanning a file that holds an
+/// AWS-published EXAMPLE credential (AKIAIOSFODNN7EXAMPLE) used to
+/// print "No secrets found. Your code is clean." — identical to a
+/// genuinely clean repo — because the test-fixture suppression
+/// filtered the match BEFORE the example-suppression telemetry
+/// counter saw it. The reporter then read counter=0 and chose the
+/// clean-repo summary.
+///
+/// v0.5.6 wired `record_example_suppression` for the engine-side
+/// EXAMPLE token check, but missed this orchestrator-level
+/// test-fixture filter, so the bug came back as soon as the AWS
+/// fixture went through the substring suppression instead of the
+/// engine path. This test pins the right behaviour:
+///
+/// * Default mode → output contains "example/test key" and does
+///   NOT contain the all-clean summary.
+/// * The bundled AWS-EXAMPLE entry must still suppress (no
+///   finding shown in the matches list).
+#[test]
+fn demo_secret_aws_example_summary_distinguishes_suppression_from_clean() {
+    let fixture = "AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE\n";
+    let dir = TempDir::new().expect("tempdir");
+    let path = dir.path().join("demo-secret.env");
+    std::fs::write(&path, fixture).expect("write fixture");
+
+    // --no-daemon to guarantee the in-process orchestrator path is
+    // exercised (the daemon path lives in `subcommands/scan.rs` and
+    // is locked by `daemon_route_test_fixture_suppression_records_telemetry`
+    // below).
+    let out = Command::new(binary())
+        .arg("scan")
+        .arg("--no-daemon")
+        .arg("--format")
+        .arg("text")
+        .arg(&path)
+        .output()
+        .expect("spawn keyhog scan demo-secret.env");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+
+    assert!(
+        stdout.contains("example/test key") && stdout.contains("suppressed"),
+        "demo-secret.env summary must distinguish suppressed-example from a \
+         clean repo. Got stdout: {stdout}"
+    );
+    assert!(
+        !stdout.contains("Your code is clean."),
+        "the clean-repo summary must NOT fire when an example credential was \
+         suppressed. Got stdout: {stdout}"
+    );
+}
+
 #[test]
 fn explicit_format_text_does_not_emit_json() {
     let fixture = "AWS_ACCESS_KEY_ID = \"AKIAQYLPMN5HFIQR7XYA\"\n";

@@ -13,16 +13,19 @@
   - Fix: Added `vyre-runtime = { version = "=0.4.1", path = "vendor/vyre/vyre-runtime" }` to workspace root `Cargo.toml`
   - Status: **FIXED** in this session
 
-- [ ] **UX**: Demo secrets (`demo-secret.env`) use `EXAMPLE` suffix — scanner returns "No secrets found"
-  - Severity: LOW (confusing for new users evaluating the tool)
-  - Context: Testing with the provided demo file after build
-  - Impact: User thinks the tool is broken or their config is wrong
-  - Repro: `./target/release/keyhog scan demo-secret.env`
-  - Expected: At minimum a note like "1 example/test key found (not a real secret)"
-  - Actual: "No secrets found. Your code is clean."
-  - Suggestion: Detect example/test keys explicitly and report them differently, or use a real-looking fake secret in the demo
+- [x] **UX**: Demo secrets (`demo-secret.env`) use `EXAMPLE` suffix — scanner returns "No secrets found"
+  - Original v0.5.6 fix wired engine-side EXAMPLE-token telemetry, but the
+    orchestrator's `test_fixture_suppressions.suppresses()` branch ran
+    EARLIER on the demo-secret.env input (AKIAIOSFODNN7EXAMPLE is on the
+    bundled substring suppression list) and never bumped the counter. The
+    reporter then read `example_suppression_count() == 0` and printed the
+    clean-repo summary instead of the suppressed-example summary.
+  - Fixed by extending the orchestrator filter to call
+    `keyhog_scanner::telemetry::record_example_suppression(..., "test_fixture_suppression")`
+    before returning `false` from the test-fixture branch.
+  - Regression test: `crates/cli/tests/e2e_binary.rs::demo_secret_aws_example_summary_distinguishes_suppression_from_clean`.
 
-- [ ] **FEATURE**: Add `--dogfood` flag or env var that emits structured JSON of every internal decision
-  - Context: Debugging why a detector didn't fire
-  - Impact: Impossible to tell if a miss is a false negative or a config issue
-  - Suggestion: `keyhog scan --dogfood` emits per-file/per-detector match attempts, entropy scores, and why-match-failed reasons
+- [x] **FEATURE**: Add `--dogfood` flag or env var that emits structured JSON of every internal decision
+  - Shipped in v0.5.6 (see `crates/scanner/src/telemetry.rs`,
+    `crates/cli/src/args.rs::dogfood`). Pair with the demo-secret.env fix above
+    so the counter actually fires for fixture-style suppressions.

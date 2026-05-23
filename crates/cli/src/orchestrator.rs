@@ -787,8 +787,22 @@ impl ScanOrchestrator {
                 }
                 // Tier-B configurable test-fixture suppression
                 // (data/suppressions/test-fixtures.toml; opt out
-                // via `--no-suppress-test-fixtures`).
+                // via `--no-suppress-test-fixtures`). Record into
+                // telemetry so the reporter's empty-findings summary
+                // can distinguish "no matches at all" from "matched
+                // and suppressed as a known test fixture" — without
+                // this bump the user sees a misleading "No secrets
+                // found. Your code is clean." on demo-secret.env
+                // (AKIAIOSFODNN7EXAMPLE is on the EXAMPLE substring
+                // list) instead of the v0.5.6-documented "0 real
+                // secrets, N example/test key(s) suppressed".
                 if self.test_fixture_suppressions.suppresses(cred) {
+                    keyhog_scanner::telemetry::record_example_suppression(
+                        m.detector_id.as_ref(),
+                        m.location.file_path.as_deref(),
+                        cred,
+                        "test_fixture_suppression",
+                    );
                     return false;
                 }
 
