@@ -101,7 +101,7 @@ fn every_cve_replay_entry_must_fire() {
             data: entry.leaked_text.clone().into(),
             metadata: ChunkMetadata {
                 source_type: "cve_replay".into(),
-                path: Some(format!("{}.txt", entry.cve_id).into()),
+                path: Some(format!("{}.txt", entry.cve_id)),
                 ..Default::default()
             },
         };

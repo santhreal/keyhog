@@ -6,7 +6,7 @@
 //!      → primary fires AND companions map is populated.
 //!   2. positive_primary_only — primary alone
 //!      → if companion is scanner-required, no match;
-//!        otherwise primary fires but companions map is empty.
+//!      otherwise primary fires but companions map is empty.
 //!   3. negative_companion_lookalike — companion-shaped noise, no primary
 //!      → primary must NOT fire.
 //!

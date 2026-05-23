@@ -256,7 +256,7 @@ fn bisect_gpu_ac_recall_by_window_size() {
         // Drive both backends over the SAME bytes. If SIMD finds it
         // and AC misses it, the bug is purely AC-side. If both miss
         // it, the chunk-coalesce + dedup downstream is dropping it.
-        let ac_results = scanner.scan_coalesced_gpu_ac(&[chunk.clone()]);
+        let ac_results = scanner.scan_coalesced_gpu_ac(std::slice::from_ref(&chunk));
         let ac_flat: Vec<_> = ac_results.into_iter().flatten().collect();
         let ac_hit = finds_stackblitz(&ac_flat);
         let ac_stackblitz_count = ac_flat
