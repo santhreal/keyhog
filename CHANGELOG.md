@@ -4,6 +4,31 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ## Unreleased
 
+## v0.5.10 — 2026-05-23 — detector dedup sweep + binary/crates alignment
+
+### Fixed
+
+- **Dedupe primary-equals-companion in 14 detectors**
+  (idenfy, infura, jumio, marvel, packer, scaleway, sovos,
+  thomson-reuters-onesource, time4vps, twilio-iot, upcloud,
+  vonage-video, wix, woocommerce). Each listed the "secret /
+  companion" half as a duplicate primary regex; companion-only
+  text would fire the detector. Same SURPLUS shape closed in
+  v0.5.9 for ringcentral/booking-com/vanta/trulioo/appdynamics/
+  avalara/akoya — sweeping the rest of the corpus that has no
+  main contracts yet so existing positives can't regress.
+- **Test-target clippy lints** in gpu_ac_recall_bug_56,
+  cve_replay_runner, companion_contracts_runner, property/scanner_fuzz.
+
+### Changed
+
+- **Pattern count 1697 → 1676** across README banner +
+  `e2e_binary::README_PATTERN_COUNT` + `readme_claims` gate.
+- **v0.5.10 binary release and crates.io publish are built from
+  the same commit.** v0.5.9 shipped a linux binary built from the
+  tag commit before CI dedup landed; crates.io was never published
+  at 0.5.9 (CI test red on the pattern-count drift).
+
 ## v0.5.9 — 2026-05-23 — companion contracts gate + LFS coverage
 
 ### Fixed
@@ -42,7 +67,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 ### Added
 
 - **GitHub Action that actually works.** `uses:
-  santhsecurity/keyhog/.github/actions/keyhog@v0.5.9` now installs
+  santhsecurity/keyhog/.github/actions/keyhog@v0.5.10` now installs
   the Rust toolchain + Vectorscan/Hyperscan and builds keyhog,
   *or* downloads a prebuilt binary from the matching GitHub
   Release when one exists. Previously the action ran
