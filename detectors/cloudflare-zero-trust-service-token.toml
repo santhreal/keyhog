@@ -15,11 +15,6 @@ regex = "(?:CF-Access-Client-Id|CF.Access.Client.Id)[=:\\s\"'']+([a-f0-9]{32})\\
 description = "Cloudflare Zero Trust service token Client ID"
 group = 1
 
-[[detector.patterns]]
-regex = "(?:CF-Access-Client-Secret|CF.Access.Client.Secret)[=:\\s\"'']+([a-zA-Z0-9_-]{40,})"
-description = "Cloudflare Zero Trust service token Client Secret"
-group = 1
-
 [[detector.companions]]
 name = "client_secret"
 regex = "(?:CF-Access-Client-Secret|CF.Access.Client.Secret)[=:\\s\"'']+[a-zA-Z0-9_-]{40,}"

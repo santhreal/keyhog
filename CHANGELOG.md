@@ -4,6 +4,35 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ## Unreleased
 
+## v0.5.12 — 2026-05-23 — dedup 9 more dup-primary detectors
+
+### Fixed
+
+Dropped the duplicate "secret/companion" primary in nine more
+detectors. Companion-only text no longer fires the detector
+without the id-half nearby.
+
+- hashicorp-vault-approle-credentials (Vault Secret ID)
+- qualys-api-credentials (qualys_username)
+- remitly-api-credentials (Remitly client ID)
+- smartproxy-credentials (smartproxy_username)
+- tidb-cloud-credentials (TiDB Public Key)
+- veracode-api-credentials (veracode_api_secret)
+- zscaler-api-key (zscaler_client_secret)
+- zuora-api-credentials (zuora_client_secret)
+- cloudflare-zero-trust-service-token (client_secret) — positives
+  use the Client-Id shape, so dedup is safe even with main contract.
+
+belvo, crisp, env0, exoscale, checkmarx, crowdstrike, fastspring,
+fedex still have the dup-shape — their main contracts have a
+secret-only positive that fires by design, so dedup would regress
+recall and isn't a safe local sweep.
+
+### Changed
+
+- **Pattern count 1674 → 1665** across README + e2e_binary +
+  readme_claims gate.
+
 ## v0.5.11 — 2026-05-23 — dedup carbon-black + databricks
 
 ### Fixed

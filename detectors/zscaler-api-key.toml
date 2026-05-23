@@ -15,11 +15,6 @@ regex = "(?:ZSCALER|zscaler|ZPA|zpa)[_\\s]*(?:CLIENT[_\\s]*)?ID[=:\\s\"'']+([a-z
 description = "Zscaler client ID with context anchor"
 group = 1
 
-[[detector.patterns]]
-regex = "(?:ZSCALER|zscaler|ZPA|zpa)[_\\s]*(?:CLIENT[_\\s]*)?(?:SECRET|KEY)[=:\\s\"'']+([a-zA-Z0-9_-]{32,64})"
-description = "Zscaler client secret with context anchor"
-group = 1
-
 [[detector.companions]]
 name = "zscaler_client_secret"
 regex = "(?:ZSCALER|zscaler|ZPA|zpa)[_\\s]*(?:CLIENT[_\\s]*)?(?:SECRET|KEY)[=:\\s\"'']+[a-zA-Z0-9_-]{32,64}"
