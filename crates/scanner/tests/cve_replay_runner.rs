@@ -103,9 +103,12 @@ fn every_cve_replay_entry_must_fire() {
         };
         let matches = scanner.scan(&chunk);
 
-        let detector_hit = matches
-            .iter()
-            .any(|m| entry.detectors.iter().any(|d| d.as_str() == m.detector_id.as_ref()));
+        let detector_hit = matches.iter().any(|m| {
+            entry
+                .detectors
+                .iter()
+                .any(|d| d.as_str() == m.detector_id.as_ref())
+        });
         let credential_hit = matches
             .iter()
             .any(|m| entry.leaked_text.contains(m.credential.as_ref()));

@@ -1,7 +1,7 @@
 //! Backend-neutral compiled-pipeline construction.
 
 use super::{
-    dispatch_policy_cache_string, normalized_program_cache_digest, CompiledPipelineBuild,
+    dispatch_policy_cache_string, try_normalized_program_cache_digest, CompiledPipelineBuild,
     PipelineCacheSnapshot, PipelinePrewarmReport, PipelineReproManifest,
 };
 use crate::backend::{
@@ -111,7 +111,9 @@ pub fn compile_shared_with_telemetry(
     config: &DispatchConfig,
 ) -> Result<CompiledPipelineBuild, BackendError> {
     let backend_id = backend.id().to_owned();
-    let program_digest = normalized_program_cache_digest(&program);
+    let program_digest = try_normalized_program_cache_digest(&program).map_err(|error| {
+        BackendError::new(format!("compiled-pipeline cache digest failed: {error}"))
+    })?;
     let dispatch_policy = dispatch_policy_cache_string(config);
     let before = backend.pipeline_cache_snapshot();
     let pipeline = compile_shared(Arc::clone(&backend), program, config)?;
@@ -189,8 +191,18 @@ fn cache_status_from_snapshots(
     after: Option<PipelineCacheSnapshot>,
 ) -> Option<bool> {
     let (before, after) = (before?, after?);
-    let hits = after.hits.saturating_sub(before.hits);
-    let misses = after.misses.saturating_sub(before.misses);
+    let hits = after.hits.checked_sub(before.hits).unwrap_or_else(|| {
+        panic!(
+            "pipeline cache hit counter regressed from {} to {}. Fix: backend cache snapshots must be monotonic within one compile.",
+            before.hits, after.hits
+        )
+    });
+    let misses = after.misses.checked_sub(before.misses).unwrap_or_else(|| {
+        panic!(
+            "pipeline cache miss counter regressed from {} to {}. Fix: backend cache snapshots must be monotonic within one compile.",
+            before.misses, after.misses
+        )
+    });
     if hits > 0 {
         Some(true)
     } else if misses > 0 {

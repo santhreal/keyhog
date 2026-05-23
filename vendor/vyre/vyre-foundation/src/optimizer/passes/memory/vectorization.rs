@@ -3,10 +3,16 @@ use crate::optimizer::fact_substrate::{FactSubstrate, UseFacts};
 use crate::optimizer::program_shape_facts::ProgramShapeFacts;
 use crate::optimizer::{vyre_pass, PassAnalysis, PassResult};
 
-
 /// Promote proven-safe vector/coalescing layout hints from buffer shape facts.
 #[derive(Debug, Default)]
-#[vyre_pass(name = "vectorization", requires = [], invalidates = ["buffer_layout"])]
+#[vyre_pass(
+    name = "vectorization",
+    requires = [],
+    invalidates = ["buffer_layout"],
+    phase = "memory",
+    boundary_class = "abi_preserving",
+    cost_model_family = "memory"
+)]
 pub struct Vectorization;
 
 impl Vectorization {
@@ -15,20 +21,31 @@ impl Vectorization {
     #[inline]
     fn analyze_impl(program: &Program) -> PassAnalysis {
         if program.buffers().is_empty() {
-            PassAnalysis::SKIP
-        } else {
-            PassAnalysis::RUN
+            return PassAnalysis::SKIP;
         }
+        // Vectorization rewrites apply where the program actually
+        // touches buffer memory. memory_op_count is a cached counter
+        // of every Load / Store / async copy in the program; zero
+        // means there is no buffer access to vectorize.
+        if program.stats().memory_op_count == 0 {
+            return PassAnalysis::SKIP;
+        }
+        PassAnalysis::RUN
     }
 
     /// Rewrite buffer hints when shape facts prove tail-free vector lanes.
     #[must_use]
     pub fn transform(program: Program) -> PassResult {
-        let mut substrate = FactSubstrate::default();
-        let rewritten_buffers = with_cached_shape_and_use(&program, &mut substrate, |shapes, use_facts| {
+        let substrate = FactSubstrate::derive_shape_and_use_cached(&program);
+        let shapes = substrate.shape.as_deref().unwrap_or_else(|| {
+            unreachable!("derive_shape_and_use_cached contract: shape always populated")
+        });
+        let use_facts = substrate.use_facts.as_deref().unwrap_or_else(|| {
+            unreachable!("derive_shape_and_use_cached contract: use_facts always populated")
+        });
+        let rewritten_buffers = {
             let buffers = program.buffers();
             let mut rewritten_buffers = None::<Vec<_>>;
-
             for (index, buffer) in buffers.iter().enumerate() {
                 let rewritten = vectorized_buffer(buffer, shapes, use_facts);
                 match (rewritten_buffers.as_mut(), rewritten) {
@@ -43,9 +60,8 @@ impl Vectorization {
                     (Some(out), Some(rewritten)) => out.push(rewritten),
                 }
             }
-
             rewritten_buffers
-        });
+        };
 
         if let Some(buffers) = rewritten_buffers {
             PassResult {
@@ -55,7 +71,8 @@ impl Vectorization {
         } else {
             PassResult::unchanged(program)
         }
-    }}
+    }
+}
 
 fn vectorized_buffer(
     buffer: &crate::ir::BufferDecl,
@@ -81,25 +98,6 @@ fn vectorized_buffer(
     Some(rewritten)
 }
 
-fn with_cached_shape_and_use<R>(
-    program: &Program,
-    substrate: &mut FactSubstrate,
-    read: impl FnOnce(&ProgramShapeFacts, &UseFacts) -> R,
-) -> R {
-    if !substrate.has_fresh_shape_and_use_for(program) {
-        *substrate = FactSubstrate::derive_shape_and_use(program);
-    }
-    let shapes = substrate
-        .shape
-        .as_deref()
-        .expect("Fix: derive_shape_and_use must populate shape facts");
-    let use_facts = substrate
-        .use_facts
-        .as_deref()
-        .expect("Fix: derive_shape_and_use must populate use facts");
-    read(shapes, use_facts)
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct VectorPlan {
     coalesce_axis: u8,
@@ -117,14 +115,14 @@ fn vector_plan(
         return None;
     }
     let element_size = u32::try_from(facts.element_size_bytes?).ok()?.max(1);
-    let max_lanes = 16u32.saturating_div(element_size).max(1);
+    let max_lanes = 16u32.checked_div(element_size)?.max(1);
     let coalesce_axis = hints
         .coalesce_axis
         .or_else(|| use_facts.dominant_index_axis(&facts.name))
         .unwrap_or(0);
     for lanes in [16, 8, 4, 2] {
         if lanes <= max_lanes && facts.vectorizable_at(lanes) {
-            let alignment_bytes = lanes.saturating_mul(element_size);
+            let alignment_bytes = lanes.checked_mul(element_size)?;
             if facts
                 .max_bytes
                 .is_some_and(|bytes| bytes < u64::from(alignment_bytes))

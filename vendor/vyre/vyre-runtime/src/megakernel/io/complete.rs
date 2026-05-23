@@ -7,9 +7,10 @@ use crate::PipelineError;
 
 use super::super::protocol::slot;
 use super::helpers::{
-    read_queue_word, validate_io_queue_view, write_queue_word_unfenced, IoQueueView,
+    read_queue_word, try_queue_word_index, validate_io_queue_view, write_queue_word_unfenced,
+    IoQueueView,
 };
-use super::{io_status, io_word, IO_SLOT_WORDS};
+use super::{io_status, io_word};
 
 /// Strictly write a completion status for a serviced IO request.
 ///
@@ -41,13 +42,7 @@ pub fn try_complete_io_requests_batch(
         return complete_io_requests_words(words, view, completions);
     }
     for (slot_idx, _) in completions {
-        if *slot_idx as usize >= view.slot_count {
-            return Err(PipelineError::QueueFull {
-                queue: "submission",
-                fix: "io_queue completion slot exceeds queue length; complete a valid slot id",
-            });
-        }
-        let base_word = (*slot_idx as usize) * (IO_SLOT_WORDS as usize);
+        let base_word = completion_base_word(*slot_idx, view)?;
         let current_status = read_queue_word(io_queue_bytes, base_word, io_word::STATUS)?;
         if current_status != slot::CLAIMED {
             return Err(PipelineError::QueueFull {
@@ -57,7 +52,7 @@ pub fn try_complete_io_requests_batch(
         }
     }
     for (slot_idx, success) in completions {
-        let base_word = (*slot_idx as usize) * (IO_SLOT_WORDS as usize);
+        let base_word = completion_base_word(*slot_idx, view)?;
         let status = if *success {
             io_status::OK
         } else {
@@ -74,16 +69,14 @@ fn complete_io_requests_words(
     view: IoQueueView,
     completions: &[(u32, bool)],
 ) -> Result<(), PipelineError> {
+    fence(Ordering::Acquire);
     for (slot_idx, _) in completions {
-        if *slot_idx as usize >= view.slot_count {
-            return Err(PipelineError::QueueFull {
-                queue: "submission",
-                fix: "io_queue completion slot exceeds queue length; complete a valid slot id",
-            });
-        }
-        let base = (*slot_idx as usize) * (IO_SLOT_WORDS as usize);
-        fence(Ordering::Acquire);
-        let current_status = u32::from_le(words[base + io_word::STATUS as usize]);
+        let status_index = completion_status_word(*slot_idx, view)?;
+        let current_status = u32::from_le(*words.get(status_index).ok_or_else(|| {
+            PipelineError::Backend(format!(
+                "io_queue completion status word index {status_index} is outside the aligned word view. Fix: validate io_queue byte length before completion."
+            ))
+        })?);
         if current_status != slot::CLAIMED {
             return Err(PipelineError::QueueFull {
                 queue: "submission",
@@ -92,16 +85,40 @@ fn complete_io_requests_words(
         }
     }
     for (slot_idx, success) in completions {
-        let base = (*slot_idx as usize) * (IO_SLOT_WORDS as usize);
+        let status_index = completion_status_word(*slot_idx, view)?;
         let status = if *success {
             io_status::OK
         } else {
             io_status::ERROR
         };
-        words[base + io_word::STATUS as usize] = status.to_le();
+        *words.get_mut(status_index).ok_or_else(|| {
+            PipelineError::Backend(format!(
+                "io_queue completion status word index {status_index} is outside the aligned word view. Fix: validate io_queue byte length before completion."
+            ))
+        })? = status.to_le();
     }
     fence(Ordering::Release);
     Ok(())
+}
+
+fn completion_base_word(slot_idx: u32, view: IoQueueView) -> Result<usize, PipelineError> {
+    let slot = usize::try_from(slot_idx).map_err(|error| {
+        PipelineError::Backend(format!(
+            "io_queue completion slot {slot_idx} cannot fit usize: {error}. Fix: shard completion batches before host processing."
+        ))
+    })?;
+    if slot >= view.slot_count {
+        return Err(PipelineError::QueueFull {
+            queue: "submission",
+            fix: "io_queue completion slot exceeds queue length; complete a valid slot id",
+        });
+    }
+    try_queue_word_index(slot_idx, 0)
+}
+
+fn completion_status_word(slot_idx: u32, view: IoQueueView) -> Result<usize, PipelineError> {
+    let _ = completion_base_word(slot_idx, view)?;
+    try_queue_word_index(slot_idx, io_word::STATUS)
 }
 
 /// Complete several serviced IO requests.

@@ -182,6 +182,7 @@ inventory::submit! {
             }
             vec![vec![idx_bytes, weights]]
         }),
+        category: Some("nn"),
     }
 }
 
@@ -260,6 +261,7 @@ inventory::submit! {
                 .sum::<f32>();
             vec![vec![f32_fixture(&scores), f32_fixture(&[max_score, sum_exp])]]
         }),
+        category: Some("nn"),
     }
 }
 
@@ -293,6 +295,7 @@ inventory::submit! {
                 libm::expf(scores[3] - max_score) / sum_exp,
             ])]]
         }),
+        category: Some("nn"),
     }
 }
 

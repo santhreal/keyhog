@@ -26,7 +26,7 @@ inventory::submit! {
         test_inputs: Some(|| {
             let a = [0u32, 1, u32::MAX, 42];
             let to_bytes = |w: &[u32]| w.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<u8>>();
-            vec![vec![to_bytes(&a), vec![0u8; 16]]]
+            vec![vec![to_bytes(&a)]]
         }),
         expected_output: Some(|| {
             let expected = [
@@ -41,5 +41,6 @@ inventory::submit! {
                 .collect::<Vec<u8>>();
             vec![vec![bytes]]
         }),
+        category: Some("math"),
     }
 }

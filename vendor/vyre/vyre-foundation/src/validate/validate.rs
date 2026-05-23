@@ -244,6 +244,10 @@ impl<'p, 'o> PreorderValidator<'p, 'o> {
         }
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "single-pass validator run loop is an explicit stack machine; keeping frames together preserves stack-safety and validation-order invariants"
+    )]
     fn run(&mut self, nodes: &'p [Node]) {
         let mut stack: SmallVec<[Frame<'p>; 128]> = SmallVec::new();
         stack.push(Frame::PopScope);
@@ -344,12 +348,7 @@ impl<'p, 'o> PreorderValidator<'p, 'o> {
                         _ => {}
                     }
                 }
-                Frame::PostIf => {
-                    if let Some(accesses) = self.pending_alias_extensions.pop() {
-                        self.extend_alias(&accesses);
-                    }
-                }
-                Frame::PostLoop => {
+                Frame::PostIf | Frame::PostLoop => {
                     if let Some(accesses) = self.pending_alias_extensions.pop() {
                         self.extend_alias(&accesses);
                     }
@@ -439,15 +438,12 @@ impl<'p, 'o> PreorderValidator<'p, 'o> {
 
     #[inline]
     fn current_divergent(&self) -> bool {
-        self.scope_stack
-            .last()
-            .map(|f| f.divergent)
-            .unwrap_or(false)
+        self.scope_stack.last().is_some_and(|f| f.divergent)
     }
 
     #[inline]
     fn current_depth(&self) -> usize {
-        self.scope_stack.last().map(|f| f.depth).unwrap_or(0)
+        self.scope_stack.last().map_or(0, |f| f.depth)
     }
 
     /// Run the legacy `validate_expr` helper and merge its diagnostics.
@@ -479,7 +475,7 @@ impl<'p, 'o> PreorderValidator<'p, 'o> {
                 .intersection(&self.alias_atomics)
                 .cloned(),
         );
-        hazards.sort_by(|a, b| a.as_str().cmp(b.as_str()));
+        hazards.sort_unstable_by(|a, b| a.as_str().cmp(b.as_str()));
         hazards.dedup();
 
         for buffer in hazards {
@@ -597,6 +593,28 @@ impl NodeVisitor for PreorderValidator<'_, '_> {
                     )));
                 }
             }
+        } else if let Some(buffer) = self.buffers.get(name.as_str()) {
+            if buffer.access != BufferAccess::ReadWrite {
+                self.errors.push(err(format!(
+                    "assignment to buffer `{name}` requires read-write storage but declared access is `{access:?}`. Fix: use a read-write/output buffer or store into a mutable local binding.",
+                    access = buffer.access
+                )));
+            }
+            if let Some(value_ty) = expr_type(value, &self.buffers, &self.scope) {
+                let elem = &buffer.element;
+                let compatible = value_ty == *elem
+                    || matches!(
+                        (&value_ty, elem),
+                        (DataType::U32, DataType::Bytes | DataType::Bool)
+                            | (DataType::Bytes | DataType::Bool, DataType::U32)
+                            | (DataType::F32, DataType::F32)
+                    );
+                if !compatible {
+                    self.errors.push(err(format!(
+                        "V045: assignment to buffer `{name}` has type `{value_ty}` but the buffer element type is `{elem}`. Fix: cast the value to `{elem}` or write to a buffer with the intended element type."
+                    )));
+                }
+            }
         } else {
             self.errors.push(err(format!(
                 "assignment to undeclared variable `{name}`. Fix: add `let {name} = ...;` before this assignment."
@@ -635,16 +653,14 @@ impl NodeVisitor for PreorderValidator<'_, '_> {
                 let compatible = val_ty == *elem
                     || matches!(
                         (&val_ty, elem),
-                        (DataType::U32, DataType::Bytes)
-                            | (DataType::Bytes, DataType::U32)
-                            | (DataType::U32, DataType::Bool)
-                            | (DataType::Bool, DataType::U32)
+                        (DataType::U32, DataType::Bytes | DataType::Bool)
+                            | (DataType::Bytes | DataType::Bool, DataType::U32)
                     )
                     || matches!((&val_ty, elem), (DataType::F32, DataType::F32));
                 if !compatible {
                     let legal_targets = nodes::store_value_targets(elem);
                     self.errors.push(err(format!(
-                        "Node::Store buffer `{buffer}` value has type `{val_ty}` but element type is `{elem}`. Fix: cast/store using one of {}.", legal_targets
+                        "Node::Store buffer `{buffer}` value has type `{val_ty}` but element type is `{elem}`. Fix: cast/store using one of {legal_targets}."
                     )));
                 }
             }
@@ -915,6 +931,6 @@ impl NodeVisitor for PreorderValidator<'_, '_> {
 }
 
 #[cfg(test)]
-    mod tests {
-        include!("validate_tests.rs");
-    }
+mod tests {
+    include!("validate_tests.rs");
+}

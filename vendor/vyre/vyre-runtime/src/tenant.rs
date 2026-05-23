@@ -1,13 +1,13 @@
 //! Multi-tenant megakernel multiplexing.
 //!
 //! A single persistent megakernel per GPU can service many producer
-//! tools (warpscan, soleno, keyhog, vein, …) without each one
-//! paying the dispatch-setup cost. The `tenant_id` field already
-//! lives in the ring-slot protocol (`protocol::TENANT_WORD`); this
-//! module owns the host-side bookkeeping that hands each producer a
-//! stable id, reserves an opcode-range per producer, and gates
-//! publish operations against a per-tenant mask so one producer
-//! cannot accidentally drive another producer's opcodes.
+//! tools without each one paying the dispatch-setup cost. The
+//! `tenant_id` field already lives in the ring-slot protocol
+//! (`protocol::TENANT_WORD`); this module owns the host-side
+//! bookkeeping that hands each producer a stable id, reserves an
+//! opcode-range per producer, and gates publish operations against a
+//! per-tenant mask so one producer cannot accidentally drive another
+//! producer's opcodes.
 //!
 //! ## Tenants and opcodes
 //!
@@ -47,8 +47,7 @@ use crate::megakernel::Megakernel;
 use crate::PipelineError;
 
 /// First opcode the tenant registry hands out. Sits inside the
-/// user-extension range reserved by the megakernel protocol,
-/// matching `surgec::fuse::RULE_OPCODE_BASE` so fused
+/// user-extension range reserved by the megakernel protocol so fused
 /// rule documents compose with tenant allocation without colliding
 /// with built-in opcodes.
 pub const TENANT_OPCODE_BASE: u32 = 0x4000_0000;
@@ -64,27 +63,42 @@ pub const TENANT_ID_MAX: u32 = u32::MAX - 1;
 pub const OPCODE_RANGE_PER_TENANT: u32 = 1 << 20;
 
 const QUIESCE_SPIN_POLLS: u64 = 64;
-const QUIESCE_YIELD_POLLS: u64 = 128;
 const QUIESCE_MIN_PARK: Duration = Duration::from_micros(2);
 const QUIESCE_MAX_PARK: Duration = Duration::from_micros(50);
 const QUIESCE_BACKOFF_SHIFT_CAP: u64 = 5;
 
 #[allow(clippy::unnecessary_min_or_max)]
 fn quiesce_backoff_duration(poll: u64) -> Duration {
-    let parked_poll = poll.saturating_sub(QUIESCE_YIELD_POLLS);
-    let shift = parked_poll.min(QUIESCE_BACKOFF_SHIFT_CAP) as u32;
+    let parked_poll = poll.checked_sub(QUIESCE_SPIN_POLLS).unwrap_or(0);
+    let shift = u32::try_from(parked_poll.min(QUIESCE_BACKOFF_SHIFT_CAP)).unwrap_or_else(|error| {
+        panic!(
+            "tenant quiesce backoff shift cannot fit u32: {error}. Fix: lower QUIESCE_BACKOFF_SHIFT_CAP."
+        )
+    });
+    let multiplier = 1_u32.checked_shl(shift).unwrap_or_else(|| {
+        panic!("tenant quiesce backoff multiplier overflowed u32. Fix: lower shift cap.")
+    });
     QUIESCE_MIN_PARK
-        .saturating_mul(1u32 << shift)
+        .checked_mul(multiplier)
+        .unwrap_or_else(|| {
+            panic!("tenant quiesce backoff duration overflowed. Fix: lower quiesce park bounds.")
+        })
         .min(QUIESCE_MAX_PARK)
 }
 
 fn quiesce_idle(poll: u64) {
     if poll < QUIESCE_SPIN_POLLS {
         std::hint::spin_loop();
-    } else if poll < QUIESCE_YIELD_POLLS {
-        std::thread::yield_now();
     } else {
         std::thread::park_timeout(quiesce_backoff_duration(poll));
+    }
+}
+
+fn tenant_registry_retry_idle(retry: u64) {
+    if retry < QUIESCE_SPIN_POLLS {
+        std::hint::spin_loop();
+    } else {
+        std::thread::park_timeout(quiesce_backoff_duration(retry));
     }
 }
 
@@ -169,7 +183,7 @@ struct TenantState {
     quiesce_wait_ns: AtomicU64,
     /// Set to 1 on `unregister`; publishes reject afterwards.
     revoked: AtomicU32,
-    /// Stable label for diagnostics (e.g., `"warpscan"`, `"keyhog"`).
+    /// Stable label for diagnostics (for example, `"scanner-a"`, `"scanner-b"`).
     label: String,
 }
 
@@ -296,7 +310,7 @@ impl TenantHandle {
         if let Err(error) =
             Megakernel::publish_slot(ring_bytes, slot_idx, self.state.id, global, args)
         {
-            self.state.published_count.fetch_sub(1, Ordering::AcqRel);
+            checked_atomic_sub_u64(&self.state.published_count, 1, "tenant published rollback");
             return Err(error.into());
         }
         Ok(())
@@ -307,7 +321,12 @@ impl TenantHandle {
         let mut published = self.state.published_count.load(Ordering::Acquire);
         loop {
             let drained = self.state.drained_count.load(Ordering::Acquire);
-            let outstanding = published.saturating_sub(drained);
+            let outstanding = published.checked_sub(drained).ok_or_else(|| {
+                TenantError::Pipeline(PipelineError::QueueFull {
+                    queue: "tenant",
+                    fix: "tenant drained_count exceeded published_count; rebuild tenant accounting state",
+                })
+            })?;
             if outstanding >= cap {
                 return Err(TenantError::Backpressure {
                     tenant_id: self.state.id,
@@ -317,7 +336,12 @@ impl TenantHandle {
             }
             match self.state.published_count.compare_exchange_weak(
                 published,
-                published.saturating_add(1),
+                published.checked_add(1).ok_or_else(|| {
+                    TenantError::Pipeline(PipelineError::QueueFull {
+                        queue: "tenant",
+                        fix: "tenant published_count overflowed u64; quiesce or recreate the tenant before publishing more slots",
+                    })
+                })?,
                 Ordering::AcqRel,
                 Ordering::Acquire,
             ) {
@@ -355,7 +379,11 @@ impl TenantHandle {
             tenant_id: self.state.id,
             published_count,
             drained_count,
-            outstanding_slots: published_count.saturating_sub(drained_count),
+            outstanding_slots: published_count.checked_sub(drained_count).unwrap_or_else(|| {
+                panic!(
+                    "tenant drained_count exceeded published_count. Fix: rebuild tenant accounting state."
+                )
+            }),
             max_outstanding_slots: self.state.max_outstanding_slots,
             quiesce_calls: self.state.quiesce_calls.load(Ordering::Acquire),
             quiesce_timeouts: self.state.quiesce_timeouts.load(Ordering::Acquire),
@@ -367,7 +395,7 @@ impl TenantHandle {
     /// DONE_COUNT calls this when it sees the global counter
     /// advance past the tenant's last-published cursor.
     pub fn note_drained(&self, count: u64) {
-        self.state.drained_count.fetch_add(count, Ordering::AcqRel);
+        checked_atomic_add_u64(&self.state.drained_count, count, "tenant drained_count");
     }
 
     /// Block-style quiesce: bounded backoff until every published
@@ -394,19 +422,30 @@ impl TenantHandle {
         self.record_quiesce(started, true);
         Err(TenantError::QuiesceTimeout {
             tenant_id: self.state.id,
-            outstanding: pub_count.saturating_sub(drained),
+            outstanding: pub_count.checked_sub(drained).ok_or_else(|| {
+                TenantError::Pipeline(PipelineError::QueueFull {
+                    queue: "tenant",
+                    fix: "tenant drained_count exceeded published_count during quiesce; rebuild tenant accounting state",
+                })
+            })?,
         })
     }
 
     fn record_quiesce(&self, started: Instant, timed_out: bool) {
-        self.state.quiesce_calls.fetch_add(1, Ordering::AcqRel);
+        checked_atomic_add_u64(&self.state.quiesce_calls, 1, "tenant quiesce_calls");
         if timed_out {
-            self.state.quiesce_timeouts.fetch_add(1, Ordering::AcqRel);
+            checked_atomic_add_u64(&self.state.quiesce_timeouts, 1, "tenant quiesce_timeouts");
         }
-        let elapsed_ns = u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX);
-        self.state
-            .quiesce_wait_ns
-            .fetch_add(elapsed_ns, Ordering::AcqRel);
+        let elapsed_ns = u64::try_from(started.elapsed().as_nanos()).unwrap_or_else(|error| {
+            panic!(
+                "tenant quiesce elapsed nanoseconds cannot fit u64: {error}. Fix: quiesce with a bounded timeout."
+            )
+        });
+        checked_atomic_add_u64(
+            &self.state.quiesce_wait_ns,
+            elapsed_ns,
+            "tenant quiesce_wait_ns",
+        );
     }
 }
 
@@ -443,6 +482,38 @@ impl TenantSelectionScratch {
     }
 }
 
+fn checked_atomic_add_u64(counter: &AtomicU64, value: u64, label: &'static str) {
+    if value == 0 {
+        return;
+    }
+    let mut current = counter.load(Ordering::Acquire);
+    loop {
+        let next = current.checked_add(value).unwrap_or_else(|| {
+            panic!("{label} overflowed u64. Fix: quiesce or recreate the tenant accounting state.")
+        });
+        match counter.compare_exchange_weak(current, next, Ordering::AcqRel, Ordering::Acquire) {
+            Ok(_) => return,
+            Err(observed) => current = observed,
+        }
+    }
+}
+
+fn checked_atomic_sub_u64(counter: &AtomicU64, value: u64, label: &'static str) {
+    if value == 0 {
+        return;
+    }
+    let mut current = counter.load(Ordering::Acquire);
+    loop {
+        let next = current.checked_sub(value).unwrap_or_else(|| {
+            panic!("{label} underflowed u64. Fix: rebuild tenant accounting state.")
+        });
+        match counter.compare_exchange_weak(current, next, Ordering::AcqRel, Ordering::Acquire) {
+            Ok(_) => return,
+            Err(observed) => current = observed,
+        }
+    }
+}
+
 impl TenantRegistry {
     /// Fresh registry with no tenants.
     #[must_use]
@@ -473,6 +544,7 @@ impl TenantRegistry {
         label: impl Into<String>,
         max_outstanding_slots: u64,
     ) -> Result<TenantHandle, TenantError> {
+        let mut registration_retries = 0u64;
         let (issued, id) = loop {
             let current = self.next_id.load(Ordering::Relaxed);
             if current >= TENANT_ID_MAX {
@@ -487,14 +559,23 @@ impl TenantRegistry {
                 Ordering::Relaxed,
             ) {
                 Ok(_) => break (current, id),
-                Err(_) => std::hint::spin_loop(),
+                Err(_) => {
+                    tenant_registry_retry_idle(registration_retries);
+                    registration_retries = registration_retries.checked_add(1).ok_or(
+                        TenantError::Pipeline(PipelineError::QueueFull {
+                            queue: "tenant",
+                            fix: "tenant registration retry counter overflowed u64; retry registration later",
+                        }),
+                    )?;
+                }
             }
         };
 
         let base_opcode = TENANT_OPCODE_BASE
-            .checked_add(id.checked_mul(OPCODE_RANGE_PER_TENANT).ok_or_else(|| {
-                TenantError::RegistryFull { issued }
-            })?)
+            .checked_add(
+                id.checked_mul(OPCODE_RANGE_PER_TENANT)
+                    .ok_or_else(|| TenantError::RegistryFull { issued })?,
+            )
             .ok_or(TenantError::RegistryFull { issued })?;
         if base_opcode
             .checked_add(OPCODE_RANGE_PER_TENANT)
@@ -554,7 +635,9 @@ impl TenantRegistry {
     /// unregistered.
     #[must_use]
     pub fn lookup(&self, tenant_id: u32) -> Option<TenantHandle> {
-        self.tenants.get(&tenant_id).map(|entry| entry.value().clone())
+        self.tenants
+            .get(&tenant_id)
+            .map(|entry| entry.value().clone())
     }
 
     /// Snapshot runtime counters for every active tenant.
@@ -615,9 +698,14 @@ impl TenantRegistry {
         if n == 0 {
             return;
         }
-        if conflict_adj.len() != n * n {
+        if n.checked_mul(n) != Some(conflict_adj.len()) {
             // Degenerate: caller didn't supply a matching adjacency.
             // Default to all-tenants-can-run (no conflicts).
+            out.reserve(n);
+            out.extend(scratch.active_ids.iter().copied());
+            return;
+        }
+        if conflict_adj.iter().all(|conflict| *conflict == 0) {
             out.reserve(n);
             out.extend(scratch.active_ids.iter().copied());
             return;
@@ -651,15 +739,15 @@ mod tests {
     fn two_tenants_get_distinct_id_and_opcode_ranges() {
         let reg = TenantRegistry::new();
         let a = reg
-            .register("warpscan")
+            .register("scanner-a")
             .expect("Fix: register a; restore this invariant before continuing.");
         let b = reg
-            .register("keyhog")
+            .register("scanner-b")
             .expect("Fix: register b; restore this invariant before continuing.");
         assert_ne!(a.id(), b.id());
         assert!(a.base_opcode() + OPCODE_RANGE_PER_TENANT <= b.base_opcode());
-        assert_eq!(a.label(), "warpscan");
-        assert_eq!(b.label(), "keyhog");
+        assert_eq!(a.label(), "scanner-a");
+        assert_eq!(b.label(), "scanner-b");
     }
 
     #[test]
@@ -801,6 +889,18 @@ mod tests {
     }
 
     #[test]
+    fn tenant_registry_registration_retry_uses_adaptive_idle_not_unbounded_spin() {
+        for retry in [0, 1, 2, QUIESCE_SPIN_POLLS - 1, QUIESCE_SPIN_POLLS] {
+            tenant_registry_retry_idle(retry);
+        }
+        assert_eq!(
+            quiesce_backoff_duration(QUIESCE_SPIN_POLLS),
+            QUIESCE_MIN_PARK
+        );
+        assert_eq!(quiesce_backoff_duration(u64::MAX), QUIESCE_MAX_PARK);
+    }
+
+    #[test]
     fn quiesce_backoff_is_bounded_and_monotonic() {
         let samples = [
             quiesce_backoff_duration(0),
@@ -885,6 +985,31 @@ mod tests {
         assert!(out.contains(&a.id()) || out.contains(&b.id()));
         assert!(!(out.contains(&a.id()) && out.contains(&b.id())));
         assert!(out.contains(&c.id()));
+    }
+
+    #[test]
+    fn concurrent_tenant_selection_fast_paths_all_zero_conflicts() {
+        let reg = TenantRegistry::new();
+        let a = reg.register("a").unwrap();
+        let b = reg.register("b").unwrap();
+        let c = reg.register("c").unwrap();
+        let mut out = Vec::with_capacity(8);
+        let mut scratch = TenantSelectionScratch::new();
+        let conflicts = vec![0_u32; 9];
+        let out_ptr = out.as_ptr();
+
+        reg.select_concurrent_tenants_into(&conflicts, &mut out, &mut scratch);
+
+        assert_eq!(out, vec![a.id(), b.id(), c.id()]);
+        assert_eq!(
+            out.as_ptr(),
+            out_ptr,
+            "all-zero conflict fast path must reuse caller-owned output storage"
+        );
+        assert!(
+            scratch.selected_indices.is_empty(),
+            "all-zero conflict fast path must not populate pairwise selection scratch"
+        );
     }
 
     #[test]

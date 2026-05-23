@@ -40,24 +40,36 @@ pub fn find_root_body(
                         Expr::ge(Expr::var(root_var), Expr::u32(node_count)),
                         vec![Node::trap(Expr::var(root_var), "union-find-parent-oob")],
                     ),
-                    Node::assign(scratch_parent_var, Expr::load(parent, Expr::var(root_var))),
-                    Node::if_then(
-                        Expr::lt(Expr::var(scratch_parent_var), Expr::u32(node_count)),
-                        vec![Node::let_bind(
-                            "uf_grandparent",
-                            Expr::load(parent, Expr::var(scratch_parent_var)),
-                        )],
+                    Node::assign(
+                        scratch_parent_var,
+                        Expr::atomic_or(parent, Expr::var(root_var), Expr::u32(0)),
                     ),
+                    // Bind uf_grandparent and the atomic_min that consumes
+                    // it in the SAME if_then so the binding scope covers
+                    // the use. Splitting them into two sibling if_then
+                    // blocks ends uf_grandparent's binding lifetime
+                    // before atomic_min needs it (CUDA backend reports
+                    // "uf_grandparent referenced before binding").
                     Node::if_then(
                         Expr::lt(Expr::var(scratch_parent_var), Expr::u32(node_count)),
-                        vec![Node::let_bind(
-                            "uf_path_old",
-                            Expr::atomic_min(
-                                parent,
-                                Expr::var(root_var),
-                                Expr::var("uf_grandparent"),
+                        vec![
+                            Node::let_bind(
+                                "uf_grandparent",
+                                Expr::atomic_or(
+                                    parent,
+                                    Expr::var(scratch_parent_var),
+                                    Expr::u32(0),
+                                ),
                             ),
-                        )],
+                            Node::let_bind(
+                                "uf_path_old",
+                                Expr::atomic_min(
+                                    parent,
+                                    Expr::var(root_var),
+                                    Expr::var("uf_grandparent"),
+                                ),
+                            ),
+                        ],
                     ),
                 ],
             )],
@@ -192,6 +204,90 @@ pub fn union_find_program(
     )
 }
 
+/// Validated dispatch layout for the union-find primitive.
+///
+/// The primitive owns these derived counts so dispatch wrappers do not fork
+/// parent output sizing or padded edge-buffer policy.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct UnionFindLayout {
+    /// Number of parent nodes accepted by the primitive.
+    pub node_count: u32,
+    /// Number of union edges accepted by the primitive.
+    pub edge_count: u32,
+    /// Number of parent words expected in the backend output.
+    pub node_words: usize,
+    /// Number of edge words to upload for each edge endpoint buffer.
+    pub edge_storage_words: usize,
+}
+
+/// Validate the parent/edge arrays consumed by the union-find primitive.
+///
+/// Returns the full primitive-compatible dispatch layout so dispatch wrappers
+/// can build the IR program without duplicating boundary checks or padding
+/// rules.
+///
+/// # Errors
+///
+/// Returns an actionable diagnostic when edge arrays differ in length, counts
+/// exceed the primitive's u32 index space, parent links are malformed, or edge
+/// endpoints reference nodes outside the parent set.
+pub fn validate_union_find_inputs(
+    parent_init: &[u32],
+    edge_a: &[u32],
+    edge_b: &[u32],
+) -> Result<UnionFindLayout, String> {
+    if edge_a.len() != edge_b.len() {
+        return Err(format!(
+            "Fix: union_find requires edge_a.len() == edge_b.len(), got {} vs {}.",
+            edge_a.len(),
+            edge_b.len()
+        ));
+    }
+    let node_count = u32::try_from(parent_init.len()).map_err(|_| {
+        format!(
+            "Fix: union_find parent length {} exceeds u32 index space.",
+            parent_init.len()
+        )
+    })?;
+    let edge_count = u32::try_from(edge_a.len()).map_err(|_| {
+        format!(
+            "Fix: union_find edge count {} exceeds u32 index space.",
+            edge_a.len()
+        )
+    })?;
+    if node_count == 0 {
+        if edge_count == 0 {
+            return Ok(UnionFindLayout {
+                node_count: 0,
+                edge_count: 0,
+                node_words: 0,
+                edge_storage_words: 1,
+            });
+        }
+        return Err("Fix: union_find cannot union edges against an empty parent set.".to_string());
+    }
+    for (idx, &parent) in parent_init.iter().enumerate() {
+        if parent >= node_count {
+            return Err(format!(
+                "Fix: union_find parent_init[{idx}]={parent} is outside node_count {node_count}."
+            ));
+        }
+    }
+    for (idx, (&a, &b)) in edge_a.iter().zip(edge_b.iter()).enumerate() {
+        if a >= node_count || b >= node_count {
+            return Err(format!(
+                "Fix: union_find edge {idx} endpoint ({a}, {b}) is outside node_count {node_count}."
+            ));
+        }
+    }
+    Ok(UnionFindLayout {
+        node_count,
+        edge_count,
+        node_words: parent_init.len(),
+        edge_storage_words: edge_a.len().max(1),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -211,5 +307,42 @@ mod tests {
         let program = union_find_program("parent", "edge_a", "edge_b", 8, 4);
         assert_eq!(program.buffers().len(), 3);
         assert_eq!(program.workgroup_size(), [256, 1, 1]);
+    }
+
+    #[test]
+    fn validate_union_find_inputs_accepts_empty_and_canonical_inputs() {
+        assert_eq!(
+            validate_union_find_inputs(&[], &[], &[]).unwrap(),
+            UnionFindLayout {
+                node_count: 0,
+                edge_count: 0,
+                node_words: 0,
+                edge_storage_words: 1,
+            }
+        );
+        assert_eq!(
+            validate_union_find_inputs(&[0, 1, 2, 3], &[0, 2], &[1, 3]).unwrap(),
+            UnionFindLayout {
+                node_count: 4,
+                edge_count: 2,
+                node_words: 4,
+                edge_storage_words: 2,
+            }
+        );
+    }
+
+    #[test]
+    fn validate_union_find_inputs_rejects_malformed_inputs() {
+        let err = validate_union_find_inputs(&[0, 1], &[0], &[1, 0]).unwrap_err();
+        assert!(err.contains("edge_a.len() == edge_b.len()"));
+
+        let err = validate_union_find_inputs(&[], &[0], &[0]).unwrap_err();
+        assert!(err.contains("empty parent set"));
+
+        let err = validate_union_find_inputs(&[0, 9], &[0], &[1]).unwrap_err();
+        assert!(err.contains("parent_init[1]=9"));
+
+        let err = validate_union_find_inputs(&[0, 1], &[0], &[2]).unwrap_err();
+        assert!(err.contains("outside node_count"));
     }
 }

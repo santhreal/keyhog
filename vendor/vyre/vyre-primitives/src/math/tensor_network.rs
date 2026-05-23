@@ -100,6 +100,7 @@ pub fn tn_pair_contract(a: &str, b: &str, c: &str, m: u32, k: u32, n: u32) -> Pr
 
 /// CPU reference: f64.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn tn_pair_contract_cpu(a: &[f64], b: &[f64], m: u32, k: u32, n: u32) -> Vec<f64> {
     let m = m as usize;
     let k = k as usize;
@@ -124,10 +125,21 @@ pub fn tn_pair_contract_cpu(a: &[f64], b: &[f64], m: u32, k: u32, n: u32) -> Vec
 /// intermediate sizes. This is the tropical-shortest-path solution
 /// in a small-dimension case.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn greedy_contract_order_cpu(dims: &[u32]) -> Vec<usize> {
     let mut order: Vec<usize> = (0..dims.len()).collect();
     order.sort_by(|&left, &right| dims[right].cmp(&dims[left]).then_with(|| left.cmp(&right)));
     order
+}
+
+#[cfg(feature = "inventory-registry")]
+inventory::submit! {
+    crate::harness::OpEntry::new(
+        OP_ID,
+        || tn_pair_contract("a", "b", "c", 2, 2, 2),
+        None,
+        None,
+    )
 }
 
 #[cfg(test)]

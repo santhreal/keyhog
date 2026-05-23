@@ -35,9 +35,22 @@ pub enum PassSchedulingError {
         /// The duplicated pass ID.
         id: &'static str,
     },
+    /// A scheduled order placed a pass before one of its declared requirements.
+    #[error("optimizer pass `{pass}` is scheduled before required pass `{requirement}`.")]
+    OrderViolation {
+        /// The pass requiring the dependency.
+        pass: &'static str,
+        /// The dependency that must appear first.
+        requirement: &'static str,
+    },
 }
 
 /// Computes a valid execution order for the given passes according to their requirements.
+///
+/// # Errors
+///
+/// Returns [`PassSchedulingError`] when required pass IDs are missing, pass IDs
+/// are duplicated, or the dependency graph contains a cycle.
 pub fn schedule_passes(
     passes: &[&'static ProgramPassRegistration],
 ) -> Result<Vec<&'static ProgramPassRegistration>, PassSchedulingError> {
@@ -53,7 +66,8 @@ pub(super) fn schedule_pass_metadata_indices(
     passes: &[PassMetadata],
 ) -> Result<Vec<usize>, PassSchedulingError> {
     let n = passes.len();
-    let mut by_id = FxHashMap::with_capacity_and_hasher(n, Default::default());
+    let mut by_id =
+        FxHashMap::with_capacity_and_hasher(n, std::hash::BuildHasherDefault::default());
     for (i, pass) in passes.iter().enumerate() {
         if by_id.insert(pass.name, i).is_some() {
             return Err(PassSchedulingError::DuplicateId { id: pass.name });

@@ -15,6 +15,7 @@ pub fn reduce_min(values: &str, out: &str, count: u32) -> Program {
 
 /// CPU reference.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref(values: &[u32]) -> u32 {
     values.iter().copied().min().unwrap_or(u32::MAX)
 }

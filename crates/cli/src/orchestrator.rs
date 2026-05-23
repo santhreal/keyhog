@@ -610,10 +610,11 @@ impl ScanOrchestrator {
                 // corpus, this branch can broaden.
                 let explicit_backend = explicit_backend_override();
                 let per_chunk = match explicit_backend {
-                    Some(backend @ (keyhog_scanner::hw_probe::ScanBackend::Gpu
-                        | keyhog_scanner::hw_probe::ScanBackend::MegaScan)) => {
-                        let batch_bytes: u64 =
-                            batch.iter().map(|c| c.data.len() as u64).sum();
+                    Some(
+                        backend @ (keyhog_scanner::hw_probe::ScanBackend::Gpu
+                        | keyhog_scanner::hw_probe::ScanBackend::MegaScan),
+                    ) => {
+                        let batch_bytes: u64 = batch.iter().map(|c| c.data.len() as u64).sum();
                         tracing::debug!(
                             target: "keyhog::routing",
                             backend = backend.label(),

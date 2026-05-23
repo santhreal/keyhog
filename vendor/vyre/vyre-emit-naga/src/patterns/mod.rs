@@ -291,6 +291,11 @@ mod audit_tests {
         };
         let report = audit(&desc);
         assert_eq!(report.kernel_id, "k");
-        assert_eq!(report.total_candidates(), 1);
+        // 3-op, 1-binding kernel sits below every naga pattern threshold
+        // (vec_pack needs Load/Store fusion groups, push_constant needs
+        // element_count=Some(1), prewarm needs ops≥50 or bindings≥4).
+        // The contract this test enforces is "audit returns cleanly on
+        // a real kernel without panicking", not a non-zero candidate count.
+        assert_eq!(report.total_candidates(), 0);
     }
 }

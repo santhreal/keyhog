@@ -174,7 +174,12 @@ fn recommend(
     shared_mem: &PromotionPlan,
     bank_conflict: &BankConflictReport,
 ) -> Vec<Recommendation> {
-    let mut out = Vec::new();
+    // Upper bound: every coalesce site, every shared-mem candidate,
+    // and every bank-conflict site can produce at most one recommendation.
+    // Pre-size to the sum so the three sequential pushes never resize.
+    let mut out = Vec::with_capacity(
+        coalesce.sites.len() + shared_mem.candidates.len() + bank_conflict.sites.len(),
+    );
 
     for site in &coalesce.sites {
         if site.pattern.is_problematic() {

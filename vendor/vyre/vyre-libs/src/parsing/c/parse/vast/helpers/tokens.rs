@@ -97,15 +97,35 @@ pub(crate) fn c_statement_kind(token: Expr) -> Expr {
 }
 
 pub(crate) fn any_token_eq(token: Expr, values: &[u32]) -> Expr {
-    let ranges = merged_token_ranges(values);
-    let mut iter = ranges.into_iter();
-    let Some((first_lo, first_hi)) = iter.next() else {
-        return Expr::bool(false);
-    };
-    iter.fold(
-        token_range_expr(&token, first_lo, first_hi),
-        |acc, (lo, hi)| Expr::or(acc, token_range_expr(&token, lo, hi)),
+    balanced_or(
+        merged_token_ranges(values)
+            .into_iter()
+            .map(|(lo, hi)| token_range_expr(&token, lo, hi))
+            .collect(),
     )
+}
+
+pub(crate) fn balanced_or(mut exprs: Vec<Expr>) -> Expr {
+    if exprs.is_empty() {
+        return Expr::bool(false);
+    }
+
+    while exprs.len() > 1 {
+        let mut next = Vec::with_capacity(exprs.len().div_ceil(2));
+        let mut iter = exprs.into_iter();
+        while let Some(left) = iter.next() {
+            match iter.next() {
+                Some(right) => next.push(Expr::or(left, right)),
+                None => next.push(left),
+            }
+        }
+        exprs = next;
+    }
+
+    match exprs.pop() {
+        Some(expr) => expr,
+        None => Expr::bool(false),
+    }
 }
 
 pub(crate) fn token_range_expr(token: &Expr, lo: u32, hi: u32) -> Expr {

@@ -16,7 +16,11 @@ use super::helpers::{byte_at_or_zero, byte_eq, set_token};
 /// that read the runtime `byte`/`next_byte`/`next2_byte` IR variables.
 #[must_use]
 pub(super) fn operator_punct_pushes() -> Vec<Node> {
-    let mut nodes = Vec::new();
+    // Pre-size — the table emits ~45 set_token nodes (2 three-byte
+    // ops + 20 two-byte ops + 1 ellipsis + ~22 single-byte tokens).
+    // Capacity 64 fits with headroom and avoids 6 grow-by-doublings
+    // while the lexer is being assembled.
+    let mut nodes = Vec::with_capacity(64);
     for (token, first, second, third) in [
         (TOK_LSHIFT_EQ, b'<', b'<', b'='),
         (TOK_RSHIFT_EQ, b'>', b'>', b'='),

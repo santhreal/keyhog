@@ -23,6 +23,6 @@ without explicit linking.
 ## Integration points
 
 - Plugs into `vyre-driver` via inventory.
-- Used by surgec for non-NVIDIA Vulkan-capable GPUs and the
-  desktop Linux + Apple Silicon Metal-via-MoltenVK path on the
-  preflight smoke matrix (D2).
+- Used for non-NVIDIA Vulkan-capable GPUs and the desktop Linux +
+  Apple Silicon Metal-via-MoltenVK path on the preflight smoke
+  matrix.

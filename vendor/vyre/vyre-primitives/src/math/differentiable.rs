@@ -128,6 +128,7 @@ pub fn softmax_step(pre_exp: &str, out: &str, n: u32) -> Program {
 
 /// CPU reference: softmax in f64 for clarity.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn softmax_cpu(x: &[f64]) -> Vec<f64> {
     let mut out = Vec::new();
     softmax_cpu_into(x, &mut out);
@@ -135,6 +136,7 @@ pub fn softmax_cpu(x: &[f64]) -> Vec<f64> {
 }
 
 /// CPU reference: softmax in f64 using caller-owned output.
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn softmax_cpu_into(x: &[f64], out: &mut Vec<f64>) {
     out.clear();
     if x.is_empty() {
@@ -158,6 +160,7 @@ pub fn softmax_cpu_into(x: &[f64], out: &mut Vec<f64>) {
 /// recovers hard argmax. Returns the soft-assignment vector that sums
 /// to 1 (probability over indices).
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn differentiable_argmax_cpu(x: &[f64], temperature: f64) -> Vec<f64> {
     let mut scaled = Vec::new();
     let mut out = Vec::new();
@@ -166,6 +169,7 @@ pub fn differentiable_argmax_cpu(x: &[f64], temperature: f64) -> Vec<f64> {
 }
 
 /// CPU reference: differentiable argmax using caller-owned scratch and output.
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn differentiable_argmax_cpu_into(
     x: &[f64],
     temperature: f64,
@@ -180,6 +184,18 @@ pub fn differentiable_argmax_cpu_into(
     scaled.reserve(x.len());
     scaled.extend(x.iter().map(|&v| v / temperature));
     softmax_cpu_into(scaled, out);
+}
+
+#[cfg(feature = "inventory-registry")]
+inventory::submit! {
+    crate::harness::OpEntry::new(
+        OP_ID,
+        || {
+            softmax_step("pre_exp", "out", 4)
+        },
+        None,
+        None,
+    )
 }
 
 #[cfg(test)]

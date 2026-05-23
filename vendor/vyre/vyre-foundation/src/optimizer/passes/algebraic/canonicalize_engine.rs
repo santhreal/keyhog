@@ -42,15 +42,12 @@ use vyre_spec::BinOp;
 #[must_use]
 pub fn run(program: Program) -> Program {
     // VYRE_IR_HOTSPOTS CRIT: `program.entry().to_vec()` cloned the
-    // whole `Vec<Node>` unconditionally. Split the program into its
-    // component pieces so we can move the entry out of its Arc when
-    // uniquely owned (the common case — canonicalize runs on programs
-    // the pass pipeline has exclusive access to). `with_rewritten_entry`
-    // rebuilds on the remaining fields.
-    let scaffold = program.with_rewritten_entry(Vec::new());
-    let entry_vec = program.into_entry_vec();
-    let canonical = canonicalize_nodes(entry_vec);
-    scaffold.with_rewritten_entry(canonical)
+    // whole `Vec<Node>` unconditionally. `Program::map_entry` moves the
+    // entry out of its Arc when uniquely owned (the common case —
+    // canonicalize runs on programs the pass pipeline has exclusive
+    // access to) and rebuilds on the remaining fields without an
+    // intermediate scaffold allocation.
+    program.map_entry(canonicalize_nodes)
 }
 
 /// Run the canonical-form pass from a borrowed `Program`.
@@ -139,7 +136,7 @@ fn canonicalize_expr(expr: Expr) -> Expr {
         Expr::BinOp { op, left, right } => {
             let mut l = canonicalize_expr(*left);
             let mut r = canonicalize_expr(*right);
-            if is_commutative_binop(&op) {
+            if is_commutative_binop(op) {
                 // Rule: literal-on-right for all commutative ops.
                 // Non-literals are sorted ONLY for bitwise/boolean ops
                 // because IEEE-754 float Add/Mul NaN payload propagation
@@ -149,7 +146,7 @@ fn canonicalize_expr(expr: Expr) -> Expr {
                 let should_swap = match (l_is_lit, r_is_lit) {
                     (true, false) => true,
                     (false, true) => false,
-                    _ => is_safe_to_sort_nonliterals(&op) && expr_sort_key(&l) > expr_sort_key(&r),
+                    _ => is_safe_to_sort_nonliterals(op) && expr_sort_key(&l) > expr_sort_key(&r),
                 };
                 if should_swap {
                     std::mem::swap(&mut l, &mut r);
@@ -157,7 +154,7 @@ fn canonicalize_expr(expr: Expr) -> Expr {
             }
             // Rule 3: fold `x == x` → true and `x != x` → false when both
             // operands are syntactically identical `Var` references.
-            if let (Expr::Var(ref l_name), Expr::Var(ref r_name)) = (&l, &r) {
+            if let (Expr::Var(l_name), Expr::Var(r_name)) = (&l, &r) {
                 if l_name == r_name {
                     match op {
                         BinOp::Eq => return Expr::LitBool(true),
@@ -217,7 +214,7 @@ fn canonicalize_expr(expr: Expr) -> Expr {
     }
 }
 
-fn is_commutative_binop(op: &BinOp) -> bool {
+fn is_commutative_binop(op: BinOp) -> bool {
     matches!(
         op,
         BinOp::Add
@@ -236,7 +233,7 @@ fn is_commutative_binop(op: &BinOp) -> bool {
 /// for all Vyre types (integers and booleans). Add/Mul are excluded
 /// because IEEE-754 NaN payload propagation makes them non-commutative
 /// at the bit level for float operands.
-fn is_safe_to_sort_nonliterals(op: &BinOp) -> bool {
+fn is_safe_to_sort_nonliterals(op: BinOp) -> bool {
     matches!(
         op,
         BinOp::BitAnd
@@ -262,7 +259,7 @@ fn is_literal(expr: &Expr) -> bool {
 fn expr_sort_key(expr: &Expr) -> u64 {
     match expr {
         Expr::LitU32(v) => u64::from(*v),
-        Expr::LitI32(v) => u64::from(*v as u32),
+        Expr::LitI32(v) => u64::from(u32::from_ne_bytes(v.to_ne_bytes())),
         Expr::LitF32(v) => u64::from(v.to_bits()),
         Expr::LitBool(v) => u64::from(*v),
         // VYRE_IR_HOTSPOTS LOW: `Ident` carries a precomputed hash

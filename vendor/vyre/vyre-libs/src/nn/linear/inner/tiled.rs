@@ -173,12 +173,13 @@ inventory::submit! {
             // honor that buffer length; an over-allocated input slot would
             // make CPU echo a longer Value than the GPU returns and trip
             // the CPU/GPU length divergence assertion in cat_a_gpu_differential.
-            vec![vec![x, w, bias, vec![0u8; 16]]]
+            vec![vec![x, w, bias]]
         }),
         expected_output: Some(|| {
 
             vec![vec![crate::test_support::byte_pack::u32_bytes(&[56, 62, 68, 74])]]
         }),
+        category: Some("nn"),
     }
 }
 
@@ -194,11 +195,12 @@ inventory::submit! {
             let x = crate::test_support::byte_pack::u32_bytes(&(0..4).collect::<Vec<_>>());
             let w = crate::test_support::byte_pack::u32_bytes(&(0..16).collect::<Vec<_>>());
             let bias = crate::test_support::byte_pack::u32_bytes(&[0, 0, 0, 0]);
-            vec![vec![x, w, bias, vec![0u8; 16]]]
+            vec![vec![x, w, bias]]
         }),
         expected_output: Some(|| {
 
             vec![vec![crate::test_support::byte_pack::u32_bytes(&[56, 62, 68, 74])]]
         }),
+        category: Some("nn"),
     }
 }

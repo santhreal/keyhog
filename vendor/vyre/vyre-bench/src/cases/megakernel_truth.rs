@@ -71,10 +71,7 @@ impl BenchCase for MegakernelTruth {
         }))
     }
 
-    fn program<'a>(
-        &self,
-        _prepared: &'a PreparedCase,
-    ) -> Option<&'a vyre_foundation::ir::Program> {
+    fn program<'a>(&self, _prepared: &'a PreparedCase) -> Option<&'a vyre_foundation::ir::Program> {
         None
     }
 
@@ -95,6 +92,12 @@ impl BenchCase for MegakernelTruth {
             worker_count: WORKER_COUNT,
             max_wall_time: Duration::from_secs(5),
             expected_items_per_worker: 1,
+            workload: vyre_runtime::megakernel::MegakernelWorkloadHints {
+                graph_node_count: WORK_ITEM_COUNT as u32,
+                graph_edge_count: WORK_ITEM_COUNT.saturating_sub(1) as u32,
+                frontier_density_bps: 10_000,
+                ..Default::default()
+            },
         };
         let dispatcher = WgpuMegakernelDispatcher::new(ctx.preferred_backend.as_ref());
         let started = Instant::now();
@@ -111,9 +114,7 @@ impl BenchCase for MegakernelTruth {
                 wall_ns: Some(wall_ns),
                 dispatch_ns: Some(report.backend_dispatch_ns),
                 kernel_queue_submit_ns: Some(
-                    report
-                        .queue_plan_ns
-                        .saturating_add(report.queue_publish_ns),
+                    report.queue_plan_ns.saturating_add(report.queue_publish_ns),
                 ),
                 input_bytes: Some(prepared.input_bytes_total),
                 bytes_read: Some(prepared.input_bytes_total),
@@ -155,6 +156,74 @@ impl BenchCase for MegakernelTruth {
                     MetricPoint {
                         name: "megakernel_items_remaining".to_string(),
                         value: report.items_remaining,
+                    },
+                    MetricPoint {
+                        name: "megakernel_bytes_uploaded".to_string(),
+                        value: report.telemetry.bytes_uploaded,
+                    },
+                    MetricPoint {
+                        name: "megakernel_bytes_read_back".to_string(),
+                        value: report.telemetry.bytes_read_back,
+                    },
+                    MetricPoint {
+                        name: "megakernel_bytes_moved".to_string(),
+                        value: report.telemetry.bytes_moved,
+                    },
+                    MetricPoint {
+                        name: "megakernel_resident_allocations".to_string(),
+                        value: u64::from(report.telemetry.resident_allocations),
+                    },
+                    MetricPoint {
+                        name: "megakernel_kernel_launches".to_string(),
+                        value: u64::from(report.telemetry.kernel_launches),
+                    },
+                    MetricPoint {
+                        name: "megakernel_sync_points".to_string(),
+                        value: u64::from(report.telemetry.sync_points),
+                    },
+                    MetricPoint {
+                        name: "megakernel_occupancy_proxy_bps".to_string(),
+                        value: u64::from(report.telemetry.occupancy_proxy_bps),
+                    },
+                    MetricPoint {
+                        name: "megakernel_frontier_density_bps".to_string(),
+                        value: u64::from(report.telemetry.frontier_density_bps),
+                    },
+                    MetricPoint {
+                        name: "megakernel_readback_buffers".to_string(),
+                        value: u64::from(report.telemetry.readback_buffers),
+                    },
+                    MetricPoint {
+                        name: "megakernel_compiled_pipeline_cache_hit".to_string(),
+                        value: report.telemetry.compiled_pipeline_cache_hit as u64,
+                    },
+                    MetricPoint {
+                        name: "megakernel_resident_input_cache_hit".to_string(),
+                        value: report.telemetry.resident_input_cache_hit as u64,
+                    },
+                    MetricPoint {
+                        name: "megakernel_topology".to_string(),
+                        value: report.telemetry.topology as u64,
+                    },
+                    MetricPoint {
+                        name: "megakernel_pressure".to_string(),
+                        value: report.telemetry.pressure as u64,
+                    },
+                    MetricPoint {
+                        name: "megakernel_execution_mode".to_string(),
+                        value: report.telemetry.execution_mode as u64,
+                    },
+                    MetricPoint {
+                        name: "megakernel_hit_capacity".to_string(),
+                        value: u64::from(report.telemetry.hit_capacity),
+                    },
+                    MetricPoint {
+                        name: "megakernel_estimated_peak_device_bytes".to_string(),
+                        value: report.telemetry.estimated_peak_device_bytes,
+                    },
+                    MetricPoint {
+                        name: "megakernel_device_memory_budget_bytes".to_string(),
+                        value: report.telemetry.device_memory_budget_bytes,
                     },
                 ],
                 ..Default::default()
@@ -207,15 +276,13 @@ fn make_work_items(count: usize) -> Result<Vec<MegakernelWorkItem>, BenchError> 
 }
 
 fn simulate_cpu_drain(items: &[MegakernelWorkItem]) -> u64 {
-    items
-        .iter()
-        .fold(0_u64, |count, item| {
-            count.saturating_add(if item.op_handle == protocol::opcode::NOP {
-                1
-            } else {
-                0
-            })
+    items.iter().fold(0_u64, |count, item| {
+        count.saturating_add(if item.op_handle == protocol::opcode::NOP {
+            1
+        } else {
+            0
         })
+    })
 }
 
 inventory::submit! {
@@ -230,10 +297,8 @@ mod tests {
     fn work_items_are_unique_for_dedupe_truth() {
         let items = make_work_items(64).expect("fixture");
         let mut deduped = Vec::new();
-        let report = vyre_runtime::megakernel::prune_redundant_work_items_into(
-            &items,
-            &mut deduped,
-        );
+        let report =
+            vyre_runtime::megakernel::prune_redundant_work_items_into(&items, &mut deduped);
 
         assert!(report.is_empty());
         assert!(deduped.is_empty());

@@ -72,9 +72,9 @@ pub fn scan_text(data: &str, path: &str) -> Vec<keyhog_core::RawMatch> {
 }
 
 pub fn has_detector(matches: &[keyhog_core::RawMatch], needle: &str) -> bool {
-    matches.iter().any(|m| {
-        m.detector_id.as_ref().contains(needle) || m.service.as_ref().contains(needle)
-    })
+    matches
+        .iter()
+        .any(|m| m.detector_id.as_ref().contains(needle) || m.service.as_ref().contains(needle))
 }
 
 pub fn has_credential(matches: &[keyhog_core::RawMatch], credential: &str) -> bool {

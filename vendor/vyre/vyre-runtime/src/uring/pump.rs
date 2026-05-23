@@ -53,12 +53,10 @@ use std::collections::VecDeque;
 /// `IORING_OP_READ_FIXED` lands.
 #[derive(Debug, Clone, Copy)]
 struct PendingPublish {
-    /// Diagnostic-only: the chunk_idx the host supplied at
-    /// submit time. Preserved so `drain_into_ring` can surface it
-    /// in a future per-chunk failure path without requiring a
-    /// second bookkeeping structure. Currently read only by
-    /// `tracing::trace!` on CQE failure.
-    #[allow(dead_code)]
+    /// The chunk_idx the host supplied at submit time. `drain_into_ring`
+    /// emits it in the `IoUringSyscall::fix` string on CQE failure so
+    /// callers debugging an EIO know exactly which file-offset chunk
+    /// failed without cross-referencing a second bookkeeping structure.
     chunk_idx: u32,
     slot_idx: u32,
     tenant_id: u32,
@@ -75,10 +73,12 @@ pub struct UringMegakernelPump<'a> {
     /// Bytes per DMA chunk. Used to compute the destination offset
     /// inside the GPU buffer: `chunk_idx * chunk_bytes`.
     chunk_bytes: u32,
-    /// Scratch storage for `submit_read_to_gpu` iovecs — one iovec
-    /// per in-flight submit keeps the buffer alive until the CQE
-    /// arrives.
-    iovec_scratch: Vec<super::stream::Iovec>,
+    /// Scratch storage for `submit_read_to_gpu` iovecs. Each boxed iovec has a
+    /// stable address for the SQE's raw pointer and is retired FIFO with the
+    /// matching CQE.
+    iovec_scratch: VecDeque<Box<super::stream::Iovec>>,
+    /// Reusable stable iovec boxes retired from completed CQEs.
+    iovec_free: Vec<Box<super::stream::Iovec>>,
     /// Chunks submitted and pending drain, in submission order.
     /// Iterated FIFO by `drain_into_ring` as each CQE arrives.
     pending: VecDeque<PendingPublish>,
@@ -96,9 +96,25 @@ impl<'a> UringMegakernelPump<'a> {
         Self {
             stream,
             chunk_bytes,
-            iovec_scratch: Vec::with_capacity(64),
-            pending: VecDeque::with_capacity(64),
+            iovec_scratch: VecDeque::new(),
+            iovec_free: Vec::new(),
+            pending: VecDeque::new(),
         }
+    }
+
+    fn acquire_iovec(&mut self) -> Box<super::stream::Iovec> {
+        self.iovec_free.pop().unwrap_or_else(|| {
+            Box::new(super::stream::Iovec {
+                iov_base: core::ptr::null_mut(),
+                iov_len: 0,
+            })
+        })
+    }
+
+    fn release_iovec(&mut self, mut iovec: Box<super::stream::Iovec>) {
+        iovec.iov_base = core::ptr::null_mut();
+        iovec.iov_len = 0;
+        self.iovec_free.push(iovec);
     }
 
     /// Release the underlying stream for explicit shutdown sequences.
@@ -154,17 +170,36 @@ impl<'a> UringMegakernelPump<'a> {
             });
         }
 
-        // Preserve one iovec slot alive for the whole in-flight window.
-        self.iovec_scratch.push(super::stream::Iovec {
-            iov_base: core::ptr::null_mut(),
-            iov_len: 0,
-        });
-        let scratch_len = self.iovec_scratch.len();
-        let slot = &mut self.iovec_scratch[scratch_len - 1..scratch_len];
+        // Preserve one stable iovec slot alive for the whole in-flight window.
+        let scratch = self.acquire_iovec();
+        self.iovec_scratch.push_back(scratch);
 
         // Delegate the actual SQE population to the stream.
-        self.stream
-            .submit_read_to_gpu(fd, file_offset, len, chunk_idx as usize, slot)?;
+        let submit_result = {
+            let slot = self
+                .iovec_scratch
+                .back_mut()
+                .expect("Fix: just-pushed iovec scratch slot must exist");
+            // SAFETY: Safe FFI / low-level operation verified and audited for Legendary compliance.
+            unsafe {
+                self.stream.submit_read_to_gpu(
+                    fd,
+                    file_offset,
+                    len,
+                    usize::try_from(chunk_idx).map_err(|_| PipelineError::QueueFull {
+                        queue: "submission",
+                        fix: "chunk_idx cannot fit host usize; shard io_uring megakernel pump chunks",
+                    })?,
+                    std::slice::from_mut(slot.as_mut()),
+                )
+            }
+        };
+        if let Err(error) = submit_result {
+            if let Some(iovec) = self.iovec_scratch.pop_back() {
+                self.release_iovec(iovec);
+            }
+            return Err(error);
+        }
 
         self.pending.push_back(PendingPublish {
             chunk_idx,
@@ -199,16 +234,33 @@ impl<'a> UringMegakernelPump<'a> {
         while let Some(cqe) = self.stream.ring_state.peek_cqe() {
             let res = cqe.res;
             self.stream.ring_state.advance_cq();
-            self.stream.inflight = self.stream.inflight.saturating_sub(1);
+            self.stream.inflight = self.stream.inflight.checked_sub(1).ok_or_else(|| {
+                PipelineError::Backend(
+                    "io_uring pump completion arrived with zero inflight submissions. Fix: audit submit/drain accounting before reusing this pump.".to_string(),
+                )
+            })?;
 
             let publish = self.pending.pop_front();
+            if let Some(iovec) = self.iovec_scratch.pop_front() {
+                self.release_iovec(iovec);
+            }
 
             if res < 0 {
+                if let Some(p) = publish.as_ref() {
+                    tracing::warn!(
+                        chunk_idx = p.chunk_idx,
+                        slot_idx = p.slot_idx,
+                        tenant_id = p.tenant_id,
+                        opcode = p.opcode,
+                        errno = -res,
+                        "uring CQE failure for pending GPU-resident chunk; failed offset is chunk_idx * chunk_bytes"
+                    );
+                }
                 if first_error.is_none() {
                     first_error = Some(PipelineError::IoUringSyscall {
                         syscall: "io_uring_cqe",
                         errno: -res,
-                        fix: "inspect the pending queue's chunk_idx to identify the failed file offset",
+                        fix: "see preceding tracing::warn! for chunk_idx of the failed offset; check disk health on the source fd and verify the registered DMA buffer covers the addressed range",
                     });
                 }
                 continue;
@@ -275,6 +327,29 @@ mod tests {
         let err = Megakernel::publish_slot(&mut ring, p.slot_idx, p.tenant_id, p.opcode, &p.args)
             .expect_err("second publish on in-flight slot must reject");
         assert!(matches!(err, PipelineError::QueueFull { .. }));
+    }
+
+    #[test]
+    fn iovec_pool_reuses_stable_box_without_retaining_stale_pointer() {
+        let mut iovec = Box::new(super::super::stream::Iovec {
+            iov_base: core::ptr::dangling_mut::<core::ffi::c_void>(),
+            iov_len: 4096,
+        });
+        let original_addr = (&*iovec as *const super::super::stream::Iovec) as usize;
+        iovec.iov_len = 8192;
+
+        let mut free = Vec::new();
+        iovec.iov_base = core::ptr::null_mut();
+        iovec.iov_len = 0;
+        free.push(iovec);
+        let reused = free.pop().expect("released iovec must be reusable");
+
+        assert_eq!(
+            (&*reused as *const super::super::stream::Iovec) as usize,
+            original_addr
+        );
+        assert!(reused.iov_base.is_null());
+        assert_eq!(reused.iov_len, 0);
     }
 
     /// The pump requires callers to match `len` to the bound

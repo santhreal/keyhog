@@ -172,7 +172,6 @@ inventory::submit! {
                 crate::test_support::byte_pack::u32_bytes(&iv),
                 crate::test_support::byte_pack::u32_bytes(&msg),
                 crate::test_support::byte_pack::u32_bytes(&params),
-                vec![0u8; 8 * 4],
             ]]
         }),
         expected_output: Some(|| vec![
@@ -181,5 +180,6 @@ inventory::submit! {
                      0x8a, 0xc6, 0xee, 0xef, 0x86, 0x39, 0xc4, 0x55, 0x31, 0x4f, 0x36, 0xd0, 0xbc, 0xf1, 0x3f, 0xe5, ],
             ],
         ]),
+        category: None,
     }
 }

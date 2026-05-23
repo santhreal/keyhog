@@ -113,7 +113,7 @@ inventory::submit! {
         test_inputs: Some(|| {
             let mut bytes = Vec::with_capacity(12);
             for &b in b"abc" { bytes.extend_from_slice(&u32::from(b).to_le_bytes()); }
-            vec![vec![bytes, vec![0u8; 8]]]
+            vec![vec![bytes]]
         }),
         // FNV-1a 64("abc") = 0xe71fa2190541574b (canonical test vector).
         // Written LE as [lo, hi] pair of u32s.
@@ -122,6 +122,7 @@ inventory::submit! {
             let bytes = hash.to_le_bytes().to_vec();
             vec![vec![bytes]]
         }),
+        category: None,
     }
 }
 
@@ -133,10 +134,7 @@ mod tests {
 
     fn run(bytes: &[u8]) -> u64 {
         let program = fnv1a64("input", "out");
-        let inputs = vec![
-            Value::Bytes(pack_bytes_as_u32(bytes).into()),
-            Value::Bytes(vec![0u8; 8].into()),
-        ];
+        let inputs = vec![Value::Bytes(pack_bytes_as_u32(bytes).into())];
         let outputs = vyre_reference::reference_eval(&program, &inputs)
             .expect("Fix: fnv1a64 must run; restore this invariant before continuing.");
         let raw = outputs[0].to_bytes();

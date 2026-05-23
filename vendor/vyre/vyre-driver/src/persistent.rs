@@ -81,13 +81,30 @@ pub struct RingAtomics {
 }
 
 impl RingAtomics {
-    fn new(ring_size: u32) -> Self {
-        Self {
+    fn try_new(ring_size: u32) -> Result<Self, String> {
+        let capacity = persistent_ring_capacity(ring_size)?;
+        let mut ready = Vec::new();
+        ready.try_reserve_exact(capacity).map_err(|error| {
+            format!("Fix: persistent ring could not reserve {capacity} ready marker(s): {error}.")
+        })?;
+        for _ in 0..ring_size {
+            ready.push(AtomicU64::new(0));
+        }
+
+        let mut done = Vec::new();
+        done.try_reserve_exact(capacity).map_err(|error| {
+            format!("Fix: persistent ring could not reserve {capacity} done marker(s): {error}.")
+        })?;
+        for _ in 0..ring_size {
+            done.push(AtomicU32::new(0));
+        }
+
+        Ok(Self {
             head: AtomicU64::new(0),
             tail: AtomicU64::new(0),
-            ready: (0..ring_size).map(|_| AtomicU64::new(0)).collect(),
-            done: (0..ring_size).map(|_| AtomicU32::new(0)).collect(),
-        }
+            ready,
+            done,
+        })
     }
 }
 
@@ -154,7 +171,11 @@ impl PersistentEngine {
         let ring_size = ring_size
             .checked_next_power_of_two()
             .filter(|&size| size > 0)
-            .unwrap_or(1);
+            .unwrap_or_else(|| {
+                panic!(
+                    "Fix: persistent ring_size {ring_size} cannot be rounded to a nonzero power of two without overflow."
+                )
+            });
         Self::with_valid_ring_size(ring_size)
     }
 
@@ -162,7 +183,7 @@ impl PersistentEngine {
     /// the persistent-ring indexing contract.
     pub fn try_new(ring_size: u32) -> Result<Self, String> {
         if ring_size.is_power_of_two() && ring_size > 0 {
-            Ok(Self::with_valid_ring_size(ring_size))
+            Self::try_with_valid_ring_size(ring_size)
         } else {
             Err(format!(
                 "Fix: ring_size must be a nonzero power of two, got {ring_size}."
@@ -171,18 +192,32 @@ impl PersistentEngine {
     }
 
     fn with_valid_ring_size(ring_size: u32) -> Self {
+        Self::try_with_valid_ring_size(ring_size).expect(
+            "Fix: persistent ring construction must reserve every slot before dispatch starts.",
+        )
+    }
+
+    fn try_with_valid_ring_size(ring_size: u32) -> Result<Self, String> {
         let zero = PersistentWorkItem {
             input_offset: 0,
             input_len: 0,
             rule_set_id: 0,
             correlation: 0,
         };
-        let slots = (0..ring_size).map(|_| WorkSlot::new(zero)).collect();
-        Self {
-            slots,
-            atomics: RingAtomics::new(ring_size),
-            ring_size,
+        let capacity = persistent_ring_capacity(ring_size)?;
+        let mut slots = Vec::new();
+        slots.try_reserve_exact(capacity).map_err(|error| {
+            format!("Fix: persistent ring could not reserve {capacity} work slot(s): {error}.")
+        })?;
+        for _ in 0..ring_size {
+            slots.push(WorkSlot::new(zero));
         }
+
+        Ok(Self {
+            slots,
+            atomics: RingAtomics::try_new(ring_size)?,
+            ring_size,
+        })
     }
 
     /// Capacity of the ring buffer.
@@ -254,33 +289,83 @@ impl PersistentEngine {
     }
 
     /// Mark item at `slot_idx` as done.
-    pub fn mark_done(&self, slot_idx: u32) {
-        self.atomics.done[slot_idx as usize].store(1, Ordering::Release);
+    pub fn mark_done(&self, slot_idx: u32) -> Result<(), String> {
+        let Some(done) = self.atomics.done.get(slot_idx as usize) else {
+            return Err(format!(
+                "Fix: persistent ring slot_idx={slot_idx} is outside ring_size={}. Reject stale or corrupt completion markers before marking done.",
+                self.ring_size
+            ));
+        };
+        done.store(1, Ordering::Release);
+        Ok(())
     }
 
     /// Whether the consumer finished the item at `slot_idx`.
-    pub fn is_done(&self, slot_idx: u32) -> bool {
-        self.atomics.done[slot_idx as usize].load(Ordering::Acquire) != 0
+    pub fn is_done(&self, slot_idx: u32) -> Result<bool, String> {
+        let Some(done) = self.atomics.done.get(slot_idx as usize) else {
+            return Err(format!(
+                "Fix: persistent ring slot_idx={slot_idx} is outside ring_size={}. Reject stale or corrupt completion markers before reading done state.",
+                self.ring_size
+            ));
+        };
+        Ok(done.load(Ordering::Acquire) != 0)
+    }
+
+    /// Number of items queued and pending claim.
+    pub fn try_in_flight(&self) -> Result<u32, String> {
+        let pending = self
+            .atomics
+            .head
+            .load(Ordering::Acquire)
+            .wrapping_sub(self.atomics.tail.load(Ordering::Acquire));
+        u32::try_from(pending).map_err(|_| {
+            format!(
+                "Fix: persistent engine in-flight count {pending} exceeds u32::MAX. Drain the ring or use the 64-bit counters before exporting GPU-visible queue metadata."
+            )
+        })
     }
 
     /// Number of items queued and pending claim.
     pub fn in_flight(&self) -> u32 {
-        self.atomics
-            .head
-            .load(Ordering::Acquire)
-            .wrapping_sub(self.atomics.tail.load(Ordering::Acquire))
-            .min(u64::from(u32::MAX)) as u32
+        self.try_in_flight()
+            .unwrap_or_else(|message| panic!("{message}"))
     }
 
     /// Monotonic head counter (modulo `ring_size` = slot index).
+    pub fn head_counter(&self) -> u64 {
+        self.atomics.head.load(Ordering::Acquire)
+    }
+
+    /// Monotonic head counter exposed through the legacy u32 API.
     pub fn head(&self) -> u32 {
-        self.atomics.head.load(Ordering::Acquire) as u32
+        let head = self.head_counter();
+        u32::try_from(head).unwrap_or_else(|_| {
+            panic!(
+                "Fix: persistent engine head counter {head} exceeds u32::MAX. Use head_counter() for long-running queues instead of truncating telemetry."
+            )
+        })
     }
 
     /// Monotonic tail counter.
-    pub fn tail(&self) -> u32 {
-        self.atomics.tail.load(Ordering::Acquire) as u32
+    pub fn tail_counter(&self) -> u64 {
+        self.atomics.tail.load(Ordering::Acquire)
     }
+
+    /// Monotonic tail counter exposed through the legacy u32 API.
+    pub fn tail(&self) -> u32 {
+        let tail = self.tail_counter();
+        u32::try_from(tail).unwrap_or_else(|_| {
+            panic!(
+                "Fix: persistent engine tail counter {tail} exceeds u32::MAX. Use tail_counter() for long-running queues instead of truncating telemetry."
+            )
+        })
+    }
+}
+
+fn persistent_ring_capacity(ring_size: u32) -> Result<usize, String> {
+    usize::try_from(ring_size).map_err(|_| {
+        format!("Fix: persistent ring_size {ring_size} does not fit this target's address space.")
+    })
 }
 
 /// Enqueue attempted but the ring is full.
@@ -373,11 +458,11 @@ mod tests {
     fn done_marker_flows_through() {
         let eng = PersistentEngine::new(4);
         let slot = eng.enqueue(item(1)).unwrap();
-        assert!(!eng.is_done(slot));
+        assert!(!eng.is_done(slot).unwrap());
         let claimed = eng.claim().unwrap();
         assert_eq!(claimed.correlation, 1);
-        eng.mark_done(slot);
-        assert!(eng.is_done(slot));
+        eng.mark_done(slot).unwrap();
+        assert!(eng.is_done(slot).unwrap());
     }
 
     #[test]
@@ -395,7 +480,7 @@ mod tests {
                         if eng.enqueue(item(corr)).is_ok() {
                             break;
                         }
-                        thread::yield_now();
+                        std::hint::spin_loop();
                     }
                 }
             }));
@@ -408,7 +493,7 @@ mod tests {
                 if let Some(it) = consumer_eng.claim() {
                     seen.push(it.correlation);
                 } else {
-                    thread::yield_now();
+                    std::hint::spin_loop();
                 }
             }
             seen

@@ -1,4 +1,4 @@
-//! Audit-fix A35 `expansion/fnlike.rs` extract.
+//! Function-like macro expansion builder.
 
 use crate::parsing::c::lex::tokens::*;
 use crate::parsing::c::preprocess::synthesis::*;

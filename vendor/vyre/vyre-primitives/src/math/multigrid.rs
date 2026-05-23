@@ -86,15 +86,9 @@ pub fn jacobi_smooth_step(
                     "res",
                     Expr::sub(
                         Expr::var("res"),
-                        Expr::shr(
-                            Expr::mul(
-                                Expr::load(
-                                    a_matrix,
-                                    Expr::add(Expr::var("row_base"), Expr::var("j")),
-                                ),
-                                Expr::load(x_in, Expr::var("j")),
-                            ),
-                            Expr::u32(16),
+                        crate::fixed_mul_16_16_expr(
+                            Expr::load(a_matrix, Expr::add(Expr::var("row_base"), Expr::var("j"))),
+                            Expr::load(x_in, Expr::var("j")),
                         ),
                     ),
                 )],
@@ -112,15 +106,26 @@ pub fn jacobi_smooth_step(
                     Expr::var("diag"),
                 ),
             ),
-            // delta = (omega · res) / diag_safe (16.16 throughout)
+            Node::let_bind(
+                "diag_units",
+                Expr::select(
+                    Expr::lt(Expr::var("diag_safe"), Expr::u32(1 << 16)),
+                    Expr::u32(1),
+                    Expr::shr(Expr::var("diag_safe"), Expr::u32(16)),
+                ),
+            ),
+            // delta = (omega · res) / diag_safe (16.16 throughout).
+            // `(omega * res) >> 16` leaves a 16.16 numerator. Divide by the
+            // integer diagonal scale to avoid the overflowing `(num << 16)`
+            // rescale on 32-bit target lanes.
             Node::let_bind(
                 "delta",
                 Expr::div(
-                    Expr::shr(
-                        Expr::mul(Expr::load(omega_scaled, Expr::u32(0)), Expr::var("res")),
-                        Expr::u32(16),
+                    crate::fixed_mul_16_16_expr(
+                        Expr::load(omega_scaled, Expr::u32(0)),
+                        Expr::var("res"),
                     ),
-                    Expr::var("diag_safe"),
+                    Expr::var("diag_units"),
                 ),
             ),
             Node::store(
@@ -152,6 +157,7 @@ pub fn jacobi_smooth_step(
 
 /// CPU reference: one weighted Jacobi step in f64.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn jacobi_smooth_step_cpu(a: &[f64], b: &[f64], x_in: &[f64], omega: f64, n: u32) -> Vec<f64> {
     let mut out = Vec::with_capacity(n as usize);
     jacobi_smooth_step_cpu_into(a, b, x_in, omega, n, &mut out);
@@ -159,6 +165,7 @@ pub fn jacobi_smooth_step_cpu(a: &[f64], b: &[f64], x_in: &[f64], omega: f64, n:
 }
 
 /// CPU reference: one weighted Jacobi step in f64, writing into caller-owned storage.
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn jacobi_smooth_step_cpu_into(
     a: &[f64],
     b: &[f64],
@@ -186,6 +193,28 @@ pub fn jacobi_smooth_step_cpu_into(
         };
         out.push(x_in.get(i).copied().unwrap_or(0.0) + omega * res / diag);
     }
+}
+
+#[cfg(feature = "inventory-registry")]
+inventory::submit! {
+    crate::harness::OpEntry::new(
+        OP_ID,
+        || jacobi_smooth_step("a", "b", "x", "omega", "out", 1),
+        Some(|| {
+            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            vec![vec![
+                to_bytes(&[1u32 << 16]),
+                to_bytes(&[3u32 << 16]),
+                to_bytes(&[1u32 << 16]),
+                to_bytes(&[1u32 << 16]),
+                to_bytes(&[0]),
+            ]]
+        }),
+        Some(|| {
+            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            vec![vec![to_bytes(&[3u32 << 16])]]
+        }),
+    )
 }
 
 #[cfg(test)]

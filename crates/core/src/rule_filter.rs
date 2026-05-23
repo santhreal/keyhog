@@ -159,11 +159,7 @@ impl RuleSuppressor {
         if self.rules.is_empty() {
             return false;
         }
-        let path = finding
-            .location
-            .file_path
-            .as_deref()
-            .unwrap_or("");
+        let path = finding.location.file_path.as_deref().unwrap_or("");
         let ctx = FindingContext {
             detector_id: finding.detector_id.as_ref(),
             service: finding.service.as_ref(),

@@ -15,10 +15,15 @@ pub(super) fn related_kind(vast_nodes: &[u32], related_idx: u32, node_count: usi
     if related_idx >= node_count {
         return 0;
     }
-    vast_nodes
-        .get(related_idx * VAST_NODE_STRIDE_U32 as usize + IDX_KIND)
-        .copied()
-        .unwrap_or_default()
+    let word_idx = related_idx
+        .checked_mul(VAST_NODE_STRIDE_U32 as usize)
+        .and_then(|base| base.checked_add(IDX_KIND))
+        .expect("related VAST node kind index overflow. Fix: pass a bounded complete VAST table to AST-to-PG semantic lowering.");
+    *vast_nodes.get(word_idx).unwrap_or_else(|| {
+        panic!(
+            "related VAST node {related_idx} is missing kind field. Fix: pass complete VAST rows to AST-to-PG semantic lowering."
+        )
+    })
 }
 
 pub(super) fn semantic_role(

@@ -34,9 +34,12 @@ impl BodyCtx<'_> {
                     .filter_map(|op_idx| body.ops.get(*op_idx).and_then(|op| op.result))
                     .collect::<SmallVec<[u32; 4]>>();
                 for _ in 0..MAX_LOAD_GAP_FILLERS {
-                    let Some(filler_idx) =
-                        self.find_latency_filler_avoiding_results(body, idx, &blocked_results, &skip)
-                    else {
+                    let Some(filler_idx) = self.find_latency_filler_avoiding_results(
+                        body,
+                        idx,
+                        &blocked_results,
+                        &skip,
+                    ) else {
                         break;
                     };
                     let _ = writeln!(
@@ -60,11 +63,17 @@ impl BodyCtx<'_> {
             }
             self.emit_op(body, &body.ops[idx])?;
             if is_latency_load(&body.ops[idx]) {
-                let blocked_results = body.ops[idx].result.into_iter().collect::<SmallVec<[u32; 1]>>();
+                let blocked_results = body.ops[idx]
+                    .result
+                    .into_iter()
+                    .collect::<SmallVec<[u32; 1]>>();
                 for _ in 0..MAX_LOAD_GAP_FILLERS {
-                    let Some(filler_idx) =
-                        self.find_latency_filler_avoiding_results(body, idx, &blocked_results, &skip)
-                    else {
+                    let Some(filler_idx) = self.find_latency_filler_avoiding_results(
+                        body,
+                        idx,
+                        &blocked_results,
+                        &skip,
+                    ) else {
                         break;
                     };
                     let _ = writeln!(

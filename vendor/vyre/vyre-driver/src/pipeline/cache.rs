@@ -6,7 +6,7 @@ use super::hashing::{
 };
 use super::CURRENT_PIPELINE_CACHE_KEY_VERSION;
 use crate::backend::DispatchConfig;
-use std::sync::Arc;
+use std::sync::{Arc, MutexGuard};
 use vyre_foundation::ir::Program;
 use vyre_spec::BackendId;
 
@@ -20,6 +20,14 @@ pub struct DiskPipelineCache {
 }
 
 impl DiskPipelineCache {
+    fn lock_pending_flushes(&self) -> MutexGuard<'_, Vec<std::path::PathBuf>> {
+        self.pending_flushes.lock().unwrap_or_else(|error| {
+            panic!(
+                "Vyre disk pipeline cache pending-flush lock was poisoned: {error}. Fix: discard this cache instance after a panic; continuing could lose or duplicate compiled-pipeline fsync work."
+            )
+        })
+    }
+
     /// Open a cache rooted at `root`.
     ///
     /// # Errors
@@ -131,10 +139,7 @@ impl DiskPipelineCache {
             remove_failed_atomic_write(&tmp)?;
         }
         write_result?;
-        self.pending_flushes
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .push(path);
+        self.lock_pending_flushes().push(path);
         Ok(())
     }
 
@@ -145,19 +150,13 @@ impl DiskPipelineCache {
     /// Returns when a pending path cannot be flushed.
     pub fn flush(&self) -> std::io::Result<()> {
         let paths = {
-            let mut pending = self
-                .pending_flushes
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let mut pending = self.lock_pending_flushes();
             pending.sort();
             pending.dedup();
             std::mem::take(&mut *pending)
         };
         if let Err(error) = flush_paths(&paths) {
-            self.pending_flushes
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner())
-                .extend(paths);
+            self.lock_pending_flushes().extend(paths);
             return Err(error);
         }
         Ok(())
@@ -219,7 +218,24 @@ fn read_bounded(path: &std::path::Path, max_bytes: u64) -> std::io::Result<Vec<u
             format!("pipeline cache blob exceeds {max_bytes} byte limit"),
         ));
     }
-    let mut bytes = Vec::with_capacity(metadata.len() as usize);
+    let byte_capacity = usize::try_from(metadata.len()).map_err(|error| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!(
+                "pipeline cache blob length {} does not fit usize: {error}",
+                metadata.len()
+            ),
+        )
+    })?;
+    let mut bytes = Vec::new();
+    bytes.try_reserve_exact(byte_capacity).map_err(|error| {
+        std::io::Error::new(
+            std::io::ErrorKind::OutOfMemory,
+            format!(
+                "pipeline cache bounded read could not reserve {byte_capacity} byte(s): {error}. Fix: lower the pipeline cache blob limit or evict oversized entries."
+            ),
+        )
+    })?;
     file.by_ref().take(max_bytes + 1).read_to_end(&mut bytes)?;
     if bytes.len() as u64 > max_bytes {
         return Err(std::io::Error::new(
@@ -231,7 +247,16 @@ fn read_bounded(path: &std::path::Path, max_bytes: u64) -> std::io::Result<Vec<u
 }
 
 fn flush_paths(paths: &[std::path::PathBuf]) -> std::io::Result<()> {
-    let mut parents = Vec::with_capacity(paths.len());
+    let mut parents = Vec::new();
+    parents.try_reserve_exact(paths.len()).map_err(|error| {
+        std::io::Error::new(
+            std::io::ErrorKind::OutOfMemory,
+            format!(
+                "pipeline cache flush could not reserve {} parent path slot(s): {error}. Fix: flush fewer cache paths per batch.",
+                paths.len()
+            ),
+        )
+    })?;
     sync_files_bounded(
         paths,
         std::fs::File::sync_data,
@@ -276,7 +301,16 @@ fn sync_files_bounded(
         .clamp(1, 16);
     for chunk in paths.chunks(workers) {
         std::thread::scope(|scope| {
-            let mut handles = Vec::with_capacity(chunk.len());
+            let mut handles = Vec::new();
+            handles.try_reserve_exact(chunk.len()).map_err(|error| {
+                std::io::Error::new(
+                    std::io::ErrorKind::OutOfMemory,
+                    format!(
+                        "pipeline cache sync could not reserve {} worker handle(s): {error}. Fix: lower pipeline cache sync fan-out.",
+                        chunk.len()
+                    ),
+                )
+            })?;
             for path in chunk {
                 handles.push(scope.spawn(move || {
                     let file = std::fs::File::open(path)?;
@@ -517,5 +551,33 @@ mod pipeline_cache_key_tests {
             BackendId::from("backend-a"),
         );
         assert_eq!(k.version, CURRENT_PIPELINE_CACHE_KEY_VERSION);
+    }
+
+    #[test]
+    fn poisoned_pending_flush_lock_is_not_silently_recovered() {
+        let cache = Arc::new(DiskPipelineCache {
+            root: std::env::temp_dir(),
+            pending_flushes: std::sync::Mutex::new(Vec::new()),
+        });
+        let poisoned = Arc::clone(&cache);
+        let _ = std::thread::spawn(move || {
+            let _guard = poisoned.lock_pending_flushes();
+            panic!("poison disk pipeline cache pending flushes");
+        })
+        .join();
+
+        let panic = std::panic::catch_unwind(|| {
+            drop(cache.lock_pending_flushes());
+        })
+        .expect_err("poisoned disk pipeline cache must panic instead of recovering");
+        let message = panic
+            .downcast_ref::<String>()
+            .map(String::as_str)
+            .or_else(|| panic.downcast_ref::<&'static str>().copied())
+            .unwrap_or("<non-string panic>");
+        assert!(
+            message.contains("pending-flush lock was poisoned"),
+            "{message}"
+        );
     }
 }

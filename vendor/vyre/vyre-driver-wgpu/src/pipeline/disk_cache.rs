@@ -2,15 +2,17 @@
 
 use fs2::FileExt;
 use smallvec::SmallVec;
+use std::collections::BTreeSet;
 use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Mutex, OnceLock};
 use vyre_driver::{BackendError, DispatchConfig};
 use vyre_foundation::ir::Program;
 use vyre_foundation::serial::wire::framing::WIRE_FORMAT_VERSION;
 
+#[cfg(test)]
+pub(crate) use super::disk_cache_invalidation::set_test_disk_pipeline_cache_root;
 pub(crate) use super::disk_cache_invalidation::{
     cache_entry_path, disk_pipeline_cache_dir, invalidate_impacted, CompiledPipelineMetadata,
     DiskPipelineMetadata,
@@ -19,22 +21,13 @@ pub(crate) use super::disk_cache_invalidation::{
 const DISK_PIPELINE_CACHE_VERSION: u32 = 5;
 const NAGA_VERSION: &str = env!("VYRE_NAGA_VERSION");
 const WGSL_LOWERING_CONTRACT: &str =
-    "vyre-wgpu-lowering-contract:v7:region-phi-named-carrier+per-word-byte-compact";
+    "vyre-wgpu-lowering-contract:v16:region-phi-named-carrier+ssa-carrier-snapshots+block-shadowed-carriers+carrier-rebind-invalidates-stale-blocks+restored-loop-and-block-carrier-scope+nonfinite-f32-bitcast+per-word-byte-compact+no-mutable-loop-unroll+licm-keeps-reassigned-loop-locals+runtime-storage-buffer-lengths";
 const MAX_WGSL_CACHE_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_COMPILED_PIPELINE_CACHE_BLOB_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_PIPELINE_CACHE_METADATA_BYTES: u64 = 64 * 1024;
-const CACHE_SWITCH_UNKNOWN: u8 = 0;
-const CACHE_SWITCH_ENABLED: u8 = 1;
-const CACHE_SWITCH_DISABLED: u8 = 2;
 const MAX_PENDING_DURABLE_CACHE_FILES: usize = 4096;
 
-static PIPELINE_CACHE_SWITCH: AtomicU8 = AtomicU8::new(CACHE_SWITCH_UNKNOWN);
-static PENDING_DURABLE_CACHE_FILES: OnceLock<Mutex<Vec<PathBuf>>> = OnceLock::new();
-
-#[cfg(test)]
-fn reset_pipeline_cache_switch_for_test() {
-    PIPELINE_CACHE_SWITCH.store(CACHE_SWITCH_UNKNOWN, Ordering::Release);
-}
+static PENDING_DURABLE_CACHE_FILES: OnceLock<Mutex<BTreeSet<PathBuf>>> = OnceLock::new();
 
 pub(crate) struct CompiledPipelineCacheKey {
     pub(crate) hash: [u8; 32],
@@ -55,11 +48,10 @@ pub(crate) fn load_or_compile_disk_wgsl(
 ) -> Result<String, BackendError> {
     let fingerprint = adapter_fingerprint(adapter_info);
 
-    if cache_disabled() {
-        return lower_wgsl(program, config, enabled_features);
-    }
-
-    let norm_digest = vyre_driver::pipeline::normalized_program_cache_digest(program);
+    let norm_digest =
+        vyre_driver::pipeline::try_normalized_program_cache_digest(program).map_err(|error| {
+            BackendError::new(format!("WGSL disk pipeline cache digest failed: {error}"))
+        })?;
     let cache_key = wgsl_cache_key(&norm_digest, &fingerprint, config);
     let cache_key_hex = hex_hash(&cache_key);
     let dir = disk_pipeline_cache_dir();
@@ -145,18 +137,18 @@ pub(crate) fn create_compiled_pipeline_cache(
     device: &wgpu::Device,
     key: &CompiledPipelineCacheKey,
 ) -> Result<PipelineCacheHandle, BackendError> {
-    let data = if cache_disabled() {
-        None
-    } else {
-        load_compiled_pipeline_blob(key)?
-    };
+    let data = load_compiled_pipeline_blob(key)?;
     let cache = {
         #[allow(unsafe_code)]
+        // SAFETY: FFI to wgpu / wgpu-hal native APIs. Handles + sizes are
+        // validated by the surrounding cache layer; fallback=false makes a
+        // broken advertised pipeline-cache feature fail loudly instead of
+        // silently substituting an uncached driver path.
         unsafe {
             device.create_pipeline_cache(&wgpu::PipelineCacheDescriptor {
                 label: Some("vyre persistent compiled pipeline cache"),
                 data: data.as_deref(),
-                fallback: true,
+                fallback: false,
             })
         }
     };
@@ -167,9 +159,6 @@ pub(crate) fn persist_compiled_pipeline_cache(
     key: &CompiledPipelineCacheKey,
     cache: &wgpu::PipelineCache,
 ) -> Result<(), BackendError> {
-    if cache_disabled() {
-        return Ok(());
-    }
     let Some(bytes) = cache.get_data() else {
         return Ok(());
     };
@@ -195,9 +184,10 @@ pub(crate) fn flush_disk_pipeline_cache() -> Result<(), BackendError> {
     };
     let paths = {
         let mut guard = pending.lock().map_err(BackendError::poisoned_lock)?;
-        guard.sort();
-        guard.dedup();
-        std::mem::take(&mut *guard)
+        let pending_paths = std::mem::take(&mut *guard);
+        let mut paths = Vec::with_capacity(pending_paths.len());
+        paths.extend(pending_paths);
+        paths
     };
     if paths.is_empty() {
         return Ok(());
@@ -223,33 +213,6 @@ fn flush_disk_cache_paths(paths: &[PathBuf]) -> Result<(), BackendError> {
     parents.dedup();
     sync_parent_dirs_bounded(&parents)?;
     Ok(())
-}
-
-fn cache_disabled() -> bool {
-    match PIPELINE_CACHE_SWITCH.load(Ordering::Acquire) {
-        CACHE_SWITCH_ENABLED => false,
-        CACHE_SWITCH_DISABLED => true,
-        _ => {
-            let disabled = pipeline_cache_env_disables_cache();
-            PIPELINE_CACHE_SWITCH.store(
-                if disabled {
-                    CACHE_SWITCH_DISABLED
-                } else {
-                    CACHE_SWITCH_ENABLED
-                },
-                Ordering::Release,
-            );
-            disabled
-        }
-    }
-}
-
-fn pipeline_cache_env_disables_cache() -> bool {
-    let Some(value) = std::env::var_os("VYRE_PIPELINE_CACHE") else {
-        return false;
-    };
-    let bytes = value.as_encoded_bytes();
-    bytes.eq_ignore_ascii_case(b"off") || bytes == b"0" || bytes.eq_ignore_ascii_case(b"false")
 }
 
 fn persist_disk_wgsl(
@@ -322,7 +285,12 @@ fn load_compiled_pipeline_blob(
         );
         return Ok(None);
     }
-    if metadata.blob_bytes as u64 > MAX_COMPILED_PIPELINE_CACHE_BLOB_BYTES {
+    let metadata_blob_bytes = u64::try_from(metadata.blob_bytes).map_err(|source| {
+        BackendError::new(format!(
+            "compiled pipeline blob metadata length cannot fit u64: {source}. Fix: delete the corrupt cache entry."
+        ))
+    })?;
+    if metadata_blob_bytes > MAX_COMPILED_PIPELINE_CACHE_BLOB_BYTES {
         tracing::warn!(
             cache_key = %key.cache_key,
             blob_bytes = metadata.blob_bytes,
@@ -390,12 +358,10 @@ fn write_atomic(path: &Path, bytes: &[u8], label: &str) -> Result<(), BackendErr
 }
 
 fn register_pending_durable_cache_file(path: &Path) -> Result<(), BackendError> {
-    let pending = PENDING_DURABLE_CACHE_FILES.get_or_init(|| Mutex::new(Vec::new()));
+    let pending = PENDING_DURABLE_CACHE_FILES.get_or_init(|| Mutex::new(BTreeSet::new()));
     let should_flush = {
         let mut guard = pending.lock().map_err(BackendError::poisoned_lock)?;
-        if !guard.iter().any(|existing| existing == path) {
-            guard.push(path.to_path_buf());
-        }
+        guard.insert(path.to_path_buf());
         guard.len() >= MAX_PENDING_DURABLE_CACHE_FILES
     };
     if should_flush {
@@ -471,12 +437,18 @@ fn read_metadata<T: serde::de::DeserializeOwned>(meta_path: &Path) -> Result<T, 
     if file.lock_shared().is_err() {
         return Err(());
     }
-    let mut text = String::with_capacity(metadata.len() as usize);
-    let res = Read::by_ref(&mut file).take(MAX_PIPELINE_CACHE_METADATA_BYTES + 1).read_to_string(&mut text);
+    let capacity = usize::try_from(metadata.len()).map_err(|_| ())?;
+    let bounded_read_limit = MAX_PIPELINE_CACHE_METADATA_BYTES.checked_add(1).ok_or(())?;
+    let mut text = String::with_capacity(capacity);
+    let res = Read::by_ref(&mut file)
+        .take(bounded_read_limit)
+        .read_to_string(&mut text);
     if file.unlock().is_err() {
         return Err(());
     }
-    if res.is_err() || text.len() as u64 > MAX_PIPELINE_CACHE_METADATA_BYTES {
+    if res.is_err()
+        || u64::try_from(text.len()).map_or(true, |len| len > MAX_PIPELINE_CACHE_METADATA_BYTES)
+    {
         return Err(());
     }
     toml::from_str::<T>(&text).map_err(|_| ())
@@ -497,9 +469,23 @@ fn read_bounded_bytes(path: &Path, max_bytes: u64) -> std::io::Result<Vec<u8>> {
             "cache entry too large",
         ));
     }
-    let mut bytes = Vec::with_capacity(metadata.len() as usize);
-    Read::by_ref(&mut file).take(max_bytes + 1).read_to_end(&mut bytes)?;
-    if bytes.len() as u64 > max_bytes {
+    let capacity = usize::try_from(metadata.len()).map_err(|source| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("cache entry length cannot fit usize: {source}"),
+        )
+    })?;
+    let bounded_read_limit = max_bytes.checked_add(1).ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "cache entry max_bytes cannot add sentinel byte without overflowing u64",
+        )
+    })?;
+    let mut bytes = Vec::with_capacity(capacity);
+    Read::by_ref(&mut file)
+        .take(bounded_read_limit)
+        .read_to_end(&mut bytes)?;
+    if u64::try_from(bytes.len()).map_or(true, |len| len > max_bytes) {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
             "cache entry exceeded bounded read limit",
@@ -594,8 +580,8 @@ fn hex_hash(bytes: &[u8; 32]) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
     let mut hex = String::with_capacity(64);
     for byte in bytes {
-        hex.push(HEX[(byte >> 4) as usize] as char);
-        hex.push(HEX[(byte & 0x0f) as usize] as char);
+        hex.push(HEX[hex_nibble_index(byte >> 4)] as char);
+        hex.push(HEX[hex_nibble_index(byte & 0x0f)] as char);
     }
     hex
 }
@@ -603,12 +589,21 @@ fn hex_hash(bytes: &[u8; 32]) -> String {
 fn push_hex_u32(out: &mut String, value: u32) {
     const HEX: &[u8; 16] = b"0123456789abcdef";
     for byte in value.to_be_bytes() {
-        out.push(HEX[(byte >> 4) as usize] as char);
-        out.push(HEX[(byte & 0x0f) as usize] as char);
+        out.push(HEX[hex_nibble_index(byte >> 4)] as char);
+        out.push(HEX[hex_nibble_index(byte & 0x0f)] as char);
     }
 }
 
+fn hex_nibble_index(nibble: u8) -> usize {
+    debug_assert!(
+        nibble < 16,
+        "pipeline disk-cache hex encoding received a non-nibble byte"
+    );
+    usize::from(nibble)
+}
+
 #[cfg(test)]
-    mod tests {
-        include!("disk_cache_tests.rs");
-    }
+mod tests {
+    #![allow(missing_docs)]
+    include!("disk_cache_tests.rs");
+}

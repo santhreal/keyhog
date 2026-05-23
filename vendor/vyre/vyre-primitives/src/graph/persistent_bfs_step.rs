@@ -135,6 +135,98 @@ pub fn persistent_bfs_step_child_prefixed(
     }
 }
 
+/// Wrap one persistent-BFS step and write the per-step convergence flag into
+/// `scratch[active_scratch_index]`.
+#[must_use]
+pub fn persistent_bfs_step_child_prefixed_with_active(
+    parent_op_id: &str,
+    shape: ProgramGraphShape,
+    frontier_out: &str,
+    changed: &str,
+    scratch: &str,
+    active_scratch: &str,
+    edge_kind_mask: u32,
+    local_prefix: &str,
+) -> Node {
+    Node::Region {
+        generator: Ident::from(PERSISTENT_BFS_STEP_OP_ID),
+        source_region: Some(GeneratorRef {
+            name: parent_op_id.to_string(),
+        }),
+        body: Arc::new(persistent_bfs_step_body_prefixed_with_active(
+            shape,
+            frontier_out,
+            changed,
+            scratch,
+            active_scratch,
+            edge_kind_mask,
+            local_prefix,
+        )),
+    }
+}
+
+#[must_use]
+fn persistent_bfs_step_body_prefixed_with_active(
+    shape: ProgramGraphShape,
+    frontier_out: &str,
+    changed: &str,
+    scratch: &str,
+    active_scratch: &str,
+    edge_kind_mask: u32,
+    local_prefix: &str,
+) -> Vec<Node> {
+    let local_changed = format!("{local_prefix}_local_changed");
+    let any_changed = format!("{local_prefix}_any_changed");
+    let t = Expr::gid_x();
+    vec![
+        Node::let_bind(local_changed.as_str(), Expr::u32(0)),
+        Node::store(scratch, Expr::local_x(), Expr::u32(0)),
+        Node::barrier(),
+        Node::if_then(
+            Expr::and(
+                Expr::ne(Expr::load(active_scratch, Expr::u32(0)), Expr::u32(0)),
+                Expr::lt(t, Expr::u32(shape.node_count)),
+            ),
+            vec![csr_forward_or_changed_child_prefixed(
+                PERSISTENT_BFS_STEP_OP_ID,
+                shape,
+                frontier_out,
+                local_changed.as_str(),
+                edge_kind_mask,
+                &format!("{local_prefix}_csr"),
+            )],
+        ),
+        Node::store(scratch, Expr::local_x(), Expr::var(local_changed.as_str())),
+        Node::barrier(),
+        Node::if_then(
+            Expr::eq(Expr::local_x(), Expr::u32(0)),
+            vec![
+                Node::let_bind(any_changed.as_str(), Expr::u32(0)),
+                workgroup_any_u32_child_prefixed(
+                    PERSISTENT_BFS_STEP_OP_ID,
+                    scratch,
+                    any_changed.as_str(),
+                    256,
+                    &format!("{local_prefix}_any_i"),
+                ),
+                Node::store(
+                    active_scratch,
+                    Expr::u32(0),
+                    Expr::var(any_changed.as_str()),
+                ),
+                Node::if_then(
+                    Expr::ne(Expr::var(any_changed.as_str()), Expr::u32(0)),
+                    vec![Node::let_bind(
+                        format!("{local_prefix}_atomic_old"),
+                        Expr::atomic_or(changed, Expr::u32(0), Expr::u32(1)),
+                    )],
+                ),
+            ],
+        ),
+        Node::barrier(),
+    ]
+}
+
 /// Standalone one-step program for primitive-level conformance.
 #[must_use]
 pub fn persistent_bfs_step(
@@ -167,7 +259,7 @@ pub fn persistent_bfs_step(
 
     Program::wrapped(
         buffers,
-        [1, 1, 1],
+        [256, 1, 1],
         vec![Node::Region {
             generator: Ident::from(PERSISTENT_BFS_STEP_OP_ID),
             source_region: None,

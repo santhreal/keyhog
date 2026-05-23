@@ -343,7 +343,8 @@ mod tests {
                     ops: vec![KernelOp {
                         kind: KernelOpKind::Atomic {
                             op: vyre_foundation::ir::AtomicOp::Add,
-                            ordering: vyre_foundation::runtime::memory_model::MemoryOrdering::SeqCst,
+                            ordering:
+                                vyre_foundation::runtime::memory_model::MemoryOrdering::SeqCst,
                         },
                         operands: vec![0, 0, 1],
                         result: Some(2),

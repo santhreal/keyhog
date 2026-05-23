@@ -208,8 +208,7 @@ fn perf_floor_matrix_all_backends_all_sizes() {
             // Reference: how many findings does SimdCpu produce? We use
             // this to decide if a GPU/MegaScan "0 findings" is a SKIP
             // (no adapter) vs a real perf-floor failure.
-            let (_, simd_matches) =
-                measure(scanner, &chunk, ScanBackend::SimdCpu);
+            let (_, simd_matches) = measure(scanner, &chunk, ScanBackend::SimdCpu);
 
             for backend in backends {
                 cells += 1;

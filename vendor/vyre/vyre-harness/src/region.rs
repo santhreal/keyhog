@@ -13,6 +13,7 @@
 
 use std::sync::Arc;
 use vyre::ir::{Node, Program};
+use vyre_foundation::composition::mark_self_exclusive_region;
 use vyre_foundation::ir::model::expr::{GeneratorRef, Ident};
 
 /// Wrap a list of Nodes into a single `Node::Region`.
@@ -74,14 +75,20 @@ pub fn reparent_program_children(program: &Program, parent_op_id: &str) -> Vec<N
 /// giving the higher-level library op its own stable generator boundary.
 #[must_use]
 pub fn tag_program(parent_op_id: &str, program: Program) -> Program {
+    let generator = if program.is_non_composable_with_self() {
+        mark_self_exclusive_region(parent_op_id)
+    } else {
+        parent_op_id.to_string()
+    };
     Program::wrapped(
         program.buffers().to_vec(),
         program.workgroup_size(),
         vec![wrap_anonymous(
-            parent_op_id,
+            &generator,
             reparent_program_children(&program, parent_op_id),
         )],
     )
+    .with_non_composable_with_self(program.is_non_composable_with_self())
 }
 
 fn reparent_entry_node(node: Node, parent: &GeneratorRef) -> Node {
@@ -89,12 +96,16 @@ fn reparent_entry_node(node: Node, parent: &GeneratorRef) -> Node {
         Node::Region {
             generator, body, ..
         } => Node::Region {
-            generator,
+            generator: if generator.as_ref() == Program::ROOT_REGION_GENERATOR {
+                Ident::from(format!("inline::{}", parent.name))
+            } else {
+                generator
+            },
             source_region: Some(parent.clone()),
             body,
         },
         other => wrap(
-            Program::ROOT_REGION_GENERATOR,
+            &format!("inline::{}", parent.name),
             vec![other],
             Some(parent.clone()),
         ),

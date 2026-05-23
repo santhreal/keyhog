@@ -1,12 +1,20 @@
-//! Audit-fix A36 `vast/ref_decode_err.rs` extract.
+//! Explicit CPU oracle VAST construction and decode errors.
+//!
+//! Production VAST construction must use `c11_build_vast_nodes`. The byte
+//! decode helpers remain shared by oracle-only classify/typedef/expression
+//! fixtures so malformed parity inputs fail with actionable diagnostics.
 
-#![allow(missing_docs)] // c-parser feature: A33-A36 split lost some leading doc comments; lint loud, fix surgically when revisiting docs.
+#![allow(missing_docs)] // Internal oracle helpers are documented at the owning module boundary.
 use crate::parsing::c::lex::tokens::*;
 
 use super::expr_shape::*;
 use super::ref_expr_shape::*;
 use super::*;
 
+#[deprecated(
+    note = "CPU oracle only; production VAST construction must dispatch c11_build_vast_nodes"
+)]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn reference_c11_build_vast_nodes(
     tok_types: &[u32],
     tok_starts: &[u32],
@@ -16,6 +24,7 @@ pub fn reference_c11_build_vast_nodes(
     let mut parent = vec![SENTINEL; n];
     let mut first_child = vec![SENTINEL; n];
     let mut next_sibling = vec![SENTINEL; n];
+    let mut previous_sibling = vec![SENTINEL; n];
     let mut stack: Vec<u32> = Vec::new();
     let mut last_child: Vec<Option<u32>> = vec![None; n];
     let mut root_last: Option<u32> = None;
@@ -29,6 +38,7 @@ pub fn reference_c11_build_vast_nodes(
         } else {
             last_child[parent_idx as usize]
         } {
+            previous_sibling[i] = previous;
             next_sibling[previous as usize] = i as u32;
         } else if parent_idx != SENTINEL {
             first_child[parent_idx as usize] = i as u32;
@@ -56,7 +66,7 @@ pub fn reference_c11_build_vast_nodes(
             parent[i],
             first_child[i],
             next_sibling[i],
-            0,
+            previous_sibling[i],
             tok_starts[i],
             tok_lens[i],
             0,
@@ -82,6 +92,14 @@ pub enum CReferenceDecodeError {
         /// Required row stride.
         stride: usize,
     },
+    /// Two VAST streams that must describe the same node set have
+    /// different row counts.
+    MismatchedVastRows {
+        /// Row count in the raw VAST stream.
+        raw_rows: usize,
+        /// Row count in the typed VAST stream.
+        typed_rows: usize,
+    },
 }
 
 impl std::fmt::Display for CReferenceDecodeError {
@@ -94,6 +112,13 @@ impl std::fmt::Display for CReferenceDecodeError {
             Self::PartialVastRow { words, stride } => write!(
                 formatter,
                 "C VAST word input has {words} words, which is not a multiple of row stride {stride}. Fix: pass complete C VAST rows to the reference oracle."
+            ),
+            Self::MismatchedVastRows {
+                raw_rows,
+                typed_rows,
+            } => write!(
+                formatter,
+                "C VAST reference oracle received {raw_rows} raw rows but {typed_rows} typed rows. Fix: pass matching raw and typed VAST streams from the same translation unit."
             ),
         }
     }

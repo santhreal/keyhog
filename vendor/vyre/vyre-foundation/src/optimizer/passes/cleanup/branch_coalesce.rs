@@ -56,7 +56,10 @@ use crate::visit::node_map;
 #[vyre_pass(
     name = "branch_coalesce",
     requires = [],
-    invalidates = []
+    invalidates = [],
+    phase = "cleanup",
+    boundary_class = "abi_preserving",
+    cost_model_family = "fusion"
 )]
 pub struct BranchCoalesce;
 
@@ -65,6 +68,14 @@ impl BranchCoalesce {
     /// pair matching the rule.
     #[must_use]
     fn analyze_impl(program: &Program) -> PassAnalysis {
+        // Coalescing rewrites require an If; absent any If the
+        // recursive walk would find nothing to coalesce.
+        if !program
+            .stats()
+            .has_any_node_kind(crate::ir::stats::NODE_KIND_IF)
+        {
+            return PassAnalysis::SKIP;
+        }
         if program
             .entry()
             .iter()
@@ -80,18 +91,16 @@ impl BranchCoalesce {
     /// single If carrying the conjoined predicate.
     #[must_use]
     pub fn transform(program: Program) -> PassResult {
-        let scaffold = program.with_rewritten_entry(Vec::new());
         let mut changed = false;
-        let entry: Vec<Node> = program
-            .into_entry_vec()
-            .into_iter()
-            .map(|n| rewrite_node(n, &mut changed))
-            .collect();
-        PassResult {
-            program: scaffold.with_rewritten_entry(entry),
-            changed,
-        }
-    }}
+        let program = program.map_entry(|entry| {
+            entry
+                .into_iter()
+                .map(|n| rewrite_node(n, &mut changed))
+                .collect()
+        });
+        PassResult { program, changed }
+    }
+}
 
 /// Recurse into `node`'s descendants, then attempt to coalesce at
 /// `node` itself. Children are rewritten first so deeply-nested
@@ -124,7 +133,9 @@ fn coalesce_if(node: Node, changed: &mut bool) -> Node {
         };
     }
     let mut then_iter = then.into_iter();
-    let inner = then_iter.next().expect("then.len() == 1 by guard above");
+    let inner = then_iter
+        .next()
+        .unwrap_or_else(|| unreachable!("then.len() == 1 by guard above"));
     let Node::If {
         cond: inner_cond,
         then: inner_then,
@@ -205,8 +216,6 @@ fn is_coalesceable_if(node: &Node) -> bool {
 /// repeated or reordered evaluation could change observable behavior.
 fn is_pure_bool_expr(expr: &Expr) -> bool {
     match expr {
-        Expr::LitBool(_) => true,
-        Expr::Var(_) => true,
         Expr::BinOp { left, right, .. } => is_pure_bool_expr(left) && is_pure_bool_expr(right),
         Expr::UnOp { operand, .. } => is_pure_bool_expr(operand),
         Expr::Select {
@@ -216,22 +225,31 @@ fn is_pure_bool_expr(expr: &Expr) -> bool {
         } => is_pure_bool_expr(cond) && is_pure_bool_expr(true_val) && is_pure_bool_expr(false_val),
         Expr::Cast { value, .. } => is_pure_bool_expr(value),
         // Builtins are pure and observably free.
-        Expr::InvocationId { .. }
+        Expr::LitBool(_)
+        | Expr::Var(_)
+        | Expr::InvocationId { .. }
         | Expr::WorkgroupId { .. }
         | Expr::LocalId { .. }
         | Expr::SubgroupLocalId
-        | Expr::SubgroupSize => true,
+        | Expr::SubgroupSize
         // Literals other than bool are fine as operands of pure binops
         // (e.g. `i < n` where `n` is a u32 literal).
-        Expr::LitU32(_) | Expr::LitI32(_) | Expr::LitF32(_) => true,
+        | Expr::LitU32(_)
+        | Expr::LitI32(_)
+        | Expr::LitF32(_)
+        // BufLen returns the bound buffer's length — a dispatch-time
+        // constant, no observable side effect; conjoining `i < buf_len`
+        // with a sibling predicate is safe.
+        | Expr::BufLen { .. } => true,
+        // Fma is fused-multiply-add — pure arithmetic when its operands
+        // are pure. Reject when any operand is impure.
+        Expr::Fma { a, b, c } => is_pure_bool_expr(a) && is_pure_bool_expr(b) && is_pure_bool_expr(c),
         // Anything that reads memory or invokes side effects is
         // rejected to keep ordering observable.
         Expr::Load { .. }
-        | Expr::BufLen { .. }
         | Expr::Atomic { .. }
         | Expr::Call { .. }
         | Expr::Opaque(_)
-        | Expr::Fma { .. }
         | Expr::SubgroupBallot { .. }
         | Expr::SubgroupShuffle { .. }
         | Expr::SubgroupAdd { .. } => false,
@@ -239,227 +257,4 @@ fn is_pure_bool_expr(expr: &Expr) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::ir::{BufferAccess, BufferDecl, DataType, Expr, Ident, Node};
-
-    fn buf() -> BufferDecl {
-        BufferDecl::storage("buf", 0, BufferAccess::ReadWrite, DataType::U32).with_count(4)
-    }
-
-    fn program_with_entry(entry: Vec<Node>) -> Program {
-        Program::wrapped(vec![buf()], [1, 1, 1], entry)
-    }
-
-    fn count_ifs(node: &Node) -> usize {
-        match node {
-            Node::If {
-                then, otherwise, ..
-            } => {
-                1 + then.iter().map(count_ifs).sum::<usize>()
-                    + otherwise.iter().map(count_ifs).sum::<usize>()
-            }
-            Node::Loop { body, .. } | Node::Block(body) => body.iter().map(count_ifs).sum(),
-            Node::Region { body, .. } => body.iter().map(count_ifs).sum(),
-            _ => 0,
-        }
-    }
-
-    fn first_if_cond(entry: &[Node]) -> Option<&Expr> {
-        for node in entry {
-            match node {
-                Node::If { cond, .. } => return Some(cond),
-                Node::Region { body, .. } => {
-                    if let Some(c) = first_if_cond(body.as_ref()) {
-                        return Some(c);
-                    }
-                }
-                Node::Block(body) | Node::Loop { body, .. } => {
-                    if let Some(c) = first_if_cond(body) {
-                        return Some(c);
-                    }
-                }
-                _ => {}
-            }
-        }
-        None
-    }
-
-    #[test]
-    fn coalesces_nested_if_with_two_pure_conds() {
-        let entry = vec![Node::if_then(
-            Expr::var("c1"),
-            vec![Node::if_then(
-                Expr::var("c2"),
-                vec![Node::store("buf", Expr::u32(0), Expr::u32(7))],
-            )],
-        )];
-        let program = program_with_entry(entry);
-        let result = BranchCoalesce::transform(program);
-        assert!(result.changed);
-        let entry: Vec<&Node> = result.program.entry().iter().collect();
-        let total: usize = entry.iter().map(|n| count_ifs(n)).sum();
-        assert_eq!(total, 1, "two nested Ifs collapse into one");
-        let cond = first_if_cond(result.program.entry()).expect("Fix: must have an If");
-        assert_eq!(cond, &Expr::and(Expr::var("c1"), Expr::var("c2")));
-    }
-
-    #[test]
-    fn does_not_coalesce_when_outer_has_sibling() {
-        // Outer If body has an extra Store sibling alongside the inner
-        // If — coalescing would change observable order.
-        let entry = vec![Node::if_then(
-            Expr::var("c1"),
-            vec![
-                Node::store("buf", Expr::u32(0), Expr::u32(7)),
-                Node::if_then(
-                    Expr::var("c2"),
-                    vec![Node::store("buf", Expr::u32(1), Expr::u32(8))],
-                ),
-            ],
-        )];
-        let program = program_with_entry(entry);
-        let result = BranchCoalesce::transform(program);
-        assert!(
-            !result.changed,
-            "must not hoist sibling Store into combined branch"
-        );
-    }
-
-    #[test]
-    fn does_not_coalesce_when_outer_has_otherwise() {
-        let entry = vec![Node::if_then_else(
-            Expr::var("c1"),
-            vec![Node::if_then(
-                Expr::var("c2"),
-                vec![Node::store("buf", Expr::u32(0), Expr::u32(7))],
-            )],
-            vec![Node::store("buf", Expr::u32(0), Expr::u32(9))],
-        )];
-        let program = program_with_entry(entry);
-        let result = BranchCoalesce::transform(program);
-        assert!(!result.changed, "outer else-arm must be preserved");
-    }
-
-    #[test]
-    fn does_not_coalesce_when_inner_has_otherwise() {
-        let entry = vec![Node::if_then(
-            Expr::var("c1"),
-            vec![Node::if_then_else(
-                Expr::var("c2"),
-                vec![Node::store("buf", Expr::u32(0), Expr::u32(7))],
-                vec![Node::store("buf", Expr::u32(0), Expr::u32(9))],
-            )],
-        )];
-        let program = program_with_entry(entry);
-        let result = BranchCoalesce::transform(program);
-        assert!(!result.changed, "inner else-arm must be preserved");
-    }
-
-    #[test]
-    fn does_not_coalesce_when_outer_cond_loads_memory() {
-        let entry = vec![Node::if_then(
-            Expr::eq(Expr::load("buf", Expr::u32(0)), Expr::u32(0)),
-            vec![Node::if_then(
-                Expr::var("c2"),
-                vec![Node::store("buf", Expr::u32(0), Expr::u32(7))],
-            )],
-        )];
-        let program = program_with_entry(entry);
-        let result = BranchCoalesce::transform(program);
-        assert!(
-            !result.changed,
-            "outer cond reads memory; conjoining could change ordering"
-        );
-    }
-
-    #[test]
-    fn does_not_coalesce_when_inner_cond_loads_memory() {
-        let entry = vec![Node::if_then(
-            Expr::var("c1"),
-            vec![Node::if_then(
-                Expr::eq(Expr::load("buf", Expr::u32(0)), Expr::u32(0)),
-                vec![Node::store("buf", Expr::u32(0), Expr::u32(7))],
-            )],
-        )];
-        let program = program_with_entry(entry);
-        let result = BranchCoalesce::transform(program);
-        assert!(
-            !result.changed,
-            "inner cond reads memory; conjoining could change ordering"
-        );
-    }
-
-    #[test]
-    fn coalesces_three_level_nesting_in_one_pass() {
-        // If(c1) { If(c2) { If(c3) { body } } } → If(And(And(c1,c2),c3)) { body }
-        // bottom-up rewrite: inner two coalesce first, then outer
-        // joins.
-        let entry = vec![Node::if_then(
-            Expr::var("c1"),
-            vec![Node::if_then(
-                Expr::var("c2"),
-                vec![Node::if_then(
-                    Expr::var("c3"),
-                    vec![Node::store("buf", Expr::u32(0), Expr::u32(1))],
-                )],
-            )],
-        )];
-        let program = program_with_entry(entry);
-        let result = BranchCoalesce::transform(program);
-        assert!(result.changed);
-        let total: usize = result.program.entry().iter().map(|n| count_ifs(n)).sum();
-        assert_eq!(total, 1, "three nested Ifs collapse into one");
-        let cond = first_if_cond(result.program.entry()).expect("Fix: must have an If");
-        // Order: c2 and c3 join first, then c1 ANDed with that.
-        let expected = Expr::and(Expr::var("c1"), Expr::and(Expr::var("c2"), Expr::var("c3")));
-        assert_eq!(cond, &expected);
-    }
-
-    #[test]
-    fn analyze_skips_program_with_no_coalesceable_pair() {
-        let entry = vec![Node::if_then(
-            Expr::var("c1"),
-            vec![Node::store("buf", Expr::u32(0), Expr::u32(1))],
-        )];
-        let program = program_with_entry(entry);
-        assert_eq!(crate::optimizer::ProgramPass::analyze(&BranchCoalesce, &program), PassAnalysis::SKIP);
-    }
-
-    #[test]
-    fn analyze_runs_when_coalesceable_pair_present() {
-        let entry = vec![Node::if_then(
-            Expr::var("c1"),
-            vec![Node::if_then(
-                Expr::var("c2"),
-                vec![Node::store("buf", Expr::u32(0), Expr::u32(7))],
-            )],
-        )];
-        let program = program_with_entry(entry);
-        assert_eq!(crate::optimizer::ProgramPass::analyze(&BranchCoalesce, &program), PassAnalysis::RUN);
-    }
-
-    #[test]
-    fn coalesces_inside_loop_body() {
-        // Nested If inside a Loop body still coalesces — the Loop
-        // itself is not the trigger; the rule fires on the inner pair.
-        let loop_var = Ident::from("i");
-        let entry = vec![Node::loop_for(
-            loop_var.as_str(),
-            Expr::u32(0),
-            Expr::u32(8),
-            vec![Node::if_then(
-                Expr::var("c1"),
-                vec![Node::if_then(
-                    Expr::var("c2"),
-                    vec![Node::store("buf", Expr::var("i"), Expr::u32(7))],
-                )],
-            )],
-        )];
-        let program = program_with_entry(entry);
-        let result = BranchCoalesce::transform(program);
-        assert!(result.changed);
-        let total: usize = result.program.entry().iter().map(|n| count_ifs(n)).sum();
-        assert_eq!(total, 1, "nested If inside Loop coalesces");
-    }
-}
+mod tests;

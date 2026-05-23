@@ -82,22 +82,48 @@ pub fn sum_product_evaluate(
     n_nodes: u32,
     n_edges: u32,
 ) -> Program {
+    match try_sum_product_evaluate(
+        kinds,
+        child_offsets,
+        child_counts,
+        children,
+        weights,
+        leaf_values,
+        out,
+        n_nodes,
+        n_edges,
+    ) {
+        Ok(program) => program,
+        Err(error) => {
+            eprintln!("{error}");
+            crate::invalid_output_program(OP_ID, out, DataType::U32, error)
+        }
+    }
+}
+
+/// Emit one bottom-up sum-product evaluation step with checked node shape.
+///
+/// `n_edges == 0` is valid for a leaf-only circuit; children and weight buffers
+/// still receive one declared word because several GPU backends reject true
+/// zero-sized storage bindings.
+#[allow(clippy::too_many_arguments)]
+pub fn try_sum_product_evaluate(
+    kinds: &str,
+    child_offsets: &str,
+    child_counts: &str,
+    children: &str,
+    weights: &str,
+    leaf_values: &str,
+    out: &str,
+    n_nodes: u32,
+    n_edges: u32,
+) -> Result<Program, String> {
     if n_nodes == 0 {
-        return crate::invalid_output_program(
-            OP_ID,
-            out,
-            DataType::U32,
-            format!("Fix: sum_product_evaluate requires n_nodes > 0, got {n_nodes}."),
-        );
+        return Err(format!(
+            "Fix: sum_product_evaluate requires n_nodes > 0, got {n_nodes}."
+        ));
     }
-    if n_edges == 0 {
-        return crate::invalid_output_program(
-            OP_ID,
-            out,
-            DataType::U32,
-            format!("Fix: sum_product_evaluate requires n_edges > 0, got {n_edges}."),
-        );
-    }
+    let edge_buffer_count = n_edges.max(1);
 
     let t = Expr::InvocationId { axis: 0 };
     let body = vec![Node::if_then(
@@ -184,7 +210,7 @@ pub fn sum_product_evaluate(
         ],
     )];
 
-    Program::wrapped(
+    Ok(Program::wrapped(
         vec![
             BufferDecl::storage(kinds, 0, BufferAccess::ReadOnly, DataType::U32)
                 .with_count(n_nodes),
@@ -193,9 +219,9 @@ pub fn sum_product_evaluate(
             BufferDecl::storage(child_counts, 2, BufferAccess::ReadOnly, DataType::U32)
                 .with_count(n_nodes),
             BufferDecl::storage(children, 3, BufferAccess::ReadOnly, DataType::U32)
-                .with_count(n_edges),
+                .with_count(edge_buffer_count),
             BufferDecl::storage(weights, 4, BufferAccess::ReadOnly, DataType::U32)
-                .with_count(n_edges),
+                .with_count(edge_buffer_count),
             BufferDecl::storage(leaf_values, 5, BufferAccess::ReadOnly, DataType::U32)
                 .with_count(n_nodes),
             BufferDecl::storage(out, 6, BufferAccess::ReadWrite, DataType::U32).with_count(n_nodes),
@@ -206,12 +232,13 @@ pub fn sum_product_evaluate(
             source_region: None,
             body: Arc::new(body),
         }],
-    )
+    ))
 }
 
 /// CPU reference: f64 evaluation of a sum-product circuit.
 /// `topo_order` is the bottom-up evaluation order (leaves first).
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn sum_product_evaluate_cpu(
     kinds: &[u32],
     child_offsets: &[u32],
@@ -360,8 +387,42 @@ mod tests {
     }
 
     #[test]
-    fn zero_edges_traps() {
+    fn zero_edges_leaf_only_circuit_is_valid() {
         let p = sum_product_evaluate("k", "co", "cc", "ch", "w", "lv", "o", 1, 0);
-        assert!(p.stats().trap());
+        assert!(!p.stats().trap());
+        assert_eq!(p.buffers[3].count(), 1);
+        assert_eq!(p.buffers[4].count(), 1);
+    }
+
+    #[test]
+    fn checked_builder_rejects_zero_nodes() {
+        let error = try_sum_product_evaluate("k", "co", "cc", "ch", "w", "lv", "o", 0, 0)
+            .expect_err("checked sum-product builder must reject empty node domains");
+
+        assert!(
+            error.contains("requires n_nodes > 0"),
+            "error should describe the invalid circuit shape: {error}"
+        );
+    }
+
+    #[test]
+    fn sum_product_builder_source_allows_leaf_only_circuits_without_panics() {
+        let source = include_str!("sum_product_circuit.rs");
+        let builder_source = source
+            .split("pub fn sum_product_evaluate(")
+            .nth(1)
+            .expect("sum-product builder source must be present")
+            .split("/// CPU reference:")
+            .next()
+            .expect("sum-product builder source must precede CPU oracle");
+
+        assert!(
+            builder_source.contains("pub fn try_sum_product_evaluate(")
+                && builder_source.contains("let edge_buffer_count = n_edges.max(1);")
+                && !builder_source.contains("requires n_edges > 0")
+                && !builder_source.contains(concat!("panic", "!("))
+                && !builder_source.contains(".unwrap_or_else("),
+            "Fix: sum_product_evaluate must support zero-edge leaf circuits and avoid production panics."
+        );
     }
 }

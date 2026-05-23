@@ -5,8 +5,8 @@ single-file `fn(...) -> Program` that lowers via existing
 `vyre::ir` constructors only — no hardware emission, no
 self-substrate.
 
-This crate is the substrate `vyre-libs` and surgec's predicates
-compose on top of.
+This crate is the substrate `vyre-libs` and downstream predicate
+systems compose on top of.
 
 ## Modules (one folder per family)
 
@@ -46,12 +46,12 @@ Per-block compressors: blake3, sha2, fnv1a, crc32. Each declares
 its constants as buffer literals.
 
 ### `label/`
-Label-bitmask primitives. Surgec's `label_by_family` lowers via
-this.
+Label-bitmask primitives. Downstream `label_by_family` compositions
+lower via this.
 
 ### `predicate/`
-Predicate scaffolding helpers used by surgec's predicate
-registry.
+Predicate scaffolding helpers used by downstream predicate
+registries.
 
 ### `geom/`
 Geometric / spatial primitives — bounding box test, point-in-
@@ -68,7 +68,7 @@ gemv). Composes into `vyre-libs::nn`.
 
 ### `parsing/`
 Generic parsing scaffolds (bracket_match, char_class) consumed
-by surgec's source adapter.
+by frontend source adapters.
 
 ### `text/`
 String-search primitives (utf8 decode, character classification).
@@ -109,6 +109,6 @@ the canonical conform-suite probe set.
 ## Integration points
 
 - Consumed by `vyre-libs` for higher-level compositions.
-- Consumed by surgec's predicate lowering directly.
+- Consumed by downstream predicate lowering directly.
 - Conform runner cross-checks every primitive's CPU reference
   against its GPU dispatch byte-by-byte.

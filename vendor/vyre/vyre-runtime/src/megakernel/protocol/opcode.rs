@@ -14,6 +14,21 @@ pub const MEMCPY: u32 = 5;
 pub const DFA_STEP: u32 = 6;
 /// Batch fence signaling that the published batch is complete.
 pub const BATCH_FENCE: u32 = 7;
+/// GPU-initiated load miss: the megakernel writes a DMA request to the IO
+/// queue and polls for completion. The argument is the consumer's
+/// resource identifier (32-bit, opaque to vyre). vyre is a generic GPU
+/// substrate; it does not know what "the resource" is — that is the
+/// consumer's domain. See the boundary rule in AGENTS.md.
+pub const LOAD_MISS: u32 = 0x0000_FFFD;
+/// Deprecated alias retained for source-level compatibility. Will be
+/// removed once all in-tree consumers have migrated; new code must use
+/// [`LOAD_MISS`].
+#[deprecated(
+    since = "0.5.0",
+    note = "vyre is a generic GPU substrate — use `LOAD_MISS`. The wire \
+            format is unchanged; only the symbolic name moves."
+)]
+pub const EXPERT_LOAD_MISS: u32 = LOAD_MISS;
 /// Packed slot: one outer ring slot carries several inner ops.
 pub const PACKED_SLOT: u32 = 0x8000_0001;
 /// Write one PRINTF event to the debug log.
@@ -71,6 +86,7 @@ const _: () = {
         MEMCPY,
         DFA_STEP,
         BATCH_FENCE,
+        LOAD_MISS,
         PACKED_SLOT,
         PRINTF,
         SHUTDOWN,

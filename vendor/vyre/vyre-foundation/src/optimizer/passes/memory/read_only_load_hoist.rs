@@ -44,12 +44,12 @@
 //!
 //! A15 says "buffer aliasing facts into load elision". The full
 //! alias substrate (proving two arbitrary buffers don't alias) is
-//! a weir analysis. ReadOnly is the trivial alias proof: a buffer
+//! a downstream alias analysis. ReadOnly is the trivial alias proof: a buffer
 //! that nobody writes cannot alias with any write target, so its
 //! Loads are invariant across control flow. Shipping the trivial
 //! slice here gives the hot path the same code-size win that the
 //! full aliasing substrate would deliver, while the fact-driven
-//! variant lands beside the weir alias pass.
+//! variant lands beside the downstream alias pass.
 
 use crate::ir::{BufferAccess, Expr, Node, Program};
 use crate::optimizer::{vyre_pass, PassAnalysis, PassResult};
@@ -62,7 +62,10 @@ use std::sync::Arc;
 #[vyre_pass(
     name = "read_only_load_hoist",
     requires = [],
-    invalidates = []
+    invalidates = [],
+    phase = "memory",
+    boundary_class = "abi_preserving",
+    cost_model_family = "memory"
 )]
 pub struct ReadOnlyLoadHoistPass;
 
@@ -70,6 +73,11 @@ impl ReadOnlyLoadHoistPass {
     /// Skip programs with no candidate `If`.
     #[must_use]
     fn analyze_impl(program: &Program) -> PassAnalysis {
+        // The hoist needs an If with two arms that both load from a
+        // ReadOnly buffer. Without an If, no candidate is possible.
+        if !program.stats().has_node_if() {
+            return PassAnalysis::SKIP;
+        }
         let read_only = read_only_buffer_set(program);
         if read_only.is_empty() {
             return PassAnalysis::SKIP;
@@ -98,18 +106,16 @@ impl ReadOnlyLoadHoistPass {
                 changed: false,
             };
         }
-        let scaffold = program.with_rewritten_entry(Vec::new());
         let mut changed = false;
-        let entry: Vec<Node> = program
-            .into_entry_vec()
-            .into_iter()
-            .flat_map(|node| hoist_prefix(node, &read_only, &mut changed))
-            .collect();
-        PassResult {
-            program: scaffold.with_rewritten_entry(entry),
-            changed,
-        }
-    }}
+        let program = program.map_entry(|entry| {
+            entry
+                .into_iter()
+                .flat_map(|node| hoist_prefix(node, &read_only, &mut changed))
+                .collect()
+        });
+        PassResult { program, changed }
+    }
+}
 
 fn read_only_buffer_set(program: &Program) -> FxHashSet<crate::ir::Ident> {
     program
@@ -235,13 +241,19 @@ fn extract_common_prefix(
 }
 
 fn is_hoistable_pair(a: &Node, b: &Node, read_only: &FxHashSet<crate::ir::Ident>) -> bool {
-    let (name_a, value_a) = match a {
-        Node::Let { name, value } => (name, value),
-        _ => return false,
+    let Node::Let {
+        name: name_a,
+        value: value_a,
+    } = a
+    else {
+        return false;
     };
-    let (name_b, value_b) = match b {
-        Node::Let { name, value } => (name, value),
-        _ => return false,
+    let Node::Let {
+        name: name_b,
+        value: value_b,
+    } = b
+    else {
+        return false;
     };
     if name_a != name_b || value_a != value_b {
         return false;

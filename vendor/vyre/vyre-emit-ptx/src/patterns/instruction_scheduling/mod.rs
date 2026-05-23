@@ -40,6 +40,12 @@ impl SchedulingHints {
     pub fn longest_chain(&self) -> u32 {
         self.long_chains.iter().map(|c| c.length).max().unwrap_or(0)
     }
+
+    #[must_use]
+    pub fn schedule_latency_pressure(&self) -> u32 {
+        self.longest_chain()
+            .saturating_mul(self.long_chain_count().min(u32::MAX as usize) as u32)
+    }
 }
 
 pub const LONG_CHAIN_THRESHOLD: u32 = 4;
@@ -221,6 +227,7 @@ mod tests {
         };
         assert_eq!(h.long_chain_count(), 3);
         assert_eq!(h.longest_chain(), 12);
+        assert_eq!(h.schedule_latency_pressure(), 36);
     }
 
     #[test]

@@ -48,6 +48,12 @@ pub const P2M_OP_ID: &str = "vyre-primitives::math::fmm_p2m_step";
 pub const M2L_OP_ID: &str = "vyre-primitives::math::fmm_m2l_step";
 /// l2p op id.
 pub const L2P_OP_ID: &str = "vyre-primitives::math::fmm_l2p_step";
+/// f32 zeroth-moment p2m op id.
+pub const P2M_ZEROTH_F32_OP_ID: &str = "vyre-primitives::math::fmm_p2m_zeroth_f32_step";
+/// f32 zeroth-moment m2l op id.
+pub const M2L_ZEROTH_F32_OP_ID: &str = "vyre-primitives::math::fmm_m2l_zeroth_f32_step";
+/// f32 zeroth-moment l2p op id.
+pub const L2P_ZEROTH_F32_OP_ID: &str = "vyre-primitives::math::fmm_l2p_zeroth_f32_step";
 
 /// Number of u32 lanes per multipole/local expansion (`2 * (p + 1)`
 /// for `p = 3`, packed real-imag interleaved).
@@ -58,6 +64,8 @@ pub const PARTICLE_STRIDE: u32 = 4;
 
 /// Stride per cell in the cell-centers buffer.
 pub const CELL_STRIDE: u32 = 4;
+
+const MIN_DISTANCE_F32: f32 = 1.0e-12;
 
 /// Emit P2M: for each leaf cell, sum the contribution of every
 /// particle in that cell into the cell's multipole expansion.
@@ -163,8 +171,239 @@ pub fn p2m_step(
     )
 }
 
+/// Emit zeroth-moment f32 P2M for the self-substrate polyhedral FMM compressor.
+///
+/// Lane `t` owns one cell and scans all regions, summing `scores[i]` when
+/// `cell_assignment[i] == t`. This keeps the primitive deterministic without
+/// atomics and maps directly to CUDA workgroups for the release path.
+#[must_use]
+pub fn p2m_zeroth_f32_step(
+    scores: &str,
+    cell_assignment: &str,
+    moments: &str,
+    n_regions: u32,
+    n_cells: u32,
+) -> Program {
+    if n_regions == 0 {
+        return crate::invalid_output_program(
+            P2M_ZEROTH_F32_OP_ID,
+            moments,
+            DataType::F32,
+            "Fix: p2m_zeroth_f32_step requires n_regions > 0, got 0.".to_string(),
+        );
+    }
+    if n_cells == 0 {
+        return crate::invalid_output_program(
+            P2M_ZEROTH_F32_OP_ID,
+            moments,
+            DataType::F32,
+            "Fix: p2m_zeroth_f32_step requires n_cells > 0, got 0.".to_string(),
+        );
+    }
+
+    let cell = Expr::InvocationId { axis: 0 };
+    let body = vec![Node::if_then(
+        Expr::lt(cell.clone(), Expr::u32(n_cells)),
+        vec![
+            Node::let_bind("acc", Expr::f32(0.0)),
+            Node::loop_for(
+                "region",
+                Expr::u32(0),
+                Expr::u32(n_regions),
+                vec![Node::if_then(
+                    Expr::eq(
+                        Expr::load(cell_assignment, Expr::var("region")),
+                        cell.clone(),
+                    ),
+                    vec![Node::assign(
+                        "acc",
+                        Expr::add(Expr::var("acc"), Expr::load(scores, Expr::var("region"))),
+                    )],
+                )],
+            ),
+            Node::store(moments, cell, Expr::var("acc")),
+        ],
+    )];
+
+    Program::wrapped(
+        vec![
+            BufferDecl::storage(scores, 0, BufferAccess::ReadOnly, DataType::F32)
+                .with_count(n_regions),
+            BufferDecl::storage(cell_assignment, 1, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(n_regions),
+            BufferDecl::storage(moments, 2, BufferAccess::ReadWrite, DataType::F32)
+                .with_count(n_cells),
+        ],
+        [256, 1, 1],
+        vec![Node::Region {
+            generator: Ident::from(P2M_ZEROTH_F32_OP_ID),
+            source_region: None,
+            body: Arc::new(body),
+        }],
+    )
+}
+
+/// Emit zeroth-moment f32 M2L translation for all target cells.
+///
+/// `cell_distances` is row-major target-by-source. Self-cell contribution is
+/// skipped because near-field/direct evaluation owns it.
+#[must_use]
+pub fn m2l_zeroth_f32_step(
+    cell_moments: &str,
+    cell_distances: &str,
+    cell_local: &str,
+    n_cells: u32,
+) -> Program {
+    if n_cells == 0 {
+        return crate::invalid_output_program(
+            M2L_ZEROTH_F32_OP_ID,
+            cell_local,
+            DataType::F32,
+            "Fix: m2l_zeroth_f32_step requires n_cells > 0, got 0.".to_string(),
+        );
+    }
+    let distance_count = match n_cells.checked_mul(n_cells) {
+        Some(count) => count,
+        None => {
+            return crate::invalid_output_program(
+                M2L_ZEROTH_F32_OP_ID,
+                cell_local,
+                DataType::F32,
+                format!(
+                    "Fix: m2l_zeroth_f32_step n_cells*n_cells overflows u32 for n_cells={n_cells}."
+                ),
+            );
+        }
+    };
+
+    let target = Expr::InvocationId { axis: 0 };
+    let body = vec![Node::if_then(
+        Expr::lt(target.clone(), Expr::u32(n_cells)),
+        vec![
+            Node::let_bind("acc", Expr::f32(0.0)),
+            Node::loop_for(
+                "source",
+                Expr::u32(0),
+                Expr::u32(n_cells),
+                vec![Node::if_then(
+                    Expr::ne(Expr::var("source"), target.clone()),
+                    vec![
+                        Node::let_bind(
+                            "distance",
+                            Expr::load(
+                                cell_distances,
+                                Expr::add(
+                                    Expr::mul(target.clone(), Expr::u32(n_cells)),
+                                    Expr::var("source"),
+                                ),
+                            ),
+                        ),
+                        Node::let_bind(
+                            "safe_distance",
+                            Expr::select(
+                                Expr::lt(Expr::var("distance"), Expr::f32(MIN_DISTANCE_F32)),
+                                Expr::f32(MIN_DISTANCE_F32),
+                                Expr::var("distance"),
+                            ),
+                        ),
+                        Node::assign(
+                            "acc",
+                            Expr::add(
+                                Expr::var("acc"),
+                                Expr::div(
+                                    Expr::load(cell_moments, Expr::var("source")),
+                                    Expr::var("safe_distance"),
+                                ),
+                            ),
+                        ),
+                    ],
+                )],
+            ),
+            Node::store(cell_local, target, Expr::var("acc")),
+        ],
+    )];
+
+    Program::wrapped(
+        vec![
+            BufferDecl::storage(cell_moments, 0, BufferAccess::ReadOnly, DataType::F32)
+                .with_count(n_cells),
+            BufferDecl::storage(cell_distances, 1, BufferAccess::ReadOnly, DataType::F32)
+                .with_count(distance_count),
+            BufferDecl::storage(cell_local, 2, BufferAccess::ReadWrite, DataType::F32)
+                .with_count(n_cells),
+        ],
+        [256, 1, 1],
+        vec![Node::Region {
+            generator: Ident::from(M2L_ZEROTH_F32_OP_ID),
+            source_region: None,
+            body: Arc::new(body),
+        }],
+    )
+}
+
+/// Emit zeroth-moment f32 L2P evaluation from cell locals to per-region output.
+#[must_use]
+pub fn l2p_zeroth_f32_step(
+    cell_local: &str,
+    cell_assignment: &str,
+    region_out: &str,
+    n_regions: u32,
+    n_cells: u32,
+) -> Program {
+    if n_regions == 0 {
+        return crate::invalid_output_program(
+            L2P_ZEROTH_F32_OP_ID,
+            region_out,
+            DataType::F32,
+            "Fix: l2p_zeroth_f32_step requires n_regions > 0, got 0.".to_string(),
+        );
+    }
+    if n_cells == 0 {
+        return crate::invalid_output_program(
+            L2P_ZEROTH_F32_OP_ID,
+            region_out,
+            DataType::F32,
+            "Fix: l2p_zeroth_f32_step requires n_cells > 0, got 0.".to_string(),
+        );
+    }
+
+    let region = Expr::InvocationId { axis: 0 };
+    let body = vec![Node::if_then(
+        Expr::lt(region.clone(), Expr::u32(n_regions)),
+        vec![
+            Node::let_bind("cell", Expr::load(cell_assignment, region.clone())),
+            Node::if_then(
+                Expr::lt(Expr::var("cell"), Expr::u32(n_cells)),
+                vec![Node::store(
+                    region_out,
+                    region,
+                    Expr::load(cell_local, Expr::var("cell")),
+                )],
+            ),
+        ],
+    )];
+
+    Program::wrapped(
+        vec![
+            BufferDecl::storage(cell_local, 0, BufferAccess::ReadOnly, DataType::F32)
+                .with_count(n_cells),
+            BufferDecl::storage(cell_assignment, 1, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(n_regions),
+            BufferDecl::storage(region_out, 2, BufferAccess::ReadWrite, DataType::F32)
+                .with_count(n_regions),
+        ],
+        [256, 1, 1],
+        vec![Node::Region {
+            generator: Ident::from(L2P_ZEROTH_F32_OP_ID),
+            source_region: None,
+            body: Arc::new(body),
+        }],
+    )
+}
+
 /// CPU reference for `p2m_step` — sums particle charges into per-cell
 /// total charge (zeroth-order moment).
+#[cfg(test)]
 #[must_use]
 pub fn p2m_zeroth_moment_cpu(charges: &[f64], cell_assignment: &[u32]) -> Vec<f64> {
     let mut moments = Vec::new();
@@ -173,6 +412,7 @@ pub fn p2m_zeroth_moment_cpu(charges: &[f64], cell_assignment: &[u32]) -> Vec<f6
 }
 
 /// CPU reference for `p2m_step` using caller-owned moment storage.
+#[cfg(test)]
 pub fn p2m_zeroth_moment_cpu_into(
     charges: &[f64],
     cell_assignment: &[u32],
@@ -195,6 +435,7 @@ pub fn p2m_zeroth_moment_cpu_into(
 /// expansion (zeroth-order = total far-field potential) and a target
 /// particle position, return the contributed potential. For the
 /// zeroth-order primitive, this is just the local moment value.
+#[cfg(test)]
 #[must_use]
 pub fn l2p_zeroth_eval_cpu(local_moment: f64, _target_x: f64, _target_y: f64) -> f64 {
     local_moment
@@ -204,6 +445,7 @@ pub fn l2p_zeroth_eval_cpu(local_moment: f64, _target_x: f64, _target_y: f64) ->
 /// multipole expansion (zeroth-order = total source charge), the
 /// distance to the target cell, return the target cell's local
 /// expansion contribution. For Coulomb 2D: `local_0 = source_0 / r`.
+#[cfg(test)]
 #[must_use]
 pub fn m2l_zeroth_translate_cpu(source_moment: f64, distance: f64) -> f64 {
     let r = distance.max(1e-12);

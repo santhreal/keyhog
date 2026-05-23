@@ -60,6 +60,9 @@ impl LoopFission {
     /// Skip programs without a fissionable Loop.
     #[must_use]
     fn analyze_impl(program: &Program) -> PassAnalysis {
+        if !program.stats().has_node_loop() {
+            return PassAnalysis::SKIP;
+        }
         if program
             .entry()
             .iter()
@@ -74,14 +77,11 @@ impl LoopFission {
     /// Walk the entry tree and split fissionable Loops.
     #[must_use]
     pub fn transform(program: Program) -> PassResult {
-        let scaffold = program.with_rewritten_entry(Vec::new());
         let mut changed = false;
-        let entry = fission_in_body(program.into_entry_vec(), &mut changed);
-        PassResult {
-            program: scaffold.with_rewritten_entry(entry),
-            changed,
-        }
-    }}
+        let program = program.map_entry(|entry| fission_in_body(entry, &mut changed));
+        PassResult { program, changed }
+    }
+}
 
 fn fission_in_body(body: Vec<Node>, changed: &mut bool) -> Vec<Node> {
     let body: Vec<Node> = body.into_iter().map(|n| recurse(n, changed)).collect();
@@ -143,7 +143,7 @@ fn recurse(node: Node, changed: &mut bool) -> Node {
     node_map::map_body(recursed, &mut |body| fission_in_body(body, changed))
 }
 
-/// True iff `nodes` contains a Barrier / IndirectDispatch / AsyncWait
+/// True iff `nodes` contains a Barrier / `IndirectDispatch` / `AsyncWait`
 /// anywhere in the immediate sequence (we only check direct siblings
 /// because the partition itself only splits direct siblings).
 fn has_barrier_like(nodes: &[Node]) -> bool {
@@ -273,7 +273,9 @@ fn collect_buffers_in_expr(expr: &Expr, out: &mut FxHashSet<Ident>) {
             collect_buffers_in_expr(true_val, out);
             collect_buffers_in_expr(false_val, out);
         }
-        Expr::Cast { value, .. } => collect_buffers_in_expr(value, out),
+        Expr::Cast { value, .. } | Expr::SubgroupAdd { value } => {
+            collect_buffers_in_expr(value, out);
+        }
         Expr::Fma { a, b, c } => {
             collect_buffers_in_expr(a, out);
             collect_buffers_in_expr(b, out);
@@ -289,7 +291,6 @@ fn collect_buffers_in_expr(expr: &Expr, out: &mut FxHashSet<Ident>) {
             collect_buffers_in_expr(value, out);
             collect_buffers_in_expr(lane, out);
         }
-        Expr::SubgroupAdd { value } => collect_buffers_in_expr(value, out),
         Expr::LitU32(_)
         | Expr::LitI32(_)
         | Expr::LitF32(_)
@@ -394,7 +395,9 @@ fn collect_var_reads_in_expr(expr: &Expr, out: &mut FxHashSet<Ident>) {
             collect_var_reads_in_expr(true_val, out);
             collect_var_reads_in_expr(false_val, out);
         }
-        Expr::Cast { value, .. } => collect_var_reads_in_expr(value, out),
+        Expr::Cast { value, .. } | Expr::SubgroupAdd { value } => {
+            collect_var_reads_in_expr(value, out);
+        }
         Expr::Fma { a, b, c } => {
             collect_var_reads_in_expr(a, out);
             collect_var_reads_in_expr(b, out);
@@ -422,7 +425,6 @@ fn collect_var_reads_in_expr(expr: &Expr, out: &mut FxHashSet<Ident>) {
             collect_var_reads_in_expr(value, out);
             collect_var_reads_in_expr(lane, out);
         }
-        Expr::SubgroupAdd { value } => collect_var_reads_in_expr(value, out),
         Expr::LitU32(_)
         | Expr::LitI32(_)
         | Expr::LitF32(_)

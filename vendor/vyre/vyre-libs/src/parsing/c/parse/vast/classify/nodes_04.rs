@@ -3,17 +3,17 @@ use super::*;
 pub(super) fn extend(
     out: &mut Vec<Node>,
     vast_nodes: &str,
-    out_typed_vast_nodes: &str,
+    _out_typed_vast_nodes: &str,
     num_nodes: Expr,
     t: Expr,
-    base: Expr,
+    _base: Expr,
 ) {
     out.extend(vec![
         Node::if_then(
             Expr::var("needs_decl_context"),
             vec![Node::loop_for(
                 "decl_ctx_scan",
-                Expr::u32(0),
+                Expr::var("decl_ctx_scan_start"),
                 t.clone(),
                 vec![
                     Node::let_bind(
@@ -127,7 +127,7 @@ pub(super) fn extend(
             Expr::eq(Expr::var("decl_ctx_leading_gnu_attribute"), Expr::u32(1)),
             vec![Node::loop_for(
                 "decl_ctx_attr_scan",
-                Expr::u32(0),
+                Expr::var("decl_ctx_scan_start"),
                 t.clone(),
                 vec![
                     Node::let_bind(

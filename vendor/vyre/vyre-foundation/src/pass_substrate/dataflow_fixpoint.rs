@@ -1,4 +1,4 @@
-//! Region-graph dataflow fixpoint via #1 semiring_gemm (#26 substrate).
+//! Region-graph dataflow fixpoint via #1 `semiring_gemm` (#26 substrate).
 //!
 //! Treats vyre's Region tree adjacency as a sparse boolean matrix
 //! and computes reachability / liveness / dominance / constant-prop
@@ -6,11 +6,11 @@
 //!
 //! | Analysis | Semiring | Combine | Accumulate |
 //! |---|---|---|---|
-//! | Reachability | BoolOr | AND | OR |
-//! | Liveness | BoolOr (reverse direction) | AND | OR |
-//! | Reaching defs | Lineage | OR (zero-absorbing) | OR |
-//! | Constant prop | Lineage | OR | OR |
-//! | Min-cost path | MinPlus | + (sat) | min |
+//! | Reachability | `BoolOr` | AND | OR |
+//! | Liveness | `BoolOr` (reverse direction) | AND | OR |
+//! | Reaching defs | `Lineage` | OR (zero-absorbing) | OR |
+//! | Constant prop | `Lineage` | OR | OR |
+//! | Min-cost path | `MinPlus` | + (sat) | min |
 //!
 //! Same primitive (#1), same Program, four different IR analyses.
 //! Demonstrates the recursion thesis directly.
@@ -20,53 +20,53 @@ pub use vyre_spec::Semiring;
 /// Multiply matrices over the selected semiring on the CPU.
 #[must_use]
 pub fn semiring_gemm_cpu(
-    a: &[u32],
-    b: &[u32],
-    m: u32,
-    n: u32,
-    k: u32,
+    left: &[u32],
+    right: &[u32],
+    rows: u32,
+    cols: u32,
+    inner: u32,
     semiring: Semiring,
 ) -> Vec<u32> {
-    let Some(out_len) = m.checked_mul(n).map(|v| v as usize) else {
+    let Some(out_len) = rows.checked_mul(cols).map(|v| v as usize) else {
         return Vec::new();
     };
-    let Some(a_len) = m.checked_mul(k).map(|v| v as usize) else {
+    let Some(left_len) = rows.checked_mul(inner).map(|v| v as usize) else {
         return Vec::new();
     };
-    let Some(b_len) = k.checked_mul(n).map(|v| v as usize) else {
+    let Some(right_len) = inner.checked_mul(cols).map(|v| v as usize) else {
         return Vec::new();
     };
-    if a.len() < a_len || b.len() < b_len {
+    if left.len() < left_len || right.len() < right_len {
         return Vec::new();
     }
-    let mut c = vec![semiring.identity(); out_len];
-    let m = m as usize;
-    let n = n as usize;
-    let k = k as usize;
-    for i in 0..m {
-        for j in 0..n {
+    let mut output = vec![semiring.identity(); out_len];
+    let rows = rows as usize;
+    let cols = cols as usize;
+    let inner = inner as usize;
+    for row in 0..rows {
+        for col in 0..cols {
             let mut acc = semiring.identity();
-            for kk in 0..k {
-                let a_v = a[i * k + kk];
-                let b_v = b[kk * n + j];
+            for scan in 0..inner {
+                let left_value = left[row * inner + scan];
+                let right_value = right[scan * cols + col];
 
                 let combined = match semiring {
-                    Semiring::Real | Semiring::MaxTimes => a_v.wrapping_mul(b_v),
+                    Semiring::Real | Semiring::MaxTimes => left_value.wrapping_mul(right_value),
                     Semiring::MinPlus => {
-                        if a_v == u32::MAX || b_v == u32::MAX {
+                        if left_value == u32::MAX || right_value == u32::MAX {
                             u32::MAX
                         } else {
-                            a_v.saturating_add(b_v)
+                            left_value.saturating_add(right_value)
                         }
                     }
-                    Semiring::MaxPlus => a_v.saturating_add(b_v),
-                    Semiring::BoolOr | Semiring::Gf2 => a_v & b_v,
-                    Semiring::BoolAnd => a_v | b_v,
+                    Semiring::MaxPlus => left_value.saturating_add(right_value),
+                    Semiring::BoolOr | Semiring::Gf2 => left_value & right_value,
+                    Semiring::BoolAnd => left_value | right_value,
                     Semiring::Lineage => {
-                        if a_v == 0 || b_v == 0 {
+                        if left_value == 0 || right_value == 0 {
                             0
                         } else {
-                            a_v | b_v
+                            left_value | right_value
                         }
                     }
                 };
@@ -80,10 +80,10 @@ pub fn semiring_gemm_cpu(
                     Semiring::Gf2 => acc ^ combined,
                 };
             }
-            c[i * n + j] = acc;
+            output[row * cols + col] = acc;
         }
     }
-    c
+    output
 }
 
 fn square_cells(n: u32) -> Option<usize> {

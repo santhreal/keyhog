@@ -46,11 +46,9 @@ pub fn inline_calls(program: &Program) -> Result<Program> {
 pub fn inline_calls_with_resolver(program: &Program, resolver: OpResolver) -> Result<Program> {
     let mut ctx = InlineCtx::new(resolver);
     let entry = ctx.inline_nodes(program.entry())?;
-    Ok(Program::wrapped(
-        program.buffers().to_vec(),
-        program.workgroup_size(),
-        entry,
-    ))
+    // Reuse the buffer Arc + buffer_index from the source program instead
+    // of re-cloning + re-interning via Program::wrapped.
+    Ok(program.with_rewritten_wrapped_entry(entry))
 }
 
 /// Resolve inline calls against the foundation-level empty registry.
@@ -131,18 +129,12 @@ pub fn output_buffer<'a>(op_id: &str, program: &'a Program) -> Result<&'a Buffer
 
 /// Construct the zero literal used when an inline target needs a default value.
 #[inline]
-pub fn zero_value(ty: DataType) -> Expr {
+#[must_use]
+pub fn zero_value(ty: &DataType) -> Expr {
     match ty {
         DataType::I32 => Expr::i32(0),
         DataType::Bool => Expr::LitBool(false),
         DataType::F32 | DataType::F16 | DataType::BF16 | DataType::F64 => Expr::f32(0.0),
-        DataType::U32
-        | DataType::U64
-        | DataType::Vec2U32
-        | DataType::Vec4U32
-        | DataType::Bytes
-        | DataType::Array { .. }
-        | DataType::Tensor => Expr::u32(0),
         _ => Expr::u32(0),
     }
 }
@@ -231,9 +223,9 @@ mod tests {
 
     #[test]
     fn test_zero_value() {
-        assert_eq!(zero_value(DataType::I32), Expr::i32(0));
-        assert_eq!(zero_value(DataType::F32), Expr::f32(0.0));
-        assert_eq!(zero_value(DataType::Bool), Expr::LitBool(false));
-        assert_eq!(zero_value(DataType::U32), Expr::u32(0));
+        assert_eq!(zero_value(&DataType::I32), Expr::i32(0));
+        assert_eq!(zero_value(&DataType::F32), Expr::f32(0.0));
+        assert_eq!(zero_value(&DataType::Bool), Expr::LitBool(false));
+        assert_eq!(zero_value(&DataType::U32), Expr::u32(0));
     }
 }

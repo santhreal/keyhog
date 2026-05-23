@@ -36,6 +36,7 @@ pub use entry::{trap_sidecar_decl, trap_tags};
 pub use types::{TrapTag, TRAP_SIDECAR_NAME, TRAP_SIDECAR_WORDS};
 
 #[cfg(test)]
-    mod tests {
-        include!("mod_tests.rs");
-    }
+mod tests {
+    #![allow(missing_docs)]
+    include!("mod_tests.rs");
+}

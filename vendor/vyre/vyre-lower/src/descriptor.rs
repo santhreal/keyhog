@@ -56,8 +56,16 @@ pub enum MemoryClass {
     Global,
     /// Workgroup-shared memory.
     Shared,
-    /// Read-only constant memory.
+    /// Read-only constant memory backed by a storage buffer
+    /// (`BufferDecl::storage(.., ReadOnly, ..)`). Bind in group 0
+    /// alongside `Global` writers.
     Constant,
+    /// True uniform-buffer memory backed by `BufferDecl::uniform`.
+    /// Maps to WGSL `var<uniform>` / Vulkan `uniform_buffer` descriptor
+    /// and binds in group 1 per `bind_group_for`. Distinct from
+    /// `Constant` so the emitter can pick `AddressSpace::Uniform` and
+    /// the layout builder can reserve the second bind group.
+    Uniform,
     /// Backend-managed scratch storage.
     Scratch,
 }

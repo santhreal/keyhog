@@ -54,6 +54,19 @@ fn declaration_prefix(token: Expr) -> Expr {
             TOK_UNION,
             TOK_UNSIGNED,
             TOK_VOLATILE,
+            // C23 / TS 18661-2 scalar types and clang/GCC half-precision.
+            TOK_BITINT_KW,
+            TOK_FLOAT16_KW,
+            TOK_FLOAT32_KW,
+            TOK_FLOAT64_KW,
+            TOK_FLOAT128_KW,
+            TOK_GNU_FLOAT128_KW,
+            TOK_GNU_BF16_KW,
+            TOK_GNU_FP16_KW,
+            TOK_DECIMAL32_KW,
+            TOK_DECIMAL64_KW,
+            TOK_DECIMAL128_KW,
+            TOK_FORCEINLINE_KW,
         ],
     )
 }
@@ -121,44 +134,47 @@ fn emit_aggregate_context(node_idx: &Expr) -> Vec<Node> {
     vec![
         Node::let_bind("aggregate_kind", Expr::u32(0)),
         Node::let_bind("aggregate_depth", Expr::u32(0)),
-        Node::loop_for(
-            "aggregate_scan",
-            Expr::u32(0),
-            node_idx.clone(),
-            vec![
-                Node::let_bind(
-                    "aggregate_idx",
-                    Expr::sub(
-                        Expr::sub(node_idx.clone(), Expr::u32(1)),
-                        Expr::var("aggregate_scan"),
+        Node::if_then(
+            Expr::eq(Expr::var("tok_type"), Expr::u32(TOK_IDENTIFIER)),
+            vec![Node::loop_for(
+                "aggregate_scan",
+                Expr::u32(0),
+                node_idx.clone(),
+                vec![
+                    Node::let_bind(
+                        "aggregate_idx",
+                        Expr::sub(
+                            Expr::sub(node_idx.clone(), Expr::u32(1)),
+                            Expr::var("aggregate_scan"),
+                        ),
                     ),
-                ),
-                Node::let_bind(
-                    "aggregate_tok",
-                    Expr::load("tok_types", Expr::var("aggregate_idx")),
-                ),
-                Node::if_then(
-                    Expr::eq(Expr::var("aggregate_tok"), Expr::u32(TOK_RBRACE)),
-                    vec![Node::assign(
-                        "aggregate_depth",
-                        Expr::add(Expr::var("aggregate_depth"), Expr::u32(1)),
-                    )],
-                ),
-                Node::if_then(
-                    Expr::eq(Expr::var("aggregate_kind"), Expr::u32(0)),
-                    vec![Node::if_then(
-                        Expr::eq(Expr::var("aggregate_tok"), Expr::u32(TOK_LBRACE)),
-                        vec![Node::if_then_else(
-                            Expr::eq(Expr::var("aggregate_depth"), Expr::u32(0)),
-                            emit_set_aggregate_kind(),
-                            vec![Node::assign(
-                                "aggregate_depth",
-                                Expr::sub(Expr::var("aggregate_depth"), Expr::u32(1)),
+                    Node::let_bind(
+                        "aggregate_tok",
+                        Expr::load("tok_types", Expr::var("aggregate_idx")),
+                    ),
+                    Node::if_then(
+                        Expr::eq(Expr::var("aggregate_tok"), Expr::u32(TOK_RBRACE)),
+                        vec![Node::assign(
+                            "aggregate_depth",
+                            Expr::add(Expr::var("aggregate_depth"), Expr::u32(1)),
+                        )],
+                    ),
+                    Node::if_then(
+                        Expr::eq(Expr::var("aggregate_kind"), Expr::u32(0)),
+                        vec![Node::if_then(
+                            Expr::eq(Expr::var("aggregate_tok"), Expr::u32(TOK_LBRACE)),
+                            vec![Node::if_then_else(
+                                Expr::eq(Expr::var("aggregate_depth"), Expr::u32(0)),
+                                emit_set_aggregate_kind(),
+                                vec![Node::assign(
+                                    "aggregate_depth",
+                                    Expr::sub(Expr::var("aggregate_depth"), Expr::u32(1)),
+                                )],
                             )],
                         )],
-                    )],
-                ),
-            ],
+                    ),
+                ],
+            )],
         ),
     ]
 }
@@ -208,40 +224,43 @@ fn emit_declaration_flags(node_idx: &Expr) -> Vec<Node> {
     vec![
         Node::let_bind("seen_typedef_in_decl", Expr::u32(0)),
         Node::let_bind("decl_prefix_active", Expr::u32(1)),
-        Node::loop_for(
-            "decl_prefix_scan",
-            Expr::u32(0),
-            node_idx.clone(),
-            vec![
-                Node::let_bind(
-                    "decl_prefix_idx",
-                    Expr::sub(
-                        Expr::sub(node_idx.clone(), Expr::u32(1)),
-                        Expr::var("decl_prefix_scan"),
-                    ),
-                ),
-                Node::let_bind(
-                    "decl_prefix_tok",
-                    Expr::load("tok_types", Expr::var("decl_prefix_idx")),
-                ),
-                Node::if_then(
-                    Expr::and(
-                        Expr::eq(Expr::var("decl_prefix_active"), Expr::u32(1)),
-                        Expr::eq(Expr::var("decl_prefix_tok"), Expr::u32(TOK_TYPEDEF)),
-                    ),
-                    vec![Node::assign("seen_typedef_in_decl", Expr::u32(1))],
-                ),
-                Node::if_then(
-                    Expr::and(
-                        Expr::eq(Expr::var("decl_prefix_active"), Expr::u32(1)),
-                        Expr::or(
-                            Expr::eq(Expr::var("decl_prefix_tok"), Expr::u32(TOK_SEMICOLON)),
-                            Expr::eq(Expr::var("decl_prefix_tok"), Expr::u32(TOK_LBRACE)),
+        Node::if_then(
+            Expr::eq(Expr::var("tok_type"), Expr::u32(TOK_IDENTIFIER)),
+            vec![Node::loop_for(
+                "decl_prefix_scan",
+                Expr::u32(0),
+                node_idx.clone(),
+                vec![
+                    Node::let_bind(
+                        "decl_prefix_idx",
+                        Expr::sub(
+                            Expr::sub(node_idx.clone(), Expr::u32(1)),
+                            Expr::var("decl_prefix_scan"),
                         ),
                     ),
-                    vec![Node::assign("decl_prefix_active", Expr::u32(0))],
-                ),
-            ],
+                    Node::let_bind(
+                        "decl_prefix_tok",
+                        Expr::load("tok_types", Expr::var("decl_prefix_idx")),
+                    ),
+                    Node::if_then(
+                        Expr::and(
+                            Expr::eq(Expr::var("decl_prefix_active"), Expr::u32(1)),
+                            Expr::eq(Expr::var("decl_prefix_tok"), Expr::u32(TOK_TYPEDEF)),
+                        ),
+                        vec![Node::assign("seen_typedef_in_decl", Expr::u32(1))],
+                    ),
+                    Node::if_then(
+                        Expr::and(
+                            Expr::eq(Expr::var("decl_prefix_active"), Expr::u32(1)),
+                            Expr::or(
+                                Expr::eq(Expr::var("decl_prefix_tok"), Expr::u32(TOK_SEMICOLON)),
+                                Expr::eq(Expr::var("decl_prefix_tok"), Expr::u32(TOK_LBRACE)),
+                            ),
+                        ),
+                        vec![Node::assign("decl_prefix_active", Expr::u32(0))],
+                    ),
+                ],
+            )],
         ),
     ]
 }

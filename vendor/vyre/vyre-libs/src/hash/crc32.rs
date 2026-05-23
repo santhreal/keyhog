@@ -2,23 +2,24 @@
 //!
 //! Serial single-invocation walk. Standard CRC-32 polynomial
 //! 0xEDB88320 (reflected), init 0xFFFFFFFF, final XOR 0xFFFFFFFF,
-//! computed bit-by-bit without a lookup table to keep the body
-//! compact (well under the Tier-2 size cap).
+//! delegated to the Tier-2.5 primitive so this wrapper owns only naming,
+//! provenance, and harness registration.
 //!
 //! `input[i]` packs one byte per u32 slot (low 8 bits). `out[0]`
 //! receives the final CRC-32.
 
-use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
+use vyre::ir::{BufferAccess, BufferDecl, DataType, Program};
+use vyre_foundation::ir::model::expr::GeneratorRef;
+use vyre_primitives::hash::crc32::{crc32_program, CRC32_OP_ID};
 
 #[cfg(test)]
 use crate::buffer_names::fixed_name;
 use crate::buffer_names::scoped_generic_name;
+#[cfg(test)]
+use vyre_primitives::hash::crc32::crc32 as crc32_cpu_reference;
 
 const OP_ID: &str = "vyre-libs::hash::crc32";
 const FAMILY_PREFIX: &str = "hash_crc32";
-const POLY_REFLECTED: u32 = 0xEDB8_8320;
-const INIT: u32 = 0xFFFF_FFFF;
-const FINAL_XOR: u32 = 0xFFFF_FFFF;
 
 fn scoped_input_buffer(name: &str) -> String {
     scoped_generic_name(FAMILY_PREFIX, "input", name, &["input"])
@@ -33,74 +34,30 @@ fn scoped_output_buffer(name: &str) -> String {
 pub fn crc32(input: &str, out: &str, n: u32) -> Program {
     let input = scoped_input_buffer(input);
     let out = scoped_output_buffer(out);
-    let body = vec![crate::region::wrap_anonymous(
-        OP_ID,
-        vec![Node::if_then(
-            Expr::eq(Expr::InvocationId { axis: 0 }, Expr::u32(0)),
-            vec![
-                Node::let_bind("crc", Expr::u32(INIT)),
-                Node::loop_for(
-                    "i",
-                    Expr::u32(0),
-                    Expr::u32(n),
-                    vec![
-                        Node::assign(
-                            "crc",
-                            Expr::bitxor(Expr::var("crc"), Expr::load(&input, Expr::var("i"))),
-                        ),
-                        Node::loop_for(
-                            "bit",
-                            Expr::u32(0),
-                            Expr::u32(8),
-                            vec![Node::assign(
-                                "crc",
-                                Expr::Select {
-                                    cond: Box::new(Expr::ne(
-                                        Expr::bitand(Expr::var("crc"), Expr::u32(1)),
-                                        Expr::u32(0),
-                                    )),
-                                    true_val: Box::new(Expr::bitxor(
-                                        Expr::shr(Expr::var("crc"), Expr::u32(1)),
-                                        Expr::u32(POLY_REFLECTED),
-                                    )),
-                                    false_val: Box::new(Expr::shr(Expr::var("crc"), Expr::u32(1))),
-                                },
-                            )],
-                        ),
-                    ],
-                ),
-                Node::store(
-                    &out,
-                    Expr::u32(0),
-                    Expr::bitxor(Expr::var("crc"), Expr::u32(FINAL_XOR)),
-                ),
-            ],
-        )],
-    )];
+    let primitive = crc32_program(&input, &out, n);
+    let parent = GeneratorRef {
+        name: OP_ID.to_string(),
+    };
     Program::wrapped(
         vec![
             BufferDecl::storage(&input, 0, BufferAccess::ReadOnly, DataType::U32).with_count(n),
             BufferDecl::output(&out, 1, DataType::U32).with_count(1),
         ],
         [1, 1, 1],
-        body,
+        vec![crate::region::wrap_anonymous(
+            OP_ID,
+            vec![crate::region::wrap_child(
+                CRC32_OP_ID,
+                parent,
+                primitive.into_entry_vec(),
+            )],
+        )],
     )
 }
 
 #[cfg(test)]
 fn cpu_ref(input: &[u8]) -> u32 {
-    let mut crc: u32 = INIT;
-    for &b in input {
-        crc ^= u32::from(b);
-        for _ in 0..8 {
-            crc = if (crc & 1) != 0 {
-                (crc >> 1) ^ POLY_REFLECTED
-            } else {
-                crc >> 1
-            };
-        }
-    }
-    crc ^ FINAL_XOR
+    crc32_cpu_reference(input)
 }
 
 inventory::submit! {
@@ -110,26 +67,35 @@ inventory::submit! {
         test_inputs: Some(|| {
             let mut bytes = Vec::with_capacity(12);
             for &b in b"abc" { bytes.extend_from_slice(&u32::from(b).to_le_bytes()); }
-            vec![vec![bytes, vec![0u8; 4]]]
+            vec![vec![bytes]]
         }),
         // Canonical CRC-32 of "abc" (reflected poly 0xEDB88320) = 0x352441c2.
         expected_output: Some(|| vec![vec![0x352441c2u32.to_le_bytes().to_vec()]]),
+        category: None,
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hash::pack_bytes_as_u32;
     use vyre_reference::value::Value;
 
     fn run(bytes: &[u8]) -> u32 {
-        let n = bytes.len().max(1) as u32;
+        let words = bytes
+            .iter()
+            .map(|&byte| u32::from(byte))
+            .collect::<Vec<_>>();
+        run_words(&words)
+    }
+
+    fn run_words(words: &[u32]) -> u32 {
+        let n = words.len().max(1) as u32;
         let program = crc32("input", "out", n);
-        let inputs = vec![
-            Value::Bytes(pack_bytes_as_u32(bytes).into()),
-            Value::Bytes(vec![0u8; 4].into()),
-        ];
+        let mut input = Vec::with_capacity(words.len() * 4);
+        for &word in words {
+            input.extend_from_slice(&word.to_le_bytes());
+        }
+        let inputs = vec![Value::Bytes(input.into())];
         let outputs = vyre_reference::reference_eval(&program, &inputs)
             .expect("Fix: crc32 must run; restore this invariant before continuing.");
         let raw = outputs[0].to_bytes();
@@ -151,6 +117,24 @@ mod tests {
     fn random_64_bytes_match_ref() {
         let bytes: Vec<u8> = (0u8..64).collect();
         assert_eq!(run(&bytes), cpu_ref(&bytes));
+    }
+
+    #[test]
+    fn high_bits_in_packed_slots_are_ignored() {
+        let words = [0xFFFF_FF61, 0xCAFE_0062, 0x8000_0063];
+        assert_eq!(run_words(&words), cpu_ref(b"abc"));
+    }
+
+    #[test]
+    fn wrapper_delegates_to_primitive_crc32_region() {
+        let program = crc32("input", "out", 3);
+        let [vyre::ir::Node::Region { body, .. }] = program.entry() else {
+            panic!("expected one top-level CRC32 wrapper region");
+        };
+        let [vyre::ir::Node::Region { generator, .. }] = body.as_ref().as_slice() else {
+            panic!("expected CRC32 wrapper to contain one primitive child region");
+        };
+        assert_eq!(generator.as_str(), CRC32_OP_ID);
     }
 
     #[test]

@@ -1,6 +1,10 @@
-//! Audit-fix A36 `vast/ref_typedef.rs` extract.
+//! Explicit CPU oracle for C typedef-name annotation.
+//!
+//! Production typedef annotation must use the dispatchable
+//! `c11_annotate_typedef_names*` builders. This module is retained for
+//! conformance witnesses and parity fixtures only.
 
-#![allow(missing_docs)] // c-parser feature: A33-A36 split lost some leading doc comments; lint loud, fix surgically when revisiting docs.
+#![allow(missing_docs)] // Internal oracle helpers are documented at the owning module boundary.
 use crate::parsing::c::lex::tokens::*;
 
 use super::expr_shape::*;
@@ -24,6 +28,34 @@ use expressions::*;
 use identifiers::*;
 use scopes::*;
 
+pub(super) fn vast_field_at(vast_nodes: &[u32], node_idx: usize, field_idx: usize) -> u32 {
+    let word_idx = node_idx
+        .checked_mul(VAST_NODE_STRIDE_U32 as usize)
+        .and_then(|base| base.checked_add(field_idx))
+        .expect("C typedef VAST field index overflow. Fix: pass a bounded complete VAST table.");
+    *vast_nodes.get(word_idx).unwrap_or_else(|| {
+        panic!(
+            "C typedef VAST node {node_idx} is missing field {field_idx}. Fix: pass complete VAST rows."
+        )
+    })
+}
+
+pub(super) fn parent_at(vast_nodes: &[u32], node_idx: usize) -> u32 {
+    vast_field_at(vast_nodes, node_idx, 1)
+}
+
+pub(super) fn first_child_at(vast_nodes: &[u32], node_idx: usize) -> u32 {
+    vast_field_at(vast_nodes, node_idx, 2)
+}
+
+pub(super) fn next_sibling_at(vast_nodes: &[u32], node_idx: usize) -> u32 {
+    vast_field_at(vast_nodes, node_idx, 3)
+}
+
+pub(super) fn flags_at(vast_nodes: &[u32], node_idx: usize) -> u32 {
+    vast_field_at(vast_nodes, node_idx, VAST_TYPEDEF_FLAGS_FIELD as usize)
+}
+
 pub(super) fn kind_at(vast_nodes: &[u32], node_idx: usize) -> u32 {
     expressions::kind_at_impl(vast_nodes, node_idx)
 }
@@ -32,6 +64,10 @@ pub(super) fn reference_typed_kind(vast_nodes: &[u32], node_idx: usize) -> u32 {
     typed_kind::reference_typed_kind(vast_nodes, node_idx)
 }
 
+#[deprecated(
+    note = "CPU oracle only; production typedef annotation must dispatch c11_annotate_typedef_names* builders"
+)]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn try_reference_c11_annotate_typedef_names(
     vast_node_bytes: &[u8],
     haystack: &[u8],
@@ -45,6 +81,13 @@ pub fn try_reference_c11_annotate_typedef_names(
 
 /// CPU oracle for `c11_annotate_typedef_names`.
 #[must_use]
+#[deprecated(
+    note = "CPU oracle only; production typedef annotation must dispatch c11_annotate_typedef_names* builders"
+)]
+#[allow(deprecated)]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn reference_c11_annotate_typedef_names(vast_node_bytes: &[u8], haystack: &[u8]) -> Vec<u8> {
-    try_reference_c11_annotate_typedef_names(vast_node_bytes, haystack).unwrap_or_default()
+    try_reference_c11_annotate_typedef_names(vast_node_bytes, haystack).unwrap_or_else(|error| {
+        panic!("C VAST typedef reference oracle received malformed input: {error}")
+    })
 }

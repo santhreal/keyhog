@@ -32,6 +32,7 @@ inventory::submit! {
         build: || bit_reverse_u32("input", "out", 4),
         test_inputs: Some(test_inputs),
         expected_output: Some(expected_output),
+        category: Some("hardware"),
     }
 }
 

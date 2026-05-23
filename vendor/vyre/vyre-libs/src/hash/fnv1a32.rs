@@ -85,12 +85,12 @@ inventory::submit! {
         build: || fnv1a32_n("input", "out", 3),
         test_inputs: Some(|| vec![vec![
             vec![0x61, 0, 0, 0, 0x62, 0, 0, 0, 0x63, 0, 0, 0],
-            vec![0, 0, 0, 0],
         ]]),
         expected_output: Some(|| vec![{
             let hash = 0x1a47_e90bu32;
             vec![hash.to_le_bytes().to_vec()]
         }]),
+        category: None,
     }
 }
 

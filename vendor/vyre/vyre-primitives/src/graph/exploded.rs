@@ -39,6 +39,14 @@
 //! `vyre-libs::dataflow::ifds_gpu` and composes this encoding with
 //! `csr_forward_traverse`.
 
+use std::sync::Arc;
+
+use vyre_foundation::ir::model::expr::Ident;
+use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
+
+/// Canonical op id for the IFDS CSR construction program.
+pub const OP_ID: &str = "vyre-primitives::graph::exploded_build_ifds_csr";
+
 /// Bits reserved for each component of the packed node id.
 pub const PROC_BITS: u32 = 12;
 /// Bits reserved for the basic-block component of the packed node id.
@@ -67,6 +75,707 @@ const PROC_SHIFT: u32 = FACT_BITS + BLOCK_BITS;
 const FACT_MASK: u32 = MAX_FACT_ID;
 const BLOCK_MASK: u32 = MAX_BLOCK_ID;
 const PROC_MASK: u32 = MAX_PROC_ID;
+
+/// Checked dispatch layout for an exploded IFDS CSR build.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct IfdsCsrLayout {
+    /// Whether the declared IFDS domain is empty and should not dispatch.
+    pub empty: bool,
+    /// Number of procedures in the exploded domain.
+    pub num_procs: u32,
+    /// Number of blocks per procedure.
+    pub blocks_per_proc: u32,
+    /// Number of facts per procedure.
+    pub facts_per_proc: u32,
+    /// Number of intra-procedural control-flow edges.
+    pub intra_count: u32,
+    /// Number of inter-procedural call/return edges.
+    pub inter_count: u32,
+    /// Number of GEN rules.
+    pub gen_count: u32,
+    /// Number of KILL rules.
+    pub kill_count: u32,
+    /// Number of u32 words required by each intra edge field buffer.
+    pub intra_storage_words: usize,
+    /// Number of u32 words required by each inter edge field buffer.
+    pub inter_storage_words: usize,
+    /// Number of u32 words required by each GEN rule field buffer.
+    pub gen_storage_words: usize,
+    /// Number of u32 words required by each KILL rule field buffer.
+    pub kill_storage_words: usize,
+    /// Dense nodes per procedure.
+    pub slots_per_proc: u32,
+    /// Total dense node count.
+    pub total_nodes: u32,
+    /// Number of `u32` words in `row_ptr`.
+    pub row_words: usize,
+    /// Number of `u32` words in the dispatch row cursor scratch buffer.
+    pub row_cursor_words: usize,
+    /// Maximum emitted column count for the declared edge/rule counts.
+    pub max_col_count: u32,
+    /// Number of `u32` words allocated for `col_idx`.
+    pub col_buffer_words: usize,
+}
+
+/// Checked exploded-supergraph node count.
+#[must_use]
+pub fn ifds_node_count_checked(
+    num_procs: u32,
+    blocks_per_proc: u32,
+    facts_per_proc: u32,
+) -> Option<u32> {
+    num_procs
+        .checked_mul(blocks_per_proc)?
+        .checked_mul(facts_per_proc)
+}
+
+/// Saturating exploded-supergraph node count for capacity planning UIs.
+#[must_use]
+pub fn ifds_node_count_saturating(
+    num_procs: u32,
+    blocks_per_proc: u32,
+    facts_per_proc: u32,
+) -> u32 {
+    num_procs
+        .saturating_mul(blocks_per_proc)
+        .saturating_mul(facts_per_proc)
+}
+
+/// Maximum column count needed by the deterministic IFDS CSR builder.
+#[must_use]
+pub fn max_ifds_col_count(
+    intra_count: u32,
+    inter_count: u32,
+    gen_count: u32,
+    facts_per_proc: u32,
+) -> Option<u32> {
+    intra_count
+        .checked_mul(facts_per_proc)
+        .and_then(|v| v.checked_add(intra_count.checked_mul(gen_count)?))
+        .and_then(|v| v.checked_add(inter_count.checked_mul(facts_per_proc)?))
+}
+
+/// Validate dimensions/counts and return the exact dispatch buffer layout.
+pub fn validate_ifds_csr_layout(
+    num_procs: u32,
+    blocks_per_proc: u32,
+    facts_per_proc: u32,
+    intra_count: u32,
+    inter_count: u32,
+    gen_count: u32,
+) -> Result<IfdsCsrLayout, String> {
+    if num_procs == 0 || blocks_per_proc == 0 || facts_per_proc == 0 {
+        return Err(format!(
+            "Fix: exploded IFDS dimensions must be nonzero, got procs={num_procs}, blocks={blocks_per_proc}, facts={facts_per_proc}."
+        ));
+    }
+    if !fits(
+        num_procs.saturating_sub(1),
+        blocks_per_proc.saturating_sub(1),
+        facts_per_proc.saturating_sub(1),
+    ) {
+        return Err(format!(
+            "Fix: exploded IFDS dimensions exceed packed IFDS limits: procs={num_procs}, blocks={blocks_per_proc}, facts={facts_per_proc}."
+        ));
+    }
+    let slots_per_proc = blocks_per_proc.checked_mul(facts_per_proc).ok_or_else(|| {
+        format!(
+            "Fix: exploded IFDS blocks*facts overflows u32: {blocks_per_proc}*{facts_per_proc}."
+        )
+    })?;
+    let total_nodes = num_procs.checked_mul(slots_per_proc).ok_or_else(|| {
+        format!(
+            "Fix: exploded IFDS procs*blocks*facts overflows u32: {num_procs}*{blocks_per_proc}*{facts_per_proc}."
+        )
+    })?;
+    let row_ptr_count = total_nodes.checked_add(1).ok_or_else(|| {
+        format!(
+            "Fix: exploded IFDS total_nodes={total_nodes} overflows row_ptr count. Shard the IFDS graph before GPU dispatch."
+        )
+    })?;
+    let max_col_count = max_ifds_col_count(intra_count, inter_count, gen_count, facts_per_proc)
+        .ok_or_else(|| "Fix: exploded IFDS maximum column count overflows u32.".to_string())?;
+    Ok(IfdsCsrLayout {
+        empty: false,
+        num_procs,
+        blocks_per_proc,
+        facts_per_proc,
+        intra_count,
+        inter_count,
+        gen_count,
+        kill_count: 0,
+        intra_storage_words: (intra_count as usize).max(1),
+        inter_storage_words: (inter_count as usize).max(1),
+        gen_storage_words: (gen_count as usize).max(1),
+        kill_storage_words: 1,
+        slots_per_proc,
+        total_nodes,
+        row_words: row_ptr_count as usize,
+        row_cursor_words: (total_nodes as usize).max(1),
+        max_col_count,
+        col_buffer_words: (max_col_count as usize).max(1),
+    })
+}
+
+/// Validate the full IFDS CSR dispatch contract from caller-owned rule slices.
+///
+/// Returns the exact primitive dispatch layout so consumers do not narrow rule
+/// counts or decide padded input-buffer widths locally.
+pub fn validate_ifds_csr_inputs(
+    num_procs: u32,
+    blocks_per_proc: u32,
+    facts_per_proc: u32,
+    intra_edges: &[(u32, u32, u32)],
+    inter_edges: &[(u32, u32, u32, u32)],
+    flow_gen: &[(u32, u32, u32)],
+    flow_kill: &[(u32, u32, u32)],
+) -> Result<IfdsCsrLayout, String> {
+    let intra_count = checked_rule_count("intra edge", intra_edges.len())?;
+    let inter_count = checked_rule_count("inter edge", inter_edges.len())?;
+    let gen_count = checked_rule_count("GEN", flow_gen.len())?;
+    let kill_count = checked_rule_count("KILL", flow_kill.len())?;
+
+    if num_procs == 0 || blocks_per_proc == 0 || facts_per_proc == 0 {
+        if intra_count == 0 && inter_count == 0 && gen_count == 0 && kill_count == 0 {
+            return Ok(IfdsCsrLayout {
+                empty: true,
+                num_procs,
+                blocks_per_proc,
+                facts_per_proc,
+                intra_count,
+                inter_count,
+                gen_count,
+                kill_count,
+                intra_storage_words: 1,
+                inter_storage_words: 1,
+                gen_storage_words: 1,
+                kill_storage_words: 1,
+                slots_per_proc: 0,
+                total_nodes: 0,
+                row_words: 1,
+                row_cursor_words: 1,
+                max_col_count: 0,
+                col_buffer_words: 1,
+            });
+        }
+        return Err(format!(
+            "Fix: exploded IFDS empty dimensions cannot carry rules, got intra={intra_count}, inter={inter_count}, gen={gen_count}, kill={kill_count}."
+        ));
+    }
+
+    let mut layout = validate_ifds_csr_layout(
+        num_procs,
+        blocks_per_proc,
+        facts_per_proc,
+        intra_count,
+        inter_count,
+        gen_count,
+    )?;
+    layout.kill_count = kill_count;
+    layout.kill_storage_words = flow_kill.len().max(1);
+    Ok(layout)
+}
+
+fn checked_rule_count(kind: &str, len: usize) -> Result<u32, String> {
+    u32::try_from(len)
+        .map_err(|_| format!("Fix: exploded IFDS {kind} count {len} exceeds u32 index space."))
+}
+
+/// Sort each CSR row in place after validating row ranges.
+pub fn canonicalize_csr_within_rows_in_place(
+    row_ptr: &[u32],
+    col_idx: &mut [u32],
+) -> Result<(), String> {
+    for window in row_ptr.windows(2) {
+        let start = window[0] as usize;
+        let end = window[1] as usize;
+        if start > end || end > col_idx.len() {
+            return Err(format!(
+                "Fix: exploded IFDS CSR row range {start}..{end} exceeds col_idx.len()={}.",
+                col_idx.len()
+            ));
+        }
+        col_idx[start..end].sort_unstable();
+    }
+    Ok(())
+}
+
+/// Return a row-canonical CSR copy.
+#[must_use]
+pub fn canonicalize_csr_within_rows(row_ptr: &[u32], col_idx: &[u32]) -> (Vec<u32>, Vec<u32>) {
+    let mut canonical_col = col_idx.to_vec();
+    canonicalize_csr_within_rows_in_place(row_ptr, &mut canonical_col)
+        .expect("exploded IFDS CSR canonicalization received invalid row_ptr/col_idx");
+    (row_ptr.to_vec(), canonical_col)
+}
+
+/// Build a GPU Program that emits the exploded-supergraph CSR.
+///
+/// This is a deterministic single-lane construction pass: count each
+/// source row, prefix row counts, then fill `col_idx`. It removes the
+/// production CPU-reference path while preserving a stable API for a
+/// later parallel count/scan/fill implementation.
+#[must_use]
+#[allow(clippy::too_many_arguments)]
+pub fn build_ifds_csr_program(
+    num_procs: u32,
+    blocks_per_proc: u32,
+    facts_per_proc: u32,
+    intra_count: u32,
+    inter_count: u32,
+    gen_count: u32,
+    kill_count: u32,
+    max_col_count: u32,
+) -> Program {
+    if num_procs == 0 || blocks_per_proc == 0 || facts_per_proc == 0 {
+        return crate::invalid_output_program(
+            OP_ID,
+            "row_ptr",
+            DataType::U32,
+            format!(
+                "Fix: exploded IFDS dimensions must be nonzero, got procs={num_procs}, blocks={blocks_per_proc}, facts={facts_per_proc}."
+            ),
+        );
+    }
+    let Some(slots_per_proc) = blocks_per_proc.checked_mul(facts_per_proc) else {
+        return crate::invalid_output_program(
+            OP_ID,
+            "row_ptr",
+            DataType::U32,
+            "Fix: exploded IFDS slots_per_proc overflowed u32.".to_string(),
+        );
+    };
+    let Some(total_nodes) = num_procs.checked_mul(slots_per_proc) else {
+        return crate::invalid_output_program(
+            OP_ID,
+            "row_ptr",
+            DataType::U32,
+            "Fix: exploded IFDS total node count overflowed u32.".to_string(),
+        );
+    };
+    let Some(row_ptr_count) = total_nodes.checked_add(1) else {
+        return crate::invalid_output_program(
+            OP_ID,
+            "row_ptr",
+            DataType::U32,
+            format!(
+                "Fix: exploded IFDS total_nodes={total_nodes} overflows row_ptr count. Shard the IFDS graph before GPU dispatch."
+            ),
+        );
+    };
+
+    let idx_expr = |p: Expr, b: Expr, f: Expr| {
+        Expr::add(
+            Expr::add(
+                Expr::mul(p, Expr::u32(slots_per_proc)),
+                Expr::mul(b, Expr::u32(facts_per_proc)),
+            ),
+            f,
+        )
+    };
+    let in_proc_block = |p: Expr, b: Expr| {
+        Expr::and(
+            Expr::lt(p, Expr::u32(num_procs)),
+            Expr::lt(b, Expr::u32(blocks_per_proc)),
+        )
+    };
+    let valid_intra = Expr::and(
+        in_proc_block(Expr::var("intra_p"), Expr::var("intra_src_b")),
+        Expr::lt(Expr::var("intra_dst_b"), Expr::u32(blocks_per_proc)),
+    );
+    let valid_inter = Expr::and(
+        in_proc_block(Expr::var("inter_sp"), Expr::var("inter_sb")),
+        in_proc_block(Expr::var("inter_dp"), Expr::var("inter_db")),
+    );
+
+    let count_row = |src: Expr| {
+        Node::store(
+            "row_ptr",
+            Expr::add(src.clone(), Expr::u32(1)),
+            Expr::add(
+                Expr::load("row_ptr", Expr::add(src, Expr::u32(1))),
+                Expr::u32(1),
+            ),
+        )
+    };
+    let fill_col = |src: Expr, dst: Expr| {
+        vec![
+            Node::let_bind("emit_slot", Expr::load("row_cursor", src.clone())),
+            Node::store("col_idx", Expr::var("emit_slot"), dst),
+            Node::store(
+                "row_cursor",
+                src,
+                Expr::add(Expr::var("emit_slot"), Expr::u32(1)),
+            ),
+        ]
+    };
+
+    let kill_scan = vec![
+        Node::let_bind("is_killed", Expr::u32(0)),
+        Node::loop_for(
+            "kill_i",
+            Expr::u32(0),
+            Expr::u32(kill_count),
+            vec![
+                Node::let_bind("kill_p", Expr::load("kill_proc", Expr::var("kill_i"))),
+                Node::let_bind("kill_b", Expr::load("kill_block", Expr::var("kill_i"))),
+                Node::let_bind("kill_f", Expr::load("kill_fact", Expr::var("kill_i"))),
+                Node::if_then(
+                    Expr::and(
+                        Expr::and(
+                            Expr::eq(Expr::var("kill_p"), Expr::var("intra_p")),
+                            Expr::eq(Expr::var("kill_b"), Expr::var("intra_src_b")),
+                        ),
+                        Expr::eq(Expr::var("kill_f"), Expr::var("fact")),
+                    ),
+                    vec![Node::assign("is_killed", Expr::u32(1))],
+                ),
+            ],
+        ),
+    ];
+
+    let mut count_intra_fact = kill_scan.clone();
+    count_intra_fact.push(Node::if_then(
+        Expr::eq(Expr::var("is_killed"), Expr::u32(0)),
+        vec![
+            Node::let_bind(
+                "src_dense",
+                idx_expr(
+                    Expr::var("intra_p"),
+                    Expr::var("intra_src_b"),
+                    Expr::var("fact"),
+                ),
+            ),
+            count_row(Expr::var("src_dense")),
+        ],
+    ));
+
+    let count_gen = vec![
+        Node::let_bind("gen_p", Expr::load("gen_proc", Expr::var("gen_i"))),
+        Node::let_bind("gen_b", Expr::load("gen_block", Expr::var("gen_i"))),
+        Node::let_bind("gen_f", Expr::load("gen_fact", Expr::var("gen_i"))),
+        Node::if_then(
+            Expr::and(
+                Expr::and(
+                    Expr::eq(Expr::var("gen_p"), Expr::var("intra_p")),
+                    Expr::eq(Expr::var("gen_b"), Expr::var("intra_src_b")),
+                ),
+                Expr::lt(Expr::var("gen_f"), Expr::u32(facts_per_proc)),
+            ),
+            vec![
+                Node::let_bind(
+                    "src_dense",
+                    idx_expr(Expr::var("intra_p"), Expr::var("intra_src_b"), Expr::u32(0)),
+                ),
+                count_row(Expr::var("src_dense")),
+            ],
+        ),
+    ];
+
+    let mut fill_intra_fact = kill_scan;
+    fill_intra_fact.push(Node::if_then(
+        Expr::eq(Expr::var("is_killed"), Expr::u32(0)),
+        {
+            let mut nodes = vec![
+                Node::let_bind(
+                    "src_dense",
+                    idx_expr(
+                        Expr::var("intra_p"),
+                        Expr::var("intra_src_b"),
+                        Expr::var("fact"),
+                    ),
+                ),
+                Node::let_bind(
+                    "dst_dense",
+                    idx_expr(
+                        Expr::var("intra_p"),
+                        Expr::var("intra_dst_b"),
+                        Expr::var("fact"),
+                    ),
+                ),
+            ];
+            nodes.extend(fill_col(Expr::var("src_dense"), Expr::var("dst_dense")));
+            nodes
+        },
+    ));
+
+    let fill_gen = vec![
+        Node::let_bind("gen_p", Expr::load("gen_proc", Expr::var("gen_i"))),
+        Node::let_bind("gen_b", Expr::load("gen_block", Expr::var("gen_i"))),
+        Node::let_bind("gen_f", Expr::load("gen_fact", Expr::var("gen_i"))),
+        Node::if_then(
+            Expr::and(
+                Expr::and(
+                    Expr::eq(Expr::var("gen_p"), Expr::var("intra_p")),
+                    Expr::eq(Expr::var("gen_b"), Expr::var("intra_src_b")),
+                ),
+                Expr::lt(Expr::var("gen_f"), Expr::u32(facts_per_proc)),
+            ),
+            {
+                let mut nodes = vec![
+                    Node::let_bind(
+                        "src_dense",
+                        idx_expr(Expr::var("intra_p"), Expr::var("intra_src_b"), Expr::u32(0)),
+                    ),
+                    Node::let_bind(
+                        "dst_dense",
+                        idx_expr(
+                            Expr::var("intra_p"),
+                            Expr::var("intra_dst_b"),
+                            Expr::var("gen_f"),
+                        ),
+                    ),
+                ];
+                nodes.extend(fill_col(Expr::var("src_dense"), Expr::var("dst_dense")));
+                nodes
+            },
+        ),
+    ];
+
+    let mut entry = vec![
+        Node::loop_for(
+            "row_i",
+            Expr::u32(0),
+            Expr::u32(row_ptr_count),
+            vec![Node::store("row_ptr", Expr::var("row_i"), Expr::u32(0))],
+        ),
+        Node::store("col_len", Expr::u32(0), Expr::u32(0)),
+    ];
+
+    entry.push(Node::loop_for(
+        "intra_i",
+        Expr::u32(0),
+        Expr::u32(intra_count),
+        vec![
+            Node::let_bind("intra_p", Expr::load("intra_proc", Expr::var("intra_i"))),
+            Node::let_bind(
+                "intra_src_b",
+                Expr::load("intra_src_block", Expr::var("intra_i")),
+            ),
+            Node::let_bind(
+                "intra_dst_b",
+                Expr::load("intra_dst_block", Expr::var("intra_i")),
+            ),
+            Node::if_then(
+                valid_intra.clone(),
+                vec![
+                    Node::loop_for(
+                        "fact",
+                        Expr::u32(0),
+                        Expr::u32(facts_per_proc),
+                        count_intra_fact,
+                    ),
+                    Node::loop_for("gen_i", Expr::u32(0), Expr::u32(gen_count), count_gen),
+                ],
+            ),
+        ],
+    ));
+    entry.push(Node::loop_for(
+        "inter_i",
+        Expr::u32(0),
+        Expr::u32(inter_count),
+        vec![
+            Node::let_bind(
+                "inter_sp",
+                Expr::load("inter_src_proc", Expr::var("inter_i")),
+            ),
+            Node::let_bind(
+                "inter_sb",
+                Expr::load("inter_src_block", Expr::var("inter_i")),
+            ),
+            Node::let_bind(
+                "inter_dp",
+                Expr::load("inter_dst_proc", Expr::var("inter_i")),
+            ),
+            Node::let_bind(
+                "inter_db",
+                Expr::load("inter_dst_block", Expr::var("inter_i")),
+            ),
+            Node::if_then(
+                valid_inter.clone(),
+                vec![Node::loop_for(
+                    "fact",
+                    Expr::u32(0),
+                    Expr::u32(facts_per_proc),
+                    vec![
+                        Node::let_bind(
+                            "src_dense",
+                            idx_expr(
+                                Expr::var("inter_sp"),
+                                Expr::var("inter_sb"),
+                                Expr::var("fact"),
+                            ),
+                        ),
+                        count_row(Expr::var("src_dense")),
+                    ],
+                )],
+            ),
+        ],
+    ));
+    entry.extend([
+        Node::let_bind("prefix_sum", Expr::u32(0)),
+        Node::loop_for(
+            "prefix_row",
+            Expr::u32(0),
+            Expr::u32(total_nodes),
+            vec![
+                Node::let_bind(
+                    "row_count",
+                    Expr::load("row_ptr", Expr::add(Expr::var("prefix_row"), Expr::u32(1))),
+                ),
+                Node::assign(
+                    "prefix_sum",
+                    Expr::add(Expr::var("prefix_sum"), Expr::var("row_count")),
+                ),
+                Node::store(
+                    "row_ptr",
+                    Expr::add(Expr::var("prefix_row"), Expr::u32(1)),
+                    Expr::var("prefix_sum"),
+                ),
+            ],
+        ),
+        Node::store("col_len", Expr::u32(0), Expr::var("prefix_sum")),
+        Node::loop_for(
+            "cursor_row",
+            Expr::u32(0),
+            Expr::u32(total_nodes),
+            vec![Node::store(
+                "row_cursor",
+                Expr::var("cursor_row"),
+                Expr::load("row_ptr", Expr::var("cursor_row")),
+            )],
+        ),
+    ]);
+    entry.push(Node::loop_for(
+        "intra_i",
+        Expr::u32(0),
+        Expr::u32(intra_count),
+        vec![
+            Node::let_bind("intra_p", Expr::load("intra_proc", Expr::var("intra_i"))),
+            Node::let_bind(
+                "intra_src_b",
+                Expr::load("intra_src_block", Expr::var("intra_i")),
+            ),
+            Node::let_bind(
+                "intra_dst_b",
+                Expr::load("intra_dst_block", Expr::var("intra_i")),
+            ),
+            Node::if_then(
+                valid_intra,
+                vec![
+                    Node::loop_for(
+                        "fact",
+                        Expr::u32(0),
+                        Expr::u32(facts_per_proc),
+                        fill_intra_fact,
+                    ),
+                    Node::loop_for("gen_i", Expr::u32(0), Expr::u32(gen_count), fill_gen),
+                ],
+            ),
+        ],
+    ));
+    entry.push(Node::loop_for(
+        "inter_i",
+        Expr::u32(0),
+        Expr::u32(inter_count),
+        vec![
+            Node::let_bind(
+                "inter_sp",
+                Expr::load("inter_src_proc", Expr::var("inter_i")),
+            ),
+            Node::let_bind(
+                "inter_sb",
+                Expr::load("inter_src_block", Expr::var("inter_i")),
+            ),
+            Node::let_bind(
+                "inter_dp",
+                Expr::load("inter_dst_proc", Expr::var("inter_i")),
+            ),
+            Node::let_bind(
+                "inter_db",
+                Expr::load("inter_dst_block", Expr::var("inter_i")),
+            ),
+            Node::if_then(
+                valid_inter,
+                vec![Node::loop_for(
+                    "fact",
+                    Expr::u32(0),
+                    Expr::u32(facts_per_proc),
+                    {
+                        let mut nodes = vec![
+                            Node::let_bind(
+                                "src_dense",
+                                idx_expr(
+                                    Expr::var("inter_sp"),
+                                    Expr::var("inter_sb"),
+                                    Expr::var("fact"),
+                                ),
+                            ),
+                            Node::let_bind(
+                                "dst_dense",
+                                idx_expr(
+                                    Expr::var("inter_dp"),
+                                    Expr::var("inter_db"),
+                                    Expr::var("fact"),
+                                ),
+                            ),
+                        ];
+                        nodes.extend(fill_col(Expr::var("src_dense"), Expr::var("dst_dense")));
+                        nodes
+                    },
+                )],
+            ),
+        ],
+    ));
+
+    Program::wrapped(
+        vec![
+            BufferDecl::storage("intra_proc", 0, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(intra_count.max(1)),
+            BufferDecl::storage("intra_src_block", 1, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(intra_count.max(1)),
+            BufferDecl::storage("intra_dst_block", 2, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(intra_count.max(1)),
+            BufferDecl::storage("inter_src_proc", 3, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(inter_count.max(1)),
+            BufferDecl::storage("inter_src_block", 4, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(inter_count.max(1)),
+            BufferDecl::storage("inter_dst_proc", 5, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(inter_count.max(1)),
+            BufferDecl::storage("inter_dst_block", 6, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(inter_count.max(1)),
+            BufferDecl::storage("gen_proc", 7, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(gen_count.max(1)),
+            BufferDecl::storage("gen_block", 8, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(gen_count.max(1)),
+            BufferDecl::storage("gen_fact", 9, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(gen_count.max(1)),
+            BufferDecl::storage("kill_proc", 10, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(kill_count.max(1)),
+            BufferDecl::storage("kill_block", 11, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(kill_count.max(1)),
+            BufferDecl::storage("kill_fact", 12, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(kill_count.max(1)),
+            BufferDecl::storage("row_ptr", 13, BufferAccess::ReadWrite, DataType::U32)
+                .with_count(row_ptr_count),
+            BufferDecl::storage("row_cursor", 14, BufferAccess::ReadWrite, DataType::U32)
+                .with_count(total_nodes.max(1)),
+            BufferDecl::storage("col_idx", 15, BufferAccess::ReadWrite, DataType::U32)
+                .with_count(max_col_count.max(1)),
+            BufferDecl::storage("col_len", 16, BufferAccess::ReadWrite, DataType::U32)
+                .with_count(1),
+        ],
+        [1, 1, 1],
+        vec![Node::Region {
+            generator: Ident::from(OP_ID),
+            source_region: None,
+            body: Arc::new(vec![Node::if_then(
+                Expr::eq(Expr::gid_x(), Expr::u32(0)),
+                entry,
+            )]),
+        }],
+    )
+}
 
 /// Pack a `(proc_id, block_id, fact_id)` triple into a 32-bit
 /// node id.
@@ -114,6 +823,7 @@ pub fn fits(proc_id: u32, block_id: u32, fact_id: u32) -> bool {
 /// the dense layout works for any dimensions that fit in
 /// 32-bit encoding.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn build_cpu_reference(
     num_procs: u32,
     blocks_per_proc: u32,
@@ -124,14 +834,14 @@ pub fn build_cpu_reference(
     flow_kill: &[(u32, u32, u32)],   // (proc, block, fact) — KILL bits
 ) -> (Vec<u32>, Vec<u32>) {
     if num_procs == 0 || blocks_per_proc == 0 || facts_per_proc == 0 {
-        return (vec![0], Vec::new());
+        panic!(
+            "exploded IFDS CPU reference dimensions must be nonzero, got procs={num_procs}, blocks={blocks_per_proc}, facts={facts_per_proc}. Fix: pass a real exploded-supergraph domain before parity comparison."
+        );
     }
-    if !fits(
-        num_procs.saturating_sub(1),
-        blocks_per_proc.saturating_sub(1),
-        facts_per_proc.saturating_sub(1),
-    ) {
-        return (vec![0], Vec::new());
+    if !fits(num_procs - 1, blocks_per_proc - 1, facts_per_proc - 1) {
+        panic!(
+            "exploded IFDS CPU reference dimensions exceed packed node-id limits: procs={num_procs}, blocks={blocks_per_proc}, facts={facts_per_proc}. Fix: shard the IFDS graph before parity comparison."
+        );
     }
 
     // PHASE7_GRAPH C4: every multiply checked. The previous unchecked
@@ -143,13 +853,19 @@ pub fn build_cpu_reference(
     // the edge-emit loops below.
     let Some(slots_per_proc) = (blocks_per_proc as usize).checked_mul(facts_per_proc as usize)
     else {
-        return (vec![0], Vec::new());
+        panic!(
+            "exploded IFDS CPU reference blocks={blocks_per_proc} facts={facts_per_proc} overflow slots_per_proc. Fix: shard the IFDS graph before parity comparison."
+        );
     };
     let Some(total_nodes) = (num_procs as usize).checked_mul(slots_per_proc) else {
-        return (vec![0], Vec::new());
+        panic!(
+            "exploded IFDS CPU reference procs={num_procs} slots_per_proc={slots_per_proc} overflow total node count. Fix: shard the IFDS graph before parity comparison."
+        );
     };
     if total_nodes > u32::MAX as usize {
-        return (vec![0], Vec::new());
+        panic!(
+            "exploded IFDS CPU reference total_nodes={total_nodes} exceeds u32 dense-node encoding. Fix: shard the IFDS graph before parity comparison."
+        );
     }
     let mut edges_flat: Vec<(u32, u32)> = Vec::new();
     let block_count = (num_procs as usize) * (blocks_per_proc as usize);
@@ -229,15 +945,31 @@ pub fn build_cpu_reference(
 
     // Flatten into CSR — row_ptr has total_nodes+1 entries.
     if edges_flat.len() > u32::MAX as usize {
-        return (vec![0], Vec::new());
+        panic!(
+            "exploded IFDS CPU reference edge_count={} exceeds u32 CSR encoding. Fix: shard the IFDS graph before parity comparison.",
+            edges_flat.len()
+        );
     }
-    let mut row_ptr = vec![0u32; total_nodes + 1];
+    let row_ptr_len = total_nodes.checked_add(1).unwrap_or_else(|| {
+        panic!(
+            "exploded IFDS CPU reference total_nodes={total_nodes} overflows row_ptr length. Fix: shard the IFDS graph before parity comparison."
+        )
+    });
+    let mut row_ptr = vec![0u32; row_ptr_len];
     for &(src, _) in &edges_flat {
         let row = src as usize;
-        row_ptr[row + 1] = row_ptr[row + 1].saturating_add(1);
+        row_ptr[row + 1] = row_ptr[row + 1].checked_add(1).unwrap_or_else(|| {
+            panic!(
+                "exploded IFDS CPU reference row {row} edge count overflowed u32. Fix: shard the IFDS graph before parity comparison."
+            )
+        });
     }
     for row in 1..row_ptr.len() {
-        row_ptr[row] = row_ptr[row].saturating_add(row_ptr[row - 1]);
+        row_ptr[row] = row_ptr[row].checked_add(row_ptr[row - 1]).unwrap_or_else(|| {
+            panic!(
+                "exploded IFDS CPU reference CSR prefix overflowed at row {row}. Fix: shard the IFDS graph before parity comparison."
+            )
+        });
     }
     let mut cursor = row_ptr[..total_nodes]
         .iter()
@@ -432,11 +1164,36 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "exceed packed node-id limits")]
     fn csr_rejects_dimensions_overflowing_encoding() {
         // (MAX_PROC_ID + 2) × anything overflows PROC_BITS.
-        let (row_ptr, col_idx) = build_cpu_reference(MAX_PROC_ID + 2, 1, 1, &[], &[], &[], &[]);
-        assert_eq!(row_ptr, vec![0]);
-        assert!(col_idx.is_empty());
+        let _ = build_cpu_reference(MAX_PROC_ID + 2, 1, 1, &[], &[], &[], &[]);
+    }
+
+    #[test]
+    fn gpu_builder_rejects_row_ptr_count_overflow_without_panic() {
+        let program = build_ifds_csr_program(u32::MAX, 1, 1, 0, 0, 0, 0, 0);
+
+        assert!(program.stats().trap());
+    }
+
+    #[test]
+    fn gpu_builder_source_has_checked_row_ptr_count_without_panics() {
+        let source = include_str!("exploded.rs");
+        let builder_source = source
+            .split("pub fn build_ifds_csr_program(")
+            .nth(1)
+            .expect("exploded IFDS GPU builder source must be present")
+            .split("/// Pack a `(proc_id, block_id, fact_id)` triple")
+            .next()
+            .expect("exploded IFDS GPU builder source must precede node packing");
+
+        assert!(
+            builder_source.contains("let Some(row_ptr_count)")
+                && !builder_source.contains(concat!("panic", "!("))
+                && !builder_source.contains(".unwrap_or_else("),
+            "Fix: exploded IFDS GPU builder must check row_ptr count and avoid production panics."
+        );
     }
 
     #[test]
@@ -455,5 +1212,83 @@ mod tests {
     fn facts_per_workgroup_matches_max_fact_id_plus_one() {
         // G3 docstring claim: lane sizing matches NFA's.
         assert_eq!(FACTS_PER_WORKGROUP as u32, MAX_FACT_ID + 1);
+    }
+
+    #[test]
+    fn reusable_layout_contract_sizes_dispatch_buffers() {
+        let layout = validate_ifds_csr_layout(2, 3, 4, 5, 7, 11).unwrap();
+
+        assert!(!layout.empty);
+        assert_eq!(layout.num_procs, 2);
+        assert_eq!(layout.blocks_per_proc, 3);
+        assert_eq!(layout.facts_per_proc, 4);
+        assert_eq!(layout.intra_count, 5);
+        assert_eq!(layout.inter_count, 7);
+        assert_eq!(layout.gen_count, 11);
+        assert_eq!(layout.slots_per_proc, 12);
+        assert_eq!(layout.total_nodes, 24);
+        assert_eq!(layout.row_words, 25);
+        assert_eq!(layout.row_cursor_words, 24);
+        assert_eq!(layout.max_col_count, 5 * 4 + 5 * 11 + 7 * 4);
+        assert_eq!(layout.col_buffer_words, layout.max_col_count as usize);
+    }
+
+    #[test]
+    fn reusable_layout_contract_rejects_invalid_domains() {
+        assert!(validate_ifds_csr_layout(0, 1, 1, 0, 0, 0).is_err());
+        assert!(validate_ifds_csr_layout(MAX_PROC_ID + 2, 1, 1, 0, 0, 0).is_err());
+        assert!(validate_ifds_csr_layout(
+            MAX_PROC_ID + 1,
+            MAX_BLOCK_ID + 1,
+            MAX_FACT_ID + 1,
+            0,
+            0,
+            0
+        )
+        .is_err());
+        assert!(validate_ifds_csr_layout(u32::MAX, u32::MAX, 2, 0, 0, 0).is_err());
+        assert!(validate_ifds_csr_layout(1, 1, 2, u32::MAX, 0, u32::MAX).is_err());
+    }
+
+    #[test]
+    fn reusable_input_layout_contract_narrows_rule_counts_and_padding() {
+        let layout = validate_ifds_csr_inputs(
+            1,
+            2,
+            3,
+            &[(0, 0, 1), (0, 1, 0)],
+            &[(0, 0, 0, 1)],
+            &[],
+            &[(0, 0, 1)],
+        )
+        .unwrap();
+
+        assert_eq!(layout.intra_count, 2);
+        assert_eq!(layout.inter_count, 1);
+        assert_eq!(layout.gen_count, 0);
+        assert_eq!(layout.kill_count, 1);
+        assert_eq!(layout.intra_storage_words, 2);
+        assert_eq!(layout.inter_storage_words, 1);
+        assert_eq!(layout.gen_storage_words, 1);
+        assert_eq!(layout.kill_storage_words, 1);
+
+        let empty = validate_ifds_csr_inputs(0, 0, 0, &[], &[], &[], &[]).unwrap();
+        assert!(empty.empty);
+        assert_eq!(empty.row_words, 1);
+
+        let err = validate_ifds_csr_inputs(0, 0, 0, &[(0, 0, 0)], &[], &[], &[]).unwrap_err();
+        assert!(err.contains("empty dimensions cannot carry rules"));
+    }
+
+    #[test]
+    fn reusable_canonicalizer_sorts_rows_and_rejects_bad_ranges() {
+        let row_ptr = vec![0, 3, 5];
+        let mut col_idx = vec![9, 1, 4, 8, 2];
+        canonicalize_csr_within_rows_in_place(&row_ptr, &mut col_idx).unwrap();
+        assert_eq!(col_idx, vec![1, 4, 9, 2, 8]);
+
+        let mut bad_col = vec![1, 2];
+        let err = canonicalize_csr_within_rows_in_place(&[0, 3], &mut bad_col).unwrap_err();
+        assert!(err.contains("exceeds col_idx.len()"));
     }
 }

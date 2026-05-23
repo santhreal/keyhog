@@ -41,11 +41,8 @@ fn run_case(patterns: &[&[u8]], haystack: &[u8]) {
     };
 
     const MAX_MATCHES: u32 = 1024;
-    let program = build_ac_bounded_ranges_program(
-        &ac.dfa,
-        pattern_lengths.len() as u32,
-        MAX_MATCHES,
-    );
+    let program =
+        build_ac_bounded_ranges_program(&ac.dfa, pattern_lengths.len() as u32, MAX_MATCHES);
 
     // Binding order MUST match `classic_ac_bounded_ranges_program`'s
     // BufferDecl indices (0..7). Reordering here would silently
@@ -58,7 +55,7 @@ fn run_case(patterns: &[&[u8]], haystack: &[u8]) {
         pack_u32_slice(&pattern_lengths),
         pack_u32_slice(&[haystack.len() as u32]),
         vec![0u8; 4], // match_count atomic
-        // matches: pure output buffer; backend allocates from program's BufferDecl.
+                      // matches: pure output buffer; backend allocates from program's BufferDecl.
     ];
 
     let config =
@@ -72,7 +69,11 @@ fn run_case(patterns: &[&[u8]], haystack: &[u8]) {
 
     // Outputs are returned in the order the kernel WRITES them:
     // `match_count` (binding 6) then `matches` (binding 7).
-    assert!(outputs.len() >= 2, "expected 2 output buffers, got {}", outputs.len());
+    assert!(
+        outputs.len() >= 2,
+        "expected 2 output buffers, got {}",
+        outputs.len()
+    );
     let count_bytes = &outputs[0];
     let matches_bytes = &outputs[1];
     assert!(
@@ -80,7 +81,12 @@ fn run_case(patterns: &[&[u8]], haystack: &[u8]) {
         "match_count buffer truncated to {} bytes",
         count_bytes.len()
     );
-    let count = u32::from_le_bytes([count_bytes[0], count_bytes[1], count_bytes[2], count_bytes[3]]);
+    let count = u32::from_le_bytes([
+        count_bytes[0],
+        count_bytes[1],
+        count_bytes[2],
+        count_bytes[3],
+    ]);
 
     let triples = dispatch_io::unpack_match_triples(matches_bytes, count.min(MAX_MATCHES));
     let mut gpu_sorted: Vec<(u32, u32, u32)> = triples

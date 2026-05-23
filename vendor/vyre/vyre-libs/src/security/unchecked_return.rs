@@ -24,16 +24,17 @@ pub fn unchecked_return(
 }
 
 #[must_use]
+#[cfg(test)]
 /// CPU oracle for [`unchecked_return`].
-pub fn cpu_ref(use_set: &[u32], check_dominates: &[u32]) -> Vec<u32> {
+pub(crate) fn cpu_ref(use_set: &[u32], check_dominates: &[u32]) -> Vec<u32> {
     vyre_primitives::bitset::and_not::cpu_ref(use_set, check_dominates)
 }
 
 /// Soundness marker for [`unchecked_return`].
 pub struct UncheckedReturn;
-impl weir::soundness::SoundnessTagged for UncheckedReturn {
-    fn soundness(&self) -> weir::soundness::Soundness {
-        weir::soundness::Soundness::Exact
+impl vyre::soundness::SoundnessTagged for UncheckedReturn {
+    fn soundness(&self) -> vyre::soundness::Soundness {
+        vyre::soundness::Soundness::Exact
     }
 }
 

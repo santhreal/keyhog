@@ -1,6 +1,11 @@
-//! Audit-fix A36 `vast/ref_expr_shape.rs` extract.
+//! Explicit CPU oracle for VAST expression-shape construction.
+//!
+//! Production expression-shape construction must use the dispatchable
+//! `c11_build_expression_shape_nodes*` builders. This module remains for
+//! oracle witnesses and hostile corpus diagnosis.
 
-#![allow(missing_docs)] // c-parser feature: A33-A36 split lost some leading doc comments; lint loud, fix surgically when revisiting docs.
+#![allow(missing_docs)] // Internal oracle helpers are documented at the owning module boundary.
+#![allow(deprecated)]
 use crate::parsing::c::lex::tokens::*;
 use vyre::ir::Expr;
 
@@ -8,12 +13,24 @@ use super::expr_shape::*;
 use super::ref_decode_err::*;
 use super::*;
 
+#[deprecated(
+    note = "CPU oracle only; production expression-shape construction must dispatch c11_build_expression_shape_nodes* builders"
+)]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn try_reference_c11_build_expression_shape_nodes(
     raw_vast_node_bytes: &[u8],
     typed_vast_node_bytes: &[u8],
 ) -> Result<Vec<u8>, CReferenceDecodeError> {
     let raw_vast_nodes = try_vast_words_from_bytes(raw_vast_node_bytes)?;
     let typed_vast_nodes = try_vast_words_from_bytes(typed_vast_node_bytes)?;
+    let raw_rows = raw_vast_nodes.len() / VAST_NODE_STRIDE_U32 as usize;
+    let typed_rows = typed_vast_nodes.len() / VAST_NODE_STRIDE_U32 as usize;
+    if raw_rows != typed_rows {
+        return Err(CReferenceDecodeError::MismatchedVastRows {
+            raw_rows,
+            typed_rows,
+        });
+    }
     Ok(reference_c11_build_expression_shape_nodes_from_words(
         &raw_vast_nodes,
         &typed_vast_nodes,
@@ -22,27 +39,36 @@ pub fn try_reference_c11_build_expression_shape_nodes(
 
 /// CPU oracle for `c11_build_expression_shape_nodes`.
 #[must_use]
+#[deprecated(
+    note = "CPU oracle only; production expression-shape construction must dispatch c11_build_expression_shape_nodes* builders"
+)]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn reference_c11_build_expression_shape_nodes(
     raw_vast_node_bytes: &[u8],
     typed_vast_node_bytes: &[u8],
 ) -> Vec<u8> {
     try_reference_c11_build_expression_shape_nodes(raw_vast_node_bytes, typed_vast_node_bytes)
-        .unwrap_or_default()
+        .unwrap_or_else(|error| {
+            panic!("C VAST expression-shape reference oracle received malformed input: {error}")
+        })
 }
 
 fn reference_c11_build_expression_shape_nodes_from_words(
     raw_vast_nodes: &[u32],
     typed_vast_nodes: &[u32],
 ) -> Vec<u8> {
-    let node_count =
-        raw_vast_nodes.len().min(typed_vast_nodes.len()) / VAST_NODE_STRIDE_U32 as usize;
+    let node_count = raw_vast_nodes.len() / VAST_NODE_STRIDE_U32 as usize;
+    assert_eq!(
+        node_count,
+        typed_vast_nodes.len() / VAST_NODE_STRIDE_U32 as usize,
+        "raw and typed VAST streams diverged after decode. Fix: pass matching streams from the same C translation unit."
+    );
     let mut out = Vec::with_capacity(node_count * C_EXPR_SHAPE_STRIDE_U32 as usize);
 
     for node_idx in 0..node_count {
-        let base = node_idx * VAST_NODE_STRIDE_U32 as usize;
-        let raw_kind = raw_vast_nodes.get(base).copied().unwrap_or_default();
-        let typed_kind = typed_vast_nodes.get(base).copied().unwrap_or_default();
-        let parent = raw_vast_nodes.get(base + 1).copied().unwrap_or(SENTINEL);
+        let raw_kind = vast_kind(raw_vast_nodes, node_idx);
+        let typed_kind = vast_kind(typed_vast_nodes, node_idx);
+        let parent = vast_parent(raw_vast_nodes, node_idx);
         let shape = reference_c_expr_shape_kind(raw_kind, typed_kind);
         let precedence = reference_c_expr_operator_precedence(raw_kind, typed_kind);
         let associativity = reference_c_expr_operator_associativity(typed_kind);
@@ -144,6 +170,26 @@ fn reference_c11_build_expression_shape_nodes_from_words(
     u32_words_to_bytes(&out)
 }
 
+fn vast_field(vast_nodes: &[u32], node_idx: usize, field_idx: usize) -> u32 {
+    let word_idx = node_idx
+        .checked_mul(VAST_NODE_STRIDE_U32 as usize)
+        .and_then(|base| base.checked_add(field_idx))
+        .expect("C VAST expression-shape field index overflow. Fix: pass a bounded complete VAST table.");
+    *vast_nodes.get(word_idx).unwrap_or_else(|| {
+        panic!(
+            "C VAST expression-shape node {node_idx} is missing field {field_idx}. Fix: pass complete VAST rows."
+        )
+    })
+}
+
+fn vast_kind(vast_nodes: &[u32], node_idx: usize) -> u32 {
+    vast_field(vast_nodes, node_idx, 0)
+}
+
+fn vast_parent(vast_nodes: &[u32], node_idx: usize) -> u32 {
+    vast_field(vast_nodes, node_idx, 1)
+}
+
 fn reference_c_expr_shape_kind(raw_kind: u32, typed_kind: u32) -> u32 {
     if typed_kind == C_AST_KIND_CONDITIONAL_EXPR || raw_kind == TOK_QUESTION {
         C_EXPR_SHAPE_CONDITIONAL
@@ -198,18 +244,13 @@ fn reference_expr_segment_bounds(
     include_ternary_parts: bool,
 ) -> (usize, usize) {
     let node_count = raw_vast_nodes.len() / VAST_NODE_STRIDE_U32 as usize;
-    let base = node_idx * VAST_NODE_STRIDE_U32 as usize;
-    let parent = raw_vast_nodes.get(base + 1).copied().unwrap_or(SENTINEL);
+    let parent = vast_parent(raw_vast_nodes, node_idx);
     let mut start = 0usize;
     let mut scan = node_idx;
     while scan > 0 {
         scan -= 1;
-        let scan_base = scan * VAST_NODE_STRIDE_U32 as usize;
-        let scan_parent = raw_vast_nodes
-            .get(scan_base + 1)
-            .copied()
-            .unwrap_or(SENTINEL);
-        let scan_raw = raw_vast_nodes.get(scan_base).copied().unwrap_or_default();
+        let scan_parent = vast_parent(raw_vast_nodes, scan);
+        let scan_raw = vast_kind(raw_vast_nodes, scan);
         if scan_parent == parent
             && reference_is_expr_shape_boundary(scan_raw, include_ternary_parts)
         {
@@ -220,12 +261,8 @@ fn reference_expr_segment_bounds(
 
     let mut end = node_count;
     for scan in node_idx.saturating_add(1)..node_count {
-        let scan_base = scan * VAST_NODE_STRIDE_U32 as usize;
-        let scan_parent = raw_vast_nodes
-            .get(scan_base + 1)
-            .copied()
-            .unwrap_or(SENTINEL);
-        let scan_raw = raw_vast_nodes.get(scan_base).copied().unwrap_or_default();
+        let scan_parent = vast_parent(raw_vast_nodes, scan);
+        let scan_raw = vast_kind(raw_vast_nodes, scan);
         if scan_parent == parent
             && reference_is_expr_shape_boundary(scan_raw, include_ternary_parts)
         {
@@ -246,21 +283,14 @@ fn reference_binary_segment_uses_ternary_boundaries(
     raw_vast_nodes: &[u32],
     node_idx: usize,
 ) -> bool {
-    let base = node_idx * VAST_NODE_STRIDE_U32 as usize;
-    let parent = raw_vast_nodes.get(base + 1).copied().unwrap_or(SENTINEL);
+    let parent = vast_parent(raw_vast_nodes, node_idx);
     let mut scan = node_idx;
     while scan > 0 {
         scan -= 1;
-        let scan_base = scan * VAST_NODE_STRIDE_U32 as usize;
-        if raw_vast_nodes
-            .get(scan_base + 1)
-            .copied()
-            .unwrap_or(SENTINEL)
-            != parent
-        {
+        if vast_parent(raw_vast_nodes, scan) != parent {
             continue;
         }
-        match raw_vast_nodes.get(scan_base).copied().unwrap_or_default() {
+        match vast_kind(raw_vast_nodes, scan) {
             TOK_QUESTION | TOK_COLON => return true,
             TOK_SEMICOLON | TOK_COMMA => return false,
             _ => {}
@@ -279,12 +309,11 @@ fn reference_conditional_condition_start(
 ) -> usize {
     let mut condition_start = segment_start;
     for scan in segment_start..question_idx {
-        let base = scan * VAST_NODE_STRIDE_U32 as usize;
-        if raw_vast_nodes.get(base + 1).copied().unwrap_or(SENTINEL) != parent {
+        if vast_parent(raw_vast_nodes, scan) != parent {
             continue;
         }
-        let raw_kind = raw_vast_nodes.get(base).copied().unwrap_or_default();
-        let typed_kind = typed_vast_nodes.get(base).copied().unwrap_or_default();
+        let raw_kind = vast_kind(raw_vast_nodes, scan);
+        let typed_kind = vast_kind(typed_vast_nodes, scan);
         if reference_c_expr_shape_kind(raw_kind, typed_kind) == C_EXPR_SHAPE_NONE {
             continue;
         }
@@ -314,12 +343,11 @@ fn reference_binary_operand_bounds(
         if scan == node_idx {
             continue;
         }
-        let base = scan * VAST_NODE_STRIDE_U32 as usize;
-        if raw_vast_nodes.get(base + 1).copied().unwrap_or(SENTINEL) != parent {
+        if vast_parent(raw_vast_nodes, scan) != parent {
             continue;
         }
-        let raw_kind = raw_vast_nodes.get(base).copied().unwrap_or_default();
-        let typed_kind = typed_vast_nodes.get(base).copied().unwrap_or_default();
+        let raw_kind = vast_kind(raw_vast_nodes, scan);
+        let typed_kind = vast_kind(typed_vast_nodes, scan);
         if reference_c_expr_shape_kind(raw_kind, typed_kind) == C_EXPR_SHAPE_NONE {
             continue;
         }
@@ -355,18 +383,21 @@ fn reference_expr_root(
     hi: usize,
     parent: u32,
 ) -> u32 {
-    let node_count =
-        raw_vast_nodes.len().min(typed_vast_nodes.len()) / VAST_NODE_STRIDE_U32 as usize;
+    let node_count = raw_vast_nodes.len() / VAST_NODE_STRIDE_U32 as usize;
+    assert_eq!(
+        node_count,
+        typed_vast_nodes.len() / VAST_NODE_STRIDE_U32 as usize,
+        "raw and typed VAST streams diverged while resolving expression root. Fix: pass matching streams from the same C translation unit."
+    );
     let end = hi.min(node_count);
     let mut root = SENTINEL;
     let mut root_prec = u32::MAX;
     let mut first_operand = SENTINEL;
 
     for scan in lo.min(end)..end {
-        let base = scan * VAST_NODE_STRIDE_U32 as usize;
-        let scan_parent = raw_vast_nodes.get(base + 1).copied().unwrap_or(SENTINEL);
-        let raw_kind = raw_vast_nodes.get(base).copied().unwrap_or_default();
-        let typed_kind = typed_vast_nodes.get(base).copied().unwrap_or_default();
+        let scan_parent = vast_parent(raw_vast_nodes, scan);
+        let raw_kind = vast_kind(raw_vast_nodes, scan);
+        let typed_kind = vast_kind(typed_vast_nodes, scan);
         let shape = reference_c_expr_shape_kind(raw_kind, typed_kind);
         if scan_parent != parent && shape == C_EXPR_SHAPE_NONE {
             continue;
@@ -403,21 +434,14 @@ fn reference_matching_ternary_colon(
     seg_end: usize,
 ) -> Option<usize> {
     let node_count = raw_vast_nodes.len() / VAST_NODE_STRIDE_U32 as usize;
-    let base = question_idx * VAST_NODE_STRIDE_U32 as usize;
-    let parent = raw_vast_nodes.get(base + 1).copied().unwrap_or(SENTINEL);
+    let parent = vast_parent(raw_vast_nodes, question_idx);
     let mut depth = 0u32;
 
     for scan in question_idx.saturating_add(1)..seg_end.min(node_count) {
-        let scan_base = scan * VAST_NODE_STRIDE_U32 as usize;
-        if raw_vast_nodes
-            .get(scan_base + 1)
-            .copied()
-            .unwrap_or(SENTINEL)
-            != parent
-        {
+        if vast_parent(raw_vast_nodes, scan) != parent {
             continue;
         }
-        match raw_vast_nodes.get(scan_base).copied().unwrap_or_default() {
+        match vast_kind(raw_vast_nodes, scan) {
             TOK_QUESTION => depth = depth.saturating_add(1),
             TOK_COLON if depth == 0 => return Some(scan),
             TOK_COLON => depth = depth.saturating_sub(1),

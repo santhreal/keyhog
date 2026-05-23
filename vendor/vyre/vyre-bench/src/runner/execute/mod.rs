@@ -47,7 +47,7 @@ impl Default for RunConfig {
             sample_timeout: Duration::from_secs(30),
             determinism_runs: 1,
             workgroup_override: None,
-            baseline_warmup_runs: 5,
+            baseline_warmup_runs: 0,
             snapshot_on_pass: false,
         }
     }
@@ -81,7 +81,12 @@ pub fn execute_suite(
     suite: SuiteKind,
     config: &RunConfig,
 ) -> ReportSchema {
-    let environment = capture_environment();
+    let environment = capture_environment().unwrap_or_else(|error| {
+        eprintln!(
+            "vyre-bench fatal error: benchmark environment probe failed: {error}. Fix: repair GPU/NVIDIA provenance before collecting performance evidence."
+        );
+        std::process::exit(1);
+    });
     let started = Instant::now();
     let mut cases_report = Vec::with_capacity(registry.len());
     let mut passed = 0;
@@ -169,17 +174,15 @@ pub fn execute_suite(
                 let compile_config = if ctx.dispatch_config.grid_override.is_none() {
                     inferred_config = ctx.dispatch_config.clone();
                     let binding_plan = vyre_driver::binding::BindingPlan::build(program)?;
-                    let element_count = vyre_driver::program_walks::dispatch_element_count(
-                        &binding_plan.bindings,
-                    );
-                    inferred_config.grid_override = Some(
-                        vyre_driver::program_walks::infer_dispatch_grid_for_count(
+                    let element_count =
+                        vyre_driver::program_walks::dispatch_element_count(&binding_plan.bindings);
+                    inferred_config.grid_override =
+                        Some(vyre_driver::program_walks::infer_dispatch_grid_for_count(
                             element_count,
                             inferred_config
                                 .workgroup_override
                                 .unwrap_or(program.workgroup_size()),
-                        )?,
-                    );
+                        )?);
                     &inferred_config
                 } else {
                     &ctx.dispatch_config
@@ -413,7 +416,8 @@ pub fn evaluate_candidate_headless(
     candidate: vyre::ir::Program,
     config: &RunConfig,
 ) -> Result<CaseReport, String> {
-    let environment = capture_environment();
+    let environment =
+        capture_environment().map_err(|error| format!("Environment probe failed: {error}"))?;
     let case = registry
         .get(&crate::api::case::BenchId(case_id.to_string()))
         .ok_or_else(|| format!("Unknown benchmark case: {}", case_id))?;

@@ -142,14 +142,23 @@ where
 /// recursive implementation. Used by passes to short-circuit when
 /// `analyze` can prove there's nothing to rewrite.
 ///
-/// Implemented iteratively with a `Vec<&Node>` worklist to avoid stack
-/// overflow on deeply nested trees (e.g. 1000+ nested `If` bodies).
+/// Implemented iteratively with a `SmallVec<&Node>` worklist to avoid
+/// stack overflow on deeply nested trees (e.g. 1000+ nested `If`
+/// bodies) AND to avoid the heap allocation entirely on the typical
+/// small-tree case.
+///
+/// `VYRE_IR_HOTSPOTS` HIGH: every `analyze_impl` in cleanup/algebraic/loops
+/// calls this once per top-level entry node. The 64-slot inline
+/// `SmallVec` covers the vast majority of program trees in zero
+/// allocations; deeper trees spill to the heap and pay only a couple
+/// of doublings.
 #[must_use]
 pub fn any_descendant<P>(node: &Node, pred: &mut P) -> bool
 where
     P: FnMut(&Node) -> bool,
 {
-    let mut stack: Vec<&Node> = vec![node];
+    let mut stack: smallvec::SmallVec<[&Node; 64]> = smallvec::SmallVec::new();
+    stack.push(node);
     while let Some(current) = stack.pop() {
         if pred(current) {
             return true;
@@ -162,12 +171,7 @@ where
                     stack.push(child);
                 }
             }
-            Node::Loop { body, .. } => {
-                for child in body.iter().rev() {
-                    stack.push(child);
-                }
-            }
-            Node::Block(body) => {
+            Node::Loop { body, .. } | Node::Block(body) => {
                 for child in body.iter().rev() {
                     stack.push(child);
                 }

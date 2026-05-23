@@ -1,9 +1,7 @@
 use std::fmt::Write as _;
 
 use rustc_hash::{FxHashMap, FxHashSet};
-use vyre_lower::{
-    BindingLayout, BindingSlot, KernelDescriptor, MemoryClass, TRAP_SIDECAR_NAME,
-};
+use vyre_lower::{BindingLayout, BindingSlot, KernelDescriptor, MemoryClass, TRAP_SIDECAR_NAME};
 
 use super::names::sanitize_param_name;
 use super::BodyCtx;
@@ -201,7 +199,7 @@ impl<'a> BodyCtx<'a> {
             MemoryClass::Global if self.read_only_cache_slots.contains(&binding_slot) => {
                 "global.nc"
             }
-            MemoryClass::Global | MemoryClass::Constant => "global",
+            MemoryClass::Global | MemoryClass::Constant | MemoryClass::Uniform => "global",
             MemoryClass::Shared => "shared",
             MemoryClass::Scratch => "global",
         }

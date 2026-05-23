@@ -339,13 +339,13 @@ fn param_width(ty: &str) -> usize {
 }
 
 fn eval_indirect_dispatch(
-    _count_buffer: &str,
-    _count_offset: u32,
+    count_buffer: &str,
+    count_offset: u32,
     _memory: &HashmapMemory,
 ) -> Result<(), Error> {
-    // Reference implementation for indirect dispatch is a no-op; the harness
-    // ensures the workgroup grid matches the buffer contents before launch.
-    Ok(())
+    Err(Error::interp(format!(
+        "Node::IndirectDispatch cannot execute in the hashmap reference interpreter because dynamic indirect dispatch requires runtime queue scheduling. Fix: run this program on a backend/runtime that supports indirect dispatch or lower `{count_buffer}` at byte offset {count_offset} to a static workgroup grid before reference execution."
+    )))
 }
 
 fn eval_async_load(

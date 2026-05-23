@@ -31,7 +31,16 @@ impl Program {
     #[must_use]
     pub fn canonical_wire_bytes(&self) -> Result<Vec<u8>, crate::error::Error> {
         let canonical = self.canonicalized();
-        let mut out = Vec::new();
+        // Pre-size: VIR0 wire encoding lands in the ballpark of ~32
+        // bytes per IR node + a fixed program header. Over-sizing is
+        // free at this stage and avoids the typical 4-7 reallocations
+        // a fresh Vec<u8> would do while the encoder pushes header
+        // tags + buffer table + node tree.
+        let stats = canonical.stats();
+        let estimate = 256
+            + stats.node_count.saturating_mul(48)
+            + canonical.buffers().len().saturating_mul(64);
+        let mut out = Vec::with_capacity(estimate);
         crate::serial::wire::encode::to_wire_into(&canonical, &mut out)
             .map_err(|message| crate::error::Error::WireFormatValidation { message })?;
         Ok(out)
@@ -167,7 +176,7 @@ impl CanonicalCtx {
             Expr::BinOp { op, left, right } => {
                 let mut left = self.canonicalize_expr(left);
                 let mut right = self.canonicalize_expr(right);
-                if should_swap_operands(op, &left, &right, &mut self.left_key, &mut self.right_key)
+                if should_swap_operands(*op, &left, &right, &mut self.left_key, &mut self.right_key)
                 {
                     std::mem::swap(&mut left, &mut right);
                 }
@@ -251,7 +260,7 @@ fn can_splice_block(nodes: &[Node]) -> bool {
 }
 
 fn should_swap_operands(
-    op: &BinOp,
+    op: BinOp,
     left: &Expr,
     right: &Expr,
     left_key: &mut Vec<u8>,
@@ -298,7 +307,7 @@ fn append_expr_wire_key(key: &mut Vec<u8>, expr: &Expr) {
     }
 }
 
-fn is_commutative_binop(op: &BinOp) -> bool {
+fn is_commutative_binop(op: BinOp) -> bool {
     matches!(
         op,
         BinOp::Add
@@ -319,7 +328,7 @@ fn is_commutative_binop(op: &BinOp) -> bool {
     )
 }
 
-fn can_sort_all_operands(op: &BinOp) -> bool {
+fn can_sort_all_operands(op: BinOp) -> bool {
     // Ops whose operand swap is observably safe even when both
     // operands are arbitrary non-literal expressions. Excludes Add /
     // Mul because float reassociation changes rounding for non-literal

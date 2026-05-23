@@ -15,7 +15,7 @@
 //!   read the location; phase 1 stays out of those).
 //! - No intervening Barrier or Atomic on the same slot.
 //!
-//! Weir-provided alias and reaching-definition facts make the pass
+//! External alias and reaching-definition facts make the pass
 //! more aggressive without weakening safety: no-alias facts prevent
 //! unrelated reads from invalidating pending stores, and single
 //! reaching-def facts canonicalize equivalent descriptor index ids.
@@ -26,30 +26,30 @@ use std::hash::{Hash, Hasher};
 
 #[must_use]
 pub fn dead_store(desc: &KernelDescriptor) -> KernelDescriptor {
-    dead_store_with_dataflow_facts(desc, None, None)
+    dead_store_with_optional_dataflow_facts(desc, None, None)
 }
 
 #[must_use]
-pub fn dead_store_with_weir_alias_facts(
+pub fn dead_store_with_alias_facts(
     desc: &KernelDescriptor,
-    alias_facts: &crate::analyses::weir_alias::AliasFactSet,
+    alias_facts: &crate::analyses::alias_facts::AliasFactSet,
 ) -> KernelDescriptor {
-    dead_store_with_dataflow_facts(desc, Some(alias_facts), None)
+    dead_store_with_optional_dataflow_facts(desc, Some(alias_facts), None)
 }
 
 #[must_use]
-pub fn dead_store_with_weir_dataflow_facts(
+pub fn dead_store_with_dataflow_facts(
     desc: &KernelDescriptor,
-    alias_facts: &crate::analyses::weir_alias::AliasFactSet,
-    reaching_defs: &crate::analyses::weir_reaching_def::ReachingDefFactSet,
+    alias_facts: &crate::analyses::alias_facts::AliasFactSet,
+    reaching_defs: &crate::analyses::reaching_def_facts::ReachingDefFactSet,
 ) -> KernelDescriptor {
-    dead_store_with_dataflow_facts(desc, Some(alias_facts), Some(reaching_defs))
+    dead_store_with_optional_dataflow_facts(desc, Some(alias_facts), Some(reaching_defs))
 }
 
-fn dead_store_with_dataflow_facts(
+fn dead_store_with_optional_dataflow_facts(
     desc: &KernelDescriptor,
-    alias_facts: Option<&crate::analyses::weir_alias::AliasFactSet>,
-    reaching_defs: Option<&crate::analyses::weir_reaching_def::ReachingDefFactSet>,
+    alias_facts: Option<&crate::analyses::alias_facts::AliasFactSet>,
+    reaching_defs: Option<&crate::analyses::reaching_def_facts::ReachingDefFactSet>,
 ) -> KernelDescriptor {
     let mut out = desc.clone();
     out.body = dead_store_body(out.body, alias_facts, reaching_defs);
@@ -58,8 +58,8 @@ fn dead_store_with_dataflow_facts(
 
 fn dead_store_body(
     mut body: KernelBody,
-    alias_facts: Option<&crate::analyses::weir_alias::AliasFactSet>,
-    reaching_defs: Option<&crate::analyses::weir_reaching_def::ReachingDefFactSet>,
+    alias_facts: Option<&crate::analyses::alias_facts::AliasFactSet>,
+    reaching_defs: Option<&crate::analyses::reaching_def_facts::ReachingDefFactSet>,
 ) -> KernelBody {
     let mut keep = vec![true; body.ops.len()];
     let mut pending_stores = FxHashMap::<StoreKey, usize>::default();
@@ -135,7 +135,7 @@ enum StoreSpace {
 fn store_key(
     op: &KernelOp,
     literal_values: &FxHashMap<u32, u32>,
-    reaching_defs: Option<&crate::analyses::weir_reaching_def::ReachingDefFactSet>,
+    reaching_defs: Option<&crate::analyses::reaching_def_facts::ReachingDefFactSet>,
 ) -> Option<StoreKey> {
     let space = match op.kind {
         KernelOpKind::StoreGlobal => StoreSpace::Global,
@@ -155,8 +155,8 @@ fn invalidate_pending_stores(
     pending_stores: &mut FxHashMap<StoreKey, usize>,
     op: &KernelOp,
     literal_values: &FxHashMap<u32, u32>,
-    alias_facts: Option<&crate::analyses::weir_alias::AliasFactSet>,
-    reaching_defs: Option<&crate::analyses::weir_reaching_def::ReachingDefFactSet>,
+    alias_facts: Option<&crate::analyses::alias_facts::AliasFactSet>,
+    reaching_defs: Option<&crate::analyses::reaching_def_facts::ReachingDefFactSet>,
 ) {
     match invalidated_store_scope(op, literal_values, reaching_defs) {
         Invalidation::None => {}
@@ -181,7 +181,7 @@ enum Invalidation {
 fn invalidated_store_scope(
     op: &KernelOp,
     literal_values: &FxHashMap<u32, u32>,
-    reaching_defs: Option<&crate::analyses::weir_reaching_def::ReachingDefFactSet>,
+    reaching_defs: Option<&crate::analyses::reaching_def_facts::ReachingDefFactSet>,
 ) -> Invalidation {
     use KernelOpKind::*;
     match &op.kind {
@@ -221,7 +221,7 @@ fn memory_probe(
     space: StoreSpace,
     op: &KernelOp,
     literal_values: &FxHashMap<u32, u32>,
-    reaching_defs: Option<&crate::analyses::weir_reaching_def::ReachingDefFactSet>,
+    reaching_defs: Option<&crate::analyses::reaching_def_facts::ReachingDefFactSet>,
 ) -> Option<StoreKey> {
     let slot = *op.operands.first()?;
     let index = resolve(*op.operands.get(1)?, reaching_defs);
@@ -235,7 +235,7 @@ fn memory_probe(
 
 fn resolve(
     id: u32,
-    reaching_defs: Option<&crate::analyses::weir_reaching_def::ReachingDefFactSet>,
+    reaching_defs: Option<&crate::analyses::reaching_def_facts::ReachingDefFactSet>,
 ) -> u32 {
     let Some(facts) = reaching_defs else {
         return id;
@@ -286,7 +286,7 @@ fn literal_u32_by_result(body: &KernelBody) -> FxHashMap<u32, u32> {
 fn may_alias(
     a: &StoreKey,
     b: &StoreKey,
-    alias_facts: Option<&crate::analyses::weir_alias::AliasFactSet>,
+    alias_facts: Option<&crate::analyses::alias_facts::AliasFactSet>,
 ) -> bool {
     if a.space != b.space {
         return false;
@@ -467,7 +467,7 @@ mod tests {
     }
 
     #[test]
-    fn weir_no_alias_fact_preserves_unrelated_load_and_drops_dead_store() {
+    fn external_no_alias_fact_preserves_unrelated_load_and_drops_dead_store() {
         let mut binding = out_binding();
         binding.visibility = BindingVisibility::ReadWrite;
         let desc = KernelDescriptor {
@@ -527,14 +527,14 @@ mod tests {
             .count();
         assert_eq!(conservative_store_count, 2);
 
-        let mut facts = crate::analyses::weir_alias::AliasFactSet::default();
-        facts.insert_no_alias(crate::analyses::weir_alias::NoAliasFact {
+        let mut facts = crate::analyses::alias_facts::AliasFactSet::default();
+        facts.insert_no_alias(crate::analyses::alias_facts::NoAliasFact {
             left_binding: 0,
             left_index: 0,
             right_binding: 0,
             right_index: 1,
         });
-        let alias_aware = dead_store_with_weir_alias_facts(&desc, &facts);
+        let alias_aware = dead_store_with_alias_facts(&desc, &facts);
         let alias_aware_store_count = alias_aware
             .body
             .ops
@@ -545,7 +545,7 @@ mod tests {
     }
 
     #[test]
-    fn different_binding_load_keeps_store_alive_without_weir_no_alias_fact() {
+    fn different_binding_load_keeps_store_alive_without_external_no_alias_fact() {
         let mut left = out_binding_numbered(0);
         left.visibility = BindingVisibility::ReadWrite;
         let mut right = out_binding_numbered(1);
@@ -608,14 +608,14 @@ mod tests {
             .count();
         assert_eq!(conservative_store_count, 2);
 
-        let mut facts = crate::analyses::weir_alias::AliasFactSet::default();
-        facts.insert_no_alias(crate::analyses::weir_alias::NoAliasFact {
+        let mut facts = crate::analyses::alias_facts::AliasFactSet::default();
+        facts.insert_no_alias(crate::analyses::alias_facts::NoAliasFact {
             left_binding: 0,
             left_index: 0,
             right_binding: 1,
             right_index: 1,
         });
-        let alias_aware = dead_store_with_weir_alias_facts(&desc, &facts);
+        let alias_aware = dead_store_with_alias_facts(&desc, &facts);
         let alias_aware_store_count = alias_aware
             .body
             .ops

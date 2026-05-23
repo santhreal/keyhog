@@ -45,10 +45,17 @@ pub(super) fn map_full_sidecar(
         ))
     })?;
     let mapped = slice.get_mapped_range();
-    let error = crate::pipeline::trap_error_from_sidecar(&mapped, trap_tags);
+    let error = sidecar_error_from_mapped(&mapped, trap_tags)?;
     drop(mapped);
     buf.unmap();
     Ok(error)
+}
+
+pub(super) fn sidecar_error_from_mapped(
+    mapped: &[u8],
+    trap_tags: &[TrapTag],
+) -> Result<Option<BackendError>, BackendError> {
+    Ok(crate::pipeline::trap_error_from_sidecar(mapped, trap_tags))
 }
 
 fn poll_map_result_until(

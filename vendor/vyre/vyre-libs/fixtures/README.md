@@ -30,13 +30,13 @@ directory following the same schema.
 
 ## Current fixture files
 
-- `aho_corasick.toml` — 20 regression vectors from
+- `aho_corasick.toml`: 20 regression vectors from
   `tests/aho_corasick_kat.rs`.
-- `blake3.toml` — 3 KAT vectors from `tests/blake3_kat.rs`.
+- `blake3.toml`: 3 KAT vectors from `tests/blake3_kat.rs`.
 
 ## Why TOML
 
-- Diff-reviewable — any reviewer can audit a PR that touches a
+- Diff-reviewable: any reviewer can audit a PR that touches a
   fixture byte-by-byte.
 - Loadable from non-Rust tooling for parity runs outside the vyre
   test harness.

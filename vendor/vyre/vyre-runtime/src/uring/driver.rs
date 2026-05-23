@@ -124,25 +124,17 @@ impl<'a> NvmeGpuIngestDriver<'a> {
         megakernel_io_queue: MegakernelIoQueue,
         read_path: NativeReadPath,
     ) -> Result<Self, PipelineError> {
-        if slot_count == 0 {
-            return Err(PipelineError::QueueFull {
-                queue: "submission",
-                fix: "NvmeGpuIngestDriver requires at least one slot",
-            });
-        }
         let total_len = stream.gpu_buffer.len();
-        let slot_bytes = total_len / slot_count as usize;
-        if slot_bytes == 0 || slot_bytes * slot_count as usize > total_len {
-            return Err(PipelineError::QueueFull {
+        let slot_count_usize =
+            usize::try_from(slot_count).map_err(|_| PipelineError::QueueFull {
                 queue: "submission",
-                fix:
-                    "mapped staging buffer is too small to partition into the requested slot count",
-            });
-        }
+                fix: "slot_count does not fit host usize; reduce the ingest slot count",
+            })?;
+        let slot_bytes = partition_slot_bytes(total_len, slot_count_usize)?;
 
-        let mut mapped_slots = Vec::with_capacity(slot_count as usize);
-        let mut registered_iovecs = Vec::with_capacity(slot_count as usize);
-        for slot in 0..slot_count as usize {
+        let mut mapped_slots = Vec::with_capacity(slot_count_usize);
+        let mut registered_iovecs = Vec::with_capacity(slot_count_usize);
+        for slot in 0..slot_count_usize {
             let offset = slot * slot_bytes;
             let slot_buffer = stream.gpu_buffer.sub_region(offset, slot_bytes)?;
             registered_iovecs.push(Iovec {
@@ -157,7 +149,7 @@ impl<'a> NvmeGpuIngestDriver<'a> {
             registered_iovecs,
             megakernel_io_queue,
             pending: std::iter::repeat_with(|| None)
-                .take(slot_count as usize)
+                .take(slot_count_usize)
                 .collect(),
             slot_bytes,
             read_path,
@@ -182,21 +174,25 @@ impl<'a> NvmeGpuIngestDriver<'a> {
                 PipelineError::Backend(format!("stat {} failed: {error}", path.display()))
             })?
             .len();
-        if file_len > self.slot_bytes as u64 {
+        let slot_bytes_u64 = usize_to_u64(self.slot_bytes, "ingest slot byte length")?;
+        if file_len > slot_bytes_u64 {
             return Err(PipelineError::QueueFull {
                 queue: "submission",
                 fix: "file exceeds the configured ingest slot size; enlarge the mapped staging buffer or segment the file",
             });
         }
 
-        let target_offset = (slot_usize * self.slot_bytes) as u64;
+        let target_offset = slot_byte_offset(slot_usize, self.slot_bytes)?;
         let slot_iovec = &mut self.registered_iovecs[slot_usize..slot_usize + 1];
         // SAFETY: `slot_iovec` and file descriptor stay live until the CQE is reaped.
         unsafe {
             self.stream.submit_read_to_gpu_at(
                 file.as_raw_fd(),
                 0,
-                file_len as u32,
+                u32::try_from(file_len).map_err(|_| PipelineError::QueueFull {
+                    queue: "submission",
+                    fix: "file length exceeds u32 read size even though it fit the slot; split the ingest file",
+                })?,
                 target_offset,
                 slot_iovec,
             )?;
@@ -257,16 +253,24 @@ impl<'a> NvmeGpuIngestDriver<'a> {
                 queue: "submission",
                 fix: "native NVMe read byte count overflowed u32; submit a smaller range",
             })?;
-        if byte_count as usize > self.slot_bytes {
+        let byte_count_usize =
+            usize::try_from(byte_count).map_err(|_| PipelineError::QueueFull {
+                queue: "submission",
+                fix: "native NVMe read byte count cannot fit host usize; submit a smaller range",
+            })?;
+        if byte_count_usize > self.slot_bytes {
             return Err(PipelineError::QueueFull {
                 queue: "submission",
                 fix: "native NVMe read exceeds the configured ingest slot size; enlarge the BAR1 mapped slot or submit fewer blocks",
             });
         }
 
-        let dest = self.mapped_slots[slot_usize].as_ptr() as u64;
+        let dest = usize_to_u64(
+            self.mapped_slots[slot_usize].as_ptr().addr(),
+            "mapped BAR1 destination pointer",
+        )?;
         let sqe = encode_nvme_read_sqe(namespace_id, starting_lba, blocks, dest);
-        let user_data = (slot_usize * self.slot_bytes) as u64;
+        let user_data = slot_byte_offset(slot_usize, self.slot_bytes)?;
         // SAFETY: forwarded from this method's contract; the SQE is built
         // from validated scalar fields and a slot-local BAR1 destination.
         unsafe {
@@ -310,7 +314,7 @@ impl<'a> NvmeGpuIngestDriver<'a> {
     /// Flush submissions, reap CQEs, and publish the completed slots into the
     /// megakernel `io_queue`.
     pub fn poll_completions(&mut self) -> Result<Vec<CompletedIngest>, PipelineError> {
-        let mut completed = Vec::with_capacity(self.pending.len());
+        let mut completed = Vec::new();
         self.poll_completions_into(&mut completed)?;
         Ok(completed)
     }
@@ -330,9 +334,24 @@ impl<'a> NvmeGpuIngestDriver<'a> {
 
         while let Some(cqe) = self.stream.ring_state.peek_cqe() {
             let res = cqe.res;
-            let slot = (cqe.user_data as usize) / self.slot_bytes.max(1);
+            if self.slot_bytes == 0 {
+                return Err(PipelineError::Backend(
+                    "io_uring ingest driver has zero slot_bytes. Fix: construct NvmeGpuIngestDriver with at least one non-empty mapped slot.".to_string(),
+                ));
+            }
+            let user_data = usize::try_from(cqe.user_data).map_err(|_| {
+                PipelineError::Backend(format!(
+                    "io_uring CQE user_data {} does not fit host usize. Fix: keep slot byte offsets within host addressable range.",
+                    cqe.user_data
+                ))
+            })?;
+            let slot = user_data / self.slot_bytes;
             self.stream.ring_state.advance_cq();
-            self.stream.inflight = self.stream.inflight.saturating_sub(1);
+            self.stream.inflight = self.stream.inflight.checked_sub(1).ok_or_else(|| {
+                PipelineError::Backend(
+                    "io_uring completion arrived with zero inflight submissions. Fix: audit submit/completion accounting before reusing this stream.".to_string(),
+                )
+            })?;
 
             let pending = self.pending.get_mut(slot).and_then(Option::take);
             if res < 0 {
@@ -358,7 +377,11 @@ impl<'a> NvmeGpuIngestDriver<'a> {
                 }
             };
             let byte_count = match pending.completion {
-                PendingCompletion::ByteCountFromCqe => res as u32,
+                PendingCompletion::ByteCountFromCqe => {
+                    u32::try_from(res).map_err(|_| PipelineError::Backend(format!(
+                        "io_uring CQE byte count {res} cannot fit u32. Fix: split ingest reads so completions stay within the megakernel io_queue ABI."
+                    )))?
+                }
                 PendingCompletion::NativeNvmeStatus {
                     expected_byte_count,
                 } => {
@@ -373,14 +396,13 @@ impl<'a> NvmeGpuIngestDriver<'a> {
                     expected_byte_count
                 }
             };
-            self.megakernel_io_queue.publish_slot(
-                slot as u32,
-                slot as u32,
-                byte_count,
-                pending.tag,
-            )?;
+            let slot_u32 = u32::try_from(slot).map_err(|_| PipelineError::Backend(format!(
+                "io_uring completion slot {slot} cannot fit u32. Fix: shard ingest slots before publishing to the megakernel io_queue."
+            )))?;
+            self.megakernel_io_queue
+                .publish_slot(slot_u32, slot_u32, byte_count, pending.tag)?;
             completed.push(CompletedIngest {
-                slot: slot as u32,
+                slot: slot_u32,
                 byte_count,
                 tag: pending.tag,
             });
@@ -423,7 +445,10 @@ impl<'a> NvmeGpuIngestDriver<'a> {
     }
 
     fn validate_slot_for_submit(&self, slot: u32) -> Result<usize, PipelineError> {
-        let slot_usize = slot as usize;
+        let slot_usize = usize::try_from(slot).map_err(|_| PipelineError::QueueFull {
+            queue: "submission",
+            fix: "slot index cannot fit host usize; shard mapped ingest slots",
+        })?;
         if slot_usize >= self.mapped_slots.len() {
             return Err(PipelineError::QueueFull {
                 queue: "submission",
@@ -437,5 +462,75 @@ impl<'a> NvmeGpuIngestDriver<'a> {
             });
         }
         Ok(slot_usize)
+    }
+}
+
+fn usize_to_u64(value: usize, label: &'static str) -> Result<u64, PipelineError> {
+    u64::try_from(value).map_err(|_| {
+        PipelineError::Backend(format!(
+            "{label} cannot fit u64. Fix: shard io_uring GPU ingest buffers before submission."
+        ))
+    })
+}
+
+fn slot_byte_offset(slot_idx: usize, slot_bytes: usize) -> Result<u64, PipelineError> {
+    let offset = slot_idx.checked_mul(slot_bytes).ok_or_else(|| {
+        PipelineError::Backend(
+            "io_uring ingest slot byte offset overflowed usize. Fix: shard mapped ingest slots."
+                .to_string(),
+        )
+    })?;
+    usize_to_u64(offset, "io_uring ingest slot byte offset")
+}
+
+fn partition_slot_bytes(total_len: usize, slot_count: usize) -> Result<usize, PipelineError> {
+    if slot_count == 0 {
+        return Err(PipelineError::QueueFull {
+            queue: "submission",
+            fix: "NvmeGpuIngestDriver requires at least one slot",
+        });
+    }
+    let slot_bytes = total_len / slot_count;
+    if slot_bytes == 0 {
+        return Err(PipelineError::QueueFull {
+            queue: "submission",
+            fix: "mapped staging buffer is too small to partition into the requested slot count",
+        });
+    }
+    if total_len % slot_count != 0 {
+        return Err(PipelineError::QueueFull {
+            queue: "submission",
+            fix: "mapped staging buffer length must divide evenly by slot_count so every byte belongs to exactly one DMA slot",
+        });
+    }
+    Ok(slot_bytes)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn partition_slot_bytes_accepts_exact_slot_geometry() {
+        assert_eq!(partition_slot_bytes(4096 * 8, 8).unwrap(), 4096);
+    }
+
+    #[test]
+    fn partition_slot_bytes_rejects_zero_slots() {
+        let error = partition_slot_bytes(4096, 0).expect_err("zero slots must fail");
+        assert!(matches!(error, PipelineError::QueueFull { .. }));
+    }
+
+    #[test]
+    fn partition_slot_bytes_rejects_remainder_bytes() {
+        let error = partition_slot_bytes(4097, 4)
+            .expect_err("remainder bytes create unreachable DMA capacity");
+        assert!(matches!(error, PipelineError::QueueFull { .. }));
+    }
+
+    #[test]
+    fn partition_slot_bytes_rejects_zero_byte_slots() {
+        let error = partition_slot_bytes(3, 4).expect_err("zero-byte DMA slots must fail");
+        assert!(matches!(error, PipelineError::QueueFull { .. }));
     }
 }

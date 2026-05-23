@@ -1,15 +1,14 @@
-//! Audit-fix A35 split expansion.rs (3187 LOC) into per-pass files.
+//! GPU macro-expansion program builders.
 //!
-//! Each preprocessor expansion pass lives in its own file under
-//! `expansion/`. The shared imports + magic constants stay here in
-//! `mod.rs`.
+//! Each expansion pass has one file under `expansion/`, while this module
+//! owns the shared ABI constants and the public pass exports. Keep helper code
+//! in the pass that uses it unless it is shared by multiple active builders.
 
-pub(super) const EMPTY_MACRO_SLOT: u32 = u32::MAX;
-pub(super) const MACRO_TABLE_SLOTS: u32 = 1024;
-pub(super) const MACRO_TABLE_MASK: u32 = MACRO_TABLE_SLOTS - 1;
-pub(super) const FNV1A32_OFFSET: u32 = 0x811c_9dc5;
-pub(super) const FNV1A32_PRIME: u32 = 0x0100_0193;
-pub(super) const MACRO_NAME_BYTES: u32 = 4096;
+pub(crate) const EMPTY_MACRO_SLOT: u32 = u32::MAX;
+pub(crate) const MACRO_TABLE_SLOTS: u32 = 4_096;
+pub(crate) const MACRO_TABLE_MASK: u32 = MACRO_TABLE_SLOTS - 1;
+pub(crate) const FNV1A32_OFFSET: u32 = 0x811c_9dc5;
+pub(crate) const FNV1A32_PRIME: u32 = 0x0100_0193;
 
 /// Object-like C macro table kind for `opt_named_macro_expansion`.
 pub const C_MACRO_KIND_OBJECT_LIKE: u32 = 0;
@@ -37,8 +36,5 @@ pub use dynamic_pass::opt_dynamic_macro_expansion;
 pub use named::opt_named_macro_expansion;
 pub use named_mat::opt_named_macro_expansion_materialized;
 
-// Re-exports so sibling modules can `use super::*` and reach every
-// helper that A35 split out into per-pass files. Without this each
-// child has to enumerate `use super::{fnlike::*, fnlike_mat::*, ...}`
-// and the build-graph fragility shows up as the c-parser feature
-// errors that follow A35.
+// Re-exports so sibling modules can `use super::*` for the active helper
+// surface. Keep this small: shared means used by multiple active builders.

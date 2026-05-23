@@ -86,6 +86,18 @@ pub(crate) fn invalid_output_program(
     )
 }
 
+/// Return `(left * right) >> 16` for unsigned 16.16 fixed-point lanes without
+/// losing the high half of the product to 32-bit overflow.
+#[cfg(feature = "vyre-foundation")]
+pub(crate) fn fixed_mul_16_16_expr(left: Expr, right: Expr) -> Expr {
+    let low = Expr::mul(left.clone(), right.clone());
+    let high = Expr::mulhi(left, right);
+    Expr::bitor(
+        Expr::shr(low, Expr::u32(16)),
+        Expr::shl(high, Expr::u32(16)),
+    )
+}
+
 /// Domain-neutral byte-range primitive.
 ///
 /// CRITIQUE_VISION_ALIGNMENT_2026-04-23 V1: the foundation tier ships a
@@ -137,7 +149,7 @@ pub mod nn;
 
 /// Graph primitives (topological sort, reachability, CSR traversal,
 /// SCC decomposition, path reconstruction — the Tier 2.5 substrate
-/// that surgec's stdlib rules compose against).
+/// that a downstream analyzer's stdlib rules compose against).
 #[cfg(feature = "graph")]
 pub mod graph;
 
@@ -203,19 +215,19 @@ pub mod dnnf;
 pub mod bitset;
 
 /// Reduction primitives — `count`/`min`/`max`/`sum` over bitsets and
-/// fixed-width ValueSets. Backs SURGE aggregates.
+/// fixed-width ValueSets. Backs source-query dialect aggregates.
 #[cfg(feature = "reduce")]
 pub mod reduce;
 
 /// Label → NodeSet resolver — turn a TagFamily bitmask into a
-/// NodeSet bitset. Implements the `@family` lookup that surgec's
+/// NodeSet bitset. Implements the `@family` lookup that a downstream analyzer's
 /// label surface surfaces.
 #[cfg(feature = "label")]
 pub mod label;
 
 /// Frozen predicate primitives — the ~10 engine primitives (call_to,
 /// return_value_of, arg_of, size_argument_of, edge, in_function,
-/// in_file, in_package, literal_of, node_kind) that SURGE stdlib
+/// in_file, in_package, literal_of, node_kind) that source-query dialect stdlib
 /// rules compose into every higher-level query.
 #[cfg(feature = "predicate")]
 pub mod predicate;

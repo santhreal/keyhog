@@ -35,7 +35,7 @@ inventory::submit! {
         test_inputs: Some(|| {
             let input = [0u32, 1, 0x8000_0000, 0x00F0_0000];
             let to_bytes = |w: &[u32]| w.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<u8>>();
-            vec![vec![to_bytes(&input), vec![0u8; 16]]]
+            vec![vec![to_bytes(&input)]]
         }),
         expected_output: Some(|| {
             // u32::trailing_zeros: 0 -> 32, 1 -> 0, 0x80000000 -> 31, 0x00F00000 -> 20.
@@ -46,6 +46,7 @@ inventory::submit! {
                 .collect::<Vec<u8>>();
             vec![vec![bytes]]
         }),
+        category: Some("math"),
     }
 }
 

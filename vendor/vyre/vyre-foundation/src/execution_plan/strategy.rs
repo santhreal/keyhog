@@ -221,7 +221,6 @@ mod tests {
 
     #[test]
     fn baseline_uses_persistent_dispatch() {
-        // 10 nodes <= 64 → PersistentRuntime
         assert_eq!(
             baseline_strategy().dispatch,
             DispatchStrategy::PersistentRuntime
@@ -229,9 +228,9 @@ mod tests {
     }
 
     #[test]
-    fn large_program_uses_compiled_pipeline() {
+    fn large_program_uses_persistent_dispatch() {
         let mut fusion = baseline_fusion();
-        fusion.node_count = 200; // > 64
+        fusion.node_count = 200;
         let s = StrategyPlan::from_parts(
             &fusion,
             &baseline_memory(),
@@ -239,7 +238,7 @@ mod tests {
             &baseline_accuracy(),
             &baseline_autotune(),
         );
-        assert_eq!(s.dispatch, DispatchStrategy::CompiledPipeline);
+        assert_eq!(s.dispatch, DispatchStrategy::PersistentRuntime);
     }
 
     #[test]

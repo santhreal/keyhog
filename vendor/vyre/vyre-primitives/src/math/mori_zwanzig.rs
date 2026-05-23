@@ -117,6 +117,7 @@ pub fn mz_project_step(p_matrix: &str, f_vec: &str, out: &str, n: u32) -> Progra
 
 /// CPU reference, f64.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn mz_project_step_cpu(p_matrix: &[f64], f_vec: &[f64], n: u32) -> Vec<f64> {
     let mut out = Vec::new();
     mz_project_step_cpu_into(p_matrix, f_vec, n, &mut out);
@@ -124,6 +125,7 @@ pub fn mz_project_step_cpu(p_matrix: &[f64], f_vec: &[f64], n: u32) -> Vec<f64> 
 }
 
 /// CPU reference, f64, using caller-owned output storage.
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn mz_project_step_cpu_into(p_matrix: &[f64], f_vec: &[f64], n: u32, out: &mut Vec<f64>) {
     let n = n as usize;
     out.clear();
@@ -137,6 +139,18 @@ pub fn mz_project_step_cpu_into(p_matrix: &[f64], f_vec: &[f64], n: u32, out: &m
         }
         out[i] = acc;
     }
+}
+
+#[cfg(feature = "inventory-registry")]
+inventory::submit! {
+    crate::harness::OpEntry::new(
+        OP_ID,
+        || {
+            mz_project_step("a", "b", "out", 4)
+        },
+        None,
+        None,
+    )
 }
 
 #[cfg(test)]

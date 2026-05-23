@@ -29,7 +29,7 @@
 //! ## ROADMAP
 //!
 //! A18 — GVN across control flow. The fact-driven full-CFG GVN over
-//! arbitrary join points lands beside the weir reaching-def pass; this
+//! arbitrary join points lands beside the downstream reaching-def pass; this
 //! row implements the structural prefix slice that is provably correct
 //! without needing the alias substrate.
 
@@ -43,7 +43,10 @@ use crate::visit::node_map;
 #[vyre_pass(
     name = "branch_value_hoist",
     requires = [],
-    invalidates = []
+    invalidates = [],
+    phase = "cleanup",
+    boundary_class = "abi_preserving",
+    cost_model_family = "fusion"
 )]
 pub struct BranchValueHoistPass;
 
@@ -51,6 +54,12 @@ impl BranchValueHoistPass {
     /// Skip programs with no candidate `If`.
     #[must_use]
     fn analyze_impl(program: &Program) -> PassAnalysis {
+        if !program
+            .stats()
+            .has_any_node_kind(crate::ir::stats::NODE_KIND_IF)
+        {
+            return PassAnalysis::SKIP;
+        }
         if program
             .entry()
             .iter()
@@ -65,18 +74,16 @@ impl BranchValueHoistPass {
     /// Walk the entry tree and hoist common prefixes.
     #[must_use]
     pub fn transform(program: Program) -> PassResult {
-        let scaffold = program.with_rewritten_entry(Vec::new());
         let mut changed = false;
-        let entry: Vec<Node> = program
-            .into_entry_vec()
-            .into_iter()
-            .flat_map(|node| hoist_prefix(node, &mut changed))
-            .collect();
-        PassResult {
-            program: scaffold.with_rewritten_entry(entry),
-            changed,
-        }
-    }}
+        let program = program.map_entry(|entry| {
+            entry
+                .into_iter()
+                .flat_map(|node| hoist_prefix(node, &mut changed))
+                .collect()
+        });
+        PassResult { program, changed }
+    }
+}
 
 /// Recurse into descendants then hoist this node's prefix.
 fn hoist_prefix(node: Node, changed: &mut bool) -> Vec<Node> {
@@ -125,14 +132,23 @@ fn extract_common_prefix(
     mut then: Vec<Node>,
     mut otherwise: Vec<Node>,
 ) -> (Vec<Node>, Vec<Node>, Vec<Node>) {
-    let mut prefix = Vec::new();
-    while let (Some(t), Some(o)) = (then.first(), otherwise.first()) {
-        if !is_hoistable_let_pair(t, o) {
-            break;
-        }
-        prefix.push(then.remove(0));
-        otherwise.remove(0);
+    // Count the prefix length first, then drain in one pass — the
+    // previous loop did Vec::remove(0) per matched Let which is O(n)
+    // each (every remaining element shifts left). For an If with a
+    // long body and a 5-deep common prefix that's 5 * 2 * (n - 5)
+    // shifts; the count-then-drain version is one shift per arm.
+    let mut prefix_len = 0;
+    let pair_limit = then.len().min(otherwise.len());
+    while prefix_len < pair_limit
+        && is_hoistable_let_pair(&then[prefix_len], &otherwise[prefix_len])
+    {
+        prefix_len += 1;
     }
+    if prefix_len == 0 {
+        return (Vec::new(), then, otherwise);
+    }
+    let prefix: Vec<Node> = then.drain(0..prefix_len).collect();
+    otherwise.drain(0..prefix_len);
     (prefix, then, otherwise)
 }
 

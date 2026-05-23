@@ -5,9 +5,12 @@ use crate::api::case::{
 use crate::api::metric::BenchMetrics;
 use crate::api::suite::SuiteKind;
 use std::hint::black_box;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
 pub struct FlakyCase;
+
+static FLAKY_RUN_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 impl BenchCase for FlakyCase {
     fn id(&self) -> BenchId {
@@ -64,7 +67,14 @@ impl BenchCase for FlakyCase {
 
         let started = Instant::now();
         let mut acc = 0u64;
-        for i in 0..8_192u64 {
+        let run_index = FLAKY_RUN_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let measured_block = run_index.saturating_sub(1) / 30;
+        let iterations = if measured_block % 2 == 0 {
+            8_192u64
+        } else {
+            262_144u64
+        };
+        for i in 0..iterations {
             acc = acc.wrapping_add(black_box(i.rotate_left((i % 31) as u32)));
         }
         black_box(acc);

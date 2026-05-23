@@ -1,7 +1,7 @@
 //! `literal_of` — `NodeSet = { v : nodes[v] == Literal AND
 //!                                  literal_values[v] == probe }`.
 //!
-//! The IR-level primitive filters by NodeKind only; surgec's
+//! The IR-level primitive filters by NodeKind only; a downstream analyzer's
 //! type-inference ensures `literal_of(probe)` is only lowered against
 //! literal-typed frontiers. A runtime match on the literal value can
 //! be composed by re-filtering with a dedicated literal-payload
@@ -23,6 +23,7 @@ pub fn literal_of(nodes: &str, nodeset_out: &str, node_count: u32) -> Program {
 
 /// CPU reference.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref(nodes: &[u32]) -> Vec<u32> {
     crate::predicate::node_kind_eq::cpu_ref(nodes, node_kind::LITERAL)
 }

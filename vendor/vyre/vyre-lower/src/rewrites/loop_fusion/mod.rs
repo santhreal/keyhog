@@ -7,30 +7,30 @@ use crate::{KernelBody, KernelDescriptor, KernelOp, KernelOpKind};
 /// provably disjoint writes.
 #[must_use]
 pub fn loop_fusion(desc: &KernelDescriptor) -> KernelDescriptor {
-    loop_fusion_with_dataflow_facts(desc, None, None)
+    loop_fusion_with_optional_dataflow_facts(desc, None, None)
 }
 
 #[must_use]
-pub fn loop_fusion_with_weir_alias_facts(
+pub fn loop_fusion_with_alias_facts(
     desc: &KernelDescriptor,
-    alias_facts: &crate::analyses::weir_alias::AliasFactSet,
+    alias_facts: &crate::analyses::alias_facts::AliasFactSet,
 ) -> KernelDescriptor {
-    loop_fusion_with_dataflow_facts(desc, Some(alias_facts), None)
+    loop_fusion_with_optional_dataflow_facts(desc, Some(alias_facts), None)
 }
 
 #[must_use]
-pub fn loop_fusion_with_weir_dataflow_facts(
+pub fn loop_fusion_with_dataflow_facts(
     desc: &KernelDescriptor,
-    alias_facts: &crate::analyses::weir_alias::AliasFactSet,
-    reaching_defs: &crate::analyses::weir_reaching_def::ReachingDefFactSet,
+    alias_facts: &crate::analyses::alias_facts::AliasFactSet,
+    reaching_defs: &crate::analyses::reaching_def_facts::ReachingDefFactSet,
 ) -> KernelDescriptor {
-    loop_fusion_with_dataflow_facts(desc, Some(alias_facts), Some(reaching_defs))
+    loop_fusion_with_optional_dataflow_facts(desc, Some(alias_facts), Some(reaching_defs))
 }
 
-fn loop_fusion_with_dataflow_facts(
+fn loop_fusion_with_optional_dataflow_facts(
     desc: &KernelDescriptor,
-    alias_facts: Option<&crate::analyses::weir_alias::AliasFactSet>,
-    reaching_defs: Option<&crate::analyses::weir_reaching_def::ReachingDefFactSet>,
+    alias_facts: Option<&crate::analyses::alias_facts::AliasFactSet>,
+    reaching_defs: Option<&crate::analyses::reaching_def_facts::ReachingDefFactSet>,
 ) -> KernelDescriptor {
     let mut out = desc.clone();
     out.body = fuse_body(out.body, alias_facts, reaching_defs);
@@ -39,8 +39,8 @@ fn loop_fusion_with_dataflow_facts(
 
 fn fuse_body(
     mut body: KernelBody,
-    alias_facts: Option<&crate::analyses::weir_alias::AliasFactSet>,
-    reaching_defs: Option<&crate::analyses::weir_reaching_def::ReachingDefFactSet>,
+    alias_facts: Option<&crate::analyses::alias_facts::AliasFactSet>,
+    reaching_defs: Option<&crate::analyses::reaching_def_facts::ReachingDefFactSet>,
 ) -> KernelBody {
     body.child_bodies = body
         .child_bodies
@@ -52,15 +52,13 @@ fn fuse_body(
     let mut index = 0;
     while index < old_ops.len() {
         if index + 1 < old_ops.len() {
-            if let Some(fused) =
-                try_fuse_pair(
-                    &mut body,
-                    &old_ops[index],
-                    &old_ops[index + 1],
-                    alias_facts,
-                    reaching_defs,
-                )
-            {
+            if let Some(fused) = try_fuse_pair(
+                &mut body,
+                &old_ops[index],
+                &old_ops[index + 1],
+                alias_facts,
+                reaching_defs,
+            ) {
                 new_ops.push(fused);
                 index += 2;
                 continue;
@@ -77,8 +75,8 @@ fn try_fuse_pair(
     body: &mut KernelBody,
     left: &KernelOp,
     right: &KernelOp,
-    alias_facts: Option<&crate::analyses::weir_alias::AliasFactSet>,
-    reaching_defs: Option<&crate::analyses::weir_reaching_def::ReachingDefFactSet>,
+    alias_facts: Option<&crate::analyses::alias_facts::AliasFactSet>,
+    reaching_defs: Option<&crate::analyses::reaching_def_facts::ReachingDefFactSet>,
 ) -> Option<KernelOp> {
     let (left_loop_var, left_body) = loop_parts(left)?;
     let (right_loop_var, right_body) = loop_parts(right)?;
@@ -111,8 +109,8 @@ fn loop_parts(op: &KernelOp) -> Option<(&Name, u32)> {
 fn simple_disjoint_write_bodies(
     left: &KernelBody,
     right: &KernelBody,
-    alias_facts: Option<&crate::analyses::weir_alias::AliasFactSet>,
-    reaching_defs: Option<&crate::analyses::weir_reaching_def::ReachingDefFactSet>,
+    alias_facts: Option<&crate::analyses::alias_facts::AliasFactSet>,
+    reaching_defs: Option<&crate::analyses::reaching_def_facts::ReachingDefFactSet>,
 ) -> bool {
     if !left.child_bodies.is_empty() || !right.child_bodies.is_empty() {
         return false;
@@ -128,7 +126,7 @@ fn simple_disjoint_write_bodies(
 
 fn single_write_target(
     body: &KernelBody,
-    reaching_defs: Option<&crate::analyses::weir_reaching_def::ReachingDefFactSet>,
+    reaching_defs: Option<&crate::analyses::reaching_def_facts::ReachingDefFactSet>,
 ) -> Option<(u8, u32, u32)> {
     if body.ops.len() != 1 {
         return None;
@@ -150,7 +148,7 @@ fn single_write_target(
 
 fn resolve(
     id: u32,
-    reaching_defs: Option<&crate::analyses::weir_reaching_def::ReachingDefFactSet>,
+    reaching_defs: Option<&crate::analyses::reaching_def_facts::ReachingDefFactSet>,
 ) -> u32 {
     let Some(facts) = reaching_defs else {
         return id;
@@ -173,17 +171,17 @@ fn resolve(
 fn write_targets_are_independent(
     left: (u8, u32, u32),
     right: (u8, u32, u32),
-    alias_facts: Option<&crate::analyses::weir_alias::AliasFactSet>,
+    alias_facts: Option<&crate::analyses::alias_facts::AliasFactSet>,
 ) -> bool {
     left.0 != right.0
-        || alias_facts.is_some_and(|facts| {
-            facts.proves_no_alias(left.1, left.2, right.1, right.2)
-        })
+        || alias_facts.is_some_and(|facts| facts.proves_no_alias(left.1, left.2, right.1, right.2))
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{BindingLayout, Dispatch, KernelBody, KernelDescriptor, KernelOp, KernelOpKind, LiteralValue};
+    use crate::{
+        BindingLayout, Dispatch, KernelBody, KernelDescriptor, KernelOp, KernelOpKind, LiteralValue,
+    };
 
     use super::*;
 
@@ -195,15 +193,27 @@ mod tests {
             dispatch: Dispatch::new(64, 1, 1),
             body: KernelBody {
                 ops: vec![
-                    KernelOp { kind: KernelOpKind::Literal, operands: vec![0], result: Some(0) },
-                    KernelOp { kind: KernelOpKind::Literal, operands: vec![1], result: Some(1) },
                     KernelOp {
-                        kind: KernelOpKind::StructuredForLoop { loop_var: "i".into() },
+                        kind: KernelOpKind::Literal,
+                        operands: vec![0],
+                        result: Some(0),
+                    },
+                    KernelOp {
+                        kind: KernelOpKind::Literal,
+                        operands: vec![1],
+                        result: Some(1),
+                    },
+                    KernelOp {
+                        kind: KernelOpKind::StructuredForLoop {
+                            loop_var: "i".into(),
+                        },
                         operands: vec![0, 1, 0],
                         result: None,
                     },
                     KernelOp {
-                        kind: KernelOpKind::StructuredForLoop { loop_var: "i".into() },
+                        kind: KernelOpKind::StructuredForLoop {
+                            loop_var: "i".into(),
+                        },
                         operands: vec![0, 1, 1],
                         result: None,
                     },
@@ -223,22 +233,34 @@ mod tests {
     }
 
     #[test]
-    fn does_not_fuse_different_global_bindings_without_weir_no_alias_fact() {
+    fn does_not_fuse_different_global_bindings_without_external_no_alias_fact() {
         let desc = KernelDescriptor {
             id: "fusion_cross_binding_conservative".into(),
             bindings: BindingLayout { slots: vec![] },
             dispatch: Dispatch::new(64, 1, 1),
             body: KernelBody {
                 ops: vec![
-                    KernelOp { kind: KernelOpKind::Literal, operands: vec![0], result: Some(0) },
-                    KernelOp { kind: KernelOpKind::Literal, operands: vec![1], result: Some(1) },
                     KernelOp {
-                        kind: KernelOpKind::StructuredForLoop { loop_var: "i".into() },
+                        kind: KernelOpKind::Literal,
+                        operands: vec![0],
+                        result: Some(0),
+                    },
+                    KernelOp {
+                        kind: KernelOpKind::Literal,
+                        operands: vec![1],
+                        result: Some(1),
+                    },
+                    KernelOp {
+                        kind: KernelOpKind::StructuredForLoop {
+                            loop_var: "i".into(),
+                        },
                         operands: vec![0, 1, 0],
                         result: None,
                     },
                     KernelOp {
-                        kind: KernelOpKind::StructuredForLoop { loop_var: "i".into() },
+                        kind: KernelOpKind::StructuredForLoop {
+                            loop_var: "i".into(),
+                        },
                         operands: vec![0, 1, 1],
                         result: None,
                     },
@@ -256,14 +278,14 @@ mod tests {
             .count();
         assert_eq!(conservative_loops, 2);
 
-        let mut facts = crate::analyses::weir_alias::AliasFactSet::default();
-        facts.insert_no_alias(crate::analyses::weir_alias::NoAliasFact {
+        let mut facts = crate::analyses::alias_facts::AliasFactSet::default();
+        facts.insert_no_alias(crate::analyses::alias_facts::NoAliasFact {
             left_binding: 0,
             left_index: 0,
             right_binding: 1,
             right_index: 0,
         });
-        let alias_aware = loop_fusion_with_weir_alias_facts(&desc, &facts);
+        let alias_aware = loop_fusion_with_alias_facts(&desc, &facts);
         let alias_aware_loops = alias_aware
             .body
             .ops
@@ -286,22 +308,34 @@ mod tests {
     }
 
     #[test]
-    fn fuses_same_binding_loops_when_weir_proves_indices_no_alias() {
+    fn fuses_same_binding_loops_when_analysis_proves_indices_no_alias() {
         let desc = KernelDescriptor {
             id: "fusion_alias".into(),
             bindings: BindingLayout { slots: vec![] },
             dispatch: Dispatch::new(64, 1, 1),
             body: KernelBody {
                 ops: vec![
-                    KernelOp { kind: KernelOpKind::Literal, operands: vec![0], result: Some(0) },
-                    KernelOp { kind: KernelOpKind::Literal, operands: vec![1], result: Some(1) },
                     KernelOp {
-                        kind: KernelOpKind::StructuredForLoop { loop_var: "i".into() },
+                        kind: KernelOpKind::Literal,
+                        operands: vec![0],
+                        result: Some(0),
+                    },
+                    KernelOp {
+                        kind: KernelOpKind::Literal,
+                        operands: vec![1],
+                        result: Some(1),
+                    },
+                    KernelOp {
+                        kind: KernelOpKind::StructuredForLoop {
+                            loop_var: "i".into(),
+                        },
                         operands: vec![0, 1, 0],
                         result: None,
                     },
                     KernelOp {
-                        kind: KernelOpKind::StructuredForLoop { loop_var: "i".into() },
+                        kind: KernelOpKind::StructuredForLoop {
+                            loop_var: "i".into(),
+                        },
                         operands: vec![0, 1, 1],
                         result: None,
                     },
@@ -318,14 +352,14 @@ mod tests {
             .filter(|op| matches!(op.kind, KernelOpKind::StructuredForLoop { .. }))
             .count();
         assert_eq!(conservative_loops, 2);
-        let mut facts = crate::analyses::weir_alias::AliasFactSet::default();
-        facts.insert_no_alias(crate::analyses::weir_alias::NoAliasFact {
+        let mut facts = crate::analyses::alias_facts::AliasFactSet::default();
+        facts.insert_no_alias(crate::analyses::alias_facts::NoAliasFact {
             left_binding: 0,
             left_index: 10,
             right_binding: 0,
             right_index: 11,
         });
-        let alias_aware = loop_fusion_with_weir_alias_facts(&desc, &facts);
+        let alias_aware = loop_fusion_with_alias_facts(&desc, &facts);
         let alias_aware_loops = alias_aware
             .body
             .ops
@@ -343,15 +377,27 @@ mod tests {
             dispatch: Dispatch::new(64, 1, 1),
             body: KernelBody {
                 ops: vec![
-                    KernelOp { kind: KernelOpKind::Literal, operands: vec![0], result: Some(0) },
-                    KernelOp { kind: KernelOpKind::Literal, operands: vec![1], result: Some(1) },
                     KernelOp {
-                        kind: KernelOpKind::StructuredForLoop { loop_var: "i".into() },
+                        kind: KernelOpKind::Literal,
+                        operands: vec![0],
+                        result: Some(0),
+                    },
+                    KernelOp {
+                        kind: KernelOpKind::Literal,
+                        operands: vec![1],
+                        result: Some(1),
+                    },
+                    KernelOp {
+                        kind: KernelOpKind::StructuredForLoop {
+                            loop_var: "i".into(),
+                        },
                         operands: vec![0, 1, 0],
                         result: None,
                     },
                     KernelOp {
-                        kind: KernelOpKind::StructuredForLoop { loop_var: "i".into() },
+                        kind: KernelOpKind::StructuredForLoop {
+                            loop_var: "i".into(),
+                        },
                         operands: vec![0, 1, 1],
                         result: None,
                     },

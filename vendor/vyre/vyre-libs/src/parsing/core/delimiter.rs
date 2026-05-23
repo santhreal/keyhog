@@ -11,8 +11,10 @@ use vyre::ir::Program;
 
 use crate::region::tag_program;
 use vyre_primitives::matching::bracket_match::bracket_match as primitive_bracket_match;
+#[cfg(any(test, feature = "cpu-parity"))]
+pub use vyre_primitives::matching::bracket_match::cpu_ref;
 pub use vyre_primitives::matching::bracket_match::{
-    cpu_ref, pack_u32, CLOSE_BRACE, MATCH_NONE, OPEN_BRACE, OTHER,
+    pack_u32, CLOSE_BRACE, MATCH_NONE, OPEN_BRACE, OTHER,
 };
 use vyre_primitives::parsing::core_delimiter_match as primitive_core_delimiter;
 
@@ -61,24 +63,17 @@ fn fixture_inputs() -> Vec<Vec<Vec<u8>>> {
     vec![vec![
         pack_u32(&[OPEN_BRACE, OPEN_BRACE, CLOSE_BRACE, CLOSE_BRACE]),
         vec![0u8; 4 * 4],
-        pack_u32(&[MATCH_NONE; 4]),
     ]]
 }
 
 fn fixture_outputs() -> Vec<Vec<Vec<u8>>> {
-    // The universal harness expects one readback per RW / output
-    // buffer. bracket_match declares two RW buffers in order: `stack`
-    // (scratch depth stack) and `match_pairs` (result). For the
-    // fixture input [OPEN, OPEN, CLOSE, CLOSE] with max_depth=4,
-    // tracing the serial walk leaves stack = [0, 1, 0, 0] (slots
-    // 2..3 never written) and match_pairs = [3, 2, 1, 0].
-    vec![vec![
-        pack_u32(&[0, 1, 0, 0]),
-        pack_u32(&cpu_ref(
-            &[OPEN_BRACE, OPEN_BRACE, CLOSE_BRACE, CLOSE_BRACE],
-            4,
-        )),
-    ]]
+    // The universal harness expects one readback per input-output /
+    // output buffer. `stack` is caller-supplied scratch, while
+    // `match_pairs` is a backend-owned output. For the fixture input
+    // [OPEN, OPEN, CLOSE, CLOSE] with max_depth=4, tracing the serial
+    // walk leaves stack = [0, 1, 0, 0] (slots 2..3 never written) and
+    // match_pairs = [3, 2, 1, 0].
+    vec![vec![pack_u32(&[0, 1, 0, 0]), pack_u32(&[3, 2, 1, 0])]]
 }
 
 inventory::submit! {
@@ -87,6 +82,7 @@ inventory::submit! {
         build: || bracket_match("kinds", "stack", "match_pairs", 4, 4),
         test_inputs: Some(fixture_inputs),
         expected_output: Some(fixture_outputs),
+        category: Some("parsing"),
     }
 }
 
@@ -112,6 +108,7 @@ inventory::submit! {
                 .collect::<Vec<u8>>();
             vec![vec![bytes]]
         }),
+        category: Some("parsing"),
     }
 }
 

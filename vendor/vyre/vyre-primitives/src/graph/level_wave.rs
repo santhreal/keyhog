@@ -117,6 +117,7 @@ pub fn level_wave_program(
 /// `step_for_lane(lane, depth)` exactly once per (lane, depth ==
 /// depth_for_lane`lane`). Used by the conformance harness to verify
 /// that the GPU kernel respects the depth ordering.
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref<F>(depths: &[u32], max_depth: u32, mut step_for_lane: F)
 where
     F: FnMut(u32, u32),

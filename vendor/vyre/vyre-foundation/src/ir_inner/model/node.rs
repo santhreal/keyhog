@@ -25,6 +25,11 @@ pub trait NodeExtension: fmt::Debug + Send + Sync + 'static {
     /// Validate extension-local invariants.
     ///
     /// The returned error must explain the bad invariant and include `Fix:`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an extension-defined diagnostic when the payload violates its
+    /// local invariants.
     fn validate_extension(&self) -> Result<(), String>;
 
     /// Downcast to Any to allow backend-specific dispatch from opaque payloads.

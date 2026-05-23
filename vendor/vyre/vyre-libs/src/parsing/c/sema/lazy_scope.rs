@@ -67,9 +67,12 @@ struct LazyInner {
     /// for declarations introduced *in that frame only* (no
     /// inherited entries).
     frames: Vec<FxHashMap<Arc<str>, DeclKind>>,
-    /// Lookup cache: `(frame, name) → resolved DeclKind`.
+    /// Lookup cache: `name -> frame -> resolved DeclKind`.
     /// Populated on first query; cleared by `invalidate`.
-    cache: FxHashMap<ScopeFrameId, FxHashMap<Arc<str>, DeclKind>>,
+    ///
+    /// The name-major layout makes declaration invalidation proportional to
+    /// the one declared name instead of the total number of cached frames.
+    cache: FxHashMap<Arc<str>, FxHashMap<ScopeFrameId, DeclKind>>,
 }
 
 impl LazyScopeTable {
@@ -115,16 +118,10 @@ impl LazyScopeTable {
             return false;
         }
         inner.frames[frame_idx].insert(Arc::from(name), kind);
-        // Conservative cache invalidation: drop every cached entry
-        // for `name` (across all frames) — the new declaration
-        // could shadow a previously-resolved binding for any
-        // descendant frame. The cache repopulates lazily.
-        for per_frame_cache in inner.cache.values_mut() {
-            per_frame_cache.remove(name);
-        }
-        inner
-            .cache
-            .retain(|_, per_frame_cache| !per_frame_cache.is_empty());
+        // Conservative cache invalidation: drop every cached entry for this
+        // one name. A new declaration could shadow a previously-resolved
+        // binding for any descendant frame, but unrelated names stay hot.
+        inner.cache.remove(name);
         true
     }
 
@@ -135,7 +132,7 @@ impl LazyScopeTable {
     pub fn lookup(&self, frame: ScopeFrameId, name: &str) -> DeclKind {
         {
             let inner = self.read_inner();
-            if let Some(kind) = inner.cache.get(&frame).and_then(|cache| cache.get(name)) {
+            if let Some(kind) = inner.cache.get(name).and_then(|cache| cache.get(&frame)) {
                 return *kind;
             }
         }
@@ -144,9 +141,9 @@ impl LazyScopeTable {
         let mut inner = self.write_inner();
         inner
             .cache
-            .entry(frame)
+            .entry(Arc::from(name))
             .or_default()
-            .insert(Arc::from(name), kind);
+            .insert(frame, kind);
         kind
     }
 
@@ -192,15 +189,19 @@ impl LazyScopeTable {
     }
 
     fn read_inner(&self) -> RwLockReadGuard<'_, LazyInner> {
-        self.inner
-            .read()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+        self.inner.read().unwrap_or_else(|error| {
+            panic!(
+                "C semantic lazy scope table read lock was poisoned: {error}. Fix: discard the translation-unit semantic cache after a panic; continuing could misclassify declarations."
+            )
+        })
     }
 
     fn write_inner(&self) -> RwLockWriteGuard<'_, LazyInner> {
-        self.inner
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+        self.inner.write().unwrap_or_else(|error| {
+            panic!(
+                "C semantic lazy scope table write lock was poisoned: {error}. Fix: discard the translation-unit semantic cache after a panic; continuing could corrupt declaration resolution."
+            )
+        })
     }
 }
 
@@ -277,9 +278,15 @@ mod tests {
     fn second_lookup_hits_cache() {
         let table = LazyScopeTable::new();
         table.declare(LazyScopeTable::root(), "x", DeclKind::Variable);
-        assert_eq!(table.lookup(LazyScopeTable::root(), "x"), DeclKind::Variable);
+        assert_eq!(
+            table.lookup(LazyScopeTable::root(), "x"),
+            DeclKind::Variable
+        );
         let initial = table.cache_size();
-        assert_eq!(table.lookup(LazyScopeTable::root(), "x"), DeclKind::Variable);
+        assert_eq!(
+            table.lookup(LazyScopeTable::root(), "x"),
+            DeclKind::Variable
+        );
         assert_eq!(
             table.cache_size(),
             initial,
@@ -323,10 +330,37 @@ mod tests {
     fn invalidate_clears_cache() {
         let table = LazyScopeTable::new();
         table.declare(LazyScopeTable::root(), "x", DeclKind::Variable);
-        assert_eq!(table.lookup(LazyScopeTable::root(), "x"), DeclKind::Variable);
+        assert_eq!(
+            table.lookup(LazyScopeTable::root(), "x"),
+            DeclKind::Variable
+        );
         assert!(table.cache_size() > 0);
         table.invalidate();
         assert_eq!(table.cache_size(), 0);
+    }
+
+    /// Poisoned semantic state is not recoverable: continuing after
+    /// a panic can corrupt declaration classification.
+    #[test]
+    fn poisoned_scope_table_lock_is_not_silently_recovered() {
+        let table = LazyScopeTable::new();
+        let poisoned = table.clone();
+        let _ = std::thread::spawn(move || {
+            let _guard = poisoned.write_inner();
+            panic!("poison lazy scope table");
+        })
+        .join();
+
+        let panic = std::panic::catch_unwind(|| {
+            let _ = table.lookup(LazyScopeTable::root(), "x");
+        })
+        .expect_err("poisoned semantic scope table must panic instead of recovering");
+        let message = panic
+            .downcast_ref::<String>()
+            .map(String::as_str)
+            .or_else(|| panic.downcast_ref::<&'static str>().copied())
+            .unwrap_or("<non-string panic>");
+        assert!(message.contains("read lock was poisoned"), "{message}");
     }
 
     /// Send + Sync trait bounds (compile-time check).

@@ -29,9 +29,10 @@
 //!   - `tok_starts` (U32) — per-token byte offset.
 //!   - `tok_lens` (U32) — per-token byte length.
 //!   - `directive_kinds` (U32) — output of `gpu_directive_metadata`.
-//!   - `source` (U8) — original source bytes.
-//!   - `macro_names_packed` (U8), `macro_offsets` (U32) — defined-macro
-//!     table (same layout as `gpu_ifdef_value`).
+//!   - `source` (U32 packed bytes) — original source bytes.
+//!   - `macro_names_packed` (U32 packed bytes), `macro_offsets` (U32),
+//!     `macro_values` (U32) — GNU/Clang builtin perfect-hash table followed by
+//!     the defined object-like macro integer values.
 //!
 //! Outputs:
 //!   - `directive_values` (U32) — per-token value: `1`/`0` for
@@ -53,7 +54,7 @@
 //!   - `defined(X)` and `defined X`
 //!   - Integer literals (via inlined logic from 17b.2)
 //!   - Char constants (via inlined logic from 17b.3)
-//!   - Identifier macro reference: bare ident → defined-or-not (1 / 0)
+//!   - Identifier macro reference: bare ident → object-like integer macro value, or 0 if absent
 //!
 //! Tested under `tests/gpu_if_expression_roundtrip.rs` against the CPU
 //! `reference_c_preprocessor_directive_metadata` for `if`/`elif` rows.
@@ -61,479 +62,497 @@
 use crate::parsing::c::lex::tokens::{TOK_PP_ELIF, TOK_PP_IF};
 use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 
-/// Canonical op id.
-pub const OP_ID: &str = "vyre-libs::parsing::c::preprocess::gpu_if_expression";
+mod abi;
+mod apply;
+mod byte_load;
+mod opcodes;
+mod stack;
+#[cfg(test)]
+mod tests;
 
-/// Canonical binding indices.
-pub const BINDING_TOK_STARTS: u32 = 0;
-/// Canonical binding for the input per-token byte-length buffer.
-pub const BINDING_TOK_LENS: u32 = 1;
-/// Canonical binding for the input directive-kinds buffer.
-pub const BINDING_DIRECTIVE_KINDS: u32 = 2;
-/// Canonical binding for the input source bytes.
-pub const BINDING_SOURCE: u32 = 3;
-/// Canonical binding for the input packed defined-macro names.
-pub const BINDING_MACRO_NAMES_PACKED: u32 = 4;
-/// Canonical binding for the input macro-offset table.
-pub const BINDING_MACRO_OFFSETS: u32 = 5;
-/// Canonical binding for the output `directive_values` buffer.
-pub const BINDING_DIRECTIVE_VALUES: u32 = 6;
+pub use abi::{
+    BINDING_DIRECTIVE_KINDS, BINDING_DIRECTIVE_VALUES, BINDING_MACRO_NAMES_PACKED,
+    BINDING_MACRO_OFFSETS, BINDING_MACRO_VALUES, BINDING_SOURCE, BINDING_TOK_LENS,
+    BINDING_TOK_STARTS, MAX_IDENT_LEN, MAX_PAYLOAD_BYTES, OP_ID, STACK_DEPTH,
+};
+use apply::apply_top_op;
+use byte_load::{load_packed_byte_u32, safe_load_src_expr};
+use opcodes::*;
+use stack::{peek_stack, pop_stack, push_stack};
 
-/// Per-thread stack depth (value and operator stacks).
-pub const STACK_DEPTH: u32 = 16;
+fn fnv1a32_bytes(bytes: &[u8]) -> u32 {
+    let mut hash = 0x811c_9dc5u32;
+    for byte in bytes {
+        hash ^= u32::from(*byte);
+        hash = hash.wrapping_mul(0x0100_0193);
+    }
+    hash
+}
 
-/// Maximum payload bytes scanned per directive.
-pub const MAX_PAYLOAD_BYTES: u32 = 512;
+fn ident_hash_equals(bytes: &'static [u8]) -> Expr {
+    Expr::and(
+        Expr::eq(Expr::var("ident_len"), Expr::u32(bytes.len() as u32)),
+        Expr::eq(Expr::var("ident_hash"), Expr::u32(fnv1a32_bytes(bytes))),
+    )
+}
 
-/// Maximum identifier length scanned for `defined(X)` / bare-ident lookups.
-pub const MAX_IDENT_LEN: u32 = 64;
+fn source_at_equals(start_var: &'static str, bytes: &'static [u8], source_byte_len: Expr) -> Expr {
+    let mut expr = Expr::eq(Expr::u32(1), Expr::u32(1));
+    for (idx, byte) in bytes.iter().copied().enumerate() {
+        expr = Expr::and(
+            expr,
+            Expr::eq(
+                safe_load_src_expr(
+                    Expr::add(Expr::var(start_var), Expr::u32(idx as u32)),
+                    source_byte_len.clone(),
+                ),
+                Expr::u32(u32::from(byte)),
+            ),
+        );
+    }
+    expr
+}
 
-// Operator opcodes. Higher = higher precedence; `precedence_of` is
-// the source of truth and the codes are arbitrary as long as the
-// precedence helper agrees.
-const OP_LPAREN: u32 = 1; // sentinel; never popped except by `)`.
-const OP_TERNARY_Q: u32 = 2; // sentinel for the `?` of `?:`.
-const OP_LOR: u32 = 3;
-const OP_LAND: u32 = 4;
-const OP_BOR: u32 = 5;
-const OP_BXOR: u32 = 6;
-const OP_BAND: u32 = 7;
-const OP_EQ: u32 = 8;
-const OP_NE: u32 = 9;
-const OP_LT: u32 = 10;
-const OP_LE: u32 = 11;
-const OP_GT: u32 = 12;
-const OP_GE: u32 = 13;
-const OP_SHL: u32 = 14;
-const OP_SHR: u32 = 15;
-const OP_ADD: u32 = 16;
-const OP_SUB: u32 = 17;
-const OP_MUL: u32 = 18;
-const OP_DIV: u32 = 19;
-const OP_MOD: u32 = 20;
-// Unary operators. Higher precedence than any binary so they always
-// apply before binary work. Encoded as opcodes >= 100 so the apply
-// helper can distinguish unary (pop 1) from binary (pop 2).
-const OP_UN_NOT: u32 = 101;
-const OP_UN_BNOT: u32 = 102;
-const OP_UN_NEG: u32 = 103;
-const OP_UN_PLUS: u32 = 104;
-
-/// Build the 17b.4 `#if`/`#elif` evaluator `Program`.
-#[must_use]
-pub fn gpu_if_expression(
-    num_tokens: u32,
-    source_len: u32,
-    macro_names_len: u32,
-    num_macros: u32,
-) -> Program {
-    let t = Expr::var("t");
-
-    // Real-GPU note: U8 storage buffers are emitted as `array<u32>`;
-    // `load(buf, addr)` returns the u32 word at index `addr`.
-    // Reference-eval treats U8 as byte-addressed. Both backends agree
-    // when `source` and `macro_names_packed` are declared as packed
-    // U32 below; this helper extracts the byte explicitly.
-    let load_byte_u32 = |buf: &'static str, addr: Expr| -> Expr {
-        let word_idx = Expr::div(addr.clone(), Expr::u32(4));
-        let byte_in_word = Expr::rem(addr, Expr::u32(4));
-        let word = Expr::cast(DataType::U32, Expr::load(buf, word_idx));
-        let shift = Expr::mul(byte_in_word, Expr::u32(8));
-        Expr::bitand(Expr::shr(word, shift), Expr::u32(0xFF))
-    };
-    let safe_load_src = |addr: Expr| -> Expr {
+fn push_gnu_builtin_hash_lookup(
+    nodes: &mut Vec<Node>,
+    prefix: &'static str,
+    hash_var: &str,
+    out_var: &str,
+) {
+    let slot_var = format!("{prefix}_lookup_slot");
+    let value_var = format!("{prefix}_lookup_value");
+    nodes.push(Node::let_bind(
+        &slot_var,
+        Expr::rem(
+            Expr::mul(
+                Expr::var(hash_var),
+                Expr::u32(crate::parsing::c::parse::gnu_builtins::GPU_BUILTIN_HASH_TABLE_SEED),
+            ),
+            Expr::u32(crate::parsing::c::parse::gnu_builtins::GPU_BUILTIN_HASH_TABLE_SIZE as u32),
+        ),
+    ));
+    nodes.push(Node::let_bind(
+        &value_var,
+        Expr::load("macro_values", Expr::var(&slot_var)),
+    ));
+    nodes.push(Node::let_bind(
+        out_var,
         Expr::select(
-            Expr::lt(addr.clone(), Expr::u32(source_len)),
-            load_byte_u32("source", addr),
+            Expr::and(
+                Expr::ne(Expr::var(&value_var), Expr::u32(0)),
+                Expr::eq(Expr::var(&value_var), Expr::var(hash_var)),
+            ),
+            Expr::u32(1),
             Expr::u32(0),
-        )
-    };
+        ),
+    ));
+}
 
-    // ---------- precedence_of(op) ----------
-    // Returns the precedence as a u32 (higher = tighter binding).
-    let precedence_of = |op: Expr| -> Expr {
-        // Match each opcode to its precedence. LPAREN/TERNARY_Q have
-        // precedence 0 so binary operators never pop them. Unary ops
-        // are 14 so they apply before any binary work but still get
-        // popped by `)`/EOF drain.
+fn push_has_builtin_call_parser(
+    nodes: &mut Vec<Node>,
+    prefix: &'static str,
+    start_var: &'static str,
+    tok_end_var: &'static str,
+    tok_len_var: &'static str,
+    source_byte_len: Expr,
+    scan_out_var: &'static str,
+    found_var: &'static str,
+    value_var: &'static str,
+) {
+    let is_builtin = format!("{prefix}_is_builtin");
+    let is_constexpr_builtin = format!("{prefix}_is_constexpr_builtin");
+    let pos = format!("{prefix}_pos");
+    let ws_done = format!("{prefix}_ws_done");
+    let ws_loop = format!("{prefix}_ws");
+    let ws_b = format!("{prefix}_ws_b");
+    let ws_is_ws = format!("{prefix}_ws_is_ws");
+    let had_paren = format!("{prefix}_had_paren");
+    let ws2_done = format!("{prefix}_ws2_done");
+    let ws2_loop = format!("{prefix}_ws2");
+    let ws2_b = format!("{prefix}_ws2_b");
+    let ws2_is_ws = format!("{prefix}_ws2_is_ws");
+    let arg_base = format!("{prefix}_arg_base");
+    let arg_len = format!("{prefix}_arg_len");
+    let hash = format!("{prefix}_hash");
+    let arg_loop = format!("{prefix}_arg_id");
+    let arg_pos = format!("{prefix}_arg_pos");
+    let arg_b = format!("{prefix}_arg_b");
+    let arg_alpha = format!("{prefix}_arg_alpha");
+    let arg_digit = format!("{prefix}_arg_digit");
+    let arg_under = format!("{prefix}_arg_under");
+    let arg_cont = format!("{prefix}_arg_cont");
+    let known = format!("{prefix}_known");
+    let ws3_done = format!("{prefix}_ws3_done");
+    let ws3_loop = format!("{prefix}_ws3");
+    let ws3_b = format!("{prefix}_ws3_b");
+    let ws3_is_ws = format!("{prefix}_ws3_is_ws");
+    let had_close = format!("{prefix}_had_close");
+
+    nodes.push(Node::let_bind(
+        &is_builtin,
         Expr::select(
-            Expr::ge(op.clone(), Expr::u32(100)),
-            Expr::u32(14),
-            Expr::select(
-            Expr::eq(op.clone(), Expr::u32(OP_MUL)),
-            Expr::u32(13),
-            Expr::select(
-                Expr::eq(op.clone(), Expr::u32(OP_DIV)),
-                Expr::u32(13),
-                Expr::select(
-                    Expr::eq(op.clone(), Expr::u32(OP_MOD)),
-                    Expr::u32(13),
+            source_at_equals(start_var, b"__has_builtin", source_byte_len.clone()),
+            Expr::u32(1),
+            Expr::u32(0),
+        ),
+    ));
+    nodes.push(Node::let_bind(
+        &is_constexpr_builtin,
+        Expr::select(
+            source_at_equals(
+                start_var,
+                b"__has_constexpr_builtin",
+                source_byte_len.clone(),
+            ),
+            Expr::u32(1),
+            Expr::u32(0),
+        ),
+    ));
+    nodes.push(Node::if_then(
+        Expr::and(
+            Expr::eq(Expr::var(found_var), Expr::u32(0)),
+            Expr::or(
+                Expr::eq(Expr::var(&is_builtin), Expr::u32(1)),
+                Expr::eq(Expr::var(&is_constexpr_builtin), Expr::u32(1)),
+            ),
+        ),
+        {
+            let mut call_nodes: Vec<Node> = Vec::new();
+            call_nodes.push(Node::let_bind(
+                &pos,
+                Expr::add(
+                    Expr::var(start_var),
                     Expr::select(
-                        Expr::eq(op.clone(), Expr::u32(OP_ADD)),
-                        Expr::u32(12),
-                        Expr::select(
-                            Expr::eq(op.clone(), Expr::u32(OP_SUB)),
-                            Expr::u32(12),
-                            Expr::select(
-                                Expr::eq(op.clone(), Expr::u32(OP_SHL)),
-                                Expr::u32(11),
-                                Expr::select(
-                                    Expr::eq(op.clone(), Expr::u32(OP_SHR)),
-                                    Expr::u32(11),
-                                    Expr::select(
-                                        Expr::eq(op.clone(), Expr::u32(OP_LT)),
-                                        Expr::u32(10),
-                                        Expr::select(
-                                            Expr::eq(op.clone(), Expr::u32(OP_LE)),
-                                            Expr::u32(10),
-                                            Expr::select(
-                                                Expr::eq(op.clone(), Expr::u32(OP_GT)),
-                                                Expr::u32(10),
-                                                Expr::select(
-                                                    Expr::eq(op.clone(), Expr::u32(OP_GE)),
-                                                    Expr::u32(10),
-                                                    Expr::select(
-                                                        Expr::eq(op.clone(), Expr::u32(OP_EQ)),
-                                                        Expr::u32(9),
-                                                        Expr::select(
-                                                            Expr::eq(op.clone(), Expr::u32(OP_NE)),
-                                                            Expr::u32(9),
-                                                            Expr::select(
-                                                                Expr::eq(op.clone(), Expr::u32(OP_BAND)),
-                                                                Expr::u32(8),
-                                                                Expr::select(
-                                                                    Expr::eq(op.clone(), Expr::u32(OP_BXOR)),
-                                                                    Expr::u32(7),
-                                                                    Expr::select(
-                                                                        Expr::eq(op.clone(), Expr::u32(OP_BOR)),
-                                                                        Expr::u32(6),
-                                                                        Expr::select(
-                                                                            Expr::eq(op.clone(), Expr::u32(OP_LAND)),
-                                                                            Expr::u32(5),
-                                                                            Expr::select(
-                                                                                Expr::eq(op, Expr::u32(OP_LOR)),
-                                                                                Expr::u32(4),
-                                                                                Expr::u32(0),
-                                                                            ),
-                                                                        ),
-                                                                    ),
-                                                                ),
-                                                            ),
-                                                        ),
-                                                    ),
-                                                ),
-                                            ),
-                                        ),
-                                    ),
-                                ),
-                            ),
-                        ),
+                        Expr::eq(Expr::var(&is_builtin), Expr::u32(1)),
+                        Expr::u32(13),
+                        Expr::u32(23),
                     ),
                 ),
-            ),
-        )
-        )
-    };
-
-    // ---------- val_stack / op_stack helpers ----------
-    // Stacks are stored as STACK_DEPTH let_bind slots each, with
-    // mutable-via-assign semantics. Push/pop branch on the current SP.
-    fn push_stack(name: &str, sp: &str, value: Expr) -> Vec<Node> {
-        let mut nodes = Vec::with_capacity(STACK_DEPTH as usize);
-        for slot in 0..STACK_DEPTH {
-            nodes.push(Node::if_then(
-                Expr::eq(Expr::var(sp), Expr::u32(slot)),
-                vec![Node::assign(&format!("{name}_{slot}"), value.clone())],
             ));
-        }
-        // Bump SP. If full, leave SP at STACK_DEPTH so subsequent pushes
-        // also no-op; the final state still produces a value the caller
-        // can safely emit (0 / failsafe).
-        nodes.push(Node::if_then(
-            Expr::lt(Expr::var(sp), Expr::u32(STACK_DEPTH)),
-            vec![Node::assign(sp, Expr::add(Expr::var(sp), Expr::u32(1)))],
-        ));
-        nodes
-    }
-    // Pop a stack into `out_var` (must already be let_bind'd to 0).
-    fn pop_stack(name: &str, sp: &str, out_var: &str) -> Vec<Node> {
-        let mut nodes = Vec::with_capacity(STACK_DEPTH as usize + 2);
-        // Decrement SP first (saturating at 0).
-        nodes.push(Node::if_then(
-            Expr::gt(Expr::var(sp), Expr::u32(0)),
-            vec![Node::assign(sp, Expr::sub(Expr::var(sp), Expr::u32(1)))],
-        ));
-        for slot in 0..STACK_DEPTH {
-            nodes.push(Node::if_then(
-                Expr::eq(Expr::var(sp), Expr::u32(slot)),
-                vec![Node::assign(out_var, Expr::var(&format!("{name}_{slot}")))],
+            call_nodes.push(Node::let_bind(&ws_done, Expr::u32(0)));
+            call_nodes.push(Node::loop_for(
+                &ws_loop,
+                Expr::u32(0),
+                Expr::var(tok_len_var),
+                vec![Node::if_then(
+                    Expr::and(
+                        Expr::eq(Expr::var(&ws_done), Expr::u32(0)),
+                        Expr::lt(Expr::var(&pos), Expr::var(tok_end_var)),
+                    ),
+                    vec![
+                        Node::let_bind(
+                            &ws_b,
+                            safe_load_src_expr(Expr::var(&pos), source_byte_len.clone()),
+                        ),
+                        Node::let_bind(
+                            &ws_is_ws,
+                            Expr::select(
+                                Expr::or(
+                                    Expr::or(
+                                        Expr::eq(Expr::var(&ws_b), Expr::u32(b' ' as u32)),
+                                        Expr::eq(Expr::var(&ws_b), Expr::u32(b'\t' as u32)),
+                                    ),
+                                    Expr::or(
+                                        Expr::eq(Expr::var(&ws_b), Expr::u32(0x0B)),
+                                        Expr::eq(Expr::var(&ws_b), Expr::u32(0x0C)),
+                                    ),
+                                ),
+                                Expr::u32(1),
+                                Expr::u32(0),
+                            ),
+                        ),
+                        Node::if_then_else(
+                            Expr::eq(Expr::var(&ws_is_ws), Expr::u32(1)),
+                            vec![Node::assign(&pos, Expr::add(Expr::var(&pos), Expr::u32(1)))],
+                            vec![Node::assign(&ws_done, Expr::u32(1))],
+                        ),
+                    ],
+                )],
             ));
-        }
-        nodes
-    }
-    // Peek top of stack into `out_var` without popping. SP points at
-    // the next free slot, so top is at SP-1.
-    fn peek_stack(name: &str, sp: &str, out_var: &str) -> Vec<Node> {
-        let mut nodes = Vec::with_capacity(STACK_DEPTH as usize);
-        for slot in 0..STACK_DEPTH {
-            nodes.push(Node::if_then(
-                Expr::and(
-                    Expr::gt(Expr::var(sp), Expr::u32(0)),
-                    Expr::eq(Expr::var(sp), Expr::u32(slot + 1)),
-                ),
-                vec![Node::assign(out_var, Expr::var(&format!("{name}_{slot}")))],
-            ));
-        }
-        nodes
-    }
-
-    // Apply the top operator: pop op + (1 or 2) vals, compute, push result.
-    let apply_top_op = || -> Vec<Node> {
-        let mut nodes = Vec::new();
-        nodes.push(Node::let_bind("apply_op", Expr::u32(0)));
-        nodes.extend(pop_stack("op_stack", "osp", "apply_op"));
-        // Always pop one value (the unary operand or the binary RHS).
-        nodes.push(Node::let_bind("apply_rhs", Expr::u32(0)));
-        nodes.extend(pop_stack("val_stack", "vsp", "apply_rhs"));
-        // Pop a second value only for binary opcodes. Unary opcodes
-        // are >= 100; for those `apply_lhs` stays 0 and is unused
-        // because the unary result is computed solely from
-        // `apply_rhs` (the operand) below.
-        nodes.push(Node::let_bind("apply_lhs", Expr::u32(0)));
-        nodes.push(Node::if_then(
-            Expr::lt(Expr::var("apply_op"), Expr::u32(100)),
-            pop_stack("val_stack", "vsp", "apply_lhs"),
-        ));
-        // Unary computation overrides apply_result for unary ops.
-        nodes.push(Node::let_bind(
-            "unary_result",
-            Expr::select(
-                Expr::eq(Expr::var("apply_op"), Expr::u32(OP_UN_NOT)),
+            call_nodes.push(Node::let_bind(
+                &had_paren,
                 Expr::select(
-                    Expr::eq(Expr::var("apply_rhs"), Expr::u32(0)),
+                    Expr::eq(
+                        safe_load_src_expr(Expr::var(&pos), source_byte_len.clone()),
+                        Expr::u32(b'(' as u32),
+                    ),
                     Expr::u32(1),
                     Expr::u32(0),
                 ),
-                Expr::select(
-                    Expr::eq(Expr::var("apply_op"), Expr::u32(OP_UN_BNOT)),
-                    Expr::sub(Expr::u32(0xFFFF_FFFF), Expr::var("apply_rhs")),
-                    Expr::select(
-                        Expr::eq(Expr::var("apply_op"), Expr::u32(OP_UN_NEG)),
-                        Expr::sub(Expr::u32(0), Expr::var("apply_rhs")),
-                        Expr::var("apply_rhs"),
-                    ),
-                ),
-            ),
-        ));
-        // Compute result based on apply_op. Division by zero saturates
-        // to 0 (the CPU reference returns an error; for v0.4 we
-        // saturate so corrupt inputs don't crash the GPU).
-        nodes.push(Node::let_bind(
-            "apply_result",
-            Expr::select(
-                Expr::eq(Expr::var("apply_op"), Expr::u32(OP_ADD)),
-                Expr::add(Expr::var("apply_lhs"), Expr::var("apply_rhs")),
-                Expr::select(
-                    Expr::eq(Expr::var("apply_op"), Expr::u32(OP_SUB)),
-                    Expr::sub(Expr::var("apply_lhs"), Expr::var("apply_rhs")),
-                    Expr::select(
-                        Expr::eq(Expr::var("apply_op"), Expr::u32(OP_MUL)),
-                        Expr::mul(Expr::var("apply_lhs"), Expr::var("apply_rhs")),
-                        Expr::select(
+            ));
+            call_nodes.push(Node::if_then(
+                Expr::eq(Expr::var(&had_paren), Expr::u32(1)),
+                {
+                    let mut paren_nodes: Vec<Node> = Vec::new();
+                    paren_nodes.push(Node::assign(&pos, Expr::add(Expr::var(&pos), Expr::u32(1))));
+                    paren_nodes.push(Node::let_bind(&ws2_done, Expr::u32(0)));
+                    paren_nodes.push(Node::loop_for(
+                        &ws2_loop,
+                        Expr::u32(0),
+                        Expr::var(tok_len_var),
+                        vec![Node::if_then(
                             Expr::and(
-                                Expr::eq(Expr::var("apply_op"), Expr::u32(OP_DIV)),
-                                Expr::ne(Expr::var("apply_rhs"), Expr::u32(0)),
+                                Expr::eq(Expr::var(&ws2_done), Expr::u32(0)),
+                                Expr::lt(Expr::var(&pos), Expr::var(tok_end_var)),
                             ),
-                            // We can't use `/` directly in vyre IR — use
-                            // the `Expr::div_floor` if available; here we
-                            // synthesize via repeated subtraction would be
-                            // pathological. vyre IR has Expr::div on u32;
-                            // assume it's available via the `BinOp::Div`
-                            // path. Fall back: 0.
-                            Expr::u32(0),
-                            Expr::select(
-                                Expr::eq(Expr::var("apply_op"), Expr::u32(OP_BAND)),
-                                Expr::bitand(Expr::var("apply_lhs"), Expr::var("apply_rhs")),
-                                Expr::select(
-                                    Expr::eq(Expr::var("apply_op"), Expr::u32(OP_BOR)),
-                                    Expr::bitor(Expr::var("apply_lhs"), Expr::var("apply_rhs")),
+                            vec![
+                                Node::let_bind(
+                                    &ws2_b,
+                                    safe_load_src_expr(Expr::var(&pos), source_byte_len.clone()),
+                                ),
+                                Node::let_bind(
+                                    &ws2_is_ws,
                                     Expr::select(
-                                        Expr::eq(Expr::var("apply_op"), Expr::u32(OP_BXOR)),
-                                        Expr::bitxor(
-                                            Expr::var("apply_lhs"),
-                                            Expr::var("apply_rhs"),
+                                        Expr::or(
+                                            Expr::or(
+                                                Expr::eq(Expr::var(&ws2_b), Expr::u32(b' ' as u32)),
+                                                Expr::eq(
+                                                    Expr::var(&ws2_b),
+                                                    Expr::u32(b'\t' as u32),
+                                                ),
+                                            ),
+                                            Expr::or(
+                                                Expr::eq(Expr::var(&ws2_b), Expr::u32(0x0B)),
+                                                Expr::eq(Expr::var(&ws2_b), Expr::u32(0x0C)),
+                                            ),
                                         ),
-                                        Expr::select(
-                                            Expr::eq(Expr::var("apply_op"), Expr::u32(OP_LAND)),
+                                        Expr::u32(1),
+                                        Expr::u32(0),
+                                    ),
+                                ),
+                                Node::if_then_else(
+                                    Expr::eq(Expr::var(&ws2_is_ws), Expr::u32(1)),
+                                    vec![Node::assign(
+                                        &pos,
+                                        Expr::add(Expr::var(&pos), Expr::u32(1)),
+                                    )],
+                                    vec![Node::assign(&ws2_done, Expr::u32(1))],
+                                ),
+                            ],
+                        )],
+                    ));
+                    paren_nodes.push(Node::let_bind(
+                        &arg_base,
+                        Expr::add(Expr::var(&pos), Expr::u32(0)),
+                    ));
+                    paren_nodes.push(Node::let_bind(&arg_len, Expr::u32(0)));
+                    paren_nodes.push(Node::let_bind(&hash, Expr::u32(0x811c_9dc5)));
+                    paren_nodes.push(Node::loop_for(
+                        &arg_loop,
+                        Expr::u32(0),
+                        Expr::select(
+                            Expr::lt(Expr::var(&arg_base), Expr::var(tok_end_var)),
+                            Expr::sub(Expr::var(tok_end_var), Expr::var(&arg_base)),
+                            Expr::u32(0),
+                        ),
+                        vec![Node::if_then(
+                            Expr::eq(Expr::var(&arg_len), Expr::var(&arg_loop)),
+                            vec![
+                                Node::let_bind(
+                                    &arg_pos,
+                                    Expr::add(Expr::var(&arg_base), Expr::var(&arg_loop)),
+                                ),
+                                Node::if_then(
+                                    Expr::lt(Expr::var(&arg_pos), Expr::var(tok_end_var)),
+                                    vec![
+                                        Node::let_bind(
+                                            &arg_b,
+                                            safe_load_src_expr(
+                                                Expr::var(&arg_pos),
+                                                source_byte_len.clone(),
+                                            ),
+                                        ),
+                                        Node::let_bind(
+                                            &arg_alpha,
                                             Expr::select(
-                                                Expr::and(
-                                                    Expr::ne(Expr::var("apply_lhs"), Expr::u32(0)),
-                                                    Expr::ne(Expr::var("apply_rhs"), Expr::u32(0)),
+                                                Expr::or(
+                                                    Expr::and(
+                                                        Expr::ge(
+                                                            Expr::var(&arg_b),
+                                                            Expr::u32(b'a' as u32),
+                                                        ),
+                                                        Expr::le(
+                                                            Expr::var(&arg_b),
+                                                            Expr::u32(b'z' as u32),
+                                                        ),
+                                                    ),
+                                                    Expr::and(
+                                                        Expr::ge(
+                                                            Expr::var(&arg_b),
+                                                            Expr::u32(b'A' as u32),
+                                                        ),
+                                                        Expr::le(
+                                                            Expr::var(&arg_b),
+                                                            Expr::u32(b'Z' as u32),
+                                                        ),
+                                                    ),
                                                 ),
                                                 Expr::u32(1),
                                                 Expr::u32(0),
                                             ),
+                                        ),
+                                        Node::let_bind(
+                                            &arg_digit,
                                             Expr::select(
-                                                Expr::eq(Expr::var("apply_op"), Expr::u32(OP_LOR)),
-                                                Expr::select(
-                                                    Expr::or(
-                                                        Expr::ne(
-                                                            Expr::var("apply_lhs"),
-                                                            Expr::u32(0),
-                                                        ),
-                                                        Expr::ne(
-                                                            Expr::var("apply_rhs"),
-                                                            Expr::u32(0),
-                                                        ),
+                                                Expr::and(
+                                                    Expr::ge(
+                                                        Expr::var(&arg_b),
+                                                        Expr::u32(b'0' as u32),
                                                     ),
-                                                    Expr::u32(1),
-                                                    Expr::u32(0),
-                                                ),
-                                                Expr::select(
-                                                    Expr::eq(Expr::var("apply_op"), Expr::u32(OP_EQ)),
-                                                    Expr::select(
-                                                        Expr::eq(
-                                                            Expr::var("apply_lhs"),
-                                                            Expr::var("apply_rhs"),
-                                                        ),
-                                                        Expr::u32(1),
-                                                        Expr::u32(0),
-                                                    ),
-                                                    Expr::select(
-                                                        Expr::eq(
-                                                            Expr::var("apply_op"),
-                                                            Expr::u32(OP_NE),
-                                                        ),
-                                                        Expr::select(
-                                                            Expr::ne(
-                                                                Expr::var("apply_lhs"),
-                                                                Expr::var("apply_rhs"),
-                                                            ),
-                                                            Expr::u32(1),
-                                                            Expr::u32(0),
-                                                        ),
-                                                        Expr::select(
-                                                            Expr::eq(
-                                                                Expr::var("apply_op"),
-                                                                Expr::u32(OP_LT),
-                                                            ),
-                                                            Expr::select(
-                                                                Expr::lt(
-                                                                    Expr::var("apply_lhs"),
-                                                                    Expr::var("apply_rhs"),
-                                                                ),
-                                                                Expr::u32(1),
-                                                                Expr::u32(0),
-                                                            ),
-                                                            Expr::select(
-                                                                Expr::eq(
-                                                                    Expr::var("apply_op"),
-                                                                    Expr::u32(OP_LE),
-                                                                ),
-                                                                Expr::select(
-                                                                    Expr::le(
-                                                                        Expr::var("apply_lhs"),
-                                                                        Expr::var("apply_rhs"),
-                                                                    ),
-                                                                    Expr::u32(1),
-                                                                    Expr::u32(0),
-                                                                ),
-                                                                Expr::select(
-                                                                    Expr::eq(
-                                                                        Expr::var("apply_op"),
-                                                                        Expr::u32(OP_GT),
-                                                                    ),
-                                                                    Expr::select(
-                                                                        Expr::gt(
-                                                                            Expr::var("apply_lhs"),
-                                                                            Expr::var("apply_rhs"),
-                                                                        ),
-                                                                        Expr::u32(1),
-                                                                        Expr::u32(0),
-                                                                    ),
-                                                                    Expr::select(
-                                                                        Expr::eq(
-                                                                            Expr::var("apply_op"),
-                                                                            Expr::u32(OP_GE),
-                                                                        ),
-                                                                        Expr::select(
-                                                                            Expr::ge(
-                                                                                Expr::var("apply_lhs"),
-                                                                                Expr::var("apply_rhs"),
-                                                                            ),
-                                                                            Expr::u32(1),
-                                                                            Expr::u32(0),
-                                                                        ),
-                                                                        Expr::select(
-                                                                            Expr::eq(
-                                                                                Expr::var("apply_op"),
-                                                                                Expr::u32(OP_SHL),
-                                                                            ),
-                                                                            Expr::shl(
-                                                                                Expr::var(
-                                                                                    "apply_lhs",
-                                                                                ),
-                                                                                Expr::bitand(
-                                                                                    Expr::var(
-                                                                                        "apply_rhs",
-                                                                                    ),
-                                                                                    Expr::u32(31),
-                                                                                ),
-                                                                            ),
-                                                                            Expr::select(
-                                                                                Expr::eq(
-                                                                                    Expr::var(
-                                                                                        "apply_op",
-                                                                                    ),
-                                                                                    Expr::u32(OP_SHR),
-                                                                                ),
-                                                                                Expr::shr(
-                                                                                    Expr::var(
-                                                                                        "apply_lhs",
-                                                                                    ),
-                                                                                    Expr::bitand(
-                                                                                        Expr::var(
-                                                                                            "apply_rhs",
-                                                                                        ),
-                                                                                        Expr::u32(
-                                                                                            31,
-                                                                                        ),
-                                                                                    ),
-                                                                                ),
-                                                                                Expr::u32(0),
-                                                                            ),
-                                                                        ),
-                                                                    ),
-                                                                ),
-                                                            ),
-                                                        ),
+                                                    Expr::le(
+                                                        Expr::var(&arg_b),
+                                                        Expr::u32(b'9' as u32),
                                                     ),
                                                 ),
+                                                Expr::u32(1),
+                                                Expr::u32(0),
                                             ),
                                         ),
+                                        Node::let_bind(
+                                            &arg_under,
+                                            Expr::select(
+                                                Expr::eq(Expr::var(&arg_b), Expr::u32(b'_' as u32)),
+                                                Expr::u32(1),
+                                                Expr::u32(0),
+                                            ),
+                                        ),
+                                        Node::let_bind(
+                                            &arg_cont,
+                                            Expr::select(
+                                                Expr::or(
+                                                    Expr::or(
+                                                        Expr::eq(
+                                                            Expr::var(&arg_alpha),
+                                                            Expr::u32(1),
+                                                        ),
+                                                        Expr::eq(
+                                                            Expr::var(&arg_digit),
+                                                            Expr::u32(1),
+                                                        ),
+                                                    ),
+                                                    Expr::eq(Expr::var(&arg_under), Expr::u32(1)),
+                                                ),
+                                                Expr::u32(1),
+                                                Expr::u32(0),
+                                            ),
+                                        ),
+                                        Node::if_then(
+                                            Expr::eq(Expr::var(&arg_cont), Expr::u32(1)),
+                                            vec![
+                                                Node::assign(
+                                                    &hash,
+                                                    Expr::mul(
+                                                        Expr::bitxor(
+                                                            Expr::var(&hash),
+                                                            Expr::var(&arg_b),
+                                                        ),
+                                                        Expr::u32(0x0100_0193),
+                                                    ),
+                                                ),
+                                                Node::assign(
+                                                    &arg_len,
+                                                    Expr::add(Expr::var(&arg_len), Expr::u32(1)),
+                                                ),
+                                            ],
+                                        ),
+                                    ],
+                                ),
+                            ],
+                        )],
+                    ));
+                    paren_nodes.push(Node::assign(
+                        &pos,
+                        Expr::add(Expr::var(&arg_base), Expr::var(&arg_len)),
+                    ));
+                    push_gnu_builtin_hash_lookup(&mut paren_nodes, prefix, &hash, &known);
+                    paren_nodes.push(Node::let_bind(&ws3_done, Expr::u32(0)));
+                    paren_nodes.push(Node::loop_for(
+                        &ws3_loop,
+                        Expr::u32(0),
+                        Expr::var(tok_len_var),
+                        vec![Node::if_then(
+                            Expr::and(
+                                Expr::eq(Expr::var(&ws3_done), Expr::u32(0)),
+                                Expr::lt(Expr::var(&pos), Expr::var(tok_end_var)),
+                            ),
+                            vec![
+                                Node::let_bind(
+                                    &ws3_b,
+                                    safe_load_src_expr(Expr::var(&pos), source_byte_len.clone()),
+                                ),
+                                Node::let_bind(
+                                    &ws3_is_ws,
+                                    Expr::select(
+                                        Expr::or(
+                                            Expr::or(
+                                                Expr::eq(Expr::var(&ws3_b), Expr::u32(b' ' as u32)),
+                                                Expr::eq(
+                                                    Expr::var(&ws3_b),
+                                                    Expr::u32(b'\t' as u32),
+                                                ),
+                                            ),
+                                            Expr::or(
+                                                Expr::eq(Expr::var(&ws3_b), Expr::u32(0x0B)),
+                                                Expr::eq(Expr::var(&ws3_b), Expr::u32(0x0C)),
+                                            ),
+                                        ),
+                                        Expr::u32(1),
+                                        Expr::u32(0),
                                     ),
                                 ),
+                                Node::if_then_else(
+                                    Expr::eq(Expr::var(&ws3_is_ws), Expr::u32(1)),
+                                    vec![Node::assign(
+                                        &pos,
+                                        Expr::add(Expr::var(&pos), Expr::u32(1)),
+                                    )],
+                                    vec![Node::assign(&ws3_done, Expr::u32(1))],
+                                ),
+                            ],
+                        )],
+                    ));
+                    paren_nodes.push(Node::let_bind(
+                        &had_close,
+                        Expr::select(
+                            Expr::eq(
+                                safe_load_src_expr(Expr::var(&pos), source_byte_len.clone()),
+                                Expr::u32(b')' as u32),
                             ),
+                            Expr::u32(1),
+                            Expr::u32(0),
                         ),
-                    ),
-                ),
-            ),
-        ));
-        // Final result: unary opcodes use the unary path; binary use
-        // the apply_result cascade above.
-        nodes.push(Node::let_bind(
-            "final_result",
-            Expr::select(
-                Expr::ge(Expr::var("apply_op"), Expr::u32(100)),
-                Expr::var("unary_result"),
-                Expr::var("apply_result"),
-            ),
-        ));
-        nodes.extend(push_stack("val_stack", "vsp", Expr::var("final_result")));
-        nodes
-    };
+                    ));
+                    paren_nodes.push(Node::if_then(
+                        Expr::eq(Expr::var(&had_close), Expr::u32(1)),
+                        vec![
+                            Node::assign(scan_out_var, Expr::add(Expr::var(&pos), Expr::u32(1))),
+                            Node::assign(found_var, Expr::u32(1)),
+                            Node::assign(value_var, Expr::var(&known)),
+                        ],
+                    ));
+                    paren_nodes
+                },
+            ));
+            call_nodes
+        },
+    ));
+}
 
-    // ---------- Per-thread body ----------
+/// Build the 17b.4 `#if`/`#elif` evaluator `Program`.
+///
+/// `macro_names_len` and `num_macros` were previously construction-time
+/// parameters baked into safe_load bounds and buffer counts. They are
+/// no longer accepted: the kernel reads its macro count and packed-name
+/// byte capacity at runtime via `Expr::buf_len("macro_offsets")` and
+/// `Expr::buf_len("macro_names_packed")`. One program shape per process.
+#[must_use]
+pub fn gpu_if_expression(num_tokens: u32, source_len: u32) -> Program {
+    let _ = source_len;
+    let source_byte_len = Expr::mul(Expr::buf_len("source"), Expr::u32(4));
+    let t = Expr::var("t");
+
+    let safe_load_src = |addr: Expr| -> Expr { safe_load_src_expr(addr, source_byte_len.clone()) };
+
     let mut body: Vec<Node> = Vec::new();
     body.push(Node::let_bind("t", Expr::InvocationId { axis: 0 }));
     body.push(Node::if_then(
@@ -542,6 +561,7 @@ pub fn gpu_if_expression(
             let mut inner: Vec<Node> = Vec::new();
             inner.push(Node::let_bind("kind", Expr::load("directive_kinds", t.clone())));
             inner.push(Node::let_bind("expr_value_out", Expr::u32(0)));
+            inner.push(Node::let_bind("expr_invalid", Expr::u32(0)));
 
             // Only if/elif tokens get evaluated by THIS kernel.
             let mut evaluate: Vec<Node> = Vec::new();
@@ -636,7 +656,7 @@ pub fn gpu_if_expression(
             evaluate.push(Node::loop_for(
                 "scan_iter",
                 Expr::u32(0),
-                Expr::u32(MAX_PAYLOAD_BYTES),
+                Expr::var("tok_len"),
                 vec![Node::if_then(
                     Expr::and(
                         Expr::eq(Expr::var("scan_done"), Expr::u32(0)),
@@ -644,18 +664,15 @@ pub fn gpu_if_expression(
                     ),
                     {
                         let mut iter_body: Vec<Node> = Vec::new();
-                        // Skip horizontal whitespace + the simplest
-                        // line-splice pattern (\<lf>). Comment skipping
-                        // is intentionally kept out of the inner loop —
-                        // 17b.4 first cut targets `#if` payloads which
-                        // typically don't have comments. A future
-                        // commit can lift the comment-skip helper out
-                        // of `expr_parser.rs::skip_ws_and_splices`.
+                        // Skip horizontal whitespace. Production pipeline
+                        // inputs have already passed phase-2 line splicing
+                        // and phase-3 comment replacement, so this evaluator
+                        // does not duplicate comment scanning in the hot loop.
                         iter_body.push(Node::let_bind("inner_ws_done", Expr::u32(0)));
                         iter_body.push(Node::loop_for(
                             "ws_skip",
                             Expr::u32(0),
-                            Expr::u32(64),
+                            Expr::var("tok_len"),
                             vec![Node::if_then(
                                 Expr::and(
                                     Expr::eq(Expr::var("inner_ws_done"), Expr::u32(0)),
@@ -802,7 +819,7 @@ pub fn gpu_if_expression(
                                         lit_nodes.push(Node::loop_for(
                                             "lit_d",
                                             Expr::u32(0),
-                                            Expr::u32(32),
+                                            Expr::var("tok_len"),
                                             vec![Node::if_then(
                                                 Expr::and(
                                                     Expr::eq(Expr::var("lit_done"), Expr::u32(0)),
@@ -810,6 +827,13 @@ pub fn gpu_if_expression(
                                                 ),
                                                 vec![
                                                     Node::let_bind("ldb", safe_load_src(Expr::var("scan_pos"))),
+                                                    Node::let_bind(
+                                                        "ldb1",
+                                                        safe_load_src(Expr::add(
+                                                            Expr::var("scan_pos"),
+                                                            Expr::u32(1),
+                                                        )),
+                                                    ),
                                                     Node::let_bind(
                                                         "ld_dec",
                                                         Expr::select(
@@ -865,14 +889,90 @@ pub fn gpu_if_expression(
                                                             ),
                                                         ),
                                                     ),
+                                                    Node::let_bind(
+                                                        "ld1_dec",
+                                                        Expr::select(
+                                                            Expr::and(
+                                                                Expr::ge(Expr::var("ldb1"), Expr::u32(b'0' as u32)),
+                                                                Expr::le(Expr::var("ldb1"), Expr::u32(b'9' as u32)),
+                                                            ),
+                                                            Expr::u32(1),
+                                                            Expr::u32(0),
+                                                        ),
+                                                    ),
+                                                    Node::let_bind(
+                                                        "ld1_lc",
+                                                        Expr::select(
+                                                            Expr::and(
+                                                                Expr::ge(Expr::var("ldb1"), Expr::u32(b'a' as u32)),
+                                                                Expr::le(Expr::var("ldb1"), Expr::u32(b'f' as u32)),
+                                                            ),
+                                                            Expr::u32(1),
+                                                            Expr::u32(0),
+                                                        ),
+                                                    ),
+                                                    Node::let_bind(
+                                                        "ld1_uc",
+                                                        Expr::select(
+                                                            Expr::and(
+                                                                Expr::ge(Expr::var("ldb1"), Expr::u32(b'A' as u32)),
+                                                                Expr::le(Expr::var("ldb1"), Expr::u32(b'F' as u32)),
+                                                            ),
+                                                            Expr::u32(1),
+                                                            Expr::u32(0),
+                                                        ),
+                                                    ),
+                                                    Node::let_bind(
+                                                        "ld1_v",
+                                                        Expr::select(
+                                                            Expr::eq(Expr::var("ld1_dec"), Expr::u32(1)),
+                                                            Expr::sub(Expr::var("ldb1"), Expr::u32(b'0' as u32)),
+                                                            Expr::select(
+                                                                Expr::eq(Expr::var("ld1_lc"), Expr::u32(1)),
+                                                                Expr::add(
+                                                                    Expr::sub(Expr::var("ldb1"), Expr::u32(b'a' as u32)),
+                                                                    Expr::u32(10),
+                                                                ),
+                                                                Expr::select(
+                                                                    Expr::eq(Expr::var("ld1_uc"), Expr::u32(1)),
+                                                                    Expr::add(
+                                                                        Expr::sub(Expr::var("ldb1"), Expr::u32(b'A' as u32)),
+                                                                        Expr::u32(10),
+                                                                    ),
+                                                                    Expr::u32(99),
+                                                                ),
+                                                            ),
+                                                        ),
+                                                    ),
+                                                    Node::let_bind(
+                                                        "lit_separator",
+                                                        Expr::select(
+                                                            Expr::and(
+                                                                Expr::eq(Expr::var("ldb"), Expr::u32(b'\'' as u32)),
+                                                                Expr::lt(Expr::var("ld1_v"), Expr::var("lit_radix")),
+                                                            ),
+                                                            Expr::u32(1),
+                                                            Expr::u32(0),
+                                                        ),
+                                                    ),
                                                     Node::if_then_else(
-                                                        Expr::lt(Expr::var("ld_v"), Expr::var("lit_radix")),
+                                                        Expr::or(
+                                                            Expr::lt(Expr::var("ld_v"), Expr::var("lit_radix")),
+                                                            Expr::eq(Expr::var("lit_separator"), Expr::u32(1)),
+                                                        ),
                                                         vec![
                                                             Node::assign(
                                                                 "lit_value",
-                                                                Expr::add(
-                                                                    Expr::mul(Expr::var("lit_value"), Expr::var("lit_radix")),
-                                                                    Expr::var("ld_v"),
+                                                                Expr::select(
+                                                                    Expr::eq(Expr::var("lit_separator"), Expr::u32(1)),
+                                                                    Expr::var("lit_value"),
+                                                                    Expr::add(
+                                                                        Expr::mul(
+                                                                            Expr::var("lit_value"),
+                                                                            Expr::var("lit_radix"),
+                                                                        ),
+                                                                        Expr::var("ld_v"),
+                                                                    ),
                                                                 ),
                                                             ),
                                                             Node::assign(
@@ -885,7 +985,7 @@ pub fn gpu_if_expression(
                                                 ],
                                             )],
                                         ));
-                                        // Skip suffix u/U/l/L (up to 4).
+                                        // Skip suffix u/U/l/L/z/Z/wb/WB (up to 4 loop iterations).
                                         lit_nodes.push(Node::let_bind("suf_done", Expr::u32(0)));
                                         lit_nodes.push(Node::loop_for(
                                             "lit_suf",
@@ -899,7 +999,14 @@ pub fn gpu_if_expression(
                                                 vec![
                                                     Node::let_bind("sfb", safe_load_src(Expr::var("scan_pos"))),
                                                     Node::let_bind(
-                                                        "is_suf",
+                                                        "sfb1",
+                                                        safe_load_src(Expr::add(
+                                                            Expr::var("scan_pos"),
+                                                            Expr::u32(1),
+                                                        )),
+                                                    ),
+                                                    Node::let_bind(
+                                                        "is_single_suf",
                                                         Expr::select(
                                                             Expr::or(
                                                                 Expr::or(
@@ -915,11 +1022,52 @@ pub fn gpu_if_expression(
                                                             Expr::u32(0),
                                                         ),
                                                     ),
+                                                    Node::let_bind(
+                                                        "is_z_suf",
+                                                        Expr::select(
+                                                            Expr::or(
+                                                                Expr::eq(Expr::var("sfb"), Expr::u32(b'z' as u32)),
+                                                                Expr::eq(Expr::var("sfb"), Expr::u32(b'Z' as u32)),
+                                                            ),
+                                                            Expr::u32(1),
+                                                            Expr::u32(0),
+                                                        ),
+                                                    ),
+                                                    Node::let_bind(
+                                                        "is_wb_suf",
+                                                        Expr::select(
+                                                            Expr::and(
+                                                                Expr::or(
+                                                                    Expr::eq(Expr::var("sfb"), Expr::u32(b'w' as u32)),
+                                                                    Expr::eq(Expr::var("sfb"), Expr::u32(b'W' as u32)),
+                                                                ),
+                                                                Expr::or(
+                                                                    Expr::eq(Expr::var("sfb1"), Expr::u32(b'b' as u32)),
+                                                                    Expr::eq(Expr::var("sfb1"), Expr::u32(b'B' as u32)),
+                                                                ),
+                                                            ),
+                                                            Expr::u32(1),
+                                                            Expr::u32(0),
+                                                        ),
+                                                    ),
                                                     Node::if_then_else(
-                                                        Expr::eq(Expr::var("is_suf"), Expr::u32(1)),
+                                                        Expr::or(
+                                                            Expr::or(
+                                                                Expr::eq(Expr::var("is_single_suf"), Expr::u32(1)),
+                                                                Expr::eq(Expr::var("is_z_suf"), Expr::u32(1)),
+                                                            ),
+                                                            Expr::eq(Expr::var("is_wb_suf"), Expr::u32(1)),
+                                                        ),
                                                         vec![Node::assign(
                                                             "scan_pos",
-                                                            Expr::add(Expr::var("scan_pos"), Expr::u32(1)),
+                                                            Expr::add(
+                                                                Expr::var("scan_pos"),
+                                                                Expr::select(
+                                                                    Expr::eq(Expr::var("is_wb_suf"), Expr::u32(1)),
+                                                                    Expr::u32(2),
+                                                                    Expr::u32(1),
+                                                                ),
+                                                            ),
                                                         )],
                                                         vec![Node::assign("suf_done", Expr::u32(1))],
                                                     ),
@@ -960,12 +1108,16 @@ pub fn gpu_if_expression(
                                     ),
                                     {
                                         let mut id_nodes: Vec<Node> = Vec::new();
-                                        id_nodes.push(Node::let_bind("ident_start", Expr::var("scan_pos")));
+                                        id_nodes.push(Node::let_bind("ident_start", Expr::add(Expr::var("scan_pos"), Expr::u32(0))));
                                         id_nodes.push(Node::let_bind("ident_len", Expr::u32(0)));
                                         id_nodes.push(Node::loop_for(
                                             "id_read",
                                             Expr::u32(0),
-                                            Expr::u32(MAX_IDENT_LEN),
+                                            Expr::select(
+                                                Expr::lt(Expr::var("ident_start"), Expr::var("tok_end")),
+                                                Expr::sub(Expr::var("tok_end"), Expr::var("ident_start")),
+                                                Expr::u32(0),
+                                            ),
                                             vec![Node::if_then(
                                                 Expr::eq(Expr::var("ident_len"), Expr::var("id_read")),
                                                 vec![
@@ -1043,28 +1195,77 @@ pub fn gpu_if_expression(
                                             "scan_pos",
                                             Expr::add(Expr::var("ident_start"), Expr::var("ident_len")),
                                         ));
-                                        // `defined` is the only special identifier.
+                                        id_nodes.push(Node::let_bind("ident_hash", Expr::u32(0x811c_9dc5)));
+                                        id_nodes.push(Node::loop_for(
+                                            "ident_hash_bytes",
+                                            Expr::u32(0),
+                                            Expr::var("ident_len"),
+                                            vec![
+                                                Node::let_bind(
+                                                    "idhb",
+                                                    safe_load_src(Expr::add(
+                                                        Expr::var("ident_start"),
+                                                        Expr::var("ident_hash_bytes"),
+                                                    )),
+                                                ),
+                                                Node::assign(
+                                                    "ident_hash",
+                                                    Expr::mul(
+                                                        Expr::bitxor(Expr::var("ident_hash"), Expr::var("idhb")),
+                                                        Expr::u32(0x0100_0193),
+                                                    ),
+                                                ),
+                                            ],
+                                        ));
+                                        // Preprocessor operators that look like identifiers.
                                         id_nodes.push(Node::let_bind(
                                             "is_defined_kw",
                                             Expr::select(
-                                                Expr::and(
-                                                    Expr::eq(Expr::var("ident_len"), Expr::u32(7)),
-                                                    Expr::and(
-                                                        Expr::eq(safe_load_src(Expr::var("ident_start")), Expr::u32(b'd' as u32)),
-                                                        Expr::and(
-                                                            Expr::eq(safe_load_src(Expr::add(Expr::var("ident_start"), Expr::u32(1))), Expr::u32(b'e' as u32)),
-                                                            Expr::and(
-                                                                Expr::eq(safe_load_src(Expr::add(Expr::var("ident_start"), Expr::u32(2))), Expr::u32(b'f' as u32)),
-                                                                Expr::and(
-                                                                    Expr::eq(safe_load_src(Expr::add(Expr::var("ident_start"), Expr::u32(3))), Expr::u32(b'i' as u32)),
-                                                                    Expr::and(
-                                                                        Expr::eq(safe_load_src(Expr::add(Expr::var("ident_start"), Expr::u32(4))), Expr::u32(b'n' as u32)),
-                                                                        Expr::and(
-                                                                            Expr::eq(safe_load_src(Expr::add(Expr::var("ident_start"), Expr::u32(5))), Expr::u32(b'e' as u32)),
-                                                                            Expr::eq(safe_load_src(Expr::add(Expr::var("ident_start"), Expr::u32(6))), Expr::u32(b'd' as u32)),
-                                                                        ),
-                                                                    ),
+                                                ident_hash_equals(b"defined"),
+                                                Expr::u32(1),
+                                                Expr::u32(0),
+                                            ),
+                                        ));
+                                        id_nodes.push(Node::let_bind(
+                                            "is_has_builtin_kw",
+                                            Expr::select(
+                                                ident_hash_equals(b"__has_builtin"),
+                                                Expr::u32(1),
+                                                Expr::u32(0),
+                                            ),
+                                        ));
+                                        id_nodes.push(Node::let_bind(
+                                            "is_has_constexpr_builtin_kw",
+                                            Expr::select(
+                                                ident_hash_equals(b"__has_constexpr_builtin"),
+                                                Expr::u32(1),
+                                                Expr::u32(0),
+                                            ),
+                                        ));
+                                        id_nodes.push(Node::let_bind(
+                                            "is_has_x_kw",
+                                            Expr::select(
+                                                Expr::or(
+                                                    Expr::or(
+                                                        ident_hash_equals(b"__has_include"),
+                                                        ident_hash_equals(b"__has_include_next"),
+                                                    ),
+                                                    Expr::or(
+                                                        Expr::or(
+                                                            ident_hash_equals(b"__has_embed"),
+                                                            ident_hash_equals(b"__has_attribute"),
+                                                        ),
+                                                        Expr::or(
+                                                            Expr::or(
+                                                                ident_hash_equals(b"__has_c_attribute"),
+                                                                ident_hash_equals(b"__has_cpp_attribute"),
+                                                            ),
+                                                            Expr::or(
+                                                                Expr::or(
+                                                                    ident_hash_equals(b"__has_declspec_attribute"),
+                                                                    ident_hash_equals(b"__has_feature"),
                                                                 ),
+                                                                ident_hash_equals(b"__has_extension"),
                                                             ),
                                                         ),
                                                     ),
@@ -1084,7 +1285,7 @@ pub fn gpu_if_expression(
                                                 def_nodes.push(Node::loop_for(
                                                     "def_ws",
                                                     Expr::u32(0),
-                                                    Expr::u32(32),
+                                                    Expr::var("tok_len"),
                                                     vec![Node::if_then(
                                                         Expr::and(
                                                             Expr::eq(Expr::var("def_ws_done"), Expr::u32(0)),
@@ -1142,7 +1343,7 @@ pub fn gpu_if_expression(
                                                 def_nodes.push(Node::loop_for(
                                                     "def_ws2",
                                                     Expr::u32(0),
-                                                    Expr::u32(32),
+                                                    Expr::var("tok_len"),
                                                     vec![Node::if_then(
                                                         Expr::and(
                                                             Expr::eq(Expr::var("def_ws2_done"), Expr::u32(0)),
@@ -1184,7 +1385,11 @@ pub fn gpu_if_expression(
                                                 def_nodes.push(Node::loop_for(
                                                     "inner_id",
                                                     Expr::u32(0),
-                                                    Expr::u32(MAX_IDENT_LEN),
+                                                    Expr::select(
+                                                        Expr::lt(Expr::var("inner_start"), Expr::var("tok_end")),
+                                                        Expr::sub(Expr::var("tok_end"), Expr::var("inner_start")),
+                                                        Expr::u32(0),
+                                                    ),
                                                     vec![Node::if_then(
                                                         Expr::eq(Expr::var("inner_len"), Expr::var("inner_id")),
                                                         vec![
@@ -1267,7 +1472,11 @@ pub fn gpu_if_expression(
                                                 def_nodes.push(Node::loop_for(
                                                     "dm",
                                                     Expr::u32(0),
-                                                    Expr::u32(num_macros),
+                                                    Expr::select(
+                                                        Expr::gt(Expr::buf_len("macro_offsets"), Expr::u32(0)),
+                                                        Expr::sub(Expr::buf_len("macro_offsets"), Expr::u32(1)),
+                                                        Expr::u32(0),
+                                                    ),
                                                     vec![Node::if_then(
                                                         Expr::eq(Expr::var("def_found"), Expr::u32(0)),
                                                         vec![
@@ -1301,9 +1510,9 @@ pub fn gpu_if_expression(
                                                                                 Expr::select(
                                                                                     Expr::lt(
                                                                                         Expr::add(Expr::var("dm_s"), Expr::var("dmk")),
-                                                                                        Expr::u32(macro_names_len),
+                                                                                        Expr::mul(Expr::buf_len("macro_names_packed"), Expr::u32(4)),
                                                                                     ),
-                                                                                    load_byte_u32("macro_names_packed", Expr::add(Expr::var("dm_s"), Expr::var("dmk"))),
+                                                                                    load_packed_byte_u32("macro_names_packed", Expr::add(Expr::var("dm_s"), Expr::var("dmk"))),
                                                                                     Expr::u32(0),
                                                                                 ),
                                                                             ),
@@ -1331,7 +1540,7 @@ pub fn gpu_if_expression(
                                                         Node::loop_for(
                                                             "def_ws3",
                                                             Expr::u32(0),
-                                                            Expr::u32(32),
+                                                            Expr::var("tok_len"),
                                                             vec![Node::if_then(
                                                                 Expr::and(
                                                                     Expr::eq(Expr::var("def_ws3_done"), Expr::u32(0)),
@@ -1382,13 +1591,131 @@ pub fn gpu_if_expression(
                                                 def_nodes
                                             },
                                             {
-                                                // Bare ident: treat as macro reference. Push 1 if defined, 0 otherwise.
+                                                // Bare ident: treat as an object-like integer macro reference.
+                                                // Push the packed macro value when defined, otherwise 0.
                                                 let mut bare_nodes: Vec<Node> = Vec::new();
                                                 bare_nodes.push(Node::let_bind("bare_found", Expr::u32(0)));
+                                                bare_nodes.push(Node::let_bind("bare_value", Expr::u32(0)));
+                                                bare_nodes.push(Node::let_bind(
+                                                    "bare_ident_base",
+                                                    Expr::sub(Expr::var("scan_pos"), Expr::var("ident_len")),
+                                                ));
+                                                push_has_builtin_call_parser(
+                                                    &mut bare_nodes,
+                                                    "ehb",
+                                                    "bare_ident_base",
+                                                    "tok_end",
+                                                    "tok_len",
+                                                    source_byte_len.clone(),
+                                                    "scan_pos",
+                                                    "bare_found",
+                                                    "bare_value",
+                                                );
+                                                bare_nodes.push(Node::if_then(
+                                                    Expr::and(
+                                                        Expr::eq(Expr::var("bare_found"), Expr::u32(0)),
+                                                        Expr::eq(Expr::var("is_has_x_kw"), Expr::u32(1)),
+                                                    ),
+                                                    {
+                                                        let mut hx_nodes: Vec<Node> = Vec::new();
+                                                        hx_nodes.push(Node::let_bind("hx_ws_done", Expr::u32(0)));
+                                                        hx_nodes.push(Node::loop_for(
+                                                            "hx_ws",
+                                                            Expr::u32(0),
+                                                            Expr::var("tok_len"),
+                                                            vec![Node::if_then(
+                                                                Expr::and(
+                                                                    Expr::eq(Expr::var("hx_ws_done"), Expr::u32(0)),
+                                                                    Expr::lt(Expr::var("scan_pos"), Expr::var("tok_end")),
+                                                                ),
+                                                                vec![
+                                                                    Node::let_bind("hxwsb", safe_load_src(Expr::var("scan_pos"))),
+                                                                    Node::let_bind(
+                                                                        "hxws_is_ws",
+                                                                        Expr::select(
+                                                                            Expr::or(
+                                                                                Expr::or(
+                                                                                    Expr::eq(Expr::var("hxwsb"), Expr::u32(b' ' as u32)),
+                                                                                    Expr::eq(Expr::var("hxwsb"), Expr::u32(b'\t' as u32)),
+                                                                                ),
+                                                                                Expr::or(
+                                                                                    Expr::eq(Expr::var("hxwsb"), Expr::u32(0x0B)),
+                                                                                    Expr::eq(Expr::var("hxwsb"), Expr::u32(0x0C)),
+                                                                                ),
+                                                                            ),
+                                                                            Expr::u32(1),
+                                                                            Expr::u32(0),
+                                                                        ),
+                                                                    ),
+                                                                    Node::if_then_else(
+                                                                        Expr::eq(Expr::var("hxws_is_ws"), Expr::u32(1)),
+                                                                        vec![Node::assign(
+                                                                            "scan_pos",
+                                                                            Expr::add(Expr::var("scan_pos"), Expr::u32(1)),
+                                                                        )],
+                                                                        vec![Node::assign("hx_ws_done", Expr::u32(1))],
+                                                                    ),
+                                                                ],
+                                                            )],
+                                                        ));
+                                                        hx_nodes.push(Node::let_bind("hx_open", safe_load_src(Expr::var("scan_pos"))));
+                                                        hx_nodes.push(Node::if_then(
+                                                            Expr::eq(Expr::var("hx_open"), Expr::u32(b'(' as u32)),
+                                                            {
+                                                                let mut paren_nodes: Vec<Node> = Vec::new();
+                                                                paren_nodes.push(Node::assign(
+                                                                    "scan_pos",
+                                                                    Expr::add(Expr::var("scan_pos"), Expr::u32(1)),
+                                                                ));
+                                                                paren_nodes.push(Node::let_bind("hx_depth", Expr::u32(1)));
+                                                                paren_nodes.push(Node::loop_for(
+                                                                    "hx_arg_scan",
+                                                                    Expr::u32(0),
+                                                                    Expr::var("tok_len"),
+                                                                    vec![Node::if_then(
+                                                                        Expr::and(
+                                                                            Expr::gt(Expr::var("hx_depth"), Expr::u32(0)),
+                                                                            Expr::lt(Expr::var("scan_pos"), Expr::var("tok_end")),
+                                                                        ),
+                                                                        vec![
+                                                                            Node::let_bind("hxab", safe_load_src(Expr::var("scan_pos"))),
+                                                                            Node::if_then(
+                                                                                Expr::eq(Expr::var("hxab"), Expr::u32(b'(' as u32)),
+                                                                                vec![Node::assign(
+                                                                                    "hx_depth",
+                                                                                    Expr::add(Expr::var("hx_depth"), Expr::u32(1)),
+                                                                                )],
+                                                                            ),
+                                                                            Node::if_then(
+                                                                                Expr::eq(Expr::var("hxab"), Expr::u32(b')' as u32)),
+                                                                                vec![Node::assign(
+                                                                                    "hx_depth",
+                                                                                    Expr::sub(Expr::var("hx_depth"), Expr::u32(1)),
+                                                                                )],
+                                                                            ),
+                                                                            Node::assign(
+                                                                                "scan_pos",
+                                                                                Expr::add(Expr::var("scan_pos"), Expr::u32(1)),
+                                                                            ),
+                                                                        ],
+                                                                    )],
+                                                                ));
+                                                                paren_nodes
+                                                            },
+                                                        ));
+                                                        hx_nodes.push(Node::assign("bare_found", Expr::u32(1)));
+                                                        hx_nodes.push(Node::assign("bare_value", Expr::u32(0)));
+                                                        hx_nodes
+                                                    },
+                                                ));
                                                 bare_nodes.push(Node::loop_for(
                                                     "bm",
                                                     Expr::u32(0),
-                                                    Expr::u32(num_macros),
+                                                    Expr::select(
+                                                        Expr::gt(Expr::buf_len("macro_offsets"), Expr::u32(0)),
+                                                        Expr::sub(Expr::buf_len("macro_offsets"), Expr::u32(1)),
+                                                        Expr::u32(0),
+                                                    ),
                                                     vec![Node::if_then(
                                                         Expr::eq(Expr::var("bare_found"), Expr::u32(0)),
                                                         vec![
@@ -1404,10 +1731,11 @@ pub fn gpu_if_expression(
                                                                 "bm_l",
                                                                 Expr::sub(Expr::var("bm_e"), Expr::var("bm_s")),
                                                             ),
+                                                            Node::let_bind("bm_match", Expr::u32(0)),
                                                             Node::if_then(
                                                                 Expr::eq(Expr::var("bm_l"), Expr::var("ident_len")),
                                                                 vec![
-                                                                    Node::let_bind("bm_match", Expr::u32(1)),
+                                                                    Node::assign("bm_match", Expr::u32(1)),
                                                                     Node::loop_for(
                                                                         "bmk",
                                                                         Expr::u32(0),
@@ -1415,16 +1743,16 @@ pub fn gpu_if_expression(
                                                                         vec![
                                                                             Node::let_bind(
                                                                                 "bms_b",
-                                                                                safe_load_src(Expr::add(Expr::var("ident_start"), Expr::var("bmk"))),
+                                                                                safe_load_src(Expr::add(Expr::var("bare_ident_base"), Expr::var("bmk"))),
                                                                             ),
                                                                             Node::let_bind(
                                                                                 "bmm_b",
                                                                                 Expr::select(
                                                                                     Expr::lt(
                                                                                         Expr::add(Expr::var("bm_s"), Expr::var("bmk")),
-                                                                                        Expr::u32(macro_names_len),
+                                                                                        Expr::mul(Expr::buf_len("macro_names_packed"), Expr::u32(4)),
                                                                                     ),
-                                                                                    load_byte_u32("macro_names_packed", Expr::add(Expr::var("bm_s"), Expr::var("bmk"))),
+                                                                                    load_packed_byte_u32("macro_names_packed", Expr::add(Expr::var("bm_s"), Expr::var("bmk"))),
                                                                                     Expr::u32(0),
                                                                                 ),
                                                                             ),
@@ -1436,14 +1764,28 @@ pub fn gpu_if_expression(
                                                                     ),
                                                                     Node::if_then(
                                                                         Expr::eq(Expr::var("bm_match"), Expr::u32(1)),
-                                                                        vec![Node::assign("bare_found", Expr::u32(1))],
+                                                                        vec![
+                                                                            Node::assign("bare_found", Expr::u32(1)),
+                                                                            Node::assign(
+                                                                                "bare_value",
+                                                                                Expr::load(
+                                                                                    "macro_values",
+                                                                                    Expr::add(
+                                                                                        Expr::u32(
+                                                                                            crate::parsing::c::parse::gnu_builtins::GPU_BUILTIN_HASH_TABLE_SIZE as u32,
+                                                                                        ),
+                                                                                        Expr::var("bm"),
+                                                                                    ),
+                                                                                ),
+                                                                            ),
+                                                                        ],
                                                                     ),
                                                                 ],
                                                             ),
                                                         ],
                                                     )],
                                                 ));
-                                                bare_nodes.extend(push_stack("val_stack", "vsp", Expr::var("bare_found")));
+                                                bare_nodes.extend(push_stack("val_stack", "vsp", Expr::var("bare_value")));
                                                 bare_nodes.push(Node::assign("last_was_value", Expr::u32(1)));
                                                 bare_nodes
                                             },
@@ -1708,9 +2050,13 @@ pub fn gpu_if_expression(
             evaluate.push(Node::assign(
                 "expr_value_out",
                 Expr::select(
-                    Expr::ne(Expr::var("final_val"), Expr::u32(0)),
-                    Expr::u32(1),
-                    Expr::u32(0),
+                    Expr::ne(Expr::var("expr_invalid"), Expr::u32(0)),
+                    Expr::u32(INVALID_EXPR_VALUE),
+                    Expr::select(
+                        Expr::ne(Expr::var("final_val"), Expr::u32(0)),
+                        Expr::u32(1),
+                        Expr::u32(0),
+                    ),
                 ),
             ));
 
@@ -1740,10 +2086,20 @@ pub fn gpu_if_expression(
 
     Program::wrapped(
         vec![
-            BufferDecl::storage("tok_starts", BINDING_TOK_STARTS, BufferAccess::ReadOnly, DataType::U32)
-                .with_count(num_tokens.max(1)),
-            BufferDecl::storage("tok_lens", BINDING_TOK_LENS, BufferAccess::ReadOnly, DataType::U32)
-                .with_count(num_tokens.max(1)),
+            BufferDecl::storage(
+                "tok_starts",
+                BINDING_TOK_STARTS,
+                BufferAccess::ReadOnly,
+                DataType::U32,
+            )
+            .with_count(num_tokens.max(1)),
+            BufferDecl::storage(
+                "tok_lens",
+                BINDING_TOK_LENS,
+                BufferAccess::ReadOnly,
+                DataType::U32,
+            )
+            .with_count(num_tokens.max(1)),
             BufferDecl::storage(
                 "directive_kinds",
                 BINDING_DIRECTIVE_KINDS,
@@ -1751,22 +2107,37 @@ pub fn gpu_if_expression(
                 DataType::U32,
             )
             .with_count(num_tokens.max(1)),
-            BufferDecl::storage("source", BINDING_SOURCE, BufferAccess::ReadOnly, DataType::U32)
-                .with_count(source_len.div_ceil(4).max(1)),
+            BufferDecl::storage(
+                "source",
+                BINDING_SOURCE,
+                BufferAccess::ReadOnly,
+                DataType::U32,
+            )
+            .with_count(0),
+            // Runtime-sized: count=0 marks the buffer as runtime-bound,
+            // so the program structure stays independent of the host's
+            // macro-table size.
             BufferDecl::storage(
                 "macro_names_packed",
                 BINDING_MACRO_NAMES_PACKED,
                 BufferAccess::ReadOnly,
                 DataType::U32,
             )
-            .with_count(macro_names_len.div_ceil(4).max(1)),
+            .with_count(0),
             BufferDecl::storage(
                 "macro_offsets",
                 BINDING_MACRO_OFFSETS,
                 BufferAccess::ReadOnly,
                 DataType::U32,
             )
-            .with_count((num_macros + 1).max(1)),
+            .with_count(0),
+            BufferDecl::storage(
+                "macro_values",
+                BINDING_MACRO_VALUES,
+                BufferAccess::ReadOnly,
+                DataType::U32,
+            )
+            .with_count(0),
             BufferDecl::storage(
                 "directive_values",
                 BINDING_DIRECTIVE_VALUES,
@@ -1779,35 +2150,4 @@ pub fn gpu_if_expression(
         body,
     )
     .with_entry_op_id(OP_ID)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn op_id_is_canonical_and_stable() {
-        assert_eq!(
-            OP_ID,
-            "vyre-libs::parsing::c::preprocess::gpu_if_expression"
-        );
-    }
-
-    #[test]
-    fn binding_indices_are_canonical_and_stable() {
-        assert_eq!(BINDING_TOK_STARTS, 0);
-        assert_eq!(BINDING_TOK_LENS, 1);
-        assert_eq!(BINDING_DIRECTIVE_KINDS, 2);
-        assert_eq!(BINDING_SOURCE, 3);
-        assert_eq!(BINDING_MACRO_NAMES_PACKED, 4);
-        assert_eq!(BINDING_MACRO_OFFSETS, 5);
-        assert_eq!(BINDING_DIRECTIVE_VALUES, 6);
-    }
-
-    #[test]
-    fn build_program_returns_well_formed_program() {
-        let p = gpu_if_expression(8, 64, 16, 2);
-        assert_eq!(p.buffers().len(), 7);
-        assert_eq!(p.workgroup_size(), [256, 1, 1]);
-    }
 }

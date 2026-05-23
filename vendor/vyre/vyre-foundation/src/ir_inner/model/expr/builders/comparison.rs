@@ -11,7 +11,7 @@ impl Expr {
     /// let _ = Expr::eq(Expr::u32(1), Expr::u32(1));
     /// ```
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn eq(left: Expr, right: Expr) -> Expr {
         Expr::BinOp {
             op: BinOp::Eq,
@@ -29,7 +29,7 @@ impl Expr {
     /// let _ = Expr::lt(Expr::u32(1), Expr::u32(2));
     /// ```
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn lt(left: Expr, right: Expr) -> Expr {
         Expr::BinOp {
             op: BinOp::Lt,
@@ -47,7 +47,7 @@ impl Expr {
     /// let _ = Expr::ne(Expr::u32(1), Expr::u32(2));
     /// ```
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn ne(left: Expr, right: Expr) -> Expr {
         Expr::BinOp {
             op: BinOp::Ne,
@@ -65,7 +65,7 @@ impl Expr {
     /// let _ = Expr::gt(Expr::u32(2), Expr::u32(1));
     /// ```
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn gt(left: Expr, right: Expr) -> Expr {
         Expr::BinOp {
             op: BinOp::Gt,
@@ -83,7 +83,7 @@ impl Expr {
     /// let _ = Expr::le(Expr::u32(1), Expr::u32(2));
     /// ```
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn le(left: Expr, right: Expr) -> Expr {
         Expr::BinOp {
             op: BinOp::Le,
@@ -101,7 +101,7 @@ impl Expr {
     /// let _ = Expr::ge(Expr::u32(2), Expr::u32(1));
     /// ```
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn ge(left: Expr, right: Expr) -> Expr {
         Expr::BinOp {
             op: BinOp::Ge,
@@ -120,7 +120,7 @@ impl Expr {
     /// assert!(matches!(Expr::and(Expr::u32(1), Expr::u32(0)), Expr::BinOp { op: BinOp::And, .. }));
     /// ```
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn and(left: Expr, right: Expr) -> Expr {
         Expr::BinOp {
             op: BinOp::And,
@@ -139,7 +139,7 @@ impl Expr {
     /// assert!(matches!(Expr::or(Expr::u32(1), Expr::u32(0)), Expr::BinOp { op: BinOp::Or, .. }));
     /// ```
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn or(left: Expr, right: Expr) -> Expr {
         Expr::BinOp {
             op: BinOp::Or,
@@ -157,7 +157,7 @@ impl Expr {
     /// let _ = Expr::not(Expr::bool(true));
     /// ```
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn not(operand: Expr) -> Expr {
         Expr::UnOp {
             op: UnOp::LogicalNot,
@@ -174,7 +174,7 @@ impl Expr {
     /// let _ = Expr::sin(Expr::f32(0.0));
     /// ```
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn sin(operand: Expr) -> Expr {
         Expr::UnOp {
             op: UnOp::Sin,
@@ -191,7 +191,7 @@ impl Expr {
     /// let _ = Expr::cos(Expr::f32(0.0));
     /// ```
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn cos(operand: Expr) -> Expr {
         Expr::UnOp {
             op: UnOp::Cos,
@@ -208,7 +208,7 @@ impl Expr {
     /// let _ = Expr::abs(Expr::f32(-1.0));
     /// ```
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn abs(operand: Expr) -> Expr {
         Expr::UnOp {
             op: UnOp::Abs,
@@ -225,7 +225,7 @@ impl Expr {
     /// let _ = Expr::sqrt(Expr::f32(4.0));
     /// ```
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn sqrt(operand: Expr) -> Expr {
         Expr::UnOp {
             op: UnOp::Sqrt,
@@ -235,7 +235,7 @@ impl Expr {
 
     /// `inverseSqrt(a)` (f32).
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn inverse_sqrt(operand: Expr) -> Expr {
         Expr::UnOp {
             op: UnOp::InverseSqrt,
@@ -245,7 +245,7 @@ impl Expr {
 
     /// `1.0 / a` (f32 reciprocal).
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn reciprocal(operand: Expr) -> Expr {
         Expr::UnOp {
             op: UnOp::Reciprocal,

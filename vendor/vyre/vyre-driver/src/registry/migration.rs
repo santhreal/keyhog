@@ -302,16 +302,27 @@ impl MigrationRegistry {
     pub fn global() -> &'static MigrationRegistry {
         static REGISTRY: OnceLock<MigrationRegistry> = OnceLock::new();
         REGISTRY.get_or_init(|| {
-            let migrations: Vec<&'static Migration> = inventory::iter::<Migration>().collect();
-            let mut forward =
-                FxHashMap::with_capacity_and_hasher(migrations.len(), Default::default());
+            let migration_count = inventory::iter::<Migration>().count();
+            let mut forward = FxHashMap::default();
+            forward.try_reserve(migration_count).unwrap_or_else(|error| {
+                panic!(
+                    "Vyre migration registry could not reserve {migration_count} migration slot(s): {error}. Fix: split registry initialization or reduce linked migration inventory."
+                )
+            });
+            let migrations = inventory::iter::<Migration>();
             for m in migrations {
                 forward.insert((m.from.0, m.from.1), m);
             }
-            let deprecation_defs: Vec<&'static Deprecation> =
-                inventory::iter::<Deprecation>().collect();
-            let mut deprecations =
-                FxHashMap::with_capacity_and_hasher(deprecation_defs.len(), Default::default());
+            let deprecation_count = inventory::iter::<Deprecation>().count();
+            let mut deprecations = FxHashMap::default();
+            deprecations
+                .try_reserve(deprecation_count)
+                .unwrap_or_else(|error| {
+                    panic!(
+                        "Vyre migration registry could not reserve {deprecation_count} deprecation slot(s): {error}. Fix: split registry initialization or reduce linked deprecation inventory."
+                    )
+                });
+            let deprecation_defs = inventory::iter::<Deprecation>();
             for d in deprecation_defs {
                 deprecations.insert(d.op_id, d);
             }

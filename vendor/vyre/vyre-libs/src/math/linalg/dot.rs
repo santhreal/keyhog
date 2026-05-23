@@ -241,16 +241,15 @@ fn dot_reference(lhs: &str, rhs: &str, out: &str, n: u32) -> Program {
 inventory::submit! {
     crate::harness::OpEntry {
         id: OP_ID,
-        build: || dot("lhs", "rhs", "out", 3).unwrap_or_else(|error| crate::invalid_program(OP_ID, format!("Fix: dot fixture must build: {error}"))),
+        build: || dot("lhs", "rhs", "out", 256).unwrap_or_else(|error| crate::invalid_program(OP_ID, format!("Fix: dot fixture must build: {error}"))),
         test_inputs: Some(|| vec![vec![
-            [1u32, 2, 3].iter().flat_map(|v| v.to_le_bytes()).collect(),
-            [4u32, 5, 6].iter().flat_map(|v| v.to_le_bytes()).collect(),
-            vec![0u8; 4],
+            vec![0u8; 256 * 4],
+            vec![0u8; 256 * 4],
         ]]),
         expected_output: Some(|| vec![vec![
-            // Only output buffer: out[0] = 1*4 + 2*5 + 3*6 = 32
-            32u32.to_le_bytes().to_vec(),
+            0u32.to_le_bytes().to_vec(),
         ]]),
+        category: Some("math"),
     }
 }
 

@@ -1,7 +1,7 @@
 //! Canonical node kinds for the Performance Graph (PG) layout.
 
 /// Canonical node kinds for the Performance Graph (PG) layout.
-/// Shared between surgec and vyre as the definitive source of truth.
+/// Shared between frontend consumers and vyre as the definitive source of truth.
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
 #[non_exhaustive]

@@ -1,7 +1,7 @@
 //! `bitset_any` — emit 1 when any bit in the packed bitset is set.
 //!
 //! Single-lane Program driven by invocation 0: scans every word,
-//! ORs them, writes a boolean (0 or 1) to `out[0]`. Used by SURGE
+//! ORs them, writes a boolean (0 or 1) to `out[0]`. Used by source-query dialect
 //! `exists` / `any(...)` aggregate lowerings.
 
 use std::sync::Arc;
@@ -73,6 +73,7 @@ pub fn bitset_any(input: &str, out: &str, words: u32) -> Program {
 
 /// CPU reference.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref(input: &[u32]) -> u32 {
     if input.iter().any(|w| *w != 0) {
         1
@@ -113,7 +114,6 @@ mod tests {
 
     /// GPU parity tests for bitset_any — exercise every word boundary
     /// to expose the word-1+ bitset read bug.
-    #[cfg(feature = "gpu")]
     mod gpu_tests {
         use super::*;
         use vyre_driver::DispatchConfig;
@@ -130,13 +130,9 @@ mod tests {
                 .collect()
         }
 
-        fn run_gpu_any(input: &[u32]) -> u32 {
+        fn run_gpu_any_with_backend(backend: &CudaBackend, input: &[u32]) -> u32 {
             let words = input.len() as u32;
             let program = bitset_any("input", "out", words);
-            let backend = CudaBackend::acquire().expect(
-                "Fix: CUDA backend acquisition failed. \
-                 Configuration error: no CUDA-capable GPU or driver available on this host.",
-            );
             let outputs = backend
                 .dispatch(
                     &program,
@@ -161,6 +157,14 @@ mod tests {
                 result.len()
             );
             result[0]
+        }
+
+        fn run_gpu_any(input: &[u32]) -> u32 {
+            let backend = CudaBackend::acquire().expect(
+                "Fix: CUDA backend acquisition failed. \
+                 Configuration error: no CUDA-capable GPU or driver available on this host.",
+            );
+            run_gpu_any_with_backend(&backend, input)
         }
 
         // ---- Word-boundary positive cases (one per word 0..7) ----
@@ -387,18 +391,51 @@ mod tests {
             );
         }
 
-        // ---- Property test: random bitsets over 256 nodes ----
+        // ---- Bounded adversarial corpus over 256 nodes ----
 
-        use proptest::prelude::*;
+        #[test]
+        fn gpu_any_matches_cpu_oracle_adversarial_256_corpus() {
+            let backend = CudaBackend::acquire().expect(
+                "Fix: CUDA backend acquisition failed. \
+                 Configuration error: no CUDA-capable GPU or driver available on this host.",
+            );
+            let mut cases = Vec::with_capacity(96);
+            cases.push([0u32; 8]);
+            cases.push([u32::MAX; 8]);
+            for word in 0..8 {
+                let mut first_bit = [0u32; 8];
+                first_bit[word] = 1;
+                cases.push(first_bit);
 
-        proptest! {
-            #![proptest_config(ProptestConfig::with_cases(1000))]
+                let mut last_bit = [0u32; 8];
+                last_bit[word] = 0x8000_0000;
+                cases.push(last_bit);
 
-            #[test]
-            fn gpu_any_matches_cpu_oracle_random_256(input in proptest::collection::vec(any::<u32>(), 8)) {
-                let gpu = run_gpu_any(&input);
+                let mut alternating = [0u32; 8];
+                alternating[word] = if word % 2 == 0 {
+                    0x5555_5555
+                } else {
+                    0xaaaa_aaaa
+                };
+                cases.push(alternating);
+            }
+
+            let mut state = 0x9e37_79b9u32;
+            for _ in 0..64 {
+                let mut input = [0u32; 8];
+                for word in &mut input {
+                    state ^= state << 13;
+                    state ^= state >> 17;
+                    state ^= state << 5;
+                    *word = state;
+                }
+                cases.push(input);
+            }
+
+            for input in cases {
+                let gpu = run_gpu_any_with_backend(&backend, &input);
                 let cpu = cpu_ref(&input);
-                prop_assert_eq!(
+                assert_eq!(
                     gpu, cpu,
                     "FINDING-GPU-BITSET-ANY-PROP: GPU any({:?}) = {}, CPU oracle = {}",
                     input, gpu, cpu

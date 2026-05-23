@@ -5,7 +5,7 @@ use vyre::ir::{Expr, Node};
 
 use super::shape::{in_output_bounds, MatrixShape, TileShape};
 
-pub(super) fn cooperative_matmul_body(
+pub(crate) fn cooperative_matmul_body(
     a: &str,
     b: &str,
     bias: Option<&str>,
@@ -22,7 +22,19 @@ pub(super) fn cooperative_matmul_body(
     let out_index = Expr::add(Expr::mul(row.clone(), Expr::u32(shape.n)), col.clone());
 
     let mut body = vec![
-        Node::let_bind("local", Expr::LocalId { axis: 0 }),
+        Node::let_bind(
+            "local",
+            Expr::add(
+                Expr::add(
+                    Expr::LocalId { axis: 0 },
+                    Expr::mul(Expr::LocalId { axis: 1 }, Expr::u32(tile.x_lanes)),
+                ),
+                Expr::mul(
+                    Expr::LocalId { axis: 2 },
+                    Expr::u32(tile.x_lanes.saturating_mul(tile.y_lanes)),
+                ),
+            ),
+        ),
         Node::let_bind("tile_block", Expr::WorkgroupId { axis: 0 }),
         Node::let_bind("tile_cols", Expr::u32(shape.n.div_ceil(tile.out_cols))),
         Node::let_bind(

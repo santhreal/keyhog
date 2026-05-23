@@ -1,4 +1,3 @@
-
 use super::*;
 
 fn legacy_item(op_handle: u32) -> MegakernelWorkItem {

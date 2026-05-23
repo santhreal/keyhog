@@ -15,32 +15,43 @@ pub trait CategoryAOp {
     fn program() -> Program;
 }
 
-/// CPU adapter for intrinsics whose existing reference accepts structured buffers.
+/// Failing CPU adapter for intrinsics whose existing reference accepts structured buffers.
 ///
-/// This is the fall-through adapter for Category C ops whose typed CPU
-/// reference is intentionally not exposed through the flat ABI. The function clears
-/// the output buffer and emits a structured error. Consumers (conform
-/// runner, backend parity checks) treat a non-empty invocation of this
-/// function as a signal that a per-op flat-ABI adapter is still missing.
+/// This is the explicit reference-oracle sentinel for Category C ops whose
+/// typed CPU reference is intentionally not exposed through the flat ABI. The
+/// function clears the output buffer and panics with an actionable diagnostic.
+/// Returning normally would create a production-shaped host execution escape
+/// hatch where callers could accidentally consume an empty byte vector as a
+/// valid result.
 ///
 /// Each op can register its own CPU ref via `vyre-reference`, and
 /// `DialectRegistry::get_lowering(ReferenceBackend)` dispatches to it
-/// directly rather than going through this fallback.
+/// directly rather than going through this sentinel.
 pub fn structured_intrinsic_cpu(input: &[u8], output: &mut Vec<u8>) {
     output.clear();
-    tracing::error!(
-        target: "vyre::cpu_ref_fallback",
-        input_len = input.len(),
-        "structured intrinsic CPU adapter received flat bytes; no typed reference implementation is registered for this op. Fix: implement the op's typed reference in vyre-reference and dispatch via DialectRegistry::get_lowering(ReferenceBackend) instead of this fallback."
+    panic!(
+        "structured intrinsic CPU adapter received {} flat input bytes, but no typed reference implementation is registered for this op. Fix: implement the op's typed reference in vyre-reference and dispatch via DialectRegistry::get_lowering(ReferenceBackend); production execution must select a concrete GPU/backend lowering before launch.",
+        input.len()
     );
 }
 
-/// True when [`structured_intrinsic_cpu`] is set as an op's CPU lowering —
-/// used by the conform runner to flag ops still on the fallback so their
-/// parity status is recorded accurately rather than silently passing.
+/// True when [`structured_intrinsic_cpu`] is set as an op's CPU lowering.
+///
+/// Conformance tooling uses this to flag operations that still expose only the
+/// structured-reference sentinel, so parity status is recorded explicitly
+/// instead of pretending a flat CPU adapter exists.
+#[must_use]
+pub fn is_cpu_reference_sentinel(f: CpuFn) -> bool {
+    std::ptr::fn_addr_eq(f, structured_intrinsic_cpu as CpuFn)
+}
+
+/// Compatibility wrapper for older conformance tooling.
+#[deprecated(
+    note = "use is_cpu_reference_sentinel; CPU reference sentinels are explicit oracles, not runtime fallbacks"
+)]
 #[must_use]
 pub fn is_fallback_cpu_ref(f: CpuFn) -> bool {
-    std::ptr::fn_addr_eq(f, structured_intrinsic_cpu as CpuFn)
+    is_cpu_reference_sentinel(f)
 }
 
 #[cfg(test)]
@@ -48,21 +59,34 @@ mod tests {
     use super::*;
 
     #[test]
-    fn is_fallback_detects_structured_intrinsic() {
-        assert!(is_fallback_cpu_ref(structured_intrinsic_cpu));
+    fn is_cpu_reference_sentinel_detects_structured_intrinsic() {
+        assert!(is_cpu_reference_sentinel(structured_intrinsic_cpu));
     }
 
     #[test]
-    fn is_fallback_rejects_other_fn() {
+    fn is_cpu_reference_sentinel_rejects_other_fn() {
         #[allow(clippy::ptr_arg)] // Must match `CpuFn` (`&mut Vec<u8>`), not `&mut [u8]`.
         fn custom_cpu(_input: &[u8], _output: &mut Vec<u8>) {}
-        assert!(!is_fallback_cpu_ref(custom_cpu));
+        assert!(!is_cpu_reference_sentinel(custom_cpu));
     }
 
     #[test]
-    fn structured_intrinsic_clears_output() {
+    fn structured_intrinsic_clears_output_and_panics() {
         let mut output = vec![1, 2, 3];
-        structured_intrinsic_cpu(b"input", &mut output);
+        let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            structured_intrinsic_cpu(b"input", &mut output);
+        }))
+        .expect_err("structured intrinsic CPU sentinel must not return normally");
+
         assert!(output.is_empty());
+        let message = panic
+            .downcast_ref::<String>()
+            .map(String::as_str)
+            .or_else(|| panic.downcast_ref::<&str>().copied())
+            .expect("structured intrinsic CPU sentinel panic should carry a message");
+        assert!(message.contains("no typed reference implementation is registered"));
+        assert!(
+            message.contains("production execution must select a concrete GPU/backend lowering")
+        );
     }
 }

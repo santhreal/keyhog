@@ -145,12 +145,25 @@ inventory::submit! {
             let to_f32 = |w: &[f32]| w.iter().flat_map(|v| v.to_bits().to_le_bytes()).collect::<Vec<u8>>();
             vec![vec![to_f32(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0])]]
         }),
+        category: Some("nn"),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use vyre_reference::value::Value;
+
+    fn f32_bytes(values: &[f32]) -> Vec<u8> {
+        values.iter().flat_map(|v| v.to_le_bytes()).collect()
+    }
+
+    fn decode_f32(bytes: &[u8]) -> Vec<f32> {
+        bytes
+            .chunks_exact(4)
+            .map(|c| f32::from_le_bytes(c.try_into().unwrap()))
+            .collect()
+    }
 
     #[test]
     fn rejects_invalid_rope_dims_without_panicking() {
@@ -187,8 +200,23 @@ mod tests {
         )
         .expect("Fix: partial_rope must not panic on NaN input");
         let out = decode_f32(&outputs[0].to_bytes());
-        assert!(out[0].is_nan(), "partial_rope must propagate NaN from input");
-        assert_eq!(out[1], 2.0, "partial_rope NaN only at lane 0");
+        assert!(
+            out[0].is_nan(),
+            "partial_rope must propagate NaN from input"
+        );
+        // RoPE pairs lanes (0,1): out[0] = in[0]*cos - in[1]*sin and
+        // out[1] = in[0]*sin + in[1]*cos. With NaN at in[0] and sin=0,
+        // out[1] computes `NaN*0 + 2*1` which is NaN under IEEE 754
+        // (any arithmetic involving NaN returns NaN, including NaN*0).
+        // Asserting out[1] == 2.0 would require a non-IEEE shortcut.
+        assert!(
+            out[1].is_nan(),
+            "partial_rope NaN at in[0] poisons the paired lane via NaN*0 = NaN per IEEE 754, got {}",
+            out[1]
+        );
+        // Lanes outside the rotated pair must NOT be poisoned.
+        assert_eq!(out[2], 3.0, "partial_rope leaves unrotated lanes untouched");
+        assert_eq!(out[3], 4.0, "partial_rope leaves unrotated lanes untouched");
     }
 
     #[test]
@@ -235,6 +263,9 @@ mod tests {
         )
         .expect("Fix: partial_rope must not panic on NaN cos table");
         let out = decode_f32(&outputs[0].to_bytes());
-        assert!(out[0].is_nan() || out[1].is_nan(), "partial_rope NaN in cos table must propagate to rotated pair");
+        assert!(
+            out[0].is_nan() || out[1].is_nan(),
+            "partial_rope NaN in cos table must propagate to rotated pair"
+        );
     }
 }

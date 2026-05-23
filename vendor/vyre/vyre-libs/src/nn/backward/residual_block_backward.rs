@@ -78,5 +78,6 @@ inventory::submit! {
             let to_f32 = |w: &[f32]| w.iter().flat_map(|v| v.to_bits().to_le_bytes()).collect::<Vec<u8>>();
             vec![vec![to_f32(&[1.0, 2.0, 3.0, 4.0])]]
         }),
+        category: Some("nn"),
     }
 }

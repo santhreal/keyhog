@@ -118,6 +118,9 @@ impl DeviceSignature {
                 self.id
             ));
         }
+        validate_kib_projection(self.shared_mem_per_sm_kb, "shared_mem_per_sm_kb", &self.id)?;
+        validate_kib_projection(self.l1_kb, "l1_kb", &self.id)?;
+        validate_kib_projection(self.l2_kb, "l2_kb", &self.id)?;
         Ok(())
     }
 
@@ -129,12 +132,13 @@ impl DeviceSignature {
         profile.has_subgroup_shuffle = self.warp_size > 0;
         profile.has_shared_memory |= self.shared_mem_per_sm_kb > 0;
         if profile.max_shared_memory_bytes == 0 {
-            profile.max_shared_memory_bytes = self.shared_mem_per_sm_kb.saturating_mul(1024);
+            profile.max_shared_memory_bytes =
+                kib_to_bytes_checked(self.shared_mem_per_sm_kb, "shared_mem_per_sm_kb", &self.id);
         }
         profile.compute_units = self.max_sm;
         profile.regs_per_thread_max = self.regs_per_thread_max;
-        profile.l1_cache_bytes = self.l1_kb.saturating_mul(1024);
-        profile.l2_cache_bytes = self.l2_kb.saturating_mul(1024);
+        profile.l1_cache_bytes = kib_to_bytes_checked(self.l1_kb, "l1_kb", &self.id);
+        profile.l2_cache_bytes = kib_to_bytes_checked(self.l2_kb, "l2_kb", &self.id);
         profile.mem_bw_gbps = self.mem_bw_gbps;
         profile.ideal_unroll_depth = self.ideal_unroll_depth;
         profile.ideal_vector_pack_bits = self.ideal_vector_pack_bits;
@@ -172,7 +176,7 @@ impl DeviceSignatureTable {
         let mut signatures = vec![DeviceSignature::from_toml_str(
             DeviceSignature::BUILTIN_BLACKWELL_120,
         )?];
-        signatures.sort_by(|left, right| left.id.cmp(&right.id));
+        signatures.sort_unstable_by(|left, right| left.id.cmp(&right.id));
         Ok(Self { signatures })
     }
 
@@ -212,7 +216,7 @@ impl DeviceSignatureTable {
                 .map_err(|error| format!("{} in `{}`", error, path.display()))?;
             signatures.push(signature);
         }
-        signatures.sort_by(|left, right| left.id.cmp(&right.id));
+        signatures.sort_unstable_by(|left, right| left.id.cmp(&right.id));
         dedupe_signature_ids(&signatures)?;
         Ok(Self { signatures })
     }
@@ -305,6 +309,22 @@ fn dedupe_signature_ids(signatures: &[DeviceSignature]) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+fn validate_kib_projection(value: u32, field: &str, id: &str) -> Result<(), String> {
+    value.checked_mul(1024).map(|_| ()).ok_or_else(|| {
+        format!(
+            "device signature `{id}` field {field}={value} KiB overflows u32 bytes. Fix: split the architecture record or lower the Tier-B value; silent saturation corrupts GPU resource planning."
+        )
+    })
+}
+
+fn kib_to_bytes_checked(value: u32, field: &str, id: &str) -> u32 {
+    value.checked_mul(1024).unwrap_or_else(|| {
+        panic!(
+            "device signature `{id}` field {field}={value} KiB overflows u32 bytes. Fix: call DeviceSignature::validate before applying profiles; silent saturation corrupts GPU resource planning."
+        )
+    })
 }
 
 fn parse_u32(value: &str) -> Option<u32> {
@@ -427,12 +447,16 @@ bank_width_bytes = 4
     #[test]
     fn builtin_signature_materially_projects_planner_fields() {
         let table = DeviceSignatureTable::builtins().unwrap();
+        let signature = table.find_architecture_generation(120).unwrap();
         let profile =
             table.apply_generation_to_profile(120, DeviceProfile::conservative("backend"));
 
-        assert_eq!(profile.ideal_unroll_depth, 8);
-        assert_eq!(profile.ideal_vector_pack_bits, 128);
-        assert_eq!(profile.ideal_workgroup_tile, [16, 16, 1]);
-        assert_eq!(profile.shared_memory_bank_count, 32);
+        assert_eq!(profile.ideal_unroll_depth, signature.ideal_unroll_depth);
+        assert_eq!(
+            profile.ideal_vector_pack_bits,
+            signature.ideal_vector_pack_bits
+        );
+        assert_eq!(profile.ideal_workgroup_tile, signature.ideal_workgroup_tile);
+        assert_eq!(profile.shared_memory_bank_count, signature.bank_count);
     }
 }

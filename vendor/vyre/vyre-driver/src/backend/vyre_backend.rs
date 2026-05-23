@@ -6,9 +6,29 @@ use smallvec::SmallVec;
 use vyre_foundation::ir::Program;
 
 use crate::backend::{
-    private, BackendError, CompiledPipeline, DispatchConfig, OutputBuffers, PendingDispatch,
-    Resource, TimedDispatchResult,
+    device_buffer::unsupported_device_buffer, private, BackendError, CompiledPipeline,
+    DeviceBuffer, DispatchConfig, OutputBuffers, PendingDispatch, Resource, TimedDispatchResult,
 };
+
+/// One backend-resident program dispatch in an ordered sequence.
+pub struct ResidentDispatchStep<'a> {
+    /// Program to dispatch.
+    pub program: &'a Program,
+    /// Resident resources in binding order.
+    pub resources: &'a [Resource],
+    /// Optional CUDA/grid-style launch override.
+    pub grid_override: Option<[u32; 3]>,
+}
+
+/// One compact byte range to read from a backend-resident resource.
+pub struct ResidentReadRange<'a> {
+    /// Resident resource to read.
+    pub resource: &'a Resource,
+    /// Byte offset inside the resident resource.
+    pub byte_offset: usize,
+    /// Number of bytes to read.
+    pub byte_len: usize,
+}
 
 /// The frozen contract between vyre and every execution backend.
 ///
@@ -94,8 +114,11 @@ pub trait VyreBackend: private::Sealed + Send + Sync {
         inputs: &[&[u8]],
         config: &DispatchConfig,
     ) -> Result<Vec<Vec<u8>>, BackendError> {
-        let owned: SmallVec<[Vec<u8>; 8]> = inputs.iter().map(|input| (*input).to_vec()).collect();
-        self.dispatch(program, &owned, config)
+        let owned =
+            crate::backend::clone_borrowed_inputs_for_dispatch(inputs, "backend input staging")?;
+        let outputs = self.dispatch(program, &owned, config)?;
+        crate::observability::record_dispatch_io(inputs, &outputs);
+        Ok(outputs)
     }
 
     /// Executes a borrowed-input dispatch and returns backend-owned timing.
@@ -118,7 +141,7 @@ pub trait VyreBackend: private::Sealed + Send + Sync {
         let outputs = self.dispatch_borrowed(program, inputs, config)?;
         Ok(TimedDispatchResult {
             outputs,
-            wall_ns: started.elapsed().as_nanos() as u64,
+            wall_ns: crate::backend::checked_elapsed_wall_ns(started, "backend borrowed dispatch")?,
             device_ns: None,
             enqueue_ns: None,
             wait_ns: None,
@@ -130,7 +153,7 @@ pub trait VyreBackend: private::Sealed + Send + Sync {
     ///
     /// Backends may override this method to reuse output buffers across
     /// dispatches. The default preserves the existing dispatch contract and
-    /// moves the returned vectors into `outputs`.
+    /// copies returned bytes into existing output slots where possible.
     ///
     /// # Errors
     ///
@@ -143,8 +166,11 @@ pub trait VyreBackend: private::Sealed + Send + Sync {
         outputs: &mut OutputBuffers,
     ) -> Result<(), BackendError> {
         let result = self.dispatch_borrowed(program, inputs, config)?;
-        outputs.clear();
-        outputs.extend(result);
+        let stats = crate::backend::dispatch_result::replace_output_buffers_preserving_slots_with_memory_stats(
+            result,
+            outputs,
+        );
+        crate::observability::record_output_replacement_stats(stats);
         Ok(())
     }
 
@@ -179,6 +205,179 @@ pub trait VyreBackend: private::Sealed + Send + Sync {
         })
     }
 
+    /// Upload several backend-resident resources as one logical staging
+    /// operation.
+    ///
+    /// Backends that support resident graph/dataflow hot paths should override
+    /// this with a native batched transfer. The default fails loudly instead
+    /// of looping over [`VyreBackend::upload_resident`], because a hidden
+    /// per-buffer synchronization loop destroys the performance contract.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BackendError`] when the backend cannot batch resident uploads
+    /// or when any resource/byte length is invalid.
+    fn upload_resident_many(&self, _uploads: &[(&Resource, &[u8])]) -> Result<(), BackendError> {
+        Err(BackendError::UnsupportedFeature {
+            name: "resident buffer batch upload".to_string(),
+            backend: self.id().to_string(),
+        })
+    }
+
+    /// Upload bytes into a subrange of a backend-resident resource.
+    ///
+    /// This is the hot-loop path for reusable resident slots whose capacity is
+    /// larger than the current logical payload. Backends must not require the
+    /// upload length to equal the allocation length.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BackendError`] when ranged upload is unsupported, the resource
+    /// is not owned by this backend, or the destination range is out of bounds.
+    fn upload_resident_at(
+        &self,
+        _resource: &Resource,
+        _dst_offset_bytes: usize,
+        _bytes: &[u8],
+    ) -> Result<(), BackendError> {
+        Err(BackendError::UnsupportedFeature {
+            name: "resident buffer ranged upload".to_string(),
+            backend: self.id().to_string(),
+        })
+    }
+
+    /// Upload several resident subranges as one logical staging operation.
+    ///
+    /// The default fails loudly instead of looping over
+    /// [`VyreBackend::upload_resident_at`], because hidden per-range
+    /// synchronization breaks resident hot-loop performance.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BackendError`] when ranged batch upload is unsupported or when
+    /// any resource/range is invalid.
+    fn upload_resident_at_many(
+        &self,
+        _uploads: &[(&Resource, usize, &[u8])],
+    ) -> Result<(), BackendError> {
+        Err(BackendError::UnsupportedFeature {
+            name: "resident buffer ranged batch upload".to_string(),
+            backend: self.id().to_string(),
+        })
+    }
+
+    /// Download a backend-resident resource into a new host buffer.
+    ///
+    /// Prefer [`VyreBackend::download_resident_into`] in hot loops so repeated
+    /// validation does not allocate a fresh `Vec` for every readback.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BackendError`] when the backend cannot download resident
+    /// resources or when `resource` is not owned by this backend.
+    fn download_resident(&self, resource: &Resource) -> Result<Vec<u8>, BackendError> {
+        let mut bytes = Vec::new();
+        self.download_resident_into(resource, &mut bytes)?;
+        Ok(bytes)
+    }
+
+    /// Download a backend-resident resource into caller-owned storage.
+    ///
+    /// Implementations must clear and reuse `out`; hidden compatibility
+    /// allocation defeats resident hot-loop validation.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BackendError`] when resident download is unsupported or when
+    /// `resource` is not owned by this backend.
+    fn download_resident_into(
+        &self,
+        _resource: &Resource,
+        _out: &mut Vec<u8>,
+    ) -> Result<(), BackendError> {
+        Err(BackendError::UnsupportedFeature {
+            name: "resident buffer download".to_string(),
+            backend: self.id().to_string(),
+        })
+    }
+
+    /// Download a byte range from a backend-resident resource into a new host
+    /// buffer.
+    ///
+    /// Prefer [`VyreBackend::download_resident_range_into`] in hot loops.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BackendError`] when resident ranged download is unsupported,
+    /// the range is invalid, or `resource` is not owned by this backend.
+    fn download_resident_range(
+        &self,
+        resource: &Resource,
+        byte_offset: usize,
+        byte_len: usize,
+    ) -> Result<Vec<u8>, BackendError> {
+        let mut bytes = Vec::new();
+        bytes.try_reserve_exact(byte_len).map_err(|error| {
+            BackendError::InvalidProgram {
+                fix: format!(
+                    "Fix: resident ranged download could not reserve {byte_len} output byte(s): {error}. Split the readback range before dispatch."
+                ),
+            }
+        })?;
+        self.download_resident_range_into(resource, byte_offset, byte_len, &mut bytes)?;
+        Ok(bytes)
+    }
+
+    /// Download a byte range from a backend-resident resource into
+    /// caller-owned storage.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BackendError`] when resident ranged download is unsupported,
+    /// the range is invalid, or `resource` is not owned by this backend.
+    fn download_resident_range_into(
+        &self,
+        _resource: &Resource,
+        _byte_offset: usize,
+        _byte_len: usize,
+        _out: &mut Vec<u8>,
+    ) -> Result<(), BackendError> {
+        Err(BackendError::UnsupportedFeature {
+            name: "resident buffer ranged download".to_string(),
+            backend: self.id().to_string(),
+        })
+    }
+
+    /// Download several byte ranges from backend-resident resources into
+    /// caller-owned storage as one logical readback operation.
+    ///
+    /// Backends with a real multi-readback path should override this to issue
+    /// all copies behind one backend synchronization boundary.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BackendError`] when counts do not match, any range is invalid,
+    /// or resident ranged download is unsupported.
+    fn download_resident_ranges_into(
+        &self,
+        ranges: &[(&Resource, usize, usize)],
+        outputs: &mut [&mut Vec<u8>],
+    ) -> Result<(), BackendError> {
+        if ranges.len() != outputs.len() {
+            return Err(BackendError::InvalidProgram {
+                fix: format!(
+                    "Fix: resident ranged batch download expected matching range/output counts but got {} range(s) and {} output(s).",
+                    ranges.len(),
+                    outputs.len()
+                ),
+            });
+        }
+        for ((resource, byte_offset, byte_len), output) in ranges.iter().zip(outputs.iter_mut()) {
+            self.download_resident_range_into(resource, *byte_offset, *byte_len, output)?;
+        }
+        Ok(())
+    }
+
     /// Free a backend-resident resource previously returned by
     /// [`VyreBackend::allocate_resident`].
     ///
@@ -209,6 +408,77 @@ pub trait VyreBackend: private::Sealed + Send + Sync {
             name: "resident timed dispatch".to_string(),
             backend: self.id().to_string(),
         })
+    }
+
+    /// Dispatch an ordered sequence of resident-buffer programs and read
+    /// selected resident byte ranges into caller-owned storage.
+    ///
+    /// The default preserves correctness by dispatching each step through
+    /// [`VyreBackend::dispatch_resident_timed`] and then calling
+    /// [`VyreBackend::download_resident_ranges_into`]. CUDA overrides this to
+    /// enqueue the whole dependent chain plus D2H readbacks on one stream and
+    /// pay one host synchronization point.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BackendError`] when any step fails, when readback ranges are
+    /// invalid, or when the backend cannot perform resident dispatch/readback.
+    fn dispatch_resident_sequence_read_ranges_into(
+        &self,
+        steps: &[ResidentDispatchStep<'_>],
+        read_ranges: &[ResidentReadRange<'_>],
+        outputs: &mut [&mut Vec<u8>],
+    ) -> Result<(), BackendError> {
+        for step in steps {
+            let mut config = DispatchConfig::default();
+            config.grid_override = step.grid_override;
+            self.dispatch_resident_timed(step.program, step.resources, &config)?;
+        }
+        let ranges = read_ranges
+            .iter()
+            .map(|range| (range.resource, range.byte_offset, range.byte_len))
+            .collect::<SmallVec<[_; 8]>>();
+        self.download_resident_ranges_into(&ranges, outputs)
+    }
+
+    /// Dispatch a resident prefix, repeat a resident sub-sequence, and read
+    /// selected resident byte ranges into caller-owned storage.
+    ///
+    /// This is the fixed-point hot-path contract: dataflow clients can express
+    /// a repeated kernel group without allocating one host sequence entry per
+    /// iteration. Backends that understand repetition should override this to
+    /// keep launch preparation and parameter upload sublinear in
+    /// `repeat_count`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BackendError`] when any step fails, when readback ranges are
+    /// invalid, or when the backend cannot perform resident dispatch/readback.
+    fn dispatch_resident_repeated_sequence_read_ranges_into(
+        &self,
+        prefix_steps: &[ResidentDispatchStep<'_>],
+        repeated_steps: &[ResidentDispatchStep<'_>],
+        repeat_count: u32,
+        read_ranges: &[ResidentReadRange<'_>],
+        outputs: &mut [&mut Vec<u8>],
+    ) -> Result<(), BackendError> {
+        for step in prefix_steps {
+            let mut config = DispatchConfig::default();
+            config.grid_override = step.grid_override;
+            self.dispatch_resident_timed(step.program, step.resources, &config)?;
+        }
+        for _ in 0..repeat_count {
+            for step in repeated_steps {
+                let mut config = DispatchConfig::default();
+                config.grid_override = step.grid_override;
+                self.dispatch_resident_timed(step.program, step.resources, &config)?;
+            }
+        }
+        let ranges = read_ranges
+            .iter()
+            .map(|range| (range.resource, range.byte_offset, range.byte_len))
+            .collect::<SmallVec<[_; 8]>>();
+        self.download_resident_ranges_into(&ranges, outputs)
     }
 
     /// Optional pre-compilation hook for the pipeline-mode API.
@@ -340,15 +610,15 @@ pub trait VyreBackend: private::Sealed + Send + Sync {
     // Backends MUST report HONESTLY. Returning `true` from a capability
     // query is a promise the lowering path emits the corresponding
     // intrinsic and the adapter supports it. "Supported but broken" is a
-    // LAW 9 evasion (see CLAUDE.md). If the feature bit is set on the
-    // device but the lowering emits scalar fallback, the answer is
-    // `false` until the lowering catches up.
+    // LAW 9 evasion (see AGENTS.md). If the feature bit is set on the
+    // device but the lowering emits a slower emulation sequence, the
+    // answer is `false` until the native lowering catches up.
     // ---------------------------------------------------------------
 
     /// Whether this backend's lowering path emits subgroup / wave
     /// intrinsics AND the current adapter exposes them.
     ///
-    /// Default: `false` (conservative — assumes the scalar fallback).
+    /// Default: `false` (conservative — assumes no native subgroup lowering).
     #[must_use]
     fn supports_subgroup_ops(&self) -> bool {
         false
@@ -422,8 +692,10 @@ pub trait VyreBackend: private::Sealed + Send + Sync {
     /// every thread in the entire grid waits at the barrier and
     /// every prior write is globally visible afterwards. Backends
     /// that lack a native grid barrier (workgroup-only fences) must
-    /// return `false`; the runtime will lower a `GridSync` barrier
-    /// to a kernel split that re-dispatches with the same buffers.
+    /// return `false`; registration-based dispatch may lower a
+    /// `GridSync` barrier to a host-orchestrated kernel split only
+    /// when [`VyreBackend::allows_host_grid_sync_split`] also returns
+    /// `true`.
     ///
     /// Backends with cooperative whole-grid launch support can return
     /// `true`; backends limited to workgroup-local synchronization return
@@ -433,6 +705,24 @@ pub trait VyreBackend: private::Sealed + Send + Sync {
     #[must_use]
     fn supports_grid_sync(&self) -> bool {
         false
+    }
+
+    /// Whether the shared registry wrapper may emulate whole-grid
+    /// synchronization for this backend by splitting one program into
+    /// multiple host-dispatched kernels.
+    ///
+    /// This exists separately from [`VyreBackend::supports_grid_sync`]
+    /// because a backend can intentionally reject hidden host
+    /// orchestration while native cooperative-grid lowering is absent.
+    /// CUDA uses that policy in the release path so missing native
+    /// grid-barrier lowering is surfaced as an unsupported feature
+    /// instead of silently becoming a slower multi-launch path.
+    ///
+    /// Default: `true` to preserve existing behavior for simple
+    /// backends that intentionally rely on shared split lowering.
+    #[must_use]
+    fn allows_host_grid_sync_split(&self) -> bool {
+        true
     }
 
     /// Whether this backend partitions a program across more than one
@@ -467,11 +757,17 @@ pub trait VyreBackend: private::Sealed + Send + Sync {
     /// Maximum total invocations allowed in a single workgroup.
     ///
     /// Default derives from [`max_workgroup_size`](Self::max_workgroup_size)
-    /// and clamps overflow to `u32::MAX`.
+    /// and fails loudly if a backend reports an unrepresentable product.
     #[must_use]
     fn max_compute_invocations_per_workgroup(&self) -> u32 {
         let [x, y, z] = self.max_workgroup_size();
-        x.saturating_mul(y).saturating_mul(z)
+        let invocations = u128::from(x) * u128::from(y) * u128::from(z);
+        u32::try_from(invocations).unwrap_or_else(|_| {
+            panic!(
+                "backend `{}` reported max_workgroup_size [{x}, {y}, {z}], whose invocation product {invocations} exceeds u32. Fix: report a valid hardware workgroup limit; silent saturation corrupts scheduler admission.",
+                self.id()
+            )
+        })
     }
 
     /// Native subgroup size for the backing device when the backend
@@ -616,5 +912,180 @@ pub trait VyreBackend: private::Sealed + Send + Sync {
             name: "device recovery".to_string(),
             backend: self.id().to_string(),
         })
+    }
+
+    /// Allocate a backend-owned device buffer of `byte_len` bytes.
+    ///
+    /// The returned [`DeviceBuffer`] handle is only meaningful to the
+    /// backend that produced it. Backends that have not opted in return
+    /// [`BackendError::UnsupportedFeature`] with the
+    /// `DEVICE_BUFFER_FEATURE` name; production callers that require
+    /// resident-buffer performance must treat that as a hard capability
+    /// failure rather than silently routing through host `Vec<u8>`
+    /// dispatch. Real device backends (cuda/wgpu/spirv) override this to
+    /// wrap their concrete handle (for example, a vendor device allocation,
+    /// vulkan buffer) in a `DeviceBuffer` impl.
+    ///
+    /// See `crate::backend::device_buffer` for the substrate.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BackendError::UnsupportedFeature`] when the backend
+    /// has not yet implemented persistent device-buffer allocation.
+    fn allocate_device_buffer(
+        &self,
+        _byte_len: usize,
+    ) -> Result<Box<dyn DeviceBuffer>, BackendError> {
+        Err(unsupported_device_buffer(self.id()))
+    }
+
+    /// Upload host bytes into a previously-allocated device buffer.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BackendError`] when the buffer was not allocated by this
+    /// backend, the byte length does not match the allocation, or the
+    /// backend has not opted in to device-buffer dispatch.
+    fn upload_device_buffer(
+        &self,
+        _buffer: &mut dyn DeviceBuffer,
+        _bytes: &[u8],
+    ) -> Result<(), BackendError> {
+        Err(unsupported_device_buffer(self.id()))
+    }
+
+    /// Download bytes from a device buffer back to a host `Vec<u8>`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BackendError`] when the buffer was not allocated by this
+    /// backend or the backend has not opted in to device-buffer dispatch.
+    fn download_device_buffer(&self, _buffer: &dyn DeviceBuffer) -> Result<Vec<u8>, BackendError> {
+        Err(unsupported_device_buffer(self.id()))
+    }
+
+    /// Free a device buffer previously returned by
+    /// [`Self::allocate_device_buffer`]. Explicit-free is required
+    /// because the substrate does not assume reference-counted backend
+    /// handles; consumers are responsible for calling this when done.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BackendError`] when the buffer was not allocated by this
+    /// backend or the underlying free fails.
+    fn free_device_buffer(&self, _buffer: Box<dyn DeviceBuffer>) -> Result<(), BackendError> {
+        Err(unsupported_device_buffer(self.id()))
+    }
+
+    /// Dispatch a Program with backend-owned device buffers as inputs and
+    /// outputs.
+    ///
+    /// Backends that have implemented [`Self::allocate_device_buffer`]
+    /// override this method to bind their concrete buffer type without
+    /// the host upload/download round trip the legacy `dispatch` API
+    /// requires. Backends that have not opted in return
+    /// [`BackendError::UnsupportedFeature`]. Callers that choose this
+    /// API are asking for resident-buffer execution; falling back to
+    /// host-buffer dispatch would hide the copy cost and violate the
+    /// performance contract.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BackendError::UnsupportedFeature`] by default. Real
+    /// implementations return any error encountered during dispatch.
+    fn dispatch_with_device_buffers(
+        &self,
+        _program: &Program,
+        _inputs: &[&dyn DeviceBuffer],
+        _outputs: &mut [&mut dyn DeviceBuffer],
+        _config: &DispatchConfig,
+    ) -> Result<(), BackendError> {
+        Err(unsupported_device_buffer(self.id()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct TelemetryBackend;
+
+    impl private::Sealed for TelemetryBackend {}
+
+    impl VyreBackend for TelemetryBackend {
+        fn id(&self) -> &'static str {
+            "telemetry-test"
+        }
+
+        fn dispatch(
+            &self,
+            _program: &Program,
+            _inputs: &[Vec<u8>],
+            _config: &DispatchConfig,
+        ) -> Result<Vec<Vec<u8>>, BackendError> {
+            Ok(vec![vec![1, 2], vec![3, 4]])
+        }
+    }
+
+    #[test]
+    fn default_borrowed_into_dispatch_records_runtime_telemetry() {
+        let _guard = crate::observability::audit_events_test_lock();
+        let before = crate::observability::snapshot_dispatch_telemetry();
+        let backend = TelemetryBackend;
+        let mut outputs = vec![Vec::with_capacity(4), Vec::with_capacity(1)];
+
+        backend
+            .dispatch_borrowed_into(
+                &Program::empty(),
+                &[&[9, 8, 7]],
+                &DispatchConfig::default(),
+                &mut outputs,
+            )
+            .expect("default borrowed-into dispatch must succeed");
+
+        let telemetry = crate::observability::snapshot_dispatch_telemetry();
+        assert!(telemetry.launches >= before.launches + 1);
+        assert!(telemetry.input_bytes >= before.input_bytes + 3);
+        assert!(telemetry.output_bytes >= before.output_bytes + 4);
+        assert!(telemetry.output_slots >= before.output_slots + 2);
+        assert!(telemetry.output_slots_reused >= before.output_slots_reused + 1);
+        assert!(telemetry.output_slots_moved >= before.output_slots_moved + 1);
+        assert!(telemetry.output_slots_appended >= before.output_slots_appended);
+    }
+
+    #[test]
+    fn default_dispatch_paths_use_shared_fallible_staging_and_checked_timing() {
+        let backend_source = include_str!("vyre_backend.rs");
+        let compiled_source = include_str!("compiled_pipeline.rs");
+        let module_source = include_str!("../backend.rs");
+
+        assert!(
+            module_source.contains("fn clone_borrowed_inputs_for_dispatch")
+                && module_source.contains("fn reserve_batch_output_slots")
+                && module_source.contains("fn checked_elapsed_wall_ns"),
+            "Fix: backend defaults must share one fallible staging and checked timing contract."
+        );
+        for source in [backend_source, compiled_source] {
+            let production = source
+                .split("#[cfg(test)]")
+                .next()
+                .expect("backend source must contain production section before tests");
+            assert!(
+                production.contains("clone_borrowed_inputs_for_dispatch")
+                    && production.contains("checked_elapsed_wall_ns")
+                    && !production.contains(".as_nanos() as u64")
+                    && !production.contains("inputs.iter().map(|input| (*input).to_vec()).collect()"),
+                "Fix: inherited backend dispatch defaults must avoid infallible borrowed-input collection and lossy wall timing."
+            );
+        }
+        let compiled_production = compiled_source
+            .split("#[cfg(test)]")
+            .next()
+            .expect("compiled pipeline source must contain production section before tests");
+        assert!(
+            compiled_production.contains("reserved_batch_output_slots")
+                && !compiled_production.contains("Vec::with_capacity(batches.len())"),
+            "Fix: compiled-pipeline batch defaults must construct output slots through shared fallible staging."
+        );
     }
 }

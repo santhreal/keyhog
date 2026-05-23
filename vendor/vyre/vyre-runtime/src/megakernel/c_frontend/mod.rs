@@ -1,8 +1,10 @@
-// COMPLETED: gemini-cli 2026-04-30 T-06
-//! NOTE: this module is flagged for eviction from the substrate (Phase 1 substrate cut). C-language semantics belong in vyre-libs-c, not vyre-runtime. Do not extend this file; new C-frontend logic goes in the consumer crate.
+//! Runtime ABI glue for the GPU-resident C frontend workspace.
+//!
+//! C-language semantics belong in `vyre-libs`; this module owns only the
+//! runtime megakernel workspace contract. Do not add parser semantics here.
 //! GPU-resident C frontend workspace ABI for the parser megakernel.
 //!
-//! Audit-fix A28 split this module into:
+//! Module ownership:
 //!  - `mod.rs`: constants + enums + handler + `manifest_word` + workspace limits/region types
 //!  - `workspace.rs`: [`CFrontendWorkspaceManifest`] + impl
 //!  - `nodes.rs`: builder functions emitting `Node` graphs

@@ -12,6 +12,7 @@ use cudarc::driver::{
 };
 use vyre_driver::{backend::private, BackendError, PendingDispatch};
 
+use crate::backend::telemetry::CudaTelemetry;
 use crate::backend::{cuda_check, DispatchAllocations, HostTransferAllocations, ResidentUseGuard};
 
 /// RAII owner for a CUDA stream.
@@ -165,7 +166,15 @@ impl CudaEvent {
                 "cuEventElapsedTime",
             )?;
         }
-        Ok((elapsed_ms * 1_000_000.0) as u64)
+        let elapsed_ns = f64::from(elapsed_ms) * 1_000_000.0;
+        if !elapsed_ns.is_finite() || elapsed_ns < 0.0 || elapsed_ns > u64::MAX as f64 {
+            return Err(BackendError::InvalidProgram {
+                fix: format!(
+                    "Fix: CUDA event elapsed time {elapsed_ms} ms cannot fit u64 nanoseconds; inspect CUDA event timing and split the dispatch before telemetry overflows."
+                ),
+            });
+        }
+        crate::numeric::rounded_f64_to_u64(elapsed_ns, "event elapsed nanoseconds")
     }
 }
 
@@ -192,6 +201,124 @@ pub(crate) struct CudaLaunchResourcePool {
     streams: ArrayQueue<CudaStream>,
     events: ArrayQueue<CudaEvent>,
     timing_events: ArrayQueue<CudaEvent>,
+}
+
+/// Cached CUDA launch-resource counts retained for dispatch reuse.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CudaLaunchResourceCounts {
+    /// Cached non-blocking CUDA streams.
+    pub streams: usize,
+    /// Cached completion-fence CUDA events.
+    pub completion_events: usize,
+    /// Cached timing-enabled CUDA events used by graph replay telemetry.
+    pub timing_events: usize,
+}
+
+/// Owned lease for launch resources before they are transferred into a pending dispatch.
+#[derive(Debug)]
+pub(crate) struct CudaLaunchResourceLease {
+    pool: Arc<CudaLaunchResourcePool>,
+    stream: Option<CudaStream>,
+    timing_events: Option<(CudaEvent, CudaEvent)>,
+}
+
+/// Owned lease for a timing-event pair used outside normal launch-resource ownership.
+#[derive(Debug)]
+pub(crate) struct CudaTimingEventPairLease {
+    pool: Arc<CudaLaunchResourcePool>,
+    timing_events: Option<(CudaEvent, CudaEvent)>,
+}
+
+impl CudaTimingEventPairLease {
+    pub(crate) fn acquire(pool: Arc<CudaLaunchResourcePool>) -> Result<Self, BackendError> {
+        let timing_events = pool.acquire_timing_event_pair()?;
+        Ok(Self {
+            pool,
+            timing_events: Some(timing_events),
+        })
+    }
+
+    pub(crate) fn events(&self) -> Result<&(CudaEvent, CudaEvent), BackendError> {
+        self.timing_events
+            .as_ref()
+            .ok_or_else(|| BackendError::InvalidProgram {
+                fix: "Fix: CUDA timing event pair lease was already consumed; acquire a fresh timing lease before recording graph replay events.".to_string(),
+            })
+    }
+}
+
+impl Drop for CudaTimingEventPairLease {
+    fn drop(&mut self) {
+        if let Some((start, end)) = self.timing_events.take() {
+            self.pool.release_timing_event(start);
+            self.pool.release_timing_event(end);
+        }
+    }
+}
+
+impl CudaLaunchResourceLease {
+    pub(crate) fn acquire(
+        pool: Arc<CudaLaunchResourcePool>,
+        capture_timing: bool,
+    ) -> Result<Self, BackendError> {
+        let stream = pool.acquire_stream()?;
+        let timing_events = if capture_timing {
+            match pool.acquire_timing_event_pair() {
+                Ok(pair) => Some(pair),
+                Err(error) => {
+                    pool.release_stream(stream);
+                    return Err(error);
+                }
+            }
+        } else {
+            None
+        };
+        Ok(Self {
+            pool,
+            stream: Some(stream),
+            timing_events,
+        })
+    }
+
+    pub(crate) fn stream_raw(&self) -> Result<CUstream, BackendError> {
+        self.stream
+            .as_ref()
+            .map(CudaStream::raw)
+            .ok_or_else(|| BackendError::InvalidProgram {
+                fix: "Fix: CUDA launch resource lease stream was already consumed; acquire a fresh launch-resource lease before enqueueing CUDA work.".to_string(),
+            })
+    }
+
+    pub(crate) fn timing_events(&self) -> Result<Option<&(CudaEvent, CudaEvent)>, BackendError> {
+        if self.stream.is_none() {
+            return Err(BackendError::InvalidProgram {
+                fix: "Fix: CUDA launch resource lease timing events were queried after the stream was consumed; query timing events before transferring the lease into a pending dispatch.".to_string(),
+            });
+        }
+        Ok(self.timing_events.as_ref())
+    }
+
+    pub(crate) fn into_parts(
+        mut self,
+    ) -> Result<(CudaStream, Option<(CudaEvent, CudaEvent)>), BackendError> {
+        let stream = self.stream.take().ok_or_else(|| BackendError::InvalidProgram {
+            fix: "Fix: CUDA launch resource lease stream was already consumed; pending dispatch ownership cannot be built twice from the same lease.".to_string(),
+        })?;
+        let timing_events = self.timing_events.take();
+        Ok((stream, timing_events))
+    }
+}
+
+impl Drop for CudaLaunchResourceLease {
+    fn drop(&mut self) {
+        if let Some((start, end)) = self.timing_events.take() {
+            self.pool.release_timing_event(start);
+            self.pool.release_timing_event(end);
+        }
+        if let Some(stream) = self.stream.take() {
+            self.pool.release_stream(stream);
+        }
+    }
 }
 
 impl CudaLaunchResourcePool {
@@ -225,19 +352,30 @@ impl CudaLaunchResourcePool {
         CudaEvent::timing()
     }
 
+    pub(crate) fn acquire_timing_event_pair(&self) -> Result<(CudaEvent, CudaEvent), BackendError> {
+        let start = self.acquire_timing_event()?;
+        match self.acquire_timing_event() {
+            Ok(end) => Ok((start, end)),
+            Err(error) => {
+                self.release_timing_event(start);
+                Err(error)
+            }
+        }
+    }
+
     pub(crate) fn release_stream(&self, stream: CudaStream) {
         if let Err(stream) = self.streams.push(stream) {
             drop(stream);
         }
     }
 
-    fn release_event(&self, event: CudaEvent) {
+    pub(crate) fn release_event(&self, event: CudaEvent) {
         if let Err(event) = self.events.push(event) {
             drop(event);
         }
     }
 
-    fn release_timing_event(&self, event: CudaEvent) {
+    pub(crate) fn release_timing_event(&self, event: CudaEvent) {
         if let Err(event) = self.timing_events.push(event) {
             drop(event);
         }
@@ -245,6 +383,14 @@ impl CudaLaunchResourcePool {
 
     pub(crate) fn cached_counts(&self) -> Result<(usize, usize), BackendError> {
         Ok((self.streams.len(), self.events.len()))
+    }
+
+    pub(crate) fn cached_counts_detailed(&self) -> Result<CudaLaunchResourceCounts, BackendError> {
+        Ok(CudaLaunchResourceCounts {
+            streams: self.streams.len(),
+            completion_events: self.events.len(),
+            timing_events: self.timing_events.len(),
+        })
     }
 
     pub(crate) fn clear(&self) -> Result<(), BackendError> {
@@ -268,10 +414,34 @@ pub(crate) struct CudaPendingDispatch {
     outputs: Vec<Vec<u8>>,
     timing_start: Option<CudaEvent>,
     timing_end: Option<CudaEvent>,
+    telemetry: Arc<CudaTelemetry>,
     completed: AtomicBool,
 }
 
 impl CudaPendingDispatch {
+    /// Build an already-completed pending dispatch.
+    pub(crate) fn new_ready(
+        ctx: Arc<CudaContext>,
+        pool: Arc<CudaLaunchResourcePool>,
+        outputs: Vec<Vec<u8>>,
+        telemetry: Arc<CudaTelemetry>,
+    ) -> Self {
+        Self {
+            ctx,
+            pool,
+            event: None,
+            stream: None,
+            allocations: None,
+            resident_use: None,
+            host_transfers: None,
+            outputs,
+            timing_start: None,
+            timing_end: None,
+            telemetry,
+            completed: AtomicBool::new(true),
+        }
+    }
+
     /// Build a pending dispatch after all GPU work has been enqueued.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
@@ -283,6 +453,7 @@ impl CudaPendingDispatch {
         resident_use: Option<ResidentUseGuard>,
         host_transfers: Option<HostTransferAllocations>,
         outputs: Vec<Vec<u8>>,
+        telemetry: Arc<CudaTelemetry>,
     ) -> Self {
         Self {
             ctx,
@@ -295,6 +466,7 @@ impl CudaPendingDispatch {
             outputs,
             timing_start: None,
             timing_end: None,
+            telemetry,
             completed: AtomicBool::new(false),
         }
     }
@@ -312,6 +484,7 @@ impl CudaPendingDispatch {
         outputs: Vec<Vec<u8>>,
         timing_start: CudaEvent,
         timing_end: CudaEvent,
+        telemetry: Arc<CudaTelemetry>,
     ) -> Self {
         Self {
             ctx,
@@ -324,6 +497,7 @@ impl CudaPendingDispatch {
             outputs,
             timing_start: Some(timing_start),
             timing_end: Some(timing_end),
+            telemetry,
             completed: AtomicBool::new(false),
         }
     }
@@ -338,6 +512,9 @@ impl CudaPendingDispatch {
     }
 
     fn synchronize(&self) -> Result<(), BackendError> {
+        if self.completed.load(Ordering::Acquire) {
+            return Ok(());
+        }
         self.bind_context()?;
         let event = self
             .event
@@ -347,6 +524,7 @@ impl CudaPendingDispatch {
                 message: "CUDA pending dispatch completion event was already released".to_string(),
             })?;
         event.synchronize()?;
+        self.telemetry.record_sync_point();
         self.completed.store(true, Ordering::Release);
         Ok(())
     }
@@ -378,19 +556,31 @@ impl CudaPendingDispatch {
         self.release_launch_resources();
         self.allocations.take();
         self.resident_use.take();
-        let outputs = self.collect_outputs();
+        let outputs = self.collect_outputs()?;
         self.host_transfers.take();
         Ok((outputs, device_ns))
     }
 
-    fn collect_outputs(&mut self) -> Vec<Vec<u8>> {
+    fn collect_outputs(&mut self) -> Result<Vec<Vec<u8>>, BackendError> {
         if let Some(transfers) = self.host_transfers.as_ref() {
             let mut outputs = std::mem::take(&mut self.outputs);
-            transfers.collect_outputs_into(&mut outputs);
-            outputs
+            transfers.collect_outputs_into(&mut outputs)?;
+            Ok(outputs)
         } else {
-            std::mem::take(&mut self.outputs)
+            Ok(std::mem::take(&mut self.outputs))
         }
+    }
+
+    fn collect_outputs_into(&mut self, outputs: &mut Vec<Vec<u8>>) -> Result<(), BackendError> {
+        if let Some(transfers) = self.host_transfers.as_ref() {
+            transfers.collect_outputs_into(outputs)?;
+        } else {
+            vyre_driver::replace_output_buffers_preserving_slots(
+                std::mem::take(&mut self.outputs),
+                outputs,
+            );
+        }
+        Ok(())
     }
 }
 
@@ -419,9 +609,60 @@ impl PendingDispatch for CudaPendingDispatch {
         self.release_launch_resources();
         self.allocations.take();
         self.resident_use.take();
-        let outputs = self.collect_outputs();
+        let outputs = self.collect_outputs()?;
         self.host_transfers.take();
         Ok(outputs)
+    }
+
+    fn await_result_into(
+        mut self: Box<Self>,
+        outputs: &mut Vec<Vec<u8>>,
+    ) -> Result<(), BackendError> {
+        self.synchronize()?;
+        self.release_launch_resources();
+        self.allocations.take();
+        self.resident_use.take();
+        self.collect_outputs_into(outputs)?;
+        self.host_transfers.take();
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::CudaLaunchResourcePool;
+
+    #[test]
+    fn launch_resource_leases_do_not_panic_on_consumed_state() {
+        let source = include_str!("stream.rs");
+        assert!(
+            !source.contains(concat!(".expect", "(\"Fix: CUDA launch resource lease stream was already consumed")),
+            "Fix: CUDA launch resource leases must return typed backend errors when consumed twice, not panic."
+        );
+        assert!(
+            !source.contains(concat!(".expect", "(\"Fix: CUDA timing event pair lease was already consumed")),
+            "Fix: CUDA graph replay timing leases must return typed backend errors when consumed twice, not panic."
+        );
+    }
+
+    #[test]
+    fn launch_resource_counts_include_timing_events() {
+        let pool = CudaLaunchResourcePool::new(8);
+        let counts = pool
+            .cached_counts_detailed()
+            .expect("empty launch resource pool counts should be readable");
+
+        assert_eq!(counts.streams, 0);
+        assert_eq!(counts.completion_events, 0);
+        assert_eq!(counts.timing_events, 0);
+
+        let source = include_str!("stream.rs");
+        assert!(
+            source.contains("pub struct CudaLaunchResourceCounts")
+                && source.contains("pub timing_events: usize")
+                && source.contains("cached_counts_detailed"),
+            "Fix: CUDA launch-resource telemetry must expose timing-event cache pressure, not just streams and completion events."
+        );
     }
 }
 
@@ -438,6 +679,8 @@ impl Drop for CudaPendingDispatch {
                     eprintln!(
                         "Fix: failed to synchronize CUDA stream while dropping pending dispatch: {error}. Dispatch completion state may be stale."
                     );
+                } else {
+                    self.telemetry.record_sync_point();
                 }
             }
             self.completed.store(true, Ordering::Release);

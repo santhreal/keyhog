@@ -249,6 +249,7 @@ pub fn nfa_step(
 /// `transition`: lane-major `[num_states × 256 × LANES]`.
 /// `epsilon`: lane-major `[num_states × LANES]`.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_step(
     state: &[u32],
     byte: u8,
@@ -271,6 +272,7 @@ pub fn cpu_step(
 }
 
 /// CPU-reference NFA step using caller-owned buffers.
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_step_into(
     state: &[u32],
     byte: u8,
@@ -285,12 +287,40 @@ pub fn cpu_step_into(
     scratch.clear();
     scratch.resize(LANES_PER_SUBGROUP, 0);
 
-    if state.len() != LANES_PER_SUBGROUP
-        || transition.len() != num_states.saturating_mul(256 * LANES_PER_SUBGROUP)
-        || epsilon.len() != num_states.saturating_mul(LANES_PER_SUBGROUP)
-    {
-        return;
-    }
+    assert!(
+        num_states <= MAX_STATES_PER_SUBGROUP,
+        "subgroup NFA CPU oracle received num_states={num_states} above MAX_STATES_PER_SUBGROUP={MAX_STATES_PER_SUBGROUP}. Fix: tile the NFA before parity comparison."
+    );
+    assert_eq!(
+        state.len(),
+        LANES_PER_SUBGROUP,
+        "subgroup NFA CPU oracle received state_len={} but requires LANES_PER_SUBGROUP={LANES_PER_SUBGROUP}. Fix: pass a complete subgroup state bitset.",
+        state.len()
+    );
+    let expected_transition = num_states
+        .checked_mul(256 * LANES_PER_SUBGROUP)
+        .unwrap_or_else(|| {
+            panic!(
+                "subgroup NFA CPU oracle num_states={num_states} overflows transition table length. Fix: tile the NFA before parity comparison."
+            )
+        });
+    let expected_epsilon = num_states.checked_mul(LANES_PER_SUBGROUP).unwrap_or_else(|| {
+        panic!(
+            "subgroup NFA CPU oracle num_states={num_states} overflows epsilon table length. Fix: tile the NFA before parity comparison."
+        )
+    });
+    assert_eq!(
+        transition.len(),
+        expected_transition,
+        "subgroup NFA CPU oracle received transition_len={} but requires {expected_transition}. Fix: pass a complete num_states * 256 * LANES transition table.",
+        transition.len()
+    );
+    assert_eq!(
+        epsilon.len(),
+        expected_epsilon,
+        "subgroup NFA CPU oracle received epsilon_len={} but requires {expected_epsilon}. Fix: pass a complete num_states * LANES epsilon table.",
+        epsilon.len()
+    );
 
     for (k, &peer) in state.iter().enumerate() {
         for i in 0..32 {
@@ -474,8 +504,10 @@ mod tests {
         assert_eq!(scratch.as_ptr(), scratch_ptr);
         assert_eq!(acc, seed_state(&[1]));
 
-        cpu_step_into(&[1], b'a', &trans, &eps, 2, &mut acc, &mut scratch);
-        assert_eq!(acc, vec![0_u32; LANES_PER_SUBGROUP]);
+        let malformed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            cpu_step_into(&[1], b'a', &trans, &eps, 2, &mut acc, &mut scratch);
+        }));
+        assert!(malformed.is_err());
     }
 
     #[test]

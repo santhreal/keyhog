@@ -7,6 +7,10 @@ use crate::ir::DataType;
 /// concrete lowering target can provide a capability implementation here so the
 /// validator rejects IR shapes that would only fail later in a backend.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "backend capability snapshots are explicit feature bits; replacing them with enums would obscure capability checks and break the stable validation ABI"
+)]
 pub struct BackendCapabilities {
     /// The backend can lower `Expr::SubgroupAdd`, `Expr::SubgroupBallot`, and
     /// `Expr::SubgroupShuffle`.
@@ -135,9 +139,10 @@ impl<'a> ValidationOptions<'a> {
     #[must_use]
     #[inline]
     pub fn backend_name(&self) -> &'static str {
-        self.backend
-            .map(BackendValidationCapabilities::backend_name)
-            .unwrap_or("best-effort universal")
+        self.backend.map_or(
+            "best-effort universal",
+            BackendValidationCapabilities::backend_name,
+        )
     }
 
     /// Return true when this validation run accepts casts to `target`.
@@ -145,8 +150,7 @@ impl<'a> ValidationOptions<'a> {
     #[inline]
     pub fn supports_cast_target(&self, target: &DataType) -> bool {
         self.backend
-            .map(|backend| backend.supports_cast_target(target))
-            .unwrap_or(true)
+            .is_none_or(|backend| backend.supports_cast_target(target))
     }
 
     /// Return true when this validation run requires subgroup support.

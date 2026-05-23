@@ -69,7 +69,10 @@ use crate::optimizer::{vyre_pass, PassAnalysis, PassResult};
 #[vyre_pass(
     name = "loop_software_pipeline",
     requires = ["const_fold"],
-    invalidates = ["loop_unroll", "loop_strip_mine"]
+    invalidates = ["loop_unroll", "loop_strip_mine"],
+    phase = "loop",
+    boundary_class = "abi_preserving",
+    cost_model_family = "loop"
 )]
 pub struct LoopSoftwarePipeline;
 
@@ -77,7 +80,13 @@ impl LoopSoftwarePipeline {
     /// Skip programs without a candidate loop.
     #[must_use]
     fn analyze_impl(program: &Program) -> PassAnalysis {
-        let facts = ProgramFacts::build(program);
+        // Pipelining requires a Loop. Without one, the ProgramFacts
+        // build (full SoA walk) and the recursive pipelinable check
+        // would both come up empty.
+        if !program.stats().has_node_loop() {
+            return PassAnalysis::SKIP;
+        }
+        let facts = ProgramFacts::build_cached(program);
         if program
             .entry()
             .iter()
@@ -93,19 +102,17 @@ impl LoopSoftwarePipeline {
     /// prologue + steady-state + epilogue.
     #[must_use]
     pub fn transform(program: Program) -> PassResult {
-        let facts = ProgramFacts::build(&program);
-        let scaffold = program.with_rewritten_entry(Vec::new());
+        let facts = ProgramFacts::build_cached(&program);
         let mut changed = false;
-        let entry: Vec<Node> = program
-            .into_entry_vec()
-            .into_iter()
-            .flat_map(|n| rewrite_node(n, &facts, &mut changed))
-            .collect();
-        PassResult {
-            program: scaffold.with_rewritten_entry(entry),
-            changed,
-        }
-    }}
+        let program = program.map_entry(|entry| {
+            entry
+                .into_iter()
+                .flat_map(|n| rewrite_node(n, &facts, &mut changed))
+                .collect()
+        });
+        PassResult { program, changed }
+    }
+}
 
 fn rewrite_node(node: Node, facts: &ProgramFacts, changed: &mut bool) -> Vec<Node> {
     match node {
@@ -117,7 +124,7 @@ fn rewrite_node(node: Node, facts: &ProgramFacts, changed: &mut bool) -> Vec<Nod
         } => {
             if let Some(plan) = analyse_pipelinable(&var, &from, &to, &body, facts) {
                 *changed = true;
-                return apply_pipeline(plan);
+                return apply_pipeline(&plan);
             }
             vec![Node::Loop {
                 var,
@@ -193,18 +200,20 @@ fn analyse_pipelinable(
     facts: &ProgramFacts,
 ) -> Option<PipelinePlan> {
     let (lo, hi) = match (from, to) {
-        (Expr::LitU32(lo), Expr::LitU32(hi)) if *hi >= lo + 2 => (*lo, *hi),
+        (Expr::LitU32(lo), Expr::LitU32(hi)) if hi.checked_sub(*lo).is_some_and(|n| n >= 2) => {
+            (*lo, *hi)
+        }
         _ => return None,
     };
     if body.len() != 2 {
         return None;
     }
     let (let_name, buf_in) = match &body[0] {
-        Node::Let { name, value } => match value {
-            Expr::Load { buffer, index } => match index.as_ref() {
-                Expr::Var(idx_var) if idx_var == var => (name.clone(), buffer.clone()),
-                _ => return None,
-            },
+        Node::Let {
+            name,
+            value: Expr::Load { buffer, index },
+        } => match index.as_ref() {
+            Expr::Var(idx_var) if idx_var == var => (name.clone(), buffer.clone()),
             _ => return None,
         },
         _ => return None,
@@ -244,7 +253,7 @@ fn analyse_pipelinable(
     })
 }
 
-fn apply_pipeline(plan: PipelinePlan) -> Vec<Node> {
+fn apply_pipeline(plan: &PipelinePlan) -> Vec<Node> {
     let prologue = Node::let_bind(
         plan.pipe_name.clone(),
         Expr::Load {
@@ -699,5 +708,39 @@ mod tests {
             PassAnalysis::SKIP => {}
             other => panic!("expected SKIP, got {other:?}"),
         }
+    }
+
+    /// Loop bounds with `lo + 2 > u32::MAX` previously overflowed in the
+    /// pipelinable-loop guard. The replacement uses `checked_sub` so the
+    /// pass cleanly declines instead of panicking on overflow under
+    /// debug-assertions.
+    #[test]
+    fn keeps_loop_when_pipelinability_check_would_overflow() {
+        let entry = vec![Node::Loop {
+            var: Ident::from("i"),
+            from: Expr::u32(u32::MAX),
+            to: Expr::u32(u32::MAX),
+            body: vec![
+                Node::let_bind(
+                    "x",
+                    Expr::Load {
+                        buffer: Ident::from("ro"),
+                        index: Box::new(Expr::var("i")),
+                    },
+                ),
+                Node::store(
+                    "rw",
+                    Expr::var("i"),
+                    Expr::BinOp {
+                        op: BinOp::Add,
+                        left: Box::new(Expr::var("x")),
+                        right: Box::new(Expr::u32(1)),
+                    },
+                ),
+            ],
+        }];
+        let prog = program(vec![ro("ro"), rw("rw", 1)], entry);
+        let result = LoopSoftwarePipeline::transform(prog);
+        assert!(!result.changed);
     }
 }

@@ -6,7 +6,11 @@
 use crate::ir::{AtomicOp, Expr, Node, Program};
 use crate::optimizer::{vyre_pass, PassAnalysis, PassResult};
 use crate::runtime::memory_model::MemoryOrdering;
-use std::collections::{HashMap, HashSet};
+// Ident hashes well into the FxHash64-mixed bucket; the std SipHash-13
+// default (which fights HashDoS) is overkill for an internal pass-private
+// table that never sees adversarial input. FxHashMap/FxHashSet measurably
+// shorten the analysis pass on programs with many distinct buffers.
+use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 
 #[derive(Default, Debug, Clone, Copy)]
 struct BufferAccesses {
@@ -19,7 +23,10 @@ struct BufferAccesses {
 #[vyre_pass(
     name = "atomic_minimize",
     requires = [],
-    invalidates = []
+    invalidates = [],
+    phase = "sync",
+    boundary_class = "abi_preserving",
+    cost_model_family = "sync"
 )]
 pub struct AtomicMinimizePass;
 
@@ -27,13 +34,19 @@ impl AtomicMinimizePass {
     /// Skip programs that do not contain a candidate atomic.
     #[must_use]
     fn analyze_impl(program: &Program) -> PassAnalysis {
+        // Both rewrites need at least one Atomic op anywhere; without
+        // any atomic the two follow-up tree walks (identity scan +
+        // buffer-access count) would always come up empty.
+        if program.stats().atomic_op_count == 0 {
+            return PassAnalysis::SKIP;
+        }
         let mut found = false;
         scan_for_identity_candidate(program.entry(), &mut found);
         if found {
             return PassAnalysis::RUN;
         }
 
-        let mut access_counts = HashMap::new();
+        let mut access_counts = HashMap::default();
         count_buffer_accesses(program.entry(), &mut access_counts);
         let has_single_writer = access_counts
             .values()
@@ -49,7 +62,7 @@ impl AtomicMinimizePass {
     /// Walk the program and collapse atomics.
     #[must_use]
     pub fn transform(program: Program) -> PassResult {
-        let mut access_counts = HashMap::new();
+        let mut access_counts = HashMap::default();
         count_buffer_accesses(program.entry(), &mut access_counts);
         let eligible_buffers: HashSet<_> = access_counts
             .into_iter()
@@ -57,19 +70,21 @@ impl AtomicMinimizePass {
             .map(|(buf, _)| buf)
             .collect();
 
-        let scaffold = program.with_rewritten_entry(Vec::new());
         let mut changed = false;
-        let entry: Vec<Node> = program
-            .into_entry_vec()
-            .into_iter()
-            .flat_map(|n| rewrite_node_multi(n, &eligible_buffers, &mut changed))
-            .collect();
-        PassResult {
-            program: scaffold.with_rewritten_entry(entry),
-            changed,
-        }
-    }}
+        let program = program.map_entry(|entry| {
+            entry
+                .into_iter()
+                .flat_map(|n| rewrite_node_multi(n, &eligible_buffers, &mut changed))
+                .collect()
+        });
+        PassResult { program, changed }
+    }
+}
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "atomic minimization keeps hoisting/rewrite cases colocated with Node reconstruction"
+)]
 fn rewrite_node_multi(
     node: Node,
     eligible_buffers: &HashSet<crate::ir::Ident>,
@@ -339,12 +354,13 @@ fn rewrite_expr(expr: Expr, changed: &mut bool) -> Expr {
 }
 
 fn is_identity_atomic(op: AtomicOp, value: &Expr) -> bool {
-    match (op, value) {
-        (AtomicOp::Add | AtomicOp::Or | AtomicOp::Xor, Expr::LitU32(0) | Expr::LitI32(0)) => true,
-        (AtomicOp::And, Expr::LitU32(u32::MAX)) => true,
-        (AtomicOp::And, Expr::LitI32(-1)) => true,
-        _ => false,
-    }
+    matches!(
+        (op, value),
+        (
+            AtomicOp::Add | AtomicOp::Or | AtomicOp::Xor,
+            Expr::LitU32(0) | Expr::LitI32(0)
+        ) | (AtomicOp::And, Expr::LitU32(u32::MAX) | Expr::LitI32(-1))
+    )
 }
 
 fn scan_for_identity_candidate(nodes: &[Node], found: &mut bool) {
@@ -359,7 +375,7 @@ fn scan_for_identity_candidate(nodes: &[Node], found: &mut bool) {
 fn scan_node_for_identity(node: &Node, found: &mut bool) {
     match node {
         Node::Let { value, .. } | Node::Assign { value, .. } => {
-            scan_expr_for_identity(value, found)
+            scan_expr_for_identity(value, found);
         }
         Node::Store { index, value, .. } => {
             scan_expr_for_identity(index, found);
@@ -431,7 +447,9 @@ fn scan_expr_for_identity(expr: &Expr, found: &mut bool) {
             scan_expr_for_identity(true_val, found);
             scan_expr_for_identity(false_val, found);
         }
-        Expr::Cast { value, .. } => scan_expr_for_identity(value, found),
+        Expr::Cast { value, .. } | Expr::SubgroupAdd { value } => {
+            scan_expr_for_identity(value, found);
+        }
         Expr::Fma { a, b, c } => {
             scan_expr_for_identity(a, found);
             scan_expr_for_identity(b, found);
@@ -442,7 +460,6 @@ fn scan_expr_for_identity(expr: &Expr, found: &mut bool) {
             scan_expr_for_identity(value, found);
             scan_expr_for_identity(lane, found);
         }
-        Expr::SubgroupAdd { value } => scan_expr_for_identity(value, found),
         _ => {}
     }
 }
@@ -451,7 +468,7 @@ fn count_buffer_accesses(nodes: &[Node], counts: &mut HashMap<crate::ir::Ident, 
     for node in nodes {
         match node {
             Node::Let { value, .. } | Node::Assign { value, .. } => {
-                count_expr_accesses(value, counts)
+                count_expr_accesses(value, counts);
             }
             Node::Store {
                 buffer,
@@ -484,16 +501,8 @@ fn count_buffer_accesses(nodes: &[Node], counts: &mut HashMap<crate::ir::Ident, 
                 offset,
                 size,
                 ..
-            } => {
-                counts.entry(source.clone()).or_default().other_accesses += 1;
-                counts
-                    .entry(destination.clone())
-                    .or_default()
-                    .other_accesses += 1;
-                count_expr_accesses(offset, counts);
-                count_expr_accesses(size, counts);
             }
-            Node::AsyncStore {
+            | Node::AsyncStore {
                 source,
                 destination,
                 offset,
@@ -563,7 +572,9 @@ fn count_expr_accesses(expr: &Expr, counts: &mut HashMap<crate::ir::Ident, Buffe
             count_expr_accesses(true_val, counts);
             count_expr_accesses(false_val, counts);
         }
-        Expr::Cast { value, .. } => count_expr_accesses(value, counts),
+        Expr::Cast { value, .. } | Expr::SubgroupAdd { value } => {
+            count_expr_accesses(value, counts);
+        }
         Expr::Fma { a, b, c } => {
             count_expr_accesses(a, counts);
             count_expr_accesses(b, counts);
@@ -574,7 +585,6 @@ fn count_expr_accesses(expr: &Expr, counts: &mut HashMap<crate::ir::Ident, Buffe
             count_expr_accesses(value, counts);
             count_expr_accesses(lane, counts);
         }
-        Expr::SubgroupAdd { value } => count_expr_accesses(value, counts),
         _ => {}
     }
 }

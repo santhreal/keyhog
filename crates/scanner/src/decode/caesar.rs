@@ -31,17 +31,18 @@ const MIN_ALNUM_RUN: usize = 8;
 /// suffix of `chunk.metadata.path` (lower-cased). Kept short — only the
 /// dominant source-code extensions a scanner is realistically pointed at.
 const SOURCE_CODE_EXTENSIONS: &[&str] = &[
-    ".rs", ".py", ".go", ".js", ".jsx", ".ts", ".tsx", ".java", ".kt", ".scala",
-    ".c", ".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp", ".cs", ".rb", ".php",
-    ".swift", ".m", ".mm", ".sh", ".bash", ".zsh", ".fish", ".lua", ".pl", ".pm",
-    ".sql", ".html", ".htm", ".css", ".scss", ".sass", ".vue", ".svelte",
-    ".md", ".rst", ".txt", ".adoc",
+    ".rs", ".py", ".go", ".js", ".jsx", ".ts", ".tsx", ".java", ".kt", ".scala", ".c", ".cc",
+    ".cpp", ".cxx", ".h", ".hh", ".hpp", ".cs", ".rb", ".php", ".swift", ".m", ".mm", ".sh",
+    ".bash", ".zsh", ".fish", ".lua", ".pl", ".pm", ".sql", ".html", ".htm", ".css", ".scss",
+    ".sass", ".vue", ".svelte", ".md", ".rst", ".txt", ".adoc",
 ];
 
 fn is_source_code_path(path: Option<&str>) -> bool {
     let Some(p) = path else { return false };
     let lower = p.to_ascii_lowercase();
-    SOURCE_CODE_EXTENSIONS.iter().any(|ext| lower.ends_with(ext))
+    SOURCE_CODE_EXTENSIONS
+        .iter()
+        .any(|ext| lower.ends_with(ext))
 }
 
 impl Decoder for CaesarDecoder {

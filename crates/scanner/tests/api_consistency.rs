@@ -104,17 +104,13 @@ fn scan_with_backend_each_matches_scan_chunks_with_backend() {
         "auth: \"sk_live_4eC39HqLyjWDarjtT1zdp7dc\"\npayload: \"AKIAQYLPMN5HFIQR7BBB\"\n",
         "fixtures/stripe_aws.yml",
     );
-    for backend in [
-        ScanBackend::SimdCpu,
-        ScanBackend::CpuFallback,
-    ] {
+    for backend in [ScanBackend::SimdCpu, ScanBackend::CpuFallback] {
         let single = key(&scanner.scan_with_backend(&chunk, backend));
-        let multi = key_chunks(&scanner.scan_chunks_with_backend(
-            std::slice::from_ref(&chunk),
-            backend,
-        ));
+        let multi =
+            key_chunks(&scanner.scan_chunks_with_backend(std::slice::from_ref(&chunk), backend));
         assert_eq!(
-            single, multi,
+            single,
+            multi,
             "scan_with_backend({backend:?}) and scan_chunks_with_backend(&[chunk], {backend:?}) \
              must produce identical findings: single={} multi={}",
             single.len(),
@@ -143,7 +139,10 @@ fn scan_repeated_invocations_produce_identical_findings() {
 fn empty_chunks_slice_returns_empty_results() {
     let scanner = scanner();
     let r = scanner.scan_chunks_with_backend(&[], ScanBackend::SimdCpu);
-    assert!(r.is_empty(), "empty input slice must return empty result slice");
+    assert!(
+        r.is_empty(),
+        "empty input slice must return empty result slice"
+    );
 }
 
 #[test]
@@ -153,10 +152,17 @@ fn multi_chunk_input_preserves_per_chunk_attribution() {
         make_chunk("noise\n", "a.txt"),
         make_chunk("AWS = \"AKIAQYLPMN5HFIQR7XYA\"\n", "b.txt"),
         make_chunk("more noise\n", "c.txt"),
-        make_chunk("PAT = \"ghp_aBcD1234EFgh5678ijklMNop9012qrSTuvWX\"\n", "d.txt"),
+        make_chunk(
+            "PAT = \"ghp_aBcD1234EFgh5678ijklMNop9012qrSTuvWX\"\n",
+            "d.txt",
+        ),
     ];
     let results = scanner.scan_chunks_with_backend(&chunks, ScanBackend::SimdCpu);
-    assert_eq!(results.len(), chunks.len(), "per-chunk results slice length mismatch");
+    assert_eq!(
+        results.len(),
+        chunks.len(),
+        "per-chunk results slice length mismatch"
+    );
 
     // a.txt and c.txt must have NO findings (no secrets); b.txt and d.txt MUST.
     assert!(

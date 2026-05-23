@@ -131,10 +131,8 @@ fn collect_node_access(root: &Node, access: &mut AccessSet) {
                 collect_expr_reads(address, access);
                 access.serial_boundary = true;
             }
-            Node::Resume { .. } => {
-                access.serial_boundary = true;
-            }
-            Node::Return
+            Node::Resume { .. }
+            | Node::Return
             | Node::Barrier { .. }
             | Node::AsyncLoad { .. }
             | Node::AsyncStore { .. }
@@ -206,8 +204,8 @@ fn collect_expr_reads(expr: &Expr, access: &mut AccessSet) {
             | Expr::WorkgroupId { .. }
             | Expr::LocalId { .. }
             | Expr::SubgroupLocalId
-            | Expr::SubgroupSize => {}
-            Expr::SubgroupBallot { .. }
+            | Expr::SubgroupSize
+            | Expr::SubgroupBallot { .. }
             | Expr::SubgroupShuffle { .. }
             | Expr::SubgroupAdd { .. } => {}
             Expr::Opaque(_) => {

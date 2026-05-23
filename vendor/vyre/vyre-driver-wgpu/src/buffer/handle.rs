@@ -1,12 +1,14 @@
 //! Public persistent GPU buffer handle.
 
-use std::collections::VecDeque;
+use std::cmp::{Ordering as CmpOrdering, Reverse};
+use std::collections::BinaryHeap;
+use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock, Weak};
 use std::time::Instant;
 
 use dashmap::DashMap;
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHasher};
 use smallvec::SmallVec;
 use vyre_driver::BackendError;
 
@@ -14,9 +16,16 @@ use super::pool::PoolReturn;
 
 static NEXT_BUFFER_ID: AtomicU64 = AtomicU64::new(1);
 static RESIDENT_BUFFERS: OnceLock<DashMap<u64, Weak<GpuBufferInner>>> = OnceLock::new();
+const STAGING_BUFFER_POOL_CLASS_CAP: usize = 16;
 
 fn resident_buffers() -> &'static DashMap<u64, Weak<GpuBufferInner>> {
     RESIDENT_BUFFERS.get_or_init(DashMap::new)
+}
+
+fn pointer_identity_key<T>(ptr: *const T) -> u64 {
+    let mut hasher = FxHasher::default();
+    ptr.addr().hash(&mut hasher);
+    hasher.finish()
 }
 
 /// Cheaply cloneable handle for a GPU-resident buffer.
@@ -53,7 +62,8 @@ pub struct StagingBufferPoolStats {
 /// Hot dispatch paths (e.g. [`GpuBufferHandle::readback_until`]) acquire
 /// readback staging buffers from this pool instead of creating a fresh
 /// `wgpu::Buffer` on every call. Each `(size, usage)` class is capped at
-/// 16 entries; evictions drop the least-recently-used buffer.
+/// [`STAGING_BUFFER_POOL_CLASS_CAP`] entries; evictions drop the
+/// least-recently-used buffer.
 #[derive(Clone, Default)]
 pub struct StagingBufferPool {
     inner: Arc<Mutex<StagingBufferPoolInner>>,
@@ -67,12 +77,21 @@ impl std::fmt::Debug for StagingBufferPool {
 
 #[derive(Default)]
 struct StagingBufferPoolInner {
-    free: FxHashMap<(u64, u32), VecDeque<wgpu::Buffer>>,
+    free: FxHashMap<(u64, u32), SmallVec<[wgpu::Buffer; STAGING_BUFFER_POOL_CLASS_CAP]>>,
     allocations: usize,
     hits: usize,
 }
 
 impl StagingBufferPool {
+    fn lock_inner(&self) -> MutexGuard<'_, StagingBufferPoolInner> {
+        self.inner.lock().unwrap_or_else(|error| {
+            tracing::error!(
+                "Vyre WGPU staging buffer pool lock was poisoned: {error}. Fix: discard the pool after a panic; continuing with recovered state."
+            );
+            error.into_inner()
+        })
+    }
+
     /// Create an empty staging buffer pool.
     #[must_use]
     #[inline]
@@ -83,7 +102,7 @@ impl StagingBufferPool {
     /// Return allocation and hit counters.
     #[must_use]
     pub fn stats(&self) -> StagingBufferPoolStats {
-        let inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        let inner = self.lock_inner();
         StagingBufferPoolStats {
             allocations: inner.allocations,
             hits: inner.hits,
@@ -101,25 +120,21 @@ impl StagingBufferPool {
         usage: wgpu::BufferUsages,
     ) -> wgpu::Buffer {
         let key = (size, usage.bits());
-        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(deque) = inner.free.get_mut(&key) {
-            if let Some(buffer) = deque.pop_front() {
+        let mut inner = self.lock_inner();
+        if let Some(buffers) = inner.free.get_mut(&key) {
+            if let Some(buffer) = buffers.pop() {
                 inner.hits += 1;
                 return buffer;
             }
         }
+        inner.allocations += 1;
         drop(inner);
-        let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("vyre staging readback"),
             size,
             usage,
             mapped_at_creation: false,
-        });
-        self.inner
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .allocations += 1;
-        buffer
+        })
     }
 
     /// Release a staging buffer back to the pool.
@@ -128,12 +143,12 @@ impl StagingBufferPool {
     /// If the class already holds 16 buffers, the LRU entry is dropped.
     pub fn release(&self, buffer: wgpu::Buffer, size: u64, usage: wgpu::BufferUsages) {
         let key = (size, usage.bits());
-        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
-        let deque = inner.free.entry(key).or_default();
-        deque.push_front(buffer);
-        if deque.len() > 16 {
-            deque.pop_back();
+        let mut inner = self.lock_inner();
+        let buffers = inner.free.entry(key).or_insert_with(SmallVec::new);
+        if buffers.len() == STAGING_BUFFER_POOL_CLASS_CAP {
+            buffers.remove(0);
         }
+        buffers.push(buffer);
     }
 }
 
@@ -160,9 +175,14 @@ impl GpuBufferHandle {
             mapped_at_creation: false,
         });
         write_padded(queue, &buffer, bytes, allocation_len)?;
+        let logical_len = u64::try_from(bytes.len()).map_err(|source| {
+            BackendError::new(format!(
+                "GPU upload logical byte length cannot fit u64: {source}. Fix: split the dispatch input."
+            ))
+        })?;
         Ok(Self::from_parts(
             Arc::new(buffer),
-            bytes.len() as u64,
+            logical_len,
             allocation_len,
             bytes.len(),
             usage | wgpu::BufferUsages::COPY_DST,
@@ -181,18 +201,23 @@ impl GpuBufferHandle {
         len: u64,
         usage: wgpu::BufferUsages,
     ) -> Result<Self, BackendError> {
-        let allocation_len = len.max(4).next_multiple_of(4);
+        let allocation_len = aligned_len_u64(len, "persistent GPU allocation length")?;
         let buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("vyre persistent alloc"),
             size: allocation_len,
             usage,
             mapped_at_creation: false,
         });
+        let host_len = usize::try_from(len).map_err(|error| {
+            BackendError::new(format!(
+                "GpuBufferHandle::alloc received logical byte length {len} that does not fit usize on this host: {error}. Fix: shard the GPU buffer before allocating or run on a host with a wide enough address space."
+            ))
+        })?;
         Ok(Self::from_parts(
             Arc::new(buffer),
             len,
             allocation_len,
-            usize::try_from(len).unwrap_or(usize::MAX),
+            host_len,
             usage,
             None,
         ))
@@ -237,6 +262,26 @@ impl GpuBufferHandle {
         self.readback_prefix_until(device, None, queue, len, out, None)
     }
 
+    /// Download `len` logical bytes starting at `byte_offset` into `out`.
+    ///
+    /// The internal GPU copy is alignment-expanded when necessary, then the
+    /// returned host slice is trimmed back to exactly the requested range.
+    ///
+    /// # Errors
+    ///
+    /// Returns a backend error when the handle is not copy-readable, the range
+    /// exceeds the logical buffer length, or the GPU mapping fails.
+    pub fn readback_range(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        byte_offset: u64,
+        len: u64,
+        out: &mut Vec<u8>,
+    ) -> Result<(), BackendError> {
+        self.readback_range_until(device, None, queue, byte_offset, len, out, None)
+    }
+
     pub(crate) fn readback_until(
         &self,
         device: &wgpu::Device,
@@ -257,14 +302,32 @@ impl GpuBufferHandle {
         out: &mut Vec<u8>,
         deadline: Option<Instant>,
     ) -> Result<(), BackendError> {
+        self.readback_range_until(device, pool, queue, 0, len, out, deadline)
+    }
+
+    pub(crate) fn readback_range_until(
+        &self,
+        device: &wgpu::Device,
+        pool: Option<&StagingBufferPool>,
+        queue: &wgpu::Queue,
+        byte_offset: u64,
+        len: u64,
+        out: &mut Vec<u8>,
+        deadline: Option<Instant>,
+    ) -> Result<(), BackendError> {
         if !self.usage().contains(wgpu::BufferUsages::COPY_SRC) {
             return Err(BackendError::new(
                 "GpuBufferHandle readback requires COPY_SRC usage. Fix: allocate terminal-output buffers with COPY_SRC.",
             ));
         }
-        if len > self.byte_len() {
+        let logical_end = byte_offset.checked_add(len).ok_or_else(|| {
+            BackendError::new(format!(
+                "GpuBufferHandle range readback overflows u64 at offset {byte_offset} len {len}. Fix: split the readback range before dispatch."
+            ))
+        })?;
+        if logical_end > self.byte_len() {
             return Err(BackendError::new(format!(
-                "GpuBufferHandle prefix readback requested {len} bytes from a {} byte buffer. Fix: clamp the requested prefix to the device-published count.",
+                "GpuBufferHandle range readback requested bytes [{byte_offset}..{logical_end}) from a {} byte buffer. Fix: clamp the requested range to the device-published count.",
                 self.byte_len()
             )));
         }
@@ -272,10 +335,22 @@ impl GpuBufferHandle {
             out.clear();
             return Ok(());
         }
-        let read_len = len.max(4).next_multiple_of(4);
-        if read_len > self.inner.allocation_len {
+        let copy_start = byte_offset & !3;
+        let trim_start = byte_offset - copy_start;
+        let visible_copy_len = trim_start.checked_add(len).ok_or_else(|| {
+            BackendError::new(format!(
+                "GpuBufferHandle range readback copy length overflows u64 at trim {trim_start} len {len}. Fix: split the readback range before dispatch."
+            ))
+        })?;
+        let read_len = aligned_len_u64(visible_copy_len, "GPU readback visible copy length")?;
+        let copy_end = copy_start.checked_add(read_len).ok_or_else(|| {
+            BackendError::new(format!(
+                "GpuBufferHandle range readback aligned copy overflows u64 at start {copy_start} len {read_len}. Fix: split the readback range before dispatch."
+            ))
+        })?;
+        if copy_end > self.inner.allocation_len {
             return Err(BackendError::new(format!(
-                "GpuBufferHandle prefix readback rounded {len} bytes to {read_len}, beyond allocation length {}. Fix: allocate buffers with 4-byte padding.",
+                "GpuBufferHandle range readback rounded bytes [{byte_offset}..{logical_end}) to aligned bytes [{copy_start}..{copy_end}), beyond allocation length {}. Fix: allocate buffers with 4-byte padding.",
                 self.inner.allocation_len
             )));
         }
@@ -293,7 +368,7 @@ impl GpuBufferHandle {
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("vyre persistent handle readback encoder"),
         });
-        encoder.copy_buffer_to_buffer(self.buffer(), 0, &readback, 0, read_len);
+        encoder.copy_buffer_to_buffer(self.buffer(), copy_start, &readback, 0, read_len);
         let submission = queue.submit(std::iter::once(encoder.finish()));
         let slice = readback.slice(0..read_len);
         let (sender, receiver) = std::sync::mpsc::channel();
@@ -306,10 +381,7 @@ impl GpuBufferHandle {
             }
         });
         let mapping = if let Some(deadline) = deadline {
-            const SPIN_POLLS: u32 = 64;
-            const MIN_PARK: std::time::Duration = std::time::Duration::from_micros(2);
-            const MAX_PARK: std::time::Duration = std::time::Duration::from_micros(50);
-            let mut idle_polls = 0u32;
+            let mut backoff = crate::wait_backoff::AdaptiveWaitBackoff::from_micros(64, 2, 50, 5);
             loop {
                 match device.poll(wgpu::Maintain::Poll) {
                     wgpu::MaintainResult::Ok | wgpu::MaintainResult::SubmissionQueueEmpty => {}
@@ -329,17 +401,7 @@ impl GpuBufferHandle {
                         "dispatch cancelled after DispatchConfig.timeout before readback completed. Fix: raise DispatchConfig.timeout or split the program into smaller chunks.",
                     ));
                 }
-                idle_polls = idle_polls.saturating_add(1);
-                if idle_polls <= SPIN_POLLS {
-                    std::thread::yield_now();
-                } else {
-                    let shift = (idle_polls - SPIN_POLLS).min(5);
-                    let park = MIN_PARK
-                        .saturating_mul(1u32 << shift)
-                        .min(MAX_PARK)
-                        .min(deadline.saturating_duration_since(now));
-                    std::thread::park_timeout(park);
-                }
+                backoff.idle_for(deadline.saturating_duration_since(now));
             }
         } else {
             match device.poll(wgpu::Maintain::wait_for(submission)) {
@@ -365,9 +427,31 @@ impl GpuBufferHandle {
                 "persistent buffer prefix length {len} cannot fit usize: {source}. Fix: split the buffer before readback.",
             ))
         })?;
-        out.clear();
-        out.reserve(visible_len);
-        out.extend_from_slice(&mapped[..visible_len]);
+        let trim_start = usize::try_from(trim_start).map_err(|source| {
+            BackendError::new(format!(
+                "persistent buffer range trim offset {trim_start} cannot fit usize: {source}. Fix: split the buffer before readback.",
+            ))
+        })?;
+        let trim_end = trim_start.checked_add(visible_len).ok_or_else(|| {
+            BackendError::new(format!(
+                "persistent buffer range trim overflows usize at offset {trim_start} len {visible_len}. Fix: split the buffer before readback."
+            ))
+        })?;
+        let visible = &mapped[trim_start..trim_end];
+        if out.len() == visible_len {
+            out.copy_from_slice(visible);
+        } else {
+            out.clear();
+            if visible_len > out.capacity() {
+                let additional = visible_len - out.capacity();
+                out.try_reserve_exact(additional).map_err(|source| {
+                    BackendError::new(format!(
+                        "persistent buffer readback could not reserve {visible_len} output bytes exactly: {source}. Fix: lower max_output_bytes or stream readback in smaller shards."
+                    ))
+                })?;
+            }
+            out.extend_from_slice(visible);
+        }
         drop(mapped);
         readback.unmap();
         if let Some(pool) = pool {
@@ -390,7 +474,7 @@ impl GpuBufferHandle {
     /// a pooled allocation is wrapped in a fresh handle.
     #[must_use]
     pub(crate) fn allocation_identity(&self) -> u64 {
-        Arc::as_ptr(&self.inner.buffer) as usize as u64
+        pointer_identity_key(Arc::as_ptr(&self.inner.buffer))
     }
 
     /// Resolve a process-local resident buffer id back into a live GPU handle.
@@ -490,7 +574,6 @@ impl Drop for GpuBufferInner {
                 Arc::clone(&self.buffer),
                 self.byte_len,
                 self.allocation_len,
-                self.element_count,
                 self.usage,
             );
         }
@@ -498,10 +581,36 @@ impl Drop for GpuBufferInner {
 }
 
 pub(crate) fn aligned_len(len: usize) -> Result<u64, BackendError> {
-    let padded = len.max(4).next_multiple_of(4);
+    let padded = aligned_len_usize(len, "GPU buffer length")?;
     u64::try_from(padded).map_err(|source| {
         BackendError::new(format!(
             "GPU buffer length {padded} cannot fit u64: {source}. Fix: split the dispatch input."
+        ))
+    })
+}
+
+fn aligned_len_u64(len: u64, label: &'static str) -> Result<u64, BackendError> {
+    let normalized = len.max(4);
+    let remainder = normalized % 4;
+    if remainder == 0 {
+        return Ok(normalized);
+    }
+    normalized.checked_add(4 - remainder).ok_or_else(|| {
+        BackendError::new(format!(
+            "{label} overflows u64 while padding to 4-byte WGPU alignment. Fix: split the buffer before allocation or readback."
+        ))
+    })
+}
+
+fn aligned_len_usize(len: usize, label: &'static str) -> Result<usize, BackendError> {
+    let normalized = len.max(4);
+    let remainder = normalized % 4;
+    if remainder == 0 {
+        return Ok(normalized);
+    }
+    normalized.checked_add(4 - remainder).ok_or_else(|| {
+        BackendError::new(format!(
+            "{label} overflows usize while padding to 4-byte WGPU alignment. Fix: split the buffer before allocation or upload."
         ))
     })
 }
@@ -526,7 +635,15 @@ pub(crate) fn write_padded(
     if tail_len > 0 {
         let mut tail = [0u8; 4];
         tail[..tail_len].copy_from_slice(&bytes[aligned_len..]);
-        queue.write_buffer(buffer, aligned_len as u64, &tail);
+        queue.write_buffer(
+            buffer,
+            u64::try_from(aligned_len).map_err(|source| {
+                BackendError::new(format!(
+                    "GPU padded tail offset cannot fit u64: {source}. Fix: split the dispatch input."
+                ))
+            })?,
+            &tail,
+        );
         zero_start += 4;
     }
     if allocation_len > zero_start {
@@ -539,7 +656,15 @@ pub(crate) fn write_padded(
         let end = allocation_len;
         while offset < end {
             let chunk = (end - offset).min(SCRATCH_ZEROS.len());
-            queue.write_buffer(buffer, offset as u64, &SCRATCH_ZEROS[..chunk]);
+            queue.write_buffer(
+                buffer,
+                u64::try_from(offset).map_err(|source| {
+                    BackendError::new(format!(
+                        "GPU zero-fill offset cannot fit u64: {source}. Fix: split the dispatch input."
+                    ))
+                })?,
+                &SCRATCH_ZEROS[..chunk],
+            );
             offset += chunk;
         }
     }
@@ -570,22 +695,48 @@ pub struct BindGroupCache {
 
 struct BindGroupCacheInner {
     entries: FxHashMap<BindGroupCacheKey, BindGroupCacheEntry>,
-    lru: VecDeque<(BindGroupCacheKey, u64)>,
+    lru: BinaryHeap<Reverse<BindGroupLruEntry>>,
     cap: usize,
     next_generation: u64,
 }
 
 struct BindGroupCacheEntry {
     bind_group: Arc<wgpu::BindGroup>,
-    generation: u64,
+    last_seen: u64,
 }
 
-fn push_bind_group_handle_key(key: &mut BindGroupHandleKey, handle: &GpuBufferHandle) {
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct BindGroupLruEntry {
+    last_seen: u64,
+    key: BindGroupCacheKey,
+}
+
+impl Ord for BindGroupLruEntry {
+    fn cmp(&self, other: &Self) -> CmpOrdering {
+        self.last_seen
+            .cmp(&other.last_seen)
+            .then_with(|| self.key.cmp(&other.key))
+    }
+}
+
+impl PartialOrd for BindGroupLruEntry {
+    fn partial_cmp(&self, other: &Self) -> Option<CmpOrdering> {
+        Some(self.cmp(other))
+    }
+}
+
+fn push_bind_group_handle_key(key: &mut BindGroupHandleKey, handle: &GpuBufferHandle) -> bool {
     key.push(handle.allocation_identity());
-    key.push(handle.byte_len().max(4).next_multiple_of(4));
+    let Ok(aligned_len) = aligned_len_u64(handle.byte_len(), "bind-group handle key byte length")
+    else {
+        key.pop();
+        return false;
+    };
+    key.push(aligned_len);
+    true
 }
 
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 struct BindGroupCacheKey {
     layout_id: usize,
     handles: BindGroupHandleKey,
@@ -619,10 +770,14 @@ impl BindGroupCacheInner {
         let generation = self.next_lru_generation();
         let bind_group = {
             let entry = self.entries.get_mut(key)?;
-            entry.generation = generation;
+            entry.last_seen = generation;
             Arc::clone(&entry.bind_group)
         };
-        self.lru.push_back((key.clone(), generation));
+        self.lru.push(Reverse(BindGroupLruEntry {
+            last_seen: generation,
+            key: key.clone(),
+        }));
+        self.compact_lru_if_needed();
         Some(bind_group)
     }
 
@@ -632,32 +787,67 @@ impl BindGroupCacheInner {
             key.clone(),
             BindGroupCacheEntry {
                 bind_group,
-                generation,
+                last_seen: generation,
             },
         );
-        self.lru.push_back((key, generation));
+        self.lru.push(Reverse(BindGroupLruEntry {
+            last_seen: generation,
+            key,
+        }));
+        self.compact_lru_if_needed();
     }
 
     fn evict_to_cap(&mut self, mut on_evict: impl FnMut()) {
         while self.entries.len() > self.cap {
-            let Some((key, generation)) = self.lru.pop_front() else {
-                break;
-            };
-            let is_current = self
-                .entries
-                .get(&key)
-                .is_some_and(|entry| entry.generation == generation);
-            if is_current {
-                self.entries.remove(&key);
+            let Some(key) = self.pop_lru_key() else { break };
+            if self.entries.remove(&key).is_some() {
                 on_evict();
             }
         }
     }
+
+    fn pop_lru_key(&mut self) -> Option<BindGroupCacheKey> {
+        while let Some(Reverse(entry)) = self.lru.pop() {
+            if self
+                .entries
+                .get(&entry.key)
+                .is_some_and(|current| current.last_seen == entry.last_seen)
+            {
+                return Some(entry.key);
+            }
+        }
+        None
+    }
+
+    fn compact_lru_if_needed(&mut self) {
+        let live = self.entries.len();
+        if let Some(limit) = stale_lru_limit(live) {
+            if self.lru.len() <= limit {
+                return;
+            }
+        }
+        self.lru.clear();
+        self.lru.extend(self.entries.iter().map(|(key, entry)| {
+            Reverse(BindGroupLruEntry {
+                last_seen: entry.last_seen,
+                key: key.clone(),
+            })
+        }));
+    }
+}
+
+fn stale_lru_limit(live: usize) -> Option<usize> {
+    live.checked_mul(4).map(|limit| limit.max(8))
 }
 
 impl BindGroupCache {
     fn lock_cache(&self) -> MutexGuard<'_, BindGroupCacheInner> {
-        self.cache.lock().unwrap_or_else(|error| error.into_inner())
+        self.cache.lock().unwrap_or_else(|error| {
+            tracing::error!(
+                "Vyre WGPU bind-group cache lock was poisoned: {error}. Fix: discard the cache after a panic; continuing with recovered state."
+            );
+            error.into_inner()
+        })
     }
 
     /// Create a bind-group cache with the default 256-entry cap.
@@ -673,7 +863,7 @@ impl BindGroupCache {
         Self {
             cache: Arc::new(Mutex::new(BindGroupCacheInner {
                 entries: FxHashMap::default(),
-                lru: VecDeque::new(),
+                lru: BinaryHeap::new(),
                 cap: cap.max(1),
                 next_generation: 0,
             })),
@@ -696,9 +886,16 @@ impl BindGroupCache {
         handles: &[GpuBufferHandle],
         factory: impl FnOnce() -> wgpu::BindGroup,
     ) -> Arc<wgpu::BindGroup> {
-        let mut key_parts = SmallVec::with_capacity(handles.len().saturating_mul(2));
+        let Some(key_part_count) = handles.len().checked_mul(2) else {
+            self.misses.fetch_add(1, Ordering::Relaxed);
+            return Arc::new(factory());
+        };
+        let mut key_parts = SmallVec::with_capacity(key_part_count);
         for handle in handles {
-            push_bind_group_handle_key(&mut key_parts, handle);
+            if !push_bind_group_handle_key(&mut key_parts, handle) {
+                self.misses.fetch_add(1, Ordering::Relaxed);
+                return Arc::new(factory());
+            }
         }
         self.get_or_create_by_ids(layout_id, key_parts, factory)
     }
@@ -859,27 +1056,110 @@ mod tests {
                 .expect("Fix: upload should register a resident buffer");
         let id = handle.id();
 
+        // Phase 1: while the handle is alive, 8 concurrent readers
+        // must always resolve the resident id. Join BEFORE the drop so
+        // there is no readers-vs-drop race producing flaky panics.
         let readers = (0..8)
             .map(|_| {
                 std::thread::spawn(move || {
                     for _ in 0..1_000 {
-                        let resident =
-                            GpuBufferHandle::from_resident_id(id).expect("resident id must resolve");
+                        let resident = GpuBufferHandle::from_resident_id(id)
+                            .expect("resident id must resolve while handle is alive");
                         assert_eq!(resident.id(), id);
                     }
                 })
             })
             .collect::<Vec<_>>();
-
-        drop(handle);
         for reader in readers {
             reader
                 .join()
                 .expect("Fix: concurrent resident lookups must not panic");
         }
+
+        // Phase 2: dropping the handle must remove the id from the
+        // registry so subsequent lookups return None.
+        drop(handle);
         assert!(
             GpuBufferHandle::from_resident_id(id).is_none(),
             "dropped handles must be removed from the resident registry"
+        );
+    }
+
+    #[test]
+    fn poisoned_staging_pool_lock_recovers_without_aborting_dispatch_path() {
+        let pool = StagingBufferPool::new();
+        let poisoned = pool.clone();
+        let _ = std::thread::spawn(move || {
+            let _guard = poisoned.lock_inner();
+            panic!("poison staging buffer pool");
+        })
+        .join();
+
+        std::panic::catch_unwind(|| {
+            let _ = pool.stats();
+        })
+        .expect("poisoned staging pool must recover so GPU readback pooling does not abort");
+    }
+
+    #[test]
+    fn poisoned_bind_group_cache_lock_recovers_without_aborting_dispatch_path() {
+        let cache = BindGroupCache::new();
+        let poisoned = cache.clone();
+        let _ = std::thread::spawn(move || {
+            let _guard = poisoned.lock_cache();
+            panic!("poison bind group cache");
+        })
+        .join();
+
+        std::panic::catch_unwind(|| {
+            let _ = cache.stats();
+        })
+        .expect("poisoned bind-group cache must recover so GPU dispatch does not abort");
+    }
+
+    #[test]
+    fn bind_group_cache_lru_heap_stays_capacity_scale() {
+        let arc = crate::runtime::cached_device()
+            .expect("Fix: GPU device is required for bind-group cache test");
+        let (device, _) = &*arc;
+        let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("vyre bind-group cache lru test layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: wgpu::BufferSize::new(4),
+                },
+                count: None,
+            }],
+        });
+        let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("vyre bind-group cache lru test buffer"),
+            size: 4,
+            usage: wgpu::BufferUsages::STORAGE,
+            mapped_at_creation: false,
+        });
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("vyre bind-group cache lru test bind group"),
+            layout: &layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: buffer.as_entire_binding(),
+            }],
+        });
+        let cache = BindGroupCache::with_cap(4);
+
+        for i in 0..64u64 {
+            cache.insert_by_ids(1, &[i, 4], bind_group.clone());
+        }
+
+        let inner = cache.lock_cache();
+        assert_eq!(inner.entries.len(), 4);
+        assert!(
+            inner.lru.len() <= inner.entries.len().saturating_mul(4).max(8),
+            "Fix: bind-group LRU heap must compact stale entries to cache-capacity scale"
         );
     }
 }

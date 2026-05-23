@@ -40,7 +40,7 @@
 //! - **User dialect consumer**: probabilistic Datalog programs (Scallop
 //!   programs compile each rule body to one `scallop_join`). Substrate
 //!   for neuro-symbolic reasoning systems.
-//! - **vyre-self consumer**: rule-provenance tracking for surgec / any
+//! - **vyre-self consumer**: rule-provenance tracking for downstream analyzer / any
 //!   substrate that needs to ask "which input rule produced this output
 //!   finding?" The answer is a Datalog query over (rule_id, derives,
 //!   finding_id), and `scallop_join` is the GPU-resident execution.
@@ -93,9 +93,11 @@
 use std::sync::Arc;
 
 use vyre_foundation::ir::model::expr::Ident;
-use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Node, Program};
+use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 
-use crate::math::semiring_gemm::{semiring_gemm, semiring_gemm_cpu_into, Semiring};
+#[cfg(any(test, feature = "cpu-parity"))]
+use crate::math::semiring_gemm::semiring_gemm_cpu_into;
+use crate::math::semiring_gemm::{semiring_gemm, Semiring};
 
 /// Canonical op id.
 pub const OP_ID: &str = "vyre-primitives::math::scallop_join";
@@ -148,10 +150,37 @@ pub fn scallop_join(
     // since `persistent_fixpoint` already wraps the whole sequence
     // in its own outer Region.
     let transfer = semiring_gemm(state, join_rules, next, n, n, n, Semiring::Lineage);
-    let transfer_body: Vec<Node> = transfer.entry().to_vec();
+    let mut transfer_body: Vec<Node> = transfer.entry().to_vec();
 
     // n*n cells, each one u32 — one "word" per cell for ping-pong.
-    let words = n.saturating_mul(n);
+    let words = n.checked_mul(n).unwrap_or_else(|| {
+        panic!(
+            "scallop_join n={n} overflows relation matrix word count. Fix: shard the relation matrix before GPU dispatch."
+        )
+    });
+
+    // Datalog monotonicity: each iteration's output must be the
+    // bitwise-OR superset of the input on every cell. semiring_gemm
+    // by itself REPLACES (next = gemm(state, join_rules)), losing the
+    // seed facts. Append a per-cell `next[t] |= state[t]` step so
+    // persistent_fixpoint's ping-pong copy preserves the seed facts
+    // alongside the newly-derived ones — matching cpu_ref_into.
+    let t = Expr::InvocationId { axis: 0 };
+    transfer_body.push(Node::if_then(
+        Expr::lt(t.clone(), Expr::u32(words)),
+        vec![
+            Node::let_bind("__sj_seed", Expr::load(state, t.clone())),
+            Node::let_bind("__sj_derived", Expr::load(next, t.clone())),
+            Node::store(
+                next,
+                t,
+                Expr::bitor(Expr::var("__sj_seed"), Expr::var("__sj_derived")),
+            ),
+        ],
+    ));
+    transfer_body.push(Node::Barrier {
+        ordering: vyre_foundation::MemoryOrdering::SeqCst,
+    });
 
     // Build the persistent fixpoint Program against `state` ↔ `next`.
     // We deliberately rebuild the buffer declarations so the
@@ -207,6 +236,7 @@ pub fn scallop_join(
 /// # Panics
 ///
 /// Panics if `state.len() != n*n` or `join_rules.len() != n*n`.
+#[cfg(any(test, feature = "cpu-parity"))]
 #[must_use]
 pub fn cpu_ref(state: &[u32], join_rules: &[u32], n: u32, max_iterations: u32) -> (Vec<u32>, u32) {
     let mut current = Vec::new();
@@ -230,6 +260,7 @@ pub fn cpu_ref(state: &[u32], join_rules: &[u32], n: u32, max_iterations: u32) -
 /// # Panics
 ///
 /// Panics if `state.len() != n*n` or `join_rules.len() != n*n`.
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref_into(
     state: &[u32],
     join_rules: &[u32],
@@ -238,12 +269,28 @@ pub fn cpu_ref_into(
     current: &mut Vec<u32>,
     next: &mut Vec<u32>,
 ) -> u32 {
-    let cells = (n as usize) * (n as usize);
+    let cells = usize::try_from(n)
+        .ok()
+        .and_then(|n| n.checked_mul(n))
+        .unwrap_or_else(|| {
+            panic!(
+                "scallop_join CPU oracle n={n} overflows relation matrix word count. Fix: shard the relation matrix before parity comparison."
+            )
+        });
+    assert_eq!(
+        state.len(),
+        cells,
+        "scallop_join CPU oracle received state_len={} for n={n}. Fix: pass a complete n*n state matrix before parity comparison.",
+        state.len()
+    );
+    assert_eq!(
+        join_rules.len(),
+        cells,
+        "scallop_join CPU oracle received join_rules_len={} for n={n}. Fix: pass a complete n*n rule matrix before parity comparison.",
+        join_rules.len()
+    );
     current.clear();
-    current.resize(cells, 0);
-    for (dst, &src) in current.iter_mut().zip(state.iter()) {
-        *dst = src;
-    }
+    current.extend_from_slice(state);
     for iter in 0..max_iterations {
         semiring_gemm_cpu_into(current, join_rules, n, n, n, Semiring::Lineage, next);
         // Datalog monotonicity: each iteration's output is a

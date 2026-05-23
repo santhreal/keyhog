@@ -23,7 +23,7 @@ and `OWNERSHIP.md`.
 
 ## Domain layout
 
-Mirrors the Linux kernel `fs/` / `mm/` / `net/` shape — each domain is
+Mirrors the Linux kernel `fs/` / `mm/` / `net/` shape: each domain is
 its own subdirectory under `src/`, gated behind a Cargo feature flag.
 
 | Feature              | Subsystem            | Highlights                                              |
@@ -55,7 +55,7 @@ core (`bitset`, `reduce`, `inventory-registry`).
   live in `vyre-reference` (CPU oracle) and the per-backend crate.
 - **No GPU code in this crate.** Every primitive's GPU lowering lives
   in the concrete driver crate that owns the target. The marker type
-  does not import shader strings — the
+  does not import shader strings: the
   `check_no_string_wgsl.sh` gate is non-negotiable.
 - **Promotion path.** A composition that lives in `vyre-libs` is
   promoted to a primitive here only after ≥3 distinct callers and an
@@ -67,11 +67,11 @@ core (`bitset`, `reduce`, `inventory-registry`).
 
 ## Where to look
 
-- `src/lib.rs` — feature-gate table and the public domain list.
-- `src/markers.rs` — the always-on marker registry types.
-- `tests/` — per-domain adversarial corpora.
-- `OWNERSHIP.md` (workspace root) — boundary definition.
-- `audits/LEGO_PRIMITIVES.md` — promotion candidates and Tier
+- `src/lib.rs`: feature-gate table and the public domain list.
+- `src/markers.rs`: the always-on marker registry types.
+- `tests/`: per-domain adversarial corpora.
+- `OWNERSHIP.md` (workspace root): boundary definition.
+- `audits/LEGO_PRIMITIVES.md`: promotion candidates and Tier
   assignment rationale.
 
 ## Conformance

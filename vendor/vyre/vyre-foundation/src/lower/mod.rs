@@ -8,7 +8,12 @@
 /// and computes the row of effect kinds the backend will see.
 pub mod effects;
 
+/// Subgroup-first lowering (Phase 2.3): converts workgroup-tree reductions
+/// to `subgroup_add` / `subgroup_shuffle` when the backend supports them.
+pub mod subgroup_lowering;
+
 pub use effects::{compute_program_effects, ProgramEffects};
+pub use subgroup_lowering::lower_subgroup_reductions;
 
 use crate::ir_inner::model::types::DataType;
 use std::{error::Error, fmt};

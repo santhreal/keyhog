@@ -60,21 +60,49 @@ pub fn ddnnf_evaluate(
     n_children: u32,
     n_vars: u32,
 ) -> Program {
+    match try_ddnnf_evaluate(
+        node_kinds,
+        node_var,
+        child_offsets,
+        child_counts,
+        children,
+        var_assignments,
+        out,
+        n_nodes,
+        n_children,
+        n_vars,
+    ) {
+        Ok(program) => program,
+        Err(error) => {
+            eprintln!("{error}");
+            crate::invalid_output_program(OP_ID, out, DataType::U32, error)
+        }
+    }
+}
+
+/// Emit one bottom-up d-DNNF evaluation step with checked domain shape.
+#[allow(clippy::too_many_arguments)]
+pub fn try_ddnnf_evaluate(
+    node_kinds: &str,
+    node_var: &str,
+    child_offsets: &str,
+    child_counts: &str,
+    children: &str,
+    var_assignments: &str,
+    out: &str,
+    n_nodes: u32,
+    n_children: u32,
+    n_vars: u32,
+) -> Result<Program, String> {
     if n_nodes == 0 {
-        return crate::invalid_output_program(
-            OP_ID,
-            out,
-            DataType::U32,
-            format!("Fix: ddnnf_evaluate requires n_nodes > 0, got {n_nodes}."),
-        );
+        return Err(format!(
+            "Fix: ddnnf_evaluate requires n_nodes > 0, got {n_nodes}."
+        ));
     }
     if n_vars == 0 {
-        return crate::invalid_output_program(
-            OP_ID,
-            out,
-            DataType::U32,
-            format!("Fix: ddnnf_evaluate requires n_vars > 0, got {n_vars}."),
-        );
+        return Err(format!(
+            "Fix: ddnnf_evaluate requires n_vars > 0, got {n_vars}."
+        ));
     }
 
     let lane = Expr::InvocationId { axis: 0 };
@@ -194,7 +222,7 @@ pub fn ddnnf_evaluate(
         ],
     )];
 
-    Program::wrapped(
+    Ok(Program::wrapped(
         vec![
             BufferDecl::storage(node_kinds, 0, BufferAccess::ReadOnly, DataType::U32)
                 .with_count(n_nodes),
@@ -216,7 +244,7 @@ pub fn ddnnf_evaluate(
             source_region: None,
             body: Arc::new(body),
         }],
-    )
+    ))
 }
 
 /// CPU helper: evaluate a d-DNNF compiled circuit under a partial
@@ -228,6 +256,7 @@ pub fn ddnnf_evaluate(
 /// `node_var[i]` = variable id (only meaningful for literal nodes).
 /// `topo_order` is the bottom-up evaluation order.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn ddnnf_evaluate_cpu(
     nodes: &[(u32, u32, u32)],
     node_var: &[u32],
@@ -235,15 +264,47 @@ pub fn ddnnf_evaluate_cpu(
     var_assignments: &[u32],
     topo_order: &[u32],
 ) -> Vec<u32> {
+    match try_ddnnf_evaluate_cpu(nodes, node_var, children, var_assignments, topo_order) {
+        Ok(out) => out,
+        Err(error) => {
+            eprintln!("{error}");
+            Vec::new()
+        }
+    }
+}
+
+/// CPU helper with checked compiled-circuit indexing and arithmetic.
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn try_ddnnf_evaluate_cpu(
+    nodes: &[(u32, u32, u32)],
+    node_var: &[u32],
+    children: &[u32],
+    var_assignments: &[u32],
+    topo_order: &[u32],
+) -> Result<Vec<u32>, String> {
     let n_nodes = nodes.len();
     let mut out = vec![0u32; n_nodes];
     for &node in topo_order {
         let i = node as usize;
-        let (kind, co, cc) = nodes[i];
+        let Some(&(kind, co, cc)) = nodes.get(i) else {
+            return Err(format!(
+                "ddnnf_evaluate CPU oracle topo node {node} is outside node_count={n_nodes}. Fix: rebuild the compiled-circuit topological order."
+            ));
+        };
         match kind {
             LITERAL_TRUE => {
-                let v = node_var[i] as usize;
-                let assigned = var_assignments[v];
+                let Some(&var_id) = node_var.get(i) else {
+                    return Err(format!(
+                        "ddnnf_evaluate CPU oracle missing node_var for literal node {i}. Fix: pass one variable slot per compiled node."
+                    ));
+                };
+                let v = var_id as usize;
+                let Some(&assigned) = var_assignments.get(v) else {
+                    return Err(format!(
+                        "ddnnf_evaluate CPU oracle literal node {i} references var {v} outside assignment_count={}. Fix: pass a complete assignment vector.",
+                        var_assignments.len()
+                    ));
+                };
                 out[i] = if assigned == 1 || assigned == u32::MAX {
                     1
                 } else {
@@ -251,8 +312,18 @@ pub fn ddnnf_evaluate_cpu(
                 };
             }
             LITERAL_FALSE => {
-                let v = node_var[i] as usize;
-                let assigned = var_assignments[v];
+                let Some(&var_id) = node_var.get(i) else {
+                    return Err(format!(
+                        "ddnnf_evaluate CPU oracle missing node_var for literal node {i}. Fix: pass one variable slot per compiled node."
+                    ));
+                };
+                let v = var_id as usize;
+                let Some(&assigned) = var_assignments.get(v) else {
+                    return Err(format!(
+                        "ddnnf_evaluate CPU oracle literal node {i} references var {v} outside assignment_count={}. Fix: pass a complete assignment vector.",
+                        var_assignments.len()
+                    ));
+                };
                 out[i] = if assigned == 0 || assigned == u32::MAX {
                     1
                 } else {
@@ -262,16 +333,56 @@ pub fn ddnnf_evaluate_cpu(
             AND_NODE => {
                 let mut acc = 1u32;
                 for k in 0..cc as usize {
-                    let cn = children[co as usize + k] as usize;
-                    acc = acc.wrapping_mul(out[cn]);
+                    let child_index = (co as usize).checked_add(k).ok_or_else(|| {
+                        format!(
+                            "ddnnf_evaluate CPU oracle child offset overflow at node {i}. Fix: rebuild child_offsets before parity comparison."
+                        )
+                    })?;
+                    let Some(&child_node) = children.get(child_index) else {
+                        return Err(format!(
+                            "ddnnf_evaluate CPU oracle node {i} child index {child_index} exceeds child_count={}. Fix: pass a complete child list.",
+                            children.len()
+                        ));
+                    };
+                    let cn = child_node as usize;
+                    let Some(&child_value) = out.get(cn) else {
+                        return Err(format!(
+                            "ddnnf_evaluate CPU oracle node {i} references child node {cn} outside node_count={n_nodes}. Fix: rebuild compiled child ids."
+                        ));
+                    };
+                    acc = acc.checked_mul(child_value).ok_or_else(|| {
+                        format!(
+                            "ddnnf_evaluate CPU oracle AND node {i} model count overflowed u32. Fix: shard or widen model-count accumulation."
+                        )
+                    })?;
                 }
                 out[i] = acc;
             }
             OR_NODE => {
                 let mut acc = 0u32;
                 for k in 0..cc as usize {
-                    let cn = children[co as usize + k] as usize;
-                    acc = acc.wrapping_add(out[cn]);
+                    let child_index = (co as usize).checked_add(k).ok_or_else(|| {
+                        format!(
+                            "ddnnf_evaluate CPU oracle child offset overflow at node {i}. Fix: rebuild child_offsets before parity comparison."
+                        )
+                    })?;
+                    let Some(&child_node) = children.get(child_index) else {
+                        return Err(format!(
+                            "ddnnf_evaluate CPU oracle node {i} child index {child_index} exceeds child_count={}. Fix: pass a complete child list.",
+                            children.len()
+                        ));
+                    };
+                    let cn = child_node as usize;
+                    let Some(&child_value) = out.get(cn) else {
+                        return Err(format!(
+                            "ddnnf_evaluate CPU oracle node {i} references child node {cn} outside node_count={n_nodes}. Fix: rebuild compiled child ids."
+                        ));
+                    };
+                    acc = acc.checked_add(child_value).ok_or_else(|| {
+                        format!(
+                            "ddnnf_evaluate CPU oracle OR node {i} model count overflowed u32. Fix: shard or widen model-count accumulation."
+                        )
+                    })?;
                 }
                 out[i] = acc;
             }
@@ -280,7 +391,7 @@ pub fn ddnnf_evaluate_cpu(
             }
         }
     }
-    out
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -352,6 +463,38 @@ mod tests {
     }
 
     #[test]
+    fn checked_cpu_oracle_rejects_missing_assignment() {
+        let nodes = vec![(LITERAL_TRUE, 0, 0)];
+        let node_var = vec![7];
+        let children = vec![];
+        let assigns = vec![u32::MAX];
+        let order = vec![0];
+        let error = try_ddnnf_evaluate_cpu(&nodes, &node_var, &children, &assigns, &order)
+            .expect_err("checked d-DNNF oracle must reject missing variable assignments");
+
+        assert!(
+            error.contains("outside assignment_count"),
+            "error should describe the missing assignment: {error}"
+        );
+    }
+
+    #[test]
+    fn checked_cpu_oracle_rejects_missing_child() {
+        let nodes = vec![(LITERAL_TRUE, 0, 0), (AND_NODE, 0, 1)];
+        let node_var = vec![0, 0];
+        let children = vec![];
+        let assigns = vec![u32::MAX];
+        let order = vec![0, 1];
+        let error = try_ddnnf_evaluate_cpu(&nodes, &node_var, &children, &assigns, &order)
+            .expect_err("checked d-DNNF oracle must reject missing child list entries");
+
+        assert!(
+            error.contains("exceeds child_count"),
+            "error should describe the missing child entry: {error}"
+        );
+    }
+
+    #[test]
     fn gpu_program_builder_exposes_ddnnf_buffers() {
         let program = ddnnf_evaluate(
             "kinds",
@@ -395,6 +538,47 @@ mod tests {
                 .entry()
                 .iter()
                 .any(|node| matches!(node, vyre_foundation::ir::Node::Region { body, .. } if body.iter().any(|inner| matches!(inner, vyre_foundation::ir::Node::Trap { .. }))))
+        );
+    }
+
+    #[test]
+    fn checked_gpu_builder_rejects_empty_var_domain() {
+        let error = try_ddnnf_evaluate(
+            "kinds",
+            "node_var",
+            "child_offsets",
+            "child_counts",
+            "children",
+            "assignments",
+            "out",
+            1,
+            0,
+            0,
+        )
+        .expect_err("checked d-DNNF builder must reject empty variable domains");
+
+        assert!(
+            error.contains("requires n_vars > 0"),
+            "error should describe the invalid variable domain: {error}"
+        );
+    }
+
+    #[test]
+    fn gpu_builder_source_has_checked_api_without_panics() {
+        let source = include_str!("knowledge_compile.rs");
+        let builder_source = source
+            .split("pub fn ddnnf_evaluate(")
+            .nth(1)
+            .expect("d-DNNF GPU builder source must be present")
+            .split("/// CPU helper:")
+            .next()
+            .expect("d-DNNF GPU builder source must precede CPU oracle");
+
+        assert!(
+            builder_source.contains("pub fn try_ddnnf_evaluate(")
+                && !builder_source.contains(concat!("panic", "!("))
+                && !builder_source.contains(".unwrap_or_else("),
+            "Fix: ddnnf_evaluate must expose a checked release API and avoid production panics."
         );
     }
 }

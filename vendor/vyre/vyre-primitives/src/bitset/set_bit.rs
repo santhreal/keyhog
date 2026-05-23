@@ -36,12 +36,29 @@ pub fn bitset_set_bit(target: &str, bit_idx: u32, words: u32) -> Program {
 }
 
 /// CPU reference. Mutates `target` in place.
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref(target: &mut [u32], bit_idx: u32) {
     let w = (bit_idx / 32) as usize;
     let b = bit_idx % 32;
     if w < target.len() {
         target[w] |= 1u32 << b;
     }
+}
+
+#[cfg(feature = "inventory-registry")]
+inventory::submit! {
+    crate::harness::OpEntry::new(
+        OP_ID,
+        || bitset_set_bit("target", 0, 2),
+        Some(|| {
+            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            vec![vec![to_bytes(&[0, 0])]]
+        }),
+        Some(|| {
+            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            vec![vec![to_bytes(&[1, 0])]]
+        }),
+    )
 }
 
 #[cfg(test)]

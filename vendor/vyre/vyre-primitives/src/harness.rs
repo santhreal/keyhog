@@ -51,11 +51,18 @@ pub struct OpEntry {
     /// Deterministic expected-output bytes the universal harness
     /// compares against the reference + every backend.
     pub expected_output: Option<ExpectedFn>,
+
+    /// Coarse-grained taxonomy tag (T028 / SEPARATION_AUDIT S2 prep).
+    /// Examples: `"math"`, `"nn"`, `"crypto"`, `"graph"`, `"matching"`.
+    /// `None` means uncategorised — equivalent to the pre-T028 behaviour.
+    pub category: Option<&'static str>,
 }
 
 impl OpEntry {
     /// Construct an `OpEntry`. Required because the struct is
     /// `#[non_exhaustive]`; callers cannot use literal construction.
+    /// `category` initialises to `None`; chain `with_category` if a
+    /// category is required at submission time.
     #[must_use]
     pub const fn new(
         id: &'static str,
@@ -68,7 +75,23 @@ impl OpEntry {
             build,
             test_inputs,
             expected_output,
+            category: None,
         }
+    }
+
+    /// Set the category and return `self`. `const`-friendly so callers
+    /// can write `OpEntry::new(...).with_category("math")` inside
+    /// `inventory::submit!`.
+    #[must_use]
+    pub const fn with_category(mut self, category: &'static str) -> Self {
+        self.category = Some(category);
+        self
+    }
+
+    /// Return the registered coarse-grained taxonomy tag, if any.
+    #[must_use]
+    pub const fn category(&self) -> Option<&'static str> {
+        self.category
     }
 }
 

@@ -35,7 +35,7 @@
 //!   compile-time constant strictly less than the upper bound `b`.
 //! - Loop bounds must both be `Expr::LitU32`. Runtime bounds (e.g.
 //!   `Expr::buf_len`) need range facts (ROADMAP A16) before tightening
-//!   is safe; that variant lives beside the weir range pass.
+//!   is safe; that variant lives beside the downstream range pass.
 //! - When `n >= b`, the predicate is always true on every iteration —
 //!   the redundant guard is dropped by `loop_redundant_bound_check_elide`,
 //!   not by this pass.
@@ -51,7 +51,10 @@ use crate::visit::node_map;
 #[vyre_pass(
     name = "loop_bound_tighten",
     requires = [],
-    invalidates = []
+    invalidates = [],
+    phase = "loop",
+    boundary_class = "abi_preserving",
+    cost_model_family = "loop"
 )]
 pub struct LoopBoundTighten;
 
@@ -60,6 +63,9 @@ impl LoopBoundTighten {
     /// matching tighten-eligible Loop.
     #[must_use]
     fn analyze_impl(program: &Program) -> PassAnalysis {
+        if !program.stats().has_node_loop() {
+            return PassAnalysis::SKIP;
+        }
         if program
             .entry()
             .iter()
@@ -74,18 +80,16 @@ impl LoopBoundTighten {
     /// Rewrite every tighten-eligible Loop in the program tree.
     #[must_use]
     pub fn transform(program: Program) -> PassResult {
-        let scaffold = program.with_rewritten_entry(Vec::new());
         let mut changed = false;
-        let entry: Vec<Node> = program
-            .into_entry_vec()
-            .into_iter()
-            .map(|n| rewrite_node(n, &mut changed))
-            .collect();
-        PassResult {
-            program: scaffold.with_rewritten_entry(entry),
-            changed,
-        }
-    }}
+        let program = program.map_entry(|entry| {
+            entry
+                .into_iter()
+                .map(|n| rewrite_node(n, &mut changed))
+                .collect()
+        });
+        PassResult { program, changed }
+    }
+}
 
 fn rewrite_node(node: Node, changed: &mut bool) -> Node {
     let recursed = node_map::map_children(node, &mut |child| rewrite_node(child, changed));

@@ -114,7 +114,7 @@ pub enum DfaWireError {
     /// an unrelated blob.
     BadMagic,
     /// Wire version did not match the build's `DFA_WIRE_VERSION`. The
-    /// caller's cache is from an older keyhog/vyre and must be rebuilt.
+    /// caller's cache is from an older secret-scanning consumer/vyre and must be rebuilt.
     VersionMismatch {
         /// Wire version this build of vyre-primitives understands.
         expected: u32,
@@ -239,8 +239,10 @@ impl CompiledDfa {
         let output_offsets = reader.read_words().map_err(map_envelope_error)?;
         let output_records = reader.read_words().map_err(map_envelope_error)?;
 
-        // Cross-check shape against state_count *before* reading payload —
-        // catches a corrupt header without ever indexing past the buffer.
+        // Cross-check the declared shape before returning the payload to
+        // callers. Length fields are validated by the envelope reader; these
+        // checks validate DFA-specific invariants so corrupt cache blobs do not
+        // become internally inconsistent automata.
         if transitions.len() != (state_count as usize) * 256 {
             return Err(DfaWireError::ShapeMismatch {
                 reason: "transitions length != state_count * 256",
@@ -254,6 +256,39 @@ impl CompiledDfa {
         if output_offsets.len() != (state_count as usize) + 1 {
             return Err(DfaWireError::ShapeMismatch {
                 reason: "output_offsets length != state_count + 1",
+            });
+        }
+        if output_offsets.first().copied() != Some(0) {
+            return Err(DfaWireError::ShapeMismatch {
+                reason: "output_offsets must start at zero",
+            });
+        }
+        if output_offsets.last().copied() != Some(output_records.len() as u32) {
+            return Err(DfaWireError::ShapeMismatch {
+                reason: "output_offsets last entry must equal output_records length",
+            });
+        }
+        if output_offsets
+            .windows(2)
+            .any(|window| window[0] > window[1])
+        {
+            return Err(DfaWireError::ShapeMismatch {
+                reason: "output_offsets must be monotonic",
+            });
+        }
+        if output_offsets
+            .iter()
+            .any(|&offset| offset as usize > output_records.len())
+        {
+            return Err(DfaWireError::ShapeMismatch {
+                reason: "output_offsets entries must be within output_records",
+            });
+        }
+        if max_pattern_len == 0
+            && (accept.iter().any(|&state_accept| state_accept != 0) || !output_records.is_empty())
+        {
+            return Err(DfaWireError::ShapeMismatch {
+                reason: "max_pattern_len is zero for a non-empty accepting DFA",
             });
         }
 

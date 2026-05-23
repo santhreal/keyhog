@@ -20,14 +20,15 @@ pub mod region;
 
 mod dfa_compile;
 
+#[cfg(any(test, feature = "cpu-parity"))]
+pub use bracket_match::cpu_ref as bracket_match_cpu_ref;
 pub use bracket_match::{
-    bracket_match, cpu_ref as bracket_match_cpu_ref, pack_u32 as pack_bracket_u32, CLOSE_BRACE,
-    MATCH_NONE, OPEN_BRACE, OTHER,
+    bracket_match, pack_u32 as pack_bracket_u32, CLOSE_BRACE, MATCH_NONE, OPEN_BRACE, OTHER,
 };
 pub use dfa_compile::{
     dfa_compile, dfa_compile_with_budget, CompiledDfa, DfaCompileError, DfaWireError,
     DEFAULT_DFA_BUDGET_BYTES,
 };
-pub use region::{
-    dedup_regions_cpu, dedup_regions_flag_program, dedup_regions_inplace, RegionTriple,
-};
+#[cfg(any(test, feature = "cpu-parity"))]
+pub use region::dedup_regions_cpu;
+pub use region::{dedup_regions_flag_program, dedup_regions_inplace, RegionTriple};

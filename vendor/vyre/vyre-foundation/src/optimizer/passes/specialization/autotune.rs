@@ -3,15 +3,32 @@ use crate::ir::{Expr, Ident, Node, Program};
 use crate::optimizer::program_shape_facts::ProgramShapeFacts;
 use crate::optimizer::program_soa::ProgramFacts;
 use crate::optimizer::AdapterCaps;
-use crate::optimizer::{vyre_pass, PassResult};
+use crate::optimizer::{vyre_pass, PassAnalysis, PassResult};
 use rustc_hash::FxHashSet;
 
 /// Dynamically adjust dispatch dimensions and workgroup bounds.
 #[derive(Debug, Default)]
-#[vyre_pass(name = "autotune", requires = [], invalidates = [], analyze = "always")]
+#[vyre_pass(name = "autotune", requires = [], invalidates = [])]
 pub struct Autotune;
 
 impl Autotune {
+    /// O(1) gates: autotune only adjusts 1-D workgroup kernels with at least
+    /// one buffer (it derives shape facts from buffers and may emit a
+    /// `buf_len` bounds guard). Multi-dimensional workgroups have intentional
+    /// spatial structure (e.g. 2-D matmul tile) and skip the tuner anyway —
+    /// pre-gating here avoids deriving `ProgramShapeFacts` for those programs.
+    #[must_use]
+    fn analyze_impl(program: &Program) -> PassAnalysis {
+        let wg = program.workgroup_size();
+        if wg[1] != 1 || wg[2] != 1 {
+            return PassAnalysis::SKIP;
+        }
+        if program.buffers().is_empty() {
+            return PassAnalysis::SKIP;
+        }
+        PassAnalysis::RUN
+    }
+
     /// Autotune invocation scales without introducing partial-wave OOB accesses.
     #[must_use]
     pub fn transform(program: Program) -> PassResult {
@@ -22,7 +39,7 @@ impl Autotune {
     #[must_use]
     pub fn transform_for_adapter(program: Program, caps: &AdapterCaps) -> PassResult {
         let current = program.workgroup_size();
-        let shape_facts = ProgramShapeFacts::derive(&program);
+        let shape_facts = ProgramShapeFacts::derive_cached(&program);
         let tuned = tuned_workgroup_size_for(
             current,
             infer_problem_size_from_facts(&program, &shape_facts),
@@ -64,7 +81,8 @@ impl Autotune {
             program: optimized,
             changed: true,
         }
-    }}
+    }
+}
 
 fn tuned_workgroup_size_for(
     current: [u32; 3],
@@ -108,7 +126,7 @@ fn inferred_guard_bound_buffer(program: &Program) -> Option<&crate::ir::BufferDe
 fn infer_problem_size(program: &Program) -> Option<u32> {
     referenced_storage_buffers(program)
         .into_iter()
-        .map(|buffer| buffer.count())
+        .map(crate::ir_inner::model::program::BufferDecl::count)
         // Zero-count buffers are uniforms or temporaries with no
         // meaningful element count — exclude them from problem-size
         // inference.
@@ -130,7 +148,7 @@ fn infer_problem_size_from_facts(program: &Program, facts: &ProgramShapeFacts) -
 }
 
 fn referenced_storage_buffers(program: &Program) -> Vec<&crate::ir::BufferDecl> {
-    let facts = ProgramFacts::build(program);
+    let facts = ProgramFacts::build_cached(program);
     let mut names = FxHashSet::<Ident>::default();
     for (_, name, _) in facts.buffer_refs() {
         names.insert(name.clone());
@@ -149,7 +167,7 @@ fn referenced_storage_buffers(program: &Program) -> Vec<&crate::ir::BufferDecl> 
 ///
 /// Historical note: this used to be
 /// `assert_even_divisible_without_guard` with an `assert_eq!` that
-/// panicked on legal user IR (VYRE_OPTIMIZER audit CRIT-01:
+/// panicked on legal user IR (`VYRE_OPTIMIZER` audit CRIT-01:
 /// optimizer crashing on valid input). Panicking the whole compiler
 /// for a condition the very same pass is supposed to *fix* is the
 /// exact wrong move. The caller now gets an actionable Result.
@@ -212,6 +230,28 @@ fn is_gid_x_bounds_cond(cond: &Expr) -> bool {
 mod tests {
     use super::*;
     use crate::ir::{BufferDecl, DataType, ShapePredicate};
+
+    #[test]
+    fn analyze_skips_program_with_no_buffers() {
+        let program = Program::wrapped(Vec::new(), [64, 1, 1], vec![Node::Return]);
+        match crate::optimizer::ProgramPass::analyze(&Autotune, &program) {
+            PassAnalysis::SKIP => {}
+            other => panic!("expected SKIP for buffer-less program, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn analyze_skips_multidimensional_workgroup() {
+        let program = Program::wrapped(
+            vec![BufferDecl::output("out", 0, DataType::U32).with_count(64)],
+            [8, 8, 1],
+            vec![Node::Return],
+        );
+        match crate::optimizer::ProgramPass::analyze(&Autotune, &program) {
+            PassAnalysis::SKIP => {}
+            other => panic!("expected SKIP for multi-dim workgroup, got {other:?}"),
+        }
+    }
 
     #[test]
     fn injects_gid_x_bounds_check_when_clamping_oversized_workgroup() {
@@ -382,7 +422,8 @@ mod tests {
             ..compact
         };
 
-        let compact_program = Autotune::transform_for_adapter(program.clone(), &compact).program;
+        let compact_program =
+            Autotune::transform_for_adapter(Clone::clone(&program), &compact).program;
         let wide_program = Autotune::transform_for_adapter(program, &wide).program;
 
         assert_eq!(compact_program.workgroup_size(), [64, 1, 1]);

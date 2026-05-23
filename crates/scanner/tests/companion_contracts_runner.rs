@@ -98,7 +98,10 @@ fn make_chunk(text: &str) -> Chunk {
     }
 }
 
-fn findings_for_detector<'a>(matches: &'a [keyhog_core::RawMatch], detector_id: &str) -> Vec<&'a keyhog_core::RawMatch> {
+fn findings_for_detector<'a>(
+    matches: &'a [keyhog_core::RawMatch],
+    detector_id: &str,
+) -> Vec<&'a keyhog_core::RawMatch> {
     matches
         .iter()
         .filter(|m| m.detector_id.as_ref() == detector_id)
@@ -267,7 +270,10 @@ fn every_companion_contract_passes() {
     // Print parity issues as warnings so they appear in test output,
     // but do not fail the suite — they become engineer tickets.
     if !parity_issues.is_empty() {
-        eprintln!("\n=== COMPANION PARITY ISSUES ({} found) ===", parity_issues.len());
+        eprintln!(
+            "\n=== COMPANION PARITY ISSUES ({} found) ===",
+            parity_issues.len()
+        );
         for issue in &parity_issues {
             eprintln!("  - {issue}");
         }

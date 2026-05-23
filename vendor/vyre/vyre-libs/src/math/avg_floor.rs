@@ -33,7 +33,7 @@ inventory::submit! {
             let a = [10u32, u32::MAX, 7, 100];
             let b = [20u32, u32::MAX, 12, 0];
             let to_bytes = |w: &[u32]| w.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<u8>>();
-            vec![vec![to_bytes(&a), to_bytes(&b), vec![0u8; 16]]]
+            vec![vec![to_bytes(&a), to_bytes(&b)]]
         }),
         expected_output: Some(|| {
             // HD-style floor((a+b)/2) that never overflows:
@@ -52,5 +52,6 @@ inventory::submit! {
                 .collect::<Vec<u8>>();
             vec![vec![bytes]]
         }),
+        category: Some("math"),
     }
 }

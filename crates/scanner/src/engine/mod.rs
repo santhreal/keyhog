@@ -581,19 +581,14 @@ impl CompiledScanner {
                 // plain `append_match` variant for now. Either path
                 // produces bit-identical match output; the difference
                 // is purely atomic-coalescing strategy.
-                let backend_id = self
-                    .gpu_backend
-                    .as_ref()
-                    .map(|b| b.id())
-                    .unwrap_or("none");
+                let backend_id = self.gpu_backend.as_ref().map(|b| b.id()).unwrap_or("none");
                 let use_subgroup_coalesce = backend_id != "cuda";
-                let program =
-                    vyre_libs::matching::classic_ac::build_ac_bounded_ranges_program_ext(
-                        &matcher.dfa,
-                        pattern_count,
-                        AC_GPU_MAX_MATCHES_PER_DISPATCH,
-                        use_subgroup_coalesce,
-                    );
+                let program = vyre_libs::matching::classic_ac::build_ac_bounded_ranges_program_ext(
+                    &matcher.dfa,
+                    pattern_count,
+                    AC_GPU_MAX_MATCHES_PER_DISPATCH,
+                    use_subgroup_coalesce,
+                );
                 tracing::debug!(
                     target: "keyhog::routing",
                     pattern_count,
@@ -978,8 +973,8 @@ impl CompiledScanner {
                 // scanned as one chunk or two, making the test see false
                 // "drops". Real-source-offset removes that asymmetry.
                 let fragment_value_offset = {
-                    let line_offset = line.as_ptr() as usize
-                        - chunk.data.as_ref().as_ptr() as usize;
+                    let line_offset =
+                        line.as_ptr() as usize - chunk.data.as_ref().as_ptr() as usize;
                     line_offset + value_match.start()
                 };
                 let fragment = crate::fragment_cache::SecretFragment {
@@ -1041,8 +1036,7 @@ impl CompiledScanner {
                         // same credential got different synthetic
                         // offsets depending on chunk topology.
                         m.location.line = Some(fragment_line);
-                        m.location.offset = fragment_value_offset
-                            + chunk.metadata.base_offset;
+                        m.location.offset = fragment_value_offset + chunk.metadata.base_offset;
                     }
                     matches.append(&mut reassembled_matches);
                     // Zeroized automatically on drop (SensitiveString)

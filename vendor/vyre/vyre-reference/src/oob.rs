@@ -42,7 +42,20 @@ impl Buffer {
         } else {
             bytes_guard.len() / stride
         };
-        u32::try_from(count).unwrap_or(u32::MAX)
+        match u32::try_from(count) {
+            Ok(value) => value,
+            Err(_) => {
+                debug_assert!(
+                    false,
+                    "Buffer::len overflowed u32::MAX for byte_len={}; stride={}; element={:?}. \
+                     Fix: split or downsize the buffer so per-element indexing remains representable.",
+                    bytes_guard.len(),
+                    stride,
+                    self.element
+                );
+                u32::MAX
+            }
+        }
     }
 
     pub(crate) fn byte_len(&self) -> usize {
@@ -215,10 +228,11 @@ fn ir_to_conform_type(ty: IrDataType) -> DataType {
         IrDataType::I32 => DataType::I32,
         IrDataType::U64 => DataType::U64,
         IrDataType::F32 => DataType::F32,
+        IrDataType::F64 => DataType::F64,
         IrDataType::Vec2U32 => DataType::Vec2U32,
         IrDataType::Vec4U32 => DataType::Vec4U32,
         IrDataType::Bool => DataType::U32,
         IrDataType::Bytes => DataType::Bytes,
-        _ => DataType::Bytes,
+        other => other,
     }
 }

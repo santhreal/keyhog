@@ -36,7 +36,7 @@ pub struct ScratchReusePlan {
     /// is licensed to recycle (non-escaping per A13 facts).
     arm_recyclable: FxHashMap<Ident, FxHashSet<Ident>>,
     /// All buffers in the program that are "non-escaping" (host
-    /// never reads back, no atomics, no IndirectDispatch). These
+    /// never reads back, no atomics, no `IndirectDispatch`). These
     /// are the candidates for recycling.
     non_escaping: FxHashSet<Ident>,
 }
@@ -47,14 +47,14 @@ impl ScratchReusePlan {
     /// and queries the facts.
     #[must_use]
     pub fn build(program: &Program) -> Self {
-        let facts = ProgramFacts::build(program);
+        let facts = ProgramFacts::build_cached(program);
         let escaping = facts.escaping_buffers();
         let non_escaping: FxHashSet<Ident> = program
             .buffers()
             .iter()
             .filter_map(|b| {
                 let name = Ident::from(b.name.as_ref());
-                if escaping.contains_key(&name) {
+                if escaping.contains(&name) {
                     None
                 } else {
                     Some(name)
@@ -63,7 +63,7 @@ impl ScratchReusePlan {
             .collect();
         let mut arm_recyclable: FxHashMap<Ident, FxHashSet<Ident>> = FxHashMap::default();
         for region in facts.regions() {
-            let arm_buffers = collect_buffer_uses(program.entry(), &region.node, &facts);
+            let arm_buffers = collect_buffer_uses(program.entry(), region.node, &facts);
             let recyclable: FxHashSet<Ident> = arm_buffers
                 .into_iter()
                 .filter(|b| non_escaping.contains(b))
@@ -99,13 +99,19 @@ impl ScratchReusePlan {
     /// `true` iff the named buffer can be recycled by some arm.
     #[must_use]
     pub fn is_recyclable(&self, name: &str) -> bool {
-        self.non_escaping.iter().any(|n| n.as_str() == name)
+        // Ident: Borrow<str>, so contains takes &str directly without
+        // building an Ident; the lookup is one hash + one cmp instead
+        // of an O(N) linear scan.
+        self.non_escaping.contains(name)
     }
 
     /// Total number of arm/buffer recycle pairs in the plan.
     #[must_use]
     pub fn pair_count(&self) -> usize {
-        self.arm_recyclable.values().map(|s| s.len()).sum()
+        self.arm_recyclable
+            .values()
+            .map(std::collections::HashSet::len)
+            .sum()
     }
 }
 
@@ -113,15 +119,15 @@ static EMPTY_SET: std::sync::LazyLock<FxHashSet<Ident>> =
     std::sync::LazyLock::new(FxHashSet::default);
 
 /// Collect every buffer touched (via Read / Write / Atomic / Async)
-/// inside the subtree rooted at the given Region NodeIndex.
+/// inside the subtree rooted at the given Region `NodeIndex`.
 fn collect_buffer_uses(
     _entry: &[Node],
-    region_node: &crate::optimizer::program_soa::NodeIndex,
+    region_node: crate::optimizer::program_soa::NodeIndex,
     facts: &ProgramFacts,
 ) -> FxHashSet<Ident> {
     let mut out: FxHashSet<Ident> = FxHashSet::default();
     for (node, name, _) in facts.buffer_refs() {
-        if facts.is_descendant_of(*node, *region_node) {
+        if facts.is_descendant_of(*node, region_node) {
             out.insert(name.clone());
         }
     }
@@ -145,9 +151,9 @@ mod tests {
         BufferDecl::output(name, binding, DataType::U32).with_count(4)
     }
 
-    fn region(gen: &str, body: Vec<Node>) -> Node {
+    fn region(generator_name: &str, body: Vec<Node>) -> Node {
         Node::Region {
-            generator: Ident::from(gen),
+            generator: Ident::from(generator_name),
             source_region: None,
             body: std::sync::Arc::new(body),
         }

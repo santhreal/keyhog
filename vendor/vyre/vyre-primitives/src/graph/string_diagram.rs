@@ -24,16 +24,33 @@ pub const OP_ID: &str = "vyre-primitives::graph::monoidal_compose";
 /// because string diagrams are graphs of morphisms.
 #[must_use]
 pub fn monoidal_compose(f: &str, g: &str, out: &str, a: u32, b: u32, c: u32) -> Program {
+    match try_monoidal_compose(f, g, out, a, b, c) {
+        Ok(program) => program,
+        Err(error) => {
+            eprintln!("{error}");
+            crate::invalid_output_program(OP_ID, out, DataType::U32, error)
+        }
+    }
+}
+
+/// Sequential composition step with checked tensor cell counts.
+pub fn try_monoidal_compose(
+    f: &str,
+    g: &str,
+    out: &str,
+    a: u32,
+    b: u32,
+    c: u32,
+) -> Result<Program, String> {
     if a == 0 || b == 0 || c == 0 {
-        return crate::invalid_output_program(
-            OP_ID,
-            out,
-            DataType::U32,
-            format!("Fix: monoidal_compose requires a, b, c > 0, got a={a}, b={b}, c={c}."),
-        );
+        return Err(format!(
+            "Fix: monoidal_compose requires a, b, c > 0, got a={a}, b={b}, c={c}."
+        ));
     }
 
-    let cells = a * c;
+    let f_cells = checked_cells("monoidal_compose f input", a, b)?;
+    let g_cells = checked_cells("monoidal_compose g input", b, c)?;
+    let cells = checked_cells("monoidal_compose output", a, c)?;
     let t = Expr::InvocationId { axis: 0 };
     let i_expr = Expr::div(t.clone(), Expr::u32(c));
     let j_expr = Expr::rem(t.clone(), Expr::u32(c));
@@ -78,10 +95,10 @@ pub fn monoidal_compose(f: &str, g: &str, out: &str, a: u32, b: u32, c: u32) -> 
         ],
     )];
 
-    Program::wrapped(
+    Ok(Program::wrapped(
         vec![
-            BufferDecl::storage(f, 0, BufferAccess::ReadOnly, DataType::U32).with_count(a * b),
-            BufferDecl::storage(g, 1, BufferAccess::ReadOnly, DataType::U32).with_count(b * c),
+            BufferDecl::storage(f, 0, BufferAccess::ReadOnly, DataType::U32).with_count(f_cells),
+            BufferDecl::storage(g, 1, BufferAccess::ReadOnly, DataType::U32).with_count(g_cells),
             BufferDecl::storage(out, 2, BufferAccess::ReadWrite, DataType::U32).with_count(cells),
         ],
         [256, 1, 1],
@@ -90,11 +107,20 @@ pub fn monoidal_compose(f: &str, g: &str, out: &str, a: u32, b: u32, c: u32) -> 
             source_region: None,
             body: Arc::new(body),
         }],
-    )
+    ))
+}
+
+fn checked_cells(label: &'static str, rows: u32, cols: u32) -> Result<u32, String> {
+    rows.checked_mul(cols).ok_or_else(|| {
+        format!(
+            "{label} rows*cols overflows cell count for rows={rows}, cols={cols}. Fix: shard the string diagram before GPU dispatch."
+        )
+    })
 }
 
 /// CPU reference.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn monoidal_compose_cpu(f: &[f64], g: &[f64], a: u32, b: u32, c: u32) -> Vec<f64> {
     let mut out = Vec::new();
     monoidal_compose_cpu_into(f, g, a, b, c, &mut out);
@@ -102,6 +128,7 @@ pub fn monoidal_compose_cpu(f: &[f64], g: &[f64], a: u32, b: u32, c: u32) -> Vec
 }
 
 /// CPU reference using caller-owned output storage.
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn monoidal_compose_cpu_into(f: &[f64], g: &[f64], a: u32, b: u32, c: u32, out: &mut Vec<f64>) {
     let a = a as usize;
     let b = b as usize;
@@ -117,6 +144,16 @@ pub fn monoidal_compose_cpu_into(f: &[f64], g: &[f64], a: u32, b: u32, c: u32, o
             }
         }
     }
+}
+
+#[cfg(feature = "inventory-registry")]
+inventory::submit! {
+    crate::harness::OpEntry::new(
+        OP_ID,
+        || monoidal_compose("f", "g", "out", 2, 2, 2),
+        None,
+        None,
+    )
 }
 
 #[cfg(test)]
@@ -167,5 +204,53 @@ mod tests {
     fn zero_a_traps() {
         let p = monoidal_compose("f", "g", "h", 0, 1, 1);
         assert!(p.stats().trap());
+    }
+
+    #[test]
+    fn checked_monoidal_compose_rejects_zero_dimension() {
+        let error = try_monoidal_compose("f", "g", "h", 0, 1, 1)
+            .expect_err("checked monoidal compose builder must reject zero dimensions");
+
+        assert!(
+            error.contains("requires a, b, c > 0"),
+            "error should describe the invalid tensor shape: {error}"
+        );
+    }
+
+    #[test]
+    fn checked_monoidal_compose_rejects_output_cell_overflow() {
+        let error = try_monoidal_compose("f", "g", "h", u32::MAX, 1, 2)
+            .expect_err("checked monoidal compose builder must reject output overflow");
+
+        assert!(
+            error.contains("overflows cell count"),
+            "error should describe the output tensor overflow: {error}"
+        );
+    }
+
+    #[test]
+    fn legacy_monoidal_compose_does_not_panic_on_output_cell_overflow() {
+        let program = monoidal_compose("f", "g", "h", u32::MAX, 1, 2);
+
+        assert!(program.stats().trap());
+    }
+
+    #[test]
+    fn monoidal_compose_source_has_checked_api_without_panics() {
+        let source = include_str!("string_diagram.rs");
+        let builder_source = source
+            .split("/// Sequential composition step.")
+            .nth(1)
+            .expect("monoidal compose builder source must be present")
+            .split("/// CPU reference.")
+            .next()
+            .expect("monoidal compose builder source must precede CPU oracle");
+
+        assert!(
+            builder_source.contains("pub fn try_monoidal_compose(")
+                && !builder_source.contains(concat!("panic", "!("))
+                && !builder_source.contains(".unwrap_or_else("),
+            "Fix: monoidal_compose must expose checked release API and avoid production panics."
+        );
     }
 }

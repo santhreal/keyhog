@@ -86,9 +86,10 @@ pub fn byte_histogram_256(input: &str, histogram: &str, count: u32) -> Program {
     )
 }
 
-/// CPU reference for [`byte_histogram_256`].
+/// Reference oracle for [`byte_histogram_256`].
 #[must_use]
-pub fn cpu_ref(bytes: &[u8]) -> [u32; 256] {
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn reference_byte_histogram(bytes: &[u8]) -> [u32; 256] {
     let mut histogram = [0u32; 256];
     for &byte in bytes {
         histogram[usize::from(byte)] += 1;
@@ -111,7 +112,11 @@ inventory::submit! {
             ]]
         }),
         Some(|| {
-            let histogram = cpu_ref(&[b'a', b'b', b'a', 0xC3, 0xA9]);
+            let mut histogram = [0u32; 256];
+            histogram[usize::from(b'a')] = 2;
+            histogram[usize::from(b'b')] = 1;
+            histogram[0xC3] = 1;
+            histogram[0xA9] = 1;
             vec![vec![histogram.iter().flat_map(|value| value.to_le_bytes()).collect()]]
         }),
     )
@@ -122,8 +127,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn cpu_ref_counts_each_byte() {
-        let histogram = cpu_ref(&[b'a', b'b', b'a', 0xC3, 0xA9]);
+    fn reference_counts_each_byte() {
+        let histogram = reference_byte_histogram(&[b'a', b'b', b'a', 0xC3, 0xA9]);
         assert_eq!(histogram[usize::from(b'a')], 2);
         assert_eq!(histogram[usize::from(b'b')], 1);
         assert_eq!(histogram[0xC3], 1);

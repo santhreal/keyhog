@@ -9,8 +9,8 @@
 //! the final state; convergence happens entirely on device.
 //!
 //! This is the substrate primitive that replaces every "host iterates
-//! to fixpoint" docstring in `weir::points_to`, `weir::summary`,
-//! `weir::loop_sum`, and the `lower_binary_graph_predicate` 8-hop
+//! to fixpoint" docstring in `downstream_dataflow::points_to`, `downstream_dataflow::summary`,
+//! `downstream_dataflow::loop_sum`, and the `lower_binary_graph_predicate` 8-hop
 //! unrolled BFS. Each consumer composes their own transfer body once;
 //! `persistent_fixpoint` provides the convergence harness.
 //!
@@ -168,6 +168,7 @@ pub fn persistent_fixpoint(
 /// `max_iterations` is hit. Returns the final `current` state and the
 /// number of iterations actually executed.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref<F>(seed: &[u32], max_iterations: u32, mut transfer_step: F) -> (Vec<u32>, u32)
 where
     F: FnMut(&[u32], &mut [u32]),
@@ -188,6 +189,7 @@ where
 ///
 /// `current` receives the final fixpoint state and `next` is retained as
 /// ping-pong scratch for subsequent calls.
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref_into<F>(
     seed: &[u32],
     max_iterations: u32,
@@ -210,6 +212,35 @@ where
         std::mem::swap(current, next);
     }
     max_iterations
+}
+
+#[cfg(feature = "inventory-registry")]
+inventory::submit! {
+    crate::harness::OpEntry::new(
+        OP_ID,
+        || {
+            persistent_fixpoint(
+                vec![Node::store(
+                    "next",
+                    Expr::u32(0),
+                    Expr::load("current", Expr::u32(0)),
+                )],
+                "current",
+                "next",
+                "changed",
+                1,
+                4,
+            )
+        },
+        Some(|| {
+            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            vec![vec![to_bytes(&[7]), to_bytes(&[0]), to_bytes(&[0])]]
+        }),
+        Some(|| {
+            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            vec![vec![to_bytes(&[7]), to_bytes(&[7]), to_bytes(&[0])]]
+        }),
+    )
 }
 
 #[cfg(test)]

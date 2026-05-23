@@ -61,13 +61,13 @@ Embedding tools surface the same env vars verbatim.
 
 ## Where to look
 
-- `src/lib.rs` — public surface (`AotCompileOptions`, `compile`,
+- `src/lib.rs`: public surface (`AotCompileOptions`, `compile`,
   artifact format).
-- `src/launcher/` — generated launcher templates.
-- `src/compress/` — brotli + lzma wrappers.
-- `CONFIG.md` — Tier A/B configurability surface.
-- `OWNERSHIP.md` (workspace root) — dependency boundary.
-- The `vyre-runtime` README — for what the artifact replaces.
+- `src/launcher/`: generated launcher templates.
+- `src/compress/`: brotli + lzma wrappers.
+- `CONFIG.md`: Tier A/B configurability surface.
+- `OWNERSHIP.md` (workspace root): dependency boundary.
+- The `vyre-runtime` README: for what the artifact replaces.
 
 ## Conformance
 

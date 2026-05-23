@@ -42,11 +42,28 @@ pub fn bitset_xor_into(target: &str, addend: &str, words: u32) -> Program {
 }
 
 /// CPU reference. Mutates `target` in place.
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref(target: &mut [u32], addend: &[u32]) {
     let n = target.len().min(addend.len());
     for i in 0..n {
         target[i] ^= addend[i];
     }
+}
+
+#[cfg(feature = "inventory-registry")]
+inventory::submit! {
+    crate::harness::OpEntry::new(
+        OP_ID,
+        || bitset_xor_into("target", "operand", 2),
+        Some(|| {
+            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            vec![vec![
+                to_bytes(&[0xFFFF, 0xF0F0]),
+                to_bytes(&[0x0F0F, 0x00FF]),
+            ]]
+        }),
+        None,
+    )
 }
 
 #[cfg(test)]

@@ -105,11 +105,8 @@ pub fn run_persistent_kernel(
     })?;
 
     let pipeline = ensure_persistent_pipeline(backend, program, config)?;
-    let payloads: SmallVec<[&[u8]; 16]> = queue
-        .items
-        .iter()
-        .map(|item| item.payload.as_slice())
-        .collect();
+    let mut payloads = SmallVec::<[&[u8]; 16]>::with_capacity(queue.items.len());
+    payloads.extend(queue.items.iter().map(|item| item.payload.as_slice()));
     let output_batches = pipeline
         .dispatch_coalesced_borrowed(&payloads, config)
         .map_err(|error| {
@@ -119,10 +116,27 @@ pub fn run_persistent_kernel(
             ))
         })?;
     drop(payloads);
+    if output_batches.len() != queue.items.len() {
+        return Err(BackendError::new(format!(
+            "persistent kernel returned {} output batch(es) for {} queued work item(s). Fix: keep coalesced dispatch output cardinality identical to queue length.",
+            output_batches.len(),
+            queue.items.len()
+        )));
+    }
 
     let mut results = Vec::with_capacity(queue.items.len());
-    for (item, outputs) in queue.items.into_iter().zip(output_batches) {
-        let payload = outputs.into_iter().next().unwrap_or_default();
+    for (item_index, (item, outputs)) in queue.items.into_iter().zip(output_batches).enumerate() {
+        if outputs.len() != 1 {
+            return Err(BackendError::new(format!(
+                "persistent kernel work item index {item_index} id={} returned {} output buffer(s); WorkResult requires exactly one payload. Fix: use a persistent program with one public output or extend PersistentKernelReport to carry multi-output results explicitly.",
+                item.id,
+                outputs.len()
+            )));
+        }
+        let mut outputs = outputs.into_iter();
+        let payload = outputs
+            .next()
+            .expect("persistent output count was checked before extraction");
         results.push(WorkResult {
             id: item.id,
             payload,

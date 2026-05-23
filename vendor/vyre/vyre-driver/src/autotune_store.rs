@@ -36,7 +36,6 @@
 //! who never write don't pay an I/O on shutdown.
 
 use std::collections::BTreeMap;
-use std::fmt::Write as _;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
@@ -100,9 +99,11 @@ impl AutotuneKey {
             bytes[i] ^= ((wg >> (i * 8)) & 0xFF) as u8;
             bytes[8 + i] ^= ((spec.binding_sig >> (i * 8)) & 0xFF) as u8;
         }
+        const HEX: &[u8; 16] = b"0123456789abcdef";
         let mut key_hex = String::with_capacity(32);
-        for b in &bytes {
-            let _ = write!(&mut key_hex, "{b:02x}");
+        for &b in &bytes {
+            key_hex.push(HEX[(b >> 4) as usize] as char);
+            key_hex.push(HEX[(b & 0x0f) as usize] as char);
         }
         Self {
             key_hex,
@@ -182,7 +183,16 @@ impl AutotuneStore {
         if !self.dirty {
             return Ok(false);
         }
-        let mut entries: Vec<PersistentEntry> = Vec::with_capacity(self.records.len());
+        let mut entries: Vec<PersistentEntry> = Vec::new();
+        entries.try_reserve_exact(self.records.len()).map_err(|error| {
+            std::io::Error::new(
+                std::io::ErrorKind::OutOfMemory,
+                format!(
+                    "autotune store could not reserve {} persistent entries: {error}. Fix: compact the autotune store before saving.",
+                    self.records.len()
+                ),
+            )
+        })?;
         for (key, record) in &self.records {
             entries.push(PersistentEntry {
                 key: key.key_hex.clone(),
@@ -202,7 +212,7 @@ impl AutotuneStore {
         // R7: cross-process write fence. Two concurrent dispatches on the
         // same machine can race and lose updates with a plain `fs::write`.
         // Take an exclusive lock on the target file (creating it if absent),
-        // write, then drop the lock when the file goes out of scope.
+        // write, then drop the lock when the File handle is dropped.
         use fs2::FileExt;
         use std::io::Write;
         let mut file = std::fs::OpenOptions::new()
@@ -245,7 +255,9 @@ fn read_autotune_store_bounded(path: &Path) -> std::io::Result<String> {
         ));
     }
     let mut text = String::with_capacity(metadata.len() as usize);
-    file.by_ref().take(MAX_AUTOTUNE_STORE_BYTES + 1).read_to_string(&mut text)?;
+    file.by_ref()
+        .take(MAX_AUTOTUNE_STORE_BYTES + 1)
+        .read_to_string(&mut text)?;
     if text.len() as u64 > MAX_AUTOTUNE_STORE_BYTES {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,

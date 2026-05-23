@@ -36,8 +36,12 @@ pub fn get_or_build_c11_pipeline(
     extra: &[u8],
 ) -> Arc<C11PipelinePrograms> {
     cache.get_or_parse(source, extra, |bytes| {
-        let len = u32::try_from(bytes.len()).unwrap_or(u32::MAX).max(1);
-        let token_capacity = len.checked_next_power_of_two().unwrap_or(u32::MAX);
+        let len = u32::try_from(bytes.len())
+            .expect("C11 pipeline source length exceeds the u32 GPU index space. Fix: shard the translation unit before building cached pipeline programs.")
+            .max(1);
+        let token_capacity = len
+            .checked_next_power_of_two()
+            .expect("C11 pipeline token capacity exceeds the u32 GPU index space. Fix: shard the translation unit before building cached pipeline programs.");
         C11PipelinePrograms {
             lex: c11_lex_single_pass(
                 "haystack",

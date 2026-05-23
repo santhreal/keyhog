@@ -1,6 +1,6 @@
 [package]
 name = "vyre-primitives"
-version = "0.4.1"
+version = "0.4.2"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -20,6 +20,11 @@ default = []
 
 # Enable GPU-backend parity tests (requires CUDA driver + device).
 gpu = []
+
+# Enable host reference oracles for explicit parity harnesses. Release
+# consumers should not enable this; CUDA/GPU dispatch builders remain
+# available without host execution paths.
+cpu-parity = []
 
 # Internal marker feature — ON whenever any domain feature pulls
 # vyre-foundation. Keeps `#[cfg]` expressions terse (one gate
@@ -91,7 +96,7 @@ vyre-spec.workspace = true
 inventory = { workspace = true, optional = true }
 
 [dev-dependencies]
-vyre-reference = { version = "0.4.1", path = "../vyre-reference" }
+vyre-reference = { version = "0.4.2", path = "../vyre-reference" }
 vyre-foundation.workspace = true
 proptest.workspace = true
 vyre-driver-cuda = { workspace = true }
@@ -110,6 +115,11 @@ name = "integration"
 path = "tests/integration.rs"
 required-features = ["hash", "inventory-registry"]
 
+[[test]]
+name = "inflate_program"
+path = "tests/inflate_program.rs"
+required-features = ["decode"]
+
 
 
 
@@ -118,42 +128,42 @@ required-features = ["hash", "inventory-registry"]
 [[test]]
 name = "adversarial_bitset_and"
 path = "tests/adversarial_bitset_and.rs"
-required-features = ["bitset"]
+required-features = ["bitset", "cpu-parity"]
 
 [[test]]
 name = "bitset_word_contracts"
 path = "tests/bitset_word_contracts.rs"
-required-features = ["bitset"]
+required-features = ["bitset", "cpu-parity"]
 
 [[test]]
 name = "adversarial_bitset_any"
 path = "tests/adversarial_bitset_any.rs"
-required-features = ["bitset"]
+required-features = ["bitset", "cpu-parity"]
 
 [[test]]
 name = "adversarial_bitset_contains"
 path = "tests/adversarial_bitset_contains.rs"
-required-features = ["bitset"]
+required-features = ["bitset", "cpu-parity"]
 
 [[test]]
 name = "adversarial_bitset_not"
 path = "tests/adversarial_bitset_not.rs"
-required-features = ["bitset"]
+required-features = ["bitset", "cpu-parity"]
 
 [[test]]
 name = "adversarial_bitset_or"
 path = "tests/adversarial_bitset_or.rs"
-required-features = ["bitset"]
+required-features = ["bitset", "cpu-parity"]
 
 [[test]]
 name = "adversarial_bitset_popcount"
 path = "tests/adversarial_bitset_popcount.rs"
-required-features = ["bitset"]
+required-features = ["bitset", "cpu-parity"]
 
 [[test]]
 name = "adversarial_bitset_xor"
 path = "tests/adversarial_bitset_xor.rs"
-required-features = ["bitset"]
+required-features = ["bitset", "cpu-parity"]
 
 [[test]]
 name = "adversarial_reduce_all"
@@ -231,9 +241,14 @@ path = "tests/adversarial_text_utf8_validate.rs"
 required-features = ["text"]
 
 [[test]]
+name = "adversarial_math"
+path = "tests/adversarial_math.rs"
+required-features = ["math", "cpu-parity"]
+
+[[test]]
 name = "adversarial_graph_reachability_fixpoint"
 path = "tests/adversarial_graph_reachability_fixpoint.rs"
-required-features = ["graph", "fixpoint", "math"]
+required-features = ["graph", "fixpoint", "math", "cpu-parity"]
 
 [[test]]
 name = "adversarial_graph_csr_validation_contracts"
@@ -243,17 +258,17 @@ required-features = ["graph"]
 [[test]]
 name = "adversarial_boolean_packing_four_russians_readiness"
 path = "tests/adversarial_boolean_packing_four_russians_readiness.rs"
-required-features = ["bitset"]
+required-features = ["bitset", "cpu-parity"]
 
 [[test]]
 name = "adversarial_graph_ops"
 path = "tests/adversarial_graph_ops.rs"
-required-features = ["graph"]
+required-features = ["graph", "cpu-parity"]
 
 [[test]]
 name = "adversarial_bitset_ops"
 path = "tests/adversarial_bitset_ops.rs"
-required-features = ["bitset"]
+required-features = ["bitset", "cpu-parity"]
 
 [[test]]
 name = "region_adversarial"

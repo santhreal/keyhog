@@ -153,6 +153,7 @@ pub fn bigint_add_carry(limb_count: u32) -> Program {
 ///
 /// Returns [`BigIntAddCarryError::LimbCountMismatch`] when operands have
 /// different limb counts.
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn bigint_add_carry_cpu(
     a: &[u32],
     b: &[u32],
@@ -171,6 +172,7 @@ pub fn bigint_add_carry_cpu(
 ///
 /// Returns [`BigIntAddCarryError::LimbCountMismatch`] when operands have
 /// different limb counts.
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn bigint_add_carry_cpu_into(
     a: &[u32],
     b: &[u32],
@@ -200,6 +202,7 @@ pub fn bigint_add_carry_cpu_into(
 /// correctly into the final big-integer sum + final carry-out.
 ///
 /// Returns `(final_sum, final_carry_out)`. `final_carry_out` is 0 or 1.
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn resolve_carry_chain_cpu(
     sum_partial: &[u32],
     carry_partial: &[u32],
@@ -217,6 +220,7 @@ pub fn resolve_carry_chain_cpu(
 ///
 /// Returns [`BigIntAddCarryError::SplitCarryLengthMismatch`] when the split
 /// carry buffers have different limb counts.
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn resolve_carry_chain_cpu_into(
     sum_partial: &[u32],
     carry_partial: &[u32],
@@ -241,6 +245,16 @@ pub fn resolve_carry_chain_cpu_into(
         carry_in = *carry | u32::from(overflow_from_in);
     }
     Ok(carry_in)
+}
+
+#[cfg(feature = "inventory-registry")]
+inventory::submit! {
+    crate::harness::OpEntry::new(
+        OP_ID,
+        || bigint_add_carry(4),
+        None,
+        None,
+    )
 }
 
 #[cfg(test)]

@@ -275,7 +275,10 @@ fn condition_opcode_handler() -> OpcodeHandler {
             ),
             Node::let_bind(
                 "condition_count_ok",
-                Expr::ge(Expr::var("condition_count"), Expr::var("condition_threshold")),
+                Expr::ge(
+                    Expr::var("condition_count"),
+                    Expr::var("condition_threshold"),
+                ),
             ),
             Node::let_bind(
                 "condition_offset_ok",
@@ -313,14 +316,24 @@ fn condition_ring(slot_count: u32, expected_fired: &mut u32) -> Result<Vec<u8>, 
         let limit = condition_limit(slot_index);
         if condition_matches(flags, count, threshold, offset, limit) {
             *expected_fired = expected_fired.checked_add(1).ok_or_else(|| {
-                BenchError::ExecutionFailed("megakernel expected fired count overflowed".to_string())
+                BenchError::ExecutionFailed(
+                    "megakernel expected fired count overflowed".to_string(),
+                )
             })?;
         }
         let base = slot_index.saturating_mul(SLOT_WORDS);
         write_word(&mut ring, base.saturating_add(STATUS_WORD), slot::PUBLISHED)?;
-        write_word(&mut ring, base.saturating_add(OPCODE_WORD), CONDITION_OPCODE)?;
+        write_word(
+            &mut ring,
+            base.saturating_add(OPCODE_WORD),
+            CONDITION_OPCODE,
+        )?;
         write_word(&mut ring, base.saturating_add(TENANT_WORD), 0)?;
-        write_word(&mut ring, base.saturating_add(PRIORITY_WORD), slot::PRIORITY_NORMAL)?;
+        write_word(
+            &mut ring,
+            base.saturating_add(PRIORITY_WORD),
+            slot::PRIORITY_NORMAL,
+        )?;
         write_word(&mut ring, base.saturating_add(ARG0_WORD), flags)?;
         write_word(
             &mut ring,
@@ -362,9 +375,7 @@ fn condition_matches(flags: u32, count: u32, threshold: u32, offset: u32, limit:
     flags & 0b11 == 0b11 && count >= threshold && offset <= limit
 }
 
-fn simulate_condition_outputs(
-    inputs: &[Vec<u8>],
-) -> Result<Vec<Vec<u8>>, BenchError> {
+fn simulate_condition_outputs(inputs: &[Vec<u8>]) -> Result<Vec<Vec<u8>>, BenchError> {
     if inputs.len() != 4 {
         return Err(BenchError::ExecutionFailed(format!(
             "megakernel condition baseline received {} buffers, expected 4",

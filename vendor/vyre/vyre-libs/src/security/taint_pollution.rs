@@ -9,6 +9,7 @@ use vyre_primitives::graph::program_graph::ProgramGraphShape;
 use vyre_primitives::predicate::edge_kind;
 
 use crate::security::flow_composition::dataflow_hit_program;
+#[cfg(test)]
 use crate::security::flows_to::FLOWS_TO_MASK;
 
 pub(crate) const OP_ID: &str = "vyre-libs::security::taint_pollution";
@@ -31,7 +32,8 @@ pub fn taint_pollution(
 
 /// CPU oracle.
 #[must_use]
-pub fn cpu_ref(
+#[cfg(test)]
+pub(crate) fn cpu_ref(
     node_count: u32,
     edge_offsets: &[u32],
     edge_targets: &[u32],
@@ -55,9 +57,9 @@ pub fn cpu_ref(
 
 /// Soundness marker for [`taint_pollution`].
 pub struct TaintPollution;
-impl weir::soundness::SoundnessTagged for TaintPollution {
-    fn soundness(&self) -> weir::soundness::Soundness {
-        weir::soundness::Soundness::MayOver
+impl vyre::soundness::SoundnessTagged for TaintPollution {
+    fn soundness(&self) -> vyre::soundness::Soundness {
+        vyre::soundness::Soundness::MayOver
     }
 }
 
@@ -92,6 +94,7 @@ inventory::submit! {
                 to_bytes(&[0b0001]),              // out_scalar = 1
             ]]
         }),
+        category: Some("security"),
     }
 }
 

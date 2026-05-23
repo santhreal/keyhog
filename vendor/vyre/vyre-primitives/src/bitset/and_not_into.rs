@@ -1,7 +1,7 @@
 //! `bitset_and_not_into` — in-place per-word `target &= !subtrahend`.
 //!
 //! Set-difference accumulator: subtract `subtrahend` from `target` in
-//! place. Used by surgec's `flows_to_not_via` lowering to drop
+//! place. Used by a downstream analyzer's `flows_to_not_via` lowering to drop
 //! waypoint nodes from a frontier as it grows, without allocating a
 //! fresh output buffer per masking step.
 
@@ -48,11 +48,28 @@ pub fn bitset_and_not_into(target: &str, subtrahend: &str, words: u32) -> Progra
 }
 
 /// CPU reference. Mutates `target` in place.
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref(target: &mut [u32], subtrahend: &[u32]) {
     let n = target.len().min(subtrahend.len());
     for i in 0..n {
         target[i] &= !subtrahend[i];
     }
+}
+
+#[cfg(feature = "inventory-registry")]
+inventory::submit! {
+    crate::harness::OpEntry::new(
+        OP_ID,
+        || bitset_and_not_into("target", "operand", 2),
+        Some(|| {
+            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            vec![vec![
+                to_bytes(&[0xFFFF, 0xF0F0]),
+                to_bytes(&[0x0F0F, 0x00FF]),
+            ]]
+        }),
+        None,
+    )
 }
 
 #[cfg(test)]

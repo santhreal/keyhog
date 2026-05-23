@@ -102,6 +102,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 brotli = "8"
 lzma-rs = "0.3"
+sha2 = "0.10"
 "#,
     );
     for dep in deps {
@@ -181,4 +182,65 @@ Target-owned collective support is {collective_status} in this launcher.
         name = opts.crate_name,
         collective_status = collective_status,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn emitted_launcher_declares_sha2_for_runtime_integrity_checks() {
+        let opts = LauncherOpts::default();
+        let cargo = emit_launcher_cargo_toml(&opts, &[]);
+
+        assert!(
+            cargo.contains("sha2 = \"0.10\""),
+            "Fix: generated launchers must include sha2 so runtime artifact integrity checks compile."
+        );
+    }
+
+    #[test]
+    fn emitted_artifact_loader_verifies_payload_hashes_and_rejects_path_escape() {
+        assert!(
+            EMIT_ARTIFACT_LOADER.contains("verify_sha256_hex(")
+                && EMIT_ARTIFACT_LOADER.contains("SHA-256 mismatch"),
+            "Fix: generated launchers must verify decompressed kernel and weight bytes before CUDA load/upload."
+        );
+        assert!(
+            EMIT_ARTIFACT_LOADER.contains("validate_bundle_relative_path")
+                && EMIT_ARTIFACT_LOADER.contains("Component::ParentDir"),
+            "Fix: generated launchers must reject manifest paths that escape the bundle root."
+        );
+        assert!(
+            EMIT_ARTIFACT_LOADER.contains("read_bundle_file(dir, &manifest.kernel_file)")
+                && EMIT_ARTIFACT_LOADER.contains("read_bundle_file(dir, &manifest.weights_file)"),
+            "Fix: generated launchers must route artifact reads through the validated bundle path helper."
+        );
+    }
+
+    #[test]
+    fn emitted_artifact_loader_preflights_manifest_contract_before_cuda_runtime_work() {
+        assert!(
+            EMIT_ARTIFACT_LOADER.contains("validate_manifest_contract(&manifest)?")
+                && EMIT_ARTIFACT_LOADER.contains("MANIFEST_SCHEMA_VERSION")
+                && EMIT_ARTIFACT_LOADER.contains("vyre-aot-manifest-v1"),
+            "Fix: generated launchers must reject incompatible manifest schemas before reading payloads."
+        );
+        assert!(
+            EMIT_ARTIFACT_LOADER.contains("validate_dispatch_geometry(&manifest.dispatch)")
+                && EMIT_ARTIFACT_LOADER.contains("runtime-grid placeholders are not supported"),
+            "Fix: generated launchers must reject zero dispatch axes before CUDA module load."
+        );
+        assert!(
+            EMIT_ARTIFACT_LOADER.contains("validate_buffer_table(&manifest.buffers)")
+                && EMIT_ARTIFACT_LOADER.contains("both use binding")
+                && EMIT_ARTIFACT_LOADER.contains("metrics records are u32 words"),
+            "Fix: generated launchers must enforce the manifest buffer ABI before CUDA allocation."
+        );
+        assert!(
+            EMIT_ARTIFACT_LOADER.contains("validate_sha256_manifest_field(\"kernel\"")
+                && EMIT_ARTIFACT_LOADER.contains("vsa_fingerprint"),
+            "Fix: generated launchers must preflight digest fields and semantic fingerprints."
+        );
+    }
 }

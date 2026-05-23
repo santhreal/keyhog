@@ -13,9 +13,9 @@
 //!
 //! * `SpirvEmitter` — stateless helper that wraps
 //!   `naga::back::spv::write_vec`.
-//! * `SpirvBackend` — `VyreBackend` impl. Construction fails
-//!   cleanly when Vulkan is not available; callers skip the SPIR-V
-//!   path on non-Vulkan platforms.
+//! * `SpirvBackend` — emission helper for Vulkan/SPIR-V validation.
+//!   Live SPIR-V dispatch must acquire a concrete Vulkan backend or
+//!   fail loudly with an actionable driver/probe error.
 //!
 //! The actual dispatch implementation shares machinery with the
 //! WGSL path via the trait surface in `vyre::backend`; this module

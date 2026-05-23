@@ -89,7 +89,11 @@ pub fn infer_dispatch_grid_for_count(
         ]);
     }
     let side = ceil_cuberoot_u64(count);
-    let xy = side.saturating_mul(side).max(1);
+    let xy = side.checked_mul(side).ok_or_else(|| {
+        BackendError::new(format!(
+            "3D dispatch-grid side {side} overflows u64 square during shape planning. Fix: split the Program before GPU launch planning."
+        ))
+    })?;
     Ok([
         ceil_div_u64(side, u64::from(workgroup[0]))?,
         ceil_div_u64(side, u64::from(workgroup[1]))?,
@@ -107,25 +111,39 @@ fn ceil_div_u64(value: u64, divisor: u64) -> Result<u32, BackendError> {
 }
 
 fn ceil_sqrt_u64(value: u64) -> u64 {
-    let mut root = (value as f64).sqrt() as u64;
-    while root.saturating_mul(root) < value {
-        root += 1;
+    if value <= 1 {
+        return 1;
     }
-    while root > 0 && (root - 1).saturating_mul(root - 1) >= value {
-        root -= 1;
+    let mut lo = 1_u64;
+    let mut hi = 1_u64 << 32;
+    while lo < hi {
+        let mid = lo + ((hi - lo) / 2);
+        match mid.checked_mul(mid) {
+            Some(square) if square < value => lo = mid + 1,
+            _ => hi = mid,
+        }
     }
-    root.max(1)
+    lo
 }
 
 fn ceil_cuberoot_u64(value: u64) -> u64 {
-    let mut root = (value as f64).cbrt() as u64;
-    while root.saturating_mul(root).saturating_mul(root) < value {
-        root += 1;
+    if value <= 1 {
+        return 1;
     }
-    while root > 0 && (root - 1).saturating_mul(root - 1).saturating_mul(root - 1) >= value {
-        root -= 1;
+    let mut lo = 1_u64;
+    let mut hi = 1_u64 << 22;
+    while lo < hi {
+        let mid = lo + ((hi - lo) / 2);
+        match checked_cube_u64(mid) {
+            Some(cube) if cube < value => lo = mid + 1,
+            _ => hi = mid,
+        }
     }
-    root.max(1)
+    lo
+}
+
+fn checked_cube_u64(value: u64) -> Option<u64> {
+    value.checked_mul(value)?.checked_mul(value)
 }
 
 // ---------------------------------------------------------------------------
@@ -173,34 +191,47 @@ impl TailMaskPolicy {
 ///
 /// `element_count == 0` is treated as 0 (rounded_count = 0, no tail).
 /// `element_count == 1` rounds to 1 (already pow2).
-/// `element_count` beyond `1 << 31` saturates at `1 << 31` to avoid
-/// overflowing `u32` — the substrate is opt-in and callers are
-/// expected to fall back to plain dispatch for huge workloads.
+/// `element_count` beyond `1 << 31` is rejected by panicking with an
+/// actionable message. Silently saturating would under-dispatch work
+/// and a plain-dispatch fallback would hide a shape-planning failure.
 #[must_use]
 pub fn coerce_to_pow2_with_tail_mask(element_count: u32) -> TailMaskPolicy {
+    try_coerce_to_pow2_with_tail_mask(element_count)
+        .expect("power-of-two dispatch tail-mask planning failed in legacy infallible caller")
+}
+
+/// Fallible N6 power-of-two dispatch-grid coercion.
+///
+/// # Errors
+/// Returns when `element_count` cannot be rounded up inside `u32`.
+pub fn try_coerce_to_pow2_with_tail_mask(
+    element_count: u32,
+) -> Result<TailMaskPolicy, BackendError> {
     if element_count == 0 {
-        return TailMaskPolicy {
+        return Ok(TailMaskPolicy {
             original_count: 0,
             rounded_count: 0,
             tail_lanes: 0,
-        };
+        });
     }
-    let rounded = next_pow2_u32_saturating(element_count);
-    TailMaskPolicy {
+    let rounded = next_pow2_u32_checked(element_count)?;
+    Ok(TailMaskPolicy {
         original_count: element_count,
         rounded_count: rounded,
-        tail_lanes: rounded.saturating_sub(element_count),
-    }
+        tail_lanes: rounded - element_count,
+    })
 }
 
-fn next_pow2_u32_saturating(value: u32) -> u32 {
+fn next_pow2_u32_checked(value: u32) -> Result<u32, BackendError> {
     if value.is_power_of_two() {
-        return value;
+        return Ok(value);
     }
     if value > (1u32 << 31) {
-        return 1u32 << 31;
+        return Err(BackendError::new(format!(
+            "cannot round element_count={value} up to a power-of-two u32 grid without overflow. Fix: split the workload before grid-shape planning; do not silently saturate or fall back to an under-dispatching shape."
+        )));
     }
-    value.next_power_of_two()
+    Ok(value.next_power_of_two())
 }
 
 #[cfg(test)]
@@ -249,10 +280,42 @@ mod n6_tests {
     }
 
     #[test]
-    fn value_above_2_31_saturates_at_2_31() {
-        let p = coerce_to_pow2_with_tail_mask(u32::MAX);
-        assert_eq!(p.rounded_count, 1u32 << 31);
-        // No assert on tail_lanes; saturation is opt-out signal — caller
-        // must check `rounded_count < original_count` and fall back.
+    fn value_above_2_31_errors_instead_of_saturating() {
+        let error = try_coerce_to_pow2_with_tail_mask(u32::MAX)
+            .expect_err("oversized power-of-two coercion must fail loudly");
+        let message = error.to_string();
+        assert!(
+            message.contains("Fix:"),
+            "oversized grid-shape error must be actionable"
+        );
+    }
+
+    #[test]
+    fn root_helpers_are_exact_at_large_boundaries() {
+        assert_eq!(ceil_sqrt_u64((1_u64 << 32) - 1), 65_536);
+        assert_eq!(ceil_sqrt_u64(1_u64 << 32), 65_536);
+        assert_eq!(ceil_cuberoot_u64(2_642_245_u64.pow(3)), 2_642_245);
+        assert_eq!(ceil_cuberoot_u64(2_642_245_u64.pow(3) - 1), 2_642_245);
+    }
+
+    #[test]
+    fn dispatch_grid_planning_uses_integer_roots_and_typed_errors() {
+        let source = include_str!("grid.rs");
+        let production = source
+            .split("#[cfg(test)]")
+            .next()
+            .expect("dispatch-grid production source must precede tests");
+
+        assert!(
+            !production.contains(" as f64")
+                && !production.contains(".sqrt()")
+                && !production.contains(".cbrt()"),
+            "Fix: dispatch-grid inference must use deterministic integer root arithmetic."
+        );
+        assert!(
+            production.contains("try_coerce_to_pow2_with_tail_mask")
+                && !production.contains("panic!("),
+            "Fix: dispatch-grid planning should expose typed errors instead of production panics."
+        );
     }
 }

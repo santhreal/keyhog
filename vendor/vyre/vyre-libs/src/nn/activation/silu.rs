@@ -65,7 +65,6 @@ inventory::submit! {
             let to_bytes = |w: &[f32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
             vec![vec![
                 to_bytes(&[0.0_f32, 1.0, -1.0, 2.0]), // input
-                vec![0u8; 4 * 4],                      // initial output buffer
             ]]
         }),
         expected_output: Some(|| {
@@ -84,6 +83,7 @@ inventory::submit! {
                 .collect::<Vec<u8>>();
             vec![vec![bytes]]
         }),
+        category: Some("nn"),
     }
 }
 
@@ -126,7 +126,10 @@ mod tests {
         // +Inf
         let outputs = vyre_reference::reference_eval(
             &program,
-            &[Value::from(f32_bytes(&[f32::INFINITY, 0.0])), Value::from(vec![0u8; 8])],
+            &[
+                Value::from(f32_bytes(&[f32::INFINITY, 0.0])),
+                Value::from(vec![0u8; 8]),
+            ],
         )
         .expect("Fix: silu must not panic on +Inf input");
         let out = decode_f32(&outputs[0].to_bytes());
@@ -135,11 +138,17 @@ mod tests {
         // -Inf: sigmoid(-Inf)=0, -Inf*0 = NaN
         let outputs = vyre_reference::reference_eval(
             &program,
-            &[Value::from(f32_bytes(&[f32::NEG_INFINITY, 0.0])), Value::from(vec![0u8; 8])],
+            &[
+                Value::from(f32_bytes(&[f32::NEG_INFINITY, 0.0])),
+                Value::from(vec![0u8; 8]),
+            ],
         )
         .expect("Fix: silu must not panic on -Inf input");
         let out = decode_f32(&outputs[0].to_bytes());
-        assert!(out[0].is_nan(), "silu(-Inf) must be NaN (negative infinity times zero)");
+        assert!(
+            out[0].is_nan(),
+            "silu(-Inf) must be NaN (negative infinity times zero)"
+        );
     }
 
     #[test]
@@ -147,7 +156,10 @@ mod tests {
         let program = silu("input", "output", 2);
         let outputs = vyre_reference::reference_eval(
             &program,
-            &[Value::from(f32_bytes(&[0.0f32, -0.0f32])), Value::from(vec![0u8; 8])],
+            &[
+                Value::from(f32_bytes(&[0.0f32, -0.0f32])),
+                Value::from(vec![0u8; 8]),
+            ],
         )
         .expect("Fix: silu must distinguish -0.0 from 0.0");
         let out = decode_f32(&outputs[0].to_bytes());
@@ -170,7 +182,11 @@ mod tests {
         )
         .expect("Fix: silu must not panic on subnormal input");
         let out = decode_f32(&outputs[0].to_bytes());
-        assert_eq!(out[0].to_bits(), 0.0f32.to_bits(), "silu must flush tiny subnormal to +0.0");
+        assert_eq!(
+            out[0].to_bits(),
+            0.0f32.to_bits(),
+            "silu must flush tiny subnormal to +0.0"
+        );
     }
 
     #[test]
@@ -198,7 +214,10 @@ mod tests {
         let out = decode_f32(&outputs[0].to_bytes());
         let expected = silu_ref(1.0);
         for (i, &v) in out.iter().enumerate() {
-            assert!((v - expected).abs() <= 1.0e-6, "silu all-ones mismatch at {i}: {v}");
+            assert!(
+                (v - expected).abs() <= 1.0e-6,
+                "silu all-ones mismatch at {i}: {v}"
+            );
         }
     }
 
@@ -214,7 +233,11 @@ mod tests {
         let out = decode_f32(&outputs[0].to_bytes());
         for (i, &v) in out.iter().enumerate() {
             // sigmoid(MAX) ≈ 1.0, so silu(MAX) ≈ MAX (does not overflow because MAX*1.0 = MAX)
-            assert_eq!(v, f32::MAX, "silu(f32::MAX) must be f32::MAX at {i}: got {v}");
+            assert_eq!(
+                v,
+                f32::MAX,
+                "silu(f32::MAX) must be f32::MAX at {i}: got {v}"
+            );
         }
     }
 
@@ -229,17 +252,20 @@ mod tests {
         .expect("Fix: silu single element must execute");
         let out = decode_f32(&outputs[0].to_bytes());
         let expected = silu_ref(2.5);
-        assert!((out[0] - expected).abs() <= 1.0e-6, "silu single element mismatch: {} != {}", out[0], expected);
+        assert!(
+            (out[0] - expected).abs() <= 1.0e-6,
+            "silu single element mismatch: {} != {}",
+            out[0],
+            expected
+        );
     }
 
     #[test]
     fn silu_empty_tensor() {
         let program = silu("input", "output", 0);
-        let outputs = vyre_reference::reference_eval(
-            &program,
-            &[Value::from(vec![]), Value::from(vec![])],
-        )
-        .expect("Fix: silu n=0 must not panic");
+        let outputs =
+            vyre_reference::reference_eval(&program, &[Value::from(vec![]), Value::from(vec![])])
+                .expect("Fix: silu n=0 must not panic");
         assert!(outputs[0].to_bytes().is_empty());
     }
 

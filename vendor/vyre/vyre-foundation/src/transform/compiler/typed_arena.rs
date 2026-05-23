@@ -52,10 +52,10 @@ pub const ALLOC_OVERFLOW_SENTINEL: u32 = u32::MAX;
 /// Build a vyre IR Program implementing one arena allocation.
 ///
 /// Buffers:
-/// - `arena`: ReadWrite u32 array; bump cursor lives at word
+/// - `arena`: `ReadWrite` u32 array; bump cursor lives at word
 ///   [`BUMP_CURSOR_WORD_OFFSET`] and capacity at
 ///   [`CAPACITY_WORD_OFFSET`]. Caller pre-populates both.
-/// - `out_offset`: ReadWrite u32 array; the Program writes the
+/// - `out_offset`: `ReadWrite` u32 array; the Program writes the
 ///   allocation's byte offset (pre-increment cursor × 4) at word 0.
 ///   `out_offset[0] = ALLOC_OVERFLOW_SENTINEL` on overflow.
 ///
@@ -68,7 +68,7 @@ pub const ALLOC_OVERFLOW_SENTINEL: u32 = u32::MAX;
 /// if `size_words == 0` and the resulting zero-byte allocation
 /// conflicts with a caller's downstream layout assertion. The
 /// Program itself handles `size_words == 0` gracefully (store 0
-/// into out_offset without incrementing the cursor).
+/// into `out_offset` without incrementing the cursor).
 #[must_use]
 pub fn alloc_program(arena: &str, out_offset: &str, size_words: u32) -> Program {
     // Atomic fetch-and-add on the cursor. `atomic_add(arena, idx,

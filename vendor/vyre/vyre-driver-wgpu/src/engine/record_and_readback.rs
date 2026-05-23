@@ -1,10 +1,11 @@
 //! Shared command recording, dispatch, and readback for vyre IR pipelines.
 
 use crate::buffer::BindGroupCache;
+use crate::buffer::{BufferPool, GpuBufferHandle};
+use crate::numeric::usize_to_u64;
 use crate::pipeline::binding::consumes_host_input;
 use crate::pipeline::element_size_bytes;
 use crate::pipeline::{BufferBindingInfo, OutputBindingLayout};
-use crate::buffer::{BufferPool, GpuBufferHandle};
 use smallvec::SmallVec;
 use std::sync::Arc;
 use std::time::Instant;
@@ -32,8 +33,6 @@ type GpuBuffers = SmallVec<[(u32, GpuBufferHandle, u64); 8]>;
 /// Static labels used for wgpu resource creation.
 #[derive(Clone, Copy)]
 pub(crate) struct DispatchLabels {
-    /// Readback buffer label.
-    pub readback: &'static str,
     /// Bind group label.
     pub bind_group: &'static str,
     /// Command encoder label.
@@ -171,12 +170,20 @@ fn record_dispatch_unsubmitted_impl(
         }
         if !consumes_host_input(info) {
             if full_input_order {
-                next_input = next_input.saturating_add(1);
+                next_input = next_input.checked_add(1).ok_or_else(|| {
+                    BackendError::new(
+                        "record-and-readback input binding index overflowed usize. Fix: split the dispatch input list before recording.",
+                    )
+                })?;
             }
             continue;
         }
         input_idx_by_binding.push(info.binding, next_input);
-        next_input = next_input.saturating_add(1);
+        next_input = next_input.checked_add(1).ok_or_else(|| {
+            BackendError::new(
+                "record-and-readback consumed input index overflowed usize. Fix: split the dispatch input list before recording.",
+            )
+        })?;
     }
 
     // Create a GPU buffer for every binding that needs one.
@@ -208,7 +215,8 @@ fn record_dispatch_unsubmitted_impl(
         let (buf, logical_size): (GpuBufferHandle, u64) = if info.internal_trap {
             let size = u64::from(TRAP_SIDECAR_WORDS) * 4;
             let b = pool
-                .acquire(size,
+                .acquire(
+                    size,
                     wgpu::BufferUsages::STORAGE
                         | wgpu::BufferUsages::COPY_SRC
                         | wgpu::BufferUsages::COPY_DST,
@@ -239,25 +247,33 @@ fn record_dispatch_unsubmitted_impl(
                 | wgpu::BufferUsages::COPY_SRC
                 | wgpu::BufferUsages::COPY_DST
                 | wgpu::BufferUsages::INDIRECT;
+            let output_bytes_u64 = usize_to_u64(output_bytes, "output allocation bytes")?;
             let b = pool
-                .acquire(output_bytes as u64, usage)
+                .acquire(output_bytes_u64, usage)
                 .map_err(pool_backend_error)?;
             if info.preserve_input_contents {
-                let bytes = data.unwrap_or(&[]);
-                if let Some((offset, len)) = write_padded_input(
-                    queue,
-                    b.buffer(),
-                    bytes,
-                    output_bytes,
-                ) {
+                let bytes = data.ok_or_else(|| {
+                    BackendError::new(format!(
+                        "read-write output binding {} (`{}`) preserves input contents but no host input bytes were supplied. Fix: pass one input slice for every non-shared BufferDecl that is read before it is written.",
+                        info.binding, info.name
+                    ))
+                })?;
+                if let Some((offset, len)) =
+                    write_padded_input(queue, b.buffer(), bytes, output_bytes)?
+                {
                     clear_requests.push((info.binding, offset, len));
                 }
             }
-            (b, output_bytes as u64)
+            (b, output_bytes_u64)
         } else {
             let element_size = element_size_bytes(&info.element)?;
             let declared_size = if info.count > 0 {
-                (info.count as usize)
+                (usize::try_from(info.count).map_err(|_| {
+                    BackendError::new(format!(
+                        "buffer `{}` element count cannot fit host usize. Fix: reduce buffer count or shard the binding.",
+                        info.name
+                    ))
+                })?)
                     .checked_mul(element_size)
                     .ok_or_else(|| {
                         BackendError::new(format!(
@@ -270,9 +286,13 @@ fn record_dispatch_unsubmitted_impl(
             };
             let (size, contents): (usize, Option<&[u8]>) = match (declared_size, data) {
                 (d, Some(bytes)) if d > 0 => (d.max(bytes.len()), Some(bytes)),
-                (d, None) if d > 0 => (d, None),
                 (0, Some(bytes)) => (bytes.len(), Some(bytes)),
-                (0, None) => (4, None),
+                (_, None) => {
+                    return Err(BackendError::new(format!(
+                        "input binding {} (`{}`) has no host input bytes. Fix: pass input slices matching non-output BufferDecl order; only internal traps and pure outputs may be backend-allocated empty.",
+                        info.binding, info.name
+                    )));
+                }
                 _ => {
                     return Err(BackendError::new(
                         "unexpected (declared_size, data) combination. Fix: ensure buffer has either a declared count or input data.",
@@ -281,7 +301,7 @@ fn record_dispatch_unsubmitted_impl(
             };
 
             // wgpu requires buffer sizes to be a multiple of 4 for some usages.
-            let size = size.max(4).next_multiple_of(4);
+            let size = padded_wgpu_usize(size, "record-and-readback input allocation bytes")?;
 
             let usage = match info.kind {
                 vyre_foundation::ir::MemoryKind::Readonly
@@ -314,26 +334,27 @@ fn record_dispatch_unsubmitted_impl(
                 }
             };
 
-            let b = pool
-                .acquire(size as u64, usage)
-                .map_err(pool_backend_error)?;
+            let size_u64 = usize_to_u64(size, "input allocation bytes")?;
+            let b = pool.acquire(size_u64, usage).map_err(pool_backend_error)?;
             if let Some(c) = contents {
-                if let Some((offset, len)) =
-                    write_padded_input(queue, b.buffer(), c, size)
-                {
+                if let Some((offset, len)) = write_padded_input(queue, b.buffer(), c, size)? {
                     clear_requests.push((info.binding, offset, len));
                 }
             } else {
-                clear_requests.push((info.binding, 0, size as u64));
+                clear_requests.push((info.binding, 0, size_u64));
             }
-            (b, size as u64)
+            (b, size_u64)
         };
 
         let idx = gpu_buffers.len();
         gpu_buffers.push((info.binding, buf, logical_size));
         gpu_idx_by_binding.push(info.binding, idx);
     }
-    let host_upload_us = host_upload_started.elapsed().as_micros() as u64;
+    let host_upload_us = u64::try_from(host_upload_started.elapsed().as_micros()).map_err(|source| {
+        BackendError::new(format!(
+            "host upload elapsed time cannot fit u64 microseconds: {source}. Fix: split or timeout the dispatch before telemetry overflows."
+        ))
+    })?;
 
     let bind_groups = bind_groups::build_bind_groups(
         device,
@@ -379,7 +400,10 @@ fn record_dispatch_unsubmitted_impl(
         });
         pass.set_pipeline(request.pipeline);
         for (i, bg) in bind_groups.iter().enumerate() {
-            pass.set_bind_group(i as u32, bg.as_ref(), &[]);
+            let bind_group_index = u32::try_from(i).map_err(|_| {
+                BackendError::new("bind group index exceeds u32::MAX. Fix: reduce bind group fanout before WGPU dispatch.")
+            })?;
+            pass.set_bind_group(bind_group_index, bg.as_ref(), &[]);
         }
 
         let indirect_dispatch_buffer = if let Some(indirect) = request.indirect {
@@ -472,6 +496,19 @@ fn record_dispatch_unsubmitted_impl(
         output_bindings: Arc::clone(request.output_bindings),
         trap_tags: Arc::from(request.trap_tags),
         timestamp_recorder,
+    })
+}
+
+fn padded_wgpu_usize(size: usize, label: &'static str) -> Result<usize, BackendError> {
+    let normalized = size.max(4);
+    let remainder = normalized % 4;
+    if remainder == 0 {
+        return Ok(normalized);
+    }
+    normalized.checked_add(4 - remainder).ok_or_else(|| {
+        BackendError::new(format!(
+            "{label} overflows usize while padding to WGPU's 4-byte buffer alignment. Fix: split the dispatch input."
+        ))
     })
 }
 

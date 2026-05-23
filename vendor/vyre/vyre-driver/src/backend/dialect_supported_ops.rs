@@ -27,11 +27,29 @@ use vyre_foundation::ir::OpId;
 pub fn dialect_and_language_supported_ops() -> &'static HashSet<OpId> {
     static OPS: OnceLock<HashSet<OpId>> = OnceLock::new();
     OPS.get_or_init(|| {
-        let mut set: HashSet<OpId> = super::validation::default_supported_ops()
-            .iter()
-            .cloned()
-            .collect();
-        for reg in inventory::iter::<OpDefRegistration> {
+        let language_ops = super::validation::default_supported_ops();
+        let registrations = inventory::iter::<OpDefRegistration>.into_iter();
+        let inventory_bound = registrations
+            .size_hint()
+            .1
+            .unwrap_or_else(|| registrations.size_hint().0);
+        let reserve = language_ops
+            .len()
+            .checked_add(inventory_bound)
+            .unwrap_or_else(|| {
+                panic!(
+                    "Vyre dialect support set size overflowed while reserving {} language op(s) plus {inventory_bound} dialect op(s). Fix: split support-set construction.",
+                    language_ops.len()
+                )
+            });
+        let mut set = HashSet::new();
+        set.try_reserve(reserve).unwrap_or_else(|error| {
+            panic!(
+                "Vyre dialect support set could not reserve {reserve} op slot(s): {error}. Fix: reduce linked dialect inventory or split support-set construction."
+            )
+        });
+        set.extend(language_ops.iter().cloned());
+        for reg in registrations {
             let def = (reg.op)();
             set.insert(Arc::<str>::from(def.id));
         }
@@ -53,13 +71,22 @@ pub fn dialect_only_supported_ops() -> &'static HashSet<OpId> {
     OPS.get_or_init(|| {
         // HOT-PATH-OK: inventory::iter runs once on first access; result frozen
         // for all subsequent lookups. See docs/inventory-contract.md.
-        inventory::iter::<OpDefRegistration>
-            .into_iter()
-            .map(|reg| {
-                let def = (reg.op)();
-                Arc::<str>::from(def.id)
-            })
-            .collect()
+        let registrations = inventory::iter::<OpDefRegistration>.into_iter();
+        let reserve = registrations
+            .size_hint()
+            .1
+            .unwrap_or_else(|| registrations.size_hint().0);
+        let mut set = HashSet::new();
+        set.try_reserve(reserve).unwrap_or_else(|error| {
+            panic!(
+                "Vyre dialect support set could not reserve {reserve} dialect-only op slot(s): {error}. Fix: reduce linked dialect inventory or split support-set construction."
+            )
+        });
+        for reg in registrations {
+            let def = (reg.op)();
+            set.insert(Arc::<str>::from(def.id));
+        }
+        set
     })
 }
 

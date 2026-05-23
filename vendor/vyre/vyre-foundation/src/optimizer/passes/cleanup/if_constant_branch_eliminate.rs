@@ -43,7 +43,10 @@ use crate::visit::node_map;
 #[vyre_pass(
     name = "if_constant_branch_eliminate",
     requires = ["const_fold"],
-    invalidates = []
+    invalidates = [],
+    phase = "cleanup",
+    boundary_class = "abi_preserving",
+    cost_model_family = "scalar"
 )]
 pub struct IfConstantBranchEliminatePass;
 
@@ -51,6 +54,12 @@ impl IfConstantBranchEliminatePass {
     /// Skip programs without any `If` whose condition is a literal bool.
     #[must_use]
     fn analyze_impl(program: &Program) -> PassAnalysis {
+        if !program
+            .stats()
+            .has_any_node_kind(crate::ir::stats::NODE_KIND_IF)
+        {
+            return PassAnalysis::SKIP;
+        }
         if program
             .entry()
             .iter()
@@ -66,18 +75,16 @@ impl IfConstantBranchEliminatePass {
     /// the surviving arm wrapped in a `Node::Block`.
     #[must_use]
     pub fn transform(program: Program) -> PassResult {
-        let scaffold = program.with_rewritten_entry(Vec::new());
         let mut changed = false;
-        let entry: Vec<Node> = program
-            .into_entry_vec()
-            .into_iter()
-            .map(|node| eliminate_node(node, &mut changed))
-            .collect();
-        PassResult {
-            program: scaffold.with_rewritten_entry(entry),
-            changed,
-        }
-    }}
+        let program = program.map_entry(|entry| {
+            entry
+                .into_iter()
+                .map(|node| eliminate_node(node, &mut changed))
+                .collect()
+        });
+        PassResult { program, changed }
+    }
+}
 
 /// Recurse into `node`'s descendants. After recursion, if `node` is itself
 /// an `If` with a literal-bool condition, replace it with the surviving

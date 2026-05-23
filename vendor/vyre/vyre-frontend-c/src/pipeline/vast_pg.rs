@@ -1,20 +1,64 @@
 #![allow(clippy::too_many_arguments, clippy::type_complexity)]
 
+use std::cell::RefCell;
+use std::mem;
 use std::path::Path;
 
 use vyre::ir::Expr;
 use vyre::{DispatchConfig, VyreBackend};
 
+use vyre_libs::parsing::c::lex::tokens::TOK_TYPEDEF;
 use vyre_libs::parsing::c::lower::ast_to_pg_nodes::{
-    c_lower_ast_to_pg_nodes, c_lower_ast_to_pg_semantic_graph, C_AST_PG_EDGE_ROWS_PER_NODE,
-    C_AST_PG_EDGE_STRIDE_U32, C_AST_PG_SEMANTIC_NODE_STRIDE_U32,
-    reference_ast_to_pg_nodes, reference_ast_to_pg_semantic_graph,
+    c_lower_ast_to_pg_semantic_graph_with_pg,
+    c_lower_ast_to_pg_semantic_graph_with_pg_no_control_resolution,
 };
 use vyre_libs::parsing::c::parse::vast::{
-    c11_annotate_typedef_names, c11_build_expression_shape_nodes, c11_build_vast_nodes,
-    c11_classify_vast_node_kinds, reference_c11_annotate_typedef_names,
-    reference_c11_build_expression_shape_nodes, reference_c11_classify_vast_node_kinds,
+    c11_annotate_global_typedef_names_fast, c11_annotate_typedef_names_precomputed_context,
+    c11_annotate_typedef_names_precomputed_context_packed_haystack,
+    c11_build_expression_shape_nodes, c11_build_expression_shape_nodes_no_conditional,
+    c11_build_vast_nodes, c11_build_vast_nodes_uses_global_last_child,
+    c11_classify_annotated_vast_node_kinds_precomputed_context, c11_precompute_vast_decl_contexts,
+    c11_precompute_vast_decl_prefix_starts, c11_precompute_vast_scopes,
+    c11_precompute_vast_scopes_uses_global_stack, c11_prehash_vast_identifiers,
+    c11_prehash_vast_identifiers_packed_haystack, C_EXPR_SHAPE_STRIDE_U32,
 };
+
+use super::{
+    buffers, dispatch_borrowed_cached_into, dispatch_borrowed_stage_cached_into,
+    stage_pipeline_cache_key, validate_internal_stage,
+};
+
+mod contracts;
+mod decl_context;
+mod dump;
+mod fusion;
+mod prehash;
+mod raw_vast;
+mod result;
+mod scopes;
+mod typedef_classify;
+mod typedef_hashes;
+
+use decl_context::precompute_decl_contexts;
+use dump::dump_typed_vast_as_json;
+use fusion::light_runtime_fusion_enabled;
+use prehash::prehash_vast_identifiers;
+use raw_vast::build_raw_vast;
+use result::{finish_vast_pg_result, TerminalSemanticBlobs, VastPgResult};
+use scopes::precompute_vast_scopes;
+use typedef_classify::classify_typedef_vast;
+use typedef_hashes::global_typedef_hash_count;
+
+#[derive(Default)]
+struct VastTerminalScratch {
+    expr_outputs: Vec<Vec<u8>>,
+    semantic_outputs: Vec<Vec<u8>>,
+}
+
+thread_local! {
+    static VAST_TERMINAL_SCRATCH: RefCell<VastTerminalScratch> =
+        RefCell::new(VastTerminalScratch::default());
+}
 
 pub(super) fn build_vast_and_pg(
     backend: &dyn VyreBackend,
@@ -22,11 +66,16 @@ pub(super) fn build_vast_and_pg(
     tok_types_bytes: &[u8],
     starts: &[u8],
     lens: &[u8],
-    source: &[u8],
+    _source: &[u8],
     haystack: &[u8],
     haystack_len: u32,
     nt: u32,
-) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>), String> {
+    packed_haystack: bool,
+    readback_terminal_outputs: bool,
+    resolve_control_edges: bool,
+    resolve_conditional_shapes: bool,
+    global_typedef_hashes: Option<&[u8]>,
+) -> Result<VastPgResult, String> {
     let trace = std::env::var_os("VYRE_STAGE_TRACE").is_some();
     let stage_start = std::time::Instant::now();
     let mut last_t = stage_start;
@@ -40,136 +89,63 @@ pub(super) fn build_vast_and_pg(
         }
     };
 
-    let vast_prog = c11_build_vast_nodes(
-        "tok_types",
-        "tok_starts",
-        "tok_lens",
-        Expr::u32(nt),
-        "out_vast_nodes",
-        "out_vast_count",
-    );
-    super::validate_internal_stage(&vast_prog, "c11_build_vast_nodes")?;
-    let vast_init = vec![0u8; nt as usize * 10 * 4];
-    let vast_count_init = vec![0u8; 4];
     let mut cfg = DispatchConfig::default();
-    cfg.label = Some(format!("vyre-frontend-c vast {}", path.display()));
-    // Debug: when dispatch fails, dump the lowered descriptor shape so
-    // we can compare against the standalone repro. nt = the actual
-    // token count derived from the live lex output, not a hand-picked
-    // synthetic.
-    let mut vast_out = super::dispatch_borrowed_cached(
+    let (raw_vast_blob, vast_count) = build_raw_vast(
         backend,
-            &vast_prog,
-            &[
-                tok_types_bytes,
-                starts,
-                lens,
-                &vast_init,
-                &vast_count_init,
-            ],
-            &cfg,
-        )
-        .map_err(|e| {
-            eprintln!("=== VAST_DEBUG nt={nt} ===");
-            let optimized = vyre::optimize(vast_prog.clone()).unwrap_or_else(|_| vast_prog.clone());
-            match vyre_lower::lower_for_emit(&optimized) {
-                Ok(_) => eprintln!("  standalone lower_for_emit OK (mismatch with backend dispatch path)"),
-                Err(e) => eprintln!("  standalone lower_for_emit FAIL: {e}"),
-            }
-            format!("c11_build_vast_nodes dispatch failed: {e}")
-        })?;
-    log("dispatch c11_build_vast_nodes");
-    if vast_out.len() < 2 {
-        return Err("c11_build_vast_nodes: expected node table and count outputs".to_string());
-    }
-    let raw_vast_blob = vast_out.remove(0);
-    let vast_count = nt.max(1);
-
-    let annot_prog = c11_annotate_typedef_names(
-        "vast_nodes",
-        "haystack",
-        Expr::u32(haystack_len.max(1)),
-        Expr::u32(vast_count.max(1)),
-        "annotated_vast",
-    );
-    super::validate_internal_stage(&annot_prog, "c11_annotate_typedef_names")?;
-
-    let classify_prog = c11_classify_vast_node_kinds(
-        "annotated_vast",
-        Expr::u32(vast_count.max(1)),
-        "typed_vast_nodes",
-    );
-    super::validate_internal_stage(&classify_prog, "c11_classify_vast_node_kinds")?;
-    let annotated_init = vec![0u8; vast_count.max(1) as usize * 10 * 4];
-    let typed_init = vec![0u8; vast_count.max(1) as usize * 10 * 4];
-    let mut run_typedef_classify_unfused = |cfg: &mut DispatchConfig| -> Result<Vec<u8>, String> {
-        cfg.label = Some(format!("vyre-frontend-c vast-typedefs {}", path.display()));
-        let annotated_out = super::dispatch_borrowed_cached(
-            backend,
-                &annot_prog,
-                &[&raw_vast_blob, haystack, &annotated_init],
-                cfg,
-            )
-            .map_err(|e| format!("c11_annotate_typedef_names dispatch failed: {e}"))?;
-        log("dispatch c11_annotate_typedef_names");
-        let annotated_vast = annotated_out.into_iter().next().ok_or_else(|| {
-            "c11_annotate_typedef_names: missing annotated VAST output".to_string()
-        })?;
-        cfg.label = Some(format!("vyre-frontend-c vast-classify {}", path.display()));
-        let typed_out = super::dispatch_borrowed_cached(
-            backend,
-            &classify_prog,
-            &[&annotated_vast, &typed_init],
-            cfg,
-        )
-            .map_err(|e| format!("c11_classify_vast_node_kinds dispatch failed: {e}"))?;
-        log("dispatch c11_classify_vast_node_kinds");
-        typed_out.into_iter().next().ok_or_else(|| {
-            "c11_classify_vast_node_kinds: missing typed VAST output".to_string()
-        })
-    };
-    let typed_vast_blob = if vast_count <= 4096
-        && std::env::var_os("VYRE_FRONTEND_C_FORCE_GPU_TYPEDEF_ANNOTATION").is_none()
-    {
-        let annotated_vast = reference_c11_annotate_typedef_names(&raw_vast_blob, source);
-        log("host c11_annotate_typedef_names");
-        let typed_vast = reference_c11_classify_vast_node_kinds(&annotated_vast);
-        log("host c11_classify_vast_node_kinds");
-        typed_vast
-    } else if std::env::var_os("VYRE_FRONTEND_C_ENABLE_RUNTIME_FUSION").is_some() {
-        match vyre_foundation::execution_plan::fusion::fuse_programs(&[
-            annot_prog.clone(),
-            classify_prog.clone(),
-        ]) {
-            Ok(fused) => {
-            cfg.label = Some(format!(
-                "vyre-frontend-c vast-typedefs+classify {}",
-                path.display()
-            ));
-            match super::dispatch_borrowed_cached(
-                    backend,
-                    &fused,
-                    &[&raw_vast_blob, haystack, &annotated_init, &typed_init],
-                    &cfg,
-                ) {
-                Ok(mut fused_out) => fused_out.pop().ok_or_else(|| {
-                    "fused VAST typedef/classify: missing typed VAST output".to_string()
-                }).inspect(|_| log("dispatch fused typedef/classify"))?,
-                Err(error) => {
-                    if std::env::var_os("VYRE_STAGE_TRACE").is_some() {
-                        eprintln!(
-                            "[stage-trace] fused VAST typedef/classify rejected by backend; running unfused stages: {error}"
-                        );
-                    }
-                    run_typedef_classify_unfused(&mut cfg)?
-                }
-            }
-        }
-            Err(_) => run_typedef_classify_unfused(&mut cfg)?,
-        }
-    } else {
-        run_typedef_classify_unfused(&mut cfg)?
-    };
+        path,
+        tok_types_bytes,
+        starts,
+        lens,
+        nt,
+        &mut cfg,
+        &mut log,
+    )?;
+    let hashed_vast_blob = prehash_vast_identifiers(
+        backend,
+        path,
+        &raw_vast_blob,
+        haystack,
+        haystack_len,
+        vast_count,
+        packed_haystack,
+        &mut cfg,
+        &mut log,
+    )?;
+    let global_typedef_fast_path = global_typedef_hashes.is_some();
+    let scoped_vast_blob = precompute_vast_scopes(
+        backend,
+        path,
+        hashed_vast_blob,
+        vast_count,
+        global_typedef_fast_path,
+        &mut cfg,
+        &mut log,
+    )?;
+    let decl_context_blob = precompute_decl_contexts(
+        backend,
+        path,
+        &scoped_vast_blob,
+        vast_count,
+        global_typedef_fast_path,
+        &mut cfg,
+        &mut log,
+    )?;
+    let has_typedef_keyword = contains_u32_word(tok_types_bytes, TOK_TYPEDEF);
+    let typed_vast_blob = classify_typedef_vast(
+        backend,
+        path,
+        &scoped_vast_blob,
+        &decl_context_blob,
+        haystack,
+        haystack_len,
+        vast_count,
+        packed_haystack,
+        readback_terminal_outputs,
+        has_typedef_keyword,
+        global_typedef_hashes,
+        &mut cfg,
+        &mut log,
+    )?;
 
     // Divergence-gate hook: when `VYRE_DUMP_TYPED_VAST` is set, write the
     // post-classify typed VAST as JSON before downstream stages run.
@@ -184,276 +160,177 @@ pub(super) fn build_vast_and_pg(
         })?;
     }
 
-    if vast_count <= 4096 && std::env::var_os("VYRE_FRONTEND_C_FORCE_GPU_VAST_LOWERING").is_none() {
-        let expr_shape_blob =
-            reference_c11_build_expression_shape_nodes(&raw_vast_blob, &typed_vast_blob);
-        log("host c11_build_expression_shape_nodes");
-        let pg_blob = reference_ast_to_pg_nodes(&typed_vast_blob);
-        log("host c_lower_ast_to_pg_nodes");
-        let semantic_pg = reference_ast_to_pg_semantic_graph(&typed_vast_blob);
-        log("host c_lower_ast_to_pg_semantic_graph");
-        return Ok((
-            typed_vast_blob,
-            expr_shape_blob,
-            pg_blob,
-            semantic_pg.nodes,
-            semantic_pg.edges,
-        ));
-    }
-
-    let expr_prog = c11_build_expression_shape_nodes(
-        "raw_vast_nodes",
-        "typed_vast_nodes",
-        Expr::u32(vast_count.max(1)),
-        "expr_shape_nodes",
-    );
-    super::validate_internal_stage(&expr_prog, "c11_build_expression_shape_nodes")?;
-    let pg_prog = c_lower_ast_to_pg_nodes(
-        "typed_vast_nodes",
-        Expr::u32(vast_count.max(1)),
-        "pg_nodes",
-    );
-    super::validate_internal_stage(&pg_prog, "c_lower_ast_to_pg_nodes")?;
-    let pg_init = vec![0u8; vast_count.max(1) as usize * 6 * 4];
-
-    let semantic_pg_prog = c_lower_ast_to_pg_semantic_graph(
-        "typed_vast_nodes",
-        Expr::u32(vast_count.max(1)),
-        "semantic_pg_nodes",
-        "semantic_pg_edges",
-    );
-    super::validate_internal_stage(&semantic_pg_prog, "c_lower_ast_to_pg_semantic_graph")?;
-    let semantic_node_init =
-        vec![0u8; vast_count.max(1) as usize * C_AST_PG_SEMANTIC_NODE_STRIDE_U32 as usize * 4];
-    let semantic_edge_init = vec![
-        0u8;
-        vast_count.max(1) as usize
-            * C_AST_PG_EDGE_ROWS_PER_NODE as usize
-            * C_AST_PG_EDGE_STRIDE_U32 as usize
-            * 4
-    ];
-    let expr_shape_init = vec![0u8; vast_count.max(1) as usize * 8 * 4];
     let (expr_shape_blob, pg_blob, semantic_pg_nodes, semantic_pg_edges) =
-        if std::env::var_os("VYRE_FRONTEND_C_ENABLE_RUNTIME_FUSION").is_some() {
-            match vyre_foundation::execution_plan::fusion::fuse_programs(&[
-            expr_prog.clone(),
-            pg_prog.clone(),
-            semantic_pg_prog.clone(),
-            ]) {
-                Ok(fused) => {
-                cfg.label = Some(format!(
-                    "vyre-frontend-c expr+pg+semantic-pg {}",
-                    path.display()
-                ));
-                let fused_out = super::dispatch_borrowed_cached(
-                    backend,
-                        &fused,
-                        &[
-                            &raw_vast_blob,
-                            &typed_vast_blob,
-                            &expr_shape_init,
-                            &pg_init,
-                            &semantic_node_init,
-                            &semantic_edge_init,
-                        ],
-                        &cfg,
-                    )
-                    .map_err(|e| format!("fused VAST lowerer dispatch failed: {e}"))?;
-                log("dispatch fused expr+pg+semantic");
-                if fused_out.len() < 4 {
-                    return Err(
-                        "fused VAST lowerer: expected expression, PG, semantic-node, and semantic-edge outputs"
-                            .to_string(),
-                    );
-                }
-                let mut fused_out = fused_out.into_iter();
-                let expr_shape_blob = fused_out.next().ok_or_else(|| {
-                    "fused VAST lowerer: missing expression-shape output".to_string()
-                })?;
-                let pg_blob = fused_out
-                    .next()
-                    .ok_or_else(|| "fused VAST lowerer: missing PG output".to_string())?;
-                let semantic_pg_nodes = fused_out.next().ok_or_else(|| {
-                    "fused VAST lowerer: missing semantic-node output".to_string()
-                })?;
-                let semantic_pg_edges = fused_out.next().ok_or_else(|| {
-                    "fused VAST lowerer: missing semantic-edge output".to_string()
-                })?;
-                (
-                    expr_shape_blob,
-                    pg_blob,
-                    semantic_pg_nodes,
-                    semantic_pg_edges,
-                )
-            }
-                Err(_) => {
-                cfg.label = Some(format!("vyre-frontend-c expr-shape {}", path.display()));
-                let expr_out = super::dispatch_borrowed_cached(
-                    backend,
-                        &expr_prog,
-                        &[&raw_vast_blob, &typed_vast_blob, &expr_shape_init],
-                        &cfg,
-                    )
-                    .map_err(|e| {
-                        format!("c11_build_expression_shape_nodes dispatch failed: {e}")
-                    })?;
-                log("dispatch c11_build_expression_shape_nodes");
-                let expr_shape_blob = expr_out.into_iter().next().ok_or_else(|| {
-                    "c11_build_expression_shape_nodes: missing expression-shape output"
-                        .to_string()
-                })?;
-                cfg.label = Some(format!("vyre-frontend-c pg {}", path.display()));
-                let pg_out = super::dispatch_borrowed_cached(
-                    backend,
-                    &pg_prog,
-                    &[&typed_vast_blob, &pg_init],
-                    &cfg,
-                )
-                    .map_err(|e| format!("c_lower_ast_to_pg_nodes dispatch failed: {e}"))?;
-                log("dispatch c_lower_ast_to_pg_nodes");
-                let pg_blob = pg_out.into_iter().next().ok_or_else(|| {
-                    "c_lower_ast_to_pg_nodes: missing ProgramGraph node output".to_string()
-                })?;
-                cfg.label = Some(format!("vyre-frontend-c semantic-pg {}", path.display()));
-                let semantic_pg_out = super::dispatch_borrowed_cached(
-                    backend,
-                        &semantic_pg_prog,
-                        &[&typed_vast_blob, &semantic_node_init, &semantic_edge_init],
-                        &cfg,
-                    )
-                    .map_err(|e| {
-                        format!("c_lower_ast_to_pg_semantic_graph dispatch failed: {e}")
-                    })?;
-                log("dispatch c_lower_ast_to_pg_semantic_graph");
-                if semantic_pg_out.len() < 2 {
-                    return Err(
-                        "c_lower_ast_to_pg_semantic_graph: missing semantic node/edge outputs"
-                            .to_string(),
-                    );
-                }
-                let mut semantic_pg_out = semantic_pg_out.into_iter();
-                let semantic_pg_nodes = semantic_pg_out.next().ok_or_else(|| {
-                    "c_lower_ast_to_pg_semantic_graph: missing semantic node output".to_string()
-                })?;
-                let semantic_pg_edges = semantic_pg_out.next().ok_or_else(|| {
-                    "c_lower_ast_to_pg_semantic_graph: missing semantic edge output".to_string()
-                })?;
-                (expr_shape_blob, pg_blob, semantic_pg_nodes, semantic_pg_edges)
-            }
-            }
-        } else {
+        VAST_TERMINAL_SCRATCH.with(|scratch| -> Result<_, String> {
+            let mut scratch = scratch.try_borrow_mut().map_err(|_| {
+                "VAST terminal dispatch scratch was re-entered on the same thread. Fix: call VAST/PG construction from a non-nested parser context or add explicit caller-owned scratch.".to_string()
+            })?;
             cfg.label = Some(format!("vyre-frontend-c expr-shape {}", path.display()));
-            let expr_out = super::dispatch_borrowed_cached(
+            let expr_key = super::stage_pipeline_cache_key(
+                "c11_build_expression_shape_nodes",
+                &[
+                    vast_count.max(1) as u64,
+                    resolve_conditional_shapes as u64,
+                    readback_terminal_outputs as u64,
+                ],
+            );
+            let expr_inputs = [raw_vast_blob.as_slice(), typed_vast_blob.as_slice()];
+            super::dispatch_borrowed_stage_cached_into(
                 backend,
-                &expr_prog,
-                &[&raw_vast_blob, &typed_vast_blob, &expr_shape_init],
+                expr_key,
+                || {
+                    let expr_prog = if resolve_conditional_shapes {
+                        c11_build_expression_shape_nodes(
+                            "raw_vast_nodes",
+                            "typed_vast_nodes",
+                            Expr::u32(vast_count.max(1)),
+                            "expr_shape_nodes",
+                        )
+                    } else {
+                        c11_build_expression_shape_nodes_no_conditional(
+                            "raw_vast_nodes",
+                            "typed_vast_nodes",
+                            Expr::u32(vast_count.max(1)),
+                            "expr_shape_nodes",
+                        )
+                    };
+                    let expr_prog = super::buffers::mark_program_outputs_readback(
+                        expr_prog,
+                        &["expr_shape_nodes"],
+                        readback_terminal_outputs,
+                    );
+                    super::validate_internal_stage(&expr_prog, "c11_build_expression_shape_nodes")?;
+                    Ok(expr_prog)
+                },
+                &expr_inputs,
                 &cfg,
+                &mut scratch.expr_outputs,
             )
-            .map_err(|e| {
-                format!("c11_build_expression_shape_nodes dispatch failed: {e}")
-            })?;
+            .map_err(|e| format!("c11_build_expression_shape_nodes dispatch failed: {e}"))?;
+            super::buffers::drop_suppressed_readbacks(&mut scratch.expr_outputs);
             log("dispatch c11_build_expression_shape_nodes");
-            let expr_shape_blob = expr_out.into_iter().next().ok_or_else(|| {
-                "c11_build_expression_shape_nodes: missing expression-shape output".to_string()
-            })?;
-            cfg.label = Some(format!("vyre-frontend-c pg {}", path.display()));
-            let pg_out = super::dispatch_borrowed_cached(
-                backend,
-                &pg_prog,
-                &[&typed_vast_blob, &pg_init],
-                &cfg,
-            )
-            .map_err(|e| format!("c_lower_ast_to_pg_nodes dispatch failed: {e}"))?;
-            log("dispatch c_lower_ast_to_pg_nodes");
-            let pg_blob = pg_out.into_iter().next().ok_or_else(|| {
-                "c_lower_ast_to_pg_nodes: missing ProgramGraph node output".to_string()
-            })?;
+            require_scratch_output_count(
+                "c11_build_expression_shape_nodes",
+                &scratch.expr_outputs,
+                usize::from(readback_terminal_outputs),
+            )?;
+            let expr_shape_blob = if readback_terminal_outputs {
+                take_scratch_output(&mut scratch.expr_outputs, 0)
+            } else {
+                Vec::new()
+            };
             cfg.label = Some(format!("vyre-frontend-c semantic-pg {}", path.display()));
-            let semantic_pg_out = super::dispatch_borrowed_cached(
+            let semantic_key = super::stage_pipeline_cache_key(
+                "c_lower_ast_to_pg_semantic_graph_with_pg",
+                &[
+                    vast_count.max(1) as u64,
+                    resolve_control_edges as u64,
+                    readback_terminal_outputs as u64,
+                ],
+            );
+            let semantic_inputs = [typed_vast_blob.as_slice()];
+            super::dispatch_borrowed_stage_cached_into(
                 backend,
-                &semantic_pg_prog,
-                &[&typed_vast_blob, &semantic_node_init, &semantic_edge_init],
+                semantic_key,
+                || {
+                    let semantic_pg_prog = if resolve_control_edges {
+                        c_lower_ast_to_pg_semantic_graph_with_pg(
+                            "typed_vast_nodes",
+                            Expr::u32(vast_count.max(1)),
+                            "pg_nodes",
+                            "semantic_pg_nodes",
+                            "semantic_pg_edges",
+                        )
+                    } else {
+                        c_lower_ast_to_pg_semantic_graph_with_pg_no_control_resolution(
+                            "typed_vast_nodes",
+                            Expr::u32(vast_count.max(1)),
+                            "pg_nodes",
+                            "semantic_pg_nodes",
+                            "semantic_pg_edges",
+                        )
+                    };
+                    let semantic_pg_prog = super::buffers::mark_program_outputs_readback(
+                        semantic_pg_prog,
+                        &["pg_nodes", "semantic_pg_nodes", "semantic_pg_edges"],
+                        readback_terminal_outputs,
+                    );
+                    super::validate_internal_stage(
+                        &semantic_pg_prog,
+                        "c_lower_ast_to_pg_semantic_graph",
+                    )?;
+                    Ok(semantic_pg_prog)
+                },
+                &semantic_inputs,
                 &cfg,
+                &mut scratch.semantic_outputs,
             )
             .map_err(|e| format!("c_lower_ast_to_pg_semantic_graph dispatch failed: {e}"))?;
+            super::buffers::drop_suppressed_readbacks(&mut scratch.semantic_outputs);
             log("dispatch c_lower_ast_to_pg_semantic_graph");
-            if semantic_pg_out.len() < 2 {
-                return Err(
-                    "c_lower_ast_to_pg_semantic_graph: missing semantic node/edge outputs"
-                        .to_string(),
-                );
-            }
-            let mut semantic_pg_out = semantic_pg_out.into_iter();
-            let semantic_pg_nodes = semantic_pg_out.next().ok_or_else(|| {
-                "c_lower_ast_to_pg_semantic_graph: missing semantic node output".to_string()
-            })?;
-            let semantic_pg_edges = semantic_pg_out.next().ok_or_else(|| {
-                "c_lower_ast_to_pg_semantic_graph: missing semantic edge output".to_string()
-            })?;
-            (expr_shape_blob, pg_blob, semantic_pg_nodes, semantic_pg_edges)
-        };
+            require_scratch_output_count(
+                "c_lower_ast_to_pg_semantic_graph",
+                &scratch.semantic_outputs,
+                if readback_terminal_outputs { 3 } else { 0 },
+            )?;
+            let pg_blob = if readback_terminal_outputs {
+                take_scratch_output(&mut scratch.semantic_outputs, 0)
+            } else {
+                Vec::new()
+            };
+            let semantic_pg_nodes = if readback_terminal_outputs {
+                take_scratch_output(&mut scratch.semantic_outputs, 1)
+            } else {
+                Vec::new()
+            };
+            let semantic_pg_edges = if readback_terminal_outputs {
+                take_scratch_output(&mut scratch.semantic_outputs, 2)
+            } else {
+                Vec::new()
+            };
+            Ok((
+                expr_shape_blob,
+                pg_blob,
+                semantic_pg_nodes,
+                semantic_pg_edges,
+            ))
+        })?;
 
-    Ok((
+    finish_vast_pg_result(
         typed_vast_blob,
-        expr_shape_blob,
-        pg_blob,
-        semantic_pg_nodes,
-        semantic_pg_edges,
+        TerminalSemanticBlobs {
+            expr_shape_blob,
+            pg_blob,
+            semantic_pg_nodes,
+            semantic_pg_edges,
+        },
+        vast_count,
+        readback_terminal_outputs,
+    )
+}
+
+fn require_scratch_output_count(
+    stage: &str,
+    outputs: &[Vec<u8>],
+    expected: usize,
+) -> Result<(), String> {
+    if outputs.len() == expected {
+        return Ok(());
+    }
+    Err(format!(
+        "{stage} returned {} output buffer(s), expected {expected}. Fix: backend output marking must match readback_terminal_outputs.",
+        outputs.len()
     ))
 }
 
-/// Write the typed VAST blob as a JSON file under `dump_dir`. Filename is
-/// the source's basename with `.vast.json` suffix; collisions are accepted
-/// (the divergence sweep runs one file at a time per worktree).
-fn dump_typed_vast_as_json(
-    dump_dir: &str,
-    source_path: &Path,
-    typed_vast_blob: &[u8],
-    vast_count: u32,
-) -> std::io::Result<()> {
-    use std::fs;
-    use std::io::Write as _;
+fn take_scratch_output(outputs: &mut [Vec<u8>], index: usize) -> Vec<u8> {
+    let mut output = Vec::new();
+    mem::swap(&mut output, &mut outputs[index]);
+    output
+}
 
-    fs::create_dir_all(dump_dir)?;
-    let stem = source_path
-        .file_name()
-        .map(|s| s.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "unknown".to_string());
-    let out_path = std::path::PathBuf::from(dump_dir).join(format!("{stem}.vast.json"));
-
-    let stride: usize = 10;
-    let count = vast_count as usize;
-    let mut file = fs::File::create(&out_path)?;
-    write!(
-        file,
-        "{{\"stride\":{stride},\"count\":{count},\"source\":\"{}\",\"nodes\":[",
-        source_path.display()
-    )?;
-    for i in 0..count {
-        if i > 0 {
-            write!(file, ",")?;
-        }
-        let base = i * stride * 4;
-        write!(file, "[")?;
-        for f in 0..stride {
-            if f > 0 {
-                write!(file, ",")?;
-            }
-            let off = base + f * 4;
-            let word = if off + 4 <= typed_vast_blob.len() {
-                u32::from_le_bytes([
-                    typed_vast_blob[off],
-                    typed_vast_blob[off + 1],
-                    typed_vast_blob[off + 2],
-                    typed_vast_blob[off + 3],
-                ])
-            } else {
-                0
-            };
-            write!(file, "{word}")?;
-        }
-        write!(file, "]")?;
-    }
-    write!(file, "]}}")?;
-    Ok(())
+fn contains_u32_word(bytes: &[u8], needle: u32) -> bool {
+    bytes
+        .chunks_exact(4)
+        .any(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]) == needle)
 }

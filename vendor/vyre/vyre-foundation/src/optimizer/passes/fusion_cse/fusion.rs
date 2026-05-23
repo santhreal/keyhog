@@ -1,4 +1,3 @@
-use crate::composition::duplicate_self_exclusive_regions;
 use crate::ir::{Expr, Ident, Node, Program};
 use crate::optimizer::{fingerprint_program, vyre_pass, PassAnalysis, PassResult};
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -12,7 +11,14 @@ use std::sync::Arc;
 /// that same buffer so optimized IR cannot observe a newer value than the
 /// unfused sequence would have seen.
 #[derive(Debug, Default)]
-#[vyre_pass(name = "fusion", requires = [], invalidates = [])]
+#[vyre_pass(
+    name = "fusion",
+    requires = [],
+    invalidates = ["region_inline", "canonicalize", "const_fold", "cse", "dce"],
+    phase = "fusion_cse",
+    boundary_class = "abi_preserving",
+    cost_model_family = "fusion"
+)]
 pub struct Fusion;
 
 impl Fusion {
@@ -20,25 +26,48 @@ impl Fusion {
     #[must_use]
     #[inline]
     fn analyze_impl(program: &Program) -> PassAnalysis {
-        if duplicate_self_exclusive_regions(program.entry()).is_empty() {
-            PassAnalysis::RUN
-        } else {
-            PassAnalysis::SKIP
+        // Fusion operates on Regions; without any Region the
+        // duplicate-scan walk would always be empty.
+        if !program
+            .stats()
+            .has_any_node_kind(crate::ir::stats::NODE_KIND_REGION)
+        {
+            return PassAnalysis::SKIP;
         }
+        // Iterate the pre-computed region column on ProgramFacts instead
+        // of recursing through every node: O(regions) vs O(nodes), and
+        // facts is already cached on the program by other passes in the
+        // pipeline.
+        let facts = crate::optimizer::program_soa::ProgramFacts::build_cached(program);
+        let mut counts: FxHashMap<&str, u32> = FxHashMap::default();
+        for region in facts.regions() {
+            if let Some(base) =
+                crate::composition::self_exclusive_region_key(region.generator.as_str())
+            {
+                let entry = counts.entry(base).or_insert(0);
+                *entry += 1;
+                if *entry > 1 {
+                    return PassAnalysis::SKIP;
+                }
+            }
+        }
+        PassAnalysis::RUN
     }
 
     /// Inline single-use pure bindings so load/op/store pipelines lower as one kernel body.
     #[must_use]
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "pass transform consumes Program to preserve the ProgramPass ownership contract"
+    )]
     pub fn transform(program: Program) -> PassResult {
         let before_fp = fingerprint_program(&program);
-        let mut substrate = crate::optimizer::fact_substrate::FactSubstrate::default();
-        let optimized = Program::wrapped(
-            program.buffers().to_vec(),
-            program.workgroup_size(),
-            fuse_nodes(program.entry(), program.buffers(), &program, &mut substrate),
-        )
-        .with_optional_entry_op_id(program.entry_op_id().map(str::to_string))
-        .with_non_composable_with_self(program.is_non_composable_with_self());
+        let fused = fuse_nodes(program.entry(), program.buffers(), &program);
+        // Reuse the buffer Arc + buffer_index instead of rebuilding via
+        // Program::wrapped (which deep-clones buffers and re-interns names).
+        // entry_op_id and non_composable_with_self are already preserved by
+        // with_rewritten_entry.
+        let optimized = program.with_rewritten_wrapped_entry(fused);
         // VYRE_OPTIMIZER LOW-02: `from_programs` runs full `Program` PartialEq
         // (O(N) structural walk). Content-addressed fingerprint already hashes
         // canonical wire bytes; reuse it for the changed bit.
@@ -47,7 +76,8 @@ impl Fusion {
             program: optimized,
             changed,
         }
-    }}
+    }
+}
 
 #[cfg(test)]
 mod analyze_tests {
@@ -75,7 +105,10 @@ mod analyze_tests {
                 },
             ],
         );
-        assert_eq!(crate::optimizer::ProgramPass::analyze(&Fusion, &program), PassAnalysis::SKIP);
+        assert_eq!(
+            crate::optimizer::ProgramPass::analyze(&Fusion, &program),
+            PassAnalysis::SKIP
+        );
     }
 }
 
@@ -220,16 +253,15 @@ impl PendingReplacements {
     }
 }
 
-fn fuse_nodes(
-    nodes: &[Node],
-    buffers: &[crate::ir::BufferDecl],
-    program: &Program,
-    substrate: &mut crate::optimizer::fact_substrate::FactSubstrate,
-) -> Vec<Node> {
-    let use_counts = cached_var_uses(program, substrate);
+fn fuse_nodes(nodes: &[Node], buffers: &[crate::ir::BufferDecl], program: &Program) -> Vec<Node> {
+    let use_counts = cached_var_uses(program);
     fuse_nodes_with_counts(nodes, buffers, &use_counts)
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "fusion state machine keeps pending replacements, flush barriers, and Node reconstruction colocated"
+)]
 fn fuse_nodes_with_counts(
     nodes: &[Node],
     buffers: &[crate::ir::BufferDecl],
@@ -371,13 +403,9 @@ fn fuse_nodes_with_counts(
     fused
 }
 
-fn cached_var_uses(
-    program: &Program,
-    substrate: &mut crate::optimizer::fact_substrate::FactSubstrate,
-) -> Arc<FxHashMap<Ident, usize>> {
-    if !substrate.has_fresh_use_facts_for(program) {
-        *substrate = crate::optimizer::fact_substrate::FactSubstrate::derive_use_only(program);
-    }
+fn cached_var_uses(program: &Program) -> Arc<FxHashMap<Ident, usize>> {
+    let substrate =
+        crate::optimizer::fact_substrate::FactSubstrate::derive_use_only_cached(program);
     substrate.use_counts.clone().unwrap_or_default()
 }
 
@@ -466,8 +494,7 @@ fn substitute_expr(expr: &Expr, replacements: &PendingReplacements) -> Expr {
     match expr {
         Expr::Var(name) => replacements
             .get(name)
-            .map(|pending| pending.expr.clone())
-            .unwrap_or_else(|| expr.clone()),
+            .map_or_else(|| expr.clone(), |pending| pending.expr.clone()),
         Expr::Load { buffer, index } => Expr::Load {
             buffer: buffer.clone(),
             index: Box::new(substitute_expr(index, replacements)),
@@ -535,8 +562,8 @@ fn substitute_expr(expr: &Expr, replacements: &PendingReplacements) -> Expr {
         | Expr::SubgroupSize
         | Expr::SubgroupBallot { .. }
         | Expr::SubgroupShuffle { .. }
-        | Expr::SubgroupAdd { .. } => expr.clone(),
-        Expr::Opaque(_) => expr.clone(),
+        | Expr::SubgroupAdd { .. }
+        | Expr::Opaque(_) => expr.clone(),
     }
 }
 
@@ -563,9 +590,9 @@ fn is_fusable_expr(expr: &Expr) -> bool {
         | Expr::Opaque(_)
         | Expr::SubgroupBallot { .. }
         | Expr::SubgroupShuffle { .. }
-        | Expr::SubgroupAdd { .. } => false,
+        | Expr::SubgroupAdd { .. }
         // Trivial leaves — not worth a dedicated let binding.
-        Expr::LitU32(_)
+        | Expr::LitU32(_)
         | Expr::LitI32(_)
         | Expr::LitF32(_)
         | Expr::LitBool(_)
@@ -644,9 +671,9 @@ fn try_fuse_regions(r1: &Node, r2: &Node, buffers: &[crate::ir::BufferDecl]) -> 
         }
 
         if dim1.saturating_add(dim2) <= 1024 {
-            let mut combined_body = Vec::new();
-            combined_body.extend(b1.as_ref().clone());
-            combined_body.extend(b2.as_ref().clone());
+            let mut combined_body = Vec::with_capacity(b1.len() + b2.len());
+            combined_body.extend_from_slice(b1.as_ref());
+            combined_body.extend_from_slice(b2.as_ref());
             return Some(Node::Region {
                 generator: format!("{g1}+{g2}").into(),
                 source_region: s1.clone(),
@@ -693,12 +720,8 @@ pub(super) fn collect_buffer_reads(nodes: &[Node]) -> FxHashSet<Ident> {
                     offset,
                     size,
                     ..
-                } => {
-                    reads.insert(source.clone());
-                    collect_expr_buffer_reads(offset, &mut reads);
-                    collect_expr_buffer_reads(size, &mut reads);
                 }
-                Node::AsyncStore {
+                | Node::AsyncStore {
                     source,
                     offset,
                     size,
@@ -760,7 +783,7 @@ fn push_expr_children<'a>(expr: &'a Expr, stack: &mut SmallVec<[&'a Expr; 16]>) 
             stack.push(true_val);
             stack.push(false_val);
         }
-        Expr::Cast { value, .. } => stack.push(value),
+        Expr::Cast { value, .. } | Expr::SubgroupAdd { value } => stack.push(value),
         Expr::Fma { a, b, c } => {
             stack.push(a);
             stack.push(b);
@@ -783,7 +806,6 @@ fn push_expr_children<'a>(expr: &'a Expr, stack: &mut SmallVec<[&'a Expr; 16]>) 
             stack.push(value);
             stack.push(lane);
         }
-        Expr::SubgroupAdd { value } => stack.push(value),
         Expr::Var(_)
         | Expr::LitU32(_)
         | Expr::LitI32(_)
@@ -800,6 +822,6 @@ fn push_expr_children<'a>(expr: &'a Expr, stack: &mut SmallVec<[&'a Expr; 16]>) 
 }
 
 #[cfg(test)]
-    mod tests {
-        include!("fusion_tests.rs");
-    }
+mod tests {
+    include!("fusion_tests.rs");
+}

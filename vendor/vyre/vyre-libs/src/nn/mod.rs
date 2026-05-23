@@ -29,6 +29,18 @@ pub mod attention;
 #[cfg(feature = "nn-moe")]
 pub mod moe;
 
+#[cfg(any(
+    feature = "nn-inference",
+    all(
+        feature = "nn-activation",
+        feature = "nn-linear",
+        feature = "nn-norm",
+        feature = "nn-attention",
+        feature = "nn-moe"
+    )
+))]
+pub mod inference_graph;
+
 #[cfg(feature = "nn-activation")]
 pub mod optim;
 
@@ -40,7 +52,8 @@ pub mod quant;
 pub use activation::relu;
 #[cfg(feature = "nn-attention")]
 pub use attention::{
-    attention, attention_reference, softmax, softmax_reference, Attention, Softmax,
+    attention, attention_reference, flash_attention_2, flash_attention_2_reference, softmax,
+    softmax_reference, Attention, Softmax,
 };
 #[cfg(feature = "nn-linear")]
 pub use linear::{linear, linear_relu, linear_silu, linear_tiled, Linear};

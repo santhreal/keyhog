@@ -49,7 +49,7 @@ pub enum PersistentKernelDecision {
         /// Predicted total time saved (in nanoseconds) by using the
         /// persistent path vs N standard launches. Useful for
         /// telemetry and for the autotune store.
-        savings_ns: u64,
+        savings_ns: u128,
     },
 }
 
@@ -72,11 +72,12 @@ pub fn decide_persistent_kernel(inputs: PersistentKernelInputs) -> PersistentKer
         return PersistentKernelDecision::StandardLaunches;
     }
     let standard_overhead =
-        (inputs.batch_size as u64).saturating_mul(inputs.per_launch_overhead_ns);
-    if standard_overhead <= inputs.persistent_setup_overhead_ns {
+        u128::from(inputs.batch_size) * u128::from(inputs.per_launch_overhead_ns);
+    let persistent_setup_overhead_ns = u128::from(inputs.persistent_setup_overhead_ns);
+    if standard_overhead <= persistent_setup_overhead_ns {
         return PersistentKernelDecision::StandardLaunches;
     }
-    let savings_ns = standard_overhead.saturating_sub(inputs.persistent_setup_overhead_ns);
+    let savings_ns = standard_overhead - persistent_setup_overhead_ns;
     PersistentKernelDecision::PersistentKernel { savings_ns }
 }
 
@@ -177,15 +178,35 @@ mod tests {
     }
 
     #[test]
-    fn saturating_arithmetic_protects_against_overflow() {
+    fn widened_arithmetic_preserves_extreme_savings() {
         // Adversarial: batch_size × per_launch_overhead near u64::MAX
-        // must not panic. Use saturating arithmetic; verdict should
-        // still be PersistentKernel because the saturated total is
-        // much larger than persistent_setup.
+        // must not panic or clamp the predicted savings.
         let dec = decide_persistent_kernel(inp(u32::MAX, u64::MAX / 2, 1, 50_000));
         match dec {
-            PersistentKernelDecision::PersistentKernel { .. } => {}
+            PersistentKernelDecision::PersistentKernel { savings_ns } => {
+                assert_eq!(
+                    savings_ns,
+                    u128::from(u32::MAX) * u128::from(u64::MAX / 2) - 50_000
+                );
+            }
             other => panic!("expected PersistentKernel; got {:?}", other),
         }
+    }
+
+    #[test]
+    fn persistent_policy_source_uses_exact_widened_arithmetic() {
+        let source = include_str!("persistent_kernel_policy.rs");
+
+        assert!(
+            !source.contains(concat!("saturating", "_mul"))
+                && !source.contains(concat!("saturating", "_sub")),
+            "Fix: persistent-kernel policy must use exact widened arithmetic, not saturating launch-cost math."
+        );
+        assert!(
+            source.contains("u128::from(inputs.batch_size)")
+                && source.contains("u128::from(inputs.per_launch_overhead_ns)")
+                && source.contains("standard_overhead - persistent_setup_overhead_ns"),
+            "Fix: persistent-kernel savings must stay widened through the verdict."
+        );
     }
 }

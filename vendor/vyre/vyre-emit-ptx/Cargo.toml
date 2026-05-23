@@ -1,6 +1,6 @@
 [package]
 name = "vyre-emit-ptx"
-version = "0.4.1"
+version = "0.4.2"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "PTX text emitter for vyre KernelDescriptor. Produces NVRTC-compatible CUDA assembly."
@@ -24,6 +24,7 @@ rustc-hash = { workspace = true }
 smallvec = { workspace = true }
 
 [features]
+default = []
 nvrtc = []
 
 [dev-dependencies]

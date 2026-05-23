@@ -37,8 +37,7 @@ pub mod launcher;
 pub mod manifest;
 
 pub use artifact::{
-    BufferAccessKind, BufferEntry, BufferMemoryKind, CompiledArtifact,
-    DispatchGeometry, Target,
+    BufferAccessKind, BufferEntry, BufferMemoryKind, CompiledArtifact, DispatchGeometry, Target,
 };
 pub use bundle::{bundle, Bundle, BundleError};
 pub use compile::{compile, CompileError};
@@ -62,5 +61,5 @@ pub fn observability_snapshot() -> vyre_driver::observability::DriverObservabili
 /// the compile cost.
 #[must_use]
 pub fn program_fingerprint(program: &vyre_foundation::ir::Program) -> Vec<u32> {
-    vyre_self_substrate::vsa_fingerprint::vsa_fingerprint_cpu(program)
+    vyre_driver::program_vsa_fingerprint(program)
 }

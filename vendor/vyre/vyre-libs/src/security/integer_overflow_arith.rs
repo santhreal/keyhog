@@ -63,14 +63,18 @@ pub fn integer_overflow_arith(
         vec![Node::Region {
             generator: Ident::from(OP_ID),
             source_region: None,
-            body: Arc::new(vec![Node::if_then(Expr::lt(t.clone(), Expr::u32(words)), body)]),
+            body: Arc::new(vec![Node::if_then(
+                Expr::lt(t.clone(), Expr::u32(words)),
+                body,
+            )]),
         }],
     )
 }
 
 /// CPU oracle.
 #[must_use]
-pub fn cpu_ref(
+#[cfg(test)]
+pub(crate) fn cpu_ref(
     arith_set: &[u32],
     attacker_reach: &[u32],
     overflow_check_dominates: &[u32],
@@ -81,9 +85,9 @@ pub fn cpu_ref(
 
 /// Soundness marker for [`integer_overflow_arith`].
 pub struct IntegerOverflowArith;
-impl weir::soundness::SoundnessTagged for IntegerOverflowArith {
-    fn soundness(&self) -> weir::soundness::Soundness {
-        weir::soundness::Soundness::Exact
+impl vyre::soundness::SoundnessTagged for IntegerOverflowArith {
+    fn soundness(&self) -> vyre::soundness::Soundness {
+        vyre::soundness::Soundness::Exact
     }
 }
 

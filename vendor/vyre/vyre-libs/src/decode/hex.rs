@@ -172,6 +172,7 @@ pub fn hex_decode_then_aho_corasick(
     )
 }
 
+#[cfg(test)]
 fn cpu_ref(input: &[u8]) -> Vec<u32> {
     input
         .chunks_exact(2)
@@ -204,7 +205,7 @@ fn fixture_inputs() -> Vec<Vec<Vec<u8>>> {
                 u32::from(b'6'),
                 u32::from(b'E'),
             ]),
-            vec![0u8; 3 * 4],
+            pack_words(&[0, 0, 0]),
             pack_words(&hex_decode_table()),
         ],
         vec![
@@ -216,7 +217,7 @@ fn fixture_inputs() -> Vec<Vec<Vec<u8>>> {
                 u32::from(b'4'),
                 u32::from(b'A'),
             ]),
-            vec![0u8; 3 * 4],
+            pack_words(&[0, 0, 0]),
             pack_words(&hex_decode_table()),
         ],
         vec![
@@ -228,21 +229,18 @@ fn fixture_inputs() -> Vec<Vec<Vec<u8>>> {
                 u32::from(b'0'),
                 u32::from(b'0'),
             ]),
-            vec![0u8; 3 * 4],
+            pack_words(&[0, 0, 0]),
             pack_words(&hex_decode_table()),
         ],
     ]
 }
 
 fn fixture_outputs() -> Vec<Vec<Vec<u8>>> {
-    [
-        b"4D616E".as_slice(),
-        b"68494A".as_slice(),
-        b"7aZ100".as_slice(),
+    vec![
+        vec![pack_words(&[0x4D, 0x61, 0x6E])],
+        vec![pack_words(&[0x68, 0x49, 0x4A])],
+        vec![pack_words(&[0x7A, 0x01, 0x00])],
     ]
-    .into_iter()
-    .map(|case| vec![pack_words(&cpu_ref(case))])
-    .collect()
 }
 
 inventory::submit! {

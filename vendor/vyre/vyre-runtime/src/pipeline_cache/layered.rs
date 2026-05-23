@@ -59,7 +59,7 @@ impl PipelineCacheStore for LayeredPipelineCache {
         self.layers
             .iter()
             .fold(PipelineCacheMetrics::default(), |acc, layer| {
-                acc.saturating_add(layer.metrics())
+                acc.checked_add(layer.metrics())
             })
     }
 }

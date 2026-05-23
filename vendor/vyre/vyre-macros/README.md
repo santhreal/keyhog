@@ -2,7 +2,7 @@
 
 Proc-macros for the [`vyre`](../core) GPU compute IR compiler.
 
-This crate is consumed at compile time only — you do not depend on it directly
+This crate is consumed at compile time only: you do not depend on it directly
 in most cases. The `vyre` crate re-exports everything you need:
 
 ```rust
@@ -19,7 +19,7 @@ Register a unit struct as an optimizer pass in the global
 automatically and applies it to every `Program` during `vyre::optimize()`.
 
 The annotated type must expose three inherent methods with exactly the
-signatures below — the macro wires them into the `Pass` trait impl:
+signatures below: the macro wires them into the `Pass` trait impl:
 
 ```rust
 use vyre::ir::Program;
@@ -61,7 +61,7 @@ impl FoldZeroAdd {
 | `requires`      | `&[&str]`      | Pass names that must have already run (or analyses that must be available) before this one fires.   |
 | `invalidates`   | `&[&str]`      | Analyses invalidated when this pass changes the program.                                            |
 
-Every pass contributes to the shared fixpoint loop — the scheduler keeps
+Every pass contributes to the shared fixpoint loop: the scheduler keeps
 iterating until either every pass reports `changed: false` or the safety cap
 is hit.
 

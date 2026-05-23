@@ -50,9 +50,15 @@ const METADATA_OP_ID: &str = "vyre.program.metadata";
 ///
 /// `bytes` must be the **complete** output of `Program::to_wire`; partial
 /// slices or concatenated blobs are rejected.
+///
+/// # Errors
+///
+/// Returns an actionable diagnostic when the blob exceeds the framing cap,
+/// has a malformed envelope, fails the integrity digest, or contains a
+/// structurally invalid program payload.
+/// Decodes a valid Vyre VIR0 Program from a byte slice.
 #[inline]
 #[must_use]
-/// Decodes a valid Vyre VIR0 Program from a byte slice.
 pub fn from_wire(bytes: &[u8]) -> Result<Program, String> {
     if bytes.len() > MAX_PROGRAM_BYTES {
         return Err(format!(
@@ -156,7 +162,9 @@ pub fn from_wire(bytes: &[u8]) -> Result<Program, String> {
     program
         .output_buffer_index
         .set(Arc::new(output_set.into_vec()))
-        .expect("decoded Program output buffer index is initialized exactly once");
+        .unwrap_or_else(|_| {
+            unreachable!("decoded Program output buffer index is initialized exactly once")
+        });
     Ok(program)
 }
 
@@ -227,8 +235,7 @@ fn read_nodes(
         let actual = crate::ir_inner::model::node::node_op_id(&node);
         if actual != op_id {
             return Err(format!(
-                "InvalidDiscriminant: node {node_index} op_id `{op_id}` does not match payload `{}`. Fix: reject tampered wire bytes.",
-                actual
+                "InvalidDiscriminant: node {node_index} op_id `{op_id}` does not match payload `{actual}`. Fix: reject tampered wire bytes."
             ));
         }
         metadata.entry.push(node);

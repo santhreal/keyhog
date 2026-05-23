@@ -14,7 +14,7 @@ pub fn schedule_via_homotopy(costs: &[f64], n: u32, steps: u32, dt: f64) -> Vec<
     if n == 0 || costs.len() != n_usize {
         return Vec::new();
     }
-    let uniform = vec![1.0 / n as f64; n_usize];
+    let uniform = vec![1.0 / f64::from(n); n_usize];
     let mut inverse: Vec<f64> = costs
         .iter()
         .map(|cost| 1.0 / cost.abs().max(1.0e-12))
@@ -23,7 +23,7 @@ pub fn schedule_via_homotopy(costs: &[f64], n: u32, steps: u32, dt: f64) -> Vec<
     for value in &mut inverse {
         *value /= total;
     }
-    let t = (steps as f64 * dt).clamp(0.0, 1.0);
+    let t = (f64::from(steps) * dt).clamp(0.0, 1.0);
     let mut state = linear_homotopy_cpu(&uniform, &inverse, t);
     for _ in 0..steps {
         let velocity: Vec<f64> = inverse

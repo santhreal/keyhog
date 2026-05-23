@@ -100,7 +100,14 @@ pub fn try_encode_control(
     tenant_count: u32,
     observable_slots: u32,
 ) -> Result<Vec<u8>, ProtocolError> {
-    let mut bytes = Vec::with_capacity(control_encode_capacity(observable_slots)?);
+    let total_bytes = control_encode_capacity(observable_slots)?;
+    let mut bytes = Vec::new();
+    try_reserve_protocol_capacity(
+        &mut bytes,
+        total_bytes,
+        "control",
+        "control encode could not reserve host staging bytes; reduce observable_slots or reuse a preallocated control buffer",
+    )?;
     try_encode_control_into(shutdown, tenant_count, observable_slots, &mut bytes)?;
     Ok(bytes)
 }
@@ -122,27 +129,61 @@ pub fn try_encode_control_into(
 ) -> Result<(), ProtocolError> {
     let total_bytes = control_encode_capacity(observable_slots)?;
     dst.clear();
+    try_reserve_protocol_capacity(
+        dst,
+        total_bytes,
+        "control",
+        "control encode could not reserve caller-owned staging bytes; reduce observable_slots or reuse a larger control buffer",
+    )?;
     dst.resize(total_bytes, 0);
 
     if shutdown {
-        write_word(dst, control::SHUTDOWN as usize, 1);
+        write_word(
+            dst,
+            control_word_index(control::SHUTDOWN, "shutdown word")?,
+            1,
+        );
     }
-    write_word(dst, control::TENANT_BASE as usize, control::TENANT_BASE + 1);
+    write_word(
+        dst,
+        control_word_index(control::TENANT_BASE, "tenant base word")?,
+        control::TENANT_BASE + 1,
+    );
 
-    let tenant_table_start = (control::TENANT_BASE as usize) + 1;
-    let requested_tenant_words = usize::try_from(tenant_count).unwrap_or(usize::MAX);
+    let tenant_table_start = control_word_index(control::TENANT_BASE, "tenant base word")?
+        .checked_add(1)
+        .ok_or(ProtocolError::ByteLengthOverflow {
+            buffer: "control",
+            fix: "tenant table start overflowed usize; reduce control protocol constants",
+        })?;
+    let requested_tenant_words =
+        usize::try_from(tenant_count).map_err(|_| ProtocolError::ByteLengthOverflow {
+            buffer: "control",
+            fix: "tenant_count cannot fit host usize; split tenant tables before encoding",
+        })?;
     let tenant_table_end = core::cmp::min(
-        tenant_table_start.saturating_add(requested_tenant_words),
-        control::TENANT_QUOTA_BASE as usize,
+        tenant_table_start
+            .checked_add(requested_tenant_words)
+            .ok_or(ProtocolError::ByteLengthOverflow {
+                buffer: "control",
+                fix: "tenant table end overflowed usize; split tenant tables before encoding",
+            })?,
+        control_word_index(control::TENANT_QUOTA_BASE, "tenant quota base word")?,
     );
     for word_idx in tenant_table_start..tenant_table_end {
         write_word(dst, word_idx, !0u32);
     }
 
-    let quota_table_start = control::TENANT_QUOTA_BASE as usize;
+    let quota_table_start =
+        control_word_index(control::TENANT_QUOTA_BASE, "tenant quota base word")?;
     let quota_table_end = core::cmp::min(
-        quota_table_start.saturating_add(requested_tenant_words),
-        control::TENANT_FAIRNESS_BASE as usize,
+        quota_table_start
+            .checked_add(requested_tenant_words)
+            .ok_or(ProtocolError::ByteLengthOverflow {
+                buffer: "control",
+                fix: "quota table end overflowed usize; split tenant tables before encoding",
+            })?,
+        control_word_index(control::TENANT_FAIRNESS_BASE, "tenant fairness base word")?,
     );
     for word_idx in quota_table_start..quota_table_end {
         write_word(dst, word_idx, 1_000_000);
@@ -167,7 +208,14 @@ pub fn encode_empty_ring(slot_count: u32) -> Result<Vec<u8>, ProtocolError> {
 /// Returns [`ProtocolError`] when the requested ring size overflows host
 /// address space.
 pub fn try_encode_empty_ring(slot_count: u32) -> Result<Vec<u8>, ProtocolError> {
-    let mut bytes = Vec::with_capacity(ring_encode_capacity(slot_count)?);
+    let total_bytes = ring_encode_capacity(slot_count)?;
+    let mut bytes = Vec::new();
+    try_reserve_protocol_capacity(
+        &mut bytes,
+        total_bytes,
+        "ring",
+        "ring encode could not reserve host staging bytes; split the dispatch into smaller ring shards or reuse a preallocated ring buffer",
+    )?;
     try_encode_empty_ring_into(slot_count, &mut bytes)?;
     Ok(bytes)
 }
@@ -183,6 +231,12 @@ pub fn try_encode_empty_ring(slot_count: u32) -> Result<Vec<u8>, ProtocolError> 
 pub fn try_encode_empty_ring_into(slot_count: u32, dst: &mut Vec<u8>) -> Result<(), ProtocolError> {
     let total_bytes = ring_encode_capacity(slot_count)?;
     dst.clear();
+    try_reserve_protocol_capacity(
+        dst,
+        total_bytes,
+        "ring",
+        "ring encode could not reserve caller-owned staging bytes; split the dispatch into smaller ring shards or reuse a larger ring buffer",
+    )?;
     dst.resize(total_bytes, 0);
     Ok(())
 }
@@ -204,7 +258,14 @@ pub fn encode_empty_debug_log(record_capacity: u32) -> Result<Vec<u8>, ProtocolE
 /// Returns [`ProtocolError`] when the requested debug-log size overflows host
 /// address space.
 pub fn try_encode_empty_debug_log(record_capacity: u32) -> Result<Vec<u8>, ProtocolError> {
-    let mut bytes = Vec::with_capacity(debug_log_encode_capacity(record_capacity)?);
+    let total_bytes = debug_log_encode_capacity(record_capacity)?;
+    let mut bytes = Vec::new();
+    try_reserve_protocol_capacity(
+        &mut bytes,
+        total_bytes,
+        "debug_log",
+        "debug-log encode could not reserve host staging bytes; reduce record_capacity or reuse a preallocated debug-log buffer",
+    )?;
     try_encode_empty_debug_log_into(record_capacity, &mut bytes)?;
     Ok(bytes)
 }
@@ -223,6 +284,12 @@ pub fn try_encode_empty_debug_log_into(
 ) -> Result<(), ProtocolError> {
     let total_bytes = debug_log_encode_capacity(record_capacity)?;
     dst.clear();
+    try_reserve_protocol_capacity(
+        dst,
+        total_bytes,
+        "debug_log",
+        "debug-log encode could not reserve caller-owned staging bytes; reduce record_capacity or reuse a larger debug-log buffer",
+    )?;
     dst.resize(total_bytes, 0);
     Ok(())
 }
@@ -230,13 +297,21 @@ pub fn try_encode_empty_debug_log_into(
 /// Decode the kernel's `done_count` from a control buffer.
 #[must_use]
 pub fn read_done_count(control_bytes: &[u8]) -> u32 {
-    read_word(control_bytes, control::DONE_COUNT as usize).unwrap_or(0)
+    try_read_done_count(control_bytes).unwrap_or_else(|source| {
+        panic!(
+            "megakernel control done_count decode failed: {source}. Fix: use a complete control readback produced by the matching megakernel protocol encoder."
+        )
+    })
 }
 
 /// Read the epoch counter from a control buffer.
 #[must_use]
 pub fn read_epoch(control_bytes: &[u8]) -> u32 {
-    read_word(control_bytes, control::EPOCH as usize).unwrap_or(0)
+    try_read_epoch(control_bytes).unwrap_or_else(|source| {
+        panic!(
+            "megakernel control epoch decode failed: {source}. Fix: use a complete control readback produced by the matching megakernel protocol encoder."
+        )
+    })
 }
 
 /// Strictly decode the kernel's `done_count` from a control buffer.
@@ -246,7 +321,11 @@ pub fn read_epoch(control_bytes: &[u8]) -> u32 {
 /// Returns [`ProtocolError`] when the buffer is not word-aligned or is too
 /// short to contain the fixed control header.
 pub fn try_read_done_count(control_bytes: &[u8]) -> Result<u32, ProtocolError> {
-    read_required_word("control", control_bytes, control::DONE_COUNT as usize)
+    read_required_word(
+        "control",
+        control_bytes,
+        control_word_index(control::DONE_COUNT, "done-count word")?,
+    )
 }
 
 /// Strictly decode the epoch counter from a control buffer.
@@ -256,13 +335,21 @@ pub fn try_read_done_count(control_bytes: &[u8]) -> Result<u32, ProtocolError> {
 /// Returns [`ProtocolError`] when the buffer is not word-aligned or is too
 /// short to contain the epoch word.
 pub fn try_read_epoch(control_bytes: &[u8]) -> Result<u32, ProtocolError> {
-    read_required_word("control", control_bytes, control::EPOCH as usize)
+    read_required_word(
+        "control",
+        control_bytes,
+        control_word_index(control::EPOCH, "epoch word")?,
+    )
 }
 
 /// Read an observable result word from a control buffer.
 #[must_use]
 pub fn read_observable(control_bytes: &[u8], index: u32) -> u32 {
-    read_word(control_bytes, (control::OBSERVABLE_BASE + index) as usize).unwrap_or(0)
+    try_read_observable(control_bytes, index).unwrap_or_else(|source| {
+        panic!(
+            "megakernel control observable[{index}] decode failed: {source}. Fix: use a complete control readback sized for the requested observable slot."
+        )
+    })
 }
 
 /// Strictly read an observable result word from a control buffer.
@@ -272,52 +359,37 @@ pub fn read_observable(control_bytes: &[u8], index: u32) -> u32 {
 /// Returns [`ProtocolError`] when the buffer is not word-aligned, the index
 /// overflows the observable word offset, or the word is outside the buffer.
 pub fn try_read_observable(control_bytes: &[u8], index: u32) -> Result<u32, ProtocolError> {
-    let word_idx =
+    let word_idx = control_word_index(
         control::OBSERVABLE_BASE
             .checked_add(index)
             .ok_or(ProtocolError::ByteLengthOverflow {
                 buffer: "control",
                 fix: "observable index overflows the protocol word offset; shard observable reads",
-            })? as usize;
+            })?,
+        "observable word index",
+    )?;
     read_required_word("control", control_bytes, word_idx)
 }
 
 /// Read per-opcode metrics counters from a control buffer.
 #[must_use]
 pub fn read_metrics(control_bytes: &[u8]) -> Vec<(u32, u32)> {
-    let mut result = Vec::with_capacity(control::METRICS_SLOTS as usize);
-    read_metrics_into(control_bytes, &mut result);
-    result
+    try_read_metrics(control_bytes).unwrap_or_else(|source| {
+        panic!(
+            "megakernel control metrics decode failed: {source}. Fix: use a complete control readback produced by the matching megakernel protocol encoder."
+        )
+    })
 }
 
 /// Read per-opcode metrics counters into caller-owned storage.
 ///
 /// Clears `out`, then reuses its allocation.
 pub fn read_metrics_into(control_bytes: &[u8], out: &mut Vec<(u32, u32)>) {
-    out.clear();
-    reserve_target_capacity(out, control::METRICS_SLOTS as usize);
-    if let Ok(words) = bytemuck::try_cast_slice::<u8, u32>(control_bytes) {
-        for i in 0..control::METRICS_SLOTS {
-            let word_idx = (control::METRICS_BASE + i) as usize;
-            let Some(&count) = words.get(word_idx) else {
-                break;
-            };
-            let count = u32::from_le(count);
-            if count > 0 {
-                out.push((i, count));
-            }
-        }
-        return;
-    }
-    for i in 0..control::METRICS_SLOTS {
-        let Some(count) = read_word_unaligned(control_bytes, (control::METRICS_BASE + i) as usize)
-        else {
-            break;
-        };
-        if count > 0 {
-            out.push((i, count));
-        }
-    }
+    try_read_metrics_into(control_bytes, out).unwrap_or_else(|source| {
+        panic!(
+            "megakernel control metrics decode failed: {source}. Fix: use a complete control readback produced by the matching megakernel protocol encoder."
+        )
+    });
 }
 
 /// Strictly read per-opcode metrics counters from a control buffer.
@@ -327,7 +399,7 @@ pub fn read_metrics_into(control_bytes: &[u8], out: &mut Vec<(u32, u32)>) {
 /// Returns [`ProtocolError`] when the buffer is not word-aligned or is too
 /// short for the fixed metrics window.
 pub fn try_read_metrics(control_bytes: &[u8]) -> Result<Vec<(u32, u32)>, ProtocolError> {
-    let mut result = Vec::with_capacity(control::METRICS_SLOTS as usize);
+    let mut result = Vec::new();
     try_read_metrics_into(control_bytes, &mut result)?;
     Ok(result)
 }
@@ -346,10 +418,13 @@ pub fn try_read_metrics_into(
 ) -> Result<(), ProtocolError> {
     validate_word_aligned("control", control_bytes)?;
     out.clear();
-    reserve_target_capacity(out, control::METRICS_SLOTS as usize);
     if let Ok(words) = bytemuck::try_cast_slice::<u8, u32>(control_bytes) {
+        try_reserve_target_capacity(
+            out,
+            count_nonzero_metrics_words_strict(words, control_bytes.len())?,
+        )?;
         for i in 0..control::METRICS_SLOTS {
-            let word_idx = (control::METRICS_BASE + i) as usize;
+            let word_idx = metrics_word_index(i)?;
             let count =
                 words
                     .get(word_idx)
@@ -367,8 +442,9 @@ pub fn try_read_metrics_into(
         }
         return Ok(());
     }
+    try_reserve_target_capacity(out, count_nonzero_metrics_unaligned_strict(control_bytes)?)?;
     for i in 0..control::METRICS_SLOTS {
-        let word_idx = (control::METRICS_BASE + i) as usize;
+        let word_idx = metrics_word_index(i)?;
         let count = read_word_unaligned(control_bytes, word_idx)
             .ok_or(ProtocolError::MissingWord {
             buffer: "control",
@@ -415,28 +491,163 @@ pub fn count_done_ring_slots(ring_bytes: &[u8], item_count: usize) -> Option<u64
                 == Some(slot::DONE)
         })
         .count();
-    Some(done as u64)
+    u64::try_from(done).ok()
 }
 
-fn debug_log_record_capacity(debug_bytes: &[u8]) -> usize {
-    let record_bytes = (debug::RECORD_WORDS as usize).saturating_mul(4);
-    if record_bytes == 0 {
-        0
-    } else {
-        debug_bytes
-            .len()
-            .saturating_sub((debug::RECORDS_BASE as usize).saturating_mul(4))
-            / record_bytes
+/// Strictly count DONE slots in a ring-buffer readback.
+///
+/// # Errors
+///
+/// Returns [`ProtocolError`] when `ring_bytes` cannot contain `item_count`
+/// complete ring slots or when the byte count overflows the host protocol
+/// domain.
+pub fn try_count_done_ring_slots(
+    ring_bytes: &[u8],
+    item_count: usize,
+) -> Result<u64, ProtocolError> {
+    if item_count == 0 {
+        return Ok(0);
     }
+    validate_word_aligned("ring", ring_bytes)?;
+    let slot_words =
+        usize::try_from(SLOT_WORDS).map_err(|_| ProtocolError::ByteLengthOverflow {
+            buffer: "ring",
+            fix: "keep SLOT_WORDS representable in host usize before decoding ring status",
+        })?;
+    let required_bytes = item_count
+        .checked_mul(slot_words)
+        .and_then(|words| words.checked_mul(4))
+        .ok_or(ProtocolError::ByteLengthOverflow {
+            buffer: "ring",
+            fix: "split the dispatch before ring status decode overflows host address space",
+        })?;
+    if ring_bytes.len() < required_bytes {
+        return Err(ProtocolError::MissingWord {
+            buffer: "ring",
+            word_idx: required_bytes / 4,
+            byte_len: ring_bytes.len(),
+            fix: "decode only full ring readbacks sized for the submitted megakernel item_count",
+        });
+    }
+    let status_word =
+        usize::try_from(STATUS_WORD).map_err(|_| ProtocolError::ByteLengthOverflow {
+            buffer: "ring",
+            fix: "keep STATUS_WORD representable in host usize before decoding ring status",
+        })?;
+    let words = bytemuck::try_cast_slice::<u8, u32>(ring_bytes).ok();
+    let mut done = 0_u64;
+    for slot_idx in 0..item_count {
+        let word_idx = slot_idx
+            .checked_mul(slot_words)
+            .and_then(|base| base.checked_add(status_word))
+            .ok_or(ProtocolError::ByteLengthOverflow {
+                buffer: "ring",
+                fix: "split the dispatch before ring status word indexing overflows host address space",
+            })?;
+        if read_word_from_optional_words(words, ring_bytes, word_idx) == Some(slot::DONE) {
+            done = done
+                .checked_add(1)
+                .ok_or(ProtocolError::ByteLengthOverflow {
+                    buffer: "ring",
+                    fix: "split the dispatch before DONE slot count exceeds u64",
+                })?;
+        }
+    }
+    Ok(done)
 }
 
-fn reserve_target_capacity<T>(out: &mut Vec<T>, target_capacity: usize) {
+fn try_reserve_target_capacity<T>(
+    out: &mut Vec<T>,
+    target_capacity: usize,
+) -> Result<(), ProtocolError> {
+    try_reserve_protocol_capacity(
+        out,
+        target_capacity,
+        "control",
+        "host metrics decode could not reserve output records; reduce metrics fanout or decode into a reused scratch vector",
+    )
+}
+
+fn try_reserve_protocol_capacity<T>(
+    out: &mut Vec<T>,
+    target_capacity: usize,
+    buffer: &'static str,
+    fix: &'static str,
+) -> Result<(), ProtocolError> {
     if out.capacity() < target_capacity {
-        out.reserve_exact(target_capacity);
+        out.try_reserve_exact(target_capacity - out.capacity())
+            .map_err(|_| ProtocolError::ByteLengthOverflow { buffer, fix })?;
     }
+    Ok(())
 }
 
-fn read_word(bytes: &[u8], word_idx: usize) -> Option<u32> {
+fn count_nonzero_metrics_words_strict(
+    words: &[u32],
+    byte_len: usize,
+) -> Result<usize, ProtocolError> {
+    let mut count = 0usize;
+    for i in 0..control::METRICS_SLOTS {
+        let word_idx = metrics_word_index(i)?;
+        let word = words
+            .get(word_idx)
+            .copied()
+            .map(u32::from_le)
+            .ok_or(ProtocolError::MissingWord {
+            buffer: "control",
+            word_idx,
+            byte_len,
+            fix: "decode only control buffers produced by the matching megakernel protocol encoder",
+        })?;
+        if word > 0 {
+            count += 1;
+        }
+    }
+    Ok(count)
+}
+
+fn count_nonzero_metrics_unaligned_strict(control_bytes: &[u8]) -> Result<usize, ProtocolError> {
+    let mut count = 0usize;
+    for i in 0..control::METRICS_SLOTS {
+        let word_idx = metrics_word_index(i)?;
+        let word = read_word_unaligned(control_bytes, word_idx)
+            .ok_or(ProtocolError::MissingWord {
+            buffer: "control",
+            word_idx,
+            byte_len: control_bytes.len(),
+            fix: "decode only control buffers produced by the matching megakernel protocol encoder",
+        })?;
+        if word > 0 {
+            count += 1;
+        }
+    }
+    Ok(count)
+}
+
+fn metrics_word_index(slot: u32) -> Result<usize, ProtocolError> {
+    let word =
+        control::METRICS_BASE
+            .checked_add(slot)
+            .ok_or(ProtocolError::ByteLengthOverflow {
+                buffer: "control",
+                fix: "metrics slot index overflows the protocol word offset; shard metrics reads",
+            })?;
+    control_word_index(word, "metrics word index")
+}
+
+fn control_word_index(word: u32, label: &'static str) -> Result<usize, ProtocolError> {
+    usize::try_from(word).map_err(|_| ProtocolError::ByteLengthOverflow {
+        buffer: "control",
+        fix: match label {
+            "observable word index" => {
+                "observable word index cannot fit host usize; shard observable reads"
+            }
+            "metrics word index" => "metrics word index cannot fit host usize; shard metrics reads",
+            _ => "control word index cannot fit host usize; shard protocol reads",
+        },
+    })
+}
+
+pub(crate) fn read_word(bytes: &[u8], word_idx: usize) -> Option<u32> {
     if let Ok(words) = bytemuck::try_cast_slice::<u8, u32>(bytes) {
         return words.get(word_idx).copied().map(u32::from_le);
     }
@@ -487,7 +698,7 @@ fn validate_word_aligned(buffer: &'static str, bytes: &[u8]) -> Result<(), Proto
     }
 }
 
-fn write_word(bytes: &mut [u8], word_idx: usize, value: u32) {
+pub(crate) fn write_word(bytes: &mut [u8], word_idx: usize, value: u32) {
     let off = word_idx * 4;
     bytes[off..off + 4].copy_from_slice(&value.to_le_bytes());
 }

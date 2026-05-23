@@ -64,7 +64,7 @@ pub enum FusionDecision {
     /// Shared-memory budget would exceed adapter caps.
     SharedMemoryBudget {
         /// Combined bytes the fused kernel would request.
-        needed: u32,
+        needed: u64,
         /// Adapter cap.
         cap: u32,
     },
@@ -92,19 +92,18 @@ impl FusionPass {
                 downstream: downstream.workgroup_size,
             };
         }
-        let invocations = upstream.workgroup_size[0]
-            .saturating_mul(upstream.workgroup_size[1])
-            .saturating_mul(upstream.workgroup_size[2]);
-        if invocations > caps.max_invocations_per_workgroup {
+        let invocations = u128::from(upstream.workgroup_size[0])
+            * u128::from(upstream.workgroup_size[1])
+            * u128::from(upstream.workgroup_size[2]);
+        if invocations > u128::from(caps.max_invocations_per_workgroup) {
             return FusionDecision::WorkgroupSizeMismatch {
                 upstream: upstream.workgroup_size,
                 downstream: downstream.workgroup_size,
             };
         }
-        let needed = upstream
-            .shared_memory_bytes
-            .saturating_add(downstream.shared_memory_bytes);
-        if needed > caps.max_shared_memory_bytes {
+        let needed =
+            u64::from(upstream.shared_memory_bytes) + u64::from(downstream.shared_memory_bytes);
+        if needed > u64::from(caps.max_shared_memory_bytes) {
             return FusionDecision::SharedMemoryBudget {
                 needed,
                 cap: caps.max_shared_memory_bytes,
@@ -164,6 +163,45 @@ mod tests {
         assert_eq!(
             FusionPass::decide(&up, &down, FusionCaps::high_end(), &["x"]),
             FusionDecision::OutputConsumedElsewhere
+        );
+    }
+
+    #[test]
+    fn workgroup_invocation_overflow_rejects_instead_of_wrapping_or_clamping() {
+        let mut up = dispatch("wide-a", &["in"], &["stage"]);
+        up.workgroup_size = [u32::MAX, u32::MAX, 2];
+        let mut down = dispatch("wide-b", &["stage"], &["out"]);
+        down.workgroup_size = up.workgroup_size;
+        assert_eq!(
+            FusionPass::decide(&up, &down, FusionCaps::high_end(), &[]),
+            FusionDecision::WorkgroupSizeMismatch {
+                upstream: up.workgroup_size,
+                downstream: down.workgroup_size,
+            }
+        );
+    }
+
+    #[test]
+    fn shared_memory_overflow_rejects_instead_of_appearing_under_cap() {
+        let mut up = dispatch("smem-a", &["in"], &["stage"]);
+        up.shared_memory_bytes = u32::MAX;
+        let mut down = dispatch("smem-b", &["stage"], &["out"]);
+        down.shared_memory_bytes = 1;
+        assert_eq!(
+            FusionPass::decide(&up, &down, FusionCaps::high_end(), &[]),
+            FusionDecision::SharedMemoryBudget {
+                needed: u64::from(u32::MAX) + 1,
+                cap: FusionCaps::high_end().max_shared_memory_bytes,
+            }
+        );
+    }
+
+    #[test]
+    fn source_has_no_clamped_fusion_admission_math() {
+        let source = include_str!("fusion.rs");
+        assert!(
+            !source.contains(concat!(".", "saturating_")),
+            "fusion admission must use widened exact arithmetic, not silent clamps"
         );
     }
 }

@@ -19,25 +19,8 @@ use std::sync::Arc;
 use vyre_driver::backend::BackendError;
 
 const MIN_RING_SIZE: usize = 2;
-// Lifted from 256 → 4096 so consumers (megakernel, keyhog's
-// `dispatch_borrowed_batch` literal-set sub-batches, surgec
-// kernels) can issue larger batched dispatches without
-// "readback ring slot N wrapped before collection" forcing them
-// to chunk into ring-sized sub-batches and serialize sub-batch
-// waits. Each ring slot's staging buffer is allocated lazily on
-// first use and reused after collection, so the 16× cap bump
-// only translates into 16× MORE concurrent live readbacks
-// during heavy bursts — peak GPU memory rises by N × slot_size,
-// where slot_size matches the actual readback (typically a few
-// KiB to a few MiB).
-const MAX_RING_SIZE: usize = 4096;
-// Default must move with the cap or every consumer that doesn't
-// know to set `VYRE_WGPU_READBACK_RING_SLOTS` keeps hitting the
-// old 256-slot wrap. 2048 is the conservative production
-// default — half the new max — so we leave headroom for env
-// overrides without bumping baseline GPU memory by 16× in
-// single-shot dispatch workloads.
-const DEFAULT_RING_SLOTS: usize = 2048;
+const MAX_RING_SIZE: usize = 256;
+const DEFAULT_RING_SLOTS: usize = 256;
 const RING_CAPACITY_GRANULARITY: u64 = 4096;
 const SLOT_FREE: u8 = 0;
 const SLOT_PENDING: u8 = 1;
@@ -61,12 +44,12 @@ pub struct RingStats {
 impl RingStats {
     /// Record one dispatch; returns the monotonic dispatch index.
     pub fn record_dispatch(&self) -> u64 {
-        self.dispatches.fetch_add(1, Ordering::AcqRel)
+        rebasing_atomic_increment_u64(&self.dispatches, "readback ring dispatch counter")
     }
 
     /// Record a stall.
     pub fn record_stall(&self) {
-        self.readback_stalls.fetch_add(1, Ordering::Relaxed);
+        rebasing_atomic_increment_u64(&self.readback_stalls, "readback ring stall counter");
     }
 
     /// Update the peak-in-flight watermark.
@@ -150,15 +133,39 @@ impl ReadbackRingSet {
         device: &wgpu::Device,
         byte_len: u64,
     ) -> Result<Arc<ReadbackRing>, BackendError> {
-        let capacity = ring_capacity_class(byte_len)?;
+        let capacity = Self::capacity_class_for(byte_len)?;
+        self.ring_for_capacity(device, capacity)
+    }
+
+    /// Return a ring for an already-normalized capacity class.
+    #[inline]
+    pub(crate) fn ring_for_capacity(
+        &self,
+        device: &wgpu::Device,
+        capacity: u64,
+    ) -> Result<Arc<ReadbackRing>, BackendError> {
         Ok(match self.rings.entry(capacity) {
             Entry::Occupied(entry) => Arc::clone(entry.get()),
             Entry::Vacant(entry) => {
-                let ring = Arc::new(ReadbackRing::new(device, self.slots_per_ring, capacity));
+                let ring = Arc::new(ReadbackRing::new(device, self.slots_per_ring, capacity)?);
                 entry.insert(Arc::clone(&ring));
                 ring
             }
         })
+    }
+
+    /// Convert an arbitrary byte length to the ring capacity class used for
+    /// ring sizing.
+    #[inline]
+    pub(crate) fn capacity_class(byte_len: u64) -> Result<u64, BackendError> {
+        Self::capacity_class_for(byte_len)
+    }
+
+    /// Convert an arbitrary byte length to the ring capacity class used for
+    /// ring sizing.
+    #[inline]
+    pub(crate) fn capacity_class_for(byte_len: u64) -> Result<u64, BackendError> {
+        ring_capacity_class(byte_len)
     }
 
     /// Return an existing size-classed ring without taking exclusive access.
@@ -171,11 +178,22 @@ impl ReadbackRingSet {
         &self,
         byte_len: u64,
     ) -> Result<Option<Arc<ReadbackRing>>, BackendError> {
-        let capacity = ring_capacity_class(byte_len)?;
-        Ok(self
-            .rings
+        let capacity = Self::capacity_class(byte_len)?;
+        Ok(self.existing_ring_for_capacity(capacity))
+    }
+
+    /// Return an existing size-classed ring without taking exclusive access.
+    #[inline]
+    pub(crate) fn existing_ring_for_capacity(&self, capacity: u64) -> Option<Arc<ReadbackRing>> {
+        self.rings
             .get(&capacity)
-            .map(|ring| Arc::clone(ring.value())))
+            .map(|ring| Arc::clone(ring.value()))
+    }
+
+    /// Number of slots configured for each runtime ring instance.
+    #[must_use]
+    pub fn slots_per_ring(&self) -> usize {
+        self.slots_per_ring
     }
 }
 
@@ -189,9 +207,9 @@ pub struct ReadbackRing {
 impl ReadbackRing {
     /// Construct a ring with N staging buffers.
     #[must_use]
-    pub fn new(device: &wgpu::Device, size: usize, buffer_size: u64) -> Self {
+    pub fn new(device: &wgpu::Device, size: usize, buffer_size: u64) -> Result<Self, BackendError> {
         let size = size.clamp(MIN_RING_SIZE, MAX_RING_SIZE);
-        let capacity = staging_capacity(buffer_size);
+        let capacity = staging_capacity(buffer_size)?;
         let mut slots = Vec::with_capacity(size);
         for i in 0..size {
             let buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -208,11 +226,11 @@ impl ReadbackRing {
                 capacity,
             });
         }
-        Self {
+        Ok(Self {
             slots,
             stats: Arc::new(RingStats::default()),
             next_idx: AtomicU64::new(0),
-        }
+        })
     }
 
     /// Record a readback copy into the next available ring slot.
@@ -235,7 +253,7 @@ impl ReadbackRing {
         src_offset: u64,
         byte_len: u64,
     ) -> Result<ReadbackTicket, BackendError> {
-        let idx = self.next_slot_index();
+        let idx = self.next_slot_index()?;
         let slot = &self.slots[idx];
         let mapped_len = aligned_copy_len(byte_len)?;
         if mapped_len > slot.capacity {
@@ -406,7 +424,7 @@ impl ReadbackRing {
         src_buffer: &wgpu::Buffer,
         byte_len: u64,
     ) -> Result<usize, BackendError> {
-        let idx = self.next_slot_index();
+        let idx = self.next_slot_index()?;
         let slot = &self.slots[idx];
         let mapped_len = aligned_copy_len(byte_len)?;
         if mapped_len > slot.capacity {
@@ -535,13 +553,27 @@ impl ReadbackRing {
                 "readback ring byte length {byte_len} cannot fit usize: {source}. Fix: split the readback before collecting it."
             ))
         })?;
-        out.clear();
-        out.reserve(len);
         if mapped_len != 0 {
             let view = slot.buffer.slice(0..mapped_len).get_mapped_range();
-            out.extend_from_slice(&view[..len]);
+            let bytes = &view[..len];
+            if out.len() == len {
+                out.copy_from_slice(bytes);
+            } else {
+                out.clear();
+                if len > out.capacity() {
+                    let additional = len - out.capacity();
+                    out.try_reserve_exact(additional).map_err(|source| {
+                        BackendError::new(format!(
+                            "readback ring collection could not reserve {len} output bytes exactly: {source}. Fix: lower max_output_bytes or collect readback in smaller shards."
+                        ))
+                    })?;
+                }
+                out.extend_from_slice(bytes);
+            }
             drop(view);
             slot.buffer.unmap();
+        } else {
+            out.clear();
         }
         slot.byte_len.store(0, Ordering::Release);
         slot.mapped_len.store(0, Ordering::Release);
@@ -550,15 +582,56 @@ impl ReadbackRing {
     }
 
     #[inline]
-    fn next_slot_index(&self) -> usize {
-        (self.next_idx.fetch_add(1, Ordering::AcqRel) as usize) % self.slots.len()
+    fn next_slot_index(&self) -> Result<usize, BackendError> {
+        let slot_len = u64::try_from(self.slots.len()).map_err(|source| {
+            BackendError::new(format!(
+                "readback ring slot count {} cannot fit u64: {source}. Fix: reduce readback ring slot count.",
+                self.slots.len()
+            ))
+        })?;
+        if slot_len == 0 {
+            return Err(BackendError::new(
+                "readback ring has zero slots. Fix: construct rings with at least two slots.",
+            ));
+        }
+        let next = rebasing_atomic_increment_u64(&self.next_idx, "readback ring slot counter");
+        usize::try_from(next % slot_len).map_err(|source| {
+            BackendError::new(format!(
+                "readback ring slot index cannot fit usize: {source}. Fix: reduce readback ring slot count."
+            ))
+        })
     }
 }
 
-fn staging_capacity(byte_len: u64) -> u64 {
-    aligned_copy_len(byte_len).unwrap_or(u64::MAX).max(4)
+fn rebasing_atomic_increment_u64(counter: &AtomicU64, label: &'static str) -> u64 {
+    let mut current = counter.load(Ordering::Relaxed);
+    loop {
+        let next = current.checked_add(1).unwrap_or(0);
+        match counter.compare_exchange_weak(current, next, Ordering::Relaxed, Ordering::Relaxed) {
+            Ok(previous) => {
+                if previous == u64::MAX {
+                    tracing::error!(
+                        "{label} reached u64::MAX and was rebased to zero. Fix: shard readback rings or scrape counters before wrap."
+                    );
+                }
+                return previous;
+            }
+            Err(observed) => current = observed,
+        }
+    }
 }
 
+#[inline]
+fn staging_capacity(byte_len: u64) -> Result<u64, BackendError> {
+    aligned_copy_len(byte_len).map_err(|error| {
+        tracing::warn!(
+            "readback ring staging capacity overflowed for {byte_len} bytes: {error}. Fix: shard the readback buffer before constructing the ring."
+        );
+        error
+    }).map(|len| len.max(4))
+}
+
+#[inline]
 fn ring_capacity_class(byte_len: u64) -> Result<u64, BackendError> {
     let aligned = aligned_copy_len(byte_len)?.max(4);
     aligned
@@ -571,6 +644,7 @@ fn ring_capacity_class(byte_len: u64) -> Result<u64, BackendError> {
         })
 }
 
+#[inline]
 fn aligned_copy_len(byte_len: u64) -> Result<u64, BackendError> {
     if byte_len == 0 {
         return Ok(0);
@@ -583,10 +657,67 @@ fn aligned_copy_len(byte_len: u64) -> Result<u64, BackendError> {
 }
 
 fn readback_ring_slots_from_env() -> usize {
-    std::env::var("VYRE_WGPU_READBACK_RING_SLOTS")
-        .ok()
-        .and_then(|value| value.parse::<usize>().ok())
-        .filter(|value| *value > 0)
-        .unwrap_or(DEFAULT_RING_SLOTS)
-        .clamp(MIN_RING_SIZE, MAX_RING_SIZE)
+    let Some(raw) = std::env::var("VYRE_WGPU_READBACK_RING_SLOTS").ok() else {
+        return DEFAULT_RING_SLOTS;
+    };
+    let slots = match raw.parse::<usize>() {
+        Ok(0) => {
+            tracing::warn!(
+                "VYRE_WGPU_READBACK_RING_SLOTS=0 is invalid for GPU readback rings; defaulting to {MIN_RING_SIZE}. Fix: set it to a positive integer between {MIN_RING_SIZE} and {MAX_RING_SIZE}, or unset it."
+            );
+            MIN_RING_SIZE
+        }
+        Ok(value) if value > MAX_RING_SIZE => {
+            tracing::warn!(
+                "VYRE_WGPU_READBACK_RING_SLOTS={value} exceeds the safe cap of {MAX_RING_SIZE}; clamping.
+                Fix: set it to an integer between {MIN_RING_SIZE} and {MAX_RING_SIZE}, or unset it."
+            );
+            MAX_RING_SIZE
+        }
+        Ok(value) => value,
+        Err(error) => {
+            tracing::warn!(
+                "VYRE_WGPU_READBACK_RING_SLOTS={raw:?} is invalid ({error:?}); defaulting to {DEFAULT_RING_SLOTS}. Fix: set it to a positive integer between {MIN_RING_SIZE} and {MAX_RING_SIZE}, or unset it."
+            );
+            DEFAULT_RING_SLOTS
+        }
+    };
+    slots.clamp(MIN_RING_SIZE, MAX_RING_SIZE)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn capacity_class_classifies_by_alignment_and_granularity() {
+        assert_eq!(
+            ReadbackRingSet::capacity_class_for(16).unwrap(),
+            4096,
+            "16-byte requests must promote to 4096-byte slot class"
+        );
+        assert_eq!(
+            ReadbackRingSet::capacity_class_for(1).unwrap(),
+            4096,
+            "1-byte requests must promote to minimum aligned 4096-byte class"
+        );
+        assert_eq!(
+            ReadbackRingSet::capacity_class_for(4097).unwrap(),
+            8192,
+            "4KB boundary crossings must promote to the next class"
+        );
+    }
+
+    #[test]
+    fn existing_ring_for_and_capacity_variant_agree_on_lookup_key() {
+        let ring_set = ReadbackRingSet::new();
+        let from_raw = ring_set
+            .existing_ring_for(16)
+            .expect("lookup with raw byte length should not fail");
+        let from_class = ring_set.existing_ring_for_capacity(4096);
+        assert!(
+            from_raw.is_none() && from_class.is_none(),
+            "raw and capacity-based lookups should agree on an empty set"
+        );
+    }
 }

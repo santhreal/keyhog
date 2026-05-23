@@ -7,12 +7,12 @@
 //! the index expression and increases the shared binding's element count to
 //! preserve the same logical row capacity with one padding element per row.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use crate::{
     BindingLayout, KernelBody, KernelDescriptor, KernelOp, KernelOpKind, LiteralValue, MemoryClass,
 };
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 use vyre_foundation::ir::BinOp;
 
 const DEFAULT_BANK_COUNT: u32 = crate::analyses::bank_conflict::DEFAULT_BANK_COUNT;
@@ -58,8 +58,8 @@ pub fn bank_conflict_pad_with_bank_count(
 
 #[derive(Default)]
 struct PaddingPlan {
-    literal_updates: BTreeMap<u32, u32>,
-    binding_counts: BTreeMap<u32, u32>,
+    literal_updates: FxHashMap<u32, u32>,
+    binding_counts: FxHashMap<u32, u32>,
     swizzle_updates: BTreeMap<usize, SwizzleUpdate>,
     child_plans: BTreeMap<usize, PaddingPlan>,
 }
@@ -111,7 +111,8 @@ fn plan_body(body: &KernelBody, bindings: &BindingLayout, bank_count: u32) -> Op
         if stride <= 1 || gcd_u32(stride, bank_count) <= 1 {
             continue;
         }
-        let mut target_mul_results_by_literal = BTreeMap::<u32, BTreeSet<u32>>::new();
+        let mut target_mul_results_by_literal: FxHashMap<u32, FxHashSet<u32>> =
+            FxHashMap::default();
         for access in &accesses {
             target_mul_results_by_literal
                 .entry(access.literal_result_id)

@@ -9,10 +9,7 @@ pub(super) fn enclosing_brace_is_initializer_list(vast_nodes: &[u32], cur_parent
         return false;
     }
 
-    let parent_parent = vast_nodes
-        .get(parent_idx * VAST_NODE_STRIDE_U32 as usize + 1)
-        .copied()
-        .unwrap_or(SENTINEL);
+    let parent_parent = parent_at(vast_nodes, parent_idx);
     let parent_prev = previous_sibling_context(vast_nodes, parent_idx, parent_parent);
     if matches!(parent_prev.kind, TOK_ASSIGN | TOK_COMMA) {
         return true;
@@ -27,10 +24,7 @@ pub(super) fn enclosing_brace_is_initializer_list(vast_nodes: &[u32], cur_parent
     if grandparent_idx >= node_count || kind_at(vast_nodes, grandparent_idx) != TOK_LBRACE {
         return false;
     }
-    let grandparent_parent = vast_nodes
-        .get(grandparent_idx * VAST_NODE_STRIDE_U32 as usize + 1)
-        .copied()
-        .unwrap_or(SENTINEL);
+    let grandparent_parent = parent_at(vast_nodes, grandparent_idx);
     let grandparent_prev =
         previous_sibling_context(vast_nodes, grandparent_idx, grandparent_parent);
     matches!(grandparent_prev.kind, TOK_ASSIGN | TOK_COMMA | TOK_LBRACE)
@@ -50,10 +44,7 @@ pub(super) fn reference_c_asm_context_kind(
     {
         return None;
     }
-    let parent_parent = vast_nodes
-        .get(parent_idx * VAST_NODE_STRIDE_U32 as usize + 1)
-        .copied()
-        .unwrap_or(SENTINEL);
+    let parent_parent = parent_at(vast_nodes, parent_idx);
     if !asm_prefix_before(vast_nodes, parent_idx, parent_parent) {
         return None;
     }
@@ -80,11 +71,10 @@ pub(super) fn reference_c_asm_context_kind(
 
 pub(super) fn asm_prefix_before(vast_nodes: &[u32], before_idx: usize, parent: u32) -> bool {
     for scan_idx in (0..before_idx).rev() {
-        let base = scan_idx * VAST_NODE_STRIDE_U32 as usize;
-        if vast_nodes.get(base + 1).copied().unwrap_or(SENTINEL) != parent {
+        if parent_at(vast_nodes, scan_idx) != parent {
             continue;
         }
-        match vast_nodes.get(base).copied().unwrap_or_default() {
+        match kind_at(vast_nodes, scan_idx) {
             TOK_GNU_ASM => return true,
             TOK_VOLATILE | TOK_GOTO => continue,
             _ => return false,
@@ -100,11 +90,10 @@ pub(super) fn asm_has_goto_qualifier_before(
 ) -> bool {
     let mut saw_goto = false;
     for scan_idx in (0..before_idx).rev() {
-        let base = scan_idx * VAST_NODE_STRIDE_U32 as usize;
-        if vast_nodes.get(base + 1).copied().unwrap_or(SENTINEL) != parent {
+        if parent_at(vast_nodes, scan_idx) != parent {
             continue;
         }
-        match vast_nodes.get(base).copied().unwrap_or_default() {
+        match kind_at(vast_nodes, scan_idx) {
             TOK_GOTO => saw_goto = true,
             TOK_VOLATILE => continue,
             TOK_GNU_ASM => return saw_goto,
@@ -117,9 +106,8 @@ pub(super) fn asm_has_goto_qualifier_before(
 pub(super) fn sibling_colons_before(vast_nodes: &[u32], node_idx: usize, cur_parent: u32) -> u32 {
     let mut colons = 0u32;
     for scan_idx in 0..node_idx {
-        let base = scan_idx * VAST_NODE_STRIDE_U32 as usize;
-        if vast_nodes.get(base + 1).copied().unwrap_or(SENTINEL) == cur_parent
-            && vast_nodes.get(base).copied().unwrap_or_default() == TOK_COLON
+        if parent_at(vast_nodes, scan_idx) == cur_parent
+            && kind_at(vast_nodes, scan_idx) == TOK_COLON
         {
             colons = colons.saturating_add(1);
         }
@@ -143,20 +131,14 @@ pub(super) fn reference_c_attribute_kind(
     if parent_idx >= node_count || kind_at(vast_nodes, parent_idx) != TOK_LPAREN {
         return None;
     }
-    let parent_parent = vast_nodes
-        .get(parent_idx * VAST_NODE_STRIDE_U32 as usize + 1)
-        .copied()
-        .unwrap_or(SENTINEL);
+    let parent_parent = parent_at(vast_nodes, parent_idx);
     let Ok(parent_parent_idx) = usize::try_from(parent_parent) else {
         return None;
     };
     if parent_parent_idx >= node_count || kind_at(vast_nodes, parent_parent_idx) != TOK_LPAREN {
         return None;
     }
-    let grand_parent = vast_nodes
-        .get(parent_parent_idx * VAST_NODE_STRIDE_U32 as usize + 1)
-        .copied()
-        .unwrap_or(SENTINEL);
+    let grand_parent = parent_at(vast_nodes, parent_parent_idx);
     let attr_prefix = previous_sibling_context(vast_nodes, parent_parent_idx, grand_parent);
     let adjacent_attr_prefix = parent_parent_idx > 0
         && kind_at(vast_nodes, parent_parent_idx.saturating_sub(1)) == TOK_GNU_ATTRIBUTE;
@@ -167,10 +149,7 @@ pub(super) fn reference_c_attribute_kind(
         return Some(C_AST_KIND_ATTRIBUTE_CONST);
     }
 
-    let symbol = vast_nodes
-        .get(node_idx * VAST_NODE_STRIDE_U32 as usize + VAST_TYPEDEF_SYMBOL_FIELD as usize)
-        .copied()
-        .unwrap_or_default();
+    let symbol = symbol_hash_at(vast_nodes, node_idx);
     C_ATTRIBUTE_KIND_HASHES
         .iter()
         .find_map(|(hash, kind)| (*hash == symbol).then_some(*kind))
@@ -190,10 +169,7 @@ pub(super) fn reference_c_direct_attribute_kind(
     if parent_idx >= node_count || kind_at(vast_nodes, parent_idx) != TOK_LPAREN {
         return None;
     }
-    let parent_parent = vast_nodes
-        .get(parent_idx * VAST_NODE_STRIDE_U32 as usize + 1)
-        .copied()
-        .unwrap_or(SENTINEL);
+    let parent_parent = parent_at(vast_nodes, parent_idx);
     let parent_parent_idx = usize::try_from(parent_parent).ok()?;
     if parent_parent_idx == 0
         || parent_parent_idx >= node_count
@@ -231,6 +207,11 @@ pub(super) fn reference_c_builtin_identifier_expression_kind(
     }
     if is_gnu_typeof_hash_raw(symbol) {
         return Some(C_AST_KIND_SIZEOF_EXPR);
+    }
+    if let Some(kind) =
+        crate::parsing::c::parse::gnu_builtin_catalog::classify_gnu_builtin_hash(symbol)
+    {
+        return Some(kind);
     }
     match symbol {
         0x749d_f71e => Some(C_AST_KIND_BUILTIN_EXPECT_EXPR),

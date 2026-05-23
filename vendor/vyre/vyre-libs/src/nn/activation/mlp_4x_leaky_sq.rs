@@ -189,7 +189,7 @@ inventory::submit! {
                 f(&[1.0, 2.0]),
                 f(&[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]),
                 f(&[0.0; 4]), f(&[1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0]),
-                f(&[0.0, 0.0]), vec![0u8; 8],
+                f(&[0.0, 0.0]),
             ]]
         }),
         expected_output: Some(|| {
@@ -219,6 +219,7 @@ inventory::submit! {
             let bytes = out.iter().flat_map(|v| v.to_bits().to_le_bytes()).collect::<Vec<u8>>();
             vec![vec![bytes]]
         }),
+        category: Some("nn"),
     }
 }
 
@@ -282,7 +283,6 @@ inventory::submit! {
             f32_fixture(&[1.0, 2.0]),
             f32_fixture(&[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]),
             f32_fixture(&[0.0; 4]),
-            f32_fixture(&[0.0; 4]),
         ]]),
         expected_output: Some(|| {
             let x = [1.0_f32, 2.0];
@@ -295,6 +295,7 @@ inventory::submit! {
             }
             vec![vec![f32_fixture(&out)]]
         }),
+        category: Some("nn"),
     }
 }
 
@@ -306,7 +307,6 @@ inventory::submit! {
             f32_fixture(&[1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0]),
             f32_fixture(&[0.0, 0.0]),
             f32_fixture(&[1.21, 1.96, 2.89, 4.0]),
-            f32_fixture(&[0.0, 0.0]),
         ]]),
         expected_output: Some(|| {
             let hidden = [1.21_f32, 1.96, 2.89, 4.0];
@@ -319,6 +319,7 @@ inventory::submit! {
             }
             vec![vec![f32_fixture(&out)]]
         }),
+        category: Some("nn"),
     }
 }
 

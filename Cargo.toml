@@ -89,20 +89,19 @@ notify = "=8.0.0"
 
 # Performance libraries
 simdsieve = "=0.1.1"
-# Point at the live Santh vyre tree (0.4.2) instead of the vendored
-# 0.4.1 snapshot. Live includes the matching → scan module reorg,
-# substring_search LAW 1 fix, persistent megakernel + io_uring NVMe
-# streaming, Category A composition ecosystem, plus the validator/
-# observability error catalog. Vendored 0.4.1 is gone — keyhog must
-# track live or fall behind 0.4.2+ work indefinitely.
-vyre = { version = "0.4.2", path = "../../libs/performance/matching/vyre/vyre-core" }
-vyre_libs = { package = "vyre-libs", version = "0.4.2", path = "../../libs/performance/matching/vyre/vyre-libs" }
-vyre-driver-wgpu = { package = "vyre-driver-wgpu", version = "0.4.2", path = "../../libs/performance/matching/vyre/vyre-driver-wgpu" }
+# vyre is vendored at vendor/vyre/ (see VENDOR_INFO.txt for the pinned
+# upstream commit; refresh via scripts/vendor-vyre.sh --ref vyre-vX.Y.Z).
+# Vendoring keeps keyhog buildable on a fresh checkout with no
+# sibling-repo assumptions — CI just needs `actions/checkout` and the
+# paths resolve. crates.io is not an option until vyre publishes there.
+vyre = { version = "=0.4.2", path = "vendor/vyre/vyre-core" }
+vyre_libs = { package = "vyre-libs", version = "=0.4.2", path = "vendor/vyre/vyre-libs" }
+vyre-driver-wgpu = { package = "vyre-driver-wgpu", version = "=0.4.2", path = "vendor/vyre/vyre-driver-wgpu" }
 # CUDA backend — wired in keyhog-scanner behind the `cuda` feature
 # (default on). On hosts without libcuda.so the backend's `acquire()`
 # call fails cleanly and the scanner falls back to wgpu.
-vyre-driver-cuda = { package = "vyre-driver-cuda", version = "0.4.2", path = "../../libs/performance/matching/vyre/vyre-driver-cuda" }
-vyre-runtime = { version = "0.4.2", path = "../../libs/performance/matching/vyre/vyre-runtime" }
+vyre-driver-cuda = { package = "vyre-driver-cuda", version = "=0.4.2", path = "vendor/vyre/vyre-driver-cuda" }
+vyre-runtime = { version = "=0.4.2", path = "vendor/vyre/vyre-runtime" }
 wgpu = "=24.0.5"
 pollster = "=0.4.0"
 bytemuck = { version = "=1.25.0", features = ["derive"] }

@@ -7,11 +7,11 @@ mod outputs;
 
 pub use dispatch_params::{
     dispatch_element_count, dispatch_element_count_for_program, dispatch_param_words,
-    dispatch_param_words_into,
+    dispatch_param_words_into, try_dispatch_param_words, try_dispatch_param_words_into,
 };
 pub use grid::{
     auto_grid, coerce_to_pow2_with_tail_mask, infer_dispatch_grid, infer_dispatch_grid_for_count,
-    TailMaskPolicy,
+    try_coerce_to_pow2_with_tail_mask, TailMaskPolicy,
 };
 pub use indirect::{find_indirect_dispatch, IndirectDispatch};
 pub use outputs::{

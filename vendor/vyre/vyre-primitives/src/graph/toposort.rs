@@ -1,7 +1,7 @@
 //! Kahn-style topological sort with LIFO worklist — CPU reference +
 //! single-invocation GPU `Program` builder.
 //!
-//! Consumed by the optimizer's reaching-defs pass, surgec
+//! Consumed by the optimizer's reaching-defs pass, downstream analyzer
 //! `dominator_tree`, and graph-IR analyses that need a DAG walk.
 //!
 //! AUDIT_2026-04-24 F-TS-04: `toposort_program` emits a single-invocation
@@ -45,6 +45,289 @@ pub enum ToposortError {
         /// The out-of-range node id that tripped the check.
         node: u32,
     },
+    /// A node's dependency count exceeded the `u32` counter used by the
+    /// compact scheduler representation.
+    IndegreeOverflow {
+        /// Node whose dependency count overflowed.
+        node: u32,
+    },
+    /// Kahn's invariant was violated after input validation, indicating
+    /// inconsistent derived adjacency state.
+    InconsistentState {
+        /// Actionable diagnostic.
+        message: String,
+    },
+}
+
+/// Errors from CSR topological-sort shape or order validation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ToposortCsrError {
+    /// CSR row pointers or targets are malformed for the declared node count.
+    BadCsr {
+        /// Actionable diagnostic.
+        message: String,
+    },
+    /// The supplied topological order is not a full valid permutation.
+    BadOrder {
+        /// Actionable diagnostic.
+        message: String,
+    },
+}
+
+/// Validated dispatch layout for primitive-native CSR topological sorting.
+///
+/// The primitive owns these derived counts so dispatch wrappers do not fork CSR
+/// offset or node scratch sizing rules.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ToposortCsrLayout {
+    /// Number of nodes accepted by the primitive.
+    pub node_count: u32,
+    /// Number of words required by node-indexed scratch and output buffers.
+    pub node_words: usize,
+    /// Number of words required by the CSR offsets buffer.
+    pub offset_words: usize,
+    /// Number of words required by the CSR targets buffer.
+    pub target_words: usize,
+}
+
+/// CPU reference over the primitive-native CSR adjacency shape.
+///
+/// `offsets` has `node_count + 1` entries and `targets` stores outgoing
+/// edges from each prerequisite node to its dependent nodes. The returned
+/// order is valid iff every prerequisite appears before every dependent.
+///
+/// # Errors
+///
+/// Returns [`ToposortCsrError::BadCsr`] when the CSR shape is malformed and
+/// [`ToposortCsrError::BadOrder`] only if derived state violates the
+/// topological-order contract after input validation.
+pub fn toposort_csr(
+    node_count: u32,
+    offsets: &[u32],
+    targets: &[u32],
+) -> Result<Vec<u32>, ToposortCsrError> {
+    let mut order = Vec::new();
+    toposort_csr_into(node_count, offsets, targets, &mut order)?;
+    Ok(order)
+}
+
+/// CPU reference over primitive-native CSR adjacency, reusing caller storage.
+///
+/// # Errors
+///
+/// Returns [`ToposortCsrError::BadCsr`] when CSR validation fails and
+/// [`ToposortCsrError::BadOrder`] when the derived order violates the
+/// primitive contract.
+pub fn toposort_csr_into(
+    node_count: u32,
+    offsets: &[u32],
+    targets: &[u32],
+    order: &mut Vec<u32>,
+) -> Result<(), ToposortCsrError> {
+    validate_toposort_csr_inputs(node_count, offsets, targets)?;
+    order.clear();
+    if node_count == 0 {
+        return Ok(());
+    }
+
+    let node_words = node_count as usize;
+    let mut indeg = vec![0u32; node_words];
+    for (idx, &target) in targets.iter().enumerate() {
+        indeg[target as usize] =
+            indeg[target as usize]
+                .checked_add(1)
+                .ok_or_else(|| ToposortCsrError::BadCsr {
+                    message: format!(
+                    "Fix: toposort_csr target node {target} indegree overflowed at targets[{idx}]."
+                ),
+                })?;
+    }
+
+    let mut queue: Vec<u32> = (0..node_count)
+        .filter(|&node| indeg[node as usize] == 0)
+        .collect();
+    order.reserve(node_words);
+    while let Some(node) = queue.pop() {
+        order.push(node);
+        let start = offsets[node as usize] as usize;
+        let end = offsets[node as usize + 1] as usize;
+        for (edge_offset, &dependent) in targets[start..end].iter().enumerate() {
+            let slot = &mut indeg[dependent as usize];
+            *slot = slot
+                .checked_sub(1)
+                .ok_or_else(|| ToposortCsrError::BadOrder {
+                    message: format!(
+                    "Fix: toposort_csr indegree underflow for edge {} from {node} to {dependent}.",
+                    start + edge_offset
+                ),
+                })?;
+            if *slot == 0 {
+                queue.push(dependent);
+            }
+        }
+    }
+
+    validate_toposort_csr_order(node_count, offsets, targets, order)
+}
+
+/// Validate primitive-native CSR input shape.
+///
+/// # Errors
+///
+/// Returns [`ToposortCsrError::BadCsr`] when offsets are the wrong length, not
+/// monotonic, inconsistent with `targets`, or when a target is out of range.
+pub fn validate_toposort_csr_inputs(
+    node_count: u32,
+    offsets: &[u32],
+    targets: &[u32],
+) -> Result<ToposortCsrLayout, ToposortCsrError> {
+    if node_count == 0 {
+        if offsets != [0] || !targets.is_empty() {
+            return Err(ToposortCsrError::BadCsr {
+                message:
+                    "Fix: toposort_csr zero-node graph requires offsets == [0] and empty targets."
+                        .to_string(),
+            });
+        }
+        return Ok(ToposortCsrLayout {
+            node_count,
+            node_words: 0,
+            offset_words: 1,
+            target_words: 0,
+        });
+    }
+    let expected_offsets =
+        (node_count as usize)
+            .checked_add(1)
+            .ok_or_else(|| ToposortCsrError::BadCsr {
+                message: format!(
+                    "Fix: toposort_csr node_count + 1 overflows usize for node_count={node_count}."
+                ),
+            })?;
+    if offsets.len() != expected_offsets {
+        return Err(ToposortCsrError::BadCsr {
+            message: format!(
+                "Fix: toposort_csr requires offsets.len() == node_count + 1, got len={}, node_count={node_count}.",
+                offsets.len()
+            ),
+        });
+    }
+    if offsets[0] != 0 {
+        return Err(ToposortCsrError::BadCsr {
+            message: format!(
+                "Fix: toposort_csr requires offsets[0] == 0, got {}.",
+                offsets[0]
+            ),
+        });
+    }
+    for (idx, pair) in offsets.windows(2).enumerate() {
+        if pair[0] > pair[1] {
+            return Err(ToposortCsrError::BadCsr {
+                message: format!(
+                    "Fix: toposort_csr offsets must be monotonic, but offsets[{idx}]={} > offsets[{}]={}.",
+                    pair[0],
+                    idx + 1,
+                    pair[1]
+                ),
+            });
+        }
+    }
+    if offsets[node_count as usize] as usize != targets.len() {
+        return Err(ToposortCsrError::BadCsr {
+            message: format!(
+                "Fix: toposort_csr offsets[node_count] must equal targets.len(), got {} vs {}.",
+                offsets[node_count as usize],
+                targets.len()
+            ),
+        });
+    }
+    for (idx, &target) in targets.iter().enumerate() {
+        if target >= node_count {
+            return Err(ToposortCsrError::BadCsr {
+                message: format!(
+                    "Fix: toposort_csr targets[{idx}]={target} is outside node_count={node_count}."
+                ),
+            });
+        }
+    }
+    Ok(ToposortCsrLayout {
+        node_count,
+        node_words: node_count as usize,
+        offset_words: expected_offsets,
+        target_words: targets.len(),
+    })
+}
+
+/// Validate that `order` is a full topological permutation for the
+/// primitive-native CSR adjacency shape.
+///
+/// # Errors
+///
+/// Returns [`ToposortCsrError::BadCsr`] for malformed CSR input and
+/// [`ToposortCsrError::BadOrder`] for malformed, partial, duplicate, or
+/// dependency-violating orders.
+pub fn validate_toposort_csr_order(
+    node_count: u32,
+    offsets: &[u32],
+    targets: &[u32],
+    order: &[u32],
+) -> Result<(), ToposortCsrError> {
+    validate_toposort_csr_inputs(node_count, offsets, targets)?;
+    if order.len() != node_count as usize {
+        return Err(ToposortCsrError::BadOrder {
+            message: format!(
+                "Fix: toposort_csr expected {} order entries, got {}.",
+                node_count,
+                order.len()
+            ),
+        });
+    }
+    let mut seen = vec![false; node_count as usize];
+    let mut pos = vec![0usize; node_count as usize];
+    for (idx, &node) in order.iter().enumerate() {
+        if node >= node_count {
+            return Err(ToposortCsrError::BadOrder {
+                message: format!(
+                    "Fix: toposort_csr order[{idx}]={node} is outside node_count={node_count}."
+                ),
+            });
+        }
+        let slot = &mut seen[node as usize];
+        if *slot {
+            return Err(ToposortCsrError::BadOrder {
+                message: format!(
+                    "Fix: toposort_csr order contains duplicate node {node}; graph may be cyclic or backend output is malformed."
+                ),
+            });
+        }
+        *slot = true;
+        pos[node as usize] = idx;
+    }
+    if let Some((missing, _)) = seen.iter().enumerate().find(|(_, present)| !**present) {
+        return Err(ToposortCsrError::BadOrder {
+            message: format!(
+                "Fix: toposort_csr order omitted node {missing}; graph may be cyclic."
+            ),
+        });
+    }
+
+    for prereq in 0..node_count {
+        let start = offsets[prereq as usize] as usize;
+        let end = offsets[prereq as usize + 1] as usize;
+        for &dependent in &targets[start..end] {
+            if pos[prereq as usize] >= pos[dependent as usize] {
+                return Err(ToposortCsrError::BadOrder {
+                    message: format!(
+                        "Fix: toposort_csr order violates dependency edge {prereq}->{dependent}; prerequisite position {} must be before dependent position {}.",
+                        pos[prereq as usize],
+                        pos[dependent as usize]
+                    ),
+                });
+            }
+        }
+    }
+    Ok(())
 }
 
 /// CPU reference: Kahn's algorithm over `(node_count, edges)`.
@@ -94,11 +377,9 @@ pub fn toposort(node_count: u32, edges: &[(u32, u32)]) -> Result<Vec<u32>, Topos
         depends_next.push(depends_head[from as usize]);
         depends_head[from as usize] = depends_idx;
 
-        // AUDIT_2026-04-24 F-TS-01: saturating_add so pathological
-        // graphs with > u32::MAX in-edges per node don't wrap
-        // silently (yielding 0, which then falsely indicates a root
-        // node in the toposort seed phase).
-        indeg[from as usize] = indeg[from as usize].saturating_add(1);
+        indeg[from as usize] = indeg[from as usize]
+            .checked_add(1)
+            .ok_or(ToposortError::IndegreeOverflow { node: from })?;
     }
 
     let mut queue: Vec<u32> = (0..node_count)
@@ -113,7 +394,13 @@ pub fn toposort(node_count: u32, edges: &[(u32, u32)]) -> Result<Vec<u32>, Topos
         while edge != NONE {
             let u = outgoing_to[edge];
             let slot = &mut indeg[u as usize];
-            *slot = slot.saturating_sub(1);
+            *slot = slot.checked_sub(1).ok_or_else(|| {
+                ToposortError::InconsistentState {
+                    message: format!(
+                        "toposort indegree underflow for node {u}. Fix: rebuild dependency edges before scheduling."
+                    ),
+                }
+            })?;
             if *slot == 0 {
                 queue.push(u);
             }
@@ -131,9 +418,17 @@ pub fn toposort(node_count: u32, edges: &[(u32, u32)]) -> Result<Vec<u32>, Topos
         let seed = indeg
             .iter()
             .enumerate()
-            .find(|(_, &deg)| deg > 0)
+            .find(|(_, deg)| **deg > 0)
             .map(|(i, _)| i as u32)
-            .unwrap_or(0);
+            .ok_or_else(|| {
+                ToposortError::InconsistentState {
+                    message: format!(
+                        "toposort could not find a positive-indegree seed while output_len={} node_count={n}. Fix: rebuild dependency indegrees before scheduling.",
+                        out.len()
+                    ),
+                }
+            });
+        let seed = seed?;
         let mut on_stack = vec![false; n];
         let mut cursor = seed;
         let cycle_node = loop {
@@ -153,11 +448,13 @@ pub fn toposort(node_count: u32, edges: &[(u32, u32)]) -> Result<Vec<u32>, Topos
             }
             match next {
                 Some(n) => cursor = n,
-                // No unemitted successor — defensive fallback. This
-                // cannot happen when out.len() != n and the graph is
-                // well-formed, but we stay total to avoid panicking
-                // on hand-crafted inputs.
-                None => break cursor,
+                None => {
+                    return Err(ToposortError::InconsistentState {
+                        message: format!(
+                            "toposort cycle diagnosis found stuck node {cursor} without an unemitted dependency. Fix: rebuild the dependency adjacency; this state is inconsistent with Kahn's invariant."
+                        ),
+                    });
+                }
             }
         };
         return Err(ToposortError::Cycle { node: cycle_node });
@@ -392,6 +689,67 @@ mod tests {
         assert_eq!(p.buffers[4].count(), 4); // node_count
     }
 
+    #[test]
+    fn csr_reference_sorts_prerequisites_before_dependents() {
+        let order = toposort_csr(3, &[0, 2, 3, 3], &[1, 2, 2]).unwrap();
+        let pos = |v: u32| order.iter().position(|&x| x == v).unwrap();
+        assert!(pos(0) < pos(1));
+        assert!(pos(0) < pos(2));
+        assert!(pos(1) < pos(2));
+    }
+
+    #[test]
+    fn csr_reference_reuses_output_storage() {
+        let mut order = Vec::with_capacity(8);
+        toposort_csr_into(3, &[0, 1, 2, 2], &[1, 2], &mut order).unwrap();
+        let capacity = order.capacity();
+        assert_eq!(order.len(), 3);
+
+        toposort_csr_into(2, &[0, 1, 1], &[1], &mut order).unwrap();
+        assert_eq!(order.capacity(), capacity);
+        assert_eq!(order.len(), 2);
+    }
+
+    #[test]
+    fn csr_validation_rejects_bad_shape() {
+        let err = validate_toposort_csr_inputs(2, &[0, 2, 1], &[1]).unwrap_err();
+        assert!(matches!(err, ToposortCsrError::BadCsr { .. }));
+    }
+
+    #[test]
+    fn csr_validation_returns_dispatch_layout() {
+        assert_eq!(
+            validate_toposort_csr_inputs(3, &[0, 2, 3, 3], &[1, 2, 2]).unwrap(),
+            ToposortCsrLayout {
+                node_count: 3,
+                node_words: 3,
+                offset_words: 4,
+                target_words: 3,
+            }
+        );
+        assert_eq!(
+            validate_toposort_csr_inputs(0, &[0], &[]).unwrap(),
+            ToposortCsrLayout {
+                node_count: 0,
+                node_words: 0,
+                offset_words: 1,
+                target_words: 0,
+            }
+        );
+    }
+
+    #[test]
+    fn csr_order_validation_rejects_duplicate_backend_output() {
+        let err = validate_toposort_csr_order(3, &[0, 1, 2, 2], &[1, 2], &[0, 1, 1]).unwrap_err();
+        assert!(matches!(err, ToposortCsrError::BadOrder { .. }));
+    }
+
+    #[test]
+    fn csr_order_validation_rejects_dependency_inversion() {
+        let err = validate_toposort_csr_order(2, &[0, 1, 1], &[1], &[1, 0]).unwrap_err();
+        assert!(matches!(err, ToposortCsrError::BadOrder { .. }));
+    }
+
     // ------------------------------------------------------------------
     // Adversarial fixtures — empty/single/disconnected/self-loop/max-size.
     // ------------------------------------------------------------------
@@ -442,5 +800,25 @@ mod tests {
             }
             other => panic!("expected Cycle, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn toposort_result_path_has_no_internal_panics() {
+        let source = include_str!("toposort.rs");
+        let result_path = source
+            .split("pub fn toposort(")
+            .nth(1)
+            .expect("toposort implementation source must be present")
+            .split("/// Build a single-invocation Program")
+            .next()
+            .expect("toposort implementation source must precede program builder");
+
+        assert!(
+            result_path.contains("ToposortError::IndegreeOverflow")
+                && result_path.contains("ToposortError::InconsistentState")
+                && !result_path.contains(concat!("panic", "!("))
+                && !result_path.contains(".unwrap_or_else("),
+            "Fix: toposort already returns Result, so internal failure states must be Err variants instead of panics."
+        );
     }
 }

@@ -4,14 +4,13 @@
 //! polls the GPU's `io_queue` for requests and services them via
 //! io_uring. This removes the CPU from the dispatch critical path.
 
-use std::ptr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-use crate::megakernel::io::{claim_io_requests_into, complete_io_request, io_op, IO_SLOT_COUNT};
-use crate::uring::stream::{AsyncUringStream, Iovec};
+use crate::megakernel::io::{claim_io_requests_into, complete_io_request, io_op};
+use crate::uring::stream::AsyncUringStream;
 use crate::PipelineError;
 
 const IDLE_SPINS: u32 = 64;
@@ -47,14 +46,28 @@ impl IdleBackoff {
         if shutdown.load(Ordering::Acquire) {
             return;
         }
-        self.polls = self.polls.saturating_add(1);
+        self.polls = self.polls.checked_add(1).unwrap_or_else(|| {
+            panic!(
+                "megakernel IO loop idle poll counter overflowed u32. Fix: reset idle backoff before polling indefinitely."
+            )
+        });
         if self.polls <= IDLE_SPINS {
-            thread::yield_now();
+            std::hint::spin_loop();
             return;
         }
         let shift = (self.polls - IDLE_SPINS).min(7);
+        let multiplier = 1_u32.checked_shl(shift).unwrap_or_else(|| {
+            panic!(
+                "megakernel IO loop idle park multiplier overflowed u32. Fix: lower idle backoff shift."
+            )
+        });
         let park = MIN_IDLE_PARK
-            .saturating_mul(1u32 << shift)
+            .checked_mul(multiplier)
+            .unwrap_or_else(|| {
+                panic!(
+                    "megakernel IO loop idle park duration overflowed. Fix: lower idle backoff bounds."
+                )
+            })
             .min(MAX_IDLE_PARK);
         thread::park_timeout(park);
     }
@@ -67,8 +80,10 @@ pub struct MegakernelIoLoop {
 }
 
 impl MegakernelIoLoop {
-    /// Start a background thread that polls `io_queue_mapped` and services
-    /// requests using `stream`.
+    /// Start a background thread that polls `io_queue_mapped`.
+    ///
+    /// READ requests require registered destinations; call
+    /// [`Self::spawn_with_registered_destinations`] for production IO.
     pub fn spawn(stream: AsyncUringStream<'static>, io_queue_mapped: &'static mut [u8]) -> Self {
         Self::spawn_with_registered_destinations(stream, io_queue_mapped, Vec::new())
     }
@@ -76,7 +91,9 @@ impl MegakernelIoLoop {
     /// Start a background IO pump with a registered destination table.
     ///
     /// Requests whose `dst_handle` is present in `registered_destinations` use
-    /// fixed-buffer reads; all other reads retain the compatibility READV path.
+    /// fixed-buffer reads. Unregistered READ destinations stop the pump with a
+    /// host-visible error instead of silently taking a host-iovec compatibility
+    /// route.
     pub fn spawn_with_registered_destinations(
         mut stream: AsyncUringStream<'static>,
         io_queue_mapped: &'static mut [u8],
@@ -87,14 +104,7 @@ impl MegakernelIoLoop {
 
         let handle = thread::spawn(move || {
             let mut backoff = IdleBackoff::default();
-            let mut requests = Vec::with_capacity(IO_SLOT_COUNT as usize);
-            let mut fallback_iovs = vec![
-                [Iovec {
-                    iov_base: ptr::null_mut(),
-                    iov_len: 0
-                }];
-                IO_SLOT_COUNT as usize
-            ];
+            let mut requests = Vec::new();
             let mut registered_destinations = registered_destinations;
             registered_destinations.sort_unstable_by_key(|destination| destination.handle);
             while !shutdown_clone.load(Ordering::Acquire) {
@@ -102,8 +112,20 @@ impl MegakernelIoLoop {
                     let res = cqe.res;
                     let slot_idx = cqe.user_data;
                     stream.ring_state.advance_cq();
-                    stream.inflight = stream.inflight.saturating_sub(1);
-                    complete_io_request(io_queue_mapped, slot_idx as u32, res >= 0)?;
+                    stream.inflight = stream.inflight.checked_sub(1).unwrap_or_else(|| {
+                        panic!(
+                            "megakernel IO loop completion arrived with no inflight SQE. Fix: rebuild the IO stream state."
+                        )
+                    });
+                    let slot_idx = u32::try_from(slot_idx).map_err(|error| {
+                        PipelineError::QueueFull {
+                            queue: "completion",
+                            fix: match error {
+                                _ => "io_uring completion user_data does not fit megakernel IO slot index; keep user_data in u32 slot-id range",
+                            },
+                        }
+                    })?;
+                    complete_io_request(io_queue_mapped, slot_idx, res >= 0)?;
                     backoff.reset();
                 }
 
@@ -133,31 +155,30 @@ impl MegakernelIoLoop {
                                 })
                             {
                                 let destination = registered_destinations[destination_idx];
-                                stream
-                                    .submit_read_fixed_at(
-                                        fd,
-                                        req.offset,
-                                        req.byte_count,
-                                        destination.target_offset,
-                                        destination.buf_index,
-                                        u64::from(req.slot_idx),
-                                    )
-                                    .map_err(|e| PipelineError::Backend(e.to_string()))?;
+                                // Bug fix: a submit_read_fixed_at error
+                                // previously returned via `?` while the
+                                // slot was still CLAIMED, hanging the
+                                // GPU which never saw a completion.
+                                // Mark the slot failed first, then
+                                // propagate the error.
+                                if let Err(e) = stream.submit_read_fixed_at(
+                                    fd,
+                                    req.offset,
+                                    req.byte_count,
+                                    destination.target_offset,
+                                    destination.buf_index,
+                                    u64::from(req.slot_idx),
+                                ) {
+                                    let _ =
+                                        complete_io_request(io_queue_mapped, req.slot_idx, false);
+                                    return Err(PipelineError::Backend(e.to_string()));
+                                }
                             } else {
-                                let Some(iov) = fallback_iovs.get_mut(req.slot_idx as usize) else {
-                                    complete_io_request(io_queue_mapped, req.slot_idx, false)?;
-                                    continue;
-                                };
-                                stream
-                                    .submit_read_to_gpu_at_with_user_data(
-                                        fd,
-                                        req.offset,
-                                        req.byte_count,
-                                        u64::from(req.dst_handle),
-                                        u64::from(req.slot_idx),
-                                        &mut iov[..],
-                                    )
-                                    .map_err(|e| PipelineError::Backend(e.to_string()))?;
+                                complete_io_request(io_queue_mapped, req.slot_idx, false)?;
+                                return Err(PipelineError::Backend(format!(
+                                    "megakernel IO READ requested unregistered GPU destination handle {} in slot {}. Fix: register the destination with MegakernelIoLoop::spawn_with_registered_destinations before publishing READ requests.",
+                                    req.dst_handle, req.slot_idx
+                                )));
                             }
                         },
                         io_op::FENCE => complete_io_request(io_queue_mapped, req.slot_idx, true)?,
@@ -165,7 +186,18 @@ impl MegakernelIoLoop {
                         _ => complete_io_request(io_queue_mapped, req.slot_idx, false)?,
                     }
                 }
-                stream.flush_submissions()?;
+                // Bug fix: same hazard as the per-request submit error
+                // — if flush_submissions fails, every slot we just
+                // claimed is stranded in CLAIMED. Mark every still-
+                // claimed slot failed before propagating.
+                if let Err(e) = stream.flush_submissions() {
+                    for req in requests.iter().copied() {
+                        if req.op_type == io_op::READ {
+                            let _ = complete_io_request(io_queue_mapped, req.slot_idx, false);
+                        }
+                    }
+                    return Err(e);
+                }
             }
             Ok(())
         });

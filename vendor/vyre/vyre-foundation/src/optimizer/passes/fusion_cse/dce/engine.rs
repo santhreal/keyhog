@@ -6,11 +6,11 @@ use im::HashSet;
 #[must_use]
 #[inline]
 pub fn dce(program: Program) -> Program {
-    let template = program.with_rewritten_entry(Vec::new());
-    let entry = eliminate_dead_lets(program.into_entry_vec(), HashSet::<Ident>::new()).nodes;
-    let entry = eliminate_unreachable(entry);
-    let entry = eliminate_dead_lets(entry, HashSet::<Ident>::new()).nodes;
-    template.with_rewritten_entry(entry)
+    program.map_entry(|entry| {
+        let entry = eliminate_dead_lets(entry, HashSet::<Ident>::new()).nodes;
+        let entry = eliminate_unreachable(entry);
+        eliminate_dead_lets(entry, HashSet::<Ident>::new()).nodes
+    })
 }
 
 #[cfg(test)]

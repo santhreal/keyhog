@@ -22,6 +22,7 @@ pub fn call_to(shape: ProgramGraphShape, frontier_in: &str, frontier_out: &str) 
 
 /// CPU reference.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref(
     node_count: u32,
     edge_offsets: &[u32],

@@ -94,12 +94,12 @@ const MAX_WS_PREFIX: u32 = 4;
 
 /// Build the 17a directive-classification `Program`.
 ///
-/// `num_tokens` is the length of `tok_types`/`tok_starts`/`tok_lens`.
-/// `source_len` is the length of the `source` byte buffer; classification
-/// never reads past `tok_starts[i] + tok_lens[i]`, but the buffer is
-/// declared with this length so the IR validator knows the bound.
+/// Hybrid runtime/static-bound: kernel BODY uses `Expr::buf_len()` for
+/// per-thread bounds and `safe_load`, `num_tokens` is kept ONLY for
+/// output buffer sizing, `source_len` is unused.
 #[must_use]
 pub fn gpu_directive_metadata(num_tokens: u32, source_len: u32) -> Program {
+    let _ = source_len;
     let t = Expr::var("t");
 
     // ---- helper expression builders ----
@@ -123,9 +123,14 @@ pub fn gpu_directive_metadata(num_tokens: u32, source_len: u32) -> Program {
         Expr::bitand(Expr::shr(word, shift), Expr::u32(0xFF))
     };
     // Safe load: if `addr < source_len` load source[addr] else 0.
+    // source_len read at runtime via Expr::buf_len so the program is
+    // independent of the host's source-buffer size.
     let safe_load = |addr: Expr| -> Expr {
         Expr::select(
-            Expr::lt(addr.clone(), Expr::u32(source_len)),
+            Expr::lt(
+                addr.clone(),
+                Expr::mul(Expr::buf_len("source"), Expr::u32(4)),
+            ),
             load_byte_u32(addr),
             Expr::u32(0),
         )
@@ -240,7 +245,10 @@ pub fn gpu_directive_metadata(num_tokens: u32, source_len: u32) -> Program {
             all_eq = Expr::bitand(all_eq, eq_byte);
         }
         let next_not_ident = Expr::select(
-            Expr::eq(Expr::var(format!("k_is_continue_{}", expected.len())), Expr::u32(0)),
+            Expr::eq(
+                Expr::var(format!("k_is_continue_{}", expected.len())),
+                Expr::u32(0),
+            ),
             Expr::u32(1),
             Expr::u32(0),
         );
@@ -250,7 +258,10 @@ pub fn gpu_directive_metadata(num_tokens: u32, source_len: u32) -> Program {
 
     // ---- per-thread classify body (loop-free, mutation-free) ----
     let mut classify: Vec<Node> = Vec::new();
-    classify.push(Node::let_bind("tok_start", Expr::load("tok_starts", t.clone())));
+    classify.push(Node::let_bind(
+        "tok_start",
+        Expr::load("tok_starts", t.clone()),
+    ));
 
     // Read bytes s_0..s_{MAX_WS_PREFIX} starting at tok_start (the
     // potential leading-WS run plus the `#`).
@@ -280,10 +291,7 @@ pub fn gpu_directive_metadata(num_tokens: u32, source_len: u32) -> Program {
     for q in 0..MAX_WS_PREFIX {
         classify.push(Node::let_bind(
             format!("p_{q}"),
-            safe_load(Expr::add(
-                Expr::var("hash_idx"),
-                Expr::u32(q + 1),
-            )),
+            safe_load(Expr::add(Expr::var("hash_idx"), Expr::u32(q + 1))),
         ));
     }
     for q in 0..MAX_WS_PREFIX {
@@ -364,8 +372,14 @@ pub fn gpu_directive_metadata(num_tokens: u32, source_len: u32) -> Program {
     // ident-continue check on include's k_7 ensures `include_next`
     // doesn't accidentally fire `include` (k_7 = '_' which IS
     // ident-continue, so `include` matches only when k_7 is NOT).
-    classify.push(fire(keyword_match_expr(&[100, 101, 102, 105, 110, 101]), TOK_PP_DEFINE));
-    classify.push(fire(keyword_match_expr(&[117, 110, 100, 101, 102]), TOK_PP_UNDEF));
+    classify.push(fire(
+        keyword_match_expr(&[100, 101, 102, 105, 110, 101]),
+        TOK_PP_DEFINE,
+    ));
+    classify.push(fire(
+        keyword_match_expr(&[117, 110, 100, 101, 102]),
+        TOK_PP_UNDEF,
+    ));
     classify.push(fire(
         keyword_match_expr(&[105, 110, 99, 108, 117, 100, 101, 95, 110, 101, 120, 116]),
         TOK_PP_INCLUDE_NEXT,
@@ -374,27 +388,45 @@ pub fn gpu_directive_metadata(num_tokens: u32, source_len: u32) -> Program {
         keyword_match_expr(&[105, 110, 99, 108, 117, 100, 101]),
         TOK_PP_INCLUDE,
     ));
-    classify.push(fire(keyword_match_expr(&[105, 102, 110, 100, 101, 102]), TOK_PP_IFNDEF));
-    classify.push(fire(keyword_match_expr(&[105, 102, 100, 101, 102]), TOK_PP_IFDEF));
+    classify.push(fire(
+        keyword_match_expr(&[105, 102, 110, 100, 101, 102]),
+        TOK_PP_IFNDEF,
+    ));
+    classify.push(fire(
+        keyword_match_expr(&[105, 102, 100, 101, 102]),
+        TOK_PP_IFDEF,
+    ));
     classify.push(fire(keyword_match_expr(&[105, 102]), TOK_PP_IF));
     classify.push(fire(keyword_match_expr(&[101, 108, 105, 102]), TOK_PP_ELIF));
     classify.push(fire(keyword_match_expr(&[101, 108, 115, 101]), TOK_PP_ELSE));
-    classify.push(fire(keyword_match_expr(&[101, 110, 100, 105, 102]), TOK_PP_ENDIF));
-    classify.push(fire(keyword_match_expr(&[112, 114, 97, 103, 109, 97]), TOK_PP_PRAGMA));
+    classify.push(fire(
+        keyword_match_expr(&[101, 110, 100, 105, 102]),
+        TOK_PP_ENDIF,
+    ));
+    classify.push(fire(
+        keyword_match_expr(&[112, 114, 97, 103, 109, 97]),
+        TOK_PP_PRAGMA,
+    ));
     classify.push(fire(keyword_match_expr(&[108, 105, 110, 101]), TOK_PP_LINE));
-    classify.push(fire(keyword_match_expr(&[101, 114, 114, 111, 114]), TOK_PP_ERROR));
+    classify.push(fire(
+        keyword_match_expr(&[101, 114, 114, 111, 114]),
+        TOK_PP_ERROR,
+    ));
     classify.push(fire(
         keyword_match_expr(&[119, 97, 114, 110, 105, 110, 103]),
         TOK_PP_WARNING,
     ));
-    classify.push(fire(keyword_match_expr(&[105, 100, 101, 110, 116]), TOK_PP_IDENT));
+    classify.push(fire(
+        keyword_match_expr(&[105, 100, 101, 110, 116]),
+        TOK_PP_IDENT,
+    ));
     classify.push(fire(keyword_match_expr(&[115, 99, 99, 115]), TOK_PP_SCCS));
 
     // ---- per-thread top-level body ----
     let body: Vec<Node> = vec![
         Node::let_bind("t", Expr::InvocationId { axis: 0 }),
         Node::if_then(
-            Expr::lt(t.clone(), Expr::u32(num_tokens)),
+            Expr::lt(t.clone(), Expr::buf_len("tok_starts")),
             vec![
                 Node::let_bind("tok_type", Expr::load("tok_types", t.clone())),
                 // Pre-zero output cells. Classify path conditionally
@@ -412,12 +444,27 @@ pub fn gpu_directive_metadata(num_tokens: u32, source_len: u32) -> Program {
 
     Program::wrapped(
         vec![
-            BufferDecl::storage("tok_types", BINDING_TOK_TYPES, BufferAccess::ReadOnly, DataType::U32)
-                .with_count(num_tokens.max(1)),
-            BufferDecl::storage("tok_starts", BINDING_TOK_STARTS, BufferAccess::ReadOnly, DataType::U32)
-                .with_count(num_tokens.max(1)),
-            BufferDecl::storage("tok_lens", BINDING_TOK_LENS, BufferAccess::ReadOnly, DataType::U32)
-                .with_count(num_tokens.max(1)),
+            BufferDecl::storage(
+                "tok_types",
+                BINDING_TOK_TYPES,
+                BufferAccess::ReadOnly,
+                DataType::U32,
+            )
+            .with_count(num_tokens.max(1)),
+            BufferDecl::storage(
+                "tok_starts",
+                BINDING_TOK_STARTS,
+                BufferAccess::ReadOnly,
+                DataType::U32,
+            )
+            .with_count(num_tokens.max(1)),
+            BufferDecl::storage(
+                "tok_lens",
+                BINDING_TOK_LENS,
+                BufferAccess::ReadOnly,
+                DataType::U32,
+            )
+            .with_count(num_tokens.max(1)),
             // The source buffer is declared as packed `u32` words rather
             // than `u8` bytes. Reference-eval and naga-emitted real GPU
             // disagreed on `load(U8 buffer, addr)` semantics —
@@ -426,8 +473,13 @@ pub fn gpu_directive_metadata(num_tokens: u32, source_len: u32) -> Program {
             // 4*addr..4*addr+4). Declaring the buffer as U32 forces
             // both backends to use the same word-indexed layout, and
             // the kernel does the byte extraction in `load_byte_u32`.
-            BufferDecl::storage("source", BINDING_SOURCE, BufferAccess::ReadOnly, DataType::U32)
-                .with_count(source_len.div_ceil(4).max(1)),
+            BufferDecl::storage(
+                "source",
+                BINDING_SOURCE,
+                BufferAccess::ReadOnly,
+                DataType::U32,
+            )
+            .with_count(0),
             BufferDecl::storage(
                 "directive_kinds",
                 BINDING_DIRECTIVE_KINDS,
@@ -476,6 +528,20 @@ mod tests {
         let p = gpu_directive_metadata(8, 64);
         assert_eq!(p.buffers().len(), 6);
         assert_eq!(p.workgroup_size(), [256, 1, 1]);
+    }
+
+    #[test]
+    fn source_buffer_is_runtime_sized_not_source_length_specialized() {
+        let p = gpu_directive_metadata(8, 64);
+        let source = p
+            .buffers()
+            .iter()
+            .find(|buffer| buffer.name() == "source")
+            .expect("source buffer must exist");
+        assert_eq!(
+            source.count, 0,
+            "source must be runtime-sized so one directive classifier program serves all source lengths"
+        );
     }
 
     #[test]

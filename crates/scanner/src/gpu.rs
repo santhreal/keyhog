@@ -129,29 +129,28 @@ mod backend {
             source: wgpu::ShaderSource::Wgsl(MOE_SHADER.into()),
         });
 
-        let bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("moe_bgl"),
-                entries: &[
-                    // Weights buffer (read-only storage)
-                    bgl_entry(0, true),
-                    // Input features buffer (read-only storage)
-                    bgl_entry(1, true),
-                    // Output scores buffer (read-write storage)
-                    bgl_entry(2, false),
-                    // Params uniform
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 3,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("moe_bgl"),
+            entries: &[
+                // Weights buffer (read-only storage)
+                bgl_entry(0, true),
+                // Input features buffer (read-only storage)
+                bgl_entry(1, true),
+                // Output scores buffer (read-write storage)
+                bgl_entry(2, false),
+                // Params uniform
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
                     },
-                ],
-            });
+                    count: None,
+                },
+            ],
+        });
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("moe_pipeline_layout"),
@@ -250,12 +249,11 @@ mod backend {
         // Flatten features into a contiguous f32 buffer
         let flat_features: Vec<f32> = features.iter().flat_map(|f| f.iter().copied()).collect();
 
-        let input_buf = device
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("input"),
-                contents: bytemuck::cast_slice(&flat_features),
-                usage: wgpu::BufferUsages::STORAGE,
-            });
+        let input_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("input"),
+            contents: bytemuck::cast_slice(&flat_features),
+            usage: wgpu::BufferUsages::STORAGE,
+        });
 
         let output_size = (batch_size * std::mem::size_of::<f32>()) as u64;
         let output_buf = device.create_buffer(&wgpu::BufferDescriptor {
@@ -277,8 +275,7 @@ mod backend {
             batch_size: batch_size as u32,
             _pad: [0; 3],
         };
-        queue
-            .write_buffer(&gpu.params_buf, 0, bytemuck::bytes_of(&params));
+        queue.write_buffer(&gpu.params_buf, 0, bytemuck::bytes_of(&params));
 
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("moe_bg"),
@@ -303,10 +300,9 @@ mod backend {
             ],
         });
 
-        let mut encoder = device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("moe_encoder"),
-            });
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("moe_encoder"),
+        });
 
         {
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {

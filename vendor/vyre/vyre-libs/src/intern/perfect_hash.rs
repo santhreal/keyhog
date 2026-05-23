@@ -115,14 +115,15 @@ impl PerfectHash {
 
 /// Build a CHD perfect hash from `(key, value)` pairs.
 ///
-/// Returns an empty hash if construction fails. Use [`try_build_chd`]
-/// when the caller needs diagnostics for duplicate or adversarial keys.
+/// Panics if construction fails. Use [`try_build_chd`] when the caller needs
+/// recoverable diagnostics for duplicate or adversarial keys.
 pub fn build_chd<I, S>(entries: I) -> PerfectHash
 where
     I: IntoIterator<Item = (S, u32)>,
     S: AsRef<str>,
 {
-    try_build_chd(entries).unwrap_or_default()
+    try_build_chd(entries)
+        .unwrap_or_else(|error| panic!("vyre-libs CHD perfect-hash construction failed: {error}"))
 }
 
 /// Fallible variant of [`build_chd`].
@@ -350,9 +351,9 @@ mod tests {
     }
 
     #[test]
-    fn infallible_builder_does_not_panic_on_duplicates() {
-        let ph = build_chd([("dup", 1_u32), ("dup", 2_u32)]);
-        assert!(ph.is_empty());
+    #[should_panic(expected = "CHD perfect-hash construction failed")]
+    fn infallible_builder_panics_on_duplicates() {
+        let _ = build_chd([("dup", 1_u32), ("dup", 2_u32)]);
     }
 
     #[test]

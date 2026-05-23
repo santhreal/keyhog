@@ -44,8 +44,12 @@ fn main() {
         if !path.exists() {
             continue;
         }
-        let src = fs::read_to_string(path)
-            .unwrap_or_else(|e| fail(format!("cannot read {} for category scan: {e}", path.display())));
+        let src = fs::read_to_string(path).unwrap_or_else(|e| {
+            fail(format!(
+                "cannot read {} for category scan: {e}",
+                path.display()
+            ))
+        });
         check_file(path, &src);
     }
 }

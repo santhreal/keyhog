@@ -78,6 +78,14 @@ pub fn tt_contract_step(
             format!("Fix: tt_contract_step requires r_next > 0, got {r_next}."),
         );
     }
+    let Some(core_count) = r_prev.checked_mul(r_next) else {
+        return crate::invalid_output_program(
+            OP_ID,
+            acc_out,
+            DataType::U32,
+            format!("Fix: tt_contract_step r_prev*r_next overflows u32: {r_prev}*{r_next}."),
+        );
+    };
 
     let t = Expr::InvocationId { axis: 0 };
     let body = vec![Node::if_then(
@@ -92,18 +100,12 @@ pub fn tt_contract_step(
                     "acc",
                     Expr::add(
                         Expr::var("acc"),
-                        Expr::shr(
-                            Expr::mul(
-                                Expr::load(acc_in, Expr::var("a")),
-                                Expr::load(
-                                    core_slice,
-                                    Expr::add(
-                                        Expr::mul(Expr::var("a"), Expr::u32(r_next)),
-                                        t.clone(),
-                                    ),
-                                ),
+                        crate::fixed_mul_16_16_expr(
+                            Expr::load(acc_in, Expr::var("a")),
+                            Expr::load(
+                                core_slice,
+                                Expr::add(Expr::mul(Expr::var("a"), Expr::u32(r_next)), t.clone()),
                             ),
-                            Expr::u32(16),
                         ),
                     ),
                 )],
@@ -117,7 +119,7 @@ pub fn tt_contract_step(
             BufferDecl::storage(acc_in, 0, BufferAccess::ReadOnly, DataType::U32)
                 .with_count(r_prev),
             BufferDecl::storage(core_slice, 1, BufferAccess::ReadOnly, DataType::U32)
-                .with_count(r_prev * r_next),
+                .with_count(core_count),
             BufferDecl::storage(acc_out, 2, BufferAccess::ReadWrite, DataType::U32)
                 .with_count(r_next),
         ],
@@ -131,6 +133,7 @@ pub fn tt_contract_step(
 }
 
 /// CPU reference: f64.
+#[cfg(any(test, feature = "cpu-parity"))]
 #[must_use]
 pub fn tt_contract_step_cpu(
     acc_in: &[f64],
@@ -144,6 +147,7 @@ pub fn tt_contract_step_cpu(
 }
 
 /// CPU reference: f64 into caller-owned output storage.
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn tt_contract_step_cpu_into(
     acc_in: &[f64],
     core_slice: &[f64],
@@ -169,6 +173,7 @@ pub fn tt_contract_step_cpu_into(
 /// CPU reference: full TT chain contraction. Cores given as a Vec of
 /// 3D arrays flattened row-major as `(r_prev × n × r_next)`. Indices
 /// pick the slice from each core. Boundary ranks must be 1.
+#[cfg(any(test, feature = "cpu-parity"))]
 #[must_use]
 pub fn tt_full_chain_cpu(
     cores: &[Vec<f64>],
@@ -182,6 +187,7 @@ pub fn tt_full_chain_cpu(
 }
 
 /// CPU reference full chain contraction using caller-owned accumulators.
+#[cfg(any(test, feature = "cpu-parity"))]
 #[allow(clippy::needless_range_loop)]
 pub fn tt_full_chain_cpu_with_scratch(
     cores: &[Vec<f64>],

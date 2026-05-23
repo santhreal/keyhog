@@ -112,8 +112,12 @@ impl TomlEquivalenceRules {
         Self::from_toml_str(name, &text)
     }
 
-    /// Parse rule pairs from an in-memory TOML string. Same error
-    /// surface as [`Self::load`].
+    /// Parse rule pairs from an in-memory TOML string.
+    ///
+    /// # Errors
+    ///
+    /// Returns `std::io::ErrorKind::InvalidData` when the TOML text
+    /// cannot be decoded or declares an unsupported schema version.
     pub fn from_toml_str(name: &'static str, text: &str) -> std::io::Result<Self> {
         let parsed: RuleFile = toml::from_str(text)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;

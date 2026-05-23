@@ -1,6 +1,6 @@
 # c_frontend Eviction Plan
 
-**Target Crate**: `vyre-libs-c` (or consumer equivalent)
+**Target Crate**: consumer-owned C frontend crate
 
 **Public Symbols to Migrate**:
 - C_FRONTEND_WORKSPACE_BINDING
@@ -34,5 +34,5 @@
 - validate_c_frontend_phase_transition
 
 **Downstream Consumers to Update**:
-- The main substrate pipeline should no longer depend directly on `c_frontend`. C-language parsing and handling will be instantiated by `vyre-libs-c` (or surgec) which will use the core substrate as a library rather than polluting `vyre-runtime` with domain-specific C logic.
+- The main substrate pipeline should no longer depend directly on `c_frontend`. C-language parsing and handling will be instantiated by a consumer-owned frontend crate which will use the core substrate as a library rather than polluting `vyre-runtime` with domain-specific C logic.
 - Remove `c_frontend` module dependency from `megakernel/builder.rs` and execution path, moving initialization strictly to the consumer's setup.

@@ -293,6 +293,7 @@ pub fn inflate_then_aho_corasick(
     )
 }
 
+#[cfg(test)]
 fn cpu_ref(input: &[u8]) -> Result<(Vec<u32>, u32), String> {
     if input.len() < 5 {
         return Err(STORED_HEADER_FIX.to_string());
@@ -337,19 +338,26 @@ fn fixture_inputs() -> Vec<Vec<Vec<u8>>> {
             u32::from(b'l'),
             u32::from(b'o'),
         ]),
-        vec![0u8; 10 * 4],
         vec![0u8; 4],
     ]]
 }
 
 fn fixture_outputs() -> Vec<Vec<Vec<u8>>> {
-    let Ok((mut decoded, decoded_len)) =
-        cpu_ref(&[0x01, 0x05, 0x00, 0xFA, 0xFF, b'h', b'e', b'l', b'l', b'o'])
-    else {
-        return Vec::new();
-    };
-    decoded.resize(10, 0);
-    vec![vec![pack_words(&decoded), pack_words(&[decoded_len])]]
+    vec![vec![
+        pack_words(&[
+            u32::from(b'h'),
+            u32::from(b'e'),
+            u32::from(b'l'),
+            u32::from(b'l'),
+            u32::from(b'o'),
+            0,
+            0,
+            0,
+            0,
+            0,
+        ]),
+        pack_words(&[5]),
+    ]]
 }
 
 inventory::submit! {
@@ -483,7 +491,7 @@ mod tests {
             u32::from_le_bytes([len_bytes[0], len_bytes[1], len_bytes[2], len_bytes[3]]);
 
         // --- Separate aho ---
-        let aho_program = crate::matching::aho_corasick(
+        let aho_program = crate::scan::aho_corasick(
             "haystack",
             "transitions",
             "accept",

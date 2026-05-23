@@ -33,12 +33,12 @@ pub fn source() -> Option<&'static str> {
 /// `changed_flag[0]`.
 ///
 /// Buffers:
-/// - `state`: ReadWrite u32 array — per-node lattice element.
-/// - `transfer`: ReadOnly u32 array — per-node transfer mask.
-/// - `successor_offsets`: ReadOnly u32 array of length
+/// - `state`: `ReadWrite` u32 array — per-node lattice element.
+/// - `transfer`: `ReadOnly` u32 array — per-node transfer mask.
+/// - `successor_offsets`: `ReadOnly` u32 array of length
 ///   `node_count + 1` — CSR offsets.
-/// - `successors`: ReadOnly u32 array — flat successor list.
-/// - `changed_flag`: ReadWrite u32 array of length 1 — set to 1
+/// - `successors`: `ReadOnly` u32 array — flat successor list.
+/// - `changed_flag`: `ReadWrite` u32 array of length 1 — set to 1
 ///   on any change during this step.
 ///
 /// The IR dispatches one lane per node; callers set workgroup size

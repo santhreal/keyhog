@@ -3,13 +3,18 @@ use crate::parsing::c::sema::{
     lookup::emit_declaration_lookup,
     walk::{emit_brace_scope_resolution, emit_function_parameter_scope},
 };
+use crate::parsing::c::source_bytes::source_haystack_words;
 use crate::parsing::composition::child_phase;
 use crate::region::wrap_anonymous;
 use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 
+#[cfg(any(test, feature = "cpu-parity"))]
 mod reference;
+#[cfg(any(test, feature = "cpu-parity"))]
 mod witness;
 
+#[allow(deprecated)]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub use reference::reference_scope_tree;
 
 const OP_ID: &str = "vyre-libs::parsing::c_sema_scope";
@@ -47,13 +52,93 @@ pub fn c_sema_scope(
     num_tokens: Expr,
     out_scope_tree: &str,
 ) -> Program {
+    c_sema_scope_impl(
+        tok_types,
+        tok_starts,
+        tok_lens,
+        haystack,
+        haystack_len,
+        num_tokens,
+        out_scope_tree,
+        false,
+        false,
+    )
+}
+
+#[must_use]
+/// Build semantic scope/interning IR for packed-byte source haystacks.
+///
+/// Token offsets remain logical byte offsets; `haystack` stores four source
+/// bytes per `u32` word for CUDA-first parser pipelines.
+pub fn c_sema_scope_packed_haystack(
+    tok_types: &str,
+    tok_starts: &str,
+    tok_lens: &str,
+    haystack: &str,
+    haystack_len: Expr,
+    num_tokens: Expr,
+    out_scope_tree: &str,
+) -> Program {
+    c_sema_scope_impl(
+        tok_types,
+        tok_starts,
+        tok_lens,
+        haystack,
+        haystack_len,
+        num_tokens,
+        out_scope_tree,
+        true,
+        false,
+    )
+}
+
+#[must_use]
+/// Build semantic scope records for symbol-bearing tokens on packed CUDA haystacks.
+///
+/// Non-identifier rows are emitted with zero scope/declaration/intern fields so
+/// production object consumers can keep stable row indexing without paying
+/// brace/parameter scope walks for punctuation and keywords.
+pub fn c_sema_scope_symbols_packed_haystack(
+    tok_types: &str,
+    tok_starts: &str,
+    tok_lens: &str,
+    haystack: &str,
+    haystack_len: Expr,
+    num_tokens: Expr,
+    out_scope_tree: &str,
+) -> Program {
+    c_sema_scope_impl(
+        tok_types,
+        tok_starts,
+        tok_lens,
+        haystack,
+        haystack_len,
+        num_tokens,
+        out_scope_tree,
+        true,
+        true,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn c_sema_scope_impl(
+    tok_types: &str,
+    tok_starts: &str,
+    tok_lens: &str,
+    haystack: &str,
+    haystack_len: Expr,
+    num_tokens: Expr,
+    out_scope_tree: &str,
+    packed_haystack: bool,
+    symbols_only: bool,
+) -> Program {
     let t = Expr::InvocationId { axis: 0 };
     let tok_count = match &num_tokens {
         Expr::LitU32(n) => *n,
         _ => 1,
     };
     let haystack_words = match &haystack_len {
-        Expr::LitU32(n) => *n,
+        Expr::LitU32(n) => source_haystack_words(*n, packed_haystack),
         _ => 1,
     };
 
@@ -70,6 +155,8 @@ pub fn c_sema_scope(
                 t.clone(),
                 &num_tokens,
                 out_scope_tree,
+                packed_haystack,
+                symbols_only,
             ),
         ),
         child_phase(
@@ -84,6 +171,8 @@ pub fn c_sema_scope(
                 t.clone(),
                 &num_tokens,
                 out_scope_tree,
+                packed_haystack,
+                symbols_only,
             ),
         ),
         child_phase(
@@ -98,6 +187,8 @@ pub fn c_sema_scope(
                 t.clone(),
                 &num_tokens,
                 out_scope_tree,
+                packed_haystack,
+                symbols_only,
             ),
         ),
     ];
@@ -114,8 +205,7 @@ pub fn c_sema_scope(
                 .with_count(tok_count.max(1)),
             BufferDecl::storage(haystack, 3, BufferAccess::ReadOnly, DataType::U32)
                 .with_count(haystack_words.max(1)),
-            BufferDecl::storage(out_scope_tree, 4, BufferAccess::ReadWrite, DataType::U32)
-                .with_count(out_words),
+            BufferDecl::output(out_scope_tree, 4, DataType::U32).with_count(out_words),
         ],
         [256, 1, 1],
         vec![wrap_anonymous(
@@ -139,6 +229,8 @@ fn c_sema_scope_phase_body(
     t: Expr,
     num_tokens: &Expr,
     out_scope_tree: &str,
+    packed_haystack: bool,
+    symbols_only: bool,
 ) -> Vec<Node> {
     match phase {
         CScopePhase::Scope => {
@@ -149,34 +241,51 @@ fn c_sema_scope_phase_body(
                 Node::let_bind("scope_open", Expr::u32(u32::MAX)),
                 Node::let_bind("scope_depth", Expr::u32(0)),
             ]);
-            body.push(child_phase(
-                SCOPE_PHASE_OP_ID,
-                SCOPE_BRACE_PHASE_OP_ID,
-                c_sema_scope_phase_body(
-                    CScopePhase::ScopeBrace,
-                    tok_types,
-                    tok_starts,
-                    tok_lens,
-                    haystack,
-                    t.clone(),
-                    num_tokens,
-                    out_scope_tree,
+            let scope_resolution = vec![
+                child_phase(
+                    SCOPE_PHASE_OP_ID,
+                    SCOPE_BRACE_PHASE_OP_ID,
+                    c_sema_scope_phase_body(
+                        CScopePhase::ScopeBrace,
+                        tok_types,
+                        tok_starts,
+                        tok_lens,
+                        haystack,
+                        t.clone(),
+                        num_tokens,
+                        out_scope_tree,
+                        packed_haystack,
+                        symbols_only,
+                    ),
                 ),
-            ));
-            body.push(child_phase(
-                SCOPE_PHASE_OP_ID,
-                SCOPE_FUNCTION_PARAMS_PHASE_OP_ID,
-                c_sema_scope_phase_body(
-                    CScopePhase::ScopeFunctionParameters,
-                    tok_types,
-                    tok_starts,
-                    tok_lens,
-                    haystack,
-                    t.clone(),
-                    num_tokens,
-                    out_scope_tree,
+                child_phase(
+                    SCOPE_PHASE_OP_ID,
+                    SCOPE_FUNCTION_PARAMS_PHASE_OP_ID,
+                    c_sema_scope_phase_body(
+                        CScopePhase::ScopeFunctionParameters,
+                        tok_types,
+                        tok_starts,
+                        tok_lens,
+                        haystack,
+                        t.clone(),
+                        num_tokens,
+                        out_scope_tree,
+                        packed_haystack,
+                        symbols_only,
+                    ),
                 ),
-            ));
+            ];
+            if symbols_only {
+                body.push(Node::if_then(
+                    Expr::eq(
+                        Expr::var("tok_type"),
+                        Expr::u32(crate::parsing::c::lex::tokens::TOK_IDENTIFIER),
+                    ),
+                    scope_resolution,
+                ));
+            } else {
+                body.extend(scope_resolution);
+            }
             body.extend(store_scope_nodes(out_scope_tree, t));
             body
         }
@@ -186,27 +295,45 @@ fn c_sema_scope_phase_body(
         }
         CScopePhase::Decl => {
             let mut body = vec![Node::let_bind("tok_type", Expr::load(tok_types, t.clone()))];
-            body.extend(emit_declaration_lookup(t.clone(), num_tokens));
-            body.push(Node::store(
+            let mut decl_body = emit_declaration_lookup(t.clone(), num_tokens);
+            decl_body.push(Node::store(
                 out_scope_tree,
-                Expr::add(Expr::mul(t, Expr::u32(4)), Expr::u32(2)),
+                Expr::add(Expr::mul(t.clone(), Expr::u32(4)), Expr::u32(2)),
                 Expr::var("decl_kind"),
             ));
+            if symbols_only {
+                body.push(Node::if_then(
+                    Expr::eq(
+                        Expr::var("tok_type"),
+                        Expr::u32(crate::parsing::c::lex::tokens::TOK_IDENTIFIER),
+                    ),
+                    decl_body,
+                ));
+            } else {
+                body.extend(decl_body);
+            }
             body
         }
         CScopePhase::IdentifierIntern => {
             let mut body = vec![Node::let_bind("tok_type", Expr::load(tok_types, t.clone()))];
-            body.extend(emit_identifier_intern(
-                tok_starts,
-                tok_lens,
-                haystack,
-                t.clone(),
-            ));
-            body.push(Node::store(
+            let mut intern_body =
+                emit_identifier_intern(tok_starts, tok_lens, haystack, t.clone(), packed_haystack);
+            intern_body.push(Node::store(
                 out_scope_tree,
                 Expr::add(Expr::mul(t, Expr::u32(4)), Expr::u32(3)),
                 Expr::var("identifier_intern_id"),
             ));
+            if symbols_only {
+                body.push(Node::if_then(
+                    Expr::eq(
+                        Expr::var("tok_type"),
+                        Expr::u32(crate::parsing::c::lex::tokens::TOK_IDENTIFIER),
+                    ),
+                    intern_body,
+                ));
+            } else {
+                body.extend(intern_body);
+            }
             body
         }
     }
@@ -258,6 +385,8 @@ fn c_sema_scope_phase(
         t.clone(),
         &num_tokens,
         out_scope_tree,
+        false,
+        false,
     );
     if phase == CScopePhase::ScopeBrace {
         let mut standalone = vec![
@@ -278,7 +407,7 @@ fn c_sema_scope_phase(
         standalone.extend(store_scope_nodes(out_scope_tree, t.clone()));
         body = standalone;
     }
-    let body_op_id = format!("{phase_op_id}.body");
+    let body_op_id = format!("anonymous::{phase_op_id}.body");
     Program::wrapped(
         vec![
             BufferDecl::storage(tok_types, 0, BufferAccess::ReadOnly, DataType::U32)
@@ -289,8 +418,7 @@ fn c_sema_scope_phase(
                 .with_count(tok_count.max(1)),
             BufferDecl::storage(haystack, 3, BufferAccess::ReadOnly, DataType::U32)
                 .with_count(haystack_words.max(1)),
-            BufferDecl::storage(out_scope_tree, 4, BufferAccess::ReadWrite, DataType::U32)
-                .with_count(out_words),
+            BufferDecl::output(out_scope_tree, 4, DataType::U32).with_count(out_words),
         ],
         [256, 1, 1],
         vec![wrap_anonymous(

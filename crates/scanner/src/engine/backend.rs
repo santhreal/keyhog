@@ -226,7 +226,7 @@ impl CompiledScanner {
         self.scan_hot_patterns_fast(
             &prepared.preprocessed.text,
             &line_offsets,
-            &prepared.chunk,
+            prepared.chunk,
             &mut scan_state,
         );
 
@@ -322,8 +322,7 @@ impl CompiledScanner {
                         continue;
                     }
                     let scan_start = start.saturating_sub(PRE_MARGIN) as usize;
-                    let window_end =
-                        (end.saturating_add(POST_MARGIN) as usize).min(text_len);
+                    let window_end = (end.saturating_add(POST_MARGIN) as usize).min(text_len);
                     if scan_start >= window_end {
                         continue;
                     }
@@ -358,8 +357,7 @@ impl CompiledScanner {
                     } else {
                         &[]
                     };
-                    let candidates =
-                        std::iter::once(pat_idx).chain(siblings.iter().copied());
+                    let candidates = std::iter::once(pat_idx).chain(siblings.iter().copied());
                     for cand_idx in candidates {
                         if cand_idx >= total_patterns {
                             continue;
@@ -418,7 +416,7 @@ impl CompiledScanner {
                         &line_offsets,
                         &code_lines,
                         &documentation_lines,
-                        &prepared.chunk,
+                        prepared.chunk,
                         &mut scan_state,
                         deadline,
                     );
@@ -445,7 +443,7 @@ impl CompiledScanner {
                         &line_offsets,
                         &code_lines,
                         &documentation_lines,
-                        &prepared.chunk,
+                        prepared.chunk,
                         &mut scan_state,
                         deadline,
                     );
@@ -466,18 +464,18 @@ impl CompiledScanner {
             &line_offsets,
             &code_lines,
             &documentation_lines,
-            &prepared.chunk,
+            prepared.chunk,
             &mut scan_state,
             deadline,
         );
 
-        self.scan_generic_assignments(&code_lines, &line_offsets, &prepared.chunk, &mut scan_state);
+        self.scan_generic_assignments(&code_lines, &line_offsets, prepared.chunk, &mut scan_state);
 
         #[cfg(feature = "entropy")]
         self.scan_entropy_fallback(
             &prepared.preprocessed,
             &line_offsets,
-            &prepared.chunk,
+            prepared.chunk,
             &mut scan_state,
         );
 
@@ -509,7 +507,7 @@ impl CompiledScanner {
         self.scan_hot_patterns_fast(
             &prepared.preprocessed.text,
             &line_offsets,
-            &prepared.chunk,
+            prepared.chunk,
             &mut scan_state,
         );
 
@@ -534,7 +532,7 @@ impl CompiledScanner {
                 &line_offsets,
                 &code_lines,
                 &documentation_lines,
-                &prepared.chunk,
+                prepared.chunk,
                 &mut scan_state,
                 deadline,
             );
@@ -557,18 +555,18 @@ impl CompiledScanner {
             &line_offsets,
             &code_lines,
             &documentation_lines,
-            &prepared.chunk,
+            prepared.chunk,
             &mut scan_state,
             deadline,
         );
 
-        self.scan_generic_assignments(&code_lines, &line_offsets, &prepared.chunk, &mut scan_state);
+        self.scan_generic_assignments(&code_lines, &line_offsets, prepared.chunk, &mut scan_state);
 
         #[cfg(feature = "entropy")]
         self.scan_entropy_fallback(
             &prepared.preprocessed,
             &line_offsets,
-            &prepared.chunk,
+            prepared.chunk,
             &mut scan_state,
         );
 

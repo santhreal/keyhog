@@ -6,7 +6,7 @@
 //! `mod.rs`; everything below the BodyBuilder boundary is op-emit logic
 //! split into its own files. This file is the *outside-in* layer.
 
-use std::collections::BTreeMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 use std::num::NonZeroU32;
 
 use naga::{
@@ -30,6 +30,8 @@ pub(super) struct TypeHandles {
     pub(super) i32_ty: naga::Handle<Type>,
     pub(super) f32_ty: naga::Handle<Type>,
     pub(super) f64_ty: naga::Handle<Type>,
+    pub(super) u64_ty: naga::Handle<Type>,
+    pub(super) i64_ty: naga::Handle<Type>,
     pub(super) vec3_u32_ty: naga::Handle<Type>,
     pub(super) atomic_compare_exchange_u32_ty: naga::Handle<Type>,
 }
@@ -104,9 +106,19 @@ fn push_builtin_arg(
 struct ModuleBuilder {
     module: Module,
     types: TypeHandles,
-    bindings: BTreeMap<u32, naga::Handle<GlobalVariable>>,
-    binding_types: BTreeMap<u32, naga::Handle<Type>>,
-    binding_counts: BTreeMap<u32, Option<u32>>,
+    bindings: FxHashMap<u32, naga::Handle<GlobalVariable>>,
+    binding_types: FxHashMap<u32, naga::Handle<Type>>,
+    binding_counts: FxHashMap<u32, Option<u32>>,
+    /// Source-level `DataType` per binding slot. WGSL packs every
+    /// sub-word scalar (U8/I8/U16/I16/Bool) into `array<u32>` /
+    /// `array<i32>` storage; LoadGlobal/LoadShared/LoadConstant on a
+    /// byte-element slot needs to honor the byte-addressing the
+    /// reference evaluator uses, which means the emitter must extract
+    /// the correct lane out of the loaded word. This map lets the body
+    /// builder distinguish "real word" from "packed byte" at op-emit
+    /// time without losing the IR-level type information that
+    /// `binding_types` (the naga handle) collapses.
+    binding_data_types: FxHashMap<u32, DataType>,
 }
 
 impl ModuleBuilder {
@@ -117,6 +129,8 @@ impl ModuleBuilder {
         let i32_ty = insert_scalar(&mut module, ScalarKind::Sint, 4);
         let f32_ty = insert_scalar(&mut module, ScalarKind::Float, 4);
         let f64_ty = insert_scalar(&mut module, ScalarKind::Float, 8);
+        let u64_ty = insert_scalar(&mut module, ScalarKind::Uint, 8);
+        let i64_ty = insert_scalar(&mut module, ScalarKind::Sint, 8);
         let vec3_u32_ty = module.types.insert(
             Type {
                 name: Some("__vyre_vec3_u32".to_owned()),
@@ -161,12 +175,15 @@ impl ModuleBuilder {
                 i32_ty,
                 f32_ty,
                 f64_ty,
+                u64_ty,
+                i64_ty,
                 vec3_u32_ty,
                 atomic_compare_exchange_u32_ty,
             },
-            bindings: BTreeMap::new(),
-            binding_types: BTreeMap::new(),
-            binding_counts: BTreeMap::new(),
+            bindings: FxHashMap::default(),
+            binding_types: FxHashMap::default(),
+            binding_counts: FxHashMap::default(),
+            binding_data_types: FxHashMap::default(),
         }
     }
 
@@ -233,8 +250,16 @@ impl ModuleBuilder {
         );
         self.bindings.insert(binding.slot, global);
         self.binding_types.insert(binding.slot, element_ty);
-        self.binding_counts
-            .insert(binding.slot, binding.element_count);
+        self.binding_counts.insert(
+            binding.slot,
+            if binding.memory_class == MemoryClass::Shared {
+                binding.element_count
+            } else {
+                None
+            },
+        );
+        self.binding_data_types
+            .insert(binding.slot, binding.element_type.clone());
         Ok(())
     }
 
@@ -258,6 +283,38 @@ impl ModuleBuilder {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
+
+    #[test]
+    fn storage_buffer_len_emits_runtime_array_length_for_counted_bindings() {
+        let program = Program::wrapped(
+            vec![
+                BufferDecl::storage("input", 0, BufferAccess::ReadOnly, DataType::U32)
+                    .with_count(8),
+                BufferDecl::storage("out", 1, BufferAccess::ReadWrite, DataType::U32).with_count(1),
+            ],
+            [1, 1, 1],
+            vec![Node::store("out", Expr::u32(0), Expr::buf_len("input"))],
+        );
+        let descriptor =
+            vyre_lower::lower(&program).expect("counted storage buf_len program must lower");
+        let module =
+            emit_uncached(&descriptor).expect("counted storage buf_len descriptor must emit");
+        let function = &module.entry_points[0].function;
+
+        assert!(
+            function
+                .expressions
+                .iter()
+                .any(|(_, expr)| matches!(expr, naga::Expression::ArrayLength(_))),
+            "Fix: storage BufferLength must emit runtime arrayLength so WGSL cache keys can ignore per-dispatch storage counts without reusing stale static bounds."
+        );
+    }
+}
+
 fn insert_scalar(module: &mut Module, kind: ScalarKind, width: u8) -> naga::Handle<Type> {
     module.types.insert(
         Type {
@@ -271,7 +328,14 @@ fn insert_scalar(module: &mut Module, kind: ScalarKind, width: u8) -> naga::Hand
 fn address_space(binding: &BindingSlot) -> AddressSpace {
     match binding.memory_class {
         MemoryClass::Shared => AddressSpace::WorkGroup,
-        MemoryClass::Constant => AddressSpace::Storage {
+        // True `var<uniform>` would require 16-byte (vec4) stride
+        // for any inner array — `array<u32>` alone fails Naga's
+        // alignment validation. Keep the WGSL address space as
+        // storage(LOAD); `resource_binding` still routes uniforms
+        // to group 1 so the layout-builder side is unambiguous.
+        // When the lowering grows a packed-vec4 uniform variant, swap
+        // this arm back to `AddressSpace::Uniform`.
+        MemoryClass::Uniform | MemoryClass::Constant => AddressSpace::Storage {
             access: StorageAccess::LOAD,
         },
         MemoryClass::Global | MemoryClass::Scratch => AddressSpace::Storage {
@@ -291,6 +355,10 @@ fn storage_access(visibility: BindingVisibility) -> StorageAccess {
 fn resource_binding(binding: &BindingSlot) -> Option<ResourceBinding> {
     match binding.memory_class {
         MemoryClass::Shared | MemoryClass::Scratch => None,
+        MemoryClass::Uniform => Some(ResourceBinding {
+            group: 1,
+            binding: binding.slot,
+        }),
         MemoryClass::Global | MemoryClass::Constant => Some(ResourceBinding {
             group: 0,
             binding: binding.slot,
@@ -323,10 +391,10 @@ fn body_uses_trap(body: &KernelBody) -> bool {
 /// validator requires the array element to be `atomic<u32>` (not just
 /// `u32`) for any binding that is the target of an atomic operation;
 /// otherwise it rejects the module with `InvalidAtomic(InvalidPointer)`.
-fn collect_atomic_binding_slots(desc: &KernelDescriptor) -> std::collections::BTreeSet<u32> {
-    use std::collections::BTreeSet;
+fn collect_atomic_binding_slots(desc: &KernelDescriptor) -> FxHashSet<u32> {
+    use FxHashSet;
 
-    fn walk(body: &KernelBody, out: &mut BTreeSet<u32>) {
+    fn walk(body: &KernelBody, out: &mut FxHashSet<u32>) {
         for op in &body.ops {
             if matches!(op.kind, KernelOpKind::Atomic { .. }) {
                 if let Some(&slot) = op.operands.first() {
@@ -338,7 +406,7 @@ fn collect_atomic_binding_slots(desc: &KernelDescriptor) -> std::collections::BT
             walk(child, out);
         }
     }
-    let mut out = BTreeSet::new();
+    let mut out = FxHashSet::default();
     walk(&desc.body, &mut out);
     if body_uses_trap(&desc.body) {
         if let Some(slot) = desc
@@ -383,10 +451,10 @@ fn descriptor_trap_sidecar_slot(desc: &KernelDescriptor) -> Result<Option<u32>, 
     Ok(Some(slot.slot))
 }
 
-fn descriptor_trap_tag_codes(body: &KernelBody) -> BTreeMap<vyre_lower::descriptor::Name, u32> {
+fn descriptor_trap_tag_codes(body: &KernelBody) -> FxHashMap<vyre_lower::descriptor::Name, u32> {
     fn walk(
         body: &KernelBody,
-        tags: &mut BTreeMap<vyre_lower::descriptor::Name, u32>,
+        tags: &mut FxHashMap<vyre_lower::descriptor::Name, u32>,
         next: &mut u32,
     ) {
         for op in &body.ops {
@@ -402,7 +470,7 @@ fn descriptor_trap_tag_codes(body: &KernelBody) -> BTreeMap<vyre_lower::descript
             walk(child, tags, next);
         }
     }
-    let mut tags = BTreeMap::new();
+    let mut tags = FxHashMap::default();
     let mut next = 1;
     walk(body, &mut tags, &mut next);
     tags
@@ -422,22 +490,23 @@ pub(crate) fn emit_uncached(desc: &KernelDescriptor) -> Result<naga::Module, Emi
     let builtins = Builtins::push(&mut function, builder.types, body_uses_subgroup(&desc.body));
     let mut body_builder = BodyBuilder {
         function: &mut function,
-        values: BTreeMap::new(),
-        value_types: BTreeMap::new(),
+        values: FxHashMap::default(),
+        value_types: FxHashMap::default(),
         globals: &builder.bindings,
         binding_types: &builder.binding_types,
         binding_counts: &builder.binding_counts,
+        binding_data_types: &builder.binding_data_types,
         builtins,
         types: builder.types,
-        loop_locals: BTreeMap::new(),
-        loop_types: BTreeMap::new(),
-        loop_carrier_targets: std::collections::BTreeSet::new(),
-        loop_carrier_locals: BTreeMap::new(),
+        loop_locals: FxHashMap::default(),
+        loop_types: FxHashMap::default(),
+        loop_carrier_targets: FxHashSet::default(),
+        loop_carrier_locals: FxHashMap::default(),
         child_body_depth: 0,
-        block_scoped_locals: BTreeMap::new(),
-        named_carrier_locals: BTreeMap::new(),
-        named_carrier_types: BTreeMap::new(),
-        named_carrier_result_ids: BTreeMap::new(),
+        block_scoped_locals: FxHashMap::default(),
+        named_carrier_locals: FxHashMap::default(),
+        named_carrier_types: FxHashMap::default(),
+        named_carrier_result_ids: FxHashMap::default(),
         trap_sidecar_slot,
         trap_tag_codes,
     };

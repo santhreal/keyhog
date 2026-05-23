@@ -1,6 +1,6 @@
 [package]
 name = "vyre-libs"
-version = "0.4.1"
+version = "0.4.2"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -32,12 +32,14 @@ default = [
 # relied on the wide default flip to `full` (no behavior change).
 full = [
     "math-linalg", "math-scan", "math-broadcast", "math-algebra", "math-succinct",
-    "nn-activation", "nn-linear", "nn-norm", "nn-attention",
+    "nn-activation", "nn-linear", "nn-linear-4bit", "nn-norm", "nn-attention", "nn-moe", "nn-inference",
     "matching-substring", "matching-dfa",
     "decode",
     "crypto-fnv", "crypto-blake3",
 ]
 bench = []
+cpu-parity = ["vyre-primitives/cpu-parity"]
+hash = []
 math = ["math-linalg", "math-scan", "math-broadcast", "math-algebra", "math-succinct"]
 nn = ["nn-activation", "nn-linear", "nn-norm", "nn-attention"]
 matching = ["matching-substring", "matching-dfa"]
@@ -53,11 +55,13 @@ rule = ["dep:regex"]
 "math-succinct" = []
 "nn-activation" = []
 "nn-linear" = ["math-linalg"]
+"nn-linear-4bit" = ["nn-linear"]
 "nn-norm" = []
 "nn-attention" = ["nn-norm", "math-linalg"]
 "nn-moe" = ["nn-attention"]
-"matching-substring" = []
-"matching-dfa" = []
+"nn-inference" = ["nn-activation", "nn-linear", "nn-norm", "nn-attention", "nn-moe"]
+"matching-substring" = ["cpu-parity"]
+"matching-dfa" = ["cpu-parity"]
 "matching-nfa" = ["matching-dfa"]
 "matching-regex" = ["matching-nfa", "dep:regex-syntax"]
 "intern" = []
@@ -69,7 +73,7 @@ rule = ["dep:regex"]
 "go-parser" = []
 "python-parser" = []
 "test-fixtures" = []
-security = ["dep:weir"]
+security = []
 "self-substrate" = []
 
 [dependencies]
@@ -86,18 +90,23 @@ thiserror.workspace = true
 tracing.workspace = true
 regex-syntax = { workspace = true, optional = true }
 regex = { workspace = true, optional = true }
-weir = { workspace = true, optional = true }
 libm.workspace = true
 rustc-hash.workspace = true
 blake3.workspace = true
 rayon.workspace = true
+bytemuck.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true
 tempfile.workspace = true
 vyre-reference = { workspace = true, features = ["subgroup-ops"] }
+vyre-primitives = { workspace = true, features = ["text", "matching", "decode", "math", "nn", "hash", "parsing", "graph", "bitset", "reduce", "label", "predicate", "fixpoint", "nfa", "inventory-registry", "geom", "opt", "topology", "visual", "cpu-parity"] }
 criterion.workspace = true
 vyre-driver.workspace = true
+vyre-lower.workspace = true
+vyre-emit-naga.workspace = true
+vyre-emit-ptx.workspace = true
+naga.workspace = true
 vyre-self-substrate = { workspace = true }
 vyre-intrinsics.workspace = true
 surgec-grammar-gen = { version = "0.6.0", path = "../../../../shared/surgec-grammar-gen" }

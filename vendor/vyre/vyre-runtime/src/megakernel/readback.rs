@@ -18,6 +18,21 @@ pub struct MegakernelReadback {
     pub io_queue_bytes: Vec<u8>,
 }
 
+/// Host-visible byte volume for one strict megakernel readback.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct MegakernelReadbackCounters {
+    /// Bytes copied back for the control buffer.
+    pub control_bytes: usize,
+    /// Bytes copied back for the ring buffer.
+    pub ring_bytes: usize,
+    /// Bytes copied back for the debug log.
+    pub debug_log_bytes: usize,
+    /// Bytes copied back for the IO queue.
+    pub io_queue_bytes: usize,
+    /// Total host-visible readback bytes.
+    pub total_bytes: usize,
+}
+
 impl MegakernelReadback {
     /// Decode the backend output vector produced by [`super::Megakernel`].
     ///
@@ -49,13 +64,11 @@ impl MegakernelReadback {
     /// Returns [`PipelineError::Backend`] when output count or protocol buffer
     /// shapes do not match the persistent megakernel ABI.
     pub fn from_outputs_into(
-        outputs: Vec<Vec<u8>>,
+        mut outputs: Vec<Vec<u8>>,
         slot_count: u32,
         out: &mut Self,
     ) -> Result<(), PipelineError> {
-        let readback = Self::from_outputs(outputs, slot_count)?;
-        *out = readback;
-        Ok(())
+        Self::drain_outputs_into(&mut outputs, slot_count, out)
     }
 
     /// Decode backend outputs into caller-owned readback storage while
@@ -71,10 +84,16 @@ impl MegakernelReadback {
         out: &mut Self,
     ) -> Result<(), PipelineError> {
         Self::validate_output_refs(outputs, slot_count)?;
-        out.io_queue_bytes = pop_validated_output(outputs, "io queue")?;
-        out.debug_log_bytes = pop_validated_output(outputs, "debug log")?;
-        out.ring_bytes = pop_validated_output(outputs, "ring")?;
-        out.control_bytes = pop_validated_output(outputs, "control")?;
+        if outputs.len() != 4 {
+            return Err(PipelineError::Backend(format!(
+                "megakernel readback returned {} buffers after validation, expected 4. Fix: keep output ownership immutable during drain.",
+                outputs.len()
+            )));
+        }
+        std::mem::swap(&mut out.control_bytes, &mut outputs[0]);
+        std::mem::swap(&mut out.ring_bytes, &mut outputs[1]);
+        std::mem::swap(&mut out.debug_log_bytes, &mut outputs[2]);
+        std::mem::swap(&mut out.io_queue_bytes, &mut outputs[3]);
         Ok(())
     }
 
@@ -111,6 +130,30 @@ impl MegakernelReadback {
         })
     }
 
+    /// Host-visible readback byte counters for B.21 telemetry.
+    #[must_use]
+    pub fn counters(&self) -> MegakernelReadbackCounters {
+        let control_bytes = self.control_bytes.len();
+        let ring_bytes = self.ring_bytes.len();
+        let debug_log_bytes = self.debug_log_bytes.len();
+        let io_queue_bytes = self.io_queue_bytes.len();
+        MegakernelReadbackCounters {
+            control_bytes,
+            ring_bytes,
+            debug_log_bytes,
+            io_queue_bytes,
+            total_bytes: checked_add_usize(
+                checked_add_usize(
+                    checked_add_usize(control_bytes, ring_bytes, "megakernel readback total bytes"),
+                    debug_log_bytes,
+                    "megakernel readback total bytes",
+                ),
+                io_queue_bytes,
+                "megakernel readback total bytes",
+            ),
+        }
+    }
+
     fn validate_output_refs(outputs: &[Vec<u8>], slot_count: u32) -> Result<(), PipelineError> {
         let [control, ring, debug_log, io_queue] = outputs else {
             return Err(PipelineError::Backend(format!(
@@ -137,10 +180,60 @@ impl MegakernelReadback {
     }
 }
 
-fn pop_validated_output(outputs: &mut Vec<Vec<u8>>, name: &str) -> Result<Vec<u8>, PipelineError> {
-    outputs.pop().ok_or_else(|| {
-        PipelineError::Backend(format!(
-            "megakernel readback lost the {name} buffer after validation. Fix: keep output ownership immutable during drain."
-        ))
+fn checked_add_usize(left: usize, right: usize, label: &str) -> usize {
+    left.checked_add(right).unwrap_or_else(|| {
+        panic!("{label} overflowed usize. Fix: split megakernel readback buffers before telemetry/accounting.")
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn valid_outputs(slot_count: u32) -> Vec<Vec<u8>> {
+        vec![
+            crate::megakernel::Megakernel::try_encode_control(false, 1, 4).unwrap(),
+            crate::megakernel::Megakernel::try_encode_empty_ring(slot_count).unwrap(),
+            crate::megakernel::Megakernel::try_encode_empty_debug_log(
+                protocol::debug::RECORD_CAPACITY,
+            )
+            .unwrap(),
+            io::try_encode_empty_io_queue(io::IO_SLOT_COUNT).unwrap(),
+        ]
+    }
+
+    #[test]
+    fn drain_outputs_into_retains_reusable_output_slots() {
+        let mut outputs = valid_outputs(4);
+        let mut readback = MegakernelReadback::default();
+
+        MegakernelReadback::drain_outputs_into(&mut outputs, 4, &mut readback)
+            .expect("valid megakernel outputs must decode");
+
+        assert_eq!(outputs.len(), 4);
+        assert!(outputs.iter().all(Vec::is_empty));
+        assert!(!readback.control_bytes.is_empty());
+        assert!(!readback.ring_bytes.is_empty());
+        assert!(!readback.debug_log_bytes.is_empty());
+        assert!(!readback.io_queue_bytes.is_empty());
+    }
+
+    #[test]
+    fn readback_counters_report_total_volume() {
+        let readback = MegakernelReadback::from_outputs(valid_outputs(4), 4)
+            .expect("valid megakernel outputs must decode");
+        let counters = readback.counters();
+
+        assert_eq!(counters.control_bytes, readback.control_bytes.len());
+        assert_eq!(counters.ring_bytes, readback.ring_bytes.len());
+        assert_eq!(counters.debug_log_bytes, readback.debug_log_bytes.len());
+        assert_eq!(counters.io_queue_bytes, readback.io_queue_bytes.len());
+        assert_eq!(
+            counters.total_bytes,
+            readback.control_bytes.len()
+                + readback.ring_bytes.len()
+                + readback.debug_log_bytes.len()
+                + readback.io_queue_bytes.len()
+        );
+    }
 }

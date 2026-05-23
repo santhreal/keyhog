@@ -88,7 +88,7 @@ pub fn output_layout_from_program(program: &Program) -> Result<OutputLayout, Bac
 /// Returns when there is no output buffer, an index is invalid, or layout
 /// math fails.
 pub fn output_binding_layouts(program: &Program) -> Result<Vec<OutputBindingLayout>, BackendError> {
-    let mut outputs = Vec::with_capacity(program.output_buffer_indices().len());
+    let mut outputs = reserved_output_layout_slots(program.output_buffer_indices().len())?;
     output_binding_layouts_into(program, &mut outputs)?;
     Ok(outputs)
 }
@@ -104,7 +104,7 @@ pub fn output_binding_layouts_into(
     outputs: &mut Vec<OutputBindingLayout>,
 ) -> Result<(), BackendError> {
     outputs.clear();
-    outputs.reserve(program.output_buffer_indices().len());
+    reserve_output_layout_slots(outputs, program.output_buffer_indices().len())?;
     for &index in program.output_buffer_indices() {
         let output = program.buffers().get(index as usize).ok_or_else(|| {
             BackendError::new(
@@ -144,7 +144,11 @@ pub fn output_binding_layout(output: &BufferDecl) -> Result<OutputBindingLayout,
     let word_count = full_size
         .checked_add(3)
         .and_then(|n| n.checked_div(4))
-        .unwrap_or(full_size)
+        .ok_or_else(|| {
+            BackendError::new(
+                "program output word count overflows usize. Fix: split the dispatch into smaller output buffers.",
+            )
+        })?
         .max(1);
     Ok(OutputBindingLayout {
         binding: output.binding(),
@@ -163,8 +167,12 @@ fn output_layout(output: &BufferDecl, full_size: usize) -> Result<OutputLayout, 
         )));
     }
     let copy_offset = range.start & !3;
-    let copy_end = range.end.next_multiple_of(4).min(full_size.max(4));
-    let copy_size = (copy_end.saturating_sub(copy_offset)).max(4);
+    let copy_end = align_up_to_u32_word(range.end)?.min(full_size.max(4));
+    let copy_size = copy_end.checked_sub(copy_offset).ok_or_else(|| {
+        BackendError::new(format!(
+            "aligned output copy range underflowed: copy_end={copy_end}, copy_offset={copy_offset}. Fix: declare output_byte_range inside the output buffer."
+        ))
+    })?.max(4);
     Ok(OutputLayout {
         full_size,
         read_size: range.end - range.start,
@@ -172,6 +180,74 @@ fn output_layout(output: &BufferDecl, full_size: usize) -> Result<OutputLayout, 
         copy_size,
         trim_start: range.start - copy_offset,
     })
+}
+
+fn reserve_output_layout_slots(
+    outputs: &mut Vec<OutputBindingLayout>,
+    capacity: usize,
+) -> Result<(), BackendError> {
+    if outputs.capacity() >= capacity {
+        return Ok(());
+    }
+    outputs
+        .try_reserve_exact(capacity - outputs.capacity())
+        .map_err(|error| {
+            BackendError::new(format!(
+                "output binding layout planning could not reserve {capacity} output slot(s): {error}. Fix: split the Program output set or reuse caller-owned output layout scratch."
+            ))
+        })
+}
+
+fn reserved_output_layout_slots(capacity: usize) -> Result<Vec<OutputBindingLayout>, BackendError> {
+    let mut outputs = Vec::new();
+    reserve_output_layout_slots(&mut outputs, capacity)?;
+    Ok(outputs)
+}
+
+fn align_up_to_u32_word(value: usize) -> Result<usize, BackendError> {
+    value.checked_add(3).map(|end| end & !3).ok_or_else(|| {
+        BackendError::new(format!(
+            "aligned output copy end overflows usize for byte offset {value}. Fix: declare a smaller output_byte_range before backend readback planning."
+        ))
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn output_layout_planning_uses_fallible_modular_reservation_and_alignment() {
+        let source = include_str!("outputs.rs");
+        let production = source
+            .split("#[cfg(test)]")
+            .next()
+            .expect("output-layout source must contain production section before tests");
+
+        assert!(
+            production.contains("fn reserve_output_layout_slots")
+                && production.contains("fn align_up_to_u32_word")
+                && production.contains("try_reserve_exact"),
+            "Fix: output layout planning must keep reservation and alignment as modular fallible helpers."
+        );
+        assert!(
+            !production.contains("Vec::with_capacity")
+                && !production.contains(".reserve(program.output_buffer_indices().len())")
+                && !production.contains(".next_multiple_of(4)")
+                && !production.contains(".unwrap_or(full_size)"),
+            "Fix: output layout planning must not allocate infallibly or hide overflow in release paths."
+        );
+    }
+
+    #[test]
+    fn output_layout_alignment_rejects_usize_overflow() {
+        let error =
+            align_up_to_u32_word(usize::MAX).expect_err("max byte offset cannot align upward");
+        assert!(
+            error.to_string().contains("Fix:"),
+            "alignment overflow must be actionable: {error}"
+        );
+    }
 }
 
 /// Fixed scalar element size in bytes for [`DataType`].

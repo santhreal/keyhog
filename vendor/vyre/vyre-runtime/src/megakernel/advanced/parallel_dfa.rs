@@ -120,7 +120,7 @@ pub fn dfa_byte_scanner_parallel_composition_with(bindings: &ParallelDfaBindings
 
     let mut stride = 1;
     while stride < bindings.subgroup_width {
-        nodes.extend(prefix_stage(bindings, stride));
+        append_prefix_stage(&mut nodes, bindings, stride);
         stride *= 2;
     }
 
@@ -142,72 +142,66 @@ pub fn dfa_byte_scanner_parallel_composition_with(bindings: &ParallelDfaBindings
     nodes
 }
 
-fn prefix_stage(bindings: &ParallelDfaBindings, stride: u32) -> Vec<Node> {
-    vec![
-        Node::loop_for(
-            "state",
-            Expr::u32(0),
-            Expr::var(bindings.state_count),
-            vec![
-                Node::let_bind(
-                    "source_lane",
-                    Expr::select(
-                        Expr::ge(Expr::var("lane_id"), Expr::u32(stride)),
-                        Expr::sub(Expr::var("lane_id"), Expr::u32(stride)),
-                        Expr::u32(0),
+fn append_prefix_stage(nodes: &mut Vec<Node>, bindings: &ParallelDfaBindings, stride: u32) {
+    nodes.push(Node::loop_for(
+        "state",
+        Expr::u32(0),
+        Expr::var(bindings.state_count),
+        vec![
+            Node::let_bind(
+                "source_lane",
+                Expr::select(
+                    Expr::ge(Expr::var("lane_id"), Expr::u32(stride)),
+                    Expr::sub(Expr::var("lane_id"), Expr::u32(stride)),
+                    Expr::u32(0),
+                ),
+            ),
+            Node::let_bind(
+                "previous_state",
+                Expr::subgroup_shuffle(
+                    Expr::load(
+                        bindings.lane_prefix,
+                        table_index("lane_id", bindings.state_count, Expr::var("state")),
+                    ),
+                    Expr::var("source_lane"),
+                ),
+            ),
+            Node::let_bind(
+                "composed_state",
+                Expr::select(
+                    Expr::ge(Expr::var("lane_id"), Expr::u32(stride)),
+                    Expr::load(
+                        bindings.lane_prefix,
+                        table_index("lane_id", bindings.state_count, Expr::var("previous_state")),
+                    ),
+                    Expr::load(
+                        bindings.lane_prefix,
+                        table_index("lane_id", bindings.state_count, Expr::var("state")),
                     ),
                 ),
-                Node::let_bind(
-                    "previous_state",
-                    Expr::subgroup_shuffle(
-                        Expr::load(
-                            bindings.lane_prefix,
-                            table_index("lane_id", bindings.state_count, Expr::var("state")),
-                        ),
-                        Expr::var("source_lane"),
-                    ),
-                ),
-                Node::let_bind(
-                    "composed_state",
-                    Expr::select(
-                        Expr::ge(Expr::var("lane_id"), Expr::u32(stride)),
-                        Expr::load(
-                            bindings.lane_prefix,
-                            table_index(
-                                "lane_id",
-                                bindings.state_count,
-                                Expr::var("previous_state"),
-                            ),
-                        ),
-                        Expr::load(
-                            bindings.lane_prefix,
-                            table_index("lane_id", bindings.state_count, Expr::var("state")),
-                        ),
-                    ),
-                ),
-                Node::store(
-                    bindings.lane_next,
-                    table_index("lane_id", bindings.state_count, Expr::var("state")),
-                    Expr::var("composed_state"),
-                ),
-            ],
-        ),
-        Node::barrier(),
-        Node::loop_for(
-            "state",
-            Expr::u32(0),
-            Expr::var(bindings.state_count),
-            vec![Node::store(
-                bindings.lane_prefix,
+            ),
+            Node::store(
+                bindings.lane_next,
                 table_index("lane_id", bindings.state_count, Expr::var("state")),
-                Expr::load(
-                    bindings.lane_next,
-                    table_index("lane_id", bindings.state_count, Expr::var("state")),
-                ),
-            )],
-        ),
-        Node::barrier(),
-    ]
+                Expr::var("composed_state"),
+            ),
+        ],
+    ));
+    nodes.push(Node::barrier());
+    nodes.push(Node::loop_for(
+        "state",
+        Expr::u32(0),
+        Expr::var(bindings.state_count),
+        vec![Node::store(
+            bindings.lane_prefix,
+            table_index("lane_id", bindings.state_count, Expr::var("state")),
+            Expr::load(
+                bindings.lane_next,
+                table_index("lane_id", bindings.state_count, Expr::var("state")),
+            ),
+        )],
+    ));
+    nodes.push(Node::barrier());
 }
 
 fn table_index(lane_var: &str, state_count_var: &str, state: Expr) -> Expr {

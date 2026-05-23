@@ -14,7 +14,8 @@ pub use compiler::{
 };
 pub use hashing::{
     dispatch_policy_cache_string, hex_encode, hex_short, normalized_program_cache_digest,
-    update_dispatch_policy_cache_hash, PipelineDeviceFingerprint,
+    try_normalized_program_cache_digest, update_dispatch_policy_cache_hash,
+    PipelineDeviceFingerprint,
 };
 
 /// Version mixed into every persistent pipeline cache key.
@@ -164,9 +165,9 @@ impl PipelineCacheAudit {
     /// Push one outcome from the dispatcher.
     pub fn observe(&mut self, cache_hit: Option<bool>) {
         match cache_hit {
-            Some(true) => self.hits = self.hits.saturating_add(1),
-            Some(false) => self.misses = self.misses.saturating_add(1),
-            None => self.unknowns = self.unknowns.saturating_add(1),
+            Some(true) => self.hits = increment_counter(self.hits, "pipeline cache hits"),
+            Some(false) => self.misses = increment_counter(self.misses, "pipeline cache misses"),
+            None => self.unknowns = increment_counter(self.unknowns, "pipeline cache unknowns"),
         }
     }
 
@@ -175,11 +176,15 @@ impl PipelineCacheAudit {
     /// rate; pass `0` to disable the alarm.
     #[must_use]
     pub fn snapshot(&self, alarm_threshold_bps: u32) -> PipelineCacheAuditReport {
-        let denominator = self.hits.saturating_add(self.misses);
+        let denominator = self.hits.checked_add(self.misses).unwrap_or_else(|| {
+            panic!(
+                "pipeline cache audit denominator overflowed u64. Fix: rotate telemetry windows before counters reach u64::MAX."
+            )
+        });
         let hit_rate_bps = if denominator == 0 {
             None
         } else {
-            let bps = (self.hits.saturating_mul(10_000) / denominator).min(10_000);
+            let bps = (u128::from(self.hits) * 10_000 / u128::from(denominator)).min(10_000);
             Some(bps as u32)
         };
         let below_alarm_threshold = match hit_rate_bps {
@@ -196,20 +201,55 @@ impl PipelineCacheAudit {
     }
 }
 
+fn increment_counter(value: u64, label: &str) -> u64 {
+    value.checked_add(1).unwrap_or_else(|| {
+        panic!(
+            "{label} overflowed u64. Fix: rotate pipeline cache telemetry windows before counter exhaustion; silent saturation hides cache regressions."
+        )
+    })
+}
+
 /// Resolve pipeline cache limits from Tier-A operational environment settings.
 #[must_use]
 pub fn pipeline_cache_limits_from_env() -> (u32, usize) {
-    let entries = std::env::var("VYRE_PIPELINE_CACHE_ENTRIES")
-        .ok()
-        .and_then(|value| value.parse::<u32>().ok())
-        .filter(|value| *value > 0)
-        .unwrap_or(DEFAULT_PIPELINE_CACHE_ENTRIES as u32);
-    let bytes = std::env::var("VYRE_PIPELINE_CACHE_BYTES")
-        .ok()
-        .and_then(|value| value.parse::<usize>().ok())
-        .filter(|value| *value > 0)
-        .unwrap_or(DEFAULT_PIPELINE_CACHE_BYTES);
+    let entries = parse_positive_env_u32(
+        "VYRE_PIPELINE_CACHE_ENTRIES",
+        DEFAULT_PIPELINE_CACHE_ENTRIES as u32,
+    );
+    let bytes = parse_positive_env_usize("VYRE_PIPELINE_CACHE_BYTES", DEFAULT_PIPELINE_CACHE_BYTES);
     (entries, bytes)
+}
+
+fn parse_positive_env_u32(name: &str, default: u32) -> u32 {
+    let Some(raw) = std::env::var(name).ok() else {
+        return default;
+    };
+    let value = raw.parse::<u32>().unwrap_or_else(|error| {
+        panic!(
+            "{name}={raw:?} is invalid: {error}. Fix: set {name} to a positive integer, or unset it for the production default."
+        )
+    });
+    assert!(
+        value > 0,
+        "{name} must be positive. Fix: set {name} to a positive integer, or unset it for the production default."
+    );
+    value
+}
+
+fn parse_positive_env_usize(name: &str, default: usize) -> usize {
+    let Some(raw) = std::env::var(name).ok() else {
+        return default;
+    };
+    let value = raw.parse::<usize>().unwrap_or_else(|error| {
+        panic!(
+            "{name}={raw:?} is invalid: {error}. Fix: set {name} to a positive integer, or unset it for the production default."
+        )
+    });
+    assert!(
+        value > 0,
+        "{name} must be positive. Fix: set {name} to a positive integer, or unset it for the production default."
+    );
+    value
 }
 
 #[cfg(test)]

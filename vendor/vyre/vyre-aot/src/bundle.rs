@@ -30,6 +30,8 @@ use crate::artifact::CompiledArtifact;
 use crate::launcher::{emit_launcher_rust, LauncherError, LauncherOpts};
 use crate::manifest::Manifest;
 
+const METRIC_RECORD_WORDS: u32 = 8;
+
 /// Produced layout of a bundle.
 #[derive(Debug, Clone)]
 pub struct Bundle {
@@ -59,6 +61,10 @@ pub enum BundleError {
     /// Launcher generation failed.
     #[error(transparent)]
     Launcher(#[from] LauncherError),
+
+    /// Artifact ABI cannot be represented by the emitted launcher contract.
+    #[error("vyre-aot bundle: invalid artifact: {0}")]
+    InvalidArtifact(String),
 }
 
 /// Write the full bundle.
@@ -73,8 +79,9 @@ pub fn bundle(
     launcher_opts: &LauncherOpts,
     notes: &str,
 ) -> Result<Bundle, BundleError> {
-    fs::create_dir_all(out_dir)?;
+    validate_artifact_for_bundle(artifact, weights)?;
     let launcher_tree: BTreeMap<PathBuf, String> = emit_launcher_rust(artifact, launcher_opts)?;
+    fs::create_dir_all(out_dir)?;
 
     // 1. Compress kernel bytes via LZMA.
     let kernel_compressed = lzma_compress(&artifact.kernel_bytes)?;
@@ -146,6 +153,160 @@ pub fn bundle(
     written.extend([kernel_path, weights_path, manifest_path, readme_path]);
 
     Ok(Bundle { files: written })
+}
+
+fn validate_artifact_for_bundle(
+    artifact: &CompiledArtifact,
+    weights: &[u8],
+) -> Result<(), BundleError> {
+    if artifact.kernel_bytes.is_empty() {
+        return Err(BundleError::InvalidArtifact(
+            "kernel bytes are empty. Fix: compile the Program for a concrete GPU target before bundling.".to_string(),
+        ));
+    }
+    if artifact.entry_point.is_empty() {
+        return Err(BundleError::InvalidArtifact(
+            "entry_point is empty. Fix: compile the artifact with a concrete visible kernel entry name.".to_string(),
+        ));
+    }
+    if artifact.buffers.is_empty() {
+        return Err(BundleError::InvalidArtifact(
+            "buffer table is empty. Fix: emit at least the parameter/weight buffer required by launchers.".to_string(),
+        ));
+    }
+    validate_dispatch_geometry(artifact)?;
+    validate_buffer_table(artifact)?;
+    validate_weight_payload_fits_first_finite_buffer(artifact, weights)?;
+    Ok(())
+}
+
+fn validate_dispatch_geometry(artifact: &CompiledArtifact) -> Result<(), BundleError> {
+    for axis in 0..3 {
+        if artifact.dispatch.workgroup_size[axis] == 0 {
+            return Err(BundleError::InvalidArtifact(format!(
+                "workgroup_size axis {axis} is zero. Fix: derive explicit positive dispatch geometry before bundling."
+            )));
+        }
+        if artifact.dispatch.grid_size[axis] == 0 {
+            return Err(BundleError::InvalidArtifact(format!(
+                "grid_size axis {axis} is zero. Fix: run vyre-aot compile() or provide explicit finite grid geometry; runtime-grid placeholders are not bundleable."
+            )));
+        }
+    }
+    checked_axis_product("workgroup_size", artifact.dispatch.workgroup_size)?;
+    checked_axis_product("grid_size", artifact.dispatch.grid_size)?;
+    Ok(())
+}
+
+fn checked_axis_product(label: &str, axes: [u32; 3]) -> Result<u64, BundleError> {
+    u64::from(axes[0])
+        .checked_mul(u64::from(axes[1]))
+        .and_then(|xy| xy.checked_mul(u64::from(axes[2])))
+        .ok_or_else(|| {
+            BundleError::InvalidArtifact(format!(
+                "{label} {axes:?} overflows u64. Fix: shard the AOT dispatch before bundling."
+            ))
+        })
+}
+
+fn validate_buffer_table(artifact: &CompiledArtifact) -> Result<(), BundleError> {
+    let mut bindings: Vec<(u32, usize)> = Vec::with_capacity(artifact.buffers.len());
+    let mut names: Vec<(&str, usize)> = Vec::with_capacity(artifact.buffers.len());
+    let mut metrics_buffers = 0_usize;
+
+    for (index, buffer) in artifact.buffers.iter().enumerate() {
+        if buffer.name.is_empty() {
+            return Err(BundleError::InvalidArtifact(format!(
+                "buffer {index} has an empty name. Fix: emit stable buffer names before bundling."
+            )));
+        }
+        if buffer.element_size_bytes == 0 {
+            return Err(BundleError::InvalidArtifact(format!(
+                "buffer {index} `{}` has element_size_bytes=0. Fix: lower the buffer to a concrete fixed-width ABI element.",
+                buffer.name
+            )));
+        }
+        let _ = checked_buffer_bytes(index, buffer)?;
+        if buffer.name == "metrics" {
+            metrics_buffers += 1;
+            if buffer.element_size_bytes != 4 {
+                return Err(BundleError::InvalidArtifact(format!(
+                    "metrics buffer has element_size_bytes={} but metrics records are u32 words. Fix: emit metrics.element_size_bytes=4.",
+                    buffer.element_size_bytes
+                )));
+            }
+            if buffer.element_count < METRIC_RECORD_WORDS {
+                return Err(BundleError::InvalidArtifact(format!(
+                    "metrics buffer has {} word(s) but final records require at least {METRIC_RECORD_WORDS}. Fix: allocate a larger metrics ring.",
+                    buffer.element_count
+                )));
+            }
+        }
+        bindings.push((buffer.binding, index));
+        names.push((buffer.name.as_str(), index));
+    }
+
+    bindings.sort_unstable_by_key(|(binding, _)| *binding);
+    for pair in bindings.windows(2) {
+        if pair[0].0 == pair[1].0 {
+            return Err(BundleError::InvalidArtifact(format!(
+                "buffers {} and {} both use binding {}. Fix: emit a one-to-one CUDA argument table before bundling.",
+                pair[0].1, pair[1].1, pair[0].0
+            )));
+        }
+    }
+    names.sort_unstable_by(|left, right| left.0.cmp(right.0));
+    for pair in names.windows(2) {
+        if pair[0].0 == pair[1].0 {
+            return Err(BundleError::InvalidArtifact(format!(
+                "buffers {} and {} both use name `{}`. Fix: emit unique stable buffer names before bundling.",
+                pair[0].1, pair[1].1, pair[0].0
+            )));
+        }
+    }
+    if metrics_buffers > 1 {
+        return Err(BundleError::InvalidArtifact(format!(
+            "artifact has {metrics_buffers} metrics buffers. Fix: emit exactly one `metrics` buffer."
+        )));
+    }
+    Ok(())
+}
+
+fn checked_buffer_bytes(
+    index: usize,
+    buffer: &crate::artifact::BufferEntry,
+) -> Result<u64, BundleError> {
+    u64::from(buffer.element_count)
+        .checked_mul(u64::from(buffer.element_size_bytes))
+        .ok_or_else(|| {
+            BundleError::InvalidArtifact(format!(
+                "buffer {index} `{}` byte size overflows u64. Fix: shard the buffer before bundling.",
+                buffer.name
+            ))
+        })
+}
+
+fn validate_weight_payload_fits_first_finite_buffer(
+    artifact: &CompiledArtifact,
+    weights: &[u8],
+) -> Result<(), BundleError> {
+    let first = &artifact.buffers[0];
+    if first.element_count == 0 {
+        return Ok(());
+    }
+    let capacity = checked_buffer_bytes(0, first)?;
+    let weight_bytes = u64::try_from(weights.len()).map_err(|error| {
+        BundleError::InvalidArtifact(format!(
+            "weights payload length cannot fit u64: {error}. Fix: shard the weights artifact before bundling."
+        ))
+    })?;
+    if weight_bytes > capacity {
+        return Err(BundleError::InvalidArtifact(format!(
+            "weights payload has {weight_bytes} byte(s) but first buffer `{}` declares {capacity} byte(s). Fix: make buffer 0 the parameter buffer and size it to cover weights.brotli.",
+            first.name
+        )));
+    }
+    Ok(())
 }
 
 fn lzma_compress(input: &[u8]) -> Result<Vec<u8>, BundleError> {

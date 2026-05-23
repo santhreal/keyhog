@@ -88,8 +88,16 @@ pub fn registered_backends() -> &'static [&'static BackendRegistration] {
     static FROZEN: std::sync::OnceLock<Box<[&'static BackendRegistration]>> =
         std::sync::OnceLock::new();
     FROZEN.get_or_init(|| {
-        let registrations: Vec<&'static BackendRegistration> =
-            inventory::iter::<BackendRegistration>.into_iter().collect();
+        let registration_count = inventory::iter::<BackendRegistration>.into_iter().count();
+        let mut registrations = Vec::new();
+        registrations
+            .try_reserve_exact(registration_count)
+            .unwrap_or_else(|error| {
+                panic!(
+                    "Vyre backend inventory could not reserve {registration_count} registration slot(s): {error}. Fix: reduce linked backend inventory or split registry initialization."
+                )
+            });
+        registrations.extend(inventory::iter::<BackendRegistration>);
         registrations.into_boxed_slice()
     })
 }

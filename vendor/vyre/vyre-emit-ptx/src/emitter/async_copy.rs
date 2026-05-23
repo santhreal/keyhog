@@ -1,5 +1,6 @@
 use std::fmt::Write as _;
 
+use vyre_foundation::ir::DataType;
 use vyre_lower::descriptor::Name;
 use vyre_lower::MemoryClass;
 
@@ -54,10 +55,12 @@ impl BodyCtx<'_> {
         size_id: u32,
         direction: AsyncCopyDirection,
     ) -> Result<(), EmitError> {
-        let (source_type, source_class) =
-            self.require_u32_slot(source_slot, "Async copy source")?;
-        let (destination_type, destination_class) =
-            self.require_u32_slot(destination_slot, "Async copy destination")?;
+        let source_binding = self.binding_for_slot(source_slot)?;
+        let source_type = source_binding.element_type.clone();
+        let source_class = source_binding.memory_class;
+        let destination_binding = self.binding_for_slot(destination_slot)?;
+        let destination_type = destination_binding.element_type.clone();
+        let destination_class = destination_binding.memory_class;
         let offset_reg = self.lookup_operand(offset_id)?;
         let size_reg = self.lookup_operand(size_id)?;
         let requested_words = self.emit_words_from_byte_size(size_reg);
@@ -118,7 +121,8 @@ impl BodyCtx<'_> {
             }
         };
 
-        let value = self.alloc(PtxType::U32);
+        let elem_ty = PtxType::from_dtype(&source_type)?;
+        let value = self.alloc(elem_ty);
         let in_bounds = self.alloc(PtxType::Bool);
         let source_addr = self.emit_memory_address_from_index_reg(
             source_slot,
@@ -130,14 +134,29 @@ impl BodyCtx<'_> {
             self.text,
             "    setp.lt.u32    {in_bounds}, {source_index}, {source_len};"
         );
-        let _ = writeln!(
+        let load_space = self.load_space_for(source_slot, source_class);
+        let _ = write!(
             self.text,
-            "    @{in_bounds} ld.{}.u32    {value}, ",
-            self.load_space_for(source_slot, source_class),
+            "    @{in_bounds} ld.{}.{}    {value}, ",
+            load_space,
+            elem_ty.ptx_type_str(),
         );
         self.write_mem_operand(source_addr.operand)?;
         self.text.push_str(";\n");
-        let _ = writeln!(self.text, "    @!{in_bounds} mov.u32    {value}, 0;");
+        let zero_text = match source_type {
+            DataType::F32 => "0F".to_string(),
+            DataType::U32 => "0".to_string(),
+            DataType::I32 => "0".to_string(),
+            DataType::Bool => "0".to_string(),
+            _ => return Err(EmitError::UnsupportedDataType(format!(
+                "Async copy fallback does not support {source_type:?}. Fix: add zero literal for this type or use U32 staging."
+            ))),
+        };
+        let _ = writeln!(
+            self.text,
+            "    @!{in_bounds} mov.{}    {value}, {zero_text};",
+            elem_ty.ptx_type_str()
+        );
 
         let destination_addr = self.emit_memory_address_from_index_reg(
             destination_slot,
@@ -145,7 +164,13 @@ impl BodyCtx<'_> {
             &destination_type,
             destination_class,
         )?;
-        let _ = write!(self.text, "    st.{}.u32    ", destination_addr.space);
+        let dst_elem_ty = PtxType::from_dtype(&destination_type)?;
+        let _ = write!(
+            self.text,
+            "    st.{}.{}    ",
+            destination_addr.space,
+            dst_elem_ty.ptx_type_str()
+        );
         self.write_mem_operand(destination_addr.operand)?;
         let _ = writeln!(self.text, ", {value};");
         let _ = writeln!(self.text, "    add.u32    {loop_index}, {loop_index}, 1;");
@@ -169,9 +194,16 @@ impl BodyCtx<'_> {
         if !self.options.target.supports_async_copy() {
             return Ok(false);
         }
-        let (source_type, source_class) = self.require_u32_slot(source_slot, "cp.async source")?;
+        let (source_type, source_class) =
+            match self.require_u32_slot(source_slot, "cp.async source") {
+                Ok(v) => v,
+                Err(_) => return Ok(false),
+            };
         let (destination_type, destination_class) =
-            self.require_u32_slot(destination_slot, "cp.async destination")?;
+            match self.require_u32_slot(destination_slot, "cp.async destination") {
+                Ok(v) => v,
+                Err(_) => return Ok(false),
+            };
         if source_class != MemoryClass::Global || destination_class != MemoryClass::Shared {
             return Ok(false);
         }

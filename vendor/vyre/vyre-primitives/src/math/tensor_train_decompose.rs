@@ -155,6 +155,7 @@ pub fn tensor_train_decompose_step(
 }
 
 /// CPU reference: Full TT-SVD.
+#[cfg(any(test, feature = "cpu-parity"))]
 #[must_use]
 pub fn cpu_ref(tensor: &[f64], dims: &[u32], target_ranks: &[u32]) -> Vec<Vec<f64>> {
     let d = dims.len();
@@ -200,6 +201,7 @@ pub fn cpu_ref(tensor: &[f64], dims: &[u32], target_ranks: &[u32]) -> Vec<Vec<f6
     cores
 }
 
+#[cfg(any(test, feature = "cpu-parity"))]
 fn truncated_svd(matrix: &[f64], m: usize, n: usize, r: usize) -> (Vec<f64>, Vec<f64>, Vec<f64>) {
     let Some(matrix_len) = m.checked_mul(n) else {
         return (Vec::new(), Vec::new(), Vec::new());
@@ -257,6 +259,7 @@ fn truncated_svd(matrix: &[f64], m: usize, n: usize, r: usize) -> (Vec<f64>, Vec
     (u, s, vt)
 }
 
+#[cfg(any(test, feature = "cpu-parity"))]
 fn symmetric_eigen_jacobi(mut a: Vec<f64>, n: usize) -> (Vec<f64>, Vec<f64>) {
     let Some(square_len) = n.checked_mul(n) else {
         return (Vec::new(), Vec::new());

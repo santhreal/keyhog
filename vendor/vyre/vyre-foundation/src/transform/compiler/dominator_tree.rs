@@ -35,20 +35,24 @@ pub const IDOM_UNDEFINED: u32 = u32::MAX;
 /// if it changed.
 ///
 /// Buffers:
-/// - `idom`: ReadWrite u32 array — node_count entries; entry points
+/// - `idom`: `ReadWrite` u32 array — `node_count` entries; entry points
 ///   start as themselves, all others as [`IDOM_UNDEFINED`].
-/// - `pred_offsets`: ReadOnly u32 array of length node_count + 1 —
+/// - `pred_offsets`: `ReadOnly` u32 array of length `node_count` + 1 —
 ///   CSR offsets into the predecessor table.
-/// - `preds`: ReadOnly u32 array — flat predecessor list.
-/// - `rpo_index`: ReadOnly u32 array — reverse-postorder index per
+/// - `preds`: `ReadOnly` u32 array — flat predecessor list.
+/// - `rpo_index`: `ReadOnly` u32 array — reverse-postorder index per
 ///   node; used by the intersect helper to pick the "lower" node
 ///   when climbing.
-/// - `changed_flag`: ReadWrite u32 array of length 1.
+/// - `changed_flag`: `ReadWrite` u32 array of length 1.
 ///
 /// The intersect helper is embedded inline — it walks the two idom
 /// chains up the tree until they meet, comparing reverse-postorder
 /// indices to pick the deeper of the two.
 #[must_use]
+#[expect(
+    clippy::too_many_lines,
+    reason = "IR construction mirrors the dominator kernel control flow; splitting obscures the graph invariant"
+)]
 pub fn relax_step_program(
     idom: &str,
     pred_offsets: &str,
@@ -288,6 +292,11 @@ pub fn index(value: u32) -> Result<usize, DominatorTreeError> {
 /// Walks the higher-ranked node up the `idom` chain until both pointers meet.
 /// This is the standard CHK intersect routine used during fixed-point
 /// iteration.
+///
+/// # Errors
+///
+/// Returns [`DominatorTreeError::NodeIndexOverflow`] when a node id in the
+/// dominator chain cannot be used as a host index.
 #[must_use]
 pub fn intersect(
     mut left: u32,
@@ -313,6 +322,12 @@ pub const LAWS: &[AlgebraicLaw] = &[AlgebraicLaw::Bounded {
 }];
 
 /// Build a predecessor list for every CFG node from CSR successor data.
+///
+/// # Errors
+///
+/// Returns [`DominatorTreeError::NodeIndexOverflow`] when a CSR offset,
+/// successor id, or emitted predecessor id cannot fit the required host/index
+/// representation.
 #[must_use]
 pub fn predecessors(
     node_count: usize,
@@ -334,6 +349,11 @@ pub fn predecessors(
 /// The CHK algorithm converges faster when nodes are processed in RPO.
 /// This routine uses an explicit stack so the traversal bound is controlled
 /// and mirrored by the target-text reference.
+///
+/// # Errors
+///
+/// Returns [`DominatorTreeError::NodeIndexOverflow`] when a CSR offset or
+/// successor id cannot be used as a host index.
 #[must_use]
 pub fn reverse_postorder(
     entry: usize,

@@ -3,6 +3,7 @@
 use vyre_driver::BackendError;
 
 use crate::buffer::GpuBufferHandle;
+use crate::numeric::usize_to_u64;
 use crate::pipeline::{element_size_bytes, BufferBindingInfo, OutputBindingLayout};
 
 /// Return true when a binding consumes one caller-provided borrowed input slot.
@@ -72,7 +73,13 @@ pub(crate) fn validate_handle(
         )));
     }
     if info.count > 0 {
-        let required_bytes = (info.count as usize)
+        let required_bytes = usize::try_from(info.count)
+            .map_err(|_| {
+                BackendError::new(format!(
+                    "buffer `{}` element count cannot fit host usize. Fix: reduce buffer count.",
+                    info.name
+                ))
+            })?
             .checked_mul(element_size_bytes(&info.element)?)
             .ok_or_else(|| {
                 BackendError::new(format!(
@@ -80,7 +87,8 @@ pub(crate) fn validate_handle(
                     info.name
                 ))
             })?;
-        if handle.allocation_len() < required_bytes as u64 {
+        let required_bytes_u64 = usize_to_u64(required_bytes, "required binding bytes")?;
+        if handle.allocation_len() < required_bytes_u64 {
             return Err(BackendError::new(format!(
                 "{mode} handle for binding {} (`{}`) has {} bytes but requires {required_bytes}. Fix: allocate a larger GPU buffer.",
                 info.binding,
@@ -113,14 +121,15 @@ where
                 output.name
             ))
         })?;
-        if handle.allocation_len() < clear_size as u64 {
+        let clear_size_u64 = usize_to_u64(clear_size, "output clear bytes")?;
+        if handle.allocation_len() < clear_size_u64 {
             return Err(BackendError::new(format!(
                 "{mode} output buffer `{}` has {} bytes but dispatch requires {clear_size}. Fix: allocate the output handle with at least the compiled output size.",
                 info.name,
                 handle.allocation_len()
             )));
         }
-        encoder.clear_buffer(handle.buffer(), 0, Some(clear_size as u64));
+        encoder.clear_buffer(handle.buffer(), 0, Some(clear_size_u64));
     }
     Ok(())
 }
@@ -130,7 +139,11 @@ mod tests {
     use super::*;
     use std::sync::Arc;
 
-    fn info(is_output: bool, preserve_input_contents: bool, internal_trap: bool) -> BufferBindingInfo {
+    fn info(
+        is_output: bool,
+        preserve_input_contents: bool,
+        internal_trap: bool,
+    ) -> BufferBindingInfo {
         BufferBindingInfo {
             group: 0,
             binding: 1,

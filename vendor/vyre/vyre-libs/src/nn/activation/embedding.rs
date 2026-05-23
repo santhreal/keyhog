@@ -47,7 +47,6 @@ inventory::submit! {
             vec![vec![
                 to_f32(&[1.0, 2.0, 3.0,  4.0, 5.0, 6.0]), // table: 2 vocab × 3 dim
                 to_u32(&[1, 0]),                             // tokens
-                vec![0u8; 4 * 6],                            // output
             ]]
         }),
         expected_output: Some(|| {
@@ -55,6 +54,7 @@ inventory::submit! {
             // token 1 → [4,5,6], token 0 → [1,2,3]
             vec![vec![to_f32(&[4.0, 5.0, 6.0, 1.0, 2.0, 3.0])]]
         }),
+        category: Some("nn"),
     }
 }
 
@@ -138,7 +138,10 @@ mod tests {
         )
         .expect("Fix: embedding NaN table must not panic");
         let out = decode_f32(&outputs[0].to_bytes());
-        assert!(out[0].is_nan(), "embedding must propagate NaN from table to output");
+        assert!(
+            out[0].is_nan(),
+            "embedding must propagate NaN from table to output"
+        );
         assert_eq!(out[1], 2.0);
     }
 

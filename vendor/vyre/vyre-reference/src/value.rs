@@ -194,9 +194,12 @@ impl Value {
             vyre::ir::DataType::Bool => Some(Self::Bool(false)),
             vyre::ir::DataType::Bytes => Some(Self::Bytes(Arc::from([]))),
             vyre::ir::DataType::F32 => Some(Self::Float(0.0)),
+            vyre::ir::DataType::F64 => Some(Self::Float(0.0)),
             vyre::ir::DataType::Vec2U32 => Some(Self::Bytes(Arc::from(vec![0; 8]))),
             vyre::ir::DataType::Vec4U32 => Some(Self::Bytes(Arc::from(vec![0; 16]))),
-            _ => None,
+            _ => {
+                fixed_scalar_storage_width(&ty).map(|width| Self::Bytes(Arc::from(vec![0; width])))
+            }
         }
     }
 
@@ -259,9 +262,46 @@ impl Value {
                     bytes[0], bytes[1], bytes[2], bytes[3],
                 ]))))
             }
+            vyre::ir::DataType::F64 => {
+                if bytes.len() < 8 {
+                    return Err("f64 requires 8 bytes".to_string());
+                }
+                Ok(Self::Float(f64::from_le_bytes([
+                    bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+                ])))
+            }
             vyre::ir::DataType::Bytes => Ok(Self::Bytes(Arc::from(bytes))),
-            _ => Ok(Self::Bytes(Arc::from(bytes))),
+            _ => match fixed_scalar_storage_width(&ty) {
+                Some(width) => {
+                    if bytes.len() < width {
+                        return Err(format!("{ty} requires {width} bytes"));
+                    }
+                    Ok(Self::Bytes(Arc::from(&bytes[..width])))
+                }
+                None => Ok(Self::Bytes(Arc::from(bytes))),
+            },
         }
+    }
+}
+
+fn fixed_scalar_storage_width(ty: &vyre::ir::DataType) -> Option<usize> {
+    match ty {
+        vyre::ir::DataType::U8
+        | vyre::ir::DataType::I8
+        | vyre::ir::DataType::F8E4M3
+        | vyre::ir::DataType::F8E5M2
+        | vyre::ir::DataType::I4
+        | vyre::ir::DataType::FP4
+        | vyre::ir::DataType::NF4 => Some(1),
+        vyre::ir::DataType::U16
+        | vyre::ir::DataType::I16
+        | vyre::ir::DataType::F16
+        | vyre::ir::DataType::BF16 => Some(2),
+        vyre::ir::DataType::Handle(_) | vyre::ir::DataType::DeviceMesh { .. } => Some(4),
+        vyre::ir::DataType::I64 => Some(8),
+        vyre::ir::DataType::Vec { element, count } => fixed_scalar_storage_width(element)
+            .and_then(|width| width.checked_mul(usize::from(*count))),
+        _ => None,
     }
 }
 

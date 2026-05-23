@@ -2,14 +2,16 @@
 
 use std::ops::Range;
 
-use crate::ir::{BufferAccess, DataType, MemoryKind, Node, Program};
+use crate::ir::{BufferAccess, DataType, MemoryKind, Program};
 use crate::optimizer::AdapterCaps;
 use crate::program_caps::{self, RequiredCapabilities};
 use crate::validate::{validate_with_options, ValidationOptions};
 
 pub mod fusion;
+pub mod memory_budget;
 mod policy;
 mod strategy;
+pub use memory_budget::{DeviceMemoryBudget, MemoryBudgetReport};
 pub use policy::{PolicyRoute, SchedulingPolicy};
 pub use strategy::{
     AccuracyStrategy, AutotuneStrategy, DispatchStrategy, FusionStrategy, LayoutStrategy,
@@ -103,14 +105,61 @@ pub enum PlanError {
         /// Full buffer size in bytes.
         full_size: u64,
     },
+    /// A buffer uses a runtime-sized element type that cannot be represented in
+    /// static byte planning.
+    #[error(
+        "runtime-sized buffer {name} with element type {element:?} cannot be statically planned. Fix: lower the buffer to a concrete fixed-width ABI type before execution planning."
+    )]
+    RuntimeSizedBuffer {
+        /// Buffer name.
+        name: String,
+        /// Runtime-sized data type.
+        element: DataType,
+    },
+    /// One declared buffer exceeds the selected adapter's per-buffer limit.
+    #[error(
+        "device memory budget exceeded for buffer {name}: {size_bytes} bytes exceeds per-buffer budget {budget_bytes} on backend {backend}. Fix: shard the buffer, compact the layout, or select a backend with a larger storage-buffer limit."
+    )]
+    BufferBudgetExceeded {
+        /// Backend identifier.
+        backend: &'static str,
+        /// Buffer name.
+        name: String,
+        /// Planned static byte size.
+        size_bytes: u64,
+        /// Per-buffer byte budget.
+        budget_bytes: u64,
+    },
+    /// The full Program exceeds the selected adapter's peak static memory budget.
+    #[error(
+        "device peak memory budget exceeded: planned {planned_bytes} static bytes exceeds budget {budget_bytes} on backend {backend}. Fix: split the Program, enable resident reuse, or lower the graph in shards before dispatch."
+    )]
+    PeakBudgetExceeded {
+        /// Backend identifier.
+        backend: &'static str,
+        /// Planned peak static bytes.
+        planned_bytes: u64,
+        /// Peak static byte budget.
+        budget_bytes: u64,
+    },
 }
 
 /// Build a backend-neutral execution plan with default validation options.
+///
+/// # Errors
+///
+/// Returns [`PlanError`] when validation, static memory planning, output-range
+/// planning, or canonical fingerprint construction fails for `program`.
 pub fn plan(program: &Program) -> Result<ExecutionPlan, PlanError> {
     plan_for_adapter(program, &AdapterCaps::conservative())
 }
 
 /// Build a backend-neutral execution plan parameterized by adapter facts.
+///
+/// # Errors
+///
+/// Returns [`PlanError`] when `program` cannot be validated or planned for the
+/// supplied `adapter_caps`.
 pub fn plan_for_adapter(
     program: &Program,
     adapter_caps: &AdapterCaps,
@@ -119,6 +168,11 @@ pub fn plan_for_adapter(
 }
 
 /// Build a backend-neutral execution plan after validating with `options`.
+///
+/// # Errors
+///
+/// Returns [`PlanError`] when `program` violates `options` or cannot be lowered
+/// into a backend-neutral execution plan.
 pub fn plan_with_options(
     program: &Program,
     options: ValidationOptions<'_>,
@@ -128,6 +182,11 @@ pub fn plan_with_options(
 
 /// Build a backend-neutral execution plan after validating with `options` and
 /// adapter facts.
+///
+/// # Errors
+///
+/// Returns [`PlanError`] when validation, capability scanning, memory planning,
+/// provenance planning, or fingerprint construction fails.
 pub fn plan_with_options_for_adapter(
     program: &Program,
     options: ValidationOptions<'_>,
@@ -136,7 +195,7 @@ pub fn plan_with_options_for_adapter(
     validate_program_for_plan(program, options)?;
     let required_capabilities = program_caps::scan(program);
     let fusion = fusion_plan(program);
-    let memory = memory_plan(program)?;
+    let memory = memory_plan(program, adapter_caps)?;
     let program_fingerprint = canonical_program_fingerprint(program)?;
     let provenance = provenance_plan(program, &fusion);
     let accuracy = accuracy_plan(&required_capabilities, &provenance);
@@ -196,30 +255,13 @@ fn validate_program_for_plan(
 
 fn fusion_plan(program: &Program) -> FusionPlan {
     let stats = program.stats();
-    let node_count = count_nodes(program.entry());
     FusionPlan {
         entry_op_id: program.entry_op_id().map(ToOwned::to_owned),
         top_level_regions: stats.top_level_regions as usize,
-        node_count,
+        node_count: stats.node_count,
         batch_fusion_candidate: !program.is_non_composable_with_self()
             && program.is_top_level_region_wrapped(),
     }
-}
-
-fn count_nodes(nodes: &[Node]) -> usize {
-    nodes
-        .iter()
-        .map(|node| {
-            1 + match node {
-                Node::If {
-                    then, otherwise, ..
-                } => count_nodes(then) + count_nodes(otherwise),
-                Node::Loop { body, .. } | Node::Block(body) => count_nodes(body),
-                Node::Region { body, .. } => count_nodes(body),
-                _ => 0,
-            }
-        })
-        .sum()
 }
 
 fn canonical_program_fingerprint(program: &Program) -> Result<[u8; 32], PlanError> {
@@ -230,21 +272,52 @@ fn canonical_program_fingerprint(program: &Program) -> Result<[u8; 32], PlanErro
     Ok(*blake3::hash(&wire).as_bytes())
 }
 
-fn memory_plan(program: &Program) -> Result<MemoryPlan, PlanError> {
+fn memory_plan(program: &Program, adapter_caps: &AdapterCaps) -> Result<MemoryPlan, PlanError> {
     let mut static_bytes = 0u64;
     let mut visible_readback_bytes = 0u64;
     let mut avoided_readback_bytes = 0u64;
-    let mut buffers = Vec::new();
+    // Pre-size to the exact buffer count — every buffer becomes one
+    // BufferPlan entry — so the inner push loop never reallocates the
+    // backing storage. memory_plan is called once per
+    // execution_plan::plan(), which itself is on every backend's
+    // pre-dispatch path.
+    let mut buffers = Vec::with_capacity(program.buffers().len());
+    let mut dynamic_buffers = 0usize;
     for buffer in program.buffers() {
         let count = buffer.count();
-        let elem_size = buffer.element().size_bytes().unwrap_or(4) as u64;
+        let elem_size =
+            buffer
+                .element()
+                .size_bytes()
+                .ok_or_else(|| PlanError::RuntimeSizedBuffer {
+                    name: buffer.name().to_string(),
+                    element: buffer.element(),
+                })? as u64;
         let size = if count > 0 {
-            Some(u64::from(count) * elem_size)
+            Some(u64::from(count).checked_mul(elem_size).ok_or_else(|| {
+                PlanError::NonCanonicalProgram {
+                    source: crate::error::Error::WireFormatValidation {
+                        message: format!(
+                            "canonical execution plan buffer `{}` byte size overflows u64. Fix: split the buffer before planning.",
+                            buffer.name()
+                        ),
+                    },
+                }
+            })?)
         } else {
             None
         };
         if let Some(s) = size {
-            static_bytes += s;
+            static_bytes = static_bytes.checked_add(s).ok_or_else(|| {
+                PlanError::NonCanonicalProgram {
+                    source: crate::error::Error::WireFormatValidation {
+                        message: format!(
+                            "canonical execution plan static memory total overflows u64 while adding `{}`. Fix: split the Program before planning.",
+                            buffer.name()
+                        ),
+                    },
+                }
+            })?;
         }
         let output_range = buffer.output_byte_range();
         if buffer.is_output() {
@@ -275,6 +348,9 @@ fn memory_plan(program: &Program) -> Result<MemoryPlan, PlanError> {
             visible_readback_bytes += visible;
             avoided_readback_bytes += full_size.saturating_sub(visible);
         }
+        if buffer.count() == 0 {
+            dynamic_buffers += 1;
+        }
         buffers.push(BufferPlan {
             name: buffer.name().to_string(),
             binding: buffer.binding(),
@@ -286,13 +362,15 @@ fn memory_plan(program: &Program) -> Result<MemoryPlan, PlanError> {
             output_range,
         });
     }
-    Ok(MemoryPlan {
+    let plan = MemoryPlan {
         buffers,
         static_bytes,
-        dynamic_buffers: program.buffers().iter().filter(|b| b.count() == 0).count(),
+        dynamic_buffers,
         visible_readback_bytes,
         avoided_readback_bytes,
-    })
+    };
+    DeviceMemoryBudget::from_adapter(adapter_caps).validate(&plan)?;
+    Ok(plan)
 }
 
 fn provenance_plan(program: &Program, _fusion: &FusionPlan) -> ProvenancePlan {
@@ -320,7 +398,7 @@ fn autotune_plan(
     _fusion: &FusionPlan,
     adapter_caps: &AdapterCaps,
 ) -> AutotunePlan {
-    let node_count = count_nodes(program.entry());
+    let node_count = program.stats().node_count;
     let policy = SchedulingPolicy::standard();
     let problem_size = infer_static_problem_size(program);
     let recommended_workgroup_size = [
@@ -339,6 +417,7 @@ fn autotune_plan(
     let profile_driven = adapter_caps.ideal_unroll_depth > 0
         || adapter_caps.ideal_vector_pack_bits > 0
         || !adapter_caps.ideal_workgroup_tile.contains(&0);
+    let large_program = policy.recommend_autotune(node_count);
     AutotunePlan {
         // Only flag autotuning as recommended when there's a real
         // signal: a large enough program OR a device profile that
@@ -349,7 +428,7 @@ fn autotune_plan(
         // selector always returns a different number, so every small
         // program got marked autotune-recommended even when it has no
         // measurement variants worth exploring.
-        recommended: policy.recommend_autotune(node_count) || profile_driven,
+        recommended: large_program || profile_driven,
         parallel_region_size: program.parallel_region_size(),
         recommended_workgroup_size,
         recommended_tile,
@@ -357,7 +436,7 @@ fn autotune_plan(
         recommended_unroll_depth,
         reason: if profile_driven {
             "device profile"
-        } else if policy.recommend_autotune(node_count) {
+        } else if large_program {
             "large program"
         } else {
             "none"
@@ -370,7 +449,7 @@ fn infer_static_problem_size(program: &Program) -> Option<u32> {
         .buffers()
         .iter()
         .filter(|buffer| buffer.count() > 0 && !matches!(buffer.kind(), MemoryKind::Shared))
-        .map(|buffer| buffer.count())
+        .map(crate::ir_inner::model::program::BufferDecl::count)
         .min()
 }
 
@@ -549,29 +628,6 @@ mod tests {
     }
 
     #[test]
-    fn count_nodes_simple() {
-        let nodes = vec![
-            Node::let_bind("x", Expr::u32(1)),
-            Node::let_bind("y", Expr::u32(2)),
-        ];
-        assert_eq!(count_nodes(&nodes), 2);
-    }
-
-    #[test]
-    fn count_nodes_nested_if() {
-        let nodes = vec![Node::if_then_else(
-            Expr::u32(1),
-            vec![Node::let_bind("x", Expr::u32(1))],
-            vec![
-                Node::let_bind("a", Expr::u32(2)),
-                Node::let_bind("b", Expr::u32(3)),
-            ],
-        )];
-        // 1 (if) + 1 (then let) + 2 (else lets) = 4
-        assert_eq!(count_nodes(&nodes), 4);
-    }
-
-    #[test]
     fn track_active_returns_false_for_inactive() {
         let p = trivial_program();
         let exec_plan = plan(&p).unwrap();
@@ -587,6 +643,62 @@ mod tests {
             exec_plan.strategy.dispatch,
             DispatchStrategy::PersistentRuntime
         );
+    }
+
+    #[test]
+    fn plan_rejects_buffer_over_adapter_budget_before_dispatch() {
+        let p = Program::wrapped(
+            vec![BufferDecl::output("out", 0, DataType::U32).with_count(8)],
+            [1, 1, 1],
+            vec![Node::store("out", Expr::u32(0), Expr::u32(1))],
+        );
+        let caps = AdapterCaps {
+            backend: "tiny-test-gpu",
+            max_storage_buffer_binding_size: 16,
+            ..AdapterCaps::conservative()
+        };
+        let error = plan_for_adapter(&p, &caps)
+            .expect_err("oversized buffers must fail during planning, before backend allocation");
+        assert!(matches!(
+            error,
+            PlanError::BufferBudgetExceeded {
+                backend: "tiny-test-gpu",
+                name,
+                size_bytes: 32,
+                budget_bytes: 16,
+            } if name == "out"
+        ));
+    }
+
+    #[test]
+    fn plan_rejects_peak_static_memory_over_adapter_budget() {
+        let names = [
+            "b00", "b01", "b02", "b03", "b04", "b05", "b06", "b07", "b08", "b09", "b10", "b11",
+            "b12", "b13", "b14", "b15", "b16",
+        ];
+        let buffers = names
+            .iter()
+            .enumerate()
+            .map(|(index, name)| {
+                BufferDecl::read_write(*name, index as u32, DataType::U32).with_count(4)
+            })
+            .collect::<Vec<_>>();
+        let p = Program::wrapped(buffers, [1, 1, 1], vec![Node::Return]);
+        let caps = AdapterCaps {
+            backend: "tiny-test-gpu",
+            max_storage_buffer_binding_size: 16,
+            ..AdapterCaps::conservative()
+        };
+        let error = plan_for_adapter(&p, &caps)
+            .expect_err("aggregate static memory must fail during planning");
+        assert!(matches!(
+            error,
+            PlanError::PeakBudgetExceeded {
+                backend: "tiny-test-gpu",
+                planned_bytes: 272,
+                budget_bytes: 256,
+            }
+        ));
     }
 
     #[test]

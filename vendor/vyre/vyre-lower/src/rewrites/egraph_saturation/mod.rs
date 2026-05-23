@@ -95,7 +95,9 @@ pub fn saturate_descriptor(
 /// `run_all_with_stats`, so it is safe to compose inside the standard
 /// pass sequence.
 #[must_use]
-pub fn saturate_algebraic_descriptor(desc: &KernelDescriptor) -> (KernelDescriptor, SaturationReport) {
+pub fn saturate_algebraic_descriptor(
+    desc: &KernelDescriptor,
+) -> (KernelDescriptor, SaturationReport) {
     let input_ops = desc.body.ops.len();
     let algebraic = saturate_local_algebra(desc);
     let output_ops = algebraic.descriptor.body.ops.len();
@@ -227,7 +229,11 @@ fn reassociate_constant_chain(
     })
 }
 
-fn split_value_const(value: u32, maybe_const: u32, literals: &FxHashMap<u32, u32>) -> Option<(u32, u32)> {
+fn split_value_const(
+    value: u32,
+    maybe_const: u32,
+    literals: &FxHashMap<u32, u32>,
+) -> Option<(u32, u32)> {
     literals
         .get(&maybe_const)
         .copied()
@@ -333,7 +339,9 @@ fn next_result_id(body: &KernelBody) -> u32 {
 
 #[cfg(test)]
 mod tests {
-    use crate::{BindingLayout, Dispatch, KernelBody, KernelDescriptor, KernelOp, KernelOpKind, LiteralValue};
+    use crate::{
+        BindingLayout, Dispatch, KernelBody, KernelDescriptor, KernelOp, KernelOpKind, LiteralValue,
+    };
 
     use super::*;
 

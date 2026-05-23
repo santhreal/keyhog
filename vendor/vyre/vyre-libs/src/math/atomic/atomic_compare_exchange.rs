@@ -30,7 +30,6 @@ inventory::submit! {
                 to_bytes(&[10u32, 99, 20, 30]),
                 to_bytes(&[11u32, 88, 21, 31]),
                 to_bytes(&[10u32]),
-                vec![0u8; 16],
             ]]
         }),
         expected_output: Some(|| {
@@ -46,6 +45,7 @@ inventory::submit! {
                 to_bytes(&[10u32, 11, 11, 11]),
             ]]
         }),
+        category: Some("math"),
     }
 }
 

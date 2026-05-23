@@ -24,16 +24,17 @@ pub fn sql_param_bound(
 }
 
 #[must_use]
+#[cfg(test)]
 /// CPU oracle for [`sql_param_bound`].
-pub fn cpu_ref(param_binding_set: &[u32], sql_query_set: &[u32]) -> Vec<u32> {
+pub(crate) fn cpu_ref(param_binding_set: &[u32], sql_query_set: &[u32]) -> Vec<u32> {
     vyre_primitives::bitset::and::cpu_ref(param_binding_set, sql_query_set)
 }
 
 /// Soundness marker for [`sql_param_bound`].
 pub struct SqlParamBound;
-impl weir::soundness::SoundnessTagged for SqlParamBound {
-    fn soundness(&self) -> weir::soundness::Soundness {
-        weir::soundness::Soundness::Exact
+impl vyre::soundness::SoundnessTagged for SqlParamBound {
+    fn soundness(&self) -> vyre::soundness::Soundness {
+        vyre::soundness::Soundness::Exact
     }
 }
 

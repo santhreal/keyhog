@@ -27,7 +27,7 @@
 //! inventory-registered OpDef with the same id. A conflict is
 //! surfaced as a Diagnostic so downstream consumers can disambiguate.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -85,16 +85,41 @@ pub struct TomlDialectStore {
 
 impl TomlDialectStore {
     /// Build a store by scanning the directories in
-    /// `VYRE_DIALECT_PATH`. Missing directories are silently
-    /// ignored (the env var is optional).
+    /// `VYRE_DIALECT_PATH`. The env var itself is optional, but every
+    /// configured entry must resolve to a readable directory; missing
+    /// rule roots are surfaced as diagnostics instead of being treated
+    /// as an empty community knowledge database.
     #[must_use]
     pub fn from_env() -> Self {
         let mut store = Self::default();
-        if let Ok(path) = std::env::var(DIALECT_PATH_ENV) {
+        if let Some(path) = dialect_path_value() {
             for entry in path.split(':') {
+                if entry.is_empty() {
+                    store.diagnostics.push(
+                        Diagnostic::error(
+                            "E-TOML-EMPTY-DIALECT-PATH",
+                            format!("{DIALECT_PATH_ENV} contains an empty path entry"),
+                        )
+                        .with_fix(
+                            "remove empty entries or point them at an explicit dialect directory",
+                        ),
+                    );
+                    continue;
+                }
                 let dir = Path::new(entry);
                 if dir.is_dir() {
                     store.scan_dir(dir);
+                } else {
+                    store.diagnostics.push(
+                        Diagnostic::error(
+                            "E-TOML-DIALECT-DIR-MISSING",
+                            format!(
+                                "{DIALECT_PATH_ENV} entry `{}` is not a directory",
+                                dir.display()
+                            ),
+                        )
+                        .with_fix("create the directory, fix the path, or unset VYRE_DIALECT_PATH"),
+                    );
                 }
             }
         }
@@ -106,10 +131,34 @@ impl TomlDialectStore {
     /// never short-circuits.
     pub fn scan_dir(&mut self, dir: &Path) {
         let Ok(entries) = fs::read_dir(dir) else {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E-TOML-DIALECT-DIR-UNREADABLE",
+                    format!("TOML dialect directory `{}` is unreadable", dir.display()),
+                )
+                .with_fix(
+                    "fix directory permissions or remove the directory from VYRE_DIALECT_PATH",
+                ),
+            );
             return;
         };
-        for entry in entries.flatten() {
-            let path = entry.path();
+        for entry in entries {
+            let path = match entry {
+                Ok(entry) => entry.path(),
+                Err(error) => {
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            "E-TOML-DIALECT-DIR-ENTRY",
+                            format!(
+                                "failed to read an entry from TOML dialect directory `{}`: {error}",
+                                dir.display()
+                            ),
+                        )
+                        .with_fix("fix directory permissions or remove the unreadable entry"),
+                    );
+                    continue;
+                }
+            };
             if path.extension().and_then(|s| s.to_str()) != Some("toml") {
                 continue;
             }
@@ -122,19 +171,116 @@ impl TomlDialectStore {
     pub fn load_file(&mut self, path: &Path) {
         let Ok(contents) = read_toml_bounded(path) else {
             self.diagnostics.push(
-                Diagnostic::warning("W-TOML-UNREADABLE",
-                    format!("TOML dialect file `{}` is unreadable", path.display()))
-                    .with_fix("confirm file permissions and that VYRE_DIALECT_PATH points at an intended directory"),
+                Diagnostic::error(
+                    "E-TOML-UNREADABLE",
+                    format!("TOML dialect file `{}` is unreadable", path.display()),
+                )
+                .with_fix("confirm file permissions and that VYRE_DIALECT_PATH points at an intended directory"),
             );
             return;
         };
         match toml::from_str::<DialectManifest>(&contents) {
             Ok(mut manifest) => {
-                // Keep the highest-versioned manifest per dialect.
-                // Duplicate loads with same dialect id are
-                // informational, not fatal.
+                if manifest.dialect.trim().is_empty() {
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            "E-TOML-EMPTY-DIALECT",
+                            format!(
+                                "TOML dialect file `{}` has an empty dialect id",
+                                path.display()
+                            ),
+                        )
+                        .with_fix("set `dialect` to a stable non-empty identifier"),
+                    );
+                    return;
+                }
+                if manifest.version.trim().is_empty() {
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            "E-TOML-EMPTY-VERSION",
+                            format!(
+                                "dialect manifest `{}` has an empty version",
+                                manifest.dialect
+                            ),
+                        )
+                        .with_fix("set `version` to a stable non-empty version string"),
+                    );
+                    return;
+                }
+                // Sanity pass: every op id must begin with the
+                // dialect prefix. Reject the whole manifest on any
+                // invalid op id so a partial community rule database
+                // cannot load with missing operations.
+                let mut invalid_manifest = false;
+                let mut seen_ops = BTreeSet::new();
+                manifest.ops.retain(|op| {
+                    let mut keep = true;
+                    if !op.id.starts_with(&format!("{}.", manifest.dialect)) {
+                        invalid_manifest = true;
+                        self.diagnostics.push(
+                            Diagnostic::error(
+                                "E-TOML-BAD-OP-ID",
+                                format!(
+                                    "op id `{}` does not start with dialect prefix `{}.`",
+                                    op.id, manifest.dialect
+                                ),
+                            )
+                            .with_fix("rename the op to `<dialect>.<name>`"),
+                        );
+                        keep = false;
+                    }
+                    if !matches!(op.category.as_str(), "A" | "B" | "C") {
+                        invalid_manifest = true;
+                        self.diagnostics.push(
+                            Diagnostic::error(
+                                "E-TOML-BAD-CATEGORY",
+                                format!("op `{}` has invalid category `{}`", op.id, op.category),
+                            )
+                            .with_fix("set category to `A`, `B`, or `C`"),
+                        );
+                        keep = false;
+                    }
+                    if keep && !seen_ops.insert(op.id.clone()) {
+                        invalid_manifest = true;
+                        self.diagnostics.push(
+                            Diagnostic::error(
+                                "E-TOML-DUPLICATE-OP",
+                                format!(
+                                    "dialect manifest `{}` declares op `{}` more than once",
+                                    manifest.dialect, op.id
+                                ),
+                            )
+                            .with_fix("keep one declaration per stable op id"),
+                        );
+                        keep = false;
+                    }
+                    keep
+                });
+                if invalid_manifest {
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            "E-TOML-MANIFEST-REJECTED",
+                            format!(
+                                "dialect manifest `{}` was rejected because one or more op declarations are invalid",
+                                manifest.dialect
+                            ),
+                        )
+                        .with_fix("fix every op declaration in the manifest before loading this dialect"),
+                    );
+                    return;
+                }
+                // Keep the highest-versioned manifest per dialect, but only
+                // after validating this file. Losing version selection must
+                // not hide malformed community metadata.
                 if let Some(existing) = self.manifests.get(&manifest.dialect) {
                     if existing.version >= manifest.version {
+                        self.diagnostics.push(Diagnostic::note(
+                            "N-TOML-DIALECT-SHADOWED",
+                            format!(
+                                "dialect `{}` has multiple manifests; keeping version {} over {}",
+                                manifest.dialect, existing.version, manifest.version
+                            ),
+                        ));
                         return;
                     }
                     self.diagnostics.push(Diagnostic::note(
@@ -145,25 +291,6 @@ impl TomlDialectStore {
                         ),
                     ));
                 }
-                // Sanity pass: every op id must begin with the
-                // dialect prefix.
-                manifest.ops.retain(|op| {
-                    if op.id.starts_with(&format!("{}.", manifest.dialect)) {
-                        true
-                    } else {
-                        self.diagnostics.push(
-                            Diagnostic::warning(
-                                "W-TOML-BAD-OP-ID",
-                                format!(
-                                    "op id `{}` does not start with dialect prefix `{}.`",
-                                    op.id, manifest.dialect
-                                ),
-                            )
-                            .with_fix("rename the op to `<dialect>.<name>`"),
-                        );
-                        false
-                    }
-                });
                 self.manifests.insert(manifest.dialect.clone(), manifest);
             }
             Err(err) => {
@@ -196,7 +323,17 @@ impl TomlDialectStore {
     /// Return every loaded dialect manifest.
     #[must_use]
     pub fn manifests(&self) -> Vec<&DialectManifest> {
-        self.manifests.values().collect()
+        let mut manifests = Vec::new();
+        manifests
+            .try_reserve_exact(self.manifests.len())
+            .unwrap_or_else(|error| {
+                panic!(
+                    "Vyre TOML registry could not reserve {} manifest reference slot(s): {error}. Fix: split manifest loading into pages or reduce loaded dialect files.",
+                    self.manifests.len()
+                )
+            });
+        manifests.extend(self.manifests.values());
+        manifests
     }
 
     /// Diagnostics accumulated during load.
@@ -215,6 +352,27 @@ impl TomlDialectStore {
     }
 }
 
+fn dialect_path_value() -> Option<String> {
+    #[cfg(test)]
+    {
+        if let Some(path) = dialect_path_override()
+            .lock()
+            .expect("dialect path test override lock must not be poisoned")
+            .clone()
+        {
+            return Some(path);
+        }
+    }
+    std::env::var(DIALECT_PATH_ENV).ok()
+}
+
+#[cfg(test)]
+fn dialect_path_override() -> &'static std::sync::Mutex<Option<String>> {
+    static OVERRIDE: std::sync::OnceLock<std::sync::Mutex<Option<String>>> =
+        std::sync::OnceLock::new();
+    OVERRIDE.get_or_init(|| std::sync::Mutex::new(None))
+}
+
 fn read_toml_bounded(path: &Path) -> std::io::Result<String> {
     use std::io::Read as _;
 
@@ -227,7 +385,9 @@ fn read_toml_bounded(path: &Path) -> std::io::Result<String> {
         ));
     }
     let mut text = String::with_capacity(metadata.len() as usize);
-    file.by_ref().take(MAX_DIALECT_TOML_BYTES + 1).read_to_string(&mut text)?;
+    file.by_ref()
+        .take(MAX_DIALECT_TOML_BYTES + 1)
+        .read_to_string(&mut text)?;
     if text.len() as u64 > MAX_DIALECT_TOML_BYTES {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
@@ -304,7 +464,7 @@ ops = [
         assert!(store
             .diagnostics()
             .iter()
-            .any(|d| d.code.as_str() == "W-TOML-BAD-OP-ID"));
+            .any(|d| d.code.as_str() == "E-TOML-BAD-OP-ID"));
     }
 
     #[test]
@@ -316,6 +476,49 @@ ops = [
             .diagnostics()
             .iter()
             .any(|d| d.code.as_str() == "E-TOML-PARSE"));
+    }
+
+    #[test]
+    fn invalid_op_category_rejects_manifest() {
+        let file = write_tmp(
+            r#"
+dialect = "community.bad_category"
+version = "1.0.0"
+ops = [ { id = "community.bad_category.scan", category = "Z" } ]
+"#,
+        );
+        let mut store = TomlDialectStore::default();
+        store.load_file(file.path());
+        assert!(store.dialect("community.bad_category").is_none());
+        assert!(store
+            .diagnostics()
+            .iter()
+            .any(|d| d.code.as_str() == "E-TOML-BAD-CATEGORY"));
+        assert!(store
+            .diagnostics()
+            .iter()
+            .any(|d| d.code.as_str() == "E-TOML-MANIFEST-REJECTED"));
+    }
+
+    #[test]
+    fn duplicate_manifest_op_rejects_manifest() {
+        let file = write_tmp(
+            r#"
+dialect = "community.duplicate"
+version = "1.0.0"
+ops = [
+  { id = "community.duplicate.scan", category = "B" },
+  { id = "community.duplicate.scan", category = "B" },
+]
+"#,
+        );
+        let mut store = TomlDialectStore::default();
+        store.load_file(file.path());
+        assert!(store.dialect("community.duplicate").is_none());
+        assert!(store
+            .diagnostics()
+            .iter()
+            .any(|d| d.code.as_str() == "E-TOML-DUPLICATE-OP"));
     }
 
     #[test]
@@ -345,19 +548,53 @@ ops = [ { id = "community.versioned.new", category = "B" } ]
     }
 
     #[test]
-    fn env_scan_skips_missing_directories() {
-        // VYRE_DIALECT_PATH points at a directory that doesn't
-        // exist — must not panic, must not accumulate diagnostics.
-        let saved = std::env::var(DIALECT_PATH_ENV).ok();
-        std::env::set_var(DIALECT_PATH_ENV, "/no/such/dir:/also/not/real");
+    fn shadowed_manifest_is_still_validated() {
+        let newer = write_tmp(
+            r#"
+dialect = "community.versioned_invalid"
+version = "2.0.0"
+ops = [ { id = "community.versioned_invalid.good", category = "B" } ]
+"#,
+        );
+        let older_invalid = write_tmp(
+            r#"
+dialect = "community.versioned_invalid"
+version = "1.0.0"
+ops = [ { id = "wrong.bad", category = "B" } ]
+"#,
+        );
+        let mut store = TomlDialectStore::default();
+        store.load_file(newer.path());
+        store.load_file(older_invalid.path());
+        assert_eq!(store.ops_in("community.versioned_invalid").len(), 1);
+        assert!(store
+            .diagnostics()
+            .iter()
+            .any(|d| d.code.as_str() == "E-TOML-BAD-OP-ID"));
+    }
+
+    #[test]
+    fn env_scan_reports_missing_directories() {
+        // VYRE_DIALECT_PATH points at directories that do not exist.
+        // Missing Tier-B rule roots are configuration errors: they
+        // must not be silently mistaken for an empty knowledge base.
+        *dialect_path_override()
+            .lock()
+            .expect("dialect path test override lock must not be poisoned") =
+            Some("/no/such/dir:/also/not/real".to_string());
         let store = TomlDialectStore::from_env();
         assert!(store.manifests.is_empty());
-        assert!(store.diagnostics.is_empty());
-        if let Some(s) = saved {
-            std::env::set_var(DIALECT_PATH_ENV, s);
-        } else {
-            std::env::remove_var(DIALECT_PATH_ENV);
-        }
+        assert_eq!(
+            store
+                .diagnostics
+                .iter()
+                .filter(|d| d.code.as_str() == "E-TOML-DIALECT-DIR-MISSING")
+                .count(),
+            2
+        );
+        *dialect_path_override()
+            .lock()
+            .expect("dialect path test override lock must not be poisoned") = None;
     }
 
     #[test]

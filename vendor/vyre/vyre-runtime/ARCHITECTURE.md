@@ -35,7 +35,7 @@ Top-level dispatch scheduler. Coordinates between routing and
 the megakernel runner.
 
 ### `tenant.rs`
-Tenant abstraction — multiple consumers can share a megakernel by
+Tenant abstraction — multiple clients can share a megakernel by
 publishing into different opcode partitions.
 
 ### `uring/`
@@ -55,7 +55,7 @@ Captures + replays a dispatch trace for offline debugging.
 
 ## Integration points
 
-- Surgec's fused-dispatch path will route through this layer
-  when the megakernel switch lands (post-launch).
+- Downstream fused-dispatch paths route through this layer when they
+  opt into megakernel residency.
 - `vyre-aot` calls into this for the runtime side of the AOT
   artifact loader.

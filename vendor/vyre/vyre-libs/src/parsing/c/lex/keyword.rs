@@ -1,4 +1,5 @@
 use crate::parsing::c::lex::tokens::*;
+use crate::parsing::c::source_bytes::{load_source_byte, source_haystack_words};
 use crate::region::wrap_anonymous;
 use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 
@@ -90,6 +91,28 @@ pub const C_KEYWORDS: &[(&str, u32)] = &[
     ("__seg_gs", TOK_GNU_ADDRESS_SPACE),
     ("__seg_fs", TOK_GNU_ADDRESS_SPACE),
     ("__label__", TOK_GNU_LABEL),
+    // C23 + TS-extension scalar type keywords.
+    ("_BitInt", TOK_BITINT_KW),
+    ("_Float16", TOK_FLOAT16_KW),
+    ("_Float32", TOK_FLOAT32_KW),
+    ("_Float32x", TOK_FLOAT32_KW),
+    ("_Float64", TOK_FLOAT64_KW),
+    ("_Float64x", TOK_FLOAT64_KW),
+    ("_Float128", TOK_FLOAT128_KW),
+    ("_Float128x", TOK_FLOAT128_KW),
+    ("__float128", TOK_GNU_FLOAT128_KW),
+    ("__bf16", TOK_GNU_BF16_KW),
+    ("__fp16", TOK_GNU_FP16_KW),
+    ("_Decimal32", TOK_DECIMAL32_KW),
+    ("_Decimal64", TOK_DECIMAL64_KW),
+    ("_Decimal128", TOK_DECIMAL128_KW),
+    ("__forceinline", TOK_FORCEINLINE_KW),
+    // clang nullability qualifiers — folded onto one token id; the
+    // identifier text disambiguates downstream.
+    ("_Nonnull", TOK_NULLABILITY_KW),
+    ("_Nullable", TOK_NULLABILITY_KW),
+    ("_Nullable_result", TOK_NULLABILITY_KW),
+    ("_Null_unspecified", TOK_NULLABILITY_KW),
 ];
 
 /// FNV-1a32 hash used by `c_keyword`.
@@ -112,24 +135,48 @@ pub fn c_keyword_map_words() -> Vec<u32> {
         .collect()
 }
 
-/// CPU oracle for keyword promotion over extracted token streams.
+/// Explicit CPU oracle for keyword promotion over extracted token streams.
 #[must_use]
+#[deprecated(
+    note = "CPU oracle only; production C keyword promotion must dispatch the GPU keyword pass"
+)]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn reference_c_keyword_types(
     tok_types: &[u32],
     tok_starts: &[u32],
     tok_lens: &[u32],
     haystack: &[u8],
 ) -> Vec<u32> {
+    assert_eq!(
+        tok_starts.len(),
+        tok_types.len(),
+        "vyre-libs C keyword CPU oracle received {} token starts for {} token types. Fix: pass one start per token.",
+        tok_starts.len(),
+        tok_types.len()
+    );
+    assert_eq!(
+        tok_lens.len(),
+        tok_types.len(),
+        "vyre-libs C keyword CPU oracle received {} token lengths for {} token types. Fix: pass one length per token.",
+        tok_lens.len(),
+        tok_types.len()
+    );
     let mut out = tok_types.to_vec();
     for (idx, tok_type) in out.iter_mut().enumerate() {
         if *tok_type != TOK_IDENTIFIER {
             continue;
         }
-        let start = tok_starts.get(idx).copied().unwrap_or_default() as usize;
-        let len = tok_lens.get(idx).copied().unwrap_or_default() as usize;
-        let Some(lexeme) = haystack.get(start..start.saturating_add(len)) else {
-            continue;
-        };
+        let start = tok_starts[idx] as usize;
+        let len = tok_lens[idx] as usize;
+        let end = start.checked_add(len).unwrap_or_else(|| {
+            panic!("vyre-libs C keyword CPU oracle token {idx} span overflows usize: start={start}, len={len}. Fix: validate lexer span emission.")
+        });
+        let lexeme = haystack.get(start..end).unwrap_or_else(|| {
+            panic!(
+                "vyre-libs C keyword CPU oracle token {idx} span is outside haystack: start={start}, end={end}, haystack_len={}. Fix: validate lexer span emission.",
+                haystack.len()
+            )
+        });
         if let Some((_, keyword_token)) = C_KEYWORDS
             .iter()
             .find(|(keyword, _)| keyword.as_bytes() == lexeme)
@@ -158,7 +205,69 @@ pub fn c_keyword(
     num_keywords: u32,
     haystack_len: u32,
 ) -> Program {
-    let t = Expr::InvocationId { axis: 0 };
+    c_keyword_impl(
+        tok_types,
+        tok_starts,
+        tok_lens,
+        counts,
+        haystack,
+        keyword_map,
+        max_tokens,
+        num_keywords,
+        haystack_len,
+        false,
+        "vyre-libs::parsing::c_keyword",
+    )
+}
+
+/// GPU keyword reclassification pass over a packed-byte source haystack.
+///
+/// This is the CUDA megakernel companion to [`c_keyword`]. Token starts/lens
+/// remain byte offsets, but the source buffer is resident as packed `u32`
+/// words containing four source bytes per element.
+#[must_use]
+#[allow(clippy::too_many_arguments)]
+pub fn c_keyword_packed_haystack(
+    tok_types: &str,
+    tok_starts: &str,
+    tok_lens: &str,
+    counts: &str,
+    haystack: &str,
+    keyword_map: &str,
+    max_tokens: u32,
+    num_keywords: u32,
+    haystack_len: u32,
+) -> Program {
+    c_keyword_impl(
+        tok_types,
+        tok_starts,
+        tok_lens,
+        counts,
+        haystack,
+        keyword_map,
+        max_tokens,
+        num_keywords,
+        haystack_len,
+        true,
+        "vyre-libs::parsing::c_keyword_packed_haystack",
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn c_keyword_impl(
+    tok_types: &str,
+    tok_starts: &str,
+    tok_lens: &str,
+    counts: &str,
+    haystack: &str,
+    keyword_map: &str,
+    max_tokens: u32,
+    num_keywords: u32,
+    haystack_len: u32,
+    packed_haystack: bool,
+    entry_op_id: &'static str,
+) -> Program {
+    let t = Expr::var("t");
     let num_tokens = Expr::load(counts, Expr::u32(0));
 
     let loop_body = vec![
@@ -177,7 +286,11 @@ pub fn c_keyword(
                     vec![
                         Node::let_bind(
                             "byte",
-                            Expr::load(haystack, Expr::add(Expr::var("start"), Expr::var("i"))),
+                            load_source_byte(
+                                haystack,
+                                Expr::add(Expr::var("start"), Expr::var("i")),
+                                packed_haystack,
+                            ),
                         ),
                         Node::assign("hash", Expr::bitxor(Expr::var("hash"), Expr::var("byte"))),
                         Node::assign("hash", Expr::mul(Expr::var("hash"), Expr::u32(0x01000193))),
@@ -223,7 +336,18 @@ pub fn c_keyword(
         ),
     ];
 
-    let body = vec![Node::if_then(Expr::lt(t.clone(), num_tokens), loop_body)];
+    let body = vec![
+        Node::let_bind("lane", Expr::LocalId { axis: 0 }),
+        Node::let_bind("block", Expr::WorkgroupId { axis: 0 }),
+        Node::let_bind(
+            "t",
+            Expr::add(
+                Expr::mul(Expr::var("block"), Expr::u32(256)),
+                Expr::var("lane"),
+            ),
+        ),
+        Node::if_then(Expr::lt(t.clone(), num_tokens), loop_body),
+    ];
 
     Program::wrapped(
         vec![
@@ -235,14 +359,14 @@ pub fn c_keyword(
                 .with_count(max_tokens),
             BufferDecl::storage(counts, 3, BufferAccess::ReadOnly, DataType::U32).with_count(1),
             BufferDecl::storage(haystack, 4, BufferAccess::ReadOnly, DataType::U32)
-                .with_count(haystack_len),
+                .with_count(source_haystack_words(haystack_len, packed_haystack)),
             BufferDecl::storage(keyword_map, 5, BufferAccess::ReadOnly, DataType::U32)
                 .with_count(num_keywords.saturating_mul(2)),
         ],
         [256, 1, 1], // Launch configuration
-        vec![wrap_anonymous("vyre-libs::parsing::c_keyword", body)],
+        vec![wrap_anonymous(entry_op_id, body)],
     )
-    .with_entry_op_id("vyre-libs::parsing::c_keyword")
+    .with_entry_op_id(entry_op_id)
     .with_non_composable_with_self(true)
 }
 
@@ -273,6 +397,38 @@ inventory::submit! {
             }
             vec![vec![tok_types]]
         }),
+        category: Some("parsing"),
+    }
+}
+
+inventory::submit! {
+    crate::harness::OpEntry {
+        id: "vyre-libs::parsing::c_keyword_packed_haystack",
+        build: || {
+            c_keyword_packed_haystack(
+                "tok_types",
+                "tok_starts",
+                "tok_lens",
+                "counts",
+                "haystack",
+                "keyword_map",
+                1024,
+                C_KEYWORDS.len() as u32,
+                4096,
+            )
+        },
+        test_inputs: Some(keyword_packed_fixture_inputs),
+        expected_output: Some(|| {
+            let mut tok_types = vec![0u8; 1024 * 4];
+            for (idx, tok) in [TOK_INT, TOK_IDENTIFIER, TOK_RETURN, TOK_GNU_ASM]
+                .into_iter()
+                .enumerate()
+            {
+                tok_types[idx * 4..idx * 4 + 4].copy_from_slice(&tok.to_le_bytes());
+            }
+            vec![vec![tok_types]]
+        }),
+        category: Some("parsing"),
     }
 }
 
@@ -313,4 +469,41 @@ fn keyword_fixture_inputs() -> Vec<Vec<Vec<u8>>> {
         haystack,
         keyword_map,
     ]]
+}
+
+fn keyword_packed_fixture_inputs() -> Vec<Vec<Vec<u8>>> {
+    let mut inputs = keyword_fixture_inputs();
+    let Some(first_case) = inputs.first_mut() else {
+        return inputs;
+    };
+    let lexemes = b"int foo return __asm__";
+    let mut packed_haystack = vec![0u8; 4096];
+    packed_haystack[..lexemes.len()].copy_from_slice(lexemes);
+    first_case[4] = packed_haystack;
+    inputs
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(deprecated)]
+
+    use super::*;
+
+    #[test]
+    #[should_panic(expected = "one start per token")]
+    fn reference_keyword_oracle_rejects_short_start_stream() {
+        let _ = reference_c_keyword_types(&[TOK_IDENTIFIER], &[], &[3], b"int");
+    }
+
+    #[test]
+    #[should_panic(expected = "outside haystack")]
+    fn reference_keyword_oracle_rejects_out_of_bounds_span() {
+        let _ = reference_c_keyword_types(&[TOK_IDENTIFIER], &[10], &[3], b"int");
+    }
+
+    #[test]
+    fn reference_keyword_oracle_promotes_valid_identifier() {
+        let out = reference_c_keyword_types(&[TOK_IDENTIFIER], &[0], &[3], b"int");
+        assert_eq!(out, [TOK_INT]);
+    }
 }

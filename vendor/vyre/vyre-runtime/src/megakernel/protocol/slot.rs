@@ -14,7 +14,13 @@ pub const YIELD: u32 = 5;
 pub const REQUEUE: u32 = 6;
 /// The slot hit a hardware or software fault constraint.
 pub const FAULT: u32 = 7;
-/// Priority: normal scheduling (default).
-pub const PRIORITY_NORMAL: u32 = 0;
-/// Priority: high; kernel checks these slots first on each iteration.
+/// Priority: critical; kernel checks these slots first on each iteration.
+pub const PRIORITY_CRITICAL: u32 = 0;
+/// Priority: high-priority foreground work.
 pub const PRIORITY_HIGH: u32 = 1;
+/// Priority: normal scheduling (default).
+pub const PRIORITY_NORMAL: u32 = 2;
+/// Priority: low-priority background work.
+pub const PRIORITY_LOW: u32 = 3;
+/// Priority: idle maintenance work.
+pub const PRIORITY_IDLE: u32 = 4;

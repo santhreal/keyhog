@@ -1,43 +1,46 @@
-//! Zero-allocation error type for wire-format hot-path encoders.
+//! Small error type for wire-format hot-path encoders.
 //!
 //! Every function called per-Node or per-Expr during encode uses this type
 //! instead of `String` so that the success path never touches the heap and
-//! the error path builds the diagnostic on the stack.
+//! the rare dynamic error path keeps the returned `Result` compact.
 
 use arrayvec::ArrayString;
 
 /// Error returned by hot-path wire encoders.
 ///
-/// Uses either a borrowed static string (zero allocation) or a small
-/// stack-allocated buffer when dynamic formatting is required.
+/// Uses either a borrowed static string (zero allocation) or a boxed bounded
+/// buffer when dynamic formatting is required.
 #[derive(Debug, Clone)]
 pub enum WireEncodeErr {
     /// Borrowed static diagnostic, used by fixed contract failures.
     Static(&'static str),
-    /// Stack-backed diagnostic for errors that include computed values.
-    Dynamic(ArrayString<256>),
+    /// Bounded diagnostic for errors that include computed values.
+    Dynamic(Box<ArrayString<256>>),
 }
 
 impl WireEncodeErr {
     /// Create an error from a static string.
     #[inline]
+    #[must_use]
     pub const fn static_msg(msg: &'static str) -> Self {
         WireEncodeErr::Static(msg)
     }
 
     /// Build a dynamic error from prefix + formatted usize + suffix.
     #[inline]
+    #[must_use]
     pub fn fmt_usize(prefix: &str, value: usize, suffix: &str) -> Self {
         let mut buf = ArrayString::<256>::new();
         buf.push_str(prefix);
         let mut tmp = itoa::Buffer::new();
         buf.push_str(tmp.format(value));
         buf.push_str(suffix);
-        WireEncodeErr::Dynamic(buf)
+        WireEncodeErr::Dynamic(Box::new(buf))
     }
 
     /// Build a dynamic error from prefix + two formatted usizes + suffix.
     #[inline]
+    #[must_use]
     pub fn fmt_usize2(prefix: &str, v1: usize, mid: &str, v2: usize, suffix: &str) -> Self {
         let mut buf = ArrayString::<256>::new();
         buf.push_str(prefix);
@@ -46,22 +49,24 @@ impl WireEncodeErr {
         buf.push_str(mid);
         buf.push_str(tmp.format(v2));
         buf.push_str(suffix);
-        WireEncodeErr::Dynamic(buf)
+        WireEncodeErr::Dynamic(Box::new(buf))
     }
 
     /// Build a dynamic error from prefix + formatted u64 + suffix.
     #[inline]
+    #[must_use]
     pub fn fmt_u64(prefix: &str, value: u64, suffix: &str) -> Self {
         let mut buf = ArrayString::<256>::new();
         buf.push_str(prefix);
         let mut tmp = itoa::Buffer::new();
         buf.push_str(tmp.format(value));
         buf.push_str(suffix);
-        WireEncodeErr::Dynamic(buf)
+        WireEncodeErr::Dynamic(Box::new(buf))
     }
 
     /// Borrow the diagnostic as UTF-8 bytes without allocating.
     #[inline]
+    #[must_use]
     pub fn as_bytes(&self) -> &[u8] {
         <Self as AsRef<[u8]>>::as_ref(self)
     }
@@ -103,6 +108,6 @@ impl From<String> for WireEncodeErr {
     fn from(s: String) -> Self {
         let mut buf = ArrayString::<256>::new();
         let _ = buf.try_push_str(&s);
-        WireEncodeErr::Dynamic(buf)
+        WireEncodeErr::Dynamic(Box::new(buf))
     }
 }

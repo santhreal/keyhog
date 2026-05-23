@@ -2,12 +2,13 @@ use vyre_driver::error::Result;
 
 /// Compile a WGSL compute shader into a `wgpu` compute pipeline.
 ///
-/// This helper is **uncached**. Callers that want caching own their own
-/// backend-scoped cache (see `crate::WgpuBackend::pipeline_cache` — the
-/// single-source-of-truth in-memory pipeline cache for 0.6). The pre-0.6
-/// process-wide `static PIPELINES: DashMap` that lived here was a second,
-/// uncoordinated cache that leaked `wgpu::Device` references across
-/// backend instances — removed per the 0.6 "one in-memory cache" rule.
+/// This helper does not cache `ComputePipeline` objects. It does attach a
+/// per-device driver pipeline cache automatically when the adapter exposes
+/// `PIPELINE_CACHE`, so one-off WGSL helpers still avoid repeated native
+/// compiler cold-start work. The pre-0.6 process-wide `static PIPELINES:
+/// DashMap` that lived here was a second, uncoordinated pipeline-object cache
+/// that leaked `wgpu::Device` references across backend instances — removed
+/// per the 0.6 "one in-memory cache" rule.
 ///
 /// Callers outside the backend dispatch path (e.g. `ext.rs` WGSL eval
 /// helpers) pay the compile cost on every call, which is correct: the
@@ -50,9 +51,7 @@ pub fn compile_compute_pipeline_with_layout(
             ),
         }
     })?;
-    let driver_cache = if driver_pipeline_cache_enabled()
-        && device.features().contains(wgpu::Features::PIPELINE_CACHE)
-    {
+    let driver_cache = if device.features().contains(wgpu::Features::PIPELINE_CACHE) {
         Some(driver_pipeline_cache(device, label)?)
     } else {
         None
@@ -86,13 +85,6 @@ pub fn compile_compute_pipeline_with_layout(
     Ok(pipeline)
 }
 
-fn driver_pipeline_cache_enabled() -> bool {
-    matches!(
-        std::env::var("VYRE_WGPU_DRIVER_PIPELINE_CACHE").as_deref(),
-        Ok("1" | "true" | "TRUE" | "on" | "ON")
-    )
-}
-
 fn driver_pipeline_cache(device: &wgpu::Device, _label: &str) -> Result<wgpu::PipelineCache> {
     use dashmap::DashMap;
     use std::sync::LazyLock;
@@ -106,12 +98,14 @@ fn driver_pipeline_cache(device: &wgpu::Device, _label: &str) -> Result<wgpu::Pi
 
     let cache = {
         #[allow(unsafe_code)]
-        // SAFETY: data=None forbids untrusted bytes; fallback=true lets wgpu substitute an empty cache on backends without pipeline-cache support.
+        // SAFETY: data=None forbids untrusted bytes; fallback=false makes
+        // pipeline-cache creation fail loudly instead of silently substituting
+        // an uncached path when the advertised feature is broken.
         unsafe {
             device.create_pipeline_cache(&wgpu::PipelineCacheDescriptor {
                 label: Some("vyre wgpu pipeline cache"),
                 data: None,
-                fallback: true,
+                fallback: false,
             })
         }
     };

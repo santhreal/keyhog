@@ -200,7 +200,9 @@ fn dump_kdesc_if_requested(
     descriptor: &vyre_lower::KernelDescriptor,
     module: Option<&naga::Module>,
 ) {
-    if let Ok(dir) = std::env::var("VYRE_DUMP_KDESC").or_else(|_| std::env::var("VYRE_CAPTURE_FAILED_DESCRIPTOR")) {
+    if let Ok(dir) = std::env::var("VYRE_DUMP_KDESC")
+        .or_else(|_| std::env::var("VYRE_CAPTURE_FAILED_DESCRIPTOR"))
+    {
         let path = std::path::Path::new(&dir);
         if let Err(error) = std::fs::create_dir_all(path) {
             eprintln!(
@@ -210,7 +212,7 @@ fn dump_kdesc_if_requested(
             return;
         }
         let id = &descriptor.id;
-        
+
         let kdesc_path = path.join(format!("{id}.kdesc.bin"));
         match std::fs::File::create(&kdesc_path) {
             Ok(file) => {
@@ -226,7 +228,7 @@ fn dump_kdesc_if_requested(
                 kdesc_path.display()
             ),
         }
-        
+
         if let Some(m) = module {
             let module_path = path.join(format!("{id}.module.ron"));
             match std::fs::File::create(&module_path) {
@@ -333,27 +335,27 @@ fn write_wgsl(module: &naga::Module) -> Result<String, LoweringError> {
 }
 
 fn binding_assignments(descriptor: &vyre_lower::KernelDescriptor) -> Vec<WgpuBindingAssignment> {
-    descriptor
-        .bindings
-        .slots
-        .iter()
-        .filter_map(|slot| {
-            let group = descriptor_bind_group(slot)?;
-            Some(WgpuBindingAssignment {
-                name: Arc::from(slot.name.as_str()),
-                group,
-                binding: slot.slot,
-                kind: descriptor_memory_kind(slot.memory_class),
-                access: descriptor_buffer_access(slot.visibility),
-                element: slot.element_type.clone(),
-            })
-        })
-        .collect()
+    let mut assignments = Vec::with_capacity(descriptor.bindings.slots.len());
+    for slot in &descriptor.bindings.slots {
+        let Some(group) = descriptor_bind_group(slot) else {
+            continue;
+        };
+        assignments.push(WgpuBindingAssignment {
+            name: Arc::from(slot.name.as_str()),
+            group,
+            binding: slot.slot,
+            kind: descriptor_memory_kind(slot.memory_class),
+            access: descriptor_buffer_access(slot.visibility),
+            element: slot.element_type.clone(),
+        });
+    }
+    assignments
 }
 
 fn descriptor_bind_group(slot: &vyre_lower::BindingSlot) -> Option<u32> {
     match slot.memory_class {
         vyre_lower::MemoryClass::Shared | vyre_lower::MemoryClass::Scratch => None,
+        vyre_lower::MemoryClass::Uniform => Some(1),
         vyre_lower::MemoryClass::Global | vyre_lower::MemoryClass::Constant => Some(0),
     }
 }
@@ -364,6 +366,7 @@ fn descriptor_memory_kind(
     match memory_class {
         vyre_lower::MemoryClass::Shared => vyre_foundation::ir::MemoryKind::Shared,
         vyre_lower::MemoryClass::Constant => vyre_foundation::ir::MemoryKind::Readonly,
+        vyre_lower::MemoryClass::Uniform => vyre_foundation::ir::MemoryKind::Uniform,
         vyre_lower::MemoryClass::Global => vyre_foundation::ir::MemoryKind::Global,
         vyre_lower::MemoryClass::Scratch => vyre_foundation::ir::MemoryKind::Local,
     }
@@ -399,8 +402,13 @@ fn static_workgroups(
         .map(|count| count.max(1))
         .max()
         .unwrap_or(1);
-    let lanes = workgroup_size[0].max(1);
-    [output_words.div_ceil(lanes).max(1), 1, 1]
+    // Use the product of all workgroup dimensions as total thread count.
+    // Previously only workgroup_size[0] was used, causing multi-dimensional
+    // workgroups (e.g. [8,8,1] = 64 threads) to over-dispatch by the
+    // product of the ignored dimensions.
+    let total_threads =
+        workgroup_size[0].max(1) * workgroup_size[1].max(1) * workgroup_size[2].max(1);
+    [output_words.div_ceil(total_threads).max(1), 1, 1]
 }
 
 fn format_descriptor_verify_errors(errors: &[vyre_lower::VerifyError]) -> String {
@@ -484,5 +492,39 @@ mod tests {
         assert_eq!(assignments.len(), 1);
         assert_eq!(assignments[0].name.as_ref(), "out");
         assert_eq!(static_workgroups(&descriptor, [4, 1, 1]), [2, 1, 1]);
+    }
+
+    /// Regression test: multi-dimensional workgroup sizes must use the
+    /// product of all three dimensions as total thread count.
+    /// Before the fix, only `workgroup_size[0]` was used, so a
+    /// `[8, 8, 1]` workgroup (64 total threads) was treated as 8 threads,
+    /// dispatching 8× too many workgroups.
+    #[test]
+    fn static_workgroups_multi_dimensional_uses_total_threads() {
+        let descriptor = vyre_lower::KernelDescriptor {
+            id: "multidim".into(),
+            bindings: vyre_lower::BindingLayout {
+                slots: vec![vyre_lower::BindingSlot {
+                    slot: 0,
+                    element_type: DataType::U32,
+                    element_count: Some(256),
+                    memory_class: vyre_lower::MemoryClass::Global,
+                    visibility: vyre_lower::BindingVisibility::ReadWrite,
+                    name: "out".to_owned(),
+                }],
+            },
+            dispatch: vyre_lower::Dispatch::new(8, 8, 1),
+            body: vyre_lower::KernelBody {
+                ops: vec![],
+                child_bodies: vec![],
+                literals: vec![],
+            },
+        };
+        // [8, 8, 1] = 64 total threads → 256 / 64 = 4 workgroups
+        assert_eq!(static_workgroups(&descriptor, [8, 8, 1]), [4, 1, 1]);
+        // [4, 4, 4] = 64 total threads → 256 / 64 = 4 workgroups
+        assert_eq!(static_workgroups(&descriptor, [4, 4, 4]), [4, 1, 1]);
+        // [16, 1, 1] = 16 total threads → 256 / 16 = 16 workgroups
+        assert_eq!(static_workgroups(&descriptor, [16, 1, 1]), [16, 1, 1]);
     }
 }

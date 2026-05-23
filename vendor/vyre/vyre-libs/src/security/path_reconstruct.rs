@@ -15,6 +15,19 @@ pub fn path_reconstruct(
     path_len: &str,
     max_depth: u32,
 ) -> Program {
+    // path_reconstruct does not consume a node count; max_depth is
+    // the structural sizing parameter. Use it as the non-degenerate
+    // sentinel — a zero-depth reconstruction has no useful output.
+    crate::security::assert_security_inputs(
+        OP_ID,
+        max_depth,
+        &[
+            ("parent", parent),
+            ("target", target),
+            ("path_out", path_out),
+            ("path_len", path_len),
+        ],
+    );
     crate::region::tag_program(
         OP_ID,
         primitive_path_reconstruct(parent, target, path_out, path_len, max_depth),
@@ -38,6 +51,7 @@ inventory::submit! {
             let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
             vec![vec![to_bytes(&[3, 2, 1, 0]), to_bytes(&[4])]]
         }),
+        category: Some("security"),
     }
 }
 
@@ -111,8 +125,10 @@ mod tests {
             to_bytes(&[0, 0, 0, 0]),
             to_bytes(&[0]),
         ];
-        let values: Vec<vyre_reference::value::Value> =
-            inputs.into_iter().map(vyre_reference::value::Value::from).collect();
+        let values: Vec<vyre_reference::value::Value> = inputs
+            .into_iter()
+            .map(vyre_reference::value::Value::from)
+            .collect();
         let outputs = vyre_reference::reference_eval(&p, &values).unwrap();
         let gpu_path_bytes = outputs[0].to_bytes();
         let gpu_len = u32::from_le_bytes(outputs[1].to_bytes()[0..4].try_into().unwrap());
@@ -120,7 +136,10 @@ mod tests {
         let mut cpu_scratch = Vec::new();
         let cpu_len = cpu_ref(&parent, target, max_depth, &mut cpu_scratch);
 
-        assert_eq!(gpu_len, cpu_len, "GPU path length must match CPU reference on cycle");
+        assert_eq!(
+            gpu_len, cpu_len,
+            "GPU path length must match CPU reference on cycle"
+        );
         let gpu_path: Vec<u32> = gpu_path_bytes
             .chunks_exact(4)
             .map(|c| u32::from_le_bytes(c.try_into().unwrap()))
@@ -135,6 +154,6 @@ mod tests {
     #[test]
     #[should_panic(expected = "empty buffer name")]
     fn path_reconstruct_empty_buffer_name_should_panic() {
-        path_reconstruct("", "target", "path_out", "path_len", 4);
+        let _ = path_reconstruct("", "target", "path_out", "path_len", 4);
     }
 }

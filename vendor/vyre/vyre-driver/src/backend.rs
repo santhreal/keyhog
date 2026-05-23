@@ -15,6 +15,7 @@ mod registry;
 pub mod validation;
 
 mod compiled_pipeline;
+mod device_buffer;
 mod dispatch_config;
 mod dispatch_result;
 mod error;
@@ -42,15 +43,143 @@ pub use validation::{
 pub use crate::validation::validate_program_for_backend;
 
 pub use compiled_pipeline::CompiledPipeline;
+pub use device_buffer::{
+    default_dispatch_with_device_buffers, validate_buffer_ownership, DeviceBuffer, HostShimBuffer,
+    DEVICE_BUFFER_FEATURE,
+};
 pub use dispatch_config::DispatchConfig;
-pub use dispatch_result::{OutputBuffers, TimedDispatchResult};
+pub use dispatch_result::{
+    replace_output_buffers_preserving_slots,
+    replace_output_buffers_preserving_slots_with_memory_stats,
+    replace_output_buffers_preserving_slots_with_stats, OutputBuffers, OutputReplacementStats,
+    OutputSlotByteStats, OutputSlotStats, TimedDispatchResult,
+};
 pub use error::{BackendError, ErrorCode};
 pub use pending_dispatch::PendingDispatch;
 pub use resource::Resource;
 pub use typed_dispatch::TypedDispatchExt;
-pub use vyre_backend::VyreBackend;
+pub use vyre_backend::{ResidentDispatchStep, ResidentReadRange, VyreBackend};
 
 #[doc(hidden)]
 pub mod private {
     pub trait Sealed {}
+}
+
+pub(crate) fn clone_borrowed_inputs_for_dispatch(
+    inputs: &[&[u8]],
+    field: &'static str,
+) -> Result<smallvec::SmallVec<[Vec<u8>; 8]>, BackendError> {
+    let mut owned = smallvec::SmallVec::<[Vec<u8>; 8]>::new();
+    owned.try_reserve(inputs.len()).map_err(|error| {
+        BackendError::InvalidProgram {
+            fix: format!(
+                "Fix: failed to reserve {field} for {} borrowed input buffer(s): {error}. Use a backend-native borrowed dispatch path or shard the dispatch.",
+                inputs.len()
+            ),
+        }
+    })?;
+    for (index, input) in inputs.iter().enumerate() {
+        let mut cloned = Vec::new();
+        cloned.try_reserve_exact(input.len()).map_err(|error| {
+            BackendError::InvalidProgram {
+                fix: format!(
+                    "Fix: failed to reserve {field} bytes for borrowed input {index} with length {}: {error}. Keep hot inputs resident on the GPU or shard the dispatch.",
+                    input.len()
+                ),
+            }
+        })?;
+        cloned.extend_from_slice(input);
+        owned.push(cloned);
+    }
+    Ok(owned)
+}
+
+pub(crate) fn borrowed_input_slices<'a>(
+    inputs: &'a [Vec<u8>],
+    field: &'static str,
+) -> Result<smallvec::SmallVec<[&'a [u8]; 8]>, BackendError> {
+    let mut borrowed = smallvec::SmallVec::<[&[u8]; 8]>::new();
+    borrowed.try_reserve(inputs.len()).map_err(|error| {
+        BackendError::InvalidProgram {
+            fix: format!(
+                "Fix: failed to reserve {field} for {} borrowed input slice(s): {error}. Reuse caller-owned borrowed slices or shard dispatch certification.",
+                inputs.len()
+            ),
+        }
+    })?;
+    borrowed.extend(inputs.iter().map(Vec::as_slice));
+    Ok(borrowed)
+}
+
+pub(crate) fn reserve_batch_output_slots(
+    outputs: &mut Vec<OutputBuffers>,
+    batch_len: usize,
+    field: &'static str,
+) -> Result<(), BackendError> {
+    if outputs.capacity() >= batch_len {
+        return Ok(());
+    }
+    outputs
+        .try_reserve_exact(batch_len - outputs.capacity())
+        .map_err(|error| BackendError::InvalidProgram {
+            fix: format!(
+                "Fix: failed to reserve {field} for {batch_len} batch output slot(s): {error}. Split the batch before dispatch or use a backend-native batch path."
+            ),
+        })
+}
+
+pub(crate) fn reserved_batch_output_slots(
+    batch_len: usize,
+    field: &'static str,
+) -> Result<Vec<OutputBuffers>, BackendError> {
+    let mut outputs = Vec::new();
+    reserve_batch_output_slots(&mut outputs, batch_len, field)?;
+    Ok(outputs)
+}
+
+pub(crate) fn resize_batch_output_slots(
+    outputs: &mut Vec<OutputBuffers>,
+    batch_len: usize,
+    field: &'static str,
+) -> Result<(), BackendError> {
+    reserve_batch_output_slots(outputs, batch_len, field)?;
+    if outputs.len() < batch_len {
+        outputs.resize_with(batch_len, Vec::new);
+    } else {
+        outputs.truncate(batch_len);
+    }
+    Ok(())
+}
+
+pub(crate) fn resize_typed_output_slots<T>(
+    outputs: &mut Vec<Vec<T>>,
+    output_len: usize,
+    field: &'static str,
+) -> Result<(), BackendError> {
+    if outputs.capacity() < output_len {
+        outputs
+            .try_reserve_exact(output_len - outputs.capacity())
+            .map_err(|error| BackendError::InvalidProgram {
+                fix: format!(
+                    "Fix: failed to reserve {field} for {output_len} typed output slot(s): {error}. Split the dispatch or decode into a caller-owned output arena."
+                ),
+            })?;
+    }
+    if outputs.len() < output_len {
+        outputs.resize_with(output_len, Vec::new);
+    } else {
+        outputs.truncate(output_len);
+    }
+    Ok(())
+}
+
+pub(crate) fn checked_elapsed_wall_ns(
+    started: std::time::Instant,
+    field: &'static str,
+) -> Result<u64, BackendError> {
+    u64::try_from(started.elapsed().as_nanos()).map_err(|error| BackendError::InvalidProgram {
+        fix: format!(
+            "Fix: {field} wall-clock timing cannot fit u64 nanoseconds: {error}. Split telemetry windows or report per-dispatch timing."
+        ),
+    })
 }

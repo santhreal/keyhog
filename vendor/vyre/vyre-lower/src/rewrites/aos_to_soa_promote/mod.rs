@@ -106,10 +106,22 @@ pub fn promote(desc: &KernelDescriptor) -> Vec<(u32, LayoutHint)> {
 #[must_use]
 pub fn plan_binding_splits(desc: &KernelDescriptor) -> SoaBindingSplitPlan {
     let analysis = layout_aos_to_soa::analyze(desc);
+    // Only consider host-visible slots when allocating component slots.
+    // Shared/Scratch slots live in the WORKGROUP_SLOT_BASE (1<<24) range
+    // and are not host-bound; mixing them in here would push every
+    // SoA-split component past the wgpu max binding index (1000) and the
+    // bind group layout validator would reject it. Same hazard fix as the
+    // trap sidecar slot allocator in vyre-lower::lower::add_trap_sidecar_binding.
     let mut next_slot = desc
         .bindings
         .slots
         .iter()
+        .filter(|slot| {
+            !matches!(
+                slot.memory_class,
+                crate::MemoryClass::Shared | crate::MemoryClass::Scratch,
+            )
+        })
         .map(|slot| slot.slot)
         .max()
         .unwrap_or(0)

@@ -195,7 +195,7 @@ pub(super) fn shift_add_chain(x: &Expr, c: u32) -> Option<Expr> {
     }
 
     let mut terms = terms;
-    terms.sort_unstable_by(|a, b| b.shift.cmp(&a.shift));
+    terms.sort_unstable_by_key(|term| std::cmp::Reverse(term.shift));
     let mut iter = terms.into_iter();
     let first = iter.next()?;
     let mut acc = if first.sign > 0 {
@@ -243,8 +243,9 @@ fn naf_terms(mut n: u32) -> Vec<SignedShiftTerm> {
 }
 
 fn shift_add_cost(terms: &[SignedShiftTerm]) -> u32 {
-    let shifts = terms.iter().filter(|term| term.shift != 0).count() as u32;
-    let combines = terms.len().saturating_sub(1) as u32;
+    let shifts =
+        u32::try_from(terms.iter().filter(|term| term.shift != 0).count()).unwrap_or(u32::MAX);
+    let combines = u32::try_from(terms.len().saturating_sub(1)).unwrap_or(u32::MAX);
     shifts + combines
 }
 
@@ -276,7 +277,7 @@ fn operand_duplication_cost(expr: &Expr) -> u32 {
 fn positive_u32_constant(expr: &Expr) -> Option<u32> {
     match expr {
         Expr::LitU32(v) => Some(*v),
-        Expr::LitI32(v) if *v > 0 => Some(*v as u32),
+        Expr::LitI32(v) if *v > 0 => u32::try_from(*v).ok(),
         _ => None,
     }
 }
@@ -289,7 +290,7 @@ fn positive_u32_constant(expr: &Expr) -> Option<u32> {
 /// Returns `None` for `c == 0.0` or non-literal operands.
 pub(super) fn reciprocal_constant_fold(left: &Expr, right: &Expr) -> Option<Expr> {
     if let (Expr::LitF32(one), Expr::LitF32(c)) = (left, right) {
-        if *one == 1.0 && *c != 0.0 && c.is_finite() {
+        if one.to_bits() == 1.0f32.to_bits() && (c.to_bits() & 0x7FFF_FFFF) != 0 && c.is_finite() {
             return Some(Expr::f32(1.0 / c));
         }
     }
@@ -337,8 +338,10 @@ pub(super) fn synthesize_fma_sub(left: &Expr, right: &Expr) -> Option<Expr> {
 pub(super) fn power_of_two_shift(expr: &Expr) -> Option<u32> {
     match expr {
         Expr::LitU32(value) if value.is_power_of_two() => Some(value.trailing_zeros()),
-        Expr::LitI32(value) if *value > 0 && (*value as u32).is_power_of_two() => {
-            Some(value.trailing_zeros())
+        Expr::LitI32(value)
+            if *value > 0 && u32::try_from(*value).is_ok_and(u32::is_power_of_two) =>
+        {
+            u32::try_from(*value).ok().map(u32::trailing_zeros)
         }
         _ => None,
     }
@@ -364,7 +367,6 @@ fn negated_mul_terms(expr: &Expr) -> Option<(Expr, Expr)> {
         _ => None,
     }
 }
-
 
 // ═══════════════════════════════════════════════════════════════
 // Granlund-Montgomery: integer division by constant → mulhi + shift
@@ -475,15 +477,7 @@ pub(super) fn granlund_montgomery_div(dividend: &Expr, d: u32) -> Option<Expr> {
     let magic = compute_div_magic(d);
     let n = dividend.clone();
 
-    if !magic.needs_fixup {
-        // Case 1: result = mulhi(n, M) >> s
-        let hi = Expr::mulhi(n, Expr::u32(magic.magic));
-        if magic.shift == 0 {
-            Some(hi)
-        } else {
-            Some(Expr::shr(hi, Expr::u32(magic.shift)))
-        }
-    } else {
+    if magic.needs_fixup {
         // Case 2: t = mulhi(n, M)
         //         result = (t + ((n - t) >> 1)) >> (s - 1)
         let t = Expr::mulhi(n.clone(), Expr::u32(magic.magic));
@@ -495,6 +489,14 @@ pub(super) fn granlund_montgomery_div(dividend: &Expr, d: u32) -> Option<Expr> {
             Some(sum)
         } else {
             Some(Expr::shr(sum, Expr::u32(shift)))
+        }
+    } else {
+        // Case 1: result = mulhi(n, M) >> s
+        let hi = Expr::mulhi(n, Expr::u32(magic.magic));
+        if magic.shift == 0 {
+            Some(hi)
+        } else {
+            Some(Expr::shr(hi, Expr::u32(magic.shift)))
         }
     }
 }

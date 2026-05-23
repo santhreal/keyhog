@@ -60,7 +60,7 @@ inventory::submit! {
             let hi = [8u32, 8, 8, 200];
             let to_bytes =
                 |w: &[u32]| w.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<u8>>();
-            vec![vec![to_bytes(&input), to_bytes(&lo), to_bytes(&hi), vec![0u8; 16]]]
+            vec![vec![to_bytes(&input), to_bytes(&lo), to_bytes(&hi)]]
         }),
         expected_output: Some(|| {
             // u32::clamp per-element. The 4th lane (u32::MAX) clamps
@@ -73,6 +73,7 @@ inventory::submit! {
                 .collect::<Vec<u8>>();
             vec![vec![bytes]]
         }),
+        category: Some("math"),
     }
 }
 

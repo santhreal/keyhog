@@ -194,10 +194,12 @@ fn classify_pool_operand(body: &KernelBody, operand_id: u32) -> AccessPattern {
 }
 
 fn literal_operand_u32(body: &KernelBody, operand_id: u32) -> Option<u32> {
-    body.literals.get(operand_id as usize).and_then(|literal| match literal {
-        LiteralValue::U32(value) => Some(*value),
-        _ => None,
-    })
+    body.literals
+        .get(operand_id as usize)
+        .and_then(|literal| match literal {
+            LiteralValue::U32(value) => Some(*value),
+            _ => None,
+        })
 }
 
 fn child_body_operands<'a>(

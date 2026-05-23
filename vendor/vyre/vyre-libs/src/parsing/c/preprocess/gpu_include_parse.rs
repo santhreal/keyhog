@@ -26,12 +26,10 @@
 //!    byte at byte-address `addr`. The kernel does the byte
 //!    extraction inline so it produces the correct value on both
 //!    backends.
-//! 2. vyre-lower's region-scope phi-merge drops nested-scope assigns
-//!    to outer-scope mutables (Q7 carrier-seed family bug). This
-//!    kernel is therefore written as straight-line `let_bind` chains
-//!    plus direct buffer stores — no loops, no outer-scope mutables.
-//!    Whitespace skipping uses fixed-depth chained Selects; path-byte
-//!    scanning uses a fixed-depth unrolled probe.
+//! 2. Whitespace skipping uses fixed-depth chained Selects because C
+//!    directive separators are short in practice. Path extraction is
+//!    bounded by the directive row length, so Linux-scale include paths
+//!    are not truncated by a compile-time probe cap.
 //!
 //! ## Wire layout
 //!
@@ -47,7 +45,7 @@ use crate::parsing::c::lex::tokens::{TOK_PP_INCLUDE, TOK_PP_INCLUDE_NEXT};
 use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 
 /// Canonical op id.
-pub const OP_ID: &str = "vyre-libs::parsing::c::preprocess::gpu_include_parse";
+pub const OP_ID: &str = "vyre-libs::parsing::c::preprocess::gpu_include_parse_v2";
 
 /// Canonical binding for the input per-token start-offset buffer.
 pub const BINDING_TOK_STARTS: u32 = 0;
@@ -69,18 +67,18 @@ pub const BINDING_IS_SYSTEM_OUT: u32 = 6;
 /// keeps the unrolled scans a fixed depth.
 const MAX_WS_PREFIX: u32 = 4;
 
-/// Maximum include path length the kernel can extract. Cap chosen so
-/// the unrolled close-delimiter probe stays a manageable fixed depth
-/// at WGSL emit time AND the host-side IR builder doesn't blow its
-/// recursion stack walking the ~MAX_PATH_LEN-deep Select chain.
-/// Real-world header paths fit easily; the host treats
-/// `path_len == 0` as "not parseable".
-const MAX_PATH_LEN: u32 = 48;
-
 /// Build the 17b.7 `#include` row parser `Program`.
+///
+/// Hybrid runtime/static-bound: kernel BODY uses `Expr::buf_len()` for
+/// every per-thread bound (so program AST is constant across files),
+/// `num_tokens` is kept ONLY for output buffer sizing (CUDA backend
+/// requires static byte length for readback), `source_len` is unused.
 #[must_use]
 pub fn gpu_include_parse(num_tokens: u32, source_len: u32) -> Program {
+    let source_words = source_len.div_ceil(4).max(1);
     let t = Expr::var("t");
+    let lane = Expr::var("lane");
+    let block = Expr::var("block");
 
     // U8 byte extraction (see module note).
     let load_byte_u32 = |addr: Expr| -> Expr {
@@ -92,7 +90,10 @@ pub fn gpu_include_parse(num_tokens: u32, source_len: u32) -> Program {
     };
     let safe_load = |addr: Expr| -> Expr {
         Expr::select(
-            Expr::lt(addr.clone(), Expr::u32(source_len)),
+            Expr::lt(
+                addr.clone(),
+                Expr::mul(Expr::buf_len("source"), Expr::u32(4)),
+            ),
             load_byte_u32(addr),
             Expr::u32(0),
         )
@@ -156,7 +157,15 @@ pub fn gpu_include_parse(num_tokens: u32, source_len: u32) -> Program {
     };
 
     let mut parse: Vec<Node> = Vec::new();
-    parse.push(Node::let_bind("tok_start", Expr::load("tok_starts", t.clone())));
+    parse.push(Node::let_bind(
+        "tok_start",
+        Expr::load("tok_starts", t.clone()),
+    ));
+    parse.push(Node::let_bind("tok_len", Expr::load("tok_lens", t.clone())));
+    parse.push(Node::let_bind(
+        "tok_end",
+        Expr::add(Expr::var("tok_start"), Expr::var("tok_len")),
+    ));
 
     // ---- step 1: hash_off / hash_idx ----
     for p in 0..=MAX_WS_PREFIX {
@@ -235,14 +244,20 @@ pub fn gpu_include_parse(num_tokens: u32, source_len: u32) -> Program {
             is_ws(Expr::var(format!("dp_{q}"))),
         ));
     }
-    parse.push(Node::let_bind("delim_skip", ws_skip_expr("dp", MAX_WS_PREFIX)));
+    parse.push(Node::let_bind(
+        "delim_skip",
+        ws_skip_expr("dp", MAX_WS_PREFIX),
+    ));
     parse.push(Node::let_bind(
         "delim_pos",
         Expr::add(Expr::var("post_kw"), Expr::var("delim_skip")),
     ));
 
     // ---- step 5: classify delimiter. ----
-    parse.push(Node::let_bind("delim_byte", safe_load(Expr::var("delim_pos"))));
+    parse.push(Node::let_bind(
+        "delim_byte",
+        safe_load(Expr::var("delim_pos")),
+    ));
     parse.push(Node::let_bind(
         "is_angle",
         Expr::select(
@@ -283,42 +298,51 @@ pub fn gpu_include_parse(num_tokens: u32, source_len: u32) -> Program {
         Expr::add(Expr::var("delim_pos"), Expr::u32(1)),
     ));
 
-    // ---- step 6: scan path bytes for closing delimiter. Unrolled
-    // up to MAX_PATH_LEN. ----
-    for i in 0..MAX_PATH_LEN {
-        parse.push(Node::let_bind(
-            format!("pb_{i}"),
-            safe_load(Expr::add(Expr::var("path_start_val"), Expr::u32(i))),
-        ));
-    }
-    // path_len_val: smallest index `i` in [0, MAX_PATH_LEN) where
-    // pb_i == close_byte; 0 if none found.
-    //
-    // Iterating high → low builds a Select chain whose outermost arm
-    // tests i=0, the next tests i=1, and so on. If multiple bytes match
-    // the closing delimiter, the innermost matches don't matter because
-    // an outer match always overrides them, so the chain naturally
-    // returns the smallest `i`. No prefix-not-close check required.
-    // (The earlier O(N²) prefix-AND blew the host's stack at WGSL
-    // emit-time at MAX_PATH_LEN=128.)
-    let path_len_expr = {
-        let mut acc = Expr::u32(0);
-        for i in (0..MAX_PATH_LEN).rev() {
-            let pb_i_eq = Expr::eq(
-                Expr::var(format!("pb_{i}")),
-                Expr::var("close_byte"),
-            );
-            acc = Expr::select(pb_i_eq, Expr::u32(i), acc);
-        }
-        acc
-    };
-    parse.push(Node::let_bind("path_len_val", path_len_expr));
+    // ---- step 6: scan path bytes to the directive row end for the
+    // closing delimiter. This used to be a fixed 48-byte unrolled
+    // probe, which silently rejected long Linux/generated include
+    // paths. The row-length loop keeps the program shape constant but
+    // removes the semantic cap.
+    parse.push(Node::let_bind(
+        "path_scan_limit",
+        Expr::select(
+            Expr::lt(Expr::var("path_start_val"), Expr::var("tok_end")),
+            Expr::sub(Expr::var("tok_end"), Expr::var("path_start_val")),
+            Expr::u32(0),
+        ),
+    ));
+    parse.push(Node::let_bind("path_len_val", Expr::u32(0)));
+    parse.push(Node::let_bind("path_done", Expr::u32(0)));
+    parse.push(Node::loop_for(
+        "path_i",
+        Expr::u32(0),
+        Expr::var("path_scan_limit"),
+        vec![Node::if_then(
+            Expr::eq(Expr::var("path_done"), Expr::u32(0)),
+            vec![
+                Node::let_bind(
+                    "path_byte",
+                    safe_load(Expr::add(Expr::var("path_start_val"), Expr::var("path_i"))),
+                ),
+                Node::if_then(
+                    Expr::eq(Expr::var("path_byte"), Expr::var("close_byte")),
+                    vec![
+                        Node::assign("path_len_val", Expr::var("path_i")),
+                        Node::assign("path_done", Expr::u32(1)),
+                    ],
+                ),
+            ],
+        )],
+    ));
 
     // ---- step 7: commit if found_hash AND valid_delim ----
     // Both are u32 0/1; bitand stays u32; convert to bool for if_then.
     parse.push(Node::if_then(
         Expr::eq(
-            Expr::bitand(Expr::var("found_hash"), Expr::var("valid_delim")),
+            Expr::bitand(
+                Expr::bitand(Expr::var("found_hash"), Expr::var("valid_delim")),
+                Expr::var("path_done"),
+            ),
             Expr::u32(1),
         ),
         vec![
@@ -330,9 +354,11 @@ pub fn gpu_include_parse(num_tokens: u32, source_len: u32) -> Program {
 
     // ---- per-thread top-level body ----
     let body: Vec<Node> = vec![
-        Node::let_bind("t", Expr::InvocationId { axis: 0 }),
+        Node::let_bind("lane", Expr::LocalId { axis: 0 }),
+        Node::let_bind("block", Expr::WorkgroupId { axis: 0 }),
+        Node::let_bind("t", Expr::add(Expr::mul(block, Expr::u32(256)), lane)),
         Node::if_then(
-            Expr::lt(t.clone(), Expr::u32(num_tokens)),
+            Expr::lt(t.clone(), Expr::buf_len("tok_starts")),
             vec![
                 Node::let_bind("kind", Expr::load("directive_kinds", t.clone())),
                 // Pre-zero output cells. Parse path conditionally
@@ -383,7 +409,7 @@ pub fn gpu_include_parse(num_tokens: u32, source_len: u32) -> Program {
             BufferAccess::ReadOnly,
             DataType::U32,
         )
-        .with_count(source_len.div_ceil(4).max(1)),
+        .with_count(source_words),
         BufferDecl::storage(
             "path_start_out",
             BINDING_PATH_START_OUT,
@@ -416,7 +442,10 @@ mod tests {
 
     #[test]
     fn op_id_is_canonical_and_stable() {
-        assert_eq!(OP_ID, "vyre-libs::parsing::c::preprocess::gpu_include_parse");
+        assert_eq!(
+            OP_ID,
+            "vyre-libs::parsing::c::preprocess::gpu_include_parse_v2"
+        );
     }
 
     #[test]

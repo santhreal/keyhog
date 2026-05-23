@@ -99,7 +99,7 @@ fn operand_is_result_reference(kind: &KernelOpKind, pos: usize) -> bool {
 fn is_pure(kind: &KernelOpKind) -> bool {
     !matches!(
         kind,
-            KernelOpKind::StoreGlobal
+        KernelOpKind::StoreGlobal
             | KernelOpKind::StoreShared
             | KernelOpKind::LoopCarrierInit { .. }
             | KernelOpKind::LoopCarrierEnd { .. }

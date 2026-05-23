@@ -2,8 +2,8 @@
 //!
 //! Higher layers in the workspace ship their own little binary blobs:
 //! `CompiledDfa` in `vyre-primitives`, `GpuLiteralSet` in `vyre-libs`,
-//! and (next) `RulePipeline` plus consumer-side caches in `keyhog` /
-//! `surgec`. Each one re-implemented the same four moves:
+//! and (next) `RulePipeline` plus downstream consumer-side caches. Each one
+//! re-implemented the same four moves:
 //!
 //!   1. Write a 4-byte magic + LE u32 version header.
 //!   2. Emit length-prefixed `&[u8]` sections.
@@ -123,6 +123,11 @@ impl WireWriter {
 
     /// Append a length-prefixed byte section. The length is encoded as
     /// a little-endian `u32` (bound: 4 GiB per section).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EnvelopeError::SectionTooLarge`] when the byte count cannot
+    /// fit in the envelope's `u32` length prefix.
     pub fn write_section(&mut self, bytes: &[u8]) -> Result<(), EnvelopeError> {
         let len = u32::try_from(bytes.len()).map_err(|_| EnvelopeError::SectionTooLarge {
             len: bytes.len(),
@@ -135,6 +140,11 @@ impl WireWriter {
 
     /// Append a length-prefixed `u32` word array. Each word is encoded
     /// little-endian; the prefix counts WORDS, not bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EnvelopeError::SectionTooLarge`] when the word count cannot
+    /// fit in the envelope's `u32` length prefix.
     pub fn write_words(&mut self, words: &[u32]) -> Result<(), EnvelopeError> {
         let len = u32::try_from(words.len()).map_err(|_| EnvelopeError::SectionTooLarge {
             len: words.len(),
@@ -172,6 +182,12 @@ impl<'a> WireReader<'a> {
     /// Begin a reader; validates the 8-byte magic + version header.
     /// Consumers MUST call this and propagate the error before reading
     /// any sections — sections after a bad header cannot be trusted.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EnvelopeError::Truncated`] for incomplete headers,
+    /// [`EnvelopeError::BadMagic`] for magic mismatches, or
+    /// [`EnvelopeError::VersionMismatch`] for stale/corrupt versions.
     pub fn new(
         bytes: &'a [u8],
         expected_magic: &[u8; 4],
@@ -205,6 +221,11 @@ impl<'a> WireReader<'a> {
     }
 
     /// Read a length-prefixed byte section.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EnvelopeError::Truncated`] when the length prefix or section
+    /// bytes exceed the remaining input.
     pub fn read_section(&mut self) -> Result<&'a [u8], EnvelopeError> {
         let n = self.read_u32()? as usize;
         if self.src.len() < self.cursor + n {
@@ -219,6 +240,11 @@ impl<'a> WireReader<'a> {
     }
 
     /// Read a length-prefixed `u32` word array.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EnvelopeError::Truncated`] when the length prefix or encoded
+    /// words exceed the remaining input.
     pub fn read_words(&mut self) -> Result<Vec<u32>, EnvelopeError> {
         let n_words = self.read_u32()? as usize;
         let bytes_needed = n_words * 4;
@@ -243,6 +269,10 @@ impl<'a> WireReader<'a> {
     }
 
     /// Read a single little-endian `u32` (no length prefix).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EnvelopeError::Truncated`] when fewer than four bytes remain.
     pub fn read_u32(&mut self) -> Result<u32, EnvelopeError> {
         if self.src.len() < self.cursor + 4 {
             return Err(EnvelopeError::Truncated {
@@ -266,11 +296,11 @@ impl<'a> WireReader<'a> {
 ///
 /// Every type that ships its own `to_bytes` / `from_bytes` pair on top
 /// of this envelope used to write the same five tests:
-///   1. round_trip
-///   2. rejects_bad_magic
-///   3. rejects_version_mismatch
-///   4. rejects_truncated_header
-///   5. rejects_truncated_section
+///   1. `round_trip`
+///   2. `rejects_bad_magic`
+///   3. `rejects_version_mismatch`
+///   4. `rejects_truncated_header`
+///   5. `rejects_truncated_section`
 ///
 /// These helpers reduce that to one call per type. Consumers call
 /// `assert_envelope_roundtrip(&value)` and the helper drives the full
@@ -330,13 +360,24 @@ pub mod test_helpers {
     ///
     /// Intentionally panics on assertion failure (this is a test
     /// helper, not a runtime path).
+    ///
+    /// # Panics
+    ///
+    /// Panics when encoding/decoding fails for the supplied valid sample, when
+    /// the encoded header is malformed, or when corruption/truncation does not
+    /// surface as a typed decode error.
     pub fn assert_envelope_roundtrip<T>(sample: &T)
     where
         T: WireRoundTrip + std::fmt::Debug,
     {
-        let bytes = sample
-            .to_bytes()
-            .expect("Fix: encode sample; restore this invariant before continuing.");
+        let encoded = sample.to_bytes();
+        assert!(
+            encoded.is_ok(),
+            "Fix: encode sample; restore this invariant before continuing: {encoded:?}"
+        );
+        let Ok(bytes) = encoded else {
+            return;
+        };
         assert!(
             bytes.len() >= 8,
             "wire blob must include at least the 8-byte header"
@@ -346,15 +387,21 @@ pub mod test_helpers {
             T::MAGIC.as_slice(),
             "magic mismatch in encoded blob"
         );
-        let version_field = u32::from_le_bytes(bytes[4..8].try_into().unwrap());
+        let version_field = u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
         let expected_version = T::VERSION;
         assert!(
             version_field == expected_version,
             "version mismatch in encoded blob: got {version_field}, expected {expected_version}"
         );
 
-        let back = T::from_bytes(&bytes)
-            .expect("Fix: decode round trip; restore this invariant before continuing.");
+        let decoded = T::from_bytes(&bytes);
+        assert!(
+            decoded.is_ok(),
+            "Fix: decode round trip; restore this invariant before continuing: {decoded:?}"
+        );
+        let Ok(back) = decoded else {
+            return;
+        };
         assert!(
             sample.structurally_eq(&back),
             "round-tripped value diverges from original"
@@ -396,9 +443,13 @@ pub mod test_helpers {
         WireWriter::new(magic, version).into_bytes()
     }
 
-    /// Confirm that the EnvelopeError matches an expected variant
+    /// Confirm that the `EnvelopeError` matches an expected variant
     /// (without requiring the consumer's wrapper enum to expose
-    /// PartialEq).
+    /// `PartialEq`).
+    ///
+    /// # Panics
+    ///
+    /// Panics when `err` does not match the expected envelope-error category.
     pub fn assert_envelope_error_kind(err: &EnvelopeError, kind: ExpectedEnvelopeError) {
         let matches = matches!(
             (err, kind),

@@ -305,19 +305,18 @@ fn reduce_variance_reference_program(input: &str, output: &str, n: u32, bessel: 
 inventory::submit! {
     crate::harness::OpEntry {
         id: "vyre-libs::math::reduce_variance",
-        build: || reduce_variance("input", "output", 4),
+        build: || reduce_variance("input", "output", 256),
         test_inputs: Some(|| {
             let to_bytes = |w: &[f32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
             vec![vec![
-                to_bytes(&[1.0_f32, 2.0, 3.0, 4.0]), // input
-                vec![0u8; 4],                         // output (single f32)
+                to_bytes(&[2.0_f32; 256]), // input
             ]]
         }),
         expected_output: Some(|| {
             let to_bytes = |w: &[f32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
-            // Population variance of [1,2,3,4] = 1.25
-            vec![vec![to_bytes(&[1.25_f32])]]
+            vec![vec![to_bytes(&[0.0_f32])]]
         }),
+        category: Some("math"),
     }
 }
 

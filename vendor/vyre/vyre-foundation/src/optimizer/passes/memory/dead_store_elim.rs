@@ -56,7 +56,10 @@ use crate::visit::node_map;
 #[vyre_pass(
     name = "dead_store_elim",
     requires = [],
-    invalidates = []
+    invalidates = [],
+    phase = "memory",
+    boundary_class = "abi_preserving",
+    cost_model_family = "memory"
 )]
 pub struct DeadStoreElim;
 
@@ -65,6 +68,12 @@ impl DeadStoreElim {
     /// to the same buffer that *could* alias each other.
     #[must_use]
     fn analyze_impl(program: &Program) -> PassAnalysis {
+        if !program
+            .stats()
+            .has_any_node_kind(crate::ir::stats::NODE_KIND_STORE)
+        {
+            return PassAnalysis::SKIP;
+        }
         if program
             .entry()
             .iter()
@@ -80,21 +89,19 @@ impl DeadStoreElim {
     /// sequence body that has them.
     #[must_use]
     pub fn transform(program: Program) -> PassResult {
-        let scaffold = program.with_rewritten_entry(Vec::new());
         let mut changed = false;
-        let entry: Vec<Node> = drop_dead_stores(
-            program
-                .into_entry_vec()
-                .into_iter()
-                .map(|n| rewrite_node(n, &mut changed))
-                .collect(),
-            &mut changed,
-        );
-        PassResult {
-            program: scaffold.with_rewritten_entry(entry),
-            changed,
-        }
-    }}
+        let program = program.map_entry(|entry| {
+            drop_dead_stores(
+                entry
+                    .into_iter()
+                    .map(|n| rewrite_node(n, &mut changed))
+                    .collect(),
+                &mut changed,
+            )
+        });
+        PassResult { program, changed }
+    }
+}
 
 fn rewrite_node(node: Node, changed: &mut bool) -> Node {
     let recursed = node_map::map_children(node, &mut |child| rewrite_node(child, changed));
@@ -171,9 +178,11 @@ fn node_observes_buffer(node: &Node, buffer: &Ident) -> bool {
             // A different store to the same buffer (different index)
             // is not an observation, but the index/value subexpressions
             // might Load from the buffer.
-            (other == buffer).then(|| false).unwrap_or_else(|| {
+            if other == buffer {
+                false
+            } else {
                 expr_touches_buffer(index, buffer) || expr_touches_buffer(value, buffer)
-            })
+            }
         }
         Node::Let { value, .. } | Node::Assign { value, .. } => expr_touches_buffer(value, buffer),
         Node::If {
@@ -192,7 +201,11 @@ fn node_observes_buffer(node: &Node, buffer: &Ident) -> bool {
         }
         Node::Block(body) => any_node_observes_buffer(body, buffer),
         Node::Region { body, .. } => any_node_observes_buffer(body.as_ref(), buffer),
-        Node::Barrier { .. } => true,
+        Node::Barrier { .. }
+        | Node::AsyncWait { .. }
+        | Node::Resume { .. }
+        | Node::Return
+        | Node::Opaque(_) => true,
         Node::AsyncLoad {
             source,
             destination,
@@ -212,11 +225,8 @@ fn node_observes_buffer(node: &Node, buffer: &Ident) -> bool {
                 || expr_touches_buffer(offset, buffer)
                 || expr_touches_buffer(size, buffer)
         }
-        Node::AsyncWait { .. } => true,
         Node::IndirectDispatch { count_buffer, .. } => count_buffer == buffer,
         Node::Trap { address, .. } => expr_touches_buffer(address, buffer),
-        Node::Resume { .. } => true,
-        Node::Return | Node::Opaque(_) => true,
     }
 }
 
@@ -518,7 +528,10 @@ mod tests {
             Node::store("other", Expr::u32(0), Expr::u32(2)),
         ];
         let program = program_with_entry(entry);
-        assert_eq!(crate::optimizer::ProgramPass::analyze(&DeadStoreElim, &program), PassAnalysis::SKIP);
+        assert_eq!(
+            crate::optimizer::ProgramPass::analyze(&DeadStoreElim, &program),
+            PassAnalysis::SKIP
+        );
     }
 
     #[test]
@@ -528,6 +541,9 @@ mod tests {
             Node::store("buf", Expr::u32(0), Expr::u32(2)),
         ];
         let program = program_with_entry(entry);
-        assert_eq!(crate::optimizer::ProgramPass::analyze(&DeadStoreElim, &program), PassAnalysis::RUN);
+        assert_eq!(
+            crate::optimizer::ProgramPass::analyze(&DeadStoreElim, &program),
+            PassAnalysis::RUN
+        );
     }
 }

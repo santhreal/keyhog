@@ -87,7 +87,6 @@ inventory::submit! {
             vec![vec![
                 to_u32(&[10, 20, 30, 40]),
                 to_f32(&[0.5, 2.0]),  // 2 rows
-                vec![0u8; 4 * 4],
             ]]
         }),
         expected_output: Some(|| {
@@ -96,6 +95,7 @@ inventory::submit! {
             let bytes = out.iter().flat_map(|v| v.to_bits().to_le_bytes()).collect::<Vec<u8>>();
             vec![vec![bytes]]
         }),
+        category: Some("nn"),
     }
 }
 
@@ -107,12 +107,12 @@ inventory::submit! {
             let to_u32 = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
             vec![vec![
                 to_u32(&[255, 256, 1, 0]),
-                vec![0u8; 4 * 4],
             ]]
         }),
         expected_output: Some(|| {
             let to_u32 = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
             vec![vec![to_u32(&[255, 0, 1, 0])]]
         }),
+        category: Some("nn"),
     }
 }

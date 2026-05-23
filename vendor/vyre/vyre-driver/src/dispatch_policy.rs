@@ -67,6 +67,36 @@ pub struct DispatchPolicyVerdict {
     pub trace_jit: TraceJitDecision,
 }
 
+/// Mutually exclusive launch strategy selected from the dispatch-policy bundle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DispatchExecutionMode {
+    /// Plain launches remain cheapest for this batch.
+    PlainLaunches,
+    /// Use persistent kernel mode.
+    PersistentKernel {
+        /// Predicted saved nanoseconds versus plain launches.
+        savings_ns: u128,
+    },
+    /// Use native command record/replay.
+    CommandReuse {
+        /// Predicted saved nanoseconds versus plain launches.
+        savings_ns: u128,
+    },
+}
+
+impl DispatchPolicyVerdict {
+    /// Return the mutually exclusive primary launch strategy.
+    ///
+    /// D1 persistent kernels and D4 command reuse can both be profitable on
+    /// paper. A concrete dispatcher cannot run both for the same launch group,
+    /// so this resolver chooses the higher predicted savings. Equal savings
+    /// prefer command reuse because it avoids persistent queue residency.
+    #[must_use]
+    pub fn primary_execution_mode(&self) -> DispatchExecutionMode {
+        select_primary_execution_mode(self.persistent, self.command_reuse)
+    }
+}
+
 /// One-shot evaluation of every dispatch-side policy substrate.
 #[must_use]
 pub fn evaluate_dispatch_policy(inputs: &DispatchPolicyInputs) -> DispatchPolicyVerdict {
@@ -86,6 +116,45 @@ pub fn evaluate_dispatch_policy(inputs: &DispatchPolicyInputs) -> DispatchPolicy
         command_reuse,
         bindless,
         trace_jit,
+    }
+}
+
+/// Select a single primary launch strategy from D1 and D4 decisions.
+#[must_use]
+pub fn select_primary_execution_mode(
+    persistent: PersistentKernelDecision,
+    command_reuse: CommandReuseDecision,
+) -> DispatchExecutionMode {
+    match (persistent, command_reuse) {
+        (
+            PersistentKernelDecision::PersistentKernel {
+                savings_ns: persistent_savings,
+            },
+            CommandReuseDecision::RecordAndReplay {
+                savings_ns: command_savings,
+            },
+        ) => {
+            if persistent_savings > command_savings {
+                DispatchExecutionMode::PersistentKernel {
+                    savings_ns: persistent_savings,
+                }
+            } else {
+                DispatchExecutionMode::CommandReuse {
+                    savings_ns: command_savings,
+                }
+            }
+        }
+        (
+            PersistentKernelDecision::PersistentKernel { savings_ns },
+            CommandReuseDecision::PlainLaunches,
+        ) => DispatchExecutionMode::PersistentKernel { savings_ns },
+        (
+            PersistentKernelDecision::StandardLaunches,
+            CommandReuseDecision::RecordAndReplay { savings_ns },
+        ) => DispatchExecutionMode::CommandReuse { savings_ns },
+        (PersistentKernelDecision::StandardLaunches, CommandReuseDecision::PlainLaunches) => {
+            DispatchExecutionMode::PlainLaunches
+        }
     }
 }
 
@@ -224,6 +293,7 @@ mod tests {
 
     #[test]
     fn aggressive_workload_routes_through_every_aggressive_path() {
+        let _guard = crate::observability::audit_events_test_lock();
         crate::observability::clear_substrate_audit_events_for_test();
         let v = evaluate_dispatch_policy(&aggressive_inputs());
         assert!(matches!(
@@ -238,6 +308,12 @@ mod tests {
         ));
         assert_eq!(v.bindless, BindlessDecision::Bindless);
         assert!(matches!(v.trace_jit, TraceJitDecision::Speculate { .. }));
+        assert_eq!(
+            v.primary_execution_mode(),
+            DispatchExecutionMode::PersistentKernel {
+                savings_ns: 2_450_000
+            }
+        );
         record_policy_audit_events_with(
             v.persistent,
             v.command_reuse,
@@ -265,6 +341,10 @@ mod tests {
         assert_eq!(v.command_reuse, CommandReuseDecision::PlainLaunches);
         assert_eq!(v.bindless, BindlessDecision::TraditionalBindings);
         assert_eq!(v.trace_jit, TraceJitDecision::HoldSteady);
+        assert_eq!(
+            v.primary_execution_mode(),
+            DispatchExecutionMode::PlainLaunches
+        );
     }
 
     #[test]
@@ -275,5 +355,35 @@ mod tests {
         inputs.copy_dst_slot = None;
         let v = evaluate_dispatch_policy(&inputs);
         assert_eq!(v.copy_overlap, None);
+    }
+
+    #[test]
+    fn primary_execution_mode_prefers_command_reuse_on_equal_savings() {
+        let mode = select_primary_execution_mode(
+            PersistentKernelDecision::PersistentKernel { savings_ns: 100 },
+            CommandReuseDecision::RecordAndReplay { savings_ns: 100 },
+        );
+        assert_eq!(
+            mode,
+            DispatchExecutionMode::CommandReuse { savings_ns: 100 }
+        );
+    }
+
+    #[test]
+    fn primary_execution_mode_selects_only_profitable_substrate() {
+        assert_eq!(
+            select_primary_execution_mode(
+                PersistentKernelDecision::PersistentKernel { savings_ns: 500 },
+                CommandReuseDecision::PlainLaunches,
+            ),
+            DispatchExecutionMode::PersistentKernel { savings_ns: 500 }
+        );
+        assert_eq!(
+            select_primary_execution_mode(
+                PersistentKernelDecision::StandardLaunches,
+                CommandReuseDecision::RecordAndReplay { savings_ns: 700 },
+            ),
+            DispatchExecutionMode::CommandReuse { savings_ns: 700 }
+        );
     }
 }

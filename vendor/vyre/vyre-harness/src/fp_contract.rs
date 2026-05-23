@@ -242,7 +242,9 @@ pub fn compare_output_buffers(
         if element == DataType::F32 {
             if !f32_buffer_matches(bytes_a, bytes_b, tolerance) {
                 return BufferParity::Mismatch(format!(
-                    "output buffer {slot} (F32) exceeded the {tolerance}-ULP window"
+                    "output buffer {slot} (F32) exceeded the {tolerance}-ULP window; left={} right={}",
+                    summarize_bytes(bytes_a),
+                    summarize_bytes(bytes_b)
                 ));
             }
         } else if bytes_a != bytes_b {

@@ -127,7 +127,7 @@ inventory::submit! {
             let x = f32_bytes(&(0..4).map(|i| i as f32).collect::<Vec<_>>());
             let w = f32_bytes(&(0..16).map(|i| i as f32).collect::<Vec<_>>());
             let bias = f32_bytes(&[0.0, 0.0, 0.0, 0.0]);
-            vec![vec![x, w, bias, vec![0u8; 4 * 4]]]
+            vec![vec![x, w, bias]]
         }),
         expected_output: Some(|| {
             // linear: x=[0,1,2,3], w[k,i] = k*4+i, b=[0,0,0,0]
@@ -145,6 +145,7 @@ inventory::submit! {
                 .collect::<Vec<u8>>();
             vec![vec![bytes]]
         }),
+        category: Some("nn"),
     }
 }
 

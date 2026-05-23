@@ -1,6 +1,6 @@
 [package]
 name = "vyre-lints"
-version = "0.4.1"
+version = "0.4.2"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "Lego-block enforcement lints for vyre. Forbids raw IR construction in dialect crates."

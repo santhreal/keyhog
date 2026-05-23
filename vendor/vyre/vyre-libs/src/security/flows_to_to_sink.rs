@@ -1,7 +1,7 @@
 //! `flows_to_to_sink` — composite source→sink reachability primitive.
 //!
 //! The "does taint reach a sink node" pattern is the single most
-//! common composition in every taint-style SURGE rule:
+//! common composition in every taint-style source-query dialect rule:
 //!
 //! ```text
 //!   reach    = csr_forward_traverse(source, FLOWS_TO_MASK)
@@ -9,12 +9,12 @@
 //!   any_hit  = bitset_any(hits) → u32
 //! ```
 //!
-//! Surgec's `lower_binary_graph_predicate` emitted this composition
+//! Downstream analyzer's `lower_binary_graph_predicate` emitted this composition
 //! inline at every call site (~25 lines of boilerplate per call,
 //! plus a fresh accumulator buffer per invocation). Centralising it
 //! here as one fused Region:
 //!
-//! * cuts surgec's per-call lowering surface from ~5 sub-programs
+//! * cuts a downstream analyzer's per-call lowering surface from ~5 sub-programs
 //!   merged via `merge_programs` to one helper invocation;
 //! * gives the optimizer one Region with a stable op id to fuse,
 //!   cache, and CSE across rules;
@@ -30,9 +30,9 @@ use vyre::ir::Program;
 use vyre_primitives::graph::program_graph::ProgramGraphShape;
 use vyre_primitives::predicate::edge_kind;
 
-use crate::security::flow_composition::{
-    any_dataflow_hit, dataflow_hit_program, dataflow_reach_step,
-};
+use crate::security::flow_composition::dataflow_hit_program;
+#[cfg(test)]
+use crate::security::flow_composition::{any_dataflow_hit_cpu_ref, dataflow_reach_step_cpu_ref};
 
 pub(crate) const OP_ID: &str = "vyre-libs::security::flows_to_to_sink";
 
@@ -69,7 +69,8 @@ pub fn flows_to_to_sink(
 /// CPU oracle: walks one BFS step from `source` along dataflow edges,
 /// intersects with `sink`, returns 1 if any bit set, 0 otherwise.
 #[must_use]
-pub fn cpu_ref(
+#[cfg(test)]
+pub(crate) fn cpu_ref(
     node_count: u32,
     edge_offsets: &[u32],
     edge_targets: &[u32],
@@ -77,14 +78,14 @@ pub fn cpu_ref(
     source: &[u32],
     sink: &[u32],
 ) -> u32 {
-    let reach = dataflow_reach_step(
+    let reach = dataflow_reach_step_cpu_ref(
         node_count,
         edge_offsets,
         edge_targets,
         edge_kind_mask,
         source,
     );
-    any_dataflow_hit(&reach, sink)
+    any_dataflow_hit_cpu_ref(&reach, sink)
 }
 
 inventory::submit! {
@@ -118,6 +119,7 @@ inventory::submit! {
                 to_bytes(&[0b0001]),              // out_scalar = 1
             ]]
         }),
+        category: Some("security"),
     }
 }
 

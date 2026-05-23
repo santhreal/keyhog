@@ -8,7 +8,7 @@
 pub mod toposort;
 
 /// GPU-resident depth-wave dispatcher for bottom-up callee-before-
-/// caller computations (e.g. weir::summary's per-procedure summary
+/// caller computations (e.g. downstream_dataflow::summary's per-procedure summary
 /// fixpoint with topological ordering). Composes Node::Loop +
 /// Node::Barrier { ordering: vyre::memory_model::MemoryOrdering::SeqCst } + a per-lane depth predicate; no new sub-op.
 pub mod level_wave;
@@ -28,6 +28,8 @@ pub mod csr_forward_traverse;
 /// One persistent-BFS workgroup step with coalesced change detection.
 pub mod persistent_bfs_step;
 
+/// Reverse-direction in-place frontier step that reports changes.
+pub mod csr_backward_or_changed;
 /// Reverse-direction BFS frontier step.
 pub mod csr_backward_traverse;
 
@@ -35,6 +37,9 @@ pub mod csr_backward_traverse;
 /// for load-balanced one-thread-per-edge expansion that beats naive
 /// one-thread-per-node on power-law graphs.
 pub mod csr_frontier_degree_sum;
+/// Device-side active-frontier queue materialization and queue-driven CSR
+/// expansion for sparse dataflow waves.
+pub mod csr_frontier_queue;
 
 /// One BFS step over BOTH forward + backward edges.
 pub mod csr_bidirectional;

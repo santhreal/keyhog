@@ -1,24 +1,23 @@
-﻿//! C1 substrate: whole-megakernel optimization domain.
+//! C1 substrate: whole-megakernel optimization domain.
 //!
 //! Per-arm optimization (the existing CSE/DCE per arm, then fuse) is
-//! conservative â€” it can't see structural redundancy ACROSS arms.
+//! conservative — it can't see structural redundancy ACROSS arms.
 //! When two adjacent arms produce the same intermediate result the
 //! first arm could compute it once and the second arm could just
 //! read it.
 //!
 //! This substrate owns the *cross-arm redundancy detector*: given a
 //! per-arm sequence of `MegakernelWorkItem`s, identify pairs of arms that
-//! emit the same opâ†’inputâ†’output triple. The dispatcher uses the
+//! emit the same op→input→output triple. The dispatcher uses the
 //! verdict to skip the redundant compute.
 //!
-//! Pure substrate â€” no Program walk, no allocation outside the
+//! Pure substrate — no Program walk, no allocation outside the
 //! returned redundancy report. The actual rewrite (collapse
 //! redundant arms into one + rewire downstream readers) is the
 //! Codex-side runtime work; this substrate just names the
 //! optimization opportunity.
 
-use crate::megakernel::planner::MegakernelWorkItem;
-use std::collections::hash_map::Entry;
+use crate::{megakernel::planner::MegakernelWorkItem, PipelineError};
 use rustc_hash::FxHashMap;
 
 const DENSE_OUTPUT_UNIQUE_BITS: usize = 4096;
@@ -44,7 +43,7 @@ pub struct CrossArmRedundancy {
 }
 
 impl CrossArmRedundancy {
-    /// Empty report â€” no redundancy across arms.
+    /// Empty report — no redundancy across arms.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
@@ -57,49 +56,100 @@ impl CrossArmRedundancy {
     }
 }
 
+/// Reusable scratch for same-batch work-item dedupe.
+#[derive(Debug, Default)]
+pub struct RedundantWorkItemPruneScratch {
+    first_seen: FxHashMap<(u32, u32, u32, u32), usize>,
+}
+
+impl RedundantWorkItemPruneScratch {
+    /// Clear retained hash state while preserving useful capacity.
+    pub fn clear(&mut self) {
+        self.first_seen.clear();
+    }
+
+    fn try_prepare_for_len(&mut self, len: usize) -> Result<(), PipelineError> {
+        self.first_seen.clear();
+        let retained_ceiling = len.checked_mul(4).unwrap_or_else(|| {
+            panic!(
+                "megakernel redundant-work scratch retained ceiling overflowed usize. Fix: shard the work batch before pruning."
+            )
+        })
+        .max(1024);
+        if self.first_seen.capacity() > retained_ceiling {
+            self.first_seen.shrink_to(len);
+        }
+        if self.first_seen.capacity() < len {
+            self.first_seen
+                .try_reserve(len - self.first_seen.capacity())
+                .map_err(|source| {
+                    PipelineError::Backend(format!(
+                        "megakernel redundant-work hash reservation failed for {len} item(s): {source}. Fix: shard the work batch before pruning."
+                    ))
+                })?;
+        }
+        Ok(())
+    }
+}
+
 /// Walk `arms` and detect cross-arm structural redundancy.
 ///
 /// For each (op_handle, input_handle, output_handle) triple the
 /// substrate sees in arm N, it remembers which arm produced it. If
 /// an identical triple appears in a later arm M > N, the substrate
 /// records `(N, M, op_idx_in_M)`. WorkItems are compared by the
-/// `(op_handle, input_handle, output_handle)` triple alone â€” the
+/// `(op_handle, input_handle, output_handle)` triple alone — the
 /// `param` field is treated as separate launch metadata.
 ///
-/// O(total_ops) â€” uses one pass + one hash table. Allocation only
+/// O(total_ops) — uses one pass + one hash table. Allocation only
 /// for the redundancy report and the seen-set.
 #[must_use]
 pub fn detect_cross_arm_redundancy(arms: &[&[MegakernelWorkItem]]) -> CrossArmRedundancy {
-    // (op_handle, input_handle, output_handle) â†’ (arm_idx, op_idx)
+    try_detect_cross_arm_redundancy(arms).unwrap_or_else(|error| {
+        panic!(
+            "megakernel cross-arm redundancy detection allocation failed: {error}. Fix: split the fused arm sequence before planning."
+        )
+    })
+}
+
+/// Walk `arms` and detect cross-arm structural redundancy with fallible staging.
+///
+/// # Errors
+///
+/// Returns [`PipelineError::Backend`] when host hash/report storage cannot be
+/// reserved for the fused arm sequence.
+pub fn try_detect_cross_arm_redundancy(
+    arms: &[&[MegakernelWorkItem]],
+) -> Result<CrossArmRedundancy, PipelineError> {
+    // (op_handle, input_handle, output_handle) → (arm_idx, op_idx)
     let total_ops = arms.iter().map(|arm| arm.len()).sum();
-    if total_ops <= 1 {
-        return CrossArmRedundancy::new();
-    }
-    let mut first_seen: FxHashMap<(u32, u32, u32), usize> =
-        FxHashMap::with_capacity_and_hasher(total_ops, Default::default());
+    let mut first_seen: FxHashMap<(u32, u32, u32), usize> = FxHashMap::default();
+    reserve_hash_map(&mut first_seen, total_ops, "cross-arm first-seen")?;
     let mut report = CrossArmRedundancy {
-        redundant_pairs: Vec::with_capacity(total_ops.saturating_sub(arms.len())),
+        redundant_pairs: Vec::new(),
         total_redundant_ops: 0,
     };
     for (arm_idx, arm) in arms.iter().enumerate() {
         for (op_idx, item) in arm.iter().enumerate() {
             let key = (item.op_handle, item.input_handle, item.output_handle);
-            match first_seen.entry(key) {
-                Entry::Occupied(entry) => {
-                    if *entry.get() < arm_idx {
-                        report
-                            .redundant_pairs
-                            .push((*entry.get(), arm_idx, op_idx));
-                    }
+            match first_seen.get(&key) {
+                Some(&early_arm_idx) if early_arm_idx < arm_idx => {
+                    reserve_redundant_pairs(&mut report.redundant_pairs, 1, "cross-arm report")?;
+                    report
+                        .redundant_pairs
+                        .push((early_arm_idx, arm_idx, op_idx));
                 }
-                Entry::Vacant(vacant) => {
-                    vacant.insert(arm_idx);
+                Some(_) => {
+                    // Same arm — not a cross-arm redundancy.
+                }
+                None => {
+                    first_seen.insert(key, arm_idx);
                 }
             }
         }
     }
     report.total_redundant_ops = report.redundant_pairs.len();
-    report
+    Ok(report)
 }
 
 /// Copy `items` into `out`, dropping later work items that are byte-for-byte
@@ -121,17 +171,66 @@ pub fn prune_redundant_work_items_into(
     items: &[MegakernelWorkItem],
     out: &mut Vec<MegakernelWorkItem>,
 ) -> CrossArmRedundancy {
+    try_prune_redundant_work_items_into(items, out).unwrap_or_else(|error| {
+        panic!(
+            "megakernel redundant-work pruning allocation failed: {error}. Fix: shard the work batch before pruning."
+        )
+    })
+}
+
+/// Copy `items` into `out`, dropping later exact duplicates with fallible
+/// staging.
+///
+/// # Errors
+///
+/// Returns [`PipelineError::Backend`] when host hash/report/output storage
+/// cannot be reserved for the batch.
+pub fn try_prune_redundant_work_items_into(
+    items: &[MegakernelWorkItem],
+    out: &mut Vec<MegakernelWorkItem>,
+) -> Result<CrossArmRedundancy, PipelineError> {
+    let mut scratch = RedundantWorkItemPruneScratch::default();
+    try_prune_redundant_work_items_with_scratch_into(items, out, &mut scratch)
+}
+
+/// Copy `items` into `out`, dropping later exact duplicates while reusing the
+/// caller-owned hash scratch across dispatches.
+///
+/// This is the hot megakernel-dispatch entry point. The legacy
+/// [`prune_redundant_work_items_into`] wrapper remains for callers that do not
+/// own persistent dispatch scratch.
+pub fn prune_redundant_work_items_with_scratch_into(
+    items: &[MegakernelWorkItem],
+    out: &mut Vec<MegakernelWorkItem>,
+    scratch: &mut RedundantWorkItemPruneScratch,
+) -> CrossArmRedundancy {
+    try_prune_redundant_work_items_with_scratch_into(items, out, scratch).unwrap_or_else(|error| {
+        panic!(
+            "megakernel redundant-work pruning allocation failed: {error}. Fix: shard the work batch before pruning."
+        )
+    })
+}
+
+/// Copy `items` into `out`, dropping later exact duplicates while reusing
+/// caller-owned hash scratch and fallible output/report staging.
+///
+/// # Errors
+///
+/// Returns [`PipelineError::Backend`] when host hash/report/output storage
+/// cannot be reserved for the batch.
+pub fn try_prune_redundant_work_items_with_scratch_into(
+    items: &[MegakernelWorkItem],
+    out: &mut Vec<MegakernelWorkItem>,
+    scratch: &mut RedundantWorkItemPruneScratch,
+) -> Result<CrossArmRedundancy, PipelineError> {
     out.clear();
-    if items.len() <= 1 {
-        return CrossArmRedundancy::new();
-    }
 
     if output_handles_are_dense_unique(items) {
-        return CrossArmRedundancy::new();
+        scratch.clear();
+        return Ok(CrossArmRedundancy::new());
     }
 
-    let mut first_seen: FxHashMap<(u32, u32, u32, u32), usize> =
-        FxHashMap::with_capacity_and_hasher(items.len(), Default::default());
+    scratch.try_prepare_for_len(items.len())?;
     let mut report = CrossArmRedundancy {
         redundant_pairs: Vec::new(),
         total_redundant_ops: 0,
@@ -145,26 +244,71 @@ pub fn prune_redundant_work_items_into(
             item.output_handle,
             item.param,
         );
-        match first_seen.entry(key) {
-            Entry::Occupied(entry) => {
-                if !found_duplicate {
-                    out.reserve(items.len().saturating_sub(1));
-                    out.extend_from_slice(&items[..idx]);
-                    found_duplicate = true;
-                }
-                report.redundant_pairs.push((*entry.get(), idx, 0));
+        if let Some(&early_idx) = scratch.first_seen.get(&key) {
+            if !found_duplicate {
+                reserve_work_items(out, items.len().checked_sub(1).unwrap_or(0), "dedup output")?;
+                out.extend_from_slice(&items[..idx]);
+                found_duplicate = true;
             }
-            Entry::Vacant(vacant) => {
-                vacant.insert(idx);
-                if found_duplicate {
-                    out.push(item);
-                }
-            }
+            reserve_redundant_pairs(&mut report.redundant_pairs, 1, "dedup report")?;
+            report.redundant_pairs.push((early_idx, idx, 0));
+            continue;
+        }
+        scratch.first_seen.insert(key, idx);
+        if found_duplicate {
+            out.push(item);
         }
     }
 
     report.total_redundant_ops = report.redundant_pairs.len();
-    report
+    Ok(report)
+}
+
+fn reserve_hash_map<K, V>(
+    values: &mut FxHashMap<K, V>,
+    additional: usize,
+    label: &'static str,
+) -> Result<(), PipelineError>
+where
+    K: Eq + std::hash::Hash,
+{
+    if additional > 0 {
+        values.try_reserve(additional).map_err(|source| {
+            PipelineError::Backend(format!(
+                "megakernel {label} reservation failed for {additional} additional entry slot(s): {source}. Fix: shard the work batch before whole-megakernel optimization."
+            ))
+        })?;
+    }
+    Ok(())
+}
+
+fn reserve_redundant_pairs(
+    values: &mut Vec<(usize, usize, usize)>,
+    additional: usize,
+    label: &'static str,
+) -> Result<(), PipelineError> {
+    values.try_reserve(additional).map_err(|source| {
+        PipelineError::Backend(format!(
+            "megakernel {label} reservation failed for {additional} additional pair slot(s): {source}. Fix: shard the work batch before whole-megakernel optimization."
+        ))
+    })
+}
+
+fn reserve_work_items(
+    values: &mut Vec<MegakernelWorkItem>,
+    capacity: usize,
+    label: &'static str,
+) -> Result<(), PipelineError> {
+    if values.capacity() < capacity {
+        values
+            .try_reserve_exact(capacity - values.capacity())
+            .map_err(|source| {
+                PipelineError::Backend(format!(
+                    "megakernel {label} reservation failed for {capacity} item slot(s): {source}. Fix: shard the work batch before whole-megakernel optimization."
+                ))
+            })?;
+    }
+    Ok(())
 }
 
 fn output_handles_are_dense_unique(items: &[MegakernelWorkItem]) -> bool {
@@ -181,16 +325,41 @@ fn output_handles_are_dense_unique(items: &[MegakernelWorkItem]) -> bool {
         min = min.min(item.output_handle);
         max = max.max(item.output_handle);
     }
-    let range = u64::from(max) - u64::from(min) + 1;
+    let range = u64::from(max)
+        .checked_sub(u64::from(min))
+        .and_then(|value| value.checked_add(1))
+        .unwrap_or_else(|| {
+            panic!(
+                "megakernel dense output-handle range overflowed u64. Fix: shard the work batch before uniqueness pruning."
+            )
+        });
     if range > DENSE_OUTPUT_UNIQUE_BITS as u64 {
         return false;
     }
 
     let mut seen = [0u64; DENSE_OUTPUT_UNIQUE_WORDS];
     for item in items {
-        let offset = (item.output_handle - min) as usize;
-        let word = offset / u64::BITS as usize;
-        let bit = 1u64 << (offset % u64::BITS as usize);
+        let offset = usize::try_from(item.output_handle.checked_sub(min).unwrap_or_else(|| {
+            panic!(
+                "megakernel output handle underflowed dense uniqueness offset. Fix: rebuild output handle range."
+            )
+        }))
+        .unwrap_or_else(|error| {
+            panic!(
+                "megakernel output handle offset cannot fit usize: {error}. Fix: shard the work batch before uniqueness pruning."
+            )
+        });
+        let word = offset
+            / usize::try_from(u64::BITS).unwrap_or_else(|error| {
+                panic!("u64::BITS cannot fit usize: {error}. Fix: unsupported host index width.")
+            });
+        let bit = 1u64
+            << (offset
+                % usize::try_from(u64::BITS).unwrap_or_else(|error| {
+                    panic!(
+                        "u64::BITS cannot fit usize: {error}. Fix: unsupported host index width."
+                    )
+                }));
         if (seen[word] & bit) != 0 {
             return false;
         }
@@ -250,7 +419,7 @@ mod tests {
 
     #[test]
     fn redundancy_uses_first_seen_arm_index() {
-        // Op appears in arms 0, 2, 3 â€” both 2 and 3 should reference 0.
+        // Op appears in arms 0, 2, 3 — both 2 and 3 should reference 0.
         let a = vec![item(1, 0, 5)];
         let b = vec![item(99, 0, 0)];
         let c = vec![item(1, 0, 5)];
@@ -263,7 +432,7 @@ mod tests {
 
     #[test]
     fn param_field_does_not_affect_redundancy() {
-        // Same (op, in, out) triple but different param â€” still
+        // Same (op, in, out) triple but different param — still
         // cross-arm redundant by this substrate's contract.
         let a = vec![MegakernelWorkItem {
             op_handle: 1,
@@ -325,6 +494,25 @@ mod tests {
         assert_eq!(out, vec![item(1, 0, 5), item(2, 5, 6), item(3, 6, 7)]);
         assert_eq!(report.total_redundant_ops, 2);
         assert_eq!(report.redundant_pairs, vec![(0, 2, 0), (1, 4, 0)]);
+    }
+
+    #[test]
+    fn prune_redundant_work_items_reuses_hash_scratch() {
+        let items = vec![item(1, 0, 5), item(2, 5, 6), item(1, 0, 5), item(3, 6, 7)];
+        let mut out = Vec::new();
+        let mut scratch = RedundantWorkItemPruneScratch::default();
+
+        let first = prune_redundant_work_items_with_scratch_into(&items, &mut out, &mut scratch);
+        let retained_capacity = scratch.first_seen.capacity();
+        out.clear();
+        let second = prune_redundant_work_items_with_scratch_into(&items, &mut out, &mut scratch);
+
+        assert_eq!(first, second);
+        assert!(
+            scratch.first_seen.capacity() >= retained_capacity,
+            "hot megakernel dedupe must retain hash capacity across repeated dispatches"
+        );
+        assert_eq!(out, vec![item(1, 0, 5), item(2, 5, 6), item(3, 6, 7)]);
     }
 
     #[test]

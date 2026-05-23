@@ -25,7 +25,8 @@
 //! ```
 //!
 //! One dispatch, no host round-trip. On Ada-class hardware this is
-//! a 2-4x wall-clock win on the fused kernel vs the serial pair,
+//! a 2-4x wall-clock win on the fused kernel vs the non-speculative
+//! two-stage GPU pair,
 //! *if* the pre-filter hit rate is high enough to amortise the
 //! speculative confirmer work. `AdaptiveSpeculator` watches the
 //! commit-rate EMA and disables speculation when it stops paying.
@@ -75,8 +76,8 @@ impl SpeculationReport {
 
     /// Total tiles the confirmer ran on.
     #[must_use]
-    pub fn attempted_tiles(&self) -> u32 {
-        self.committed_tiles.saturating_add(self.rolled_back_tiles)
+    pub fn attempted_tiles(&self) -> u64 {
+        u64::from(self.committed_tiles) + u64::from(self.rolled_back_tiles)
     }
 
     /// Commit rate in parts-per-million. `0` when no tiles ran, to
@@ -89,7 +90,7 @@ impl SpeculationReport {
             return 0;
         }
         let num = u64::from(self.committed_tiles) * 1_000_000;
-        (num / u64::from(total)) as u32
+        (num / total) as u32
     }
 
     /// Commit rate as a whole-percent, floored.
@@ -98,18 +99,18 @@ impl SpeculationReport {
         self.commit_rate_ppm() / 10_000
     }
 
-    /// True when speculation is paying for itself vs the serial
+    /// True when speculation is paying for itself vs the two-stage GPU
     /// path at the caller's threshold. Integer-only comparison.
     #[must_use]
     pub fn worthwhile(&self, threshold_pct: u32) -> bool {
-        let threshold_ppm = threshold_pct.saturating_mul(10_000);
-        self.commit_rate_ppm() >= threshold_ppm
+        let threshold_ppm = u64::from(threshold_pct) * 10_000;
+        u64::from(self.commit_rate_ppm()) >= threshold_ppm
     }
 }
 
 /// Default crossover threshold. Below this commit rate the
-/// speculative path underperforms the serial prefilter → confirmer
-/// pair on Ada-class hardware. Empirical.
+/// speculative path underperforms the non-speculative GPU
+/// prefilter -> confirmer pair on Ada-class hardware. Empirical.
 pub const DEFAULT_THRESHOLD_PCT: u32 = 15;
 
 /// Caller-controlled speculation policy.
@@ -131,12 +132,12 @@ pub enum SpeculationMode {
 const EMA_SHIFT: u32 = 2;
 
 /// Online speculator — decides dispatch by dispatch whether to run
-/// the fused speculative kernel or fall back to the serial pair.
+/// the fused speculative kernel or the non-speculative two-stage GPU path.
 ///
 /// The EMA is stored in ppm so we never leave integer math.
 #[derive(Debug)]
 pub struct AdaptiveSpeculator {
-    threshold_ppm: u32,
+    threshold_ppm: u64,
     ema_commit_rate_ppm: AtomicU32,
     speculation_enabled: AtomicU32,
     samples: AtomicU32,
@@ -149,10 +150,11 @@ impl AdaptiveSpeculator {
     /// path and produce real evidence for the EMA.
     #[must_use]
     pub fn new(threshold_pct: u32) -> Self {
-        let threshold_ppm = threshold_pct.saturating_mul(10_000);
+        let threshold_ppm = u64::from(threshold_pct) * 10_000;
+        let seeded_ema_ppm = threshold_ppm.min(u64::from(u32::MAX)) as u32;
         Self {
             threshold_ppm,
-            ema_commit_rate_ppm: AtomicU32::new(threshold_ppm),
+            ema_commit_rate_ppm: AtomicU32::new(seeded_ema_ppm),
             speculation_enabled: AtomicU32::new(1),
             samples: AtomicU32::new(0),
         }
@@ -195,23 +197,22 @@ impl AdaptiveSpeculator {
         let observation = report.commit_rate_ppm();
         // EMA update — single fetch_update so concurrent callers
         // cannot lose samples.
-        self
-            .ema_commit_rate_ppm
+        self.ema_commit_rate_ppm
             .fetch_update(Ordering::AcqRel, Ordering::Acquire, |old| {
                 let delta = i64::from(observation) - i64::from(old);
                 let step = delta >> EMA_SHIFT;
                 let new = i64::from(old) + step;
                 Some(new.clamp(0, i64::from(u32::MAX)) as u32)
             })
-            .expect("speculation EMA update closure always returns Some");
+            .unwrap_or_else(|_| unreachable!("speculation EMA update closure always returns Some"));
         self.samples.fetch_add(1, Ordering::AcqRel);
-        let new_ppm = self.ema_commit_rate_ppm.load(Ordering::Acquire);
+        let new_ppm = u64::from(self.ema_commit_rate_ppm.load(Ordering::Acquire));
         // Hysteresis: enable when we clearly beat threshold,
         // disable when we clearly miss it. Deadband is ±25% of
         // threshold to avoid flapping right at the crossover.
         let margin = self.threshold_ppm / 4;
-        let enable_at = self.threshold_ppm.saturating_add(margin);
-        let disable_at = self.threshold_ppm.saturating_sub(margin);
+        let enable_at = self.threshold_ppm + margin;
+        let disable_at = self.threshold_ppm - margin;
         let prev = self.speculation_enabled.load(Ordering::Acquire);
         if prev == 0 && new_ppm >= enable_at {
             self.speculation_enabled.store(1, Ordering::Release);
@@ -222,7 +223,7 @@ impl AdaptiveSpeculator {
 
     /// Threshold in ppm.
     #[must_use]
-    pub fn threshold_ppm(&self) -> u32 {
+    pub fn threshold_ppm(&self) -> u64 {
         self.threshold_ppm
     }
 }
@@ -306,7 +307,7 @@ pub struct SpeculativeVariantDecision {
     /// Which variant won after compile + dispatch cost.
     pub winner: SpeculativeVariantKind,
     /// Nanoseconds saved versus the loser. Zero for exact ties.
-    pub saved_ns: u64,
+    pub saved_ns: u128,
     /// Autotune key used for the winning record.
     pub autotune_key: AutotuneKey,
 }
@@ -314,16 +315,14 @@ pub struct SpeculativeVariantDecision {
 impl SpeculativeVariantRace {
     /// Conservative total time: compile/cache-miss plus dispatch.
     #[must_use]
-    pub fn conservative_total_ns(&self) -> u64 {
-        self.conservative_compile_ns
-            .saturating_add(self.conservative_dispatch_ns)
+    pub fn conservative_total_ns(&self) -> u128 {
+        u128::from(self.conservative_compile_ns) + u128::from(self.conservative_dispatch_ns)
     }
 
     /// Speculative total time: compile/cache-miss plus dispatch.
     #[must_use]
-    pub fn speculative_total_ns(&self) -> u64 {
-        self.speculative_compile_ns
-            .saturating_add(self.speculative_dispatch_ns)
+    pub fn speculative_total_ns(&self) -> u128 {
+        u128::from(self.speculative_compile_ns) + u128::from(self.speculative_dispatch_ns)
     }
 
     /// Pick the faster variant. Ties intentionally choose the conservative
@@ -356,12 +355,12 @@ pub fn record_speculative_variant_race(
         SpeculativeVariantKind::Conservative => (
             keys.conservative,
             race.conservative_record,
-            speculative_total.saturating_sub(conservative_total),
+            speculative_total - conservative_total,
         ),
         SpeculativeVariantKind::Speculative => (
             keys.speculative,
             race.speculative_record,
-            conservative_total.saturating_sub(speculative_total),
+            conservative_total - speculative_total,
         ),
     };
     let autotune_key = AutotuneKey::new(cache_key, keys.adapter_id);
@@ -378,7 +377,7 @@ pub fn record_speculative_variant_race(
 pub struct SpeculativeDispatchPlan<'a> {
     /// Fused speculative prefilter + confirmer program.
     pub fused_program: &'a Program,
-    /// Cheap prefilter program used by the serial fallback.
+    /// Cheap prefilter program used by the non-speculative two-stage GPU path.
     pub prefilter_program: &'a Program,
     /// Output buffer containing the two-u32 speculative counter tail.
     pub counter_output_index: usize,
@@ -389,7 +388,7 @@ pub struct SpeculativeDispatchPlan<'a> {
 /// Result of a speculative routing decision.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SpeculativeDispatchOutcome {
-    /// Output buffers produced by the fused program or serial confirmer.
+    /// Output buffers produced by the fused program or two-stage confirmer.
     pub outputs: OutputBuffers,
     /// Counters observed from a fused speculative dispatch.
     pub report: Option<SpeculationReport>,
@@ -403,13 +402,13 @@ pub struct SpeculativeDispatchOutcome {
 /// parses the counter tail, records it back into the speculator, and returns
 /// the fused outputs. When speculation is disabled it runs
 /// `plan.prefilter_program` and passes the materialized prefilter outputs to
-/// `confirm_serial`; the closure owns candidate compaction and confirmer
-/// dispatch semantics for the caller's domain.
+/// `confirm_two_stage`; the closure owns GPU candidate compaction and
+/// confirmer dispatch semantics for the caller's domain.
 ///
 /// # Errors
 ///
 /// Returns a backend error when either dispatch fails, when the fused output
-/// does not contain the required counter tail, or when the serial confirmer
+/// does not contain the required counter tail, or when the two-stage confirmer
 /// closure rejects the prefilter output.
 pub fn dispatch_prefilter_confirm<B, F>(
     backend: &B,
@@ -417,7 +416,7 @@ pub fn dispatch_prefilter_confirm<B, F>(
     plan: SpeculativeDispatchPlan<'_>,
     inputs: &[&[u8]],
     config: &DispatchConfig,
-    mut confirm_serial: F,
+    mut confirm_two_stage: F,
 ) -> Result<SpeculativeDispatchOutcome, BackendError>
 where
     B: VyreBackend + ?Sized,
@@ -467,7 +466,7 @@ where
     }
 
     let prefilter_outputs = backend.dispatch_borrowed(plan.prefilter_program, inputs, config)?;
-    let outputs = confirm_serial(prefilter_outputs)?;
+    let outputs = confirm_two_stage(prefilter_outputs)?;
     Ok(SpeculativeDispatchOutcome {
         outputs,
         report: None,
@@ -515,6 +514,15 @@ mod tests {
         let r = SpeculationReport::from_counts(1024, 0);
         assert_eq!(r.commit_rate_ppm(), 1_000_000);
         assert!(r.worthwhile(99));
+    }
+
+    #[test]
+    fn commit_rate_uses_exact_attempt_count_without_clamping() {
+        let r = SpeculationReport::from_counts(u32::MAX, u32::MAX);
+
+        assert_eq!(r.attempted_tiles(), 8_589_934_590);
+        assert_eq!(r.commit_rate_ppm(), 500_000);
+        assert!(!r.worthwhile(u32::MAX));
     }
 
     #[test]
@@ -642,6 +650,50 @@ mod tests {
     }
 
     #[test]
+    fn speculative_variant_race_uses_widened_total_time() {
+        let conservative = spec_key(5);
+        let speculative = spec_key(6);
+        let mut store = AutotuneStore::default();
+        let decision = record_speculative_variant_race(
+            &mut store,
+            SpeculativeVariantKeys {
+                conservative: &conservative,
+                speculative: &speculative,
+                adapter_id: "native-sm120",
+            },
+            SpeculativeVariantRace {
+                conservative_dispatch_ns: u64::MAX,
+                conservative_compile_ns: u64::MAX,
+                speculative_dispatch_ns: 1,
+                speculative_compile_ns: 1,
+                conservative_record: tune(1),
+                speculative_record: tune(8),
+            },
+        );
+
+        assert_eq!(decision.winner, SpeculativeVariantKind::Speculative);
+        assert_eq!(decision.saved_ns, (u128::from(u64::MAX) * 2) - 2);
+    }
+
+    #[test]
+    fn speculation_source_uses_exact_arithmetic_for_report_and_race_policy() {
+        let source = include_str!("speculate.rs");
+
+        assert!(
+            !source.contains(concat!("saturating", "_add"))
+                && !source.contains(concat!("saturating", "_sub"))
+                && !source.contains(concat!("saturating", "_mul")),
+            "Fix: speculation report, hysteresis, and race timing policy must use exact widened arithmetic rather than saturating release-path counters."
+        );
+        assert!(
+            source.contains("u64::from(self.committed_tiles) + u64::from(self.rolled_back_tiles)")
+                && source.contains("u128::from(self.conservative_compile_ns)")
+                && source.contains("u128::from(self.speculative_compile_ns)"),
+            "Fix: speculation policy must widen before tile-count and timing arithmetic."
+        );
+    }
+
+    #[test]
     fn adaptive_speculator_starts_enabled_at_threshold_seed() {
         let s = AdaptiveSpeculator::new(15);
         assert!(s.should_speculate());
@@ -751,7 +803,7 @@ mod tests {
             plan,
             &[],
             &DispatchConfig::default(),
-            |_| panic!("serial fallback must not run while speculation is enabled"),
+            |_| panic!("non-speculative two-stage path must not run while speculation is enabled"),
         )
         .expect("Fix: fused counter tail should parse");
         assert!(outcome.used_speculative_path);
@@ -761,7 +813,7 @@ mod tests {
     }
 
     #[test]
-    fn dispatch_prefilter_confirm_runs_serial_fallback_when_disabled() {
+    fn dispatch_prefilter_confirm_runs_two_stage_gpu_path_when_disabled() {
         let backend = TailBackend;
         let speculator = AdaptiveSpeculator::new(90);
         for _ in 0..16 {
@@ -785,7 +837,7 @@ mod tests {
                 Ok(vec![b"confirmed".to_vec()])
             },
         )
-        .expect("Fix: serial fallback should dispatch prefilter and confirmer");
+        .expect("Fix: two-stage GPU path should dispatch prefilter and confirmer");
         assert!(!outcome.used_speculative_path);
         assert_eq!(outcome.report, None);
         assert_eq!(outcome.outputs, vec![b"confirmed".to_vec()]);

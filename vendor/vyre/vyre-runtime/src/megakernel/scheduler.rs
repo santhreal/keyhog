@@ -25,7 +25,8 @@ use vyre_foundation::ir::{Expr, Node};
 
 mod offsets;
 pub use offsets::{
-    default_priority_offsets, default_priority_offsets_array, write_default_priority_offsets,
+    default_priority_offsets, default_priority_offsets_array, try_default_priority_offsets,
+    write_default_priority_offsets,
 };
 
 /// Number of priority levels the scheduler supports.
@@ -99,9 +100,13 @@ pub fn priority_partition_active_lane_count(partition_slots: u32, worker_width: 
 /// Upper bound on slot status probes for one priority partition.
 #[must_use]
 pub fn priority_partition_probe_budget(partition_slots: u32, worker_width: u32) -> u32 {
-    priority_partition_active_lane_count(partition_slots, worker_width).saturating_mul(
-        priority_partition_probe_count(partition_slots, worker_width),
-    )
+    priority_partition_active_lane_count(partition_slots, worker_width)
+        .checked_mul(priority_partition_probe_count(partition_slots, worker_width))
+        .unwrap_or_else(|| {
+            panic!(
+                "megakernel priority partition probe budget overflowed u32. Fix: shard partition slots or reduce worker width."
+            )
+        })
 }
 
 /// Policy helper: check if a tenant has exceeded its fairness quota.

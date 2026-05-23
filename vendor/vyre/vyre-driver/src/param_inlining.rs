@@ -113,10 +113,16 @@ pub fn decide_param_inlining(bytes_len: u32, policy: ParamInliningPolicy) -> Par
         if !policy.allow_padding_to_align {
             return ParamInliningDecision::UniformBuffer;
         }
-        // Round up to the next align_bytes multiple. Saturating add
-        // protects against u32 overflow on adversarial inputs.
+        // Round up to the next align_bytes multiple exactly. Overflow
+        // cannot inline, because the padded payload is larger than any
+        // representable backend inline budget.
         let remainder = bytes_len % policy.align_bytes;
-        bytes_len.saturating_add(policy.align_bytes - remainder)
+        let padding = policy.align_bytes - remainder;
+        let padded = u64::from(bytes_len) + u64::from(padding);
+        if padded > u64::from(policy.max_inline_bytes) {
+            return ParamInliningDecision::UniformBuffer;
+        }
+        padded as u32
     } else {
         bytes_len
     };
@@ -255,6 +261,28 @@ mod tests {
         assert_eq!(
             decide_param_inlining(64, policy),
             ParamInliningDecision::UniformBuffer
+        );
+    }
+
+    #[test]
+    fn adversarial_padding_overflow_cannot_inline() {
+        let policy = ParamInliningPolicy {
+            max_inline_bytes: u32::MAX,
+            align_bytes: 256,
+            allow_padding_to_align: true,
+        };
+        assert_eq!(
+            decide_param_inlining(u32::MAX - 1, policy),
+            ParamInliningDecision::UniformBuffer
+        );
+    }
+
+    #[test]
+    fn source_has_no_saturating_padding_math() {
+        let source = include_str!("param_inlining.rs");
+        assert!(
+            !source.contains(concat!(".", "saturating_add")),
+            "param inlining cannot silently clamp launch-param padding"
         );
     }
 }

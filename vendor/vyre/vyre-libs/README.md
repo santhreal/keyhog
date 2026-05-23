@@ -8,11 +8,11 @@ no new `inventory::submit!`, no backend-specific code.
 
 ## Modules
 
-- `vyre_libs::math` — linear algebra, scans, broadcasts
-- `vyre_libs::nn` — neural-net primitives (linear, ReLU, softmax,
+- `vyre_libs::math`: linear algebra, scans, broadcasts
+- `vyre_libs::nn`: neural-net primitives (linear, ReLU, softmax,
   layer_norm, attention)
-- `vyre_libs::matching` — string scanning (substring, DFA, multi-string) — one building block inside arbitrary programs
-- `vyre_libs::crypto` — hashing (FNV-1a, BLAKE3, SHA-256, CRC32)
+- `vyre_libs::matching`: string scanning (substring, DFA, multi-string): one building block inside arbitrary programs
+- `vyre_libs::crypto`: hashing (FNV-1a, BLAKE3, SHA-256, CRC32)
 
 ## Design
 

@@ -6,7 +6,6 @@
 
 use crate::{BackendError, DispatchConfig, VyreBackend};
 use serde::{Deserialize, Serialize};
-use smallvec::SmallVec;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -55,7 +54,7 @@ impl PgoTable {
         config: &DispatchConfig,
         backends: &[&dyn VyreBackend],
     ) -> Result<&RouteDecision, BackendError> {
-        let borrowed: SmallVec<[&[u8]; 8]> = inputs.iter().map(Vec::as_slice).collect();
+        let borrowed = crate::backend::borrowed_input_slices(inputs, "PGO certification inputs")?;
         self.certify_op_borrowed(op_id, program, &borrowed, config, backends)
     }
 
@@ -83,7 +82,15 @@ impl PgoTable {
             )));
         }
 
-        let mut observations = Vec::with_capacity(backends.len());
+        let mut observations = Vec::new();
+        observations
+            .try_reserve_exact(backends.len())
+            .map_err(|error| BackendError::InvalidProgram {
+                fix: format!(
+                    "Fix: PGO certification could not reserve {} backend latency observation(s): {error}. Certify fewer backends per pass or shard route calibration.",
+                    backends.len()
+                ),
+            })?;
         for backend in backends {
             let elapsed = measure_backend(*backend, program, inputs, config)?;
             observations.push(BackendLatency {
@@ -193,7 +200,9 @@ fn read_pgo_table_bounded(path: &Path) -> std::io::Result<String> {
         ));
     }
     let mut text = String::with_capacity(metadata.len() as usize);
-    file.by_ref().take(MAX_PGO_TABLE_BYTES + 1).read_to_string(&mut text)?;
+    file.by_ref()
+        .take(MAX_PGO_TABLE_BYTES + 1)
+        .read_to_string(&mut text)?;
     if text.len() as u64 > MAX_PGO_TABLE_BYTES {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,

@@ -11,8 +11,10 @@
 //! `register_pressure_estimate` — each successful rewrite removes one
 //! named live binding; the substituted cheap expressions occupy the
 //! same register lifetime they would have occupied as a `Var(name)`
-//! load. Preserves: every analysis. Invalidates: nothing (the value at
-//! every use site is observably identical to the dropped binding).
+//! load. Preserves: ABI and observable value semantics. Invalidates:
+//! region inlining, canonicalization, constant folding, CSE, and DCE
+//! because substituting leaves can expose smaller regions, foldable
+//! expressions, duplicate expressions, and dead bindings.
 //!
 //! ## Pattern
 //!
@@ -48,7 +50,7 @@
 //! `register_pressure_estimate` already exists at the
 //! `ProgramStats`/`OptimizationCost` layer; this pass is the
 //! rewrite-side companion that drops the easiest contributors to that
-//! estimate without needing the weir live-range substrate.
+//! estimate without needing a downstream live-range substrate.
 
 use crate::ir::{Expr, Node, Program};
 use crate::optimizer::{vyre_pass, PassAnalysis, PassResult};
@@ -59,7 +61,10 @@ use crate::optimizer::{vyre_pass, PassAnalysis, PassResult};
 #[vyre_pass(
     name = "rematerialize_cheap_let",
     requires = [],
-    invalidates = []
+    invalidates = ["region_inline", "canonicalize", "const_fold", "cse", "dce"],
+    phase = "cleanup",
+    boundary_class = "abi_preserving",
+    cost_model_family = "scalar"
 )]
 pub struct RematerializeCheapLetPass;
 
@@ -67,6 +72,9 @@ impl RematerializeCheapLetPass {
     /// Skip programs without any candidate `Let`.
     #[must_use]
     fn analyze_impl(program: &Program) -> PassAnalysis {
+        if !program.stats().has_node_let() {
+            return PassAnalysis::SKIP;
+        }
         let mut found = false;
         scan_for_candidate(program.entry(), &mut found);
         if found {
@@ -79,14 +87,11 @@ impl RematerializeCheapLetPass {
     /// Walk the entry tree and rematerialize cheap single-binding Lets.
     #[must_use]
     pub fn transform(program: Program) -> PassResult {
-        let scaffold = program.with_rewritten_entry(Vec::new());
         let mut changed = false;
-        let entry = rewrite_sequence(program.into_entry_vec(), &mut changed);
-        PassResult {
-            program: scaffold.with_rewritten_entry(entry),
-            changed,
-        }
-    }}
+        let program = program.map_entry(|entry| rewrite_sequence(entry, &mut changed));
+        PassResult { program, changed }
+    }
+}
 
 /// Rewrite a sibling sequence in order. For each `Let(name, value)`:
 /// if `value` is a cheap leaf and `name` is never reassigned in this
@@ -105,10 +110,10 @@ fn rewrite_sequence(nodes: Vec<Node>, changed: &mut bool) -> Vec<Node> {
             Node::Let { name, value } if is_cheap_leaf(value) => {
                 let name = name.clone();
                 let tail = &nodes[i + 1..];
-                if tail.iter().any(|n| node_reassigns(n, &name)) {
-                    None
-                } else {
+                if can_rematerialize_let(&name, value, tail) {
                     Some((name, value.clone()))
+                } else {
+                    None
                 }
             }
             _ => None,
@@ -275,7 +280,9 @@ fn substitute_var_in_expr(expr: &mut Expr, name: &str, value: &Expr) {
             substitute_var_in_expr(true_val, name, value);
             substitute_var_in_expr(false_val, name, value);
         }
-        Expr::Cast { value: v, .. } => substitute_var_in_expr(v, name, value),
+        Expr::Cast { value: v, .. } | Expr::SubgroupAdd { value: v } => {
+            substitute_var_in_expr(v, name, value);
+        }
         Expr::Fma { a, b, c } => {
             substitute_var_in_expr(a, name, value);
             substitute_var_in_expr(b, name, value);
@@ -303,7 +310,6 @@ fn substitute_var_in_expr(expr: &mut Expr, name: &str, value: &Expr) {
             substitute_var_in_expr(v, name, value);
             substitute_var_in_expr(lane, name, value);
         }
-        Expr::SubgroupAdd { value: v } => substitute_var_in_expr(v, name, value),
     }
 }
 
@@ -325,12 +331,37 @@ fn is_cheap_leaf(expr: &Expr) -> bool {
     )
 }
 
+/// True iff a cheap `Let` can be replaced by its value in the remaining
+/// sibling tail without changing snapshot semantics.
+fn can_rematerialize_let(name: &str, value: &Expr, tail: &[Node]) -> bool {
+    if tail.iter().any(|n| node_reassigns(n, name)) {
+        return false;
+    }
+    if let Expr::Var(source) = value {
+        if tail.iter().any(|n| node_reassigns(n, source.as_str())) {
+            return false;
+        }
+    }
+    true
+}
+
 /// True iff `node` (or any descendant) reassigns `name`.
 fn node_reassigns(node: &Node, name: &str) -> bool {
     match node {
         Node::Assign { name: n, .. } if n.as_str() == name => true,
         Node::Let { name: n, .. } if n.as_str() == name => true,
-        Node::Assign { .. } | Node::Let { .. } | Node::Store { .. } => false,
+        Node::Assign { .. }
+        | Node::Let { .. }
+        | Node::Store { .. }
+        | Node::Return
+        | Node::Barrier { .. }
+        | Node::IndirectDispatch { .. }
+        | Node::AsyncLoad { .. }
+        | Node::AsyncStore { .. }
+        | Node::AsyncWait { .. }
+        | Node::Trap { .. }
+        | Node::Resume { .. }
+        | Node::Opaque(_) => false,
         Node::If {
             then, otherwise, ..
         } => {
@@ -345,15 +376,6 @@ fn node_reassigns(node: &Node, name: &str) -> bool {
         }
         Node::Block(body) => body.iter().any(|n| node_reassigns(n, name)),
         Node::Region { body, .. } => body.iter().any(|n| node_reassigns(n, name)),
-        Node::Return
-        | Node::Barrier { .. }
-        | Node::IndirectDispatch { .. }
-        | Node::AsyncLoad { .. }
-        | Node::AsyncStore { .. }
-        | Node::AsyncWait { .. }
-        | Node::Trap { .. }
-        | Node::Resume { .. }
-        | Node::Opaque(_) => false,
     }
 }
 
@@ -372,8 +394,7 @@ fn scan_for_candidate(nodes: &[Node], found: &mut bool) {
                 scan_for_candidate(then, found);
                 scan_for_candidate(otherwise, found);
             }
-            Node::Loop { body, .. } => scan_for_candidate(body, found),
-            Node::Block(body) => scan_for_candidate(body, found),
+            Node::Loop { body, .. } | Node::Block(body) => scan_for_candidate(body, found),
             Node::Region { body, .. } => scan_for_candidate(body, found),
             _ => {}
         }
@@ -541,6 +562,74 @@ mod tests {
         ];
         let result = RematerializeCheapLetPass::transform(program(entry));
         assert!(!result.changed, "reassigned Let must not be rematerialized");
+    }
+
+    /// Negative: `let tmp = x; x = y; y = tmp` is a snapshot, not an
+    /// alias. Rematerializing `tmp` into `x` would turn the final
+    /// assignment into `y = x` after `x` has already changed, breaking
+    /// stack-machine `SWAP` and every other carrier snapshot pattern.
+    #[test]
+    fn keeps_var_let_when_source_is_reassigned_later() {
+        let entry = vec![
+            Node::let_bind("x", Expr::u32(1)),
+            Node::let_bind("y", Expr::u32(2)),
+            Node::let_bind("tmp", Expr::var("x")),
+            Node::Assign {
+                name: crate::ir::Ident::from("x"),
+                value: Expr::var("y"),
+            },
+            Node::Assign {
+                name: crate::ir::Ident::from("y"),
+                value: Expr::var("tmp"),
+            },
+            Node::store("buf", Expr::u32(0), Expr::var("y")),
+        ];
+
+        let result = RematerializeCheapLetPass::transform(program(entry));
+        let siblings = find_user_siblings(result.program.entry()).expect("user body present");
+
+        assert!(
+            siblings.iter().any(|node| matches!(
+                node,
+                Node::Let { name, value: Expr::Var(source) }
+                    if name.as_str() == "tmp" && source.as_str() == "x"
+            )),
+            "source-reassigned Var Let must remain as a snapshot boundary"
+        );
+    }
+
+    #[test]
+    fn keeps_var_let_when_source_is_reassigned_later_inside_if() {
+        let entry = vec![Node::If {
+            cond: Expr::var("cond"),
+            then: vec![
+                Node::let_bind("tmp", Expr::var("x")),
+                Node::Assign {
+                    name: crate::ir::Ident::from("x"),
+                    value: Expr::var("y"),
+                },
+                Node::Assign {
+                    name: crate::ir::Ident::from("y"),
+                    value: Expr::var("tmp"),
+                },
+            ],
+            otherwise: Vec::new(),
+        }];
+
+        let result = RematerializeCheapLetPass::transform(program(entry));
+        let siblings = find_user_siblings(result.program.entry()).expect("user body present");
+        let Node::If { then, .. } = &siblings[0] else {
+            panic!("expected If");
+        };
+
+        assert!(
+            then.iter().any(|node| matches!(
+                node,
+                Node::Let { name, value: Expr::Var(source) }
+                    if name.as_str() == "tmp" && source.as_str() == "x"
+            )),
+            "nested source-reassigned Var Let must remain as a snapshot boundary"
+        );
     }
 
     /// Negative: a `Let` whose name is used as a loop induction

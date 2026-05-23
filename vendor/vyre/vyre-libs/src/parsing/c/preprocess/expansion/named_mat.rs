@@ -1,6 +1,6 @@
-//! Audit-fix A35 `expansion/named_mat.rs` extract.
+//! Materialized named macro-expansion dispatch builder.
 
-#![allow(missing_docs)] // c-parser feature: A33-A36 split lost some leading doc comments; lint loud, fix surgically when revisiting docs.
+#![allow(missing_docs)] // Internal macro-expansion helpers are documented at the owning module boundary.
 use crate::parsing::c::lex::tokens::*;
 use crate::parsing::c::preprocess::materialization::*;
 use crate::region::wrap_anonymous;
@@ -28,6 +28,7 @@ pub fn opt_named_macro_expansion_materialized(
     macro_replacement_starts: &str,
     macro_replacement_lens: &str,
     macro_replacement_words: &str,
+    runtime_counts: &str,
     out_tok_types: &str,
     out_tok_starts: &str,
     out_tok_lens: &str,
@@ -37,25 +38,16 @@ pub fn opt_named_macro_expansion_materialized(
     num_tokens: Expr,
     source_len: Expr,
     macro_replacement_source_len: Expr,
+    max_input_tokens: u32,
+    max_source_words: u32,
+    max_replacement_source_words: u32,
     max_out_tokens: u32,
     max_out_source_bytes: u32,
 ) -> Program {
     let t = Expr::InvocationId { axis: 0 };
-    let tok_count = match &num_tokens {
-        Expr::LitU32(n) => *n,
-        _ => 1,
-    };
-    let tok_buffer_count = tok_count.max(1);
-    let source_count = match &source_len {
-        Expr::LitU32(n) => *n,
-        _ => 1,
-    }
-    .max(1);
-    let replacement_source_count = match &macro_replacement_source_len {
-        Expr::LitU32(n) => *n,
-        _ => 1,
-    }
-    .max(1);
+    let tok_buffer_count = max_input_tokens.max(1);
+    let source_count = max_source_words.max(1);
+    let replacement_source_count = max_replacement_source_words.max(1);
     let out_buffer_count = max_out_tokens.max(1);
     let out_source_count = max_out_source_bytes.max(1);
 
@@ -65,6 +57,8 @@ pub fn opt_named_macro_expansion_materialized(
         Node::let_bind("named_macro_idx", Expr::u32(EMPTY_MACRO_SLOT)),
         Node::let_bind("named_macro_kind", Expr::u32(C_MACRO_KIND_OBJECT_LIKE)),
         Node::let_bind("named_param_count", Expr::u32(0)),
+        Node::let_bind("named_is_variadic", Expr::u32(0)),
+        Node::let_bind("named_required_param_count", Expr::u32(0)),
     ];
     process_current.push(Node::if_then(
         Expr::eq(Expr::var("named_tok"), Expr::u32(TOK_IDENTIFIER)),
@@ -104,9 +98,24 @@ pub fn opt_named_macro_expansion_materialized(
                 "named_macro_kind",
                 Expr::load(macro_kinds, Expr::var("named_macro_slot")),
             ),
+            Node::let_bind(
+                "named_param_count_raw",
+                Expr::load(macro_param_counts, Expr::var("named_macro_slot")),
+            ),
             Node::assign(
                 "named_param_count",
-                Expr::load(macro_param_counts, Expr::var("named_macro_slot")),
+                Expr::bitand(Expr::var("named_param_count_raw"), Expr::u32(0x7fff_ffff)),
+            ),
+            Node::assign(
+                "named_is_variadic",
+                Expr::shr(Expr::var("named_param_count_raw"), Expr::u32(31)),
+            ),
+            Node::assign(
+                "named_required_param_count",
+                Expr::saturating_sub(
+                    Expr::var("named_param_count"),
+                    Expr::var("named_is_variadic"),
+                ),
             ),
             Node::if_then(
                 Expr::and(
@@ -269,7 +278,7 @@ pub fn opt_named_macro_expansion_materialized(
             BufferDecl::storage(macro_name_lens, 6, BufferAccess::ReadOnly, DataType::U32)
                 .with_count(MACRO_TABLE_SLOTS),
             BufferDecl::storage(macro_name_words, 7, BufferAccess::ReadOnly, DataType::U32)
-                .with_count(MACRO_NAME_BYTES),
+                .with_count(0),
             BufferDecl::storage(macro_vals, 8, BufferAccess::ReadOnly, DataType::U32)
                 .with_count(MACRO_TABLE_SLOTS),
             BufferDecl::storage(macro_sizes, 9, BufferAccess::ReadOnly, DataType::U32)
@@ -311,25 +320,34 @@ pub fn opt_named_macro_expansion_materialized(
                 DataType::U32,
             )
             .with_count(replacement_source_count),
-            BufferDecl::storage(out_tok_types, 16, BufferAccess::ReadWrite, DataType::U32)
+            BufferDecl::storage(runtime_counts, 16, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(3),
+            BufferDecl::storage(out_tok_types, 17, BufferAccess::ReadWrite, DataType::U32)
                 .with_count(out_buffer_count),
-            BufferDecl::storage(out_tok_starts, 17, BufferAccess::ReadWrite, DataType::U32)
+            BufferDecl::storage(out_tok_starts, 18, BufferAccess::ReadWrite, DataType::U32)
                 .with_count(out_buffer_count),
-            BufferDecl::storage(out_tok_lens, 18, BufferAccess::ReadWrite, DataType::U32)
+            BufferDecl::storage(out_tok_lens, 19, BufferAccess::ReadWrite, DataType::U32)
                 .with_count(out_buffer_count),
-            BufferDecl::storage(out_source_words, 19, BufferAccess::ReadWrite, DataType::U32)
+            BufferDecl::storage(out_source_words, 20, BufferAccess::ReadWrite, DataType::U32)
                 .with_count(out_source_count),
-            BufferDecl::storage(out_tok_counts, 20, BufferAccess::ReadWrite, DataType::U32)
+            BufferDecl::storage(out_tok_counts, 21, BufferAccess::ReadWrite, DataType::U32)
                 .with_count(1),
             BufferDecl::storage(
                 out_source_counts,
-                21,
+                22,
                 BufferAccess::ReadWrite,
                 DataType::U32,
             )
             .with_count(1),
-            BufferDecl::workgroup("macro_arg_starts", tok_buffer_count, DataType::U32),
-            BufferDecl::workgroup("macro_arg_ends", tok_buffer_count, DataType::U32),
+            BufferDecl::storage(
+                "macro_arg_starts",
+                23,
+                BufferAccess::ReadWrite,
+                DataType::U32,
+            )
+            .with_count(tok_buffer_count),
+            BufferDecl::storage("macro_arg_ends", 24, BufferAccess::ReadWrite, DataType::U32)
+                .with_count(tok_buffer_count),
         ],
         [1, 1, 1],
         vec![wrap_anonymous(
@@ -359,6 +377,6 @@ pub fn opt_named_macro_expansion_materialized(
             )],
         )],
     )
-    .with_entry_op_id("vyre-libs::parsing::opt_named_macro_expansion_materialized")
+    .with_entry_op_id("vyre-libs::parsing::opt_named_macro_expansion_materialized_v5")
     .with_non_composable_with_self(true)
 }

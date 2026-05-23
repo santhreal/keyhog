@@ -93,7 +93,7 @@ pub fn prepared_program(program: &Program) -> Result<Program, LoweringError> {
     // ReadOnly. The result flows to BOTH the naga emitter (which
     // emits the WGSL `var<storage, read>` access mode) AND the
     // pipeline-layout descriptor (which sets `read_only=true`) — they
-    // agree by construction. Pre-fix: surgec's merge step defaulted
+    // agree by construction. Pre-fix: the consumer's merge step defaulted
     // every intermediate buffer to ReadWrite for safety; pipeline
     // layout was built from BufferDecl.access (ReadWrite →
     // read_only=false) but the shader emitter saw only loads.

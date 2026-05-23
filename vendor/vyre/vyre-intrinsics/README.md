@@ -1,6 +1,6 @@
 # vyre-intrinsics
 
-Category-C hardware intrinsics for vyre — the ops that cannot be
+Category-C hardware intrinsics for vyre: the ops that cannot be
 written as `fn(...) -> Program` compositions over existing `Expr` /
 `Node` primitives because they require dedicated backend emitter arms
 and dedicated `vyre-reference` evaluation arms.
@@ -16,7 +16,7 @@ The split is documented in `docs/migration-vyre-ops-to-intrinsics.md`.
    conform runner diffs every backend dispatch against that
    reference byte-for-byte.
 2. **Every intrinsic has a dedicated Naga emitter arm.** There is no
-   fallback-to-composition path — if the backend can't emit it, the
+   fallback-to-composition path: if the backend can't emit it, the
    program fails validation up front with a `Fix:` hint.
 3. **Every intrinsic has an `IntrinsicDescriptor` in the inventory
    registry.** `inventory::submit!` wires the descriptor at link time
@@ -37,21 +37,21 @@ The split is documented in `docs/migration-vyre-ops-to-intrinsics.md`.
 
 `vyre-intrinsics` owns:
 
-- `subgroup_add`, `subgroup_ballot`, `subgroup_shuffle` — wave-level
+- `subgroup_add`, `subgroup_ballot`, `subgroup_shuffle`: wave-level
   collectives backed by Naga 25+ subgroup lowering.
-- `workgroup_barrier`, `storage_barrier` — concurrency fences.
-- `bit_reverse_u32`, `popcount_u32` — bit intrinsics mapping 1:1 to
+- `workgroup_barrier`, `storage_barrier`: concurrency fences.
+- `bit_reverse_u32`, `popcount_u32`: bit intrinsics mapping 1:1 to
   hardware (`reverseBits`, `countOneBits`).
-- `fma_f32` — fused multiply-add, byte-identical to `f32::mul_add`.
-- `inverse_sqrt_f32` — hardware `inverseSqrt()` via naga.
+- `fma_f32`: fused multiply-add, byte-identical to `f32::mul_add`.
+- `inverse_sqrt_f32`: hardware `inverseSqrt()` via naga.
 
 `vyre-intrinsics` does NOT own:
 
 - Composite builders (atomics, lzcnt/tzcnt, clamp, hashes). Those
   moved to `vyre-libs` in Migration 2–3 and live there now.
-- Register allocation, backend dispatch, or pipeline caching —
+- Register allocation, backend dispatch, or pipeline caching:
   that's `vyre-driver` + the backend crates.
-- IR schema or validation — those live in `vyre-foundation`.
+- IR schema or validation: those live in `vyre-foundation`.
 
 ## Three worked examples
 
@@ -76,7 +76,7 @@ fn popcount_program(input: &Expr) -> Program {
 
 ```toml
 [dependencies]
-vyre-intrinsics = "0.4.1"
+vyre-intrinsics = "0.4.2"
 ```
 
 Then in code:
@@ -98,7 +98,7 @@ let expected = structured_intrinsic_cpu::<fma_f32::Cpu>(&[2.0, 3.0, 1.0]);
 assert_eq!(expected, 7.0);
 ```
 
-## Extension guide — adding a Category-C intrinsic
+## Extension guide: adding a Category-C intrinsic
 
 1. Verify the op cannot be expressed as a composition of existing
    `Expr` variants. If it can, write a `fn() -> Program` helper in
@@ -111,7 +111,7 @@ assert_eq!(expected, 7.0);
    - The dedicated emitter arm in the concrete driver that owns the
      target lowering.
 3. Register with `inventory::submit!(IntrinsicDescriptor { ... })`
-   — the harness discovers you automatically.
+   : the harness discovers you automatically.
 4. Declare algebraic laws (`AlgebraicLaw`) if your op has any; the
    conform harness re-derives them at every CI run and rejects
    implementations that break them.

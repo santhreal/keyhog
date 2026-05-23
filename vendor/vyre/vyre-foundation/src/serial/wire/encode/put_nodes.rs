@@ -37,6 +37,11 @@ use crate::serial::wire::Node;
 ///   the program.
 /// * **Node encoding failure** – any error from [`put_node`] is
 ///   propagated upward unchanged.
+///
+/// # Errors
+///
+/// Returns [`WireEncodeErr`] when the node count cannot fit the wire format or
+/// any contained node fails to encode.
 #[inline]
 #[must_use]
 pub fn put_nodes(out: &mut Vec<u8>, nodes: &[Node]) -> Result<(), WireEncodeErr> {

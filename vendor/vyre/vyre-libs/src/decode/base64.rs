@@ -186,6 +186,7 @@ pub fn base64_decode_then_aho_corasick(
     )
 }
 
+#[cfg(test)]
 fn cpu_ref(input: &[u8]) -> (Vec<u32>, u32) {
     let table = base64_table();
     let blocks = input.len() / 4;
@@ -234,7 +235,6 @@ fn fixture_inputs() -> Vec<Vec<Vec<u8>>> {
                 u32::from(b'u'),
             ]),
             pack_words(&base64_table()),
-            vec![0u8; 6 * 4],
             vec![0u8; 4],
         ],
         vec![
@@ -249,7 +249,6 @@ fn fixture_inputs() -> Vec<Vec<Vec<u8>>> {
                 u32::from(b'='),
             ]),
             pack_words(&base64_table()),
-            vec![0u8; 6 * 4],
             vec![0u8; 4],
         ],
         vec![
@@ -264,24 +263,17 @@ fn fixture_inputs() -> Vec<Vec<Vec<u8>>> {
                 u32::from(b'*'),
             ]),
             pack_words(&base64_table()),
-            vec![0u8; 6 * 4],
             vec![0u8; 4],
         ],
     ]
 }
 
 fn fixture_outputs() -> Vec<Vec<Vec<u8>>> {
-    [
-        b"TWFuTWFu".as_slice(),
-        b"TWE=TWE=".as_slice(),
-        b"SGVsbG8*".as_slice(),
+    vec![
+        vec![pack_words(&[77, 97, 110, 77, 97, 110]), pack_words(&[6])],
+        vec![pack_words(&[77, 97, 0, 77, 97, 0]), pack_words(&[5])],
+        vec![pack_words(&[72, 101, 108, 108, 111, 0]), pack_words(&[6])],
     ]
-    .into_iter()
-    .map(|case| {
-        let (decoded, decoded_len) = cpu_ref(case);
-        vec![pack_words(&decoded), pack_words(&[decoded_len])]
-    })
-    .collect()
 }
 
 inventory::submit! {

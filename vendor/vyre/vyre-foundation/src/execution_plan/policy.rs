@@ -5,11 +5,15 @@ use crate::optimizer::AdapterCaps;
 /// Backend route category emitted by the shared scheduling policy.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum PolicyRoute {
-    /// CPU SIMD path for tiny programs where GPU launch overhead dominates.
+    /// Explicit diagnostic/reference route.
+    ///
+    /// `SchedulingPolicy::standard()` never emits this route; CPU execution is
+    /// allowed only when a caller opts into an oracle/test policy.
     CpuSimd,
-    /// Standard compiled GPU pipeline.
+    /// Standard compiled GPU pipeline. Kept for explicit non-persistent
+    /// policies and backend diagnostics; it is not the standard release route.
     GpuPipeline,
-    /// Persistent megakernel runtime for large sustained workloads.
+    /// Persistent megakernel runtime used by the standard release route.
     PersistentMegakernel,
 }
 
@@ -41,7 +45,7 @@ impl Default for SchedulingPolicy {
 }
 
 impl SchedulingPolicy {
-    /// Return the standard balanced policy used by vyre's built-in planners.
+    /// Return the standard CUDA-first megakernel policy used by vyre's built-in planners.
     #[must_use]
     pub const fn standard() -> Self {
         Self {
@@ -63,8 +67,8 @@ impl SchedulingPolicy {
 
     /// Return true when a program should use persistent runtime dispatch.
     #[must_use]
-    pub const fn use_persistent_runtime(&self, node_count: usize) -> bool {
-        node_count <= self.persistent_runtime_node_max
+    pub const fn use_persistent_runtime(&self, _node_count: usize) -> bool {
+        true
     }
 
     /// Return true when dispatch-shape autotuning should measure variants.
@@ -76,26 +80,28 @@ impl SchedulingPolicy {
     /// Route a plan represented by node count and static bytes.
     #[must_use]
     pub const fn route(&self, node_count: usize, static_bytes: u64) -> PolicyRoute {
-        if self.use_cpu_fast_path(node_count, static_bytes) {
-            PolicyRoute::CpuSimd
-        } else if self.use_persistent_megakernel(node_count) {
+        if self.use_persistent_megakernel(node_count) {
             PolicyRoute::PersistentMegakernel
+        } else if self.use_cpu_fast_path(node_count, static_bytes) {
+            PolicyRoute::CpuSimd
         } else {
             PolicyRoute::GpuPipeline
         }
     }
 
     /// Return true when a tiny static workload should stay on CPU SIMD.
+    ///
+    /// The standard release policy is GPU-only and therefore returns `false`;
+    /// CPU SIMD remains an explicit oracle/test concept, not an implicit route.
     #[must_use]
-    pub const fn use_cpu_fast_path(&self, node_count: usize, static_bytes: u64) -> bool {
-        node_count <= self.cpu_fast_path_node_max
-            && static_bytes < self.cpu_fast_path_static_bytes_below
+    pub const fn use_cpu_fast_path(&self, _node_count: usize, _static_bytes: u64) -> bool {
+        false
     }
 
     /// Return true when the persistent megakernel is the preferred route.
     #[must_use]
-    pub const fn use_persistent_megakernel(&self, node_count: usize) -> bool {
-        node_count > self.megakernel_node_count_above
+    pub const fn use_persistent_megakernel(&self, _node_count: usize) -> bool {
+        true
     }
 
     /// Return true when an axis-wise fused launch stays within policy.
@@ -220,8 +226,8 @@ impl SchedulingPolicy {
         if declared_x >= min_x
             && declared_x <= max_x
             && declared_x.is_power_of_two()
-            && self.workgroup_x_score(declared, problem_size, caps)
-                >= self.workgroup_x_score(
+            && Self::workgroup_x_score(declared, problem_size, caps)
+                >= Self::workgroup_x_score(
                     self.default_workgroup_x.min(max_x).max(min_x),
                     problem_size,
                     caps,
@@ -231,10 +237,10 @@ impl SchedulingPolicy {
         }
 
         let mut best = normalize_power_of_two(self.default_workgroup_x, floor, max_x);
-        let mut best_score = self.workgroup_x_score(best, problem_size, caps);
+        let mut best_score = Self::workgroup_x_score(best, problem_size, caps);
         let mut candidate = floor.next_power_of_two().min(max_x).max(1);
         while candidate <= max_x {
-            let score = self.workgroup_x_score(candidate, problem_size, caps);
+            let score = Self::workgroup_x_score(candidate, problem_size, caps);
             if score > best_score || (score == best_score && candidate > best) {
                 best = candidate;
                 best_score = score;
@@ -341,12 +347,12 @@ impl SchedulingPolicy {
         }
     }
 
-    fn workgroup_x_score(&self, x: u32, problem_size: Option<u32>, caps: &AdapterCaps) -> u32 {
+    fn workgroup_x_score(x: u32, problem_size: Option<u32>, caps: &AdapterCaps) -> u32 {
         let subgroup = effective_subgroup_size(caps);
         let waves = x.saturating_add(subgroup - 1).saturating_div(subgroup);
-        let profile_preferred = preferred_workgroup_x(caps)
-            .map(|preferred| if preferred == x { 1000 } else { 0 })
-            .unwrap_or(0);
+        let profile_preferred =
+            preferred_workgroup_x(caps)
+                .map_or(0, |preferred| if preferred == x { 1000 } else { 0 });
         let occupancy = waves.min(8).saturating_mul(100);
         let subgroup_fit = if x % subgroup == 0 { 250 } else { 0 };
         let specialization = if caps.supports_specialization_constants {
@@ -430,7 +436,7 @@ const fn normalize_power_of_two(value: u32, min: u32, max: u32) -> u32 {
     if bounded.is_power_of_two() {
         bounded
     } else {
-        1u32 << (31 - bounded.leading_zeros())
+        1u32 << bounded.ilog2()
     }
 }
 
@@ -453,21 +459,21 @@ mod tests {
     // --- Routing ---
 
     #[test]
-    fn route_tiny_workload_uses_cpu() {
+    fn route_tiny_workload_uses_megakernel() {
         assert_eq!(
             policy().route(10, 100),
-            PolicyRoute::CpuSimd,
-            "small node count + small bytes → CPU"
+            PolicyRoute::PersistentMegakernel,
+            "small node count + small bytes uses standard megakernel release path"
         );
     }
 
     #[test]
-    fn route_large_bytes_uses_gpu() {
+    fn route_large_bytes_uses_megakernel() {
         // Below node threshold but above static bytes threshold.
         assert_eq!(
             policy().route(10, 1 << 20),
-            PolicyRoute::GpuPipeline,
-            "small nodes but large bytes → GPU pipeline"
+            PolicyRoute::PersistentMegakernel,
+            "small nodes but large bytes uses standard megakernel release path"
         );
     }
 
@@ -481,21 +487,21 @@ mod tests {
     }
 
     #[test]
-    fn route_medium_node_count_uses_gpu() {
+    fn route_medium_node_count_uses_megakernel() {
         assert_eq!(
             policy().route(500, 1 << 20),
-            PolicyRoute::GpuPipeline,
-            "500 nodes → GPU pipeline"
+            PolicyRoute::PersistentMegakernel,
+            "500 nodes uses standard megakernel release path"
         );
     }
 
     // --- Persistent runtime ---
 
     #[test]
-    fn persistent_runtime_boundary() {
+    fn persistent_runtime_is_standard_for_all_node_counts() {
         let p = policy();
         assert!(p.use_persistent_runtime(64));
-        assert!(!p.use_persistent_runtime(65));
+        assert!(p.use_persistent_runtime(65));
     }
 
     // --- Autotune ---

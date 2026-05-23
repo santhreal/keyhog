@@ -20,16 +20,17 @@ pub fn buffer_size_check(
 }
 
 #[must_use]
+#[cfg(test)]
 /// CPU oracle for [`buffer_size_check`].
-pub fn cpu_ref(size_compared: &[u32], user_input_set: &[u32]) -> Vec<u32> {
+pub(crate) fn cpu_ref(size_compared: &[u32], user_input_set: &[u32]) -> Vec<u32> {
     vyre_primitives::bitset::and::cpu_ref(size_compared, user_input_set)
 }
 
 /// Soundness marker for [`buffer_size_check`].
 pub struct BufferSizeCheck;
-impl weir::soundness::SoundnessTagged for BufferSizeCheck {
-    fn soundness(&self) -> weir::soundness::Soundness {
-        weir::soundness::Soundness::Exact
+impl vyre::soundness::SoundnessTagged for BufferSizeCheck {
+    fn soundness(&self) -> vyre::soundness::Soundness {
+        vyre::soundness::Soundness::Exact
     }
 }
 

@@ -192,6 +192,7 @@ where
 ///
 /// This keeps paired reductions such as `(sum, sum_sq)` in one memory pass
 /// instead of forcing two separate scans over the input.
+#[allow(dead_code)]
 pub(crate) fn strided_accumulate2_child<F1, F2>(
     parent_op_id: &'static str,
     tile: u32,
@@ -263,6 +264,7 @@ fn child_region(parent_op_id: &'static str, child_op_id: &'static str, body: Vec
 /// This keeps public compatibility wrappers infallible without panicking on
 /// user-controlled names or shapes. Typed builders should still return
 /// `Result`; this helper is for legacy `fn foo(...) -> Program` surfaces.
+#[allow(dead_code)]
 pub(crate) fn invalid_output_program(
     op_id: &'static str,
     output: &str,
@@ -279,7 +281,8 @@ pub(crate) fn invalid_output_program(
     )
 }
 
-/// Tensor-ref elementwise builders; reserved for upcoming domain ops.
+/// Tensor-ref elementwise binary builder, used by `math::avg_floor`,
+/// `math::algebra`, and other binary-arithmetic primitives.
 #[allow(dead_code)]
 pub(crate) fn build_elementwise_binary<F>(
     op_id: &'static str,

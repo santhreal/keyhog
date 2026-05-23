@@ -1,6 +1,6 @@
 [package]
 name = "vyre-driver-cuda"
-version = "0.4.1"
+version = "0.4.2"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -30,6 +30,10 @@ vyre-foundation = { workspace = true }
 vyre-spec = { workspace = true }
 vyre-lower.workspace = true
 vyre-emit-ptx.workspace = true
+# `optimizer` module dispatches the self-hosted optimizer passes
+# (DCE/CSE/const-fold) on CUDA. Lives in [dependencies] (not dev-deps)
+# because src/optimizer.rs is shipped lib code.
+vyre-self-substrate = { workspace = true }
 inventory.workspace = true
 tracing.workspace = true
 blake3.workspace = true
@@ -41,7 +45,9 @@ dashmap.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+serde_json.workspace = true
 vyre.workspace = true
-vyre-primitives = { version = "0.4.1", path = "../vyre-primitives", features = ["decode"] }
-vyre-libs = { version = "0.4.1", path = "../vyre-libs" }
+vyre-primitives = { version = "0.4.2", path = "../vyre-primitives", features = ["decode", "math", "cpu-parity"] }
+vyre-self-substrate = { version = "0.4.2", path = "../vyre-self-substrate", features = ["cpu-parity"] }
+vyre-libs = { version = "0.4.2", path = "../vyre-libs" }
 pollster.workspace = true

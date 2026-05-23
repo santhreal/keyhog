@@ -98,6 +98,17 @@ pub mod ir {
     pub use crate::ir_inner::model::program::{
         BufferDecl, CacheLocality, LinearType, MemoryHints, MemoryKind, Program, ShapePredicate,
     };
+    /// Per-Node-variant bit-position constants for `ProgramStats::node_kinds_present`.
+    /// Compose with `ProgramStats::has_any_node_kind` for O(1) `analyze_impl` gates.
+    pub mod stats {
+        pub use crate::ir_inner::model::program::{
+            NODE_KIND_ASSIGN, NODE_KIND_ASYNC_LOAD, NODE_KIND_ASYNC_STORE, NODE_KIND_ASYNC_WAIT,
+            NODE_KIND_BARRIER, NODE_KIND_BLOCK, NODE_KIND_EXPRESSION_BEARING_MASK, NODE_KIND_IF,
+            NODE_KIND_INDIRECT_DISPATCH, NODE_KIND_LET, NODE_KIND_LOOP, NODE_KIND_OPAQUE,
+            NODE_KIND_REGION, NODE_KIND_RESUME, NODE_KIND_RETURN, NODE_KIND_STORE, NODE_KIND_TRAP,
+        };
+    }
+    pub use crate::ir_inner::model::program::ProgramStats;
     pub use crate::ir_inner::model::types::{
         AtomicOp, BinOp, BufferAccess, Convention, DataType, OpSignature, UnOp,
     };
@@ -221,21 +232,11 @@ pub use runtime::program_caps;
 pub mod error;
 pub use error::{Error, Result};
 
-/// Canonical little-endian byte-packing helpers. Single home for
-/// `pack_u32_slice_le` and `pack_haystack_u32`; the matching layer,
-/// the C frontend pipelines, and the primitives library all re-export
-/// or call into these from one place. Replaces five parallel
-/// implementations identified in the 2026-05-20 cross-crate audit.
-pub mod byte_pack;
-pub use byte_pack::{pack_haystack_u32, pack_u32_slice_le};
-
-/// Canonical hash helpers (FNV-1a 32-bit, byte- and word-shaped).
-/// Replaces three parallel implementations across vyre-foundation
-/// (string_interner), vyre-cc (pipeline::buffers), and
-/// vyre-frontend-c (pipeline::buffers); see `hash.rs` for the
-/// audit notes.
-pub mod hash;
-pub use hash::{fnv1a32, fnv1a32_words};
+/// Soundness lattice for dataflow primitives. Canonical home — dataflow
+/// engines and composition crates consume from here per the LEGO discipline
+/// (consumers always
+/// calls vyre, vyre never calls anything else).
+pub mod soundness;
 
 /// Test utilities shared across optimizer and transform test suites.
 /// `pub(crate)` because they are an internal contract — no consumer

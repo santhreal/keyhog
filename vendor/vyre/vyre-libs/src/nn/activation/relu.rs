@@ -51,12 +51,12 @@ inventory::submit! {
         build: || relu("input", "output", 4),
         test_inputs: Some(|| vec![vec![
             [0u32, 5, 10, 0].iter().flat_map(|v| v.to_le_bytes()).collect(),
-            vec![0u8; 4 * 4],
         ]]),
         expected_output: Some(|| vec![vec![
             // Only ReadWrite buffer: output = max(0, input) = identity for u32
             [0u32, 5, 10, 0].iter().flat_map(|v| v.to_le_bytes()).collect(),
         ]]),
+        category: Some("nn"),
     }
 }
 
@@ -72,11 +72,9 @@ mod tests {
     #[test]
     fn relu_empty_tensor_produces_no_panic() {
         let program = relu("input", "output", 0);
-        let outputs = vyre_reference::reference_eval(
-            &program,
-            &[Value::from(vec![]), Value::from(vec![])],
-        )
-        .expect("Fix: relu n=0 must not panic");
+        let outputs =
+            vyre_reference::reference_eval(&program, &[Value::from(vec![]), Value::from(vec![])])
+                .expect("Fix: relu n=0 must not panic");
         assert!(outputs[0].to_bytes().is_empty());
     }
 

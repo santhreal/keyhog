@@ -1,6 +1,6 @@
-//! Audit-fix A35 `expansion/named.rs` extract.
+//! Named macro-expansion dispatch builder.
 
-#![allow(missing_docs)] // c-parser feature: A33-A36 split lost some leading doc comments; lint loud, fix surgically when revisiting docs.
+#![allow(missing_docs)] // Internal macro-expansion helpers are documented at the owning module boundary.
 use crate::parsing::c::lex::tokens::*;
 use crate::region::wrap_anonymous;
 use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
@@ -214,7 +214,7 @@ pub fn opt_named_macro_expansion(
             BufferDecl::storage(macro_name_lens, 6, BufferAccess::ReadOnly, DataType::U32)
                 .with_count(MACRO_TABLE_SLOTS),
             BufferDecl::storage(macro_name_words, 7, BufferAccess::ReadOnly, DataType::U32)
-                .with_count(MACRO_NAME_BYTES),
+                .with_count(0),
             BufferDecl::storage(macro_vals, 8, BufferAccess::ReadOnly, DataType::U32)
                 .with_count(MACRO_TABLE_SLOTS),
             BufferDecl::storage(macro_sizes, 9, BufferAccess::ReadOnly, DataType::U32)

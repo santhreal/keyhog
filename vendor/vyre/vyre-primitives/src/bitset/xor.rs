@@ -37,6 +37,7 @@ pub fn bitset_xor(lhs: &str, rhs: &str, out: &str, words: u32) -> Program {
 
 /// CPU reference.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref(lhs: &[u32], rhs: &[u32]) -> Vec<u32> {
     let mut out = Vec::new();
     cpu_ref_into(lhs, rhs, &mut out);
@@ -44,6 +45,7 @@ pub fn cpu_ref(lhs: &[u32], rhs: &[u32]) -> Vec<u32> {
 }
 
 /// CPU reference into caller-owned storage.
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref_into(lhs: &[u32], rhs: &[u32], out: &mut Vec<u32>) {
     out.clear();
     out.reserve(lhs.len().min(rhs.len()));
@@ -82,10 +84,7 @@ mod tests {
 
     #[test]
     fn single_word_all_bits() {
-        assert_eq!(
-            cpu_ref(&[0xFFFF_FFFF], &[0xFFFF_FFFF]),
-            vec![0x0000_0000]
-        );
+        assert_eq!(cpu_ref(&[0xFFFF_FFFF], &[0xFFFF_FFFF]), vec![0x0000_0000]);
     }
 
     #[test]

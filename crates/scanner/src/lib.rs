@@ -59,12 +59,12 @@ pub use multiline::fragment_cache;
 pub(crate) mod homoglyph;
 /// Internal scan pipeline orchestration.
 pub mod pipeline;
-/// Per-scan telemetry: always-on counters + opt-in `--dogfood` events.
-pub mod telemetry;
 /// Prefix trie for efficient keyword propagation.
 pub mod prefix_trie;
 pub(crate) mod probabilistic_gate;
 pub(crate) mod structured;
+/// Per-scan telemetry: always-on counters + opt-in `--dogfood` events.
+pub mod telemetry;
 /// Unicode normalization and homoglyph defense.
 pub mod unicode_hardening;
 

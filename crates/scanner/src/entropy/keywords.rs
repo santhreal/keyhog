@@ -280,11 +280,7 @@ fn looks_like_program_identifier(value: &str) -> bool {
         return false;
     }
     // snake_case (lowercase + underscore segments) — `my_long_helper_name`.
-    if value.contains('_')
-        && value
-            .chars()
-            .all(|ch| ch.is_ascii_lowercase() || ch == '_')
-    {
+    if value.contains('_') && value.chars().all(|ch| ch.is_ascii_lowercase() || ch == '_') {
         return true;
     }
     // camelCase / PascalCase — at least one internal lower→Upper
@@ -391,9 +387,7 @@ mod identifier_rejection_tests {
     fn real_secret_with_digits_not_flagged() {
         // AWS access keys, GitHub PATs, Slack tokens all contain digits
         // — the identifier check must not reject them.
-        assert!(!looks_like_program_identifier(
-            "AKIAIOSFODNN7EXAMPLE"
-        ));
+        assert!(!looks_like_program_identifier("AKIAIOSFODNN7EXAMPLE"));
         assert!(!looks_like_program_identifier(
             "ghp_K9pV2nL3xB5cD7eF8gH0iJ1kL2mN3oP4qR5sT"
         ));

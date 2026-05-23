@@ -46,10 +46,22 @@ use crate::optimizer::{vyre_pass, PassAnalysis, PassResult};
 pub struct BarrierCoalescePass;
 
 impl BarrierCoalescePass {
-    /// Skip programs that contain no consecutive-barrier pair.
+    /// Skip programs that contain no consecutive-barrier pair. Checks
+    /// both the top-level entry vec (transform fuses adjacent siblings
+    /// there too) and every nested If/Loop/Block/Region body.
     #[must_use]
     fn analyze_impl(program: &Program) -> PassAnalysis {
-        if program.entry().iter().any(has_consecutive_barriers) {
+        // Coalescing requires at least two barriers; even one Barrier
+        // is necessary. Bit-test the cached stats first.
+        if !program
+            .stats()
+            .has_any_node_kind(crate::ir::stats::NODE_KIND_BARRIER)
+        {
+            return PassAnalysis::SKIP;
+        }
+        if sequence_has_consecutive_barriers(program.entry())
+            || program.entry().iter().any(has_consecutive_barriers)
+        {
             PassAnalysis::RUN
         } else {
             PassAnalysis::SKIP
@@ -60,14 +72,11 @@ impl BarrierCoalescePass {
     /// barriers, replace them with the join.
     #[must_use]
     pub fn transform(program: Program) -> PassResult {
-        let scaffold = program.with_rewritten_entry(Vec::new());
         let mut changed = false;
-        let entry = coalesce_nodes(program.into_entry_vec(), &mut changed);
-        PassResult {
-            program: scaffold.with_rewritten_entry(entry),
-            changed,
-        }
-    }}
+        let program = program.map_entry(|entry| coalesce_nodes(entry, &mut changed));
+        PassResult { program, changed }
+    }
+}
 
 /// Recurse into the children of `node` and coalesce any internal
 /// barrier sequences. Parent-level coalescing is handled by `coalesce_nodes`.
@@ -137,7 +146,9 @@ fn push_coalesced(out: &mut Vec<Node>, node: Node, changed: &mut bool) {
         (Some(Node::Barrier { ordering: prev }), Node::Barrier { ordering: curr }) => {
             let joined = join_ordering(*prev, *curr);
             let new_last = Node::Barrier { ordering: joined };
-            *out.last_mut().expect("non-empty by match arm") = new_last;
+            *out.last_mut()
+                .unwrap_or_else(|| unreachable!("non-empty by match arm above (Some(Barrier))")) =
+                new_last;
             *changed = true;
         }
         _ => out.push(node),
@@ -156,10 +167,7 @@ fn has_consecutive_barriers(node: &Node) -> bool {
                 || then.iter().any(has_consecutive_barriers)
                 || otherwise.iter().any(has_consecutive_barriers)
         }
-        Node::Loop { body, .. } => {
-            sequence_has_consecutive_barriers(body) || body.iter().any(has_consecutive_barriers)
-        }
-        Node::Block(body) => {
+        Node::Loop { body, .. } | Node::Block(body) => {
             sequence_has_consecutive_barriers(body) || body.iter().any(has_consecutive_barriers)
         }
         Node::Region { body, .. } => {
@@ -178,7 +186,7 @@ fn sequence_has_consecutive_barriers(body: &[Node]) -> bool {
     })
 }
 
-/// Join two MemoryOrderings to the strictest of the pair. Mirrors the
+/// Join two `MemoryOrderings` to the strictest of the pair. Mirrors the
 /// composition rule used by `effect_lattice::SyncScope::join` and the
 /// per-ordering composition table documented in the module doc.
 fn join_ordering(a: MemoryOrdering, b: MemoryOrdering) -> MemoryOrdering {
@@ -186,8 +194,7 @@ fn join_ordering(a: MemoryOrdering, b: MemoryOrdering) -> MemoryOrdering {
     match (a, b) {
         (GridSync, _) | (_, GridSync) => GridSync,
         (SeqCst, _) | (_, SeqCst) => SeqCst,
-        (AcqRel, _) | (_, AcqRel) => AcqRel,
-        (Acquire, Release) | (Release, Acquire) => AcqRel,
+        (AcqRel, _) | (_, AcqRel) | (Acquire, Release) | (Release, Acquire) => AcqRel,
         (Acquire, Acquire) => Acquire,
         (Release, Release) => Release,
         (Relaxed, x) | (x, Relaxed) => x,

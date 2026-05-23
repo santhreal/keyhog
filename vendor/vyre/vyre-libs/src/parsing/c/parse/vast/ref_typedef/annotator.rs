@@ -9,7 +9,7 @@ pub(super) fn reference_c11_annotate_typedef_names_from_words(
 
     for node_idx in 0..node_count {
         let base = node_idx * VAST_NODE_STRIDE_U32 as usize;
-        let raw_kind = raw_vast_nodes.get(base).copied().unwrap_or_default();
+        let raw_kind = kind_at(&raw_vast_nodes, node_idx);
         let name = identifier_lexeme(&raw_vast_nodes, node_idx, haystack);
         let scope_open = scope_open_before(&raw_vast_nodes, node_idx);
         let mut flags = 0u32;

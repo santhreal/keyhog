@@ -99,6 +99,125 @@ pub fn walk_nodes(program: &Program, mut f: impl FnMut(&Node)) {
     }
 }
 
+fn push_node_children_and_exprs<'a>(
+    node: &'a Node,
+    node_stack: &mut SmallVec<[&'a Node; 128]>,
+    expr_stack: &mut SmallVec<[&'a Expr; 128]>,
+) {
+    match node {
+        Node::Let { value, .. } | Node::Assign { value, .. } => {
+            expr_stack.push(value);
+        }
+        Node::Store { index, value, .. } => {
+            expr_stack.push(value);
+            expr_stack.push(index);
+        }
+        Node::If {
+            cond,
+            then,
+            otherwise,
+        } => {
+            for n in otherwise.iter().rev() {
+                node_stack.push(n);
+            }
+            for n in then.iter().rev() {
+                node_stack.push(n);
+            }
+            expr_stack.push(cond);
+        }
+        Node::Loop { from, to, body, .. } => {
+            for n in body.iter().rev() {
+                node_stack.push(n);
+            }
+            expr_stack.push(to);
+            expr_stack.push(from);
+        }
+        Node::Block(nodes) => {
+            for n in nodes.iter().rev() {
+                node_stack.push(n);
+            }
+        }
+        Node::Region { body, .. } => {
+            for n in body.iter().rev() {
+                node_stack.push(n);
+            }
+        }
+        Node::Return
+        | Node::Barrier { .. }
+        | Node::IndirectDispatch { .. }
+        | Node::AsyncLoad { .. }
+        | Node::AsyncStore { .. }
+        | Node::AsyncWait { .. }
+        | Node::Trap { .. }
+        | Node::Resume { .. }
+        | Node::Opaque(_) => {}
+    }
+}
+
+fn drain_expr_stack<'a>(
+    expr_stack: &mut SmallVec<[&'a Expr; 128]>,
+    mut visit: impl FnMut(&'a Expr),
+) {
+    while let Some(expr) = expr_stack.pop() {
+        visit(expr);
+        match expr {
+            Expr::Load { index, .. } => expr_stack.push(index),
+            Expr::LitU32(_)
+            | Expr::LitI32(_)
+            | Expr::LitF32(_)
+            | Expr::LitBool(_)
+            | Expr::Var(_)
+            | Expr::BufLen { .. }
+            | Expr::InvocationId { .. }
+            | Expr::WorkgroupId { .. }
+            | Expr::LocalId { .. }
+            | Expr::SubgroupLocalId
+            | Expr::SubgroupSize
+            | Expr::SubgroupBallot { .. }
+            | Expr::SubgroupShuffle { .. }
+            | Expr::SubgroupAdd { .. }
+            | Expr::Opaque(_) => {}
+            Expr::BinOp { left, right, .. } => {
+                expr_stack.push(right);
+                expr_stack.push(left);
+            }
+            Expr::Fma { a, b, c, .. } => {
+                expr_stack.push(c);
+                expr_stack.push(b);
+                expr_stack.push(a);
+            }
+            Expr::UnOp { operand, .. } => expr_stack.push(operand),
+            Expr::Call { args, .. } => {
+                for arg in args.iter().rev() {
+                    expr_stack.push(arg);
+                }
+            }
+            Expr::Select {
+                cond,
+                true_val,
+                false_val,
+            } => {
+                expr_stack.push(false_val);
+                expr_stack.push(true_val);
+                expr_stack.push(cond);
+            }
+            Expr::Cast { value, .. } => expr_stack.push(value),
+            Expr::Atomic {
+                index,
+                expected,
+                value,
+                ..
+            } => {
+                expr_stack.push(value);
+                if let Some(expected) = expected {
+                    expr_stack.push(expected);
+                }
+                expr_stack.push(index);
+            }
+        }
+    }
+}
+
 /// Walk all expressions in a program, calling `f` on each.
 ///
 /// The traversal visits every `Expr` nested inside every node, again using
@@ -128,113 +247,8 @@ pub fn walk_exprs(program: &Program, mut f: impl FnMut(&Expr)) {
     expr_stack.reserve(program.entry().len().saturating_mul(2));
 
     while let Some(node) = node_stack.pop() {
-        match node {
-            Node::Let { value, .. } | Node::Assign { value, .. } => {
-                expr_stack.push(value);
-            }
-            Node::Store { index, value, .. } => {
-                expr_stack.push(value);
-                expr_stack.push(index);
-            }
-            Node::If {
-                cond,
-                then,
-                otherwise,
-            } => {
-                for n in otherwise.iter().rev() {
-                    node_stack.push(n);
-                }
-                for n in then.iter().rev() {
-                    node_stack.push(n);
-                }
-                expr_stack.push(cond);
-            }
-            Node::Loop { from, to, body, .. } => {
-                for n in body.iter().rev() {
-                    node_stack.push(n);
-                }
-                expr_stack.push(to);
-                expr_stack.push(from);
-            }
-            Node::Block(nodes) => {
-                for n in nodes.iter().rev() {
-                    node_stack.push(n);
-                }
-            }
-            Node::Region { body, .. } => {
-                for n in body.iter().rev() {
-                    node_stack.push(n);
-                }
-            }
-            Node::Return
-            | Node::Barrier { .. }
-            | Node::IndirectDispatch { .. }
-            | Node::AsyncLoad { .. }
-            | Node::AsyncStore { .. }
-            | Node::AsyncWait { .. }
-            | Node::Trap { .. }
-            | Node::Resume { .. }
-            | Node::Opaque(_) => {}
-        }
-
-        while let Some(expr) = expr_stack.pop() {
-            f(expr);
-            match expr {
-                Expr::LitU32(_)
-                | Expr::LitI32(_)
-                | Expr::LitF32(_)
-                | Expr::LitBool(_)
-                | Expr::Var(_) => {}
-                Expr::Load { index, .. } => expr_stack.push(index),
-                Expr::BufLen { .. } => {}
-                Expr::InvocationId { .. }
-                | Expr::WorkgroupId { .. }
-                | Expr::LocalId { .. }
-                | Expr::SubgroupLocalId
-                | Expr::SubgroupSize
-                | Expr::SubgroupBallot { .. }
-                | Expr::SubgroupShuffle { .. }
-                | Expr::SubgroupAdd { .. } => {}
-                Expr::Opaque(_) => {}
-                Expr::BinOp { left, right, .. } => {
-                    expr_stack.push(right);
-                    expr_stack.push(left);
-                }
-                Expr::Fma { a, b, c, .. } => {
-                    expr_stack.push(c);
-                    expr_stack.push(b);
-                    expr_stack.push(a);
-                }
-                Expr::UnOp { operand, .. } => expr_stack.push(operand),
-                Expr::Call { args, .. } => {
-                    for arg in args.iter().rev() {
-                        expr_stack.push(arg);
-                    }
-                }
-                Expr::Select {
-                    cond,
-                    true_val,
-                    false_val,
-                } => {
-                    expr_stack.push(false_val);
-                    expr_stack.push(true_val);
-                    expr_stack.push(cond);
-                }
-                Expr::Cast { value, .. } => expr_stack.push(value),
-                Expr::Atomic {
-                    index,
-                    expected,
-                    value,
-                    ..
-                } => {
-                    expr_stack.push(value);
-                    if let Some(expected) = expected {
-                        expr_stack.push(expected);
-                    }
-                    expr_stack.push(index);
-                }
-            }
-        }
+        push_node_children_and_exprs(node, &mut node_stack, &mut expr_stack);
+        drain_expr_stack(&mut expr_stack, &mut f);
     }
 }
 
@@ -350,113 +364,8 @@ pub fn walk_nodes_and_exprs<V: NodeVisitor + ExprVisitor>(program: &Program, vis
 
     while let Some(node) = node_stack.pop() {
         visitor.visit_node(node);
-        match node {
-            Node::Let { value, .. } | Node::Assign { value, .. } => {
-                expr_stack.push(value);
-            }
-            Node::Store { index, value, .. } => {
-                expr_stack.push(value);
-                expr_stack.push(index);
-            }
-            Node::If {
-                cond,
-                then,
-                otherwise,
-            } => {
-                for n in otherwise.iter().rev() {
-                    node_stack.push(n);
-                }
-                for n in then.iter().rev() {
-                    node_stack.push(n);
-                }
-                expr_stack.push(cond);
-            }
-            Node::Loop { from, to, body, .. } => {
-                for n in body.iter().rev() {
-                    node_stack.push(n);
-                }
-                expr_stack.push(to);
-                expr_stack.push(from);
-            }
-            Node::Block(nodes) => {
-                for n in nodes.iter().rev() {
-                    node_stack.push(n);
-                }
-            }
-            Node::Region { body, .. } => {
-                for n in body.iter().rev() {
-                    node_stack.push(n);
-                }
-            }
-            Node::Return
-            | Node::Barrier { .. }
-            | Node::IndirectDispatch { .. }
-            | Node::AsyncLoad { .. }
-            | Node::AsyncStore { .. }
-            | Node::AsyncWait { .. }
-            | Node::Trap { .. }
-            | Node::Resume { .. }
-            | Node::Opaque(_) => {}
-        }
-
-        while let Some(expr) = expr_stack.pop() {
-            visitor.visit_expr(expr);
-            match expr {
-                Expr::LitU32(_)
-                | Expr::LitI32(_)
-                | Expr::LitF32(_)
-                | Expr::LitBool(_)
-                | Expr::Var(_) => {}
-                Expr::Load { index, .. } => expr_stack.push(index),
-                Expr::BufLen { .. } => {}
-                Expr::InvocationId { .. }
-                | Expr::WorkgroupId { .. }
-                | Expr::LocalId { .. }
-                | Expr::SubgroupLocalId
-                | Expr::SubgroupSize
-                | Expr::SubgroupBallot { .. }
-                | Expr::SubgroupShuffle { .. }
-                | Expr::SubgroupAdd { .. } => {}
-                Expr::Opaque(_) => {}
-                Expr::BinOp { left, right, .. } => {
-                    expr_stack.push(right);
-                    expr_stack.push(left);
-                }
-                Expr::Fma { a, b, c, .. } => {
-                    expr_stack.push(c);
-                    expr_stack.push(b);
-                    expr_stack.push(a);
-                }
-                Expr::UnOp { operand, .. } => expr_stack.push(operand),
-                Expr::Call { args, .. } => {
-                    for arg in args.iter().rev() {
-                        expr_stack.push(arg);
-                    }
-                }
-                Expr::Select {
-                    cond,
-                    true_val,
-                    false_val,
-                } => {
-                    expr_stack.push(false_val);
-                    expr_stack.push(true_val);
-                    expr_stack.push(cond);
-                }
-                Expr::Cast { value, .. } => expr_stack.push(value),
-                Expr::Atomic {
-                    index,
-                    expected,
-                    value,
-                    ..
-                } => {
-                    expr_stack.push(value);
-                    if let Some(expected) = expected {
-                        expr_stack.push(expected);
-                    }
-                    expr_stack.push(index);
-                }
-            }
-        }
+        push_node_children_and_exprs(node, &mut node_stack, &mut expr_stack);
+        drain_expr_stack(&mut expr_stack, |expr| visitor.visit_expr(expr));
     }
 }
 
@@ -481,40 +390,16 @@ pub fn walk_nodes_and_exprs<V: NodeVisitor + ExprVisitor>(program: &Program, vis
 #[must_use]
 #[inline]
 pub fn referenced_buffers(program: &Program) -> HashSet<Ident> {
-    struct Collector<'a> {
-        names: &'a mut HashSet<Ident>,
-    }
-
-    impl NodeVisitor for Collector<'_> {
-        fn visit_node(&mut self, node: &Node) {
-            match node {
-                Node::Store { buffer, .. } => {
-                    self.names.insert(buffer.clone());
-                }
-                Node::IndirectDispatch { count_buffer, .. } => {
-                    self.names.insert(count_buffer.clone());
-                }
-                _ => {}
-            }
-        }
-    }
-
-    impl ExprVisitor for Collector<'_> {
-        fn visit_expr(&mut self, expr: &Expr) {
-            match expr {
-                Expr::Load { buffer, .. }
-                | Expr::BufLen { buffer }
-                | Expr::Atomic { buffer, .. } => {
-                    self.names.insert(buffer.clone());
-                }
-                _ => {}
-            }
-        }
-    }
-
+    // ProgramFacts::buffer_refs already enumerates every buffer-touching
+    // node and expression in the program (Store/IndirectDispatch/AsyncLoad/
+    // AsyncStore plus Load/BufLen/Atomic via the same SoA walk). Reuse the
+    // OnceLock-cached facts instead of re-walking the entire tree with a
+    // dedicated NodeVisitor + ExprVisitor pair.
+    let facts = crate::optimizer::program_soa::ProgramFacts::build_cached(program);
     let mut names = HashSet::with_capacity(program.buffers().len());
-    let mut collector = Collector { names: &mut names };
-    walk_nodes_and_exprs(program, &mut collector);
+    for (_, name, _) in facts.buffer_refs() {
+        names.insert(name.clone());
+    }
     names
 }
 
@@ -546,7 +431,16 @@ pub fn referenced_buffers(program: &Program) -> HashSet<Ident> {
 #[must_use]
 #[inline]
 pub fn collect_call_op_ids(program: &Program) -> Vec<Arc<str>> {
-    let mut op_ids = Vec::with_capacity(program.entry().len());
+    // Cached call_count is the exact number of Expr::Call sites in
+    // the program. When it is zero, skip the entire expression walk.
+    // When non-zero, pre-size the output to the exact count so we
+    // never resize during the walk.
+    let stats = program.stats();
+    let call_count = stats.call_count as usize;
+    if call_count == 0 {
+        return Vec::new();
+    }
+    let mut op_ids = Vec::with_capacity(call_count);
     walk_exprs(program, |expr| {
         if let Expr::Call { op_id, .. } = expr {
             op_ids.push(op_id.shared_text());
@@ -562,6 +456,9 @@ mod tests {
     use proptest::prelude::*;
 
     /// Legacy double-walk implementation for equivalence verification.
+    /// Mirrors every buffer-touching site that ProgramFacts::buffer_refs
+    /// records so the equivalence proptest stays sound even when arb_node
+    /// is extended with Async / IndirectDispatch variants.
     fn referenced_buffers_legacy(program: &Program) -> HashSet<Ident> {
         let mut names = HashSet::new();
         walk_exprs(program, |expr| match expr {
@@ -576,6 +473,19 @@ mod tests {
             }
             Node::IndirectDispatch { count_buffer, .. } => {
                 names.insert(count_buffer.clone());
+            }
+            Node::AsyncLoad {
+                source,
+                destination,
+                ..
+            }
+            | Node::AsyncStore {
+                source,
+                destination,
+                ..
+            } => {
+                names.insert(source.clone());
+                names.insert(destination.clone());
             }
             _ => {}
         });

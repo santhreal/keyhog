@@ -16,7 +16,7 @@ pub mod ziftsieve;
 pub mod streaming;
 
 pub use base64::{base64_decode, base64_decode_then_aho_corasick, BASE64_DECODE_TABLE_BUFFER};
-pub use encodex::{encodex_cpu, encodex_gpu, encodex_reference};
+pub use encodex::{encodex_gpu, encodex_reference};
 pub use hex::{
     hex_decode, hex_decode_table, hex_decode_then_aho_corasick, HEX_DECODE_TABLE_BUFFER,
 };
@@ -25,6 +25,4 @@ pub use inflate::{
     inflate_stored_block_then_aho_corasick, inflate_stored_block_tiled_then_aho_corasick,
     inflate_then_aho_corasick,
 };
-pub use ziftsieve::{
-    ziftsieve_cpu_extract_literals, ziftsieve_gpu, ziftsieve_reference_extract_literals,
-};
+pub use ziftsieve::{ziftsieve_gpu, ziftsieve_reference_extract_literals};

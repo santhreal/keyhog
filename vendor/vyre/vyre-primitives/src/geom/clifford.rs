@@ -70,7 +70,7 @@ pub fn clifford2_product(lhs: &str, rhs: &str, out: &str, n_pairs: u32) -> Progr
 
     let load_l = |off: u32| Expr::load(lhs, Expr::add(base.clone(), Expr::u32(off)));
     let load_r = |off: u32| Expr::load(rhs, Expr::add(base.clone(), Expr::u32(off)));
-    let mul_shr = |a: Expr, b: Expr| Expr::shr(Expr::mul(a, b), Expr::u32(16));
+    let mul_shr = crate::fixed_mul_16_16_expr;
 
     // out_s = a_s b_s + a_1 b_1 + a_2 b_2 - a_12 b_12
     let out_s = Expr::sub(
@@ -183,6 +183,7 @@ impl Cl2Mv {
 
 /// CPU reference for the Cl(2, 0) geometric product.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn clifford2_product_cpu(a: Cl2Mv, b: Cl2Mv) -> Cl2Mv {
     Cl2Mv {
         s: a.s * b.s + a.e1 * b.e1 + a.e2 * b.e2 - a.e12 * b.e12,
@@ -190,6 +191,16 @@ pub fn clifford2_product_cpu(a: Cl2Mv, b: Cl2Mv) -> Cl2Mv {
         e2: a.s * b.e2 + a.e2 * b.s + a.e1 * b.e12 - a.e12 * b.e1,
         e12: a.s * b.e12 + a.e12 * b.s + a.e1 * b.e2 - a.e2 * b.e1,
     }
+}
+
+#[cfg(feature = "inventory-registry")]
+inventory::submit! {
+    crate::harness::OpEntry::new(
+        OP_ID,
+        || clifford2_product("lhs", "rhs", "out", 2),
+        None,
+        None,
+    )
 }
 
 #[cfg(test)]

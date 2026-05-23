@@ -71,11 +71,12 @@ impl WgpuBackend {
         let persistent_pool = self.current_persistent_pool().stats();
         let pipeline_cache_hits = self.pipeline_cache.hits();
         let pipeline_cache_misses = self.pipeline_cache.misses();
-        let pipeline_cache_lookups = pipeline_cache_hits.saturating_add(pipeline_cache_misses);
-        let pipeline_cache_hit_rate = if pipeline_cache_lookups == 0 {
+        let pipeline_cache_lookup_rate_denominator =
+            pipeline_cache_hits as f64 + pipeline_cache_misses as f64;
+        let pipeline_cache_hit_rate = if pipeline_cache_lookup_rate_denominator == 0.0 {
             0.0
         } else {
-            pipeline_cache_hits as f64 / pipeline_cache_lookups as f64
+            pipeline_cache_hits as f64 / pipeline_cache_lookup_rate_denominator
         };
         WgpuBackendStats {
             adapter_name: Arc::clone(&self.adapter_name),

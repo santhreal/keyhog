@@ -93,6 +93,7 @@ pub fn workgroup_any_u32(values: &str, out: &str, count: u32) -> Program {
 
 /// CPU reference for [`workgroup_any_u32`].
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref(values: &[u32]) -> u32 {
     values.iter().fold(0u32, |acc, value| acc | value)
 }

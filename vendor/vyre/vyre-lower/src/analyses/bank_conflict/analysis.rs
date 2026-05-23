@@ -24,8 +24,8 @@
 //! 6. Anything else                        → Unknown.
 
 use super::report::{BankAccessSite, BankConflictKind, BankConflictReport};
-use crate::analyses::AccessKind;
 use super::DEFAULT_BANK_COUNT;
+use crate::analyses::AccessKind;
 use crate::{KernelBody, KernelDescriptor, KernelOpKind, LiteralValue, MemoryClass};
 use rustc_hash::FxHashMap;
 use vyre_foundation::ir::BinOp;
@@ -236,10 +236,12 @@ fn classify_mul(
 }
 
 fn literal_operand_u32(body: &KernelBody, operand_id: u32) -> Option<u32> {
-    body.literals.get(operand_id as usize).and_then(|literal| match literal {
-        LiteralValue::U32(value) => Some(*value),
-        _ => None,
-    })
+    body.literals
+        .get(operand_id as usize)
+        .and_then(|literal| match literal {
+            LiteralValue::U32(value) => Some(*value),
+            _ => None,
+        })
 }
 
 fn gcd_u32(a: u32, b: u32) -> u32 {

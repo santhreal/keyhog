@@ -1,6 +1,6 @@
 //! IO subsystem — GPU↔runtime DMA request queue for the persistent megakernel.
 //!
-//! Audit-fix A32 split io.rs into per-concern files:
+//! Module ownership:
 //!  - `mod.rs`: doc + constants + IoRequest/IoCompletion + word/op/status modules
 //!  - `queue.rs`: [`MegakernelIoQueue`] + view
 //!  - `poll.rs`: poll/claim/peek surface

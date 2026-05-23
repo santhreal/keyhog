@@ -34,15 +34,30 @@ use std::sync::Arc;
 #[vyre_pass(
     name = "region_fusion_hint",
     requires = [],
-    invalidates = []
+    invalidates = [],
+    phase = "cleanup",
+    boundary_class = "abi_preserving",
+    cost_model_family = "fusion"
 )]
 pub struct RegionFusionHintPass;
 
 impl RegionFusionHintPass {
-    /// Skip programs without a candidate Region pair.
+    /// Skip programs without a candidate Region pair. Checks both the
+    /// top-level entry vec (transform fuses adjacent siblings there too)
+    /// and every nested If/Loop/Block/Region body.
     #[must_use]
     fn analyze_impl(program: &Program) -> PassAnalysis {
-        if program.entry().iter().any(|n| has_candidate_pair(n)) {
+        // Pair-fusion needs at least two Regions; even one Region is
+        // necessary. Bit-test cached stats first.
+        if !program
+            .stats()
+            .has_any_node_kind(crate::ir::stats::NODE_KIND_REGION)
+        {
+            return PassAnalysis::SKIP;
+        }
+        if entry_has_top_level_candidate_pair(program.entry())
+            || program.entry().iter().any(has_candidate_pair)
+        {
             PassAnalysis::RUN
         } else {
             PassAnalysis::SKIP
@@ -52,14 +67,11 @@ impl RegionFusionHintPass {
     /// Walk the entry tree and fuse every matching Region pair.
     #[must_use]
     pub fn transform(program: Program) -> PassResult {
-        let scaffold = program.with_rewritten_entry(Vec::new());
         let mut changed = false;
-        let entry: Vec<Node> = fuse_in_body(program.into_entry_vec(), &mut changed);
-        PassResult {
-            program: scaffold.with_rewritten_entry(entry),
-            changed,
-        }
-    }}
+        let program = program.map_entry(|entry| fuse_in_body(entry, &mut changed));
+        PassResult { program, changed }
+    }
+}
 
 /// Built-in fusion table. Adding a new fusion candidate requires
 /// (1) shipping the fused libs primitive, (2) adding the (left,
@@ -121,7 +133,8 @@ fn fuse_in_body(body: Vec<Node>, changed: &mut bool) -> Vec<Node> {
         else {
             unreachable!("peek confirmed Region above");
         };
-        let fused_gen = lookup_fused(generator.as_str(), gen_b.as_str()).unwrap();
+        let fused_gen = lookup_fused(generator.as_str(), gen_b.as_str())
+            .unwrap_or_else(|| unreachable!("has_candidate_pair confirmed a fusable pair above"));
         let mut fused_body: Vec<Node> = match Arc::try_unwrap(body) {
             Ok(v) => v,
             Err(arc) => (*arc).clone(),
@@ -181,6 +194,19 @@ fn recurse(node: Node, changed: &mut bool) -> Node {
         }
         other => other,
     }
+}
+
+fn entry_has_top_level_candidate_pair(entry: &[Node]) -> bool {
+    for window in entry.windows(2) {
+        if let (Node::Region { generator: a, .. }, Node::Region { generator: b, .. }) =
+            (&window[0], &window[1])
+        {
+            if lookup_fused(a.as_str(), b.as_str()).is_some() {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 fn has_candidate_pair(node: &Node) -> bool {
@@ -258,9 +284,9 @@ mod tests {
         BufferDecl::storage("buf", 0, BufferAccess::ReadWrite, DataType::U32).with_count(4)
     }
 
-    fn region(gen: &str, body: Vec<Node>) -> Node {
+    fn region(generator_name: &str, body: Vec<Node>) -> Node {
         Node::Region {
-            generator: Ident::from(gen),
+            generator: Ident::from(generator_name),
             source_region: None,
             body: Arc::new(body),
         }
@@ -377,6 +403,25 @@ mod tests {
         assert!(
             gens.iter().any(|g| g == "vyre-libs::nn::linear_relu"),
             "generators: {gens:?}"
+        );
+    }
+
+    /// Two adjacent fusable Regions sitting at the TOP LEVEL of the
+    /// entry Vec must trip analyze. The previous shallow check ran
+    /// has_candidate_pair on each entry node individually, never
+    /// looking at sibling pairs in the entry vec, so analyze SKIPPed
+    /// while transform would happily fuse them.
+    #[test]
+    fn analyze_runs_for_top_level_adjacent_fusable_pair() {
+        let entry = vec![
+            region("vyre-libs::nn::linear", vec![Node::Return]),
+            region("vyre-libs::nn::relu", vec![Node::Return]),
+        ];
+        let prog = program(entry);
+        assert_eq!(
+            crate::optimizer::ProgramPass::analyze(&RegionFusionHintPass, &prog),
+            PassAnalysis::RUN,
+            "top-level adjacent fusable Region pair must trigger analyze"
         );
     }
 }

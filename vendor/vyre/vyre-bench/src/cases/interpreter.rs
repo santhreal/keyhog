@@ -181,15 +181,9 @@ fn bytecode_program(instance_count: u32, instrs_per_instance: u32) -> Program {
                         body: vec![
                             Node::let_bind(
                                 "instr",
-                                Expr::load(
-                                    "instrs",
-                                    Expr::add(Expr::var("base"), Expr::var("pc")),
-                                ),
+                                Expr::load("instrs", Expr::add(Expr::var("base"), Expr::var("pc"))),
                             ),
-                            Node::let_bind(
-                                "op",
-                                Expr::bitand(Expr::var("instr"), Expr::u32(0xFF)),
-                            ),
+                            Node::let_bind("op", Expr::bitand(Expr::var("instr"), Expr::u32(0xFF))),
                             Node::let_bind("imm", Expr::shr(Expr::var("instr"), Expr::u32(8))),
                             Node::if_then(
                                 Expr::eq(Expr::var("op"), Expr::u32(OP_PUSH)),
@@ -203,10 +197,7 @@ fn bytecode_program(instance_count: u32, instrs_per_instance: u32) -> Program {
                             Node::if_then(
                                 Expr::eq(Expr::var("op"), Expr::u32(OP_ADD)),
                                 vec![
-                                    Node::assign(
-                                        "s0",
-                                        Expr::add(Expr::var("s0"), Expr::var("s1")),
-                                    ),
+                                    Node::assign("s0", Expr::add(Expr::var("s0"), Expr::var("s1"))),
                                     Node::assign("s1", Expr::var("s2")),
                                     Node::assign("s2", Expr::var("s3")),
                                     Node::assign("s3", Expr::u32(0)),
@@ -215,10 +206,7 @@ fn bytecode_program(instance_count: u32, instrs_per_instance: u32) -> Program {
                             Node::if_then(
                                 Expr::eq(Expr::var("op"), Expr::u32(OP_MUL)),
                                 vec![
-                                    Node::assign(
-                                        "s0",
-                                        Expr::mul(Expr::var("s0"), Expr::var("s1")),
-                                    ),
+                                    Node::assign("s0", Expr::mul(Expr::var("s0"), Expr::var("s1"))),
                                     Node::assign("s1", Expr::var("s2")),
                                     Node::assign("s2", Expr::var("s3")),
                                     Node::assign("s3", Expr::u32(0)),

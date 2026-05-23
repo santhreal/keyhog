@@ -81,6 +81,7 @@ pub fn gather(src: &str, indices: &str, dst: &str, count: u32) -> Program {
 /// Returns a `Vec<u32>` of length `indices.len()`. Out-of-range
 /// indices produce zero, matching the guarded GPU load contract.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref(src: &[u32], indices: &[u32]) -> Vec<u32> {
     let mut out = Vec::new();
     cpu_ref_into(src, indices, &mut out);
@@ -88,6 +89,7 @@ pub fn cpu_ref(src: &[u32], indices: &[u32]) -> Vec<u32> {
 }
 
 /// CPU reference into caller-owned storage.
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref_into(src: &[u32], indices: &[u32], out: &mut Vec<u32>) {
     out.clear();
     out.reserve(indices.len());

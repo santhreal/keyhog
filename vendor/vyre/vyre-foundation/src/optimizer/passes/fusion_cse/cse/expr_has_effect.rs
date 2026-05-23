@@ -28,10 +28,10 @@ pub fn expr_has_effect(expr: &Expr) -> bool {
         | Expr::WorkgroupId { .. }
         | Expr::LocalId { .. }
         | Expr::SubgroupLocalId
-        | Expr::SubgroupSize => false,
-        &Expr::SubgroupBallot { .. }
-        | &Expr::SubgroupShuffle { .. }
-        | &Expr::SubgroupAdd { .. } => false,
+        | Expr::SubgroupSize
+        | Expr::SubgroupBallot { .. }
+        | Expr::SubgroupShuffle { .. }
+        | Expr::SubgroupAdd { .. } => false,
         Expr::Opaque(extension) => !extension.cse_safe(),
     }
 }

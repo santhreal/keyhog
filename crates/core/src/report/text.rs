@@ -262,7 +262,11 @@ impl<W: Write + Send> Reporter for TextReporter<W> {
         if self.count == 0 {
             self.print_header()?;
             if self.example_suppressions > 0 {
-                let plural = if self.example_suppressions == 1 { "" } else { "s" };
+                let plural = if self.example_suppressions == 1 {
+                    ""
+                } else {
+                    "s"
+                };
                 let msg = format!(
                     "No real secrets — but {} example/test key{} suppressed. Pass --dogfood to see them.",
                     self.example_suppressions, plural
@@ -422,7 +426,10 @@ mod tests {
         r.finish().unwrap();
         let s = String::from_utf8(buf).unwrap();
         assert!(s.contains("Your code is clean"), "got: {s}");
-        assert!(!s.contains("example/test"), "must not mention suppressions when there were none: {s}");
+        assert!(
+            !s.contains("example/test"),
+            "must not mention suppressions when there were none: {s}"
+        );
     }
 
     #[test]
@@ -436,7 +443,10 @@ mod tests {
             s.contains("6 example/test keys suppressed"),
             "summary must surface the suppression count: {s}"
         );
-        assert!(s.contains("--dogfood"), "summary should point at --dogfood: {s}");
+        assert!(
+            s.contains("--dogfood"),
+            "summary should point at --dogfood: {s}"
+        );
         assert!(
             !s.contains("Your code is clean"),
             "must not claim cleanliness when matches were silenced: {s}"

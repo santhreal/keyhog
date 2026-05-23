@@ -226,11 +226,7 @@ async fn scan_text(state: &ServerState, path: Option<String>, text: String) -> R
     }
 }
 
-async fn scan_path(
-    state: &ServerState,
-    path: String,
-    working_dir: Option<String>,
-) -> Response {
+async fn scan_path(state: &ServerState, path: String, working_dir: Option<String>) -> Response {
     let resolved = if Path::new(&path).is_absolute() {
         PathBuf::from(&path)
     } else if let Some(wd) = working_dir.as_deref() {

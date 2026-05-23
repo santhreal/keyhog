@@ -14,7 +14,7 @@
 //! - Live-range analysis (combine with op order to derive intervals).
 //! - Soundness checks: assert no use precedes its def.
 
-use std::collections::BTreeMap;
+use rustc_hash::FxHashMap;
 
 use serde::{Deserialize, Serialize};
 
@@ -38,7 +38,7 @@ pub struct UseSite {
 /// IR.)
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct PerBodyChains {
-    pub uses: BTreeMap<u32, Vec<UseSite>>,
+    pub uses: FxHashMap<u32, Vec<UseSite>>,
     /// Path to this body (empty = top-level).
     pub body_path: Vec<usize>,
     /// Total number of result-ids produced by this body's ops.
@@ -80,7 +80,7 @@ pub fn dead_by_no_use(desc: &KernelDescriptor) -> Vec<(Vec<usize>, u32)> {
 
 fn walk(body: &KernelBody, path: &mut Vec<usize>, report: &mut DefUseReport) {
     let mut chains = PerBodyChains {
-        uses: BTreeMap::new(),
+        uses: FxHashMap::default(),
         body_path: path.clone(),
         def_count: 0,
         use_count: 0,

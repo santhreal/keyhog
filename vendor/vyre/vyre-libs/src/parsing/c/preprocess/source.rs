@@ -1,8 +1,11 @@
 //! Source-manager ABI for C `#include` and GNU `#include_next`.
 
+#[cfg(any(test, feature = "cpu-parity"))]
 use crate::parsing::c::lex::tokens::TOK_PREPROC;
+#[cfg(any(test, feature = "cpu-parity"))]
+use crate::parsing::c::preprocess::c_logical_directive_len;
 use crate::parsing::c::preprocess::{
-    c_logical_directive_len, c_translation_phase_line_splice, try_classify_preprocessor_directive,
+    c_directive_payload, c_translation_phase_line_splice, try_classify_preprocessor_directive,
     CPreprocessorDirectiveKind, CPreprocessorError,
 };
 
@@ -100,10 +103,10 @@ pub fn parse_c_include_request(
         return Ok(None);
     }
 
-    let payload = spliced
-        .bytes
-        .get(directive.payload_start..directive.logical_end)
-        .unwrap_or_default();
+    let payload = c_directive_payload(&spliced.bytes, directive).map_err(|mut err| {
+        err.offset = directive_offset + spliced.original_offset(err.offset);
+        err
+    })?;
     let (style, spelling, payload_rel) =
         parse_header_name_payload(payload).map_err(|mut err| {
             err.offset =
@@ -127,6 +130,10 @@ pub fn parse_c_include_request(
 /// Returns a diagnostic when token streams are inconsistent, a directive span
 /// is invalid, an include payload is malformed, or the source manager rejects
 /// a load.
+#[deprecated(
+    note = "CPU reference oracle only; production include loading must use the GPU preprocessor pipeline source-manager path"
+)]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn reference_c_preprocessor_load_includes<M: CPreprocessorSourceManager>(
     tok_types: &[u32],
     tok_starts: &[u32],

@@ -56,7 +56,10 @@ use rustc_hash::FxHashSet;
 #[vyre_pass(
     name = "loop_licm",
     requires = [],
-    invalidates = []
+    invalidates = [],
+    phase = "loop",
+    boundary_class = "abi_preserving",
+    cost_model_family = "loop"
 )]
 pub struct LoopLicm;
 
@@ -65,6 +68,13 @@ impl LoopLicm {
     /// whose first nested Let could be hoisted.
     #[must_use]
     fn analyze_impl(program: &Program) -> PassAnalysis {
+        // Hoisting requires both a Loop AND a Let inside it. Either
+        // missing → recursive walk would find nothing.
+        use crate::ir::stats::{NODE_KIND_LET, NODE_KIND_LOOP};
+        let stats = program.stats();
+        if !stats.has_any_node_kind(NODE_KIND_LOOP) || !stats.has_any_node_kind(NODE_KIND_LET) {
+            return PassAnalysis::SKIP;
+        }
         if program.entry().iter().any(has_hoistable_let_in_any_loop) {
             PassAnalysis::RUN
         } else {
@@ -76,14 +86,11 @@ impl LoopLicm {
     /// `Node::Loop` whose interior has at least one hoistable Let.
     #[must_use]
     pub fn transform(program: Program) -> PassResult {
-        let scaffold = program.with_rewritten_entry(Vec::new());
         let mut changed = false;
-        let entry: Vec<Node> = hoist_in_body(program.into_entry_vec(), &mut changed);
-        PassResult {
-            program: scaffold.with_rewritten_entry(entry),
-            changed,
-        }
-    }}
+        let program = program.map_entry(|entry| hoist_in_body(entry, &mut changed));
+        PassResult { program, changed }
+    }
+}
 
 /// Walk one container body, recursing into every nested container,
 /// and hoist invariant Lets out of every `Node::Loop` we find.
@@ -158,6 +165,8 @@ fn split_invariant_lets(
     let mut mutated: FxHashSet<Ident> = FxHashSet::default();
     mutated.insert(loop_var.clone());
     collect_assigned_and_let_bound_names(&body, &mut mutated);
+    let mut assigned: FxHashSet<Ident> = FxHashSet::default();
+    collect_assigned_names(&body, &mut assigned);
 
     // Names that have been hoisted so far in this pass; references to
     // them from later Lets in the body are still safe to hoist.
@@ -167,7 +176,11 @@ fn split_invariant_lets(
         match node {
             Node::Let { name, value } => {
                 let any_dependency_mutated = expr_references_any(&value, &mutated);
-                if !any_dependency_mutated && expr_is_observably_free(&value) {
+                let name_reassigned_in_loop = assigned.contains(&name);
+                if !name_reassigned_in_loop
+                    && !any_dependency_mutated
+                    && expr_is_observably_free(&value)
+                {
                     *changed = true;
                     // The hoisted Let no longer counts as
                     // loop-mutated; the in-body references to `name`
@@ -211,7 +224,96 @@ fn collect_assigned_and_let_bound_names(nodes: &[Node], out: &mut FxHashSet<Iden
     }
 }
 
+/// Walk `nodes` collecting only true mutation targets. A `Let` inside a loop
+/// can be hoisted only when the name is never assigned in that loop body:
+/// `let emit = 0; if (...) { emit = 1; }` is a per-iteration reset, not an
+/// invariant outer binding.
+fn collect_assigned_names(nodes: &[Node], out: &mut FxHashSet<Ident>) {
+    for node in nodes {
+        match node {
+            Node::Assign { name, .. } => {
+                out.insert(name.clone());
+            }
+            Node::If {
+                then, otherwise, ..
+            } => {
+                collect_assigned_names(then, out);
+                collect_assigned_names(otherwise, out);
+            }
+            Node::Loop { body, .. } | Node::Block(body) => {
+                collect_assigned_names(body, out);
+            }
+            Node::Region { body, .. } => {
+                collect_assigned_names(body, out);
+            }
+            _ => {}
+        }
+    }
+}
+
 /// True iff `expr` references at least one name in `mutated`.
+/// Like `expr_references_any` but pretends `ignore` is not in `mutated`.
+/// Used by `has_hoistable_let_in_any_loop` so we can ask "does this Let
+/// depend on any in-loop name OTHER than its own bound name" without
+/// cloning `mutated` per Let.
+fn expr_references_any_except(expr: &Expr, mutated: &FxHashSet<Ident>, ignore: &Ident) -> bool {
+    match expr {
+        Expr::Var(name) => name != ignore && mutated.contains(name),
+        Expr::Load { index, .. } => expr_references_any_except(index, mutated, ignore),
+        Expr::BinOp { left, right, .. } => {
+            expr_references_any_except(left, mutated, ignore)
+                || expr_references_any_except(right, mutated, ignore)
+        }
+        Expr::UnOp { operand, .. } | Expr::Cast { value: operand, .. } => {
+            expr_references_any_except(operand, mutated, ignore)
+        }
+        Expr::Fma { a, b, c } => {
+            expr_references_any_except(a, mutated, ignore)
+                || expr_references_any_except(b, mutated, ignore)
+                || expr_references_any_except(c, mutated, ignore)
+        }
+        Expr::Select {
+            cond,
+            true_val,
+            false_val,
+        } => {
+            expr_references_any_except(cond, mutated, ignore)
+                || expr_references_any_except(true_val, mutated, ignore)
+                || expr_references_any_except(false_val, mutated, ignore)
+        }
+        Expr::Call { args, .. } => args
+            .iter()
+            .any(|a| expr_references_any_except(a, mutated, ignore)),
+        Expr::Atomic {
+            index,
+            expected,
+            value,
+            ..
+        } => {
+            expr_references_any_except(index, mutated, ignore)
+                || expected
+                    .as_deref()
+                    .is_some_and(|e| expr_references_any_except(e, mutated, ignore))
+                || expr_references_any_except(value, mutated, ignore)
+        }
+        Expr::SubgroupShuffle { value, .. } | Expr::SubgroupAdd { value } => {
+            expr_references_any_except(value, mutated, ignore)
+        }
+        Expr::SubgroupBallot { cond } => expr_references_any_except(cond, mutated, ignore),
+        Expr::LitU32(_)
+        | Expr::LitI32(_)
+        | Expr::LitF32(_)
+        | Expr::LitBool(_)
+        | Expr::BufLen { .. }
+        | Expr::InvocationId { .. }
+        | Expr::WorkgroupId { .. }
+        | Expr::LocalId { .. }
+        | Expr::SubgroupLocalId
+        | Expr::SubgroupSize
+        | Expr::Opaque(_) => false,
+    }
+}
+
 fn expr_references_any(expr: &Expr, mutated: &FxHashSet<Ident>) -> bool {
     match expr {
         Expr::Var(name) => mutated.contains(name),
@@ -269,7 +371,7 @@ fn expr_references_any(expr: &Expr, mutated: &FxHashSet<Ident>) -> bool {
 
 /// True iff `expr` evaluates to the same value on every iteration AND
 /// produces no observable side effect when evaluated more or fewer
-/// times. Loads, Atomics, Calls, Opaque, BufLen, and Subgroup ops are
+/// times. Loads, Atomics, Calls, Opaque, `BufLen`, and Subgroup ops are
 /// rejected — relaxed memory ordering or per-invocation lane state
 /// could make repeated evaluation observably different from single
 /// evaluation when the loop is hoisted to outer scope.
@@ -327,11 +429,19 @@ fn has_hoistable_let_in_any_loop(node: &Node) -> bool {
             let mut mutated: FxHashSet<Ident> = FxHashSet::default();
             mutated.insert(var.clone());
             collect_assigned_and_let_bound_names(body, &mut mutated);
+            let mut assigned: FxHashSet<Ident> = FxHashSet::default();
+            collect_assigned_names(body, &mut assigned);
             for n in body {
                 if let Node::Let { name, value } = n {
-                    let mut deps = mutated.clone();
-                    deps.remove(name);
-                    if !expr_references_any(value, &deps) && expr_is_observably_free(value) {
+                    // Previously: clone `mutated` and `remove(name)` per Let,
+                    // which was O(|mutated|) clone per Let just to mask the
+                    // current Let's own name. Pass `name` through to the
+                    // reference check directly so it can skip the masked id
+                    // without rebuilding the set.
+                    if !assigned.contains(name)
+                        && !expr_references_any_except(value, &mutated, name)
+                        && expr_is_observably_free(value)
+                    {
                         return true;
                     }
                 }
@@ -479,6 +589,28 @@ mod tests {
     }
 
     #[test]
+    fn does_not_hoist_per_iteration_reset_that_is_assigned_later() {
+        let entry = vec![Node::loop_for(
+            "i",
+            Expr::u32(0),
+            Expr::u32(8),
+            vec![
+                Node::let_bind("emit", Expr::u32(0)),
+                Node::if_then(
+                    Expr::eq(Expr::var("emit"), Expr::u32(0)),
+                    vec![Node::assign("emit", Expr::u32(1))],
+                ),
+                Node::store("buf", Expr::var("i"), Expr::var("emit")),
+            ],
+        )];
+        let result = LoopLicm::transform(program(entry));
+        assert!(
+            !result.changed,
+            "per-iteration reset locals assigned later must stay inside the loop"
+        );
+    }
+
+    #[test]
     fn hoists_multiple_independent_pure_lets_in_order() {
         let entry = vec![Node::loop_for(
             "i",
@@ -506,7 +638,10 @@ mod tests {
     #[test]
     fn analyze_skips_program_with_no_loops() {
         let entry = vec![Node::let_bind("a", Expr::u32(1))];
-        assert_eq!(crate::optimizer::ProgramPass::analyze(&LoopLicm, &program(entry)), PassAnalysis::SKIP);
+        assert_eq!(
+            crate::optimizer::ProgramPass::analyze(&LoopLicm, &program(entry)),
+            PassAnalysis::SKIP
+        );
     }
 
     #[test]
@@ -517,7 +652,10 @@ mod tests {
             Expr::u32(8),
             vec![Node::let_bind("k", Expr::u32(7))],
         )];
-        assert_eq!(crate::optimizer::ProgramPass::analyze(&LoopLicm, &program(entry)), PassAnalysis::RUN);
+        assert_eq!(
+            crate::optimizer::ProgramPass::analyze(&LoopLicm, &program(entry)),
+            PassAnalysis::RUN
+        );
     }
 
     #[test]

@@ -15,7 +15,7 @@ pub struct ValidationError {
 impl ValidationError {
     /// Build an unsupported-operation diagnostic for backend capability checks.
     #[must_use]
-    pub fn unsupported_op(backend: &'static str, op_id: Arc<str>, node_index: usize) -> Self {
+    pub fn unsupported_op(backend: &'static str, op_id: &Arc<str>, node_index: usize) -> Self {
         Self {
             message: Cow::Owned(format!(
                 "backend `{backend}` does not support operation `{op_id}` at node {node_index}. Fix: choose a backend whose capability set includes this operation, lower the program through a supported backend pipeline, or register an implementation for `{op_id}`."
@@ -43,7 +43,7 @@ mod tests {
 
     #[test]
     fn unsupported_op_contains_fix_hint() {
-        let err = ValidationError::unsupported_op("backend-a", Arc::from("math::fma"), 3);
+        let err = ValidationError::unsupported_op("backend-a", &Arc::from("math::fma"), 3);
         assert!(err.message().contains("backend-a"));
         assert!(err.message().contains("math::fma"));
         assert!(err.message().contains("3"));

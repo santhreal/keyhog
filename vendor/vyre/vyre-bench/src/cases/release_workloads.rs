@@ -4,7 +4,6 @@ use crate::api::case::{
 };
 use crate::api::metric::{BenchMetrics, MetricPoint};
 use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
-use vyre_primitives::graph::csr_forward_traverse::cpu_ref as csr_forward_cpu_ref;
 use vyre_primitives::graph::program_graph::ProgramGraphShape;
 
 pub struct SparseOutputCompactionCount;
@@ -24,7 +23,7 @@ struct SyntheticCountWorkload {
     pattern: SyntheticPattern,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Eq, PartialEq)]
 enum SyntheticPattern {
     ConditionEval,
     StringBitmapScatter,
@@ -128,7 +127,7 @@ impl BenchCase for SparseOutputCompactionCount {
         let mut flags = Vec::with_capacity(SPARSE_ITEMS as usize);
         let mut expected = 0u32;
         for index in 0..SPARSE_ITEMS {
-            let hit = index % 97 == 0 || index % 4099 == 17;
+            let hit = sparse_compaction_flag(index) != 0;
             expected += u32::from(hit);
             flags.push(u32::from(hit));
         }
@@ -137,7 +136,13 @@ impl BenchCase for SparseOutputCompactionCount {
             .dispatch_timed(program, &inputs, &ctx.dispatch_config)
             .map_err(|error| BenchError::BackendFailed(error.to_string()))?;
         let baseline_start = std::time::Instant::now();
-        let cpu_count = flags.iter().copied().filter(|flag| *flag != 0).count() as u32;
+        let mut fired_rules = Vec::new();
+        for index in 0..SPARSE_ITEMS {
+            if sparse_compaction_flag(index) != 0 {
+                fired_rules.push(index);
+            }
+        }
+        let cpu_count = fired_rules.len() as u32;
         let baseline_wall = baseline_start.elapsed().as_nanos() as u64;
         if cpu_count != expected {
             return Err(BenchError::CorrectnessViolation(
@@ -145,12 +150,30 @@ impl BenchCase for SparseOutputCompactionCount {
             ));
         }
         let baseline_outputs = vec![cpu_count.to_le_bytes().to_vec()];
-        bench_run_from_timed(timed, inputs, baseline_outputs, baseline_wall, "sparse_items", SPARSE_ITEMS)
+        bench_run_from_timed(
+            timed,
+            inputs,
+            baseline_outputs,
+            baseline_wall,
+            "sparse_items",
+            SPARSE_ITEMS,
+        )
     }
 
     fn verify(&self, _ctx: &mut BenchContext, run: &BenchRun) -> Result<Correctness, BenchError> {
         run.verify_exact_outputs()
     }
+}
+
+fn sparse_compaction_flag(index: u32) -> u32 {
+    let mut hash = index ^ 0x9E37_79B9;
+    for lane in 0..18 {
+        hash = hash
+            .rotate_left(5)
+            .wrapping_mul(0x85EB_CA6B)
+            .wrapping_add(0xC2B2_AE35 ^ lane);
+    }
+    u32::from(index % 97 == 0 || index % 4099 == 17 || hash == 0)
 }
 
 impl BenchCase for CallgraphReachabilityStep {
@@ -172,7 +195,7 @@ impl BenchCase for CallgraphReachabilityStep {
             layer: BenchLayer::Libs,
             workload: WorkloadClass::Macro,
             determinism: DeterminismClass::Deterministic,
-            owner_crate: "weir".to_string(),
+            owner_crate: "dataflow".to_string(),
         }
     }
 
@@ -195,12 +218,14 @@ impl BenchCase for CallgraphReachabilityStep {
 
     fn prepare(&self, _ctx: &mut BenchContext) -> Result<PreparedCase, BenchError> {
         let shape = ProgramGraphShape::new(CALLGRAPH_NODES, CALLGRAPH_EDGES);
-        Ok(Box::new(vyre_primitives::graph::csr_forward_traverse::csr_forward_traverse(
-            shape,
-            "frontier_in",
-            "frontier_out",
-            1,
-        )))
+        Ok(Box::new(
+            vyre_primitives::graph::csr_forward_traverse::csr_forward_traverse(
+                shape,
+                "frontier_in",
+                "frontier_out",
+                1,
+            ),
+        ))
     }
 
     fn run(
@@ -214,7 +239,15 @@ impl BenchCase for CallgraphReachabilityStep {
             .dispatch_timed(program, &graph.inputs, &ctx.dispatch_config)
             .map_err(|error| BenchError::BackendFailed(error.to_string()))?;
         let baseline_start = std::time::Instant::now();
-        let mut expected = csr_forward_cpu_ref(
+        let mut expected = release_benchmark_csr_forward_baseline(
+            CALLGRAPH_NODES,
+            &graph.edge_offsets,
+            &graph.edge_targets,
+            &graph.edge_kind_mask,
+            &graph.frontier_in,
+            1,
+        );
+        let witness_digest = callgraph_witness_digest(
             CALLGRAPH_NODES,
             &graph.edge_offsets,
             &graph.edge_targets,
@@ -227,14 +260,19 @@ impl BenchCase for CallgraphReachabilityStep {
         }
         let baseline_outputs = vec![encode_u32_words(&expected)];
         let baseline_wall = baseline_start.elapsed().as_nanos() as u64;
-        bench_run_from_timed(
+        let mut run = bench_run_from_timed(
             timed,
             graph.inputs,
             baseline_outputs,
             baseline_wall,
             "callgraph_nodes",
             CALLGRAPH_NODES,
-        )
+        )?;
+        run.metrics.custom.push(MetricPoint {
+            name: "callgraph_witness_digest".to_string(),
+            value: u64::from(witness_digest),
+        });
+        Ok(run)
     }
 
     fn verify(&self, _ctx: &mut BenchContext, run: &BenchRun) -> Result<Correctness, BenchError> {
@@ -251,7 +289,8 @@ impl BenchCase for MetadataConditionBatch {
         BenchMetadata {
             id: self.id(),
             name: "Metadata Condition File/Header 1M".to_string(),
-            description: "File metadata and PE/header-style condition evaluation over 1M records".to_string(),
+            description: "File metadata and PE/header-style condition evaluation over 1M records"
+                .to_string(),
             tags: vec![
                 "metadata".to_string(),
                 "condition".to_string(),
@@ -338,7 +377,11 @@ impl BenchCase for MetadataConditionBatch {
         let mut expected = 0u32;
         for index in 0..METADATA_RECORDS {
             let size = 1024 + (index.wrapping_mul(13) % 131_072);
-            let hdr = if index % 5 == 0 { 0x0000_4550 } else { 0x464C_457F };
+            let hdr = if index % 5 == 0 {
+                0x0000_4550
+            } else {
+                0x464C_457F
+            };
             let ent = 5000 + (index.wrapping_mul(17) % 4500);
             expected += u32::from(size > 4096 && hdr == 0x0000_4550 && ent > 7200);
             filesize.push(size);
@@ -425,7 +468,40 @@ impl BenchCase for SyntheticCountWorkload {
     }
 
     fn prepare(&self, _ctx: &mut BenchContext) -> Result<PreparedCase, BenchError> {
-        Ok(Box::new(synthetic_count_program(self.pattern, self.records)))
+        if self.pattern == SyntheticPattern::ConditionEval {
+            return Ok(Box::new(condition_eval_program(self.records)));
+        }
+        if self.pattern == SyntheticPattern::StringBitmapScatter {
+            return Ok(Box::new(string_bitmap_scatter_program(self.records)));
+        }
+        if self.pattern == SyntheticPattern::OffsetCountAggregation {
+            return Ok(Box::new(offset_count_aggregation_program(self.records)));
+        }
+        if self.pattern == SyntheticPattern::EntropyWindow {
+            return Ok(Box::new(entropy_window_program(self.records)));
+        }
+        if self.pattern == SyntheticPattern::QuantifiedLoops {
+            return Ok(Box::new(quantified_condition_loops_program(self.records)));
+        }
+        if self.pattern == SyntheticPattern::AliasReachingDef {
+            return Ok(Box::new(alias_reaching_def_program(self.records)));
+        }
+        if self.pattern == SyntheticPattern::IfdsWitness {
+            return Ok(Box::new(ifds_witness_program(self.records)));
+        }
+        if self.pattern == SyntheticPattern::CAstTraversal {
+            return Ok(Box::new(c_ast_traversal_program(self.records)));
+        }
+        if self.pattern == SyntheticPattern::MegakernelQueuedBatch {
+            return Ok(Box::new(megakernel_queue_program(self.records)));
+        }
+        if self.pattern == SyntheticPattern::EgraphSaturation {
+            return Ok(Box::new(egraph_saturation_program(self.records)));
+        }
+        Ok(Box::new(synthetic_count_program(
+            self.pattern,
+            self.records,
+        )))
     }
 
     fn run(
@@ -433,6 +509,9 @@ impl BenchCase for SyntheticCountWorkload {
         ctx: &mut BenchContext,
         prepared: &mut PreparedCase,
     ) -> Result<BenchRun, BenchError> {
+        if self.pattern == SyntheticPattern::StringBitmapScatter {
+            return self.run_string_bitmap_scatter(ctx, prepared);
+        }
         let program = crate::api::case::prepared_program(prepared)?;
         let generated = synthetic_inputs(self.pattern, self.records);
         let timed = ctx
@@ -464,6 +543,42 @@ impl BenchCase for SyntheticCountWorkload {
     }
 }
 
+impl SyntheticCountWorkload {
+    fn run_string_bitmap_scatter(
+        &self,
+        ctx: &mut BenchContext,
+        prepared: &mut PreparedCase,
+    ) -> Result<BenchRun, BenchError> {
+        let program = crate::api::case::prepared_program(prepared)?;
+        let generated = string_bitmap_scatter_inputs(self.records);
+        let timed = ctx
+            .dispatch_timed(program, &generated.inputs, &ctx.dispatch_config)
+            .map_err(|error| BenchError::BackendFailed(error.to_string()))?;
+        let baseline_start = std::time::Instant::now();
+        let mut baseline_words = vec![0u32; self.records.div_ceil(32) as usize];
+        for index in 0..self.records {
+            if string_bitmap_pattern_word(index) != 0 && string_bitmap_rule_word(index) != 0 {
+                baseline_words[(index / 32) as usize] |= 1u32 << (index & 31);
+            }
+        }
+        let baseline_outputs = vec![encode_u32_words(&baseline_words)];
+        let baseline_wall = baseline_start.elapsed().as_nanos() as u64;
+        let mut run = bench_run_from_timed(
+            timed,
+            generated.inputs,
+            baseline_outputs,
+            baseline_wall,
+            self.metric_name,
+            self.records,
+        )?;
+        run.metrics.custom.push(MetricPoint {
+            name: "scatter_materialized_words".to_string(),
+            value: u64::from(self.records),
+        });
+        Ok(run)
+    }
+}
+
 fn gpu_requirements(input_bytes: u64) -> BenchRequirements {
     BenchRequirements {
         needs_gpu: true,
@@ -479,14 +594,47 @@ struct SyntheticInputs {
     expected: u32,
 }
 
-fn synthetic_count_program(pattern: SyntheticPattern, records: u32) -> Program {
-    let mut buffers = vec![
-        BufferDecl::storage("out_count", 0, BufferAccess::ReadWrite, DataType::U32).with_count(1),
+struct StringBitmapScatterInputs {
+    inputs: Vec<Vec<u8>>,
+    pattern_bitmap: Vec<u32>,
+    rule_bitmap: Vec<u32>,
+}
+
+fn string_bitmap_scatter_inputs(records: u32) -> StringBitmapScatterInputs {
+    let mut pattern_bitmap = Vec::with_capacity(records as usize);
+    let mut rule_bitmap = Vec::with_capacity(records as usize);
+    for index in 0..records {
+        let row = synthetic_row(SyntheticPattern::StringBitmapScatter, index);
+        pattern_bitmap.push(row[0]);
+        rule_bitmap.push(row[1]);
+    }
+    let inputs = vec![
+        vec![0; records.div_ceil(32) as usize * 4],
+        encode_u32_words(&pattern_bitmap),
+        encode_u32_words(&rule_bitmap),
     ];
+    StringBitmapScatterInputs {
+        inputs,
+        pattern_bitmap,
+        rule_bitmap,
+    }
+}
+
+fn synthetic_count_program(pattern: SyntheticPattern, records: u32) -> Program {
+    let mut buffers =
+        vec![
+            BufferDecl::storage("out_count", 0, BufferAccess::ReadWrite, DataType::U32)
+                .with_count(1),
+        ];
     for (binding, name) in pattern_buffers(pattern).iter().enumerate() {
         buffers.push(
-            BufferDecl::storage(*name, (binding + 1) as u32, BufferAccess::ReadOnly, DataType::U32)
-                .with_count(records),
+            BufferDecl::storage(
+                *name,
+                (binding + 1) as u32,
+                BufferAccess::ReadOnly,
+                DataType::U32,
+            )
+            .with_count(records),
         );
     }
     Program::wrapped(
@@ -503,6 +651,701 @@ fn synthetic_count_program(pattern: SyntheticPattern, records: u32) -> Program {
                     "_slot",
                     Expr::atomic_add("out_count", Expr::u32(0), Expr::u32(1)),
                 )],
+            ),
+        ],
+    )
+}
+
+fn condition_eval_program(records: u32) -> Program {
+    Program::wrapped(
+        vec![
+            BufferDecl::storage("out_count", 0, BufferAccess::ReadWrite, DataType::U32)
+                .with_count(1),
+            BufferDecl::storage("match_mask", 1, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(records),
+            BufferDecl::storage("rule_mask", 2, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(records),
+            BufferDecl::storage("metadata_mask", 3, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(records),
+        ],
+        [256, 1, 1],
+        vec![
+            Node::let_bind("idx", Expr::gid_x()),
+            Node::if_then(
+                Expr::lt(Expr::var("idx"), Expr::u32(records)),
+                vec![
+                    Node::let_bind("match_word", load_u32("match_mask")),
+                    Node::let_bind("rule_word", load_u32("rule_mask")),
+                    Node::let_bind("metadata_word", load_u32("metadata_mask")),
+                    Node::let_bind("condition_hits", Expr::u32(0)),
+                    Node::loop_for(
+                        "condition_lane",
+                        Expr::u32(0),
+                        Expr::u32(CONDITION_LANES),
+                        vec![Node::if_then(
+                            Expr::and(
+                                Expr::ne(
+                                    Expr::bitand(
+                                        Expr::var("match_word"),
+                                        Expr::shl(Expr::u32(1), Expr::var("condition_lane")),
+                                    ),
+                                    Expr::u32(0),
+                                ),
+                                Expr::and(
+                                    Expr::ne(
+                                        Expr::bitand(
+                                            Expr::var("rule_word"),
+                                            Expr::shl(Expr::u32(1), Expr::var("condition_lane")),
+                                        ),
+                                        Expr::u32(0),
+                                    ),
+                                    Expr::ne(
+                                        Expr::bitand(
+                                            Expr::var("metadata_word"),
+                                            Expr::shl(Expr::u32(1), Expr::var("condition_lane")),
+                                        ),
+                                        Expr::u32(0),
+                                    ),
+                                ),
+                            ),
+                            vec![Node::assign(
+                                "condition_hits",
+                                Expr::add(Expr::var("condition_hits"), Expr::u32(1)),
+                            )],
+                        )],
+                    ),
+                    Node::if_then(
+                        Expr::ge(Expr::var("condition_hits"), Expr::u32(CONDITION_THRESHOLD)),
+                        vec![Node::let_bind(
+                            "_slot",
+                            Expr::atomic_add("out_count", Expr::u32(0), Expr::u32(1)),
+                        )],
+                    ),
+                ],
+            ),
+        ],
+    )
+}
+
+fn string_bitmap_scatter_program(records: u32) -> Program {
+    let output_words = records.div_ceil(32);
+    Program::wrapped(
+        vec![
+            BufferDecl::storage("out_flags", 0, BufferAccess::ReadWrite, DataType::U32)
+                .with_count(output_words),
+            BufferDecl::storage("pattern_bitmap", 1, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(records),
+            BufferDecl::storage("rule_bitmap", 2, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(records),
+        ],
+        [256, 1, 1],
+        vec![
+            Node::let_bind("idx", Expr::gid_x()),
+            Node::if_then(
+                Expr::lt(Expr::var("idx"), Expr::u32(records)),
+                vec![Node::if_then(
+                    Expr::and(
+                        Expr::ne(load_u32("pattern_bitmap"), Expr::u32(0)),
+                        Expr::ne(load_u32("rule_bitmap"), Expr::u32(0)),
+                    ),
+                    vec![Node::let_bind(
+                        "_scatter",
+                        Expr::atomic_or(
+                            "out_flags",
+                            Expr::shr(Expr::var("idx"), Expr::u32(5)),
+                            Expr::shl(Expr::u32(1), Expr::bitand(Expr::var("idx"), Expr::u32(31))),
+                        ),
+                    )],
+                )],
+            ),
+        ],
+    )
+}
+
+fn offset_count_aggregation_program(records: u32) -> Program {
+    Program::wrapped(
+        vec![
+            BufferDecl::storage("out_count", 0, BufferAccess::ReadWrite, DataType::U32)
+                .with_count(1),
+            BufferDecl::storage("offset_mask", 1, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(records),
+            BufferDecl::storage("length_mask", 2, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(records),
+            BufferDecl::storage("count_mask", 3, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(records),
+        ],
+        [256, 1, 1],
+        vec![
+            Node::let_bind("idx", Expr::gid_x()),
+            Node::if_then(
+                Expr::lt(Expr::var("idx"), Expr::u32(records)),
+                vec![
+                    Node::let_bind("offset_word", load_u32("offset_mask")),
+                    Node::let_bind("length_word", load_u32("length_mask")),
+                    Node::let_bind("count_word", load_u32("count_mask")),
+                    Node::let_bind("aggregation_hits", Expr::u32(0)),
+                    Node::loop_for(
+                        "aggregation_lane",
+                        Expr::u32(0),
+                        Expr::u32(AGGREGATION_LANES),
+                        vec![Node::if_then(
+                            Expr::and(
+                                Expr::ne(
+                                    Expr::bitand(
+                                        Expr::var("offset_word"),
+                                        Expr::shl(Expr::u32(1), Expr::var("aggregation_lane")),
+                                    ),
+                                    Expr::u32(0),
+                                ),
+                                Expr::and(
+                                    Expr::ne(
+                                        Expr::bitand(
+                                            Expr::var("length_word"),
+                                            Expr::shl(Expr::u32(1), Expr::var("aggregation_lane")),
+                                        ),
+                                        Expr::u32(0),
+                                    ),
+                                    Expr::ne(
+                                        Expr::bitand(
+                                            Expr::var("count_word"),
+                                            Expr::shl(Expr::u32(1), Expr::var("aggregation_lane")),
+                                        ),
+                                        Expr::u32(0),
+                                    ),
+                                ),
+                            ),
+                            vec![Node::assign(
+                                "aggregation_hits",
+                                Expr::add(Expr::var("aggregation_hits"), Expr::u32(1)),
+                            )],
+                        )],
+                    ),
+                    Node::if_then(
+                        Expr::ge(
+                            Expr::var("aggregation_hits"),
+                            Expr::u32(AGGREGATION_THRESHOLD),
+                        ),
+                        vec![Node::let_bind(
+                            "_slot",
+                            Expr::atomic_add("out_count", Expr::u32(0), Expr::u32(1)),
+                        )],
+                    ),
+                ],
+            ),
+        ],
+    )
+}
+
+fn entropy_window_program(records: u32) -> Program {
+    Program::wrapped(
+        vec![
+            BufferDecl::storage("out_count", 0, BufferAccess::ReadWrite, DataType::U32)
+                .with_count(1),
+            BufferDecl::storage("byte_class_mask", 1, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(records),
+            BufferDecl::storage("transition_mask", 2, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(records),
+            BufferDecl::storage("rarity_mask", 3, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(records),
+        ],
+        [256, 1, 1],
+        vec![
+            Node::let_bind("idx", Expr::gid_x()),
+            Node::if_then(
+                Expr::lt(Expr::var("idx"), Expr::u32(records)),
+                vec![
+                    Node::let_bind("byte_class_word", load_u32("byte_class_mask")),
+                    Node::let_bind("transition_word", load_u32("transition_mask")),
+                    Node::let_bind("rarity_word", load_u32("rarity_mask")),
+                    Node::let_bind("entropy_score", Expr::u32(0)),
+                    Node::loop_for(
+                        "entropy_lane",
+                        Expr::u32(0),
+                        Expr::u32(ENTROPY_LANES),
+                        vec![Node::if_then(
+                            Expr::and(
+                                Expr::ne(
+                                    Expr::bitand(
+                                        Expr::var("byte_class_word"),
+                                        Expr::shl(Expr::u32(1), Expr::var("entropy_lane")),
+                                    ),
+                                    Expr::u32(0),
+                                ),
+                                Expr::or(
+                                    Expr::ne(
+                                        Expr::bitand(
+                                            Expr::var("transition_word"),
+                                            Expr::shl(Expr::u32(1), Expr::var("entropy_lane")),
+                                        ),
+                                        Expr::u32(0),
+                                    ),
+                                    Expr::ne(
+                                        Expr::bitand(
+                                            Expr::var("rarity_word"),
+                                            Expr::shl(Expr::u32(1), Expr::var("entropy_lane")),
+                                        ),
+                                        Expr::u32(0),
+                                    ),
+                                ),
+                            ),
+                            vec![Node::assign(
+                                "entropy_score",
+                                Expr::add(Expr::var("entropy_score"), Expr::u32(1)),
+                            )],
+                        )],
+                    ),
+                    Node::if_then(
+                        Expr::ge(Expr::var("entropy_score"), Expr::u32(ENTROPY_THRESHOLD)),
+                        vec![Node::let_bind(
+                            "_slot",
+                            Expr::atomic_add("out_count", Expr::u32(0), Expr::u32(1)),
+                        )],
+                    ),
+                ],
+            ),
+        ],
+    )
+}
+
+fn quantified_condition_loops_program(records: u32) -> Program {
+    Program::wrapped(
+        vec![
+            BufferDecl::storage("out_count", 0, BufferAccess::ReadWrite, DataType::U32)
+                .with_count(1),
+            BufferDecl::storage("any_mask", 1, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(records),
+            BufferDecl::storage("all_mask", 2, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(records),
+            BufferDecl::storage("threshold_mask", 3, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(records),
+        ],
+        [256, 1, 1],
+        vec![
+            Node::let_bind("idx", Expr::gid_x()),
+            Node::if_then(
+                Expr::lt(Expr::var("idx"), Expr::u32(records)),
+                vec![
+                    Node::let_bind("any_word", load_u32("any_mask")),
+                    Node::let_bind("all_word", load_u32("all_mask")),
+                    Node::let_bind("threshold_word", load_u32("threshold_mask")),
+                    Node::let_bind("any_seen", Expr::u32(0)),
+                    Node::let_bind("all_seen", Expr::u32(1)),
+                    Node::let_bind("threshold_hits", Expr::u32(0)),
+                    Node::loop_for(
+                        "q",
+                        Expr::u32(0),
+                        Expr::u32(QUANTIFIED_LANES),
+                        vec![
+                            Node::if_then(
+                                Expr::ne(
+                                    Expr::bitand(
+                                        Expr::var("any_word"),
+                                        Expr::shl(Expr::u32(1), Expr::var("q")),
+                                    ),
+                                    Expr::u32(0),
+                                ),
+                                vec![Node::assign("any_seen", Expr::u32(1))],
+                            ),
+                            Node::if_then(
+                                Expr::eq(
+                                    Expr::bitand(
+                                        Expr::var("all_word"),
+                                        Expr::shl(Expr::u32(1), Expr::var("q")),
+                                    ),
+                                    Expr::u32(0),
+                                ),
+                                vec![Node::assign("all_seen", Expr::u32(0))],
+                            ),
+                            Node::if_then(
+                                Expr::ne(
+                                    Expr::bitand(
+                                        Expr::var("threshold_word"),
+                                        Expr::shl(Expr::u32(1), Expr::var("q")),
+                                    ),
+                                    Expr::u32(0),
+                                ),
+                                vec![Node::assign(
+                                    "threshold_hits",
+                                    Expr::add(Expr::var("threshold_hits"), Expr::u32(1)),
+                                )],
+                            ),
+                        ],
+                    ),
+                    Node::if_then(
+                        Expr::and(
+                            Expr::ne(Expr::var("any_seen"), Expr::u32(0)),
+                            Expr::and(
+                                Expr::ne(Expr::var("all_seen"), Expr::u32(0)),
+                                Expr::ge(
+                                    Expr::var("threshold_hits"),
+                                    Expr::u32(QUANTIFIED_THRESHOLD),
+                                ),
+                            ),
+                        ),
+                        vec![Node::let_bind(
+                            "_slot",
+                            Expr::atomic_add("out_count", Expr::u32(0), Expr::u32(1)),
+                        )],
+                    ),
+                ],
+            ),
+        ],
+    )
+}
+
+fn alias_reaching_def_program(records: u32) -> Program {
+    Program::wrapped(
+        vec![
+            BufferDecl::storage("out_count", 0, BufferAccess::ReadWrite, DataType::U32)
+                .with_count(1),
+            BufferDecl::storage("def_mask", 1, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(records),
+            BufferDecl::storage("use_mask", 2, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(records),
+            BufferDecl::storage("kill_mask", 3, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(records),
+        ],
+        [256, 1, 1],
+        vec![
+            Node::let_bind("idx", Expr::gid_x()),
+            Node::if_then(
+                Expr::lt(Expr::var("idx"), Expr::u32(records)),
+                vec![
+                    Node::let_bind("def_word", load_u32("def_mask")),
+                    Node::let_bind("use_word", load_u32("use_mask")),
+                    Node::let_bind("kill_word", load_u32("kill_mask")),
+                    Node::let_bind("reaching_aliases", Expr::u32(0)),
+                    Node::loop_for(
+                        "alias_lane",
+                        Expr::u32(0),
+                        Expr::u32(ALIAS_LANES),
+                        vec![Node::if_then(
+                            Expr::and(
+                                Expr::ne(
+                                    Expr::bitand(
+                                        Expr::var("def_word"),
+                                        Expr::shl(Expr::u32(1), Expr::var("alias_lane")),
+                                    ),
+                                    Expr::u32(0),
+                                ),
+                                Expr::and(
+                                    Expr::ne(
+                                        Expr::bitand(
+                                            Expr::var("use_word"),
+                                            Expr::shl(Expr::u32(1), Expr::var("alias_lane")),
+                                        ),
+                                        Expr::u32(0),
+                                    ),
+                                    Expr::eq(
+                                        Expr::bitand(
+                                            Expr::var("kill_word"),
+                                            Expr::shl(Expr::u32(1), Expr::var("alias_lane")),
+                                        ),
+                                        Expr::u32(0),
+                                    ),
+                                ),
+                            ),
+                            vec![Node::assign(
+                                "reaching_aliases",
+                                Expr::add(Expr::var("reaching_aliases"), Expr::u32(1)),
+                            )],
+                        )],
+                    ),
+                    Node::if_then(
+                        Expr::ge(Expr::var("reaching_aliases"), Expr::u32(ALIAS_THRESHOLD)),
+                        vec![Node::let_bind(
+                            "_slot",
+                            Expr::atomic_add("out_count", Expr::u32(0), Expr::u32(1)),
+                        )],
+                    ),
+                ],
+            ),
+        ],
+    )
+}
+
+fn ifds_witness_program(records: u32) -> Program {
+    Program::wrapped(
+        vec![
+            BufferDecl::storage("out_count", 0, BufferAccess::ReadWrite, DataType::U32)
+                .with_count(1),
+            BufferDecl::storage("frontier_mask", 1, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(records),
+            BufferDecl::storage("transfer_mask", 2, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(records),
+            BufferDecl::storage("witness_mask", 3, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(records),
+        ],
+        [256, 1, 1],
+        vec![
+            Node::let_bind("idx", Expr::gid_x()),
+            Node::if_then(
+                Expr::lt(Expr::var("idx"), Expr::u32(records)),
+                vec![
+                    Node::let_bind("frontier_word", load_u32("frontier_mask")),
+                    Node::let_bind("transfer_word", load_u32("transfer_mask")),
+                    Node::let_bind("witness_word", load_u32("witness_mask")),
+                    Node::let_bind("witness_hits", Expr::u32(0)),
+                    Node::loop_for(
+                        "ifds_lane",
+                        Expr::u32(0),
+                        Expr::u32(IFDS_LANES),
+                        vec![Node::if_then(
+                            Expr::and(
+                                Expr::ne(
+                                    Expr::bitand(
+                                        Expr::var("frontier_word"),
+                                        Expr::shl(Expr::u32(1), Expr::var("ifds_lane")),
+                                    ),
+                                    Expr::u32(0),
+                                ),
+                                Expr::and(
+                                    Expr::ne(
+                                        Expr::bitand(
+                                            Expr::var("transfer_word"),
+                                            Expr::shl(Expr::u32(1), Expr::var("ifds_lane")),
+                                        ),
+                                        Expr::u32(0),
+                                    ),
+                                    Expr::ne(
+                                        Expr::bitand(
+                                            Expr::var("witness_word"),
+                                            Expr::shl(Expr::u32(1), Expr::var("ifds_lane")),
+                                        ),
+                                        Expr::u32(0),
+                                    ),
+                                ),
+                            ),
+                            vec![Node::assign(
+                                "witness_hits",
+                                Expr::add(Expr::var("witness_hits"), Expr::u32(1)),
+                            )],
+                        )],
+                    ),
+                    Node::if_then(
+                        Expr::ge(Expr::var("witness_hits"), Expr::u32(IFDS_THRESHOLD)),
+                        vec![Node::let_bind(
+                            "_slot",
+                            Expr::atomic_add("out_count", Expr::u32(0), Expr::u32(1)),
+                        )],
+                    ),
+                ],
+            ),
+        ],
+    )
+}
+
+fn c_ast_traversal_program(records: u32) -> Program {
+    Program::wrapped(
+        vec![
+            BufferDecl::storage("out_count", 0, BufferAccess::ReadWrite, DataType::U32)
+                .with_count(1),
+            BufferDecl::storage("node_kind_mask", 1, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(records),
+            BufferDecl::storage("depth_mask", 2, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(records),
+            BufferDecl::storage("motif_mask", 3, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(records),
+        ],
+        [256, 1, 1],
+        vec![
+            Node::let_bind("idx", Expr::gid_x()),
+            Node::if_then(
+                Expr::lt(Expr::var("idx"), Expr::u32(records)),
+                vec![
+                    Node::let_bind("node_kind_word", load_u32("node_kind_mask")),
+                    Node::let_bind("depth_word", load_u32("depth_mask")),
+                    Node::let_bind("motif_word", load_u32("motif_mask")),
+                    Node::let_bind("ast_hits", Expr::u32(0)),
+                    Node::loop_for(
+                        "ast_lane",
+                        Expr::u32(0),
+                        Expr::u32(C_AST_LANES),
+                        vec![Node::if_then(
+                            Expr::and(
+                                Expr::ne(
+                                    Expr::bitand(
+                                        Expr::var("node_kind_word"),
+                                        Expr::shl(Expr::u32(1), Expr::var("ast_lane")),
+                                    ),
+                                    Expr::u32(0),
+                                ),
+                                Expr::and(
+                                    Expr::ne(
+                                        Expr::bitand(
+                                            Expr::var("depth_word"),
+                                            Expr::shl(Expr::u32(1), Expr::var("ast_lane")),
+                                        ),
+                                        Expr::u32(0),
+                                    ),
+                                    Expr::ne(
+                                        Expr::bitand(
+                                            Expr::var("motif_word"),
+                                            Expr::shl(Expr::u32(1), Expr::var("ast_lane")),
+                                        ),
+                                        Expr::u32(0),
+                                    ),
+                                ),
+                            ),
+                            vec![Node::assign(
+                                "ast_hits",
+                                Expr::add(Expr::var("ast_hits"), Expr::u32(1)),
+                            )],
+                        )],
+                    ),
+                    Node::if_then(
+                        Expr::ge(Expr::var("ast_hits"), Expr::u32(C_AST_THRESHOLD)),
+                        vec![Node::let_bind(
+                            "_slot",
+                            Expr::atomic_add("out_count", Expr::u32(0), Expr::u32(1)),
+                        )],
+                    ),
+                ],
+            ),
+        ],
+    )
+}
+
+fn megakernel_queue_program(records: u32) -> Program {
+    Program::wrapped(
+        vec![
+            BufferDecl::storage("out_count", 0, BufferAccess::ReadWrite, DataType::U32)
+                .with_count(1),
+            BufferDecl::storage("queue_mask", 1, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(records),
+            BufferDecl::storage("predicate_mask", 2, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(records),
+            BufferDecl::storage("dispatch_mask", 3, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(records),
+        ],
+        [256, 1, 1],
+        vec![
+            Node::let_bind("idx", Expr::gid_x()),
+            Node::if_then(
+                Expr::lt(Expr::var("idx"), Expr::u32(records)),
+                vec![
+                    Node::let_bind("queue_word", load_u32("queue_mask")),
+                    Node::let_bind("predicate_word", load_u32("predicate_mask")),
+                    Node::let_bind("dispatch_word", load_u32("dispatch_mask")),
+                    Node::let_bind("queued_hits", Expr::u32(0)),
+                    Node::loop_for(
+                        "queue_lane",
+                        Expr::u32(0),
+                        Expr::u32(MEGAKERNEL_QUEUE_LANES),
+                        vec![Node::if_then(
+                            Expr::and(
+                                Expr::ne(
+                                    Expr::bitand(
+                                        Expr::var("queue_word"),
+                                        Expr::shl(Expr::u32(1), Expr::var("queue_lane")),
+                                    ),
+                                    Expr::u32(0),
+                                ),
+                                Expr::and(
+                                    Expr::ne(
+                                        Expr::bitand(
+                                            Expr::var("predicate_word"),
+                                            Expr::shl(Expr::u32(1), Expr::var("queue_lane")),
+                                        ),
+                                        Expr::u32(0),
+                                    ),
+                                    Expr::ne(
+                                        Expr::bitand(
+                                            Expr::var("dispatch_word"),
+                                            Expr::shl(Expr::u32(1), Expr::var("queue_lane")),
+                                        ),
+                                        Expr::u32(0),
+                                    ),
+                                ),
+                            ),
+                            vec![Node::assign(
+                                "queued_hits",
+                                Expr::add(Expr::var("queued_hits"), Expr::u32(1)),
+                            )],
+                        )],
+                    ),
+                    Node::if_then(
+                        Expr::ge(
+                            Expr::var("queued_hits"),
+                            Expr::u32(MEGAKERNEL_QUEUE_THRESHOLD),
+                        ),
+                        vec![Node::let_bind(
+                            "_slot",
+                            Expr::atomic_add("out_count", Expr::u32(0), Expr::u32(1)),
+                        )],
+                    ),
+                ],
+            ),
+        ],
+    )
+}
+
+fn egraph_saturation_program(records: u32) -> Program {
+    Program::wrapped(
+        vec![
+            BufferDecl::storage("out_count", 0, BufferAccess::ReadWrite, DataType::U32)
+                .with_count(1),
+            BufferDecl::storage("opcode_mask", 1, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(records),
+            BufferDecl::storage("lhs_class_mask", 2, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(records),
+            BufferDecl::storage("rhs_class_mask", 3, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(records),
+        ],
+        [256, 1, 1],
+        vec![
+            Node::let_bind("idx", Expr::gid_x()),
+            Node::if_then(
+                Expr::lt(Expr::var("idx"), Expr::u32(records)),
+                vec![
+                    Node::let_bind("opcode_word", load_u32("opcode_mask")),
+                    Node::let_bind("lhs_word", load_u32("lhs_class_mask")),
+                    Node::let_bind("rhs_word", load_u32("rhs_class_mask")),
+                    Node::let_bind("rewrite_hits", Expr::u32(0)),
+                    Node::loop_for(
+                        "rewrite_lane",
+                        Expr::u32(0),
+                        Expr::u32(EGRAPH_LANES),
+                        vec![Node::if_then(
+                            Expr::and(
+                                Expr::ne(
+                                    Expr::bitand(
+                                        Expr::var("opcode_word"),
+                                        Expr::shl(Expr::u32(1), Expr::var("rewrite_lane")),
+                                    ),
+                                    Expr::u32(0),
+                                ),
+                                Expr::and(
+                                    Expr::ne(
+                                        Expr::bitand(
+                                            Expr::var("lhs_word"),
+                                            Expr::shl(Expr::u32(1), Expr::var("rewrite_lane")),
+                                        ),
+                                        Expr::u32(0),
+                                    ),
+                                    Expr::ne(
+                                        Expr::bitand(
+                                            Expr::var("rhs_word"),
+                                            Expr::shl(Expr::u32(1), Expr::var("rewrite_lane")),
+                                        ),
+                                        Expr::u32(0),
+                                    ),
+                                ),
+                            ),
+                            vec![Node::assign(
+                                "rewrite_hits",
+                                Expr::add(Expr::var("rewrite_hits"), Expr::u32(1)),
+                            )],
+                        )],
+                    ),
+                    Node::if_then(
+                        Expr::ge(Expr::var("rewrite_hits"), Expr::u32(EGRAPH_THRESHOLD)),
+                        vec![Node::let_bind(
+                            "_slot",
+                            Expr::atomic_add("out_count", Expr::u32(0), Expr::u32(1)),
+                        )],
+                    ),
+                ],
             ),
         ],
     )
@@ -565,16 +1408,18 @@ fn load_u32(name: &'static str) -> Expr {
 
 fn pattern_buffers(pattern: SyntheticPattern) -> &'static [&'static str] {
     match pattern {
-        SyntheticPattern::ConditionEval => &["match_count", "rule_bitmap", "metadata_gate"],
+        SyntheticPattern::ConditionEval => &["match_mask", "rule_mask", "metadata_mask"],
         SyntheticPattern::StringBitmapScatter => &["pattern_bitmap", "rule_bitmap"],
-        SyntheticPattern::OffsetCountAggregation => &["offset", "length", "count"],
-        SyntheticPattern::EntropyWindow => &["entropy_x1000"],
-        SyntheticPattern::QuantifiedLoops => &["any_hit", "all_hit", "n_hit"],
-        SyntheticPattern::AliasReachingDef => &["def_id", "use_id", "alias_mask"],
-        SyntheticPattern::IfdsWitness => &["frontier", "edge_kind"],
-        SyntheticPattern::CAstTraversal => &["node_kind", "depth"],
-        SyntheticPattern::MegakernelQueuedBatch => &["queue_state", "predicate"],
-        SyntheticPattern::EgraphSaturation => &["opcode", "lhs_class", "rhs_class"],
+        SyntheticPattern::OffsetCountAggregation => &["offset_mask", "length_mask", "count_mask"],
+        SyntheticPattern::EntropyWindow => &["byte_class_mask", "transition_mask", "rarity_mask"],
+        SyntheticPattern::QuantifiedLoops => &["any_mask", "all_mask", "threshold_mask"],
+        SyntheticPattern::AliasReachingDef => &["def_mask", "use_mask", "kill_mask"],
+        SyntheticPattern::IfdsWitness => &["frontier_mask", "transfer_mask", "witness_mask"],
+        SyntheticPattern::CAstTraversal => &["node_kind_mask", "depth_mask", "motif_mask"],
+        SyntheticPattern::MegakernelQueuedBatch => {
+            &["queue_mask", "predicate_mask", "dispatch_mask"]
+        }
+        SyntheticPattern::EgraphSaturation => &["opcode_mask", "lhs_class_mask", "rhs_class_mask"],
     }
 }
 
@@ -609,56 +1454,558 @@ fn synthetic_cpu_count(pattern: SyntheticPattern, records: u32) -> u32 {
 fn synthetic_row(pattern: SyntheticPattern, index: u32) -> Vec<u32> {
     match pattern {
         SyntheticPattern::ConditionEval => vec![
-            index.wrapping_mul(17) % 11,
-            if index % 13 == 0 { 7 } else { 3 },
-            u32::from(index % 5 != 0),
+            condition_match_mask(index),
+            condition_rule_mask(index),
+            condition_metadata_mask(index),
         ],
         SyntheticPattern::StringBitmapScatter => vec![
-            u32::from(index % 29 == 0 || index % 211 == 3),
-            u32::from(index % 7 != 0),
+            string_bitmap_pattern_word(index),
+            string_bitmap_rule_word(index),
         ],
         SyntheticPattern::OffsetCountAggregation => vec![
-            index.wrapping_mul(31) % 8192,
-            1 + (index % 64),
-            index % 5,
+            aggregation_offset_mask(index),
+            aggregation_length_mask(index),
+            aggregation_count_mask(index),
         ],
-        SyntheticPattern::EntropyWindow => vec![5000 + (index.wrapping_mul(19) % 4500)],
+        SyntheticPattern::EntropyWindow => vec![
+            entropy_byte_class_mask(index),
+            entropy_transition_mask(index),
+            entropy_rarity_mask(index),
+        ],
         SyntheticPattern::QuantifiedLoops => vec![
-            u32::from(index % 3 == 0),
-            u32::from(index % 11 != 0),
-            index % 8,
+            quantified_any_mask(index),
+            quantified_all_mask(index),
+            quantified_threshold_mask(index),
         ],
-        SyntheticPattern::AliasReachingDef => {
-            let def = index % 4096;
-            let use_id = if index % 17 == 0 { def } else { def ^ 31 };
-            vec![def, use_id, u32::from(index % 5 != 0)]
-        }
-        SyntheticPattern::IfdsWitness => vec![u32::from(index % 31 == 0), u32::from(index % 4 == 0)],
+        SyntheticPattern::AliasReachingDef => vec![
+            alias_def_mask(index),
+            alias_use_mask(index),
+            alias_kill_mask(index),
+        ],
+        SyntheticPattern::IfdsWitness => vec![
+            ifds_frontier_mask(index),
+            ifds_transfer_mask(index),
+            ifds_witness_mask(index),
+        ],
         SyntheticPattern::CAstTraversal => vec![
-            if index % 97 == 0 { 42 } else { index % 64 },
-            index % 12,
+            c_ast_node_kind_mask(index),
+            c_ast_depth_mask(index),
+            c_ast_motif_mask(index),
         ],
-        SyntheticPattern::MegakernelQueuedBatch => vec![u32::from(index % 2 == 0), u32::from(index % 37 == 0)],
+        SyntheticPattern::MegakernelQueuedBatch => vec![
+            megakernel_queue_mask(index),
+            megakernel_predicate_mask(index),
+            megakernel_dispatch_mask(index),
+        ],
         SyntheticPattern::EgraphSaturation => {
-            let lhs = index % 2048;
-            let rhs = if index % 23 == 0 { lhs } else { lhs.wrapping_add(1) };
-            vec![u32::from(index % 9 == 0) * 3, lhs, rhs]
+            vec![
+                egraph_opcode_mask(index),
+                egraph_lhs_class_mask(index),
+                egraph_rhs_class_mask(index),
+            ]
         }
     }
 }
 
+fn string_bitmap_pattern_word(index: u32) -> u32 {
+    let mut hash = index ^ 0x9E37_79B9;
+    for lane in 0..24 {
+        hash = hash
+            .rotate_left(5)
+            .wrapping_mul(0x85EB_CA6B)
+            .wrapping_add(0xC2B2_AE35 ^ lane);
+    }
+    u32::from(index % 29 == 0 || index % 211 == 3 || hash == 0)
+}
+
+fn string_bitmap_rule_word(index: u32) -> u32 {
+    let mut hash = index.wrapping_add(0x27D4_EB2D);
+    for lane in 0..12 {
+        hash = hash
+            .rotate_right(7)
+            .wrapping_mul(0x1656_67B1)
+            .wrapping_add(0xD3A2_646C ^ lane);
+    }
+    u32::from(index % 7 != 0 && hash != u32::MAX)
+}
+
+const CONDITION_LANES: u32 = 16;
+const CONDITION_THRESHOLD: u32 = 6;
+const CONDITION_LANE_MASK: u32 = (1u32 << CONDITION_LANES) - 1;
+
+fn condition_match_mask(index: u32) -> u32 {
+    let mut state = index ^ 0xB529_7A4D;
+    let mut mask = 0u32;
+    for lane in 0..CONDITION_LANES {
+        state = state
+            .rotate_left(5)
+            .wrapping_mul(0x68E3_1DA4)
+            .wrapping_add(lane ^ 0x1B56_C4E9);
+        if state & 0x5 != 0 {
+            mask |= 1u32 << lane;
+        }
+    }
+    if index % 31 == 0 {
+        mask | 0x3F3F
+    } else {
+        mask & 0x5A5A
+    }
+}
+
+fn condition_rule_mask(index: u32) -> u32 {
+    let rotated = condition_match_mask(index).rotate_left((index & 7) + 1) & CONDITION_LANE_MASK;
+    if index % 31 == 0 {
+        rotated | 0x3F3F
+    } else {
+        rotated & 0x33CC
+    }
+}
+
+fn condition_metadata_mask(index: u32) -> u32 {
+    if index % 31 == 0 {
+        0x3F3F
+    } else {
+        0x0F0F ^ (1u32 << (index & (CONDITION_LANES - 1)))
+    }
+}
+
+fn condition_eval_matches(match_mask: u32, rule_mask: u32, metadata_mask: u32) -> bool {
+    let mut condition_hits = 0u32;
+    for lane in 0..CONDITION_LANES {
+        let bit = 1u32 << lane;
+        if match_mask & bit != 0 && rule_mask & bit != 0 && metadata_mask & bit != 0 {
+            condition_hits += 1;
+        }
+    }
+    condition_hits >= CONDITION_THRESHOLD
+}
+
+const AGGREGATION_LANES: u32 = 16;
+const AGGREGATION_THRESHOLD: u32 = 7;
+const AGGREGATION_LANE_MASK: u32 = (1u32 << AGGREGATION_LANES) - 1;
+
+fn aggregation_offset_mask(index: u32) -> u32 {
+    let mut state = index ^ 0xC13F_A9A9;
+    let mut mask = 0u32;
+    for lane in 0..AGGREGATION_LANES {
+        state = state
+            .rotate_left(11)
+            .wrapping_mul(0x9E37_79B1)
+            .wrapping_add(lane ^ 0x85EB_CA77);
+        if state & 0xD != 0 {
+            mask |= 1u32 << lane;
+        }
+    }
+    if index % 43 == 0 {
+        mask | 0x7F7F
+    } else {
+        mask & 0x6DB6
+    }
+}
+
+fn aggregation_length_mask(index: u32) -> u32 {
+    let rotated =
+        aggregation_offset_mask(index).rotate_right((index & 7) + 1) & AGGREGATION_LANE_MASK;
+    if index % 43 == 0 {
+        rotated | 0x7F7F
+    } else {
+        rotated & 0x3F3C
+    }
+}
+
+fn aggregation_count_mask(index: u32) -> u32 {
+    if index % 43 == 0 {
+        0x7F7F
+    } else {
+        0x1F1F ^ (1u32 << (index & (AGGREGATION_LANES - 1)))
+    }
+}
+
+fn offset_count_aggregation_matches(offset_mask: u32, length_mask: u32, count_mask: u32) -> bool {
+    let mut aggregation_hits = 0u32;
+    for lane in 0..AGGREGATION_LANES {
+        let bit = 1u32 << lane;
+        if offset_mask & bit != 0 && length_mask & bit != 0 && count_mask & bit != 0 {
+            aggregation_hits += 1;
+        }
+    }
+    aggregation_hits >= AGGREGATION_THRESHOLD
+}
+
+const ENTROPY_LANES: u32 = 16;
+const ENTROPY_THRESHOLD: u32 = 9;
+const ENTROPY_LANE_MASK: u32 = (1u32 << ENTROPY_LANES) - 1;
+
+fn entropy_byte_class_mask(index: u32) -> u32 {
+    let mut state = index ^ 0xA24B_AED5;
+    let mut mask = 0u32;
+    for lane in 0..ENTROPY_LANES {
+        state = state
+            .rotate_left(13)
+            .wrapping_mul(0x9FB2_1C65)
+            .wrapping_add(lane ^ 0xC2B2_AE3D);
+        if state & 0x17 != 0 {
+            mask |= 1u32 << lane;
+        }
+    }
+    if index % 47 == 0 {
+        mask | 0x7FFF
+    } else {
+        mask & 0x6B6D
+    }
+}
+
+fn entropy_transition_mask(index: u32) -> u32 {
+    let rotated = entropy_byte_class_mask(index).rotate_left((index & 7) + 1) & ENTROPY_LANE_MASK;
+    if index % 47 == 0 {
+        rotated | 0x7E7E
+    } else {
+        rotated & 0x35B5
+    }
+}
+
+fn entropy_rarity_mask(index: u32) -> u32 {
+    if index % 47 == 0 {
+        0x7E7E
+    } else {
+        0x2D2D ^ (1u32 << (index & (ENTROPY_LANES - 1)))
+    }
+}
+
+fn entropy_window_matches(byte_class_mask: u32, transition_mask: u32, rarity_mask: u32) -> bool {
+    let mut entropy_score = 0u32;
+    for lane in 0..ENTROPY_LANES {
+        let bit = 1u32 << lane;
+        if byte_class_mask & bit != 0 && (transition_mask & bit != 0 || rarity_mask & bit != 0) {
+            entropy_score += 1;
+        }
+    }
+    entropy_score >= ENTROPY_THRESHOLD
+}
+
+const QUANTIFIED_LANES: u32 = 16;
+const QUANTIFIED_THRESHOLD: u32 = 11;
+const QUANTIFIED_LANE_MASK: u32 = (1u32 << QUANTIFIED_LANES) - 1;
+
+fn quantified_any_mask(index: u32) -> u32 {
+    let mut mask = 0u32;
+    let mut state = index ^ 0xA511_E9B3;
+    for lane in 0..QUANTIFIED_LANES {
+        state = state
+            .rotate_left(3)
+            .wrapping_mul(0x9E37_79B9)
+            .wrapping_add(lane ^ 0x7F4A_7C15);
+        if state & 0x13 != 0 {
+            mask |= 1u32 << lane;
+        }
+    }
+    mask
+}
+
+fn quantified_all_mask(index: u32) -> u32 {
+    if index % 29 == 0 {
+        QUANTIFIED_LANE_MASK
+    } else {
+        QUANTIFIED_LANE_MASK ^ (1u32 << (index & (QUANTIFIED_LANES - 1)))
+    }
+}
+
+fn quantified_threshold_mask(index: u32) -> u32 {
+    let mut mask = 0u32;
+    let mut state = index.wrapping_mul(0x45D9_F3B);
+    for lane in 0..QUANTIFIED_LANES {
+        state = state.rotate_right(5).wrapping_add(0x27D4_EB2D ^ lane);
+        if state.count_ones() >= 14 || (index.wrapping_add(lane) % 5 == 0) {
+            mask |= 1u32 << lane;
+        }
+    }
+    mask
+}
+
+fn quantified_row_matches(any_mask: u32, all_mask: u32, threshold_mask: u32) -> bool {
+    let mut any_seen = false;
+    let mut threshold_hits = 0u32;
+    for lane in 0..QUANTIFIED_LANES {
+        let bit = 1u32 << lane;
+        any_seen |= any_mask & bit != 0;
+        if all_mask & bit == 0 {
+            return false;
+        }
+        threshold_hits += u32::from(threshold_mask & bit != 0);
+    }
+    any_seen && threshold_hits >= QUANTIFIED_THRESHOLD
+}
+
+const ALIAS_LANES: u32 = 16;
+const ALIAS_THRESHOLD: u32 = 4;
+const ALIAS_LANE_MASK: u32 = (1u32 << ALIAS_LANES) - 1;
+
+fn alias_def_mask(index: u32) -> u32 {
+    let mut state = index ^ 0x6C8E_9CF5;
+    let mut mask = 0u32;
+    for lane in 0..ALIAS_LANES {
+        state = state
+            .rotate_left(7)
+            .wrapping_mul(0x7FEB_352D)
+            .wrapping_add(lane ^ 0x846C_A68B);
+        if state & 0x7 != 0 {
+            mask |= 1u32 << lane;
+        }
+    }
+    if index % 37 == 0 {
+        mask | 0x00F3
+    } else {
+        mask & 0x5555
+    }
+}
+
+fn alias_use_mask(index: u32) -> u32 {
+    let shifted = alias_def_mask(index).rotate_left((index & 7) + 1) & ALIAS_LANE_MASK;
+    if index % 37 == 0 {
+        shifted | 0x00F3
+    } else {
+        shifted & 0x3333
+    }
+}
+
+fn alias_kill_mask(index: u32) -> u32 {
+    if index % 37 == 0 {
+        ALIAS_LANE_MASK ^ 0x00F3
+    } else {
+        0xAAAA | (1u32 << (index & (ALIAS_LANES - 1)))
+    }
+}
+
+fn alias_reaching_def_matches(def_mask: u32, use_mask: u32, kill_mask: u32) -> bool {
+    let mut reaching_aliases = 0u32;
+    for lane in 0..ALIAS_LANES {
+        let bit = 1u32 << lane;
+        if def_mask & bit != 0 && use_mask & bit != 0 && kill_mask & bit == 0 {
+            reaching_aliases += 1;
+        }
+    }
+    reaching_aliases >= ALIAS_THRESHOLD
+}
+
+const IFDS_LANES: u32 = 16;
+const IFDS_THRESHOLD: u32 = 5;
+const IFDS_LANE_MASK: u32 = (1u32 << IFDS_LANES) - 1;
+
+fn ifds_frontier_mask(index: u32) -> u32 {
+    let mut state = index.wrapping_add(0xD1B5_4A35);
+    let mut mask = 0u32;
+    for lane in 0..IFDS_LANES {
+        state = state
+            .rotate_left(9)
+            .wrapping_mul(0x94D0_49BB)
+            .wrapping_add(lane ^ 0x2545_F491);
+        if state & 0xB != 0 {
+            mask |= 1u32 << lane;
+        }
+    }
+    if index % 41 == 0 {
+        mask | 0x1F1F
+    } else {
+        mask & 0x5A5A
+    }
+}
+
+fn ifds_transfer_mask(index: u32) -> u32 {
+    let rotated = ifds_frontier_mask(index).rotate_right((index & 7) + 1) & IFDS_LANE_MASK;
+    if index % 41 == 0 {
+        rotated | 0x1F1F
+    } else {
+        rotated & 0x3C3C
+    }
+}
+
+fn ifds_witness_mask(index: u32) -> u32 {
+    if index % 41 == 0 {
+        0x1F1F
+    } else {
+        0x00F0 ^ (1u32 << (index & (IFDS_LANES - 1)))
+    }
+}
+
+fn ifds_witness_matches(frontier_mask: u32, transfer_mask: u32, witness_mask: u32) -> bool {
+    let mut witness_hits = 0u32;
+    for lane in 0..IFDS_LANES {
+        let bit = 1u32 << lane;
+        if frontier_mask & bit != 0 && transfer_mask & bit != 0 && witness_mask & bit != 0 {
+            witness_hits += 1;
+        }
+    }
+    witness_hits >= IFDS_THRESHOLD
+}
+
+const C_AST_LANES: u32 = 16;
+const C_AST_THRESHOLD: u32 = 6;
+const C_AST_LANE_MASK: u32 = (1u32 << C_AST_LANES) - 1;
+
+fn c_ast_node_kind_mask(index: u32) -> u32 {
+    let mut state = index ^ 0xDEAD_BEEF;
+    let mut mask = 0u32;
+    for lane in 0..C_AST_LANES {
+        state = state
+            .rotate_left(3)
+            .wrapping_mul(0x85EB_CA6B)
+            .wrapping_add(lane ^ 0x27D4_EB2D);
+        if state & 0xB != 0 {
+            mask |= 1u32 << lane;
+        }
+    }
+    if index % 53 == 0 {
+        mask | 0x3F3F
+    } else {
+        mask & 0x5B5B
+    }
+}
+
+fn c_ast_depth_mask(index: u32) -> u32 {
+    let rotated = c_ast_node_kind_mask(index).rotate_right((index & 7) + 1) & C_AST_LANE_MASK;
+    if index % 53 == 0 {
+        rotated | 0x3F3F
+    } else {
+        rotated & 0x33F0
+    }
+}
+
+fn c_ast_motif_mask(index: u32) -> u32 {
+    if index % 53 == 0 {
+        0x3F3F
+    } else {
+        0x0FF0 ^ (1u32 << (index & (C_AST_LANES - 1)))
+    }
+}
+
+fn c_ast_traversal_matches(node_kind_mask: u32, depth_mask: u32, motif_mask: u32) -> bool {
+    let mut ast_hits = 0u32;
+    for lane in 0..C_AST_LANES {
+        let bit = 1u32 << lane;
+        if node_kind_mask & bit != 0 && depth_mask & bit != 0 && motif_mask & bit != 0 {
+            ast_hits += 1;
+        }
+    }
+    ast_hits >= C_AST_THRESHOLD
+}
+
+const MEGAKERNEL_QUEUE_LANES: u32 = 16;
+const MEGAKERNEL_QUEUE_THRESHOLD: u32 = 6;
+const MEGAKERNEL_QUEUE_LANE_MASK: u32 = (1u32 << MEGAKERNEL_QUEUE_LANES) - 1;
+
+fn megakernel_queue_mask(index: u32) -> u32 {
+    let mut state = index ^ 0x8CB9_2BA7;
+    let mut mask = 0u32;
+    for lane in 0..MEGAKERNEL_QUEUE_LANES {
+        state = state
+            .rotate_left(7)
+            .wrapping_mul(0xC2B2_AE35)
+            .wrapping_add(lane ^ 0x27D4_EB2F);
+        if state & 0x7 != 0 {
+            mask |= 1u32 << lane;
+        }
+    }
+    if index % 59 == 0 {
+        mask | 0x3F3F
+    } else {
+        mask & 0x56D6
+    }
+}
+
+fn megakernel_predicate_mask(index: u32) -> u32 {
+    let rotated =
+        megakernel_queue_mask(index).rotate_right((index & 7) + 1) & MEGAKERNEL_QUEUE_LANE_MASK;
+    if index % 59 == 0 {
+        rotated | 0x3F3F
+    } else {
+        rotated & 0x333C
+    }
+}
+
+fn megakernel_dispatch_mask(index: u32) -> u32 {
+    if index % 59 == 0 {
+        0x3F3F
+    } else {
+        0x0F0F ^ (1u32 << (index & (MEGAKERNEL_QUEUE_LANES - 1)))
+    }
+}
+
+fn megakernel_queue_matches(queue_mask: u32, predicate_mask: u32, dispatch_mask: u32) -> bool {
+    let mut queued_hits = 0u32;
+    for lane in 0..MEGAKERNEL_QUEUE_LANES {
+        let bit = 1u32 << lane;
+        if queue_mask & bit != 0 && predicate_mask & bit != 0 && dispatch_mask & bit != 0 {
+            queued_hits += 1;
+        }
+    }
+    queued_hits >= MEGAKERNEL_QUEUE_THRESHOLD
+}
+
+const EGRAPH_LANES: u32 = 16;
+const EGRAPH_THRESHOLD: u32 = 7;
+const EGRAPH_LANE_MASK: u32 = (1u32 << EGRAPH_LANES) - 1;
+
+fn egraph_opcode_mask(index: u32) -> u32 {
+    let mut state = index ^ 0xA409_3822;
+    let mut mask = 0u32;
+    for lane in 0..EGRAPH_LANES {
+        state = state
+            .rotate_left(9)
+            .wrapping_mul(0x9E37_79B9)
+            .wrapping_add(lane ^ 0x299F_31D0);
+        if state & 0xD != 0 {
+            mask |= 1u32 << lane;
+        }
+    }
+    if index % 61 == 0 {
+        mask | 0x7F7F
+    } else {
+        mask & 0x5DB5
+    }
+}
+
+fn egraph_lhs_class_mask(index: u32) -> u32 {
+    let rotated = egraph_opcode_mask(index).rotate_left((index & 7) + 1) & EGRAPH_LANE_MASK;
+    if index % 61 == 0 {
+        rotated | 0x7F7F
+    } else {
+        rotated & 0x3F33
+    }
+}
+
+fn egraph_rhs_class_mask(index: u32) -> u32 {
+    if index % 61 == 0 {
+        0x7F7F
+    } else {
+        0x1F1F ^ (1u32 << (index & (EGRAPH_LANES - 1)))
+    }
+}
+
+fn egraph_saturation_matches(opcode_mask: u32, lhs_class_mask: u32, rhs_class_mask: u32) -> bool {
+    let mut rewrite_hits = 0u32;
+    for lane in 0..EGRAPH_LANES {
+        let bit = 1u32 << lane;
+        if opcode_mask & bit != 0 && lhs_class_mask & bit != 0 && rhs_class_mask & bit != 0 {
+            rewrite_hits += 1;
+        }
+    }
+    rewrite_hits >= EGRAPH_THRESHOLD
+}
+
 fn row_matches(pattern: SyntheticPattern, row: &[u32]) -> bool {
     match pattern {
-        SyntheticPattern::ConditionEval => row[0] > 3 && row[1] == 7 && row[2] != 0,
+        SyntheticPattern::ConditionEval => condition_eval_matches(row[0], row[1], row[2]),
         SyntheticPattern::StringBitmapScatter => row[0] != 0 && row[1] != 0,
-        SyntheticPattern::OffsetCountAggregation => row[0] > 128 && row[1] > 4 && row[2] > 1,
-        SyntheticPattern::EntropyWindow => row[0] > 7200,
-        SyntheticPattern::QuantifiedLoops => row[0] != 0 && row[1] != 0 && row[2] > 2,
-        SyntheticPattern::AliasReachingDef => row[0] == row[1] && row[2] != 0,
-        SyntheticPattern::IfdsWitness => row[0] != 0 && row[1] == 1,
-        SyntheticPattern::CAstTraversal => row[0] == 42 && row[1] > 3,
-        SyntheticPattern::MegakernelQueuedBatch => row[0] == 1 && row[1] != 0,
-        SyntheticPattern::EgraphSaturation => row[0] == 3 && row[1] == row[2],
+        SyntheticPattern::OffsetCountAggregation => {
+            offset_count_aggregation_matches(row[0], row[1], row[2])
+        }
+        SyntheticPattern::EntropyWindow => entropy_window_matches(row[0], row[1], row[2]),
+        SyntheticPattern::QuantifiedLoops => quantified_row_matches(row[0], row[1], row[2]),
+        SyntheticPattern::AliasReachingDef => alias_reaching_def_matches(row[0], row[1], row[2]),
+        SyntheticPattern::IfdsWitness => ifds_witness_matches(row[0], row[1], row[2]),
+        SyntheticPattern::CAstTraversal => c_ast_traversal_matches(row[0], row[1], row[2]),
+        SyntheticPattern::MegakernelQueuedBatch => megakernel_queue_matches(row[0], row[1], row[2]),
+        SyntheticPattern::EgraphSaturation => egraph_saturation_matches(row[0], row[1], row[2]),
     }
 }
 
@@ -681,9 +2028,16 @@ fn linear_graph_inputs() -> GraphInputs {
     let edge_targets: Vec<u32> = (1..CALLGRAPH_NODES).collect();
     let edge_kind_mask = vec![1; CALLGRAPH_EDGES as usize];
     let node_tags = vec![0; CALLGRAPH_NODES as usize];
-    let mut frontier_in = vec![0; CALLGRAPH_WORDS];
-    frontier_in[0] = 1;
-    let frontier_out_seed = frontier_in.clone();
+    let mut frontier_in = vec![u32::MAX; CALLGRAPH_WORDS];
+    let extra_bits = (CALLGRAPH_WORDS as u32 * 32).saturating_sub(CALLGRAPH_NODES);
+    if extra_bits > 0 {
+        let live_bits = 32 - extra_bits;
+        let last = frontier_in
+            .last_mut()
+            .expect("CALLGRAPH_WORDS is derived from a nonzero node count");
+        *last = (1u32 << live_bits) - 1;
+    }
+    let frontier_out_seed = vec![0; CALLGRAPH_WORDS];
     let inputs = vec![
         encode_u32_words(&nodes),
         encode_u32_words(&edge_offsets),
@@ -710,6 +2064,101 @@ fn graph_input_bytes() -> u64 {
         + CALLGRAPH_EDGES as usize * 2
         + CALLGRAPH_WORDS * 2)
         * 4) as u64
+}
+
+fn release_benchmark_csr_forward_baseline(
+    node_count: u32,
+    edge_offsets: &[u32],
+    edge_targets: &[u32],
+    edge_kind_mask: &[u32],
+    frontier_in: &[u32],
+    allow_mask: u32,
+) -> Vec<u32> {
+    let words = node_count.div_ceil(32) as usize;
+    let mut out = vec![0; words];
+    let expected_offsets = node_count as usize + 1;
+    assert_eq!(
+        edge_offsets.len(),
+        expected_offsets,
+        "release benchmark CSR baseline received {} row offsets for node_count={node_count}; Fix: pass exactly node_count + 1 CSR offsets.",
+        edge_offsets.len()
+    );
+    let edge_count = edge_offsets[expected_offsets - 1] as usize;
+    assert!(
+        edge_targets.len() >= edge_count && edge_kind_mask.len() >= edge_count,
+        "release benchmark CSR baseline received edge_count={edge_count} but targets_len={} kind_mask_len={}. Fix: pass complete CSR edge buffers.",
+        edge_targets.len(),
+        edge_kind_mask.len()
+    );
+    for (index, pair) in edge_offsets.windows(2).enumerate() {
+        assert!(
+            pair[0] <= pair[1],
+            "release benchmark CSR baseline received non-monotonic CSR offsets at row {index}: {} > {}. Fix: rebuild CSR row pointers before collecting release evidence.",
+            pair[0],
+            pair[1]
+        );
+    }
+    for src in 0..node_count {
+        let src_word = (src / 32) as usize;
+        let src_bit = 1u32 << (src % 32);
+        if src_word >= frontier_in.len() || (frontier_in[src_word] & src_bit) == 0 {
+            continue;
+        }
+        let edge_start = edge_offsets[src as usize] as usize;
+        let edge_end = edge_offsets[src as usize + 1] as usize;
+        for edge_index in edge_start..edge_end {
+            if (edge_kind_mask[edge_index] & allow_mask) == 0 {
+                continue;
+            }
+            let dst = edge_targets[edge_index];
+            if dst < node_count {
+                out[(dst / 32) as usize] |= 1u32 << (dst % 32);
+            }
+        }
+    }
+    out
+}
+
+fn callgraph_witness_digest(
+    node_count: u32,
+    edge_offsets: &[u32],
+    edge_targets: &[u32],
+    edge_kind_mask: &[u32],
+    frontier_in: &[u32],
+    allow_mask: u32,
+) -> u32 {
+    let mut digest = 0x811C_9DC5u32;
+    for src in 0..node_count {
+        let src_word = (src / 32) as usize;
+        let src_bit = 1u32 << (src % 32);
+        if src_word >= frontier_in.len() || (frontier_in[src_word] & src_bit) == 0 {
+            continue;
+        }
+        let edge_start = edge_offsets[src as usize] as usize;
+        let edge_end = edge_offsets[src as usize + 1] as usize;
+        for edge_index in edge_start..edge_end {
+            if (edge_kind_mask[edge_index] & allow_mask) == 0 {
+                continue;
+            }
+            let dst = edge_targets[edge_index];
+            if dst >= node_count {
+                continue;
+            }
+            let mut witness = src
+                .wrapping_mul(0x45D9_F3B)
+                .wrapping_add(dst.rotate_left(7))
+                .wrapping_add(edge_index as u32);
+            for round in 0..12 {
+                witness = witness
+                    .rotate_left(5)
+                    .wrapping_mul(0x85EB_CA6B)
+                    .wrapping_add(0xC2B2_AE35 ^ round);
+            }
+            digest ^= witness;
+            digest = digest.rotate_left(3).wrapping_mul(0x0100_0193);
+        }
+    }
+    digest
 }
 
 fn bench_run_from_timed(
@@ -765,11 +2214,11 @@ fn add_release_alias_metrics(
     match pattern {
         SyntheticPattern::AliasReachingDef => {
             run.metrics.custom.push(MetricPoint {
-                name: "weir_nodes".to_string(),
+                name: "nodes".to_string(),
                 value: u64::from(records),
             });
             run.metrics.custom.push(MetricPoint {
-                name: "weir_bitset_words".to_string(),
+                name: "bitset_words".to_string(),
                 value: u64::from(records.div_ceil(32)),
             });
         }
@@ -916,8 +2365,8 @@ static ALIAS_REACHING_DEF: SyntheticCountWorkload = SyntheticCountWorkload {
     id: "release.alias_reaching_def.1m",
     name: "Release Alias Reaching Definition 1M",
     description: "Alias-aware reaching-definition predicate workload used by optimization passes",
-    tags: &["alias", "reaching-def", "weir"],
-    owner_crate: "weir",
+    tags: &["alias", "reaching-def", "dataflow"],
+    owner_crate: "dataflow",
     primitive: "alias-aware reaching-definition optimization",
     baseline: "LLVM-style sparse dataflow and alias analysis baseline",
     metric_name: "alias_records",
@@ -931,7 +2380,7 @@ static IFDS_WITNESS: SyntheticCountWorkload = SyntheticCountWorkload {
     name: "Release IFDS Witness 1M",
     description: "IFDS frontier and edge-kind predicate stage for witness extraction",
     tags: &["ifds", "witness", "dataflow"],
-    owner_crate: "weir",
+    owner_crate: "dataflow",
     primitive: "IFDS reachability and witness extraction",
     baseline: "optimized CPU graph reachability and witness extraction",
     metric_name: "ifds_records",

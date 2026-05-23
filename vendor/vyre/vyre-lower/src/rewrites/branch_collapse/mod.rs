@@ -1,15 +1,19 @@
 //! Branch collapse — `StructuredIfThen`/`StructuredIfThenElse` whose
-//! condition is a Literal(bool) collapses to the appropriate arm.
+//! condition is provably constant collapses to the appropriate arm.
 //!
-//! This pairs naturally with `descriptor_const_fold`: descriptor_const_fold turns boolean
-//! arithmetic chains into Literal(true)/Literal(false), then this
-//! pass eliminates the dead branches.
-//!
-//! Conditions like `Eq(lit_5, lit_5)` get folded to Literal(true) by
-//! descriptor_const_fold first; then this pass picks them up.
+//! This pass picks up two sources of provably-constant conditions:
+//! 1. Direct `Literal(Bool(_))` ops, the easy case. `descriptor_const_fold`
+//!    folds boolean arithmetic chains into these before this pass runs.
+//! 2. Comparison `BinOp`s (`Eq`/`Ne`/`Lt`/`Le`/`Gt`/`Ge`) whose operand
+//!    ranges are statically derivable via `analyses::value_range`. This
+//!    closes PERF A16 (range → branch elision): an `Lt(x, n)` where x's
+//!    proven range is `[0, n-1]` collapses to true at this layer instead
+//!    of leaving a runtime compare-and-branch in the kernel.
 
+use crate::analyses::value_range::{analyze_body, IntRange};
 use crate::{KernelBody, KernelDescriptor, KernelOp, KernelOpKind, LiteralValue};
 use rustc_hash::FxHashMap;
+use vyre_foundation::ir::BinOp;
 
 #[must_use]
 pub fn branch_collapse(desc: &KernelDescriptor) -> KernelDescriptor {
@@ -21,7 +25,7 @@ pub fn branch_collapse(desc: &KernelDescriptor) -> KernelDescriptor {
 fn collapse_body(mut body: KernelBody) -> KernelBody {
     // Map result-id → bool literal value (only when the producing op
     // is a Literal of a Bool value).
-    let bool_lits: FxHashMap<u32, bool> = body
+    let mut bool_lits: FxHashMap<u32, bool> = body
         .ops
         .iter()
         .filter_map(|op| match (&op.kind, op.result, op.operands.first()) {
@@ -35,11 +39,41 @@ fn collapse_body(mut body: KernelBody) -> KernelBody {
         })
         .collect();
 
+    // Augment with comparisons whose value-range proof yields a constant
+    // bool. This is the PERF A16 wire-up: range narrows from prior passes
+    // (loop-bound clamps, BitAnd masks, LICM-hoisted Mul ops) flow into
+    // structured branch decisions here without needing the comparison
+    // operands themselves to be Literal at the IR layer.
+    let ranges = analyze_body(&body);
+    for op in &body.ops {
+        let Some(rid) = op.result else {
+            continue;
+        };
+        if bool_lits.contains_key(&rid) {
+            continue;
+        }
+        let KernelOpKind::BinOpKind(bin_op) = &op.kind else {
+            continue;
+        };
+        if op.operands.len() < 2 {
+            continue;
+        }
+        let lhs = ranges.get(op.operands[0]);
+        let rhs = ranges.get(op.operands[1]);
+        let (Some(l), Some(r)) = (lhs, rhs) else {
+            continue;
+        };
+        if let Some(verdict) = compare_ranges(*bin_op, l, r) {
+            bool_lits.insert(rid, verdict);
+        }
+    }
+
     // Pre-compute every result id referenced by any op in this body
     // (including nested children). If a candidate-for-drop body
     // produces an id in this set, we MUST NOT drop the body — its
     // result is consumed elsewhere and dropping creates dangling refs.
     let parent_referenced_ids = collect_all_referenced_ids(&body);
+    let parent_produced_ids = collect_top_level_produced_ids(&body);
     let original_children = std::mem::take(&mut body.child_bodies);
     let mut new_ops: Vec<KernelOp> = Vec::with_capacity(body.ops.len());
     let mut new_children = original_children.clone();
@@ -54,7 +88,7 @@ fn collapse_body(mut body: KernelBody) -> KernelBody {
                     if let Some(cond_lit) = bool_lits.get(&cond_id).copied() {
                         if cond_lit {
                             if let Some(child) = original_children.get(body_id as usize) {
-                                if can_collapse_safely(child, &parent_referenced_ids) {
+                                if can_collapse_safely(child, &parent_produced_ids) {
                                     inline_child_body(child, &mut new_ops, &mut new_children);
                                     continue;
                                 }
@@ -88,7 +122,7 @@ fn collapse_body(mut body: KernelBody) -> KernelBody {
                         let pick = original_children.get(pick_id as usize);
                         let drop = original_children.get(drop_id as usize);
                         if let Some(pick) = pick {
-                            if can_collapse_safely(pick, &parent_referenced_ids)
+                            if can_collapse_safely(pick, &parent_produced_ids)
                                 && drop
                                     .map(|d| dropping_body_is_safe(d, &parent_referenced_ids))
                                     .unwrap_or(true)
@@ -150,10 +184,10 @@ fn inline_child_body(child: &KernelBody, ops: &mut Vec<KernelOp>, children: &mut
 /// would yank out of scope), refuse to collapse — the IfThen stays
 /// intact and the verifier stays clean. This is the fix for
 /// `DanglingResultRef { ref_id: 13 }` on shunting_yard descriptors.
-fn can_collapse_safely(child: &KernelBody, _parent_refs: &rustc_hash::FxHashSet<u32>) -> bool {
+fn can_collapse_safely(child: &KernelBody, parent_produced: &rustc_hash::FxHashSet<u32>) -> bool {
     let mut produced = rustc_hash::FxHashSet::default();
     collect_produced_ids_inclusive(child, &mut produced);
-    body_refs_only(child, &produced)
+    produced.is_disjoint(parent_produced) && body_refs_only(child, &produced)
 }
 
 /// Conservative drop safety: dropping the child body is safe only
@@ -169,6 +203,10 @@ fn collect_all_referenced_ids(body: &KernelBody) -> rustc_hash::FxHashSet<u32> {
     let mut out = rustc_hash::FxHashSet::default();
     collect_refs(body, &mut out);
     out
+}
+
+fn collect_top_level_produced_ids(body: &KernelBody) -> rustc_hash::FxHashSet<u32> {
+    body.ops.iter().filter_map(|op| op.result).collect()
 }
 
 fn collect_refs(body: &KernelBody, out: &mut rustc_hash::FxHashSet<u32>) {
@@ -243,6 +281,70 @@ fn operand_is_result_reference(kind: &KernelOpKind, pos: usize) -> bool {
         StructuredBlock | Region { .. } => false,
         IndirectDispatch { .. } => false,
         _ => true,
+    }
+}
+
+/// Try to derive a constant verdict for `op(l, r)` purely from the
+/// pre-computed ranges. Returns `Some(true)` if every value-pair in
+/// `(l, r)` satisfies the comparison, `Some(false)` if no pair does,
+/// and `None` when the ranges overlap on the comparison boundary.
+fn compare_ranges(op: BinOp, l: IntRange, r: IntRange) -> Option<bool> {
+    match op {
+        BinOp::Eq => {
+            if l.is_singleton() && r.is_singleton() {
+                Some(l.min == r.min)
+            } else if l.max < r.min || r.max < l.min {
+                Some(false)
+            } else {
+                None
+            }
+        }
+        BinOp::Ne => {
+            if l.is_singleton() && r.is_singleton() {
+                Some(l.min != r.min)
+            } else if l.max < r.min || r.max < l.min {
+                Some(true)
+            } else {
+                None
+            }
+        }
+        BinOp::Lt => {
+            if l.max < r.min {
+                Some(true)
+            } else if l.min >= r.max {
+                Some(false)
+            } else {
+                None
+            }
+        }
+        BinOp::Le => {
+            if l.max <= r.min {
+                Some(true)
+            } else if l.min > r.max {
+                Some(false)
+            } else {
+                None
+            }
+        }
+        BinOp::Gt => {
+            if l.min > r.max {
+                Some(true)
+            } else if l.max <= r.min {
+                Some(false)
+            } else {
+                None
+            }
+        }
+        BinOp::Ge => {
+            if l.min >= r.max {
+                Some(true)
+            } else if l.max < r.min {
+                Some(false)
+            } else {
+                None
+            }
+        }
+        _ => None,
     }
 }
 
@@ -607,5 +709,259 @@ mod tests {
         let once = branch_collapse(&desc);
         let twice = branch_collapse(&once);
         assert_eq!(once.body.ops.len(), twice.body.ops.len());
+    }
+
+    fn lit_kernel(
+        ops: Vec<KernelOp>,
+        child_ops: Vec<KernelOp>,
+        lits: Vec<LiteralValue>,
+    ) -> KernelDescriptor {
+        KernelDescriptor {
+            id: "range_collapse".into(),
+            bindings: BindingLayout { slots: vec![] },
+            dispatch: Dispatch::new(1, 1, 1),
+            body: KernelBody {
+                ops,
+                child_bodies: vec![KernelBody {
+                    ops: child_ops,
+                    child_bodies: vec![],
+                    literals: vec![LiteralValue::U32(123)],
+                }],
+                literals: lits,
+            },
+        }
+    }
+
+    #[test]
+    fn range_proves_lt_true_collapses_then_branch() {
+        // Lit(3); Lit(10); cond = Lt(Lit(3), Lit(10)) → true; if(cond) { Lit(123) }
+        // Both operands are singletons, range proves 3 < 10 → cond true.
+        // Outer body collapses to [Lit(3), Lit(10), Lt, Lit(123)] — IfThen replaced.
+        let desc = lit_kernel(
+            vec![
+                KernelOp {
+                    kind: KernelOpKind::Literal,
+                    operands: vec![0],
+                    result: Some(0),
+                },
+                KernelOp {
+                    kind: KernelOpKind::Literal,
+                    operands: vec![1],
+                    result: Some(1),
+                },
+                KernelOp {
+                    kind: KernelOpKind::BinOpKind(BinOp::Lt),
+                    operands: vec![0, 1],
+                    result: Some(2),
+                },
+                KernelOp {
+                    kind: KernelOpKind::StructuredIfThen,
+                    operands: vec![2, 0],
+                    result: None,
+                },
+            ],
+            vec![KernelOp {
+                kind: KernelOpKind::Literal,
+                operands: vec![0],
+                result: Some(3),
+            }],
+            vec![LiteralValue::U32(3), LiteralValue::U32(10)],
+        );
+        let out = branch_collapse(&desc);
+        assert!(
+            out.body
+                .ops
+                .iter()
+                .all(|o| !matches!(o.kind, KernelOpKind::StructuredIfThen)),
+            "range proof should have eliminated the IfThen"
+        );
+        assert!(
+            out.body
+                .ops
+                .iter()
+                .any(|o| matches!(o.kind, KernelOpKind::Literal) && o.result == Some(3)),
+            "child Lit(123) should have been inlined into the parent body"
+        );
+    }
+
+    #[test]
+    fn range_proves_eq_false_drops_then_branch() {
+        // Lit(7); Lit(11); cond = Eq(Lit(7), Lit(11)) → false; if(cond) { Lit(123) }
+        // Disjoint singletons; range proves 7 != 11 → cond false. IfThen drops.
+        let desc = lit_kernel(
+            vec![
+                KernelOp {
+                    kind: KernelOpKind::Literal,
+                    operands: vec![0],
+                    result: Some(0),
+                },
+                KernelOp {
+                    kind: KernelOpKind::Literal,
+                    operands: vec![1],
+                    result: Some(1),
+                },
+                KernelOp {
+                    kind: KernelOpKind::BinOpKind(BinOp::Eq),
+                    operands: vec![0, 1],
+                    result: Some(2),
+                },
+                KernelOp {
+                    kind: KernelOpKind::StructuredIfThen,
+                    operands: vec![2, 0],
+                    result: None,
+                },
+            ],
+            vec![KernelOp {
+                kind: KernelOpKind::Literal,
+                operands: vec![0],
+                result: Some(3),
+            }],
+            vec![LiteralValue::U32(7), LiteralValue::U32(11)],
+        );
+        let out = branch_collapse(&desc);
+        assert!(
+            out.body
+                .ops
+                .iter()
+                .all(|o| !matches!(o.kind, KernelOpKind::StructuredIfThen)),
+            "range proof should have eliminated the IfThen"
+        );
+        assert!(
+            out.body
+                .ops
+                .iter()
+                .all(|o| !(matches!(o.kind, KernelOpKind::Literal) && o.result == Some(3))),
+            "dropped branch's body Lit(123) must NOT appear in parent"
+        );
+    }
+
+    #[test]
+    fn range_overlapping_lt_leaves_branch_unchanged() {
+        // Lit(3); Lit(BitAnd over Lit(3) → range [0, 3]); cond = Lt(Lit(3), BitAnd…)
+        // The BitAnd produces range [0, 3], so Lt(3, [0,3]) is undecidable
+        // (true at (3, ?) only when the right value is > 3 — never). Wait:
+        // Lt(3, x in [0,3]) requires x > 3 → always false → range proves false.
+        // For an undecidable case, use Lt(BitAnd, BitAnd) which gives [0,3] vs [0,3].
+        let desc = lit_kernel(
+            vec![
+                KernelOp {
+                    kind: KernelOpKind::Literal,
+                    operands: vec![0],
+                    result: Some(0),
+                },
+                KernelOp {
+                    kind: KernelOpKind::Literal,
+                    operands: vec![1],
+                    result: Some(1),
+                },
+                // a = lit_x & lit_mask (range [0, mask])
+                KernelOp {
+                    kind: KernelOpKind::BinOpKind(BinOp::BitAnd),
+                    operands: vec![0, 1],
+                    result: Some(2),
+                },
+                // b = lit_x & lit_mask (range [0, mask]); same shape
+                KernelOp {
+                    kind: KernelOpKind::BinOpKind(BinOp::BitAnd),
+                    operands: vec![0, 1],
+                    result: Some(3),
+                },
+                KernelOp {
+                    kind: KernelOpKind::BinOpKind(BinOp::Lt),
+                    operands: vec![2, 3],
+                    result: Some(4),
+                },
+                KernelOp {
+                    kind: KernelOpKind::StructuredIfThen,
+                    operands: vec![4, 0],
+                    result: None,
+                },
+            ],
+            vec![KernelOp {
+                kind: KernelOpKind::Literal,
+                operands: vec![0],
+                result: Some(5),
+            }],
+            vec![LiteralValue::U32(15), LiteralValue::U32(7)],
+        );
+        let out = branch_collapse(&desc);
+        assert!(
+            out.body
+                .ops
+                .iter()
+                .any(|o| matches!(o.kind, KernelOpKind::StructuredIfThen)),
+            "overlapping ranges must NOT collapse the branch — undecidable"
+        );
+    }
+
+    #[test]
+    fn range_proves_ge_true_collapses_if_then_else_then_arm() {
+        // Lit(20); Lit(5); cond = Ge(Lit(20), Lit(5)) → true; if-then-else picks then.
+        let desc = KernelDescriptor {
+            id: "ge_then".into(),
+            bindings: BindingLayout { slots: vec![] },
+            dispatch: Dispatch::new(1, 1, 1),
+            body: KernelBody {
+                ops: vec![
+                    KernelOp {
+                        kind: KernelOpKind::Literal,
+                        operands: vec![0],
+                        result: Some(0),
+                    },
+                    KernelOp {
+                        kind: KernelOpKind::Literal,
+                        operands: vec![1],
+                        result: Some(1),
+                    },
+                    KernelOp {
+                        kind: KernelOpKind::BinOpKind(BinOp::Ge),
+                        operands: vec![0, 1],
+                        result: Some(2),
+                    },
+                    KernelOp {
+                        kind: KernelOpKind::StructuredIfThenElse,
+                        operands: vec![2, 0, 1],
+                        result: None,
+                    },
+                ],
+                child_bodies: vec![
+                    KernelBody {
+                        ops: vec![KernelOp {
+                            kind: KernelOpKind::Literal,
+                            operands: vec![0],
+                            result: Some(100),
+                        }],
+                        child_bodies: vec![],
+                        literals: vec![LiteralValue::U32(777)],
+                    },
+                    KernelBody {
+                        ops: vec![KernelOp {
+                            kind: KernelOpKind::Literal,
+                            operands: vec![0],
+                            result: Some(200),
+                        }],
+                        child_bodies: vec![],
+                        literals: vec![LiteralValue::U32(888)],
+                    },
+                ],
+                literals: vec![LiteralValue::U32(20), LiteralValue::U32(5)],
+            },
+        };
+        let out = branch_collapse(&desc);
+        assert!(
+            out.body
+                .ops
+                .iter()
+                .all(|o| !matches!(o.kind, KernelOpKind::StructuredIfThenElse)),
+            "Ge(20, 5) is provably true → IfThenElse should be replaced by then-arm"
+        );
+        assert!(
+            out.body.ops.iter().any(|o| o.result == Some(100)),
+            "then-arm body op (result 100) must be inlined"
+        );
+        assert!(
+            out.body.ops.iter().all(|o| o.result != Some(200)),
+            "else-arm body op (result 200) must NOT appear after collapse"
+        );
     }
 }

@@ -93,6 +93,7 @@ pub fn kernel_to_fixed_16_16_into(kernel: &[f64], step: f64, alpha: f64, out: &m
 /// CPU reference: apply a length-`n` GL kernel to a signal `f` of
 /// length `m`. Uses zero-padding for `i - k < 0`.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn fractional_derivative_cpu(f: &[f64], alpha: f64, step: f64) -> Vec<f64> {
     let mut kernel = Vec::new();
     let mut out = Vec::new();
@@ -101,6 +102,7 @@ pub fn fractional_derivative_cpu(f: &[f64], alpha: f64, step: f64) -> Vec<f64> {
 }
 
 /// CPU reference into caller-owned kernel and output storage.
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn fractional_derivative_cpu_into(
     f: &[f64],
     alpha: f64,

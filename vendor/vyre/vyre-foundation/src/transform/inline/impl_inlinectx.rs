@@ -24,6 +24,10 @@ impl InlineCtx {
     }
 
     #[inline]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "exhaustive Node inlining dispatch keeps each IR variant's rewrite contract visible"
+    )]
     pub(crate) fn inline_node(&mut self, node: &Node) -> Result<Vec<Node>> {
         match node {
             Node::Let { name, value } => {
@@ -130,6 +134,10 @@ impl InlineCtx {
     }
 
     #[inline]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "exhaustive Expr inlining dispatch keeps prefix-emission ordering auditable"
+    )]
     pub(crate) fn inline_expr(&mut self, expr: &Expr) -> Result<(Vec<Node>, Expr)> {
         match expr {
             Expr::LitU32(_)
@@ -142,7 +150,11 @@ impl InlineCtx {
             | Expr::WorkgroupId { .. }
             | Expr::LocalId { .. }
             | Expr::SubgroupLocalId
-            | Expr::SubgroupSize => Ok((Vec::new(), expr.clone())),
+            | Expr::SubgroupSize
+            | Expr::SubgroupBallot { .. }
+            | Expr::SubgroupShuffle { .. }
+            | Expr::SubgroupAdd { .. }
+            | Expr::Opaque(_) => Ok((Vec::new(), expr.clone())),
             Expr::Load { buffer, index } => {
                 let (prefix, index) = self.inline_expr(index)?;
                 Ok((
@@ -252,10 +264,6 @@ impl InlineCtx {
                     },
                 ))
             }
-            Expr::SubgroupBallot { .. }
-            | Expr::SubgroupShuffle { .. }
-            | Expr::SubgroupAdd { .. } => Ok((Vec::new(), expr.clone())),
-            Expr::Opaque(_) => Ok((Vec::new(), expr.clone())),
         }
     }
 
@@ -317,7 +325,7 @@ impl InlineCtx {
         };
 
         let mut nodes = Vec::with_capacity(callee.entry().len() + 1);
-        nodes.push(Node::let_bind(&result_name, zero_value(output.element())));
+        nodes.push(Node::let_bind(&result_name, zero_value(&output.element())));
         nodes.extend(expander.nodes(callee.entry())?);
 
         if !expander.saw_output {

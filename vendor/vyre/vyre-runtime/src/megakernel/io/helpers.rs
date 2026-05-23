@@ -13,7 +13,32 @@ pub(super) struct IoQueueView {
 }
 
 pub(super) fn queue_word_index(slot_idx: u32, word: u32) -> usize {
-    slot_idx as usize * IO_SLOT_WORDS as usize + word as usize
+    try_queue_word_index(slot_idx, word).unwrap_or_else(|error| panic!("{error}"))
+}
+
+pub(super) fn try_queue_word_index(slot_idx: u32, word: u32) -> Result<usize, PipelineError> {
+    let slot = usize::try_from(slot_idx).map_err(|error| {
+        PipelineError::Backend(format!(
+            "IO queue slot index {slot_idx} cannot fit usize: {error}. Fix: shard the IO queue before polling."
+        ))
+    })?;
+    let slot_words = usize::try_from(IO_SLOT_WORDS).map_err(|error| {
+        PipelineError::Backend(format!(
+            "IO_SLOT_WORDS cannot fit usize: {error}. Fix: keep IO_SLOT_WORDS within the host index ABI."
+        ))
+    })?;
+    let word = usize::try_from(word).map_err(|error| {
+        PipelineError::Backend(format!(
+            "IO queue word index cannot fit usize: {error}. Fix: keep IO word offsets within the host index ABI."
+        ))
+    })?;
+    slot.checked_mul(slot_words)
+        .and_then(|base| base.checked_add(word))
+        .ok_or_else(|| {
+            PipelineError::Backend(format!(
+                "IO queue word index overflow for slot {slot_idx}, word {word}. Fix: shard the IO queue before polling."
+            ))
+        })
 }
 
 pub(super) fn read_queue_word(
@@ -21,7 +46,23 @@ pub(super) fn read_queue_word(
     base_word: usize,
     word: u32,
 ) -> Result<u32, PipelineError> {
-    let off = (base_word + word as usize) * 4;
+    // Compute the byte offset with explicit overflow checks. The old
+    // `(base_word + word as usize) * 4` wraps silently on overflow; on
+    // 64-bit Linux the wrap would have to come from a deliberately
+    // malformed caller, but the substrate should still fail closed.
+    let word = usize::try_from(word).map_err(|error| {
+        PipelineError::Backend(format!(
+            "IO queue word index cannot fit usize: {error}. Fix: keep IO word offsets within the host index ABI."
+        ))
+    })?;
+    let off = base_word
+        .checked_add(word)
+        .and_then(|w| w.checked_mul(4))
+        .ok_or_else(|| {
+            PipelineError::Backend(format!(
+                "IO queue word offset overflow at base {base_word} + word {word}. Fix: pass a sane base_word/word pair within the validated queue view."
+            ))
+        })?;
     let bytes = io_queue_bytes.get(off..off + 4).ok_or_else(|| {
         PipelineError::Backend(format!(
             "IO queue word {word} at base {base_word} is outside the validated queue view. Fix: validate queue byte length before polling."
@@ -50,11 +91,24 @@ pub(super) fn write_queue_word_unfenced(
     word: u32,
     value: u32,
 ) -> Result<(), PipelineError> {
-    let off = (base_word + word as usize) * 4;
+    // Same overflow-safe offset computation as read_queue_word.
+    let word = usize::try_from(word).map_err(|error| {
+        PipelineError::Backend(format!(
+            "IO queue word index cannot fit usize: {error}. Fix: keep IO word offsets within the host index ABI."
+        ))
+    })?;
+    let off = base_word
+        .checked_add(word)
+        .and_then(|w| w.checked_mul(4))
+        .ok_or_else(|| {
+            PipelineError::Backend(format!(
+                "IO queue word offset overflow at base {base_word} + word {word}. Fix: pass a sane base_word/word pair within the validated queue view."
+            ))
+        })?;
     let bytes = io_queue_bytes.get_mut(off..off + 4).ok_or_else(|| {
         PipelineError::Backend(format!(
-            "IO queue word {word} at base {base_word} is outside the validated queue view. Fix: validate queue byte length before completing."
-        ))
+                "IO queue word {word} at base {base_word} is outside the validated queue view. Fix: validate queue byte length before completing."
+            ))
     })?;
     bytes.copy_from_slice(&value.to_le_bytes());
     Ok(())
@@ -66,19 +120,27 @@ pub(super) fn validate_io_queue_view(byte_len: usize) -> Result<IoQueueView, Pip
             "io_queue has {byte_len} bytes, which is not 4-byte aligned. Fix: pass a whole u32 queue buffer."
         )));
     }
-    let slot_bytes = (IO_SLOT_WORDS as usize)
-        .checked_mul(4)
-        .ok_or(PipelineError::QueueFull {
-            queue: "submission",
-            fix: "io_queue slot byte width overflows usize; keep IO_SLOT_WORDS within the u32 ABI",
-        })?;
+    let slot_words = usize::try_from(IO_SLOT_WORDS).map_err(|error| {
+        PipelineError::Backend(format!(
+            "IO_SLOT_WORDS cannot fit usize: {error}. Fix: keep IO_SLOT_WORDS within the host index ABI."
+        ))
+    })?;
+    let slot_bytes = slot_words.checked_mul(4).ok_or(PipelineError::QueueFull {
+        queue: "submission",
+        fix: "io_queue slot byte width overflows usize; keep IO_SLOT_WORDS within the u32 ABI",
+    })?;
     if byte_len % slot_bytes != 0 {
         return Err(PipelineError::Backend(format!(
             "io_queue has {byte_len} bytes, which is not a multiple of slot size {slot_bytes}. Fix: pass whole IO slots."
         )));
     }
     let slot_count = byte_len / slot_bytes;
-    if slot_count > IO_SLOT_COUNT as usize {
+    let max_slots = usize::try_from(IO_SLOT_COUNT).map_err(|error| {
+        PipelineError::Backend(format!(
+            "IO_SLOT_COUNT cannot fit usize: {error}. Fix: keep IO_SLOT_COUNT within the host index ABI."
+        ))
+    })?;
+    if slot_count > max_slots {
         return Err(PipelineError::QueueFull {
             queue: "submission",
             fix: "io_queue byte view exceeds the compiled IO poll window of 64 slots; split the queue or rebuild the megakernel with a larger IO_SLOT_COUNT",
@@ -125,4 +187,43 @@ pub fn io_completion_poll_body() -> Vec<Node> {
             ),
         ],
     )]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Regression: the old `(base_word + word as usize) * 4` formula
+    /// silently wrapped on overflow. With the checked_add+checked_mul
+    /// fix the caller now sees a structured error instead of either a
+    /// panic or a silent wrong-word read.
+    #[test]
+    fn read_queue_word_rejects_word_index_overflow() {
+        let bytes = vec![0u8; 1024];
+        let err = read_queue_word(&bytes, usize::MAX, 1).unwrap_err();
+        match err {
+            PipelineError::Backend(msg) => {
+                assert!(
+                    msg.contains("overflow"),
+                    "expected overflow message, got: {msg}"
+                );
+            }
+            other => panic!("expected Backend overflow error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn write_queue_word_unfenced_rejects_word_index_overflow() {
+        let mut bytes = vec![0u8; 1024];
+        let err = write_queue_word_unfenced(&mut bytes, usize::MAX, 1, 0).unwrap_err();
+        match err {
+            PipelineError::Backend(msg) => {
+                assert!(
+                    msg.contains("overflow"),
+                    "expected overflow message, got: {msg}"
+                );
+            }
+            other => panic!("expected Backend overflow error, got {other:?}"),
+        }
+    }
 }

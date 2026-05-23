@@ -165,7 +165,6 @@ inventory::submit! {
                 bytes,
                 vec![0u8; 4],
                 vec![0u8; 4],
-                vec![0u8; 4],
             ]]
         }),
         expected_output: Some(|| vec![vec![
@@ -173,6 +172,7 @@ inventory::submit! {
             0x1a47_e90bu32.to_le_bytes().to_vec(),
             0x024D_0127u32.to_le_bytes().to_vec(),
         ]]),
+        category: None,
     }
 }
 

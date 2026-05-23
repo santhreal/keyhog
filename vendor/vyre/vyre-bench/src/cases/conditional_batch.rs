@@ -59,8 +59,9 @@ impl BenchCase for BatchedConditionalEval {
         BenchMetadata {
             id: self.id(),
             name: "Batched YARA-like Conditional Eval 16x64K".to_string(),
-            description: "Evaluate 65,536 rule conditions across 16 files with sparse fired-pair output"
-                .to_string(),
+            description:
+                "Evaluate 65,536 rule conditions across 16 files with sparse fired-pair output"
+                    .to_string(),
             tags: vec![
                 "honest".to_string(),
                 "conditions".to_string(),
@@ -83,7 +84,12 @@ impl BenchCase for BatchedConditionalEval {
         BenchRequirements {
             needs_gpu: true,
             needs_network: false,
-            min_vram_bytes: Some(u64::from(PATTERN_COUNT) * 12 + u64::from(RULES_PER_FILE) * 36 + u64::from(EVAL_COUNT) * 4 + 128),
+            min_vram_bytes: Some(
+                u64::from(PATTERN_COUNT) * 12
+                    + u64::from(RULES_PER_FILE) * 36
+                    + u64::from(EVAL_COUNT) * 4
+                    + 128,
+            ),
             min_input_bytes: None,
             feature_set: vec![],
         }
@@ -122,13 +128,28 @@ impl BenchCase for BatchedConditionalEval {
                 Node::if_then(
                     Expr::lt(Expr::var("tid"), Expr::u32(EVAL_COUNT)),
                     vec![
-                        Node::let_bind("file", Expr::div(Expr::var("tid"), Expr::u32(RULES_PER_FILE))),
-                        Node::let_bind("rule", Expr::rem(Expr::var("tid"), Expr::u32(RULES_PER_FILE))),
+                        Node::let_bind(
+                            "file",
+                            Expr::div(Expr::var("tid"), Expr::u32(RULES_PER_FILE)),
+                        ),
+                        Node::let_bind(
+                            "rule",
+                            Expr::rem(Expr::var("tid"), Expr::u32(RULES_PER_FILE)),
+                        ),
                         Node::let_bind("desc", Expr::mul(Expr::var("rule"), Expr::u32(DESC_WORDS))),
                         Node::let_bind("pa", Expr::load("rule_desc", Expr::var("desc"))),
-                        Node::let_bind("pb", Expr::load("rule_desc", Expr::add(Expr::var("desc"), Expr::u32(1)))),
-                        Node::let_bind("pc", Expr::load("rule_desc", Expr::add(Expr::var("desc"), Expr::u32(2)))),
-                        Node::let_bind("pd", Expr::load("rule_desc", Expr::add(Expr::var("desc"), Expr::u32(3)))),
+                        Node::let_bind(
+                            "pb",
+                            Expr::load("rule_desc", Expr::add(Expr::var("desc"), Expr::u32(1))),
+                        ),
+                        Node::let_bind(
+                            "pc",
+                            Expr::load("rule_desc", Expr::add(Expr::var("desc"), Expr::u32(2))),
+                        ),
+                        Node::let_bind(
+                            "pd",
+                            Expr::load("rule_desc", Expr::add(Expr::var("desc"), Expr::u32(3))),
+                        ),
                         Node::let_bind(
                             "both_literals",
                             Expr::and(
@@ -154,8 +175,20 @@ impl BenchCase for BatchedConditionalEval {
                         Node::let_bind(
                             "size_ok",
                             Expr::and(
-                                Expr::ge(Expr::var("filesize"), Expr::load("rule_desc", Expr::add(Expr::var("desc"), Expr::u32(6)))),
-                                Expr::le(Expr::var("filesize"), Expr::load("rule_desc", Expr::add(Expr::var("desc"), Expr::u32(7)))),
+                                Expr::ge(
+                                    Expr::var("filesize"),
+                                    Expr::load(
+                                        "rule_desc",
+                                        Expr::add(Expr::var("desc"), Expr::u32(6)),
+                                    ),
+                                ),
+                                Expr::le(
+                                    Expr::var("filesize"),
+                                    Expr::load(
+                                        "rule_desc",
+                                        Expr::add(Expr::var("desc"), Expr::u32(7)),
+                                    ),
+                                ),
                             ),
                         ),
                         Node::let_bind(
@@ -169,13 +202,19 @@ impl BenchCase for BatchedConditionalEval {
                             "fired",
                             Expr::and(
                                 Expr::and(Expr::var("both_literals"), Expr::var("count_ok")),
-                                Expr::and(Expr::var("offset_ok"), Expr::and(Expr::var("size_ok"), Expr::var("entropy_ok"))),
+                                Expr::and(
+                                    Expr::var("offset_ok"),
+                                    Expr::and(Expr::var("size_ok"), Expr::var("entropy_ok")),
+                                ),
                             ),
                         ),
                         Node::if_then(
                             Expr::var("fired"),
                             vec![
-                                Node::let_bind("slot", Expr::atomic_add("fired_count", Expr::u32(0), Expr::u32(1))),
+                                Node::let_bind(
+                                    "slot",
+                                    Expr::atomic_add("fired_count", Expr::u32(0), Expr::u32(1)),
+                                ),
                                 Node::store("fired_pairs", Expr::var("slot"), Expr::var("tid")),
                             ],
                         ),
@@ -223,7 +262,11 @@ impl BenchCase for BatchedConditionalEval {
         ];
         let resident = match prepare_resident(ctx, &inputs) {
             Ok(resident) => Some(resident),
-            Err(BackendError::UnsupportedFeature { name, .. }) if name == "resident buffer allocation" => None,
+            Err(BackendError::UnsupportedFeature { name, .. })
+                if name == "resident buffer allocation" =>
+            {
+                None
+            }
             Err(error) => return Err(BenchError::BackendFailed(error.to_string())),
         };
         let baseline_start = std::time::Instant::now();
@@ -257,13 +300,19 @@ impl BenchCase for BatchedConditionalEval {
         prepared: &mut PreparedCase,
     ) -> Result<BenchRun, BenchError> {
         let prepared = prepared.downcast_ref::<BatchedPrepared>().ok_or_else(|| {
-            BenchError::ExecutionFailed("batched conditional prepared payload type mismatch".to_string())
+            BenchError::ExecutionFailed(
+                "batched conditional prepared payload type mismatch".to_string(),
+            )
         })?;
         let timed = if let Some(resident) = &prepared.resident {
             reset_resident_fired_count(resident)?;
             resident
                 .backend
-                .dispatch_resident_timed(&prepared.program, &resident.resources, &ctx.dispatch_config)
+                .dispatch_resident_timed(
+                    &prepared.program,
+                    &resident.resources,
+                    &ctx.dispatch_config,
+                )
                 .map_err(|error| BenchError::BackendFailed(error.to_string()))?
         } else {
             ctx.dispatch_timed(&prepared.program, &prepared.inputs, &ctx.dispatch_config)
@@ -284,11 +333,15 @@ impl BenchCase for BatchedConditionalEval {
             baseline_metrics: Some(BenchMetrics {
                 wall_ns: Some(prepared.baseline_wall_ns),
                 input_bytes: Some(input_bytes),
-                output_bytes: Some(prepared.baseline_output.iter().map(Vec::len).sum::<usize>() as u64),
+                output_bytes: Some(
+                    prepared.baseline_output.iter().map(Vec::len).sum::<usize>() as u64
+                ),
                 ..Default::default()
             }),
             outputs,
-            baseline_outputs: ctx.include_baseline_outputs.then(|| prepared.baseline_output.clone()),
+            baseline_outputs: ctx
+                .include_baseline_outputs
+                .then(|| prepared.baseline_output.clone()),
         })
     }
 
@@ -312,7 +365,8 @@ fn cpu_batch(
             let file = tid / RULES_PER_FILE as usize;
             let rule = tid % RULES_PER_FILE as usize;
             let desc = rule * DESC_WORDS as usize;
-            if matched[rule_desc[desc] as usize] == 0 || matched[rule_desc[desc + 1] as usize] == 0 {
+            if matched[rule_desc[desc] as usize] == 0 || matched[rule_desc[desc + 1] as usize] == 0
+            {
                 return None;
             }
             if counts[rule_desc[desc + 2] as usize] < rule_desc[desc + 4] {
@@ -440,7 +494,10 @@ fn mix32(mut value: u32) -> u32 {
 }
 
 fn u32_bytes(values: &[u32]) -> Vec<u8> {
-    values.iter().flat_map(|value| value.to_le_bytes()).collect()
+    values
+        .iter()
+        .flat_map(|value| value.to_le_bytes())
+        .collect()
 }
 
 inventory::submit! {

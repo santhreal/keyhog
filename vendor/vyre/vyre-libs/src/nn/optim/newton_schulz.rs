@@ -26,7 +26,6 @@ inventory::submit! {
             let to_f32 = |w: &[f32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
             vec![vec![
                 to_f32(&[0.5, 0.0, 0.0, 0.5]),
-                vec![0u8; 4 * 4],
             ]]
         }),
         expected_output: Some(|| {
@@ -34,6 +33,7 @@ inventory::submit! {
                 178, 243, 67, 63, 0, 0, 0, 0, 0, 0, 0, 0, 178, 243, 67, 63,
             ]]]
         }),
+        category: Some("nn"),
     }
 }
 

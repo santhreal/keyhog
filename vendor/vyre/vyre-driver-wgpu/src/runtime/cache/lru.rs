@@ -2,7 +2,7 @@ use std::hash::BuildHasherDefault;
 
 use rustc_hash::{FxHashMap, FxHasher};
 
-/// Default maximum number of live nodes retained by an [`IntrusiveLru`].
+/// Default initial node reservation used by [`IntrusiveLru`].
 pub const DEFAULT_INTRUSIVE_LRU_CAPACITY: usize = 65_536;
 
 /// Intrusive doubly-linked LRU over a slab allocator.
@@ -14,7 +14,7 @@ pub struct IntrusiveLru<K, V> {
     free: Vec<usize>,
     head: Option<usize>,
     tail: Option<usize>,
-    capacity: usize,
+    live_limit: Option<usize>,
 }
 
 struct Node<K, V> {
@@ -33,7 +33,7 @@ where
     /// Create an LRU with the default live-node capacity.
     #[inline]
     pub fn new() -> Self {
-        Self::with_capacity(DEFAULT_INTRUSIVE_LRU_CAPACITY)
+        Self::with_reserved_capacity(DEFAULT_INTRUSIVE_LRU_CAPACITY)
     }
 
     /// Create an LRU with a fixed live-node capacity.
@@ -54,7 +54,30 @@ where
             free: Vec::with_capacity(capacity),
             head: None,
             tail: None,
-            capacity,
+            live_limit: Some(capacity),
+        }
+    }
+
+    /// Create an LRU that reserves `capacity` slots but does not silently evict
+    /// live nodes when the reservation is exceeded.
+    ///
+    /// Cache metadata uses this path because the owning cache, not the LRU
+    /// backing store, defines when an entry is evicted. Dropping metadata while
+    /// the cache entry is still live would make promotion stats disappear and
+    /// force cold-path scans at scale.
+    #[inline]
+    pub fn with_reserved_capacity(capacity: usize) -> Self {
+        let capacity = capacity.max(1);
+        Self {
+            nodes: Vec::with_capacity(capacity),
+            indices: FxHashMap::with_capacity_and_hasher(
+                capacity,
+                BuildHasherDefault::<FxHasher>::default(),
+            ),
+            free: Vec::with_capacity(capacity),
+            head: None,
+            tail: None,
+            live_limit: None,
         }
     }
 
@@ -112,7 +135,9 @@ where
     /// Return the `n` hottest keys in most-recent-first order.
     #[inline]
     pub fn hottest(&self, n: usize) -> Vec<K> {
-        self.iter_hottest().map(|(key, _)| *key).take(n).collect()
+        let mut keys = Vec::new();
+        keys.extend(self.iter_hottest().map(|(key, _)| *key).take(n));
+        keys
     }
 
     /// Iterate entries from most recent to least recent.
@@ -140,7 +165,7 @@ where
     }
 
     fn alloc_node(&mut self, key: K) -> usize {
-        if self.indices.len() == self.capacity {
+        if self.live_limit == Some(self.indices.len()) {
             if let Some(coldest) = self.tail {
                 let evicted_key = self.nodes[coldest].key;
                 self.remove(&evicted_key);
@@ -261,9 +286,9 @@ impl AccessTracker {
     /// Record an access for the given key.
     #[inline]
     pub fn record(&mut self, key: u64) {
-        self.tick = self.tick.saturating_add(1);
+        self.advance_tick();
         let meta = self.lru.ensure_front(key);
-        meta.frequency = meta.frequency.saturating_add(1);
+        meta.frequency = bounded_frequency_increment(meta.frequency);
         meta.last_access = self.tick;
     }
 
@@ -300,10 +325,105 @@ impl AccessTracker {
             size: meta.size,
         })
     }
+
+    fn advance_tick(&mut self) {
+        if let Some(next) = self.tick.checked_add(1) {
+            self.tick = next;
+            return;
+        }
+        self.rebase_ticks_by_lru_order();
+        self.tick = match self.tick.checked_add(1) {
+            Some(next) => next,
+            None => u64::MAX,
+        };
+    }
+
+    fn rebase_ticks_by_lru_order(&mut self) {
+        let mut current = self.lru.tail;
+        let mut tick = 0_u64;
+        while let Some(index) = current {
+            let next = self.lru.nodes[index].prev;
+            if self.lru.nodes[index].active {
+                tick = match tick.checked_add(1) {
+                    Some(next_tick) => next_tick,
+                    None => u64::MAX,
+                };
+                self.lru.nodes[index].value.last_access = tick;
+            }
+            current = next;
+        }
+        self.tick = tick;
+    }
+}
+
+fn bounded_frequency_increment(value: u32) -> u32 {
+    match value.checked_add(1) {
+        Some(next) => next,
+        None => u32::MAX,
+    }
 }
 
 impl Default for AccessTracker {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn access_tracker_rebases_ticks_in_lru_order_instead_of_panicking() {
+        let mut tracker = AccessTracker::new();
+        tracker.record(10);
+        tracker.record(20);
+        tracker.record(30);
+        tracker.tick = u64::MAX;
+
+        tracker.record(20);
+
+        assert_eq!(tracker.hot_set(3), vec![20, 30, 10]);
+        let hot = tracker.stats(20).expect("hot key must remain tracked");
+        let warm = tracker.stats(30).expect("warm key must remain tracked");
+        let cold = tracker.stats(10).expect("cold key must remain tracked");
+        assert!(hot.last_access > warm.last_access);
+        assert!(warm.last_access > cold.last_access);
+    }
+
+    #[test]
+    fn access_tracker_frequency_pins_instead_of_panicking() {
+        let mut tracker = AccessTracker::new();
+        tracker.record(7);
+        tracker.lru.ensure(7).frequency = u32::MAX;
+
+        tracker.record(7);
+
+        assert_eq!(
+            tracker
+                .stats(7)
+                .expect("tracked key must have stats")
+                .frequency,
+            u32::MAX
+        );
+    }
+
+    #[test]
+    fn access_tracker_source_has_no_release_path_panic_counters() {
+        let source = include_str!("lru.rs");
+        let production = source
+            .split("#[cfg(test)]")
+            .next()
+            .expect("LRU production source must precede tests");
+        assert!(
+            !production.contains(concat!("panic", "!("))
+                && !production.contains(".unwrap_or_else("),
+            "Fix: runtime cache LRU counters must rebase or pin instead of aborting."
+        );
+        assert!(
+            production.contains("rebase_ticks_by_lru_order")
+                && production.contains("bounded_frequency_increment"),
+            "Fix: runtime cache LRU must preserve recency across tick exhaustion and pin access frequency."
+        );
     }
 }

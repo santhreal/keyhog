@@ -113,24 +113,30 @@ fn is_test_attr(attr: &syn::Attribute) -> bool {
     }
     if attr.path().is_ident("cfg") {
         let mut found = false;
-        if attr.parse_nested_meta(|m| {
-            if m.path.is_ident("test") {
-                found = true;
-            }
-            Ok(())
-        }).is_err() {
+        if attr
+            .parse_nested_meta(|m| {
+                if m.path.is_ident("test") {
+                    found = true;
+                }
+                Ok(())
+            })
+            .is_err()
+        {
             return false;
         }
         return found;
     }
     if attr.path().is_ident("cfg_attr") {
         let mut found = false;
-        if attr.parse_nested_meta(|m| {
-            if m.path.is_ident("test") {
-                found = true;
-            }
-            Ok(())
-        }).is_err() {
+        if attr
+            .parse_nested_meta(|m| {
+                if m.path.is_ident("test") {
+                    found = true;
+                }
+                Ok(())
+            })
+            .is_err()
+        {
             return false;
         }
         return found;

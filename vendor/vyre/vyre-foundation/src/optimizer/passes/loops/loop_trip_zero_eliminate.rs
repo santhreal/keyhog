@@ -46,6 +46,9 @@ impl LoopTripZeroEliminatePass {
     /// Skip programs without any compile-time-empty loop.
     #[must_use]
     fn analyze_impl(program: &Program) -> PassAnalysis {
+        if !program.stats().has_node_loop() {
+            return PassAnalysis::SKIP;
+        }
         if program
             .entry()
             .iter()
@@ -62,18 +65,16 @@ impl LoopTripZeroEliminatePass {
     /// empty loops are also caught.
     #[must_use]
     pub fn transform(program: Program) -> PassResult {
-        let scaffold = program.with_rewritten_entry(Vec::new());
         let mut changed = false;
-        let entry: Vec<Node> = program
-            .into_entry_vec()
-            .into_iter()
-            .map(|node| eliminate_node(node, &mut changed))
-            .collect();
-        PassResult {
-            program: scaffold.with_rewritten_entry(entry),
-            changed,
-        }
-    }}
+        let program = program.map_entry(|entry| {
+            entry
+                .into_iter()
+                .map(|node| eliminate_node(node, &mut changed))
+                .collect()
+        });
+        PassResult { program, changed }
+    }
+}
 
 /// Recurse into `node`'s descendants. After recursion, if `node` itself
 /// is a literal-bounded empty Loop, replace it with `Block(vec![])`.

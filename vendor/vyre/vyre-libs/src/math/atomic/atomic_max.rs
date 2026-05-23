@@ -21,7 +21,6 @@ inventory::submit! {
             vec![vec![
                 to_bytes(&[50u32, 20, 80, 10]),
                 to_bytes(&[0u32]),
-                vec![0u8; 16],
             ]]
         }),
         expected_output: Some(|| {
@@ -29,6 +28,7 @@ inventory::submit! {
             let to_bytes = |w: &[u32]| w.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<u8>>();
             vec![vec![to_bytes(&[80u32]), to_bytes(&[0u32, 50, 50, 80])]]
         }),
+        category: Some("math"),
     }
 }
 

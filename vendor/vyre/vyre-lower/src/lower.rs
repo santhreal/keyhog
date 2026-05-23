@@ -26,6 +26,14 @@ use vyre_foundation::ir::{
 /// rarely exceed 10.
 const MAX_NESTING_DEPTH: usize = 64;
 
+/// First slot value reserved for `MemoryClass::Shared` / `MemoryClass::Scratch`
+/// bindings. Host-bound bindings (`Global`/`Constant`/`Uniform`) use slots
+/// 0..WORKGROUP_SLOT_BASE so that backend bind-group layouts (capped at 1000
+/// bindings on wgpu) never see a Shared slot. Any rewrite that allocates
+/// new Shared/Scratch bindings must seed its `next_slot` cursor at or above
+/// this constant to avoid colliding with host slots in `BindingLayout.slots`.
+pub(crate) const WORKGROUP_SLOT_BASE: u32 = 1 << 24;
+
 /// Lower a vyre Program to the substrate-neutral kernel descriptor.
 ///
 /// # Errors
@@ -86,7 +94,6 @@ impl LowerCtx {
         // default to binding=0) collided with the host-bound input
         // and forced the output's slot to be auto-renumbered, which
         // then broke the dispatch path's slot-id-keyed lookup.
-        const WORKGROUP_SLOT_BASE: u32 = 1 << 24;
         let mut host_used_slots = FxHashSet::default();
         let mut host_next_free_slot = 0u32;
         let mut shared_next_slot = WORKGROUP_SLOT_BASE;
@@ -100,7 +107,7 @@ impl LowerCtx {
                         .ok_or(LowerError::OperandIdOverflow)?;
                     s
                 }
-                MemoryClass::Global | MemoryClass::Constant => {
+                MemoryClass::Global | MemoryClass::Constant | MemoryClass::Uniform => {
                     let requested = buffer.binding();
                     let s = if host_used_slots.insert(requested) {
                         requested
@@ -258,10 +265,45 @@ impl LowerCtx {
             } => {
                 let cond_id = self.lower_expr(cond, body)?;
                 let incoming_scope = self.scope.snapshot();
+                let mut if_carriers = collect_carrier_names(then, &incoming_scope, None);
+                for name in collect_carrier_names(otherwise, &incoming_scope, None) {
+                    if !if_carriers.contains(&name) {
+                        if_carriers.push(name);
+                    }
+                }
+                for name in &if_carriers {
+                    let seed_id = incoming_scope
+                        .get(name)
+                        .copied()
+                        .unwrap_or_else(|| unreachable!("if carrier must have incoming binding"));
+                    body.ops.push(KernelOp {
+                        kind: KernelOpKind::LoopCarrierInit {
+                            name: name.shared_text(),
+                        },
+                        operands: vec![seed_id],
+                        result: None,
+                    });
+                }
                 let mut then_body = empty_body_for_nodes(then);
                 self.scope.restore(incoming_scope.clone());
+                for name in &if_carriers {
+                    let read_id = self.alloc_value()?;
+                    then_body.ops.push(KernelOp {
+                        kind: KernelOpKind::LoopCarrier {
+                            name: name.shared_text(),
+                        },
+                        operands: Vec::new(),
+                        result: Some(read_id),
+                    });
+                    self.scope.bind(name.clone(), read_id);
+                }
+                let mut carrier_frame: FxHashSet<Ident> = FxHashSet::default();
+                for name in &if_carriers {
+                    carrier_frame.insert(name.clone());
+                }
+                self.active_carriers.push(carrier_frame);
                 self.lower_nodes(then, &mut then_body, depth + 1)?;
-                let then_exit_scope = self.scope.snapshot();
+                self.active_carriers.pop();
                 let then_id = push_child(body, then_body)?;
                 if otherwise.is_empty() {
                     self.scope.restore(incoming_scope.clone());
@@ -270,21 +312,27 @@ impl LowerCtx {
                         operands: vec![cond_id, then_id],
                         result: None,
                     });
-                    // Phi merge: any name bound in the incoming scope whose
-                    // ssa id changed inside the then-branch needs a Select
-                    // in the parent body so post-if reads see the
-                    // conditionally-updated value. Without this, an
-                    // `assign` nested in `if_then` is silently dropped on
-                    // exit (the bug that made the GPU lex kernel report
-                    // n_tokens=0 — `tok_idx + 1` inside the store-token
-                    // gate never escaped the if). Emit-naga's Q7 carrier
-                    // bridges the cross-body SSA scope.
-                    self.merge_if_then_scope(body, &incoming_scope, &then_exit_scope, cond_id)?;
                 } else {
                     let mut else_body = empty_body_for_nodes(otherwise);
                     self.scope.restore(incoming_scope.clone());
+                    for name in &if_carriers {
+                        let read_id = self.alloc_value()?;
+                        else_body.ops.push(KernelOp {
+                            kind: KernelOpKind::LoopCarrier {
+                                name: name.shared_text(),
+                            },
+                            operands: Vec::new(),
+                            result: Some(read_id),
+                        });
+                        self.scope.bind(name.clone(), read_id);
+                    }
+                    let mut carrier_frame: FxHashSet<Ident> = FxHashSet::default();
+                    for name in &if_carriers {
+                        carrier_frame.insert(name.clone());
+                    }
+                    self.active_carriers.push(carrier_frame);
                     self.lower_nodes(otherwise, &mut else_body, depth + 1)?;
-                    let else_exit_scope = self.scope.snapshot();
+                    self.active_carriers.pop();
                     let else_id = push_child(body, else_body)?;
                     self.scope.restore(incoming_scope.clone());
                     body.ops.push(KernelOp {
@@ -292,13 +340,9 @@ impl LowerCtx {
                         operands: vec![cond_id, then_id, else_id],
                         result: None,
                     });
-                    self.merge_if_else_scope(
-                        body,
-                        &incoming_scope,
-                        &then_exit_scope,
-                        &else_exit_scope,
-                        cond_id,
-                    )?;
+                }
+                for name in &if_carriers {
+                    self.emit_loop_carrier_read(body, name)?;
                 }
                 Ok(())
             }
@@ -329,7 +373,7 @@ impl LowerCtx {
                     let seed_id = incoming_scope
                         .get(name)
                         .copied()
-                        .expect("carrier name has incoming binding");
+                        .unwrap_or_else(|| unreachable!("carrier name has incoming binding"));
                     body.ops.push(KernelOp {
                         kind: KernelOpKind::LoopCarrierInit {
                             name: name.shared_text(),
@@ -542,7 +586,7 @@ impl LowerCtx {
             let seed_id = incoming_scope
                 .get(name)
                 .copied()
-                .expect("region carrier must have incoming binding");
+                .unwrap_or_else(|| unreachable!("region carrier must have incoming binding"));
             body.ops.push(KernelOp {
                 kind: KernelOpKind::LoopCarrierInit {
                     name: name.shared_text(),
@@ -821,7 +865,7 @@ impl LowerCtx {
             .copied()
             .map(|memory_class| match memory_class {
                 MemoryClass::Shared => KernelOpKind::LoadShared,
-                MemoryClass::Constant => KernelOpKind::LoadConstant,
+                MemoryClass::Constant | MemoryClass::Uniform => KernelOpKind::LoadConstant,
                 MemoryClass::Global | MemoryClass::Scratch => KernelOpKind::LoadGlobal,
             })
             .unwrap_or(KernelOpKind::LoadGlobal)
@@ -830,8 +874,8 @@ impl LowerCtx {
     fn store_kind(&self, slot: u32, buffer: &Ident) -> Result<KernelOpKind, LowerError> {
         match self.slot_memory_classes.get(&slot).copied() {
             Some(MemoryClass::Shared) => Ok(KernelOpKind::StoreShared),
-            Some(MemoryClass::Constant) => Err(LowerError::InvalidProgram(format!(
-                "Store to constant-class buffer `{buffer}` is invalid — constant buffers are read-only. Fix: change the buffer's MemoryKind to Global or its access to ReadWrite."
+            Some(MemoryClass::Constant | MemoryClass::Uniform) => Err(LowerError::InvalidProgram(format!(
+                "Store to constant/uniform-class buffer `{buffer}` is invalid — read-only at the dispatch boundary. Fix: change the buffer's MemoryKind to Global or its access to ReadWrite."
             ))),
             Some(MemoryClass::Global | MemoryClass::Scratch) => Ok(KernelOpKind::StoreGlobal),
             None => Ok(KernelOpKind::StoreGlobal),
@@ -847,9 +891,20 @@ impl LowerCtx {
                 "program declares reserved trap sidecar buffer `{TRAP_SIDECAR_NAME}`. Fix: choose a user buffer name outside the `__vyre_*` namespace."
             )));
         }
+        // Only consider host-visible slots when picking the next trap sidecar
+        // slot. Shared/Scratch slots live in the WORKGROUP_SLOT_BASE (1<<24)
+        // range and are not host-bound; mixing them in here would push the
+        // trap sidecar — which IS host-bound — past the wgpu max binding
+        // index (1000) and the layout validator would reject it.
         let next_slot = self
             .bindings
             .iter()
+            .filter(|binding| {
+                !matches!(
+                    binding.memory_class,
+                    MemoryClass::Shared | MemoryClass::Scratch,
+                )
+            })
             .map(|binding| binding.slot)
             .max()
             .map_or(Ok(0), |slot| {
@@ -966,89 +1021,6 @@ impl LowerCtx {
         Ok(id)
     }
 
-    /// Merge variable bindings after a `Node::If` (no else): for each
-    /// name in `incoming` whose ssa id was rebound in the then-branch,
-    /// emit a `Select(cond, then_id, incoming_id)` in the parent body
-    /// and bind name → new_id. Names that didn't change pass through.
-    /// New bindings introduced inside the then-branch don't escape
-    /// (they aren't in `incoming`).
-    fn merge_if_then_scope(
-        &mut self,
-        body: &mut KernelBody,
-        incoming: &scope::ScopeSnapshot,
-        then_exit: &scope::ScopeSnapshot,
-        cond_id: u32,
-    ) -> Result<(), LowerError> {
-        for (name, &incoming_id) in incoming.iter() {
-            // Active loop carriers manage their own state through
-            // LoopCarrierEnd inside the assign and re-read via
-            // LoopCarrier; the if-then merge Select cannot model the
-            // per-iteration round-trip and would pin the post-if value
-            // to the carrier-loaded-at-iter-start operand on the reject
-            // arm, silently breaking accumulation.
-            if self.is_active_carrier(name) {
-                let then_id = then_exit.get(name).copied().unwrap_or(incoming_id);
-                if then_id != incoming_id {
-                    self.emit_loop_carrier_read(body, name)?;
-                }
-                continue;
-            }
-            let then_id = then_exit.get(name).copied().unwrap_or(incoming_id);
-            if then_id == incoming_id {
-                continue;
-            }
-            let result = self.alloc_value()?;
-            body.ops.push(KernelOp {
-                kind: KernelOpKind::Select,
-                operands: vec![cond_id, then_id, incoming_id],
-                result: Some(result),
-            });
-            self.scope.bind(name.clone(), result);
-        }
-        Ok(())
-    }
-
-    /// Merge variable bindings after a `Node::If { otherwise: ..}`:
-    /// for each name in `incoming` whose ssa id changed in either
-    /// branch, emit a `Select(cond, then_id, else_id)` and bind name
-    /// → new_id. Falls through when both branches kept the incoming id.
-    fn merge_if_else_scope(
-        &mut self,
-        body: &mut KernelBody,
-        incoming: &scope::ScopeSnapshot,
-        then_exit: &scope::ScopeSnapshot,
-        else_exit: &scope::ScopeSnapshot,
-        cond_id: u32,
-    ) -> Result<(), LowerError> {
-        for (name, &incoming_id) in incoming.iter() {
-            if self.is_active_carrier(name) {
-                let then_id = then_exit.get(name).copied().unwrap_or(incoming_id);
-                let else_id = else_exit.get(name).copied().unwrap_or(incoming_id);
-                if then_id != incoming_id || else_id != incoming_id {
-                    self.emit_loop_carrier_read(body, name)?;
-                }
-                continue;
-            }
-            let then_id = then_exit.get(name).copied().unwrap_or(incoming_id);
-            let else_id = else_exit.get(name).copied().unwrap_or(incoming_id);
-            if then_id == incoming_id && else_id == incoming_id {
-                continue;
-            }
-            if then_id == else_id {
-                self.scope.bind(name.clone(), then_id);
-                continue;
-            }
-            let result = self.alloc_value()?;
-            body.ops.push(KernelOp {
-                kind: KernelOpKind::Select,
-                operands: vec![cond_id, then_id, else_id],
-                result: Some(result),
-            });
-            self.scope.bind(name.clone(), result);
-        }
-        Ok(())
-    }
-
     fn emit_loop_carrier_read(
         &mut self,
         body: &mut KernelBody,
@@ -1129,7 +1101,9 @@ fn collect_carrier_names(
                     walk(inner, incoming_scope, loop_var, seen, order, local_lets);
                     local_lets.pop();
                 }
-                Node::If { then, otherwise, .. } => {
+                Node::If {
+                    then, otherwise, ..
+                } => {
                     local_lets.push(FxHashSet::default());
                     walk(then, incoming_scope, loop_var, seen, order, local_lets);
                     local_lets.pop();
@@ -1137,13 +1111,24 @@ fn collect_carrier_names(
                     walk(otherwise, incoming_scope, loop_var, seen, order, local_lets);
                     local_lets.pop();
                 }
-                Node::Loop { var: inner_var, body: inner_body, .. } => {
+                Node::Loop {
+                    var: inner_var,
+                    body: inner_body,
+                    ..
+                } => {
                     local_lets.push({
                         let mut s = FxHashSet::default();
                         s.insert(inner_var.clone());
                         s
                     });
-                    walk(inner_body, incoming_scope, loop_var, seen, order, local_lets);
+                    walk(
+                        inner_body,
+                        incoming_scope,
+                        loop_var,
+                        seen,
+                        order,
+                        local_lets,
+                    );
                     local_lets.pop();
                 }
                 Node::Region { body: inner, .. } => {
@@ -1156,7 +1141,14 @@ fn collect_carrier_names(
         }
     }
 
-    walk(body, incoming_scope, loop_var, &mut seen, &mut order, &mut local_lets);
+    walk(
+        body,
+        incoming_scope,
+        loop_var,
+        &mut seen,
+        &mut order,
+        &mut local_lets,
+    );
     order
 }
 
@@ -1171,7 +1163,7 @@ fn opaque_extension_id(extension: &dyn vyre_foundation::ir::ExprNode) -> u32 {
     u32::from_le_bytes(
         extension.stable_fingerprint()[0..4]
             .try_into()
-            .expect("slice length is fixed"),
+            .unwrap_or_else(|_| unreachable!("slice length is fixed")),
     )
 }
 
@@ -1228,8 +1220,10 @@ fn memory_class(buffer: &BufferDecl) -> Result<MemoryClass, LowerError> {
         ))),
         (MemoryKind::Shared, _) | (_, BufferAccess::Workgroup) => Ok(MemoryClass::Shared),
         (MemoryKind::Local, _) => Ok(MemoryClass::Scratch),
-        (MemoryKind::Uniform | MemoryKind::Push | MemoryKind::Readonly, _)
-        | (_, BufferAccess::Uniform | BufferAccess::ReadOnly) => Ok(MemoryClass::Constant),
+        (MemoryKind::Uniform | MemoryKind::Push, _) | (_, BufferAccess::Uniform) => {
+            Ok(MemoryClass::Uniform)
+        }
+        (MemoryKind::Readonly, _) | (_, BufferAccess::ReadOnly) => Ok(MemoryClass::Constant),
         (MemoryKind::Global, _) => Ok(MemoryClass::Global),
         (other, _) => Err(LowerError::UnsupportedConstruct(format!(
             "MemoryKind::{other:?} for buffer `{}` is not supported by neutral lowering. Fix: map the buffer to Global, Shared, Uniform, Readonly, Push, or Local before emission.",
@@ -1247,11 +1241,15 @@ fn binding_visibility(access: &BufferAccess) -> BindingVisibility {
 }
 
 fn fingerprint_id(program: &Program) -> String {
+    // Direct hex table lookup is ~100x faster than per-byte write!() with
+    // formatter dispatch. fingerprint is a fixed 32 bytes, so the output
+    // is exactly 64 hex chars.
+    const HEX: &[u8; 16] = b"0123456789abcdef";
     let fingerprint = program.fingerprint();
     let mut out = String::with_capacity(fingerprint.len() * 2);
-    for byte in fingerprint {
-        use std::fmt::Write;
-        let _ = write!(&mut out, "{byte:02x}");
+    for &byte in fingerprint.iter() {
+        out.push(HEX[(byte >> 4) as usize] as char);
+        out.push(HEX[(byte & 0x0f) as usize] as char);
     }
     out
 }
@@ -1391,6 +1389,40 @@ mod tests {
     }
 
     #[test]
+    fn trap_sidecar_slot_stays_in_host_range_when_program_has_workgroup_buffer() {
+        // Regression: trap sidecar must skip Shared/Scratch slots when
+        // picking its slot id. Workgroup-class slots live in the
+        // 1<<24 reserved range and a host-bound binding past wgpu's
+        // 1000-binding limit fails layout creation.
+        use vyre_foundation::ir::{BufferDecl, Expr, Node};
+
+        let program = Program::wrapped(
+            vec![
+                BufferDecl::output("out", 0, DataType::U32).with_count(1),
+                BufferDecl::workgroup("scratch", 16, DataType::U32),
+            ],
+            [64, 1, 1],
+            vec![
+                Node::store("out", Expr::u32(0), Expr::u32(1)),
+                Node::trap(Expr::u32(7), "fault"),
+            ],
+        );
+
+        let desc = lower(&program).expect("trap + workgroup programs must lower");
+        let sidecar = desc
+            .bindings
+            .slots
+            .iter()
+            .find(|slot| slot.name == TRAP_SIDECAR_NAME)
+            .expect("trap sidecar must be present");
+        assert!(
+            sidecar.slot < 1024,
+            "trap sidecar slot must stay in the host-bindable range; got {}",
+            sidecar.slot,
+        );
+    }
+
+    #[test]
     fn lower_opaque_expr_preserves_kind_and_payload() {
         use vyre_foundation::ir::{BufferDecl, Expr, Node};
 
@@ -1519,9 +1551,19 @@ mod tests {
             .iter()
             .find(|op| matches!(op.kind, KernelOpKind::StoreGlobal))
             .expect("else branch must contain the store");
+        let else_carrier = else_body
+            .ops
+            .iter()
+            .find(
+                |op| matches!(&op.kind, KernelOpKind::LoopCarrier { name } if name.as_ref() == "x"),
+            )
+            .expect("else branch must read x through the if carrier seeded from incoming scope");
+        let else_carrier_id = else_carrier
+            .result
+            .expect("else carrier read must produce an SSA result");
         assert_eq!(
-            else_store.operands[2], 0,
-            "else branch must read the incoming x binding, not the result assigned only by then"
+            else_store.operands[2], else_carrier_id,
+            "else branch must read the incoming x through its carrier, not the result assigned only by then"
         );
 
         fn find_if_else(body: &KernelBody) -> Option<(&KernelBody, &KernelOp)> {
@@ -1664,10 +1706,13 @@ mod tests {
         // Outer-most kernel body: a single `Region { generator: c_lexer }`
         // wraps the entry tree (program::wrapped). Drill into it.
         let entry = &desc.body;
-        assert_eq!(entry.ops.len(), 1, "wrapped program has one entry-region op");
+        assert_eq!(
+            entry.ops.len(),
+            1,
+            "wrapped program has one entry-region op"
+        );
         let entry_region_op = &entry.ops[0];
-        let entry_region_body =
-            &entry.child_bodies[entry_region_op.operands[0] as usize];
+        let entry_region_body = &entry.child_bodies[entry_region_op.operands[0] as usize];
 
         // Find the explicit `Region { generator: "phase" }` op inside
         // the entry region.
@@ -1719,7 +1764,10 @@ mod tests {
                     && matches!(&op.kind, KernelOpKind::LoopCarrier { name } if name.as_ref() == "x")
             })
             .expect("region must emit a post-Region LoopCarrier read for the carried name");
-        let post_read_id = post_read.1.result.expect("post-region LoopCarrier produces an SSA id");
+        let post_read_id = post_read
+            .1
+            .result
+            .expect("post-region LoopCarrier produces an SSA id");
 
         // The store must consume the post-region read id, not the
         // pre-region seed.

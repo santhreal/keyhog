@@ -591,6 +591,7 @@ inventory::submit! {
         build: || python312_lexer("haystack", "tok_types", "tok_starts", "tok_lens", "counts", 16),
         test_inputs: Some(lexer_fixture_inputs),
         expected_output: Some(lexer_fixture_expected),
+        category: Some("parsing"),
     }
 }
 

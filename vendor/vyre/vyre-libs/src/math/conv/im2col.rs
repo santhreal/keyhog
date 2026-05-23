@@ -113,11 +113,12 @@ inventory::submit! {
             })
         },
         test_inputs: Some(|| {
-            vec![vec![f32_bytes(&im2col_fixture_input()), vec![0u8; 4 * 4 * 9 * 4]]]
+            vec![vec![f32_bytes(&im2col_fixture_input())]]
         }),
         expected_output: Some(|| {
             vec![vec![f32_bytes(&naive_im2col_3x3(&im2col_fixture_input(), 4, 4))]]
         }),
+        category: Some("math"),
     }
 }
 
@@ -168,14 +169,8 @@ mod tests {
 
     fn run(input: &[f32], h: u32, w: u32) -> Vec<f32> {
         let prog = im2col_3x3("input", "output", h, w).expect("build");
-        let outputs = vyre_reference::reference_eval(
-            &prog,
-            &[
-                Value::from(f32_bytes(input)),
-                Value::from(vec![0u8; (h as usize) * (w as usize) * 9 * 4]),
-            ],
-        )
-        .expect("Fix: im2col_3x3 must execute in the reference interpreter.");
+        let outputs = vyre_reference::reference_eval(&prog, &[Value::from(f32_bytes(input))])
+            .expect("Fix: im2col_3x3 must execute in the reference interpreter.");
         decode(&outputs[0].to_bytes())
     }
 

@@ -121,7 +121,7 @@ pub fn prefix_scan_with_op_id(
             Expr::load(&scratch_a, lane.clone()),
         ));
         body.push(Node::if_then(
-            Expr::lt(Expr::u32(stride.saturating_sub(1)), lane.clone()),
+            Expr::lt(Expr::u32(stride - 1), lane.clone()),
             vec![Node::store(
                 &scratch_b,
                 lane.clone(),
@@ -154,11 +154,19 @@ pub fn prefix_scan_with_op_id(
         )],
     ));
 
+    let output_bytes = usize::try_from(n)
+        .ok()
+        .and_then(|count| count.checked_mul(4))
+        .unwrap_or_else(|| {
+            panic!(
+                "vyre prefix_scan n={n} overflows output byte range. Fix: shard the scan before GPU dispatch."
+            )
+        });
     let buffers = vec![
         BufferDecl::storage(in_buf, 0, BufferAccess::ReadOnly, DataType::U32).with_count(n),
         BufferDecl::output(out_buf, 1, DataType::U32)
             .with_count(n)
-            .with_output_byte_range(0..(n as usize) * 4),
+            .with_output_byte_range(0..output_bytes),
         BufferDecl::workgroup(&scratch_a, lanes, DataType::U32),
         BufferDecl::workgroup(&scratch_b, lanes, DataType::U32),
     ];
@@ -196,9 +204,17 @@ pub fn prefix_scan_large_with_op_id(
     } else {
         BufferDecl::storage(in_buf, 0, BufferAccess::ReadOnly, DataType::U32).with_count(n)
     };
+    let output_bytes = usize::try_from(n)
+        .ok()
+        .and_then(|count| count.checked_mul(4))
+        .unwrap_or_else(|| {
+            panic!(
+                "vyre prefix_scan_large n={n} overflows output byte range. Fix: shard the scan before GPU dispatch."
+            )
+        });
     let output_decl = BufferDecl::output(out_buf, 1, DataType::U32)
         .with_count(n.max(1))
-        .with_output_byte_range(0..(n as usize).saturating_mul(4));
+        .with_output_byte_range(0..output_bytes);
 
     let body = if n == 0 {
         Vec::new()
@@ -237,6 +253,7 @@ pub fn prefix_scan_large_with_op_id(
 /// CPU-reference prefix scan. Conformance tests verify the GPU
 /// Program produces the same output for every input.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref(input: &[u32], kind: ScanKind) -> Vec<u32> {
     let mut out = Vec::new();
     cpu_ref_into(input, kind, &mut out);
@@ -244,6 +261,7 @@ pub fn cpu_ref(input: &[u32], kind: ScanKind) -> Vec<u32> {
 }
 
 /// CPU-reference prefix scan using a caller-owned output buffer.
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref_into(input: &[u32], kind: ScanKind, out: &mut Vec<u32>) {
     out.clear();
     out.reserve(input.len());

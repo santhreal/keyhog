@@ -1,4 +1,4 @@
-//! Audit-fix A35 `expansion/string_branch.rs` extract.
+//! Stringification branch builder for macro replacement.
 
 use crate::parsing::c::preprocess::materialization::*;
 use vyre::ir::{Expr, Node};

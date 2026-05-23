@@ -2,7 +2,7 @@
 //!
 //! Produced as a first-class primitive so set-difference (subtract
 //! `rhs` from `lhs`) is one Region instead of the two-op compose
-//! `bitset_not(rhs)` → `bitset_and(lhs, allow)`. Surgec's
+//! `bitset_not(rhs)` → `bitset_and(lhs, allow)`. Downstream analyzer's
 //! `flows_to_not_via` lowering uses this to subtract waypoint nodes
 //! from the source frontier, making the `not_via` path one fewer
 //! buffer + one fewer dispatch than the manual compose.
@@ -50,6 +50,7 @@ pub fn bitset_and_not(lhs: &str, rhs: &str, out: &str, words: u32) -> Program {
 
 /// CPU reference: `out[i] = lhs[i] & !rhs[i]` per word.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref(lhs: &[u32], rhs: &[u32]) -> Vec<u32> {
     let mut out = Vec::new();
     cpu_ref_into(lhs, rhs, &mut out);
@@ -57,6 +58,7 @@ pub fn cpu_ref(lhs: &[u32], rhs: &[u32]) -> Vec<u32> {
 }
 
 /// CPU reference into caller-owned storage.
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref_into(lhs: &[u32], rhs: &[u32], out: &mut Vec<u32>) {
     out.clear();
     out.reserve(lhs.len().min(rhs.len()));

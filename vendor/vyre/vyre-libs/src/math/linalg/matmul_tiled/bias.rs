@@ -9,6 +9,7 @@ use crate::region::{wrap, wrap_child};
 use crate::tensor_ref::{TensorRef, TensorRefError};
 
 use super::body::cooperative_matmul_body;
+use super::mma_body::cooperative_matmul_body_mma;
 use super::shape::{output_tile_shape, padded_tile_lane_count, MatrixShape, TileShape};
 
 const OP_ID_BIAS: &str = "vyre-libs::math::matmul_bias_tiled";
@@ -65,13 +66,14 @@ impl MatmulBiasTiled {
     ///
     /// Same shape-coherence + name-uniqueness errors as [`super::super::MatmulBias`].
     pub fn build(self) -> Result<Program, TensorRefError> {
+        let dtype = self.a.dtype.clone();
         check_tensors(
             OP_ID_BIAS,
             &[
-                (&self.a, DataType::U32),
-                (&self.b, DataType::U32),
-                (&self.bias, DataType::U32),
-                (&self.out, DataType::U32),
+                (&self.a, dtype.clone()),
+                (&self.b, dtype.clone()),
+                (&self.bias, dtype.clone()),
+                (&self.out, dtype.clone()),
             ],
         )?;
         if self.tile == 0 {
@@ -132,6 +134,9 @@ impl MatmulBiasTiled {
             self.tile,
             self.options.workgroup_size.unwrap_or([16, 16, 1]),
             self.options.region_generator.unwrap_or(OP_ID_BIAS),
+            dtype,
+            "matmul_a_tile",
+            "matmul_b_tile",
         )?;
         Ok(program)
     }
@@ -169,6 +174,7 @@ pub fn matmul_bias_tiled(
 }
 
 #[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)]
 fn matmul_bias_tiled_program(
     a: &str,
     b: &str,
@@ -180,6 +186,9 @@ fn matmul_bias_tiled_program(
     tile: u32,
     workgroup: [u32; 3],
     generator: &'static str,
+    dtype: DataType,
+    a_tile_name: &str,
+    b_tile_name: &str,
 ) -> Result<Program, TensorRefError> {
     if tile == 0 {
         return Err(TensorRefError::ShapeMismatch {
@@ -189,20 +198,98 @@ fn matmul_bias_tiled_program(
             op: OP_ID_BIAS,
         });
     }
-    let (out_tile_cols, out_tile_rows, lane_count) = output_tile_shape(workgroup)?;
-    let a_tile_count =
-        out_tile_rows
-            .checked_mul(tile)
+    // MMA fast path: M16N8K16 fragment with F16 inputs.
+    let use_mma = dtype == DataType::F16 && tile == 16 && m % 16 == 0 && n % 8 == 0;
+
+    let (a_tile_count, b_tile_count, padded_out_count, dispatch_wg, kernel_body) = if use_mma {
+        // Force a flat 32-thread workgroup; each lane contributes MMA fragment work.
+        let mma_wg = [32, 1, 1];
+        let mma_out_rows = 16u32;
+        let mma_out_cols = 8u32;
+        let mma_lanes = 32u32;
+        let mma_a_tile =
+            mma_out_rows
+                .checked_mul(tile)
+                .ok_or_else(|| TensorRefError::ElementCountOverflow {
+                    name: "matmul_bias_a_tile".to_string(),
+                    shape: vec![mma_out_rows, tile],
+                })?;
+        let mma_b_tile =
+            tile.checked_mul(mma_out_cols)
+                .ok_or_else(|| TensorRefError::ElementCountOverflow {
+                    name: "matmul_bias_b_tile".to_string(),
+                    shape: vec![tile, mma_out_cols],
+                })?;
+        let out_count = m
+            .checked_mul(n)
             .ok_or_else(|| TensorRefError::ElementCountOverflow {
+                name: out.to_string(),
+                shape: vec![m, n],
+            })?;
+        let body_nodes = cooperative_matmul_body_mma(
+            a,
+            b,
+            Some(bias),
+            out,
+            MatrixShape { m, k, n },
+            TileShape {
+                k_tile: tile,
+                out_rows: mma_out_rows,
+                out_cols: mma_out_cols,
+                x_lanes: mma_lanes,
+                y_lanes: 1,
+                lanes: mma_lanes,
+                a_values: mma_a_tile,
+                b_values: mma_b_tile,
+            },
+            dtype.clone(),
+            a_tile_name,
+            b_tile_name,
+        );
+        (mma_a_tile, mma_b_tile, out_count, mma_wg, body_nodes)
+    } else {
+        let (out_tile_cols, out_tile_rows, lane_count) = output_tile_shape(workgroup)?;
+        let a_tile_count = out_tile_rows.checked_mul(tile).ok_or_else(|| {
+            TensorRefError::ElementCountOverflow {
                 name: "matmul_bias_a_tile".to_string(),
                 shape: vec![out_tile_rows, tile],
-            })?;
-    let b_tile_count =
-        tile.checked_mul(out_tile_cols)
-            .ok_or_else(|| TensorRefError::ElementCountOverflow {
+            }
+        })?;
+        let b_tile_count = tile.checked_mul(out_tile_cols).ok_or_else(|| {
+            TensorRefError::ElementCountOverflow {
                 name: "matmul_bias_b_tile".to_string(),
                 shape: vec![tile, out_tile_cols],
-            })?;
+            }
+        })?;
+        let padded_out_count =
+            padded_tile_lane_count(m, n, out_tile_rows, out_tile_cols, lane_count)?;
+        let flat_workgroup = [lane_count, 1, 1];
+        let body_nodes = cooperative_matmul_body(
+            a,
+            b,
+            Some(bias),
+            out,
+            MatrixShape { m, k, n },
+            TileShape {
+                k_tile: tile,
+                out_rows: out_tile_rows,
+                out_cols: out_tile_cols,
+                x_lanes: lane_count,
+                y_lanes: 1,
+                lanes: lane_count,
+                a_values: a_tile_count,
+                b_values: b_tile_count,
+            },
+        );
+        (
+            a_tile_count,
+            b_tile_count,
+            padded_out_count,
+            flat_workgroup,
+            body_nodes,
+        )
+    };
+
     let a_count = m
         .checked_mul(k)
         .ok_or_else(|| TensorRefError::ElementCountOverflow {
@@ -215,48 +302,44 @@ fn matmul_bias_tiled_program(
             name: b.to_string(),
             shape: vec![k, n],
         })?;
-    let out_count = m
-        .checked_mul(n)
+    let logical_out_count =
+        m.checked_mul(n)
+            .ok_or_else(|| TensorRefError::ElementCountOverflow {
+                name: out.to_string(),
+                shape: vec![m, n],
+            })?;
+    let element_size = dtype
+        .size_bytes()
         .ok_or_else(|| TensorRefError::ElementCountOverflow {
             name: out.to_string(),
             shape: vec![m, n],
         })?;
-    let padded_out_count = padded_tile_lane_count(m, n, out_tile_rows, out_tile_cols, lane_count)?;
-
+    let logical_output_bytes = (logical_out_count as usize)
+        .checked_mul(element_size)
+        .ok_or_else(|| TensorRefError::ElementCountOverflow {
+            name: out.to_string(),
+            shape: vec![m, n],
+        })?;
     let body = vec![wrap_child(
         SEMIRING_GEMM_OP_ID,
         GeneratorRef {
             name: generator.to_string(),
         },
-        cooperative_matmul_body(
-            a,
-            b,
-            Some(bias),
-            out,
-            MatrixShape { m, k, n },
-            TileShape {
-                k_tile: tile,
-                out_rows: out_tile_rows,
-                out_cols: out_tile_cols,
-                lanes: lane_count,
-                a_values: a_tile_count,
-                b_values: b_tile_count,
-            },
-        ),
+        kernel_body,
     )];
 
     Ok(Program::wrapped(
         vec![
-            BufferDecl::storage(a, 0, BufferAccess::ReadOnly, DataType::U32).with_count(a_count),
-            BufferDecl::storage(b, 1, BufferAccess::ReadOnly, DataType::U32).with_count(b_count),
-            BufferDecl::storage(bias, 2, BufferAccess::ReadOnly, DataType::U32).with_count(n),
-            BufferDecl::workgroup("matmul_a_tile", a_tile_count, DataType::U32),
-            BufferDecl::workgroup("matmul_b_tile", b_tile_count, DataType::U32),
-            BufferDecl::output(out, 3, DataType::U32)
+            BufferDecl::storage(a, 0, BufferAccess::ReadOnly, dtype.clone()).with_count(a_count),
+            BufferDecl::storage(b, 1, BufferAccess::ReadOnly, dtype.clone()).with_count(b_count),
+            BufferDecl::storage(bias, 2, BufferAccess::ReadOnly, dtype.clone()).with_count(n),
+            BufferDecl::workgroup(a_tile_name, a_tile_count, dtype.clone()),
+            BufferDecl::workgroup(b_tile_name, b_tile_count, dtype.clone()),
+            BufferDecl::output(out, 3, dtype)
                 .with_count(padded_out_count)
-                .with_output_byte_range(0..((out_count as usize) * core::mem::size_of::<u32>())),
+                .with_output_byte_range(0..logical_output_bytes),
         ],
-        [lane_count, 1, 1],
+        dispatch_wg,
         vec![wrap(generator, body, None)],
     ))
 }
@@ -271,7 +354,6 @@ inventory::submit! {
                 crate::test_support::byte_pack::u32_bytes(&[1, 2, 3, 4]),
                 crate::test_support::byte_pack::u32_bytes(&[5, 6, 7, 8]),
                 crate::test_support::byte_pack::u32_bytes(&[10, 20]),
-                vec![0u8; 4 * 4],
             ]]
         }),
         expected_output: Some(|| {
@@ -282,6 +364,7 @@ inventory::submit! {
             // out[3] = 50 + 20 = 70
             vec![vec![crate::test_support::byte_pack::u32_bytes(&[29, 42, 53, 70])]]
         }),
+        category: Some("math"),
     }
 }
 
@@ -390,6 +473,35 @@ mod tests {
                 output_zero_bytes(&program),
             ],
         );
-        assert_eq!(actual, expected_bias_matmul(&a, &b, &bias, m, k, n));
+        let expected = expected_bias_matmul(&a, &b, &bias, m, k, n);
+        assert_eq!(&actual[..expected.len()], expected.as_slice());
+    }
+
+    #[test]
+    fn matmul_bias_tiled_mma_path_uses_workgroup_tile_coordinates() {
+        let program = MatmulBiasTiled::new(
+            TensorRef::f16_2d("a", 32, 16),
+            TensorRef::f16_2d("b", 16, 16),
+            TensorRef::f16_1d("bias", 16),
+            TensorRef::f16_2d("out", 32, 16),
+            16,
+        )
+        .build()
+        .expect("Fix: F16 M16N8K16 bias tiled matmul dimensions are valid.");
+        let debug = format!("{:?}", program.entry());
+
+        assert!(
+            debug.contains("tile_row_base"),
+            "MMA bias tiled matmul must include workgroup row offset in output coordinates"
+        );
+        assert!(
+            debug.contains("tile_col_base"),
+            "MMA bias tiled matmul must include workgroup column offset in output coordinates"
+        );
+        assert_eq!(
+            program.workgroup_size(),
+            [32, 1, 1],
+            "MMA bias tiled matmul must force the 32-lane M16N8K16 workgroup"
+        );
     }
 }

@@ -207,23 +207,56 @@ impl DialectRegistry {
         Ok(guard)
     }
 
-    fn from_inventory() -> Self {
-        let mut defs: Vec<OpDef> = inventory::iter::<super::dialect::OpDefRegistration>()
-            .map(|reg| (reg.op)())
-            .collect();
-        defs.extend(Self::extern_defs());
-        defs.sort_by(|left, right| (left.dialect, left.id).cmp(&(right.dialect, right.id)));
-        let defs = Self::drop_duplicate_defs(defs);
+    pub(crate) fn from_inventory() -> Self {
+        let registration_count = inventory::iter::<super::dialect::OpDefRegistration>().count();
+        let extern_defs = Self::extern_defs();
+        let total_defs = registration_count
+            .checked_add(extern_defs.len())
+            .unwrap_or_else(|| {
+                panic!(
+                    "dialect registry op-definition count overflowed usize. Fix: split registry initialization."
+                )
+            });
+        let mut defs = Vec::new();
+        defs.try_reserve_exact(total_defs).unwrap_or_else(|error| {
+            panic!(
+                "dialect registry could not reserve {total_defs} op definition slot(s): {error}. Fix: reduce linked op inventory or split registry initialization."
+            )
+        });
+        defs.extend(inventory::iter::<super::dialect::OpDefRegistration>().map(|reg| (reg.op)()));
+        defs.extend(extern_defs);
+        // (dialect, id) is the unique op key; duplicates abort registry
+        // construction so contributors cannot ship a partial snapshot that
+        // silently loses an operation.
+        defs.sort_unstable_by(|left, right| {
+            (left.dialect, left.id).cmp(&(right.dialect, right.id))
+        });
+        Self::validate_no_duplicates(defs.iter()).unwrap_or_else(|error| panic!("{error}"));
         Self::from_validated_defs(defs)
     }
 
     fn extern_defs() -> Vec<OpDef> {
-        let mut dialects: Vec<&'static ExternDialect> =
-            inventory::iter::<ExternDialect>().collect();
+        let dialect_count = inventory::iter::<ExternDialect>().count();
+        let mut dialects = Vec::new();
+        dialects.try_reserve_exact(dialect_count).unwrap_or_else(|error| {
+            panic!(
+                "extern dialect registry could not reserve {dialect_count} dialect slot(s): {error}. Fix: reduce linked extern dialect inventory or split registry initialization."
+            )
+        });
+        dialects.extend(inventory::iter::<ExternDialect>);
         dialects.sort_by_key(|dialect| dialect.name);
 
-        let mut ops: Vec<&'static ExternOp> = inventory::iter::<ExternOp>().collect();
-        ops.sort_by(|left, right| (left.dialect, left.op_id).cmp(&(right.dialect, right.op_id)));
+        let op_count = inventory::iter::<ExternOp>().count();
+        let mut ops = Vec::new();
+        ops.try_reserve_exact(op_count).unwrap_or_else(|error| {
+            panic!(
+                "extern op registry could not reserve {op_count} op slot(s): {error}. Fix: reduce linked extern op inventory or split registry initialization."
+            )
+        });
+        ops.extend(inventory::iter::<ExternOp>);
+        ops.sort_unstable_by(|left, right| {
+            (left.dialect, left.op_id).cmp(&(right.dialect, right.op_id))
+        });
 
         if let Err(errors) = vyre_foundation::extern_registry::verify() {
             let mut message = String::new();
@@ -233,60 +266,49 @@ impl DialectRegistry {
                 }
                 let _ = write!(&mut message, "{error}");
             }
-            tracing::error!(
-                target: "vyre::driver::dialect_registry",
-                message,
-                "extern dialect inventory is invalid. Fix: register each extern op \
-                 under a submitted extern dialect before the registry is built. \
-                 Invalid extern ops are ignored for this snapshot instead of \
-                 aborting the process."
+            panic!(
+                "extern dialect inventory is invalid: {message}. Fix: register each extern op under a submitted extern dialect before the registry is built; invalid extern ops must not be ignored."
             );
         }
 
-        let known = dialects
-            .into_iter()
-            .map(|dialect| dialect.name)
-            .collect::<FxHashSet<_>>();
+        let mut known = FxHashSet::default();
+        known.try_reserve(dialects.len()).unwrap_or_else(|error| {
+            panic!(
+                "extern dialect registry could not reserve {} known dialect name slot(s): {error}. Fix: reduce linked extern dialect inventory or split registry initialization.",
+                dialects.len()
+            )
+        });
+        known.extend(dialects.into_iter().map(|dialect| dialect.name));
 
-        ops.into_iter()
-            .filter(|op| known.contains(op.dialect))
-            .map(|op| OpDef {
-                id: op.op_id,
-                dialect: op.dialect,
-                category: Category::Extension,
-                ..OpDef::default()
-            })
-            .collect()
-    }
-
-    fn drop_duplicate_defs(defs: Vec<OpDef>) -> Vec<OpDef> {
-        let mut seen: FxHashMap<&'static str, &'static str> =
-            FxHashMap::with_capacity_and_hasher(defs.len(), Default::default());
-        let mut unique = Vec::with_capacity(defs.len());
-        for def in defs {
-            let registrant = Self::registrant_for(&def);
-            if let Some(&first_registrant) = seen.get(def.id) {
-                let error = DuplicateOpIdError {
-                    op_id: def.id,
-                    first_registrant,
-                    second_registrant: registrant,
-                };
-                tracing::error!(
-                    target: "vyre::driver::dialect_registry",
-                    %error,
-                    "duplicate dialect operation ignored while building the global registry. \
-                     Fix: keep exactly one owner for every stable op id."
-                );
-                continue;
-            }
-            seen.insert(def.id, registrant);
-            unique.push(def);
-        }
-        unique
+        let mut defs = Vec::new();
+        defs.try_reserve_exact(ops.len()).unwrap_or_else(|error| {
+            panic!(
+                "extern op registry could not reserve {} filtered op definition slot(s): {error}. Fix: reduce linked extern op inventory or split registry initialization.",
+                ops.len()
+            )
+        });
+        defs.extend(
+            ops.into_iter()
+                .filter(|op| known.contains(op.dialect))
+                .map(|op| OpDef {
+                    id: op.op_id,
+                    dialect: op.dialect,
+                    category: Category::Extension,
+                    ..OpDef::default()
+                }),
+        );
+        defs
     }
 
     fn from_validated_defs(defs: impl IntoIterator<Item = OpDef>) -> Self {
+        let defs = defs.into_iter();
+        let (lower_bound, _) = defs.size_hint();
         let mut by_id: FxHashMap<InternedOpId, &'static OpDef> = FxHashMap::default();
+        by_id.try_reserve(lower_bound).unwrap_or_else(|error| {
+            panic!(
+                "dialect registry could not reserve {lower_bound} frozen op lookup slot(s): {error}. Fix: reduce linked op inventory or split registry initialization."
+            )
+        });
         for def in defs {
             let interned = intern_string(def.id);
             let leaked: &'static OpDef = Box::leak(Box::new(def));
@@ -414,10 +436,7 @@ mod tests {
     }
 
     fn registry_test_lock() -> MutexGuard<'static, ()> {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(())).lock().expect(
-            "Fix: registry test lock was poisoned; inspect the earlier failing registry test.",
-        )
+        crate::registry::registry_test_lock()
     }
 
     fn test_def(id: &'static str) -> OpDef {

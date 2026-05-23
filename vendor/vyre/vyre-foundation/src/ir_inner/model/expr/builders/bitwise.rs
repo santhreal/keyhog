@@ -11,7 +11,7 @@ impl Expr {
     /// let _ = Expr::bitxor(Expr::u32(0b1010), Expr::u32(0b1100));
     /// ```
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn bitxor(left: Expr, right: Expr) -> Expr {
         Expr::BinOp {
             op: BinOp::BitXor,
@@ -29,7 +29,7 @@ impl Expr {
     /// let _ = Expr::bitand(Expr::u32(0b1010), Expr::u32(0b1100));
     /// ```
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn bitand(left: Expr, right: Expr) -> Expr {
         Expr::BinOp {
             op: BinOp::BitAnd,
@@ -47,7 +47,7 @@ impl Expr {
     /// let _ = Expr::bitor(Expr::u32(0b1010), Expr::u32(0b1100));
     /// ```
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn bitor(left: Expr, right: Expr) -> Expr {
         Expr::BinOp {
             op: BinOp::BitOr,
@@ -65,7 +65,7 @@ impl Expr {
     /// let _ = Expr::bitnot(Expr::u32(0));
     /// ```
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn bitnot(operand: Expr) -> Expr {
         Expr::UnOp {
             op: UnOp::BitNot,
@@ -82,7 +82,7 @@ impl Expr {
     /// let _ = Expr::shl(Expr::u32(1), Expr::u32(2));
     /// ```
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn shl(left: Expr, right: Expr) -> Expr {
         Expr::BinOp {
             op: BinOp::Shl,
@@ -100,7 +100,7 @@ impl Expr {
     /// let _ = Expr::shr(Expr::u32(4), Expr::u32(1));
     /// ```
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn shr(left: Expr, right: Expr) -> Expr {
         Expr::BinOp {
             op: BinOp::Shr,
@@ -118,7 +118,7 @@ impl Expr {
     /// let _ = Expr::reverse_bits(Expr::u32(1));
     /// ```
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn reverse_bits(operand: Expr) -> Expr {
         Expr::UnOp {
             op: UnOp::ReverseBits,
@@ -135,7 +135,7 @@ impl Expr {
     /// let _ = Expr::popcount(Expr::u32(0b1011));
     /// ```
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn popcount(operand: Expr) -> Expr {
         Expr::UnOp {
             op: UnOp::Popcount,
@@ -152,7 +152,7 @@ impl Expr {
     /// let _ = Expr::clz(Expr::u32(1));
     /// ```
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn clz(operand: Expr) -> Expr {
         Expr::UnOp {
             op: UnOp::Clz,
@@ -169,7 +169,7 @@ impl Expr {
     /// let _ = Expr::ctz(Expr::u32(1));
     /// ```
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn ctz(operand: Expr) -> Expr {
         Expr::UnOp {
             op: UnOp::Ctz,

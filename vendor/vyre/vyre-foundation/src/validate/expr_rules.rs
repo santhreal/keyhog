@@ -54,7 +54,14 @@ pub(crate) fn validate_expr(
         Expr::BinOp { op, left, right } => {
             validate_expr(left, buffers, scope, options, report, depth_level + 1);
             validate_expr(right, buffers, scope, options, report, depth_level + 1);
-            typecheck::validate_binop_operands(op, left, right, buffers, scope, &mut report.errors);
+            typecheck::validate_binop_operands(
+                *op,
+                left,
+                right,
+                buffers,
+                scope,
+                &mut report.errors,
+            );
         }
         Expr::UnOp { op, operand } => {
             validate_expr(operand, buffers, scope, options, report, depth_level + 1);
@@ -148,7 +155,7 @@ pub(crate) fn validate_expr(
             ordering,
         } => {
             atomic_rules::validate_atomic(
-                op,
+                *op,
                 buffer,
                 index,
                 expected.as_deref(),

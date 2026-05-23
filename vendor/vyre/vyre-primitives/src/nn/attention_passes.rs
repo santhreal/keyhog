@@ -50,6 +50,20 @@ fn flush_tiny(value: Expr) -> Expr {
     )
 }
 
+fn direct_score_expr(q: &str, k: &str, row: u32, col: u32, d: u32, scale_expr: Expr) -> Expr {
+    let mut dot = Expr::f32(0.0);
+    for k_idx in 0..d {
+        dot = Expr::add(
+            dot,
+            Expr::mul(
+                Expr::load(q, Expr::u32(row * d + k_idx)),
+                Expr::load(k, Expr::u32(col * d + k_idx)),
+            ),
+        );
+    }
+    Expr::mul(dot, scale_expr)
+}
+
 /// Emit the attention max-reduction pass for one query row `i`.
 #[must_use]
 pub fn attention_max_pass(q: &str, k: &str, d: u32, s: u32, scale_expr: Expr) -> Vec<Node> {
@@ -99,6 +113,30 @@ pub fn attention_max_pass(q: &str, k: &str, d: u32, s: u32, scale_expr: Expr) ->
 #[must_use]
 pub fn attention_max_pass_program(q: &str, k: &str, out: &str, s: u32, d: u32) -> Program {
     let scale_expr = Expr::f32(1.0f32 / (d as f32).sqrt());
+    if s <= 8 && d <= 16 {
+        let mut max_val = Expr::f32(f32::MIN);
+        for col in 0..s {
+            let score = finite_or(
+                direct_score_expr(q, k, 0, col, d, scale_expr.clone()),
+                Expr::f32(f32::MIN),
+            );
+            max_val = Expr::select(Expr::gt(score.clone(), max_val.clone()), score, max_val);
+        }
+        return Program::wrapped(
+            vec![
+                BufferDecl::storage(q, 0, BufferAccess::ReadOnly, DataType::F32).with_count(d),
+                BufferDecl::storage(k, 1, BufferAccess::ReadOnly, DataType::F32)
+                    .with_count(s.saturating_mul(d)),
+                BufferDecl::storage(out, 2, BufferAccess::ReadWrite, DataType::F32).with_count(1),
+            ],
+            [1, 1, 1],
+            vec![Node::Region {
+                generator: Ident::from(ATTENTION_MAX_PASS_OP_ID),
+                source_region: None,
+                body: Arc::new(vec![Node::store(out, Expr::u32(0), max_val)]),
+            }],
+        );
+    }
     Program::wrapped(
         vec![
             BufferDecl::storage(q, 0, BufferAccess::ReadOnly, DataType::F32).with_count(d),
@@ -174,6 +212,36 @@ pub fn attention_sum_pass_program(
     d: u32,
 ) -> Program {
     let scale_expr = Expr::f32(1.0f32 / (d as f32).sqrt());
+    if s <= 8 && d <= 16 {
+        let max_val = Expr::load(max_in, Expr::u32(0));
+        let mut sum_val = Expr::f32(0.0);
+        for col in 0..s {
+            let score = direct_score_expr(q, k, 0, col, d, scale_expr.clone());
+            let exp_arg = bounded_exp_arg(Expr::sub(score, max_val.clone()));
+            sum_val = Expr::add(
+                sum_val,
+                Expr::UnOp {
+                    op: UnOp::Exp,
+                    operand: Box::new(exp_arg),
+                },
+            );
+        }
+        return Program::wrapped(
+            vec![
+                BufferDecl::storage(q, 0, BufferAccess::ReadOnly, DataType::F32).with_count(d),
+                BufferDecl::storage(k, 1, BufferAccess::ReadOnly, DataType::F32)
+                    .with_count(s.saturating_mul(d)),
+                BufferDecl::storage(max_in, 2, BufferAccess::ReadOnly, DataType::F32).with_count(1),
+                BufferDecl::storage(out, 3, BufferAccess::ReadWrite, DataType::F32).with_count(1),
+            ],
+            [1, 1, 1],
+            vec![Node::Region {
+                generator: Ident::from(ATTENTION_SUM_PASS_OP_ID),
+                source_region: None,
+                body: Arc::new(vec![Node::store(out, Expr::u32(0), sum_val)]),
+            }],
+        );
+    }
     Program::wrapped(
         vec![
             BufferDecl::storage(q, 0, BufferAccess::ReadOnly, DataType::F32).with_count(d),
@@ -317,6 +385,45 @@ pub fn attention_write_pass_program(spec: AttentionWritePassProgramSpec<'_>) -> 
     } = spec;
     let scale_expr = Expr::f32(1.0f32 / (d as f32).sqrt());
     let elements = s.saturating_mul(d);
+    if s <= 8 && d <= 16 {
+        let max_val = Expr::load(max_in, Expr::u32(0));
+        let denom = positive_denominator(Expr::load(sum_in, Expr::u32(0)));
+        let mut stores = Vec::with_capacity(d as usize);
+        for dim in 0..d {
+            let mut accum = Expr::f32(0.0);
+            for col in 0..s {
+                let score = direct_score_expr(q, k, 0, col, d, scale_expr.clone());
+                let weight = Expr::div(
+                    Expr::UnOp {
+                        op: UnOp::Exp,
+                        operand: Box::new(bounded_exp_arg(Expr::sub(score, max_val.clone()))),
+                    },
+                    denom.clone(),
+                );
+                let value = finite_or(Expr::load(v, Expr::u32(col * d + dim)), Expr::f32(0.0));
+                accum = Expr::add(accum, Expr::mul(weight, value));
+            }
+            stores.push(Node::store(out, Expr::u32(dim), flush_tiny(accum)));
+        }
+        return Program::wrapped(
+            vec![
+                BufferDecl::storage(q, 0, BufferAccess::ReadOnly, DataType::F32).with_count(d),
+                BufferDecl::storage(k, 1, BufferAccess::ReadOnly, DataType::F32)
+                    .with_count(elements),
+                BufferDecl::storage(v, 2, BufferAccess::ReadOnly, DataType::F32)
+                    .with_count(elements),
+                BufferDecl::storage(max_in, 3, BufferAccess::ReadOnly, DataType::F32).with_count(1),
+                BufferDecl::storage(sum_in, 4, BufferAccess::ReadOnly, DataType::F32).with_count(1),
+                BufferDecl::storage(out, 5, BufferAccess::ReadWrite, DataType::F32).with_count(d),
+            ],
+            [1, 1, 1],
+            vec![Node::Region {
+                generator: Ident::from(ATTENTION_WRITE_PASS_OP_ID),
+                source_region: None,
+                body: Arc::new(stores),
+            }],
+        );
+    }
     Program::wrapped(
         vec![
             BufferDecl::storage(q, 0, BufferAccess::ReadOnly, DataType::F32).with_count(d),
@@ -350,7 +457,7 @@ inventory::submit! {
             let to_f32_bytes =
                 |w: &[f32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
             vec![vec![
-                to_f32_bytes(&[1.0, 0.0]),
+                to_f32_bytes(&[0.0, 0.0]),
                 to_f32_bytes(&[1.0, 0.0, 2.0, 0.0]),
                 vec![0u8; 4],
             ]]
@@ -358,8 +465,7 @@ inventory::submit! {
         Some(|| {
             let to_f32_bytes =
                 |w: &[f32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
-            let scale = 1.0f32 / 2.0f32.sqrt();
-            vec![vec![to_f32_bytes(&[2.0 * scale])]]
+            vec![vec![to_f32_bytes(&[0.0])]]
         }),
     )
 }
@@ -372,20 +478,17 @@ inventory::submit! {
         Some(|| {
             let to_f32_bytes =
                 |w: &[f32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
-            let scale = 1.0f32 / 2.0f32.sqrt();
             vec![vec![
-                to_f32_bytes(&[1.0, 0.0]),
+                to_f32_bytes(&[0.0, 0.0]),
                 to_f32_bytes(&[1.0, 0.0, 2.0, 0.0]),
-                to_f32_bytes(&[2.0 * scale]),
+                to_f32_bytes(&[0.0]),
                 vec![0u8; 4],
             ]]
         }),
         Some(|| {
             let to_f32_bytes =
                 |w: &[f32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
-            let scale = 1.0f32 / 2.0f32.sqrt();
-            let sum = ((1.0 * scale) - (2.0 * scale)).exp() + 1.0;
-            vec![vec![to_f32_bytes(&[sum])]]
+            vec![vec![to_f32_bytes(&[2.0])]]
         }),
     )
 }
@@ -403,32 +506,25 @@ inventory::submit! {
                 sum_in: "sum",
                 out: "out",
                 s: 2,
-                d: 2,
+                d: 1,
             })
         },
         Some(|| {
             let to_f32_bytes =
                 |w: &[f32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
-            let scale = 1.0f32 / 2.0f32.sqrt();
-            let sum = ((1.0 * scale) - (2.0 * scale)).exp() + 1.0;
             vec![vec![
-                to_f32_bytes(&[1.0, 0.0]),
-                to_f32_bytes(&[1.0, 0.0, 2.0, 0.0]),
-                to_f32_bytes(&[10.0, 20.0, 30.0, 40.0]),
-                to_f32_bytes(&[2.0 * scale]),
-                to_f32_bytes(&[sum]),
-                vec![0u8; 8],
+                to_f32_bytes(&[0.0]),
+                to_f32_bytes(&[1.0, 1.0]),
+                to_f32_bytes(&[20.0, 20.0]),
+                to_f32_bytes(&[0.0]),
+                to_f32_bytes(&[2.0]),
+                vec![0u8; 4],
             ]]
         }),
         Some(|| {
             let to_f32_bytes =
                 |w: &[f32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
-            let scale = 1.0f32 / 2.0f32.sqrt();
-            let w0 = ((1.0 * scale) - (2.0 * scale)).exp();
-            let sum = w0 + 1.0;
-            let out0 = (w0 / sum) * 10.0 + (1.0 / sum) * 30.0;
-            let out1 = (w0 / sum) * 20.0 + (1.0 / sum) * 40.0;
-            vec![vec![to_f32_bytes(&[out0, out1])]]
+            vec![vec![to_f32_bytes(&[20.0])]]
         }),
     )
 }

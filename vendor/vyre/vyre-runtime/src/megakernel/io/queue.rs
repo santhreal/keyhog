@@ -42,8 +42,13 @@ impl MegakernelIoQueue {
                 queue: "submission",
                 fix: "io_queue word count overflows u32; shard the queue before allocating",
             })?;
+        let word_count = usize::try_from(word_count).map_err(|error| {
+            PipelineError::Backend(format!(
+                "io_queue word count cannot fit host usize: {error}. Fix: shard the queue before allocating."
+            ))
+        })?;
         Ok(Self {
-            words: vec![0; word_count as usize],
+            words: vec![0; word_count],
             slot_count,
         })
     }
@@ -108,6 +113,50 @@ impl MegakernelIoQueue {
         Ok(())
     }
 
+    /// Submit a DMA-read request to the IO queue.
+    ///
+    /// This is the GPU-initiated path: the caller writes the request metadata,
+    /// then flips `STATUS` to `slot::PUBLISHED` so the host/runtime can claim
+    /// and service it.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PipelineError::QueueFull`] when the slot is out of bounds or
+    /// not empty.
+    pub fn submit_dma_read(
+        &mut self,
+        queue_slot: u32,
+        src_handle: u32,
+        dst_handle: u32,
+        byte_count: u32,
+        tag: u32,
+    ) -> Result<(), PipelineError> {
+        if queue_slot >= self.slot_count {
+            return Err(PipelineError::QueueFull {
+                queue: "submission",
+                fix: "io_queue slot exceeds MegakernelIoQueue::slot_count; enlarge the queue or submit into a valid slot id",
+            });
+        }
+        let current_status = self.read_word(queue_slot, io_word::STATUS);
+        if current_status != slot::EMPTY {
+            return Err(PipelineError::QueueFull {
+                queue: "submission",
+                fix: "io_queue slot still in flight; wait for completion before submitting a new request",
+            });
+        }
+        self.write_word_unfenced(queue_slot, io_word::OP_TYPE, io_op::READ);
+        self.write_word_unfenced(queue_slot, io_word::SRC_HANDLE, src_handle);
+        self.write_word_unfenced(queue_slot, io_word::DST_HANDLE, dst_handle);
+        self.write_word_unfenced(queue_slot, io_word::OFFSET_LO, 0);
+        self.write_word_unfenced(queue_slot, io_word::OFFSET_HI, 0);
+        self.write_word_unfenced(queue_slot, io_word::BYTE_COUNT, byte_count);
+        self.write_word_unfenced(queue_slot, io_word::TAG, tag);
+        fence(Ordering::Release);
+        self.write_word_unfenced(queue_slot, io_word::STATUS, slot::PUBLISHED);
+        fence(Ordering::Release);
+        Ok(())
+    }
+
     /// Read the queue slot back as a completion record.
     #[must_use]
     pub fn completion(&self, queue_slot: u32) -> Option<IoCompletion> {
@@ -120,9 +169,9 @@ impl MegakernelIoQueue {
         }
         Some(IoCompletion {
             slot_idx: queue_slot,
-            mapped_slot: self.read_word(queue_slot, io_word::DST_HANDLE),
-            byte_count: self.read_word(queue_slot, io_word::BYTE_COUNT),
-            tag: self.read_word(queue_slot, io_word::TAG),
+            mapped_slot: self.read_word_unfenced(queue_slot, io_word::DST_HANDLE),
+            byte_count: self.read_word_unfenced(queue_slot, io_word::BYTE_COUNT),
+            tag: self.read_word_unfenced(queue_slot, io_word::TAG),
         })
     }
 
@@ -145,6 +194,11 @@ impl MegakernelIoQueue {
     fn read_word(&self, slot_idx: u32, word: u32) -> u32 {
         let idx = queue_word_index(slot_idx, word);
         fence(Ordering::Acquire);
+        self.words[idx]
+    }
+
+    fn read_word_unfenced(&self, slot_idx: u32, word: u32) -> u32 {
+        let idx = queue_word_index(slot_idx, word);
         self.words[idx]
     }
 

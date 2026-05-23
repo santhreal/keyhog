@@ -1,3 +1,6 @@
+use super::stats::{
+    NODE_KIND_LET, NODE_KIND_LOOP, NODE_KIND_REGION, NODE_KIND_RETURN, NODE_KIND_STORE,
+};
 use super::{Program, ProgramStats};
 use crate::ir::{BufferAccess, BufferDecl, DataType, Expr, Node};
 
@@ -15,6 +18,7 @@ fn stats_matches_old_multi_walk_empty() {
             top_level_regions: 1,
             static_storage_bytes: 0,
             capability_bits: 0,
+            node_kinds_present: NODE_KIND_REGION,
             ..ProgramStats::default()
         }
     );
@@ -41,6 +45,7 @@ fn stats_matches_old_multi_walk_single_store() {
             memory_op_count: 1,
             control_flow_count: 1,
             capability_bits: 0,
+            node_kinds_present: NODE_KIND_REGION | NODE_KIND_STORE | NODE_KIND_RETURN,
             ..ProgramStats::default()
         }
     );
@@ -72,6 +77,7 @@ fn stats_matches_old_multi_walk_batch() {
             memory_op_count: 3,
             control_flow_count: 1,
             capability_bits: 0,
+            node_kinds_present: NODE_KIND_REGION | NODE_KIND_STORE | NODE_KIND_RETURN,
             ..ProgramStats::default()
         }
     );
@@ -107,6 +113,7 @@ fn stats_matches_old_multi_walk_region_chain() {
             top_level_regions: 2,
             static_storage_bytes: 0,
             capability_bits: 0,
+            node_kinds_present: NODE_KIND_REGION,
             ..ProgramStats::default()
         }
     );
@@ -138,6 +145,7 @@ fn stats_matches_old_multi_walk_recursive() {
             control_flow_count: 1,
             register_pressure_estimate: 1,
             capability_bits: 0,
+            node_kinds_present: NODE_KIND_REGION | NODE_KIND_LOOP | NODE_KIND_LET,
             ..ProgramStats::default()
         }
     );
@@ -151,5 +159,58 @@ fn stats_cache_hit_returns_same_reference() {
     assert!(
         std::ptr::eq(s1, s2),
         "Fix: repeated stats() calls must return cached reference"
+    );
+}
+
+/// `ProgramStats::node_kinds_present` must use the same bit positions
+/// as `optimizer::program_soa::NodeKind` so a pass can read either
+/// source-of-truth and get the same answer. Without this contract,
+/// passes that gate on `program.stats().has_node_kind_*` and passes
+/// that gate on `ProgramFacts::has_kind` would silently disagree.
+#[test]
+fn node_kinds_present_bit_positions_match_program_soa_node_kind() {
+    use crate::optimizer::program_soa::{kind_mask, NodeKind};
+    assert_eq!(NODE_KIND_LET, kind_mask(NodeKind::Let));
+    assert_eq!(
+        super::stats::NODE_KIND_ASSIGN,
+        kind_mask(NodeKind::Assign)
+    );
+    assert_eq!(NODE_KIND_STORE, kind_mask(NodeKind::Store));
+    assert_eq!(super::stats::NODE_KIND_IF, kind_mask(NodeKind::If));
+    assert_eq!(NODE_KIND_LOOP, kind_mask(NodeKind::Loop));
+    assert_eq!(
+        super::stats::NODE_KIND_INDIRECT_DISPATCH,
+        kind_mask(NodeKind::IndirectDispatch)
+    );
+    assert_eq!(
+        super::stats::NODE_KIND_ASYNC_LOAD,
+        kind_mask(NodeKind::AsyncLoad)
+    );
+    assert_eq!(
+        super::stats::NODE_KIND_ASYNC_STORE,
+        kind_mask(NodeKind::AsyncStore)
+    );
+    assert_eq!(
+        super::stats::NODE_KIND_ASYNC_WAIT,
+        kind_mask(NodeKind::AsyncWait)
+    );
+    assert_eq!(super::stats::NODE_KIND_TRAP, kind_mask(NodeKind::Trap));
+    assert_eq!(
+        super::stats::NODE_KIND_RESUME,
+        kind_mask(NodeKind::Resume)
+    );
+    assert_eq!(NODE_KIND_RETURN, kind_mask(NodeKind::Return));
+    assert_eq!(
+        super::stats::NODE_KIND_BARRIER,
+        kind_mask(NodeKind::Barrier)
+    );
+    assert_eq!(
+        super::stats::NODE_KIND_BLOCK,
+        kind_mask(NodeKind::Block)
+    );
+    assert_eq!(NODE_KIND_REGION, kind_mask(NodeKind::Region));
+    assert_eq!(
+        super::stats::NODE_KIND_OPAQUE,
+        kind_mask(NodeKind::Opaque)
     );
 }

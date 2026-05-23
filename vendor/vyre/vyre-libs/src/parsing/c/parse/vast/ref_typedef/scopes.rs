@@ -19,10 +19,7 @@ pub(super) fn scope_open_before(vast_nodes: &[u32], node_idx: usize) -> u32 {
 
 pub(super) fn enclosing_function_lparen(vast_nodes: &[u32], node_idx: usize) -> u32 {
     let node_count = vast_nodes.len() / VAST_NODE_STRIDE_U32 as usize;
-    let mut parent = vast_nodes
-        .get(node_idx * VAST_NODE_STRIDE_U32 as usize + 1)
-        .copied()
-        .unwrap_or(SENTINEL);
+    let mut parent = parent_at(vast_nodes, node_idx);
     for _ in 0..node_count {
         let Ok(parent_idx) = usize::try_from(parent) else {
             break;
@@ -35,10 +32,7 @@ pub(super) fn enclosing_function_lparen(vast_nodes: &[u32], node_idx: usize) -> 
         {
             return parent;
         }
-        parent = vast_nodes
-            .get(parent_idx * VAST_NODE_STRIDE_U32 as usize + 1)
-            .copied()
-            .unwrap_or(SENTINEL);
+        parent = parent_at(vast_nodes, parent_idx);
     }
 
     let mut scope = scope_open_before(vast_nodes, node_idx);
@@ -53,10 +47,7 @@ pub(super) fn enclosing_function_lparen(vast_nodes: &[u32], node_idx: usize) -> 
         if candidate != SENTINEL {
             return candidate;
         }
-        scope = vast_nodes
-            .get(scope_idx * VAST_NODE_STRIDE_U32 as usize + 1)
-            .copied()
-            .unwrap_or(SENTINEL);
+        scope = parent_at(vast_nodes, scope_idx);
     }
 
     SENTINEL
@@ -89,7 +80,12 @@ pub(super) fn lparen_starts_function_declarator(vast_nodes: &[u32], lparen_idx: 
 pub(super) fn for_init_scope_end(vast_nodes: &[u32], decl_idx: usize) -> Option<usize> {
     let control_lparen = enclosing_for_control_lparen(vast_nodes, decl_idx)?;
     let control_rparen = matching_raw_rparen(vast_nodes, control_lparen)?;
-    match kind_at(vast_nodes, control_rparen.saturating_add(1)) {
+    let node_count = vast_nodes.len() / VAST_NODE_STRIDE_U32 as usize;
+    let after_control = control_rparen.saturating_add(1);
+    if after_control >= node_count {
+        return Some(control_rparen);
+    }
+    match kind_at(vast_nodes, after_control) {
         TOK_LBRACE => matching_raw_rbrace(vast_nodes, control_rparen + 1),
         TOK_SEMICOLON => Some(control_rparen + 1),
         _ => Some(control_rparen),
@@ -166,13 +162,13 @@ pub(super) fn c99_for_init_statement_assign(
     if control_lparen_idx >= node_count || kind_at(vast_nodes, control_lparen_idx) != TOK_LPAREN {
         return false;
     }
-    let control_parent = vast_nodes
-        .get(control_lparen_idx * VAST_NODE_STRIDE_U32 as usize + 1)
-        .copied()
-        .unwrap_or(SENTINEL);
+    let control_parent = parent_at(vast_nodes, control_lparen_idx);
     let Ok(control_parent_idx) = usize::try_from(control_parent) else {
         return false;
     };
+    if control_parent_idx >= node_count {
+        return false;
+    }
     let control_parent_kind = kind_at(vast_nodes, control_parent_idx);
     if control_parent_kind == TOK_FOR {
         return true;

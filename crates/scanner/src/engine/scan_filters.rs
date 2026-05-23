@@ -93,7 +93,9 @@ pub(super) fn looks_like_variable_name(s: &str) -> bool {
     }
     // Pure ASCII check — byte ops are ~4x faster than .chars().all()
     // because they skip UTF-8 decode and char boundary tracking.
-    bytes.iter().all(|&b| b.is_ascii_alphanumeric() || b == b'_')
+    bytes
+        .iter()
+        .all(|&b| b.is_ascii_alphanumeric() || b == b'_')
 }
 
 pub(super) fn extend_known_prefix_credential<'a>(

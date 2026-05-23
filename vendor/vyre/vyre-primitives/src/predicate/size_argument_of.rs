@@ -24,7 +24,7 @@ pub const OP_ID: &str = "vyre-primitives::predicate::size_argument_of";
 /// Build a Program that reverse-traverses CallArg edges and marks
 /// argument nodes whose callees are in `frontier_in`.
 ///
-/// Surgec rules own any additional node-kind predicates at the rule
+/// Downstream analyzer rules own any additional node-kind predicates at the rule
 /// layer. This primitive deliberately avoids a baked-in Literal filter:
 /// allocator size arguments are often computed expressions, and
 /// filtering here would erase realistic vulnerability witnesses before
@@ -156,6 +156,7 @@ pub fn size_argument_of(
 /// CPU reference: reverse-traverse CallArg edges and mark every caller
 /// argument whose callee bit is present in `frontier_in`.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref(
     node_count: u32,
     _nodes: &[u32],

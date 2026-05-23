@@ -62,6 +62,14 @@ pub fn sinkhorn_iterate(
             "Fix: sinkhorn_iterate requires n > 0, got 0.".to_string(),
         );
     }
+    let Some(matrix_cells) = m.checked_mul(n) else {
+        return crate::invalid_output_program(
+            OP_ID,
+            u_curr,
+            DataType::U32,
+            format!("Fix: sinkhorn_iterate m*n overflows u32: {m}*{n}."),
+        );
+    };
 
     let mut transfer_body = Vec::new();
 
@@ -126,8 +134,10 @@ pub fn sinkhorn_iterate(
             BufferDecl::storage(u_curr, 0, BufferAccess::ReadWrite, DataType::U32).with_count(m),
             BufferDecl::storage(u_next, 1, BufferAccess::ReadWrite, DataType::U32).with_count(m),
             BufferDecl::storage(changed, 2, BufferAccess::ReadWrite, DataType::U32).with_count(1),
-            BufferDecl::storage(k, 3, BufferAccess::ReadOnly, DataType::U32).with_count(m * n),
-            BufferDecl::storage(k_t, 4, BufferAccess::ReadOnly, DataType::U32).with_count(m * n),
+            BufferDecl::storage(k, 3, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(matrix_cells),
+            BufferDecl::storage(k_t, 4, BufferAccess::ReadOnly, DataType::U32)
+                .with_count(matrix_cells),
             BufferDecl::storage(a, 5, BufferAccess::ReadOnly, DataType::U32).with_count(m),
             BufferDecl::storage(b, 6, BufferAccess::ReadOnly, DataType::U32).with_count(n),
             BufferDecl::storage(v, 7, BufferAccess::ReadWrite, DataType::U32).with_count(n),
@@ -140,6 +150,7 @@ pub fn sinkhorn_iterate(
 }
 
 /// CPU reference for iterative Sinkhorn.
+#[cfg(any(test, feature = "cpu-parity"))]
 #[must_use]
 #[allow(clippy::too_many_arguments)]
 pub fn cpu_ref(
@@ -177,6 +188,7 @@ pub fn cpu_ref(
 ///
 /// `u_out` and `v_out` receive the final states. `u_old` is retained
 /// as convergence scratch to avoid cloning `u` every iteration.
+#[cfg(any(test, feature = "cpu-parity"))]
 #[allow(clippy::too_many_arguments)]
 pub fn cpu_ref_into(
     k: &[u32],
@@ -448,6 +460,7 @@ mod tests {
 ///
 /// Panics on length mismatch.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn sinkhorn_iterate_f64(
     k: &[f64],
     a: &[f64],
@@ -474,6 +487,7 @@ pub fn sinkhorn_iterate_f64(
 /// Tolerance-based Sinkhorn-Knopp iterative balancing in f64 using
 /// caller-owned buffers.
 #[allow(clippy::too_many_arguments)]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn sinkhorn_iterate_f64_into(
     k: &[f64],
     a: &[f64],
@@ -537,6 +551,7 @@ pub fn sinkhorn_iterate_f64_into(
 /// Compute the row-sum residual `||row_sum(diag(u) · k · diag(v)) - a||_∞`.
 /// Useful for testing convergence of [`sinkhorn_iterate_f64`].
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn sinkhorn_row_residual(k: &[f64], u: &[f64], v: &[f64], a: &[f64]) -> f64 {
     let m = a.len();
     let n = v.len();
@@ -558,6 +573,7 @@ pub fn sinkhorn_row_residual(k: &[f64], u: &[f64], v: &[f64], a: &[f64]) -> f64 
 
 /// Compute the column-sum residual `||col_sum(diag(u) · k · diag(v)) - b||_∞`.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn sinkhorn_col_residual(k: &[f64], u: &[f64], v: &[f64], b: &[f64]) -> f64 {
     let m = u.len();
     let n = b.len();

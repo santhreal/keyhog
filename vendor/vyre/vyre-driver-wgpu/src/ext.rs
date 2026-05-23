@@ -33,7 +33,7 @@ impl WgpuBackend {
         let device_queue = self.current_device_queue();
         let (device, _queue) = &*device_queue;
 
-        let cache_key = dispatch_wgsl_pipeline_cache_key(wgsl, "main");
+        let cache_key = dispatch_wgsl_pipeline_cache_key(wgsl, "main")?;
         let pipeline = if let Some(hit) = self.wgsl_dispatch_pipeline_cache.get(&cache_key) {
             Arc::clone(hit.value())
         } else {
@@ -58,7 +58,11 @@ impl WgpuBackend {
         let output_word_count = output_size
             .checked_add(3)
             .and_then(|n| n.checked_div(4))
-            .unwrap_or(output_size)
+            .ok_or_else(|| {
+                format!(
+                    "Fix: output_size {output_size} overflows WGSL dispatch word-count calculation; split the dispatch into smaller chunks."
+                )
+            })?
             .max(1);
         let output_bytes = output_word_count.checked_mul(4).ok_or_else(|| {
             format!(
@@ -84,12 +88,26 @@ impl WgpuBackend {
             .into_message()
         })?;
 
-        let workgroup_count = output_word_count
-            .div_ceil(workgroup_size as usize)
-            .max(1)
-            .try_into()
-            .unwrap_or(u32::MAX);
+        let workgroup_count = u32::try_from(
+            output_word_count
+            .div_ceil(usize::try_from(workgroup_size).map_err(|error| {
+                format!(
+                    "Fix: WGSL workgroup_size {workgroup_size} cannot fit usize: {error}; reduce workgroup size."
+                )
+            })?)
+            .max(1),
+        )
+        .map_err(|_| {
+            format!(
+                "Fix: WGSL dispatch requires more than u32::MAX workgroups for {output_word_count} output words and workgroup size {workgroup_size}; split the dispatch."
+            )
+        })?;
         let input_word_count = input.len().div_ceil(4).max(1);
+        let input_word_count_u32 = u32::try_from(input_word_count).map_err(|_| {
+            format!(
+                "Fix: input word count {input_word_count} exceeds u32 capacity; split the dispatch into u32-sized chunks."
+            )
+        })?;
         let buffer_bindings = [
             BufferBindingInfo {
                 internal_trap: false,
@@ -100,7 +118,7 @@ impl WgpuBackend {
                 kind: vyre_foundation::ir::MemoryKind::Readonly,
                 hints: vyre_foundation::ir::MemoryHints::default(),
                 element: DataType::U32,
-                count: u32::try_from(input_word_count).unwrap_or(u32::MAX),
+                count: input_word_count_u32,
                 is_output: false,
                 preserve_input_contents: false,
             },
@@ -113,7 +131,7 @@ impl WgpuBackend {
                 kind: vyre_foundation::ir::MemoryKind::Global,
                 hints: vyre_foundation::ir::MemoryHints::default(),
                 element: DataType::U32,
-                count: u32::try_from(output_word_count).unwrap_or(u32::MAX),
+                count: output_len_u32,
                 is_output: true,
                 preserve_input_contents: false,
             },
@@ -132,9 +150,18 @@ impl WgpuBackend {
             },
         ];
         let max_group: u32 = buffer_bindings.iter().map(|b| b.group).max().unwrap_or(0);
-        let bind_group_layouts: Vec<Arc<wgpu::BindGroupLayout>> = (0..=max_group)
-            .map(|g| Arc::new(pipeline.get_bind_group_layout(g)))
-            .collect();
+        let bind_group_count = max_group.checked_add(1).ok_or_else(|| {
+            "raw WGSL bind-group count overflowed u32. Fix: lower buffer group indices before dispatch."
+                .to_string()
+        })?;
+        let bind_group_capacity = usize::try_from(bind_group_count).map_err(|error| {
+            format!(
+                "raw WGSL bind-group count {bind_group_count} cannot fit usize: {error}. Fix: lower buffer group indices before dispatch."
+            )
+        })?;
+        let mut bind_group_layouts = Vec::with_capacity(bind_group_capacity);
+        bind_group_layouts
+            .extend((0..=max_group).map(|g| Arc::new(pipeline.get_bind_group_layout(g))));
         let inputs = [input, params_bytes];
         let output_bindings: Arc<[OutputBindingLayout]> = Arc::from([OutputBindingLayout {
             binding: 1,
@@ -163,7 +190,6 @@ impl WgpuBackend {
             workgroup_count: [workgroup_count, 1, 1],
             indirect: None,
             labels: DispatchLabels {
-                readback: "vyre backend dispatch_wgsl readback",
                 bind_group: "vyre backend dispatch_wgsl bind group",
                 encoder: "vyre backend dispatch_wgsl",
                 compute: "vyre backend dispatch_wgsl compute",
@@ -180,14 +206,22 @@ impl WgpuBackend {
     }
 }
 
-fn dispatch_wgsl_pipeline_cache_key(wgsl: &str, entry_point: &str) -> [u8; 32] {
+fn dispatch_wgsl_pipeline_cache_key(wgsl: &str, entry_point: &str) -> Result<[u8; 32], String> {
     let mut hasher = blake3::Hasher::new();
     hasher.update(b"vyre-wgpu.dispatch_wgsl.pipeline.v1");
-    hasher.update(&(entry_point.len() as u64).to_le_bytes());
+    hasher.update(
+        &crate::numeric::usize_to_u64(entry_point.len(), "dispatch_wgsl entry point length")
+            .map_err(|error| error.into_message())?
+            .to_le_bytes(),
+    );
     hasher.update(entry_point.as_bytes());
-    hasher.update(&(wgsl.len() as u64).to_le_bytes());
+    hasher.update(
+        &crate::numeric::usize_to_u64(wgsl.len(), "dispatch_wgsl WGSL length")
+            .map_err(|error| error.into_message())?
+            .to_le_bytes(),
+    );
     hasher.update(wgsl.as_bytes());
-    *hasher.finalize().as_bytes()
+    Ok(*hasher.finalize().as_bytes())
 }
 
 #[cfg(test)]

@@ -54,6 +54,13 @@ impl BufferEntry {
     }
 }
 
+/// Test-friendly alias for [`DispatchGeometry`] — the integration test
+/// surface (manifest_round_trip, launcher_contracts, etc.) was written
+/// against an older `DispatchConfig` name. Keep the alias at the public
+/// surface so test files import the historical path; the canonical type
+/// remains [`DispatchGeometry`].
+pub type DispatchConfig = DispatchGeometry;
+
 /// Dispatch geometry baked into the artifact.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct DispatchGeometry {
@@ -83,7 +90,7 @@ pub struct CompiledArtifact {
     /// SemVer string of vyre-aot that produced this artifact.
     pub aot_version: String,
     /// VSA fingerprint of the optimized Program (8-lane u32 hypervector)
-    /// produced by `vyre_self_substrate::vsa_fingerprint::vsa_fingerprint_cpu`.
+    /// produced by `vyre_driver::program_vsa_fingerprint`.
     /// Two artifacts that differ only in non-semantic detail (instruction
     /// order, commutative-operand ordering) share this fingerprint, so
     /// downstream caches can dedup without recomputing.

@@ -101,58 +101,97 @@
 //!   onto disjoint sub-trees via planar non-overlapping selection.
 //!   Drops dispatch count from O(N) sequential to O(log N) batched.
 
-pub mod adjustment_set_pass_dependency;
-pub mod alias_registry;
-pub mod amg_pass_solver;
-pub mod bellman_tn_order;
-pub mod bitset_summary;
-pub mod categorical_check;
-pub mod cost_model;
-pub mod csr_bidirectional;
-pub mod csr_forward_or_changed;
-pub mod dataflow_fixpoint;
-pub mod decision_telemetry;
-pub mod differentiable_autotune;
-pub mod dnnf_compile;
-pub mod do_calculus_change_impact;
-pub mod dominator_frontier;
-pub mod effect_signature_check;
-pub mod exploded;
-pub mod fmm_polyhedral_compress;
-pub mod functorial_pass_composition;
-pub mod kfac_autotune_step;
-pub mod knowledge_compile_pass_precondition;
-pub mod level_wave_pass;
-pub mod linear_type_check;
-pub mod matroid_exact_megakernel;
-pub mod matroid_megakernel_scheduler;
-pub mod megakernel_schedule;
-pub mod mori_zwanzig_region_coarsen;
-pub mod motif;
-pub mod multigrid_matroid_solver;
-pub mod natural_gradient_autotuner;
-pub mod observability;
-pub mod path_reconstruct;
-pub mod persistent_bfs;
-pub mod persistent_fixpoint_program;
-pub mod persistent_homology_loop_signature;
-pub mod planar_rewrite_pass_scheduler;
-pub mod polyhedral_fusion;
-pub mod qsvt_matrix_function_fusion;
-pub mod scallop_provenance;
-pub mod scallop_provenance_wide;
-pub mod shape_smt_check;
-pub mod sheaf_heterophilic_dispatch;
-pub mod sheaf_spectral_clustering;
-pub mod sinkhorn_dispatch_clustering;
-pub mod sinkhorn_full_clustering;
-pub mod spectral_schedule;
-pub mod string_diagram_ir_rewrite;
-pub mod submodular_cache_eviction;
-pub mod tensor_network_fusion_order;
-pub mod tensor_train_chain_fusion;
-pub mod tensor_train_compression;
-pub mod toposort;
-pub mod union_find_emit;
-pub mod vsa_fingerprint;
-pub mod zx_rewrite;
+pub mod analysis;
+pub mod coverage;
+pub mod data;
+pub mod evidence;
+pub mod graph;
+pub mod hardware;
+pub mod logic;
+pub mod math;
+pub mod quality;
+pub mod release;
+pub mod scheduling;
+pub mod telemetry;
+
+/// Self-hosted optimizer keystone — the encoder + GPU passes that run
+/// the compiler against its own substrate. Exposed at the lib root so
+/// external consumers (driver-cuda parity tests, conform runners) can
+/// reach `OptimizerDispatcher` and the per-pass `*_via_encoded` entry
+/// points without descending into private module paths.
+pub mod optimization;
+pub mod optimizer;
+
+pub use analysis::{
+    cost_model, dataflow_fixpoint, decision_telemetry, diagnostic_aggregation,
+    diagnostic_comparison, effect_signature_check, incremental_invalidation,
+    knowledge_compile_pass_precondition, linear_type_check, persistent_fixpoint_program,
+    shape_smt_check,
+};
+
+pub use logic::{
+    adjustment_set_pass_dependency, categorical_check, dnnf_compile, do_calculus_change_impact,
+    functorial_pass_composition, string_diagram_ir_rewrite, zx_rewrite,
+};
+
+pub use data::{
+    bitset_compression, bitset_summary, matroid_exact_megakernel, matroid_megakernel_scheduler,
+    scallop_provenance, scallop_provenance_wide, vsa_fingerprint,
+};
+
+pub use telemetry::observability;
+
+pub use scheduling::{
+    branch_compaction, frontier_partitioning, frontier_typed_ir, megakernel_schedule,
+    multi_corpus_batching, planar_rewrite_pass_scheduler, polyhedral_fusion, spectral_schedule,
+    submodular_cache_eviction,
+};
+
+pub use evidence::{
+    benchmark_baselines, c_parser_benchmark_evidence, cuda_ptx_pattern_evidence,
+    optimization_release_evidence,
+};
+
+pub use optimization::{
+    cross_crate_perf_contracts, optimization_composition_contracts, optimization_pass_selection,
+    optimization_registry, optimization_release_passes,
+};
+
+pub use quality::{
+    allocation_regression, architecture_boundary_map, contributor_module_map,
+    crate_metadata_readiness, deep_review_gate, paradigm_shift_plan_audit, public_api_boundary,
+    public_api_doctest_gate,
+};
+
+pub use coverage::{
+    analysis_coverage, c_dialect_matrix, clang_parity_dashboard, graph_layout_coverage,
+    hostile_input_coverage, linux_corpus_parity, parser_semantic_safety, semantic_parity_coverage,
+    test_taxonomy_coverage,
+};
+
+pub use graph::{
+    adaptive_traverse, alias_registry, csr_bidirectional, csr_forward_or_changed,
+    csr_frontier_queue_batch_memory, csr_frontier_queue_batch_resident,
+    csr_frontier_queue_resident, dominator_frontier, exploded, level_wave_pass, motif,
+    path_reconstruct, persistent_bfs, toposort, union_find_emit,
+};
+
+pub use math::{
+    amg_pass_solver, bellman_tn_order, differentiable_autotune, fmm_polyhedral_compress,
+    kfac_autotune_step, mori_zwanzig_region_coarsen, multigrid_matroid_solver,
+    natural_gradient_autotuner, persistent_homology_loop_signature, qsvt_matrix_function_fusion,
+    sheaf_heterophilic_dispatch, sheaf_spectral_clustering, sinkhorn_dispatch_clustering,
+    sinkhorn_full_clustering, tensor_network_fusion_order, tensor_train_chain_fusion,
+    tensor_train_compression,
+};
+
+pub(crate) use hardware::dispatch_buffers;
+pub use hardware::{
+    device_resident_token_fact_graph, gpu_preprocessing_coverage, gpu_probe_contract,
+    memory_ownership_contract,
+};
+
+pub use release::{
+    release_checklist_gate, release_completion_audit, release_gap_findings, release_gpu_evidence,
+    release_launch_sequence, release_scope_docs, release_validation_matrix,
+};

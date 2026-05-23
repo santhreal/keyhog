@@ -3,7 +3,7 @@
 //!
 //! Op id: `vyre-primitives::parsing::whitespace_classify_word`. Soundness:
 //! `Exact` over the JSON / CSV / structural-parser whitespace set
-//! `{0x20 SP, 0x09 TAB, 0x0A LF, 0x0D CR}`. The CPU reference at the
+//! `{0x20 SP, 0x09 TAB, 0x0A LF, 0x0D CR}`. The Reference oracle at the
 //! bottom of this file is the contract; the GPU `Program` matches it
 //! lane-for-lane.
 //!
@@ -208,27 +208,29 @@ pub fn whitespace_classify_word(word_count: u32) -> Program {
 }
 
 /// Returns true if `byte` is one of {SP, TAB, LF, CR}. Inlined into the
-/// CPU reference and the per-byte fixture builders.
+/// Reference oracle and the per-byte fixture builders.
 #[must_use]
 #[inline]
 pub const fn is_structural_whitespace(byte: u8) -> bool {
     matches!(byte, 0x20 | 0x09 | 0x0A | 0x0D)
 }
 
-/// CPU reference. Returns the per-word whitespace bitmaps for the input
+/// Reference oracle. Returns the per-word whitespace bitmaps for the input
 /// byte stream (already packed 4 bytes per u32, little-endian). Matches
 /// the GPU `Program` lane-for-lane.
 #[must_use]
-pub fn whitespace_classify_word_cpu(words_in: &[u32]) -> Vec<u32> {
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn reference_whitespace_classify_word(words_in: &[u32]) -> Vec<u32> {
     let mut out = Vec::with_capacity(words_in.len());
-    whitespace_classify_word_cpu_into(words_in, &mut out);
+    reference_whitespace_classify_word_into(words_in, &mut out);
     out
 }
 
-/// CPU reference into caller-owned output storage.
+/// Reference oracle into caller-owned output storage.
 ///
 /// Clears `out`, then reuses its capacity.
-pub fn whitespace_classify_word_cpu_into(words_in: &[u32], out: &mut Vec<u32>) {
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn reference_whitespace_classify_word_into(words_in: &[u32], out: &mut Vec<u32>) {
     out.clear();
     out.reserve(words_in.len());
     for word in words_in {
@@ -256,6 +258,16 @@ pub const fn pack_bytes_le(b0: u8, b1: u8, b2: u8, b3: u8) -> u32 {
     (b0 as u32) | ((b1 as u32) << 8) | ((b2 as u32) << 16) | ((b3 as u32) << 24)
 }
 
+#[cfg(feature = "inventory-registry")]
+inventory::submit! {
+    crate::harness::OpEntry::new(
+        OP_ID,
+        || whitespace_classify_word(256),
+        None,
+        None,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -263,20 +275,20 @@ mod tests {
     #[test]
     fn classify_all_non_whitespace_emits_zero_mask() {
         let words = vec![pack_bytes_le(b'a', b'b', b'c', b'd')];
-        assert_eq!(whitespace_classify_word_cpu(&words), vec![0]);
+        assert_eq!(reference_whitespace_classify_word(&words), vec![0]);
     }
 
     #[test]
     fn classify_all_whitespace_emits_full_4_bit_mask() {
         let words = vec![pack_bytes_le(b' ', b'\t', b'\n', b'\r')];
-        assert_eq!(whitespace_classify_word_cpu(&words), vec![0b1111]);
+        assert_eq!(reference_whitespace_classify_word(&words), vec![0b1111]);
     }
 
     #[test]
     fn classify_mixed_word_marks_correct_lanes() {
         // a SP b TAB → bits 1 and 3 set → 0b1010
         let words = vec![pack_bytes_le(b'a', b' ', b'b', b'\t')];
-        assert_eq!(whitespace_classify_word_cpu(&words), vec![0b1010]);
+        assert_eq!(reference_whitespace_classify_word(&words), vec![0b1010]);
     }
 
     #[test]
@@ -287,7 +299,7 @@ mod tests {
             let mut bytes = [b'x', b'x', b'x', b'x'];
             bytes[lane as usize] = b' ';
             let word = pack_bytes_le(bytes[0], bytes[1], bytes[2], bytes[3]);
-            let result = whitespace_classify_word_cpu(&[word]);
+            let result = reference_whitespace_classify_word(&[word]);
             assert_eq!(
                 result[0],
                 1u32 << lane,
@@ -303,7 +315,7 @@ mod tests {
         // parser definition.
         let words = vec![pack_bytes_le(0x21, 0x08, 0x0B, 0x0E)];
         assert_eq!(
-            whitespace_classify_word_cpu(&words),
+            reference_whitespace_classify_word(&words),
             vec![0],
             "values adjacent to but not exactly the whitespace set must NOT classify as ws"
         );
@@ -316,7 +328,7 @@ mod tests {
         // change and this test enforces the contract.
         let words = vec![pack_bytes_le(0xA0, 0xC2, 0xE2, 0x80)];
         assert_eq!(
-            whitespace_classify_word_cpu(&words),
+            reference_whitespace_classify_word(&words),
             vec![0],
             "structural-parser whitespace is ASCII only by contract"
         );
@@ -327,7 +339,7 @@ mod tests {
         // Build 64 words of alternating SP / 'x' (one in every other lane
         // is whitespace). Every word should have bits 0 and 2 set.
         let words = vec![pack_bytes_le(b' ', b'x', b' ', b'x'); 64];
-        let masks = whitespace_classify_word_cpu(&words);
+        let masks = reference_whitespace_classify_word(&words);
         assert_eq!(masks.len(), 64);
         for mask in &masks {
             assert_eq!(*mask, 0b0101);
@@ -336,7 +348,7 @@ mod tests {
 
     #[test]
     fn classify_empty_input_emits_empty_output() {
-        let masks = whitespace_classify_word_cpu(&[]);
+        let masks = reference_whitespace_classify_word(&[]);
         assert!(masks.is_empty());
     }
 
@@ -345,7 +357,7 @@ mod tests {
         // High 28 bits MUST be zero — they're reserved for lane widening.
         // Adjusting this is a wire-format-visible change.
         let words = vec![pack_bytes_le(b' ', b' ', b' ', b' ')];
-        let masks = whitespace_classify_word_cpu(&words);
+        let masks = reference_whitespace_classify_word(&words);
         assert_eq!(
             masks[0] >> 4,
             0,
@@ -365,7 +377,7 @@ mod tests {
         let words = [pack_bytes_le(b' ', b'x', b'\n', b'y')];
         let mut out = Vec::with_capacity(32);
         let before = out.capacity();
-        whitespace_classify_word_cpu_into(&words, &mut out);
+        reference_whitespace_classify_word_into(&words, &mut out);
         assert_eq!(out, vec![0b0101]);
         assert_eq!(out.capacity(), before);
     }

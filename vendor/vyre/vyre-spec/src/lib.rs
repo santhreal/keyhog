@@ -87,8 +87,6 @@ pub mod float_type;
 /// Specification element.
 /// Specification element.
 pub mod golden_sample;
-/// Canonical semiring selector for dataflow and algebraic kernels.
-pub mod semiring;
 /// Table of hardware intrinsics exposed by vyre-intrinsics.
 /// Specification element.
 /// Specification element.
@@ -141,6 +139,8 @@ pub mod op_signature;
 /// Specification element.
 /// Specification element.
 pub mod pg_node_kind;
+/// Canonical semiring selector for dataflow and algebraic kernels.
+pub mod semiring;
 /// Ternary operator enum — select, FMA, mask-merge.
 /// Specification element.
 /// Specification element.
@@ -207,7 +207,7 @@ pub use convention::Convention;
 /// See [`data_type::DataType`].
 /// Specification element.
 /// Specification element.
-pub use data_type::DataType;
+pub use data_type::{DataType, TypeId};
 /// See [`engine_invariant::EngineInvariant`].
 /// Specification element.
 /// Specification element.
@@ -272,12 +272,12 @@ pub use op_metadata::OpMetadata;
 /// Specification element.
 /// Specification element.
 pub use op_signature::OpSignature;
-/// See [`semiring::Semiring`].
-pub use semiring::Semiring;
 /// See [`pg_node_kind::PgNodeKind`].
 /// Specification element.
 /// Specification element.
 pub use pg_node_kind::PgNodeKind;
+/// See [`semiring::Semiring`].
+pub use semiring::Semiring;
 /// See [`ternary_op::TernaryOp`].
 /// Specification element.
 /// Specification element.

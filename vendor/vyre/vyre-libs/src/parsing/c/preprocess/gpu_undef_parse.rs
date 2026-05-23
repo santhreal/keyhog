@@ -23,18 +23,16 @@
 //! ## Real-GPU lowering note
 //!
 //! Same conventions as the rest of the directive-classify family:
-//! straight-line `let_bind` chains plus direct buffer stores, no
-//! outer-scope mutables and no loops (the kernel parses up to a
-//! fixed-depth name length using unrolled probes). `source` is
-//! declared as packed U32 so reference-eval and naga-emitted real GPU
-//! agree on word-indexed access; the byte extraction is in
-//! `load_byte_u32`.
+//! `source` is declared as packed U32 so reference-eval and
+//! naga-emitted real GPU agree on word-indexed access; the byte
+//! extraction is in `load_byte_u32`. Macro-name extraction is bounded
+//! by the directive row length, not by a compile-time identifier cap.
 
 use crate::parsing::c::lex::tokens::TOK_PP_UNDEF;
 use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 
 /// Canonical op id.
-pub const OP_ID: &str = "vyre-libs::parsing::c::preprocess::gpu_undef_parse";
+pub const OP_ID: &str = "vyre-libs::parsing::c::preprocess::gpu_undef_parse_v2";
 
 /// Canonical binding for the input per-token start-offset buffer.
 pub const BINDING_TOK_STARTS: u32 = 0;
@@ -57,17 +55,17 @@ pub const BINDING_NAME_LEN_OUT: u32 = 5;
 /// the keyword and the macro name). Practical max is 1; cap at 4.
 const MAX_WS_PREFIX: u32 = 4;
 
-/// Maximum macro-name length the kernel can extract. C identifiers in
-/// the wild are well under this. Cap chosen so the unrolled probe
-/// stays a manageable fixed depth.
-const MAX_NAME_LEN: u32 = 64;
-
 /// Length of `undef` keyword (5 bytes), used to step past it.
 const UNDEF_KW_LEN: u32 = 5;
 
 /// Build the `#undef` row parser `Program`.
+///
+/// Hybrid runtime/static-bound: kernel BODY uses `Expr::buf_len()` for
+/// per-thread bounds, `num_tokens` is kept for output sizing, `source_len`
+/// is unused.
 #[must_use]
 pub fn gpu_undef_parse(num_tokens: u32, source_len: u32) -> Program {
+    let source_words = source_len.div_ceil(4).max(1);
     let t = Expr::var("t");
 
     let load_byte_u32 = |addr: Expr| -> Expr {
@@ -79,7 +77,10 @@ pub fn gpu_undef_parse(num_tokens: u32, source_len: u32) -> Program {
     };
     let safe_load = |addr: Expr| -> Expr {
         Expr::select(
-            Expr::lt(addr.clone(), Expr::u32(source_len)),
+            Expr::lt(
+                addr.clone(),
+                Expr::mul(Expr::buf_len("source"), Expr::u32(4)),
+            ),
             load_byte_u32(addr),
             Expr::u32(0),
         )
@@ -116,6 +117,22 @@ pub fn gpu_undef_parse(num_tokens: u32, source_len: u32) -> Program {
         let is_under = Expr::eq(b, Expr::u32(b'_' as u32));
         Expr::select(
             Expr::or(Expr::or(is_lower, is_upper), Expr::or(is_digit, is_under)),
+            Expr::u32(1),
+            Expr::u32(0),
+        )
+    };
+    let is_start = |b: Expr| -> Expr {
+        let is_lower = Expr::and(
+            Expr::ge(b.clone(), Expr::u32(b'a' as u32)),
+            Expr::le(b.clone(), Expr::u32(b'z' as u32)),
+        );
+        let is_upper = Expr::and(
+            Expr::ge(b.clone(), Expr::u32(b'A' as u32)),
+            Expr::le(b.clone(), Expr::u32(b'Z' as u32)),
+        );
+        let is_under = Expr::eq(b, Expr::u32(b'_' as u32));
+        Expr::select(
+            Expr::or(Expr::or(is_lower, is_upper), is_under),
             Expr::u32(1),
             Expr::u32(0),
         )
@@ -160,7 +177,15 @@ pub fn gpu_undef_parse(num_tokens: u32, source_len: u32) -> Program {
     };
 
     let mut parse: Vec<Node> = Vec::new();
-    parse.push(Node::let_bind("tok_start", Expr::load("tok_starts", t.clone())));
+    parse.push(Node::let_bind(
+        "tok_start",
+        Expr::load("tok_starts", t.clone()),
+    ));
+    parse.push(Node::let_bind("tok_len", Expr::load("tok_lens", t.clone())));
+    parse.push(Node::let_bind(
+        "tok_end",
+        Expr::add(Expr::var("tok_start"), Expr::var("tok_len")),
+    ));
 
     // Read leading run + `#`.
     for p in 0..=MAX_WS_PREFIX {
@@ -234,55 +259,53 @@ pub fn gpu_undef_parse(num_tokens: u32, source_len: u32) -> Program {
         Expr::add(Expr::var("post_kw"), Expr::var("name_skip")),
     ));
 
-    // Probe up to MAX_NAME_LEN bytes; the name spans the longest
-    // run of ident-continue bytes starting at `name_start_val`.
-    for i in 0..MAX_NAME_LEN {
-        parse.push(Node::let_bind(
-            format!("nb_{i}"),
-            safe_load(Expr::add(Expr::var("name_start_val"), Expr::u32(i))),
-        ));
-    }
-    for i in 0..MAX_NAME_LEN {
-        parse.push(Node::let_bind(
-            format!("nb_cont_{i}"),
-            is_continue(Expr::var(format!("nb_{i}"))),
-        ));
-    }
-    // name_len_val: the smallest index `i` in [0, MAX_NAME_LEN) where
-    // `nb_cont_i == 0`. Outer-first chained Select guarantees the
-    // smallest matching index wins. If every byte is ident-continue,
-    // returns MAX_NAME_LEN (best-effort cap; very large names are
-    // truncated rather than misparsed).
-    let name_len_expr = {
-        let mut acc = Expr::u32(MAX_NAME_LEN);
-        for i in (0..MAX_NAME_LEN).rev() {
-            let nb_cont_i_zero = Expr::eq(Expr::var(format!("nb_cont_{i}")), Expr::u32(0));
-            acc = Expr::select(nb_cont_i_zero, Expr::u32(i), acc);
-        }
-        acc
-    };
-    parse.push(Node::let_bind("name_len_val", name_len_expr));
-
-    // First-byte sanity: a valid C identifier may not start with a
-    // digit. If it does, treat the row as unparseable (name_len = 0).
+    // Scan to the directive row end. This removes the old 64-byte
+    // macro-name cap while preserving C identifier start/continue
+    // semantics.
     parse.push(Node::let_bind(
-        "first_is_digit",
+        "name_scan_limit",
         Expr::select(
-            Expr::and(
-                Expr::ge(Expr::var("nb_0"), Expr::u32(b'0' as u32)),
-                Expr::le(Expr::var("nb_0"), Expr::u32(b'9' as u32)),
-            ),
-            Expr::u32(1),
+            Expr::lt(Expr::var("name_start_val"), Expr::var("tok_end")),
+            Expr::sub(Expr::var("tok_end"), Expr::var("name_start_val")),
             Expr::u32(0),
         ),
+    ));
+    parse.push(Node::let_bind("name_len_val", Expr::u32(0)));
+    parse.push(Node::let_bind("name_done", Expr::u32(0)));
+    parse.push(Node::loop_for(
+        "name_i",
+        Expr::u32(0),
+        Expr::var("name_scan_limit"),
+        vec![Node::if_then(
+            Expr::eq(Expr::var("name_done"), Expr::u32(0)),
+            vec![
+                Node::let_bind(
+                    "name_byte",
+                    safe_load(Expr::add(Expr::var("name_start_val"), Expr::var("name_i"))),
+                ),
+                Node::let_bind(
+                    "name_byte_ok",
+                    Expr::select(
+                        Expr::eq(Expr::var("name_i"), Expr::u32(0)),
+                        is_start(Expr::var("name_byte")),
+                        is_continue(Expr::var("name_byte")),
+                    ),
+                ),
+                Node::if_then_else(
+                    Expr::eq(Expr::var("name_byte_ok"), Expr::u32(1)),
+                    vec![Node::assign(
+                        "name_len_val",
+                        Expr::add(Expr::var("name_i"), Expr::u32(1)),
+                    )],
+                    vec![Node::assign("name_done", Expr::u32(1))],
+                ),
+            ],
+        )],
     ));
     parse.push(Node::let_bind(
         "valid_name",
         Expr::select(
-            Expr::and(
-                Expr::ne(Expr::var("name_len_val"), Expr::u32(0)),
-                Expr::eq(Expr::var("first_is_digit"), Expr::u32(0)),
-            ),
+            Expr::ne(Expr::var("name_len_val"), Expr::u32(0)),
             Expr::u32(1),
             Expr::u32(0),
         ),
@@ -295,7 +318,11 @@ pub fn gpu_undef_parse(num_tokens: u32, source_len: u32) -> Program {
             Expr::u32(1),
         ),
         vec![
-            Node::store("undef_name_start_out", t.clone(), Expr::var("name_start_val")),
+            Node::store(
+                "undef_name_start_out",
+                t.clone(),
+                Expr::var("name_start_val"),
+            ),
             Node::store("undef_name_len_out", t.clone(), Expr::var("name_len_val")),
         ],
     ));
@@ -303,15 +330,12 @@ pub fn gpu_undef_parse(num_tokens: u32, source_len: u32) -> Program {
     let body: Vec<Node> = vec![
         Node::let_bind("t", Expr::InvocationId { axis: 0 }),
         Node::if_then(
-            Expr::lt(t.clone(), Expr::u32(num_tokens)),
+            Expr::lt(t.clone(), Expr::buf_len("tok_starts")),
             vec![
                 Node::let_bind("kind", Expr::load("directive_kinds", t.clone())),
                 Node::store("undef_name_start_out", t.clone(), Expr::u32(0)),
                 Node::store("undef_name_len_out", t.clone(), Expr::u32(0)),
-                Node::if_then(
-                    Expr::eq(Expr::var("kind"), Expr::u32(TOK_PP_UNDEF)),
-                    parse,
-                ),
+                Node::if_then(Expr::eq(Expr::var("kind"), Expr::u32(TOK_PP_UNDEF)), parse),
             ],
         ),
     ];
@@ -344,7 +368,7 @@ pub fn gpu_undef_parse(num_tokens: u32, source_len: u32) -> Program {
             BufferAccess::ReadOnly,
             DataType::U32,
         )
-        .with_count(source_len.div_ceil(4).max(1)),
+        .with_count(source_words),
         BufferDecl::storage(
             "undef_name_start_out",
             BINDING_NAME_START_OUT,
@@ -370,7 +394,10 @@ mod tests {
 
     #[test]
     fn op_id_is_canonical_and_stable() {
-        assert_eq!(OP_ID, "vyre-libs::parsing::c::preprocess::gpu_undef_parse");
+        assert_eq!(
+            OP_ID,
+            "vyre-libs::parsing::c::preprocess::gpu_undef_parse_v2"
+        );
     }
 
     #[test]

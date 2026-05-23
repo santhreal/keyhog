@@ -120,6 +120,7 @@ fn format_verify_failure(error: &VerifyFailure) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{KernelBody, KernelOpKind};
     use vyre_foundation::ir::{BufferAccess, BufferDecl, DataType, Expr, Ident, Node};
 
     #[test]
@@ -153,5 +154,121 @@ mod tests {
 
         assert!(error.message().contains("KernelDescriptor"));
         assert!(error.message().contains("Fix:"));
+    }
+
+    #[test]
+    fn lower_for_emit_preserves_loop_carrier_swap_snapshot() {
+        let program = Program::wrapped(
+            vec![
+                BufferDecl::storage("instrs", 0, BufferAccess::ReadOnly, DataType::U32)
+                    .with_count(7),
+                BufferDecl::output("results", 1, DataType::U32).with_count(1),
+            ],
+            [256, 1, 1],
+            vec![
+                Node::let_bind("tid", Expr::gid_x()),
+                Node::if_then(
+                    Expr::lt(Expr::var("tid"), Expr::u32(1)),
+                    vec![
+                        Node::let_bind("base", Expr::mul(Expr::var("tid"), Expr::u32(7))),
+                        Node::let_bind("s0", Expr::u32(0)),
+                        Node::let_bind("s1", Expr::u32(0)),
+                        Node::let_bind("s2", Expr::u32(0)),
+                        Node::let_bind("s3", Expr::u32(0)),
+                        Node::Loop {
+                            var: "pc".into(),
+                            from: Expr::u32(0),
+                            to: Expr::u32(7),
+                            body: vec![
+                                Node::let_bind(
+                                    "instr",
+                                    Expr::load(
+                                        "instrs",
+                                        Expr::add(Expr::var("base"), Expr::var("pc")),
+                                    ),
+                                ),
+                                Node::let_bind(
+                                    "op",
+                                    Expr::bitand(Expr::var("instr"), Expr::u32(0xFF)),
+                                ),
+                                Node::let_bind("imm", Expr::shr(Expr::var("instr"), Expr::u32(8))),
+                                Node::if_then(
+                                    Expr::eq(Expr::var("op"), Expr::u32(0)),
+                                    vec![
+                                        Node::assign("s3", Expr::var("s2")),
+                                        Node::assign("s2", Expr::var("s1")),
+                                        Node::assign("s1", Expr::var("s0")),
+                                        Node::assign("s0", Expr::var("imm")),
+                                    ],
+                                ),
+                                Node::if_then(
+                                    Expr::eq(Expr::var("op"), Expr::u32(1)),
+                                    vec![
+                                        Node::assign(
+                                            "s0",
+                                            Expr::add(Expr::var("s0"), Expr::var("s1")),
+                                        ),
+                                        Node::assign("s1", Expr::var("s2")),
+                                        Node::assign("s2", Expr::var("s3")),
+                                        Node::assign("s3", Expr::u32(0)),
+                                    ],
+                                ),
+                                Node::if_then(
+                                    Expr::eq(Expr::var("op"), Expr::u32(2)),
+                                    vec![
+                                        Node::assign(
+                                            "s0",
+                                            Expr::mul(Expr::var("s0"), Expr::var("s1")),
+                                        ),
+                                        Node::assign("s1", Expr::var("s2")),
+                                        Node::assign("s2", Expr::var("s3")),
+                                        Node::assign("s3", Expr::u32(0)),
+                                    ],
+                                ),
+                                Node::if_then(
+                                    Expr::eq(Expr::var("op"), Expr::u32(3)),
+                                    vec![
+                                        Node::assign("s3", Expr::var("s2")),
+                                        Node::assign("s2", Expr::var("s1")),
+                                        Node::assign("s1", Expr::var("s0")),
+                                    ],
+                                ),
+                                Node::if_then(
+                                    Expr::eq(Expr::var("op"), Expr::u32(4)),
+                                    vec![
+                                        Node::let_bind("tmp", Expr::var("s0")),
+                                        Node::assign("s0", Expr::var("s1")),
+                                        Node::assign("s1", Expr::var("tmp")),
+                                    ],
+                                ),
+                            ],
+                        },
+                        Node::store("results", Expr::var("tid"), Expr::var("s0")),
+                    ],
+                ),
+            ],
+        );
+
+        let lowered = lower_for_emit(&program).expect("pre-emit lowering must pass");
+
+        assert!(
+            body_has_s1_end_from_copy(&lowered.descriptor.body),
+            "Fix: lowering must preserve `let tmp = s0` as a Copy snapshot so SWAP writes s1 from old s0 instead of the post-assign s0 carrier"
+        );
+    }
+
+    fn body_has_s1_end_from_copy(body: &KernelBody) -> bool {
+        body.ops.iter().any(|op| {
+            let KernelOpKind::LoopCarrierEnd { name } = &op.kind else {
+                return false;
+            };
+            name.as_ref() == "s1"
+                && op.operands.first().copied().is_some_and(|operand| {
+                    body.ops.iter().any(|producer| {
+                        producer.result == Some(operand)
+                            && matches!(producer.kind, KernelOpKind::Copy)
+                    })
+                })
+        }) || body.child_bodies.iter().any(body_has_s1_end_from_copy)
     }
 }

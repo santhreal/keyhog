@@ -182,6 +182,19 @@ fn function_name_prefix(token: Expr) -> Expr {
             TOK_UNSIGNED,
             TOK_VOID,
             TOK_VOLATILE,
+            // C23 / TS 18661-2 scalar types and clang/GCC half-precision.
+            TOK_BITINT_KW,
+            TOK_FLOAT16_KW,
+            TOK_FLOAT32_KW,
+            TOK_FLOAT64_KW,
+            TOK_FLOAT128_KW,
+            TOK_GNU_FLOAT128_KW,
+            TOK_GNU_BF16_KW,
+            TOK_GNU_FP16_KW,
+            TOK_DECIMAL32_KW,
+            TOK_DECIMAL64_KW,
+            TOK_DECIMAL128_KW,
+            TOK_FORCEINLINE_KW,
         ],
     )
 }

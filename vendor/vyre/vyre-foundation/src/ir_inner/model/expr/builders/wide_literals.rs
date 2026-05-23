@@ -132,7 +132,7 @@ inventory::submit! {
 impl Expr {
     /// Construct a 64-bit signed integer literal extension.
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn i64(value: i64) -> Expr {
         Expr::opaque_arc(Arc::new(WideLiteralExpr::new(
             KIND_I64,
@@ -144,7 +144,7 @@ impl Expr {
 
     /// Construct a 64-bit unsigned integer literal extension.
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn u64(value: u64) -> Expr {
         Expr::opaque_arc(Arc::new(WideLiteralExpr::new(
             KIND_U64,
@@ -156,7 +156,7 @@ impl Expr {
 
     /// Construct a 64-bit floating-point literal extension.
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn f64(value: f64) -> Expr {
         Expr::opaque_arc(Arc::new(WideLiteralExpr::new(
             KIND_F64,

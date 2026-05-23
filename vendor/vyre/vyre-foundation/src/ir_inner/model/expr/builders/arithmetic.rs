@@ -11,7 +11,7 @@ impl Expr {
     /// let _ = Expr::add(Expr::u32(1), Expr::u32(2));
     /// ```
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn add(left: Expr, right: Expr) -> Expr {
         Expr::BinOp {
             op: BinOp::Add,
@@ -29,7 +29,7 @@ impl Expr {
     /// let _ = Expr::sub(Expr::u32(2), Expr::u32(1));
     /// ```
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn sub(left: Expr, right: Expr) -> Expr {
         Expr::BinOp {
             op: BinOp::Sub,
@@ -79,7 +79,7 @@ impl Expr {
     /// let _ = Expr::mul(Expr::u32(2), Expr::u32(3));
     /// ```
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn mul(left: Expr, right: Expr) -> Expr {
         Expr::BinOp {
             op: BinOp::Mul,
@@ -97,7 +97,7 @@ impl Expr {
     /// let _ = Expr::div(Expr::u32(10), Expr::u32(2));
     /// ```
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn div(left: Expr, right: Expr) -> Expr {
         Expr::BinOp {
             op: BinOp::Div,
@@ -120,7 +120,7 @@ impl Expr {
     /// let _ = Expr::mulhi(Expr::var("n"), Expr::u32(0xAAAAAAAB));
     /// ```
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn mulhi(left: Expr, right: Expr) -> Expr {
         Expr::BinOp {
             op: BinOp::MulHigh,
@@ -138,7 +138,7 @@ impl Expr {
     /// let _ = Expr::rem(Expr::u32(10), Expr::u32(3));
     /// ```
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn rem(left: Expr, right: Expr) -> Expr {
         Expr::BinOp {
             op: BinOp::Mod,
@@ -156,7 +156,7 @@ impl Expr {
     /// let _ = Expr::negate(Expr::i32(1));
     /// ```
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn negate(operand: Expr) -> Expr {
         Expr::UnOp {
             op: UnOp::Negate,
@@ -173,7 +173,7 @@ impl Expr {
     /// let _ = Expr::abs_diff(Expr::u32(3), Expr::u32(5));
     /// ```
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn abs_diff(left: Expr, right: Expr) -> Expr {
         Expr::BinOp {
             op: BinOp::AbsDiff,

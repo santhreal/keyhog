@@ -1,11 +1,11 @@
 //! `aliases_dataflow` — bidirectional dataflow reachability over
 //! the launch shape's `aliases($x, $y)` semantic.
 //!
-//! Pre-promotion this lived inline in surgec's `lower_aliases` as 9
+//! Pre-promotion this lived inline in a downstream analyzer's `lower_aliases` as 9
 //! `merge_programs` calls composing flows_to + bitset_or_into +
 //! bitset_and. Every aliases-using launch shape (stack_overflow_*,
 //! heap_overflow_*, oob_*, use_after_free_double_drop) re-emitted the
-//! same composition. Promoted to a single primitive: surgec calls
+//! same composition. Promoted to a single primitive: downstream analyzer calls
 //! once, vyre owns the composition shape.
 //!
 //! ## Semantics
@@ -37,7 +37,7 @@ use vyre_primitives::graph::csr_forward_traverse::bitset_words;
 use vyre_primitives::graph::program_graph::ProgramGraphShape;
 use vyre_primitives::predicate::edge_kind;
 
-use crate::security::flows_to::flows_to;
+use crate::security::flows_to::flows_to_alias_only;
 
 /// Canonical op id.
 pub const OP_ID: &str = "vyre-libs::security::aliases_dataflow";
@@ -117,8 +117,8 @@ pub fn try_aliases_dataflow(
     let seed_y = bitset_or_into(reach_y_buf, y_buf, words);
 
     // One BFS hop: hop_x = forward(reach_x); hop_y = forward(reach_y).
-    let hop_x_step = flows_to(shape, reach_x_buf, hop_x_buf);
-    let hop_y_step = flows_to(shape, reach_y_buf, hop_y_buf);
+    let hop_x_step = flows_to_alias_only(shape, reach_x_buf, hop_x_buf);
+    let hop_y_step = flows_to_alias_only(shape, reach_y_buf, hop_y_buf);
 
     // Merge hops back into accumulators.
     let merge_x = bitset_or_into(reach_x_buf, hop_x_buf, words);
@@ -159,7 +159,8 @@ pub fn try_aliases_dataflow(
 /// graph. Caller drives the BFS to fixpoint; this single-step
 /// reference returns one hop's contribution to the alias set.
 #[must_use]
-pub fn cpu_ref_one_step(x: &[u32], y: &[u32], reach_x: &[u32], reach_y: &[u32]) -> Vec<u32> {
+#[cfg(any(test, feature = "cpu-parity"))]
+pub(crate) fn cpu_ref_one_step(x: &[u32], y: &[u32], reach_x: &[u32], reach_y: &[u32]) -> Vec<u32> {
     // x_in_y = reach_y AND x; y_in_x = reach_x AND y; OR.
     let n = x.len();
     let mut out = vec![0u32; n];
@@ -210,6 +211,7 @@ inventory::submit! {
                 to_bytes(&[0b0010]),              // out = {1}
             ]]
         }),
+        category: Some("security"),
     }
 }
 

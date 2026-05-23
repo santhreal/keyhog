@@ -82,15 +82,12 @@ pub fn natural_gradient_block_apply(
                     "acc",
                     Expr::add(
                         Expr::var("acc"),
-                        Expr::shr(
-                            Expr::mul(
-                                Expr::load(
-                                    m_inv_sqrt,
-                                    Expr::add(Expr::var("row_base"), Expr::var("j")),
-                                ),
-                                Expr::load(grad, Expr::var("j")),
+                        crate::fixed_mul_16_16_expr(
+                            Expr::load(
+                                m_inv_sqrt,
+                                Expr::add(Expr::var("row_base"), Expr::var("j")),
                             ),
-                            Expr::u32(16),
+                            Expr::load(grad, Expr::var("j")),
                         ),
                     ),
                 )],
@@ -117,6 +114,7 @@ pub fn natural_gradient_block_apply(
 
 /// CPU reference: `g_nat = M_inv_sqrt · g` in f64.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn natural_gradient_block_apply_cpu(m_inv_sqrt: &[f64], grad: &[f64], n: u32) -> Vec<f64> {
     let mut out = Vec::new();
     natural_gradient_block_apply_cpu_into(m_inv_sqrt, grad, n, &mut out);
@@ -124,6 +122,7 @@ pub fn natural_gradient_block_apply_cpu(m_inv_sqrt: &[f64], grad: &[f64], n: u32
 }
 
 /// CPU reference: `g_nat = M_inv_sqrt · g` in f64 using caller-owned output.
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn natural_gradient_block_apply_cpu_into(
     m_inv_sqrt: &[f64],
     grad: &[f64],

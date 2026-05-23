@@ -89,7 +89,11 @@ pub struct MissingCapability {
     /// Backend identifier that was asked to run the program.
     pub backend: String,
     /// Flat list of human-readable capability names the backend lacks.
-    pub missing: Vec<&'static str>,
+    /// Workgroup-axis violations include the stable `"workgroup_size"`
+    /// category plus `"workgroup_size axis N (requested R, max M)"`
+    /// detail so callers can both match the category and point at the
+    /// specific axis.
+    pub missing: Vec<String>,
 }
 
 impl fmt::Display for MissingCapability {
@@ -97,8 +101,8 @@ impl fmt::Display for MissingCapability {
         write!(
             f,
             "backend `{}` is missing required capabilities: {}. \
-             Fix: pick a backend that advertises these capabilities, \
-             or run the program on the CPU reference.",
+             Fix: pick a GPU backend that advertises these capabilities \
+             or lower the program requirements before dispatch.",
             self.backend,
             self.missing.join(", ")
         )
@@ -136,37 +140,42 @@ pub fn scan(program: &Program) -> RequiredCapabilities {
 pub fn check_backend_capabilities(
     backend_id: &str,
     supports_subgroup_ops: bool,
-    supports_f16: bool,
-    supports_bf16: bool,
+    supports_half_precision: bool,
+    supports_brain_float: bool,
     supports_indirect_dispatch: bool,
     supports_trap_propagation: bool,
     max_workgroup_size: [u32; 3],
     required: &RequiredCapabilities,
 ) -> Result<(), MissingCapability> {
-    let mut missing = Vec::new();
+    let mut missing: Vec<String> = Vec::new();
     if required.subgroup_ops && !supports_subgroup_ops {
-        missing.push("subgroup_ops");
+        missing.push("subgroup_ops".to_string());
     }
-    if required.f16 && !supports_f16 {
-        missing.push("f16");
+    if required.f16 && !supports_half_precision {
+        missing.push("f16".to_string());
     }
-    if required.bf16 && !supports_bf16 {
-        missing.push("bf16");
+    if required.bf16 && !supports_brain_float {
+        missing.push("bf16".to_string());
     }
     if required.indirect_dispatch && !supports_indirect_dispatch {
-        missing.push("indirect_dispatch");
+        missing.push("indirect_dispatch".to_string());
     }
     if required.trap && !supports_trap_propagation {
-        missing.push("trap_propagation");
+        missing.push("trap_propagation".to_string());
     }
-    for (req_size, max_size) in required
+    for (axis, (req_size, max_size)) in required
         .max_workgroup_size
         .iter()
         .zip(max_workgroup_size.iter())
+        .enumerate()
     {
         if *req_size > *max_size && *max_size != 0 {
-            missing.push("workgroup_size");
-            break;
+            if !missing.iter().any(|item| item == "workgroup_size") {
+                missing.push("workgroup_size".to_string());
+            }
+            missing.push(format!(
+                "workgroup_size axis {axis} (requested {req_size}, max {max_size})"
+            ));
         }
     }
 
@@ -269,8 +278,8 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(error.backend, "test_backend");
-        assert!(error.missing.contains(&"subgroup_ops"));
-        assert!(error.missing.contains(&"f16"));
-        assert!(error.missing.contains(&"trap_propagation"));
+        assert!(error.missing.iter().any(|s| s == "subgroup_ops"));
+        assert!(error.missing.iter().any(|s| s == "f16"));
+        assert!(error.missing.iter().any(|s| s == "trap_propagation"));
     }
 }

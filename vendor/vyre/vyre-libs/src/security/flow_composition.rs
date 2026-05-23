@@ -2,16 +2,21 @@ use vyre::ir::Program;
 use vyre_foundation::execution_plan::fusion::fuse_programs;
 use vyre_foundation::ir::DataType;
 use vyre_primitives::bitset::and::bitset_and;
+#[cfg(test)]
 use vyre_primitives::bitset::and::cpu_ref as bitset_and_cpu_ref;
 use vyre_primitives::bitset::and_not::bitset_and_not;
+#[cfg(test)]
 use vyre_primitives::bitset::and_not::cpu_ref as bitset_and_not_cpu_ref;
 use vyre_primitives::bitset::any::bitset_any;
 use vyre_primitives::graph::csr_forward_traverse::bitset_words;
+#[cfg(test)]
 use vyre_primitives::graph::csr_forward_traverse::cpu_ref as csr_forward_cpu_ref;
 use vyre_primitives::graph::program_graph::ProgramGraphShape;
 
 use crate::region::{reparent_program_children, wrap_anonymous};
-use crate::security::flows_to::{flows_to, FLOWS_TO_MASK};
+use crate::security::flows_to::flows_to;
+#[cfg(test)]
+use crate::security::flows_to::FLOWS_TO_MASK;
 
 pub(crate) fn fuse_security_flow(op_id: &'static str, parts: &[Program], output: &str) -> Program {
     let fused = match fuse_programs(parts) {
@@ -35,7 +40,8 @@ pub(crate) fn fuse_security_flow(op_id: &'static str, parts: &[Program], output:
     )
 }
 
-pub(crate) fn dataflow_reach_step(
+#[cfg(test)]
+pub(crate) fn dataflow_reach_step_cpu_ref(
     node_count: u32,
     edge_offsets: &[u32],
     edge_targets: &[u32],
@@ -52,7 +58,8 @@ pub(crate) fn dataflow_reach_step(
     )
 }
 
-pub(crate) fn any_dataflow_hit(reach: &[u32], sink: &[u32]) -> u32 {
+#[cfg(test)]
+pub(crate) fn any_dataflow_hit_cpu_ref(reach: &[u32], sink: &[u32]) -> u32 {
     let hits = bitset_and_cpu_ref(reach, sink);
     u32::from(hits.iter().any(|word| *word != 0))
 }
@@ -98,7 +105,8 @@ pub(crate) fn sanitized_dataflow_hit_program(
     )
 }
 
-pub(crate) fn sanitized_dataflow_hit(
+#[cfg(test)]
+pub(crate) fn sanitized_dataflow_hit_cpu_ref(
     node_count: u32,
     edge_offsets: &[u32],
     edge_targets: &[u32],
@@ -108,7 +116,7 @@ pub(crate) fn sanitized_dataflow_hit(
     sanitizer: &[u32],
 ) -> u32 {
     let clean = bitset_and_not_cpu_ref(source, sanitizer);
-    let reach = dataflow_reach_step(
+    let reach = dataflow_reach_step_cpu_ref(
         node_count,
         edge_offsets,
         edge_targets,
@@ -116,7 +124,7 @@ pub(crate) fn sanitized_dataflow_hit(
         &clean,
     );
     let alive = bitset_and_not_cpu_ref(&reach, sanitizer);
-    any_dataflow_hit(&alive, sink)
+    any_dataflow_hit_cpu_ref(&alive, sink)
 }
 
 #[cfg(test)]

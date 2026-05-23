@@ -79,5 +79,6 @@ inventory::submit! {
             let expected = vec![0xFFFF_FFFFu32; 16];
             vec![vec![crate::visual::byte_helpers::u32_words_to_le_bytes(&expected)]]
         }),
+        category: Some("visual"),
     }
 }

@@ -149,29 +149,48 @@ pub struct RingOccupancy {
 impl RingOccupancy {
     /// Total slots represented by this occupancy snapshot.
     #[must_use]
-    pub const fn total_slots(&self) -> u32 {
-        self.empty
-            .saturating_add(self.published)
-            .saturating_add(self.claimed)
-            .saturating_add(self.done)
-            .saturating_add(self.wait_io)
-            .saturating_add(self.yield_count)
-            .saturating_add(self.requeue)
-            .saturating_add(self.fault)
-            .saturating_add(self.unknown)
+    pub fn total_slots(&self) -> u32 {
+        checked_status_sum(
+            [
+                self.empty,
+                self.published,
+                self.claimed,
+                self.done,
+                self.wait_io,
+                self.yield_count,
+                self.requeue,
+                self.fault,
+                self.unknown,
+            ],
+            "total ring slots",
+        )
     }
 
     /// Host-visible active queue depth: all non-empty slots that are not done.
     #[must_use]
-    pub const fn queue_depth(&self) -> u32 {
-        self.published
-            .saturating_add(self.claimed)
-            .saturating_add(self.wait_io)
-            .saturating_add(self.yield_count)
-            .saturating_add(self.requeue)
-            .saturating_add(self.fault)
-            .saturating_add(self.unknown)
+    pub fn queue_depth(&self) -> u32 {
+        checked_status_sum(
+            [
+                self.published,
+                self.claimed,
+                self.wait_io,
+                self.yield_count,
+                self.requeue,
+                self.fault,
+                self.unknown,
+            ],
+            "ring queue depth",
+        )
     }
+}
+
+fn checked_status_sum<const N: usize>(values: [u32; N], label: &'static str) -> u32 {
+    values
+        .into_iter()
+        .try_fold(0_u32, |acc, value| acc.checked_add(value))
+        .unwrap_or_else(|| {
+            panic!("megakernel telemetry {label} overflowed u32. Fix: shard the ring snapshot.")
+        })
 }
 
 /// Structured view of the control buffer.
@@ -202,6 +221,10 @@ pub struct MegakernelRuntimeCounters {
     pub gpu_idle_slots: u32,
     /// Idle slots in parts per million of the ring size.
     pub gpu_idle_ppm: u32,
+    /// Active frontier density in basis points of the ring size.
+    pub frontier_density_bps: u16,
+    /// Occupancy proxy in basis points: non-idle slots divided by total slots.
+    pub occupancy_proxy_bps: u16,
     /// Total slots the GPU has drained according to the control buffer.
     pub drained_slots: u32,
     /// Done slots visible in the ring snapshot and pending reclaim.

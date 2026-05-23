@@ -458,10 +458,7 @@ impl CompiledScanner {
         // because credentials are typically longer than the literal
         // prefix that anchored them.
         let (mut cursor, cursor_end) = match cursor_range {
-            Some((start, end)) => (
-                start.min(bytes_total),
-                end.min(bytes_total),
-            ),
+            Some((start, end)) => (start.min(bytes_total), end.min(bytes_total)),
             None => (0usize, bytes_total),
         };
         while cursor < cursor_end && cursor > 0 && !search_text.is_char_boundary(cursor) {

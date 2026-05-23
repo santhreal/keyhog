@@ -34,6 +34,7 @@
 /// # Panics
 ///
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn betti_persistence_cpu(mask: &[u32], n: u32) -> (u32, u32, u32) {
     let n_us = n as usize;
 

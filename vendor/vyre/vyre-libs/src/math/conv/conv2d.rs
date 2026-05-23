@@ -140,7 +140,7 @@ inventory::submit! {
                 0.0, 0.0, 0.0, 1.0,
             ]);
             let kernel = f32_bytes(&[1.0; 9]);
-            vec![vec![input, kernel, vec![0u8; 64]]]
+            vec![vec![input, kernel]]
         }),
         expected_output: Some(|| {
             let f32_bytes = |w: &[f32]| {
@@ -167,6 +167,7 @@ inventory::submit! {
                 0.0, 1.0, 2.0, 2.0,
             ])]]
         }),
+        category: Some("math"),
     }
 }
 
@@ -216,7 +217,6 @@ mod tests {
             &[
                 Value::from(f32_bytes(input)),
                 Value::from(f32_bytes(kernel)),
-                Value::from(vec![0u8; (h as usize) * (w as usize) * 4]),
             ],
         )
         .expect("Fix: conv2d_3x3_direct must execute in the reference interpreter.");

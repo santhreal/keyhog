@@ -65,7 +65,11 @@ pub fn planar_rewrite_schedule(candidates: &str, chosen: &str, h: u32, w: u32, k
         );
     }
 
-    let cells = h * w;
+    let cells = h.checked_mul(w).unwrap_or_else(|| {
+        panic!(
+            "planar_rewrite_schedule h*w overflows candidate grid cell count for h={h}, w={w}. Fix: tile the planar rewrite grid before GPU dispatch."
+        )
+    });
     let t = Expr::InvocationId { axis: 0 };
 
     // Lane 0 loops over all (r, c) cells in row-major order. For each:
@@ -166,9 +170,10 @@ pub fn planar_rewrite_schedule(candidates: &str, chosen: &str, h: u32, w: u32, k
     )
 }
 
-/// CPU reference: greedy non-overlapping selection of `k × k` matches.
+/// Reference oracle: greedy non-overlapping selection of `k × k` matches.
 #[must_use]
-pub fn planar_rewrite_schedule_cpu(candidates: &[u32], h: u32, w: u32, k: u32) -> Vec<u32> {
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn reference_planar_rewrite_schedule(candidates: &[u32], h: u32, w: u32, k: u32) -> Vec<u32> {
     let h = h as usize;
     let w = w as usize;
     let k = k as usize;
@@ -203,6 +208,16 @@ pub fn planar_rewrite_schedule_cpu(candidates: &[u32], h: u32, w: u32, k: u32) -
     chosen
 }
 
+#[cfg(feature = "inventory-registry")]
+inventory::submit! {
+    crate::harness::OpEntry::new(
+        OP_ID,
+        || planar_rewrite_schedule("candidates", "chosen", 4, 4, 2),
+        None,
+        None,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -210,7 +225,7 @@ mod tests {
     #[test]
     fn cpu_no_candidates_no_chosen() {
         let cands = vec![0u32; 16];
-        let chosen = planar_rewrite_schedule_cpu(&cands, 4, 4, 2);
+        let chosen = reference_planar_rewrite_schedule(&cands, 4, 4, 2);
         for v in chosen {
             assert_eq!(v, 0);
         }
@@ -220,7 +235,7 @@ mod tests {
     fn cpu_isolated_candidate_is_chosen() {
         let mut cands = vec![0u32; 16];
         cands[5] = 1; // (1, 1) in a 4x4
-        let chosen = planar_rewrite_schedule_cpu(&cands, 4, 4, 2);
+        let chosen = reference_planar_rewrite_schedule(&cands, 4, 4, 2);
         assert_eq!(chosen[5], 1);
     }
 
@@ -231,7 +246,7 @@ mod tests {
         let mut cands = vec![0u32; 9];
         cands[0] = 1;
         cands[1] = 1;
-        let chosen = planar_rewrite_schedule_cpu(&cands, 3, 3, 2);
+        let chosen = reference_planar_rewrite_schedule(&cands, 3, 3, 2);
         assert_eq!(chosen[0], 1);
         assert_eq!(chosen[1], 0);
     }
@@ -244,7 +259,7 @@ mod tests {
         cands[4] = 1; // (0, 4)
         cands[20] = 1; // (4, 0)
         cands[24] = 1; // (4, 4)
-        let chosen = planar_rewrite_schedule_cpu(&cands, 5, 5, 2);
+        let chosen = reference_planar_rewrite_schedule(&cands, 5, 5, 2);
         assert_eq!(chosen[0], 1);
         assert_eq!(chosen[4], 1);
         assert_eq!(chosen[20], 1);
@@ -254,7 +269,7 @@ mod tests {
     #[test]
     fn cpu_short_candidate_buffer_treats_missing_cells_as_zero() {
         let cands = vec![1u32];
-        let chosen = planar_rewrite_schedule_cpu(&cands, 2, 2, 1);
+        let chosen = reference_planar_rewrite_schedule(&cands, 2, 2, 1);
         assert_eq!(chosen, vec![1, 0, 0, 0]);
     }
 
@@ -263,7 +278,7 @@ mod tests {
         // All cells are candidates with k=2; chosen should be a maximal
         // independent set.
         let cands = vec![1u32; 16];
-        let chosen = planar_rewrite_schedule_cpu(&cands, 4, 4, 2);
+        let chosen = reference_planar_rewrite_schedule(&cands, 4, 4, 2);
         let total: u32 = chosen.iter().sum();
         // Greedy row-major with k=2 exclusion picks every other cell
         // in row 0 and skips a row, then resumes — but exact count is

@@ -1,7 +1,7 @@
 //! Recursive descent — a bounded table-driven parser primitive.
 //!
 //! Parsing is sequential: a stack, a state machine, and a transition table.
-//! Most GPU frameworks force you to fall back to CPU for this.  Vyre treats it
+//! Most GPU frameworks force this parser step out of device execution. Vyre treats it
 //! as a first-class primitive.  `recursive_descent` maintains an explicit
 //! parser stack in workgroup SRAM, fires callbacks into an output buffer, and
 //! validates bounds so the kernel cannot overflow workgroup memory.  The CPU
@@ -25,16 +25,17 @@ pub fn source() -> Option<&'static str> {
 /// full input stream.
 ///
 /// Buffers:
-/// - `tokens`: ReadOnly u32 array — token stream.
-/// - `transition_table`: ReadOnly u32 array — `state * ALPHA_SIZE
-///   + token` → next_state, with `0` reserved for "reject".
-/// - `state`: ReadWrite u32 array of length 1 — current parser
+/// - `tokens`: `ReadOnly` u32 array — token stream.
+/// - `transition_table`: `ReadOnly` u32 array —
+///   `state * ALPHA_SIZE + token` → `next_state`, with `0` reserved for
+///   "reject".
+/// - `state`: `ReadWrite` u32 array of length 1 — current parser
 ///   state carried across dispatches.
-/// - `output`: ReadWrite u32 array — emitted AST nodes or parse
+/// - `output`: `ReadWrite` u32 array — emitted AST nodes or parse
 ///   events; one entry per accepted token.
-/// - `out_count`: ReadWrite u32 array of length 1 — atomic cursor
+/// - `out_count`: `ReadWrite` u32 array of length 1 — atomic cursor
 ///   past the last populated `output` slot.
-/// - `reject_flag`: ReadWrite u32 array of length 1 — set to 1 if
+/// - `reject_flag`: `ReadWrite` u32 array of length 1 — set to 1 if
 ///   the parser hits a reject transition.
 ///
 /// `alpha_size` is the alphabet size baked into the transition

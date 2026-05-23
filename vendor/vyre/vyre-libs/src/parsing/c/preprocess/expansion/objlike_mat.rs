@@ -1,4 +1,4 @@
-//! Audit-fix A35 `expansion/objlike_mat.rs` extract.
+//! Materialized object-like macro expansion builder.
 
 use crate::parsing::c::lex::tokens::*;
 use crate::parsing::c::preprocess::materialization::*;

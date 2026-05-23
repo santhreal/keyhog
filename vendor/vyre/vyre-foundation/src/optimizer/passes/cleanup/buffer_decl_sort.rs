@@ -1,4 +1,4 @@
-//! `buffer_decl_sort` — canonicalize BufferDecl order by `(binding, name)`.
+//! `buffer_decl_sort` — canonicalize `BufferDecl` order by `(binding, name)`.
 //!
 //! Op id: `vyre-foundation::optimizer::passes::buffer_decl_sort`. Soundness:
 //! `Exact` — the IR semantics are reference-by-name, not reference-by-index,
@@ -12,7 +12,7 @@
 //!
 //! 1. **Wire-content-hash cache hit rate.** The wire-content hash keys
 //!    the differential-compilation cache. Two Programs
-//!    that differ only in BufferDecl order serialize to different bytes
+//!    that differ only in `BufferDecl` order serialize to different bytes
 //!    and miss the cache, even though they emit byte-identical backend code.
 //!    Canonicalizing the BufferDecl order at the start of the lowering
 //!    pipeline collapses these aliases into one cache key, raising hit
@@ -21,7 +21,7 @@
 //! 2. **Deterministic backend emission.** Target emitters walk
 //!    `Program::buffers()` in slice order. Without a canonicalization
 //!    pass, generated source changes whenever a frontend rebuilds
-//!    the Program in a slightly different order — bad for shader cache,
+//!    the `Program` in a slightly different order — bad for shader cache,
 //!    bad for reproducible builds, bad for diffing emitted code.
 //!
 //! ## Rule
@@ -58,7 +58,7 @@ use crate::optimizer::{vyre_pass, PassAnalysis, PassResult};
 pub struct BufferDeclSortPass;
 
 impl BufferDeclSortPass {
-    /// Skip programs whose BufferDecls are already sorted.
+    /// Skip programs whose `BufferDecls` are already sorted.
     #[must_use]
     fn analyze_impl(program: &Program) -> PassAnalysis {
         if buffers_in_canonical_order(program) {
@@ -68,7 +68,7 @@ impl BufferDeclSortPass {
         }
     }
 
-    /// Re-emit the program with BufferDecls sorted by `(binding, name)`.
+    /// Re-emit the program with `BufferDecls` sorted by `(binding, name)`.
     #[must_use]
     pub fn transform(program: Program) -> PassResult {
         if buffers_in_canonical_order(&program) {
@@ -78,15 +78,21 @@ impl BufferDeclSortPass {
             };
         }
         let mut buffers = program.buffers().to_vec();
-        buffers.sort_by(|a, b| a.binding.cmp(&b.binding).then_with(|| a.name.cmp(&b.name)));
+        // (binding, name) is unique per buffer (the validator rejects
+        // duplicates), so the order of equal keys is irrelevant —
+        // unstable sort is faster than the stable sort_by and produces
+        // the same canonical output.
+        buffers
+            .sort_unstable_by(|a, b| a.binding.cmp(&b.binding).then_with(|| a.name.cmp(&b.name)));
         let new_program = program.with_rewritten_buffers(buffers);
         PassResult {
             program: new_program,
             changed: true,
         }
-    }}
+    }
+}
 
-/// True iff the BufferDecl slice is already sorted by `(binding, name)`.
+/// True iff the `BufferDecl` slice is already sorted by `(binding, name)`.
 fn buffers_in_canonical_order(program: &Program) -> bool {
     let buffers = program.buffers();
     if buffers.len() < 2 {
@@ -121,13 +127,19 @@ mod tests {
     #[test]
     fn skip_analysis_on_already_sorted() {
         let program = Program::wrapped(vec![buf("a", 0), buf("b", 1)], [1, 1, 1], entry());
-        assert_eq!(crate::optimizer::ProgramPass::analyze(&BufferDeclSortPass, &program), PassAnalysis::SKIP);
+        assert_eq!(
+            crate::optimizer::ProgramPass::analyze(&BufferDeclSortPass, &program),
+            PassAnalysis::SKIP
+        );
     }
 
     #[test]
     fn run_analysis_on_unsorted() {
         let program = Program::wrapped(vec![buf("a", 1), buf("b", 0)], [1, 1, 1], entry());
-        assert_eq!(crate::optimizer::ProgramPass::analyze(&BufferDeclSortPass, &program), PassAnalysis::RUN);
+        assert_eq!(
+            crate::optimizer::ProgramPass::analyze(&BufferDeclSortPass, &program),
+            PassAnalysis::RUN
+        );
     }
 
     #[test]
@@ -255,7 +267,7 @@ mod tests {
             entry(),
         );
         let once = BufferDeclSortPass::transform(program);
-        let twice = BufferDeclSortPass::transform(once.program.clone());
+        let twice = BufferDeclSortPass::transform(Clone::clone(&once.program));
         assert!(once.changed);
         assert!(!twice.changed, "second run must report no change");
         let once_names: Vec<&str> = once
@@ -285,13 +297,19 @@ mod tests {
     fn already_sorted_with_tied_bindings_is_skipped() {
         // Tied bindings in name-sorted order must skip.
         let program = Program::wrapped(vec![buf("alpha", 3), buf("beta", 3)], [1, 1, 1], entry());
-        assert_eq!(crate::optimizer::ProgramPass::analyze(&BufferDeclSortPass, &program), PassAnalysis::SKIP);
+        assert_eq!(
+            crate::optimizer::ProgramPass::analyze(&BufferDeclSortPass, &program),
+            PassAnalysis::SKIP
+        );
     }
 
     #[test]
     fn unsorted_with_tied_bindings_runs() {
         // Tied bindings in reverse name order must run.
         let program = Program::wrapped(vec![buf("beta", 3), buf("alpha", 3)], [1, 1, 1], entry());
-        assert_eq!(crate::optimizer::ProgramPass::analyze(&BufferDeclSortPass, &program), PassAnalysis::RUN);
+        assert_eq!(
+            crate::optimizer::ProgramPass::analyze(&BufferDeclSortPass, &program),
+            PassAnalysis::RUN
+        );
     }
 }

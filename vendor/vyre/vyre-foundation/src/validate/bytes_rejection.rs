@@ -34,9 +34,12 @@ pub(crate) fn check_store(
     errors: &mut Vec<ValidationError>,
 ) {
     if let Some(buf) = buffers.get(buffer) {
-        if buf.access != BufferAccess::ReadWrite && buf.access != BufferAccess::Workgroup {
+        if buf.access != BufferAccess::ReadWrite
+            && buf.access != BufferAccess::WriteOnly
+            && buf.access != BufferAccess::Workgroup
+        {
             errors.push(err(format!(
-                "store to non-writable buffer `{buffer}`. Fix: declare it with BufferAccess::ReadWrite or BufferAccess::Workgroup."
+                "store to non-writable buffer `{buffer}`. Fix: declare it with BufferAccess::ReadWrite, BufferAccess::WriteOnly, or BufferAccess::Workgroup."
             )));
         }
         // L.1.18: V013 was historically enforced only on `Expr::Atomic`,

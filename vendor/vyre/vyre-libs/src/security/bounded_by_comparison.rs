@@ -30,6 +30,11 @@ pub fn bounded_by_comparison(
     frontier_in: &str,
     frontier_out: &str,
 ) -> Program {
+    crate::security::assert_security_inputs(
+        OP_ID,
+        shape.node_count,
+        &[("frontier_in", frontier_in), ("frontier_out", frontier_out)],
+    );
     let primitive = csr_backward_traverse(shape, frontier_in, frontier_out, edge_kind::DOMINANCE);
     Program::wrapped(
         primitive.buffers().to_vec(),
@@ -70,6 +75,7 @@ inventory::submit! {
             // so they light up. Accumulator preserves seed {3}.
             vec![vec![to_bytes(&[0b1110])]]
         }),
+        category: Some("security"),
     }
 }
 
@@ -166,10 +172,12 @@ mod tests {
 
         let expected = (1u32 << node_count) - 1;
         assert_eq!(
-            accumulated[0], expected,
+            accumulated[0],
+            expected,
             "backward reachability from node {} must reach all ancestors in a {}-node chain; \
              if max_iterations truncates, this test fails",
-            node_count - 1, node_count
+            node_count - 1,
+            node_count
         );
 
         let contract = crate::harness::convergence_contract(OP_ID)
@@ -184,12 +192,12 @@ mod tests {
     #[test]
     #[should_panic(expected = "node_count must be positive")]
     fn bounded_by_comparison_zero_node_count_should_panic() {
-        bounded_by_comparison(ProgramGraphShape::new(0, 0), "fin", "fout");
+        let _ = bounded_by_comparison(ProgramGraphShape::new(0, 0), "fin", "fout");
     }
 
     #[test]
     #[should_panic(expected = "empty buffer name")]
     fn bounded_by_comparison_empty_buffer_name_should_panic() {
-        bounded_by_comparison(ProgramGraphShape::new(4, 4), "", "fout");
+        let _ = bounded_by_comparison(ProgramGraphShape::new(4, 4), "", "fout");
     }
 }

@@ -63,13 +63,29 @@ inventory::collect!(AotLauncherEmitter);
 /// Return every linked AOT emitter.
 #[must_use]
 pub fn registered_aot_emitters() -> Vec<&'static AotEmitter> {
-    inventory::iter::<AotEmitter>.into_iter().collect()
+    let emitter_count = inventory::iter::<AotEmitter>.into_iter().count();
+    let mut emitters = Vec::new();
+    emitters.try_reserve_exact(emitter_count).unwrap_or_else(|error| {
+        panic!(
+            "Vyre AOT emitter inventory could not reserve {emitter_count} emitter slot(s): {error}. Fix: reduce linked AOT emitter inventory or split registry initialization."
+        )
+    });
+    emitters.extend(inventory::iter::<AotEmitter>);
+    emitters
 }
 
 /// Return every linked launcher emitter.
 #[must_use]
 pub fn registered_aot_launcher_emitters() -> Vec<&'static AotLauncherEmitter> {
-    inventory::iter::<AotLauncherEmitter>.into_iter().collect()
+    let emitter_count = inventory::iter::<AotLauncherEmitter>.into_iter().count();
+    let mut emitters = Vec::new();
+    emitters.try_reserve_exact(emitter_count).unwrap_or_else(|error| {
+        panic!(
+            "Vyre AOT launcher inventory could not reserve {emitter_count} launcher emitter slot(s): {error}. Fix: reduce linked launcher emitter inventory or split registry initialization."
+        )
+    });
+    emitters.extend(inventory::iter::<AotLauncherEmitter>);
+    emitters
 }
 
 /// Emit target-native bytes through the linked emitter matching `target`.

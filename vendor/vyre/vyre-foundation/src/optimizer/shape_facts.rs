@@ -23,9 +23,7 @@ use crate::ir_inner::model::program::ShapePredicate;
 pub fn min_count(predicate: &ShapePredicate) -> u32 {
     match predicate {
         ShapePredicate::AtLeast(n) | ShapePredicate::Exactly(n) => *n,
-        ShapePredicate::AtMost(_) => 0,
-        ShapePredicate::MultipleOf(n) if *n > 0 => 0, // 0 is always a multiple
-        ShapePredicate::MultipleOf(_) => 0,
+        ShapePredicate::AtMost(_) | ShapePredicate::MultipleOf(_) | ShapePredicate::Not(_) => 0,
         ShapePredicate::ModEquals { modulus, remainder } => {
             if *modulus != 0 && *remainder < *modulus {
                 *remainder
@@ -38,7 +36,6 @@ pub fn min_count(predicate: &ShapePredicate) -> u32 {
         } => affine_min_count(*scale, *offset, *min).unwrap_or(0),
         ShapePredicate::And(a, b) => min_count(a).max(min_count(b)),
         ShapePredicate::Or(a, b) => min_count(a).min(min_count(b)),
-        ShapePredicate::Not(_) => 0,
     }
 }
 
@@ -50,7 +47,8 @@ pub fn max_count(predicate: &ShapePredicate) -> Option<u32> {
         ShapePredicate::AtMost(n) | ShapePredicate::Exactly(n) => Some(*n),
         ShapePredicate::AtLeast(_)
         | ShapePredicate::MultipleOf(_)
-        | ShapePredicate::ModEquals { .. } => None,
+        | ShapePredicate::ModEquals { .. }
+        | ShapePredicate::Not(_) => None,
         ShapePredicate::AffineRange {
             scale, offset, max, ..
         } => affine_max_count(*scale, *offset, *max),
@@ -63,7 +61,6 @@ pub fn max_count(predicate: &ShapePredicate) -> Option<u32> {
             (Some(x), Some(y)) => Some(x.max(y)),
             _ => None,
         },
-        ShapePredicate::Not(_) => None,
     }
 }
 

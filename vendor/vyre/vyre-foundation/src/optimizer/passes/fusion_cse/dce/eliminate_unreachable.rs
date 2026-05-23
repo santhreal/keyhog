@@ -24,8 +24,7 @@ pub(crate) fn eliminate_unreachable(nodes: Vec<Node>) -> Vec<Node> {
                 from,
                 to,
                 body: _,
-            } if const_loop_empty(&from, &to) => {
-            }
+            } if const_loop_empty(&from, &to) => {}
             Node::Loop {
                 var,
                 from,

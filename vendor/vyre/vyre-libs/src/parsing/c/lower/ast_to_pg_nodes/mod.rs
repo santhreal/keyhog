@@ -1,31 +1,41 @@
-//! Audit-fix A34 split ast_to_pg_nodes.rs into:
-//!   - `mod.rs`: imports + every C_AST_PG_* constant + OP_ID strings
-//!   - `gpu_program.rs`: GPU IR builders (c_lower_ast_to_pg_nodes, c_lower_ast_to_pg_semantic_graph)
-//!   - `reference.rs`: CPU reference paths (try_reference_*, reference_ast_to_pg_*)
-//!   - `semantic.rs`: semantic_role + related_kind + edge-row helpers
-//!   - `witness.rs`: witness fixtures
+//! AST-to-ProgramGraph lowering.
+//!
+//! Module layout:
+//! - `mod.rs`: shared C_AST_PG constants and public exports.
+//! - `gpu_program.rs`: dispatchable GPU IR builders.
+//! - `reference.rs`: explicit CPU oracle functions used by parity and fixtures.
+//! - `semantic.rs`: semantic role/category helpers shared by GPU and oracle code.
+//! - `witness.rs`: harness fixtures.
 
 mod gpu_program;
+#[cfg(any(test, feature = "cpu-parity"))]
 mod reference;
 mod semantic;
+#[cfg(any(test, feature = "cpu-parity"))]
 mod witness;
 
 pub use gpu_program::{
-    c_lower_ast_to_pg_nodes, c_lower_ast_to_pg_semantic_graph, PgReferenceDecodeError,
+    c_lower_ast_to_pg_nodes, c_lower_ast_to_pg_semantic_graph,
+    c_lower_ast_to_pg_semantic_graph_with_pg,
+    c_lower_ast_to_pg_semantic_graph_with_pg_no_control_resolution, PgReferenceDecodeError,
     SemanticPgReference,
 };
+#[allow(deprecated)]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub use reference::{
     reference_ast_to_pg_nodes, reference_ast_to_pg_semantic_graph, try_reference_ast_to_pg_nodes,
     try_reference_ast_to_pg_semantic_graph,
 };
 
-// Sibling re-exports so per-pass children (gpu_program, reference,
-// witness) can `use super::*;` and reach helpers/consts from
-// `semantic` without enumerating each name. Mirrors the A35/A36 fix
-// pattern for the A34 ast_to_pg_nodes split.
+// Sibling re-exports keep the GPU builder, oracle, and witness modules on one
+// explicit helper surface. If a helper becomes pass-specific, move it into
+// that pass instead of growing this shared prelude.
 
+#[cfg(any(test, feature = "cpu-parity"))]
 use crate::harness::OpEntry;
+#[cfg(any(test, feature = "cpu-parity"))]
 use vyre::ir::Expr;
+#[cfg(any(test, feature = "cpu-parity"))]
 use vyre_primitives::predicate::node_kind;
 
 /// Number of `u32` words in one packed VAST node.

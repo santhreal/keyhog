@@ -1,6 +1,6 @@
 # vyre-debug
 
-`vyre-debug` is the static diagnostic and inspection toolkit for the Vyre 0.4.1 megakernel ecosystem.
+`vyre-debug` is the static diagnostic and inspection toolkit for the Vyre 0.4.2 megakernel ecosystem.
 
 ## Overview
 

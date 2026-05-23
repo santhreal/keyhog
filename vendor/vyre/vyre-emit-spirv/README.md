@@ -4,8 +4,8 @@ SPIR-V binary emitter for vyre's `KernelDescriptor`.
 
 Routes through `vyre-emit-naga` to produce a `naga::Module` first,
 then uses `naga::back::spv::Writer` to output a SPIR-V binary. This
-shares the lossless lowering work with the wgpu/naga path — both
-backends consume the same `naga::Module` — and avoids forking a
+shares the lossless lowering work with the wgpu/naga path: both
+backends consume the same `naga::Module`, and avoids forking a
 second `KernelOp` → SPIR-V translation table.
 
 ## Quick start
@@ -52,37 +52,37 @@ assert_eq!(words[0], SPIRV_MAGIC);
 
 ## API
 
-- `emit(&desc) -> Result<Vec<u32>, EmitError>` — lower as given.
+- `emit(&desc) -> Result<Vec<u32>, EmitError>`: lower as given.
   Output is SPIR-V words (the canonical representation per the spec).
-- `emit_optimized(&desc) -> Result<Vec<u32>, EmitError>` —
+- `emit_optimized(&desc) -> Result<Vec<u32>, EmitError>`:
   recommended. Runs `vyre_lower::rewrites::run_all` first; debug
   builds also run `verify` via `debug_assert!`.
-- `emit_optimized_with_stats(&desc) -> Result<(Vec<u32>, OptimizationStats), EmitError>` —
+- `emit_optimized_with_stats(&desc) -> Result<(Vec<u32>, OptimizationStats), EmitError>`:
   same as `emit_optimized` plus optimization metrics.
-- `emit_bytes(&desc) -> Result<Vec<u8>, EmitError>` — convenience
+- `emit_bytes(&desc) -> Result<Vec<u8>, EmitError>`: convenience
   for runtime loaders that want little-endian bytes.
 - `emit_optimized_bytes(&desc)` /
-  `emit_optimized_bytes_with_stats(&desc)` — bytes-axis variants
+  `emit_optimized_bytes_with_stats(&desc)`: bytes-axis variants
   that also run the optimization pipeline first.
-- `emit_from_naga_module(&module) -> Result<Vec<u32>, EmitError>` —
+- `emit_from_naga_module(&module) -> Result<Vec<u32>, EmitError>`:
   lower-level entry point if you want to apply naga-level rewrites
   between `vyre_emit_naga::emit` and SPIR-V conversion.
 
 ## Constants
 
-- `SPIRV_MAGIC: u32 = 0x07230203` — the SPIR-V magic word per the
+- `SPIRV_MAGIC: u32 = 0x07230203`: the SPIR-V magic word per the
   spec. Useful for sanity checks on emit output.
 
 ## Substrate-specific patterns
 
 `patterns/` contains SPIR-V-specific analyses:
 
-- `subgroup_capabilities` — walks the descriptor for subgroup ops
+- `subgroup_capabilities`: walks the descriptor for subgroup ops
   (Ballot, Shuffle, Add, LocalId, Size) and produces a
   `SubgroupCapabilities { basic, ballot, shuffle, arithmetic }` flag
   set so the host knows which `VkSubgroupFeatureFlagBits` to require
   on the pipeline.
-- `workgroup_size_validation` — checks `dispatch.workgroup_size`
+- `workgroup_size_validation`: checks `dispatch.workgroup_size`
   against `VULKAN_BASELINE` (or a custom `DeviceLimits` profile).
   Catches per-dim overflow, product overflow, zero-dim violations.
 
@@ -101,19 +101,19 @@ optional external `spirv-val` validation can be wired into your CI.
 
 ## Errors
 
-- `EmitError::NagaEmit(naga_err)` — the upstream `vyre_emit_naga`
+- `EmitError::NagaEmit(naga_err)`: the upstream `vyre_emit_naga`
   call failed. Most often `UnsupportedOp(...)` for KernelOpKinds
   Naga can't represent.
-- `EmitError::NagaValidation(s)` — Naga's validator rejected the
+- `EmitError::NagaValidation(s)`: Naga's validator rejected the
   module. Indicates a bug in this crate or in vyre-emit-naga.
-- `EmitError::WriterConstruction(s)` / `WriterWrite(s)` — Naga's
+- `EmitError::WriterConstruction(s)` / `WriterWrite(s)`: Naga's
   SPIR-V writer failed.
 
 ## See also
 
-- `vyre-lower` — IR + rewrite stack + verify.
-- `vyre-emit-naga` — the upstream emit path this crate routes through.
-- `vyre-emit-ptx` — independent PTX emitter for CUDA.
+- `vyre-lower`: IR + rewrite stack + verify.
+- `vyre-emit-naga`: the upstream emit path this crate routes through.
+- `vyre-emit-ptx`: independent PTX emitter for CUDA.
 
 ## License
 

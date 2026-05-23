@@ -1,6 +1,6 @@
 //! Loop-carried SSA carrier analysis for structured loop lowering.
 
-use std::collections::{BTreeMap, BTreeSet};
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use naga::{Expression, LocalVariable, ScalarKind, Span, Statement};
 use vyre_lower::{KernelBody, KernelOp, KernelOpKind};
@@ -11,29 +11,42 @@ use crate::EmitError;
 impl BodyBuilder<'_> {
     pub(super) fn snapshot_loop_carriers(
         &self,
-    ) -> (BTreeSet<u32>, BTreeMap<u32, naga::Handle<LocalVariable>>) {
+    ) -> (
+        FxHashSet<u32>,
+        FxHashMap<u32, naga::Handle<LocalVariable>>,
+        FxHashMap<u32, naga::Handle<LocalVariable>>,
+    ) {
         (
             self.loop_carrier_targets.clone(),
             self.loop_carrier_locals.clone(),
+            self.block_scoped_locals.clone(),
         )
     }
 
     /// Restore the carrier-target gate after a structured loop ends.
     ///
     /// `loop_carrier_targets` is restored (it is a per-loop gate that
-    /// controls whether `bind_result` runs the Q7 carrier-publish path).
-    /// `loop_carrier_locals` is *not* restored — locals are function-scope
-    /// `naga::LocalVariable`s, monotonically accumulated. Rolling the map
-    /// back left post-loop readers in nested blocks holding handles whose
-    /// `Statement::Emit` lived in a now-closed parent block, which naga
-    /// rejects as `NotInScope`. `value_handle_for_id` re-Loads through
-    /// the local in the current block, so the map must remain populated.
+    /// controls whether `bind_result` runs the Q7 carrier-publish path), and
+    /// the carrier-local resolver map is restored to the parent scope. The
+    /// allocated `naga::LocalVariable`s remain function-scoped, but their
+    /// numeric ids must not keep shadowing parent SSA after the structured
+    /// loop closes. Lowering can reuse descriptor ids for unrelated outer
+    /// values and inner loop temporaries; leaving the inner carrier map live
+    /// made Sinkhorn's inner GEMM loop replace the outer lane/count ids after
+    /// the loop. Post-loop users that genuinely need the loop result are
+    /// already rebound to a fresh Load in `emit_structured_for_loop`.
     pub(super) fn restore_loop_carriers(
         &mut self,
-        snapshot: (BTreeSet<u32>, BTreeMap<u32, naga::Handle<LocalVariable>>),
+        snapshot: (
+            FxHashSet<u32>,
+            FxHashMap<u32, naga::Handle<LocalVariable>>,
+            FxHashMap<u32, naga::Handle<LocalVariable>>,
+        ),
     ) {
-        let (targets, _locals) = snapshot;
+        let (targets, locals, block_locals) = snapshot;
         self.loop_carrier_targets = targets;
+        self.loop_carrier_locals = locals;
+        self.block_scoped_locals = block_locals;
     }
 
     pub(super) fn collect_loop_carried_ids(
@@ -41,23 +54,23 @@ impl BodyBuilder<'_> {
         parent: &KernelBody,
         loop_op: &KernelOp,
         loop_child: &KernelBody,
-    ) -> BTreeSet<u32> {
+    ) -> FxHashSet<u32> {
         let child_idx = match loop_op.operands.get(2).copied() {
             Some(idx) => idx,
-            None => return BTreeSet::new(),
+            None => return FxHashSet::default(),
         };
         let loop_pos = parent.ops.iter().position(|op| {
             matches!(&op.kind, KernelOpKind::StructuredForLoop { .. })
                 && op.operands.get(2).copied() == Some(child_idx)
         });
         let Some(loop_pos) = loop_pos else {
-            return BTreeSet::new();
+            return FxHashSet::default();
         };
 
-        let mut produced_inside = BTreeSet::new();
+        let mut produced_inside = FxHashSet::default();
         collect_produced_ids(loop_child, &mut produced_inside);
 
-        let mut referenced_after = BTreeSet::new();
+        let mut referenced_after = FxHashSet::default();
         for op in parent.ops.iter().skip(loop_pos + 1) {
             collect_op_referenced_ids(op, parent, &mut referenced_after);
         }
@@ -86,15 +99,15 @@ impl BodyBuilder<'_> {
         parent: &KernelBody,
         op_pos: usize,
         child_indices: &[u32],
-    ) -> BTreeSet<u32> {
-        let mut produced_inside = BTreeSet::new();
+    ) -> FxHashSet<u32> {
+        let mut produced_inside = FxHashSet::default();
         for child_idx in child_indices {
             if let Some(child) = parent.child_bodies.get(*child_idx as usize) {
                 collect_produced_ids(child, &mut produced_inside);
             }
         }
 
-        let mut referenced_after = BTreeSet::new();
+        let mut referenced_after = FxHashSet::default();
         for op in parent.ops.iter().skip(op_pos + 1) {
             collect_op_referenced_ids(op, parent, &mut referenced_after);
         }
@@ -267,7 +280,9 @@ impl BodyBuilder<'_> {
         });
         let snapshot = self.function.local_variables.append(
             LocalVariable {
-                name: op.result.map(|id| format!("vyre_named_carry_snapshot_{id}")),
+                name: op
+                    .result
+                    .map(|id| format!("vyre_named_carry_snapshot_{id}")),
                 ty,
                 init: None,
             },
@@ -309,7 +324,7 @@ impl BodyBuilder<'_> {
     }
 }
 
-fn collect_op_referenced_ids(op: &KernelOp, parent: &KernelBody, out: &mut BTreeSet<u32>) {
+fn collect_op_referenced_ids(op: &KernelOp, parent: &KernelBody, out: &mut FxHashSet<u32>) {
     match &op.kind {
         KernelOpKind::StructuredIfThen | KernelOpKind::StructuredBlock => {
             if let Some(&cond) = op.operands.first() {
@@ -359,13 +374,13 @@ fn collect_op_referenced_ids(op: &KernelOp, parent: &KernelBody, out: &mut BTree
     }
 }
 
-fn collect_body_referenced_ids(body: &KernelBody, out: &mut BTreeSet<u32>) {
+fn collect_body_referenced_ids(body: &KernelBody, out: &mut FxHashSet<u32>) {
     for op in &body.ops {
         collect_op_referenced_ids(op, body, out);
     }
 }
 
-fn collect_produced_ids(body: &KernelBody, out: &mut BTreeSet<u32>) {
+fn collect_produced_ids(body: &KernelBody, out: &mut FxHashSet<u32>) {
     for op in &body.ops {
         if let Some(result) = op.result {
             out.insert(result);

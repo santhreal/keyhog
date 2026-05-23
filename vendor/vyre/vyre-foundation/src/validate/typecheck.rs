@@ -6,8 +6,12 @@ use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 
 #[inline]
+#[expect(
+    clippy::too_many_lines,
+    reason = "binary operator validation is kept as one exhaustive BinOp policy table so type-safety edits review the complete operator surface"
+)]
 pub(crate) fn validate_binop_operands(
-    op: &BinOp,
+    op: BinOp,
     left: &Expr,
     right: &Expr,
     buffers: &FxHashMap<&str, &BufferDecl>,
@@ -91,7 +95,9 @@ pub(crate) fn validate_binop_operands(
                 }
             }
         }
-        // Modulo: target-text lowers to `_vyre_safe_mod_u32`, so both sides must be u32.
+        // Modulo: target emitters support total unsigned modulo and signed
+        // modulo with explicit zero/overflow guards, so both operands must be
+        // integer operands of the same width.
         BinOp::Mod => {
             if expr_is_static_zero(right) {
                 errors.push(err(
@@ -99,13 +105,23 @@ pub(crate) fn validate_binop_operands(
                         .to_string(),
                 ));
             }
-            for (side, ty) in [("left", left_ty), ("right", right_ty)] {
+            for (side, ty) in [("left", left_ty.as_ref()), ("right", right_ty.as_ref())] {
                 if let Some(ty) = ty {
-                    if !matches!(ty, DataType::U32) {
+                    if !matches!(ty, DataType::U32 | DataType::I32) {
                         errors.push(err(format!(
-                            "binary operation `Mod` {side} operand must be `u32`, got `{ty}`. Legal set for Mod is only `u32`. Fix: cast the operand to U32 before modulo."
+                            "binary operation `Mod` {side} operand must be `u32` or `i32`, got `{ty}`. Legal set for Mod is integer-only. Fix: cast both operands to the same integer type before modulo."
                         )));
                     }
+                }
+            }
+            if let (Some(left), Some(right)) = (&left_ty, &right_ty) {
+                if matches!(left, DataType::U32 | DataType::I32)
+                    && matches!(right, DataType::U32 | DataType::I32)
+                    && left != right
+                {
+                    errors.push(err(format!(
+                        "binary operation `Mod` operands have mismatched integer types: left=`{left}`, right=`{right}`. Fix: cast one operand so both sides share the same integer type."
+                    )));
                 }
             }
         }
@@ -170,12 +186,6 @@ pub(crate) fn validate_binop_operands(
                 "binary operation `{op:?}` requires backend subgroup semantics (`supports_subgroup_ops() == true`) before foundation validation can guarantee safety. Fix: validate with ValidationOptions::with_backend(backend) where `backend.supports_subgroup_ops() == true`, or remove `{op:?}` before lowering."
             )));
         }
-        // Opaque extension binops validate their own operands via
-        // `ExprNode::validate_extension`; the foundation-level typechecker
-        // imposes no operand-type constraints on them. Future non_exhaustive
-        // variants land here without constraints until a dedicated arm is
-        // added above.
-        BinOp::Opaque(_) => {}
         _ => {}
     }
 }
@@ -276,6 +286,10 @@ pub(crate) fn validate_unop_operand(
 
 /// Infer the static type of an expression, if it can be determined from the IR.
 #[inline]
+#[expect(
+    clippy::too_many_lines,
+    reason = "iterative expression type inference keeps every Expr variant in one non-recursive dispatch table to preserve stack-safety and exhaustiveness"
+)]
 pub(crate) fn expr_type(
     expr: &Expr,
     buffers: &FxHashMap<&str, &BufferDecl>,
@@ -295,21 +309,21 @@ pub(crate) fn expr_type(
     while let Some(frame) = frames.pop() {
         match frame {
             Frame::Enter(expr) => match expr {
-                Expr::LitU32(_) => values.push(Some(DataType::U32)),
-                Expr::LitI32(_) => values.push(Some(DataType::I32)),
-                Expr::LitF32(_) => values.push(Some(DataType::F32)),
-                Expr::LitBool(_) => values.push(Some(DataType::Bool)),
-                Expr::Var(name) => values.push(scope.get(name.as_str()).map(|b| b.ty.clone())),
-                Expr::Load { buffer, .. } => {
-                    values.push(buffers.get(buffer.as_str()).map(|b| b.element.clone()))
-                }
-                Expr::BufLen { .. }
+                Expr::LitU32(_)
+                | Expr::BufLen { .. }
                 | Expr::InvocationId { .. }
                 | Expr::WorkgroupId { .. }
                 | Expr::LocalId { .. }
                 | Expr::SubgroupLocalId
                 | Expr::SubgroupSize
                 | Expr::Atomic { .. } => values.push(Some(DataType::U32)),
+                Expr::LitI32(_) => values.push(Some(DataType::I32)),
+                Expr::LitF32(_) => values.push(Some(DataType::F32)),
+                Expr::LitBool(_) => values.push(Some(DataType::Bool)),
+                Expr::Var(name) => values.push(scope.get(name.as_str()).map(|b| b.ty.clone())),
+                Expr::Load { buffer, .. } => {
+                    values.push(buffers.get(buffer.as_str()).map(|b| b.element.clone()));
+                }
                 Expr::Call { .. } => values.push(None),
                 Expr::Cast { target, .. } => values.push(Some(target.clone())),
                 Expr::BinOp { op, left, right } => match op {
@@ -355,8 +369,11 @@ pub(crate) fn expr_type(
                     }
                     // LogicalNot produces Bool. Integer lowering emits
                     // `x == 0u`, which also yields Bool.
-                    crate::ir_inner::model::types::UnOp::LogicalNot => {
-                        values.push(Some(DataType::Bool))
+                    crate::ir_inner::model::types::UnOp::LogicalNot
+                    | crate::ir_inner::model::types::UnOp::IsNan
+                    | crate::ir_inner::model::types::UnOp::IsInf
+                    | crate::ir_inner::model::types::UnOp::IsFinite => {
+                        values.push(Some(DataType::Bool));
                     }
                     crate::ir_inner::model::types::UnOp::Sin
                     | crate::ir_inner::model::types::UnOp::Cos
@@ -380,11 +397,6 @@ pub(crate) fn expr_type(
                     | crate::ir_inner::model::types::UnOp::Round
                     | crate::ir_inner::model::types::UnOp::Trunc
                     | crate::ir_inner::model::types::UnOp::Sign => values.push(Some(DataType::F32)),
-                    crate::ir_inner::model::types::UnOp::IsNan
-                    | crate::ir_inner::model::types::UnOp::IsInf
-                    | crate::ir_inner::model::types::UnOp::IsFinite => {
-                        values.push(Some(DataType::Bool))
-                    }
                     _ => values.push(None),
                 },
                 Expr::Select {
@@ -403,13 +415,13 @@ pub(crate) fn expr_type(
                     frames.push(Frame::Enter(a));
                 }
                 &Expr::SubgroupBallot { .. } => {
-                    values.push(Some(crate::ir_inner::model::types::DataType::U32))
+                    values.push(Some(crate::ir_inner::model::types::DataType::U32));
                 }
                 // Both operations produce the same type as their value
                 // operand. U32 is the conservative default while the IR
                 // restricts subgroup ops to integer types.
                 &Expr::SubgroupShuffle { .. } | &Expr::SubgroupAdd { .. } => {
-                    values.push(Some(DataType::U32))
+                    values.push(Some(DataType::U32));
                 }
 
                 Expr::Opaque(extension) => values.push(extension.result_type()),
@@ -458,9 +470,9 @@ pub(crate) fn expr_type(
 }
 
 #[cfg(test)]
-    mod typecheck_critical_test {
-        include!("typecheck_critical_test.rs");
-    }
+mod typecheck_critical_test {
+    include!("typecheck_critical_test.rs");
+}
 
 #[cfg(test)]
 mod tests {
@@ -531,7 +543,7 @@ mod tests {
         let mut errors = Vec::new();
         if let Expr::BinOp { op, left, right } = &add_expr {
             validate_binop_operands(
-                op,
+                *op,
                 left,
                 right,
                 &empty_buffers(),
@@ -552,7 +564,7 @@ mod tests {
     fn div_by_static_zero_is_rejected() {
         let mut errors = Vec::new();
         validate_binop_operands(
-            &BinOp::Div,
+            BinOp::Div,
             &Expr::LitU32(9),
             &Expr::LitU32(0),
             &empty_buffers(),
@@ -566,7 +578,7 @@ mod tests {
     fn div_by_casted_static_zero_is_rejected() {
         let mut errors = Vec::new();
         validate_binop_operands(
-            &BinOp::Div,
+            BinOp::Div,
             &Expr::LitU32(9),
             &Expr::Cast {
                 target: DataType::U32,
@@ -583,7 +595,7 @@ mod tests {
     fn mod_by_static_zero_is_rejected() {
         let mut errors = Vec::new();
         validate_binop_operands(
-            &BinOp::Mod,
+            BinOp::Mod,
             &Expr::LitU32(9),
             &Expr::LitU32(0),
             &empty_buffers(),

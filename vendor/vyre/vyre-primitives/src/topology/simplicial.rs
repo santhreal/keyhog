@@ -120,6 +120,7 @@ pub fn simplicial_triangle_message(
 
 /// CPU reference: `triangle_messages = ∂(edge_features)` per triangle.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn simplicial_triangle_message_cpu(
     edge_features: &[f64],
     triangle_edges: &[u32],

@@ -1,0 +1,351 @@
+//! Stable optimizer pass explanations.
+//!
+//! The scheduler owns execution and metrics. The catalog owns pass ownership,
+//! invariants, and benchmark families. This module joins both into a stable
+//! contributor-facing record that explains why a pass fired or skipped and
+//! what contract it preserved.
+
+use super::{
+    pass_catalog::{optimization_catalog, OptimizationCatalogEntry},
+    CostModelFamily, OptimizerError, OptimizerRunReport, PassBoundaryClass, PassPhase,
+    PassRunDecision, PassRunMetric,
+};
+use std::collections::BTreeMap;
+
+/// Whether a pass metric row was matched to the live optimizer catalog.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CatalogLookupStatus {
+    /// The pass name matched a catalog entry, so owner/invariant/benchmark
+    /// fields are authoritative.
+    Cataloged,
+    /// The pass name was absent from the catalog. This is valid for custom
+    /// ad-hoc schedulers, but release pipelines should treat it as a finding.
+    MissingCatalogEntry,
+}
+
+/// Signed before/after deltas for one pass metric row.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct PassMetricDelta {
+    /// `nodes_after - nodes_before`.
+    pub nodes: i128,
+    /// `static_storage_bytes_after - static_storage_bytes_before`.
+    pub static_storage_bytes: i128,
+    /// `instruction_count_after - instruction_count_before`.
+    pub instruction_count: i128,
+    /// `memory_op_count_after - memory_op_count_before`.
+    pub memory_op_count: i128,
+    /// `atomic_op_count_after - atomic_op_count_before`.
+    pub atomic_op_count: i128,
+    /// `control_flow_count_after - control_flow_count_before`.
+    pub control_flow_count: i128,
+    /// `register_pressure_after - register_pressure_before`.
+    pub register_pressure: i128,
+    /// `ir_heap_allocations_after - ir_heap_allocations_before`.
+    pub ir_heap_allocations: i128,
+    /// `ir_heap_bytes_after - ir_heap_bytes_before`.
+    pub ir_heap_bytes: i128,
+}
+
+impl PassMetricDelta {
+    #[must_use]
+    fn from_metric(metric: &PassRunMetric) -> Self {
+        Self {
+            nodes: delta(metric.nodes_before, metric.nodes_after),
+            static_storage_bytes: delta(
+                metric.static_storage_bytes_before,
+                metric.static_storage_bytes_after,
+            ),
+            instruction_count: delta(
+                metric.instruction_count_before,
+                metric.instruction_count_after,
+            ),
+            memory_op_count: delta(metric.memory_op_count_before, metric.memory_op_count_after),
+            atomic_op_count: delta(metric.atomic_op_count_before, metric.atomic_op_count_after),
+            control_flow_count: delta(
+                metric.control_flow_count_before,
+                metric.control_flow_count_after,
+            ),
+            register_pressure: delta(
+                metric.register_pressure_before,
+                metric.register_pressure_after,
+            ),
+            ir_heap_allocations: delta(
+                metric.ir_heap_allocations_before,
+                metric.ir_heap_allocations_after,
+            ),
+            ir_heap_bytes: delta(metric.ir_heap_bytes_before, metric.ir_heap_bytes_after),
+        }
+    }
+}
+
+/// Stable explanation for one scheduler metric row.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PassExplanation {
+    /// Fixpoint iteration index.
+    pub iteration: usize,
+    /// Stable pass name.
+    pub pass: &'static str,
+    /// Scheduler decision.
+    pub decision: PassRunDecision,
+    /// Human-stable reason for [`Self::decision`].
+    pub reason: &'static str,
+    /// Whether transform ran.
+    pub ran: bool,
+    /// Whether a rewrite landed after all scheduler gates.
+    pub changed: bool,
+    /// Refusal kind when the pass explicitly refused.
+    pub refusal_kind: Option<&'static str>,
+    /// Runtime spent in transform, in nanoseconds.
+    pub runtime_ns: u128,
+    /// Catalog lookup status.
+    pub catalog_status: CatalogLookupStatus,
+    /// Optimization owner from the live catalog.
+    pub owner: Option<&'static str>,
+    /// Scheduler phase from the live catalog.
+    pub phase: Option<PassPhase>,
+    /// Boundary class from the live catalog.
+    pub boundary_class: Option<PassBoundaryClass>,
+    /// Invariant preserved by the pass.
+    pub invariant: Option<&'static str>,
+    /// Benchmark family that owns this pass.
+    pub benchmark: Option<&'static str>,
+    /// Cost model family declared by the pass.
+    pub cost_model_family: Option<CostModelFamily>,
+    /// Before/after IR and cost proxy deltas.
+    pub delta: PassMetricDelta,
+}
+
+impl PassExplanation {
+    /// Build an explanation row from one metric and an optional catalog entry.
+    #[must_use]
+    pub fn from_metric(
+        metric: &PassRunMetric,
+        catalog_entry: Option<&OptimizationCatalogEntry>,
+    ) -> Self {
+        let catalog_status = if catalog_entry.is_some() {
+            CatalogLookupStatus::Cataloged
+        } else {
+            CatalogLookupStatus::MissingCatalogEntry
+        };
+        Self {
+            iteration: metric.iteration,
+            pass: metric.pass,
+            decision: metric.decision,
+            reason: decision_reason(metric.decision),
+            ran: metric.ran,
+            changed: metric.changed,
+            refusal_kind: metric.refusal_kind,
+            runtime_ns: metric.runtime_ns,
+            catalog_status,
+            owner: catalog_entry.map(|entry| entry.owner),
+            phase: catalog_entry.map(|entry| entry.phase),
+            boundary_class: catalog_entry.map(|entry| entry.boundary_class),
+            invariant: catalog_entry.map(|entry| entry.invariant),
+            benchmark: catalog_entry.map(|entry| entry.benchmark),
+            cost_model_family: catalog_entry.map(|entry| entry.cost_model_family),
+            delta: PassMetricDelta::from_metric(metric),
+        }
+    }
+}
+
+impl OptimizerRunReport {
+    /// Convert this metrics report into stable contributor-facing pass
+    /// explanations using the live optimizer catalog.
+    ///
+    /// # Errors
+    /// Returns [`OptimizerError`] when the live catalog cannot be built because
+    /// registered pass scheduling is invalid.
+    pub fn explanations(&self) -> Result<Vec<PassExplanation>, OptimizerError> {
+        explain_optimizer_report(self)
+    }
+}
+
+/// Explain a scheduler report using the live optimizer catalog.
+///
+/// # Errors
+/// Returns [`OptimizerError`] when the live catalog cannot be built because
+/// registered pass scheduling is invalid.
+pub fn explain_optimizer_report(
+    report: &OptimizerRunReport,
+) -> Result<Vec<PassExplanation>, OptimizerError> {
+    let catalog = optimization_catalog()?;
+    Ok(explain_optimizer_report_with_catalog(report, &catalog))
+}
+
+/// Explain a scheduler report using a caller-supplied catalog snapshot.
+#[must_use]
+pub fn explain_optimizer_report_with_catalog(
+    report: &OptimizerRunReport,
+    catalog: &[OptimizationCatalogEntry],
+) -> Vec<PassExplanation> {
+    let catalog_by_name = catalog
+        .iter()
+        .map(|entry| (entry.name, entry))
+        .collect::<BTreeMap<_, _>>();
+    report
+        .passes
+        .iter()
+        .map(|metric| {
+            PassExplanation::from_metric(metric, catalog_by_name.get(metric.pass).copied())
+        })
+        .collect()
+}
+
+#[must_use]
+fn decision_reason(decision: PassRunDecision) -> &'static str {
+    match decision {
+        PassRunDecision::CleanSkipped => {
+            "pass was clean; no invalidated dependency required analysis"
+        }
+        PassRunDecision::AnalysisSkipped => {
+            "pass was dirty but its analysis hook proved no rewrite was profitable"
+        }
+        PassRunDecision::RanUnchanged => "pass ran but produced the same program",
+        PassRunDecision::Changed => "pass ran and landed a rewrite that passed scheduler gates",
+        PassRunDecision::CostReverted => {
+            "pass produced a cost-increasing rewrite, so cost-monotone enforcement reverted it"
+        }
+        PassRunDecision::Refused => {
+            "pass explicitly refused to rewrite and reported a structured refusal kind"
+        }
+    }
+}
+
+#[must_use]
+fn delta<T>(before: T, after: T) -> i128
+where
+    T: TryInto<i128>,
+{
+    after.try_into().unwrap_or(i128::MAX) - before.try_into().unwrap_or(i128::MAX)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ir::Program;
+
+    fn metric(pass: &'static str, decision: PassRunDecision) -> PassRunMetric {
+        PassRunMetric {
+            iteration: 2,
+            pass,
+            ran: matches!(
+                decision,
+                PassRunDecision::RanUnchanged
+                    | PassRunDecision::Changed
+                    | PassRunDecision::CostReverted
+                    | PassRunDecision::Refused
+            ),
+            changed: decision == PassRunDecision::Changed,
+            decision,
+            refusal_kind: (decision == PassRunDecision::Refused).then_some("cost_increase"),
+            runtime_ns: 17,
+            nodes_before: 10,
+            nodes_after: 7,
+            static_storage_bytes_before: 64,
+            static_storage_bytes_after: 32,
+            instruction_count_before: 20,
+            instruction_count_after: 11,
+            memory_op_count_before: 5,
+            memory_op_count_after: 3,
+            atomic_op_count_before: 2,
+            atomic_op_count_after: 1,
+            control_flow_count_before: 4,
+            control_flow_count_after: 6,
+            register_pressure_before: 8,
+            register_pressure_after: 5,
+            ir_heap_allocations_before: 9,
+            ir_heap_allocations_after: 4,
+            ir_heap_bytes_before: 128,
+            ir_heap_bytes_after: 80,
+        }
+    }
+
+    #[test]
+    fn decision_reasons_are_stable_and_actionable() {
+        for decision in [
+            PassRunDecision::CleanSkipped,
+            PassRunDecision::AnalysisSkipped,
+            PassRunDecision::RanUnchanged,
+            PassRunDecision::Changed,
+            PassRunDecision::CostReverted,
+            PassRunDecision::Refused,
+        ] {
+            let reason = decision_reason(decision);
+            assert!(
+                !reason.is_empty() && reason.contains("pass"),
+                "Fix: every pass decision must explain why the scheduler made it."
+            );
+        }
+    }
+
+    #[test]
+    fn explanation_records_catalog_contract_and_metric_delta() {
+        let catalog = optimization_catalog().expect("optimizer catalog must build");
+        let entry = catalog
+            .iter()
+            .find(|entry| entry.name == "megakernel.allocation_reuse")
+            .expect("release catalog must contain megakernel allocation reuse");
+        let explanation = PassExplanation::from_metric(
+            &metric("megakernel.allocation_reuse", PassRunDecision::Changed),
+            Some(entry),
+        );
+
+        assert_eq!(explanation.catalog_status, CatalogLookupStatus::Cataloged);
+        assert_eq!(explanation.owner, Some("vyre-runtime-rules"));
+        assert_eq!(explanation.invariant, Some(entry.invariant));
+        assert_eq!(
+            explanation.benchmark,
+            Some("vyre.megakernel.optimizer.rules")
+        );
+        assert_eq!(explanation.delta.nodes, -3);
+        assert_eq!(explanation.delta.control_flow_count, 2);
+        assert_eq!(
+            explanation.reason,
+            decision_reason(PassRunDecision::Changed)
+        );
+    }
+
+    #[test]
+    fn report_explanation_surfaces_uncataloged_custom_passes() {
+        let report = OptimizerRunReport {
+            program: Program::empty(),
+            passes: vec![metric(
+                "external.custom.pass",
+                PassRunDecision::RanUnchanged,
+            )],
+        };
+        let explanations = explain_optimizer_report_with_catalog(&report, &[]);
+
+        assert_eq!(explanations.len(), 1);
+        assert_eq!(
+            explanations[0].catalog_status,
+            CatalogLookupStatus::MissingCatalogEntry
+        );
+        assert!(explanations[0].owner.is_none());
+        assert!(explanations[0].invariant.is_none());
+    }
+
+    #[test]
+    fn run_report_explanations_use_live_catalog() {
+        let report = OptimizerRunReport {
+            program: Program::empty(),
+            passes: vec![metric(
+                "megakernel.allocation_reuse",
+                PassRunDecision::Changed,
+            )],
+        };
+        let explanations = report
+            .explanations()
+            .expect("run report explanations must build from live catalog");
+
+        assert_eq!(explanations.len(), 1);
+        assert_eq!(
+            explanations[0].catalog_status,
+            CatalogLookupStatus::Cataloged
+        );
+        assert_eq!(
+            explanations[0].benchmark,
+            Some("vyre.megakernel.optimizer.rules")
+        );
+    }
+}

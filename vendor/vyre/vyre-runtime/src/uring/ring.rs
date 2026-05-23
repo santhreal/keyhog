@@ -172,13 +172,24 @@ impl IoUringState {
             });
         }
 
-        let ring_fd = ring_fd as i32;
+        let ring_fd = syscall_result_i32(
+            ring_fd,
+            "io_uring_setup",
+            "io_uring_setup returned an fd outside i32; check libc/kernel ABI bindings",
+        )?;
 
-        let sq_ring_size =
-            (params.sq_off.array + params.sq_entries * mem::size_of::<u32>() as u32) as usize;
-        let cq_ring_size = (params.cq_off.cqes
-            + params.cq_entries * mem::size_of::<io_uring_cqe>() as u32)
-            as usize;
+        let sq_ring_size = kernel_ring_span_usize(
+            params.sq_off.array,
+            params.sq_entries,
+            mem::size_of::<u32>(),
+            "SQ ring",
+        )?;
+        let cq_ring_size = kernel_ring_span_usize(
+            params.cq_off.cqes,
+            params.cq_entries,
+            mem::size_of::<io_uring_cqe>(),
+            "CQ ring",
+        )?;
 
         let (sq_size, cq_size) = if (params.features & IORING_FEAT_SINGLE_MMAP) != 0 {
             let max_size = core::cmp::max(sq_ring_size, cq_ring_size);
@@ -245,7 +256,11 @@ impl IoUringState {
             ptr
         };
 
-        let sqes_size = (params.sq_entries as usize) * mem::size_of::<io_uring_sqe>();
+        let sqes_size = kernel_record_span_usize(
+            params.sq_entries,
+            mem::size_of::<io_uring_sqe>(),
+            "SQE table",
+        )?;
         // SAFETY: the kernel exposes exactly sq_entries io_uring_sqe records at IORING_OFF_SQES.
         let sqes_ptr = unsafe {
             libc::mmap(
@@ -321,7 +336,11 @@ impl IoUringState {
                 fix: "retry on EINTR/EBUSY; check SQPOLL thread health via /proc/<pid>/task/ on ENXIO",
             })
         } else {
-            Ok(res as i32)
+            syscall_result_i32(
+                res,
+                "io_uring_enter",
+                "io_uring_enter returned a completion count outside i32; check libc/kernel ABI bindings",
+            )
         }
     }
 
@@ -337,8 +356,10 @@ impl IoUringState {
         // SAFETY: sq_ring_ptr is a valid mmap'd SQ ring. The flags word is
         // kernel-owned and documented as an atomically observed status field.
         unsafe {
-            let flags = (*(self.sq_ring_ptr.add(self.params.sq_off.flags as usize)
-                as *const core::sync::atomic::AtomicU32))
+            let flags = (*(self.sq_ring_ptr.add(kernel_offset_usize_or_panic(
+                self.params.sq_off.flags,
+                "SQ flags offset",
+            )) as *const core::sync::atomic::AtomicU32))
                 .load(core::sync::atomic::Ordering::Acquire);
             (flags & IORING_SQ_NEED_WAKEUP) != 0
         }
@@ -353,23 +374,29 @@ impl IoUringState {
     pub fn get_sqe(&mut self) -> Option<&mut io_uring_sqe> {
         // SAFETY: mmap regions and kernel offsets are valid; &mut self forbids producers racing.
         unsafe {
-            let head = (*(self.sq_ring_ptr.add(self.params.sq_off.head as usize)
-                as *const core::sync::atomic::AtomicU32))
+            let head = (*(self.sq_ring_ptr.add(kernel_offset_usize_or_panic(
+                self.params.sq_off.head,
+                "SQ head offset",
+            )) as *const core::sync::atomic::AtomicU32))
                 .load(core::sync::atomic::Ordering::Acquire);
-            let tail_ptr = self.sq_ring_ptr.add(self.params.sq_off.tail as usize)
-                as *const core::sync::atomic::AtomicU32;
+            let tail_ptr = self.sq_ring_ptr.add(kernel_offset_usize_or_panic(
+                self.params.sq_off.tail,
+                "SQ tail offset",
+            )) as *const core::sync::atomic::AtomicU32;
             let tail = (*tail_ptr).load(core::sync::atomic::Ordering::Relaxed);
-            let ring_entries = *(self
-                .sq_ring_ptr
-                .add(self.params.sq_off.ring_entries as usize)
-                as *const u32);
+            let ring_entries = *(self.sq_ring_ptr.add(kernel_offset_usize_or_panic(
+                self.params.sq_off.ring_entries,
+                "SQ ring_entries offset",
+            )) as *const u32);
 
             if tail.wrapping_sub(head) < ring_entries {
-                let ring_mask =
-                    *(self.sq_ring_ptr.add(self.params.sq_off.ring_mask as usize) as *const u32);
+                let ring_mask = *(self.sq_ring_ptr.add(kernel_offset_usize_or_panic(
+                    self.params.sq_off.ring_mask,
+                    "SQ ring_mask offset",
+                )) as *const u32);
                 let idx = tail & ring_mask;
                 let sqes = self.sqes_ptr as *mut io_uring_sqe;
-                Some(&mut *sqes.add(idx as usize))
+                Some(&mut *sqes.add(kernel_offset_usize_or_panic(idx, "SQE index")))
             } else {
                 None
             }
@@ -380,15 +407,22 @@ impl IoUringState {
     pub fn commit_sqe(&mut self) {
         // SAFETY: same ring invariants as get_sqe; Release tail publish orders SQE writes.
         unsafe {
-            let tail_ptr = self.sq_ring_ptr.add(self.params.sq_off.tail as usize)
-                as *const core::sync::atomic::AtomicU32;
+            let tail_ptr = self.sq_ring_ptr.add(kernel_offset_usize_or_panic(
+                self.params.sq_off.tail,
+                "SQ tail offset",
+            )) as *const core::sync::atomic::AtomicU32;
             let tail = (*tail_ptr).load(core::sync::atomic::Ordering::Relaxed);
-            let array_ptr = self.sq_ring_ptr.add(self.params.sq_off.array as usize) as *mut u32;
-            let ring_mask =
-                *(self.sq_ring_ptr.add(self.params.sq_off.ring_mask as usize) as *const u32);
+            let array_ptr = self.sq_ring_ptr.add(kernel_offset_usize_or_panic(
+                self.params.sq_off.array,
+                "SQ array offset",
+            )) as *mut u32;
+            let ring_mask = *(self.sq_ring_ptr.add(kernel_offset_usize_or_panic(
+                self.params.sq_off.ring_mask,
+                "SQ ring_mask offset",
+            )) as *const u32);
             let idx = tail & ring_mask;
 
-            *array_ptr.add(idx as usize) = idx;
+            *array_ptr.add(kernel_offset_usize_or_panic(idx, "SQ array index")) = idx;
             (*(tail_ptr as *mut core::sync::atomic::AtomicU32))
                 .store(tail.wrapping_add(1), core::sync::atomic::Ordering::Release);
         }
@@ -398,20 +432,28 @@ impl IoUringState {
     pub fn peek_cqe(&mut self) -> Option<&io_uring_cqe> {
         // SAFETY: cq_ring_ptr is live and Acquire tail reads synchronize with kernel CQE writes.
         unsafe {
-            let head_ptr = self.cq_ring_ptr.add(self.params.cq_off.head as usize)
-                as *const core::sync::atomic::AtomicU32;
+            let head_ptr = self.cq_ring_ptr.add(kernel_offset_usize_or_panic(
+                self.params.cq_off.head,
+                "CQ head offset",
+            )) as *const core::sync::atomic::AtomicU32;
             let head = (*head_ptr).load(core::sync::atomic::Ordering::Relaxed);
-            let tail = (*(self.cq_ring_ptr.add(self.params.cq_off.tail as usize)
-                as *const core::sync::atomic::AtomicU32))
+            let tail = (*(self.cq_ring_ptr.add(kernel_offset_usize_or_panic(
+                self.params.cq_off.tail,
+                "CQ tail offset",
+            )) as *const core::sync::atomic::AtomicU32))
                 .load(core::sync::atomic::Ordering::Acquire);
 
             if head != tail {
-                let ring_mask =
-                    *(self.cq_ring_ptr.add(self.params.cq_off.ring_mask as usize) as *const u32);
+                let ring_mask = *(self.cq_ring_ptr.add(kernel_offset_usize_or_panic(
+                    self.params.cq_off.ring_mask,
+                    "CQ ring_mask offset",
+                )) as *const u32);
                 let idx = head & ring_mask;
-                let cqes =
-                    self.cq_ring_ptr.add(self.params.cq_off.cqes as usize) as *const io_uring_cqe;
-                Some(&*cqes.add(idx as usize))
+                let cqes = self.cq_ring_ptr.add(kernel_offset_usize_or_panic(
+                    self.params.cq_off.cqes,
+                    "CQ CQE base offset",
+                )) as *const io_uring_cqe;
+                Some(&*cqes.add(kernel_offset_usize_or_panic(idx, "CQE index")))
             } else {
                 None
             }
@@ -440,7 +482,7 @@ impl IoUringState {
                 self.ring_fd,
                 IORING_REGISTER_BUFFERS,
                 iovecs.as_ptr() as *const core::ffi::c_void,
-                iovecs.len() as u32,
+                slice_len_u32(iovecs.len(), "registered buffer count")?,
             )
         };
         if res < 0 {
@@ -470,7 +512,7 @@ impl IoUringState {
                 self.ring_fd,
                 IORING_REGISTER_FILES,
                 fds.as_ptr() as *const core::ffi::c_void,
-                fds.len() as u32,
+                slice_len_u32(fds.len(), "registered file count")?,
             )
         };
         if res < 0 {
@@ -488,8 +530,10 @@ impl IoUringState {
     pub fn advance_cq(&mut self) {
         // SAFETY: cq_ring_ptr is live and Release head store publishes our acknowledgement.
         unsafe {
-            let head_ptr = self.cq_ring_ptr.add(self.params.cq_off.head as usize)
-                as *mut core::sync::atomic::AtomicU32;
+            let head_ptr = self.cq_ring_ptr.add(kernel_offset_usize_or_panic(
+                self.params.cq_off.head,
+                "CQ head offset",
+            )) as *mut core::sync::atomic::AtomicU32;
             let head = (*head_ptr).load(core::sync::atomic::Ordering::Relaxed);
             (*head_ptr).store(head.wrapping_add(1), core::sync::atomic::Ordering::Release);
         }
@@ -513,5 +557,118 @@ impl Drop for IoUringState {
 fn val_to_err() -> i32 {
     // SAFETY: __errno_location returns a thread-local pointer the
     // libc itself guarantees is always valid in the current thread.
-    unsafe { *libc::__errno_location() as i32 }
+    unsafe { *libc::__errno_location() }
+}
+
+fn syscall_result_i32(
+    value: libc::c_long,
+    syscall: &'static str,
+    fix: &'static str,
+) -> Result<i32, PipelineError> {
+    i32::try_from(value).map_err(|_| PipelineError::IoUringSyscall {
+        syscall,
+        errno: libc::EOVERFLOW,
+        fix,
+    })
+}
+
+fn kernel_ring_span_usize(
+    base_offset: u32,
+    entries: u32,
+    record_bytes: usize,
+    label: &'static str,
+) -> Result<usize, PipelineError> {
+    let record_bytes = u32::try_from(record_bytes).map_err(|_| PipelineError::IoUringSyscall {
+        syscall: "io_uring_setup",
+        errno: libc::EOVERFLOW,
+        fix: match label {
+            "SQ ring" => {
+                "SQ ring record width cannot fit u32; use a supported kernel/userspace ABI"
+            }
+            "CQ ring" => {
+                "CQ ring record width cannot fit u32; use a supported kernel/userspace ABI"
+            }
+            _ => "io_uring record width cannot fit u32; use a supported kernel/userspace ABI",
+        },
+    })?;
+    let payload = entries
+        .checked_mul(record_bytes)
+        .ok_or(PipelineError::IoUringSyscall {
+            syscall: "io_uring_setup",
+            errno: libc::EOVERFLOW,
+            fix: match label {
+                "SQ ring" => "SQ ring mmap size overflowed u32; reduce requested entries",
+                "CQ ring" => "CQ ring mmap size overflowed u32; reduce requested entries",
+                _ => "io_uring mmap size overflowed u32; reduce requested entries",
+            },
+        })?;
+    let bytes = base_offset
+        .checked_add(payload)
+        .ok_or(PipelineError::IoUringSyscall {
+            syscall: "io_uring_setup",
+            errno: libc::EOVERFLOW,
+            fix: match label {
+                "SQ ring" => "SQ ring mmap span overflowed u32; reduce requested entries",
+                "CQ ring" => "CQ ring mmap span overflowed u32; reduce requested entries",
+                _ => "io_uring mmap span overflowed u32; reduce requested entries",
+            },
+        })?;
+    usize::try_from(bytes).map_err(|_| PipelineError::IoUringSyscall {
+        syscall: "io_uring_setup",
+        errno: libc::EOVERFLOW,
+        fix: match label {
+            "SQ ring" => "SQ ring mmap span cannot fit host usize; reduce requested entries",
+            "CQ ring" => "CQ ring mmap span cannot fit host usize; reduce requested entries",
+            _ => "io_uring mmap span cannot fit host usize; reduce requested entries",
+        },
+    })
+}
+
+fn kernel_record_span_usize(
+    entries: u32,
+    record_bytes: usize,
+    label: &'static str,
+) -> Result<usize, PipelineError> {
+    let entries = usize::try_from(entries).map_err(|_| PipelineError::IoUringSyscall {
+        syscall: "io_uring_setup",
+        errno: libc::EOVERFLOW,
+        fix: match label {
+            "SQE table" => "SQE entry count cannot fit host usize; reduce requested entries",
+            _ => "io_uring entry count cannot fit host usize; reduce requested entries",
+        },
+    })?;
+    entries
+        .checked_mul(record_bytes)
+        .ok_or(PipelineError::IoUringSyscall {
+            syscall: "io_uring_setup",
+            errno: libc::EOVERFLOW,
+            fix: match label {
+                "SQE table" => "SQE table mmap size overflowed usize; reduce requested entries",
+                _ => "io_uring record mmap size overflowed usize; reduce requested entries",
+            },
+        })
+}
+
+fn kernel_offset_usize_or_panic(value: u32, label: &'static str) -> usize {
+    usize::try_from(value).unwrap_or_else(|source| {
+        panic!(
+            "io_uring {label} value {value} cannot fit usize: {source}. Fix: use a supported kernel/userspace ABI or reduce ring entries."
+        )
+    })
+}
+
+fn slice_len_u32(value: usize, label: &'static str) -> Result<u32, PipelineError> {
+    u32::try_from(value).map_err(|_| PipelineError::IoUringSyscall {
+        syscall: "io_uring_register",
+        errno: libc::EOVERFLOW,
+        fix: match label {
+            "registered buffer count" => {
+                "registered buffer count cannot fit u32; split fixed-buffer registration"
+            }
+            "registered file count" => {
+                "registered file count cannot fit u32; split fixed-file registration"
+            }
+            _ => "io_uring registration count cannot fit u32; split registration",
+        },
+    })
 }

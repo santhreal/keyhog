@@ -1,4 +1,4 @@
-//! Audit-fix A35 `expansion/regular_branch.rs` extract.
+//! Regular replacement-token branch builder for macro expansion.
 
 use crate::parsing::c::preprocess::materialization::*;
 use vyre::ir::{Expr, Node};

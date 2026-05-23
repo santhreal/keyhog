@@ -70,6 +70,29 @@ pub(super) fn custom_metric_key(prefix: &'static str, name: &str) -> Option<&'st
         ("", "megakernel_deduped_items") => Some("megakernel_deduped_items"),
         ("", "megakernel_items_processed") => Some("megakernel_items_processed"),
         ("", "megakernel_items_remaining") => Some("megakernel_items_remaining"),
+        ("", "megakernel_bytes_uploaded") => Some("megakernel_bytes_uploaded"),
+        ("", "megakernel_bytes_read_back") => Some("megakernel_bytes_read_back"),
+        ("", "megakernel_bytes_moved") => Some("megakernel_bytes_moved"),
+        ("", "megakernel_resident_allocations") => Some("megakernel_resident_allocations"),
+        ("", "megakernel_kernel_launches") => Some("megakernel_kernel_launches"),
+        ("", "megakernel_sync_points") => Some("megakernel_sync_points"),
+        ("", "megakernel_occupancy_proxy_bps") => Some("megakernel_occupancy_proxy_bps"),
+        ("", "megakernel_frontier_density_bps") => Some("megakernel_frontier_density_bps"),
+        ("", "megakernel_readback_buffers") => Some("megakernel_readback_buffers"),
+        ("", "megakernel_compiled_pipeline_cache_hit") => {
+            Some("megakernel_compiled_pipeline_cache_hit")
+        }
+        ("", "megakernel_resident_input_cache_hit") => Some("megakernel_resident_input_cache_hit"),
+        ("", "megakernel_topology") => Some("megakernel_topology"),
+        ("", "megakernel_pressure") => Some("megakernel_pressure"),
+        ("", "megakernel_execution_mode") => Some("megakernel_execution_mode"),
+        ("", "megakernel_hit_capacity") => Some("megakernel_hit_capacity"),
+        ("", "megakernel_estimated_peak_device_bytes") => {
+            Some("megakernel_estimated_peak_device_bytes")
+        }
+        ("", "megakernel_device_memory_budget_bytes") => {
+            Some("megakernel_device_memory_budget_bytes")
+        }
         ("", "megakernel_condition_slots") => Some("megakernel_condition_slots"),
         ("", "megakernel_condition_fired") => Some("megakernel_condition_fired"),
         ("", "megakernel_condition_slots_per_sec_x1000") => {
@@ -102,9 +125,7 @@ pub(super) fn custom_metric_key(prefix: &'static str, name: &str) -> Option<&'st
         ("", "lower_vec_pack_ops_eliminable_before") => {
             Some("lower_vec_pack_ops_eliminable_before")
         }
-        ("", "lower_vec_pack_ops_eliminable_after") => {
-            Some("lower_vec_pack_ops_eliminable_after")
-        }
+        ("", "lower_vec_pack_ops_eliminable_after") => Some("lower_vec_pack_ops_eliminable_after"),
         ("", "lower_layout_candidates_before") => Some("lower_layout_candidates_before"),
         ("", "lower_layout_candidates_after") => Some("lower_layout_candidates_after"),
         ("", "lower_converged") => Some("lower_converged"),
@@ -145,9 +166,7 @@ pub(super) fn custom_metric_key(prefix: &'static str, name: &str) -> Option<&'st
         ("", "ptx_vectorized_stores_emitted") => Some("ptx_vectorized_stores_emitted"),
         ("", "ptx_vector_kernel_scalar_loads") => Some("ptx_vector_kernel_scalar_loads"),
         ("", "ptx_vector_kernel_scalar_stores") => Some("ptx_vector_kernel_scalar_stores"),
-        ("", "ptx_vector_kernel_scalar_index_adds") => {
-            Some("ptx_vector_kernel_scalar_index_adds")
-        }
+        ("", "ptx_vector_kernel_scalar_index_adds") => Some("ptx_vector_kernel_scalar_index_adds"),
         ("", "ptx_bytes_emitted") => Some("ptx_bytes_emitted"),
         ("", "egraph_case_count") => Some("egraph_case_count"),
         ("", "egraph_bitwise_case_count") => Some("egraph_bitwise_case_count"),

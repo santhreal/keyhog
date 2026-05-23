@@ -18,7 +18,7 @@
 //! | `MaxPlus` (+, max) | scheduling, rate analysis | critical-path of dispatch graph for #22 megakernel scheduler |
 //! | `BoolOr` (∧, ∨) | reachability in `vyre-libs::dataflow` | Region-tree reachability for #26 dataflow fixpoint |
 //! | `MaxTimes` (×, max) | Viterbi/HMM forward in ML consumers | rule-conflict probability resolution |
-//! | `Provenance` | `vyre-libs::scallop_join` (#39) | rule provenance tracking in surgec |
+//! | `Provenance` | `vyre-libs::scallop_join` (#39) | rule provenance tracking in downstream analyzer |
 //! | `Gf2` (∧, ⊕) | crypto / linear-code dialects | bitset adjacency under XOR closure |
 //!
 //! Six self-consumers, six user-dialect consumers — clears the recursion-thesis
@@ -55,30 +55,30 @@ fn semiring_combine_expr(semiring: Semiring, a: Expr, b: Expr) -> Expr {
     match semiring {
         Semiring::Real | Semiring::MaxTimes => Expr::mul(a, b),
         Semiring::MinPlus => {
-                // saturating add: if either operand is MAX, result is MAX,
-                // otherwise a + b. Keeps MAX absorbing under min-plus.
-                let max_const = Expr::u32(u32::MAX);
-                let either_inf = Expr::or(
-                    Expr::eq(a.clone(), max_const.clone()),
-                    Expr::eq(b.clone(), max_const.clone()),
-                );
-                Expr::select(either_inf, max_const, Expr::add(a, b))
-            }
+            // saturating add: if either operand is MAX, result is MAX,
+            // otherwise a + b. Keeps MAX absorbing under min-plus.
+            let max_const = Expr::u32(u32::MAX);
+            let either_inf = Expr::or(
+                Expr::eq(a.clone(), max_const.clone()),
+                Expr::eq(b.clone(), max_const.clone()),
+            );
+            Expr::select(either_inf, max_const, Expr::add(a, b))
+        }
         Semiring::MaxPlus => Expr::add(a, b),
         Semiring::BoolOr | Semiring::Gf2 => Expr::bitand(a, b),
         Semiring::BoolAnd => Expr::bitor(a, b),
         Semiring::Lineage => {
-                // Zero-absorbing OR: if either operand is 0 (no edge),
-                // the join is 0. Otherwise OR the fact bitsets along
-                // the path step. Distinguishes "no edge" from
-                // "edge with empty fact-set" — single-u32 lineage.
-                let either_zero = Expr::or(
-                    Expr::eq(a.clone(), Expr::u32(0)),
-                    Expr::eq(b.clone(), Expr::u32(0)),
-                );
-                Expr::select(either_zero, Expr::u32(0), Expr::bitor(a, b))
-            }
+            // Zero-absorbing OR: if either operand is 0 (no edge),
+            // the join is 0. Otherwise OR the fact bitsets along
+            // the path step. Distinguishes "no edge" from
+            // "edge with empty fact-set" — single-u32 lineage.
+            let either_zero = Expr::or(
+                Expr::eq(a.clone(), Expr::u32(0)),
+                Expr::eq(b.clone(), Expr::u32(0)),
+            );
+            Expr::select(either_zero, Expr::u32(0), Expr::bitor(a, b))
         }
+    }
 }
 
 fn semiring_accumulate_expr(semiring: Semiring, acc: Expr, val: Expr) -> Expr {
@@ -138,7 +138,30 @@ pub fn semiring_gemm(
         );
     }
 
-    let cell_count = m * n;
+    let Some(cell_count) = m.checked_mul(n) else {
+        return crate::invalid_output_program(
+            OP_ID,
+            c,
+            DataType::U32,
+            format!("Fix: semiring_gemm output cells overflow u32: m={m}, n={n}."),
+        );
+    };
+    let Some(a_count) = m.checked_mul(k) else {
+        return crate::invalid_output_program(
+            OP_ID,
+            c,
+            DataType::U32,
+            format!("Fix: semiring_gemm A buffer cells overflow u32: m={m}, k={k}."),
+        );
+    };
+    let Some(b_count) = k.checked_mul(n) else {
+        return crate::invalid_output_program(
+            OP_ID,
+            c,
+            DataType::U32,
+            format!("Fix: semiring_gemm B buffer cells overflow u32: k={k}, n={n}."),
+        );
+    };
     let t = Expr::InvocationId { axis: 0 };
 
     // Decode flat invocation into (i, j): t = i*n + j.
@@ -171,8 +194,8 @@ pub fn semiring_gemm(
 
     Program::wrapped(
         vec![
-            BufferDecl::storage(a, 0, BufferAccess::ReadOnly, DataType::U32).with_count(m * k),
-            BufferDecl::storage(b, 1, BufferAccess::ReadOnly, DataType::U32).with_count(k * n),
+            BufferDecl::storage(a, 0, BufferAccess::ReadOnly, DataType::U32).with_count(a_count),
+            BufferDecl::storage(b, 1, BufferAccess::ReadOnly, DataType::U32).with_count(b_count),
             BufferDecl::storage(c, 2, BufferAccess::ReadWrite, DataType::U32)
                 .with_count(cell_count),
         ],
@@ -189,6 +212,7 @@ pub fn semiring_gemm(
 ///
 /// `a` is `m × k`, `b` is `k × n`, output is `m × n`, all row-major.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn semiring_gemm_cpu(
     a: &[u32],
     b: &[u32],
@@ -207,6 +231,7 @@ pub fn semiring_gemm_cpu(
 /// This is the hot-path oracle for higher-level fixpoint primitives:
 /// callers can keep one scratch allocation across thousands of GEMM
 /// rounds instead of allocating a fresh result per iteration.
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn semiring_gemm_cpu_into(
     a: &[u32],
     b: &[u32],
@@ -216,30 +241,36 @@ pub fn semiring_gemm_cpu_into(
     semiring: Semiring,
     c: &mut Vec<u32>,
 ) {
-    let cell_count = (m * n) as usize;
+    let m_usize = m as usize;
+    let n_usize = n as usize;
+    let k_usize = k as usize;
+    let cell_count = m_usize
+        .checked_mul(n_usize)
+        .expect("Fix: semiring_gemm_cpu_into output cells overflow usize.");
     c.clear();
     c.resize(cell_count, semiring.identity());
-    for i in 0..m {
-        for j in 0..n {
+    for i in 0..m_usize {
+        for j in 0..n_usize {
             let mut acc = semiring.identity();
-            for kk in 0..k {
+            for kk in 0..k_usize {
                 let a_v = a
-                    .get((i * k + kk) as usize)
+                    .get(i * k_usize + kk)
                     .copied()
                     .unwrap_or(semiring.identity());
                 let b_v = b
-                    .get((kk * n + j) as usize)
+                    .get(kk * n_usize + j)
                     .copied()
                     .unwrap_or(semiring.identity());
                 let combined = semiring_combine_cpu(semiring, a_v, b_v);
                 acc = semiring_accumulate_cpu(semiring, acc, combined);
             }
-            c[(i * n + j) as usize] = acc;
+            c[i * n_usize + j] = acc;
         }
     }
 }
 
 #[inline]
+#[cfg(any(test, feature = "cpu-parity"))]
 fn semiring_combine_cpu(s: Semiring, a: u32, b: u32) -> u32 {
     match s {
         Semiring::Real | Semiring::MaxTimes => a.wrapping_mul(b),
@@ -264,6 +295,7 @@ fn semiring_combine_cpu(s: Semiring, a: u32, b: u32) -> u32 {
 }
 
 #[inline]
+#[cfg(any(test, feature = "cpu-parity"))]
 fn semiring_accumulate_cpu(s: Semiring, acc: u32, val: u32) -> u32 {
     match s {
         Semiring::Real | Semiring::MaxPlus => acc.wrapping_add(val),

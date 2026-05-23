@@ -69,6 +69,16 @@ impl SpirvBackendRegistration {
 
 impl vyre_driver::backend::private::Sealed for SpirvBackendRegistration {}
 
+fn spirv_device_buffer_unsupported() -> BackendError {
+    BackendError::UnsupportedFeature {
+        name: format!(
+            "{} requires native Vulkan-resident buffers; HostShimBuffer dispatch is forbidden",
+            vyre_driver::DEVICE_BUFFER_FEATURE
+        ),
+        backend: SPIRV_BACKEND_ID.to_string(),
+    }
+}
+
 impl VyreBackend for SpirvBackendRegistration {
     fn id(&self) -> &'static str {
         SPIRV_BACKEND_ID
@@ -84,6 +94,16 @@ impl VyreBackend for SpirvBackendRegistration {
         inputs: &[Vec<u8>],
         config: &DispatchConfig,
     ) -> Result<Vec<Vec<u8>>, BackendError> {
+        let borrowed: Vec<&[u8]> = inputs.iter().map(Vec::as_slice).collect();
+        self.dispatch_borrowed(program, &borrowed, config)
+    }
+
+    fn dispatch_borrowed(
+        &self,
+        program: &Program,
+        inputs: &[&[u8]],
+        config: &DispatchConfig,
+    ) -> Result<Vec<Vec<u8>>, BackendError> {
         let spv_words = SpirvBackend::program_to_spv(program).map_err(|e| {
             BackendError::KernelCompileFailed {
                 backend: SPIRV_BACKEND_ID.to_string(),
@@ -91,7 +111,53 @@ impl VyreBackend for SpirvBackendRegistration {
             }
         })?;
 
+        // SAFETY: FFI to ash::vk. Handle lifetimes are documented at the
+        // surrounding VulkanDevice construction site; the Drop impl owns
+        // destruction.
         unsafe { vulkan::dispatch_program(&self.device, program, &spv_words, inputs, config) }
+    }
+
+    fn allocate_device_buffer(
+        &self,
+        byte_len: usize,
+    ) -> Result<Box<dyn vyre_driver::DeviceBuffer>, BackendError> {
+        let _ = byte_len;
+        Err(spirv_device_buffer_unsupported())
+    }
+
+    fn upload_device_buffer(
+        &self,
+        buffer: &mut dyn vyre_driver::DeviceBuffer,
+        bytes: &[u8],
+    ) -> Result<(), BackendError> {
+        let _ = (buffer, bytes);
+        Err(spirv_device_buffer_unsupported())
+    }
+
+    fn download_device_buffer(
+        &self,
+        buffer: &dyn vyre_driver::DeviceBuffer,
+    ) -> Result<Vec<u8>, BackendError> {
+        let _ = buffer;
+        Err(spirv_device_buffer_unsupported())
+    }
+
+    fn free_device_buffer(
+        &self,
+        buffer: Box<dyn vyre_driver::DeviceBuffer>,
+    ) -> Result<(), BackendError> {
+        drop(buffer);
+        Err(spirv_device_buffer_unsupported())
+    }
+
+    fn dispatch_with_device_buffers(
+        &self,
+        program: &Program,
+        inputs: &[&dyn vyre_driver::DeviceBuffer],
+        outputs: &mut [&mut dyn vyre_driver::DeviceBuffer],
+        config: &DispatchConfig,
+    ) -> Result<(), BackendError> {
+        vyre_driver::default_dispatch_with_device_buffers(self, program, inputs, outputs, config)
     }
 
     fn max_workgroup_size(&self) -> [u32; 3] {
@@ -180,16 +246,7 @@ impl VyreBackend for SpirvBackendRegistration {
 
 /// Factory for the inventory registration path.
 pub fn spirv_factory() -> Result<Box<dyn VyreBackend>, BackendError> {
-    match SpirvBackendRegistration::acquire() {
-        Ok(backend) => Ok(Box::new(backend)),
-        Err(e) => {
-            // If Vulkan is unavailable, return a registration that still
-            // satisfies the trait but refuses dispatch with a clear error.
-            Ok(Box::new(SpirvUnavailableBackendRegistration {
-                acquisition_error: e.to_string(),
-            }))
-        }
-    }
+    SpirvBackendRegistration::acquire().map(|backend| Box::new(backend) as Box<dyn VyreBackend>)
 }
 
 /// Op-support set — SPIR-V through naga supports every op the naga::Module
@@ -214,36 +271,5 @@ inventory::submit! {
     vyre_driver::backend::BackendPrecedence {
         id: SPIRV_BACKEND_ID,
         rank: 30,
-    }
-}
-
-/// Unavailable registration used when Vulkan is not available at factory time.
-/// Dispatches return a structured error rather than panicking.
-#[derive(Debug, Clone)]
-pub struct SpirvUnavailableBackendRegistration {
-    acquisition_error: String,
-}
-
-impl vyre_driver::backend::private::Sealed for SpirvUnavailableBackendRegistration {}
-
-impl VyreBackend for SpirvUnavailableBackendRegistration {
-    fn id(&self) -> &'static str {
-        SPIRV_BACKEND_ID
-    }
-
-    fn version(&self) -> &'static str {
-        env!("CARGO_PKG_VERSION")
-    }
-
-    fn dispatch(
-        &self,
-        _program: &Program,
-        _inputs: &[Vec<u8>],
-        _config: &DispatchConfig,
-    ) -> Result<Vec<Vec<u8>>, BackendError> {
-        Err(BackendError::new(format!(
-            "SPIR-V backend could not acquire a Vulkan device during registration: {}. Fix: install a Vulkan driver and ensure a compute-capable GPU is visible.",
-            self.acquisition_error
-        )))
     }
 }

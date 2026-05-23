@@ -59,7 +59,7 @@ static LAWS_BY_OP: LazyLock<FxHashMap<&'static str, Vec<&'static AlgebraicLaw>>>
 /// this at pass-scheduling time; per-dispatch callers should cache.
 #[must_use]
 pub fn laws_for_op(op_id: &str) -> &'static [&'static AlgebraicLaw] {
-    LAWS_BY_OP.get(op_id).map(Vec::as_slice).unwrap_or(&[])
+    LAWS_BY_OP.get(op_id).map_or(&[], Vec::as_slice)
 }
 
 /// Whether any registered law for `op_id` matches a predicate.

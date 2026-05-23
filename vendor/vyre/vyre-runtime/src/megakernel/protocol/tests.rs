@@ -1,8 +1,9 @@
 use super::{
-    control, count_done_ring_slots, debug, read_debug_log_into, read_metrics_into, slot,
-    try_encode_control, try_encode_empty_debug_log, try_encode_empty_ring,
-    try_encode_empty_ring_into, try_read_debug_log_into, try_read_metrics_into,
-    MAX_ENCODED_DEBUG_RECORDS, MAX_ENCODED_OBSERVABLE_SLOTS, MAX_ENCODED_RING_SLOTS, STATUS_WORD,
+    control, count_done_ring_slots, debug, decode_load_miss, encode_load_miss, read_debug_log,
+    read_debug_log_into, read_metrics_into, slot, try_encode_control, try_encode_empty_debug_log,
+    try_encode_empty_ring, try_encode_empty_ring_into, try_read_debug_log, try_read_debug_log_into,
+    try_read_metrics_into, MAX_ENCODED_DEBUG_RECORDS, MAX_ENCODED_OBSERVABLE_SLOTS,
+    MAX_ENCODED_RING_SLOTS, STATUS_WORD,
 };
 
 #[test]
@@ -70,6 +71,52 @@ fn metrics_decode_into_reuses_capacity_without_overreserve() {
 }
 
 #[test]
+fn metrics_decode_into_does_not_allocate_for_empty_metrics() {
+    let control = super::try_encode_control(false, 1, 0).unwrap();
+
+    let mut out = Vec::new();
+    read_metrics_into(&control, &mut out);
+    assert!(out.is_empty());
+    assert_eq!(
+        out.capacity(),
+        0,
+        "Fix: empty metrics snapshots must not allocate the full metrics window."
+    );
+
+    try_read_metrics_into(&control, &mut out).unwrap();
+    assert!(out.is_empty());
+    assert_eq!(
+        out.capacity(),
+        0,
+        "Fix: strict empty metrics snapshots must not allocate the full metrics window."
+    );
+}
+
+#[test]
+fn metrics_decode_into_reserves_only_nonzero_metrics() {
+    let mut control = super::try_encode_control(false, 1, 0).unwrap();
+    let word_idx = (control::METRICS_BASE + 7) as usize;
+    control[word_idx * 4..word_idx * 4 + 4].copy_from_slice(&13_u32.to_le_bytes());
+
+    let mut out = Vec::new();
+    read_metrics_into(&control, &mut out);
+    assert_eq!(out, vec![(7, 13)]);
+    assert!(
+        out.capacity() < control::METRICS_SLOTS as usize,
+        "Fix: sparse metrics decode must not reserve the entire metrics window."
+    );
+
+    out.clear();
+    out.shrink_to_fit();
+    try_read_metrics_into(&control, &mut out).unwrap();
+    assert_eq!(out, vec![(7, 13)]);
+    assert!(
+        out.capacity() < control::METRICS_SLOTS as usize,
+        "Fix: strict sparse metrics decode must not reserve the entire metrics window."
+    );
+}
+
+#[test]
 fn debug_log_decode_into_reuses_capacity_without_overreserve() {
     let mut debug_log = super::try_encode_empty_debug_log(2).unwrap();
     debug_log[(debug::CURSOR_WORD as usize) * 4..(debug::CURSOR_WORD as usize) * 4 + 4]
@@ -90,4 +137,57 @@ fn debug_log_decode_into_reuses_capacity_without_overreserve() {
     try_read_debug_log_into(&debug_log, &mut out).unwrap();
     assert_eq!(out.len(), 1);
     assert_eq!(out.capacity(), initial_capacity);
+}
+
+#[test]
+fn debug_log_owned_decode_does_not_allocate_for_empty_log() {
+    let debug_log = super::try_encode_empty_debug_log(64).unwrap();
+
+    let records = read_debug_log(&debug_log);
+    assert!(records.is_empty());
+    assert_eq!(
+        records.capacity(),
+        0,
+        "Fix: empty debug-log decode must not allocate the full record capacity."
+    );
+
+    let records = try_read_debug_log(&debug_log).unwrap();
+    assert!(records.is_empty());
+    assert_eq!(
+        records.capacity(),
+        0,
+        "Fix: strict empty debug-log decode must not allocate the full record capacity."
+    );
+}
+
+#[test]
+fn encode_load_miss_produces_correct_slot_layout() {
+    let bytes = encode_load_miss(42, true);
+    assert_eq!(bytes.len(), 64);
+    assert_eq!(decode_load_miss(&bytes, 0), Some((42, true)));
+}
+
+#[test]
+fn decode_load_miss_returns_none_for_wrong_opcode() {
+    let mut bytes = encode_load_miss(42, true);
+    // Corrupt the opcode word
+    bytes[4..8].copy_from_slice(&0_u32.to_le_bytes());
+    assert_eq!(decode_load_miss(&bytes, 0), None);
+}
+
+#[test]
+fn decode_load_miss_returns_none_for_short_buffer() {
+    assert_eq!(decode_load_miss(&[0u8; 60], 0), None);
+}
+
+#[test]
+fn decode_load_miss_uses_slot_index_correctly() {
+    let mut ring = vec![0u8; 128];
+    let slot0 = encode_load_miss(7, false);
+    let slot1 = encode_load_miss(99, true);
+    ring[..64].copy_from_slice(&slot0);
+    ring[64..128].copy_from_slice(&slot1);
+    assert_eq!(decode_load_miss(&ring, 0), Some((7, false)));
+    assert_eq!(decode_load_miss(&ring, 1), Some((99, true)));
+    assert_eq!(decode_load_miss(&ring, 2), None);
 }

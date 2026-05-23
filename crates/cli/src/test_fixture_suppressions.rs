@@ -53,13 +53,9 @@ impl TestFixtureSuppressions {
     /// runtime condition; the file ships with the binary.
     #[must_use]
     pub fn bundled() -> Self {
-        let parsed: SuppressionFile = toml::from_str(BUNDLED_TOML)
-            .expect("bundled test-fixtures.toml must parse");
-        let exact: HashSet<String> = parsed
-            .exact
-            .into_iter()
-            .map(|e| e.credential)
-            .collect();
+        let parsed: SuppressionFile =
+            toml::from_str(BUNDLED_TOML).expect("bundled test-fixtures.toml must parse");
+        let exact: HashSet<String> = parsed.exact.into_iter().map(|e| e.credential).collect();
         // Substrings are tiny and constant — leak the strings to
         // `&'static str` so we don't pay an alloc on every check.
         let substrings: Vec<&'static str> = parsed

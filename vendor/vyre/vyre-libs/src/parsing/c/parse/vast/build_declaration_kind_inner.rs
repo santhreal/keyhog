@@ -26,10 +26,11 @@ use super::*;
 
 pub(super) fn emit_declaration_kind_for_index_inner(
     vast_nodes: &str,
+    decl_contexts: Option<&str>,
     idx: Expr,
     out_name: &str,
     prefix: &str,
-    prefix_typedef_lookup: Option<(&str, &Expr)>,
+    prefix_typedef_lookup: Option<(&str, &Expr, bool)>,
 ) -> Vec<Node> {
     let base = format!("{prefix}_base");
     let kind = format!("{prefix}_kind");
@@ -53,6 +54,7 @@ pub(super) fn emit_declaration_kind_for_index_inner(
     let prefix_has_typedef = format!("{prefix}_has_typedef");
     let prefix_has_type = format!("{prefix}_has_type");
     let prefix_done = format!("{prefix}_prefix_done");
+    let prefix_start = format!("{prefix}_prefix_start");
     let prefix_skipped_paren_depth = format!("{prefix}_prefix_skipped_paren_depth");
     let prefix_skipped_brace_depth = format!("{prefix}_prefix_skipped_brace_depth");
     let prefix_scan = format!("{prefix}_prefix_scan");
@@ -67,40 +69,44 @@ pub(super) fn emit_declaration_kind_for_index_inner(
     let declarator_follower = format!("{prefix}_declarator_follower");
     let sizeof_type_operand = format!("{prefix}_sizeof_type_operand");
     let cast_pointer_expr_operand = format!("{prefix}_cast_pointer_expr_operand");
-    let prefix_typedef_lookup_node = if let Some((haystack, haystack_len)) = prefix_typedef_lookup {
-        Node::if_then(
-            Expr::eq(Expr::var(&prefix_kind), Expr::u32(TOK_IDENTIFIER)),
-            {
-                let mut body = emit_identifier_source_hash_for_index(
-                    vast_nodes,
-                    haystack,
-                    haystack_len,
-                    Expr::var(&prefix_idx),
-                    &prefix_symbol_hash,
-                    &format!("{prefix}_prefix_hash"),
-                );
-                body.push(Node::if_then(
-                    is_gnu_typeof_symbol_hash(Expr::var(&prefix_symbol_hash)),
-                    vec![Node::assign(&prefix_has_type, Expr::u32(1))],
-                ));
-                body.extend(emit_visible_typedef_name_for_index(
-                    vast_nodes,
-                    haystack,
-                    haystack_len,
-                    Expr::var(&prefix_idx),
-                    &prefix_visible_typedef,
-                    &format!("{prefix}_prefix_type_name"),
-                ));
-                body.push(Node::if_then(
-                    Expr::eq(Expr::var(&prefix_visible_typedef), Expr::u32(1)),
-                    vec![Node::assign(&prefix_has_type, Expr::u32(1))],
-                ));
-                body
-            },
-        )
-    } else {
-        Node::if_then(Expr::u32(0), Vec::new())
-    };
+    let prefix_typedef_lookup_node =
+        if let Some((haystack, haystack_len, packed_haystack)) = prefix_typedef_lookup {
+            Node::if_then(
+                Expr::eq(Expr::var(&prefix_kind), Expr::u32(TOK_IDENTIFIER)),
+                {
+                    let mut body = emit_identifier_source_hash_for_index(
+                        vast_nodes,
+                        haystack,
+                        haystack_len,
+                        Expr::var(&prefix_idx),
+                        &prefix_symbol_hash,
+                        &format!("{prefix}_prefix_hash"),
+                        packed_haystack,
+                    );
+                    body.push(Node::if_then(
+                        is_gnu_typeof_symbol_hash(Expr::var(&prefix_symbol_hash)),
+                        vec![Node::assign(&prefix_has_type, Expr::u32(1))],
+                    ));
+                    body.extend(emit_visible_typedef_name_for_index(
+                        vast_nodes,
+                        haystack,
+                        decl_contexts,
+                        haystack_len,
+                        Expr::var(&prefix_idx),
+                        &prefix_visible_typedef,
+                        &format!("{prefix}_prefix_type_name"),
+                        packed_haystack,
+                    ));
+                    body.push(Node::if_then(
+                        Expr::eq(Expr::var(&prefix_visible_typedef), Expr::u32(1)),
+                        vec![Node::assign(&prefix_has_type, Expr::u32(1))],
+                    ));
+                    body
+                },
+            )
+        } else {
+            Node::if_then(Expr::u32(0), Vec::new())
+        };
 
     vec![
         Node::let_bind(out_name, Expr::u32(0)),
@@ -283,11 +289,25 @@ pub(super) fn emit_declaration_kind_for_index_inner(
         Node::let_bind(&prefix_has_typedef, Expr::u32(0)),
         Node::let_bind(&prefix_has_type, Expr::u32(0)),
         Node::let_bind(&prefix_done, Expr::u32(0)),
+        Node::let_bind(
+            &prefix_start,
+            if let Some(decl_contexts) = decl_contexts {
+                Expr::load(
+                    decl_contexts,
+                    Expr::add(
+                        Expr::mul(idx.clone(), Expr::u32(VAST_DECL_CONTEXT_STRIDE_U32)),
+                        Expr::u32(VAST_DECL_CONTEXT_PREFIX_START_FIELD),
+                    ),
+                )
+            } else {
+                Expr::u32(0)
+            },
+        ),
         Node::let_bind(&prefix_skipped_paren_depth, Expr::u32(0)),
         Node::let_bind(&prefix_skipped_brace_depth, Expr::u32(0)),
         Node::loop_for(
             &prefix_scan,
-            Expr::u32(0),
+            Expr::var(&prefix_start),
             idx.clone(),
             vec![Node::if_then(
                 Expr::eq(Expr::var(&prefix_done), Expr::u32(0)),
@@ -296,7 +316,7 @@ pub(super) fn emit_declaration_kind_for_index_inner(
                         &prefix_idx,
                         Expr::sub(
                             Expr::sub(idx.clone(), Expr::u32(1)),
-                            Expr::var(&prefix_scan),
+                            Expr::sub(Expr::var(&prefix_scan), Expr::var(&prefix_start)),
                         ),
                     ),
                     Node::let_bind(

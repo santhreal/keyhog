@@ -263,6 +263,10 @@ pub fn scheduling_error_to_diagnostic(err: &crate::optimizer::PassSchedulingErro
         E::DuplicateId { id } => Diagnostic::error(format!(
             "OPTSCHED003: duplicate pass id `{id}`. Fix: assign every pass a unique stable id."
         )),
+        E::OrderViolation { pass, requirement } => Diagnostic::error(format!(
+            "OPTSCHED004: pass `{pass}` is scheduled before required pass `{requirement}`. Fix: move `{requirement}` earlier or remove the stale requirement."
+        ))
+        .with_location(OpLocation::op(pass.to_string())),
     }
 }
 

@@ -48,6 +48,7 @@ pub fn arg_of(shape: ProgramGraphShape, frontier_in: &str, frontier_out: &str) -
 
 /// CPU reference for the legacy unspecified-slot form.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref(
     node_count: u32,
     edge_offsets: &[u32],
@@ -67,6 +68,7 @@ pub fn cpu_ref(
 
 /// Slot-precise CPU reference. Mirrors `arg_of_slot`'s GPU semantics.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref_slot(
     node_count: u32,
     edge_offsets: &[u32],

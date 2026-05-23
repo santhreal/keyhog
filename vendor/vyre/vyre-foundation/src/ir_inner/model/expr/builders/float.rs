@@ -4,7 +4,7 @@ use crate::ir_inner::model::types::{BinOp, UnOp};
 impl Expr {
     /// `min(a, b)` (f32).
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn min(left: Expr, right: Expr) -> Expr {
         Expr::BinOp {
             op: BinOp::Min,
@@ -15,7 +15,7 @@ impl Expr {
 
     /// `max(a, b)` (f32).
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn max(left: Expr, right: Expr) -> Expr {
         Expr::BinOp {
             op: BinOp::Max,
@@ -26,7 +26,7 @@ impl Expr {
 
     /// `floor(a)` (f32).
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn floor(operand: Expr) -> Expr {
         Expr::UnOp {
             op: UnOp::Floor,
@@ -36,7 +36,7 @@ impl Expr {
 
     /// `ceil(a)` (f32).
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn ceil(operand: Expr) -> Expr {
         Expr::UnOp {
             op: UnOp::Ceil,
@@ -46,7 +46,7 @@ impl Expr {
 
     /// `round(a)` (f32).
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn round(operand: Expr) -> Expr {
         Expr::UnOp {
             op: UnOp::Round,
@@ -56,7 +56,7 @@ impl Expr {
 
     /// `trunc(a)` (f32).
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn trunc(operand: Expr) -> Expr {
         Expr::UnOp {
             op: UnOp::Trunc,
@@ -66,7 +66,7 @@ impl Expr {
 
     /// `sign(a)` (f32).
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn sign(operand: Expr) -> Expr {
         Expr::UnOp {
             op: UnOp::Sign,
@@ -76,7 +76,7 @@ impl Expr {
 
     /// `isNan(a)` (f32) -> bool-as-u32.
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn is_nan(operand: Expr) -> Expr {
         Expr::UnOp {
             op: UnOp::IsNan,
@@ -86,7 +86,7 @@ impl Expr {
 
     /// `isInf(a)` (f32) -> bool-as-u32.
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn is_inf(operand: Expr) -> Expr {
         Expr::UnOp {
             op: UnOp::IsInf,
@@ -96,7 +96,7 @@ impl Expr {
 
     /// `isFinite(a)` (f32) -> bool-as-u32.
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn is_finite(operand: Expr) -> Expr {
         Expr::UnOp {
             op: UnOp::IsFinite,

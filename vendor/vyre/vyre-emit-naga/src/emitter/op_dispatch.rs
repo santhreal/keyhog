@@ -3,9 +3,9 @@
 //! two helpers that only `emit_op` calls (`global_invocation_axis`,
 //! `emit_opaque_expr`).
 
-use naga::{BinaryOperator, Expression, Literal, LocalVariable, Span, Statement};
-use vyre_foundation::ir::{BinOp, UnOp};
-use vyre_lower::{KernelBody, KernelOp, KernelOpKind};
+use naga::{BinaryOperator, Expression, Literal, LocalVariable, ScalarKind, Span, Statement};
+use vyre_foundation::ir::{BinOp, DataType, UnOp};
+use vyre_lower::{KernelBody, KernelOp, KernelOpKind, LiteralValue};
 
 use super::op_lookup::{
     barrier_flags, binary_math_function, binary_operator, naga_literal, scalar_cast_target,
@@ -33,7 +33,27 @@ impl BodyBuilder<'_> {
                         "literal op references missing literal-pool index {literal_index}"
                     ))
                 })?;
-                let handle = self.append_expr(Expression::Literal(naga_literal(literal)?));
+                let handle = if let LiteralValue::F32(value) = literal {
+                    if value.is_finite() {
+                        self.append_expr(Expression::Literal(naga_literal(literal)?))
+                    } else {
+                        // Naga's `Literal::F32` rejects NaN/Inf even though
+                        // WGSL can represent the exact bit pattern via
+                        // `bitcast<f32>(u32_bits)`. Preserve the IR literal
+                        // byte-for-byte instead of weakening ops that use
+                        // `-inf` as a sentinel, e.g. top-k initializers.
+                        let bits = self.append_expr(Expression::Literal(Literal::U32(
+                            value.to_bits(),
+                        )));
+                        self.append_expr(Expression::As {
+                            expr: bits,
+                            kind: ScalarKind::Float,
+                            convert: None,
+                        })
+                    }
+                } else {
+                    self.append_expr(Expression::Literal(naga_literal(literal)?))
+                };
                 let ty = self.literal_type(literal);
                 self.bind_result_typed(op, handle, ty)
             }
@@ -60,6 +80,15 @@ impl BodyBuilder<'_> {
                 let slot = *op.operands.first().ok_or_else(|| {
                     EmitError::InvalidDescriptor(format!("{:?} missing binding slot", op.kind))
                 })?;
+                // Byte-element bindings (U8/I8) are packed into array<u32>
+                // by the WGSL emitter (no native byte storage). The IR-level
+                // index is a byte address (matching reference-eval); extract
+                // the right lane from the loaded word so the wire-correct
+                // byte reaches the consumer.
+                let data_type = self.binding_data_types.get(&slot).cloned();
+                if let Some(dt @ (DataType::U8 | DataType::I8)) = data_type {
+                    return self.emit_byte_element_load(op, slot, dt);
+                }
                 let pointer = self.binding_element_pointer(op, 0, 1)?;
                 let value = self.append_expr(Expression::Load { pointer });
                 let ty =
@@ -73,9 +102,20 @@ impl BodyBuilder<'_> {
                 self.bind_result_typed(op, value, ty)
             }
             KernelOpKind::StoreGlobal | KernelOpKind::StoreShared => {
+                let slot = self.slot_operand(op, 0)?;
+                // Byte-element bindings (U8/I8) need a read-modify-write
+                // through the array<u32> word so the byte at `index`
+                // changes without clobbering the three adjacent bytes
+                // packed into the same u32. Naive Store would write the
+                // value as a u32 to the byte address, corrupting the
+                // surrounding bytes — the same byte/word-addressing
+                // mismatch the LoadGlobal byte-extract path closed.
+                let data_type = self.binding_data_types.get(&slot).cloned();
+                if matches!(data_type, Some(DataType::U8) | Some(DataType::I8)) {
+                    return self.emit_byte_element_store(op, slot);
+                }
                 let pointer = self.binding_element_pointer(op, 0, 1)?;
                 let raw_value = self.value_operand(op, 2)?;
-                let slot = self.slot_operand(op, 0)?;
                 let value = match self.binding_types.get(&slot).copied() {
                     Some(ty) => self.coerce_value_to_type(raw_value, ty),
                     None => raw_value,
@@ -311,7 +351,8 @@ impl BodyBuilder<'_> {
         let child_body_idxs: Vec<u32> = op.operands.iter().take(1).copied().collect();
         let new_targets = self.collect_child_carried_ids(body, op_pos, &child_body_idxs);
 
-        let mut pre_init: Vec<(u32, naga::Handle<Expression>)> = Vec::new();
+        let mut pre_init: Vec<(u32, naga::Handle<Expression>)> =
+            Vec::with_capacity(new_targets.len());
         for id in &new_targets {
             self.loop_carrier_targets.insert(*id);
             if let Some(handle) = self.value_handle_for_id(*id) {
@@ -380,7 +421,8 @@ impl BodyBuilder<'_> {
         // the pre-if value. value_handle_for_id materializes the prior
         // value via fresh Load when the cached handle's emit-block has
         // closed; otherwise it returns the cached handle directly.
-        let mut pre_init: Vec<(u32, naga::Handle<Expression>)> = Vec::new();
+        let mut pre_init: Vec<(u32, naga::Handle<Expression>)> =
+            Vec::with_capacity(new_targets.len());
         for id in &new_targets {
             self.loop_carrier_targets.insert(*id);
             if let Some(handle) = self.value_handle_for_id(*id) {
@@ -547,24 +589,25 @@ impl BodyBuilder<'_> {
                 right_eff = self.coerce_value_to_type(right_eff, target);
             }
         }
-        let value = if let Some(value) = self.emit_synthetic_binop(effective_binop, left_eff, right_eff) {
-            value
-        } else if let Some(fun) = binary_math_function(effective_binop) {
-            self.append_expr(Expression::Math {
-                fun,
-                arg: left_eff,
-                arg1: Some(right_eff),
-                arg2: None,
-                arg3: None,
-            })
-        } else {
-            let naga_op = binary_operator(effective_binop)?;
-            self.append_expr(Expression::Binary {
-                op: naga_op,
-                left: left_eff,
-                right: right_eff,
-            })
-        };
+        let value =
+            if let Some(value) = self.emit_synthetic_binop(effective_binop, left_eff, right_eff) {
+                value
+            } else if let Some(fun) = binary_math_function(effective_binop) {
+                self.append_expr(Expression::Math {
+                    fun,
+                    arg: left_eff,
+                    arg1: Some(right_eff),
+                    arg2: None,
+                    arg3: None,
+                })
+            } else {
+                let naga_op = binary_operator(effective_binop)?;
+                self.append_expr(Expression::Binary {
+                    op: naga_op,
+                    left: left_eff,
+                    right: right_eff,
+                })
+            };
         let ty = self.binary_result_type(op, binop)?;
         self.bind_result_typed(op, value, ty)
     }
@@ -876,5 +919,199 @@ impl BodyBuilder<'_> {
         Err(EmitError::InvalidDescriptor(format!(
             "opaque expression `{extension_kind}` (id={extension_id:#010x}) has no descriptor Naga lowering. Fix: lower this extension into concrete KernelDescriptor ops or add a descriptor extension emitter before Naga emission."
         )))
+    }
+
+    /// Emit a Load on a byte-element binding (DataType::U8 / DataType::I8).
+    ///
+    /// Reference-eval treats U8/I8 buffers as byte-addressed; the WGSL
+    /// backend has no native byte storage, so the underlying buffer is
+    /// `array<u32>` (per `setup::scalar_type`). To honor the IR-level
+    /// byte semantics, the emitter computes
+    ///
+    /// ```text
+    /// word_index = index >> 2
+    /// shift      = (index & 3) << 3
+    /// byte       = (buffer[word_index] >> shift) & 0xff
+    /// ```
+    ///
+    /// For `I8`, the extracted byte is sign-extended via the
+    /// `(byte << 24) >> 24` bitcast pattern (arithmetic shift on i32
+    /// preserves the sign bit).
+    fn emit_byte_element_load(
+        &mut self,
+        op: &KernelOp,
+        slot: u32,
+        data_type: DataType,
+    ) -> Result<(), EmitError> {
+        // The IR-level index is a byte address. Translate it to a word
+        // index for naga's `array<u32>` Access expression.
+        let raw_index = self.value_operand(op, 1)?;
+        let byte_index = self.coerce_value_to_type(raw_index, self.types.u32_ty);
+        let two = self.literal_u32(2);
+        let three = self.literal_u32(3);
+        let eight = self.literal_u32(8);
+        let mask_ff = self.literal_u32(0xff);
+        let word_index = self.append_expr(Expression::Binary {
+            op: BinaryOperator::ShiftRight,
+            left: byte_index,
+            right: two,
+        });
+        let lane_in_word = self.append_expr(Expression::Binary {
+            op: BinaryOperator::And,
+            left: byte_index,
+            right: three,
+        });
+        let shift_bits = self.append_expr(Expression::Binary {
+            op: BinaryOperator::Multiply,
+            left: lane_in_word,
+            right: eight,
+        });
+        let pointer = self.binding_element_pointer_by_slot(slot, word_index)?;
+        let word = self.append_expr(Expression::Load { pointer });
+        let shifted = self.append_expr(Expression::Binary {
+            op: BinaryOperator::ShiftRight,
+            left: word,
+            right: shift_bits,
+        });
+        let byte_u32 = self.append_expr(Expression::Binary {
+            op: BinaryOperator::And,
+            left: shifted,
+            right: mask_ff,
+        });
+        match data_type {
+            DataType::U8 => {
+                // Result type tracked in binding_types is u32_ty (per
+                // setup::scalar_type's U8 → u32_ty mapping); the
+                // extracted byte is already a u32 in the [0, 255]
+                // range so it is wire-correct as-is.
+                let ty = self.types.u32_ty;
+                self.bind_result_typed(op, byte_u32, ty)
+            }
+            DataType::I8 => {
+                // Sign-extend the [0, 255] u32 byte to a 32-bit signed
+                // value via `((byte << 24) as i32) >> 24` (arithmetic
+                // shift on i32 propagates the sign bit).
+                let twenty_four = self.literal_u32(24);
+                let shifted_left = self.append_expr(Expression::Binary {
+                    op: BinaryOperator::ShiftLeft,
+                    left: byte_u32,
+                    right: twenty_four,
+                });
+                let as_i32 = self.append_expr(Expression::As {
+                    expr: shifted_left,
+                    kind: naga::ScalarKind::Sint,
+                    convert: None,
+                });
+                let signed = self.append_expr(Expression::Binary {
+                    op: BinaryOperator::ShiftRight,
+                    left: as_i32,
+                    right: twenty_four,
+                });
+                let ty = self.types.i32_ty;
+                self.bind_result_typed(op, signed, ty)
+            }
+            other => Err(EmitError::InvalidBinding {
+                slot,
+                reason: format!(
+                    "emit_byte_element_load called with non-byte DataType {other:?}; this is an emitter routing bug"
+                ),
+            }),
+        }
+    }
+
+    /// Emit a Store on a byte-element binding (DataType::U8 / DataType::I8).
+    ///
+    /// WGSL has no native byte storage; the underlying buffer is
+    /// `array<u32>`. To store one byte at byte address `index` without
+    /// clobbering the three adjacent bytes packed in the same u32, the
+    /// emitter computes:
+    ///
+    /// ```text
+    /// word_index = index >> 2
+    /// shift      = (index & 3) << 3
+    /// word       = buffer[word_index]
+    /// cleared    = word & ~(0xff << shift)
+    /// buffer[word_index] = cleared | ((value & 0xff) << shift)
+    /// ```
+    ///
+    /// **Concurrency:** the read-modify-write is non-atomic. Two
+    /// invocations writing different bytes of the same u32 word can race
+    /// and lose one byte. This matches the existing convention for
+    /// non-atomic word stores; callers needing safe concurrent byte
+    /// stores should keep one invocation per word (the common pattern
+    /// for output buffers indexed by `GlobalInvocationId`) or migrate to
+    /// `Expr::Atomic` ops on a U32 buffer with explicit byte packing.
+    fn emit_byte_element_store(&mut self, op: &KernelOp, slot: u32) -> Result<(), EmitError> {
+        let raw_index = self.value_operand(op, 1)?;
+        let raw_value = self.value_operand(op, 2)?;
+        let byte_index = self.coerce_value_to_type(raw_index, self.types.u32_ty);
+        let value_u32 = self.coerce_value_to_type(raw_value, self.types.u32_ty);
+        let two = self.literal_u32(2);
+        let three = self.literal_u32(3);
+        let eight = self.literal_u32(8);
+        let mask_ff = self.literal_u32(0xff);
+        let word_index = self.append_expr(Expression::Binary {
+            op: BinaryOperator::ShiftRight,
+            left: byte_index,
+            right: two,
+        });
+        let lane_in_word = self.append_expr(Expression::Binary {
+            op: BinaryOperator::And,
+            left: byte_index,
+            right: three,
+        });
+        let shift_bits = self.append_expr(Expression::Binary {
+            op: BinaryOperator::Multiply,
+            left: lane_in_word,
+            right: eight,
+        });
+        // (0xff << shift) — the byte mask in u32-word position.
+        let lane_mask = self.append_expr(Expression::Binary {
+            op: BinaryOperator::ShiftLeft,
+            left: mask_ff,
+            right: shift_bits,
+        });
+        // ~(0xff << shift) — invert to clear the target byte.
+        let cleared_mask = self.append_expr(Expression::Unary {
+            op: naga::UnaryOperator::BitwiseNot,
+            expr: lane_mask,
+        });
+        // (value & 0xff) << shift — value byte in u32-word position.
+        let value_byte = self.append_expr(Expression::Binary {
+            op: BinaryOperator::And,
+            left: value_u32,
+            right: mask_ff,
+        });
+        let value_in_word = self.append_expr(Expression::Binary {
+            op: BinaryOperator::ShiftLeft,
+            left: value_byte,
+            right: shift_bits,
+        });
+        // Read-modify-write the u32 word.
+        let pointer = self.binding_element_pointer_by_slot(slot, word_index)?;
+        let word = self.append_expr(Expression::Load { pointer });
+        let cleared = self.append_expr(Expression::Binary {
+            op: BinaryOperator::And,
+            left: word,
+            right: cleared_mask,
+        });
+        let merged = self.append_expr(Expression::Binary {
+            op: BinaryOperator::InclusiveOr,
+            left: cleared,
+            right: value_in_word,
+        });
+        // Re-emit the pointer Access expression: naga's Statement::Store
+        // requires a pointer that is in scope at the store site, and
+        // the earlier `pointer` handle was consumed by the `Load`
+        // we emitted above.
+        let store_pointer = self.binding_element_pointer_by_slot(slot, word_index)?;
+        self.function.body.push(
+            Statement::Store {
+                pointer: store_pointer,
+                value: merged,
+            },
+            Span::UNDEFINED,
+        );
+        Ok(())
     }
 }

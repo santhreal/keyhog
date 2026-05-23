@@ -6,9 +6,17 @@ pub(super) fn repair_token_spans_from_source(
     starts: &mut [u32],
     lens: &mut [u32],
 ) -> Result<(), String> {
+    if starts.len() != tok_types.len() || lens.len() != tok_types.len() {
+        return Err(format!(
+            "token span repair received mismatched stream lengths: tok_types={}, starts={}, lens={}. Fix: GPU C lexer outputs must carry one start and one length per token; silent tail truncation is forbidden.",
+            tok_types.len(),
+            starts.len(),
+            lens.len()
+        ));
+    }
     let bytes = source.as_bytes();
     let mut cursor = 0usize;
-    for idx in 0..tok_types.len().min(starts.len()).min(lens.len()) {
+    for idx in 0..tok_types.len() {
         let start = starts[idx] as usize;
         let len = lens[idx] as usize;
         if len > 0 && start.saturating_add(len) <= bytes.len() {
@@ -216,4 +224,24 @@ fn punct_len(bytes: &[u8], start: usize, token: u32) -> Option<usize> {
         .iter()
         .find(|candidate| bytes.get(start..start + candidate.len()) == Some(**candidate))
         .map(|candidate| candidate.len())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn repair_token_spans_rejects_mismatched_gpu_lexer_stream_lengths() {
+        let mut starts = vec![0u32];
+        let mut lens = vec![1u32, 1u32];
+        let err = repair_token_spans_from_source(
+            "x y",
+            &[TOK_IDENTIFIER, TOK_IDENTIFIER],
+            &mut starts,
+            &mut lens,
+        )
+        .expect_err("mismatched lexer streams must fail");
+        assert!(err.contains("mismatched stream lengths"), "{err}");
+        assert!(err.contains("silent tail truncation is forbidden"), "{err}");
+    }
 }

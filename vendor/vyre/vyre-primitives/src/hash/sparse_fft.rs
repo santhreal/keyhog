@@ -116,6 +116,7 @@ pub fn sparse_fft_bin_hash(signal: &str, bins: &str, a: u32, c: u32, b: u32, n: 
 
 /// CPU reference: linear-hash binning of an arbitrary numeric signal.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn sparse_fft_bin_hash_cpu(signal: &[u32], a: u32, c: u32, b: u32) -> Vec<u32> {
     let mut bins = vec![0u32; b as usize];
     for (f, &v) in signal.iter().enumerate() {
@@ -130,6 +131,7 @@ pub fn sparse_fft_bin_hash_cpu(signal: &[u32], a: u32, c: u32, b: u32) -> Vec<u3
 /// (a, c) pairs, find the indices most consistently mapped to the
 /// same bin (heuristic median-vote support recovery).
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn voting_recovery_cpu(
     binnings: &[(u32, u32, Vec<u32>)],
     threshold: u32,
@@ -151,6 +153,25 @@ pub fn voting_recovery_cpu(
         .filter(|&f| votes[f] >= threshold)
         .map(|f| f as u32)
         .collect()
+}
+
+#[cfg(feature = "inventory-registry")]
+inventory::submit! {
+    crate::harness::OpEntry::new(
+        OP_ID,
+        || sparse_fft_bin_hash("signal", "bins", 1, 0, 4, 8),
+        Some(|| {
+            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            vec![vec![
+                to_bytes(&[1, 2, 3, 4, 5, 6, 7, 8]),
+                to_bytes(&[0, 0, 0, 0]),
+            ]]
+        }),
+        Some(|| {
+            let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            vec![vec![to_bytes(&[6, 8, 10, 12])]]
+        }),
+    )
 }
 
 #[cfg(test)]

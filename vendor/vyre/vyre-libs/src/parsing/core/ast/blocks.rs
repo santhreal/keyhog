@@ -19,7 +19,7 @@ use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 pub fn ast_cfg_blocks(
     tok_types: &str,
     _out_scope_parents: &str, // Inherited logical boundaries — reserved for V2.
-    statements: &str,        // Array of statement [start_tok, end_tok]
+    statements: &str,         // Array of statement [start_tok, end_tok]
     num_statements: Expr,
     out_block_headers: &str, // Maps stmt -> enclosing control flow keyword token index
 ) -> Program {
@@ -129,5 +129,6 @@ inventory::submit! {
                 .collect::<Vec<u8>>();
             vec![vec![bytes]]
         }),
+        category: Some("parsing"),
     }
 }

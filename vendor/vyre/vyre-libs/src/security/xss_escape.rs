@@ -15,16 +15,17 @@ pub fn xss_escape(node_count: u32, escape_dominates: &str, render_set: &str, out
 }
 
 #[must_use]
+#[cfg(test)]
 /// CPU oracle for [`xss_escape`].
-pub fn cpu_ref(escape_dominates: &[u32], render_set: &[u32]) -> Vec<u32> {
+pub(crate) fn cpu_ref(escape_dominates: &[u32], render_set: &[u32]) -> Vec<u32> {
     vyre_primitives::bitset::and::cpu_ref(escape_dominates, render_set)
 }
 
 /// Soundness marker for [`xss_escape`].
 pub struct XssEscape;
-impl weir::soundness::SoundnessTagged for XssEscape {
-    fn soundness(&self) -> weir::soundness::Soundness {
-        weir::soundness::Soundness::Exact
+impl vyre::soundness::SoundnessTagged for XssEscape {
+    fn soundness(&self) -> vyre::soundness::Soundness {
+        vyre::soundness::Soundness::Exact
     }
 }
 

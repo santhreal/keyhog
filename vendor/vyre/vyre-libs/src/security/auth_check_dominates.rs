@@ -23,16 +23,17 @@ pub fn auth_check_dominates(
 }
 
 #[must_use]
+#[cfg(test)]
 /// CPU oracle for [`auth_check_dominates`].
-pub fn cpu_ref(auth_doms: &[u32], sensitive_op_set: &[u32]) -> Vec<u32> {
+pub(crate) fn cpu_ref(auth_doms: &[u32], sensitive_op_set: &[u32]) -> Vec<u32> {
     vyre_primitives::bitset::and::cpu_ref(auth_doms, sensitive_op_set)
 }
 
 /// Soundness marker for [`auth_check_dominates`].
 pub struct AuthCheckDominates;
-impl weir::soundness::SoundnessTagged for AuthCheckDominates {
-    fn soundness(&self) -> weir::soundness::Soundness {
-        weir::soundness::Soundness::Exact
+impl vyre::soundness::SoundnessTagged for AuthCheckDominates {
+    fn soundness(&self) -> vyre::soundness::Soundness {
+        vyre::soundness::Soundness::Exact
     }
 }
 

@@ -1,7 +1,9 @@
-use super::{MegakernelLaunchPolicy, MegakernelLaunchRecommendation, MegakernelLaunchRequest};
+use super::{
+    MegakernelLaunchCacheStats, MegakernelLaunchPolicy, MegakernelLaunchRecommendation,
+    MegakernelLaunchRequest,
+};
 use rustc_hash::FxHashMap;
 use std::cell::RefCell;
-use std::collections::VecDeque;
 
 const LAUNCH_RECOMMENDATION_CACHE_CAP: usize = 128;
 
@@ -11,18 +13,41 @@ pub(super) struct LaunchRecommendationCacheKey {
     pub(super) request: MegakernelLaunchRequest,
 }
 
-#[derive(Default)]
 pub(super) struct LaunchRecommendationCache {
-    pub(super) entries: FxHashMap<LaunchRecommendationCacheKey, MegakernelLaunchRecommendation>,
-    pub(super) order: VecDeque<LaunchRecommendationCacheKey>,
+    pub(super) entries: FxHashMap<LaunchRecommendationCacheKey, LaunchRecommendationCacheEntry>,
+    clock: u64,
+    pub(super) hits: u64,
+    pub(super) misses: u64,
+}
+
+pub(super) struct LaunchRecommendationCacheEntry {
+    recommendation: MegakernelLaunchRecommendation,
+    last_seen: u64,
 }
 
 impl LaunchRecommendationCache {
     pub(super) fn get(
-        &self,
+        &mut self,
         key: &LaunchRecommendationCacheKey,
     ) -> Option<MegakernelLaunchRecommendation> {
-        self.entries.get(key).copied()
+        if self.clock == u64::MAX {
+            self.clock = 0;
+            for entry in self.entries.values_mut() {
+                entry.last_seen = 0;
+            }
+        }
+        let Some(entry) = self.entries.get_mut(key) else {
+            self.misses = self.misses.checked_add(1).unwrap_or_else(|| {
+                panic!("megakernel launch-cache miss counter overflowed u64. Fix: reset launch-cache telemetry before counters reach u64::MAX.")
+            });
+            return None;
+        };
+        self.clock += 1;
+        entry.last_seen = self.clock;
+        self.hits = self.hits.checked_add(1).unwrap_or_else(|| {
+            panic!("megakernel launch-cache hit counter overflowed u64. Fix: reset launch-cache telemetry before counters reach u64::MAX.")
+        });
+        Some(entry.recommendation)
     }
 
     pub(super) fn insert(
@@ -30,27 +55,65 @@ impl LaunchRecommendationCache {
         key: LaunchRecommendationCacheKey,
         value: MegakernelLaunchRecommendation,
     ) {
-        let is_new = self.entries.insert(key, value).is_none();
-        if !is_new {
-            return;
-        }
-        self.order.push_back(key);
+        let tick = self.next_tick();
+        self.entries.insert(
+            key,
+            LaunchRecommendationCacheEntry {
+                recommendation: value,
+                last_seen: tick,
+            },
+        );
         while self.entries.len() > LAUNCH_RECOMMENDATION_CACHE_CAP {
-            let Some(evicted) = self.order.pop_front() else {
+            let Some(evicted) = self
+                .entries
+                .iter()
+                .filter(|(candidate, _)| **candidate != key)
+                .min_by_key(|(_, entry)| entry.last_seen)
+                .map(|(candidate, _)| *candidate)
+            else {
                 break;
             };
-            if self.entries.remove(&evicted).is_some() {
-                continue;
+            self.entries.remove(&evicted);
+        }
+    }
+
+    pub(super) fn stats(&self) -> MegakernelLaunchCacheStats {
+        MegakernelLaunchCacheStats {
+            entries: self.entries.len(),
+            hits: self.hits,
+            misses: self.misses,
+        }
+    }
+
+    pub(super) fn clear(&mut self) {
+        self.entries.clear();
+        self.clock = 0;
+        self.hits = 0;
+        self.misses = 0;
+    }
+
+    fn next_tick(&mut self) -> u64 {
+        if self.clock == u64::MAX {
+            self.clock = 0;
+            for entry in self.entries.values_mut() {
+                entry.last_seen = 0;
             }
         }
-        while self.order.len() > self.entries.len() {
-            let Some(front) = self.order.pop_front() else {
-                break;
-            };
-            if self.entries.contains_key(&front) {
-                self.order.push_front(front);
-                break;
-            }
+        self.clock += 1;
+        self.clock
+    }
+}
+
+impl Default for LaunchRecommendationCache {
+    fn default() -> Self {
+        Self {
+            entries: FxHashMap::with_capacity_and_hasher(
+                LAUNCH_RECOMMENDATION_CACHE_CAP,
+                Default::default(),
+            ),
+            clock: 0,
+            hits: 0,
+            misses: 0,
         }
     }
 }

@@ -2,7 +2,7 @@
 
 use crate::ir_eval::canonical_f32;
 use crate::ir_inner::model::types::{BinOp, UnOp};
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 use std::fmt;
 use std::sync::Arc;
 
@@ -70,9 +70,9 @@ impl std::error::Error for EvalError {}
 /// Mutable context used by generic node interpreters.
 #[derive(Debug, Default)]
 pub struct InterpCtx {
-    values: HashMap<NodeId, Value>,
+    values: FxHashMap<NodeId, Value>,
     operands: Vec<NodeId>,
-    regions: HashMap<RegionId, Vec<u8>>,
+    regions: FxHashMap<RegionId, Vec<u8>>,
 }
 
 impl InterpCtx {
@@ -82,6 +82,10 @@ impl InterpCtx {
     }
 
     /// Read a previously computed node result.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EvalError`] when `id` has not been produced in this context.
     pub fn get(&self, id: NodeId) -> Result<Value, EvalError> {
         self.values.get(&id).copied().ok_or_else(|| {
             EvalError::new(format!(
@@ -107,6 +111,11 @@ impl InterpCtx {
     }
 
     /// Read an operand value by position.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EvalError`] when the operand index is absent or the referenced
+    /// node has not produced a value.
     pub fn operand(&self, index: usize) -> Result<Value, EvalError> {
         let id = self.operands.get(index).copied().ok_or_else(|| {
             EvalError::new(format!(
@@ -122,6 +131,10 @@ impl InterpCtx {
     }
 
     /// Read a byte region used by region-oriented primitives.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EvalError`] when `id` has no initialized byte region.
     pub fn region(&self, id: RegionId) -> Result<&[u8], EvalError> {
         self.regions.get(&id).map(Vec::as_slice).ok_or_else(|| {
             EvalError::new(format!(
@@ -132,6 +145,10 @@ impl InterpCtx {
     }
 
     /// Mutably read a byte region used by region-oriented primitives.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EvalError`] when `id` has no initialized mutable byte region.
     pub fn region_mut(&mut self, id: RegionId) -> Result<&mut Vec<u8>, EvalError> {
         self.regions.get_mut(&id).ok_or_else(|| {
             EvalError::new(format!(
@@ -193,6 +210,11 @@ impl NodeStorage {
     }
 
     /// Interpret this storage node without side effects.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EvalError`] when operands are missing or the operation has no
+    /// registered reference semantics.
     pub fn interpret(&self, ctx: &mut InterpCtx) -> Result<Value, EvalError> {
         match self {
             Self::LitU32(value) => Ok(Value::U32(*value)),
@@ -200,7 +222,7 @@ impl NodeStorage {
             Self::LitF32(value) => Ok(Value::F32(*value)),
             Self::LitBool(value) => Ok(Value::Bool(*value)),
             Self::BinOp { op, left, right } => {
-                interpret_bin_op(op, ctx.get(*left)?, ctx.get(*right)?)
+                interpret_bin_op(*op, ctx.get(*left)?, ctx.get(*right)?)
             }
             Self::UnOp { op, operand } => interpret_un_op(op, ctx.get(*operand)?),
             Self::Extern { op_id, .. } => Err(EvalError::new(format!(
@@ -210,25 +232,21 @@ impl NodeStorage {
     }
 }
 
-fn interpret_bin_op(op: &BinOp, left: Value, right: Value) -> Result<Value, EvalError> {
+#[expect(
+    clippy::too_many_lines,
+    reason = "reference interpreter keeps each BinOp semantics in one exhaustive table"
+)]
+fn interpret_bin_op(op: BinOp, left: Value, right: Value) -> Result<Value, EvalError> {
     match (left, right) {
         (Value::U32(left), Value::U32(right)) => match op {
             BinOp::Add => Ok(Value::U32(left.wrapping_add(right))),
             BinOp::Sub => Ok(Value::U32(left.wrapping_sub(right))),
             BinOp::Mul => Ok(Value::U32(left.wrapping_mul(right))),
             BinOp::Div => {
-                if right == 0 {
-                    Ok(Value::U32(u32::MAX))
-                } else {
-                    Ok(Value::U32(left / right))
-                }
+                Ok(Value::U32(left.checked_div(right).unwrap_or(u32::MAX)))
             }
             BinOp::Mod => {
-                if right == 0 {
-                    Ok(Value::U32(0))
-                } else {
-                    Ok(Value::U32(left % right))
-                }
+                Ok(Value::U32(left.checked_rem(right).unwrap_or(0)))
             }
             BinOp::BitAnd => Ok(Value::U32(left & right)),
             BinOp::BitOr => Ok(Value::U32(left | right)),
@@ -249,7 +267,7 @@ fn interpret_bin_op(op: &BinOp, left: Value, right: Value) -> Result<Value, Eval
             BinOp::AbsDiff => Ok(Value::U32(left.abs_diff(right))),
             BinOp::RotateLeft => Ok(Value::U32(left.rotate_left(right & 31))),
             BinOp::RotateRight => Ok(Value::U32(left.rotate_right(right & 31))),
-            BinOp::MulHigh => Ok(Value::U32(((left as u64).wrapping_mul(right as u64) >> 32) as u32)),
+            BinOp::MulHigh => Ok(Value::U32(u32::try_from((u64::from(left).wrapping_mul(u64::from(right))) >> 32).unwrap_or(u32::MAX))),
             BinOp::And => Ok(Value::Bool(left != 0 && right != 0)),
             BinOp::Or => Ok(Value::Bool(left != 0 || right != 0)),
             _ => Err(EvalError::new(format!(
@@ -273,8 +291,8 @@ fn interpret_bin_op(op: &BinOp, left: Value, right: Value) -> Result<Value, Eval
                 BinOp::Sub => Ok(Value::F32(canonical_f32(left - right))),
                 BinOp::Mul => Ok(Value::F32(canonical_f32(left * right))),
                 BinOp::Div => Ok(Value::F32(canonical_f32(left / right))),
-                BinOp::Eq => Ok(Value::Bool(left == right)),
-                BinOp::Ne => Ok(Value::Bool(left != right)),
+                BinOp::Eq => Ok(Value::Bool(left.partial_cmp(&right).is_some_and(std::cmp::Ordering::is_eq))),
+                BinOp::Ne => Ok(Value::Bool(left.partial_cmp(&right).is_none_or(|ordering| !ordering.is_eq()))),
                 BinOp::Lt => Ok(Value::Bool(left < right)),
                 BinOp::Le => Ok(Value::Bool(left <= right)),
                 BinOp::Gt => Ok(Value::Bool(left > right)),
@@ -307,8 +325,8 @@ fn interpret_bin_op(op: &BinOp, left: Value, right: Value) -> Result<Value, Eval
             BinOp::BitAnd => Ok(Value::I32(left & right)),
             BinOp::BitOr => Ok(Value::I32(left | right)),
             BinOp::BitXor => Ok(Value::I32(left ^ right)),
-            BinOp::Shl => Ok(Value::I32(left.wrapping_shl((right as u32) & 31))),
-            BinOp::Shr => Ok(Value::I32(left.wrapping_shr((right as u32) & 31))),
+            BinOp::Shl => Ok(Value::I32(left.wrapping_shl(u32::from_ne_bytes(right.to_ne_bytes()) & 31))),
+            BinOp::Shr => Ok(Value::I32(left.wrapping_shr(u32::from_ne_bytes(right.to_ne_bytes()) & 31))),
             BinOp::Eq => Ok(Value::Bool(left == right)),
             BinOp::Ne => Ok(Value::Bool(left != right)),
             BinOp::Lt => Ok(Value::Bool(left < right)),
@@ -377,9 +395,9 @@ fn interpret_un_op(op: &UnOp, operand: Value) -> Result<Value, EvalError> {
         },
         Value::U64(value) => match op {
             UnOp::BitNot => Ok(Value::U64(!value)),
-            UnOp::Popcount => Ok(Value::U64(value.count_ones() as u64)),
-            UnOp::Clz => Ok(Value::U64(value.leading_zeros() as u64)),
-            UnOp::Ctz => Ok(Value::U64(value.trailing_zeros() as u64)),
+            UnOp::Popcount => Ok(Value::U64(u64::from(value.count_ones()))),
+            UnOp::Clz => Ok(Value::U64(u64::from(value.leading_zeros()))),
+            UnOp::Ctz => Ok(Value::U64(u64::from(value.trailing_zeros()))),
             UnOp::ReverseBits => Ok(Value::U64(value.reverse_bits())),
             _ => Err(EvalError::new(format!(
                 "unsupported u64 unary operation {op:?}. Fix: register explicit u64 semantics before interpreting this operation."

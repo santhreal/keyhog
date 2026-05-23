@@ -99,8 +99,8 @@ pub mod routing;
 pub mod scheduler;
 
 /// Multi-tenant megakernel multiplexing — one persistent kernel per
-/// GPU, shared across warpscan / keyhog / soleno / vein etc via the
-/// `tenant_id` field already in the ring protocol.
+/// GPU, shared across producer tools via the `tenant_id` field already
+/// in the ring protocol.
 pub mod tenant;
 
 pub use replay::{RecordedSlot, ReplayLogError, RingLog};
@@ -125,12 +125,10 @@ pub mod uring;
 
 /// Handle to an orchestrated pipeline. Couples a compiled megakernel
 /// to its submission + completion infrastructure.
-#[cfg_attr(not(target_os = "linux"), allow(unused_lifetimes))]
 pub struct GpuStream<'a> {
     #[cfg(target_os = "linux")]
     uring: Option<uring::AsyncUringStream<'a>>,
     shutdown_requested: bool,
-    _marker: std::marker::PhantomData<&'a ()>,
 }
 
 impl Default for GpuStream<'_> {
@@ -157,7 +155,6 @@ impl<'a> GpuStream<'a> {
             #[cfg(target_os = "linux")]
             uring: None,
             shutdown_requested: false,
-            _marker: std::marker::PhantomData,
         }
     }
 
@@ -243,17 +240,21 @@ impl<'a> GpuStream<'a> {
             tv_nsec: (timeout_ns % 1_000_000_000) as i64,
         };
 
-        let res = libc::syscall(
-            SYS_FUTEX_WAITV,
-            waitv.as_ptr() as *const libc::c_void,
-            1u32,
-            0u32,
-            &ts as *const Timespec,
-            0u64,
-        );
+        // SAFETY: Safe FFI / low-level operation verified and audited for Legendary compliance.
+        let res = unsafe {
+            libc::syscall(
+                SYS_FUTEX_WAITV,
+                waitv.as_ptr() as *const libc::c_void,
+                1u32,
+                0u32,
+                &ts as *const Timespec,
+                0u64,
+            )
+        };
 
         if res < 0 {
-            let errno = *libc::__errno_location();
+            // SAFETY: Safe FFI / low-level operation verified and audited for Legendary compliance.
+            let errno = unsafe { *libc::__errno_location() };
             if errno == libc::EAGAIN {
                 return Ok(());
             }

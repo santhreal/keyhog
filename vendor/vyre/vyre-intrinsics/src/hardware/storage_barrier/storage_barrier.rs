@@ -59,6 +59,7 @@ inventory::submit! {
         build: || storage_barrier("input", "out", 4),
         test_inputs: Some(test_inputs),
         expected_output: Some(expected_output),
+        category: Some("hardware"),
     }
 }
 

@@ -25,9 +25,13 @@ impl Mode {
     /// Resolve mode from `VYRE_AUTOTUNER`.
     #[must_use]
     pub fn from_env() -> Self {
-        match std::env::var(AUTOTUNER_ENV).ok().as_deref() {
-            Some("on") => Mode::On,
-            _ => Mode::OffUseDefault,
+        match std::env::var(AUTOTUNER_ENV) {
+            Ok(value) if value == "on" => Mode::On,
+            Ok(value) if value == "off" || value == "default" => Mode::OffUseDefault,
+            Ok(value) => panic!(
+                "{AUTOTUNER_ENV}={value:?} is invalid. Fix: set VYRE_AUTOTUNER to `on`, `off`, or `default`, or unset it for the production default."
+            ),
+            Err(_) => Mode::OffUseDefault,
         }
     }
 }
@@ -214,7 +218,7 @@ impl TunerCache {
                 )
             })?;
         }
-        let mut out = String::with_capacity(self.entries.len().saturating_mul(96));
+        let mut out = String::with_capacity(tuner_cache_string_capacity(self.entries.len()));
         for (key, size) in &self.entries {
             let _ = writeln!(out, "\"{}\" = [{}, {}, {}]", key, size[0], size[1], size[2]);
         }
@@ -239,7 +243,9 @@ fn read_tuner_cache_bounded(path: &Path) -> std::io::Result<String> {
         ));
     }
     let mut text = String::with_capacity(metadata.len() as usize);
-    file.by_ref().take(MAX_TUNER_CACHE_BYTES + 1).read_to_string(&mut text)?;
+    file.by_ref()
+        .take(MAX_TUNER_CACHE_BYTES + 1)
+        .read_to_string(&mut text)?;
     if text.len() as u64 > MAX_TUNER_CACHE_BYTES {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
@@ -291,11 +297,22 @@ impl Tuner {
     /// Candidate workgroup sizes bounded by `max_invocations`.
     #[must_use]
     pub fn candidates_for(&self, max_invocations: u32) -> Vec<u32> {
-        CANDIDATES
-            .iter()
-            .copied()
-            .filter(|candidate| *candidate <= max_invocations)
-            .collect()
+        let mut candidates = Vec::new();
+        candidates
+            .try_reserve_exact(CANDIDATES.len())
+            .unwrap_or_else(|error| {
+                panic!(
+                    "Vyre tuner could not reserve {} workgroup candidate slot(s): {error}. Fix: shrink the candidate table or split tuning into pages.",
+                    CANDIDATES.len()
+                )
+            });
+        candidates.extend(
+            CANDIDATES
+                .iter()
+                .copied()
+                .filter(|candidate| *candidate <= max_invocations),
+        );
+        candidates
     }
 
     /// Default workgroup size used without cache data.
@@ -424,13 +441,21 @@ impl DefaultPolicy {
             return None;
         }
         if feedback.observed_throughput_per_us < self.saturation_threshold_per_us {
-            let grown = current.saturating_mul(2);
+            let grown = current.checked_mul(2)?;
             if grown <= self.adapter_max_workgroup_size_x && grown != current {
                 return Some(grown);
             }
         }
         None
     }
+}
+
+fn tuner_cache_string_capacity(entries: usize) -> usize {
+    entries.checked_mul(96).unwrap_or_else(|| {
+        panic!(
+            "tuner cache entry count {entries} overflows serialized capacity estimate. Fix: shard the tuner cache before formatting."
+        )
+    })
 }
 
 fn dirs_cache_root() -> PathBuf {

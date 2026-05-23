@@ -41,14 +41,26 @@ use crate::device_profile::DeviceProfile;
 /// representations on the cold path and is willing to pay more
 /// extractor work on hot paths.
 pub const HOT_PATH_COST_SCALE: f32 = 0.5;
+/// Integer basis-point form of [`HOT_PATH_COST_SCALE`] used by the release
+/// extraction path.
+pub const HOT_PATH_COST_SCALE_BPS: u32 = 5_000;
 
 /// Default cost multiplier for cold-path nodes.
 pub const COLD_PATH_COST_SCALE: f32 = 1.5;
+/// Integer basis-point form of [`COLD_PATH_COST_SCALE`] used by the release
+/// extraction path.
+pub const COLD_PATH_COST_SCALE_BPS: u32 = 15_000;
 
 /// Default tensor-core throughput multiplier for FP16-eligible ALU
 /// work on a profile that reports both `supports_tensor_cores` and
 /// `supports_f16`. `0.25` = roughly 4× cheaper than f32 ALU.
 pub const TENSOR_CORE_COST_SCALE: f32 = 0.25;
+/// Integer basis-point form of [`TENSOR_CORE_COST_SCALE`] used by the release
+/// extraction path.
+pub const TENSOR_CORE_COST_SCALE_BPS: u32 = 2_500;
+
+const ONE_SCALE_BPS: u32 = 10_000;
+const MAX_SCALE_BPS: u32 = 40_000;
 
 /// Per-node hint bits derived from the foundation analyses.
 ///
@@ -90,42 +102,44 @@ where
     B: Fn(&L) -> u64,
     H: Fn(&L) -> NodeHints,
 {
-    let path_scale = if hot {
-        HOT_PATH_COST_SCALE
+    let path_scale_bps = if hot {
+        HOT_PATH_COST_SCALE_BPS
     } else {
-        COLD_PATH_COST_SCALE
+        COLD_PATH_COST_SCALE_BPS
     };
-    let tensor_scale = if profile.supports_tensor_cores && profile.supports_f16 {
-        TENSOR_CORE_COST_SCALE
+    let tensor_scale_bps = if profile.supports_tensor_cores && profile.supports_f16 {
+        TENSOR_CORE_COST_SCALE_BPS
     } else {
-        1.0
+        ONE_SCALE_BPS
     };
     move |node: &L| {
         let base = base_cost_fn(node);
         let hints = hint_lookup(node);
-        let mut scale = path_scale;
+        let mut scale_bps = path_scale_bps;
         if hints.fp16_eligible {
-            scale *= tensor_scale;
+            scale_bps = compose_scale_basis_points(scale_bps, tensor_scale_bps);
         }
-        scale_cost(base, scale)
+        scale_cost_basis_points(base, scale_bps)
     }
 }
 
-/// Apply a `f32` multiplier to a `u64` cost with saturating semantics.
+/// Apply an integer basis-point multiplier to a `u64` cost with checked,
+/// deterministic rounding.
 ///
-/// Multiplier is clamped to `[0.0, 4.0]` before scaling; the result
-/// is rounded to nearest and returned as `u64`. Negative or NaN
-/// multipliers fall back to the base cost.
-fn scale_cost(base: u64, scale: f32) -> u64 {
-    if !scale.is_finite() || scale <= 0.0 {
+/// Scale is clamped to `[1, 40000]` basis points before scaling; zero
+/// falls back to the base cost to preserve the old invalid-scale contract.
+fn scale_cost_basis_points(base: u64, scale_bps: u32) -> u64 {
+    if scale_bps == 0 {
         return base;
     }
-    let clamped = scale.min(4.0);
-    let scaled = (base as f32) * clamped;
-    if !scaled.is_finite() {
-        return base;
-    }
-    scaled.round().max(0.0) as u64
+    let clamped = scale_bps.min(MAX_SCALE_BPS);
+    let scaled = (u128::from(base) * u128::from(clamped) + 5_000) / 10_000;
+    u64::try_from(scaled).unwrap_or(u64::MAX)
+}
+
+fn compose_scale_basis_points(left_bps: u32, right_bps: u32) -> u32 {
+    let composed = (u64::from(left_bps) * u64::from(right_bps)) / u64::from(ONE_SCALE_BPS);
+    u32::try_from(composed).unwrap_or(u32::MAX)
 }
 
 #[cfg(test)]
@@ -168,11 +182,11 @@ mod tests {
         let cost = device_aware_cost(&profile, /*hot=*/ false, base_cost, no_hints);
         assert_eq!(
             cost(&Toy::Heavy),
-            (100.0 * COLD_PATH_COST_SCALE).round() as u64
+            scale_cost_basis_points(100, COLD_PATH_COST_SCALE_BPS)
         );
         assert_eq!(
             cost(&Toy::Const(0)),
-            (1.0 * COLD_PATH_COST_SCALE).round() as u64
+            scale_cost_basis_points(1, COLD_PATH_COST_SCALE_BPS)
         );
     }
 
@@ -182,11 +196,11 @@ mod tests {
         let cost = device_aware_cost(&profile, /*hot=*/ true, base_cost, no_hints);
         assert_eq!(
             cost(&Toy::Heavy),
-            (100.0 * HOT_PATH_COST_SCALE).round() as u64
+            scale_cost_basis_points(100, HOT_PATH_COST_SCALE_BPS)
         );
         assert_eq!(
             cost(&Toy::Const(0)),
-            (1.0 * HOT_PATH_COST_SCALE).round() as u64
+            scale_cost_basis_points(1, HOT_PATH_COST_SCALE_BPS)
         );
     }
 
@@ -203,12 +217,15 @@ mod tests {
             _ => NodeHints::default(),
         };
         let cost = device_aware_cost(&profile, /*hot=*/ true, base_cost, mark_eligible);
-        let expected = (100.0 * HOT_PATH_COST_SCALE * TENSOR_CORE_COST_SCALE).round() as u64;
+        let expected = scale_cost_basis_points(
+            100,
+            compose_scale_basis_points(HOT_PATH_COST_SCALE_BPS, TENSOR_CORE_COST_SCALE_BPS),
+        );
         assert_eq!(cost(&Toy::Heavy), expected);
         // Const is not fp16-eligible — only hot-path scaling applies.
         assert_eq!(
             cost(&Toy::Const(0)),
-            (1.0 * HOT_PATH_COST_SCALE).round() as u64
+            scale_cost_basis_points(1, HOT_PATH_COST_SCALE_BPS)
         );
     }
 
@@ -224,20 +241,39 @@ mod tests {
         // FP16 hint is ignored on a profile that doesn't support tensor cores.
         assert_eq!(
             cost(&Toy::Heavy),
-            (100.0 * HOT_PATH_COST_SCALE).round() as u64
+            scale_cost_basis_points(100, HOT_PATH_COST_SCALE_BPS)
         );
     }
 
     #[test]
-    fn scale_cost_clamps_high_multiplier() {
-        assert_eq!(scale_cost(10, 100.0), 40); // 10 * 4.0 cap
+    fn scale_cost_clamps_high_multiplier_basis_points() {
+        assert_eq!(scale_cost_basis_points(10, 1_000_000), 40); // 10 * 4.0 cap
     }
 
     #[test]
-    fn scale_cost_falls_back_on_nan_or_negative() {
-        assert_eq!(scale_cost(7, f32::NAN), 7);
-        assert_eq!(scale_cost(7, -1.0), 7);
-        assert_eq!(scale_cost(7, 0.0), 7);
+    fn zero_basis_point_scale_preserves_invalid_scale_contract() {
+        assert_eq!(scale_cost_basis_points(7, 0), 7);
+    }
+
+    #[test]
+    fn extraction_cost_release_path_uses_integer_scaling() {
+        let source = include_str!("extraction_cost.rs");
+        let production = source
+            .split("#[cfg(test)]")
+            .next()
+            .expect("extraction-cost production source must precede tests");
+
+        assert!(
+            production.contains("scale_cost_basis_points")
+                && production.contains("compose_scale_basis_points"),
+            "Fix: extraction cost scaling must use deterministic integer basis-point arithmetic."
+        );
+        assert!(
+            !production.contains("base as f32")
+                && !production.contains("scaled.round()")
+                && !production.contains("scale *= tensor_scale"),
+            "Fix: extraction cost release path must not use lossy float scaling."
+        );
     }
 
     #[test]

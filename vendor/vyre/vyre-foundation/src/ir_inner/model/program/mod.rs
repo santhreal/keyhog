@@ -20,12 +20,13 @@ mod core;
 #[allow(clippy::expect_used)]
 mod meta;
 mod scope;
-mod stats;
+/// Per-node-kind bitset constants for `ProgramStats`.
+pub mod stats;
 
 #[cfg(test)]
-    mod stats_test {
-        include!("stats_test.rs");
-    }
+mod stats_test {
+    include!("stats_test.rs");
+}
 #[cfg(test)]
 mod tests;
 
@@ -33,6 +34,12 @@ pub use self::buffer_decl::{BufferDecl, LinearType, ShapePredicate};
 pub use self::core::Program;
 pub use self::scope::Scope;
 pub use self::stats::ProgramStats;
+pub use self::stats::{
+    NODE_KIND_ASSIGN, NODE_KIND_ASYNC_LOAD, NODE_KIND_ASYNC_STORE, NODE_KIND_ASYNC_WAIT,
+    NODE_KIND_BARRIER, NODE_KIND_BLOCK, NODE_KIND_EXPRESSION_BEARING_MASK, NODE_KIND_IF,
+    NODE_KIND_INDIRECT_DISPATCH, NODE_KIND_LET, NODE_KIND_LOOP, NODE_KIND_OPAQUE, NODE_KIND_REGION,
+    NODE_KIND_RESUME, NODE_KIND_RETURN, NODE_KIND_STORE, NODE_KIND_TRAP,
+};
 
 /// Memory tier requested for a declared program region.
 #[non_exhaustive]
@@ -48,7 +55,7 @@ pub enum MemoryKind {
     Local,
     /// Immutable device memory for the dispatch lifetime.
     Readonly,
-    /// Persistent memory (SSD/NVMe), accessed via AsyncLoad into Global memory.
+    /// Persistent memory (SSD/NVMe), accessed via `AsyncLoad` into Global memory.
     Persistent,
     /// Push constants, root constants, or a uniform-backed fallback.
     Push,

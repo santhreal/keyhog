@@ -1,6 +1,6 @@
 [package]
 name = "vyre-driver-wgpu"
-version = "0.4.1"
+version = "0.4.2"
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
@@ -20,6 +20,7 @@ parity-testing = []
 c-parser = ["vyre-libs/c-parser"]
 math-linalg = ["vyre-libs/math-linalg"]
 math-scan = ["vyre-libs/math-scan"]
+nn-attention = ["vyre-libs/nn-attention"]
 matching-substring = ["vyre-libs/matching-substring"]
 matching-dfa = ["vyre-libs/matching-dfa"]
 matching-nfa = ["vyre-libs/matching-nfa"]
@@ -30,6 +31,7 @@ uring-cmd-nvme = ["vyre-runtime/uring-cmd-nvme"]
 vyre-driver = { workspace = true, features = ["self-substrate-adapters"] }
 vyre-runtime = { workspace = true, features = ["self-substrate-adapters"] }
 vyre-foundation = { workspace = true }
+vyre-self-substrate = { workspace = true }
 vyre-spec = { workspace = true }
 vyre-lower.workspace = true
 vyre-emit-naga.workspace = true
@@ -62,14 +64,23 @@ tokio.workspace = true
 tempfile.workspace = true
 proptest.workspace = true
 vyre.workspace = true
-vyre-libs = { workspace = true, features = ["matching", "parsing", "c-parser"] }
-vyre-primitives = { version = "0.4.1", path = "../vyre-primitives", default-features = false, features = ["graph", "predicate"] }
+vyre-harness.workspace = true
+vyre-self-substrate = { workspace = true }
+vyre-libs = { workspace = true, features = ["matching", "parsing", "c-parser", "nn-attention", "cpu-parity"] }
+vyre-primitives = { version = "0.4.2", path = "../vyre-primitives", default-features = false, features = ["graph", "predicate", "cpu-parity"] }
 vyre-reference = { workspace = true, features = ["subgroup-ops"] }
-vyre-runtime = { version = "0.4.1", path = "../vyre-runtime", features = ["self-substrate-adapters"] }
+vyre-runtime = { version = "0.4.2", path = "../vyre-runtime", features = ["self-substrate-adapters"] }
 vyre-test-harness.workspace = true
 vyre-intrinsics.workspace = true
 tracing-subscriber.workspace = true
 libc = { version = "0.2", default-features = false }
+# LEGO-DEBT (test-only): surgec-grammar-gen is consumed by 7 C11
+# integration tests under tests/c_*. Per the LEGO discipline (vyre
+# never calls anything else), these tests should source their C lexer
+# from `vyre-frontend-c::lex` once that surface stabilises. The
+# dev-dep does not ship in the published crate (no runtime crossing),
+# but it is a test-time inversion to be closed by migration to
+# vyre-frontend-c when the C-frontend lane lands.
 surgec-grammar-gen = { version = "0.6.0", path = "../../../../shared/surgec-grammar-gen" }
 tree-sitter = "=0.26.8"
 tree-sitter-go = "=0.25.0"

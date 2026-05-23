@@ -200,5 +200,6 @@ inventory::submit! {
 
             vec![vec![cfg, labels, keys, vals]]
         }),
+        category: Some("compiler"),
     }
 }

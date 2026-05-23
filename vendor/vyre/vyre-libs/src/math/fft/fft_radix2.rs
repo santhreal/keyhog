@@ -166,7 +166,8 @@ pub fn fft_radix2_complex(input: &str, output: &str, n: u32) -> Result<Program, 
         ],
         [1, 1, 1],
         vec![wrap_anonymous(OP_ID, body)],
-    ))
+    )
+    .with_entry_op_id(OP_ID))
 }
 
 fn bit_reverse(value: u32, bits: usize) -> u32 {
@@ -177,6 +178,29 @@ fn bit_reverse(value: u32, bits: usize) -> u32 {
         v >>= 1;
     }
     result
+}
+
+inventory::submit! {
+    crate::harness::OpEntry {
+        id: OP_ID,
+        build: || fft_radix2_complex("input", "output", 4)
+            .unwrap_or_else(|_| unreachable!("Fix: catalog fixture uses a valid radix-2 FFT size.")),
+        test_inputs: Some(|| {
+            let f32_bytes = |w: &[f32]| {
+                w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>()
+            };
+            vec![vec![
+                f32_bytes(&[1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
+            ]]
+        }),
+        expected_output: Some(|| {
+            let f32_bytes = |w: &[f32]| {
+                w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>()
+            };
+            vec![vec![f32_bytes(&[1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0])]]
+        }),
+        category: Some("math"),
+    }
 }
 
 #[cfg(test)]

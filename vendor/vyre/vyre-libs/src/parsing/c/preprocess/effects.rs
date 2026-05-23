@@ -1,15 +1,19 @@
 //! Side-effect metadata for preprocessor directives.
 
+#[cfg(any(test, feature = "cpu-parity"))]
+use crate::parsing::c::lex::tokens::TOK_PREPROC;
 use crate::parsing::c::lex::tokens::{
     TOK_PP_EFFECT_ERROR_DIAGNOSTIC, TOK_PP_EFFECT_IDENT, TOK_PP_EFFECT_INCLUDE,
     TOK_PP_EFFECT_INCLUDE_NEXT, TOK_PP_EFFECT_LINE, TOK_PP_EFFECT_PRAGMA,
     TOK_PP_EFFECT_PRAGMA_DIAGNOSTIC_ERROR, TOK_PP_EFFECT_PRAGMA_DIAGNOSTIC_IGNORED,
     TOK_PP_EFFECT_PRAGMA_DIAGNOSTIC_POP, TOK_PP_EFFECT_PRAGMA_DIAGNOSTIC_PUSH,
     TOK_PP_EFFECT_PRAGMA_DIAGNOSTIC_WARNING, TOK_PP_EFFECT_PRAGMA_ONCE, TOK_PP_EFFECT_SCCS,
-    TOK_PP_EFFECT_WARNING_DIAGNOSTIC, TOK_PREPROC,
+    TOK_PP_EFFECT_WARNING_DIAGNOSTIC,
 };
+#[cfg(any(test, feature = "cpu-parity"))]
+use crate::parsing::c::preprocess::c_logical_directive_len;
 use crate::parsing::c::preprocess::{
-    c_logical_directive_len, c_translation_phase_line_splice, try_classify_preprocessor_directive,
+    c_directive_payload, c_translation_phase_line_splice, try_classify_preprocessor_directive,
     CPreprocessorDirectiveKind, CPreprocessorError,
 };
 
@@ -114,10 +118,10 @@ pub fn classify_c_preprocessor_side_effect(
         err.offset = directive_offset + spliced.original_offset(err.offset);
         err
     })?;
-    let payload = spliced
-        .bytes
-        .get(directive.payload_start..directive.logical_end)
-        .unwrap_or_default();
+    let payload = c_directive_payload(&spliced.bytes, directive).map_err(|mut err| {
+        err.offset = directive_offset + spliced.original_offset(err.offset);
+        err
+    })?;
     let payload_start = directive_offset + spliced.original_offset(directive.payload_start);
     let payload_end = directive_offset + spliced.original_offset(directive.logical_end);
     let payload_len = payload_end.saturating_sub(payload_start);
@@ -184,6 +188,10 @@ pub fn classify_c_preprocessor_side_effect(
 ///
 /// Returns a diagnostic when token streams are inconsistent or a directive span
 /// is invalid.
+#[deprecated(
+    note = "CPU reference oracle only; production side-effect metadata must use GPU preprocessor classification"
+)]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn reference_c_preprocessor_side_effect_metadata(
     tok_types: &[u32],
     tok_starts: &[u32],

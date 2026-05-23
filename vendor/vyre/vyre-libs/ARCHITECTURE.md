@@ -11,8 +11,8 @@ zstd-block. Composes `match::dfa` + `bitset` + `scatter`.
 
 ### `matching/`
 Pattern-matching primitives: `aho_corasick`, `dfa_compile`,
-`dfa_compile_with_budget`, `substring_search`. Surgec's pattern
-pre-pass uses these.
+`dfa_compile_with_budget`, `substring_search`. Downstream pattern
+pre-passes use these.
 
 ### `math/`
 Arithmetic primitives, atomic-style ops, fixed-point, hash-
@@ -32,7 +32,7 @@ sanitizer_cut_csr, path_reconstruct.
 
 ### `dataflow/`
 Bitset-fixpoint, frontier_advance, dataflow_join. The substrate
-weir runs IFDS over.
+dataflow engines run IFDS over.
 
 ### `parsing/`
 Source-language parsers (C/C++/Rust/Go/Python/JS/TS) wrapped as
@@ -67,7 +67,7 @@ Discovery surface — `vyre-libs::harness::iter()` enumerates every
 shipped op.
 
 ### `representation/`
-Frozen wire-form types that surgec relies on (PackedAst,
+Frozen wire-form types that downstream frontends rely on (PackedAst,
 PgBuffers carrier, etc.).
 
 ### `range_ordering.rs`
@@ -75,7 +75,7 @@ Sorted-range helpers used by the matching + dataflow stacks.
 
 ## Public types
 
-- **`security::*`** — surgec consumes these: `flows_to`,
+- **`security::*`** — downstream analyzers consume these: `flows_to`,
   `sanitized_by`, `bounded_by_comparison`, `dominator_tree`,
   `label_by_family`, `path_reconstruct`, `aliases_dataflow`.
 - **`matching::CompiledDfa`** — DFA build result.
@@ -84,7 +84,7 @@ Sorted-range helpers used by the matching + dataflow stacks.
 
 ## Integration points
 
-- Consumed by surgec for every predicate that lowers to a
+- Consumed by downstream analyzers for every predicate that lowers to a
   composition.
 - Consumed by `vyre-runtime` for higher-level pipeline
   scheduling.

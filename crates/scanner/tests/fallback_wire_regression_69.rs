@@ -54,7 +54,9 @@ fn asana_pat_fires_after_fallback_wire_fix() {
             m.detector_id, m.credential
         );
     }
-    let asana_fired = matches.iter().any(|m| m.detector_id.as_ref() == "asana-pat");
+    let asana_fired = matches
+        .iter()
+        .any(|m| m.detector_id.as_ref() == "asana-pat");
     assert!(
         asana_fired,
         "asana-pat must fire on the canonical 1/userid/token sample (issue #69 fix)."

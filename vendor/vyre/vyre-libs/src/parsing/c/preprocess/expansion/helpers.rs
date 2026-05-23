@@ -1,4 +1,4 @@
-//! Audit-fix A35 `expansion/helpers.rs` extract.
+//! Shared GPU macro-expansion helper builders.
 
 use crate::parsing::c::preprocess::synthesis::*;
 use vyre::ir::{Expr, Node};
@@ -152,7 +152,7 @@ pub(super) fn emit_macro_hash_lookup(
                                     ),
                                     Expr::gt(
                                         Expr::var(&candidate_name_end),
-                                        Expr::u32(MACRO_NAME_BYTES),
+                                        Expr::buf_len(macro_name_words),
                                     ),
                                 ),
                                 vec![Node::trap(

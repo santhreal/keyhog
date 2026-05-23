@@ -44,3 +44,27 @@ pub enum AtomicOp {
     /// lowerings. Wire encoding is `0x80 ++ u32 extension_id`.
     Opaque(ExtensionAtomicOpId),
 }
+
+impl AtomicOp {
+    /// Frozen builtin wire tag for this atomic operation.
+    ///
+    /// Returns `None` for extension-declared opaque operators because their
+    /// wire representation is the high-bit extension id, not a core tag.
+    #[must_use]
+    pub const fn builtin_wire_tag(&self) -> Option<u8> {
+        match self {
+            Self::Add => Some(0x01),
+            Self::Or => Some(0x02),
+            Self::And => Some(0x03),
+            Self::Xor => Some(0x04),
+            Self::Min => Some(0x05),
+            Self::Max => Some(0x06),
+            Self::Exchange => Some(0x07),
+            Self::CompareExchange => Some(0x08),
+            Self::CompareExchangeWeak => Some(0x09),
+            Self::FetchNand => Some(0x0A),
+            Self::LruUpdate => Some(0x0B),
+            Self::Opaque(_) => None,
+        }
+    }
+}

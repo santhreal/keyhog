@@ -40,10 +40,10 @@ pub struct OptimizationCorpusManifest {
     pub verified_cases: usize,
     /// Number of cases changed by the canonical optimization pipeline.
     pub optimized_cases: usize,
-    /// Number of cases that exercise Weir dataflow-aware rewrites.
-    pub weir_dataflow_cases: usize,
-    /// Number of Weir dataflow-aware cases that actually fired.
-    pub weir_dataflow_optimized_cases: usize,
+    /// Number of cases that exercise Dataflow-aware rewrites.
+    pub dataflow_cases: usize,
+    /// Number of Dataflow-aware cases that actually fired.
+    pub dataflow_optimized_cases: usize,
     /// Number of cases that exhausted rewrite convergence fuel.
     pub non_converged_cases: usize,
     /// Total operation count before optimization.
@@ -93,8 +93,8 @@ pub fn manifest_for(cases: &[OptimizationCorpusCase]) -> OptimizationCorpusManif
         generated_cases: cases.len(),
         verified_cases: validation.verified_cases,
         optimized_cases: validation.optimized_cases,
-        weir_dataflow_cases: validation.weir_dataflow_cases,
-        weir_dataflow_optimized_cases: validation.weir_dataflow_optimized_cases,
+        dataflow_cases: validation.dataflow_cases,
+        dataflow_optimized_cases: validation.dataflow_optimized_cases,
         non_converged_cases: validation.non_converged_cases,
         total_ops_before: validation.total_ops_before,
         total_ops_after: validation.total_ops_after,
@@ -116,10 +116,10 @@ pub struct OptimizationCorpusValidation {
     pub verified_cases: usize,
     /// Number of generated descriptors changed by optimization.
     pub optimized_cases: usize,
-    /// Number of generated descriptors using Weir dataflow facts.
-    pub weir_dataflow_cases: usize,
-    /// Number of Weir dataflow descriptors changed by Weir-aware optimization.
-    pub weir_dataflow_optimized_cases: usize,
+    /// Number of generated descriptors using Dataflow facts.
+    pub dataflow_cases: usize,
+    /// Number of Dataflow descriptors changed by Weir-aware optimization.
+    pub dataflow_optimized_cases: usize,
     /// Number of descriptors that did not converge.
     pub non_converged_cases: usize,
     /// Total operation count before optimization.
@@ -136,8 +136,8 @@ pub struct OptimizationCorpusValidation {
 pub fn validate_release_corpus(cases: &[OptimizationCorpusCase]) -> OptimizationCorpusValidation {
     let mut verified_cases = 0usize;
     let mut optimized_cases = 0usize;
-    let mut weir_dataflow_cases = 0usize;
-    let mut weir_dataflow_optimized_cases = 0usize;
+    let mut dataflow_cases = 0usize;
+    let mut dataflow_optimized_cases = 0usize;
     let mut non_converged_cases = 0usize;
     let mut total_ops_before = 0usize;
     let mut total_ops_after = 0usize;
@@ -159,13 +159,13 @@ pub fn validate_release_corpus(cases: &[OptimizationCorpusCase]) -> Optimization
                         case.id
                     ));
                 }
-                if case.family.starts_with("weir-dataflow-") {
-                    weir_dataflow_cases += 1;
-                    let alias_facts = weir_release_alias_facts();
-                    let reaching_defs = weir_release_reaching_defs(&case.family);
-                    let (optimized, weir_stats) = if case.family == "weir-dataflow-loop-fission" {
+                if case.family.starts_with("dataflow-") {
+                    dataflow_cases += 1;
+                    let alias_facts = release_alias_facts();
+                    let reaching_defs = release_reaching_defs(&case.family);
+                    let (optimized, dataflow_stats) = if case.family == "dataflow-loop-fission" {
                         (
-                            crate::rewrites::loop_fission_with_weir_dataflow_facts(
+                            crate::rewrites::loop_fission_with_dataflow_facts(
                                 &case.descriptor,
                                 &alias_facts,
                                 &reaching_defs,
@@ -182,24 +182,24 @@ pub fn validate_release_corpus(cases: &[OptimizationCorpusCase]) -> Optimization
                             },
                         )
                     } else {
-                        crate::rewrites::run_all_with_weir_dataflow_stats(
+                        crate::rewrites::run_all_with_dataflow_stats(
                             &case.descriptor,
                             &alias_facts,
                             &reaching_defs,
                         )
                     };
-                    if !weir_dataflow_case_fired(&case.family, &case.descriptor, &optimized) {
+                    if !dataflow_case_fired(&case.family, &case.descriptor, &optimized) {
                         blockers.push(format!(
-                            "case `{}` did not fire under Weir dataflow-aware optimization",
+                            "case `{}` did not fire under Dataflow-aware optimization",
                             case.id
                         ));
                     } else {
-                        weir_dataflow_optimized_cases += 1;
+                        dataflow_optimized_cases += 1;
                     }
-                    if !weir_stats.converged {
+                    if !dataflow_stats.converged {
                         non_converged_cases += 1;
                         blockers.push(format!(
-                            "case `{}` did not converge under Weir dataflow-aware rewrite fuel",
+                            "case `{}` did not converge under Dataflow-aware rewrite fuel",
                             case.id
                         ));
                     }
@@ -215,8 +215,8 @@ pub fn validate_release_corpus(cases: &[OptimizationCorpusCase]) -> Optimization
     OptimizationCorpusValidation {
         verified_cases,
         optimized_cases,
-        weir_dataflow_cases,
-        weir_dataflow_optimized_cases,
+        dataflow_cases,
+        dataflow_optimized_cases,
         non_converged_cases,
         total_ops_before,
         total_ops_after,
@@ -228,14 +228,14 @@ fn store_count(body: &KernelBody) -> usize {
     let local = body
         .ops
         .iter()
-        .filter(|op| matches!(op.kind, KernelOpKind::StoreGlobal | KernelOpKind::StoreShared))
+        .filter(|op| {
+            matches!(
+                op.kind,
+                KernelOpKind::StoreGlobal | KernelOpKind::StoreShared
+            )
+        })
         .count();
-    local
-        + body
-            .child_bodies
-            .iter()
-            .map(store_count)
-            .sum::<usize>()
+    local + body.child_bodies.iter().map(store_count).sum::<usize>()
 }
 
 fn loop_count(body: &KernelBody) -> usize {
@@ -244,12 +244,7 @@ fn loop_count(body: &KernelBody) -> usize {
         .iter()
         .filter(|op| matches!(op.kind, KernelOpKind::StructuredForLoop { .. }))
         .count();
-    local
-        + body
-            .child_bodies
-            .iter()
-            .map(loop_count)
-            .sum::<usize>()
+    local + body.child_bodies.iter().map(loop_count).sum::<usize>()
 }
 
 fn top_level_load_count(body: &KernelBody) -> usize {
@@ -259,29 +254,25 @@ fn top_level_load_count(body: &KernelBody) -> usize {
         .count()
 }
 
-fn weir_dataflow_case_fired(
-    family: &str,
-    before: &KernelDescriptor,
-    after: &KernelDescriptor,
-) -> bool {
+fn dataflow_case_fired(family: &str, before: &KernelDescriptor, after: &KernelDescriptor) -> bool {
     match family {
-        "weir-dataflow-dse" => store_count(&after.body) < store_count(&before.body),
-        "weir-dataflow-loop-fusion" => loop_count(&after.body) < loop_count(&before.body),
-        "weir-dataflow-loop-fission" => loop_count(&after.body) > loop_count(&before.body),
-        "weir-dataflow-licm" => top_level_load_count(&after.body) > top_level_load_count(&before.body),
+        "dataflow-dse" => store_count(&after.body) < store_count(&before.body),
+        "dataflow-loop-fusion" => loop_count(&after.body) < loop_count(&before.body),
+        "dataflow-loop-fission" => loop_count(&after.body) > loop_count(&before.body),
+        "dataflow-licm" => top_level_load_count(&after.body) > top_level_load_count(&before.body),
         _ => after != before,
     }
 }
 
-fn weir_release_alias_facts() -> crate::analyses::weir_alias::AliasFactSet {
-    let mut facts = crate::analyses::weir_alias::AliasFactSet::default();
-    facts.insert_no_alias(crate::analyses::weir_alias::NoAliasFact {
+fn release_alias_facts() -> crate::analyses::alias_facts::AliasFactSet {
+    let mut facts = crate::analyses::alias_facts::AliasFactSet::default();
+    facts.insert_no_alias(crate::analyses::alias_facts::NoAliasFact {
         left_binding: 0,
         left_index: 10,
         right_binding: 0,
         right_index: 11,
     });
-    facts.insert_no_alias(crate::analyses::weir_alias::NoAliasFact {
+    facts.insert_no_alias(crate::analyses::alias_facts::NoAliasFact {
         left_binding: 0,
         left_index: 11,
         right_binding: 0,
@@ -290,11 +281,9 @@ fn weir_release_alias_facts() -> crate::analyses::weir_alias::AliasFactSet {
     facts
 }
 
-fn weir_release_reaching_defs(
-    family: &str,
-) -> crate::analyses::weir_reaching_def::ReachingDefFactSet {
-    let mut facts = crate::analyses::weir_reaching_def::ReachingDefFactSet::default();
-    if family == "weir-dataflow-dse" {
+fn release_reaching_defs(family: &str) -> crate::analyses::reaching_def_facts::ReachingDefFactSet {
+    let mut facts = crate::analyses::reaching_def_facts::ReachingDefFactSet::default();
+    if family == "dataflow-dse" {
         facts.set_reaching_defs(20, vec![10]);
     } else {
         facts.set_reaching_defs(20, vec![11]);
@@ -310,33 +299,102 @@ fn push_algebraic_cases(seed: u32, cases: &mut Vec<OptimizationCorpusCase>) {
         ("mul_one", BinOp::Mul, LiteralValue::U32(1)),
         ("mul_pow2", BinOp::Mul, LiteralValue::U32(1 << (seed % 16))),
         ("div_one", BinOp::Div, LiteralValue::U32(1)),
-        ("mod_pow2", BinOp::Mod, LiteralValue::U32(1 << ((seed % 15) + 1))),
+        (
+            "mod_pow2",
+            BinOp::Mod,
+            LiteralValue::U32(1 << ((seed % 15) + 1)),
+        ),
         ("bitand_all", BinOp::BitAnd, LiteralValue::U32(u32::MAX)),
         ("bitor_zero", BinOp::BitOr, LiteralValue::U32(0)),
         ("xor_zero", BinOp::BitXor, LiteralValue::U32(0)),
     ] {
-        cases.push(binary_case("algebraic", name, seed, op, LiteralValue::U32(seed), rhs));
+        cases.push(binary_case(
+            "algebraic",
+            name,
+            seed,
+            op,
+            LiteralValue::U32(seed),
+            rhs,
+        ));
     }
-    cases.push(egraph_constant_chain_case("add_const_chain", seed, BinOp::Add));
-    cases.push(egraph_constant_chain_case("mul_const_chain", seed, BinOp::Mul));
-    cases.push(egraph_constant_chain_case("bitand_const_chain", seed, BinOp::BitAnd));
-    cases.push(egraph_constant_chain_case("bitor_const_chain", seed, BinOp::BitOr));
-    cases.push(egraph_constant_chain_case("bitxor_const_chain", seed, BinOp::BitXor));
+    cases.push(egraph_constant_chain_case(
+        "add_const_chain",
+        seed,
+        BinOp::Add,
+    ));
+    cases.push(egraph_constant_chain_case(
+        "mul_const_chain",
+        seed,
+        BinOp::Mul,
+    ));
+    cases.push(egraph_constant_chain_case(
+        "bitand_const_chain",
+        seed,
+        BinOp::BitAnd,
+    ));
+    cases.push(egraph_constant_chain_case(
+        "bitor_const_chain",
+        seed,
+        BinOp::BitOr,
+    ));
+    cases.push(egraph_constant_chain_case(
+        "bitxor_const_chain",
+        seed,
+        BinOp::BitXor,
+    ));
 }
 
 fn push_boolean_cases(seed: u32, cases: &mut Vec<OptimizationCorpusCase>) {
     for (name, op, lhs, rhs) in [
-        ("and_true", BinOp::And, LiteralValue::Bool(seed & 1 == 0), LiteralValue::Bool(true)),
-        ("or_false", BinOp::Or, LiteralValue::Bool(seed & 1 == 1), LiteralValue::Bool(false)),
-        ("eq_self", BinOp::Eq, LiteralValue::U32(seed), LiteralValue::U32(seed)),
-        ("ne_self", BinOp::Ne, LiteralValue::U32(seed), LiteralValue::U32(seed)),
-        ("lt_const", BinOp::Lt, LiteralValue::U32(seed), LiteralValue::U32(seed + 1)),
-        ("ge_const", BinOp::Ge, LiteralValue::U32(seed + 1), LiteralValue::U32(seed)),
+        (
+            "and_true",
+            BinOp::And,
+            LiteralValue::Bool(seed & 1 == 0),
+            LiteralValue::Bool(true),
+        ),
+        (
+            "or_false",
+            BinOp::Or,
+            LiteralValue::Bool(seed & 1 == 1),
+            LiteralValue::Bool(false),
+        ),
+        (
+            "eq_self",
+            BinOp::Eq,
+            LiteralValue::U32(seed),
+            LiteralValue::U32(seed),
+        ),
+        (
+            "ne_self",
+            BinOp::Ne,
+            LiteralValue::U32(seed),
+            LiteralValue::U32(seed),
+        ),
+        (
+            "lt_const",
+            BinOp::Lt,
+            LiteralValue::U32(seed),
+            LiteralValue::U32(seed + 1),
+        ),
+        (
+            "ge_const",
+            BinOp::Ge,
+            LiteralValue::U32(seed + 1),
+            LiteralValue::U32(seed),
+        ),
     ] {
         cases.push(binary_case("predicate", name, seed, op, lhs, rhs));
     }
-    cases.push(egraph_boolean_chain_case("bool_and_const_chain", seed, BinOp::And));
-    cases.push(egraph_boolean_chain_case("bool_or_const_chain", seed, BinOp::Or));
+    cases.push(egraph_boolean_chain_case(
+        "bool_and_const_chain",
+        seed,
+        BinOp::And,
+    ));
+    cases.push(egraph_boolean_chain_case(
+        "bool_or_const_chain",
+        seed,
+        BinOp::Or,
+    ));
     cases.push(unary_case(
         "predicate",
         "not_not",
@@ -365,7 +423,7 @@ fn push_memory_cases(seed: u32, cases: &mut Vec<OptimizationCorpusCase>) {
         for visibility in visibilities {
             let mut desc = literal_descriptor("memory", "binding_layout", seed);
             desc.bindings.slots.push(BindingSlot {
-                slot: seed % 16,
+                slot: slot_for_memory_class(seed % 16, memory_class),
                 element_type: DataType::U32,
                 element_count: Some(256 + seed),
                 memory_class,
@@ -379,17 +437,17 @@ fn push_memory_cases(seed: u32, cases: &mut Vec<OptimizationCorpusCase>) {
             });
         }
     }
-    cases.push(weir_dataflow_dse_case(seed));
+    cases.push(dataflow_dse_case(seed));
 }
 
-fn weir_dataflow_dse_case(seed: u32) -> OptimizationCorpusCase {
-    let family = "weir-dataflow-dse";
+fn dataflow_dse_case(seed: u32) -> OptimizationCorpusCase {
+    let family = "dataflow-dse";
     let mut desc = literal_descriptor(family, "equivalent_dynamic_index", seed);
     desc.bindings.slots = vec![buffer_slot(
         0,
         MemoryClass::Global,
         BindingVisibility::ReadWrite,
-        "weir_dse_buf",
+        "dse_buf",
     )];
     desc.body.literals = vec![
         LiteralValue::U32(seed % 64),
@@ -457,13 +515,13 @@ fn push_control_cases(seed: u32, cases: &mut Vec<OptimizationCorpusCase>) {
         family: "control-flow".to_string(),
         descriptor: desc,
     });
-    cases.push(weir_dataflow_loop_fusion_case(seed));
-    cases.push(weir_dataflow_loop_fission_case(seed));
-    cases.push(weir_dataflow_licm_case(seed));
+    cases.push(dataflow_loop_fusion_case(seed));
+    cases.push(dataflow_loop_fission_case(seed));
+    cases.push(dataflow_licm_case(seed));
 }
 
-fn weir_dataflow_loop_fusion_case(seed: u32) -> OptimizationCorpusCase {
-    let family = "weir-dataflow-loop-fusion";
+fn dataflow_loop_fusion_case(seed: u32) -> OptimizationCorpusCase {
+    let family = "dataflow-loop-fusion";
     let mut desc = loop_descriptor_with_parent_values(family, "equivalent_alias_indices", seed);
     desc.body.ops.push(structured_loop(0));
     desc.body.ops.push(structured_loop(1));
@@ -486,8 +544,8 @@ fn weir_dataflow_loop_fusion_case(seed: u32) -> OptimizationCorpusCase {
     }
 }
 
-fn weir_dataflow_loop_fission_case(seed: u32) -> OptimizationCorpusCase {
-    let family = "weir-dataflow-loop-fission";
+fn dataflow_loop_fission_case(seed: u32) -> OptimizationCorpusCase {
+    let family = "dataflow-loop-fission";
     let mut desc = loop_descriptor_with_parent_values(family, "equivalent_alias_indices", seed);
     desc.body.ops.push(structured_loop(0));
     desc.body.child_bodies = vec![KernelBody {
@@ -502,11 +560,12 @@ fn weir_dataflow_loop_fission_case(seed: u32) -> OptimizationCorpusCase {
     }
 }
 
-fn weir_dataflow_licm_case(seed: u32) -> OptimizationCorpusCase {
-    let family = "weir-dataflow-licm";
+fn dataflow_licm_case(seed: u32) -> OptimizationCorpusCase {
+    let family = "dataflow-licm";
     let mut desc = loop_descriptor_with_parent_values(family, "equivalent_alias_indices", seed);
     let index_literal = desc.body.literals.len() as u32;
-    desc.body.literals
+    desc.body
+        .literals
         .push(LiteralValue::U32(seed.wrapping_add(13)));
     desc.body.ops.push(KernelOp {
         kind: KernelOpKind::Literal,
@@ -528,7 +587,7 @@ fn weir_dataflow_licm_case(seed: u32) -> OptimizationCorpusCase {
             },
             KernelOp {
                 kind: KernelOpKind::StoreGlobal,
-                operands: vec![0, 40, 31],
+                operands: vec![0, 40, 50],
                 result: None,
             },
         ],
@@ -548,7 +607,7 @@ fn loop_descriptor_with_parent_values(family: &str, name: &str, seed: u32) -> Ke
         0,
         MemoryClass::Global,
         BindingVisibility::ReadWrite,
-        "weir_loop_buf",
+        "loop_buf",
     )];
     desc.body.literals = vec![
         LiteralValue::U32(0),
@@ -649,8 +708,18 @@ fn coalesce_fixture_case(seed: u32, name: &str) -> OptimizationCorpusCase {
     let family = "A13-coalesce-fixture";
     let mut desc = literal_descriptor(family, name, seed);
     desc.bindings.slots = vec![
-        buffer_slot(0, MemoryClass::Global, BindingVisibility::ReadOnly, "coalesce_in"),
-        buffer_slot(1, MemoryClass::Global, BindingVisibility::WriteOnly, "coalesce_out"),
+        buffer_slot(
+            0,
+            MemoryClass::Global,
+            BindingVisibility::ReadOnly,
+            "coalesce_in",
+        ),
+        buffer_slot(
+            1,
+            MemoryClass::Global,
+            BindingVisibility::WriteOnly,
+            "coalesce_out",
+        ),
     ];
     desc.body.literals = vec![LiteralValue::U32(if name == "strided" {
         4
@@ -707,8 +776,18 @@ fn shared_mem_promote_fixture_case(seed: u32) -> OptimizationCorpusCase {
     let family = "A14-shared-mem-promote-fixture";
     let mut desc = literal_descriptor(family, "repeated_global_tile_load", seed);
     desc.bindings.slots = vec![
-        buffer_slot(0, MemoryClass::Global, BindingVisibility::ReadOnly, "tile_in"),
-        buffer_slot(1, MemoryClass::Global, BindingVisibility::WriteOnly, "tile_out"),
+        buffer_slot(
+            0,
+            MemoryClass::Global,
+            BindingVisibility::ReadOnly,
+            "tile_in",
+        ),
+        buffer_slot(
+            1,
+            MemoryClass::Global,
+            BindingVisibility::WriteOnly,
+            "tile_out",
+        ),
     ];
     desc.body.literals = vec![LiteralValue::U32((seed % 8) + 1)];
     desc.body.ops = vec![
@@ -748,9 +827,20 @@ fn shared_mem_promote_fixture_case(seed: u32) -> OptimizationCorpusCase {
 fn bank_conflict_fixture_case(seed: u32) -> OptimizationCorpusCase {
     let family = "A15-bank-conflict-fixture";
     let mut desc = literal_descriptor(family, "shared_stride_32", seed);
+    let shared_tile_slot = crate::lower::WORKGROUP_SLOT_BASE;
     desc.bindings.slots = vec![
-        buffer_slot(0, MemoryClass::Shared, BindingVisibility::ReadWrite, "shared_tile"),
-        buffer_slot(1, MemoryClass::Global, BindingVisibility::WriteOnly, "bank_out"),
+        buffer_slot(
+            0,
+            MemoryClass::Shared,
+            BindingVisibility::ReadWrite,
+            "shared_tile",
+        ),
+        buffer_slot(
+            1,
+            MemoryClass::Global,
+            BindingVisibility::WriteOnly,
+            "bank_out",
+        ),
     ];
     desc.body.literals = vec![LiteralValue::U32(32)];
     desc.body.ops = vec![
@@ -771,7 +861,7 @@ fn bank_conflict_fixture_case(seed: u32) -> OptimizationCorpusCase {
         },
         KernelOp {
             kind: KernelOpKind::LoadShared,
-            operands: vec![0, 2],
+            operands: vec![shared_tile_slot, 2],
             result: Some(3),
         },
         KernelOp {
@@ -791,8 +881,18 @@ fn vec_pack_fixture_case(seed: u32) -> OptimizationCorpusCase {
     let family = "A16-vec-pack-fixture";
     let mut desc = literal_descriptor(family, "contiguous_u32x4", seed);
     desc.bindings.slots = vec![
-        buffer_slot(0, MemoryClass::Global, BindingVisibility::ReadOnly, "vec_in"),
-        buffer_slot(1, MemoryClass::Global, BindingVisibility::WriteOnly, "vec_out"),
+        buffer_slot(
+            0,
+            MemoryClass::Global,
+            BindingVisibility::ReadOnly,
+            "vec_in",
+        ),
+        buffer_slot(
+            1,
+            MemoryClass::Global,
+            BindingVisibility::WriteOnly,
+            "vec_out",
+        ),
     ];
     desc.body.literals = vec![
         LiteralValue::U32(4),
@@ -872,12 +972,20 @@ fn buffer_slot(
     name: &str,
 ) -> BindingSlot {
     BindingSlot {
-        slot,
+        slot: slot_for_memory_class(slot, memory_class),
         element_type: DataType::U32,
         element_count: Some(4096),
         memory_class,
         visibility,
         name: name.to_string(),
+    }
+}
+
+fn slot_for_memory_class(slot: u32, memory_class: MemoryClass) -> u32 {
+    if matches!(memory_class, MemoryClass::Shared | MemoryClass::Scratch) {
+        crate::lower::WORKGROUP_SLOT_BASE + slot
+    } else {
+        slot
     }
 }
 

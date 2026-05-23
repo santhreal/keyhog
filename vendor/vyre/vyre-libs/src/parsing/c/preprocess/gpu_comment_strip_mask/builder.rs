@@ -1,0 +1,496 @@
+use super::*;
+
+/// Build the 17b.5 comment-strip-mask `Program`.
+#[must_use]
+pub fn gpu_comment_strip_mask(byte_count: u32) -> Program {
+    // Real-GPU note: U8 storage buffers emit as `array<u32>`; load
+    // returns the u32 word at index `addr`. Reference-eval is byte-
+    // addressed. Declaring `bytes_in` as packed U32 below makes both
+    // backends agree; this helper extracts the byte explicitly.
+    let load_byte_u32 = |addr: Expr| -> Expr {
+        let word_idx = Expr::div(addr.clone(), Expr::u32(4));
+        let byte_in_word = Expr::rem(addr, Expr::u32(4));
+        let word = Expr::cast(DataType::U32, Expr::load("bytes_in", word_idx));
+        let shift = Expr::mul(byte_in_word, Expr::u32(8));
+        Expr::bitand(Expr::shr(word, shift), Expr::u32(0xFF))
+    };
+    let safe_load = |addr: Expr| -> Expr {
+        Expr::select(
+            Expr::lt(addr.clone(), Expr::u32(byte_count)),
+            load_byte_u32(addr),
+            Expr::u32(0),
+        )
+    };
+
+    // One GPU lane walks the byte stream
+    // sequentially, maintaining (in_line, in_block) state. Every byte
+    // either gets `0` (code) or `1` (comment) written to
+    // `comment_mask_out`.
+    let body: Vec<Node> = vec![Node::if_then(
+        Expr::eq(Expr::InvocationId { axis: 0 }, Expr::u32(0)),
+        vec![
+            Node::let_bind("in_line", Expr::u32(0)),
+            Node::let_bind("in_block", Expr::u32(0)),
+            Node::let_bind("in_string", Expr::u32(0)),
+            Node::let_bind("in_char", Expr::u32(0)),
+            Node::let_bind("escaped", Expr::u32(0)),
+            Node::let_bind("i", Expr::u32(0)),
+            Node::loop_for(
+                "step",
+                Expr::u32(0),
+                Expr::u32(byte_count),
+                vec![
+                    Node::let_bind("b", safe_load(Expr::var("i"))),
+                    Node::let_bind("b1", safe_load(Expr::add(Expr::var("i"), Expr::u32(1)))),
+                    Node::let_bind("b2", safe_load(Expr::add(Expr::var("i"), Expr::u32(2)))),
+                    Node::let_bind("b3", safe_load(Expr::add(Expr::var("i"), Expr::u32(3)))),
+                    Node::let_bind("b4", safe_load(Expr::add(Expr::var("i"), Expr::u32(4)))),
+                    // Default mask value for this byte = currently in
+                    // any comment.
+                    Node::let_bind(
+                        "mask",
+                        Expr::select(
+                            Expr::or(
+                                Expr::eq(Expr::var("in_line"), Expr::u32(1)),
+                                Expr::eq(Expr::var("in_block"), Expr::u32(1)),
+                            ),
+                            Expr::u32(1),
+                            Expr::u32(0),
+                        ),
+                    ),
+                    // Detect comment open when not inside any comment or literal.
+                    Node::if_then(
+                        Expr::and(
+                            Expr::and(
+                                Expr::eq(Expr::var("in_line"), Expr::u32(0)),
+                                Expr::eq(Expr::var("in_block"), Expr::u32(0)),
+                            ),
+                            Expr::and(
+                                Expr::eq(Expr::var("in_string"), Expr::u32(0)),
+                                Expr::eq(Expr::var("in_char"), Expr::u32(0)),
+                            ),
+                        ),
+                        vec![
+                            // `//` opens a line comment.
+                            Node::if_then(
+                                Expr::and(
+                                    Expr::eq(Expr::var("b"), Expr::u32(b'/' as u32)),
+                                    Expr::or(
+                                        Expr::eq(Expr::var("b1"), Expr::u32(b'/' as u32)),
+                                        Expr::or(
+                                            Expr::and(
+                                                Expr::and(
+                                                    Expr::eq(
+                                                        Expr::var("b1"),
+                                                        Expr::u32(b'\\' as u32),
+                                                    ),
+                                                    Expr::eq(
+                                                        Expr::var("b2"),
+                                                        Expr::u32(b'\n' as u32),
+                                                    ),
+                                                ),
+                                                Expr::eq(Expr::var("b3"), Expr::u32(b'/' as u32)),
+                                            ),
+                                            Expr::and(
+                                                Expr::and(
+                                                    Expr::and(
+                                                        Expr::eq(
+                                                            Expr::var("b1"),
+                                                            Expr::u32(b'\\' as u32),
+                                                        ),
+                                                        Expr::eq(
+                                                            Expr::var("b2"),
+                                                            Expr::u32(b'\r' as u32),
+                                                        ),
+                                                    ),
+                                                    Expr::eq(
+                                                        Expr::var("b3"),
+                                                        Expr::u32(b'\n' as u32),
+                                                    ),
+                                                ),
+                                                Expr::eq(Expr::var("b4"), Expr::u32(b'/' as u32)),
+                                            ),
+                                        ),
+                                    ),
+                                ),
+                                vec![
+                                    Node::assign("in_line", Expr::u32(1)),
+                                    // The first comment byte becomes the single
+                                    // replacement space required by C translation
+                                    // phase 3.
+                                    Node::assign("mask", Expr::u32(2)),
+                                ],
+                            ),
+                            // `/*` opens a block comment.
+                            Node::if_then(
+                                Expr::and(
+                                    Expr::eq(Expr::var("b"), Expr::u32(b'/' as u32)),
+                                    Expr::or(
+                                        Expr::eq(Expr::var("b1"), Expr::u32(b'*' as u32)),
+                                        Expr::or(
+                                            Expr::and(
+                                                Expr::and(
+                                                    Expr::eq(
+                                                        Expr::var("b1"),
+                                                        Expr::u32(b'\\' as u32),
+                                                    ),
+                                                    Expr::eq(
+                                                        Expr::var("b2"),
+                                                        Expr::u32(b'\n' as u32),
+                                                    ),
+                                                ),
+                                                Expr::eq(Expr::var("b3"), Expr::u32(b'*' as u32)),
+                                            ),
+                                            Expr::and(
+                                                Expr::and(
+                                                    Expr::and(
+                                                        Expr::eq(
+                                                            Expr::var("b1"),
+                                                            Expr::u32(b'\\' as u32),
+                                                        ),
+                                                        Expr::eq(
+                                                            Expr::var("b2"),
+                                                            Expr::u32(b'\r' as u32),
+                                                        ),
+                                                    ),
+                                                    Expr::eq(
+                                                        Expr::var("b3"),
+                                                        Expr::u32(b'\n' as u32),
+                                                    ),
+                                                ),
+                                                Expr::eq(Expr::var("b4"), Expr::u32(b'*' as u32)),
+                                            ),
+                                        ),
+                                    ),
+                                ),
+                                vec![
+                                    Node::assign("in_block", Expr::u32(1)),
+                                    Node::assign("mask", Expr::u32(2)),
+                                ],
+                            ),
+                        ],
+                    ),
+                    // Write the mask before processing closes — this
+                    // ensures the closing `*/` bytes are themselves
+                    // marked as comment.
+                    Node::store("comment_mask_out", Expr::var("i"), Expr::var("mask")),
+                    // Detect comment closes AFTER writing the mask.
+                    // - Line comment closes at `\n` (the newline itself
+                    //   is OUTSIDE the comment per typical C semantics;
+                    //   tools that mask comments usually keep newlines
+                    //   so line counts stay correct, but we already
+                    //   wrote 1 before checking — fix that next).
+                    Node::if_then(
+                        Expr::and(
+                            Expr::eq(Expr::var("in_line"), Expr::u32(1)),
+                            Expr::eq(Expr::var("b"), Expr::u32(b'\n' as u32)),
+                        ),
+                        vec![
+                            // Newline is NOT part of the comment — overwrite.
+                            Node::store("comment_mask_out", Expr::var("i"), Expr::u32(0)),
+                            Node::assign("in_line", Expr::u32(0)),
+                        ],
+                    ),
+                    Node::if_then(
+                        Expr::and(
+                            Expr::eq(Expr::var("in_line"), Expr::u32(1)),
+                            Expr::and(
+                                Expr::eq(Expr::var("b"), Expr::u32(b'\r' as u32)),
+                                Expr::eq(Expr::var("b1"), Expr::u32(b'\n' as u32)),
+                            ),
+                        ),
+                        vec![
+                            Node::store("comment_mask_out", Expr::var("i"), Expr::u32(0)),
+                            Node::store(
+                                "comment_mask_out",
+                                Expr::add(Expr::var("i"), Expr::u32(1)),
+                                Expr::u32(0),
+                            ),
+                            Node::assign("i", Expr::add(Expr::var("i"), Expr::u32(1))),
+                            Node::assign("in_line", Expr::u32(0)),
+                        ],
+                    ),
+                    Node::if_then(
+                        Expr::and(
+                            Expr::eq(Expr::var("in_line"), Expr::u32(1)),
+                            Expr::and(
+                                Expr::eq(Expr::var("b"), Expr::u32(b'\\' as u32)),
+                                Expr::eq(Expr::var("b1"), Expr::u32(b'\n' as u32)),
+                            ),
+                        ),
+                        vec![
+                            Node::store("comment_mask_out", Expr::var("i"), Expr::u32(1)),
+                            Node::store(
+                                "comment_mask_out",
+                                Expr::add(Expr::var("i"), Expr::u32(1)),
+                                Expr::u32(1),
+                            ),
+                            Node::assign("i", Expr::add(Expr::var("i"), Expr::u32(1))),
+                        ],
+                    ),
+                    Node::if_then(
+                        Expr::and(
+                            Expr::eq(Expr::var("in_line"), Expr::u32(1)),
+                            Expr::and(
+                                Expr::and(
+                                    Expr::eq(Expr::var("b"), Expr::u32(b'\\' as u32)),
+                                    Expr::eq(Expr::var("b1"), Expr::u32(b'\r' as u32)),
+                                ),
+                                Expr::eq(Expr::var("b2"), Expr::u32(b'\n' as u32)),
+                            ),
+                        ),
+                        vec![
+                            Node::store("comment_mask_out", Expr::var("i"), Expr::u32(1)),
+                            Node::store(
+                                "comment_mask_out",
+                                Expr::add(Expr::var("i"), Expr::u32(1)),
+                                Expr::u32(1),
+                            ),
+                            Node::store(
+                                "comment_mask_out",
+                                Expr::add(Expr::var("i"), Expr::u32(2)),
+                                Expr::u32(1),
+                            ),
+                            Node::assign("i", Expr::add(Expr::var("i"), Expr::u32(2))),
+                        ],
+                    ),
+                    // Block comment closes when current byte is `*`
+                    // and next byte is `/`. The closing `/` (i+1) is
+                    // also part of the comment, so we set in_block=0
+                    // only after the `/` byte itself is processed.
+                    // We do this by detecting (b == '*' && b1 == '/')
+                    // and writing the mask for byte i+1 in the next
+                    // iteration normally; here we just transition out
+                    // AFTER advancing past the `/`. Simplest: set
+                    // in_block=0 next iteration when (prev was `*` and
+                    // current is `/`). Track via `prev_star` flag.
+                    // Implemented below via two-step trailing close.
+                    Node::if_then(
+                        Expr::and(
+                            Expr::eq(Expr::var("in_block"), Expr::u32(1)),
+                            Expr::and(
+                                Expr::eq(Expr::var("b"), Expr::u32(b'*' as u32)),
+                                Expr::eq(Expr::var("b1"), Expr::u32(b'/' as u32)),
+                            ),
+                        ),
+                        vec![
+                            // Mark the trailing '/' (i+1) as comment now,
+                            // and exit the block AFTER it. We do this by
+                            // pre-storing into i+1 here, then on the next
+                            // iteration the loop body will run with
+                            // in_block=0 but the mask we already stored
+                            // wins because we won't re-store unless we
+                            // write the same slot.
+                            Node::if_then(
+                                Expr::lt(
+                                    Expr::add(Expr::var("i"), Expr::u32(1)),
+                                    Expr::u32(byte_count),
+                                ),
+                                vec![Node::store(
+                                    "comment_mask_out",
+                                    Expr::add(Expr::var("i"), Expr::u32(1)),
+                                    Expr::u32(1),
+                                )],
+                            ),
+                            // Skip the next byte by bumping i, then
+                            // exit the comment.
+                            Node::assign("i", Expr::add(Expr::var("i"), Expr::u32(1))),
+                            Node::assign("in_block", Expr::u32(0)),
+                        ],
+                    ),
+                    Node::if_then(
+                        Expr::and(
+                            Expr::eq(Expr::var("in_block"), Expr::u32(1)),
+                            Expr::and(
+                                Expr::and(
+                                    Expr::eq(Expr::var("b"), Expr::u32(b'*' as u32)),
+                                    Expr::eq(Expr::var("b1"), Expr::u32(b'\\' as u32)),
+                                ),
+                                Expr::and(
+                                    Expr::eq(Expr::var("b2"), Expr::u32(b'\n' as u32)),
+                                    Expr::eq(Expr::var("b3"), Expr::u32(b'/' as u32)),
+                                ),
+                            ),
+                        ),
+                        vec![
+                            Node::store("comment_mask_out", Expr::var("i"), Expr::u32(1)),
+                            Node::store(
+                                "comment_mask_out",
+                                Expr::add(Expr::var("i"), Expr::u32(1)),
+                                Expr::u32(1),
+                            ),
+                            Node::store(
+                                "comment_mask_out",
+                                Expr::add(Expr::var("i"), Expr::u32(2)),
+                                Expr::u32(1),
+                            ),
+                            Node::store(
+                                "comment_mask_out",
+                                Expr::add(Expr::var("i"), Expr::u32(3)),
+                                Expr::u32(1),
+                            ),
+                            Node::assign("i", Expr::add(Expr::var("i"), Expr::u32(3))),
+                            Node::assign("in_block", Expr::u32(0)),
+                        ],
+                    ),
+                    Node::if_then(
+                        Expr::and(
+                            Expr::eq(Expr::var("in_block"), Expr::u32(1)),
+                            Expr::and(
+                                Expr::and(
+                                    Expr::and(
+                                        Expr::eq(Expr::var("b"), Expr::u32(b'*' as u32)),
+                                        Expr::eq(Expr::var("b1"), Expr::u32(b'\\' as u32)),
+                                    ),
+                                    Expr::eq(Expr::var("b2"), Expr::u32(b'\r' as u32)),
+                                ),
+                                Expr::and(
+                                    Expr::eq(Expr::var("b3"), Expr::u32(b'\n' as u32)),
+                                    Expr::eq(Expr::var("b4"), Expr::u32(b'/' as u32)),
+                                ),
+                            ),
+                        ),
+                        vec![
+                            Node::store("comment_mask_out", Expr::var("i"), Expr::u32(1)),
+                            Node::store(
+                                "comment_mask_out",
+                                Expr::add(Expr::var("i"), Expr::u32(1)),
+                                Expr::u32(1),
+                            ),
+                            Node::store(
+                                "comment_mask_out",
+                                Expr::add(Expr::var("i"), Expr::u32(2)),
+                                Expr::u32(1),
+                            ),
+                            Node::store(
+                                "comment_mask_out",
+                                Expr::add(Expr::var("i"), Expr::u32(3)),
+                                Expr::u32(1),
+                            ),
+                            Node::store(
+                                "comment_mask_out",
+                                Expr::add(Expr::var("i"), Expr::u32(4)),
+                                Expr::u32(1),
+                            ),
+                            Node::assign("i", Expr::add(Expr::var("i"), Expr::u32(4))),
+                            Node::assign("in_block", Expr::u32(0)),
+                        ],
+                    ),
+                    // Track string/char literals after comment handling so comment
+                    // openers inside literals never enter comment state. Escape state
+                    // is one-byte delayed and only meaningful inside a literal.
+                    Node::if_then(
+                        Expr::and(
+                            Expr::eq(Expr::var("in_line"), Expr::u32(0)),
+                            Expr::eq(Expr::var("in_block"), Expr::u32(0)),
+                        ),
+                        vec![
+                            Node::if_then(
+                                Expr::eq(Expr::var("in_string"), Expr::u32(1)),
+                                vec![
+                                    Node::if_then(
+                                        Expr::eq(Expr::var("escaped"), Expr::u32(1)),
+                                        vec![Node::assign("escaped", Expr::u32(0))],
+                                    ),
+                                    Node::if_then(
+                                        Expr::eq(Expr::var("escaped"), Expr::u32(0)),
+                                        vec![
+                                            Node::if_then(
+                                                Expr::eq(Expr::var("b"), Expr::u32(b'\\' as u32)),
+                                                vec![Node::assign("escaped", Expr::u32(1))],
+                                            ),
+                                            Node::if_then(
+                                                Expr::eq(Expr::var("b"), Expr::u32(b'"' as u32)),
+                                                vec![Node::assign("in_string", Expr::u32(0))],
+                                            ),
+                                        ],
+                                    ),
+                                ],
+                            ),
+                            Node::if_then(
+                                Expr::eq(Expr::var("in_char"), Expr::u32(1)),
+                                vec![
+                                    Node::if_then(
+                                        Expr::eq(Expr::var("escaped"), Expr::u32(1)),
+                                        vec![Node::assign("escaped", Expr::u32(0))],
+                                    ),
+                                    Node::if_then(
+                                        Expr::eq(Expr::var("escaped"), Expr::u32(0)),
+                                        vec![
+                                            Node::if_then(
+                                                Expr::eq(Expr::var("b"), Expr::u32(b'\\' as u32)),
+                                                vec![Node::assign("escaped", Expr::u32(1))],
+                                            ),
+                                            Node::if_then(
+                                                Expr::eq(Expr::var("b"), Expr::u32(b'\'' as u32)),
+                                                vec![Node::assign("in_char", Expr::u32(0))],
+                                            ),
+                                        ],
+                                    ),
+                                ],
+                            ),
+                            Node::if_then(
+                                Expr::and(
+                                    Expr::eq(Expr::var("in_string"), Expr::u32(0)),
+                                    Expr::eq(Expr::var("in_char"), Expr::u32(0)),
+                                ),
+                                vec![
+                                    Node::if_then(
+                                        Expr::eq(Expr::var("b"), Expr::u32(b'"' as u32)),
+                                        vec![
+                                            Node::assign("in_string", Expr::u32(1)),
+                                            Node::assign("escaped", Expr::u32(0)),
+                                        ],
+                                    ),
+                                    Node::if_then(
+                                        Expr::eq(Expr::var("b"), Expr::u32(b'\'' as u32)),
+                                        vec![
+                                            Node::assign("in_char", Expr::u32(1)),
+                                            Node::assign("escaped", Expr::u32(0)),
+                                        ],
+                                    ),
+                                ],
+                            ),
+                        ],
+                    ),
+                    Node::assign("i", Expr::add(Expr::var("i"), Expr::u32(1))),
+                ],
+            ),
+            Node::if_then(
+                Expr::and(
+                    Expr::ge(Expr::u32(byte_count), Expr::u32(2)),
+                    Expr::and(
+                        Expr::eq(safe_load(Expr::u32(0)), Expr::u32(b'/' as u32)),
+                        Expr::or(
+                            Expr::eq(safe_load(Expr::u32(1)), Expr::u32(b'*' as u32)),
+                            Expr::eq(safe_load(Expr::u32(1)), Expr::u32(b'/' as u32)),
+                        ),
+                    ),
+                ),
+                vec![Node::store("comment_mask_out", Expr::u32(0), Expr::u32(2))],
+            ),
+        ],
+    )];
+
+    Program::wrapped(
+        vec![
+            BufferDecl::storage(
+                "bytes_in",
+                BINDING_BYTES_IN,
+                BufferAccess::ReadOnly,
+                DataType::U32,
+            )
+            .with_count(byte_count.div_ceil(4).max(1)),
+            BufferDecl::storage(
+                "comment_mask_out",
+                BINDING_COMMENT_MASK_OUT,
+                BufferAccess::ReadWrite,
+                DataType::U32,
+            )
+            .with_count(byte_count.max(1)),
+        ],
+        [1, 1, 1],
+        body,
+    )
+    .with_entry_op_id(OP_ID)
+}

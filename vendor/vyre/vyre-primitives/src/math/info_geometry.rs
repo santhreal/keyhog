@@ -115,7 +115,7 @@ pub fn bhattacharyya_per_element(p: &str, q: &str, out_per_elem: &str, n: u32) -
     body_inner.push(Node::store(
         out_per_elem,
         t.clone(),
-        Expr::shr(Expr::mul(Expr::var("xp"), Expr::var("y")), Expr::u32(16)),
+        crate::fixed_mul_16_16_expr(Expr::var("xp"), Expr::var("y")),
     ));
 
     let body = vec![Node::if_then(Expr::lt(t.clone(), Expr::u32(n)), body_inner)];
@@ -141,6 +141,7 @@ pub fn bhattacharyya_per_element(p: &str, q: &str, out_per_elem: &str, n: u32) -
 /// Bhattacharyya coefficient: `Σ sqrt(p_i · q_i)`. Coefficient is
 /// in `[0, 1]`; `0` = orthogonal distributions, `1` = identical.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn bhattacharyya_coefficient_cpu(p: &[f64], q: &[f64]) -> f64 {
     p.iter()
         .zip(q.iter())
@@ -150,6 +151,7 @@ pub fn bhattacharyya_coefficient_cpu(p: &[f64], q: &[f64]) -> f64 {
 
 /// Fisher-Rao distance from Bhattacharyya coefficient.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn fisher_rao_distance_cpu(p: &[f64], q: &[f64]) -> f64 {
     let c = bhattacharyya_coefficient_cpu(p, q).clamp(0.0, 1.0);
     2.0 * c.acos()
@@ -163,6 +165,7 @@ pub fn fisher_rao_distance_cpu(p: &[f64], q: &[f64]) -> f64 {
 ///
 /// Returns the un-normalized blend; caller normalizes if needed.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn amari_alpha_step_cpu(p: &[f64], q: &[f64], alpha: f64, t: f64) -> Vec<f64> {
     let t = t.clamp(0.0, 1.0);
     let s = 1.0 - t;
@@ -187,6 +190,18 @@ pub fn amari_alpha_step_cpu(p: &[f64], q: &[f64], alpha: f64, t: f64) -> Vec<f64
             }
         })
         .collect()
+}
+
+#[cfg(feature = "inventory-registry")]
+inventory::submit! {
+    crate::harness::OpEntry::new(
+        OP_ID,
+        || {
+            bhattacharyya_per_element("a", "b", "out", 4)
+        },
+        None,
+        None,
+    )
 }
 
 #[cfg(test)]

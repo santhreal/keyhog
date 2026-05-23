@@ -103,8 +103,8 @@ impl NodeVisitor for FallbackWireHasher<'_> {
             } => {
                 h.update(b"n:Region\0");
                 h.update(generator.as_bytes());
-                if let Some(gen) = source_region {
-                    h.update(gen.name.as_bytes());
+                if let Some(source_gen) = source_region {
+                    h.update(source_gen.name.as_bytes());
                 }
             }
             Node::Opaque(ext) => {
@@ -230,8 +230,9 @@ impl Program {
         if self.is_top_level_region_wrapped() {
             return self;
         }
-        let new_entry = Self::wrap_entry(self.entry().to_vec());
-        self.with_rewritten_entry(new_entry)
+        // Move the entry Vec out via map_entry's Arc-aware path; one
+        // Program rebuild instead of two scaffold rebuilds.
+        self.map_entry(Self::wrap_entry)
     }
 
     /// Look up a buffer declaration by name.
@@ -447,7 +448,9 @@ impl Program {
                         .iter()
                         .enumerate()
                         .filter_map(|(index, buffer)| {
-                            (buffer.access() == BufferAccess::ReadWrite).then_some(index as u32)
+                            (buffer.access() == BufferAccess::ReadWrite)
+                                .then(|| u32::try_from(index).ok())
+                                .flatten()
                         })
                         .collect(),
                 )
@@ -460,7 +463,18 @@ impl Program {
     #[inline]
     pub fn has_indirect_dispatch(&self) -> bool {
         *self.has_indirect_dispatch.get_or_init(|| {
-            let mut stack: Vec<&Node> = self.entry().iter().rev().collect();
+            // Fast-path: ProgramStats records every node kind seen during
+            // its single-pass walk. If the IndirectDispatch bit is unset,
+            // the tree definitely contains no IndirectDispatch nodes and
+            // the explicit traversal below would redundantly visit every
+            // node only to return false. Reading the bit is O(1).
+            if !self
+                .stats()
+                .has_any_node_kind(super::stats::NODE_KIND_INDIRECT_DISPATCH)
+            {
+                return false;
+            }
+            let mut stack: smallvec::SmallVec<[&Node; 32]> = self.entry().iter().rev().collect();
             while let Some(node) = stack.pop() {
                 match node {
                     Node::IndirectDispatch { .. } => return true,
@@ -538,6 +552,7 @@ impl Program {
     #[inline]
     pub fn mark_validated_on(&self, backend_id: &str) {
         self.validation_set
+            .get_or_init(|| Arc::new(dashmap::DashSet::new()))
             .insert(Arc::from(self.validation_cache_key(backend_id)));
     }
 
@@ -546,7 +561,8 @@ impl Program {
     #[inline]
     pub fn is_validated_on(&self, backend_id: &str) -> bool {
         self.validation_set
-            .contains(self.validation_cache_key(backend_id).as_str())
+            .get()
+            .is_some_and(|set| set.contains(self.validation_cache_key(backend_id).as_str()))
     }
 
     /// Deprecated: use `is_structurally_validated` or `is_validated_on`.
@@ -602,61 +618,64 @@ impl Program {
         self.buffers
             .iter()
             .map(|buffer| {
-                let element_size = buffer.element.size_bytes().unwrap_or(4);
-                (buffer.count as u64) * (element_size as u64)
+                let Some(element_size) = buffer.element.size_bytes() else {
+                    return u64::MAX;
+                };
+                u64::from(buffer.count)
+                    .saturating_mul(u64::try_from(element_size).unwrap_or(u64::MAX))
             })
-            .sum()
+            .fold(0u64, u64::saturating_add)
     }
 
     /// Return the peak computational intensity found in any instruction.
     #[must_use]
     pub fn peak_intensity(&self) -> OpIntensity {
         let mut peak = OpIntensity::Free;
-        for node in self.entry().iter() {
-            peak = peak.max(self.node_intensity(node));
+        for node in self.entry() {
+            peak = peak.max(Self::node_intensity(node));
         }
         peak
     }
 
-    fn node_intensity(&self, node: &crate::ir::Node) -> OpIntensity {
+    fn node_intensity(node: &crate::ir::Node) -> OpIntensity {
         use crate::ir::Node;
         match node {
-            Node::Let { value, .. } | Node::Assign { value, .. } => self.expr_intensity(value),
+            Node::Let { value, .. } | Node::Assign { value, .. } => Self::expr_intensity(value),
             Node::Store { index, value, .. } => {
-                self.expr_intensity(index).max(self.expr_intensity(value))
+                Self::expr_intensity(index).max(Self::expr_intensity(value))
             }
             Node::If {
                 cond,
                 then,
                 otherwise,
             } => {
-                let mut p = self.expr_intensity(cond);
+                let mut p = Self::expr_intensity(cond);
                 for n in then {
-                    p = p.max(self.node_intensity(n));
+                    p = p.max(Self::node_intensity(n));
                 }
                 for n in otherwise {
-                    p = p.max(self.node_intensity(n));
+                    p = p.max(Self::node_intensity(n));
                 }
                 p
             }
             Node::Loop { from, to, body, .. } => {
-                let mut p = self.expr_intensity(from).max(self.expr_intensity(to));
-                for n in body.iter() {
-                    p = p.max(self.node_intensity(n));
+                let mut p = Self::expr_intensity(from).max(Self::expr_intensity(to));
+                for n in body {
+                    p = p.max(Self::node_intensity(n));
                 }
                 p
             }
             Node::Block(nodes) => {
                 let mut p = OpIntensity::Free;
                 for n in nodes {
-                    p = p.max(self.node_intensity(n));
+                    p = p.max(Self::node_intensity(n));
                 }
                 p
             }
             Node::Region { body, .. } => {
                 let mut p = OpIntensity::Free;
                 for n in body.iter() {
-                    p = p.max(self.node_intensity(n));
+                    p = p.max(Self::node_intensity(n));
                 }
                 p
             }
@@ -664,47 +683,43 @@ impl Program {
         }
     }
 
-    #[allow(clippy::only_used_in_recursion)]
-    fn expr_intensity(&self, expr: &crate::ir::Expr) -> OpIntensity {
+    fn expr_intensity(expr: &crate::ir::Expr) -> OpIntensity {
         use crate::ir::Expr;
         match expr {
             Expr::BinOp { op, left, right } => op
                 .intensity()
-                .max(self.expr_intensity(left))
-                .max(self.expr_intensity(right)),
-            Expr::UnOp { operand, .. } => self.expr_intensity(operand),
-            Expr::Load { index, .. } => self.expr_intensity(index),
+                .max(Self::expr_intensity(left))
+                .max(Self::expr_intensity(right)),
+            Expr::UnOp { operand, .. } => Self::expr_intensity(operand),
+            Expr::Load { index, .. } => Self::expr_intensity(index),
             Expr::Select {
                 cond,
                 true_val,
                 false_val,
-            } => self
-                .expr_intensity(cond)
-                .max(self.expr_intensity(true_val))
-                .max(self.expr_intensity(false_val)),
-            Expr::Cast { value, .. } => self.expr_intensity(value),
-            Expr::Fma { a, b, c } => self
-                .expr_intensity(a)
-                .max(self.expr_intensity(b))
-                .max(self.expr_intensity(c)),
+            } => Self::expr_intensity(cond)
+                .max(Self::expr_intensity(true_val))
+                .max(Self::expr_intensity(false_val)),
+            Expr::Cast { value, .. } => Self::expr_intensity(value),
+            Expr::Fma { a, b, c } => Self::expr_intensity(a)
+                .max(Self::expr_intensity(b))
+                .max(Self::expr_intensity(c)),
             Expr::Atomic {
                 index,
                 value,
                 expected,
                 ..
             } => {
-                let mut p = self.expr_intensity(index).max(self.expr_intensity(value));
+                let mut p = Self::expr_intensity(index).max(Self::expr_intensity(value));
                 if let Some(e) = expected {
-                    p = p.max(self.expr_intensity(e));
+                    p = p.max(Self::expr_intensity(e));
                 }
                 p.max(OpIntensity::Heavy)
             }
-            Expr::SubgroupBallot { cond } => self.expr_intensity(cond).max(OpIntensity::Heavy),
-            Expr::SubgroupShuffle { value, lane } => self
-                .expr_intensity(value)
-                .max(self.expr_intensity(lane))
+            Expr::SubgroupBallot { cond } => Self::expr_intensity(cond).max(OpIntensity::Heavy),
+            Expr::SubgroupShuffle { value, lane } => Self::expr_intensity(value)
+                .max(Self::expr_intensity(lane))
                 .max(OpIntensity::Heavy),
-            Expr::SubgroupAdd { value } => self.expr_intensity(value).max(OpIntensity::Heavy),
+            Expr::SubgroupAdd { value } => Self::expr_intensity(value).max(OpIntensity::Heavy),
             _ => OpIntensity::Free,
         }
     }
@@ -751,13 +766,14 @@ impl Program {
     }
 
     fn validation_cache_key(&self, backend_id: &str) -> String {
+        const HEX: &[u8; 16] = b"0123456789abcdef";
         let fingerprint = self.fingerprint();
         let mut key = String::with_capacity(backend_id.len() + 1 + 64);
         key.push_str(backend_id);
         key.push(':');
-        for byte in fingerprint {
-            use std::fmt::Write as _;
-            let _ = write!(&mut key, "{byte:02x}");
+        for &byte in &fingerprint {
+            key.push(HEX[(byte >> 4) as usize] as char);
+            key.push(HEX[(byte & 0x0f) as usize] as char);
         }
         key
     }
@@ -765,7 +781,9 @@ impl Program {
     #[inline]
     pub(super) fn invalidate_caches(&mut self) {
         self.structural_validated.store(false, Ordering::Release);
-        self.validation_set.clear();
+        if let Some(set) = self.validation_set.get() {
+            set.clear();
+        }
         let _ = self.hash.take();
         let _ = self.fingerprint.take();
         drop(self.output_buffer_index.take());
@@ -854,7 +872,7 @@ pub(super) fn buffer_decl_canonical_key(buffer: &super::BufferDecl) -> Vec<u8> {
     }
     key.extend_from_slice(buffer.name.as_bytes());
     put_u32(&mut key, buffer.binding);
-    match crate::serial::wire::tags::access_tag::access_tag(buffer.access.clone()) {
+    match crate::serial::wire::tags::access_tag::access_tag(&buffer.access) {
         Ok(tag) => put_u8(&mut key, tag),
         Err(error) => {
             put_u8(&mut key, u8::MAX);

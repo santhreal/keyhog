@@ -1,12 +1,22 @@
 //! CUDA capability, feature-flag, and validation policy.
 
+use std::sync::Arc;
+use vyre_driver::binding::BindingRole;
 use vyre_driver::validation::{LaunchGeometryLimits, ProgramValidationCaps};
-use vyre_driver::{BackendError, DispatchConfig};
+use vyre_driver::{BackendError, DispatchConfig, LaunchPlan};
 use vyre_foundation::ir::Program;
 use vyre_foundation::validate::ValidationOptions;
-use std::sync::Arc;
 
 use super::dispatch::CudaBackend;
+use super::plan::CudaDispatchPlan;
+use crate::kernel_failure_diagnostics::{
+    diagnose_cuda_kernel_launch_shape, CudaKernelDeviceEnvelope, CudaKernelLaunchEnvelope,
+    CudaKernelLaunchShape,
+};
+use crate::occupancy::cooperative_thread_residency_block_limit;
+
+const CUDA_TRANSIENT_DISPATCH_BUDGET_NUMERATOR: u64 = 9;
+const CUDA_TRANSIENT_DISPATCH_BUDGET_DENOMINATOR: u64 = 10;
 
 impl CudaBackend {
     /// Compute capability as (major, minor).
@@ -140,15 +150,6 @@ impl CudaBackend {
         flags
     }
 
-    pub(crate) fn ptx_for_program(
-        &self,
-        program: &Program,
-        config: &DispatchConfig,
-    ) -> Result<String, BackendError> {
-        self.ptx_for_program_cached(program, config)
-            .map(|source| source.as_ref().to_string())
-    }
-
     pub(crate) fn ptx_for_program_cached(
         &self,
         program: &Program,
@@ -164,7 +165,7 @@ impl CudaBackend {
             self.ptx_target_sm(),
             subgroup_size,
             self.pipeline_feature_flags(),
-        );
+        )?;
         self.ptx_source_cache.get_or_lower(key, || {
             crate::codegen::program_to_ptx_for_sm_and_subgroup(
                 program,
@@ -188,6 +189,92 @@ impl CudaBackend {
         }
     }
 
+    /// Device capability envelope used by release launch diagnostics.
+    #[must_use]
+    pub fn kernel_device_envelope(&self) -> CudaKernelDeviceEnvelope {
+        let sm_major = if self.caps.compute_capability.0 > u32::from(u16::MAX) {
+            tracing::error!(
+                "CUDA compute capability major value {} cannot fit u16. Fix: widen CudaKernelDeviceEnvelope before release diagnostics.",
+                self.caps.compute_capability.0
+            );
+            u16::MAX
+        } else {
+            self.caps.compute_capability.0 as u16
+        };
+        let sm_minor = if self.caps.compute_capability.1 > u32::from(u16::MAX) {
+            tracing::error!(
+                "CUDA compute capability minor value {} cannot fit u16. Fix: widen CudaKernelDeviceEnvelope before release diagnostics.",
+                self.caps.compute_capability.1
+            );
+            u16::MAX
+        } else {
+            self.caps.compute_capability.1 as u16
+        };
+        CudaKernelDeviceEnvelope {
+            sm_major,
+            sm_minor,
+            max_threads_per_block: self.max_threads_per_block(),
+            shared_memory_per_block_bytes: u64::from(self.max_shared_memory_per_block_bytes()),
+            supports_cooperative_launch: self.hardware_supports_grid_sync(),
+            supports_tensor_cores: self.hardware_supports_tensor_cores()
+                && self.lowers_tensor_core_ops(),
+        }
+    }
+
+    /// Build the release launch envelope for a prepared CUDA launch plan.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BackendError`] when launch shape products overflow the
+    /// diagnostic envelope.
+    pub fn diagnose_launch_plan(
+        &self,
+        kernel: &'static str,
+        launch: &LaunchPlan,
+        cooperative: bool,
+        requires_tensor_cores: bool,
+    ) -> Result<CudaKernelLaunchEnvelope, BackendError> {
+        let threads_per_block = launch
+            .workgroup
+            .iter()
+            .try_fold(1_u64, |acc, dim| acc.checked_mul(u64::from(*dim)))
+            .ok_or_else(|| BackendError::InvalidProgram {
+                fix: format!(
+                    "Fix: CUDA launch diagnostic workgroup product overflowed u64 for {:?}. Lower the workgroup before dispatch.",
+                    launch.workgroup
+                ),
+            })?;
+        let cooperative_resident_block_limit = if cooperative {
+            let threads_per_block = u32::try_from(threads_per_block).map_err(|source| {
+                BackendError::InvalidProgram {
+                    fix: format!(
+                        "Fix: CUDA launch diagnostic workgroup {:?} has {threads_per_block} thread slots, which does not fit u32: {source}. Lower the workgroup before dispatch.",
+                        launch.workgroup
+                    ),
+                }
+            })?;
+            Some(cooperative_thread_residency_block_limit(
+                &self.caps,
+                threads_per_block,
+            ))
+        } else {
+            None
+        };
+        diagnose_cuda_kernel_launch_shape(
+            kernel,
+            self.kernel_device_envelope(),
+            CudaKernelLaunchShape {
+                grid: launch.grid,
+                block: launch.workgroup,
+                dynamic_shared_memory_bytes: 0,
+                cooperative,
+                requires_tensor_cores,
+            },
+            cooperative_resident_block_limit,
+        )
+        .map_err(|error| BackendError::InvalidProgram { fix: error.fix })
+    }
+
     pub(crate) fn program_validation_caps(&self) -> ProgramValidationCaps {
         ProgramValidationCaps {
             backend_id: crate::CUDA_BACKEND_ID,
@@ -206,8 +293,70 @@ impl CudaBackend {
             .with_shadowing(true)
     }
 
+    pub(crate) fn validate_transient_dispatch_memory_budget(
+        &self,
+        prepared: &CudaDispatchPlan,
+        inputs: &[&[u8]],
+        context: &'static str,
+    ) -> Result<(), BackendError> {
+        let required_bytes = cuda_transient_dispatch_required_bytes(prepared, inputs)?;
+        let budget_bytes = cuda_transient_dispatch_available_budget_bytes(
+            self.caps.total_memory,
+            self.resident_store.allocated_bytes(),
+            cuda_usize_bytes_to_u64(
+                self.transient_pool.allocated_bytes()?,
+                "transient pool allocated bytes",
+            )?,
+        );
+        let budget_bytes = self
+            .reclaim_cached_transient_allocations_when_over_budget(required_bytes, budget_bytes)?;
+        validate_cuda_transient_dispatch_budget(required_bytes, budget_bytes, context)
+    }
+
+    pub(crate) fn validate_transient_allocation_memory_budget(
+        &self,
+        byte_len: usize,
+        label: &'static str,
+        context: &'static str,
+    ) -> Result<(), BackendError> {
+        let required_bytes = cuda_dispatch_allocation_bucket(byte_len, label)?;
+        let budget_bytes = cuda_transient_dispatch_available_budget_bytes(
+            self.caps.total_memory,
+            self.resident_store.allocated_bytes(),
+            cuda_usize_bytes_to_u64(
+                self.transient_pool.allocated_bytes()?,
+                "transient pool allocated bytes",
+            )?,
+        );
+        let budget_bytes = self
+            .reclaim_cached_transient_allocations_when_over_budget(required_bytes, budget_bytes)?;
+        validate_cuda_transient_dispatch_budget(required_bytes, budget_bytes, context)
+    }
+
+    fn reclaim_cached_transient_allocations_when_over_budget(
+        &self,
+        required_bytes: u64,
+        budget_bytes: u64,
+    ) -> Result<u64, BackendError> {
+        if required_bytes <= budget_bytes {
+            return Ok(budget_bytes);
+        }
+        self.transient_pool.clear()?;
+        Ok(cuda_transient_dispatch_available_budget_bytes(
+            self.caps.total_memory,
+            self.resident_store.allocated_bytes(),
+            cuda_usize_bytes_to_u64(
+                self.transient_pool.allocated_bytes()?,
+                "transient pool allocated bytes after reclaim",
+            )?,
+        ))
+    }
+
     pub(crate) fn validate_program_cached(&self, program: &Program) -> Result<(), BackendError> {
-        if std::env::var_os("VYRE_CUDA_VALIDATE_DISPATCH").is_none() {
+        if matches!(
+            std::env::var("VYRE_CUDA_VALIDATE_DISPATCH").as_deref(),
+            Ok("0" | "false" | "FALSE" | "off" | "OFF")
+        ) {
             return Ok(());
         }
         self.validation_cache.get_or_validate(
@@ -216,5 +365,290 @@ impl CudaBackend {
             crate::cuda_supported_ops(),
             self.program_validation_caps(),
         )
+    }
+}
+
+pub(crate) fn cuda_transient_dispatch_budget_bytes(total_memory: u64) -> u64 {
+    let numerator = u128::from(total_memory) * u128::from(CUDA_TRANSIENT_DISPATCH_BUDGET_NUMERATOR);
+    (numerator / u128::from(CUDA_TRANSIENT_DISPATCH_BUDGET_DENOMINATOR)) as u64
+}
+
+pub(crate) fn cuda_transient_dispatch_available_budget_bytes(
+    total_memory: u64,
+    resident_bytes: u64,
+    transient_pool_bytes: u64,
+) -> u64 {
+    let budget = u128::from(cuda_transient_dispatch_budget_bytes(total_memory));
+    let used = u128::from(resident_bytes) + u128::from(transient_pool_bytes);
+    if used >= budget {
+        0
+    } else {
+        (budget - used) as u64
+    }
+}
+
+pub(crate) fn cuda_transient_dispatch_required_bytes(
+    prepared: &CudaDispatchPlan,
+    inputs: &[&[u8]],
+) -> Result<u64, BackendError> {
+    let mut required_bytes = 0u64;
+    for binding in &prepared.bindings.bindings {
+        if binding.role == BindingRole::Shared {
+            continue;
+        }
+        let byte_len = match binding.input_index {
+            Some(input_index) => inputs
+                .get(input_index)
+                .map(|input| input.len())
+                .ok_or_else(|| BackendError::InvalidProgram {
+                    fix: format!(
+                        "Fix: CUDA dispatch memory preflight expected input index {input_index} for `{}` but only {} input(s) were supplied.",
+                        binding.name,
+                        inputs.len()
+                    ),
+                })?,
+            None => binding.static_byte_len.ok_or_else(|| BackendError::InvalidProgram {
+                fix: format!(
+                    "Fix: CUDA dispatch memory preflight needs a static byte length for output `{}`; set BufferDecl::with_count or output_byte_range before launch.",
+                    binding.name
+                ),
+            })?,
+        };
+        required_bytes = checked_dispatch_bytes_add(
+            required_bytes,
+            cuda_dispatch_allocation_bucket(byte_len, "CUDA dispatch buffer bytes")?,
+            "CUDA dispatch buffer bytes",
+        )?;
+    }
+    let param_bytes = super::launch_params::launch_param_byte_len(
+        &prepared.launch.param_words,
+        "dispatch memory preflight",
+    )?;
+    let param_allocation_bytes = if param_bytes == 0 {
+        0
+    } else {
+        cuda_dispatch_allocation_bucket(param_bytes, "CUDA dispatch parameter bytes")?
+    };
+    checked_dispatch_bytes_add(
+        required_bytes,
+        param_allocation_bytes,
+        "CUDA dispatch parameter bytes",
+    )
+}
+
+pub(crate) fn validate_cuda_transient_dispatch_budget(
+    required_bytes: u64,
+    budget_bytes: u64,
+    context: &'static str,
+) -> Result<(), BackendError> {
+    if required_bytes > budget_bytes {
+        return Err(BackendError::InvalidProgram {
+            fix: format!(
+                "Fix: {context} requires {required_bytes} transient CUDA device bytes but the live-device preflight budget is {budget_bytes} bytes. Reduce input/output size, shard the dispatch, use resident handles with explicit reuse, or raise the CUDA memory budget deliberately."
+            ),
+        });
+    }
+    Ok(())
+}
+
+fn checked_dispatch_bytes_add(
+    left: u64,
+    right: u64,
+    field: &'static str,
+) -> Result<u64, BackendError> {
+    left.checked_add(right)
+        .ok_or_else(|| BackendError::InvalidProgram {
+            fix: format!(
+                "Fix: {field} overflowed u64 during CUDA memory preflight. Shard the dispatch before CUDA allocation."
+            ),
+        })
+}
+
+fn cuda_dispatch_allocation_bucket(
+    byte_len: usize,
+    field: &'static str,
+) -> Result<u64, BackendError> {
+    let bucket = byte_len
+        .max(1)
+        .checked_next_power_of_two()
+        .ok_or_else(|| BackendError::InvalidProgram {
+            fix: format!(
+                "Fix: {field} request of {byte_len} bytes cannot be rounded to the CUDA allocation bucket. Shard the dispatch before CUDA allocation."
+            ),
+        })?;
+    cuda_usize_bytes_to_u64(bucket, field)
+}
+
+fn cuda_usize_bytes_to_u64(byte_len: usize, field: &'static str) -> Result<u64, BackendError> {
+    u64::try_from(byte_len).map_err(|_| BackendError::InvalidProgram {
+        fix: format!(
+            "Fix: {field} value of {byte_len} bytes cannot fit u64 CUDA memory telemetry. Shard the dispatch or widen budget accounting."
+        ),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use smallvec::smallvec;
+    use vyre_driver::binding::{Binding, BindingPlan, BindingRole};
+    use vyre_driver::{BackendError, LaunchPlan};
+
+    use super::{
+        cuda_transient_dispatch_available_budget_bytes, cuda_transient_dispatch_budget_bytes,
+        cuda_transient_dispatch_required_bytes, validate_cuda_transient_dispatch_budget,
+    };
+    use crate::backend::CudaDispatchPlan;
+
+    fn plan(static_output_bytes: usize) -> CudaDispatchPlan {
+        CudaDispatchPlan {
+            bindings: BindingPlan {
+                bindings: vec![
+                    Binding {
+                        name: Arc::from("input"),
+                        binding: 0,
+                        buffer_index: 0,
+                        role: BindingRole::Input,
+                        element_size: 1,
+                        preferred_alignment: 1,
+                        element_count: 8,
+                        static_byte_len: Some(8),
+                        input_index: Some(0),
+                        output_index: None,
+                    },
+                    Binding {
+                        name: Arc::from("output"),
+                        binding: 1,
+                        buffer_index: 1,
+                        role: BindingRole::Output,
+                        element_size: 1,
+                        preferred_alignment: 1,
+                        element_count: u32::try_from(static_output_bytes).expect(
+                            "test CUDA dispatch plan static output bytes must fit u32 element count",
+                        ),
+                        static_byte_len: Some(static_output_bytes),
+                        input_index: None,
+                        output_index: Some(0),
+                    },
+                ],
+                input_indices: vec![0],
+                output_indices: vec![1],
+                shared_indices: vec![],
+            },
+            output_binding_indices: smallvec![1],
+            launch: LaunchPlan {
+                grid: [1, 1, 1],
+                workgroup: [32, 1, 1],
+                element_count: 8,
+                param_words: vec![1, 2],
+                max_binding_alignment: 1,
+            },
+            cooperative: false,
+            fixpoint_iterations: 1,
+        }
+    }
+
+    #[test]
+    fn transient_dispatch_memory_preflight_sums_buffers_and_params() {
+        let input = [0u8; 8];
+        let required = cuda_transient_dispatch_required_bytes(&plan(16), &[input.as_slice()])
+            .expect("valid dispatch memory plan should sum");
+
+        assert_eq!(required, 8 + 16 + 8);
+    }
+
+    #[test]
+    fn transient_dispatch_memory_preflight_does_not_charge_empty_params() {
+        let input = [0u8; 8];
+        let mut plan = plan(16);
+        plan.launch.param_words.clear();
+        let required = cuda_transient_dispatch_required_bytes(&plan, &[input.as_slice()])
+            .expect("valid zero-param dispatch memory plan should sum");
+
+        assert_eq!(
+            required,
+            8 + 16,
+            "Fix: CUDA memory preflight must not charge a rounded one-byte allocation for empty launch params."
+        );
+    }
+
+    #[test]
+    fn transient_dispatch_memory_preflight_counts_bucketed_allocation_pressure() {
+        let input = [0u8; 9];
+        let required = cuda_transient_dispatch_required_bytes(&plan(17), &[input.as_slice()])
+            .expect("valid dispatch memory plan should sum bucketed allocation pressure");
+
+        assert_eq!(required, 16 + 32 + 8);
+    }
+
+    #[test]
+    fn transient_dispatch_memory_preflight_rejects_over_budget_before_allocation() {
+        let error = validate_cuda_transient_dispatch_budget(1025, 1024, "CUDA test dispatch")
+            .expect_err("over-budget dispatch must fail before CUDA allocation");
+
+        match error {
+            BackendError::InvalidProgram { fix } => {
+                assert!(fix.contains("CUDA test dispatch requires 1025"));
+                assert!(fix.contains("preflight budget is 1024"));
+                assert!(fix.contains("Shard") || fix.contains("shard"));
+            }
+            other => panic!("expected InvalidProgram, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn transient_dispatch_budget_uses_conservative_live_vram_fraction() {
+        assert_eq!(cuda_transient_dispatch_budget_bytes(1000), 900);
+        assert_eq!(
+            cuda_transient_dispatch_budget_bytes(u64::MAX),
+            16_602_069_666_338_596_453,
+            "Fix: CUDA transient budget must widen before multiplying so huge live-memory probes do not saturate before division."
+        );
+    }
+
+    #[test]
+    fn transient_dispatch_available_budget_subtracts_live_resident_and_transient_pool_bytes() {
+        assert_eq!(
+            cuda_transient_dispatch_available_budget_bytes(1000, 300, 200),
+            400
+        );
+        assert_eq!(
+            cuda_transient_dispatch_available_budget_bytes(1000, 1_000, 0),
+            0
+        );
+        assert_eq!(
+            cuda_transient_dispatch_available_budget_bytes(1000, 0, 1_000),
+            0
+        );
+        assert_eq!(
+            cuda_transient_dispatch_available_budget_bytes(u64::MAX, u64::MAX, u64::MAX),
+            0,
+            "Fix: CUDA transient available-budget subtraction must use widened arithmetic and clamp only after exact live-usage comparison."
+        );
+        let source = include_str!("capabilities.rs");
+        assert!(
+            !source.contains(concat!(".", "saturating_mul"))
+                && !source.contains(concat!(".", "saturating_sub")),
+            "Fix: CUDA transient budget math must be exact/widened, not saturating."
+        );
+    }
+
+    #[test]
+    fn cuda_dispatch_validation_is_release_default_not_opt_in() {
+        let source = include_str!("capabilities.rs");
+
+        assert!(
+            source.contains("VYRE_CUDA_VALIDATE_DISPATCH")
+                && source.contains("Ok(\"0\" | \"false\" | \"FALSE\" | \"off\" | \"OFF\")"),
+            "Fix: CUDA dispatch validation must be default-on with only an explicit debug disable."
+        );
+        assert!(
+            !source.contains(concat!(
+                "var_os(\"VYRE_CUDA_VALIDATE_DISPATCH\")",
+                ".is_none()"
+            )),
+            "Fix: CUDA dispatch validation must not be an opt-in release-path correctness gate."
+        );
     }
 }

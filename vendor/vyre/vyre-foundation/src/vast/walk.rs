@@ -4,6 +4,10 @@ use super::error::VastError;
 use super::node::{VastNode, NODE_STRIDE_U32, SENTINEL};
 
 /// Preorder walk (node indices). Uses an explicit stack; `max_stack` bounds work.
+///
+/// # Errors
+///
+/// Returns [`VastError`] when the node table is malformed or the stack cap is exceeded.
 pub fn walk_preorder_indices(
     node_bytes: &[u8],
     node_count: u32,
@@ -53,6 +57,10 @@ pub fn walk_preorder_indices(
 }
 
 /// Postorder walk (node indices).
+///
+/// # Errors
+///
+/// Returns [`VastError`] when the node table is malformed or the stack cap is exceeded.
 pub fn walk_postorder_indices(
     node_bytes: &[u8],
     node_count: u32,

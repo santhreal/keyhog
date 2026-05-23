@@ -25,7 +25,7 @@ use vyre_foundation::ir::Program;
 
 pub use types::{
     MegakernelBatchDispatchOutput, MegakernelDispatchOutput, MegakernelDispatchStats,
-    MegakernelResidentHandles,
+    MegakernelResidentBatchScratch, MegakernelResidentHandles,
 };
 
 /// Orchestrated persistent-megakernel handle.
@@ -71,6 +71,20 @@ impl Megakernel {
         Self::bootstrap_sharded(backend, 256, 256, opcodes)
     }
 
+    /// Compute worker groups for a megakernel slot geometry without compiling.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PipelineError::QueueFull`] when the geometry cannot map slots
+    /// to whole workgroups.
+    pub fn worker_groups_for_geometry(
+        slot_count: u32,
+        workgroup_size_x: u32,
+    ) -> Result<u32, PipelineError> {
+        validate_bootstrap_geometry(slot_count, workgroup_size_x)?;
+        Ok(slot_count / workgroup_size_x)
+    }
+
     /// Full bootstrap with sharding and custom opcodes.
     ///
     /// # Errors
@@ -83,6 +97,7 @@ impl Megakernel {
         workgroup_size_x: u32,
         opcodes: Vec<OpcodeHandler>,
     ) -> Result<Self, PipelineError> {
+        validate_bootstrap_geometry(slot_count, workgroup_size_x)?;
         let program = build_program_sharded_slots_shared(workgroup_size_x, slot_count, &opcodes);
         Self::compile_bootstrap_shared(backend, slot_count, workgroup_size_x, program)
     }
@@ -98,6 +113,7 @@ impl Megakernel {
         workgroup_size_x: u32,
         payload_processor: &[vyre_foundation::ir::Node],
     ) -> Result<Self, PipelineError> {
+        validate_bootstrap_geometry(slot_count, workgroup_size_x)?;
         let program = build_program_jit_slots(workgroup_size_x, slot_count, payload_processor);
         Self::compile_bootstrap(backend, slot_count, workgroup_size_x, program)
     }
@@ -117,12 +133,7 @@ impl Megakernel {
         workgroup_size_x: u32,
         program: Arc<Program>,
     ) -> Result<Self, PipelineError> {
-        if slot_count == 0 || workgroup_size_x == 0 || slot_count % workgroup_size_x != 0 {
-            return Err(PipelineError::QueueFull {
-                queue: "submission",
-                fix: "slot_count must be a non-zero multiple of workgroup_size_x",
-            });
-        }
+        validate_bootstrap_geometry(slot_count, workgroup_size_x)?;
         let config = DispatchConfig::default();
         let pipeline = vyre_driver::pipeline::compile_shared(
             Arc::clone(&backend),
@@ -293,7 +304,12 @@ impl Megakernel {
         debug_log_bytes: &[u8],
         io_queue_bytes: &[u8],
     ) -> Result<MegakernelDispatchOutput, PipelineError> {
-        let mut buffers = Vec::with_capacity(4);
+        let mut buffers = Vec::new();
+        reserve_output_shell(
+            &mut buffers,
+            MegakernelResidentHandles::ABI_RESOURCE_COUNT,
+            "borrowed megakernel output shell",
+        )?;
         let stats = self.dispatch_with_io_queue_borrowed_into(
             control_bytes,
             ring_bytes,
@@ -323,7 +339,7 @@ impl Megakernel {
         io::validate_io_queue_bytes(io_queue_bytes)?;
         self.validate_ring_bytes(ring_bytes)?;
 
-        let input_bytes = total_len([control_bytes, ring_bytes, debug_log_bytes, io_queue_bytes]);
+        let input_bytes = total_len([control_bytes, ring_bytes, debug_log_bytes, io_queue_bytes])?;
         let inputs = [control_bytes, ring_bytes, debug_log_bytes, io_queue_bytes];
         let config = self.launch_geometry().dispatch_config(None);
         let started = Instant::now();
@@ -333,22 +349,35 @@ impl Megakernel {
             Err(error) if self.recovery_policy.allows_retry(&error) => {
                 self.recover_after_device_loss()?;
                 recovered = true;
-                outputs.clear();
                 self.dispatch_once_into(&inputs, &config, outputs)?
             }
             Err(error) => return Err(error.into()),
         }
-        let latency_ns = nanos_u64(started.elapsed().as_nanos());
-        let output_bytes = outputs
-            .iter()
-            .map(|buffer| buffer.len() as u64)
-            .fold(0_u64, u64::saturating_add);
-        let output_buffers = u32::try_from(outputs.len()).unwrap_or(u32::MAX);
+        let latency_ns = nanos_u64(started.elapsed().as_nanos())?;
+        let output_bytes = output_bytes(outputs)?;
+        let readback_bytes = output_bytes;
+        let bytes_moved = checked_add_u64(input_bytes, readback_bytes, "megakernel bytes moved")?;
+        let device_allocation_bytes = checked_add_u64(
+            input_bytes,
+            output_bytes,
+            "megakernel host-visible device allocation bytes",
+        )?;
+        let output_buffers = count_u32(outputs.len(), "megakernel output buffer count")?;
+        let device_allocation_events =
+            checked_add_u32(4, output_buffers, "megakernel allocation event count")?;
         Ok(MegakernelDispatchStats {
             input_bytes,
             output_bytes,
+            readback_bytes,
+            bytes_moved,
+            device_allocation_bytes,
+            device_allocation_events,
             latency_ns,
             output_buffers,
+            resident_resource_rows: 0,
+            resident_resource_handles: 0,
+            kernel_launches: if recovered { 2 } else { 1 },
+            sync_points: 1,
             recovered_after_device_loss: recovered,
         })
     }
@@ -389,7 +418,7 @@ impl Megakernel {
 
     /// Workgroup count needed to cover every ring slot.
     #[must_use]
-    pub const fn worker_groups(&self) -> u32 {
+    pub fn worker_groups(&self) -> u32 {
         self.slot_count / self.workgroup_size_x
     }
 
@@ -414,7 +443,7 @@ impl Megakernel {
         MegakernelLaunchGeometry {
             workgroup_size_x: self.workgroup_size_x,
             slot_count: self.slot_count,
-            dispatch_grid: [self.worker_groups(), 1, 1],
+            dispatch_grid: [self.slot_count / self.workgroup_size_x, 1, 1],
         }
     }
 
@@ -439,24 +468,28 @@ impl Megakernel {
             .dispatch_borrowed_into(inputs, config, outputs)
     }
 
-    fn dispatch_persistent_handles_once(
+    fn dispatch_persistent_handles_once_into(
         &self,
         inputs: &[Resource; 4],
         config: &DispatchConfig,
-    ) -> Result<Vec<Vec<u8>>, vyre_driver::BackendError> {
-        let pipeline = self.pipeline.load();
-        pipeline.inner.dispatch_persistent_handles(inputs, config)
-    }
-
-    fn dispatch_persistent_handles_batched_once(
-        &self,
-        batches: &[&[Resource]],
-        config: &DispatchConfig,
-    ) -> Result<Vec<Vec<Vec<u8>>>, vyre_driver::BackendError> {
+        outputs: &mut OutputBuffers,
+    ) -> Result<(), vyre_driver::BackendError> {
         let pipeline = self.pipeline.load();
         pipeline
             .inner
-            .dispatch_persistent_handles_batched(batches, config)
+            .dispatch_persistent_handles_into(inputs, config, outputs)
+    }
+
+    fn dispatch_persistent_handle_rows_once_into(
+        &self,
+        rows: &[[Resource; 4]],
+        config: &DispatchConfig,
+        outputs: &mut Vec<OutputBuffers>,
+    ) -> Result<(), vyre_driver::BackendError> {
+        let pipeline = self.pipeline.load();
+        pipeline
+            .inner
+            .dispatch_persistent_handle_rows_into(rows, config, outputs)
     }
 }
 
@@ -466,15 +499,140 @@ impl MegakernelRecoveryPolicy {
     }
 }
 
-fn total_len<const N: usize>(buffers: [&[u8]; N]) -> u64 {
-    buffers
-        .iter()
-        .map(|buffer| buffer.len() as u64)
-        .fold(0_u64, u64::saturating_add)
+fn validate_bootstrap_geometry(
+    slot_count: u32,
+    workgroup_size_x: u32,
+) -> Result<(), PipelineError> {
+    if slot_count == 0 || workgroup_size_x == 0 || slot_count % workgroup_size_x != 0 {
+        return Err(PipelineError::QueueFull {
+            queue: "submission",
+            fix: "slot_count must be a non-zero multiple of workgroup_size_x",
+        });
+    }
+    Ok(())
 }
 
-fn nanos_u64(nanos: u128) -> u64 {
-    u64::try_from(nanos).unwrap_or(u64::MAX)
+pub(super) fn total_len<const N: usize>(buffers: [&[u8]; N]) -> Result<u64, PipelineError> {
+    let mut total = 0u64;
+    for buffer in buffers {
+        total = checked_add_u64(
+            total,
+            usize_to_u64(buffer.len(), "megakernel input buffer length")?,
+            "megakernel input byte total",
+        )?;
+    }
+    Ok(total)
+}
+
+pub(super) fn output_bytes(outputs: &[Vec<u8>]) -> Result<u64, PipelineError> {
+    let mut total = 0u64;
+    for output in outputs {
+        total = checked_add_u64(
+            total,
+            usize_to_u64(output.len(), "megakernel output buffer length")?,
+            "megakernel output byte total",
+        )?;
+    }
+    Ok(total)
+}
+
+pub(super) fn nested_output_bytes(outputs: &[Vec<Vec<u8>>]) -> Result<u64, PipelineError> {
+    let mut total = 0u64;
+    for row in outputs {
+        total = checked_add_u64(
+            total,
+            output_bytes(row)?,
+            "megakernel nested output byte total",
+        )?;
+    }
+    Ok(total)
+}
+
+pub(super) fn output_count_u32(outputs: &[Vec<u8>]) -> Result<u32, PipelineError> {
+    count_u32(outputs.len(), "megakernel output buffer count")
+}
+
+pub(super) fn nested_output_count_u32(outputs: &[Vec<Vec<u8>>]) -> Result<u32, PipelineError> {
+    let mut total = 0usize;
+    for row in outputs {
+        total = total.checked_add(row.len()).ok_or_else(|| {
+            PipelineError::Backend(
+                "megakernel nested output buffer count overflowed usize. Fix: split resident rows before dispatch.".to_string(),
+            )
+        })?;
+    }
+    count_u32(total, "megakernel nested output buffer count")
+}
+
+pub(super) fn resident_row_count_u32(rows: usize) -> Result<u32, PipelineError> {
+    count_u32(rows, "megakernel resident resource row count")
+}
+
+pub(super) fn resident_handle_count_u32(rows: usize) -> Result<u32, PipelineError> {
+    let handles = rows
+        .checked_mul(MegakernelResidentHandles::ABI_RESOURCE_COUNT)
+        .ok_or_else(|| {
+            PipelineError::Backend(
+                "megakernel resident resource handle count overflowed usize. Fix: split resident rows before dispatch.".to_string(),
+            )
+        })?;
+    count_u32(handles, "megakernel resident resource handle count")
+}
+
+pub(super) fn reserve_output_shell<T>(
+    out: &mut Vec<T>,
+    capacity: usize,
+    label: &'static str,
+) -> Result<(), PipelineError> {
+    if out.capacity() < capacity {
+        out.try_reserve_exact(capacity - out.capacity())
+            .map_err(|source| {
+                PipelineError::Backend(format!(
+                    "{label} could not reserve {capacity} slot(s): {source}. Fix: split the megakernel dispatch or reuse a caller-owned output shell."
+                ))
+            })?;
+    }
+    Ok(())
+}
+
+pub(super) fn nanos_u64(nanos: u128) -> Result<u64, PipelineError> {
+    u64::try_from(nanos).map_err(|source| {
+        PipelineError::Backend(format!(
+            "megakernel latency cannot fit u64 nanoseconds: {source}. Fix: timeout or split the dispatch before telemetry overflows."
+        ))
+    })
+}
+
+fn usize_to_u64(value: usize, label: &str) -> Result<u64, PipelineError> {
+    u64::try_from(value).map_err(|source| {
+        PipelineError::Backend(format!(
+            "{label} cannot fit u64: {source}. Fix: split the megakernel dispatch before telemetry/accounting."
+        ))
+    })
+}
+
+fn count_u32(value: usize, label: &str) -> Result<u32, PipelineError> {
+    u32::try_from(value).map_err(|source| {
+        PipelineError::Backend(format!(
+            "{label} cannot fit u32: {source}. Fix: split the megakernel dispatch before telemetry/accounting."
+        ))
+    })
+}
+
+fn checked_add_u64(left: u64, right: u64, label: &str) -> Result<u64, PipelineError> {
+    left.checked_add(right).ok_or_else(|| {
+        PipelineError::Backend(format!(
+            "{label} overflowed u64. Fix: split the megakernel dispatch before telemetry/accounting."
+        ))
+    })
+}
+
+fn checked_add_u32(left: u32, right: u32, label: &str) -> Result<u32, PipelineError> {
+    left.checked_add(right).ok_or_else(|| {
+        PipelineError::Backend(format!(
+            "{label} overflowed u32. Fix: split the megakernel dispatch before telemetry/accounting."
+        ))
+    })
 }
 
 #[cfg(test)]

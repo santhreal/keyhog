@@ -18,12 +18,13 @@
 //! - [`body`] — the cooperative inner kernel body
 //!   (`cooperative_matmul_body`) that both builders share.
 //!
-//! Public surface preserved verbatim through the re-exports below;
-//! external callers that import via `vyre_libs::math::linalg::*` see
-//! no change.
+//! The public surface is the plain and bias builders/wrappers. Kernel geometry
+//! and body construction stay inside this module boundary.
 
 mod bias;
 mod body;
+mod mma_body;
+mod mma_fragment;
 mod plain;
 mod shape;
 

@@ -8,6 +8,7 @@
 
 use std::sync::Arc;
 
+use crate::PipelineError;
 use smallvec::SmallVec;
 use vyre_foundation::ir::{Expr, Ident, Node, Program};
 
@@ -25,17 +26,33 @@ pub struct BarrierElisionReport {
 /// `Region`) and their recursively collected buffer effects cannot conflict.
 #[must_use]
 pub fn elide_value_flow_barriers(program: Program) -> (Program, BarrierElisionReport) {
+    try_elide_value_flow_barriers(program).unwrap_or_else(|error| {
+        panic!(
+            "megakernel barrier elision allocation failed: {error}. Fix: reduce fused program size before optimization."
+        )
+    })
+}
+
+/// Remove barriers between independent megakernel arms with fallible staging.
+///
+/// # Errors
+///
+/// Returns [`PipelineError::Backend`] when host staging for the rewritten IR
+/// cannot be reserved.
+pub fn try_elide_value_flow_barriers(
+    program: Program,
+) -> Result<(Program, BarrierElisionReport), PipelineError> {
     let mut report = BarrierElisionReport::default();
     if !nodes_have_barrier(program.entry()) {
-        return (program, report);
+        return Ok((program, report));
     }
-    let entry = rewrite_nodes(program.entry().to_vec(), &mut report);
+    let entry = try_rewrite_nodes(clone_nodes(program.entry(), "barrier entry")?, &mut report)?;
     let rewritten = if report.removed == 0 {
         program
     } else {
         program.with_rewritten_entry(entry)
     };
-    (rewritten, report)
+    Ok((rewritten, report))
 }
 
 fn nodes_have_barrier(nodes: &[Node]) -> bool {
@@ -54,86 +71,151 @@ fn node_has_barrier(node: &Node) -> bool {
     }
 }
 
-fn rewrite_nodes(nodes: Vec<Node>, report: &mut BarrierElisionReport) -> Vec<Node> {
-    let rewritten = nodes
-        .into_iter()
-        .map(|node| rewrite_node(node, report))
-        .collect::<Vec<_>>();
-    elide_barrier_siblings(rewritten, report)
+fn try_rewrite_nodes(
+    nodes: Vec<Node>,
+    report: &mut BarrierElisionReport,
+) -> Result<Vec<Node>, PipelineError> {
+    if !nodes_have_barrier(&nodes) {
+        return Ok(nodes);
+    }
+    let mut rewritten = Vec::new();
+    reserve_node_vec(&mut rewritten, nodes.len(), "barrier rewrite nodes")?;
+    for node in nodes {
+        rewritten.push(try_rewrite_node(node, report)?);
+    }
+    try_elide_barrier_siblings(rewritten, report)
 }
 
-fn rewrite_node(node: Node, report: &mut BarrierElisionReport) -> Node {
+fn try_rewrite_node(node: Node, report: &mut BarrierElisionReport) -> Result<Node, PipelineError> {
     match node {
         Node::If {
             cond,
             then,
             otherwise,
-        } => Node::If {
+        } => Ok(Node::If {
             cond,
-            then: rewrite_nodes(then, report),
-            otherwise: rewrite_nodes(otherwise, report),
-        },
+            then: try_rewrite_nodes(then, report)?,
+            otherwise: try_rewrite_nodes(otherwise, report)?,
+        }),
         Node::Loop {
             var,
             from,
             to,
             body,
-        } => Node::Loop {
+        } => Ok(Node::Loop {
             var,
             from,
             to,
-            body: rewrite_nodes(body, report),
-        },
-        Node::Block(body) => Node::Block(rewrite_nodes(body, report)),
+            body: try_rewrite_nodes(body, report)?,
+        }),
+        Node::Block(body) => Ok(Node::Block(try_rewrite_nodes(body, report)?)),
         Node::Region {
             generator,
             source_region,
             body,
-        } => Node::Region {
-            generator,
-            source_region,
-            body: Arc::new(rewrite_nodes(arc_vec_into_vec(body), report)),
-        },
-        other => other,
+        } => {
+            if !nodes_have_barrier(&body) {
+                Ok(Node::Region {
+                    generator,
+                    source_region,
+                    body,
+                })
+            } else {
+                Ok(Node::Region {
+                    generator,
+                    source_region,
+                    body: Arc::new(try_rewrite_nodes(
+                        try_arc_vec_into_vec(body, "barrier region body")?,
+                        report,
+                    )?),
+                })
+            }
+        }
+        other => Ok(other),
     }
 }
 
-fn elide_barrier_siblings(nodes: Vec<Node>, report: &mut BarrierElisionReport) -> Vec<Node> {
-    let mut out = Vec::with_capacity(nodes.len());
+fn try_elide_barrier_siblings(
+    nodes: Vec<Node>,
+    report: &mut BarrierElisionReport,
+) -> Result<Vec<Node>, PipelineError> {
+    let mut out = Vec::new();
+    reserve_node_vec(&mut out, nodes.len(), "barrier sibling output")?;
     let mut iter = nodes.into_iter().peekable();
     while let Some(node) = iter.next() {
         if matches!(&node, Node::Barrier { .. }) {
             if let (Some(left), Some(right)) = (out.last(), iter.peek()) {
-                if is_runtime_arm(left) && is_runtime_arm(right) {
-                    let mut left_access = AccessSet::default();
-                    collect_node_access(left, &mut left_access);
-                    let mut right_access = AccessSet::default();
-                    collect_node_access(right, &mut right_access);
-                    if accesses_are_independent(&left_access, &right_access) {
-                        report.removed += 1;
-                        continue;
-                    }
+                if is_runtime_arm(left)
+                    && is_runtime_arm(right)
+                    && arms_are_independent(left, right)
+                {
+                    report.removed += 1;
+                    continue;
                 }
             }
         }
         out.push(node);
     }
-    out
+    Ok(out)
 }
 
-fn arc_vec_into_vec<T: Clone>(body: Arc<Vec<T>>) -> Vec<T> {
+fn try_arc_vec_into_vec<T: Clone>(
+    body: Arc<Vec<T>>,
+    label: &'static str,
+) -> Result<Vec<T>, PipelineError> {
     match Arc::try_unwrap(body) {
-        Ok(nodes) => nodes,
-        Err(shared) => (*shared).clone(),
+        Ok(nodes) => Ok(nodes),
+        Err(shared) => {
+            let mut nodes = Vec::new();
+            reserve_generic_vec(&mut nodes, shared.len(), label)?;
+            nodes.extend(shared.iter().cloned());
+            Ok(nodes)
+        }
     }
+}
+
+fn clone_nodes(nodes: &[Node], label: &'static str) -> Result<Vec<Node>, PipelineError> {
+    let mut cloned = Vec::new();
+    reserve_node_vec(&mut cloned, nodes.len(), label)?;
+    cloned.extend(nodes.iter().cloned());
+    Ok(cloned)
+}
+
+fn reserve_node_vec(
+    nodes: &mut Vec<Node>,
+    capacity: usize,
+    label: &'static str,
+) -> Result<(), PipelineError> {
+    reserve_generic_vec(nodes, capacity, label)
+}
+
+fn reserve_generic_vec<T>(
+    values: &mut Vec<T>,
+    capacity: usize,
+    label: &'static str,
+) -> Result<(), PipelineError> {
+    if values.capacity() < capacity {
+        values
+            .try_reserve_exact(capacity - values.capacity())
+            .map_err(|source| {
+                PipelineError::Backend(format!(
+                    "megakernel {label} reservation failed for {capacity} element(s): {source}. Fix: split the fused program before barrier elision."
+                ))
+            })?;
+    }
+    Ok(())
 }
 
 fn is_runtime_arm(node: &Node) -> bool {
     matches!(node, Node::Block(_) | Node::Region { .. })
 }
 
-fn accesses_are_independent<'a>(left: &AccessSet<'a>, right: &AccessSet<'a>) -> bool {
-    !left.unknown && !right.unknown && !left.conflicts_with(right)
+fn arms_are_independent(left: &Node, right: &Node) -> bool {
+    let mut left_access = AccessSet::default();
+    let mut right_access = AccessSet::default();
+    collect_node_access(left, &mut left_access);
+    collect_node_access(right, &mut right_access);
+    !left_access.unknown && !right_access.unknown && !left_access.conflicts_with(&right_access)
 }
 
 #[derive(Debug, Default)]
@@ -182,9 +264,6 @@ fn intersects(left: &[&Ident], right: &[&Ident]) -> bool {
 }
 
 fn collect_node_access<'a>(node: &'a Node, out: &mut AccessSet<'a>) {
-    if out.unknown {
-        return;
-    }
     match node {
         Node::Let { value, .. } | Node::Assign { value, .. } => collect_expr_access(value, out),
         Node::Store {
@@ -248,21 +327,12 @@ fn collect_node_access<'a>(node: &'a Node, out: &mut AccessSet<'a>) {
 }
 
 fn collect_nodes_access<'a>(nodes: &'a [Node], out: &mut AccessSet<'a>) {
-    if out.unknown {
-        return;
-    }
     for node in nodes {
-        if out.unknown {
-            return;
-        }
         collect_node_access(node, out);
     }
 }
 
 fn collect_expr_access<'a>(expr: &'a Expr, out: &mut AccessSet<'a>) {
-    if out.unknown {
-        return;
-    }
     match expr {
         Expr::Load { buffer, index } => {
             out.read(buffer);

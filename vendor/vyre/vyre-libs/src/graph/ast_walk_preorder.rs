@@ -148,6 +148,7 @@ inventory::submit! {
         build: || ast_walk_preorder("nodes", "out", 6, 8),
         test_inputs: Some(preorder_harness_inputs),
         expected_output: Some(preorder_harness_expected),
+        category: Some("graph"),
     }
 }
 

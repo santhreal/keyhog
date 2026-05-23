@@ -3,6 +3,10 @@ use crate::ir::{Ident, Node};
 use im::HashSet;
 
 #[inline]
+#[expect(
+    clippy::too_many_lines,
+    reason = "reverse liveness/DCE pass keeps Node reconstruction and live-set transfer together"
+)]
 pub(crate) fn eliminate_dead_lets(nodes: Vec<Node>, live_after: HashSet<Ident>) -> LiveResult {
     let reachable_len = reachable_prefix(&nodes).len();
     let mut live = live_after;

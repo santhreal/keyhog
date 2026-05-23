@@ -57,23 +57,27 @@ pub fn sink_intersection(
         vec![Node::Region {
             generator: Ident::from(OP_ID),
             source_region: None,
-            body: Arc::new(vec![Node::if_then(Expr::lt(t.clone(), Expr::u32(words)), body)]),
+            body: Arc::new(vec![Node::if_then(
+                Expr::lt(t.clone(), Expr::u32(words)),
+                body,
+            )]),
         }],
     )
 }
 
 /// CPU oracle: count of bits set in `query AND sink`.
 #[must_use]
-pub fn cpu_ref(query_set: &[u32], sink_set: &[u32]) -> u32 {
+#[cfg(test)]
+pub(crate) fn cpu_ref(query_set: &[u32], sink_set: &[u32]) -> u32 {
     let inter = vyre_primitives::bitset::and::cpu_ref(query_set, sink_set);
     inter.iter().map(|w| w.count_ones()).sum()
 }
 
 /// Soundness marker for [`sink_intersection`].
 pub struct SinkIntersection;
-impl weir::soundness::SoundnessTagged for SinkIntersection {
-    fn soundness(&self) -> weir::soundness::Soundness {
-        weir::soundness::Soundness::Exact
+impl vyre::soundness::SoundnessTagged for SinkIntersection {
+    fn soundness(&self) -> vyre::soundness::Soundness {
+        vyre::soundness::Soundness::Exact
     }
 }
 

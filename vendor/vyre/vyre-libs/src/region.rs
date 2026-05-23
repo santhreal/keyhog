@@ -1,5 +1,5 @@
 //! Shared Region builder — moved into the standalone `vyre-harness`
-//! crate so external Cat-A wrappers (`weir`, `decodex`, `multimatch`)
+//! crate so external Cat-A wrappers (`downstream dataflow engine`, `decodex`, `multimatch`)
 //! can construct provenance-tagged Programs without depending on the
 //! rest of `vyre-libs`. This module is a thin re-export so existing
 //! call sites keep compiling unchanged.

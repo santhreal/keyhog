@@ -90,5 +90,6 @@ inventory::submit! {
                 to_bytes(&[136u32]),
             ]]
         }),
+        category: Some("compiler"),
     }
 }

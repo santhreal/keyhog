@@ -21,7 +21,7 @@
 //! matches the surge stdlib's current composition but is
 //! technically a stronger (over-approximating) predicate than
 //! "dominates." Callers depending on strict dominator semantics
-//! should use [`cpu_dominator_sets`] or compose the intersection in SURGE
+//! should use [`cpu_dominator_sets`] or compose the intersection in source-query dialect
 //! directly. This note is load-bearing: surge rules that consume
 //! this op today are using it as reverse reachability and will
 //! keep working; any new rule that needs strict dominance must
@@ -46,6 +46,11 @@ const OP_ID: &str = "vyre-libs::security::dominator_tree";
 /// zero false positives must gate on [`cpu_dominator_sets`] instead.
 #[must_use]
 pub fn dominator_tree(shape: ProgramGraphShape, frontier_in: &str, frontier_out: &str) -> Program {
+    crate::security::assert_security_inputs(
+        OP_ID,
+        shape.node_count,
+        &[("frontier_in", frontier_in), ("frontier_out", frontier_out)],
+    );
     let primitive = csr_backward_traverse(shape, frontier_in, frontier_out, edge_kind::DOMINANCE);
     Program::wrapped(
         primitive.buffers().to_vec(),
@@ -71,7 +76,12 @@ pub fn dominator_tree(shape: ProgramGraphShape, frontier_in: &str, frontier_out:
 /// reference; rules that require zero false positives MUST compose
 /// against this oracle rather than the GPU [`dominator_tree`] shim.
 #[must_use]
-pub fn cpu_dominator_sets(num_nodes: u32, entry: u32, edges: &[(u32, u32)]) -> Vec<Vec<u32>> {
+#[cfg(any(test, feature = "cpu-parity"))]
+pub(crate) fn cpu_dominator_sets(
+    num_nodes: u32,
+    entry: u32,
+    edges: &[(u32, u32)],
+) -> Vec<Vec<u32>> {
     const NONE: usize = usize::MAX;
 
     let n = num_nodes as usize;
@@ -235,6 +245,7 @@ inventory::submit! {
             // so they light up. Accumulator preserves seed {3}.
             vec![vec![to_bytes(&[0b1110])]]
         }),
+        category: Some("security"),
     }
 }
 
@@ -331,39 +342,73 @@ mod tests {
         let p = dominator_tree(ProgramGraphShape::new(4, 4), "fin", "fout");
         let to_bytes = |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
         let inputs = vec![
-            to_bytes(&[0, 0, 0, 0]),          // pg_nodes
-            to_bytes(&[0, 2, 3, 4, 4]),       // pg_edge_offsets
-            to_bytes(&[1, 2, 3, 3]),          // pg_edge_targets
-            to_bytes(&[edge_kind::DOMINANCE, edge_kind::DOMINANCE, edge_kind::DOMINANCE, edge_kind::DOMINANCE]),
-            to_bytes(&[0, 0, 0, 0]),          // pg_node_tags
-            to_bytes(&[0b1000]),              // fin = {3}
-            to_bytes(&[0b1000]),              // fout seed = {3}
+            to_bytes(&[0, 0, 0, 0]),    // pg_nodes
+            to_bytes(&[0, 2, 3, 4, 4]), // pg_edge_offsets
+            to_bytes(&[1, 2, 3, 3]),    // pg_edge_targets
+            to_bytes(&[
+                edge_kind::DOMINANCE,
+                edge_kind::DOMINANCE,
+                edge_kind::DOMINANCE,
+                edge_kind::DOMINANCE,
+            ]),
+            to_bytes(&[0, 0, 0, 0]), // pg_node_tags
+            to_bytes(&[0b1000]),     // fin = {3}
+            to_bytes(&[0b1000]),     // fout seed = {3}
         ];
-        let values: Vec<vyre_reference::value::Value> =
-            inputs.into_iter().map(vyre_reference::value::Value::from).collect();
+        let values: Vec<vyre_reference::value::Value> = inputs
+            .into_iter()
+            .map(vyre_reference::value::Value::from)
+            .collect();
         let outputs = vyre_reference::reference_eval(&p, &values).unwrap();
         let gpu_out = u32::from_le_bytes(outputs[0].to_bytes()[0..4].try_into().unwrap());
 
         let dom = cpu_dominator_sets(4, 0, &[(0, 1), (0, 2), (1, 3), (2, 3)]);
         let true_dom_bitset: u32 = dom[3].iter().map(|&n| 1u32 << n).sum();
 
+        // Adversarial test for the documented soundness gap.
+        //
+        // `dominator_tree` is implemented as one
+        // `csr_backward_traverse` step over DOMINANCE edges from the
+        // input frontier. That is a *single-hop predecessor query*,
+        // not the dominator closure: starting from `{3}` it returns
+        // `{3} ∪ pred_DOMINANCE(3)` (immediate predecessors only),
+        // never reaching `{0}` which sits two hops back through the
+        // diamond. So the shim is neither strictly dominator-equal
+        // (under-includes — misses 0) nor a strict super-set
+        // over-approximation. The doc says `Soundness::MayOver` but
+        // the underlying primitive is one-step, not closure.
+        //
+        // This adversarial test pins the current behaviour so any
+        // change to the substrate (e.g. wiring in a fixpoint closure
+        // or migrating to a downstream dataflow engine's strict dominator solver) must update
+        // this test deliberately. Rules that need true dominators
+        // route through `cpu_dominator_sets` (Lengauer-Tarjan).
+        let one_hop_predecessors_of_3: u32 = 0b1110; // {1, 2, 3}: self + immediate DOMINANCE preds
         assert_eq!(
+            gpu_out, one_hop_predecessors_of_3,
+            "dominator_tree single-step shim returned {gpu_out:b}; expected \
+             {one_hop_predecessors_of_3:b} (immediate DOMINANCE predecessors of node 3). \
+             True strict dominators are {true_dom_bitset:b} — the shim does NOT \
+             compute these and rules requiring strict dominators must use \
+             cpu_dominator_sets instead."
+        );
+        assert_ne!(
             gpu_out, true_dom_bitset,
-            "dominator_tree GPU shim ({:b}) over-approximates true dominators ({:b}) for node 3; \
-             MayOver semantics divergence must be caught by adversarial tests",
-            gpu_out, true_dom_bitset
+            "dominator_tree shim must visibly differ from strict dominators \
+             on the diamond — equality here would mean the substrate \
+             silently became a closure and the doc/tests need updating."
         );
     }
 
     #[test]
     #[should_panic(expected = "node_count must be positive")]
     fn dominator_tree_zero_node_count_should_panic() {
-        dominator_tree(ProgramGraphShape::new(0, 0), "fin", "fout");
+        let _ = dominator_tree(ProgramGraphShape::new(0, 0), "fin", "fout");
     }
 
     #[test]
     #[should_panic(expected = "empty buffer name")]
     fn dominator_tree_empty_buffer_name_should_panic() {
-        dominator_tree(ProgramGraphShape::new(4, 4), "", "fout");
+        let _ = dominator_tree(ProgramGraphShape::new(4, 4), "", "fout");
     }
 }

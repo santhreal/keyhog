@@ -1,0 +1,189 @@
+use super::super::scan::{inclusive_prefix_scan_u32_into, PrefixScanScratch};
+use super::block_programs::{
+    simple_block_comment_marks_program, simple_block_comment_masks_program,
+    simple_block_comment_topology_program,
+};
+use super::full_comment::gpu_filter_full_comment_state;
+use super::host::read_output_u32;
+use super::program_helpers::byte_compact_program;
+use super::FilteredBytes;
+use crate::parsing::c::preprocess::gpu_pipeline::GpuDispatcher;
+
+#[derive(Default)]
+pub(super) struct SimpleBlockScratch {
+    zero_words: Vec<u8>,
+    scalar_zero: Vec<u8>,
+    marks_out: Vec<Vec<u8>>,
+    open_scan: Vec<u8>,
+    close_after_scan: Vec<u8>,
+    topology_out: Vec<Vec<u8>>,
+    masks_out: Vec<Vec<u8>>,
+    offsets_bytes: Vec<u8>,
+    compact_init: Vec<u8>,
+    compact_out: Vec<Vec<u8>>,
+}
+
+impl SimpleBlockScratch {
+    fn prepare(&mut self, n_bucket: u32, byte_buf_pad: usize) {
+        self.zero_words.clear();
+        self.zero_words.resize(n_bucket as usize * 4, 0);
+        self.scalar_zero.clear();
+        self.scalar_zero.resize(4, 0);
+        self.compact_init.clear();
+        self.compact_init.resize(byte_buf_pad, 0);
+    }
+}
+
+pub(super) fn gpu_filter_simple_block_comments(
+    dispatcher: &dyn GpuDispatcher,
+    raw: &[u8],
+    splice_input: &[u8],
+    n_bucket: u32,
+    byte_buf_pad: usize,
+    n_real_buf: &[u8],
+    scratch: &mut SimpleBlockScratch,
+    full_scratch: &mut super::full_comment::FullCommentScratch,
+    scan_scratch: &mut PrefixScanScratch,
+) -> Result<FilteredBytes, String> {
+    scratch.prepare(n_bucket, byte_buf_pad);
+    let marks_prog = simple_block_comment_marks_program(n_bucket);
+    dispatcher
+        .dispatch_borrowed_into(
+            &marks_prog,
+            &[
+                splice_input,
+                scratch.zero_words.as_slice(),
+                scratch.zero_words.as_slice(),
+                n_real_buf,
+            ],
+            &mut scratch.marks_out,
+        )
+        .map_err(|e| format!("simple block comments marks: {e}"))?;
+    if scratch.marks_out.len() != 2 {
+        return Err(format!(
+            "simple block comments marks: expected exactly 2 outputs, got {}. Fix: backend must return open_flags/close_after_flags and no extras.",
+            scratch.marks_out.len()
+        ));
+    }
+    inclusive_prefix_scan_u32_into(
+        dispatcher,
+        &scratch.marks_out[0],
+        n_bucket,
+        scan_scratch,
+        &mut scratch.open_scan,
+    )
+    .map_err(|e| format!("simple block comments open scan: {e}"))?;
+    inclusive_prefix_scan_u32_into(
+        dispatcher,
+        &scratch.marks_out[1],
+        n_bucket,
+        scan_scratch,
+        &mut scratch.close_after_scan,
+    )
+    .map_err(|e| format!("simple block comments close-after scan: {e}"))?;
+
+    let topology_prog = simple_block_comment_topology_program(n_bucket);
+    dispatcher
+        .dispatch_borrowed_into(
+            &topology_prog,
+            &[
+                scratch.marks_out[0].as_slice(),
+                scratch.marks_out[1].as_slice(),
+                scratch.open_scan.as_slice(),
+                scratch.close_after_scan.as_slice(),
+                scratch.scalar_zero.as_slice(),
+                n_real_buf,
+            ],
+            &mut scratch.topology_out,
+        )
+        .map_err(|e| format!("simple block comments topology: {e}"))?;
+    if scratch.topology_out.len() != 1 {
+        return Err(format!(
+            "simple block comments topology: expected exactly 1 output, got {}. Fix: backend must return only the invalid flag.",
+            scratch.topology_out.len()
+        ));
+    }
+    let topology_flag = scratch
+        .topology_out
+        .first()
+        .ok_or_else(|| "simple block comments topology: missing invalid flag".to_string())?;
+    if read_output_u32(
+        &topology_flag,
+        "simple block comments topology invalid flag",
+    )? != 0
+    {
+        return gpu_filter_full_comment_state(
+            dispatcher,
+            raw,
+            splice_input,
+            n_bucket,
+            n_bucket as usize,
+            byte_buf_pad,
+            n_real_buf,
+            full_scratch,
+            scan_scratch,
+        );
+    }
+
+    let masks_prog = simple_block_comment_masks_program(n_bucket);
+    dispatcher
+        .dispatch_borrowed_into(
+            &masks_prog,
+            &[
+                scratch.marks_out[0].as_slice(),
+                scratch.open_scan.as_slice(),
+                scratch.close_after_scan.as_slice(),
+                scratch.zero_words.as_slice(),
+                scratch.zero_words.as_slice(),
+                n_real_buf,
+            ],
+            &mut scratch.masks_out,
+        )
+        .map_err(|e| format!("simple block comments masks: {e}"))?;
+    if scratch.masks_out.len() != 2 {
+        return Err(format!(
+            "simple block comments masks: expected exactly 2 outputs, got {}. Fix: backend must return final_keep/comment_mask and no extras.",
+            scratch.masks_out.len()
+        ));
+    }
+    inclusive_prefix_scan_u32_into(
+        dispatcher,
+        &scratch.masks_out[0],
+        n_bucket,
+        scan_scratch,
+        &mut scratch.offsets_bytes,
+    )
+    .map_err(|e| format!("simple block comments prefix scan: {e}"))?;
+    dispatcher
+        .dispatch_borrowed_into(
+            &byte_compact_program(n_bucket),
+            &[
+                splice_input,
+                scratch.masks_out[0].as_slice(),
+                scratch.masks_out[1].as_slice(),
+                scratch.offsets_bytes.as_slice(),
+                scratch.compact_init.as_slice(),
+                scratch.scalar_zero.as_slice(),
+            ],
+            &mut scratch.compact_out,
+        )
+        .map_err(|e| format!("simple block comments byte_compact: {e}"))?;
+    if scratch.compact_out.len() != 2 {
+        return Err(format!(
+            "simple block comments byte_compact: expected exactly 2 outputs, got {}. Fix: backend must return compacted/live_count and no extras.",
+            scratch.compact_out.len()
+        ));
+    }
+    let compacted_buf = scratch.compact_out.first().ok_or_else(|| {
+        "simple block comments byte_compact: missing compacted output".to_string()
+    })?;
+    let live_buf = scratch.compact_out.get(1).ok_or_else(|| {
+        "simple block comments byte_compact: missing live_count output".to_string()
+    })?;
+    let live =
+        read_output_u32(&live_buf, "simple block comments byte_compact live_count")? as usize;
+    let byte_len = live.min(raw.len()).min(compacted_buf.len());
+    Ok(FilteredBytes {
+        bytes: compacted_buf[..byte_len].to_vec(),
+    })
+}

@@ -33,7 +33,7 @@
 //!
 //! - Both loop bounds must be `Expr::LitU32` literals. Symbolic
 //!   bounds need the full range substrate (intervals + symbolic
-//!   bounds via weir).
+//!   bounds via a downstream range analysis).
 //! - The condition must be a comparison of `Var(loop_var)` against
 //!   a `LitU32`. Compound conditions (BinOp::And / Or chains) and
 //!   non-Var operands are skipped — the next algebraic round will
@@ -64,6 +64,14 @@ impl LoopVarRangeFoldPass {
     /// Skip programs without a foldable If inside a Loop.
     #[must_use]
     fn analyze_impl(program: &Program) -> PassAnalysis {
+        // The fold rule requires both an If AND a Loop; if either is
+        // absent the pass cannot fire. Compose the bitset check for
+        // both kinds before paying the recursive walk.
+        use crate::ir::stats::{NODE_KIND_IF, NODE_KIND_LOOP};
+        let stats = program.stats();
+        if !stats.has_any_node_kind(NODE_KIND_LOOP) || !stats.has_any_node_kind(NODE_KIND_IF) {
+            return PassAnalysis::SKIP;
+        }
         if program
             .entry()
             .iter()
@@ -78,18 +86,16 @@ impl LoopVarRangeFoldPass {
     /// Walk the entry tree and fold every range-determined If.
     #[must_use]
     pub fn transform(program: Program) -> PassResult {
-        let scaffold = program.with_rewritten_entry(Vec::new());
         let mut changed = false;
-        let entry: Vec<Node> = program
-            .into_entry_vec()
-            .into_iter()
-            .map(|n| recurse(n, None, &mut changed))
-            .collect();
-        PassResult {
-            program: scaffold.with_rewritten_entry(entry),
-            changed,
-        }
-    }}
+        let program = program.map_entry(|entry| {
+            entry
+                .into_iter()
+                .map(|n| recurse(n, None, &mut changed))
+                .collect()
+        });
+        PassResult { program, changed }
+    }
+}
 
 #[derive(Clone, Copy)]
 struct LoopRange<'a> {
@@ -98,6 +104,10 @@ struct LoopRange<'a> {
     hi: u32,
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "range-fold tree rewrite keeps loop/if/block/region reconstruction in one ownership-preserving pass"
+)]
 fn recurse(node: Node, range: Option<LoopRange<'_>>, changed: &mut bool) -> Node {
     match node {
         Node::Loop {
@@ -153,7 +163,10 @@ fn recurse(node: Node, range: Option<LoopRange<'_>>, changed: &mut bool) -> Node
                         .map(|n| recurse(n, Some(range), changed))
                         .collect();
                     if folded.len() == 1 {
-                        return folded.into_iter().next().unwrap();
+                        return folded
+                            .into_iter()
+                            .next()
+                            .unwrap_or_else(|| unreachable!("folded.len() == 1 by guard above"));
                     }
                     return Node::Block(folded);
                 }
@@ -229,9 +242,17 @@ fn condition_verdict(cond: &Expr, range: &LoopRange<'_>) -> Option<bool> {
         return None;
     }
     let max_inclusive = hi - 1;
+    if matches!(op, BinOp::Eq | BinOp::Ne) {
+        return if lit_side < lo || lit_side > max_inclusive {
+            Some(matches!(op, BinOp::Ne))
+        } else {
+            None
+        };
+    }
     Some(match (op, var_on_left) {
         // Var(i) < lit
-        (BinOp::Lt, true) => {
+        // lit > Var(i)
+        (BinOp::Lt, true) | (BinOp::Gt, false) => {
             if lit_side >= hi {
                 true
             } else if lit_side <= lo {
@@ -241,7 +262,8 @@ fn condition_verdict(cond: &Expr, range: &LoopRange<'_>) -> Option<bool> {
             }
         }
         // lit < Var(i)
-        (BinOp::Lt, false) => {
+        // Var(i) > lit
+        (BinOp::Lt, false) | (BinOp::Gt, true) => {
             if lit_side >= max_inclusive {
                 false
             } else if lit_side < lo {
@@ -251,7 +273,8 @@ fn condition_verdict(cond: &Expr, range: &LoopRange<'_>) -> Option<bool> {
             }
         }
         // Var(i) <= lit
-        (BinOp::Le, true) => {
+        // lit >= Var(i)
+        (BinOp::Le, true) | (BinOp::Ge, false) => {
             if lit_side >= max_inclusive {
                 true
             } else if lit_side < lo {
@@ -261,67 +284,12 @@ fn condition_verdict(cond: &Expr, range: &LoopRange<'_>) -> Option<bool> {
             }
         }
         // lit <= Var(i)
-        (BinOp::Le, false) => {
-            if lit_side <= lo {
-                true
-            } else if lit_side > max_inclusive {
-                false
-            } else {
-                return None;
-            }
-        }
-        // Var(i) > lit
-        (BinOp::Gt, true) => {
-            if lit_side >= max_inclusive {
-                false
-            } else if lit_side < lo {
-                true
-            } else {
-                return None;
-            }
-        }
-        // lit > Var(i)
-        (BinOp::Gt, false) => {
-            if lit_side >= hi {
-                true
-            } else if lit_side <= lo {
-                false
-            } else {
-                return None;
-            }
-        }
         // Var(i) >= lit
-        (BinOp::Ge, true) => {
+        (BinOp::Le, false) | (BinOp::Ge, true) => {
             if lit_side <= lo {
                 true
             } else if lit_side > max_inclusive {
                 false
-            } else {
-                return None;
-            }
-        }
-        // lit >= Var(i)
-        (BinOp::Ge, false) => {
-            if lit_side >= max_inclusive {
-                true
-            } else if lit_side < lo {
-                false
-            } else {
-                return None;
-            }
-        }
-        // Var(i) == lit
-        (BinOp::Eq, _) => {
-            if lit_side < lo || lit_side > max_inclusive {
-                false
-            } else {
-                return None;
-            }
-        }
-        // Var(i) != lit
-        (BinOp::Ne, _) => {
-            if lit_side < lo || lit_side > max_inclusive {
-                true
             } else {
                 return None;
             }
@@ -336,8 +304,7 @@ fn body_rebinds_var(body: &[Node], var: &Ident) -> bool {
 
 fn node_rebinds_var(node: &Node, var: &Ident) -> bool {
     match node {
-        Node::Assign { name, .. } => name == var,
-        Node::Let { name, .. } => name == var,
+        Node::Assign { name, .. } | Node::Let { name, .. } => name == var,
         Node::Loop {
             var: inner, body, ..
         } => {

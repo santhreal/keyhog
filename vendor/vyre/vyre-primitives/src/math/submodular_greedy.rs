@@ -127,6 +127,7 @@ pub fn argmax_of_marginals(
 /// CPU reference. Returns `(winner_idx, winner_gain)` with
 /// `winner_idx == NO_WINNER` if all candidates picked.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn argmax_of_marginals_cpu(gains: &[u32], picked_mask: &[u32]) -> (u32, u32) {
     let mut best: Option<(u32, u32)> = None;
     for (i, (&g, &m)) in gains.iter().zip(picked_mask.iter()).enumerate() {

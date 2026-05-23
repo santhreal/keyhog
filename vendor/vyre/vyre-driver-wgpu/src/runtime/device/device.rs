@@ -35,8 +35,9 @@ pub struct EnabledFeatures {
     /// Wgpu adapter max subgroup size.
     pub max_subgroup_size: u32,
     /// Wgpu adapter minimum subgroup size (I.6). `0` means the
-    /// adapter did not report a subgroup size; consumers treat that
-    /// as "unknown" and fall back to a default workgroup heuristic.
+    /// adapter did not report a subgroup size; consumers must treat
+    /// subgroup-width-dependent planning as unavailable unless
+    /// [`crate::capabilities::supports_subgroup_ops`] is true.
     pub min_subgroup_size: u32,
 }
 
@@ -157,20 +158,20 @@ pub async fn acquire_gpu() -> Result<(
     wgpu::AdapterInfo,
     EnabledFeatures,
 )> {
-    if let Some(index) = super::selector::adapter_index_from_env() {
+    if let Some(index) = super::selector::adapter_index_from_env()? {
         return super::selector::acquire_gpu_for_adapter(index).await;
     }
 
     let instance = wgpu::Instance::default();
     let adapters = instance.enumerate_adapters(wgpu::Backends::all());
-    let mut candidates = adapters
-        .iter()
-        .filter_map(|adapter| {
-            let info = adapter.get_info();
-            let rank = real_gpu_rank(info.device_type);
-            (rank > 0).then_some((adapter, info, rank))
+    let mut candidates = Vec::with_capacity(adapters.len());
+    candidates.extend(adapters.iter().filter_map(|adapter| {
+        let info = adapter.get_info();
+        crate::capabilities::is_real_gpu(&info).then(|| {
+            let score = gpu_candidate_score(&info, adapter.features(), &adapter.limits());
+            (adapter, info, score)
         })
-        .collect::<Vec<_>>();
+    }));
     candidates.sort_by(|left, right| right.2.cmp(&left.2));
 
     let mut failures = Vec::with_capacity(candidates.len());
@@ -181,16 +182,14 @@ pub async fn acquire_gpu() -> Result<(
         }
     }
 
-    let probed = adapters
-        .iter()
-        .map(|adapter| {
-            let info = adapter.get_info();
-            format!(
-                "{} ({:?}, backend={:?})",
-                info.name, info.device_type, info.backend
-            )
-        })
-        .collect::<Vec<_>>();
+    let mut probed = Vec::with_capacity(adapters.len());
+    probed.extend(adapters.iter().map(|adapter| {
+        let info = adapter.get_info();
+        format!(
+            "{} ({:?}, backend={:?})",
+            info.name, info.device_type, info.backend
+        )
+    }));
     Err(Error::Gpu {
         message: format!(
             "no real GPU adapter could create a wgpu device. Probed adapters: [{}]. Device failures: [{}]. Fix: expose a discrete, integrated, or virtual GPU through a wgpu-supported driver before running vyre.",
@@ -209,6 +208,14 @@ pub(super) async fn request_device_for_adapter(
     EnabledFeatures,
 )> {
     let adapter_info = adapter.get_info();
+    if !crate::capabilities::is_real_gpu(&adapter_info) {
+        return Err(Error::Gpu {
+            message: format!(
+                "wgpu adapter `{}` reports device type {:?}, which is not a real GPU execution target. Fix: select a discrete, integrated, or virtual GPU adapter; CPU/software adapters are not production dispatch backends.",
+                adapter_info.name, adapter_info.device_type
+            ),
+        });
+    }
     // Opt into every feature the adapter advertises that we know how to
     // lower against. Each feature is additive: enabling it unlocks the
     // corresponding VyreBackend capability report (see
@@ -240,7 +247,7 @@ pub(super) async fn request_device_for_adapter(
                     max_storage_buffer_binding_size: adapter_limits.max_storage_buffer_binding_size,
                     // Modern adapters expose multi-GiB per-buffer caps; the
                     // wgpu spec floor is 256 MiB which is too small for
-                    // batch-amortized scanners (surgec's `MAX_BATCH × num_rules
+                    // batch-amortized scanners (`MAX_BATCH × num_rules
                     // × 65 536 × 4` packed-output buffer scales beyond that
                     // when MAX_BATCH grows past ~50). Take whatever the
                     // adapter reports — falls back to the spec floor on
@@ -284,13 +291,13 @@ pub(super) async fn request_device_for_adapter(
     enabled.max_subgroup_size = device_limits.max_subgroup_size;
     enabled.min_subgroup_size = device_limits.min_subgroup_size;
 
-    if enabled.subgroup && !subgroup_smoke_compiles(&device_queue.0) {
-        tracing::warn!(
-            target: "vyre.device",
-            adapter = %adapter_info.name,
-            "adapter advertises SUBGROUP but rejects a subgroup compute pipeline; reporting supports_subgroup_ops=false"
-        );
-        enabled.subgroup = false;
+    if enabled.subgroup {
+        subgroup_smoke_compiles(&device_queue.0).map_err(|error| Error::Gpu {
+            message: format!(
+                "adapter `{}` advertises SUBGROUP but rejects the subgroup compute-pipeline smoke test: {error}. Fix: repair the wgpu feature negotiation or GPU driver; do not silently report subgroup support as disabled on a subgroup-capable adapter.",
+                adapter_info.name
+            ),
+        })?;
     }
 
     Ok((device_queue, adapter_info, enabled))
@@ -357,7 +364,58 @@ fn real_gpu_rank(device_type: wgpu::DeviceType) -> u8 {
     }
 }
 
-fn subgroup_smoke_compiles(device: &wgpu::Device) -> bool {
+fn gpu_candidate_score(
+    info: &wgpu::AdapterInfo,
+    adapter_features: wgpu::Features,
+    adapter_limits: &wgpu::Limits,
+) -> u128 {
+    let mut feature_score = 0u128;
+    if crate::capabilities::supports_subgroup_for_adapter(adapter_features, adapter_limits) {
+        feature_score |= 1 << 7;
+    }
+    if adapter_features.contains(wgpu::Features::SUBGROUP_BARRIER) {
+        feature_score |= 1 << 6;
+    }
+    if adapter_features.contains(wgpu::Features::SHADER_F16) {
+        feature_score |= 1 << 5;
+    }
+    if adapter_features.contains(wgpu::Features::PIPELINE_CACHE) {
+        feature_score |= 1 << 4;
+    }
+    if adapter_features.contains(wgpu::Features::PUSH_CONSTANTS) {
+        feature_score |= 1 << 3;
+    }
+    if adapter_features.contains(wgpu::Features::INDIRECT_FIRST_INSTANCE) {
+        feature_score |= 1 << 2;
+    }
+    if adapter_features.contains(wgpu::Features::TIMESTAMP_QUERY) {
+        feature_score |= 1 << 1;
+    }
+    if adapter_features.contains(wgpu::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS) {
+        feature_score |= 1;
+    }
+
+    let storage_binding_bits = u128::from(adapter_limits.max_storage_buffer_binding_size.ilog2());
+    let buffer_bits = u128::from(adapter_limits.max_buffer_size.max(1).ilog2());
+    let workgroup_invocations = u128::from(adapter_limits.max_compute_invocations_per_workgroup);
+    let workgroup_storage_bits = u128::from(
+        adapter_limits
+            .max_compute_workgroup_storage_size
+            .max(1)
+            .ilog2(),
+    );
+    let storage_buffers = u128::from(adapter_limits.max_storage_buffers_per_shader_stage);
+
+    (u128::from(real_gpu_rank(info.device_type)) << 120)
+        | (feature_score << 96)
+        | (storage_binding_bits << 88)
+        | (buffer_bits << 80)
+        | (workgroup_invocations << 56)
+        | (workgroup_storage_bits << 48)
+        | storage_buffers
+}
+
+fn subgroup_smoke_compiles(device: &wgpu::Device) -> std::result::Result<(), String> {
     const WGSL: &str = r#"
 @compute @workgroup_size(32)
 fn main(@builtin(subgroup_invocation_id) lane: u32, @builtin(subgroup_size) size: u32) {
@@ -382,18 +440,9 @@ fn main(@builtin(subgroup_invocation_id) lane: u32, @builtin(subgroup_size) size
         cache: None,
     });
     match pop_error_scope_now(device) {
-        Ok(None) => true,
-        Ok(Some(error)) => {
-            tracing::warn!(
-                ?error,
-                "subgroup capability probe failed validation; reporting subgroup support as disabled"
-            );
-            false
-        }
-        Err(error) => {
-            tracing::error!("{error}");
-            false
-        }
+        Ok(None) => Ok(()),
+        Ok(Some(error)) => Err(format!("validation error: {error}")),
+        Err(error) => Err(error.to_string()),
     }
 }
 
@@ -482,6 +531,51 @@ mod tests {
         assert!(
             is_cached_device(&device_queue.0),
             "cached adapter info must not replace the cached device with a second init"
+        );
+    }
+
+    #[test]
+    fn gpu_candidate_score_prefers_stronger_compute_adapter_within_same_class() {
+        let info = wgpu::AdapterInfo {
+            name: "gpu".to_string(),
+            vendor: 0x10de,
+            device: 0x2c02,
+            device_type: wgpu::DeviceType::DiscreteGpu,
+            driver: "nvidia".to_string(),
+            driver_info: "test".to_string(),
+            backend: wgpu::Backend::Vulkan,
+        };
+        let weak_limits = wgpu::Limits {
+            max_storage_buffer_binding_size: 1 << 20,
+            max_buffer_size: 1 << 28,
+            max_compute_invocations_per_workgroup: 256,
+            max_compute_workgroup_storage_size: 16 << 10,
+            max_storage_buffers_per_shader_stage: 8,
+            ..wgpu::Limits::default()
+        };
+        let strong_limits = wgpu::Limits {
+            max_storage_buffer_binding_size: 1 << 30,
+            max_buffer_size: 1 << 34,
+            max_compute_invocations_per_workgroup: 1024,
+            max_compute_workgroup_storage_size: 64 << 10,
+            max_storage_buffers_per_shader_stage: 16,
+            min_subgroup_size: 32,
+            max_subgroup_size: 32,
+            ..wgpu::Limits::default()
+        };
+        let weak = gpu_candidate_score(&info, wgpu::Features::empty(), &weak_limits);
+        let strong = gpu_candidate_score(
+            &info,
+            wgpu::Features::SUBGROUP
+                | wgpu::Features::SUBGROUP_BARRIER
+                | wgpu::Features::SHADER_F16
+                | wgpu::Features::PIPELINE_CACHE,
+            &strong_limits,
+        );
+
+        assert!(
+            strong > weak,
+            "Fix: automatic GPU acquisition must prefer the stronger same-class compute adapter."
         );
     }
 }

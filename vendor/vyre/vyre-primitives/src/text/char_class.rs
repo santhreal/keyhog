@@ -168,11 +168,12 @@ pub fn char_class(source: &str, classified: &str, n: u32) -> Program {
     )
 }
 
-/// CPU reference: classify each source byte through the lookup table.
+/// Reference oracle: classify each source byte through the lookup table.
 ///
 /// Pure function, exposed for fixture generation + harness oracles.
 #[must_use]
-pub fn cpu_ref(source: &[u8], table: &[u32; 256]) -> Vec<u32> {
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn reference_char_class(source: &[u8], table: &[u32; 256]) -> Vec<u32> {
     source
         .iter()
         .map(|byte| table[usize::from(*byte)])
@@ -180,14 +181,9 @@ pub fn cpu_ref(source: &[u8], table: &[u32; 256]) -> Vec<u32> {
 }
 
 /// Pack a `[u32]` slice into the LE-byte layout the harness uses.
-/// Delegates to [`vyre_foundation::byte_pack::pack_u32_slice_le`] —
-/// the canonical fast implementation (pre-allocated + extend_from_slice).
-/// Pre-2026-05-20 this used the iterator `flat_map().collect()` form,
-/// which paid per-element overhead on million-element streams; the
-/// hoisted version is documented as ~2-3× faster on those workloads.
 #[must_use]
 pub fn pack_u32(words: &[u32]) -> Vec<u8> {
-    vyre_foundation::byte_pack::pack_u32_slice_le(words)
+    words.iter().flat_map(|word| word.to_le_bytes()).collect()
 }
 
 /// Pack a `[u8]` source slice into the per-element u32 layout the GPU
@@ -214,8 +210,7 @@ inventory::submit! {
             ]]
         }),
         Some(|| {
-            let table = build_char_class_table();
-            vec![vec![pack_u32(&cpu_ref(b"A1 ", &table))]]
+            vec![vec![pack_u32(&[C_ALPHA, C_DIGIT, C_WS])]]
         }),
     )
 }
@@ -241,9 +236,12 @@ mod tests {
     }
 
     #[test]
-    fn cpu_ref_walks_table() {
+    fn reference_walks_table() {
         let table = build_char_class_table();
-        assert_eq!(cpu_ref(b"A1 ", &table), vec![C_ALPHA, C_DIGIT, C_WS]);
+        assert_eq!(
+            reference_char_class(b"A1 ", &table),
+            vec![C_ALPHA, C_DIGIT, C_WS]
+        );
     }
 
     #[test]

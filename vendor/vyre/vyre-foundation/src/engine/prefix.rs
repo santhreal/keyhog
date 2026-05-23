@@ -140,7 +140,12 @@ pub fn newline_prefix_sum(bytes: &[u8]) -> Result<Vec<u32>> {
     Ok(sums)
 }
 
-/// `validate_prefix_input` function.
+/// Validate the byte length accepted by prefix construction.
+///
+/// # Errors
+///
+/// Returns [`Error::Prefix`] when `byte_len` exceeds
+/// [`MAX_PREFIX_INPUT_BYTES`].
 #[must_use]
 pub fn validate_prefix_input(byte_len: usize) -> Result<()> {
     if byte_len > MAX_PREFIX_INPUT_BYTES {

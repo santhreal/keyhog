@@ -69,19 +69,12 @@ pub(super) fn previous_sibling_context(
     let mut prev_flags = 0;
     let mut prev_symbol_hash = 0;
     for scan_idx in 0..node_idx {
-        let base = scan_idx * VAST_NODE_STRIDE_U32 as usize;
-        let scan_parent = vast_nodes.get(base + 1).copied().unwrap_or(SENTINEL);
+        let scan_parent = parent_at(vast_nodes, scan_idx);
         if scan_parent == cur_parent {
             prev_prev_kind = prev_kind;
-            prev_kind = vast_nodes.get(base).copied().unwrap_or(SENTINEL);
-            prev_flags = vast_nodes
-                .get(base + VAST_TYPEDEF_FLAGS_FIELD as usize)
-                .copied()
-                .unwrap_or_default();
-            prev_symbol_hash = vast_nodes
-                .get(base + VAST_TYPEDEF_SYMBOL_FIELD as usize)
-                .copied()
-                .unwrap_or_default();
+            prev_kind = kind_at(vast_nodes, scan_idx);
+            prev_flags = flags_at(vast_nodes, scan_idx);
+            prev_symbol_hash = symbol_hash_at(vast_nodes, scan_idx);
             prev_idx = scan_idx as u32;
         }
     }
@@ -114,10 +107,7 @@ pub(super) fn parent_context(vast_nodes: &[u32], cur_parent: u32) -> ParentConte
         };
     }
 
-    let parent_parent = vast_nodes
-        .get(parent_idx * VAST_NODE_STRIDE_U32 as usize + 1)
-        .copied()
-        .unwrap_or(SENTINEL);
+    let parent_parent = parent_at(vast_nodes, parent_idx);
     let aggregate_prefix = aggregate_prefix_before_open(vast_nodes, parent_idx, parent_parent);
     let is_record_body = aggregate_prefix == AggregatePrefix::Record;
     let is_enum_body = aggregate_prefix == AggregatePrefix::Enum;
@@ -142,11 +132,10 @@ pub(super) fn aggregate_prefix_before_open(
 ) -> AggregatePrefix {
     let mut prefix = AggregatePrefix::None;
     for scan_idx in 0..open_idx {
-        let base = scan_idx * VAST_NODE_STRIDE_U32 as usize;
-        if vast_nodes.get(base + 1).copied().unwrap_or(SENTINEL) != open_parent {
+        if parent_at(vast_nodes, scan_idx) != open_parent {
             continue;
         }
-        match vast_nodes.get(base).copied().unwrap_or(SENTINEL) {
+        match kind_at(vast_nodes, scan_idx) {
             TOK_STRUCT | TOK_UNION => prefix = AggregatePrefix::Record,
             TOK_ENUM => prefix = AggregatePrefix::Enum,
             TOK_SEMICOLON | TOK_ASSIGN | TOK_COMMA => prefix = AggregatePrefix::None,
@@ -167,10 +156,7 @@ pub(super) fn parenthesized_declarator_context(vast_nodes: &[u32], cur_parent: u
             return false;
         }
 
-        let parent_parent = vast_nodes
-            .get(parent_idx * VAST_NODE_STRIDE_U32 as usize + 1)
-            .copied()
-            .unwrap_or(SENTINEL);
+        let parent_parent = parent_at(vast_nodes, parent_idx);
         if decl_context_before(vast_nodes, parent_idx, parent_parent).has_prefix {
             return true;
         }
@@ -195,18 +181,12 @@ pub(super) fn parenthesized_declarator_context(vast_nodes: &[u32], cur_parent: u
 }
 
 pub(super) fn kind_at_impl(vast_nodes: &[u32], node_idx: usize) -> u32 {
-    vast_nodes
-        .get(node_idx * VAST_NODE_STRIDE_U32 as usize)
-        .copied()
-        .unwrap_or_default()
+    vast_field_at(vast_nodes, node_idx, 0)
 }
 
 pub(super) fn child_kind(vast_nodes: &[u32], node_idx: usize) -> u32 {
     let node_count = vast_nodes.len() / VAST_NODE_STRIDE_U32 as usize;
-    let child_idx = vast_nodes
-        .get(node_idx * VAST_NODE_STRIDE_U32 as usize + 2)
-        .copied()
-        .unwrap_or(SENTINEL);
+    let child_idx = first_child_at(vast_nodes, node_idx);
     let Ok(child_idx) = usize::try_from(child_idx) else {
         return 0;
     };
@@ -218,28 +198,19 @@ pub(super) fn child_kind(vast_nodes: &[u32], node_idx: usize) -> u32 {
 
 pub(super) fn child_flags(vast_nodes: &[u32], node_idx: usize) -> u32 {
     let node_count = vast_nodes.len() / VAST_NODE_STRIDE_U32 as usize;
-    let child_idx = vast_nodes
-        .get(node_idx * VAST_NODE_STRIDE_U32 as usize + 2)
-        .copied()
-        .unwrap_or(SENTINEL);
+    let child_idx = first_child_at(vast_nodes, node_idx);
     let Ok(child_idx) = usize::try_from(child_idx) else {
         return 0;
     };
     if child_idx >= node_count {
         return 0;
     }
-    vast_nodes
-        .get(child_idx * VAST_NODE_STRIDE_U32 as usize + VAST_TYPEDEF_FLAGS_FIELD as usize)
-        .copied()
-        .unwrap_or_default()
+    flags_at(vast_nodes, child_idx)
 }
 
 pub(super) fn child_symbol_hash(vast_nodes: &[u32], node_idx: usize) -> u32 {
     let node_count = vast_nodes.len() / VAST_NODE_STRIDE_U32 as usize;
-    let child_idx = vast_nodes
-        .get(node_idx * VAST_NODE_STRIDE_U32 as usize + 2)
-        .copied()
-        .unwrap_or(SENTINEL);
+    let child_idx = first_child_at(vast_nodes, node_idx);
     let Ok(child_idx) = usize::try_from(child_idx) else {
         return 0;
     };
@@ -264,14 +235,8 @@ pub(super) fn prior_typedef_seen(vast_nodes: &[u32], node_idx: usize) -> bool {
 }
 
 pub(super) fn prior_ordinary_decl_seen(vast_nodes: &[u32], node_idx: usize) -> bool {
-    (0..node_idx).any(|scan_idx| {
-        (vast_nodes
-            .get(scan_idx * VAST_NODE_STRIDE_U32 as usize + VAST_TYPEDEF_FLAGS_FIELD as usize)
-            .copied()
-            .unwrap_or_default()
-            & C_TYPEDEF_FLAG_ORDINARY_DECLARATOR)
-            != 0
-    })
+    (0..node_idx)
+        .any(|scan_idx| (flags_at(vast_nodes, scan_idx) & C_TYPEDEF_FLAG_ORDINARY_DECLARATOR) != 0)
 }
 
 pub(super) fn prior_raw_ordinary_decl_seen(vast_nodes: &[u32], node_idx: usize) -> bool {
@@ -279,13 +244,7 @@ pub(super) fn prior_raw_ordinary_decl_seen(vast_nodes: &[u32], node_idx: usize) 
         if kind_at(vast_nodes, scan_idx) != TOK_IDENTIFIER {
             return false;
         }
-        let parent = parent_context(
-            vast_nodes,
-            vast_nodes
-                .get(scan_idx * VAST_NODE_STRIDE_U32 as usize + 1)
-                .copied()
-                .unwrap_or(SENTINEL),
-        );
+        let parent = parent_context(vast_nodes, parent_at(vast_nodes, scan_idx));
         if parent.is_record_body || parent.is_enum_body {
             return false;
         }

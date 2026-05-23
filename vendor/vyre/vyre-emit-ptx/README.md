@@ -5,7 +5,7 @@ PTX text emitter for vyre's `KernelDescriptor`.
 Consumes a substrate-neutral `vyre_lower::KernelDescriptor` and
 produces NVIDIA PTX text suitable for `nvrtcCompileProgram` or
 `cuLinkAddData`. Independent code path from
-`vyre-emit-naga`/`vyre-emit-spirv` — PTX is a different IR family
+`vyre-emit-naga`/`vyre-emit-spirv`: PTX is a different IR family
 (register machine vs SSA-typed) so the lowering doesn't share
 machinery with the naga-based emitters.
 
@@ -53,15 +53,15 @@ assert!(ptx.contains(".visible .entry"));
 
 ## API
 
-- `emit(&desc) -> Result<String, EmitError>` — lower as given,
+- `emit(&desc) -> Result<String, EmitError>`: lower as given,
   default `ComputeCapability::SM_70`.
 - `emit_with_target(&desc, capability) -> Result<String, EmitError>`
-  — same as `emit` but pick the target SM (sm_60/70/75/80/86/89/90).
+  : same as `emit` but pick the target SM (sm_60/70/75/80/86/89/90).
 - `emit_optimized(&desc)` / `emit_optimized_with_target(&desc, cap)`
-  — recommended. Run `vyre_lower::rewrites::run_all` first; debug
+  : recommended. Run `vyre_lower::rewrites::run_all` first; debug
   builds also run `verify` via `debug_assert!`.
 - `emit_optimized_with_stats(&desc)` /
-  `emit_optimized_with_target_with_stats(&desc, cap)` — same as the
+  `emit_optimized_with_target_with_stats(&desc, cap)`: same as the
   optimized variants but also return `OptimizationStats` (op count
   delta, bindings dropped, fixed-point iterations).
 
@@ -69,16 +69,16 @@ assert!(ptx.contains(".visible .entry"));
 
 `patterns/` contains PTX-only optimizations:
 
-- `tensor_core_fragment` — wmma/mma intrinsics on Volta+.
-- `ldmatrix_cp_async` — Ampere+ async global → shared copies.
-- `predicated_execution` — fold short branches into predicated ops.
-- `instruction_scheduling` — issue-slot-aware instruction order.
-- `vec_load_fusion` — adjacent `LoadGlobal`+1 chains → `ld.global.v2/v4`.
-- `vec_store_fusion` — adjacent `StoreGlobal`+1 chains → `st.global.v2/v4`.
+- `tensor_core_fragment`: wmma/mma intrinsics on Volta+.
+- `ldmatrix_cp_async`: Ampere+ async global → shared copies.
+- `predicated_execution`: fold short branches into predicated ops.
+- `instruction_scheduling`: issue-slot-aware instruction order.
+- `vec_load_fusion`: adjacent `LoadGlobal`+1 chains → `ld.global.v2/v4`.
+- `vec_store_fusion`: adjacent `StoreGlobal`+1 chains → `st.global.v2/v4`.
 
 Run `patterns::audit(&desc, target)` for a unified `PtxAuditReport`
 covering all 6 patterns. Run `patterns::audit_optimized(&desc, target)`
-to audit the post-`run_all` form — answers "what PTX-specific
+to audit the post-`run_all` form: answers "what PTX-specific
 optimizations remain after the standard pipeline?".
 
 These complement the substrate-neutral analyses + rewrites in
@@ -100,8 +100,8 @@ features; SM_80+ enables async copies and tensor cores.
 
 ## See also
 
-- `vyre-lower` — IR + rewrite stack + verify.
-- `vyre-emit-naga` / `vyre-emit-spirv` — wgpu/Vulkan-targeting siblings.
+- `vyre-lower`: IR + rewrite stack + verify.
+- `vyre-emit-naga` / `vyre-emit-spirv`: wgpu/Vulkan-targeting siblings.
 
 ## License
 

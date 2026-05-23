@@ -265,6 +265,7 @@ inventory::submit! {
         build: || python312_extract_decorators("tok_types", "tok_starts", "tok_lens", "out_records", "out_counts", 16),
         test_inputs: Some(decorator_fixture_inputs),
         expected_output: Some(decorator_fixture_expected),
+        category: Some("parsing"),
     }
 }
 

@@ -40,7 +40,6 @@ inventory::submit! {
             let to_bytes = |w: &[f32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
             vec![vec![
                 to_bytes(&[2.0_f32, 3.0, 4.0, 5.0]), // input
-                vec![0u8; 4 * 4],                     // initial output buffer
             ]]
         }),
         expected_output: Some(|| {
@@ -49,5 +48,6 @@ inventory::submit! {
                 to_bytes(&[4.0_f32, 9.0, 16.0, 25.0]), // output = x*x
             ]]
         }),
+        category: Some("math"),
     }
 }

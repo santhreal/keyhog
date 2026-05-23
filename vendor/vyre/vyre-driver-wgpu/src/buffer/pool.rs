@@ -1,6 +1,7 @@
 //! Power-of-two GPU buffer pool for persistent dispatch.
 
 use std::fmt;
+use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Weak};
 
@@ -24,11 +25,45 @@ impl PaddedAtomicUsize {
     }
 
     fn fetch_add(&self, value: usize, order: Ordering) -> usize {
-        self.0.fetch_add(value, order)
+        let mut current = self.0.load(Ordering::Relaxed);
+        loop {
+            let next = current.checked_add(value).unwrap_or(usize::MAX);
+            match self
+                .0
+                .compare_exchange_weak(current, next, order, Ordering::Relaxed)
+            {
+                Ok(previous) => {
+                    if next == usize::MAX && previous != usize::MAX {
+                        tracing::error!(
+                            "WGPU buffer-pool counter reached usize::MAX. Fix: reset pool stats or shard retained-buffer accounting before counters wrap."
+                        );
+                    }
+                    return previous;
+                }
+                Err(observed) => current = observed,
+            }
+        }
     }
 
     fn fetch_sub(&self, value: usize, order: Ordering) -> usize {
-        self.0.fetch_sub(value, order)
+        let mut current = self.0.load(Ordering::Relaxed);
+        loop {
+            let next = current.checked_sub(value).unwrap_or(0);
+            match self
+                .0
+                .compare_exchange_weak(current, next, order, Ordering::Relaxed)
+            {
+                Ok(previous) => {
+                    if previous < value {
+                        tracing::error!(
+                            "WGPU buffer-pool counter underflow was repaired to zero. Fix: rebuild buffer-pool accounting before continuing."
+                        );
+                    }
+                    return previous;
+                }
+                Err(observed) => current = observed,
+            }
+        }
     }
 }
 
@@ -107,6 +142,18 @@ enum UsageKind {
 }
 
 const NUM_USAGE_KINDS: usize = 5;
+
+impl UsageKind {
+    fn index(self) -> usize {
+        match self {
+            Self::Input => 0,
+            Self::Output => 1,
+            Self::Uniform => 2,
+            Self::Workgroup => 3,
+            Self::Other => 4,
+        }
+    }
+}
 
 fn canonical_usage_kind(usage: wgpu::BufferUsages) -> UsageKind {
     use wgpu::BufferUsages as U;
@@ -200,11 +247,18 @@ impl PoolTiering {
 
     #[cfg(test)]
     fn drain_all_for_test(&self) {
-        for _ in 0..10_000 {
+        // The metadata worker is woken via crossbeam channel; under
+        // contention from multiple acquire/release threads it can
+        // accumulate a backlog before the OS schedules it. Use bounded
+        // adaptive parking rather than a fixed millisecond sleep; fixed
+        // sleeps create thundering-herd latency under high test fanout.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        let mut backoff = crate::wait_backoff::AdaptiveWaitBackoff::from_micros(64, 2, 50, 5);
+        while std::time::Instant::now() < deadline {
             if self.pending_events.load(Ordering::Acquire) == 0 {
                 return;
             }
-            std::hint::spin_loop();
+            backoff.idle_until(deadline);
         }
         panic!("Fix: tiering metadata worker did not drain pending buffer-pool events");
     }
@@ -266,7 +320,6 @@ struct PoolInner {
 struct FreeEntry {
     buffer: Arc<wgpu::Buffer>,
     allocation_len: u64,
-    element_count: usize,
     usage: wgpu::BufferUsages,
 }
 
@@ -367,14 +420,14 @@ impl BufferPool {
             if non_empty == 0 {
                 break;
             }
-            let idx = non_empty.trailing_zeros() as usize;
+            let idx = u32_to_usize(non_empty.trailing_zeros(), "buffer-pool non-empty class")?;
             if idx >= NUM_SIZE_CLASSES {
                 break;
             }
 
-            if let Some(entry) = self.inner.free[idx][usage_kind as usize].pop() {
+            if let Some(entry) = self.inner.free[idx][usage_kind.index()].pop() {
                 if let Some(tiering) = &self.inner.tiering {
-                    let key = Arc::as_ptr(&entry.buffer) as u64;
+                    let key = buffer_identity_key(Arc::as_ptr(&entry.buffer));
                     tiering.record_access(key);
                 }
                 // Defensive: if the stored usage doesn't cover the request,
@@ -388,16 +441,17 @@ impl BufferPool {
                             tracing::warn!(
                                 "buffer pool encountered an invalid retained entry while correcting usage metadata: {error}. Dropping the entry."
                             );
-                            self.inner
-                                .stats
-                                .retained_bytes
-                                .fetch_sub(entry.allocation_len as usize, Ordering::Relaxed);
+                            self.inner.stats.retained_bytes.fetch_sub(
+                                u64_to_usize(entry.allocation_len, "retained buffer bytes")
+                                    .unwrap_or(usize::MAX),
+                                Ordering::Relaxed,
+                            );
                             self.inner.stats.evictions.fetch_add(1, Ordering::Relaxed);
                             mask &= !(1 << idx);
                             continue;
                         }
                     };
-                    match self.inner.free[correct_class][correct_kind as usize].push(entry) {
+                    match self.inner.free[correct_class][correct_kind.index()].push(entry) {
                         Ok(()) => {
                             if correct_class != idx {
                                 self.inner
@@ -410,10 +464,11 @@ impl BufferPool {
                                 "buffer pool class {correct_class} usage bucket {correct_kind:?} is full while correcting a wrong-usage entry; dropping {} retained bytes. Fix: increase max_output_bytes or inspect usage canonicalization drift.",
                                 overflow.allocation_len
                             );
-                            self.inner
-                                .stats
-                                .retained_bytes
-                                .fetch_sub(overflow.allocation_len as usize, Ordering::Relaxed);
+                            self.inner.stats.retained_bytes.fetch_sub(
+                                u64_to_usize(overflow.allocation_len, "retained buffer bytes")
+                                    .unwrap_or(usize::MAX),
+                                Ordering::Relaxed,
+                            );
                             self.inner.stats.evictions.fetch_add(1, Ordering::Relaxed);
                         }
                     }
@@ -426,16 +481,22 @@ impl BufferPool {
                         .non_empty_classes
                         .fetch_and(!(1 << idx), Ordering::Relaxed);
                 }
-                self.inner
-                    .stats
-                    .retained_bytes
-                    .fetch_sub(entry.allocation_len as usize, Ordering::Relaxed);
+                self.inner.stats.retained_bytes.fetch_sub(
+                    u64_to_usize(entry.allocation_len, "retained buffer bytes")
+                        .unwrap_or(usize::MAX),
+                    Ordering::Relaxed,
+                );
+                let host_len = usize::try_from(len).map_err(|error| {
+                    BackendError::new(format!(
+                        "GpuBufferPool::acquire received logical byte length {len} that does not fit usize on this host while reusing a pooled buffer: {error}. Fix: shard the GPU buffer before allocating or run on a host with a wide enough address space."
+                    ))
+                })?;
                 self.inner.stats.hits.fetch_add(1, Ordering::Relaxed);
                 return Ok(GpuBufferHandle::from_parts(
                     entry.buffer,
                     len,
                     entry.allocation_len,
-                    entry.element_count,
+                    host_len,
                     entry.usage,
                     Some(self.pool_return()),
                 ));
@@ -452,6 +513,11 @@ impl BufferPool {
             mask &= !(1 << idx);
         }
 
+        let host_len = usize::try_from(len).map_err(|error| {
+            BackendError::new(format!(
+                "GpuBufferPool::acquire received logical byte length {len} that does not fit usize on this host: {error}. Fix: shard the GPU buffer before allocating or run on a host with a wide enough address space."
+            ))
+        })?;
         let buffer = self.inner.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("vyre persistent pooled buffer"),
             size: allocation_len,
@@ -463,7 +529,7 @@ impl BufferPool {
             Arc::new(buffer),
             len,
             allocation_len,
-            usize::try_from(len).unwrap_or(usize::MAX),
+            host_len,
             usage,
             Some(self.pool_return()),
         ))
@@ -499,7 +565,6 @@ impl PoolReturn {
         buffer: Arc<wgpu::Buffer>,
         _byte_len: u64,
         allocation_len: u64,
-        element_count: usize,
         usage: wgpu::BufferUsages,
     ) {
         let Some(inner) = self.inner.upgrade() else {
@@ -518,15 +583,14 @@ impl PoolReturn {
         let usage_kind = canonical_usage_kind(usage);
 
         if let Some(tiering) = &inner.tiering {
-            let key = Arc::as_ptr(&buffer) as u64;
+            let key = buffer_identity_key(Arc::as_ptr(&buffer));
             tiering.record_retained(key, allocation_len);
         }
 
-        if inner.free[class_idx][usage_kind as usize]
+        if inner.free[class_idx][usage_kind.index()]
             .push(FreeEntry {
                 buffer,
                 allocation_len,
-                element_count,
                 usage,
             })
             .is_ok()
@@ -535,17 +599,28 @@ impl PoolReturn {
                 .non_empty_classes
                 .fetch_or(1 << class_idx, Ordering::Relaxed);
             inner.stats.releases.fetch_add(1, Ordering::Relaxed);
+            let Ok(allocation_len_usize) = u64_to_usize(allocation_len, "retained buffer bytes")
+            else {
+                inner.stats.evictions.fetch_add(1, Ordering::Relaxed);
+                return;
+            };
             inner
                 .stats
                 .retained_bytes
-                .fetch_add(allocation_len as usize, Ordering::Relaxed);
+                .fetch_add(allocation_len_usize, Ordering::Relaxed);
 
             while inner.stats.retained_bytes.load(Ordering::Relaxed) > inner.max_retained_bytes {
                 let mask = inner.non_empty_classes.load(Ordering::Relaxed);
                 if mask == 0 {
                     break;
                 }
-                let highest_class = 63 - mask.leading_zeros() as usize;
+                let leading_zeros = mask.leading_zeros() as usize;
+                let highest_class = if leading_zeros >= NUM_SIZE_CLASSES {
+                    inner.non_empty_classes.store(0, Ordering::Relaxed);
+                    break;
+                } else {
+                    NUM_SIZE_CLASSES - 1 - leading_zeros
+                };
                 let mut evicted = None;
                 for kind in 0..NUM_USAGE_KINDS {
                     if let Some(e) = inner.free[highest_class][kind].pop() {
@@ -554,10 +629,11 @@ impl PoolReturn {
                     }
                 }
                 if let Some(evicted) = evicted {
-                    inner
-                        .stats
-                        .retained_bytes
-                        .fetch_sub(evicted.allocation_len as usize, Ordering::Relaxed);
+                    inner.stats.retained_bytes.fetch_sub(
+                        u64_to_usize(evicted.allocation_len, "retained buffer bytes")
+                            .unwrap_or(usize::MAX),
+                        Ordering::Relaxed,
+                    );
                     inner.stats.evictions.fetch_add(1, Ordering::Relaxed);
                     if inner.free[highest_class].iter().all(|q| q.is_empty()) {
                         inner
@@ -572,6 +648,28 @@ impl PoolReturn {
             }
         }
     }
+}
+
+fn buffer_identity_key(buffer: *const wgpu::Buffer) -> u64 {
+    let mut hasher = rustc_hash::FxHasher::default();
+    buffer.addr().hash(&mut hasher);
+    hasher.finish()
+}
+
+fn u64_to_usize(value: u64, label: &'static str) -> Result<usize, BackendError> {
+    usize::try_from(value).map_err(|source| {
+        BackendError::new(format!(
+            "WGPU buffer-pool {label} value {value} cannot fit usize: {source}. Fix: shard retained-buffer accounting before pooling."
+        ))
+    })
+}
+
+fn u32_to_usize(value: u32, label: &'static str) -> Result<usize, BackendError> {
+    usize::try_from(value).map_err(|source| {
+        BackendError::new(format!(
+            "WGPU buffer-pool {label} value {value} cannot fit usize: {source}. Fix: keep buffer-pool class indices within host index width."
+        ))
+    })
 }
 
 fn size_class(len: u64) -> Result<u64, BackendError> {
@@ -589,7 +687,7 @@ fn class_index(len: u64) -> Result<usize, BackendError> {
             "buffer allocation length {len} is not a power-of-two persistent pool size class. Fix: only release handles produced by BufferPool::acquire."
         )));
     }
-    let idx = normalized.trailing_zeros() as usize;
+    let idx = u32_to_usize(normalized.trailing_zeros(), "buffer size class")?;
     if idx >= NUM_SIZE_CLASSES {
         return Err(BackendError::new(format!(
             "buffer size class index {idx} exceeds the {NUM_SIZE_CLASSES}-class persistent buffer pool. Fix: split the dispatch into smaller buffers."
@@ -664,6 +762,32 @@ mod tests {
             "Fix: pool should allocate by power-of-two classes, stats={:?}",
             pool.stats()
         );
+    }
+
+    #[test]
+    fn pooled_reuse_updates_logical_element_count() {
+        let arc = crate::runtime::cached_device()
+            .expect("Fix: GPU device is required for persistent buffer pool test");
+        let (device, queue) = &*arc;
+        let config = vyre_driver::DispatchConfig::default();
+        let pool = BufferPool::new(device.clone(), queue.clone(), &config);
+        let usage = wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST;
+
+        let large = pool
+            .acquire(64, usage)
+            .expect("Fix: initial pooled allocation should succeed");
+        assert_eq!(large.element_count(), 64);
+        pool.release(large);
+
+        let small = pool
+            .acquire(7, usage)
+            .expect("Fix: pooled reuse should succeed");
+        assert_eq!(
+            small.element_count(),
+            7,
+            "Fix: reusing a larger allocation must not leak the previous logical element count"
+        );
+        assert_eq!(small.byte_len(), 7);
     }
 
     #[test]

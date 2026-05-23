@@ -12,7 +12,10 @@ fn stress_false_positive_bait_finds_real_github_pat() {
     assert!(
         has_credential(&matches, GITHUB_PAT),
         "real GitHub PAT must survive placeholder bait; got detector ids {:?}",
-        matches.iter().map(|m| m.detector_id.as_ref()).collect::<Vec<_>>()
+        matches
+            .iter()
+            .map(|m| m.detector_id.as_ref())
+            .collect::<Vec<_>>()
     );
     assert!(
         !has_credential(&matches, "AKIAIOSFODNN7EXAMPLE"),
@@ -47,7 +50,10 @@ fn stress_unicode_homoglyph_pat_normalizes_to_github() {
     assert!(
         has_detector(&matches, "github"),
         "Cyrillic homoglyph body must normalize and match github detector; matches={:?}",
-        matches.iter().map(|m| m.credential.as_ref()).collect::<Vec<_>>()
+        matches
+            .iter()
+            .map(|m| m.credential.as_ref())
+            .collect::<Vec<_>>()
     );
 }
 
@@ -57,7 +63,10 @@ fn stress_boundary_github_pat_exact_length_detected() {
     assert!(
         has_credential(&matches, GITHUB_PAT),
         "36-char github PAT body must match; credentials={:?}",
-        matches.iter().map(|m| m.credential.as_ref()).collect::<Vec<_>>()
+        matches
+            .iter()
+            .map(|m| m.credential.as_ref())
+            .collect::<Vec<_>>()
     );
 }
 
@@ -81,7 +90,10 @@ fn stress_block_comment_embedded_aws_key_detected() {
     assert!(
         has_credential(&matches, AWS_ACCESS_KEY),
         "AWS key inside block comment must be detected; matches={:?}",
-        matches.iter().map(|m| m.detector_id.as_ref()).collect::<Vec<_>>()
+        matches
+            .iter()
+            .map(|m| m.detector_id.as_ref())
+            .collect::<Vec<_>>()
     );
 }
 
@@ -104,7 +116,10 @@ fn stress_zero_width_inside_aws_key_still_detected() {
     assert!(
         has_detector(&matches, "aws") || has_credential(&matches, AWS_ACCESS_KEY),
         "zero-width split AWS key must be found after normalization; matches={:?}",
-        matches.iter().map(|m| m.credential.as_ref()).collect::<Vec<_>>()
+        matches
+            .iter()
+            .map(|m| m.credential.as_ref())
+            .collect::<Vec<_>>()
     );
 }
 

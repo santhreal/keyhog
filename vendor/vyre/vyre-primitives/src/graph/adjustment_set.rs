@@ -116,6 +116,7 @@ pub fn backdoor_descendants_check(
 /// CPU reference. Returns true iff the candidate violates the
 /// descendants-of-X portion of the back-door criterion.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn backdoor_descendants_check_cpu(candidate_z: &[u32], descendants_of_x: &[u32]) -> bool {
     candidate_z
         .iter()

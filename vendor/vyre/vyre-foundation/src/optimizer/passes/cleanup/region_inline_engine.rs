@@ -51,17 +51,19 @@ pub fn run(program: Program) -> Program {
 /// Run the pass with an explicit inline threshold.
 #[must_use]
 pub fn run_with_threshold(program: Program, threshold: usize) -> Program {
-    let mut region_counts = FxHashMap::default();
-    let mut entry = Vec::with_capacity(program.entry().len());
-    let mut scratch_pool = Vec::new();
-    inline_nodes_into(
-        program.entry().to_vec(),
-        threshold,
-        &mut region_counts,
-        &mut scratch_pool,
-        &mut entry,
-    );
-    program.with_rewritten_entry(entry)
+    program.map_entry(|owned_entry| {
+        let mut region_counts = FxHashMap::default();
+        let mut entry = Vec::with_capacity(owned_entry.len());
+        let mut scratch_pool = Vec::new();
+        inline_nodes_into(
+            owned_entry,
+            threshold,
+            &mut region_counts,
+            &mut scratch_pool,
+            &mut entry,
+        );
+        entry
+    })
 }
 
 /// Recursively inline regions, writing the transformed nodes into `out`.
@@ -100,7 +102,13 @@ fn inline_nodes_into(
                     inline_nodes_into(body_vec, threshold, region_counts, scratch_pool, out);
                 } else {
                     let mut new_body = take_scratch(scratch_pool, body_vec.len());
-                    inline_nodes_into(body_vec, threshold, region_counts, scratch_pool, &mut new_body);
+                    inline_nodes_into(
+                        body_vec,
+                        threshold,
+                        region_counts,
+                        scratch_pool,
+                        &mut new_body,
+                    );
                     out.push(Node::Region {
                         generator,
                         source_region,
@@ -111,7 +119,13 @@ fn inline_nodes_into(
             }
             Node::Block(children) => {
                 let mut new_children = take_scratch(scratch_pool, children.len());
-                inline_nodes_into(children, threshold, region_counts, scratch_pool, &mut new_children);
+                inline_nodes_into(
+                    children,
+                    threshold,
+                    region_counts,
+                    scratch_pool,
+                    &mut new_children,
+                );
                 out.push(Node::Block(std::mem::take(&mut new_children)));
                 return_scratch(scratch_pool, new_children);
             }
@@ -139,7 +153,13 @@ fn inline_nodes_into(
                 let mut new_then = take_scratch(scratch_pool, then.len());
                 let mut new_otherwise = take_scratch(scratch_pool, otherwise.len());
                 inline_nodes_into(then, threshold, region_counts, scratch_pool, &mut new_then);
-                inline_nodes_into(otherwise, threshold, region_counts, scratch_pool, &mut new_otherwise);
+                inline_nodes_into(
+                    otherwise,
+                    threshold,
+                    region_counts,
+                    scratch_pool,
+                    &mut new_otherwise,
+                );
                 out.push(Node::If {
                     cond,
                     then: std::mem::take(&mut new_then),

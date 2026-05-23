@@ -1,6 +1,6 @@
 //! Handle to a dispatch in flight.
 
-use crate::backend::{private, BackendError};
+use crate::backend::{private, BackendError, OutputBuffers};
 
 /// Handle to a dispatch in flight. Returned by
 /// [`crate::backend::VyreBackend::dispatch_async`].
@@ -45,6 +45,21 @@ pub trait PendingDispatch: private::Sealed + Send + Sync {
     /// Returns [`BackendError`] if the dispatch failed on the device.
     fn await_result(self: Box<Self>) -> Result<Vec<Vec<u8>>, BackendError>;
 
+    /// Consume the handle and write output buffers into caller-owned storage.
+    ///
+    /// The default preserves the return-value contract while reusing existing
+    /// output slots where possible. Backends with host readback staging should
+    /// override this to collect directly into `outputs`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BackendError`] if the dispatch failed on the device.
+    fn await_result_into(self: Box<Self>, outputs: &mut OutputBuffers) -> Result<(), BackendError> {
+        let result = self.await_result()?;
+        crate::backend::dispatch_result::replace_output_buffers_preserving_slots(result, outputs);
+        Ok(())
+    }
+
     /// Async variant of [`PendingDispatch::await_result`].
     ///
     /// Default implementation delegates to the synchronous
@@ -80,5 +95,27 @@ impl PendingDispatch for ReadyPending {
     }
     fn await_result(self: Box<Self>) -> Result<Vec<Vec<u8>>, BackendError> {
         Ok(self.outputs)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pending_dispatch_default_into_preserves_output_slots() {
+        let mut outputs = vec![Vec::with_capacity(8)];
+        let outputs_addr = outputs.as_ptr() as usize;
+        let slot_addr = outputs[0].as_ptr() as usize;
+
+        Box::new(ReadyPending {
+            outputs: vec![vec![1, 2, 3]],
+        })
+        .await_result_into(&mut outputs)
+        .expect("ready pending output should write into caller storage");
+
+        assert_eq!(outputs, vec![vec![1, 2, 3]]);
+        assert_eq!(outputs.as_ptr() as usize, outputs_addr);
+        assert_eq!(outputs[0].as_ptr() as usize, slot_addr);
     }
 }

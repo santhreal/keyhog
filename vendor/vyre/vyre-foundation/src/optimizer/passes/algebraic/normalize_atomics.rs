@@ -18,13 +18,27 @@ use crate::ir::{Expr, Ident, Node, Program};
 use crate::optimizer::{vyre_pass, PassAnalysis, PassResult};
 use smallvec::SmallVec;
 
-#[vyre_pass(name = "normalize_atomics", requires = [], invalidates = ["fusion"])]
+#[vyre_pass(
+    name = "normalize_atomics",
+    requires = [],
+    invalidates = ["fusion"],
+    phase = "sync",
+    boundary_class = "abi_preserving",
+    cost_model_family = "sync"
+)]
 /// Optimizer pass that hoists branch-condition atomics into explicit lets.
 pub struct NormalizeAtomicsPass;
 
 impl NormalizeAtomicsPass {
     /// Skip programs that do not contain atomics in `Node::If` conditions.
     fn analyze_impl(program: &Program) -> PassAnalysis {
+        // Need both an If AND at least one atomic op anywhere. The
+        // bitset already records If-presence; atomic_op_count is the
+        // existing counter for atomic-presence on Expr-side.
+        let stats = program.stats();
+        if !stats.has_node_if() || stats.atomic_op_count == 0 {
+            return PassAnalysis::SKIP;
+        }
         if program.entry().iter().any(node_has_atomic_condition) {
             PassAnalysis::RUN
         } else {
@@ -35,13 +49,10 @@ impl NormalizeAtomicsPass {
     /// Hoist atomics out of branch conditions while preserving statement order.
     pub fn transform(program: Program) -> PassResult {
         let mut state = RewriteState::default();
-        let scaffold = program.with_rewritten_entry(Vec::new());
-        let entry = rewrite_nodes(program.into_entry_vec(), &mut state);
-        let changed = state.changed;
-
+        let program = program.map_entry(|entry| rewrite_nodes(entry, &mut state));
         PassResult {
-            program: scaffold.with_rewritten_entry(entry),
-            changed,
+            program,
+            changed: state.changed,
         }
     }
 }
@@ -87,7 +98,7 @@ fn expr_contains_atomic(expr: &Expr) -> bool {
                 || expr_contains_atomic(true_val)
                 || expr_contains_atomic(false_val)
         }
-        Expr::Cast { value, .. } => expr_contains_atomic(value),
+        Expr::Cast { value, .. } | Expr::SubgroupAdd { value } => expr_contains_atomic(value),
         Expr::Fma { a, b, c } => {
             expr_contains_atomic(a) || expr_contains_atomic(b) || expr_contains_atomic(c)
         }
@@ -95,7 +106,6 @@ fn expr_contains_atomic(expr: &Expr) -> bool {
         Expr::SubgroupShuffle { value, lane } => {
             expr_contains_atomic(value) || expr_contains_atomic(lane)
         }
-        Expr::SubgroupAdd { value } => expr_contains_atomic(value),
         Expr::LitU32(_)
         | Expr::LitI32(_)
         | Expr::LitF32(_)
@@ -122,7 +132,7 @@ fn rewrite_nodes(nodes: Vec<Node>, state: &mut RewriteState) -> Vec<Node> {
             } => {
                 let mut hoists = SmallVec::<[Node; 2]>::new();
                 let cond = hoist_condition_atomics(cond, state, &mut hoists);
-                out.extend(hoists.into_iter());
+                out.extend(hoists);
                 out.push(Node::If {
                     cond,
                     then: rewrite_nodes(then, state),
@@ -281,7 +291,10 @@ mod tests {
         );
 
         let program = Program::wrapped(Vec::new(), [1, 1, 1], Vec::new());
-        assert_eq!(crate::optimizer::ProgramPass::analyze(&NormalizeAtomicsPass, &program), PassAnalysis::SKIP);
+        assert_eq!(
+            crate::optimizer::ProgramPass::analyze(&NormalizeAtomicsPass, &program),
+            PassAnalysis::SKIP
+        );
     }
 
     #[test]

@@ -2,8 +2,8 @@
 //! heat decay.
 //!
 //! F1/F3 cache compiled pipelines by `SpecCacheKey` but never evict.
-//! Long-running daemons (surgec scanning hundreds of repos in
-//! sequence) accumulate dead entries that pin VRAM-resident
+//! Long-running daemons that scan many repositories in sequence
+//! accumulate dead entries that pin VRAM-resident
 //! pipelines. This module owns the *decision*: given a list of
 //! cache entry stats and a capacity, return which entries to drop.
 //!
@@ -14,8 +14,8 @@
 
 /// Half-life (seconds) for the heat decay term. Entries older than
 /// this lose half their hit-count weight; doubled, lose three
-/// quarters; etc. Tuned for surgec scan workloads where a "warm"
-/// entry is one used in the last few minutes of a long sweep.
+/// quarters; etc. Tuned for scan workloads where a "warm" entry is
+/// one used in the last few minutes of a long sweep.
 pub const DECAY_HALF_LIFE_S: f64 = 300.0;
 
 /// Per-entry stats the eviction policy needs. Caller (the F1/F3
@@ -67,28 +67,53 @@ pub fn entries_to_evict(
     capacity: usize,
     current_time_s: f64,
 ) -> Vec<u64> {
+    try_entries_to_evict(entries, capacity, current_time_s)
+        .expect("cache eviction heat ranking allocation failed; use try_entries_to_evict to handle allocator failure")
+}
+
+/// Fallible variant of [`entries_to_evict`] for daemon/cache paths that must
+/// report allocator pressure instead of panicking.
+///
+/// # Errors
+///
+/// Returns an actionable error when ranking/result staging cannot reserve.
+pub fn try_entries_to_evict(
+    entries: &[CacheEntryStats],
+    capacity: usize,
+    current_time_s: f64,
+) -> Result<Vec<u64>, String> {
     if entries.len() <= capacity {
-        return Vec::new();
+        return Ok(Vec::new());
     }
-    let mut ranked: Vec<(usize, &CacheEntryStats, f64)> = entries
-        .iter()
-        .enumerate()
-        .map(|(idx, e)| (idx, e, e.heat(current_time_s)))
-        .collect();
+    let mut ranked: Vec<(usize, &CacheEntryStats, f64)> = Vec::new();
+    ranked.try_reserve_exact(entries.len()).map_err(|error| {
+        format!(
+            "cache eviction heat ranking could not reserve {} entry slot(s): {error}. Fix: shard the pipeline cache eviction batch.",
+            entries.len()
+        )
+    })?;
+    ranked.extend(
+        entries
+            .iter()
+            .enumerate()
+            .map(|(idx, e)| (idx, e, e.heat(current_time_s))),
+    );
     let compare = |a: &(usize, &CacheEntryStats, f64), b: &(usize, &CacheEntryStats, f64)| {
-        a.2.total_cmp(&b.2)
-            .then_with(|| a.0.cmp(&b.0))
+        a.2.total_cmp(&b.2).then_with(|| a.0.cmp(&b.0))
     };
     let evict_count = entries.len() - capacity;
     if evict_count < ranked.len() {
         ranked.select_nth_unstable_by(evict_count, compare);
     }
     ranked[..evict_count].sort_by(compare);
-    ranked
-        .into_iter()
-        .take(evict_count)
-        .map(|(_, e, _)| e.id)
-        .collect()
+    let mut evicted = Vec::new();
+    evicted.try_reserve_exact(evict_count).map_err(|error| {
+        format!(
+            "cache eviction heat result could not reserve {evict_count} entry id slot(s): {error}. Fix: shard the pipeline cache eviction batch."
+        )
+    })?;
+    evicted.extend(ranked.into_iter().take(evict_count).map(|(_, e, _)| e.id));
+    Ok(evicted)
 }
 
 #[cfg(test)]
@@ -179,12 +204,26 @@ mod tests {
 
     #[test]
     fn non_finite_current_time_is_total_and_deterministic() {
-        let entries = vec![entry(1, 10, 100.0), entry(2, 10, 100.0), entry(3, 10, 100.0)];
+        let entries = vec![
+            entry(1, 10, 100.0),
+            entry(2, 10, 100.0),
+            entry(3, 10, 100.0),
+        ];
         let evict = entries_to_evict(&entries, 1, f64::NAN);
         assert_eq!(
             evict,
             vec![1, 2],
             "invalid clock samples must preserve deterministic eviction order"
+        );
+    }
+
+    #[test]
+    fn try_entries_to_evict_matches_legacy_order() {
+        let entries = vec![entry(1, 1, 0.0), entry(2, 10, 10.0), entry(3, 0, 20.0)];
+
+        assert_eq!(
+            try_entries_to_evict(&entries, 1, 20.0).unwrap(),
+            entries_to_evict(&entries, 1, 20.0)
         );
     }
 }

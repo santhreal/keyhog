@@ -8,7 +8,7 @@ cargo add vyre-reference
 
 ## Three consumption modes
 
-### 1. Parity oracle — proving a backend is byte-identical
+### 1. Parity oracle: proving a backend is byte-identical
 
 Used by backend parity tests to run every input through CPU reference and compare byte-for-byte with GPU backend output:
 

@@ -57,7 +57,17 @@ pub fn bellman_shortest_path(
             Node::if_then(
                 Expr::ne(Expr::var("du"), Expr::u32(u32::MAX)),
                 vec![
-                    Node::let_bind("alt", Expr::add(Expr::var("du"), Expr::var("w"))),
+                    Node::let_bind(
+                        "alt",
+                        Expr::select(
+                            Expr::gt(
+                                Expr::var("w"),
+                                Expr::sub(Expr::u32(u32::MAX), Expr::var("du")),
+                            ),
+                            Expr::u32(u32::MAX),
+                            Expr::add(Expr::var("du"), Expr::var("w")),
+                        ),
+                    ),
                     Node::let_bind(
                         "_relax",
                         Expr::atomic_min(next_dist, Expr::var("v"), Expr::var("alt")),
@@ -100,6 +110,7 @@ pub fn bellman_shortest_path(
 }
 
 /// CPU reference.
+#[cfg(any(test, feature = "cpu-parity"))]
 #[must_use]
 pub fn cpu_ref(
     src: &[u32],

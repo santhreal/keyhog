@@ -89,7 +89,6 @@ inventory::submit! {
                 to_f32(&[1.0, 2.0]),    // params
                 to_f32(&[0.1, 0.2]),    // grads
                 to_f32(&[0.0, 0.0]),    // momentum (first step)
-                vec![0u8; 4 * 2],        // output
             ]]
         }),
         expected_output: Some(|| {
@@ -98,5 +97,6 @@ inventory::submit! {
                 vec![30, 138, 126, 63, 30, 138, 254, 63],
             ]]
         }),
+        category: Some("nn"),
     }
 }

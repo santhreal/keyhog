@@ -1,58 +1,11 @@
-//! Tests for `pipeline_disk_cache.rs`. Split out per audit item #85 to keep the
-//! parent file focused on production code.
-#![allow(missing_docs)]
+// Tests for `pipeline_disk_cache.rs`. Split out per audit item #85 to keep the
+// parent file focused on production code.
+// (allow(missing_docs) moved to enclosing tests module in disk_cache.rs)
 
 use super::*;
 use std::sync::Arc;
 
 static ENV_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-#[test]
-fn kill_switch_recognises_common_falsey_spellings() {
-    let _lock = ENV_TEST_LOCK.lock().unwrap();
-    // Table-driven: every variant should disable the cache so a fresh
-    // compile path runs even with cached entries on disk.
-    for value in ["off", "OFF", "Off", "0", "false", "FALSE", "False"] {
-        std::env::set_var("VYRE_PIPELINE_CACHE", value);
-        reset_pipeline_cache_switch_for_test();
-        assert!(
-            cache_disabled(),
-            "expected VYRE_PIPELINE_CACHE={value} to disable the cache"
-        );
-    }
-    // Anything else (including the empty string) should leave the cache on.
-    for value in ["on", "1", "true", "", "yes"] {
-        std::env::set_var("VYRE_PIPELINE_CACHE", value);
-        reset_pipeline_cache_switch_for_test();
-        assert!(
-            !cache_disabled(),
-            "expected VYRE_PIPELINE_CACHE={value} to leave the cache enabled"
-        );
-    }
-    std::env::remove_var("VYRE_PIPELINE_CACHE");
-    reset_pipeline_cache_switch_for_test();
-    assert!(!cache_disabled(), "unset env var must leave cache enabled");
-}
-
-#[test]
-fn kill_switch_value_is_cached_until_test_reset() {
-    let _lock = ENV_TEST_LOCK.lock().unwrap();
-
-    std::env::set_var("VYRE_PIPELINE_CACHE", "off");
-    reset_pipeline_cache_switch_for_test();
-    assert!(cache_disabled());
-
-    std::env::set_var("VYRE_PIPELINE_CACHE", "on");
-    assert!(
-        cache_disabled(),
-        "production hot path must not reread VYRE_PIPELINE_CACHE after the first lookup"
-    );
-
-    reset_pipeline_cache_switch_for_test();
-    assert!(!cache_disabled());
-    std::env::remove_var("VYRE_PIPELINE_CACHE");
-    reset_pipeline_cache_switch_for_test();
-}
 
 #[test]
 fn cache_key_isolates_wire_from_adapter() {
@@ -218,7 +171,7 @@ fn cache_writes_are_durable_on_explicit_flush_not_insert() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("entry.wgsl");
     PENDING_DURABLE_CACHE_FILES
-        .get_or_init(|| std::sync::Mutex::new(Vec::new()))
+        .get_or_init(|| std::sync::Mutex::new(std::collections::BTreeSet::new()))
         .lock()
         .unwrap()
         .clear();
@@ -283,10 +236,8 @@ fn oversized_compiled_pipeline_blob_is_rejected_before_read() {
 #[test]
 fn stale_compiled_pipeline_adapter_metadata_misses() {
     let _lock = ENV_TEST_LOCK.lock().unwrap();
-    let old_cache_dir = std::env::var_os("VYRE_CACHE_DIR");
     let temp = tempfile::tempdir().unwrap();
-    std::env::set_var("VYRE_CACHE_DIR", temp.path());
-    reset_pipeline_cache_switch_for_test();
+    let old_cache_root = set_test_disk_pipeline_cache_root(Some(temp.path().to_path_buf()));
 
     let key = CompiledPipelineCacheKey {
         hash: [7u8; 32],
@@ -325,11 +276,7 @@ fn stale_compiled_pipeline_adapter_metadata_misses() {
         "Fix: compiled-pipeline cache must miss when adapter fingerprint metadata is stale"
     );
 
-    match old_cache_dir {
-        Some(value) => std::env::set_var("VYRE_CACHE_DIR", value),
-        None => std::env::remove_var("VYRE_CACHE_DIR"),
-    }
-    reset_pipeline_cache_switch_for_test();
+    set_test_disk_pipeline_cache_root(old_cache_root);
 }
 
 #[test]
@@ -443,4 +390,3 @@ fn early_pipeline_cache_key_preserves_runtime_storage_lengths() {
         "Fix: in-memory compiled-pipeline artifacts carry binding and output metadata, so shape-distinct Programs must not share an early cache key."
     );
 }
-

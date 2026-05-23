@@ -29,6 +29,6 @@ assert_eq!(Program::from_wire(&wire).unwrap(), program);
 
 See [`COMPUTE_2_0.md`](../.internals/planning/COMPUTE_2_0.md) for the
 layer DAG. Foundation sits at the bottom; every migration target
-listed there — foundation-ir, foundation-visit, foundation-wire — is
+listed there: foundation-ir, foundation-visit, foundation-wire: is
 contained in this crate until the per-subcrate split lands in a later
 phase.

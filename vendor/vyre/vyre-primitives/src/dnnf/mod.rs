@@ -25,7 +25,9 @@
 
 pub mod compile;
 
+#[cfg(any(test, feature = "cpu-parity"))]
+pub use crate::graph::knowledge_compile::ddnnf_evaluate_cpu;
 pub use crate::graph::knowledge_compile::{
-    ddnnf_evaluate, ddnnf_evaluate_cpu, AND_NODE, LITERAL_FALSE, LITERAL_TRUE, OR_NODE,
+    ddnnf_evaluate, AND_NODE, LITERAL_FALSE, LITERAL_TRUE, OR_NODE,
 };
 pub use compile::{compile_dnnf, model_count, DnnfDag, DnnfGate};

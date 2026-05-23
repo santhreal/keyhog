@@ -8,6 +8,7 @@ use super::binding::{
     clear_outputs_for_bound, consumes_host_input, usage_for_binding, validate_handle,
 };
 use crate::buffer::{BindGroupCacheStats, GpuBufferHandle};
+use crate::numeric::usize_to_u64;
 use crate::pipeline::{element_size_bytes, BufferBindingInfo, WgpuPipeline};
 
 /// One persistent dispatch record for batched queue submission.
@@ -35,6 +36,22 @@ pub(crate) struct BorrowedDispatchItem<'a> {
     pub workgroups: [u32; 3],
 }
 
+pub(crate) fn borrowed_handle_refs(
+    handles: &[GpuBufferHandle],
+) -> smallvec::SmallVec<[&GpuBufferHandle; 8]> {
+    let mut refs = smallvec::SmallVec::<[&GpuBufferHandle; 8]>::with_capacity(handles.len());
+    refs.extend(handles.iter());
+    refs
+}
+
+pub(crate) fn copied_borrowed_handle_refs<'a>(
+    handles: &[&'a GpuBufferHandle],
+) -> smallvec::SmallVec<[&'a GpuBufferHandle; 8]> {
+    let mut refs = smallvec::SmallVec::<[&'a GpuBufferHandle; 8]>::with_capacity(handles.len());
+    refs.extend(handles.iter().copied());
+    refs
+}
+
 impl WgpuPipeline {
     /// Dispatch using caller-owned GPU-resident buffers.
     ///
@@ -53,8 +70,8 @@ impl WgpuPipeline {
         params: Option<&GpuBufferHandle>,
         workgroups: [u32; 3],
     ) -> Result<(), BackendError> {
-        let input_refs: smallvec::SmallVec<[&GpuBufferHandle; 8]> = inputs.iter().collect();
-        let output_refs: smallvec::SmallVec<[&GpuBufferHandle; 8]> = outputs.iter().collect();
+        let input_refs = borrowed_handle_refs(inputs);
+        let output_refs = borrowed_handle_refs(outputs);
         self.dispatch_persistent_borrowed(
             input_refs.as_slice(),
             output_refs.as_slice(),
@@ -82,8 +99,8 @@ impl WgpuPipeline {
         workgroups: [u32; 3],
     ) -> Result<(), BackendError> {
         let item = BorrowedDispatchItem {
-            inputs: inputs.iter().copied().collect(),
-            outputs: outputs.iter().copied().collect(),
+            inputs: copied_borrowed_handle_refs(inputs),
+            outputs: copied_borrowed_handle_refs(outputs),
             params,
             workgroups,
         };
@@ -108,10 +125,8 @@ impl WgpuPipeline {
             label: Some("vyre persistent dispatch batch"),
         });
         for item in items {
-            let input_refs: smallvec::SmallVec<[&GpuBufferHandle; 8]> =
-                item.inputs.iter().collect();
-            let output_refs: smallvec::SmallVec<[&GpuBufferHandle; 8]> =
-                item.outputs.iter().collect();
+            let input_refs = borrowed_handle_refs(item.inputs);
+            let output_refs = borrowed_handle_refs(item.outputs);
             self.record_borrowed_persistent_item(
                 device,
                 &mut encoder,
@@ -163,8 +178,8 @@ impl WgpuPipeline {
         encoder: &mut wgpu::CommandEncoder,
         item: &DispatchItem<'_>,
     ) -> Result<(), BackendError> {
-        let input_refs: smallvec::SmallVec<[&GpuBufferHandle; 8]> = item.inputs.iter().collect();
-        let output_refs: smallvec::SmallVec<[&GpuBufferHandle; 8]> = item.outputs.iter().collect();
+        let input_refs = borrowed_handle_refs(item.inputs);
+        let output_refs = borrowed_handle_refs(item.outputs);
         self.record_borrowed_persistent_item(
             device,
             encoder,
@@ -192,7 +207,12 @@ impl WgpuPipeline {
         });
         pass.set_pipeline(&self.pipeline);
         for (i, bg) in bind_groups.iter().enumerate() {
-            pass.set_bind_group(i as u32, bg.as_ref(), &[]);
+            let bind_group_index = u32::try_from(i).map_err(|_| {
+                BackendError::new(
+                    "persistent pipeline bind group index exceeds u32::MAX. Fix: reduce bind group fanout before WGPU dispatch.",
+                )
+            })?;
+            pass.set_bind_group(bind_group_index, bg.as_ref(), &[]);
         }
         if let Some(indirect) = &self.indirect {
             let indirect_handle = bound
@@ -217,8 +237,8 @@ impl WgpuPipeline {
         inputs: &[&[u8]],
     ) -> Result<(Vec<GpuBufferHandle>, Vec<GpuBufferHandle>), BackendError> {
         let (_device, queue) = &*self.device_queue;
-        let mut input_handles = Vec::new();
-        let mut output_handles = Vec::new();
+        let mut input_handles = Vec::with_capacity(self.buffer_bindings.len());
+        let mut output_handles = Vec::with_capacity(self.buffer_bindings.len());
         // `inputs` is ordered like non-Shared `buffer_bindings`. Avoid building a
         // temporary `input_bindings` vec each call: advance a slot only for used entries.
         let mut input_slot: usize = 0;
@@ -231,10 +251,7 @@ impl WgpuPipeline {
             } else if !consumes_host_input(info) {
                 None
             } else {
-                let data =
-                    inputs
-                        .get(input_slot)
-                        .and_then(|&s| if s.is_empty() { None } else { Some(s) });
+                let data = inputs.get(input_slot).copied();
                 input_slot += 1;
                 data
             };
@@ -246,25 +263,46 @@ impl WgpuPipeline {
                         output.name
                     ))
                 })?;
+                let output_bytes_u64 =
+                    usize_to_u64(output_bytes, "persistent output allocation bytes")?;
                 let handle = self
                     .persistent_pool
-                    .acquire(output_bytes as u64, usage_for_binding(info)?)?;
+                    .acquire(output_bytes_u64, usage_for_binding(info)?)?;
                 if info.preserve_input_contents {
-                    crate::buffer::write_padded(
-                        queue,
-                        handle.buffer(),
-                        data.unwrap_or(&[]),
-                        output_bytes as u64,
-                    )?;
+                    let data = data.ok_or_else(|| {
+                        BackendError::new(format!(
+                            "persistent read-write output binding {} (`{}`) preserves input contents but no host input bytes were supplied. Fix: pass one input slice for every non-shared BufferDecl that is read before it is written.",
+                            info.binding, info.name
+                        ))
+                    })?;
+                    if data.len() > output_bytes {
+                        return Err(BackendError::new(format!(
+                            "persistent read-write output binding {} (`{}`) received {} host bytes but its output allocation is only {} bytes. Fix: preserve input contents only for read-write outputs whose host input size fits the declared output layout, or mark backend-owned live-outs so they do not consume host input.",
+                            info.binding,
+                            info.name,
+                            data.len(),
+                            output_bytes
+                        )));
+                    }
+                    crate::buffer::write_padded(queue, handle.buffer(), data, output_bytes_u64)?;
                 }
                 output_handles.push(handle);
                 continue;
             }
-            let padded_size = binding_padded_size(info, data)? as u64;
+            let data = data.ok_or_else(|| {
+                BackendError::new(format!(
+                    "persistent input binding {} (`{}`) has no host input bytes. Fix: pass input slices matching non-output BufferDecl order; only internal traps and pure outputs may be backend-allocated empty.",
+                    info.binding, info.name
+                ))
+            })?;
+            let padded_size = usize_to_u64(
+                binding_padded_size(info, Some(data))?,
+                "persistent input bytes",
+            )?;
             let handle = self
                 .persistent_pool
                 .acquire(padded_size, usage_for_binding(info)?)?;
-            crate::buffer::write_padded(queue, handle.buffer(), data.unwrap_or(&[]), padded_size)?;
+            crate::buffer::write_padded(queue, handle.buffer(), data, padded_size)?;
             input_handles.push(handle);
         }
         Ok((input_handles, output_handles))
@@ -343,34 +381,69 @@ impl WgpuPipeline {
         device: &wgpu::Device,
         bound: &[(&BufferBindingInfo, &GpuBufferHandle)],
     ) -> Result<Arc<[Arc<wgpu::BindGroup>]>, BackendError> {
+        let mut grouped_bound: Vec<
+            smallvec::SmallVec<[(&BufferBindingInfo, &GpuBufferHandle); 16]>,
+        > = Vec::with_capacity(self.bind_group_layouts.len());
+        grouped_bound.resize_with(self.bind_group_layouts.len(), smallvec::SmallVec::new);
+        for (info, handle) in bound {
+            let group = usize::try_from(info.group).map_err(|source| {
+                BackendError::new(format!(
+                    "persistent bind group {} cannot fit usize: {source}. Fix: keep group indices representable on this host.",
+                    info.group
+                ))
+            })?;
+            let Some(slot) = grouped_bound.get_mut(group) else {
+                return Err(BackendError::new(format!(
+                    "persistent binding {} (`{}`) targets group {}, but the pipeline only has {} bind-group layouts. Fix: keep reflection metadata synchronized with bind-group layouts.",
+                    info.binding,
+                    info.name,
+                    info.group,
+                    self.bind_group_layouts.len()
+                )));
+            };
+            slot.push((*info, *handle));
+        }
         let mut bind_groups = Vec::with_capacity(self.bind_group_layouts.len());
         for (group_index, layout) in self.bind_group_layouts.iter().enumerate() {
-            let mut handle_ids: smallvec::SmallVec<[u64; 16]> = smallvec::SmallVec::new();
-            for (_, handle) in bound
-                .iter()
-                .filter(|(info, _)| info.group == group_index as u32)
-            {
+            let group_bound = &grouped_bound[group_index];
+            let handle_id_capacity = group_bound.len().checked_mul(2).ok_or_else(|| {
+                BackendError::new(
+                    "persistent bind group handle-id count overflowed usize. Fix: split bind-group resources before caching.",
+                )
+            })?;
+            let mut handle_ids: smallvec::SmallVec<[u64; 16]> =
+                smallvec::SmallVec::with_capacity(handle_id_capacity);
+            for (_, handle) in group_bound {
                 handle_ids.push(handle.allocation_identity());
-                handle_ids.push(handle.byte_len().max(4).next_multiple_of(4));
+                handle_ids.push(padded_wgpu_u64(
+                    handle.byte_len(),
+                    "persistent bind-group cache key byte length",
+                )?);
             }
             let layout_id = Arc::as_ptr(layout).addr();
             let bg = self
                 .bind_group_cache
                 .get_or_create_by_ids(layout_id, handle_ids, || {
-                    let entries: smallvec::SmallVec<[wgpu::BindGroupEntry<'_>; 16]> = bound
-                        .iter()
-                        .filter(|(info, _)| info.group == group_index as u32)
-                        .map(|(info, handle)| wgpu::BindGroupEntry {
+                    let mut entries =
+                        smallvec::SmallVec::<[wgpu::BindGroupEntry<'_>; 16]>::with_capacity(
+                            group_bound.len(),
+                        );
+                    entries.extend(group_bound.iter().map(|(info, handle)| {
+                        wgpu::BindGroupEntry {
                             binding: info.binding,
                             resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
                                 buffer: handle.buffer(),
                                 offset: 0,
                                 size: wgpu::BufferSize::new(
-                                    handle.byte_len().max(4).next_multiple_of(4),
+                                    padded_wgpu_u64(
+                                        handle.byte_len(),
+                                        "persistent bind-group binding size",
+                                    )
+                                    .expect("persistent bind-group size must match checked cache-key size"),
                                 ),
                             }),
-                        })
-                        .collect();
+                        }
+                    }));
                     device.create_bind_group(&wgpu::BindGroupDescriptor {
                         label: Some("vyre persistent bind group"),
                         layout,
@@ -388,7 +461,13 @@ pub(crate) fn binding_padded_size(
     data: Option<&[u8]>,
 ) -> Result<usize, BackendError> {
     let declared_size = if info.count > 0 {
-        (info.count as usize)
+        usize::try_from(info.count)
+            .map_err(|_| {
+                BackendError::new(format!(
+                    "buffer `{}` element count cannot fit host usize. Fix: reduce buffer count.",
+                    info.name
+                ))
+            })?
             .checked_mul(element_size_bytes(&info.element)?)
             .ok_or_else(|| {
                 BackendError::new(format!(
@@ -416,10 +495,35 @@ pub(crate) fn binding_padded_size(
         _ => return Err(BackendError::new(
             "binding_padded_size: unexpected (declared_size, data) combination. Fix: ensure buffer has either a declared count or input data.",
         )),
-    }
-    .max(4)
-    .next_multiple_of(4);
+    };
+    let len = padded_wgpu_usize(len, "persistent binding padded size")?;
     Ok(len)
+}
+
+fn padded_wgpu_u64(size: u64, label: &'static str) -> Result<u64, BackendError> {
+    let normalized = size.max(4);
+    let remainder = normalized % 4;
+    if remainder == 0 {
+        return Ok(normalized);
+    }
+    normalized.checked_add(4 - remainder).ok_or_else(|| {
+        BackendError::new(format!(
+            "{label} overflows u64 while padding to WGPU's 4-byte buffer alignment. Fix: split persistent dispatch buffers."
+        ))
+    })
+}
+
+fn padded_wgpu_usize(size: usize, label: &'static str) -> Result<usize, BackendError> {
+    let normalized = size.max(4);
+    let remainder = normalized % 4;
+    if remainder == 0 {
+        return Ok(normalized);
+    }
+    normalized.checked_add(4 - remainder).ok_or_else(|| {
+        BackendError::new(format!(
+            "{label} overflows usize while padding to WGPU's 4-byte buffer alignment. Fix: split persistent dispatch buffers."
+        ))
+    })
 }
 
 fn validate_consumed_counts(

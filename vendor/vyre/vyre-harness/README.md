@@ -15,17 +15,17 @@ consumes.
 
 ## Key types
 
-- `OpEntry` — POD entry: op id, builder `fn(...) -> Program`, fixture
+- `OpEntry`: POD entry: op id, builder `fn(...) -> Program`, fixture
   inputs, expected oracle bytes. POD over `&'static str` and `fn`
   pointers, so stdlib auto-traits give `Send + Sync` for free.
-- `ConvergenceContract` — declared convergence semantics for fixpoint
+- `ConvergenceContract`: declared convergence semantics for fixpoint
   ops (max iterations, oracle definition, divergence detection).
-- `FixpointContract` — bound + termination contract for fixpoint
+- `FixpointContract`: bound + termination contract for fixpoint
   dispatch.
-- `UniversalDiffExemption` — link-time exemption reason for the
+- `UniversalDiffExemption`: link-time exemption reason for the
   byte-identity sweep. Adding a new variant requires a CEO decision;
   no silent exemptions.
-- `DiffCandidate` / `universal_diff_candidates()` — the canonical
+- `DiffCandidate` / `universal_diff_candidates()`: the canonical
   iteration source the conform tests walk.
 
 ## Architecture decisions
@@ -42,14 +42,14 @@ consumes.
   which turns the registry into a zero-cost cold-start lookup.
 - **No opinion on home crate.** A primitive may live in `vyre-libs`,
   `vyre-primitives`, `weir`, or any future external composition crate
-  — the harness is registry-only.
+  : the harness is registry-only.
 
 ## Who uses it
 
-- `vyre-libs` — math / nn / crypto / matching / decode primitives.
-- `vyre-primitives` — the Tier-2.5 LEGO substrate.
-- `weir` — dataflow primitives that ride on top of vyre.
-- `vyre-conform-runner` — the consumer that walks every entry to
+- `vyre-libs`: math / nn / crypto / matching / decode primitives.
+- `vyre-primitives`: the Tier-2.5 LEGO substrate.
+- `weir`: dataflow primitives that ride on top of vyre.
+- `vyre-conform-runner`: the consumer that walks every entry to
   produce a signed certificate per op × backend × adapter.
 
 ## Where to look

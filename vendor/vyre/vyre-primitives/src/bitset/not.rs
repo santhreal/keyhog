@@ -39,6 +39,7 @@ pub fn bitset_not(input: &str, out: &str, words: u32) -> Program {
 
 /// CPU reference.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref(input: &[u32]) -> Vec<u32> {
     let mut out = Vec::new();
     cpu_ref_into(input, &mut out);
@@ -46,6 +47,7 @@ pub fn cpu_ref(input: &[u32]) -> Vec<u32> {
 }
 
 /// CPU reference into caller-owned storage.
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref_into(input: &[u32], out: &mut Vec<u32>) {
     out.clear();
     out.reserve(input.len());

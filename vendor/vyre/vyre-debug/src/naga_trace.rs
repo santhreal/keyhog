@@ -1,6 +1,6 @@
+use naga::Module;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use naga::Module;
 use vyre_emit_naga::BindResultEntry;
 
 pub struct FailureTrace {
@@ -18,7 +18,11 @@ pub fn failure_trace(module: &Module, error: &naga::valid::ValidationError) -> F
     FailureTrace { text }
 }
 
-pub fn failure_trace_wgsl(module: &Module, info: &naga::valid::ModuleInfo, err: &naga::back::wgsl::Error) -> FailureTrace {
+pub fn failure_trace_wgsl(
+    module: &Module,
+    info: &naga::valid::ModuleInfo,
+    err: &naga::back::wgsl::Error,
+) -> FailureTrace {
     let text = format!(
         "FAILURE: {:#?}\nentry_points={}\nfunctions={}\nglobals={}\nmodule_info={:#?}",
         err,

@@ -64,7 +64,7 @@ impl Parse for DefineOpArgs {
                 other => {
                     return Err(syn::Error::new(
                         key.span(),
-                        format!("unknown define_op! argument `{other}`"),
+                        format!("unknown define_op! argument `{other}`. Fix: use id, dialect, category, inputs, outputs, laws, or program."),
                     ));
                 }
             }
@@ -74,13 +74,21 @@ impl Parse for DefineOpArgs {
         }
 
         Ok(Self {
-            id: id.ok_or_else(|| input.error("missing `id = \"...\"`"))?,
-            dialect: dialect.ok_or_else(|| input.error("missing `dialect = \"...\"`"))?,
-            category: category.ok_or_else(|| input.error("missing `category = A|B|C`"))?,
+            id: id.ok_or_else(|| {
+                input.error("missing `id = \"...\"`. Fix: declare a stable operation id.")
+            })?,
+            dialect: dialect.ok_or_else(|| {
+                input.error("missing `dialect = \"...\"`. Fix: declare the owning dialect name.")
+            })?,
+            category: category.ok_or_else(|| {
+                input.error("missing `category = A|B|C`. Fix: choose a dialect category variant.")
+            })?,
             inputs,
             outputs,
             laws,
-            program: program.ok_or_else(|| input.error("missing `program = |..| ..`"))?,
+            program: program.ok_or_else(|| {
+                input.error("missing `program = ...`. Fix: provide an expression that builds a vyre Program.")
+            })?,
         })
     }
 }
@@ -93,9 +101,15 @@ fn parse_str_array(input: ParseStream<'_>) -> syn::Result<Vec<LitStr>> {
         .map(|expr| match expr {
             Expr::Lit(lit) => match lit.lit {
                 syn::Lit::Str(s) => Ok(s),
-                other => Err(syn::Error::new_spanned(other, "expected string literal")),
+                other => Err(syn::Error::new_spanned(
+                    other,
+                    "expected string literal. Fix: use string type names such as [\"u32\"].",
+                )),
             },
-            other => Err(syn::Error::new_spanned(other, "expected string literal")),
+            other => Err(syn::Error::new_spanned(
+                other,
+                "expected string literal. Fix: use string type names such as [\"u32\"].",
+            )),
         })
         .collect()
 }

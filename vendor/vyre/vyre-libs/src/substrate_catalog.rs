@@ -65,9 +65,9 @@ inventory::submit! {
         build: indexed_map_program,
         test_inputs: Some(|| vec![vec![
             u32s(&[1, 2, 3, 4]),
-            u32s(&[0, 0, 0, 0]),
         ]]),
         expected_output: Some(|| vec![vec![u32s(&[2, 3, 4, 5])]]),
+        category: None,
     }
 }
 
@@ -77,8 +77,8 @@ inventory::submit! {
         build: strided_accumulate_program,
         test_inputs: Some(|| vec![vec![
             u32s(&[7, 11, 13, 17]),
-            u32s(&[0]),
         ]]),
         expected_output: Some(|| vec![vec![u32s(&[7])]]),
+        category: None,
     }
 }

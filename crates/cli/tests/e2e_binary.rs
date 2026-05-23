@@ -27,10 +27,7 @@ fn binary() -> PathBuf {
 
 /// One-line helper: write a temp file with given content, scan it
 /// with `--format json`, return (stdout, stderr, exit-code).
-fn scan_text_file(
-    content: &str,
-    extra_args: &[&str],
-) -> (String, String, Option<i32>) {
+fn scan_text_file(content: &str, extra_args: &[&str]) -> (String, String, Option<i32>) {
     let dir = TempDir::new().expect("tempdir");
     let path = dir.path().join("planted.txt");
     std::fs::write(&path, content).expect("write fixture");
@@ -64,15 +61,12 @@ fn scan_finds_planted_aws_key_and_returns_exit_1() {
         "expected exit 1 (unverified findings); got {code:?}"
     );
 
-    let findings: serde_json::Value =
-        serde_json::from_str(&stdout).expect("stdout is valid JSON");
-    let arr = findings
-        .as_array()
-        .expect("findings JSON is an array");
+    let findings: serde_json::Value = serde_json::from_str(&stdout).expect("stdout is valid JSON");
+    let arr = findings.as_array().expect("findings JSON is an array");
     assert!(!arr.is_empty(), "expected at least one finding");
-    let aws = arr.iter().find(|f| {
-        f.get("detector_id").and_then(|v| v.as_str()) == Some("aws-access-key")
-    });
+    let aws = arr
+        .iter()
+        .find(|f| f.get("detector_id").and_then(|v| v.as_str()) == Some("aws-access-key"));
     assert!(
         aws.is_some(),
         "expected aws-access-key finding; got: {arr:?}",
@@ -85,8 +79,7 @@ fn scan_returns_exit_0_on_clean_file() {
     let (stdout, _stderr, code) = scan_text_file(fixture, &[]);
 
     assert_eq!(code, Some(0), "expected exit 0 on clean file; got {code:?}");
-    let findings: serde_json::Value =
-        serde_json::from_str(&stdout).expect("stdout is valid JSON");
+    let findings: serde_json::Value = serde_json::from_str(&stdout).expect("stdout is valid JSON");
     let arr = findings.as_array().expect("findings JSON is an array");
     assert!(arr.is_empty(), "expected zero findings; got: {arr:?}");
 }
@@ -96,8 +89,7 @@ fn scan_json_schema_carries_required_fields() {
     let fixture = "GH_TOKEN = \"ghp_aBcD1234EFgh5678ijkl9012MNop3456qrST\"\n";
     let (stdout, _stderr, _code) = scan_text_file(fixture, &[]);
 
-    let findings: serde_json::Value =
-        serde_json::from_str(&stdout).expect("stdout is valid JSON");
+    let findings: serde_json::Value = serde_json::from_str(&stdout).expect("stdout is valid JSON");
     let arr = findings.as_array().expect("findings JSON is an array");
     assert!(!arr.is_empty(), "expected the GH token to fire");
 
@@ -156,7 +148,12 @@ fn readme_banner_counts_match_loaded_corpus() {
         serde_json::from_slice(&output.stdout).expect("detectors JSON parse");
     let actual_patterns: usize = arr
         .iter()
-        .map(|d| d.get("patterns").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0))
+        .map(|d| {
+            d.get("patterns")
+                .and_then(|v| v.as_array())
+                .map(|a| a.len())
+                .unwrap_or(0)
+        })
         .sum();
 
     assert_eq!(
@@ -196,10 +193,13 @@ fn detectors_subcommand_emits_json_array() {
         arr.len()
     );
     // Spot-check one well-known detector.
-    let aws = arr.iter().find(|d| {
-        d.get("id").and_then(|v| v.as_str()) == Some("aws-access-key")
-    });
-    assert!(aws.is_some(), "aws-access-key should appear in --json output");
+    let aws = arr
+        .iter()
+        .find(|d| d.get("id").and_then(|v| v.as_str()) == Some("aws-access-key"));
+    assert!(
+        aws.is_some(),
+        "aws-access-key should appear in --json output"
+    );
     let aws = aws.unwrap();
     assert_eq!(
         aws.get("service").and_then(|v| v.as_str()),
@@ -234,7 +234,8 @@ fn no_suppress_test_fixtures_surfaces_stripe_demo_key() {
     // ----- default: suppressed -----------------------------------
     let default_out = Command::new(binary())
         .arg("scan")
-        .arg("--format").arg("json")
+        .arg("--format")
+        .arg("json")
         .arg(&path)
         .output()
         .expect("spawn keyhog scan (default)");
@@ -242,9 +243,9 @@ fn no_suppress_test_fixtures_surfaces_stripe_demo_key() {
     let default_findings: serde_json::Value =
         serde_json::from_str(&default_json).expect("default-mode stdout is JSON");
     let default_arr = default_findings.as_array().expect("array");
-    let has_stripe = default_arr.iter().any(|f| {
-        f.get("service").and_then(|v| v.as_str()) == Some("stripe")
-    });
+    let has_stripe = default_arr
+        .iter()
+        .any(|f| f.get("service").and_then(|v| v.as_str()) == Some("stripe"));
     assert!(
         !has_stripe,
         "default mode MUST suppress the Stripe demo key; got findings: {default_arr:?}"
@@ -254,7 +255,8 @@ fn no_suppress_test_fixtures_surfaces_stripe_demo_key() {
     let optout_out = Command::new(binary())
         .arg("scan")
         .arg("--no-suppress-test-fixtures")
-        .arg("--format").arg("json")
+        .arg("--format")
+        .arg("json")
         .arg(&path)
         .output()
         .expect("spawn keyhog scan (opt-out)");
@@ -262,9 +264,9 @@ fn no_suppress_test_fixtures_surfaces_stripe_demo_key() {
     let optout_findings: serde_json::Value =
         serde_json::from_str(&optout_json).expect("opt-out stdout is JSON");
     let optout_arr = optout_findings.as_array().expect("array");
-    let has_stripe_now = optout_arr.iter().any(|f| {
-        f.get("service").and_then(|v| v.as_str()) == Some("stripe")
-    });
+    let has_stripe_now = optout_arr
+        .iter()
+        .any(|f| f.get("service").and_then(|v| v.as_str()) == Some("stripe"));
     assert!(
         has_stripe_now,
         "--no-suppress-test-fixtures MUST surface the Stripe demo key; \

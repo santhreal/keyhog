@@ -41,7 +41,7 @@
 
 use crate::ir::{AtomicOp, Expr, Ident, Node, Program};
 use crate::ir_inner::model::expr::GeneratorRef;
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 use std::sync::OnceLock;
 
 /// Stable preorder index into the `ProgramFacts` columns. Distinct
@@ -123,7 +123,7 @@ pub enum BufferRefKind {
 /// identity tracking) iterate the column once.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RegionMeta {
-    /// `NodeIndex` of the `Node::Region` within the SoA fact table.
+    /// `NodeIndex` of the `Node::Region` within the `SoA` fact table.
     pub node: NodeIndex,
     /// `Region.generator` — the op id / pass / extension that
     /// produced this region, used by diagnostics to attribute
@@ -140,6 +140,13 @@ pub struct RegionMeta {
 pub struct ProgramFacts {
     kinds: Vec<NodeKind>,
     parent: Vec<Option<NodeIndex>>,
+    /// Bitset of every `NodeKind` discriminant observed during
+    /// `build`. Populated alongside `kinds` so `has_kind` and
+    /// `has_any_kind_in_mask` are O(1) bit tests instead of an O(N)
+    /// scan of `kinds`. Pass-`analyze_impl` predicates (which run
+    /// before every transform on every iteration) hit this in the
+    /// hot pipeline.
+    kinds_present: u32,
     lets: Vec<(NodeIndex, Ident)>,
     assigns: Vec<(NodeIndex, Ident)>,
     loop_vars: Vec<(NodeIndex, Ident)>,
@@ -154,6 +161,68 @@ pub struct ProgramFacts {
     region_index_by_generator: OnceLock<FxHashMap<Ident, Vec<usize>>>,
 }
 
+/// Bit position of a `NodeKind` inside the `ProgramFacts::kinds_present`
+/// bitset. Returned as a `u32` so callers can `1 << kind_bit(k)` directly.
+#[must_use]
+#[inline]
+pub const fn kind_bit(kind: NodeKind) -> u32 {
+    kind as u32
+}
+
+/// `1 << kind_bit(k)` mask for one [`NodeKind`].
+#[must_use]
+#[inline]
+pub const fn kind_mask(kind: NodeKind) -> u32 {
+    1u32 << (kind as u32)
+}
+
+thread_local! {
+    /// Last (program-fingerprint, ProgramFacts) pair the current thread
+    /// computed. ProgramFacts builds are deterministic in `program` and
+    /// the scheduler runs sequentially against the SAME program for a
+    /// burst of passes (analyze + transform per pass, multiple passes
+    /// per iteration). A one-entry thread-local cache keyed by the
+    /// program's stable fingerprint collapses 6+ redundant rebuilds
+    /// per scheduler iteration into a single build.
+    ///
+    /// Rc rather than Arc — the cache slot only ever hands references
+    /// back to the same thread that owns it, so we don't need cross-
+    /// thread synchronization for the cached payload.
+    static FACTS_CACHE: std::cell::RefCell<Option<([u8; 32], std::rc::Rc<ProgramFacts>)>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+impl ProgramFacts {
+    /// Return a thread-local cached [`ProgramFacts`] for `program`,
+    /// rebuilding only when the program's stable fingerprint differs
+    /// from the last build on this thread.
+    ///
+    /// Use this in pass `analyze_impl` / `transform` paths instead of
+    /// calling [`ProgramFacts::build`] directly: the scheduler hits
+    /// the same `Program` repeatedly within one iteration (analyze
+    /// then transform; multiple consecutive passes that all need
+    /// facts) and the cache turns those repeats into refcount bumps.
+    ///
+    /// First-call cost is identical to `build`. Subsequent same-program
+    /// calls on the same thread cost one `program.fingerprint()` (already
+    /// OnceLock-cached) plus an Rc clone.
+    #[must_use]
+    pub fn build_cached(program: &Program) -> std::rc::Rc<ProgramFacts> {
+        let fp = program.fingerprint();
+        FACTS_CACHE.with(|cell| {
+            let mut slot = cell.borrow_mut();
+            if let Some((cached_fp, cached)) = slot.as_ref() {
+                if cached_fp == &fp {
+                    return std::rc::Rc::clone(cached);
+                }
+            }
+            let facts = std::rc::Rc::new(ProgramFacts::build(program));
+            *slot = Some((fp, std::rc::Rc::clone(&facts)));
+            facts
+        })
+    }
+}
+
 impl ProgramFacts {
     /// Walk the program's entry tree once in preorder and populate
     /// every column. The lookup indices are built lazily on the
@@ -161,7 +230,32 @@ impl ProgramFacts {
     /// `buffer_refs_of`.
     #[must_use]
     pub fn build(program: &Program) -> Self {
-        let mut facts = Self::default();
+        // Pre-size the columnar Vec storage off the OnceLock-cached
+        // node count so the build walk fills already-allocated
+        // capacity instead of grow-by-doubling each column. The
+        // counts (kinds, parent, lets, assigns, etc.) are bounded by
+        // node_count; non-Let/Assign columns over-reserve, but the
+        // single allocation is cheaper than 6+ doublings on a 1000-
+        // node entry tree.
+        let stats = program.stats();
+        let node_count = stats.node_count;
+        let mut facts = Self {
+            kinds: Vec::with_capacity(node_count),
+            parent: Vec::with_capacity(node_count),
+            kinds_present: 0,
+            lets: Vec::with_capacity(node_count / 4),
+            assigns: Vec::with_capacity(node_count / 8),
+            loop_vars: Vec::with_capacity(node_count / 16),
+            var_reads: Vec::with_capacity(node_count),
+            buffer_refs: Vec::with_capacity(node_count / 2),
+            regions: Vec::with_capacity(stats.region_count as usize),
+            let_index: OnceLock::new(),
+            assign_index: OnceLock::new(),
+            var_read_index: OnceLock::new(),
+            buffer_index: OnceLock::new(),
+            region_index_by_node: OnceLock::new(),
+            region_index_by_generator: OnceLock::new(),
+        };
         for node in program.entry() {
             walk_node(node, None, &mut facts);
         }
@@ -206,11 +300,12 @@ impl ProgramFacts {
 
     /// Iterate every `(NodeIndex, NodeKind)` in preorder.
     pub fn iter_nodes(&self) -> impl Iterator<Item = (NodeIndex, NodeKind)> + '_ {
-        self.kinds
-            .iter()
-            .copied()
-            .enumerate()
-            .map(|(i, kind)| (NodeIndex(i as u32), kind))
+        self.kinds.iter().copied().enumerate().map(|(i, kind)| {
+            (
+                NodeIndex(u32::try_from(i).map_or(u32::MAX, |value| value)),
+                kind,
+            )
+        })
     }
 
     /// Iterate optimizer-semantic nodes in preorder, skipping
@@ -239,12 +334,32 @@ impl ProgramFacts {
         None
     }
 
-    /// `true` iff at least one node has the given kind. O(N) over
-    /// the kinds column; a hot pass that needs this should cache
-    /// the answer.
+    /// `true` iff at least one node has the given kind. O(1) bit
+    /// test against the cached `kinds_present` mask populated during
+    /// `build`.
     #[must_use]
+    #[inline]
     pub fn has_kind(&self, kind: NodeKind) -> bool {
-        self.kinds.iter().any(|&k| k == kind)
+        (self.kinds_present & kind_mask(kind)) != 0
+    }
+
+    /// `true` iff at least one node's kind is in `mask`. O(1).
+    /// Compose with [`kind_mask`] when checking several kinds at
+    /// once: `facts.has_any_kind_in_mask(kind_mask(NodeKind::Loop) | kind_mask(NodeKind::If))`.
+    #[must_use]
+    #[inline]
+    pub fn has_any_kind_in_mask(&self, mask: u32) -> bool {
+        (self.kinds_present & mask) != 0
+    }
+
+    /// Raw kind-presence bitset. Exposed so passes that need to
+    /// short-circuit on multiple distinct kinds can grab the mask
+    /// once and AND/OR/XOR locally without going through the
+    /// helpers per-kind.
+    #[must_use]
+    #[inline]
+    pub fn kinds_present(&self) -> u32 {
+        self.kinds_present
     }
 
     /// Every `(NodeIndex, name)` where `Node::Let { name, .. }` was
@@ -307,12 +422,16 @@ impl ProgramFacts {
     }
 
     /// Every site that touches buffer `name`, paired with the kind
-    /// of touch (Read / Write / Atomic / AsyncDestination /
-    /// AsyncSource / IndirectCount).
+    /// of touch (Read / Write / Atomic / `AsyncDestination` /
+    /// `AsyncSource` / `IndirectCount`).
     #[must_use]
     pub fn buffer_refs_of(&self, name: &str) -> &[(NodeIndex, BufferRefKind)] {
         let map = self.buffer_index.get_or_init(|| {
-            let mut out: FxHashMap<Ident, Vec<(NodeIndex, BufferRefKind)>> = FxHashMap::default();
+            let mut out: FxHashMap<Ident, Vec<(NodeIndex, BufferRefKind)>> =
+                FxHashMap::with_capacity_and_hasher(
+                    self.buffer_refs.len(),
+                    std::hash::BuildHasherDefault::default(),
+                );
             for (idx, buffer, kind) in &self.buffer_refs {
                 out.entry(buffer.clone()).or_default().push((*idx, *kind));
             }
@@ -350,15 +469,17 @@ impl ProgramFacts {
     /// argument. O(1) hash lookup once the index is built.
     pub fn regions_by_generator(&self, generator: &str) -> impl Iterator<Item = &RegionMeta> + '_ {
         let map = self.region_index_by_generator.get_or_init(|| {
-            let mut out: FxHashMap<Ident, Vec<usize>> = FxHashMap::default();
+            let mut out: FxHashMap<Ident, Vec<usize>> = FxHashMap::with_capacity_and_hasher(
+                self.regions.len(),
+                std::hash::BuildHasherDefault::default(),
+            );
             for (i, meta) in self.regions.iter().enumerate() {
                 out.entry(meta.generator.clone()).or_default().push(i);
             }
             out
         });
         map.get(generator)
-            .map(|v| v.as_slice())
-            .unwrap_or(&[])
+            .map_or(&[] as &[usize], std::vec::Vec::as_slice)
             .iter()
             .filter_map(move |&i| self.regions.get(i))
     }
@@ -390,7 +511,7 @@ impl ProgramFacts {
     /// The same name aliases itself trivially. The fact lets
     /// alias-aware passes (load elision, store-to-load forwarding,
     /// dead-store elimination) assume non-aliasing without paying
-    /// for the full weir points-to analysis on the unique slice.
+    /// for the full downstream points-to analysis on the unique slice.
     ///
     /// Returns `true` iff `buf_a != buf_b` AND both names appear in
     /// the program's `buffer_refs` column (so they're real declared
@@ -416,8 +537,8 @@ impl ProgramFacts {
     ///   - the count buffer of any `Node::IndirectDispatch` (the
     ///     value is consumed by the dispatch grid).
     ///
-    /// Buffers that are READ ONLY (no Write / Atomic / AsyncDestination
-    /// / IndirectCount in the buffer_refs column) do not escape — their
+    /// Buffers that are READ ONLY (no Write / Atomic / `AsyncDestination`
+    /// / `IndirectCount` in the `buffer_refs` column) do not escape — their
     /// contents are an input the host produced, not a kernel-local
     /// scratch the host needs to read back.
     ///
@@ -441,8 +562,8 @@ impl ProgramFacts {
     /// scratch-reuse passes that want to enumerate the escaping
     /// set in one go).
     #[must_use]
-    pub fn escaping_buffers(&self) -> FxHashMap<Ident, ()> {
-        let mut out: FxHashMap<Ident, ()> = FxHashMap::default();
+    pub fn escaping_buffers(&self) -> FxHashSet<Ident> {
+        let mut out: FxHashSet<Ident> = FxHashSet::default();
         for (_, name, kind) in &self.buffer_refs {
             if matches!(
                 kind,
@@ -451,7 +572,7 @@ impl ProgramFacts {
                     | BufferRefKind::AsyncDestination
                     | BufferRefKind::IndirectCount
             ) {
-                out.insert(name.clone(), ());
+                out.insert(name.clone());
             }
         }
         out
@@ -459,7 +580,11 @@ impl ProgramFacts {
 }
 
 fn build_index(rows: &[(NodeIndex, Ident)]) -> FxHashMap<Ident, Vec<NodeIndex>> {
-    let mut out: FxHashMap<Ident, Vec<NodeIndex>> = FxHashMap::default();
+    // Capacity = row count is an upper bound (every row could touch a
+    // unique name); the map is built once via OnceLock so over-sizing
+    // is paid once and saves grow-by-doubling on every insert.
+    let mut out: FxHashMap<Ident, Vec<NodeIndex>> =
+        FxHashMap::with_capacity_and_hasher(rows.len(), std::hash::BuildHasherDefault::default());
     for (idx, name) in rows {
         out.entry(name.clone()).or_default().push(*idx);
     }
@@ -467,12 +592,21 @@ fn build_index(rows: &[(NodeIndex, Ident)]) -> FxHashMap<Ident, Vec<NodeIndex>> 
 }
 
 fn record_node(facts: &mut ProgramFacts, kind: NodeKind, parent: Option<NodeIndex>) -> NodeIndex {
-    let idx = NodeIndex(facts.kinds.len() as u32);
+    let idx = NodeIndex(u32::try_from(facts.kinds.len()).map_or(u32::MAX, |value| value));
     facts.kinds.push(kind);
     facts.parent.push(parent);
+    // Set the kind-presence bit. `kind as u32` is the discriminant
+    // (NodeKind has 16 variants, all fit in a u32). The optimizer
+    // uses kinds_present for O(1) `has_kind` queries instead of
+    // scanning the kinds column.
+    facts.kinds_present |= kind_mask(kind);
     idx
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "SoA extraction keeps the Node variant-to-column mapping auditable in one walk"
+)]
 fn walk_node(node: &Node, parent: Option<NodeIndex>, facts: &mut ProgramFacts) {
     match node {
         Node::Let { name, value } => {
@@ -660,7 +794,9 @@ fn walk_expr(expr: &Expr, owning_node: NodeIndex, facts: &mut ProgramFacts) {
             walk_expr(true_val, owning_node, facts);
             walk_expr(false_val, owning_node, facts);
         }
-        Expr::Cast { value, .. } => walk_expr(value, owning_node, facts),
+        Expr::Cast { value, .. } | Expr::SubgroupAdd { value } => {
+            walk_expr(value, owning_node, facts);
+        }
         Expr::Fma { a, b, c } => {
             walk_expr(a, owning_node, facts);
             walk_expr(b, owning_node, facts);
@@ -671,7 +807,6 @@ fn walk_expr(expr: &Expr, owning_node: NodeIndex, facts: &mut ProgramFacts) {
             walk_expr(value, owning_node, facts);
             walk_expr(lane, owning_node, facts);
         }
-        Expr::SubgroupAdd { value } => walk_expr(value, owning_node, facts),
         Expr::LitU32(_)
         | Expr::LitI32(_)
         | Expr::LitF32(_)
@@ -710,6 +845,83 @@ mod tests {
         assert!(facts.lets().is_empty());
         assert!(facts.var_reads().is_empty());
         assert!(facts.buffer_refs().is_empty());
+    }
+
+    /// Empty entry tree has the wrapping Region in `kinds_present`
+    /// and nothing else — no Lets, no Loops, no Stores.
+    #[test]
+    fn kinds_present_bitset_starts_empty_then_records_each_kind() {
+        let facts = ProgramFacts::build(&program(Vec::new()));
+        // Wrapping Region IS recorded by `build`.
+        assert!(facts.has_kind(NodeKind::Region));
+        // But nothing else is.
+        assert!(!facts.has_kind(NodeKind::Let));
+        assert!(!facts.has_kind(NodeKind::Loop));
+        assert!(!facts.has_kind(NodeKind::Store));
+        assert!(!facts.has_kind(NodeKind::If));
+        assert!(!facts.has_kind(NodeKind::Barrier));
+    }
+
+    /// Each observed Node sets exactly its bit in `kinds_present`.
+    #[test]
+    fn kinds_present_records_every_observed_kind() {
+        let facts = ProgramFacts::build(&program(vec![
+            Node::let_bind("x", Expr::u32(1)),
+            Node::store("a", Expr::u32(0), Expr::u32(7)),
+            Node::if_then(Expr::var("x"), vec![Node::Return]),
+            Node::loop_for(
+                "i",
+                Expr::u32(0),
+                Expr::u32(4),
+                vec![Node::Block(Vec::new())],
+            ),
+            Node::Barrier {
+                ordering: MemoryOrdering::SeqCst,
+            },
+        ]));
+        assert!(facts.has_kind(NodeKind::Let));
+        assert!(facts.has_kind(NodeKind::Store));
+        assert!(facts.has_kind(NodeKind::If));
+        assert!(facts.has_kind(NodeKind::Return));
+        assert!(facts.has_kind(NodeKind::Loop));
+        assert!(facts.has_kind(NodeKind::Block));
+        assert!(facts.has_kind(NodeKind::Barrier));
+        assert!(facts.has_kind(NodeKind::Region));
+        // Kinds we never produced must remain false.
+        assert!(!facts.has_kind(NodeKind::Assign));
+        assert!(!facts.has_kind(NodeKind::AsyncLoad));
+        assert!(!facts.has_kind(NodeKind::AsyncStore));
+        assert!(!facts.has_kind(NodeKind::IndirectDispatch));
+        assert!(!facts.has_kind(NodeKind::Trap));
+    }
+
+    /// `has_any_kind_in_mask` ORs across the kinds_present bitset:
+    /// a program with a Let alone matches a (Let | Loop) mask and
+    /// not a (Loop | Trap) mask.
+    #[test]
+    fn has_any_kind_in_mask_is_or_across_observed_kinds() {
+        let facts = ProgramFacts::build(&program(vec![Node::let_bind("x", Expr::u32(1))]));
+        assert!(facts.has_any_kind_in_mask(kind_mask(NodeKind::Let)));
+        assert!(facts.has_any_kind_in_mask(kind_mask(NodeKind::Let) | kind_mask(NodeKind::Loop)));
+        assert!(!facts.has_any_kind_in_mask(kind_mask(NodeKind::Loop) | kind_mask(NodeKind::Trap)));
+        assert_eq!(facts.has_kind(NodeKind::Let), true);
+        assert_eq!(facts.has_kind(NodeKind::Loop), false);
+    }
+
+    /// `kinds_present()` mask exposes the raw bitset for callers that
+    /// want to short-circuit on multiple kinds with a single AND.
+    #[test]
+    fn kinds_present_mask_round_trips_through_kind_mask_helper() {
+        let facts = ProgramFacts::build(&program(vec![
+            Node::let_bind("x", Expr::u32(1)),
+            Node::Return,
+        ]));
+        let mask = facts.kinds_present();
+        // Exactly the bits we expect: Let, Return, Region (the
+        // wrapping Region is always recorded).
+        let expected =
+            kind_mask(NodeKind::Let) | kind_mask(NodeKind::Return) | kind_mask(NodeKind::Region);
+        assert_eq!(mask, expected);
     }
 
     /// Lets are recorded in preorder with the right name.
@@ -1127,6 +1339,6 @@ mod tests {
         ]));
         let escaping = facts.escaping_buffers();
         assert_eq!(escaping.len(), 1);
-        assert!(escaping.keys().any(|k| k.as_str() == "a"));
+        assert!(escaping.iter().any(|k| k.as_str() == "a"));
     }
 }

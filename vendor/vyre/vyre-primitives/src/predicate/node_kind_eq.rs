@@ -54,6 +54,7 @@ pub fn node_kind_eq(nodes: &str, nodeset_out: &str, node_count: u32, kind: u32) 
 
 /// CPU reference.
 #[must_use]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref(nodes: &[u32], kind: u32) -> Vec<u32> {
     let mut out = Vec::new();
     cpu_ref_into(nodes, kind, &mut out);
@@ -61,6 +62,7 @@ pub fn cpu_ref(nodes: &[u32], kind: u32) -> Vec<u32> {
 }
 
 /// CPU reference using a caller-owned nodeset bitset.
+#[cfg(any(test, feature = "cpu-parity"))]
 pub fn cpu_ref_into(nodes: &[u32], kind: u32, out: &mut Vec<u32>) {
     let n = nodes.len() as u32;
     let words = n.div_ceil(32) as usize;

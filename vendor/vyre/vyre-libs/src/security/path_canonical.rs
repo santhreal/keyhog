@@ -23,16 +23,17 @@ pub fn path_canonical(
 }
 
 #[must_use]
+#[cfg(test)]
 /// CPU oracle for [`path_canonical`].
-pub fn cpu_ref(canonicalizer_dominates: &[u32], fs_op_set: &[u32]) -> Vec<u32> {
+pub(crate) fn cpu_ref(canonicalizer_dominates: &[u32], fs_op_set: &[u32]) -> Vec<u32> {
     vyre_primitives::bitset::and::cpu_ref(canonicalizer_dominates, fs_op_set)
 }
 
 /// Soundness marker for [`path_canonical`].
 pub struct PathCanonical;
-impl weir::soundness::SoundnessTagged for PathCanonical {
-    fn soundness(&self) -> weir::soundness::Soundness {
-        weir::soundness::Soundness::Exact
+impl vyre::soundness::SoundnessTagged for PathCanonical {
+    fn soundness(&self) -> vyre::soundness::Soundness {
+        vyre::soundness::Soundness::Exact
     }
 }
 

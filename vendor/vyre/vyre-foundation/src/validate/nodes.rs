@@ -2,6 +2,8 @@ use crate::ir_inner::model::expr::{Expr, Ident};
 #[cfg(test)]
 use crate::ir_inner::model::node::Node;
 use crate::ir_inner::model::program::BufferDecl;
+#[cfg(test)]
+use crate::ir_inner::model::types::BufferAccess;
 use crate::ir_inner::model::types::DataType;
 #[cfg(test)]
 use crate::validate::barrier;
@@ -146,6 +148,30 @@ fn validate_node_inner(
                         report.errors.push(err(format!(
                             "V045: assignment to `{name}` has type `{value_ty}` but the binding was declared as `{declared}`. Fix: cast the value to `{declared}` or introduce a new binding with the intended type.",
                             declared = binding.ty
+                        )));
+                    }
+                }
+            } else if let Some(buf) = buffers.get(name.as_str()) {
+                if buf.access != BufferAccess::ReadWrite {
+                    report.errors.push(err(format!(
+                        "assignment to buffer `{name}` requires read-write storage but declared access is `{access:?}`. Fix: use a read-write/output buffer or store into a mutable local binding.",
+                        access = buf.access
+                    )));
+                }
+                if let Some(value_ty) = expr_type(value, buffers, scope) {
+                    let elem = &buf.element;
+                    let compatible = value_ty == *elem
+                        || matches!(
+                            (&value_ty, elem),
+                            (DataType::U32, DataType::Bytes)
+                                | (DataType::Bytes, DataType::U32)
+                                | (DataType::U32, DataType::Bool)
+                                | (DataType::Bool, DataType::U32)
+                                | (DataType::F32, DataType::F32)
+                        );
+                    if !compatible {
+                        report.errors.push(err(format!(
+                            "V045: assignment to buffer `{name}` has type `{value_ty}` but the buffer element type is `{elem}`. Fix: cast the value to `{elem}` or write to a buffer with the intended element type."
                         )));
                     }
                 }
@@ -432,13 +458,11 @@ pub(crate) fn check_constant_store_index(
         return;
     }
     match index {
-        Expr::LitU32(value) => {
-            if *value >= buffer.count {
-                errors.push(err(format!(
-                    "V036: store index {value} overflows buffer `{buffer_name}` with count {}. Fix: keep constant store indices below the declared element count.",
-                    buffer.count
-                )));
-            }
+        Expr::LitU32(value) if *value >= buffer.count => {
+            errors.push(err(format!(
+                "V036: store index {value} overflows buffer `{buffer_name}` with count {}. Fix: keep constant store indices below the declared element count.",
+                buffer.count
+            )));
         }
         Expr::LitI32(value) if *value < 0 => {
             errors.push(err(format!(
@@ -448,7 +472,7 @@ pub(crate) fn check_constant_store_index(
             )));
         }
         Expr::LitI32(value) => {
-            let as_u32 = *value as u32;
+            let as_u32 = u32::try_from(*value).unwrap_or(u32::MAX);
             if as_u32 >= buffer.count {
                 errors.push(err(format!(
                     "V036: store index {value} overflows buffer `{buffer_name}` with count {}. Fix: keep constant store indices below the declared element count.",
@@ -487,8 +511,7 @@ pub(crate) fn store_value_targets(element: &DataType) -> String {
     let mut targets = vec![element.clone()];
     let legal = match element {
         DataType::U32 => vec![DataType::Bytes, DataType::Bool],
-        DataType::Bytes => vec![DataType::U32],
-        DataType::Bool => vec![DataType::U32],
+        DataType::Bytes | DataType::Bool => vec![DataType::U32],
         _ => Vec::new(),
     };
     for target in legal {

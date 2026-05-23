@@ -178,7 +178,7 @@ inventory::submit! {
             let to_bytes =
                 |w: &[f32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
             // Input = [1.0, 2.0, 3.0, 4.0].
-            vec![vec![to_bytes(&[1.0, 2.0, 3.0, 4.0]), vec![0u8; 4 * 4]]]
+            vec![vec![to_bytes(&[1.0, 2.0, 3.0, 4.0])]]
         }),
         expected_output: Some(|| {
             let to_bytes =
@@ -191,6 +191,7 @@ inventory::submit! {
             let y: [f32; 4] = [1.0 * rms, 2.0 * rms, 3.0 * rms, 4.0 * rms];
             vec![vec![to_bytes(&y)]]
         }),
+        category: Some("nn"),
     }
 }
 
@@ -298,7 +299,10 @@ mod tests {
         .expect("Fix: rms_norm must not panic on large-variance input");
         let out = decode_f32(&outputs[0].to_bytes());
         for (i, &v) in out.iter().enumerate() {
-            assert!(v.is_finite(), "rms_norm large-variance output at {i} must be finite, got {v}");
+            assert!(
+                v.is_finite(),
+                "rms_norm large-variance output at {i} must be finite, got {v}"
+            );
             assert!(
                 (v.abs() - 1.0).abs() <= 1.0e-4,
                 "rms_norm large-variance output at {i} should be ~±1, got {v}"

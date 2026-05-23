@@ -8,9 +8,8 @@ pub(super) fn identifier_lexeme<'a>(
     if kind_at(vast_nodes, node_idx) != TOK_IDENTIFIER {
         return None;
     }
-    let base = node_idx * VAST_NODE_STRIDE_U32 as usize;
-    let start = vast_nodes.get(base + 5).copied().unwrap_or_default() as usize;
-    let len = vast_nodes.get(base + 6).copied().unwrap_or_default() as usize;
+    let start = vast_field_at(vast_nodes, node_idx, 5) as usize;
+    let len = vast_field_at(vast_nodes, node_idx, 6) as usize;
     haystack.get(start..start.saturating_add(len))
 }
 
@@ -32,10 +31,7 @@ pub(super) fn is_gnu_auto_type_hash_raw(hash: u32) -> bool {
 }
 
 pub(super) fn symbol_hash_at(vast_nodes: &[u32], node_idx: usize) -> u32 {
-    vast_nodes
-        .get(node_idx * VAST_NODE_STRIDE_U32 as usize + VAST_TYPEDEF_SYMBOL_FIELD as usize)
-        .copied()
-        .unwrap_or_default()
+    vast_field_at(vast_nodes, node_idx, VAST_TYPEDEF_SYMBOL_FIELD as usize)
 }
 
 pub(super) fn is_typeof_operator_raw(kind: u32, symbol_hash: u32) -> bool {

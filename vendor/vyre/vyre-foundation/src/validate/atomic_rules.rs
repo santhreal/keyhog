@@ -42,7 +42,7 @@ use rustc_hash::FxHashMap;
 /// violated.
 #[inline]
 pub(crate) fn validate_atomic(
-    op: &AtomicOp,
+    op: AtomicOp,
     buffer: &str,
     index: &Expr,
     expected: Option<&Expr>,
@@ -164,7 +164,7 @@ mod tests {
         let buffers = buf_map(&decl);
         let mut errors = Vec::new();
         validate_atomic(
-            &AtomicOp::Add,
+            AtomicOp::Add,
             "buf",
             &Expr::u32(0),
             None,
@@ -195,7 +195,7 @@ mod tests {
         let buffers = buf_map(&decl);
         let mut errors = Vec::new();
         validate_atomic(
-            &AtomicOp::Add,
+            AtomicOp::Add,
             "buf",
             &Expr::u32(0),
             None,
@@ -214,7 +214,7 @@ mod tests {
         let buffers = buf_map(&decl);
         let mut errors = Vec::new();
         validate_atomic(
-            &AtomicOp::Add,
+            AtomicOp::Add,
             "buf",
             &Expr::u32(0),
             None,
@@ -232,7 +232,7 @@ mod tests {
         let buffers: FxHashMap<&str, &BufferDecl> = FxHashMap::default();
         let mut errors = Vec::new();
         validate_atomic(
-            &AtomicOp::Add,
+            AtomicOp::Add,
             "missing",
             &Expr::u32(0),
             None,
@@ -254,7 +254,7 @@ mod tests {
         let buffers = buf_map(&decl);
         let mut errors = Vec::new();
         validate_atomic(
-            &AtomicOp::CompareExchange,
+            AtomicOp::CompareExchange,
             "buf",
             &Expr::u32(0),
             None,

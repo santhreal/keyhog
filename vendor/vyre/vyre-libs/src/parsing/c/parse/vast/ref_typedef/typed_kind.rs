@@ -1,54 +1,46 @@
 use super::*;
 
 pub(super) fn reference_typed_kind(vast_nodes: &[u32], node_idx: usize) -> u32 {
-    let base = node_idx * VAST_NODE_STRIDE_U32 as usize;
-    let raw_kind = vast_nodes.get(base).copied().unwrap_or_default();
-    let cur_parent = vast_nodes.get(base + 1).copied().unwrap_or(SENTINEL);
-    let symbol = vast_nodes
-        .get(base + VAST_TYPEDEF_SYMBOL_FIELD as usize)
-        .copied()
-        .unwrap_or_default();
+    let node_count = vast_nodes.len() / VAST_NODE_STRIDE_U32 as usize;
+    let raw_kind = kind_at(vast_nodes, node_idx);
+    let cur_parent = parent_at(vast_nodes, node_idx);
+    let symbol = symbol_hash_at(vast_nodes, node_idx);
     let current_is_typeof_operator = is_typeof_operator_raw(raw_kind, symbol);
     let first_child_kind = child_kind(vast_nodes, node_idx);
     let first_child_flags = child_flags(vast_nodes, node_idx);
     let first_child_symbol = child_symbol_hash(vast_nodes, node_idx);
-    let raw_next_kind = if node_idx + 1 < vast_nodes.len() / VAST_NODE_STRIDE_U32 as usize {
+    let raw_next_kind = if node_idx + 1 < node_count {
         kind_at(vast_nodes, node_idx + 1)
     } else {
         0
     };
-    let raw_next_flags = vast_nodes
-        .get((node_idx + 1) * VAST_NODE_STRIDE_U32 as usize + VAST_TYPEDEF_FLAGS_FIELD as usize)
-        .copied()
-        .unwrap_or_default();
-    let raw_after_next_kind = if node_idx + 2 < vast_nodes.len() / VAST_NODE_STRIDE_U32 as usize {
+    let raw_next_flags = if node_idx + 1 < node_count {
+        flags_at(vast_nodes, node_idx + 1)
+    } else {
+        0
+    };
+    let raw_after_next_kind = if node_idx + 2 < node_count {
         kind_at(vast_nodes, node_idx + 2)
     } else {
         0
     };
-    let raw_after_after_kind = if node_idx + 3 < vast_nodes.len() / VAST_NODE_STRIDE_U32 as usize {
+    let raw_after_after_kind = if node_idx + 3 < node_count {
         kind_at(vast_nodes, node_idx + 3)
     } else {
         0
     };
-    let next_idx = vast_nodes.get(base + 3).copied().unwrap_or(SENTINEL);
+    let next_idx = next_sibling_at(vast_nodes, node_idx);
     let next_valid = usize::try_from(next_idx)
         .ok()
-        .is_some_and(|idx| idx < vast_nodes.len() / VAST_NODE_STRIDE_U32 as usize);
+        .is_some_and(|idx| idx < node_count);
 
     let next_kind = if next_valid {
-        vast_nodes
-            .get(next_idx as usize * VAST_NODE_STRIDE_U32 as usize)
-            .copied()
-            .unwrap_or_default()
+        kind_at(vast_nodes, next_idx as usize)
     } else {
         0
     };
     let after_param_idx = if next_valid {
-        vast_nodes
-            .get(next_idx as usize * VAST_NODE_STRIDE_U32 as usize + 3)
-            .copied()
-            .unwrap_or(SENTINEL)
+        next_sibling_at(vast_nodes, next_idx as usize)
     } else {
         SENTINEL
     };
@@ -236,16 +228,18 @@ pub(super) fn reference_typed_kind(vast_nodes: &[u32], node_idx: usize) -> u32 {
         .or_else(|| reference_c_direct_attribute_kind(vast_nodes, raw_kind, cur_parent, symbol));
     let cur_parent_parent_kind = usize::try_from(cur_parent)
         .ok()
-        .and_then(|parent_idx| {
-            vast_nodes
-                .get(parent_idx * VAST_NODE_STRIDE_U32 as usize + 1)
-                .copied()
-        })
+        .filter(|parent_idx| *parent_idx < node_count)
+        .map(|parent_idx| parent_at(vast_nodes, parent_idx))
         .and_then(|parent_parent| usize::try_from(parent_parent).ok())
+        .filter(|parent_parent_idx| *parent_parent_idx < node_count)
         .map(|parent_parent_idx| kind_at(vast_nodes, parent_parent_idx))
-        .unwrap_or_default();
-    let inside_gnu_statement_expr_body = kind_at(vast_nodes, cur_parent as usize) == TOK_LBRACE
-        && cur_parent_parent_kind == TOK_LPAREN;
+        .unwrap_or(0);
+    let inside_gnu_statement_expr_body = usize::try_from(cur_parent)
+        .ok()
+        .filter(|parent_idx| *parent_idx < node_count)
+        .is_some_and(|parent_idx| {
+            kind_at(vast_nodes, parent_idx) == TOK_LBRACE && cur_parent_parent_kind == TOK_LPAREN
+        });
     let builtin_kind = reference_c_builtin_expression_kind(raw_kind)
         .or_else(|| reference_c_builtin_identifier_expression_kind(raw_kind, symbol, next_kind));
     let c99_for_init_statement_assign =

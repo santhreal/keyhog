@@ -314,13 +314,38 @@ fn assert_high_tier_routing_cells() -> Vec<(u64, usize, ScanBackend, &'static st
         (solo + 1, 0, ScanBackend::Gpu, "high: just above solo → Gpu"),
         (solo * 4, 1, ScanBackend::Gpu, "high: 4× solo → Gpu"),
         // Min + pattern-floor path: both conditions must hold.
-        (min, pat_floor, ScanBackend::Gpu, "high: at (min, pat_floor) → Gpu"),
-        (min, pat_floor + 1, ScanBackend::Gpu, "high: at min, above pat_floor → Gpu"),
+        (
+            min,
+            pat_floor,
+            ScanBackend::Gpu,
+            "high: at (min, pat_floor) → Gpu",
+        ),
+        (
+            min,
+            pat_floor + 1,
+            ScanBackend::Gpu,
+            "high: at min, above pat_floor → Gpu",
+        ),
         // Below min: never Gpu, falls to SimdCpu when Hyperscan present.
-        (min - 1, pat_floor + 100, ScanBackend::SimdCpu, "high: just below min → SimdCpu"),
-        (0, pat_floor + 100, ScanBackend::SimdCpu, "high: zero bytes → SimdCpu"),
+        (
+            min - 1,
+            pat_floor + 100,
+            ScanBackend::SimdCpu,
+            "high: just below min → SimdCpu",
+        ),
+        (
+            0,
+            pat_floor + 100,
+            ScanBackend::SimdCpu,
+            "high: zero bytes → SimdCpu",
+        ),
         // Above min but below pat_floor AND below solo: stays SimdCpu.
-        (min + 1, pat_floor - 1, ScanBackend::SimdCpu, "high: above min, below pat_floor, below solo → SimdCpu"),
+        (
+            min + 1,
+            pat_floor - 1,
+            ScanBackend::SimdCpu,
+            "high: above min, below pat_floor, below solo → SimdCpu",
+        ),
     ]
 }
 
@@ -347,9 +372,24 @@ fn mid_tier_routing_crossover_cells() {
     with_env(None, || {
         for (bytes, patterns, expected, label) in [
             (solo, 0, ScanBackend::Gpu, "mid: at solo cap → Gpu"),
-            (min, pat_floor, ScanBackend::Gpu, "mid: at (min, pat_floor) → Gpu"),
-            (min - 1, pat_floor + 100, ScanBackend::SimdCpu, "mid: below min → SimdCpu"),
-            (min + 1, pat_floor - 1, ScanBackend::SimdCpu, "mid: above min, below pat_floor → SimdCpu"),
+            (
+                min,
+                pat_floor,
+                ScanBackend::Gpu,
+                "mid: at (min, pat_floor) → Gpu",
+            ),
+            (
+                min - 1,
+                pat_floor + 100,
+                ScanBackend::SimdCpu,
+                "mid: below min → SimdCpu",
+            ),
+            (
+                min + 1,
+                pat_floor - 1,
+                ScanBackend::SimdCpu,
+                "mid: above min, below pat_floor → SimdCpu",
+            ),
         ] {
             assert_eq!(
                 select_backend(&caps, bytes, patterns),
@@ -369,9 +409,24 @@ fn low_tier_routing_crossover_cells() {
     with_env(None, || {
         for (bytes, patterns, expected, label) in [
             (solo, 0, ScanBackend::Gpu, "low: at solo cap → Gpu"),
-            (min, pat_floor, ScanBackend::Gpu, "low: at (min, pat_floor) → Gpu"),
-            (min - 1, pat_floor + 100, ScanBackend::SimdCpu, "low: below min → SimdCpu"),
-            (1024, 10, ScanBackend::SimdCpu, "low: tiny workload → SimdCpu"),
+            (
+                min,
+                pat_floor,
+                ScanBackend::Gpu,
+                "low: at (min, pat_floor) → Gpu",
+            ),
+            (
+                min - 1,
+                pat_floor + 100,
+                ScanBackend::SimdCpu,
+                "low: below min → SimdCpu",
+            ),
+            (
+                1024,
+                10,
+                ScanBackend::SimdCpu,
+                "low: tiny workload → SimdCpu",
+            ),
         ] {
             assert_eq!(
                 select_backend(&caps, bytes, patterns),
@@ -418,10 +473,7 @@ fn software_gpu_adapters_rejected_even_above_thresholds() {
 fn no_gpu_with_hyperscan_picks_simd() {
     let caps = caps_no_gpu(true, true);
     with_env(None, || {
-        assert_eq!(
-            select_backend(&caps, 1 << 30, 10_000),
-            ScanBackend::SimdCpu,
-        );
+        assert_eq!(select_backend(&caps, 1 << 30, 10_000), ScanBackend::SimdCpu,);
     });
 }
 
@@ -430,10 +482,7 @@ fn no_gpu_no_hyperscan_with_avx2_picks_simd() {
     let mut caps = caps_no_gpu(false, true);
     caps.has_avx2 = true;
     with_env(None, || {
-        assert_eq!(
-            select_backend(&caps, 1 << 30, 10_000),
-            ScanBackend::SimdCpu,
-        );
+        assert_eq!(select_backend(&caps, 1 << 30, 10_000), ScanBackend::SimdCpu,);
     });
 }
 
@@ -453,10 +502,7 @@ fn neon_alone_picks_simd_cpu() {
     let mut caps = caps_no_gpu(false, false);
     caps.has_neon = true;
     with_env(None, || {
-        assert_eq!(
-            select_backend(&caps, 1 << 30, 10_000),
-            ScanBackend::SimdCpu,
-        );
+        assert_eq!(select_backend(&caps, 1 << 30, 10_000), ScanBackend::SimdCpu,);
     });
 }
 
@@ -465,10 +511,7 @@ fn avx512_alone_picks_simd_cpu() {
     let mut caps = caps_no_gpu(false, false);
     caps.has_avx512 = true;
     with_env(None, || {
-        assert_eq!(
-            select_backend(&caps, 1 << 30, 10_000),
-            ScanBackend::SimdCpu,
-        );
+        assert_eq!(select_backend(&caps, 1 << 30, 10_000), ScanBackend::SimdCpu,);
     });
 }
 

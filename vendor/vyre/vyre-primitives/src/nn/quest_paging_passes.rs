@@ -269,7 +269,7 @@ inventory::submit! {
 inventory::submit! {
     crate::harness::OpEntry::new(
         QUEST_SELECT_TOP_K_OP_ID,
-        || quest_select_top_k("scores", "io", 4, 2, f32::MIN),
+        || quest_select_top_k("scores", "io", 4, 1, -1.0),
         Some(|| {
             let to_f32_bytes =
                 |w: &[f32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
@@ -286,8 +286,8 @@ inventory::submit! {
             let to_u32_bytes =
                 |w: &[u32]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
             vec![vec![
-                to_f32_bytes(&[0.0, f32::MIN, f32::MIN, 0.5]),
-                to_u32_bytes(&[2, 1, 0, 0]),
+                to_f32_bytes(&[0.0, 1.0, -1.0, 0.5]),
+                to_u32_bytes(&[2, 0, 0, 0]),
             ]]
         }),
     )

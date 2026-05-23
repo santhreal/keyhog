@@ -42,15 +42,15 @@ pub struct BufferShapeFacts {
     pub binding: u32,
     /// Element data type.
     pub dtype: DataType,
-    /// Element count declared on the BufferDecl. `0` means runtime-sized.
+    /// Element count declared on the `BufferDecl`. `0` means runtime-sized.
     pub declared_count: u32,
     /// Fixed scalar element size in bytes, or `None` for variable-size types
     /// (`DataType::Tensor`, sparse families, opaque).
     pub element_size_bytes: Option<usize>,
-    /// Tightest min count proved by the BufferDecl's count + ShapePredicate.
+    /// Tightest min count proved by the `BufferDecl`'s count + `ShapePredicate`.
     /// `0` when no positive lower bound is provable.
     pub min_count: u32,
-    /// Tightest max count proved by the BufferDecl's count + ShapePredicate.
+    /// Tightest max count proved by the `BufferDecl`'s count + `ShapePredicate`.
     /// `None` when no upper bound is provable.
     pub max_count: Option<u32>,
     /// True when both min and max bound to the same value (equivalent to a
@@ -62,7 +62,7 @@ pub struct BufferShapeFacts {
     /// Max byte capacity provable for this buffer. `None` when either the
     /// element type or the count is unbounded.
     pub max_bytes: Option<u64>,
-    /// Byte alignment proved by the BufferDecl's `MultipleOf(n)` predicate
+    /// Byte alignment proved by the `BufferDecl`'s `MultipleOf(n)` predicate
     /// scaled by element size. `1` when no alignment is provable.
     pub byte_alignment: u32,
 }
@@ -92,10 +92,13 @@ impl BufferShapeFacts {
         if self.is_fixed_count {
             return self.max_count.is_some_and(|count| count % lane_count == 0);
         }
+        let Some(element_size_bytes) = self.element_size_bytes else {
+            return false;
+        };
+        let element_size = u32::try_from(element_size_bytes).unwrap_or(u32::MAX).max(1);
         self.byte_alignment
-            .checked_div(self.element_size_bytes.unwrap_or(0).max(1) as u32)
-            .map(|elt_align| elt_align % lane_count == 0)
-            .unwrap_or(false)
+            .checked_div(element_size)
+            .is_some_and(|elt_align| elt_align % lane_count == 0)
     }
 }
 
@@ -109,11 +112,42 @@ pub struct ProgramShapeFacts {
     by_name: FxHashMap<Ident, BufferShapeFacts>,
 }
 
+// Thread-local fingerprint-keyed cache so consumers that call derive
+// directly (e.g. `Autotune::transform`) reuse the previous result on the
+// same program instead of re-walking every BufferDecl. The
+// FactSubstrate caches own a separate `Arc<ProgramShapeFacts>` for
+// shape+use bundles; this slot serves direct `derive()` callers.
+thread_local! {
+    static SHAPE_FACTS_CACHE: std::cell::RefCell<Option<([u8; 32], std::rc::Rc<ProgramShapeFacts>)>> =
+        const { std::cell::RefCell::new(None) };
+}
+
 impl ProgramShapeFacts {
-    /// Derive shape facts for every BufferDecl in the program.
+    /// Derive shape facts for every `BufferDecl` in the program.
     #[must_use]
     pub fn derive(program: &Program) -> Self {
         Self::derive_uncached(program)
+    }
+
+    /// Cached counterpart of [`Self::derive`]. Returns the previously
+    /// derived facts for the same program fingerprint via a thread-local
+    /// slot. Use when the caller needs `ProgramShapeFacts` by value but
+    /// is on the optimizer hot path where the same program may be queried
+    /// multiple times in quick succession (e.g. autotune followed by
+    /// shape-aware vectorization on the same fingerprint).
+    #[must_use]
+    pub fn derive_cached(program: &Program) -> Self {
+        let fp = program.fingerprint();
+        SHAPE_FACTS_CACHE.with(|cell| {
+            if let Some((cached_fp, ref cached)) = *cell.borrow() {
+                if cached_fp == fp {
+                    return (**cached).clone();
+                }
+            }
+            let fresh = Self::derive_uncached(program);
+            *cell.borrow_mut() = Some((fp, std::rc::Rc::new(fresh.clone())));
+            fresh
+        })
     }
 
     /// Derive shape facts and return a shared cached instance.
@@ -167,10 +201,10 @@ impl ProgramShapeFacts {
                 .and_then(|n| u32::try_from(n).ok())
                 .unwrap_or(1)
                 .max(1);
-            let count_alignment = predicate.map(count_alignment_from_predicate).unwrap_or(1);
+            let count_alignment = predicate.map_or(1, count_alignment_from_predicate);
             let byte_alignment = element_byte_alignment.saturating_mul(count_alignment);
 
-            let element_size_u64 = element_size_bytes.map(|n| n as u64);
+            let element_size_u64 = element_size_bytes.and_then(|n| u64::try_from(n).ok());
 
             let min_bytes = match element_size_u64 {
                 Some(esz) => esz.saturating_mul(u64::from(min_count)),
@@ -236,7 +270,10 @@ impl ProgramShapeFacts {
     /// [`ProgramShapeFacts::from_cache`].
     pub fn derive_into_cache(program: &Program, cache: &mut crate::optimizer::AnalysisCache) {
         let mut shape_cache = ShapeFactCache::default();
-        cache.insert(ANALYSIS_KEY, Self::derive_arc(program, &mut shape_cache).as_ref().clone());
+        cache.insert(
+            ANALYSIS_KEY,
+            Self::derive_arc(program, &mut shape_cache).as_ref().clone(),
+        );
     }
 
     /// Look up a previously-derived analysis from the cache. Returns
@@ -271,8 +308,6 @@ impl ShapeFactCache {
     }
 }
 
-
-
 /// Largest divisor `n` proved by `MultipleOf(n)` clauses in the predicate
 /// tree. Used to compute byte alignment when combined with element size.
 fn count_alignment_from_predicate(
@@ -280,11 +315,10 @@ fn count_alignment_from_predicate(
 ) -> u32 {
     use crate::ir_inner::model::program::ShapePredicate;
     match predicate {
-        ShapePredicate::MultipleOf(n) if *n > 0 => *n,
+        ShapePredicate::MultipleOf(n) | ShapePredicate::Exactly(n) if *n > 0 => *n,
         ShapePredicate::ModEquals { modulus, remainder } if *modulus > 0 && *remainder == 0 => {
             *modulus
         }
-        ShapePredicate::Exactly(n) if *n > 0 => *n,
         ShapePredicate::And(a, b) => {
             count_alignment_from_predicate(a).max(count_alignment_from_predicate(b))
         }

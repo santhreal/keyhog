@@ -1,70 +1,66 @@
-//! Audit-fix A36 split vast.rs (8721 LOC) into per-pass files.
+//! C VAST construction, classification, expression-shape, and typedef passes.
 //!
-//! The C parser hygiene split keeps each remaining VAST file under the
-//! 500-LOC source cap by using parent-as-module directories for dense
-//! generated IR builders and CPU reference helpers:
-//!
-//! - `classify.rs` keeps the public `c11_classify_vast_node_kinds`
-//!   builder and delegates ordered node-emission chunks to
-//!   `classify/nodes_*.rs`.
-//!
-//! - `ref_typedef.rs` keeps the public typedef annotation oracle and
-//!   delegates identifier, declaration, scope, expression, attribute,
-//!   and typed-kind responsibilities to `ref_typedef/*.rs`.
-//!
-//! - `c11_build_vast_nodes` (1257 → 828 LOC, in `build.rs`, T10
-//!   landed) — the 428-LOC `emit_declaration_kind_for_index_inner`
-//!   was extracted to sibling `build_declaration_kind_inner.rs`.
-//!   Build.rs is still 328 lines over cap; reducing further means
-//!   splitting the main `c11_build_vast_nodes` body or the
-//!   198-LOC `emit_enclosing_function_lparen_for_index`, both of
-//!   which are tightly interleaved and not natural extraction
-//!   points. Acceptable for parser-internal density.
-//!
-//! - `reference_c11_build_expression_shape_nodes` (560 LOC, in
-//!   `expr_shape.rs` / `ref_expr_shape.rs`) — already close to cap
-//!   (60 lines over); leave as-is.
-//!
-//! Every other section fits the cap.
+//! Public builders live in the shortest module that owns their ABI. Reference
+//! helpers are explicit oracle surfaces for parity and corpus checks; production
+//! parsing should use the dispatchable builders exported from this module.
 
 mod build;
-/// Extracted from `build.rs` (T10 audit-fix split): the 428-LOC
-/// `emit_declaration_kind_for_index_inner` body lived inside the
-/// 1257-LOC `build.rs` and was the largest single function in the
-/// vast/ subtree. Moved here as a sibling to bring `build.rs` back
-/// under the 500-LOC hygiene cap.
 mod build_declaration_kind_inner;
 mod classify;
 mod expr_shape;
 mod helpers;
+#[cfg(any(test, feature = "cpu-parity"))]
 mod ref_classify;
+#[cfg(any(test, feature = "cpu-parity"))]
 mod ref_decode_err;
+#[cfg(any(test, feature = "cpu-parity"))]
 mod ref_expr_shape;
+#[cfg(any(test, feature = "cpu-parity"))]
 mod ref_typedef;
 mod typedef_ann;
 
-pub use build::c11_build_vast_nodes;
-pub use classify::c11_classify_vast_node_kinds;
-pub use expr_shape::c11_build_expression_shape_nodes;
+pub use build::{c11_build_vast_nodes, c11_build_vast_nodes_uses_global_last_child};
+pub use classify::{
+    c11_classify_annotated_vast_node_kinds_precomputed_context, c11_classify_vast_node_kinds,
+    c11_classify_vast_node_kinds_precomputed_context,
+};
+pub use expr_shape::{
+    c11_build_expression_shape_nodes, c11_build_expression_shape_nodes_no_conditional,
+};
+#[allow(deprecated)]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub use ref_classify::{
     reference_c11_classify_vast_node_kinds, try_reference_c11_classify_vast_node_kinds,
 };
+#[allow(deprecated)]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub use ref_decode_err::{reference_c11_build_vast_nodes, CReferenceDecodeError};
+#[allow(deprecated)]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub use ref_expr_shape::{
     reference_c11_build_expression_shape_nodes, try_reference_c11_build_expression_shape_nodes,
 };
+#[allow(deprecated)]
+#[cfg(any(test, feature = "cpu-parity"))]
 pub use ref_typedef::{
     reference_c11_annotate_typedef_names, try_reference_c11_annotate_typedef_names,
 };
-pub use typedef_ann::c11_annotate_typedef_names;
+pub use typedef_ann::{
+    c11_annotate_global_typedef_names_fast, c11_annotate_typedef_names,
+    c11_annotate_typedef_names_packed_haystack, c11_annotate_typedef_names_precomputed_context,
+    c11_annotate_typedef_names_precomputed_context_packed_haystack,
+    c11_annotate_typedef_names_precomputed_scope,
+    c11_annotate_typedef_names_precomputed_scope_packed_haystack, c11_link_vast_typedef_symbols,
+    c11_precompute_vast_decl_contexts, c11_precompute_vast_decl_prefix_starts,
+    c11_precompute_vast_scopes, c11_precompute_vast_scopes_uses_global_stack,
+    c11_prehash_vast_identifiers, c11_prehash_vast_identifiers_packed_haystack,
+};
 
-// Sibling re-exports so each per-pass file can `use super::*;` and
-// reach every helper that A36 split out. Mirrors what
-// `expansion/mod.rs` does for the A35 module split. Without this each
-// child has to enumerate `use super::{helpers::*, ref_decode_err::*,
-// ...}` and the build-graph fragility shows up as the c-parser
-// feature errors that follow A36.
+// Sibling re-exports keep each active pass focused on its own program builder
+// while sharing one explicit helper surface. If a helper becomes specific to a
+// single pass, move it into that pass instead of growing this shared prelude.
 
+#[cfg(any(test, feature = "cpu-parity"))]
 use crate::harness::OpEntry;
 use vyre_primitives::predicate::node_kind;
 
@@ -73,15 +69,28 @@ pub use super::vast_kinds::{
     C_AST_KIND_ASM_CLOBBERS_LIST, C_AST_KIND_ASM_GOTO_LABELS, C_AST_KIND_ASM_INPUT_OPERAND,
     C_AST_KIND_ASM_OUTPUT_OPERAND, C_AST_KIND_ASM_QUALIFIER, C_AST_KIND_ASM_TEMPLATE,
     C_AST_KIND_ASSIGN_EXPR, C_AST_KIND_ATTRIBUTE_ALIAS, C_AST_KIND_ATTRIBUTE_ALIGNED,
-    C_AST_KIND_ATTRIBUTE_ALWAYS_INLINE, C_AST_KIND_ATTRIBUTE_CLEANUP, C_AST_KIND_ATTRIBUTE_COLD,
-    C_AST_KIND_ATTRIBUTE_CONST, C_AST_KIND_ATTRIBUTE_CONSTRUCTOR, C_AST_KIND_ATTRIBUTE_DESTRUCTOR,
-    C_AST_KIND_ATTRIBUTE_DEPRECATED, C_AST_KIND_ATTRIBUTE_FALLTHROUGH, C_AST_KIND_ATTRIBUTE_FORMAT, C_AST_KIND_ATTRIBUTE_HOT,
-    C_AST_KIND_ATTRIBUTE_MODE, C_AST_KIND_ATTRIBUTE_NAKED, C_AST_KIND_ATTRIBUTE_NOINLINE,
-    C_AST_KIND_ATTRIBUTE_PACKED, C_AST_KIND_ATTRIBUTE_PURE, C_AST_KIND_ATTRIBUTE_SECTION,
-    C_AST_KIND_ATTRIBUTE_NORETURN, C_AST_KIND_ATTRIBUTE_UNUSED, C_AST_KIND_ATTRIBUTE_USED, C_AST_KIND_ATTRIBUTE_VISIBILITY,
-    C_AST_KIND_ATTRIBUTE_WEAK, C_AST_KIND_BIT_FIELD_DECL, C_AST_KIND_BREAK_STMT,
-    C_AST_KIND_BUILTIN_CHOOSE_EXPR, C_AST_KIND_BUILTIN_CLASSIFY_TYPE_EXPR,
-    C_AST_KIND_BUILTIN_CONSTANT_P_EXPR, C_AST_KIND_BUILTIN_EXPECT_EXPR,
+    C_AST_KIND_ATTRIBUTE_ALLOC_ALIGN, C_AST_KIND_ATTRIBUTE_ALLOC_SIZE,
+    C_AST_KIND_ATTRIBUTE_ALWAYS_INLINE, C_AST_KIND_ATTRIBUTE_ASSUME_ALIGNED,
+    C_AST_KIND_ATTRIBUTE_CLEANUP, C_AST_KIND_ATTRIBUTE_COLD, C_AST_KIND_ATTRIBUTE_CONST,
+    C_AST_KIND_ATTRIBUTE_CONSTRUCTOR, C_AST_KIND_ATTRIBUTE_DEPRECATED,
+    C_AST_KIND_ATTRIBUTE_DESTRUCTOR, C_AST_KIND_ATTRIBUTE_DLLEXPORT,
+    C_AST_KIND_ATTRIBUTE_DLLIMPORT, C_AST_KIND_ATTRIBUTE_FALLTHROUGH, C_AST_KIND_ATTRIBUTE_FLATTEN,
+    C_AST_KIND_ATTRIBUTE_FORMAT, C_AST_KIND_ATTRIBUTE_FORMAT_ARG, C_AST_KIND_ATTRIBUTE_GNU_INLINE,
+    C_AST_KIND_ATTRIBUTE_HOT, C_AST_KIND_ATTRIBUTE_IFUNC, C_AST_KIND_ATTRIBUTE_INTERRUPT,
+    C_AST_KIND_ATTRIBUTE_LEAF, C_AST_KIND_ATTRIBUTE_MALLOC, C_AST_KIND_ATTRIBUTE_MODE,
+    C_AST_KIND_ATTRIBUTE_MS_ABI, C_AST_KIND_ATTRIBUTE_NAKED, C_AST_KIND_ATTRIBUTE_NOINLINE,
+    C_AST_KIND_ATTRIBUTE_NONNULL, C_AST_KIND_ATTRIBUTE_NORETURN, C_AST_KIND_ATTRIBUTE_NOTHROW,
+    C_AST_KIND_ATTRIBUTE_NO_INSTRUMENT_FUNCTION, C_AST_KIND_ATTRIBUTE_NO_SANITIZE,
+    C_AST_KIND_ATTRIBUTE_PACKED, C_AST_KIND_ATTRIBUTE_PURE, C_AST_KIND_ATTRIBUTE_RETURNS_NONNULL,
+    C_AST_KIND_ATTRIBUTE_RETURNS_TWICE, C_AST_KIND_ATTRIBUTE_SECTION,
+    C_AST_KIND_ATTRIBUTE_SELECTANY, C_AST_KIND_ATTRIBUTE_SENTINEL, C_AST_KIND_ATTRIBUTE_SYSV_ABI,
+    C_AST_KIND_ATTRIBUTE_TARGET, C_AST_KIND_ATTRIBUTE_TLS_MODEL, C_AST_KIND_ATTRIBUTE_UNUSED,
+    C_AST_KIND_ATTRIBUTE_USED, C_AST_KIND_ATTRIBUTE_VECTOR_SIZE, C_AST_KIND_ATTRIBUTE_VISIBILITY,
+    C_AST_KIND_ATTRIBUTE_WARN_UNUSED_RESULT, C_AST_KIND_ATTRIBUTE_WEAK,
+    C_AST_KIND_ATTRIBUTE_WEAKREF, C_AST_KIND_BIT_FIELD_DECL, C_AST_KIND_BREAK_STMT,
+    C_AST_KIND_BUILTIN_BPF_CORE_INTRIN_EXPR, C_AST_KIND_BUILTIN_CHOOSE_EXPR,
+    C_AST_KIND_BUILTIN_CLASSIFY_TYPE_EXPR, C_AST_KIND_BUILTIN_CONSTANT_P_EXPR,
+    C_AST_KIND_BUILTIN_EXPECT_EXPR, C_AST_KIND_BUILTIN_LIBC_INTRIN_EXPR,
     C_AST_KIND_BUILTIN_OBJECT_SIZE_EXPR, C_AST_KIND_BUILTIN_OFFSETOF_EXPR,
     C_AST_KIND_BUILTIN_OVERFLOW_EXPR, C_AST_KIND_BUILTIN_PREFETCH_EXPR,
     C_AST_KIND_BUILTIN_TYPES_COMPATIBLE_P_EXPR, C_AST_KIND_BUILTIN_UNREACHABLE_STMT,
@@ -102,14 +111,28 @@ pub use super::vast_kinds::{
 };
 
 const BUILD_VAST_OP_ID: &str = "vyre-libs::parsing::c11_build_vast_nodes";
+const PREHASH_VAST_IDENTIFIERS_OP_ID: &str = "vyre-libs::parsing::c11_prehash_vast_identifiers";
+const PRECOMPUTE_VAST_SCOPES_OP_ID: &str = "vyre-libs::parsing::c11_precompute_vast_scopes";
+const LINK_VAST_TYPEDEF_SYMBOLS_OP_ID: &str = "vyre-libs::parsing::c11_link_vast_typedef_symbols";
+const PRECOMPUTE_VAST_DECL_CONTEXTS_OP_ID: &str =
+    "vyre-libs::parsing::c11_precompute_vast_decl_contexts";
+const PRECOMPUTE_VAST_DECL_PREFIX_STARTS_OP_ID: &str =
+    "vyre-libs::parsing::c11_precompute_vast_decl_prefix_starts";
 const CLASSIFY_VAST_OP_ID: &str = "vyre-libs::parsing::c11_classify_vast_node_kinds";
 const ANNOTATE_TYPEDEF_OP_ID: &str = "vyre-libs::parsing::c11_annotate_typedef_names";
 const EXPR_SHAPE_OP_ID: &str = "vyre-libs::parsing::c11_build_expression_shape_nodes";
 const VAST_NODE_STRIDE_U32: u32 = 10;
+const VAST_DECL_CONTEXT_STRIDE_U32: u32 = 4;
+const VAST_DECL_CONTEXT_PREFIX_START_FIELD: u32 = 0;
+const VAST_DECL_CONTEXT_PREV_BUCKET_LINK_FIELD: u32 = 1;
+const VAST_DECL_CONTEXT_PREV_DECL_LINK_FIELD: u32 = 2;
+const VAST_DECL_CONTEXT_PREV_DECL_CHAIN_LEN_FIELD: u32 = 3;
 const SENTINEL: u32 = u32::MAX;
+const VAST_SRC_FILE_FIELD: u32 = 4;
 const VAST_TYPEDEF_FLAGS_FIELD: u32 = 7;
 const VAST_TYPEDEF_SCOPE_FIELD: u32 = 8;
 const VAST_TYPEDEF_SYMBOL_FIELD: u32 = 9;
+const VAST_PREVIOUS_SIBLING_FIELD: u32 = VAST_SRC_FILE_FIELD;
 const C_TYPEDEF_FLAG_VISIBLE_TYPEDEF_NAME: u32 = 1;
 const C_TYPEDEF_FLAG_TYPEDEF_DECLARATOR: u32 = 1 << 1;
 const C_TYPEDEF_FLAG_ORDINARY_DECLARATOR: u32 = 1 << 2;
@@ -167,4 +190,181 @@ const C_ATTRIBUTE_KIND_HASHES: &[(u32, u32)] = &[
     (0xc373_7bd1, C_AST_KIND_ATTRIBUTE_FALLTHROUGH),
     (0xb478_da94, C_AST_KIND_ATTRIBUTE_NORETURN),
     (0x700e_0da4, C_AST_KIND_ATTRIBUTE_DEPRECATED),
+    // FNV-1a32 hashes for additional GCC/clang/MSVC attribute names.
+    // Each name appears in both `name` and `__name__` form because real
+    // C headers spell attributes both ways (libc uses the underscored
+    // form to avoid clashing with macros named `aligned`, `malloc`, etc).
+    (0x2c91_51f9, C_AST_KIND_ATTRIBUTE_NONNULL),
+    (0x87d0_1b61, C_AST_KIND_ATTRIBUTE_NONNULL),
+    (0x32be_2a85, C_AST_KIND_ATTRIBUTE_RETURNS_NONNULL),
+    (0xcde4_3ad9, C_AST_KIND_ATTRIBUTE_RETURNS_NONNULL),
+    (0x558c_274d, C_AST_KIND_ATTRIBUTE_MALLOC),
+    (0x8752_e709, C_AST_KIND_ATTRIBUTE_MALLOC),
+    (0xb75e_ffb8, C_AST_KIND_ATTRIBUTE_WARN_UNUSED_RESULT),
+    (0x3ca3_f710, C_AST_KIND_ATTRIBUTE_WARN_UNUSED_RESULT),
+    (0x83a0_c19a, C_AST_KIND_ATTRIBUTE_NOTHROW),
+    (0x74eb_42e6, C_AST_KIND_ATTRIBUTE_NOTHROW),
+    (0xc5f0_cec4, C_AST_KIND_ATTRIBUTE_ASSUME_ALIGNED),
+    (0x673b_a19c, C_AST_KIND_ATTRIBUTE_ASSUME_ALIGNED),
+    (0x756d_ac4a, C_AST_KIND_ATTRIBUTE_ALLOC_SIZE),
+    (0xc731_ed82, C_AST_KIND_ATTRIBUTE_ALLOC_SIZE),
+    (0xc78c_a4f0, C_AST_KIND_ATTRIBUTE_ALLOC_ALIGN),
+    (0x102a_dab4, C_AST_KIND_ATTRIBUTE_ALLOC_ALIGN),
+    (0x8fe9_c41e, C_AST_KIND_ATTRIBUTE_WEAKREF),
+    (0x7d46_7226, C_AST_KIND_ATTRIBUTE_WEAKREF),
+    (0x167c_332d, C_AST_KIND_ATTRIBUTE_SENTINEL),
+    (0xb028_89a5, C_AST_KIND_ATTRIBUTE_SENTINEL),
+    (0x2648_cd55, C_AST_KIND_ATTRIBUTE_LEAF),
+    (0xce02_9465, C_AST_KIND_ATTRIBUTE_LEAF),
+    (0x21c3_98af, C_AST_KIND_ATTRIBUTE_RETURNS_TWICE),
+    (0x34c0_17b3, C_AST_KIND_ATTRIBUTE_RETURNS_TWICE),
+    (0xa3a5_0ba8, C_AST_KIND_ATTRIBUTE_NO_SANITIZE),
+    (0xa6c4_9b28, C_AST_KIND_ATTRIBUTE_NO_SANITIZE),
+    (0xc5f6_3fc9, C_AST_KIND_ATTRIBUTE_FLATTEN),
+    (0x967d_b3c1, C_AST_KIND_ATTRIBUTE_FLATTEN),
+    (0x3260_8848, C_AST_KIND_ATTRIBUTE_TARGET),
+    (0x7756_48ac, C_AST_KIND_ATTRIBUTE_TARGET),
+    (0x42b3_5373, C_AST_KIND_ATTRIBUTE_TARGET),
+    (0x8dd1_87b7, C_AST_KIND_ATTRIBUTE_TARGET),
+    (0xb074_1550, C_AST_KIND_ATTRIBUTE_INTERRUPT),
+    (0x9dc6_1004, C_AST_KIND_ATTRIBUTE_INTERRUPT),
+    (0xbd7b_ba09, C_AST_KIND_ATTRIBUTE_INTERRUPT),
+    (0x7ef1_dbb1, C_AST_KIND_ATTRIBUTE_INTERRUPT),
+    (0x8afb_247e, C_AST_KIND_ATTRIBUTE_VECTOR_SIZE),
+    (0x9957_3a9a, C_AST_KIND_ATTRIBUTE_VECTOR_SIZE),
+    (0x63fd_eb32, C_AST_KIND_ATTRIBUTE_IFUNC),
+    (0x3ca6_584e, C_AST_KIND_ATTRIBUTE_IFUNC),
+    (0xc745_e84c, C_AST_KIND_ATTRIBUTE_TLS_MODEL),
+    (0x083c_7c20, C_AST_KIND_ATTRIBUTE_TLS_MODEL),
+    (0xb5ad_4ca5, C_AST_KIND_ATTRIBUTE_GNU_INLINE),
+    (0x400d_b34d, C_AST_KIND_ATTRIBUTE_GNU_INLINE),
+    (0x2a0c_9a2a, C_AST_KIND_ATTRIBUTE_DLLIMPORT),
+    (0xbddd_336a, C_AST_KIND_ATTRIBUTE_DLLIMPORT),
+    (0xb9bf_5b49, C_AST_KIND_ATTRIBUTE_DLLEXPORT),
+    (0x9dc5_dd21, C_AST_KIND_ATTRIBUTE_DLLEXPORT),
+    (0x9f20_8c85, C_AST_KIND_ATTRIBUTE_SELECTANY),
+    (0xb266_f531, C_AST_KIND_ATTRIBUTE_SELECTANY),
+    (0x506c_b880, C_AST_KIND_ATTRIBUTE_MS_ABI),
+    (0x7d92_da38, C_AST_KIND_ATTRIBUTE_MS_ABI),
+    (0x376d_0281, C_AST_KIND_ATTRIBUTE_SYSV_ABI),
+    (0x2168_9f21, C_AST_KIND_ATTRIBUTE_SYSV_ABI),
+    (0x003d_0c87, C_AST_KIND_ATTRIBUTE_NO_INSTRUMENT_FUNCTION),
+    (0x010a_5aaf, C_AST_KIND_ATTRIBUTE_NO_INSTRUMENT_FUNCTION),
+    (0xab77_8c35, C_AST_KIND_ATTRIBUTE_FORMAT_ARG),
+    (0x98f8_ab09, C_AST_KIND_ATTRIBUTE_FORMAT_ARG),
 ];
+
+#[cfg(test)]
+mod attribute_hash_tests {
+    use super::*;
+    use crate::parsing::c::lex::keyword::fnv1a32;
+
+    /// Every attribute name in `expected_pairs` must be present in
+    /// `C_ATTRIBUTE_KIND_HASHES` mapped to the expected kind, in BOTH
+    /// `name` and `__name__` spellings. Real C headers (libc, kernel,
+    /// OpenSSL, sqlite) use both forms — missing either spelling silently
+    /// drops attribute classification on millions of lines of source.
+    #[test]
+    fn attribute_table_recognises_both_spellings_for_every_supported_name() {
+        // Format: (canonical name, expected VAST kind).
+        let expected_pairs: &[(&str, u32)] = &[
+            // Original (pre-2026-05-09) attribute coverage.
+            ("section", C_AST_KIND_ATTRIBUTE_SECTION),
+            ("weak", C_AST_KIND_ATTRIBUTE_WEAK),
+            ("alias", C_AST_KIND_ATTRIBUTE_ALIAS),
+            ("aligned", C_AST_KIND_ATTRIBUTE_ALIGNED),
+            ("used", C_AST_KIND_ATTRIBUTE_USED),
+            ("unused", C_AST_KIND_ATTRIBUTE_UNUSED),
+            ("naked", C_AST_KIND_ATTRIBUTE_NAKED),
+            ("visibility", C_AST_KIND_ATTRIBUTE_VISIBILITY),
+            ("packed", C_AST_KIND_ATTRIBUTE_PACKED),
+            ("cleanup", C_AST_KIND_ATTRIBUTE_CLEANUP),
+            ("constructor", C_AST_KIND_ATTRIBUTE_CONSTRUCTOR),
+            ("destructor", C_AST_KIND_ATTRIBUTE_DESTRUCTOR),
+            ("mode", C_AST_KIND_ATTRIBUTE_MODE),
+            ("noinline", C_AST_KIND_ATTRIBUTE_NOINLINE),
+            ("always_inline", C_AST_KIND_ATTRIBUTE_ALWAYS_INLINE),
+            ("cold", C_AST_KIND_ATTRIBUTE_COLD),
+            ("hot", C_AST_KIND_ATTRIBUTE_HOT),
+            ("pure", C_AST_KIND_ATTRIBUTE_PURE),
+            ("format", C_AST_KIND_ATTRIBUTE_FORMAT),
+            ("fallthrough", C_AST_KIND_ATTRIBUTE_FALLTHROUGH),
+            // Newly added (2026-05-09): clang-parity sweep.
+            ("nonnull", C_AST_KIND_ATTRIBUTE_NONNULL),
+            ("returns_nonnull", C_AST_KIND_ATTRIBUTE_RETURNS_NONNULL),
+            ("malloc", C_AST_KIND_ATTRIBUTE_MALLOC),
+            (
+                "warn_unused_result",
+                C_AST_KIND_ATTRIBUTE_WARN_UNUSED_RESULT,
+            ),
+            ("nothrow", C_AST_KIND_ATTRIBUTE_NOTHROW),
+            ("assume_aligned", C_AST_KIND_ATTRIBUTE_ASSUME_ALIGNED),
+            ("alloc_size", C_AST_KIND_ATTRIBUTE_ALLOC_SIZE),
+            ("alloc_align", C_AST_KIND_ATTRIBUTE_ALLOC_ALIGN),
+            ("weakref", C_AST_KIND_ATTRIBUTE_WEAKREF),
+            ("sentinel", C_AST_KIND_ATTRIBUTE_SENTINEL),
+            ("leaf", C_AST_KIND_ATTRIBUTE_LEAF),
+            ("returns_twice", C_AST_KIND_ATTRIBUTE_RETURNS_TWICE),
+            ("no_sanitize", C_AST_KIND_ATTRIBUTE_NO_SANITIZE),
+            ("flatten", C_AST_KIND_ATTRIBUTE_FLATTEN),
+            ("target", C_AST_KIND_ATTRIBUTE_TARGET),
+            ("target_clones", C_AST_KIND_ATTRIBUTE_TARGET),
+            ("interrupt", C_AST_KIND_ATTRIBUTE_INTERRUPT),
+            ("signal", C_AST_KIND_ATTRIBUTE_INTERRUPT),
+            ("vector_size", C_AST_KIND_ATTRIBUTE_VECTOR_SIZE),
+            ("ifunc", C_AST_KIND_ATTRIBUTE_IFUNC),
+            ("tls_model", C_AST_KIND_ATTRIBUTE_TLS_MODEL),
+            ("gnu_inline", C_AST_KIND_ATTRIBUTE_GNU_INLINE),
+            ("dllimport", C_AST_KIND_ATTRIBUTE_DLLIMPORT),
+            ("dllexport", C_AST_KIND_ATTRIBUTE_DLLEXPORT),
+            ("selectany", C_AST_KIND_ATTRIBUTE_SELECTANY),
+            ("ms_abi", C_AST_KIND_ATTRIBUTE_MS_ABI),
+            ("sysv_abi", C_AST_KIND_ATTRIBUTE_SYSV_ABI),
+            (
+                "no_instrument_function",
+                C_AST_KIND_ATTRIBUTE_NO_INSTRUMENT_FUNCTION,
+            ),
+            ("format_arg", C_AST_KIND_ATTRIBUTE_FORMAT_ARG),
+        ];
+        for (name, expected_kind) in expected_pairs {
+            let bare_hash = fnv1a32(name.as_bytes());
+            let underscored = format!("__{name}__");
+            let underscored_hash = fnv1a32(underscored.as_bytes());
+            let bare = C_ATTRIBUTE_KIND_HASHES
+                .iter()
+                .find_map(|(h, k)| (*h == bare_hash).then_some(*k));
+            let under = C_ATTRIBUTE_KIND_HASHES
+                .iter()
+                .find_map(|(h, k)| (*h == underscored_hash).then_some(*k));
+            assert_eq!(
+                bare,
+                Some(*expected_kind),
+                "attribute `{name}` (hash {bare_hash:#010x}) must classify as {expected_kind:#010x}"
+            );
+            assert_eq!(
+                under,
+                Some(*expected_kind),
+                "attribute `__{name}__` (hash {underscored_hash:#010x}) must classify as {expected_kind:#010x}"
+            );
+        }
+    }
+
+    /// No two distinct attribute names in the table may share a hash. A
+    /// collision here would mean reference_c_attribute_kind silently
+    /// classifies one attribute as the other (the find_map returns the
+    /// first match). Catching this at unit-test time prevents shipping a
+    /// hash duplicate.
+    #[test]
+    fn attribute_hash_table_has_no_intra_kind_hash_collisions() {
+        let mut by_hash: std::collections::HashMap<u32, u32> = std::collections::HashMap::new();
+        for (hash, kind) in C_ATTRIBUTE_KIND_HASHES {
+            if let Some(prev) = by_hash.insert(*hash, *kind) {
+                assert_eq!(
+                    prev, *kind,
+                    "hash {hash:#010x} maps to two distinct attribute kinds: \
+                     {prev:#010x} and {kind:#010x} — rename one or change the hash"
+                );
+            }
+        }
+    }
+}

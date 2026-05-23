@@ -65,7 +65,10 @@ use rustc_hash::FxHashMap;
 #[vyre_pass(
     name = "reaching_def_propagate",
     requires = ["const_fold"],
-    invalidates = []
+    invalidates = ["const_fold", "cse", "dce"],
+    phase = "scalar_algebra",
+    boundary_class = "abi_preserving",
+    cost_model_family = "scalar"
 )]
 pub struct ReachingDefPropagatePass;
 
@@ -74,7 +77,12 @@ impl ReachingDefPropagatePass {
     /// `name` is unique program-wide.
     #[must_use]
     fn analyze_impl(program: &Program) -> PassAnalysis {
-        let facts = ProgramFacts::build(program);
+        // Propagation needs a Let. Without one, the ProgramFacts build
+        // (full SoA walk) is wasted.
+        if !program.stats().has_node_let() {
+            return PassAnalysis::SKIP;
+        }
+        let facts = ProgramFacts::build_cached(program);
         if collect_propagatable_lets_with_values(&facts, program).is_empty() {
             PassAnalysis::SKIP
         } else {
@@ -86,7 +94,7 @@ impl ReachingDefPropagatePass {
     /// literal at every read site.
     #[must_use]
     pub fn transform(program: Program) -> PassResult {
-        let facts = ProgramFacts::build(&program);
+        let facts = ProgramFacts::build_cached(&program);
         let propagations = collect_propagatable_lets_with_values(&facts, &program);
         if propagations.is_empty() {
             return PassResult {
@@ -94,19 +102,21 @@ impl ReachingDefPropagatePass {
                 changed: false,
             };
         }
-        let scaffold = program.with_rewritten_entry(Vec::new());
         let mut changed = false;
-        let entry: Vec<Node> = program
-            .into_entry_vec()
-            .into_iter()
-            .map(|n| substitute_node(n, &propagations, &mut changed))
-            .collect();
-        PassResult {
-            program: scaffold.with_rewritten_entry(entry),
-            changed,
-        }
-    }}
+        let program = program.map_entry(|entry| {
+            entry
+                .into_iter()
+                .map(|n| substitute_node(n, &propagations, &mut changed))
+                .collect()
+        });
+        PassResult { program, changed }
+    }
+}
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "literal propagation keeps Node reconstruction and substitution in one ownership-preserving pass"
+)]
 fn substitute_node(node: Node, propagations: &FxHashMap<String, Expr>, changed: &mut bool) -> Node {
     match node {
         Node::Let { name, value } => {
@@ -333,10 +343,8 @@ fn scan_for_literal_lets(
     out: &mut FxHashMap<String, Expr>,
 ) {
     match node {
-        Node::Let { name, value } => {
-            if candidates.contains(name.as_str()) && is_literal(value) {
-                out.insert(name.as_str().to_owned(), value.clone());
-            }
+        Node::Let { name, value } if candidates.contains(name.as_str()) && is_literal(value) => {
+            out.insert(name.as_str().to_owned(), value.clone());
         }
         Node::If {
             then, otherwise, ..
@@ -348,12 +356,7 @@ fn scan_for_literal_lets(
                 scan_for_literal_lets(n, candidates, out);
             }
         }
-        Node::Loop { body, .. } => {
-            for n in body {
-                scan_for_literal_lets(n, candidates, out);
-            }
-        }
-        Node::Block(body) => {
+        Node::Loop { body, .. } | Node::Block(body) => {
             for n in body {
                 scan_for_literal_lets(n, candidates, out);
             }

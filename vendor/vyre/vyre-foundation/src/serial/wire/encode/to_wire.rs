@@ -63,6 +63,11 @@ struct RegionPayloadScratch {
 /// [`WIRE_FORMAT_VERSION`] so older decoders reject the payload
 /// with a clear version-mismatch message instead of arbitrary
 /// downstream parse errors.
+///
+/// # Errors
+///
+/// Returns an actionable wire-format diagnostic when the program contains an
+/// unmapped variant, oversized section, or non-round-trippable shape.
 #[inline]
 #[must_use]
 pub fn to_wire(program: &Program) -> Result<Vec<u8>, String> {
@@ -94,6 +99,11 @@ pub fn to_wire(program: &Program) -> Result<Vec<u8>, String> {
 ///
 /// * `Ok(())` – the complete VIR0 blob was appended to `dst`.
 /// * `Err(String)` – an actionable diagnostic starting with `Fix:`.
+///
+/// # Errors
+///
+/// Returns an actionable wire-format diagnostic when the program contains an
+/// unmapped variant, oversized section, or non-round-trippable shape.
 #[inline]
 pub fn to_wire_into(program: &Program, dst: &mut Vec<u8>) -> Result<(), String> {
     to_wire_with_buffer_order_into(program, program.buffers(), dst).map_err(String::from)
@@ -103,6 +113,11 @@ pub fn to_wire_into(program: &Program, dst: &mut Vec<u8>) -> Result<(), String> 
 ///
 /// This is for canonical cache keys that need declaration-order normalization
 /// without constructing a second [`Program`] that duplicates the entry body.
+///
+/// # Errors
+///
+/// Returns [`WireEncodeErr`] when `program` or the supplied buffer order cannot
+/// be represented by the stable VIR0 wire format.
 #[inline]
 pub fn to_wire_with_buffer_order_into(
     program: &Program,
@@ -115,7 +130,7 @@ pub fn to_wire_with_buffer_order_into(
     put_nodes_section(&mut body, program, buffers)?;
     put_memory_regions(&mut body, buffers)?;
     crate::serial::output_set::OutputSet::encode_from_buffers_into(buffers, &mut body)
-        .map_err(|s| WireEncodeErr::from(s))?;
+        .map_err(WireEncodeErr::from)?;
 
     let digest = blake3::hash(&body);
     dst.reserve(MAGIC.len() + 2 + 2 + 32 + body.len());
@@ -174,7 +189,7 @@ fn reject_non_roundtrippable_shapes(
             buf.push_str("Fix: workgroup buffer `");
             buf.push_str(buffer.name());
             buf.push_str("` has count 0. Encode only positive-length shared-memory buffers.");
-            return Err(WireEncodeErr::Dynamic(buf));
+            return Err(WireEncodeErr::Dynamic(Box::new(buf)));
         }
         // Output buffers may legitimately carry count 0 to signal a
         // runtime-determined size (the dispatch layer rebinds them
@@ -190,17 +205,29 @@ fn reject_non_roundtrippable_shapes(
             buf.push_str("Fix: live-out buffer `");
             buf.push_str(buffer.name());
             buf.push_str("` has count 0. Encode only positive-length externally-visible buffers.");
-            return Err(WireEncodeErr::Dynamic(buf));
+            return Err(WireEncodeErr::Dynamic(Box::new(buf)));
         }
         if let Some(range) = buffer.output_byte_range() {
-            let elem_size = buffer.element().size_bytes().unwrap_or(0) as u64;
-            let count = buffer.count() as u64;
+            let count = u64::from(buffer.count());
             let full_size = if count == 0 {
                 // runtime-sized: we can't validate against full_size here,
                 // but we can still check start <= end.
                 u64::MAX
             } else {
-                count.saturating_mul(elem_size)
+                let elem_size = buffer.element().size_bytes().ok_or_else(|| {
+                    let mut buf = arrayvec::ArrayString::<256>::new();
+                    buf.push_str("Fix: static output buffer `");
+                    buf.push_str(buffer.name());
+                    buf.push_str("` uses a runtime-sized element type. Lower it to a fixed-width GPU storage type before wire encoding.");
+                    WireEncodeErr::Dynamic(Box::new(buf))
+                })? as u64;
+                count.checked_mul(elem_size).ok_or_else(|| {
+                    let mut buf = arrayvec::ArrayString::<256>::new();
+                    buf.push_str("Fix: output buffer `");
+                    buf.push_str(buffer.name());
+                    buf.push_str("` byte size overflows u64 during wire encoding. Split the buffer before serialization.");
+                    WireEncodeErr::Dynamic(Box::new(buf))
+                })?
             };
             let start = range.start as u64;
             let end = range.end as u64;
@@ -214,7 +241,7 @@ fn reject_non_roundtrippable_shapes(
                 buf.push_str(") > end (");
                 buf.push_str(tmp.format(range.end));
                 buf.push_str("). Encode only valid ranges.");
-                return Err(WireEncodeErr::Dynamic(buf));
+                return Err(WireEncodeErr::Dynamic(Box::new(buf)));
             }
             if end > full_size && full_size != u64::MAX {
                 let mut buf = arrayvec::ArrayString::<256>::new();
@@ -226,7 +253,7 @@ fn reject_non_roundtrippable_shapes(
                 buf.push_str(") exceeds full buffer size (");
                 buf.push_str(tmp.format(full_size));
                 buf.push_str("). Encode only ranges that fit within the declared buffer size.");
-                return Err(WireEncodeErr::Dynamic(buf));
+                return Err(WireEncodeErr::Dynamic(Box::new(buf)));
             }
         }
     }
@@ -352,7 +379,7 @@ fn put_metadata_payload(
             }
             None => put_u8(out, 0),
         }
-        put_hints_payload(out, buffer.hints())?;
+        put_hints_payload(out, buffer.hints());
     }
     Ok(())
 }
@@ -391,7 +418,7 @@ fn put_memory_regions_with_scratch(
         put_u8(out, memory_kind_tag(buffer.kind()));
         put_u8(
             out,
-            access_tag(buffer.access()).map_err(|s| WireEncodeErr::from(s))?,
+            access_tag(&buffer.access()).map_err(WireEncodeErr::from)?,
         );
         put_u8(out, data_type_tag(&buffer.element())?);
         put_u8(out, 0);
@@ -420,9 +447,9 @@ fn put_memory_regions_with_scratch(
                 )
             })?,
         );
-        out.extend_from_slice(&shape);
+        out.extend_from_slice(shape);
         hints.clear();
-        put_hints_payload(hints, buffer.hints())?;
+        put_hints_payload(hints, buffer.hints());
         put_leb_u64(
             out,
             u64::try_from(hints.len()).map_err(|_| {
@@ -431,15 +458,12 @@ fn put_memory_regions_with_scratch(
                 )
             })?,
         );
-        out.extend_from_slice(&hints);
+        out.extend_from_slice(hints);
     }
     Ok(())
 }
 
-fn put_hints_payload(
-    out: &mut Vec<u8>,
-    hints: crate::ir::MemoryHints,
-) -> Result<(), WireEncodeErr> {
+fn put_hints_payload(out: &mut Vec<u8>, hints: crate::ir::MemoryHints) {
     match hints.coalesce_axis {
         Some(axis) => {
             put_u8(out, 1);
@@ -456,7 +480,6 @@ fn put_hints_payload(
             CacheLocality::Random => 2,
         },
     );
-    Ok(())
 }
 
 fn memory_kind_tag(kind: MemoryKind) -> u8 {
@@ -494,10 +517,20 @@ fn data_type_tag(value: &DataType) -> Result<u8, WireEncodeErr> {
         DataType::Handle(_) => 0x13,
         DataType::Vec { .. } => 0x14,
         DataType::TensorShaped { .. } => 0x15,
+        // Quantised scalar families are valid buffer elements (no
+        // additional payload — same shape as the U8/I32/F32 family).
+        DataType::F8E4M3 => 0x19,
+        DataType::F8E5M2 => 0x1A,
+        DataType::I4 => 0x1B,
+        DataType::FP4 => 0x1C,
+        DataType::NF4 => 0x1D,
         DataType::Opaque(_) => 0x80,
         _ => {
             return Err(WireEncodeErr::static_msg(
-                "Fix: unknown DataType variant cannot be serialized into VYRE wire format.",
+                "Fix: unknown DataType variant cannot be serialized into VYRE wire format. \
+                 Sparse/Vec/TensorShaped/DeviceMesh types are not valid buffer elements in the \
+                 dense memory-region encoder; lower to a supported scalar/array/handle/opaque \
+                 first.",
             ));
         }
     })

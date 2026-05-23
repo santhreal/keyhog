@@ -121,9 +121,10 @@ pub fn utf8_shape_counts(histogram: &str, out: &str) -> Program {
     )
 }
 
-/// CPU reference for [`utf8_shape_counts`].
+/// Reference oracle for [`utf8_shape_counts`].
 #[must_use]
-pub fn cpu_ref(histogram: &[u32; 256]) -> (u32, u32) {
+#[cfg(any(test, feature = "cpu-parity"))]
+pub fn reference_utf8_shape_counts(histogram: &[u32; 256]) -> (u32, u32) {
     let continuation: u32 = histogram[0x80..0xC0].iter().sum();
     let starter_2: u32 = histogram[0xC2..0xE0].iter().sum();
     let starter_3: u32 = histogram[0xE0..0xF0].iter().sum();
@@ -152,10 +153,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn cpu_ref_counts_continuation_and_expected() {
+    fn reference_counts_continuation_and_expected() {
         let mut histogram = [0u32; 256];
         histogram[0xC3] = 2;
         histogram[0xA9] = 2;
-        assert_eq!(cpu_ref(&histogram), (2, 2));
+        assert_eq!(reference_utf8_shape_counts(&histogram), (2, 2));
     }
 }

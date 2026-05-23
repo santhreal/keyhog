@@ -22,7 +22,7 @@ use crate::serial::wire::encode::WireEncodeErr;
 ///
 /// L.1.27 / I4: Min and Max had no tag and were rejected at serialize time,
 /// breaking `Program::from_wire(Program::to_wire(p))` for any program that
-/// legitimately declared a Min/Max BinOp. They now map to `19` and `20`.
+/// legitimately declared a Min/Max `BinOp`. They now map to `19` and `20`.
 #[inline]
 pub(crate) fn bin_op_tag(value: BinOp) -> Result<u8, WireEncodeErr> {
     match value {

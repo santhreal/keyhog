@@ -95,8 +95,15 @@ fn r3_zero_byte_input_no_panic() {
     let chunks = vec![make_chunk("", "empty.txt")];
     for backend in ALL_BACKENDS {
         let r = scanner.scan_chunks_with_backend(&chunks, *backend);
-        assert_eq!(r.len(), 1, "result vec must match input vec length on {backend:?}");
-        assert!(r[0].is_empty(), "empty input must produce no findings on {backend:?}");
+        assert_eq!(
+            r.len(),
+            1,
+            "result vec must match input vec length on {backend:?}"
+        );
+        assert!(
+            r[0].is_empty(),
+            "empty input must produce no findings on {backend:?}"
+        );
     }
 }
 
