@@ -75,10 +75,13 @@ pub(crate) async fn verify_credential(
     oob_session: Option<&Arc<OobSession>>,
 ) -> VerificationAttempt {
     if !spec.steps.is_empty() {
-        // Multi-step verification doesn't yet thread OOB through every step;
-        // OOB-bearing multi-step specs would need to mint per-step or per-flow.
-        // Until a real detector requires that combination, defer to the
-        // simpler single-shot multi-step path.
+        // Multi-step specs run the no-OOB `verify_multi_step` path —
+        // threading OOB through per-step or per-flow minting is open
+        // and unfinished. No bundled detector currently combines
+        // `[[steps]]` with an `oob` block, so the gap doesn't bite
+        // today; adding a detector that needs both must land the
+        // per-step OOB plumbing too or it will silently lose the
+        // out-of-band signal.
         return verify_multi_step(
             client,
             spec,

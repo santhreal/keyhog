@@ -582,10 +582,13 @@ impl CompiledScanner {
         backend: ScanBackend,
     ) -> Vec<u64> {
         match backend {
-            // MegaScan reuses the literal-set trigger collection until
-            // the regex-NFA pipeline is wired in (task #105). The
-            // trigger bitmask shape is identical across both engines so
-            // the upstream consumers do not branch.
+            // MegaScan currently reuses the literal-set trigger
+            // collection — its own regex-NFA trigger pass is open and
+            // unfinished. The trigger bitmask shape is identical to
+            // the literal-set output so upstream consumers don't
+            // branch; the gap is precision, not correctness (extra
+            // patterns enter the cheap-filter, but evaluation still
+            // filters them on the per-pattern match step).
             ScanBackend::Gpu | ScanBackend::MegaScan => self.collect_triggered_patterns_gpu(text),
             ScanBackend::SimdCpu => self.collect_triggered_patterns_simd(text),
             ScanBackend::CpuFallback => self.collect_triggered_patterns_cpu(text),
