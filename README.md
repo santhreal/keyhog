@@ -298,7 +298,7 @@ crates/
   cli/        CLI binary, orchestration, baselines, benchmarks
 ```
 
-The scanner compiles all 896 detector regexes into a single Hyperscan database (cached to disk), then runs a two-phase coalesced scan:
+The scanner compiles all 889 detector regexes into a single Hyperscan database (cached to disk), then runs a two-phase coalesced scan:
 
 1. **Phase 1**: Parallel Hyperscan NFA scan on raw bytes via rayon. Non-hit files (typically 95%+) pay zero cost.
 2. **Phase 2**: Full extraction on hit files only: regex capture groups, companion matching, confidence scoring, entropy gating, checksum validation.
@@ -329,7 +329,7 @@ release). SARIF output is auto-uploaded to GitHub code-scanning when
 ```yaml
 repos:
   - repo: https://github.com/santhsecurity/keyhog
-    rev: v0.5.0
+    rev: v0.5.10
     hooks:
       - id: keyhog
 ```
