@@ -26,9 +26,6 @@ pub(crate) mod backend {
         db: BlockDatabase,
         /// Map from HS pattern ID to (detector_index, pattern_index, has_group)
         pattern_map: Vec<(usize, usize, bool)>,
-        /// Number of patterns that failed HS compilation
-        #[allow(dead_code)]
-        pub unsupported_count: usize,
         /// Per-instance scratch pool (each scratch is tied to this db)
         scratch_pool: parking_lot::Mutex<Vec<Scratch>>,
     }
@@ -242,12 +239,14 @@ pub(crate) mod backend {
                 .map_err(|e| format!("hyperscan scratch: {e}"))?;
             let initial_pool = vec![test_scratch];
 
-            let unsupported_count = unsupported.len();
+            // The caller (`build_simd_scanner`) already logs
+            // `unsupported.len()` via tracing::info!, and consumers that
+            // need the count get the Vec returned alongside. No need to
+            // store a redundant copy on the scanner itself.
             Ok((
                 Self {
                     db,
                     pattern_map,
-                    unsupported_count,
                     scratch_pool: parking_lot::Mutex::new(initial_pool),
                 },
                 unsupported,

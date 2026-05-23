@@ -49,19 +49,15 @@ benchmark-harness/
 PLAN.md
 
 # Throwaway debug / scratch scripts (not part of the project tree).
-debug_*.py
-fix*.py
-run_simd*.py
-run_gpu_only.py
-run_debug.py
-test_chunks.py
-test_decoders.py
-test_second_call.py
-test_swap.py
-test_twice.py
-dump_match.py
-prove_sb.py
-ast_dump.txt
+# Leading `/` anchors these to the repo root so they don't accidentally
+# shadow `scripts/fix_*.py` or `vendor/vyre/.internals/scratch/*.py`.
+/debug_*.py
+/fix*.py
+/run_*.py
+/test_*.py
+/dump_*.py
+/prove_*.py
+/ast_dump.txt
 crates/scanner/ast_dump.txt
 crates/scanner/src/engine/scan_gpu.rs.patch
 

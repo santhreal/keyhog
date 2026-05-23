@@ -23,29 +23,6 @@ mod backend {
     /// Below this, CPU is faster due to GPU dispatch overhead.
     const GPU_BATCH_THRESHOLD: usize = 64;
 
-    /// Per-OS preferred wgpu backend mask. Retained for the
-    /// `preferred_backends_picks_native_per_os` test — runtime GPU
-    /// init now goes through `vyre_driver_wgpu::WgpuBackend::shared()`.
-    #[allow(dead_code)]
-    pub(super) fn preferred_backends() -> wgpu::Backends {
-        #[cfg(target_os = "windows")]
-        {
-            wgpu::Backends::DX12 | wgpu::Backends::VULKAN
-        }
-        #[cfg(any(target_os = "macos", target_os = "ios"))]
-        {
-            wgpu::Backends::METAL
-        }
-        #[cfg(all(unix, not(any(target_os = "macos", target_os = "ios"))))]
-        {
-            wgpu::Backends::VULKAN | wgpu::Backends::GL
-        }
-        #[cfg(not(any(unix, target_os = "windows", target_os = "macos", target_os = "ios")))]
-        {
-            wgpu::Backends::all()
-        }
-    }
-
     const INPUT_DIM: usize = 41;
 
     #[derive(Clone, Copy, Pod, Zeroable)]
@@ -538,41 +515,4 @@ pub fn gpu_probe() -> (bool, Option<String>, Option<u64>) {
         return (true, Some(gpu.gpu_name().to_string()), gpu.vram_mb());
     }
     (false, None, None)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::backend::preferred_backends;
-
-    #[test]
-    fn preferred_backends_picks_native_per_os() {
-        let backends = preferred_backends();
-        // Whatever the host OS is, the union must be non-empty so wgpu has
-        // at least one backend to try. Software-only fallback avoidance is
-        // handled at adapter-selection time (force_fallback_adapter=false +
-        // device_type==Cpu rejection).
-        assert!(
-            !backends.is_empty(),
-            "preferred_backends must enable at least one backend; got empty mask"
-        );
-
-        // OS-native backend assertions: each platform must have its
-        // first-class API in the mask, otherwise we are leaving perf on
-        // the table by routing through a translation layer.
-        #[cfg(target_os = "windows")]
-        assert!(
-            backends.contains(wgpu::Backends::DX12),
-            "Windows must include DX12"
-        );
-        #[cfg(any(target_os = "macos", target_os = "ios"))]
-        assert!(
-            backends.contains(wgpu::Backends::METAL),
-            "Apple must include Metal"
-        );
-        #[cfg(all(unix, not(any(target_os = "macos", target_os = "ios"))))]
-        assert!(
-            backends.contains(wgpu::Backends::VULKAN),
-            "Linux/BSD must include Vulkan"
-        );
-    }
 }
