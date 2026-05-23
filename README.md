@@ -328,9 +328,16 @@ repos:
 
 ### Recently shipped
 
+- **Daemon mode.** `keyhog daemon start|stop|status` runs a long-lived
+  scanner over a Unix socket (default `$XDG_RUNTIME_DIR/keyhog.sock`).
+  `keyhog scan --stdin --daemon` amortizes the ~3 s `CompiledScanner::compile`
+  cold start across many invocations — measured **105× speedup** (7 ms via
+  daemon vs 740 ms in-process) on a real github_pat sample, same detector
+  + hash + offset in both paths. Use it in pre-commit hooks, IDE save
+  handlers, or any per-commit CI loop.
 - **Gitignore-style `.keyhogignore`.** Bare globs (`*.log`, `node_modules/`)
-  and bare 64-char hex hashes are accepted alongside the prefixed forms; lines
-  that previously WARN'd + dropped now Just Work.
+  and bare 64-char hex hashes are accepted alongside the prefixed forms;
+  lines that previously WARN'd + dropped now Just Work.
 - **`--max-file-size` skip summary.** Files dropped by the size cap now emit a
   per-file WARN and an end-of-scan summary line ("N file(s) skipped: exceeded
   --max-file-size"), instead of vanishing silently into the walker's filter.
@@ -349,16 +356,17 @@ repos:
   trigger ~570 shard compiles × 256 MiB GPU upload = ~20 GB RSS; the
   small-buffer guard now degrades to the literal-set GPU dispatch for
   batches under 64 KiB (60× faster, 50× less memory).
+- **25 companion-required detector contracts.** Per-detector TOMLs at
+  `crates/scanner/tests/contracts/companion/` encode the three-shape
+  contract (positive_with_companion, positive_primary_only with
+  `must_not_verify`, negative_companion_lookalike) for every detector
+  whose primary credential is useless without its companion (AWS,
+  Twilio API key / auth-token / IoT, Algolia, Razorpay, Stripe, …).
 
 ### Next
 
 Feedback / PRs welcome: file an issue to argue scope.
 
-- **Daemon mode (re-land).** Prior session built `keyhog daemon
-  start/stop/status` + `keyhog scan --daemon` for sub-10 ms repeat scans
-  amortizing the ~3 s `CompiledScanner::compile` cold start. Working-tree
-  changes were lost before the commit landed; re-create the daemon crate
-  (server + client + protocol + frame) and wire the route in `scan.rs`.
 - **Hyperscan on Windows out of the box.** Today the `simd` feature is opt-in
   on Windows because `hyperscan-sys` requires a vcpkg/MSVC build of the
   upstream Hyperscan/Vectorscan C library (Linux/macOS users get it for free
