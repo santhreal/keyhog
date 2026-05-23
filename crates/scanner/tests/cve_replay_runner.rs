@@ -9,10 +9,14 @@
 //! related hot-pattern label, and either label is honest evidence the
 //! secret was caught.
 //!
-//! When the directory is empty (the initial state — see #7/#35), the
-//! runner passes vacuously. The hard gate is one file = one binding
-//! truth test, so the runner SKIPs gracefully until the corpus lands
-//! and starts hard-failing the moment a single entry is added.
+//! When the directory is empty, the runner passes vacuously. The
+//! hard gate is one file = one binding truth test — every entry
+//! becomes a hard-fail the moment it's added, so the runner
+//! grows teeth incrementally as the CVE corpus is populated.
+//!
+//! OPEN: `tests/cve_replay/` is currently empty; this detector
+//! suite has zero CVE-replay coverage. Each new entry must be a
+//! verbatim public-leak fixture with an auditable `source_url`.
 
 use std::path::PathBuf;
 
