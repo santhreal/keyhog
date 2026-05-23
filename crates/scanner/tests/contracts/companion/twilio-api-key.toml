@@ -1,21 +1,3 @@
-schema_version = 1
-detector_id = "twilio-api-key"
-service = "twilio"
-severity = "high"
-
-[positive_with_companion]
-text = "TWILIO_API_KEY=SKxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nTWILIO_API_SECRET=00000000fake0000000fake0000000fake"
-expected_findings = ["twilio-api-key"]
-expected_companions = { secret = "00000000fake0000000fake0000000fake" }
-reason = "API Key SK... paired with its secret."
-
-[positive_primary_only]
-text = "TWILIO_API_KEY=SKxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-expected_findings = []
-must_not_verify = true
-reason = "Missing required companion secret; scanner must suppress match."
-
-[negative_companion_lookalike]
-text = "TWILIO_API_SECRET=00000000fake0000000fake0000000fake"
-expected_findings = []
-reason = "Secret alone without SK... API key primary."
+version https://git-lfs.github.com/spec/v1
+oid sha256:07e3da5dc49c31c6603cfa0d9b955c78e6294bb22b5a2adbedf2473d282e81df
+size 758

@@ -50,8 +50,7 @@ pub use vyre_libs::scan::LiteralMatch;
 pub fn build_rule_pipeline(
     patterns: &[&str],
     input_len: u32,
-) -> std::result::Result<vyre_libs::scan::RulePipeline, vyre_libs::scan::RegexCompileError>
-{
+) -> std::result::Result<vyre_libs::scan::RulePipeline, vyre_libs::scan::RegexCompileError> {
     vyre_libs::scan::build_rule_pipeline_from_regex(patterns, "input", "hits", input_len)
 }
 
@@ -96,8 +95,7 @@ fn pipeline_cache_key(patterns: &[&str], input_len: u32) -> String {
 pub fn rule_pipeline_cached(
     patterns: &[&str],
     input_len: u32,
-) -> std::result::Result<vyre_libs::scan::RulePipeline, vyre_libs::scan::RegexCompileError>
-{
+) -> std::result::Result<vyre_libs::scan::RulePipeline, vyre_libs::scan::RegexCompileError> {
     let started = std::time::Instant::now();
     let Some(cache_dir) = gpu_matcher_cache_dir() else {
         return build_rule_pipeline(patterns, input_len);

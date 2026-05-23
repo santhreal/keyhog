@@ -1,21 +1,3 @@
-schema_version = 1
-detector_id = "sumo-logic-access-key"
-service = "sumologic"
-severity = "high"
-
-[positive_with_companion]
-text = "sumologic_access_id=example_access_id\nsumologic_access_key=AbCdEfGhIjKlMnOpQrStUvWxYz1234AbCdEfGhIjKlMnOpQrStUvWxYz1234abcd"
-expected_findings = ["sumo-logic-access-key"]
-expected_companions = { "sumo-logic-access-id" = "example" }
-reason = "Access key paired with access ID."
-
-[positive_primary_only]
-text = "sumologic_access_key=AbCdEfGhIjKlMnOpQrStUvWxYz1234AbCdEfGhIjKlMnOpQrStUvWxYz1234abcd"
-expected_findings = ["sumo-logic-access-key"]
-must_not_verify = true
-reason = "Primary found without companion sumo-logic-access-id; verification must NOT proceed."
-
-[negative_companion_lookalike]
-text = "sumologic_access_id=example_access_id"
-expected_findings = []
-reason = "Access ID alone without access key."
+version https://git-lfs.github.com/spec/v1
+oid sha256:db98c2134d8aa05e3bd45292417ac8e0a6d85eb3aa79777d59fe57695b31b571
+size 844
