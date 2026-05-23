@@ -1,21 +1,3 @@
-schema_version = 1
-detector_id = "4everland-api-token"
-service = "4everland"
-severity = "high"
-
-[positive_with_companion]
-text = "4EVER_ACCESS_KEY=KP4QX7RM2SN5TB8VW3YZ\n4EVER_SECRET_KEY=KP4QX7RM2SN5TB8VW3YZKP4QX7RM2SN5TB8VW3YZK"
-expected_findings = ["4everland-api-token"]
-expected_companions = { secret_key = "KP4QX7RM2SN5TB8VW3YZKP4QX7RM2SN5TB8VW3YZ" }
-reason = "Access key paired with secret key."
-
-[positive_primary_only]
-text = "4EVER_ACCESS_KEY=KP4QX7RM2SN5TB8VW3YZ"
-expected_findings = ["4everland-api-token"]
-must_not_verify = true
-reason = "Primary found without companion secret_key; verification must NOT proceed."
-
-[negative_companion_lookalike]
-text = "4EVER_SECRET_KEY=KP4QX7RM2SN5TB8VW3YZKP4QX7RM2SN5TB8VW3YZK"
-expected_findings = []
-reason = "Secret key alone without access key."
+version https://git-lfs.github.com/spec/v1
+oid sha256:d3eeab9ef577caaf3d0c1cb1044da403f386e76626de86a22821c93a215eefa8
+size 797

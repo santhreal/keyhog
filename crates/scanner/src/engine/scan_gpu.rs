@@ -393,9 +393,7 @@ impl CompiledScanner {
                 pattern_lengths: vyre_libs::scan::dispatch_io::pack_u32_slice(
                     &matcher.pattern_lengths,
                 ),
-                pattern_bytes: vyre_libs::scan::dispatch_io::pack_u32_slice(
-                    &matcher.pattern_bytes,
-                ),
+                pattern_bytes: vyre_libs::scan::dispatch_io::pack_u32_slice(&matcher.pattern_bytes),
                 pattern_count: vyre_libs::scan::dispatch_io::pack_u32_slice(&[matcher
                     .pattern_lengths
                     .len()
@@ -768,9 +766,7 @@ impl CompiledScanner {
         let ac_packs = self
             .gpu_ac_const_packs
             .get_or_init(|| crate::engine::AcConstPacks {
-                transitions: vyre_libs::scan::dispatch_io::pack_u32_slice(
-                    &matcher.dfa.transitions,
-                ),
+                transitions: vyre_libs::scan::dispatch_io::pack_u32_slice(&matcher.dfa.transitions),
                 output_offsets: vyre_libs::scan::dispatch_io::pack_u32_slice(
                     &matcher.dfa.output_offsets,
                 ),

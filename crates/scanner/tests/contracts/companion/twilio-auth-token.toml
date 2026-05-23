@@ -1,21 +1,3 @@
-schema_version = 1
-detector_id = "twilio-auth-token"
-service = "twilio"
-severity = "critical"
-
-[positive_with_companion]
-text = "TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nTWILIO_AUTH_TOKEN=00000000fake0000000fake000000000"
-expected_findings = ["twilio-auth-token"]
-expected_companions = { account_sid = "ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" }
-reason = "Both Account SID and Auth Token present in env-file shape."
-
-[positive_primary_only]
-text = "TWILIO_AUTH_TOKEN=00000000fake0000000fake000000000"
-expected_findings = []
-must_not_verify = true
-reason = "Missing required companion account_sid; scanner must suppress match."
-
-[negative_companion_lookalike]
-text = "ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-expected_findings = []
-reason = "Standalone AC... string matches companion regex but no primary auth_token nearby."
+version https://git-lfs.github.com/spec/v1
+oid sha256:5aeba309a184920196d2a65ff79eb08d065eca6446f1ca1aeb6983fb278c0d76
+size 828

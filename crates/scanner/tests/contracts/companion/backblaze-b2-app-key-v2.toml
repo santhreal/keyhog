@@ -1,21 +1,3 @@
-schema_version = 1
-detector_id = "backblaze-b2-app-key-v2"
-service = "backblaze"
-severity = "high"
-
-[positive_with_companion]
-text = "b2_app_key_id=a1b2c3d4e5f6a7b8c9d0\nb2_app_key=K00MNabcdefghijklmnopqrstuvwxyz123"
-expected_findings = ["backblaze-b2-app-key-v2"]
-expected_companions = { application_key_id = "a1b2c3d4e5f6a7b8c9d0" }
-reason = "Application key paired with Application Key ID."
-
-[positive_primary_only]
-text = "b2_app_key=K00MNabcdefghijklmnopqrstuvwxyz123"
-expected_findings = ["backblaze-b2-app-key-v2"]
-must_not_verify = true
-reason = "Primary found without companion application_key_id; verification must NOT proceed."
-
-[negative_companion_lookalike]
-text = "b2_app_key_id=a1b2c3d4e5f6a7b8c9d0"
-expected_findings = []
-reason = "Key ID alone without application key."
+version https://git-lfs.github.com/spec/v1
+oid sha256:675f19ac95c22d8dc4f56cd85c2a87b7c9c986909ba1ba7ec0d57e230812662b
+size 787

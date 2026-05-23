@@ -1,21 +1,3 @@
-schema_version = 1
-detector_id = "algolia-api-key"
-service = "algolia"
-severity = "medium"
-
-[positive_with_companion]
-text = "algolia_api_key=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d\nalgolia_application_id=ABCD123456"
-expected_findings = ["algolia-api-key"]
-expected_companions = { application_id = "ABCD123456" }
-reason = "Search API key paired with Application ID."
-
-[positive_primary_only]
-text = "algolia_api_key=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
-expected_findings = ["algolia-api-key"]
-must_not_verify = true
-reason = "Primary found without companion application_id; verification must NOT proceed."
-
-[negative_companion_lookalike]
-text = "algolia_application_id=ABCD123456"
-expected_findings = []
-reason = "Application ID alone without API key."
+version https://git-lfs.github.com/spec/v1
+oid sha256:1e85fd35f9bd5f790ffebe83a7fea7fb5a1cefde57b10f4ba9e3f3f135044acf
+size 744
