@@ -443,6 +443,13 @@ impl ScanOrchestrator {
         let elapsed = start.elapsed().as_secs_f64();
         if show_progress {
             report_completion_summary(report_findings.len(), elapsed);
+        } else {
+            // Even in non-TTY mode (CI, piped output, --format json)
+            // surface the size-skip count if any files were dropped —
+            // it's correctness signal, not visual chrome. Stays on
+            // stderr so JSON consumers on stdout aren't affected.
+            // kimi-1 dogfood #130.
+            report_oversize_skip_summary();
         }
         dump_dogfood_trace();
 
@@ -500,10 +507,29 @@ impl ScanOrchestrator {
     pub(crate) fn scan_sources(
         &self,
         sources: Vec<Box<dyn Source>>,
-        _show_progress: bool,
+        show_progress: bool,
         merkle: Option<Arc<keyhog_core::merkle_index::MerkleIndex>>,
     ) -> Vec<RawMatch> {
         use std::sync::atomic::Ordering;
+
+        // Reset the over-max-size counter so each scan starts at zero
+        // (the counter is process-global and persists across
+        // scan-orchestrator calls in long-running daemon / library
+        // embeddings). kimi-1 dogfood #130.
+        keyhog_sources::reset_skipped_over_max_size();
+
+        // Live progress indicator. Tick every 250 ms on stderr,
+        // overwriting the previous line via CR. Disabled when the
+        // user already gets per-finding output via --stream (would
+        // clobber the previews) or when stderr is not a TTY.
+        let progress_done = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let progress_handle = if show_progress && !self.args.stream {
+            let done = Arc::clone(&progress_done);
+            let started_t = Instant::now();
+            Some(std::thread::spawn(move || progress_ticker(done, started_t)))
+        } else {
+            None
+        };
 
         // Incremental scan via merkle index (Tier-B #3 from
         // legendary-2026-04-26). FilesystemSource handles the
@@ -715,6 +741,13 @@ impl ScanOrchestrator {
             Vec::new()
         });
 
+        // Stop the progress ticker and wait for the final clear before
+        // any post-scan output lands.
+        progress_done.store(true, std::sync::atomic::Ordering::Relaxed);
+        if let Some(h) = progress_handle {
+            let _ = h.join();
+        }
+
         if skipped_unchanged > 0 {
             tracing::info!(
                 skipped = skipped_unchanged,
@@ -787,6 +820,13 @@ impl ScanOrchestrator {
                     }
                 }
                 if allowlist.is_raw_hash_ignored(&m.credential_hash) {
+                    return false;
+                }
+                // Detector-id suppression. Previously the `.keyhogignore`
+                // parser populated `ignored_detectors` but the orchestrator
+                // never read it — every `detector:<id>` entry was dead.
+                // Pair with kimi-1 dogfood #129.
+                if allowlist.ignored_detectors.contains(&*m.detector_id) {
                     return false;
                 }
                 if let Some(conf) = m.confidence {
@@ -1054,6 +1094,59 @@ fn report_completion_summary(count: usize, elapsed: f64) {
             count, elapsed
         );
     }
+    report_oversize_skip_summary();
+}
+
+/// Live progress ticker — overwrites the previous line via CR every
+/// 250 ms while the scan runs. The final tick clears the line so the
+/// scan-complete summary lands cleanly. Reads the same atomic
+/// counters as the SIGINT handler in main.rs, so a Ctrl-C user sees
+/// the same numbers the progress line was reporting. kimi-1 #130.
+fn progress_ticker(done: Arc<std::sync::atomic::AtomicBool>, started: Instant) {
+    use std::io::{IsTerminal, Write};
+    use std::sync::atomic::Ordering;
+    use std::time::Duration;
+    if !std::io::stderr().is_terminal() {
+        return;
+    }
+    let tick = Duration::from_millis(250);
+    // First tick delayed so quick scans never paint at all.
+    std::thread::sleep(tick);
+    while !done.load(Ordering::Relaxed) {
+        let scanned = crate::SCANNED_CHUNKS.load(Ordering::Relaxed);
+        let total = crate::TOTAL_CHUNKS.load(Ordering::Relaxed);
+        let findings = crate::FINDINGS_COUNT.load(Ordering::Relaxed);
+        let elapsed = started.elapsed().as_secs_f64();
+        let mut err = std::io::stderr().lock();
+        let _ = write!(
+            err,
+            "\x1b[2K\rscanning {scanned}/{total} chunks · {findings} findings · {elapsed:.1}s"
+        );
+        let _ = err.flush();
+        drop(err);
+        std::thread::sleep(tick);
+    }
+    let mut err = std::io::stderr().lock();
+    let _ = write!(err, "\x1b[2K\r");
+    let _ = err.flush();
+}
+
+/// Surface the count of files the walker dropped because they
+/// exceeded `--max-file-size`. Before kimi-1 dogfood #130 this
+/// happened silently inside codewalk's size filter; now keyhog owns
+/// the gate, warns per-file, AND emits this one-line summary so a
+/// user looking at a smaller-than-expected scan can immediately see
+/// whether the cap was the cause and re-run with a larger value.
+fn report_oversize_skip_summary() {
+    use std::sync::atomic::Ordering;
+    let skipped = keyhog_sources::SKIPPED_OVER_MAX_SIZE.load(Ordering::Relaxed);
+    if skipped == 0 {
+        return;
+    }
+    eprintln!(
+        "\x1b[33m{}\x1b[0m file(s) skipped: exceeded --max-file-size. Re-scan with a larger cap to include them.",
+        skipped
+    );
 }
 
 /// Dump the captured dogfood events as a single JSON object on stderr.

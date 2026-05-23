@@ -391,7 +391,18 @@ pub struct ScanArgs {
     /// the CLI and harder to forget. Values: `gpu`, `mega-scan`, `simd`,
     /// `cpu`. The CLI flag takes precedence over the env var when both
     /// are set.
-    #[arg(long, value_name = "BACKEND")]
+    #[arg(
+        long,
+        value_name = "BACKEND",
+        value_parser = clap::builder::PossibleValuesParser::new([
+            "gpu",
+            "mega-scan",
+            "megascan",
+            "simd",
+            "cpu",
+            "auto",
+        ])
+    )]
     pub backend: Option<String>,
 
     /// Write findings to file
@@ -431,7 +442,13 @@ pub struct ScanArgs {
     #[arg(short, long, value_enum)]
     pub severity: Option<SeverityFilter>,
 
-    /// Maximum file size to scan (default: 10MB).
+    /// Maximum file size to scan. Files larger than this are listed in
+    /// the end-of-scan "files skipped: exceeded --max-file-size"
+    /// summary. Default is 100 MiB — chosen to match the
+    /// `FilesystemSource` ceiling (files above 64 MiB already use
+    /// windowed scanning). kimi-dogfood-3 #135: prior help text said
+    /// "10MB" but no default was wired; the 100 MiB FilesystemSource
+    /// default was the de facto cap.
     #[arg(long, value_name = "SIZE", value_parser = crate::value_parsers::parse_byte_size)]
     pub max_file_size: Option<usize>,
 

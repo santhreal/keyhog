@@ -8,6 +8,23 @@
 
 mod timeouts;
 
+use std::sync::atomic::AtomicUsize;
+
+/// How many files the filesystem walker skipped because they exceeded
+/// the active `--max-file-size` cap. Bumped once per skipped entry
+/// inside `FilesystemSource::process_entry`; the orchestrator reads
+/// it at end-of-scan to emit a single summary line so users see what
+/// the previously-silent walker filter dropped (kimi-1 dogfood #130).
+/// Counter is process-global; reset between scans by the test harness
+/// via `reset_skipped_over_max_size()`.
+pub static SKIPPED_OVER_MAX_SIZE: AtomicUsize = AtomicUsize::new(0);
+
+/// Reset the over-max-size counter. Public so test fixtures that run
+/// multiple scans in one process can baseline between runs.
+pub fn reset_skipped_over_max_size() {
+    SKIPPED_OVER_MAX_SIZE.store(0, std::sync::atomic::Ordering::Relaxed);
+}
+
 /// Local HTTP compatibility shim backed by reqwest. Only present when
 /// at least one feature that pulls in `reqwest` is enabled —
 /// otherwise this module would `pub use reqwest::*` against a crate

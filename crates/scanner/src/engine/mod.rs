@@ -102,27 +102,67 @@ pub fn rule_pipeline_cached(
     let Some(cache_dir) = gpu_matcher_cache_dir() else {
         return build_rule_pipeline(patterns, input_len);
     };
-    // The vyre `cached_load_or_compile` API expects an infallible
-    // builder closure (it has no way to bubble compile errors out).
-    // We work around that by trying the regex compile UPFRONT — if
-    // that succeeds, we know the cache builder will succeed too, so
-    // hand it the same pipeline shape. If it fails, surface the
-    // typed error to the caller.
-    let pipe = build_rule_pipeline(patterns, input_len)?;
     let cache_key = format!("pipe-{}", pipeline_cache_key(patterns, input_len));
-    // Cache lookup/store is best-effort: a stale or unwritable cache
-    // is degraded behavior, not a correctness problem. We still hand
-    // back the freshly-compiled pipeline above either way.
-    let cached =
-        vyre_libs::matching::cached_load_or_compile(&cache_dir, &cache_key, || pipe.clone());
+
+    // Try the cache FIRST so a warm start skips `build_rule_pipeline`
+    // entirely. The previous flow always pre-compiled to keep typed
+    // error semantics for vyre's infallible-closure
+    // `cached_load_or_compile`, which made the cache pointless — the
+    // compile already ran by the time we asked the cache anything.
+    // Use vyre's `engine_cache_path` + manual load/save instead.
+    // Task #94.
+    if let Some(path) = vyre_libs::matching::engine_cache_path(&cache_dir, &cache_key) {
+        if let Ok(bytes) = std::fs::read(&path) {
+            match vyre_libs::matching::RulePipeline::from_bytes(&bytes) {
+                Ok(pipeline) => {
+                    tracing::debug!(
+                        target: "keyhog::routing",
+                        patterns = patterns.len(),
+                        input_len,
+                        elapsed_ms = started.elapsed().as_millis() as u64,
+                        "RulePipeline cache hit — skipped compile"
+                    );
+                    return Ok(pipeline);
+                }
+                Err(_) => {
+                    // Stale / corrupt: best-effort remove and fall
+                    // through to recompile.
+                    let _ = std::fs::remove_file(&path);
+                }
+            }
+        }
+    }
+
+    // Cache miss: pay the typed-fallible compile, then save for the
+    // next call. Save failure is logged but never breaks the scan.
+    let pipeline = build_rule_pipeline(patterns, input_len)?;
+    if let Some(path) = vyre_libs::matching::engine_cache_path(&cache_dir, &cache_key) {
+        if let Ok(bytes) = pipeline.to_bytes() {
+            let tmp = path.with_extension(format!("tmp.{}", std::process::id()));
+            if let Some(parent) = path.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            if std::fs::write(&tmp, &bytes).is_ok() {
+                if let Err(error) = std::fs::rename(&tmp, &path) {
+                    tracing::debug!(
+                        target: "keyhog::routing",
+                        error = %error,
+                        path = %path.display(),
+                        "rule pipeline cache rename failed"
+                    );
+                    let _ = std::fs::remove_file(&tmp);
+                }
+            }
+        }
+    }
     tracing::debug!(
         target: "keyhog::routing",
         patterns = patterns.len(),
         input_len,
         elapsed_ms = started.elapsed().as_millis() as u64,
-        "RulePipeline ready (warm cache or compiled)"
+        "RulePipeline cache miss — compiled and saved"
     );
-    Ok(cached)
+    Ok(pipeline)
 }
 
 /// Maximum input buffer length the MegaScan `RulePipeline` is
@@ -606,7 +646,16 @@ impl CompiledScanner {
                         Some(pipe)
                     }
                     Err(error) => {
-                        tracing::warn!(
+                        // Demoted from `warn` to `debug` — the
+                        // fallback to literal-set GPU dispatch is the
+                        // designed degradation when vyre's byte-NFA
+                        // frontend can't represent every pattern (e.g.
+                        // lookaround in pattern 990 of the bundled
+                        // detector corpus). The user can't fix it, and
+                        // hitting this WARN once per `--backend mega-
+                        // scan` invocation creates noise without
+                        // signal. kimi-dogfood-3 #138.
+                        tracing::debug!(
                             patterns = pattern_strs.len(),
                             error = %format!("{error:?}"),
                             "MegaScan RulePipeline compile failed — falling back to literal-set GPU dispatch. \
