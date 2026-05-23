@@ -27,6 +27,20 @@ inputs:
   upload-sarif:
     description: 'When format=sarif, upload via github/codeql-action/upload-sarif@v3.'
     default: 'true'
+  fail-on-findings:
+    description: |
+      Fail the workflow when any finding at or above `severity` is reported.
+      Set to "false" to keep the job green and rely on the uploaded SARIF
+      surfacing in code-scanning instead.
+    default: 'true'
+
+outputs:
+  findings:
+    description: 'Number of findings at or above `severity` (parsed from the report).'
+    value: ${{ steps.scan.outputs.findings }}
+  report:
+    description: 'Path to the produced scan report (relative to the workspace).'
+    value: ${{ steps.outfile.outputs.name }}
 
 runs:
   using: 'composite'
@@ -106,7 +120,13 @@ runs:
       run: |
         set -euo pipefail
         cd "${{ github.action_path }}/../../.."
-        cargo build --release -p keyhog
+        # macOS has no `libhyperscan-dev` in homebrew — drop simd via the
+        # `portable` cli feature alias and keep everything else.
+        if [[ "$(uname -s)" == "Darwin" ]]; then
+          cargo build --release -p keyhog --no-default-features --features portable
+        else
+          cargo build --release -p keyhog
+        fi
         cp target/release/keyhog "$RUNNER_TEMP/keyhog"
 
     - name: Add keyhog to PATH
@@ -127,22 +147,67 @@ runs:
         echo "name=keyhog-results.${ext}" >> "$GITHUB_OUTPUT"
 
     - name: Run scan
+      id: scan
       shell: bash
       run: |
-        set -euo pipefail
+        set -uo pipefail
         verify_flag=""
         if [[ "${{ inputs.verify }}" == "true" ]]; then
           verify_flag="--verify"
         fi
+        # Run scan but DON'T exit on non-zero so we can count findings
+        # before deciding whether to fail the job.
+        set +e
         keyhog scan \
           --path "${{ inputs.path }}" \
           --severity "${{ inputs.severity }}" \
           --format "${{ inputs.format }}" \
           $verify_flag \
           --output "${{ steps.outfile.outputs.name }}"
+        keyhog_exit=$?
+        set -e
+
+        # Count findings from the report regardless of exit code.
+        report="${{ steps.outfile.outputs.name }}"
+        findings=0
+        if [[ -f "$report" ]]; then
+          case "${{ inputs.format }}" in
+            sarif)
+              findings=$(jq '[.runs[].results[]] | length' "$report" 2>/dev/null || echo 0) ;;
+            json)
+              findings=$(jq '.findings | length' "$report" 2>/dev/null || echo 0) ;;
+            jsonl)
+              findings=$(wc -l < "$report" | tr -d ' ') ;;
+            text)
+              findings=$(grep -c '^Finding ' "$report" 2>/dev/null || echo 0) ;;
+          esac
+        fi
+        echo "findings=$findings" >> "$GITHUB_OUTPUT"
+        echo "::notice title=KeyHog::Found $findings finding(s) at or above '${{ inputs.severity }}' severity."
+
+        # Exit only if keyhog crashed (exit > 1) — exit 1 typically means
+        # "findings reported", which we handle in the next step.
+        if [[ $keyhog_exit -gt 1 ]]; then
+          echo "::error title=KeyHog::Scanner crashed with exit code $keyhog_exit"
+          exit $keyhog_exit
+        fi
 
     - name: Upload SARIF to code-scanning
       if: inputs.format == 'sarif' && inputs.upload-sarif == 'true'
       uses: github/codeql-action/upload-sarif@v3
       with:
         sarif_file: ${{ steps.outfile.outputs.name }}
+
+    - name: Upload scan report as workflow artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: keyhog-report
+        path: ${{ steps.outfile.outputs.name }}
+        if-no-files-found: warn
+
+    - name: Fail when findings reported
+      if: inputs.fail-on-findings == 'true' && steps.scan.outputs.findings != '0'
+      shell: bash
+      run: |
+        echo "::error title=KeyHog::${{ steps.scan.outputs.findings }} finding(s) at or above '${{ inputs.severity }}' severity. Set fail-on-findings:false to ignore."
+        exit 1

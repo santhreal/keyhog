@@ -1,0 +1,67 @@
+# KeyHog GitHub Action — drop-in secret scanning
+
+One step in your workflow. Findings fail the job, the report uploads to
+GitHub code-scanning, and a copy of the report attaches as a workflow
+artifact for download.
+
+```yaml
+- uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.12
+```
+
+That's it. Defaults: scan the whole repo, fail on `high` or above, output
+SARIF, upload to code-scanning.
+
+## Full reference
+
+```yaml
+- uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.12
+  with:
+    path: .                     # file or directory to scan
+    severity: high              # info | low | medium | high | critical
+    format: sarif               # text | json | sarif | jsonl
+    verify: 'false'             # 'true' to live-verify credentials
+    upload-sarif: 'true'        # 'false' to keep the report local-only
+    fail-on-findings: 'true'    # 'false' to make findings advisory
+    version: ''                 # pin a specific release (default: action ref)
+```
+
+## Outputs
+
+```yaml
+- id: keyhog
+  uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.12
+  with:
+    fail-on-findings: 'false'
+
+- name: Comment on PR if anything found
+  if: steps.keyhog.outputs.findings != '0'
+  run: gh pr comment ${{ github.event.number }} -b "KeyHog flagged ${{ steps.keyhog.outputs.findings }} potential secret(s)."
+```
+
+| Output | Description |
+| --- | --- |
+| `findings` | Number of findings at or above `severity`. |
+| `report`   | Path to the produced report file. |
+
+## Platforms
+
+| OS | arch | Prebuilt binary | Source-build fallback |
+| --- | --- | --- | --- |
+| Linux | x86_64 | yes (full features) | yes |
+| macOS | aarch64 | yes (no Hyperscan) | yes (`portable` feature) |
+| macOS | x86_64 | no | yes (`portable` feature) |
+| Windows | * | no | manual — see DROP_IN_USAGE.md |
+
+The action tries the prebuilt binary first and only falls back to a
+source build when the release asset is missing. macOS builds (both
+prebuilt and source fallback) ship without Hyperscan because there is
+no `libhyperscan-dev` package in homebrew; everything else (entropy,
+multiline reassembly, ML scoring, decode-through, all source backends)
+is included.
+
+## Recipes
+
+See [`docs/DROP_IN_USAGE.md`](../../../docs/DROP_IN_USAGE.md) for
+pre-commit hooks, Husky, lefthook, GitLab CI, CircleCI, Drone, Jenkins,
+BuildKite, Bazel, Docker, library integration, and SARIF/Slack/Discord
+webhook recipes.

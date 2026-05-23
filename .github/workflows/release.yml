@@ -37,14 +37,16 @@ jobs:
             features: ''
           # macOS: no `libhyperscan-dev` in the homebrew repo, so the
           # default `cargo build` fails on the simd feature. We ship a
-          # feature-subset binary (no Hyperscan) for now — it covers
-          # entropy, multiline reassembly, ML scoring, decoding. Users
-          # who need the Hyperscan-accelerated path on macOS still
-          # source-build via the action's fallback.
+          # feature-subset binary (no Hyperscan) for now — the `portable`
+          # alias in `crates/cli/Cargo.toml` enables every keyhog-scanner
+          # data feature plus every git/web/github/s3/docker/verify
+          # source backend, just without the Hyperscan / Ghidra / CUDA
+          # system-lib paths. Users who need the Hyperscan-accelerated
+          # path on macOS still source-build via the action's fallback.
           - os: macos-latest
             asset: keyhog-macos-aarch64
             install: ''
-            features: '--no-default-features --features "entropy,multiline,ml,decode"'
+            features: '--no-default-features --features portable'
     runs-on: ${{ matrix.os }}
     steps:
       - name: Resolve tag

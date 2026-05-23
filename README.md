@@ -305,6 +305,12 @@ The scanner compiles all 889 detector regexes into a single Hyperscan database (
 
 ## CI Integration
 
+For copy-paste recipes covering GitHub Actions, GitLab CI, CircleCI,
+Drone, BuildKite, Jenkins, Bazel, Docker, Husky, lefthook, pre-commit,
+and library usage, see **[docs/DROP_IN_USAGE.md](docs/DROP_IN_USAGE.md)**.
+
+The short version below covers the two highest-traffic paths.
+
 ### GitHub Actions
 
 ```yaml
@@ -333,6 +339,9 @@ repos:
     hooks:
       - id: keyhog
 ```
+
+Or use the bundled installer: `keyhog hook install` writes
+`.git/hooks/pre-commit` directly without the pre-commit framework.
 
 ## Roadmap
 

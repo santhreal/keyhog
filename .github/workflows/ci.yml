@@ -68,6 +68,36 @@ jobs:
       - run: cargo test -p keyhog-core --lib
       - run: cargo test -p keyhog-scanner --lib --no-default-features --features "entropy,multiline,ml"
       - run: cargo test -p keyhog-sources --lib
+      # Lock the EXACT invocation the release workflow uses. The release
+      # tag flow runs `cargo build --release -p keyhog --no-default-features
+      # --features portable`; if that ever breaks (e.g. because someone
+      # moved a feature flag between crates), this lane catches it on PR
+      # instead of on a tag push. v0.5.11 + v0.5.12 both failed because
+      # this lane didn't exist.
+      - run: cargo build --release -p keyhog --no-default-features --features portable
+
+  feature-matrix:
+    name: Feature matrix sanity check
+    runs-on: ubuntu-latest
+    # Cross-package feature combinations the release workflows and the
+    # composite Action depend on. Anything anyone might `cargo install`
+    # has to compile cleanly with the documented feature set.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install Vectorscan
+        run: sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config
+      - name: portable (no system libs)
+        run: cargo check -p keyhog --no-default-features --features portable
+      - name: default (full)
+        run: cargo check -p keyhog
+      - name: full (everything except Ghidra/CUDA)
+        run: cargo check -p keyhog --features full
+      - name: minimal (no defaults, no features)
+        run: cargo check -p keyhog --no-default-features
+      - name: scanner standalone, all data features
+        run: cargo check -p keyhog-scanner --features "entropy,multiline,ml,decode"
 
   clippy:
     name: Clippy

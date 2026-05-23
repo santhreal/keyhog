@@ -38,6 +38,21 @@ default = [
 ]
 # Unused Cargo flag — use `keyhog scan --fast` at runtime for pre-commit speed.
 fast = []
+# macOS release builds: every keyhog-scanner data feature, no system-lib deps
+# (no Hyperscan / Ghidra / CUDA). Workflows pass just `--features portable`
+# instead of having to enumerate `keyhog-scanner/...` per release.
+portable = [
+    "keyhog-scanner/ml",
+    "keyhog-scanner/entropy",
+    "keyhog-scanner/decode",
+    "keyhog-scanner/multiline",
+    "git",
+    "web",
+    "github",
+    "s3",
+    "docker",
+    "verify",
+]
 full = [
     "keyhog-scanner/ml",
     "keyhog-scanner/entropy",
