@@ -2,6 +2,132 @@
 
 All notable changes to KeyHog. Versions follow [Semantic Versioning](https://semver.org/).
 
+## Unreleased — kimi-dogfood sweep + daemon mode
+
+### Added
+
+- **Daemon mode.** `keyhog daemon start | stop | status` runs a long-
+  lived scanner over a Unix socket (default
+  `$XDG_RUNTIME_DIR/keyhog.sock`, falls back to
+  `~/.cache/keyhog/server.sock`; socket is `chmod 0600`).
+  `keyhog scan --daemon` (or auto-detected when the socket exists)
+  routes a stdin scan / single-file scan through the daemon instead
+  of paying the ~3 s `CompiledScanner::compile` cold start.
+  Measured **105× speedup** (7 ms via daemon vs 740 ms in-process)
+  on a real GitHub PAT, same detector + hash + offset in both
+  paths. `--no-daemon` forces the in-process path. `--verify`,
+  `--baseline`, directory walks, git-staged scans, and archive
+  decoding stay in-process by design (the daemon doesn't replicate
+  that pipeline).
+- **`.keyhogignore` gitignore-style shorthand.** Bare path globs
+  (`*.log`, `node_modules/`, `vendor/**/*.json`) and bare 64-char
+  hex hashes are now accepted alongside the explicit
+  `path:` / `hash:` / `detector:` prefixes. Lets users drop a copied
+  `.gitignore` in place and have it work.
+- **`--max-file-size` skip summary.** Files dropped by the size cap
+  now emit a per-file WARN AND an end-of-scan summary line
+  ("N file(s) skipped: exceeded --max-file-size"). Walker's silent
+  filter was the only behavior before — a user looking at a
+  smaller-than-expected scan had no signal about which files were
+  dropped.
+- **Live progress ticker.** Long scans paint a self-overwriting
+  `scanning N/M chunks · K findings · t.t s` line on stderr every
+  250 ms; suppressed under `--stream` or when stderr isn't a TTY.
+- **25 companion-required detector contracts** at
+  `crates/scanner/tests/contracts/companion/`. Per-detector TOMLs
+  encode the three-shape contract (positive_with_companion,
+  positive_primary_only with `must_not_verify`,
+  negative_companion_lookalike) for AWS, Twilio (api-key /
+  auth-token / IoT), Algolia, Razorpay, Amplitude, AppDynamics,
+  Avalara, Backblaze, Belvo, Bitbucket, Booking, Akoya, 4everland,
+  Lark, Linear, Linode, Plaid, Reddit, RingCentral, SumoLogic,
+  Trulioo, Vanta. Runner test at
+  `companion_contracts_runner.rs` enforces all three shapes per
+  contract.
+
+### Fixed
+
+- **Mega-scan allocated ~20 GB RSS on tiny inputs.** Every shard's
+  static input/state buffers were sized for
+  `MEGASCAN_INPUT_LEN=256 MiB`. Forcing `--backend mega-scan` on a
+  19-byte file uploaded ~570 × 256 MiB ≈ 20 GB of GPU memory and
+  burned ~20 s before returning. Small-buffer guard at the entry
+  of `scan_coalesced_megascan` now routes batches under 64 KiB
+  through the literal-set GPU path. Same recall (same AC literal
+  prefix anchors), orders of magnitude lower setup cost. Confirmed
+  20.77 s / 19.7 GB → 0.34 s / 399 MB on the kimi reproducer.
+- **GPU fallback regex-NFA dispatch silently dropped to CPU.** The
+  fallback `RulePipeline::scan` was passed
+  `max_matches_per_dispatch=1_000_000` which trips vyre's
+  hard-coded `max_hits=10_000` static buffer declaration. Capping
+  the dispatch at `NFA_HITS_PER_DISPATCH=10_000` keeps the GPU
+  path live; the always-active fallback regex set is small enough
+  that 10 K matches per dispatch is well above what we'd ever see.
+- **`env::args()` panicked on non-UTF-8 args.** Linux allows
+  raw-byte paths; `std::env::args()` calls `.unwrap()` on each Result
+  which aborts with SIGABRT. Switched the version-flag detection in
+  `main.rs` to `args_os()` + lossy compare.
+- **Non-UTF-8 paths reported "No such file or directory"** even
+  when the file existed. New pre-flight at the CLI boundary refuses
+  non-UTF-8 paths with a clear message ("Rename the file or scan
+  its parent directory") instead of confusing the user with a
+  missing-file rabbit hole.
+- **Nonexistent / unreadable input paths exited 0** with a WARN
+  and "No secrets found, your code is clean." Per the documented
+  exit-code contract these are runtime errors. CLI now stat's the
+  input pre-walk; missing path → exit 2 with "path does not exist",
+  unreadable file → exit 2 with "cannot read … (fix `chmod +r …`)".
+- **`--backend invalid` silently ignored** and the scan ran with
+  the default. clap now validates against the PossibleValues set
+  `{gpu, mega-scan, megascan, simd, cpu, auto}` and exits 2 with a
+  clear error.
+- **`.keyhogignore` `detector:` entries were dead.** The parser
+  populated `ignored_detectors` but the orchestrator's per-finding
+  filter never read it. Now applied alongside `is_path_ignored` /
+  `is_raw_hash_ignored`.
+- **RefCell double-borrow panic in `fallback.rs`.** Per-pool
+  thread-local borrows now `try_borrow_mut` + fresh-alloc fallback
+  at three sites (`ACTIVE_PATTERNS_POOL`, `ACTIVE_INDICES_POOL`,
+  `TRIGGER_POOL`). Was a hard P0: the rayon worker re-entry caught
+  itself on the second borrow and aborted mid-scan.
+- **FP storms killed**: lastpass-dev-creds firing on random
+  `id=<digits>` in /var/log archives (87% FP rate per kimi); GitHub
+  PAT placeholder `ghp_xxxxxxxx…` flagged at 0.80; xoxb tokens
+  with ascending-digit runs flagged. Tightened
+  lastpass-dev-creds to require `lastpass` context within 40
+  chars; extended `looks_like_prefixed_masked_sequence` to suppress
+  x/X-dominance, all-same-char, and ascending-digit-run ≥ 13.
+
+### Improved
+
+- **LayeredPipelineCache short-circuits compile on warm hits.** The
+  prior `rule_pipeline_cached` always called
+  `build_rule_pipeline` upfront to keep typed-error semantics for
+  vyre's infallible-closure `cached_load_or_compile`, which made
+  the on-disk cache pointless. Now uses vyre's
+  `engine_cache_path` + manual load/save so a warm hit returns the
+  deserialised `RulePipeline` without paying the compile.
+- **`PreparedChunk::line_offsets()` memoised** via `OnceLock`.
+  `compute_line_offsets` used to walk the preprocessed text twice
+  per chunk (once for the triggered path, once for the
+  pattern-hits path); the second caller now hits the memoised Vec.
+- **Mega-scan compile-failure WARN demoted to debug.** Falling back
+  to the literal-set GPU dispatch when vyre's byte-NFA frontend
+  can't represent every pattern (e.g. pattern 990 in the bundled
+  detector corpus uses lookaround) is the designed degradation —
+  the user can't fix it, and one WARN per `--backend mega-scan`
+  invocation creates noise without signal.
+
+### Differential parity
+
+`.internal/bench/differential/compare.py` against gitleaks 8.30.0
+and trufflehog 3.95.3 on the 64 MiB `big_with_secrets` corpus:
+**gate green**. Every secret two independent competitors HASH-confirm
+keyhog also surfaces, except `sk_live_4eC39…` which is
+documented as a public Stripe docs example (suppressed by
+`test_fixture_suppressions::bundled()` and listed in
+`baseline.toml`).
+
 ## v0.5.7 — 2026-05-17
 
 ### Fixed
