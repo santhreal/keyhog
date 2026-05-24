@@ -53,8 +53,10 @@ Or use the bundled installer:
 
 ```bash
 keyhog hook install              # writes .git/hooks/pre-commit
-keyhog hook install --pre-push   # adds .git/hooks/pre-push too
 ```
+
+The pre-push hook is the shell snippet shown above; there is no
+`--pre-push` flag on `hook install` yet.
 
 ## Pre-push hook (git)
 
@@ -151,7 +153,7 @@ jobs:
         with:
           sarif_file: keyhog.sarif
       - name: Fail on high-severity findings
-        run: keyhog scan . --severity critical,high --min-confidence 0.5
+        run: keyhog scan . --severity high --min-confidence 0.5
 ```
 
 ### Scan only changed files in a PR (faster)
@@ -174,7 +176,7 @@ keyhog:
     - cargo install keyhog --locked
   script:
     - keyhog scan . --format json -o keyhog.json --min-confidence 0.3
-    - keyhog scan . --severity critical,high --min-confidence 0.5
+    - keyhog scan . --severity high --min-confidence 0.5
   artifacts:
     when: always
     paths:
@@ -204,7 +206,7 @@ jobs:
           command: keyhog scan . --format json -o keyhog.json --min-confidence 0.3
       - run:
           name: Fail on high-severity findings
-          command: keyhog scan . --severity critical,high --min-confidence 0.5
+          command: keyhog scan . --severity high --min-confidence 0.5
       - store_artifacts:
           path: keyhog.json
 workflows:
@@ -226,7 +228,7 @@ steps:
     commands:
       - cargo install keyhog --locked
       - keyhog scan . --min-confidence 0.3 --format json -o keyhog.json
-      - keyhog scan . --severity critical,high --min-confidence 0.5
+      - keyhog scan . --severity high --min-confidence 0.5
 ```
 
 ## BuildKite
@@ -239,7 +241,7 @@ steps:
     command: |
       cargo install keyhog --locked
       keyhog scan . --min-confidence 0.3 --format text
-      keyhog scan . --severity critical,high --min-confidence 0.5
+      keyhog scan . --severity high --min-confidence 0.5
     artifact_paths:
       - "keyhog.json"
 ```
@@ -268,7 +270,8 @@ services:
 To scan a built image's filesystem:
 
 ```bash
-docker save my-image:latest | tar -xO -C /tmp/imgfs
+mkdir -p /tmp/imgfs
+docker save my-image:latest | tar -x -C /tmp/imgfs
 keyhog scan /tmp/imgfs --min-confidence 0.4
 ```
 
@@ -285,7 +288,7 @@ pipeline {
                 sh '''
                     cargo install keyhog --locked
                     keyhog scan . --format json -o keyhog.json --min-confidence 0.3
-                    keyhog scan . --severity critical,high --min-confidence 0.5
+                    keyhog scan . --severity high --min-confidence 0.5
                 '''
             }
             post {
@@ -330,50 +333,56 @@ Add to `Cargo.toml`:
 
 ```toml
 [dependencies]
-keyhog-scanner = "0.5"
-keyhog-detectors = "0.5"
+keyhog-core = "0.5"        # detector specs + Chunk/ChunkMetadata
+keyhog-scanner = "0.5"     # CompiledScanner
 ```
+
+(Detectors ship inside `keyhog-core` as a static-embedded TOML
+corpus; there is no separate `keyhog-detectors` crate.)
 
 Minimal scan:
 
 ```rust
-use keyhog_scanner::{Scanner, ScannerConfig};
+use keyhog_core::{load_detectors_from_str, Chunk, ChunkMetadata};
+use keyhog_scanner::CompiledScanner;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let scanner = Scanner::with_config(ScannerConfig {
-        min_confidence: 0.5,
-        ..Default::default()
-    })?;
-    let findings = scanner.scan_path("./my-project")?;
-    for f in &findings {
-        println!("{}:{} — {} (confidence {:.2})",
-            f.path.display(), f.line, f.detector, f.confidence);
+    // Built-in embedded detectors — no disk I/O. Each entry is
+    // (filename, toml_text); parse them all into a flat Vec<DetectorSpec>.
+    let mut specs = Vec::new();
+    for (_name, toml_text) in keyhog_core::embedded_detector_tomls() {
+        specs.extend(load_detectors_from_str(toml_text)?);
+    }
+    // …or load from a directory of TOMLs:
+    // let specs = keyhog_core::load_detectors(std::path::Path::new("detectors"))?;
+
+    let scanner = CompiledScanner::compile(specs)?;
+
+    let bytes = std::fs::read("config.yaml")?;
+    let chunk = Chunk {
+        data: String::from_utf8_lossy(&bytes).into_owned().into(),
+        metadata: ChunkMetadata {
+            source_type: "filesystem".into(),
+            path: Some("config.yaml".into()),
+            ..Default::default()
+        },
+    };
+    for m in scanner.scan(&chunk) {
+        println!("{}: {} (detector {})", m.line, m.credential_redacted, m.detector_id);
     }
     Ok(())
 }
 ```
 
-Scan in-memory bytes (no filesystem):
+For directory-tree / git / docker walking, drive `keyhog-sources`
+or shell out to the CLI — `CompiledScanner` is one chunk at a time
+by design.
 
-```rust
-let bytes = std::fs::read("config.yaml")?;
-let findings = scanner.scan_bytes(&bytes, "config.yaml")?;
-```
-
-Stream scanning of stdin:
-
-```rust
-use std::io::Read;
-let mut buf = Vec::new();
-std::io::stdin().read_to_end(&mut buf)?;
-let findings = scanner.scan_bytes(&buf, "<stdin>")?;
-```
-
-For finer-grained control of individual detector families:
+For finer-grained control of individual detector features:
 
 ```toml
 [dependencies]
-keyhog-scanner = { version = "0.5", default-features = false, features = ["gpu", "ml"] }
+keyhog-scanner = { version = "0.5", default-features = false, features = ["ml", "decode", "entropy"] }
 ```
 
 ## Embedded in another CLI
@@ -392,10 +401,10 @@ for line in out.stdout.split(|b| *b == b'\n') {
 }
 ```
 
-Use the harness binary (deterministic, no GPU/network):
+Or invoke the scan subcommand directly from a wrapper script:
 
 ```bash
-echo "scan /path/to/project --format jsonl" | keyhog --no-color
+keyhog scan /path/to/project --format jsonl --min-confidence 0.4
 ```
 
 ## SARIF for GitHub Advanced Security
@@ -444,22 +453,31 @@ keyhog scan . --create-baseline .keyhog-baseline.json
 keyhog scan . --baseline .keyhog-baseline.json
 ```
 
-For per-file/per-line allowlists in source, drop a `.keyhog.toml` at
-the repo root:
+For per-file/per-line allowlists, the moving parts live in two
+separate files (the parser is flat, not the nested `[allowlist]` /
+`[performance]` tables an earlier version of this doc advertised):
+
+`.keyhog.toml` at the repo root — flat key/value, every field
+mirrors a CLI flag:
 
 ```toml
-[allowlist]
-paths = [
-  "vendor/**",
-  "node_modules/**",
-  "**/*.lock",
-]
-detectors = ["http-basic-auth"]  # silence all hits from this detector
-secrets = ["AKIA[A-Z0-9]+EXAMPLE"]  # regex over the matched value
+severity        = "high"
+min_confidence  = 0.4
+threads         = 8
+exclude_paths   = ["vendor/**", "node_modules/**", "**/*.lock"]
+```
 
-[performance]
-threads = "physical_cores"  # default "physical_cores/2" in TTY
-gpu = "auto"                # "force" | "off" | "auto"
+`.keyhogignore` (or `.keyhogignore.toml`) alongside it — gitignore-
+style path globs plus `detector:<id>` and `hash:<sha256>` entries:
+
+```
+# silence all hits from this detector
+detector:http-basic-auth
+
+# gitignore-style path globs
+vendor/**
+node_modules/**
+**/*.lock
 ```
 
 See [keyhogignore-toml.md](keyhogignore-toml.md) for the full schema.
@@ -489,7 +507,7 @@ keyhog scan . --deep --min-confidence 0.3
 keyhog scan . --threads $(nproc)
 
 # Force GPU when an RTX is present (5x faster on 60+ MB scans)
-keyhog scan . --gpu force
+keyhog scan . --backend gpu
 
 # Stream findings to a file (no buffer) for very large scans
 keyhog scan . --format jsonl >> findings.jsonl
@@ -503,7 +521,7 @@ catches multi-line and decoded secrets the fast path skips.
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| `error: GPU requested but not available` | `--gpu force` on a non-GPU host | Drop the flag — `auto` falls back to SIMD |
+| `error: GPU requested but not available` | `--backend gpu` on a non-GPU host | Drop the flag — `auto` falls back to SIMD |
 | Findings count drops vs prior run | `.keyhog-baseline.json` is up-to-date or `.keyhog.toml` widened | `git diff .keyhog-baseline.json .keyhog.toml` |
 | Pre-commit hook is slow | Scanning the whole repo on every commit | Use `--git-staged` not `scan .` |
 | SARIF upload rejects file | `min_confidence` too low; thousands of findings | Raise to ≥0.3 for SARIF specifically |
