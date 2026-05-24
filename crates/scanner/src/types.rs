@@ -460,6 +460,7 @@ mod sanitise_tests {
             unicode_normalization: true,
             max_decode_bytes: 65_536,
             max_matches_per_chunk: 1000,
+            scan_comments: false,
             multiline: crate::multiline::MultilineConfig::default(),
             known_prefixes: vec![],
             secret_keywords: vec![],

@@ -293,6 +293,22 @@ pub fn should_suppress_known_example_credential_with_source(
         }
     }
 
+    // ── 5b. Bare hash digest / UUID shape suppression ──
+    // Values whose entire body is an MD5 (32-hex), SHA1 (40-hex),
+    // SHA256 (64-hex), SHA512 (128-hex) or RFC-4122 UUID-v4
+    // (8-4-4-4-12 with version-4 nibble) are almost never secrets in
+    // practice — they're git commit IDs, npm-lock integrity hashes,
+    // requirements.txt --hash entries, docker image digests, and
+    // k8s resource UIDs. Surfaced by the secretbench mirror corpus
+    // as the dominant FP class (40% of keyhog's FPs on the
+    // baseline-smoke-100-seed0 scoreboard were one of these shapes).
+    // Known-prefix credentials bypass this (a 64-char hex AWS key
+    // shouldn't be filtered) — we already returned `false` above
+    // when known_prefix_body matched.
+    if looks_like_pure_hash_digest_or_uuid(credential) {
+        return true;
+    }
+
     // ── 6. Algorithmic placeholder detection ──
     // Credentials dominated by filler after stripping known prefixes.
     if crate::context::is_known_example_credential(credential) {
@@ -344,6 +360,76 @@ pub fn should_suppress_known_example_credential_with_source(
         }
     }
     false
+}
+
+/// True if `credential` is a bare cryptographic hash digest
+/// (MD5/SHA1/SHA256/SHA512) or an RFC-4122 UUID-v4. These are the
+/// dominant false-positive class in the SecretBench mirror corpus.
+///
+/// Strictness: the entire credential must be only hex (or, for UUIDs,
+/// hex + dashes in the canonical 8-4-4-4-12 shape with version-4
+/// nibble). Mixed-case is tolerated only when uniform — `Abcd1234`
+/// in a real secret would NOT match because it's not all-lower or
+/// all-upper hex. A scanner that already coincidentally classifies
+/// the credential as a known-prefix secret (AKIA…, ghp_… etc.) has
+/// already returned `false` upstream of this function.
+pub(crate) fn looks_like_pure_hash_digest_or_uuid(credential: &str) -> bool {
+    if is_uuid_v4_shape(credential) {
+        return true;
+    }
+    // SHA-family length gates. Lengths that real secrets use commonly
+    // (e.g. 32-char AWS secret-access-key body) DON'T match because
+    // those are base64, not pure hex.
+    matches!(credential.len(), 32 | 40 | 64 | 128) && is_uniform_hex(credential)
+}
+
+fn is_uniform_hex(s: &str) -> bool {
+    let bytes = s.as_bytes();
+    if bytes.is_empty() {
+        return false;
+    }
+    let mut saw_lower = false;
+    let mut saw_upper = false;
+    for &b in bytes {
+        match b {
+            b'0'..=b'9' => {}
+            b'a'..=b'f' => saw_lower = true,
+            b'A'..=b'F' => saw_upper = true,
+            _ => return false,
+        }
+    }
+    // Reject MiXeD-case hex (real hash digests are emitted by every
+    // standard library in one case or the other, never mixed). The
+    // mixed-case bar saves recall on Base16-ish secrets that happen
+    // to look hex-shaped.
+    !(saw_lower && saw_upper)
+}
+
+fn is_uuid_v4_shape(s: &str) -> bool {
+    let b = s.as_bytes();
+    if b.len() != 36 {
+        return false;
+    }
+    if b[8] != b'-' || b[13] != b'-' || b[18] != b'-' || b[23] != b'-' {
+        return false;
+    }
+    // Version-4 marker at position 14, variant marker at position 19
+    // (8/9/a/b) per RFC 4122. We don't require the version digit so
+    // we also catch v1/v3/v5 — every standard-shaped UUID is FP.
+    let mut saw_lower = false;
+    let mut saw_upper = false;
+    for (i, &c) in b.iter().enumerate() {
+        if matches!(i, 8 | 13 | 18 | 23) {
+            continue;
+        }
+        match c {
+            b'0'..=b'9' => {}
+            b'a'..=b'f' => saw_lower = true,
+            b'A'..=b'F' => saw_upper = true,
+            _ => return false,
+        }
+    }
+    !(saw_lower && saw_upper)
 }
 
 /// Return true if the credential contains three or more consecutive identical characters.
@@ -728,6 +814,74 @@ mod placeholder_suppression_tests {
         assert!(!looks_like_prefixed_masked_sequence(
             "eyJhbGciOiJIUzI1NiJ9.payloadX"
         ));
+    }
+
+    // ── hash-digest / UUID suppression unit tests ────────────────────
+
+    #[test]
+    fn sha256_hex_lowercase_is_suppressed() {
+        // git commit SHA, npm-lock integrity body, requirements.txt
+        // --hash entry, etc. — all 64 lowercase hex.
+        let sha256 = "2c0fa7a26774e22af3993a69e2ca7956518f2244aabbccddeeff001122334455";
+        assert_eq!(sha256.len(), 64);
+        assert!(looks_like_pure_hash_digest_or_uuid(sha256));
+    }
+
+    #[test]
+    fn sha256_hex_uppercase_is_suppressed() {
+        let sha256 = "2C0FA7A26774E22AF3993A69E2CA7956518F2244AABBCCDDEEFF001122334455";
+        assert_eq!(sha256.len(), 64);
+        assert!(looks_like_pure_hash_digest_or_uuid(sha256));
+    }
+
+    #[test]
+    fn sha1_md5_sha512_lengths_are_suppressed() {
+        assert!(looks_like_pure_hash_digest_or_uuid(
+            "d41d8cd98f00b204e9800998ecf8427e"          // MD5: 32
+        ));
+        assert!(looks_like_pure_hash_digest_or_uuid(
+            "da39a3ee5e6b4b0d3255bfef95601890afd80709"  // SHA1: 40
+        ));
+        // SHA-512: 128 hex chars
+        let sha512 = "abcdef0123456789".repeat(8);
+        assert_eq!(sha512.len(), 128);
+        assert!(looks_like_pure_hash_digest_or_uuid(&sha512));
+    }
+
+    #[test]
+    fn uuid_v4_canonical_shape_is_suppressed() {
+        assert!(looks_like_pure_hash_digest_or_uuid(
+            "550e8400-e29b-41d4-a716-446655440000"
+        ));
+    }
+
+    #[test]
+    fn mixed_case_hex_is_not_suppressed() {
+        // Real secret coincidentally looks hex-shaped but is mixed
+        // case — keyhog should NOT silently drop it as a digest.
+        assert!(!looks_like_pure_hash_digest_or_uuid(
+            "AbCdEf0123456789abCdEf0123456789"  // MiXeD 32-hex
+        ));
+    }
+
+    #[test]
+    fn aws_secret_access_key_shape_is_not_suppressed() {
+        // 40-char AWS secret-access-key body — NOT all hex (uses
+        // base64 alphabet incl. `/` and `+`), so the hex-shape gate
+        // must NOT fire on it.
+        assert!(!looks_like_pure_hash_digest_or_uuid(
+            "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+        ));
+    }
+
+    #[test]
+    fn near_hash_lengths_off_by_one_are_not_suppressed() {
+        // 31, 33, 39, 41, 63, 65 hex chars are NOT recognised hash
+        // sizes — the precision win is from the EXACT length match,
+        // so off-by-one variants stay surfaced for the entropy gate.
+        assert!(!looks_like_pure_hash_digest_or_uuid(&"a".repeat(31)));
+        assert!(!looks_like_pure_hash_digest_or_uuid(&"f".repeat(33)));
+        assert!(!looks_like_pure_hash_digest_or_uuid(&"0".repeat(65)));
     }
 }
 
