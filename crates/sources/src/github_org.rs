@@ -69,6 +69,125 @@ struct GitHubRepo {
     clone_url: String,
 }
 
+/// Refuse repo names that escape the temp clone root: `..`, absolute
+/// paths, anything with a path separator, or anything but the GitHub
+/// repo-name alphabet ([A-Za-z0-9._-], 1..=100 chars). Closes a
+/// path-traversal vector where a compromised API response can drive
+/// `temp_root.join(&repo.name)` outside the temp dir.
+fn validate_repo_name(name: &str) -> Result<(), SourceError> {
+    if name.is_empty() || name.len() > 100 {
+        return Err(SourceError::Other(format!(
+            "github: refusing repo with out-of-range name length ({})",
+            name.len()
+        )));
+    }
+    if name == "." || name == ".." || name.contains('/') || name.contains('\\') {
+        return Err(SourceError::Other(format!(
+            "github: refusing repo with traversal/separator in name: {name:?}"
+        )));
+    }
+    if !name
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_')
+    {
+        return Err(SourceError::Other(format!(
+            "github: refusing repo with non-alphanumeric name: {name:?}"
+        )));
+    }
+    Ok(())
+}
+
+/// Refuse clone URLs that git would interpret as anything other than
+/// an https GitHub clone. `ext::`, `ssh://`, file paths, and any other
+/// scheme are arbitrary-code-execution gadgets in git's transport
+/// negotiation. We accept only `https://<host>/...` URLs because that
+/// is the only shape the GitHub API ever returns for public repos.
+fn validate_clone_url(url: &str) -> Result<(), SourceError> {
+    if !url.starts_with("https://") {
+        return Err(SourceError::Other(format!(
+            "github: refusing non-https clone URL (potential ext::/ssh:// RCE vector): {url:?}"
+        )));
+    }
+    if url.contains(' ') || url.contains('\n') || url.contains('\r') || url.contains('\0') {
+        return Err(SourceError::Other(format!(
+            "github: refusing clone URL with control characters: {url:?}"
+        )));
+    }
+    if url.len() > 2048 {
+        return Err(SourceError::Other(format!(
+            "github: refusing clone URL longer than 2048 chars ({})",
+            url.len()
+        )));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod url_name_validation_tests {
+    use super::{validate_clone_url, validate_repo_name};
+
+    #[test]
+    fn accepts_normal_repo_names() {
+        for ok in &[
+            "keyhog",
+            "keyhog.rs",
+            "Cool-Repo_2",
+            "a",
+            &"x".repeat(100),
+        ] {
+            assert!(validate_repo_name(ok).is_ok(), "should accept {ok:?}");
+        }
+    }
+
+    #[test]
+    fn rejects_path_traversal_repo_names() {
+        for bad in &[
+            "..",
+            ".",
+            "",
+            "../etc/passwd",
+            "subdir/repo",
+            "back\\slash",
+            "weird*name",
+            "name with space",
+            &"x".repeat(101),
+        ] {
+            assert!(
+                validate_repo_name(bad).is_err(),
+                "should reject {bad:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn accepts_https_clone_urls() {
+        for ok in &[
+            "https://github.com/santhsecurity/keyhog.git",
+            "https://ghe.example.com/org/repo.git",
+        ] {
+            assert!(validate_clone_url(ok).is_ok(), "should accept {ok:?}");
+        }
+    }
+
+    #[test]
+    fn rejects_dangerous_clone_urls() {
+        for bad in &[
+            "ext::sh -c whoami",
+            "ssh://git@github.com/org/repo.git",
+            "git@github.com:org/repo.git",
+            "file:///etc/passwd",
+            "http://insecure.example/repo.git",
+            "https://example.com/repo with space.git",
+            "https://example.com/repo\nwith\nnewlines",
+        ] {
+            assert!(
+                validate_clone_url(bad).is_err(),
+                "should reject {bad:?}"
+            );
+        }
+    }
+}
+
 fn collect_org_chunks(org: &str, token: &str) -> Result<Vec<Chunk>, SourceError> {
     use rayon::prelude::*;
 
@@ -90,6 +209,17 @@ fn collect_org_chunks(org: &str, token: &str) -> Result<Vec<Chunk>, SourceError>
         repos
             .par_iter()
             .map(|repo| -> Result<Vec<Chunk>, SourceError> {
+                // SECURITY: validate repo name + clone URL BEFORE any
+                // filesystem-join or process-spawn happens. A hostile
+                // GitHub API response (compromised endpoint, GHE proxy)
+                // could return `name = "../../etc/passwd"` (path
+                // traversal — kimi-5 finding #2) or
+                // `clone_url = "ext::sh -c whoami"` (git URL-scheme
+                // RCE — kimi-5 finding #1). We refuse anything that
+                // is not a single safe path component and an https://
+                // clone URL.
+                validate_repo_name(&repo.name)?;
+                validate_clone_url(&repo.clone_url)?;
                 let clone_path = temp_root.join(&repo.name);
                 clone_repo(repo, token, &clone_path)?;
                 Ok(scan_repo(org, &repo.name, &clone_path))
@@ -122,6 +252,15 @@ fn build_client(token: &str) -> Result<Client, SourceError> {
 
     Client::builder()
         .default_headers(headers)
+        // SECURITY: kimi-5 audit finding #3. Without an explicit redirect
+        // policy, reqwest follows up to 10 redirects and re-sends the
+        // Authorization: Bearer header to any same-host target. A
+        // compromised api.github.com mirror or hostile GHE instance can
+        // bounce us to an attacker-controlled host and capture the
+        // token. The GitHub REST API never legitimately redirects
+        // /orgs/.../repos, so blocking redirects entirely is the safe
+        // default.
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|e| SourceError::Other(format!("failed to build GitHub client: {e}")))
 }
