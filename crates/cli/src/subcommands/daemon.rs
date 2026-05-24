@@ -45,7 +45,12 @@ async fn stop(socket: Option<PathBuf>) -> Result<ExitCode> {
             Ok(ExitCode::SUCCESS)
         }
         other => {
-            anyhow::bail!("daemon stop: unexpected response {other:?}")
+            anyhow::bail!(
+                "daemon stop: protocol mismatch (got {}). Restart with \
+                 `keyhog daemon stop --force || true && keyhog daemon start` \
+                 to clear stuck state.",
+                response_kind(&other)
+            )
         }
     }
 }
@@ -71,6 +76,23 @@ async fn status(socket: Option<PathBuf>) -> Result<ExitCode> {
             );
             Ok(ExitCode::SUCCESS)
         }
-        other => anyhow::bail!("daemon status: unexpected response {other:?}"),
+        other => anyhow::bail!(
+            "daemon status: protocol mismatch (got {}). Restart with \
+             `keyhog daemon stop && keyhog daemon start` to clear stuck state.",
+            response_kind(&other)
+        ),
+    }
+}
+
+/// One-word kind label for a daemon Response. Keeps user-facing error
+/// messages free of the {:?} debug dump which can leak internal field
+/// names + payload bytes (some of which are credential-shaped).
+fn response_kind(response: &Response) -> &'static str {
+    match response {
+        Response::Hello { .. } => "Hello",
+        Response::Health { .. } => "Health",
+        Response::ScanResults { .. } => "ScanResults",
+        Response::Shutdown => "Shutdown",
+        Response::Error { .. } => "Error",
     }
 }

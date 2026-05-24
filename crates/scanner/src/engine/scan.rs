@@ -183,14 +183,26 @@ impl CompiledScanner {
                         // When scanning a monorepo, secrets are often split across
                         // config files (e.g., AWS_ACCESS_KEY in one, SECRET_KEY in another).
                         let mut reassembled_candidates = Vec::new();
+                        // Pre-allocate the path Arc once per chunk instead
+                        // of once per match — every match in a single chunk
+                        // shares the same `chunk.metadata.path`, so cloning
+                        // an Arc<str> reference is cheaper than cloning the
+                        // owned String per-match. Closes one of the four
+                        // per-match heap allocations the perf kimi audit
+                        // flagged in engine/scan.rs:189-193.
+                        let path_arc: Option<std::sync::Arc<str>> = chunk
+                            .metadata
+                            .path
+                            .as_deref()
+                            .map(std::sync::Arc::<str>::from);
                         for m in &matches {
-                            if let Some(ref path) = chunk.metadata.path {
+                            if let Some(path) = path_arc.as_ref() {
                                 let fragment = crate::fragment_cache::SecretFragment {
                                     prefix: m.detector_id.to_string(),
                                     var_name: m.detector_name.to_string(),
                                     value: zeroize::Zeroizing::new(m.credential.to_string()),
                                     line: m.location.line.unwrap_or(0),
-                                    path: Some(std::sync::Arc::from(path.to_string())),
+                                    path: Some(std::sync::Arc::clone(path)),
                                 };
                                 let reassembled =
                                     self.fragment_cache.record_and_reassemble(fragment);

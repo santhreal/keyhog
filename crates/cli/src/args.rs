@@ -8,7 +8,7 @@ use std::path::PathBuf;
 #[command(
     name = "keyhog",
     about = "KeyHog: The developer-first secret scanner.\nFind leaked credentials in your code before hackers do. Fast, accurate, and verifying.",
-    after_help = "EXIT CODES:\n  0   Success (no secrets found)\n  1   Secrets found (unverified or verification skipped)\n  2   Runtime error (e.g., config error, unreadable path)\n  10  Live credentials found (requires --verify)",
+    after_help = "EXIT CODES:\n  0   Success (no secrets found)\n  1   Secrets found (unverified or verification skipped)\n  2   Runtime error (e.g., config error, unreadable path)\n  3   `detectors --audit` flagged a detector quality issue\n  4   `backend --self-test` failed (GPU/SIMD probe error)\n  10  Live credentials found (requires --verify)\n  11  Scanner thread panicked mid-scan (state is unreliable)",
     disable_version_flag = true
 )]
 pub struct Cli {
