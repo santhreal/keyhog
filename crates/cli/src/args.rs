@@ -646,6 +646,21 @@ pub struct ScanArgs {
     #[arg(long, value_name = "WEIGHT")]
     pub ml_weight: Option<f64>,
 
+    /// Treat credentials inside source-code comments (// … / # … /
+    /// /* … */ / <!-- … -->) as first-class findings instead of
+    /// applying the default comment-context confidence penalty.
+    ///
+    /// By default keyhog downgrades the confidence of credentials it
+    /// sees inside a comment because the most common case is an
+    /// engineer pasting an EXAMPLE token into a doc comment. The
+    /// drawback is that genuine secrets pasted into a TODO ("rotate
+    /// this key — Bob") or a debug-trace comment never surface.
+    /// Pass `--scan-comments` for repos where comments are part of
+    /// the threat surface: shared snippets directories, leak
+    /// post-mortems, training corpora, and CTF-style audits.
+    #[arg(long)]
+    pub scan_comments: bool,
+
     /// Known secret prefixes (internal use for config merge)
     #[arg(skip)]
     pub known_prefixes: Vec<String>,

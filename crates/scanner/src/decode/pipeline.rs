@@ -298,10 +298,38 @@ pub(super) fn extract_encoded_values(text: &str) -> Vec<String> {
     let mut values = Vec::new();
     // Base64 block accumulator — collected in the SAME pass as quoted/assigned values.
     let mut b64_block = String::new();
+    // Percent-encoded run accumulator — picks up freestanding `%41%57…`
+    // blobs that don't sit immediately after `=`/`:` (e.g.
+    // `Authorization: Bearer %41%57…` where the b64 accumulator
+    // breaks on `%` and the assignment-value extractor stops at the
+    // first whitespace after `Bearer`). Without this the url-percent
+    // decode-through path lost ~25% of contract positives whose
+    // credential lived past a non-trivial prefix word. Tracked by
+    // `encoding_explosion_runner` url-percent floor.
+    let mut pct_block = String::new();
 
     let is_b64_char = |ch: char| -> bool {
         ch.is_ascii_alphanumeric() || ch == '+' || ch == '/' || ch == '=' || ch == '-' || ch == '_'
     };
+    // Members of a percent-run AFTER the leading `%`: hex digits + the
+    // `%` itself (which restarts a fresh triplet). Anything else
+    // terminates the run.
+    let is_pct_run_char = |ch: char| -> bool { ch == '%' || ch.is_ascii_hexdigit() };
+
+    // Flush a pending percent run if it covers at least 3 triplets
+    // (9 chars). A run shorter than that is almost always a printf
+    // format string or a stray `%2F` in a URL path, not an encoded
+    // credential — pushing it would re-enter decode-through and
+    // pollute the scanner with low-value chunks.
+    fn flush_pct(values: &mut Vec<String>, pct_block: &mut String) {
+        const MIN_PCT_TRIPLETS: usize = 3;
+        if pct_block.len() >= MIN_PCT_TRIPLETS * 3
+            && pct_block.matches('%').count() >= MIN_PCT_TRIPLETS
+        {
+            values.push(std::mem::take(pct_block));
+        }
+        pct_block.clear();
+    }
 
     // Single-pass char-level iteration. Safe for UTF-8 (no mid-codepoint splits).
     let mut chars = text.char_indices().peekable();
@@ -313,6 +341,7 @@ pub(super) fn extract_encoded_values(text: &str) -> Vec<String> {
                 values.push(std::mem::take(&mut b64_block));
             }
             b64_block.clear();
+            flush_pct(&mut values, &mut pct_block);
 
             let quote = ch;
             chars.next();
@@ -344,6 +373,7 @@ pub(super) fn extract_encoded_values(text: &str) -> Vec<String> {
                 values.push(std::mem::take(&mut b64_block));
             }
             b64_block.clear();
+            flush_pct(&mut values, &mut pct_block);
 
             chars.next();
             // Skip whitespace after delimiter
@@ -370,6 +400,32 @@ pub(super) fn extract_encoded_values(text: &str) -> Vec<String> {
             continue;
         }
 
+        // ── Percent-run accumulation ────────────────────────────────
+        // Percent starts a new triplet. Hex digits extend it. Anything
+        // else terminates the run; a sufficiently long run is pushed
+        // as its own candidate so the url_decode pass picks it up
+        // regardless of whether it sat after `=`/`:` or inside quotes.
+        if is_pct_run_char(ch) {
+            // A run can only LEGITIMATELY start with '%'. If we see a
+            // bare hex digit and the block is empty, ignore it (it's
+            // ordinary text, not the leading byte of a percent run).
+            if pct_block.is_empty() && ch != '%' {
+                // fallthrough to b64 accumulator below
+            } else {
+                pct_block.push(ch);
+                // Don't fall into the b64 accumulator branch on the
+                // same char; `%` and the hex digits are still valid
+                // base64 chars only for the alphanumerics, and we
+                // don't want a `%41%57` blob to ALSO accumulate as a
+                // base64 candidate (`4157`) — which would generate
+                // spurious decode candidates downstream.
+                chars.next();
+                continue;
+            }
+        } else if !pct_block.is_empty() {
+            flush_pct(&mut values, &mut pct_block);
+        }
+
         // ── Base64 block accumulation (merged from old second pass) ─
         if is_b64_char(ch) {
             b64_block.push(ch);
@@ -388,6 +444,7 @@ pub(super) fn extract_encoded_values(text: &str) -> Vec<String> {
     if b64_block.len() >= 16 {
         values.push(b64_block);
     }
+    flush_pct(&mut values, &mut pct_block);
 
     values
 }

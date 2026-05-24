@@ -205,6 +205,14 @@ impl CompiledScanner {
                 );
                 let base_conf = match context {
                     crate::context::CodeContext::TestCode => 0.25,
+                    // `--scan-comments` (see ScannerConfig.scan_comments)
+                    // promotes comment-context credentials to the
+                    // ordinary-source base confidence so a real secret
+                    // pasted into a TODO/debug-trace comment surfaces
+                    // instead of getting silently filtered. Documentation
+                    // context stays downgraded — it's a different (and
+                    // far noisier) signal class than inline comments.
+                    crate::context::CodeContext::Comment if self.config.scan_comments => 0.60,
                     crate::context::CodeContext::Comment
                     | crate::context::CodeContext::Documentation => 0.30,
                     _ => 0.60,

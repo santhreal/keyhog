@@ -175,6 +175,13 @@ pub struct ScannerConfig {
     /// Maximum matches to collect per chunk before stopping.
     /// Prevents OOM on extremely noisy files.
     pub max_matches_per_chunk: usize,
+    /// When `true`, credentials inside source-code comments are
+    /// treated as first-class findings (no confidence downgrade,
+    /// no comment-context multiplier). Mirrors
+    /// `keyhog_core::config::ScanConfig::scan_comments` and the
+    /// CLI's `--scan-comments` flag. See that field's doc for why
+    /// the default is off.
+    pub scan_comments: bool,
     /// Configuration for multiline concatenation
     pub multiline: crate::multiline::MultilineConfig,
     /// Known secret prefixes used to boost confidence.
@@ -280,6 +287,7 @@ impl From<keyhog_core::config::ScanConfig> for ScannerConfig {
             unicode_normalization: config.unicode_normalization,
             max_decode_bytes: config.decode_size_limit,
             max_matches_per_chunk: config.max_matches_per_chunk,
+            scan_comments: config.scan_comments,
             multiline: crate::multiline::MultilineConfig::default(),
             known_prefixes: config.known_prefixes,
             secret_keywords: config.secret_keywords,

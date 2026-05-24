@@ -1163,13 +1163,20 @@ impl CompiledScanner {
                 + (crate::types::HEURISTIC_WEIGHT * pending.heuristic_conf);
             final_score = final_score.max(pending.heuristic_conf).max(ml_conf);
 
-            if matches!(
-                pending.code_context,
+            // `--scan-comments` opts the Comment context out of the
+            // ML-blended confidence multiplier so a real credential in
+            // a `// TODO: rotate this …` comment surfaces with the
+            // same weight as one on a bare assignment line. TestCode
+            // and Documentation contexts stay penalised regardless —
+            // both produce orders-of-magnitude more EXAMPLE noise
+            // than real leaks.
+            let context_penalty_applies = match pending.code_context {
+                crate::context::CodeContext::Comment => !self.config.scan_comments,
                 crate::context::CodeContext::TestCode
-                    | crate::context::CodeContext::Documentation
-                    | crate::context::CodeContext::Comment
-            ) && final_score < 0.95
-            {
+                | crate::context::CodeContext::Documentation => true,
+                _ => false,
+            };
+            if context_penalty_applies && final_score < 0.95 {
                 final_score *= pending.code_context.confidence_multiplier();
             }
 

@@ -39,6 +39,16 @@ pub struct ScanConfig {
     /// Maximum matches allowed per chunk to prevent OOM.
     pub max_matches_per_chunk: usize,
 
+    /// When `true`, credentials inside source-code comments
+    /// (//, #, /* */, <!-- -->) get the same confidence treatment as
+    /// credentials in regular code. Default `false` — comment context
+    /// downgrades confidence on the theory that examples are the
+    /// common case. CLI exposes this as `--scan-comments`; opt-in
+    /// because the rate of EXAMPLE secrets pasted into doc comments
+    /// vastly outweighs the rate of real ones.
+    #[serde(default)]
+    pub scan_comments: bool,
+
     /// List of common secret prefixes to prioritize.
     pub known_prefixes: Vec<String>,
     /// List of keywords that strongly indicate a secret.
@@ -83,6 +93,7 @@ impl Default for ScanConfig {
             // Per-chunk decode-through ceiling (conservative vs multi‑MiB blobs).
             decode_size_limit: 512 * 1024,
             max_matches_per_chunk: 1000,
+            scan_comments: false,
             known_prefixes: vec!["AKIA".into(), "ASIA".into(), "ghp_".into(), "sk_".into()],
             secret_keywords: vec![
                 "password".into(),

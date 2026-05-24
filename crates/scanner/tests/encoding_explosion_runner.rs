@@ -297,10 +297,15 @@ fn every_positive_swept_through_every_encoding() {
         // (pipeline.rs `push_decoded_text_chunk_spliced`) moved
         // base64/hex recall from ~30% to >90% by carrying parent
         // companion context through the decoded chunk.
+        // Floors re-baselined 2026-05-23 after the percent-block
+        // extractor landed in pipeline.rs (`extract_encoded_values`).
+        // url-percent jumped from ~75% to ~99.7% by capturing
+        // freestanding `%XX` runs (e.g. `Authorization: Bearer %41…`)
+        // that the b64-only accumulator was dropping on the floor.
         let floor = match *enc {
             "identity" => 99.0,
             "base64-std" | "base64-url" | "hex" => 88.0,
-            "url-percent" => 75.0,
+            "url-percent" => 95.0,
             _ => 0.0,
         };
         if Encoding::ALL

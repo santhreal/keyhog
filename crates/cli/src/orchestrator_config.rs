@@ -242,6 +242,7 @@ pub(crate) fn build_scanner_config(args: &ScanArgs) -> ScannerConfig {
         config.entropy_threshold = threshold;
     }
     config.entropy_in_source_files = args.entropy_source_files;
+    config.scan_comments = args.scan_comments;
     config.ml_enabled = !args.no_ml;
     if let Some(weight) = args.ml_weight {
         config.ml_weight = weight;
