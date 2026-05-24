@@ -339,6 +339,24 @@ pub struct ScanArgs {
     #[arg(long, value_name = "URL", num_args = 1..)]
     pub url: Option<Vec<String>>,
 
+    /// Route outbound HTTP through a proxy (`http://burp:8080`,
+    /// `socks5://127.0.0.1:9050`, etc.). When unset, falls back to
+    /// `KEYHOG_PROXY` env var, then reqwest's built-in handling of
+    /// `HTTPS_PROXY` / `HTTP_PROXY` / `ALL_PROXY` / `NO_PROXY`. Pass
+    /// `off` to disable proxying entirely (including env inheritance)
+    /// for air-gapped scans.
+    #[cfg(any(feature = "web", feature = "github", feature = "s3"))]
+    #[arg(long, value_name = "URL")]
+    pub proxy: Option<String>,
+
+    /// Skip TLS certificate verification for every outbound HTTP
+    /// request. Needed when scanning through Burp / mitmproxy /
+    /// corporate-MITM CAs that present self-signed certificates.
+    /// Off by default; equivalent env var: `KEYHOG_INSECURE_TLS=1`.
+    #[cfg(any(feature = "web", feature = "github", feature = "s3"))]
+    #[arg(long)]
+    pub insecure: bool,
+
     /// Max git commits to traverse
     #[cfg(feature = "git")]
     #[arg(long, default_value = "1000")]

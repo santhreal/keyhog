@@ -36,6 +36,13 @@ pub mod reqwest {
     pub use ::reqwest::*;
 }
 
+/// Shared HTTP-client policy (proxy, TLS, UA) used by every source
+/// + verifier site that talks to the network. Always compiled — the
+/// `HttpClientConfig` type is the thread-through even when the
+/// reqwest-backed builders are feature-gated out — so the CLI can
+/// construct one without caring about which feature set is active.
+pub mod http;
+
 #[cfg(feature = "binary")]
 mod binary;
 #[cfg(feature = "docker")]

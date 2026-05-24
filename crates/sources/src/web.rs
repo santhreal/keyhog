@@ -119,6 +119,7 @@ mod redact_url_tests {
 /// JavaScript text.
 pub struct WebSource {
     urls: Vec<String>,
+    http: crate::http::HttpClientConfig,
 }
 
 impl WebSource {
@@ -134,7 +135,13 @@ impl WebSource {
     /// assert_eq!(source.name(), "web");
     /// ```
     pub fn new(urls: Vec<String>) -> Self {
-        Self { urls }
+        Self {
+            urls,
+            http: crate::http::HttpClientConfig {
+                ua_suffix: Some("web".into()),
+                ..Default::default()
+            },
+        }
     }
 
     /// Create a web source from a single URL.
@@ -149,9 +156,21 @@ impl WebSource {
     /// assert_eq!(source.name(), "web");
     /// ```
     pub fn from_url(url: &str) -> Self {
-        Self {
-            urls: vec![url.to_string()],
+        Self::new(vec![url.to_string()])
+    }
+
+    /// Override the default HTTP policy (proxy, insecure-TLS,
+    /// timeout). Construct from `HttpClientConfig` directly when the
+    /// caller already has CLI-derived flags to thread through.
+    pub fn with_http_config(mut self, http: crate::http::HttpClientConfig) -> Self {
+        // Preserve the per-source UA suffix so the operator's proxy
+        // logs still tag this traffic as `keyhog/<ver> (web)`.
+        let mut http = http;
+        if http.ua_suffix.is_none() {
+            http.ua_suffix = Some("web".into());
         }
+        self.http = http;
+        self
     }
 
     /// Fetch all URLs and produce chunks.
@@ -162,16 +181,13 @@ impl WebSource {
         // Auto-decompression DISABLED — without this, reqwest expands gzip
         // bodies to completion before we can check size, opening a gzip-bomb
         // DoS. Decompression is opt-in per call where we explicitly want it.
-        let client = reqwest::blocking::Client::builder()
-            .timeout(crate::timeouts::HTTP_REQUEST)
-            .danger_accept_invalid_certs(false)
-            .redirect(reqwest::redirect::Policy::limited(5))
-            .user_agent("keyhog-web/0.1")
-            .no_gzip()
-            .no_brotli()
-            .no_deflate()
-            .build()
-            .map_err(|e| SourceError::Other(format!("failed to build HTTP client: {e}")));
+        let client = match crate::http::blocking_client_builder(&self.http) {
+            Ok(b) => b
+                .timeout(crate::timeouts::HTTP_REQUEST)
+                .build()
+                .map_err(|e| SourceError::Other(format!("failed to build HTTP client: {e}"))),
+            Err(e) => Err(SourceError::Other(e)),
+        };
 
         let client = match client {
             Ok(c) => c,
