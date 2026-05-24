@@ -4,6 +4,28 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ## Unreleased
 
+## v0.5.16 — 2026-05-23 — JsonDecoder wired into decode registry
+
+### Fixed
+
+**JsonDecoder is now in the decode-through pipeline.** It had a
+splice-aware implementation in `crates/scanner/src/decode/json.rs`
+since v0.5.15 but was never registered in `get_decoders()` — pure
+dead code. Credentials stored as JSON-encoded fields (the most
+common shape after `.env`) silently went unsurfaced.
+
+Result on the adversarial_explosion_runner corpus (348 detectors ×
+~2 positives × 8 real-world wrappers):
+
+| state | variants firing |
+| --- | --- |
+| v0.5.15 | 5719 / 5792 (73 JSON-wrapper misses) |
+| **v0.5.16** | **5792 / 5792** (corpus is wrapper-tight) |
+
+The runner is now strict-by-default
+(`KEYHOG_ADVERSARIAL_STRICT=0` to opt out) so any future
+regression that loses a single variant turns CI red.
+
 ## v0.5.15 — 2026-05-23 — decode-through splice: base64/hex recall 30% → 93%
 
 ### Fixed
