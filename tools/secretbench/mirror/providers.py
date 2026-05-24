@@ -337,6 +337,108 @@ def generic_api_key(rnd: random.Random) -> str:
     return prefix + _rand_chars(rnd, B62, rnd.randint(24, 48))
 
 
+def supabase_anon_jwt(rnd: random.Random) -> str:
+    # Supabase anon/service keys are JWTs (3-segment, ey-prefixed).
+    return jwt_token(rnd)
+
+
+def neon_api_key(rnd: random.Random) -> str:
+    return "neon_api_" + _rand_chars(rnd, B62 + "_-", 48)
+
+
+def vercel_token(rnd: random.Random) -> str:
+    return _rand_chars(rnd, B62, 24)
+
+
+def deepgram_api_key(rnd: random.Random) -> str:
+    return _rand_chars(rnd, HEX, 40)
+
+
+def dbt_cloud_pat(rnd: random.Random) -> str:
+    return "dbtu_" + _rand_chars(rnd, B62, 40)
+
+
+def pinecone_api_key(rnd: random.Random) -> str:
+    # UUID-shaped, but Pinecone keys live in `PINECONE_API_KEY=…`
+    # context — the synthesizer emits the value bare and relies on
+    # the wrapper to add the env-var anchor.
+    return uuid_v4_str(rnd)
+
+
+def uuid_v4_str(rnd: random.Random) -> str:
+    parts = [
+        _rand_chars(rnd, HEX, 8),
+        _rand_chars(rnd, HEX, 4),
+        "4" + _rand_chars(rnd, HEX, 3),
+        rnd.choice("89ab") + _rand_chars(rnd, HEX, 3),
+        _rand_chars(rnd, HEX, 12),
+    ]
+    return "-".join(parts)
+
+
+def auth0_api_key(rnd: random.Random) -> str:
+    return _rand_chars(rnd, B62, 64)
+
+
+def algolia_admin_key(rnd: random.Random) -> str:
+    return _rand_chars(rnd, HEX, 32)
+
+
+def render_api_key(rnd: random.Random) -> str:
+    return "rnd_" + _rand_chars(rnd, B62, 28)
+
+
+def planetscale_api_token(rnd: random.Random) -> str:
+    return "pscale_tkn_" + _rand_chars(rnd, B62 + "_-", 32)
+
+
+def fly_api_token(rnd: random.Random) -> str:
+    return "fo1_" + _rand_chars(rnd, B62 + "-_", 64)
+
+
+def railway_api_token(rnd: random.Random) -> str:
+    return _rand_chars(rnd, HEX, 32) + "-" + _rand_chars(rnd, HEX, 4)
+
+
+def replicate_api_token(rnd: random.Random) -> str:
+    return "r8_" + _rand_chars(rnd, B62, 40)
+
+
+def groq_api_key(rnd: random.Random) -> str:
+    return "gsk_" + _rand_chars(rnd, B62, 52)
+
+
+def together_api_key(rnd: random.Random) -> str:
+    return _rand_chars(rnd, HEX, 64)
+
+
+def perplexity_api_key(rnd: random.Random) -> str:
+    return "pplx-" + _rand_chars(rnd, B62, 48)
+
+
+def turso_api_token(rnd: random.Random) -> str:
+    # Turso tokens are JWTs (long, ey-prefixed)
+    return jwt_token(rnd)
+
+
+def doppler_token(rnd: random.Random) -> str:
+    prefix = rnd.choice(["dp.st.", "dp.pt.", "dp.sa.", "dp.ct."])
+    return prefix + _rand_chars(rnd, B62, 40)
+
+
+def clerk_secret_key(rnd: random.Random) -> str:
+    env = rnd.choice(["live", "test"])
+    return f"sk_{env}_" + _rand_chars(rnd, B62, 50)
+
+
+def resend_api_key(rnd: random.Random) -> str:
+    return "re_" + _rand_chars(rnd, B62 + "_-", 32)
+
+
+def expo_access_token(rnd: random.Random) -> str:
+    return "expo_" + _rand_chars(rnd, B62, 36)
+
+
 # ── catalog ────────────────────────────────────────────────────────
 
 
@@ -410,6 +512,29 @@ CATALOG: list[tuple[str, str, Builder, int]] = [
     ("generic-high-entropy-string", "env",     generic_high_entropy_hex,   60),
     ("generic-password",            "env",     generic_password_high_entropy, 40),
     ("api-key",                     "env",     generic_api_key,            60),
+
+    # modern SaaS providers (2024-2026 wave)
+    ("authentication-key",       "env",        supabase_anon_jwt,        25),
+    ("api-key",                  "env",        neon_api_key,             15),
+    ("api-key",                  "env",        vercel_token,             20),
+    ("api-key",                  "env",        deepgram_api_key,         15),
+    ("api-key",                  "env",        dbt_cloud_pat,            10),
+    ("api-key",                  "env",        pinecone_api_key,         15),
+    ("api-key",                  "env",        auth0_api_key,            20),
+    ("api-key",                  "env",        algolia_admin_key,        15),
+    ("api-key",                  "env",        render_api_key,           10),
+    ("api-key",                  "env",        planetscale_api_token,    10),
+    ("authentication-key",       "env",        fly_api_token,            15),
+    ("api-key",                  "env",        railway_api_token,        10),
+    ("api-key",                  "env",        replicate_api_token,      15),
+    ("api-key",                  "env",        groq_api_key,             20),
+    ("api-key",                  "env",        together_api_key,         15),
+    ("api-key",                  "env",        perplexity_api_key,       15),
+    ("authentication-key",       "env",        turso_api_token,          15),
+    ("session-token",            "env",        doppler_token,            15),
+    ("api-key",                  "env",        clerk_secret_key,         15),
+    ("api-key",                  "env",        resend_api_key,           10),
+    ("api-key",                  "env",        expo_access_token,        10),
 ]
 
 

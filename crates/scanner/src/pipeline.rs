@@ -377,10 +377,67 @@ pub(crate) fn looks_like_pure_hash_digest_or_uuid(credential: &str) -> bool {
     if is_uuid_v4_shape(credential) {
         return true;
     }
-    // SHA-family length gates. Lengths that real secrets use commonly
-    // (e.g. 32-char AWS secret-access-key body) DON'T match because
+    // Prefixed-hash forms emitted by docker (`sha256:<64-hex>`), npm
+    // package-lock integrity (`sha512-<base64>`), python requirements
+    // (`sha256:<64-hex>`) and git-LFS pointers (`sha256:<64-hex>`).
+    // These are very common FP shapes — see secretbench mirror per-
+    // category FP counts (docker-image-digest, npm-lock-integrity,
+    // python-requirements-hash).
+    if let Some(body) = strip_hash_algo_prefix(credential) {
+        // Stripped body must itself be a hash digest of the
+        // corresponding length OR a base64 blob (npm-style).
+        if body.len() == 64 && is_uniform_hex(body) {
+            return true;
+        }
+        if body.len() == 128 && is_uniform_hex(body) {
+            return true;
+        }
+        if body.len() == 40 && is_uniform_hex(body) {
+            return true;
+        }
+        if looks_like_base64_blob_with_padding(body) {
+            return true;
+        }
+    }
+    // Bare hash-digest hex. Lengths that real secrets use commonly
+    // (e.g. 40-char AWS secret-access-key body) DON'T match because
     // those are base64, not pure hex.
     matches!(credential.len(), 32 | 40 | 64 | 128) && is_uniform_hex(credential)
+}
+
+/// If `credential` begins with — OR contains — one of the well-known
+/// hash-algorithm labels (`sha256:`, `sha512:`, `sha512-`, `sha1:`,
+/// `md5:`), return the body after the label. Otherwise None.
+///
+/// Substring match (not prefix-only) is intentional. Docker image
+/// digests are commonly written `nginx@sha256:<64-hex>`, python
+/// requirements as `--hash=sha256:<64-hex>`, both of which keyhog's
+/// value extractor surfaces as one credential string that doesn't
+/// START with the algo label.
+fn strip_hash_algo_prefix(credential: &str) -> Option<&str> {
+    const LABELS: &[&str] = &["sha256:", "sha512:", "sha512-", "sha256-", "sha1:", "md5:"];
+    for label in LABELS {
+        if let Some(idx) = credential.find(label) {
+            return Some(&credential[idx + label.len()..]);
+        }
+    }
+    None
+}
+
+/// True if `s` looks like a base64-encoded blob with one or two
+/// trailing `=` padding chars (the canonical shape of npm package-
+/// lock `integrity` values after stripping `sha512-`). Conservative
+/// length floor of 40 chars to avoid catching short base64 tokens
+/// that might be real secrets.
+fn looks_like_base64_blob_with_padding(s: &str) -> bool {
+    if s.len() < 40 {
+        return false;
+    }
+    if !(s.ends_with("==") || s.ends_with('=')) {
+        return false;
+    }
+    s.chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '=')
 }
 
 fn is_uniform_hex(s: &str) -> bool {
@@ -872,6 +929,59 @@ mod placeholder_suppression_tests {
         assert!(!looks_like_pure_hash_digest_or_uuid(
             "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
         ));
+    }
+
+    #[test]
+    fn docker_image_digest_sha256_prefix_is_suppressed() {
+        let sha = "abcdef0123456789".repeat(4);
+        assert_eq!(sha.len(), 64);
+        let docker = format!("sha256:{sha}");
+        assert!(looks_like_pure_hash_digest_or_uuid(&docker));
+    }
+
+    #[test]
+    fn npm_integrity_sha512_dash_prefix_is_suppressed() {
+        // npm package-lock.json integrity body: sha512-<base64>==
+        let body = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+/AAAA==";
+        let npm = format!("sha512-{body}");
+        assert!(looks_like_pure_hash_digest_or_uuid(&npm));
+    }
+
+    #[test]
+    fn python_requirements_hash_sha256_prefix_is_suppressed() {
+        // python --hash=sha256:<64-hex> value
+        let sha = "0123456789abcdef".repeat(4);
+        assert_eq!(sha.len(), 64);
+        let py = format!("sha256:{sha}");
+        assert!(looks_like_pure_hash_digest_or_uuid(&py));
+    }
+
+    #[test]
+    fn docker_image_digest_embedded_sha256_is_suppressed() {
+        // Docker image-digest commonly written as
+        // `nginx@sha256:<64-hex>` — keyhog's value extractor surfaces
+        // the whole right-hand side as one credential, so the
+        // sha-algo label sits MID-string, not at the start.
+        let sha = "abcdef0123456789".repeat(4);
+        assert_eq!(sha.len(), 64);
+        let digest = format!("nginx@sha256:{sha}");
+        assert!(looks_like_pure_hash_digest_or_uuid(&digest));
+    }
+
+    #[test]
+    fn python_pip_hash_embedded_sha256_is_suppressed() {
+        // pip requirements.txt: `--hash=sha256:<64-hex>`
+        let sha = "0123456789abcdef".repeat(4);
+        let pip = format!("--hash=sha256:{sha}");
+        assert!(looks_like_pure_hash_digest_or_uuid(&pip));
+    }
+
+    #[test]
+    fn substring_hash_label_in_real_token_does_not_suppress() {
+        // Adversarial: a real token that happens to embed the substring
+        // `md5:` in its body but whose body after the label isn't a
+        // hash-shape length. Must NOT suppress.
+        assert!(!looks_like_pure_hash_digest_or_uuid("user_md5:not_a_hash_body"));
     }
 
     #[test]
