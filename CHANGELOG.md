@@ -4,6 +4,66 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ## Unreleased
 
+## v0.5.15 — 2026-05-23 — decode-through splice: base64/hex recall 30% → 93%
+
+### Fixed
+
+**Decode-through pipeline preserves companion context now.** Decoded
+chunks used to be bare bytes with no surrounding text — every
+detector anchored on a companion keyword (`aws_secret = …`,
+`Authorization: Bearer …`, `api_key: …`) lost its anchor as soon
+as the credential was recovered from an encoded blob.
+`push_decoded_text_chunk_spliced` in
+`crates/scanner/src/decode/pipeline.rs` now splices the decoded
+text BACK into the parent at the position of the original encoded
+blob. Measured on the new `encoding_explosion_runner` corpus
+(348 detectors × ~2 positives):
+
+| encoding | before | after | delta |
+| --- | --- | --- | --- |
+| base64-std | 30.5% | **93.1%** | +62.6pp |
+| base64-url | 30.5% | **92.8%** | +62.3pp |
+| hex | 30.5% | **92.8%** | +62.3pp |
+| url-percent | 15.5% | **79.7%** | +64.2pp |
+
+Migrated decoders: base64 (Base64Decoder + Z85Decoder), hex,
+json, url (via `decode_candidates`). Splice path is memory-capped
+at 256 KiB parent so multi-MB chunks don't blow allocation.
+
+### Added
+
+- **`keyhog scan --proxy <URL>`** — route every outbound HTTP
+  request through an HTTP/HTTPS/SOCKS5 proxy. Falls back to
+  `KEYHOG_PROXY` / `HTTPS_PROXY` / `HTTP_PROXY` / `ALL_PROXY`
+  env. `--proxy off` disables proxying including env inheritance
+  (air-gapped scans).
+- **`keyhog scan --insecure`** — skip TLS verification for every
+  outbound request. Needed when scanning through Burp / mitmproxy
+  CAs with self-signed certificates. Env: `KEYHOG_INSECURE_TLS=1`.
+- **Shared `keyhog_sources::http` policy module.** Single source
+  of truth for proxy + TLS + UA so an operator setting
+  `KEYHOG_PROXY` affects every outbound request uniformly.
+- **40 000-case proptest suite** for the HTTP-client policy and
+  SARIF dedup contracts (`crates/sources/tests/property/http_fuzz.rs`,
+  `crates/core/tests/property/sarif_dedup.rs`).
+- **5 500-case adversarial wrapper-explosion runner** — re-embeds
+  every contract positive in 8 real-world formats and asserts the
+  detector fires.
+- **6 500-case path-shape runner** — replays every positive at 5
+  production paths and 4 suppressed-shape paths.
+- **5 070-case encoding-explosion runner** with split decode-hit
+  vs incidental-hit metrics. Floors pinned so a regression
+  below 88% base64 / 92% hex / 75% url-percent trips the gate.
+- **`tests/live_verify.rs`** — env-gated live-verify smoke
+  against real AWS/GitHub creds (`KEYHOG_LIVE_VERIFY=1`).
+- **`tools/diff_bench/`** — single-shot runner that drives
+  keyhog + trufflehog + gitleaks across one labeled corpus
+  (positives synthesized at CI runtime to dodge push-protection)
+  and emits `differential_results.json` with per-scanner
+  precision / recall / F1 / timing.
+  `.github/workflows/differential-bench.yml` runs nightly + on
+  workflow_dispatch.
+
 ## v0.5.14 — 2026-05-23 — macOS x86_64 + Windows release binaries
 
 ### Added
