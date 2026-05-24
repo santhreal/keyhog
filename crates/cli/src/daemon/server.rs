@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tokio::net::{UnixListener, UnixStream};
-use tokio::sync::Notify;
+use tokio::sync::{Notify, Semaphore};
 
 const KEYHOG_VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -41,19 +41,26 @@ struct ServerState {
     detector_count: usize,
     // Serializes the read+drain+reset of the process-global
     // `keyhog_scanner::telemetry` counters across concurrent daemon
-    // connections. Without this lock, two clients hitting scan_text /
-    // scan_path simultaneously can double-attribute suppression
-    // counts and dogfood events: client A reads count=5, client B
-    // records 3 more, A drains both, A resets to 0 — B then reports
-    // 0 for its own scan even though its 3 events landed in A's
-    // response. Telemetry is a OnceLock under the hood; serializing
-    // the triplet is the minimum-invasion fix until telemetry exposes
-    // a single atomic drain_all() API.
+    // connections. See the scan_text / scan_path drain block for the
+    // race scenario.
     telemetry_drain: Arc<Mutex<()>>,
+    // Caps concurrent in-flight client connections. Without this,
+    // every accepted socket spawns an unbounded tokio task that in
+    // turn unboundedly spawn_blocks a scanner thread. A burst of
+    // 10 000 connections from a misconfigured CI runner would
+    // exhaust file descriptors and rayon threads in seconds.
+    // Default = 4 × physical cores so a 16-core host serves 64
+    // concurrent scans, which is the saturation point for the
+    // bounded sync_channel(64) the scanner uses internally.
+    connection_limit: Arc<Semaphore>,
 }
 
 impl ServerState {
     fn new(scanner: CompiledScanner, shutdown: Arc<Notify>, detector_count: usize) -> Self {
+        let cores = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(4);
+        let max_conns = (cores * 4).clamp(8, 256);
         Self {
             scanner: Arc::new(scanner),
             started_at: Instant::now(),
@@ -62,6 +69,7 @@ impl ServerState {
             shutdown,
             detector_count,
             telemetry_drain: Arc::new(Mutex::new(())),
+            connection_limit: Arc::new(Semaphore::new(max_conns)),
         }
     }
 
@@ -144,7 +152,19 @@ pub async fn run(socket_path: PathBuf, detectors: Vec<DetectorSpec>) -> Result<(
                     match conn {
                         Ok((stream, _addr)) => {
                             let s = accept_state.clone();
+                            let limiter = s.connection_limit.clone();
+                            // Backpressure: refuse to spawn another
+                            // handler until a permit is available. A
+                            // permit drop at the end of the spawned
+                            // task releases the slot. acquire_owned
+                            // moves the permit into the task without
+                            // a separate handle to plumb through.
+                            let permit = match limiter.acquire_owned().await {
+                                Ok(p) => p,
+                                Err(_closed) => break, // semaphore closed -> shutting down
+                            };
                             tokio::spawn(async move {
+                                let _permit = permit;
                                 if let Err(e) = handle_connection(s, stream).await {
                                     tracing::debug!("daemon: connection ended with error: {e:#}");
                                 }
