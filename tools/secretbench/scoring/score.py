@@ -214,15 +214,26 @@ def run_keyhog(file_paths: list[pathlib.Path], binary: str = "keyhog") -> list[d
         data = json.loads(out)
     except json.JSONDecodeError:
         return []
-    findings = data.get("findings") or data.get("matches") or []
-    norm = []
+    # keyhog emits a JSON ARRAY of finding objects when --format json.
+    # Each finding's shape: {detector_id, detector_name, service,
+    # severity, credential_redacted (NB: contains full secret when
+    # --show-secrets is set), credential_hash, location: {file_path,
+    # line, offset, source}, confidence, verification, ...}.
+    findings = data if isinstance(data, list) else (data.get("findings") or [])
+    norm: list[dict] = []
     for f in findings:
-        # keyhog finding shape: {detector, severity, credential, location: {file, line}}
         loc = f.get("location", {}) or {}
+        # `credential_redacted` is the field name but holds the full
+        # credential when keyhog was invoked with --show-secrets.
+        value = (
+            f.get("credential_redacted")
+            or f.get("credential")
+            or ""
+        )
         norm.append({
-            "file": loc.get("file") or loc.get("file_path") or "",
+            "file": loc.get("file_path") or loc.get("file") or "",
             "line": loc.get("line", 0),
-            "value": f.get("credential") or f.get("matched") or "",
+            "value": value,
             "detector": f.get("detector_id") or f.get("detector_name") or "",
         })
     return norm
@@ -231,13 +242,16 @@ def run_keyhog(file_paths: list[pathlib.Path], binary: str = "keyhog") -> list[d
 def run_trufflehog(file_paths: list[pathlib.Path], binary: str = "trufflehog") -> list[dict]:
     if shutil.which(binary) is None:
         raise FileNotFoundError(f"trufflehog binary not found on PATH: {binary}")
-    # trufflehog filesystem mode emits one JSON per finding to stdout.
+    # trufflehog filesystem mode emits one JSON-per-line to stdout.
+    # Batch by parent directory so a 100k-fixture corpus pays one
+    # trufflehog cold-start per shard (~256 dirs) instead of per file
+    # (~100k cold-starts at ~300 ms each = 8 hours of pure spawn cost).
     norm: list[dict] = []
-    # trufflehog accepts one path at a time — common to give it a dir.
-    for fp in file_paths:
-        cmd = [binary, "filesystem", "--json", "--no-verification", str(fp)]
+    parents = sorted({fp.parent for fp in file_paths})
+    for parent in parents:
+        cmd = [binary, "filesystem", "--json", "--no-verification", str(parent)]
         completed = subprocess.run(
-            cmd, capture_output=True, text=True, check=False, timeout=120,
+            cmd, capture_output=True, text=True, check=False, timeout=1800,
         )
         for line in completed.stdout.splitlines():
             line = line.strip()
@@ -250,7 +264,7 @@ def run_trufflehog(file_paths: list[pathlib.Path], binary: str = "trufflehog") -
             value = f.get("Raw") or f.get("Redacted") or ""
             src = f.get("SourceMetadata", {}).get("Data", {}).get("Filesystem", {}) or {}
             norm.append({
-                "file": src.get("file", str(fp)),
+                "file": src.get("file", str(parent)),
                 "line": src.get("line", 0),
                 "value": value,
                 "detector": f.get("DetectorName", ""),
