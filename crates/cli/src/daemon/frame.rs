@@ -13,7 +13,8 @@ pub async fn write_request<W>(writer: &mut W, request: &Request) -> Result<()>
 where
     W: AsyncWriteExt + Unpin,
 {
-    let body = serde_json::to_vec(request).context("frame: serialize request")?;
+    let body = serde_json::to_vec(request)
+        .with_context(|| format!("frame: serialize Request::{}", request_kind(request)))?;
     write_frame(writer, &body).await
 }
 
@@ -21,7 +22,8 @@ pub async fn write_response<W>(writer: &mut W, response: &Response) -> Result<()
 where
     W: AsyncWriteExt + Unpin,
 {
-    let body = serde_json::to_vec(response).context("frame: serialize response")?;
+    let body = serde_json::to_vec(response)
+        .with_context(|| format!("frame: serialize Response::{}", response_kind(response)))?;
     write_frame(writer, &body).await
 }
 
@@ -32,7 +34,8 @@ where
     let Some(body) = read_frame(reader).await? else {
         return Ok(None);
     };
-    let req = serde_json::from_slice(&body).context("frame: parse request")?;
+    let req = serde_json::from_slice(&body)
+        .with_context(|| format!("frame: parse request ({} bytes)", body.len()))?;
     Ok(Some(req))
 }
 
@@ -43,8 +46,32 @@ where
     let Some(body) = read_frame(reader).await? else {
         return Ok(None);
     };
-    let resp = serde_json::from_slice(&body).context("frame: parse response")?;
+    let resp = serde_json::from_slice(&body)
+        .with_context(|| format!("frame: parse response ({} bytes)", body.len()))?;
     Ok(Some(resp))
+}
+
+/// One-word kind label for a Request. Keeps frame-serialize errors
+/// from leaking JSON-shaped payloads into operator logs.
+fn request_kind(r: &Request) -> &'static str {
+    match r {
+        Request::Hello => "Hello",
+        Request::Health => "Health",
+        Request::ScanText { .. } => "ScanText",
+        Request::ScanPath { .. } => "ScanPath",
+        Request::Shutdown => "Shutdown",
+    }
+}
+
+/// One-word kind label for a Response. Same rationale as request_kind.
+fn response_kind(r: &Response) -> &'static str {
+    match r {
+        Response::Hello { .. } => "Hello",
+        Response::Health { .. } => "Health",
+        Response::ScanResults { .. } => "ScanResults",
+        Response::Shutdown => "Shutdown",
+        Response::Error { .. } => "Error",
+    }
 }
 
 async fn write_frame<W>(writer: &mut W, body: &[u8]) -> Result<()>

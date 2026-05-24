@@ -25,7 +25,13 @@ pub fn default_socket_path() -> PathBuf {
         p.push("keyhog.sock");
         return p;
     }
-    let cache = dirs::cache_dir().unwrap_or_else(|| PathBuf::from("/tmp"));
+    // `dirs::cache_dir()` returns ~/.cache on Linux, ~/Library/Caches on
+    // macOS, %LOCALAPPDATA% on Windows. Fall back to the OS temp dir
+    // when that lookup fails (e.g. inside a Docker container with no
+    // HOME set) — `std::env::temp_dir()` is /tmp on Unix and
+    // %TEMP% on Windows, never the hardcoded `/tmp` we used before
+    // (which would silently mkdir `C:\tmp` on Windows).
+    let cache = dirs::cache_dir().unwrap_or_else(std::env::temp_dir);
     let mut p = cache;
     p.push("keyhog");
     p.push("server.sock");

@@ -112,7 +112,9 @@ impl ScanOrchestrator {
 
         let scanner = Arc::new(
             CompiledScanner::compile(detectors.clone())
-                .context("compiling scanner")?
+                .with_context(|| {
+                    format!("compiling scanner from {} detector specs", detectors.len())
+                })?
                 .with_config(scanner_config),
         );
 
