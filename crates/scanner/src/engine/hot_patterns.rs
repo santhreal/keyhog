@@ -14,7 +14,9 @@ impl CompiledScanner {
         chunk: &Chunk,
         scan_state: &mut ScanState,
     ) {
-        use crate::simdsieve_prefilter::{HOT_PATTERNS, HOT_PATTERN_NAMES};
+        use crate::simdsieve_prefilter::{
+            HOT_PATTERNS, HOT_PATTERN_DETECTOR_IDS, HOT_PATTERN_DISPLAY_NAMES, HOT_PATTERN_NAMES,
+        };
         use simdsieve::SimdSieve;
 
         let text_bytes = text.as_bytes();
@@ -98,11 +100,15 @@ impl CompiledScanner {
                 // 1-based line number directly.
                 let line = line_offsets.partition_point(|&lo| lo <= offset).max(1);
 
-                let detector_id_value = format!("hot-{}", HOT_PATTERN_NAMES[pattern_idx]);
-                let detector_name_value =
-                    format!("Hot Pattern: {}", HOT_PATTERN_NAMES[pattern_idx]);
-                let detector_id = scan_state.intern_metadata(&detector_id_value);
-                let detector_name = scan_state.intern_metadata(&detector_name_value);
+                // Use the pre-formatted static tables — eliminates the
+                // two `format!()` heap allocations the perf kimi audit
+                // flagged at this site (one per match, 16 bytes each).
+                // Index-parallel with HOT_PATTERN_NAMES; the parallel-
+                // array invariant is locked by unit tests in the parent
+                // module.
+                let detector_id = scan_state.intern_metadata(HOT_PATTERN_DETECTOR_IDS[pattern_idx]);
+                let detector_name =
+                    scan_state.intern_metadata(HOT_PATTERN_DISPLAY_NAMES[pattern_idx]);
                 let service = scan_state.intern_metadata(HOT_PATTERN_NAMES[pattern_idx]);
                 let credential_shared = scan_state.intern_credential(credential);
                 let source = scan_state.intern_metadata(&chunk.metadata.source_type);
