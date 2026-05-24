@@ -6,3 +6,5 @@
 //! ziftsieve / mmap / gix.
 
 mod filesystem_fuzz;
+#[cfg(any(feature = "web", feature = "github", feature = "s3"))]
+mod http_fuzz;
