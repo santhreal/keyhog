@@ -193,49 +193,51 @@ def run_keyhog(file_paths: list[pathlib.Path], binary: str = "keyhog") -> list[d
     dicts each with at least {"file": str, "value": str}."""
     if shutil.which(binary) is None:
         raise FileNotFoundError(f"keyhog binary not found on PATH: {binary}")
-    # `keyhog scan --format json --show-secrets` lets us attribute
-    # by raw credential text (we never write JSON to disk outside
-    # the scoreboard; raw secrets stay in process memory). The
-    # `--no-suppress-test-fixtures` flag turns off keyhog's default
-    # demo-token suppression so the comparison against trufflehog
-    # / gitleaks (which DON'T suppress) is apples-to-apples.
-    cmd = [
-        binary, "scan", "--format", "json", "--show-secrets",
-        "--no-suppress-test-fixtures",
-        *[str(p) for p in file_paths],
-    ]
-    completed = subprocess.run(
-        cmd, capture_output=True, text=True, check=False, timeout=3600,
-    )
-    out = completed.stdout.strip()
-    if not out:
-        return []
-    try:
-        data = json.loads(out)
-    except json.JSONDecodeError:
-        return []
-    # keyhog emits a JSON ARRAY of finding objects when --format json.
-    # Each finding's shape: {detector_id, detector_name, service,
-    # severity, credential_redacted (NB: contains full secret when
-    # --show-secrets is set), credential_hash, location: {file_path,
-    # line, offset, source}, confidence, verification, ...}.
-    findings = data if isinstance(data, list) else (data.get("findings") or [])
+    # `keyhog scan` accepts ONE PATH argument (file or directory),
+    # not a list. Batch by parent dir so a 100k-fixture sharded
+    # corpus pays one keyhog cold-start (~250 ms) per shard (256
+    # shards) instead of per file (100k × cold-start). The
+    # `--format json --show-secrets --no-suppress-test-fixtures`
+    # combination is what makes scoring apples-to-apples with
+    # trufflehog/gitleaks (which don't suppress demo tokens).
     norm: list[dict] = []
-    for f in findings:
-        loc = f.get("location", {}) or {}
-        # `credential_redacted` is the field name but holds the full
-        # credential when keyhog was invoked with --show-secrets.
-        value = (
-            f.get("credential_redacted")
-            or f.get("credential")
-            or ""
+    parents = sorted({fp.parent for fp in file_paths})
+    for parent in parents:
+        cmd = [
+            binary, "scan", "--format", "json", "--show-secrets",
+            "--no-suppress-test-fixtures",
+            str(parent),
+        ]
+        completed = subprocess.run(
+            cmd, capture_output=True, text=True, check=False, timeout=1800,
         )
-        norm.append({
-            "file": loc.get("file_path") or loc.get("file") or "",
-            "line": loc.get("line", 0),
-            "value": value,
-            "detector": f.get("detector_id") or f.get("detector_name") or "",
-        })
+        out = completed.stdout.strip()
+        if not out:
+            continue
+        try:
+            data = json.loads(out)
+        except json.JSONDecodeError:
+            continue
+        # keyhog emits a JSON ARRAY of finding objects. Each shape:
+        # {detector_id, detector_name, service, severity,
+        # credential_redacted (NB: contains full secret when
+        # --show-secrets is set), credential_hash, location:
+        # {file_path, line, offset, source}, confidence,
+        # verification, ...}.
+        findings = data if isinstance(data, list) else (data.get("findings") or [])
+        for f in findings:
+            loc = f.get("location", {}) or {}
+            value = (
+                f.get("credential_redacted")
+                or f.get("credential")
+                or ""
+            )
+            norm.append({
+                "file": loc.get("file_path") or loc.get("file") or "",
+                "line": loc.get("line", 0),
+                "value": value,
+                "detector": f.get("detector_id") or f.get("detector_name") or "",
+            })
     return norm
 
 
