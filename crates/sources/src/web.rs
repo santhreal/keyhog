@@ -40,6 +40,77 @@ const MAX_RESPONSE_BYTES: usize = 10 * 1024 * 1024;
 /// WASM magic bytes: `\0asm`.
 const WASM_MAGIC: &[u8; 4] = b"\x00asm";
 
+/// Strip userinfo (`user:password@`) from a URL before logging.
+///
+/// Operators sometimes pass a URL with embedded credentials to scan a
+/// private endpoint — `https://user:SECRET_TOKEN@host/path`. Without
+/// redaction, every tracing::warn!/info! call below would ship that
+/// token straight into the operator's logging pipeline (Splunk,
+/// Datadog, journald), defeating the whole point of running a secret
+/// scanner. Replace the userinfo with `***` so the URL stays
+/// recognisable but the credential never leaves the process.
+fn redact_url(url: &str) -> std::borrow::Cow<'_, str> {
+    let scheme_end = match url.find("://") {
+        Some(idx) => idx + 3,
+        None => return std::borrow::Cow::Borrowed(url),
+    };
+    let after_scheme = &url[scheme_end..];
+    // `@` before the path/query/fragment delimits userinfo. Refuse to
+    // strip `@` that appears in the path (e.g. ".../foo@bar/baz") by
+    // bounding the search to the first `/?#` separator.
+    let authority_end = after_scheme
+        .find(['/', '?', '#'])
+        .unwrap_or(after_scheme.len());
+    let authority = &after_scheme[..authority_end];
+    let Some(at_offset) = authority.find('@') else {
+        return std::borrow::Cow::Borrowed(url);
+    };
+    let mut out = String::with_capacity(url.len());
+    out.push_str(&url[..scheme_end]);
+    out.push_str("***@");
+    out.push_str(&after_scheme[at_offset + 1..]);
+    std::borrow::Cow::Owned(out)
+}
+
+#[cfg(test)]
+mod redact_url_tests {
+    use super::redact_url;
+
+    #[test]
+    fn passes_through_urls_without_userinfo() {
+        for ok in &[
+            "https://example.com/path",
+            "http://example.com:8080/p?q=1",
+            "https://example.com/path/with/@symbol/in/it",
+        ] {
+            assert_eq!(redact_url(ok), *ok, "unchanged for {ok:?}");
+        }
+    }
+
+    #[test]
+    fn strips_userinfo() {
+        assert_eq!(
+            redact_url("https://user:SECRET@host/path"),
+            "https://***@host/path"
+        );
+        assert_eq!(
+            redact_url("https://user@host/path?q=1"),
+            "https://***@host/path?q=1"
+        );
+        assert_eq!(
+            redact_url("http://x:y@example.com:8080/p#frag"),
+            "http://***@example.com:8080/p#frag"
+        );
+    }
+
+    #[test]
+    fn does_not_confuse_path_at_with_userinfo() {
+        // The `@` is in the path, NOT the authority — must NOT redact.
+        let url = "https://example.com/orgs/foo/users/@me";
+        assert_eq!(redact_url(url), url);
+    }
+}
+
 /// Web content source that fetches JavaScript, source maps, and WASM from URLs.
 ///
 /// URLs ending in `.wasm` are treated as binary and have strings extracted.
@@ -136,15 +207,17 @@ fn fetch_url(client: &reqwest::blocking::Client, url: &str) -> Vec<Result<Chunk,
     let resp = match client.get(url).send() {
         Ok(r) => r,
         Err(e) => {
+            let safe_url = redact_url(url);
             return vec![Err(SourceError::Other(format!(
-                "failed to fetch {url}: {e}"
+                "failed to fetch {safe_url}: {e}"
             )))];
         }
     };
 
     let status = resp.status().as_u16();
     if status != 200 {
-        tracing::warn!(url, status, "non-200 response, skipping");
+        let safe_url = redact_url(url);
+        tracing::warn!(url = %safe_url, status, "non-200 response, skipping");
         return Vec::new();
     }
 
@@ -193,7 +266,7 @@ fn handle_sourcemap(
     let map: serde_json::Value = match serde_json::from_str(&body) {
         Ok(v) => v,
         Err(e) => {
-            tracing::warn!(url, err = %e, "failed to parse source map JSON");
+            tracing::warn!(url = %redact_url(url), err = %e, "failed to parse source map JSON");
             // Fall back to treating it as plain JS text
             return vec![Ok(Chunk {
                 data: body.into(),
@@ -279,7 +352,7 @@ fn handle_wasm(resp: reqwest::blocking::Response, url: &str) -> Vec<Result<Chunk
 
     // Verify WASM magic bytes
     if bytes.len() < 4 || &bytes[..4] != WASM_MAGIC {
-        tracing::warn!(url, "not a valid WASM file (wrong magic bytes)");
+        tracing::warn!(url = %redact_url(url), "not a valid WASM file (wrong magic bytes)");
         return Vec::new();
     }
 
@@ -320,11 +393,12 @@ fn read_text_response(resp: reqwest::blocking::Response) -> Result<String, Sourc
 fn read_bytes_response(resp: reqwest::blocking::Response) -> Result<Vec<u8>, SourceError> {
     use std::io::Read;
     let url = resp.url().to_string();
+    let safe_url = redact_url(&url);
 
     if let Some(len) = resp.content_length() {
         if len as usize > MAX_RESPONSE_BYTES {
             return Err(SourceError::Other(format!(
-                "response from {url} declares {len} bytes (> {} MB limit)",
+                "response from {safe_url} declares {len} bytes (> {} MB limit)",
                 MAX_RESPONSE_BYTES / (1024 * 1024)
             )));
         }
@@ -335,10 +409,10 @@ fn read_bytes_response(resp: reqwest::blocking::Response) -> Result<Vec<u8>, Sou
     let mut taken = resp.take(MAX_RESPONSE_BYTES as u64 + 1);
     taken
         .read_to_end(&mut buf)
-        .map_err(|e| SourceError::Other(format!("failed to read bytes from {url}: {e}")))?;
+        .map_err(|e| SourceError::Other(format!("failed to read bytes from {safe_url}: {e}")))?;
     if buf.len() > MAX_RESPONSE_BYTES {
         return Err(SourceError::Other(format!(
-            "response from {url} exceeds {} MB limit",
+            "response from {safe_url} exceeds {} MB limit",
             MAX_RESPONSE_BYTES / (1024 * 1024)
         )));
     }
