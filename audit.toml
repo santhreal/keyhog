@@ -7,10 +7,11 @@
 # `cargo audit` invocation in `.github/workflows/ci.yml` need to
 # stay in sync.
 #
-# As of v0.5.3, `cargo audit` exits zero with these four ignores:
+# As of v0.5.13, `cargo audit` exits zero with these five ignores:
 # the two gix-* CVEs that the v0.5.2 audit flagged were addressed
 # by bumping gix to 0.77 (commit history under "security: bump
-# gix").
+# gix"). The bincode advisory below was added 2026-05-23 after
+# a CI hunt found RUSTSEC-2025-0141 unaccounted for.
 
 [advisories]
 ignore = [
@@ -24,4 +25,9 @@ ignore = [
     # `rand::rng()` data race with custom logger. keyhog never replaces
     # the global rng.
     "RUSTSEC-2026-0097",
+    # `bincode` 1.x is unmaintained. Only consumer is the vendored
+    # vyre GPU stack; keyhog does not depend on bincode directly.
+    # Will be resolved when vyre cuts a release that drops bincode 1.x
+    # or upgrades to bincode 2.x.
+    "RUSTSEC-2025-0141",
 ]

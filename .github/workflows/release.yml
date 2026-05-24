@@ -91,11 +91,17 @@ jobs:
           # Create the release if it doesn't already exist; `|| true`
           # silently no-ops the create when the tag-trigger has already
           # produced a draft release.
+          # Two matrix jobs (linux + macos) race here. If both see "release
+          # does not exist" they BOTH call `gh release create`; the second
+          # one fails with "already_exists" and the shell aborts on
+          # `set -euo pipefail`, dropping the upload for that matrix arm.
+          # The trailing `|| true` on the create swallows the "second to
+          # try wins" no-op so both arms reach the upload step.
           gh release view "${{ steps.tag.outputs.tag }}" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
             gh release create "${{ steps.tag.outputs.tag }}" \
               --repo "$GITHUB_REPOSITORY" \
               --title "${{ steps.tag.outputs.tag }}" \
-              --notes "Prebuilt keyhog binaries for ${{ steps.tag.outputs.tag }}. See CHANGELOG.md."
+              --notes "Prebuilt keyhog binaries for ${{ steps.tag.outputs.tag }}. See CHANGELOG.md." || true
           gh release upload "${{ steps.tag.outputs.tag }}" "${{ matrix.asset }}" \
             --repo "$GITHUB_REPOSITORY" \
             --clobber
