@@ -8,7 +8,7 @@ use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec};
 use keyhog_scanner::CompiledScanner;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::Notify;
@@ -39,6 +39,17 @@ struct ServerState {
     active_scans: AtomicU32,
     shutdown: Arc<Notify>,
     detector_count: usize,
+    // Serializes the read+drain+reset of the process-global
+    // `keyhog_scanner::telemetry` counters across concurrent daemon
+    // connections. Without this lock, two clients hitting scan_text /
+    // scan_path simultaneously can double-attribute suppression
+    // counts and dogfood events: client A reads count=5, client B
+    // records 3 more, A drains both, A resets to 0 — B then reports
+    // 0 for its own scan even though its 3 events landed in A's
+    // response. Telemetry is a OnceLock under the hood; serializing
+    // the triplet is the minimum-invasion fix until telemetry exposes
+    // a single atomic drain_all() API.
+    telemetry_drain: Arc<Mutex<()>>,
 }
 
 impl ServerState {
@@ -50,6 +61,7 @@ impl ServerState {
             active_scans: AtomicU32::new(0),
             shutdown,
             detector_count,
+            telemetry_drain: Arc::new(Mutex::new(())),
         }
     }
 
@@ -210,6 +222,7 @@ async fn scan_text(state: &ServerState, path: Option<String>, text: String) -> R
     state.active_scans.fetch_add(1, Ordering::Relaxed);
     let scanner = state.scanner.clone();
     let chunk_path = path.clone();
+    let drain_lock = state.telemetry_drain.clone();
     // Hand the actual scan to a blocking thread — `scanner.scan` is
     // CPU-heavy and not async-aware. Without `spawn_blocking` a
     // large scan would stall the tokio reactor and block every
@@ -227,7 +240,10 @@ async fn scan_text(state: &ServerState, path: Option<String>, text: String) -> R
         // Drain telemetry alongside the matches so the client can
         // merge per-scan counts into its own process-local counters
         // (telemetry lives in a OnceLock and doesn't cross the IPC
-        // boundary on its own).
+        // boundary on its own). The lock serializes count+drain+reset
+        // across concurrent daemon connections — see ServerState
+        // .telemetry_drain for the race scenario.
+        let _drain = drain_lock.lock().unwrap_or_else(|e| e.into_inner());
         let engine_example_suppressions =
             keyhog_scanner::telemetry::example_suppression_count() as u64;
         let dogfood_events = keyhog_scanner::telemetry::drain_events();
@@ -263,6 +279,7 @@ async fn scan_path(state: &ServerState, path: String, working_dir: Option<String
     state.active_scans.fetch_add(1, Ordering::Relaxed);
     let scanner = state.scanner.clone();
     let resolved_owned = resolved.clone();
+    let drain_lock = state.telemetry_drain.clone();
     type ScanOutput = (
         Vec<keyhog_core::RawMatch>,
         u64,
@@ -281,6 +298,8 @@ async fn scan_path(state: &ServerState, path: String, working_dir: Option<String
             },
         };
         let matches = scanner.scan(&chunk);
+        // See scan_text for the rationale on this drain lock.
+        let _drain = drain_lock.lock().unwrap_or_else(|e| e.into_inner());
         let engine_example_suppressions =
             keyhog_scanner::telemetry::example_suppression_count() as u64;
         let dogfood_events = keyhog_scanner::telemetry::drain_events();
