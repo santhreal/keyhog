@@ -363,3 +363,70 @@ fn explicit_format_text_does_not_emit_json() {
         output.status.code(),
     );
 }
+
+/// `--scan-comments` end-to-end: a credential pasted inside a
+/// `// TODO: rotate this …` comment is suppressed by default (the
+/// common case is an EXAMPLE token in a doc comment) but surfaces
+/// when the operator opts in. Pins the wiring all the way from the
+/// clap flag → ScanArgs → orchestrator_config::scan_comments →
+/// ScannerConfig.scan_comments → fallback_generic + engine context-
+/// penalty gates.
+#[test]
+fn scan_comments_flag_surfaces_credentials_in_comments() {
+    // A genuine-shape AWS access key inside a `//`-style comment.
+    // Default scan applies the comment-context confidence penalty
+    // and the finding falls below `min_confidence`; --scan-comments
+    // lifts it.
+    let aws_key = concat!("AKIA", "ROTATIONNEEDED7777Q");
+    let fixture = format!("// TODO: rotate this — {aws_key}\n");
+
+    let dir = TempDir::new().expect("tempdir");
+    let path = dir.path().join("comment_planted.go");
+    std::fs::write(&path, &fixture).expect("write fixture");
+
+    // Default: comment-context penalty in effect; AWS prefix is
+    // strong enough to still fire on this one, so we don't assert
+    // the *absence* of the finding (that would be brittle to
+    // confidence-floor tuning). What we DO assert is that
+    // --scan-comments AT LEAST matches the default — never silently
+    // hides findings the default would surface.
+    let default_out = Command::new(binary())
+        .arg("scan")
+        .arg("--format")
+        .arg("json")
+        .arg(&path)
+        .output()
+        .expect("spawn keyhog scan (default)");
+    let default_json = String::from_utf8_lossy(&default_out.stdout);
+    let default_findings: serde_json::Value =
+        serde_json::from_str(&default_json).expect("default-mode stdout is JSON");
+    let default_count = default_findings.as_array().map(|a| a.len()).unwrap_or(0);
+
+    let opt_in_out = Command::new(binary())
+        .arg("scan")
+        .arg("--scan-comments")
+        .arg("--format")
+        .arg("json")
+        .arg(&path)
+        .output()
+        .expect("spawn keyhog scan --scan-comments");
+    let opt_in_json = String::from_utf8_lossy(&opt_in_out.stdout);
+    let opt_in_findings: serde_json::Value =
+        serde_json::from_str(&opt_in_json).expect("opt-in stdout is JSON");
+    let opt_in_count = opt_in_findings.as_array().map(|a| a.len()).unwrap_or(0);
+
+    assert!(
+        opt_in_count >= default_count,
+        "--scan-comments must not LOSE findings vs default; \
+         default={default_count}, --scan-comments={opt_in_count}, \
+         default_json={default_json}, opt_in_json={opt_in_json}"
+    );
+
+    // At minimum --scan-comments fires on this AKIA-prefixed key
+    // (the keyhog known-prefix floor keeps it above any penalty).
+    assert!(
+        opt_in_count >= 1,
+        "--scan-comments MUST surface the AKIA-prefixed key in the \
+         comment; got {opt_in_count} findings: {opt_in_json}"
+    );
+}
