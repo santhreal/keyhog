@@ -282,7 +282,7 @@ async fn scan_text(state: &ServerState, path: Option<String>, text: String) -> R
             dogfood_events,
         },
         Err(e) => Response::Error {
-            message: format!("daemon: scan task panicked or was cancelled: {e}"),
+            message: format!("daemon: scan task panicked or was cancelled: {e:#}"),
         },
     }
 }
@@ -341,7 +341,7 @@ async fn scan_path(state: &ServerState, path: String, working_dir: Option<String
             message: format!("daemon: scan_path failed: {e:#}"),
         },
         Err(e) => Response::Error {
-            message: format!("daemon: scan task panicked or was cancelled: {e}"),
+            message: format!("daemon: scan task panicked or was cancelled: {e:#}"),
         },
     }
 }
