@@ -6,6 +6,7 @@
 mod base64;
 mod caesar;
 mod hex;
+mod json;
 mod pipeline;
 mod reverse;
 mod url;

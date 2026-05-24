@@ -272,9 +272,16 @@ fn every_contract_positive_fires_under_every_format_wrapper() {
         Wrapper::ALL.len(),
     );
 
+    // Strict-by-default: every adversarial wrapper variant MUST
+    // fire. The runner was added in report-only mode while the
+    // baseline (~73 JSON-wrapper misses) was bedded in; wiring
+    // JsonDecoder into the decode registry (decode/pipeline.rs)
+    // dropped the miss count to 0, so strict is now the floor.
+    // Set KEYHOG_ADVERSARIAL_STRICT=0 to opt out for a one-off
+    // debugging run.
     let strict = std::env::var("KEYHOG_ADVERSARIAL_STRICT")
-        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-        .unwrap_or(false);
+        .map(|v| !(v == "0" || v.eq_ignore_ascii_case("false")))
+        .unwrap_or(true);
 
     if !failures.is_empty() {
         let total = failures.len();

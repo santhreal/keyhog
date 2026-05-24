@@ -1,6 +1,7 @@
 use super::base64::{Base64Decoder, Z85Decoder};
 use super::caesar::CaesarDecoder;
 use super::hex::HexDecoder;
+use super::json::JsonDecoder;
 use super::reverse::ReverseDecoder;
 use super::url::{
     HexEscapeDecoder, HtmlNamedEntityDecoder, HtmlNumericEntityDecoder, MimeEncodedWordDecoder,
@@ -36,6 +37,14 @@ fn get_decoders() -> &'static [Box<dyn Decoder>] {
             Box::new(OctalEscapeDecoder),
             Box::new(MimeEncodedWordDecoder),
             Box::new(UnicodeEscapeDecoder),
+            // JSON unescape — strips `\"` / `\\` / `\n` style escapes
+            // inside JSON string values so credentials stored as
+            // JSON-encoded fields (the most common shape after .env)
+            // survive into the scanner. Originally implemented but
+            // never registered — the adversarial_explosion_runner's
+            // `json` wrapper class surfaced ~73 misses that wiring
+            // this in closed (5792/5792 variants now fire).
+            Box::new(JsonDecoder),
             Box::new(Z85Decoder),
             Box::new(ReverseDecoder),
             Box::new(CaesarDecoder),
@@ -52,7 +61,10 @@ pub fn register_decoder(decoder: Box<dyn Decoder>) {
         tracing::warn!("register_decoder called after initialization — decoder ignored. Fix: register custom decoders before scanning.");
         return;
     }
-    // Force initialization with the custom decoder appended.
+    // KEEP THIS LIST IN SYNC with `get_decoders()` above — they're
+    // two paths to the same initialized state, and a decoder missing
+    // here would silently vanish from any custom-decoder-registered
+    // run.
     let mut decoders: Vec<Box<dyn Decoder>> = vec![
         Box::new(Base64Decoder),
         Box::new(HexDecoder),
@@ -64,6 +76,7 @@ pub fn register_decoder(decoder: Box<dyn Decoder>) {
         Box::new(OctalEscapeDecoder),
         Box::new(MimeEncodedWordDecoder),
         Box::new(UnicodeEscapeDecoder),
+        Box::new(JsonDecoder),
         Box::new(Z85Decoder),
     ];
     decoders.push(decoder);
