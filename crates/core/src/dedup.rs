@@ -196,7 +196,16 @@ pub fn dedup_cross_detector(deduped: Vec<DedupedMatch>) -> Vec<DedupedMatch> {
     let mut out: Vec<DedupedMatch> = Vec::with_capacity(groups.len());
     for (_, mut group) in groups {
         if group.len() == 1 {
-            out.push(group.pop().unwrap());
+            // Safety: the `group.len() == 1` guard above means pop()
+            // returns Some. Promoted to expect with the invariant
+            // name so a future refactor of the dedup loop produces
+            // an actionable panic message instead of the bare
+            // "called Option::unwrap on a None" backtrace.
+            out.push(
+                group
+                    .pop()
+                    .expect("Fix: group has exactly one element by the len() == 1 guard"),
+            );
             continue;
         }
         // Sort: highest-confidence first, then severity desc, then detector_id asc.
