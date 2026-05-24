@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
 
 # Cancel older in-flight CI when a newer push lands on the same ref.
@@ -212,7 +213,13 @@ jobs:
   publish:
     name: Publish to crates.io
     needs: [test, clippy, fmt, build]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    # Only attempt publish on an explicit `v*` tag push. Running on
+    # every main push churned the CI red because keyhog-core depends
+    # on the vendored vyre-libs (not yet on crates.io), so `cargo
+    # publish` fails the "Updating crates.io index" step. Tag-gating
+    # also matches the conventional release flow: bump the version,
+    # tag, push the tag, publish.
+    if: startsWith(github.ref, 'refs/tags/v') && github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
