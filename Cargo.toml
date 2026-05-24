@@ -74,7 +74,7 @@ wait-timeout = "=0.2.1"
 tar = "=0.4.45"
 
 # Git
-gix = { version = "0.77.0", default-features = false, features = ["max-performance-safe"] }
+gix = { version = "=0.77.0", default-features = false, features = ["max-performance-safe"] }
 
 # Benchmarking
 criterion = { version = "=0.5.1", features = ["html_reports"] }
@@ -83,7 +83,7 @@ criterion = { version = "=0.5.1", features = ["html_reports"] }
 rayon = "=1.12.0"
 memchr = "=2.8.0"
 parking_lot = "=0.12.5"
-dashmap = "6.1.0"
+dashmap = "=6.1.0"
 indexmap = "=2.7.1"
 notify = "=8.0.0"
 
