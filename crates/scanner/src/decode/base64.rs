@@ -1,4 +1,4 @@
-use super::pipeline::{extract_encoded_values, push_decoded_text_chunk};
+use super::pipeline::{extract_encoded_values, push_decoded_text_chunk_spliced};
 use super::{Decoder, EncodedString};
 use keyhog_core::Chunk;
 
@@ -14,7 +14,19 @@ impl Decoder for Base64Decoder {
         for b64_match in find_base64_strings(&chunk.data, 20) {
             if let Ok(decoded) = base64_decode(&b64_match.value) {
                 if let Ok(text) = String::from_utf8(decoded) {
-                    push_decoded_text_chunk(&mut decoded_chunks, chunk, text, self.name());
+                    // Splice the decoded text back over the original
+                    // base64 blob in the parent so companion context
+                    // (e.g. `aws_secret = "…"`) stays adjacent to the
+                    // decoded credential. Without this the decoded
+                    // chunk is bare-bytes-only and every detector
+                    // anchored on an adjacent keyword misses.
+                    push_decoded_text_chunk_spliced(
+                        &mut decoded_chunks,
+                        chunk,
+                        &b64_match.value,
+                        text,
+                        self.name(),
+                    );
                 }
             }
         }
@@ -34,9 +46,10 @@ impl Decoder for Z85Decoder {
         for z_match in find_z85_strings(&chunk.data, 20) {
             if let Ok(decoded) = z85_decode(&z_match.value) {
                 if let Ok(text) = String::from_utf8(decoded) {
-                    push_decoded_text_chunk(
+                    push_decoded_text_chunk_spliced(
                         &mut decoded_chunks,
                         chunk,
+                        &z_match.value,
                         text.trim_end_matches('\0').to_string(),
                         self.name(),
                     );

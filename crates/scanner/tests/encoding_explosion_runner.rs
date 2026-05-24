@@ -293,10 +293,14 @@ fn every_positive_swept_through_every_encoding() {
         // to the credential miss the decoded form. That's a real
         // gap worth fixing in a follow-up; this runner is the
         // regression net for the current behaviour.
+        // Baselines re-set 2026-05-23 after the decode-splice fix
+        // (pipeline.rs `push_decoded_text_chunk_spliced`) moved
+        // base64/hex recall from ~30% to >90% by carrying parent
+        // companion context through the decoded chunk.
         let floor = match *enc {
             "identity" => 99.0,
-            "base64-std" | "base64-url" | "hex" => 25.0,
-            "url-percent" => 10.0,
+            "base64-std" | "base64-url" | "hex" => 88.0,
+            "url-percent" => 75.0,
             _ => 0.0,
         };
         if Encoding::ALL

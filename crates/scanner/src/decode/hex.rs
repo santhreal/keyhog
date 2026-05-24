@@ -1,4 +1,4 @@
-use super::pipeline::{extract_encoded_values, push_decoded_text_chunk};
+use super::pipeline::{extract_encoded_values, push_decoded_text_chunk_spliced};
 use super::{Decoder, EncodedString};
 use keyhog_core::Chunk;
 
@@ -14,7 +14,17 @@ impl Decoder for HexDecoder {
         for hex_match in find_hex_strings(&chunk.data, 32) {
             if let Ok(decoded) = hex_decode(&hex_match.value) {
                 if let Ok(text) = String::from_utf8(decoded) {
-                    push_decoded_text_chunk(&mut decoded_chunks, chunk, text, self.name());
+                    // Splice the decoded text over the hex blob in
+                    // the parent so companion context survives — see
+                    // base64.rs / pipeline.rs for the recall-gap
+                    // explanation.
+                    push_decoded_text_chunk_spliced(
+                        &mut decoded_chunks,
+                        chunk,
+                        &hex_match.value,
+                        text,
+                        self.name(),
+                    );
                 }
             }
         }
