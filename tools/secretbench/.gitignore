@@ -5,3 +5,7 @@
 mirror/corpus/
 results/*.json
 !results/.gitkeep
+# Baselines ARE committed — they pin known-good scoreboard
+# numbers a regression should turn red. Convention: name
+# `baseline-<scale>-<seed>-seed<N>.json`.
+!results/baseline-*.json
