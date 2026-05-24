@@ -26,6 +26,13 @@ description = "Pulsar JWT token environment variable"
 group = 1
 
 [[detector.patterns]]
-regex = "webServiceUrl.*pulsar.*\\n.*token[\"'\\']?\\s*[=:]\\s*[\"'\\']?(eyJ[a-zA-Z0-9_-]*\\.eyJ[a-zA-Z0-9_-]*\\.[a-zA-Z0-9_-]+)"
+# Bounded the cross-line backtracking. Original had `.*pulsar.*\n.*`
+# (three unbounded segments) which could span megabytes of haystack
+# searching for the JWT. Now: webServiceUrl is followed by at most
+# 256 non-newline chars before "pulsar", then at most 256 non-newline
+# chars before the newline, then at most 256 non-newline chars before
+# the token literal. Multi-line block scan stays valid but worst-case
+# input is bounded to ~768 chars per attempt.
+regex = "webServiceUrl[^\\n]{0,128}pulsar[^\\n]{0,128}\\n[^\\n]{0,128}token[\"'\\']?\\s*[=:]\\s*[\"'\\']?(eyJ[a-zA-Z0-9_-]*\\.eyJ[a-zA-Z0-9_-]*\\.[a-zA-Z0-9_-]+)"
 description = "Pulsar client configuration with JWT token"
 group = 1
