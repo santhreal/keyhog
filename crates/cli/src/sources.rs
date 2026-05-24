@@ -196,7 +196,19 @@ pub fn build_sources(
 
     #[cfg(feature = "web")]
     if let Some(urls) = &args.url {
-        sources.push(Box::new(keyhog_sources::WebSource::new(urls.clone())));
+        // Thread --proxy / --insecure through to the WebSource HTTP
+        // client. WebSource owns its own HttpClientConfig so the env-
+        // var fallbacks (KEYHOG_PROXY, HTTPS_PROXY, ...) still kick in
+        // when neither CLI flag was passed.
+        let http = keyhog_sources::http::HttpClientConfig {
+            proxy: args.proxy.clone(),
+            insecure_tls: args.insecure,
+            ua_suffix: Some("web".into()),
+            ..Default::default()
+        };
+        sources.push(Box::new(
+            keyhog_sources::WebSource::new(urls.clone()).with_http_config(http),
+        ));
     }
 
     // Dynamic sources from the global registry / plugin factory

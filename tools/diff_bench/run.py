@@ -196,7 +196,16 @@ def run_keyhog(binary: str, fixtures: list[Fixture]) -> ScannerResult:
     for fx in fixtures:
         start = time.perf_counter()
         proc = subprocess.run(
-            [binary, "scan", "--format", "json", "--no-daemon", str(fx.path)],
+            # --show-secrets: emit the raw credential instead of the
+            # default redacted form. Without it the JSON field is
+            # `ghp_0...XIa` and value-containment attribution against
+            # the truth label always fails — the runner credited
+            # keyhog with 0 findings on the first diff-bench run.
+            # The diff bench is a sealed test, not a CI-scan path, so
+            # emitting the synthetic credential to a workflow log is
+            # fine here.
+            [binary, "scan", "--format", "json", "--no-daemon",
+             "--show-secrets", str(fx.path)],
             capture_output=True, text=True, timeout=60,
         )
         elapsed_ms = (time.perf_counter() - start) * 1000
