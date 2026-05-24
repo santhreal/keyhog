@@ -356,4 +356,96 @@ pub(crate) mod backend {
             self.pattern_map.len()
         }
     }
+
+    /// Regression gate for the silent-pattern-drop class of bug.
+    ///
+    /// `HsScanner::compile` returns `(scanner, unsupported: Vec<usize>)`
+    /// — `unsupported` lists every pattern that failed to compile into
+    /// the Hyperscan database. Today the production path
+    /// (`build_simd_scanner` in `engine/backend.rs`) only logs that
+    /// count at `tracing::info!`, which is silenced by default. A
+    /// detector pattern can therefore silently drop out of the scan
+    /// with zero CI signal.
+    ///
+    /// That's how the `aws-ecr-token` `{50,4096}` capture broke on
+    /// 2026-05-24 — Hyperscan's per-pattern DFA budget (~1 MiB)
+    /// exploded on a bounded repetition over a 64-char class, the
+    /// pattern silently dropped, and only `contracts_runner` (which
+    /// scans actual fixture text) noticed. This test catches the same
+    /// failure mode directly at PR time instead of via a missing
+    /// fixture match.
+    #[cfg(test)]
+    mod silent_drop_regression {
+        use super::*;
+
+        #[test]
+        fn no_embedded_detector_pattern_silently_drops_at_hyperscan_compile() {
+            // Load the production-shipped embedded detector corpus.
+            let mut specs = Vec::new();
+            for (name, toml_text) in keyhog_core::embedded_detector_tomls() {
+                match keyhog_core::load_detectors_from_str(toml_text) {
+                    Ok(parsed) => specs.extend(parsed),
+                    Err(err) => panic!(
+                        "embedded detector `{name}` failed to parse — fix the TOML \
+                         first. Inner: {err}"
+                    ),
+                }
+            }
+            assert!(
+                !specs.is_empty(),
+                "embedded_detector_tomls() returned empty after parse — build.rs \
+                 likely skipped embedding; rebuild keyhog-core from a clean target/."
+            );
+
+            // Compile each pattern in isolation through HsScanner::compile
+            // and assert `unsupported` is empty. This is more strict than
+            // the production path (which compiles the union database with
+            // pattern-bisect-on-failure) but it's the right gate for
+            // catching the silent-drop bug: any pattern that can't make
+            // it through compile() alone won't be in the database either.
+            let mut dropped: Vec<(String, String, String)> = Vec::new();
+            for spec in &specs {
+                for (pat_idx, pattern) in spec.patterns.iter().enumerate() {
+                    let regex_str = pattern.regex.as_str();
+                    let single = [(0usize, pat_idx, regex_str, false)];
+                    match HsScanner::compile(&single) {
+                        Ok((_scanner, unsupported)) => {
+                            if !unsupported.is_empty() {
+                                dropped.push((
+                                    spec.id.to_string(),
+                                    regex_str.to_string(),
+                                    "single-pattern compile returned unsupported — \
+                                     probable DFA-size or unsupported-feature rejection"
+                                        .to_string(),
+                                ));
+                            }
+                        }
+                        Err(err) => {
+                            dropped.push((spec.id.to_string(), regex_str.to_string(), err));
+                        }
+                    }
+                }
+            }
+
+            if !dropped.is_empty() {
+                let mut msg = format!(
+                    "{} detector pattern(s) silently dropped at Hyperscan compile:\n",
+                    dropped.len()
+                );
+                for (det, regex, why) in dropped.iter().take(10) {
+                    msg.push_str(&format!("  - {det}: {regex}\n    -> {why}\n"));
+                }
+                if dropped.len() > 10 {
+                    msg.push_str(&format!("  ... and {} more.\n", dropped.len() - 10));
+                }
+                msg.push_str(
+                    "\nCommon cause: a bounded repetition `{0,N}` over a wide \
+                     character class (8-bit alphabet, N > ~256) explodes the \
+                     per-pattern DFA. Fix: drop the upper bound or shrink N. \
+                     Prior art: aws-ecr-token commit c6d0511.",
+                );
+                panic!("{msg}");
+            }
+        }
+    }
 }
