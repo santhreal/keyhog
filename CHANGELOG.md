@@ -4,6 +4,23 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ## Unreleased
 
+## v0.5.13 — 2026-05-23 — SARIF dedup so GitHub Code Scanning accepts uploads
+
+### Fixed
+
+SARIF v2.1.0 forbids duplicate items in `relatedLocations`. When a
+finding had the same supplemental location reported twice (e.g.
+verifier echo + scanner overlap), GitHub Code Scanning rejected the
+whole SARIF with `relatedLocations contains duplicate item`,
+silently losing every finding on the upload. The dedup runs on a
+`(file_path, line, offset)` key before serialization, so each
+related location appears at most once.
+
+This is what unblocks the fleet-wide `keyhog.yml` CI rollout —
+prior to this fix every repo that produced a finding lost its
+SARIF, leaving the Code Scanning tab empty even when the run was
+"green".
+
 ## v0.5.12 — 2026-05-23 — dedup 9 more dup-primary detectors
 
 ### Fixed
