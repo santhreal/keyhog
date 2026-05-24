@@ -16,7 +16,11 @@ description = "Cerebrium JWT API token"
 group = 1
 
 [[detector.patterns]]
-regex = "Authorization[=:\\s\"\\']*Bearer[=:\\s\"\\']+([A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+).*cerebrium\\.ai"
+# Bounded the `.*` after the JWT capture to `[^\n]{0,128}` so a real
+# Cerebrium API call (Authorization + ` cerebrium.ai` URL on the same
+# line or within ~1 line) still matches, but the regex can't span
+# hundreds of lines looking for the substring. kimi-4 audit.
+regex = "Authorization[=:\\s\"\\']*Bearer[=:\\s\"\\']+([A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+)[^\\n]{0,128}cerebrium\\.ai"
 description = "Cerebrium JWT bearer token with endpoint context"
 group = 1
 

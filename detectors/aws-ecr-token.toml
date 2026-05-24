@@ -16,10 +16,23 @@ description = "AWS ECR authorization token (base64 encoded) with context anchor"
 group = 1
 
 [[detector.patterns]]
-regex = "(?:\\.dkr\\.ecr\\.[a-z0-9-]+\\.amazonaws\\.com).*?(?:password|token)[=:\\s\"'']+([A-Za-z0-9+/=]{50,})"
+# Bounded the `.*?` between the ECR registry URL and the password
+# field to 128 non-newline chars. Real ECR docker-config / Helm value
+# files keep the URL and credential within a few lines of each other.
+# The captured token keeps the unbounded `{50,}` because tightening
+# to `{50,N}` on a 64-char alphabet explodes the Hyperscan DFA
+# beyond its 1 MiB-per-pattern budget; the URL anchor + 128-char
+# bridge already prevent unbounded matching of the regex AS A WHOLE.
+# kimi-4 audit; contracts_runner caught the DFA regression.
+regex = "(?:\\.dkr\\.ecr\\.[a-z0-9-]+\\.amazonaws\\.com)[^\\n]{0,128}(?:password|token)[=:\\s\"'']+([A-Za-z0-9+/=]{50,})"
 description = "AWS ECR token associated with ECR registry URL"
 group = 1
 
 [[detector.patterns]]
-regex = "aws ecr get-login-password.*?\\|\\s*docker login.*?--password-stdin"
+# Bounded the two `.*?` segments to 128 non-newline chars each. The
+# `aws ecr get-login-password | docker login --password-stdin` idiom
+# is always one shell line in practice; the bound stops the regex
+# spanning unrelated shell commands in a Makefile/script. kimi-4
+# audit.
+regex = "aws ecr get-login-password[^\\n]{0,128}\\|\\s*docker login[^\\n]{0,128}--password-stdin"
 description = "AWS ECR login command pattern indicating token usage"
