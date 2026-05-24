@@ -202,22 +202,26 @@ def run_keyhog(binary: str, fixtures: list[Fixture]) -> ScannerResult:
         elapsed_ms = (time.perf_counter() - start) * 1000
         result.total_time_ms += elapsed_ms
 
-        # keyhog --format json emits a JSON object with a `findings`
-        # array; on no findings it still emits valid JSON.
+        # keyhog --format json emits either a top-level JSON array
+        # of findings (current schema) or an object with a `findings`
+        # array (older schema). Accept both.
         found_values: list[str] = []
         try:
-            doc = json.loads(proc.stdout) if proc.stdout.strip() else {}
-            for f in doc.get("findings", []):
-                # keyhog Finding has a `credential` or `match` field
-                # depending on the schema version; accept either.
-                cred = f.get("credential") or f.get("match") or ""
-                if isinstance(cred, str) and cred:
-                    found_values.append(cred)
+            doc = json.loads(proc.stdout) if proc.stdout.strip() else []
         except json.JSONDecodeError:
             # Non-JSON stdout means the scanner errored on this
             # fixture; treat as zero findings rather than crashing
             # the whole differential run.
-            pass
+            doc = []
+        findings_iter = doc if isinstance(doc, list) else doc.get("findings", [])
+        for f in findings_iter:
+            if not isinstance(f, dict):
+                continue
+            # keyhog Finding has a `credential` or `match` field
+            # depending on the schema version; accept either.
+            cred = f.get("credential") or f.get("match") or f.get("raw") or ""
+            if isinstance(cred, str) and cred:
+                found_values.append(cred)
 
         result.finding_count += len(found_values)
         tp, fp, fn = attribute(fx, found_values)
