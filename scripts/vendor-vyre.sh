@@ -9,6 +9,14 @@
 # `vyre-*` and writes a VENDOR_INFO.txt so the next reviewer can
 # tell exactly which upstream commit landed.
 #
+# !!! WARNING — hand-edits INSIDE `vendor/vyre/vyre-*/` are obliterated
+# on refresh. Before running this script, READ `vendor/vyre/PATCHES.md`
+# and plan to re-apply (or upstream) every entry there. As of
+# 2026-05-23 the active set includes a macOS PhantomData fix,
+# megakernel planner hardening, and local vyre-aot Cargo.toml
+# trimming. Skipping the re-apply breaks macOS + non-Linux builds
+# and regresses the GPU scan path.
+#
 # Usage:
 #   scripts/vendor-vyre.sh                # latest semver tag, default repo
 #   scripts/vendor-vyre.sh --ref v0.6.0   # pin to an explicit ref
