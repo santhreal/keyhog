@@ -1,0 +1,111 @@
+name: keyhog
+
+# Run keyhog secret scanner on every push + PR. Findings (exit 1) fail the
+# job; runtime errors (exit 2) also fail. No findings = green.
+#
+# Distribution: downloads the pinned Linux x86_64 binary from the keyhog
+# GitHub release. No `cargo install` because keyhog vendors vyre-libs and
+# is not currently on crates.io.
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+# Cancel in-flight scans for the same ref when a new push lands.
+concurrency:
+  group: keyhog-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  security-events: write   # upload SARIF to Code Scanning
+
+jobs:
+  scan:
+    name: keyhog scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history for git-source scans
+
+      - name: install vectorscan runtime
+        # keyhog v0.5.12 dynamically links to libhs.so.5 (Vectorscan,
+        # the Hyperscan-API-compatible regex engine). Ubuntu runners
+        # ship `libhyperscan5` on Ubuntu 22.04+; install it explicitly
+        # so the release binary loads.
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libhyperscan5 || \
+            sudo apt-get install -y --no-install-recommends libhyperscan-dev
+
+      - name: install keyhog
+        env:
+          KEYHOG_VERSION: v0.5.13
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.local/bin"
+          curl --proto '=https' --tlsv1.2 --retry 5 --retry-connrefused \
+               --location --silent --show-error --fail \
+               -o "$HOME/.local/bin/keyhog" \
+               "https://github.com/santhsecurity/keyhog/releases/download/${KEYHOG_VERSION}/keyhog-linux-x86_64"
+          chmod +x "$HOME/.local/bin/keyhog"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/keyhog" --version
+
+      - name: scan
+        id: scan
+        continue-on-error: true
+        run: |
+          # SARIF goes to a file (uploaded below); human-readable text
+          # also lands in the job log for at-a-glance triage.
+          keyhog scan . \
+            --format sarif \
+            --output keyhog.sarif \
+          || echo "scan_exit=$?" >> "$GITHUB_OUTPUT"
+          # Re-run for text output in the log (cheap; same in-process scan).
+          keyhog scan . --format text || true
+
+      - name: upload SARIF artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: keyhog-sarif
+          path: keyhog.sarif
+          if-no-files-found: warn
+
+      - name: upload to Code Scanning
+        # Non-blocking: SARIF v2.1.0 validation is strict (e.g.
+        # `relatedLocations contains duplicate item`), and a single
+        # validation hiccup in a single result should not turn the
+        # whole scan red. The artifact above always lands, so the
+        # SARIF is still reachable for triage.
+        if: always() && hashFiles('keyhog.sarif') != ''
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: keyhog.sarif
+          category: keyhog
+
+      - name: fail on findings (opt-in via .keyhog/strict)
+        if: steps.scan.outputs.scan_exit != ''
+        run: |
+          echo "keyhog scan exited with ${{ steps.scan.outputs.scan_exit }}"
+          echo "  exit 1 = findings present (see SARIF + Code Scanning)"
+          echo "  exit 2 = runtime error (check logs)"
+          # Runtime errors (exit 2+) always fail CI — they indicate the
+          # scanner itself broke, not a finding. Only exit 1 (findings)
+          # is gated on the repo opt-in marker.
+          if [ "${{ steps.scan.outputs.scan_exit }}" != "1" ]; then
+            exit "${{ steps.scan.outputs.scan_exit }}"
+          fi
+          if [ -f .keyhog/strict ]; then
+            echo "  .keyhog/strict present → failing CI on findings"
+            exit 1
+          fi
+          echo "  .keyhog/strict absent → findings visible in Code Scanning"
+          echo "  (touch .keyhog/strict to make findings block CI)"
