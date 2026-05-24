@@ -128,13 +128,7 @@ mod url_name_validation_tests {
 
     #[test]
     fn accepts_normal_repo_names() {
-        for ok in &[
-            "keyhog",
-            "keyhog.rs",
-            "Cool-Repo_2",
-            "a",
-            &"x".repeat(100),
-        ] {
+        for ok in &["keyhog", "keyhog.rs", "Cool-Repo_2", "a", &"x".repeat(100)] {
             assert!(validate_repo_name(ok).is_ok(), "should accept {ok:?}");
         }
     }
@@ -152,10 +146,7 @@ mod url_name_validation_tests {
             "name with space",
             &"x".repeat(101),
         ] {
-            assert!(
-                validate_repo_name(bad).is_err(),
-                "should reject {bad:?}"
-            );
+            assert!(validate_repo_name(bad).is_err(), "should reject {bad:?}");
         }
     }
 
@@ -180,10 +171,7 @@ mod url_name_validation_tests {
             "https://example.com/repo with space.git",
             "https://example.com/repo\nwith\nnewlines",
         ] {
-            assert!(
-                validate_clone_url(bad).is_err(),
-                "should reject {bad:?}"
-            );
+            assert!(validate_clone_url(bad).is_err(), "should reject {bad:?}");
         }
     }
 }
