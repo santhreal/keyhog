@@ -18,8 +18,16 @@ impl CompiledScanner {
     ) {
         use std::sync::LazyLock;
         static GENERIC_RE: LazyLock<Option<regex::Regex>> = LazyLock::new(|| {
+            // `:` was added to the value alphabet so quoted YAML
+            // values containing internal colons survive into the
+            // capture (e.g. `api_key: "nginx@sha256:<64-hex>"` was
+            // being truncated at the first internal colon and the
+            // 12-char prefix `nginx@sha256` was getting flagged as
+            // a low-entropy generic-secret FP). Captures for
+            // unquoted values terminate naturally at whitespace
+            // because `\s` is not in the alphabet.
             regex::Regex::new(
-                r#"(?i)(?:secret|password|passwd|pwd|token|api[_-]?key|apikey|auth[_-]?token|auth[_-]?key|credential|private[_-]?key|signing[_-]?key|encryption[_-]?key|access[_-]?key|client[_-]?secret|app[_-]?secret|master[_-]?key|license[_-]?key)\s*[=:]\s*["'`]?([a-zA-Z0-9/+=_.!@#$%^&*-]{8,128})["'`]?"#
+                r#"(?i)(?:secret|password|passwd|pwd|token|api[_-]?key|apikey|auth[_-]?token|auth[_-]?key|credential|private[_-]?key|signing[_-]?key|encryption[_-]?key|access[_-]?key|client[_-]?secret|app[_-]?secret|master[_-]?key|license[_-]?key)\s*[=:]\s*["'`]?([a-zA-Z0-9/+=_.:!@#$%^&*-]{8,128})["'`]?"#
             ).ok()
         });
         let Some(generic_re) = GENERIC_RE.as_ref() else {

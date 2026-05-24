@@ -1,0 +1,245 @@
+{
+  "generated_at": "2026-05-24T06:40:38.338717+00:00",
+  "corpus": "/tmp/secretbench-medium",
+  "fixture_count": 15000,
+  "ranking": [
+    {
+      "rank": 1,
+      "scanner": "keyhog",
+      "f1": 0.5417,
+      "precision": 0.4325,
+      "recall": 0.7247,
+      "total_time_ms": 114263.29
+    }
+  ],
+  "scanners": {
+    "keyhog": {
+      "scanner": "keyhog",
+      "available": true,
+      "version": "",
+      "error": "",
+      "fixture_count": 15000,
+      "finding_count": 5033,
+      "total_time_ms": 114263.29,
+      "overall": {
+        "tp": 2174,
+        "fp": 2853,
+        "fn": 826,
+        "precision": 0.4325,
+        "recall": 0.7247,
+        "f1": 0.5417
+      },
+      "per_category": {
+        "api-key": {
+          "tp": 746,
+          "fp": 26,
+          "fn": 255,
+          "precision": 0.9663,
+          "recall": 0.7453,
+          "f1": 0.8415
+        },
+        "authentication-key": {
+          "tp": 431,
+          "fp": 36,
+          "fn": 101,
+          "precision": 0.9229,
+          "recall": 0.8102,
+          "f1": 0.8629
+        },
+        "aws-arn": {
+          "tp": 0,
+          "fp": 27,
+          "fn": 0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        },
+        "base64-protobuf": {
+          "tp": 0,
+          "fp": 705,
+          "fn": 0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        },
+        "cloud-service-credential": {
+          "tp": 514,
+          "fp": 62,
+          "fn": 198,
+          "precision": 0.8924,
+          "recall": 0.7219,
+          "f1": 0.7981
+        },
+        "cryptographic-private-key": {
+          "tp": 84,
+          "fp": 39,
+          "fn": 25,
+          "precision": 0.6829,
+          "recall": 0.7706,
+          "f1": 0.7241
+        },
+        "database-connection-string": {
+          "tp": 102,
+          "fp": 0,
+          "fn": 31,
+          "precision": 1.0,
+          "recall": 0.7669,
+          "f1": 0.8681
+        },
+        "docker-image-digest": {
+          "tp": 0,
+          "fp": 201,
+          "fn": 0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        },
+        "docs-example-marker": {
+          "tp": 0,
+          "fp": 234,
+          "fn": 0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        },
+        "generic-high-entropy-string": {
+          "tp": 106,
+          "fp": 3,
+          "fn": 88,
+          "precision": 0.9725,
+          "recall": 0.5464,
+          "f1": 0.6997
+        },
+        "generic-password": {
+          "tp": 38,
+          "fp": 1,
+          "fn": 19,
+          "precision": 0.9744,
+          "recall": 0.6667,
+          "f1": 0.7917
+        },
+        "git-commit-sha": {
+          "tp": 0,
+          "fp": 52,
+          "fn": 0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        },
+        "html-color": {
+          "tp": 0,
+          "fp": 22,
+          "fn": 0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        },
+        "jwt-rfc-example": {
+          "tp": 0,
+          "fp": 142,
+          "fn": 0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        },
+        "k8s-resource-uid": {
+          "tp": 0,
+          "fp": 25,
+          "fn": 0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        },
+        "license-key-shape": {
+          "tp": 0,
+          "fp": 464,
+          "fn": 0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        },
+        "lorem-with-high-entropy": {
+          "tp": 0,
+          "fp": 68,
+          "fn": 0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        },
+        "npm-lock-integrity": {
+          "tp": 0,
+          "fp": 102,
+          "fn": 0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        },
+        "python-requirements-hash": {
+          "tp": 0,
+          "fp": 261,
+          "fn": 0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        },
+        "session-token": {
+          "tp": 42,
+          "fp": 36,
+          "fn": 64,
+          "precision": 0.5385,
+          "recall": 0.3962,
+          "f1": 0.4565
+        },
+        "sha1-hex": {
+          "tp": 0,
+          "fp": 61,
+          "fn": 0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        },
+        "sha256-hex": {
+          "tp": 0,
+          "fp": 118,
+          "fn": 0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        },
+        "ssh-key": {
+          "tp": 82,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "template-placeholder": {
+          "tp": 0,
+          "fp": 41,
+          "fn": 0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        },
+        "uuid": {
+          "tp": 0,
+          "fp": 127,
+          "fn": 0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        },
+        "webhook-url-token": {
+          "tp": 29,
+          "fp": 0,
+          "fn": 45,
+          "precision": 1.0,
+          "recall": 0.3919,
+          "f1": 0.5631
+        }
+      }
+    }
+  },
+  "citation": "If reporting numbers from the real SecretBench dataset (not the mirror corpus), cite: Basak, S. K., Neil, L., Reaves, B., Williams, L. (2023). SecretBench: A Dataset of Software Secrets. MSR. arXiv:2303.06729."
+}

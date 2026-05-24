@@ -300,12 +300,32 @@ pub fn should_suppress_known_example_credential_with_source(
     // practice — they're git commit IDs, npm-lock integrity hashes,
     // requirements.txt --hash entries, docker image digests, and
     // k8s resource UIDs. Surfaced by the secretbench mirror corpus
-    // as the dominant FP class (40% of keyhog's FPs on the
-    // baseline-smoke-100-seed0 scoreboard were one of these shapes).
+    // as the dominant FP class.
     // Known-prefix credentials bypass this (a 64-char hex AWS key
     // shouldn't be filtered) — we already returned `false` above
     // when known_prefix_body matched.
     if looks_like_pure_hash_digest_or_uuid(credential) {
+        return true;
+    }
+
+    // ── 5c. License-key / serial shape: 5 blocks of 5 alnum chars,
+    //         dash-separated (XXXXX-XXXXX-XXXXX-XXXXX-XXXXX). Used
+    //         by Microsoft Office / Adobe / Atlassian license keys
+    //         and a thousand similar product-key surfaces. Real
+    //         credentials almost never carry this shape. From
+    //         secretbench-medium-15k: 464 FPs (3rd-largest cluster).
+    if looks_like_dashed_serial_key(credential) {
+        return true;
+    }
+
+    // ── 5d. The well-known RFC 7519 example JWT (specimen token
+    //         from the spec, copy-pasted into thousands of docs).
+    //         Conservative literal-prefix match so we don't
+    //         accidentally suppress real JWTs that begin with the
+    //         same header.
+    if credential.starts_with(RFC7519_EXAMPLE_JWT_PREFIX)
+        && credential.contains("SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c")
+    {
         return true;
     }
 
@@ -360,6 +380,28 @@ pub fn should_suppress_known_example_credential_with_source(
         }
     }
     false
+}
+
+/// Prefix of the RFC 7519 specimen JWT — the example token from the
+/// JWT spec, copy-pasted into thousands of "how to use JWTs" blog
+/// posts and docs. NOT a real secret.
+const RFC7519_EXAMPLE_JWT_PREFIX: &str =
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkw";
+
+/// True if `credential` matches the XXXXX-XXXXX-XXXXX-XXXXX-XXXXX
+/// dashed-serial / license-key shape: exactly 5 dash-separated
+/// blocks, each exactly 5 alphanumeric characters. Microsoft Office,
+/// Adobe, Atlassian, JetBrains and many other product-key surfaces
+/// use this shape; real credentials almost never do.
+pub(crate) fn looks_like_dashed_serial_key(credential: &str) -> bool {
+    if credential.len() != 29 {
+        return false;
+    }
+    let parts: Vec<&str> = credential.split('-').collect();
+    if parts.len() != 5 {
+        return false;
+    }
+    parts.iter().all(|p| p.len() == 5 && p.chars().all(|c| c.is_ascii_alphanumeric()))
 }
 
 /// True if `credential` is a bare cryptographic hash digest
@@ -974,6 +1016,23 @@ mod placeholder_suppression_tests {
         let sha = "0123456789abcdef".repeat(4);
         let pip = format!("--hash=sha256:{sha}");
         assert!(looks_like_pure_hash_digest_or_uuid(&pip));
+    }
+
+    #[test]
+    fn dashed_serial_license_key_shape_is_suppressed() {
+        assert!(looks_like_dashed_serial_key("ABCDE-12345-FGHIJ-67890-KLMNO"));
+    }
+
+    #[test]
+    fn dashed_serial_off_block_shape_is_not_suppressed() {
+        // Real keyhog AKIA key shape has no internal hyphens
+        assert!(!looks_like_dashed_serial_key("AKIAIOSFODNN7EXAMPLE"));
+        // Heroku UUID has different block sizes (8-4-4-4-12), must not match
+        assert!(!looks_like_dashed_serial_key(
+            "12345678-1234-1234-1234-123456789012"
+        ));
+        // 4 blocks of 5 → 24 chars (incl 3 dashes) doesn't match 29-char rule
+        assert!(!looks_like_dashed_serial_key("ABCDE-12345-FGHIJ-67890"));
     }
 
     #[test]
