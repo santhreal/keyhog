@@ -139,6 +139,17 @@ fn print_version_info() {
         "ML Model Version: {}",
         keyhog_scanner::ml_scorer::model_version()
     );
+    // Hardware probe lives behind KEYHOG_VERSION_FULL=1 because the
+    // GPU portion initializes the entire wgpu/Vulkan stack (~200 ms +
+    // a 134 MB MAP_SHARED segment), which made `keyhog --version` 9×
+    // slower than `--help`. Production CI scripts that probe `keyhog
+    // --version` for capability detection hit that delay on every
+    // pipeline tick. Hardware info still lives in `keyhog backend`,
+    // and the env-var path keeps the original output available for
+    // users who scripted against it.
+    if std::env::var_os("KEYHOG_VERSION_FULL").is_none() {
+        return;
+    }
     let hw = keyhog_scanner::hw_probe::probe_hardware();
     if hw.gpu_available {
         // The number `hw.gpu_vram_mb` returns is `limits.max_buffer_size`,
