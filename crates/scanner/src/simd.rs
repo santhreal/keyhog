@@ -359,24 +359,39 @@ pub(crate) mod backend {
 
     /// Regression gate for the silent-pattern-drop class of bug.
     ///
-    /// `HsScanner::compile` returns `(scanner, unsupported: Vec<usize>)`
-    /// — `unsupported` lists every pattern that failed to compile into
-    /// the Hyperscan database. Today the production path
-    /// (`build_simd_scanner` in `engine/backend.rs`) only logs that
-    /// count at `tracing::info!`, which is silenced by default. A
-    /// detector pattern can therefore silently drop out of the scan
-    /// with zero CI signal.
+    /// Two engines compile every detector pattern in production:
+    /// `HsScanner::compile` (Hyperscan, simd path) and
+    /// `regex::RegexBuilder` (used by the fallback + companion paths
+    /// via `compiler.rs::shared_regex`). Each has its own ~1 MiB
+    /// per-pattern DFA budget; both can silently drop a pattern when
+    /// a bounded repetition over a wide character class blows the
+    /// budget.
     ///
-    /// That's how the `aws-ecr-token` `{50,4096}` capture broke on
-    /// 2026-05-24 — Hyperscan's per-pattern DFA budget (~1 MiB)
-    /// exploded on a bounded repetition over a 64-char class, the
-    /// pattern silently dropped, and only `contracts_runner` (which
-    /// scans actual fixture text) noticed. This test catches the same
-    /// failure mode directly at PR time instead of via a missing
-    /// fixture match.
+    /// Hyperscan logs `unsupported.len()` at `tracing::info!`
+    /// (silenced by default). The regex crate raises a
+    /// `CompiledTooBig` error inside `CompiledScanner::compile` —
+    /// but that fails LATE, only when keyhog binds a real scanner
+    /// at runtime, NOT in any unit test that compiles individual
+    /// patterns in isolation. Together the two engines let a
+    /// regression land silently until either a `contracts_runner`
+    /// fixture-text test misses a credential (Hyperscan path) or a
+    /// real `keyhog scan` invocation exits 2 with the runtime error
+    /// (regex-crate path).
+    ///
+    /// Both classes regressed on 2026-05-24:
+    ///   - aws-ecr-token   `{50,4096}` over 64-char alphabet
+    ///                     -> Hyperscan rejection
+    ///   - supabase-realtime `[^\s"']{1,2048}` over ~250-char class
+    ///                     -> regex-crate `CompiledTooBig`
+    ///
+    /// This gate runs every embedded detector pattern through BOTH
+    /// engines with the same size limits the production paths use,
+    /// and fails with the offending regex string the moment either
+    /// engine rejects it — catching the silent-drop class at PR time.
     #[cfg(test)]
     mod silent_drop_regression {
         use super::*;
+        use crate::types::REGEX_SIZE_LIMIT_BYTES;
 
         #[test]
         fn no_embedded_detector_pattern_silently_drops_at_hyperscan_compile() {
@@ -397,16 +412,16 @@ pub(crate) mod backend {
                  likely skipped embedding; rebuild keyhog-core from a clean target/."
             );
 
-            // Compile each pattern in isolation through HsScanner::compile
-            // and assert `unsupported` is empty. This is more strict than
-            // the production path (which compiles the union database with
-            // pattern-bisect-on-failure) but it's the right gate for
-            // catching the silent-drop bug: any pattern that can't make
-            // it through compile() alone won't be in the database either.
+            // Compile each pattern in isolation through both engines
+            // with the same size limits the production paths use, and
+            // collect every rejection. Any pattern that fails in either
+            // engine would silently drop in production today.
             let mut dropped: Vec<(String, String, String)> = Vec::new();
             for spec in &specs {
                 for (pat_idx, pattern) in spec.patterns.iter().enumerate() {
                     let regex_str = pattern.regex.as_str();
+
+                    // 1. Hyperscan path (production: simd feature on).
                     let single = [(0usize, pat_idx, regex_str, false)];
                     match HsScanner::compile(&single) {
                         Ok((_scanner, unsupported)) => {
@@ -414,22 +429,42 @@ pub(crate) mod backend {
                                 dropped.push((
                                     spec.id.to_string(),
                                     regex_str.to_string(),
-                                    "single-pattern compile returned unsupported — \
+                                    "Hyperscan: single-pattern compile returned unsupported — \
                                      probable DFA-size or unsupported-feature rejection"
                                         .to_string(),
                                 ));
                             }
                         }
                         Err(err) => {
-                            dropped.push((spec.id.to_string(), regex_str.to_string(), err));
+                            dropped.push((
+                                spec.id.to_string(),
+                                regex_str.to_string(),
+                                format!("Hyperscan: {err}"),
+                            ));
                         }
+                    }
+
+                    // 2. regex crate path (production: fallback + companion
+                    // compilation via compiler.rs::shared_regex, same
+                    // size_limit / dfa_size_limit settings).
+                    let regex_build_result = regex::RegexBuilder::new(regex_str)
+                        .size_limit(REGEX_SIZE_LIMIT_BYTES)
+                        .dfa_size_limit(REGEX_SIZE_LIMIT_BYTES)
+                        .case_insensitive(true)
+                        .build();
+                    if let Err(err) = regex_build_result {
+                        dropped.push((
+                            spec.id.to_string(),
+                            regex_str.to_string(),
+                            format!("regex-crate: {err}"),
+                        ));
                     }
                 }
             }
 
             if !dropped.is_empty() {
                 let mut msg = format!(
-                    "{} detector pattern(s) silently dropped at Hyperscan compile:\n",
+                    "{} detector pattern(s) silently dropped at regex compile:\n",
                     dropped.len()
                 );
                 for (det, regex, why) in dropped.iter().take(10) {
@@ -440,9 +475,10 @@ pub(crate) mod backend {
                 }
                 msg.push_str(
                     "\nCommon cause: a bounded repetition `{0,N}` over a wide \
-                     character class (8-bit alphabet, N > ~256) explodes the \
-                     per-pattern DFA. Fix: drop the upper bound or shrink N. \
-                     Prior art: aws-ecr-token commit c6d0511.",
+                     character class (e.g. `[^\\s\"']` or `[A-Za-z0-9+/=]`) \
+                     explodes the per-pattern DFA past 1 MiB. Fix: drop the \
+                     upper bound or shrink N. Prior art: aws-ecr-token + \
+                     supabase-realtime-credentials, 2026-05-24.",
                 );
                 panic!("{msg}");
             }
