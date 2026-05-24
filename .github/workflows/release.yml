@@ -47,6 +47,20 @@ jobs:
             asset: keyhog-macos-aarch64
             install: ''
             features: '--no-default-features --features portable'
+          # macOS x86_64 (Intel) — same feature subset as Apple-Silicon.
+          # macos-13 still runs on x86_64 GitHub-hosted hardware.
+          - os: macos-13
+            asset: keyhog-macos-x86_64
+            install: ''
+            features: '--no-default-features --features portable'
+          # Windows MSVC — same portable subset. Hyperscan is not
+          # shipped on Windows, and daemon IPC is Unix-socket-only
+          # (already gated with #[cfg(unix)]), so the portable
+          # surface compiles natively here.
+          - os: windows-latest
+            asset: keyhog-windows-x86_64.exe
+            install: ''
+            features: '--no-default-features --features portable'
     runs-on: ${{ matrix.os }}
     steps:
       - name: Resolve tag
@@ -80,7 +94,16 @@ jobs:
 
       - name: Stage binary
         shell: bash
-        run: cp target/release/keyhog "${{ matrix.asset }}"
+        run: |
+          set -euo pipefail
+          # cargo writes `keyhog.exe` on Windows hosts; `keyhog`
+          # elsewhere. Either source is fine; the destination name
+          # comes from matrix.asset (already carries .exe on Windows).
+          if [[ -f target/release/keyhog.exe ]]; then
+            cp target/release/keyhog.exe "${{ matrix.asset }}"
+          else
+            cp target/release/keyhog "${{ matrix.asset }}"
+          fi
 
       - name: Upload to release
         env:
