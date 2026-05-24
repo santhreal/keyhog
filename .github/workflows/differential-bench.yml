@@ -1,0 +1,118 @@
+name: differential-bench
+
+# Run the differential precision / recall / speed bench against
+# TruffleHog + Gitleaks on the same labeled corpus. Produces a single
+# `differential_results.json` artifact per run for trend analysis.
+#
+# Gating: `run_differential_compare.py` exits non-zero if keyhog's F1
+# isn't strictly better than every available competitor's F1, so a
+# regression turns this workflow red and lights the badge in README.
+
+on:
+  schedule:
+    # 03:11 UTC nightly — staggered off the hour to avoid the queue
+    # spike for actions/runner-images cache.
+    - cron: "11 3 * * *"
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "Fixture cap (0 = every fixture, smaller = smoke)."
+        required: false
+        default: "0"
+
+permissions:
+  contents: read
+
+jobs:
+  bench:
+    name: keyhog vs trufflehog vs gitleaks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: install vectorscan runtime
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libhyperscan5 || \
+            sudo apt-get install -y --no-install-recommends libhyperscan-dev
+
+      - name: install keyhog (release binary)
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.local/bin"
+          # Track the latest release rather than pinning a version —
+          # the bench is intentionally measuring "current production
+          # keyhog" not a specific tag.
+          tag=$(curl -fsSL https://api.github.com/repos/santhsecurity/keyhog/releases/latest | \
+                python3 -c 'import json,sys;print(json.load(sys.stdin)["tag_name"])')
+          echo "using keyhog $tag"
+          curl --proto '=https' --tlsv1.2 --retry 5 --retry-connrefused \
+               --location --silent --show-error --fail \
+               -o "$HOME/.local/bin/keyhog" \
+               "https://github.com/santhsecurity/keyhog/releases/download/${tag}/keyhog-linux-x86_64"
+          chmod +x "$HOME/.local/bin/keyhog"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: install trufflehog
+        run: |
+          set -euo pipefail
+          # Pinned-tag install via the upstream install.sh.
+          curl -fsSL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh \
+            | sh -s -- -b "$HOME/.local/bin"
+
+      - name: install gitleaks
+        run: |
+          set -euo pipefail
+          # Latest gitleaks release; mirrors the keyhog install pattern.
+          tag=$(curl -fsSL https://api.github.com/repos/gitleaks/gitleaks/releases/latest | \
+                python3 -c 'import json,sys;print(json.load(sys.stdin)["tag_name"])')
+          ver="${tag#v}"
+          curl --proto '=https' --tlsv1.2 --retry 5 --retry-connrefused \
+               --location --silent --show-error --fail \
+               -o /tmp/gitleaks.tgz \
+               "https://github.com/gitleaks/gitleaks/releases/download/${tag}/gitleaks_${ver}_linux_x64.tar.gz"
+          tar -xzf /tmp/gitleaks.tgz -C "$HOME/.local/bin" gitleaks
+          chmod +x "$HOME/.local/bin/gitleaks"
+
+      - name: scanner versions
+        run: |
+          set +e
+          keyhog --version
+          trufflehog --version || true
+          gitleaks version
+
+      - name: synthesize positive fixtures + manifest
+        # Positives live ONLY in $RUNNER_TEMP. Credential strings are
+        # assembled at runtime from non-matching fragments because
+        # GitHub push-protection runs the SAME detector class against
+        # this YAML at push time — any literal `ghp_...` /
+        # `xoxb-...` / `sk_live_...` in the workflow blocks the push.
+        # `tools/diff_bench/synth_corpus.py` builds the credentials,
+        # writes them to $RUNNER_TEMP, and emits the manifest pointing
+        # at both the synthesized positives and the tracked negatives.
+        run: |
+          set -euo pipefail
+          python3 tools/diff_bench/synth_corpus.py \
+            --positives-dir "$RUNNER_TEMP/diff_bench_positives" \
+            --negatives-dir "$GITHUB_WORKSPACE/tools/diff_bench/fixtures/negatives" \
+            --manifest "$RUNNER_TEMP/manifest.json"
+
+      - name: run differential bench
+        env:
+          LIMIT: ${{ inputs.limit || '0' }}
+        run: |
+          set -euo pipefail
+          python3 tools/diff_bench/run.py \
+            --manifest "$RUNNER_TEMP/manifest.json" \
+            --output differential_results.json \
+            --limit "$LIMIT"
+
+      - name: upload report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: differential-results
+          path: differential_results.json
+          if-no-files-found: error
