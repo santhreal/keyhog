@@ -218,7 +218,11 @@ pub fn build_sources(
                 Err(e) if e.to_string().contains("unknown source plugin") => {
                     // Fallback to global registry for static/pre-registered sources
                 }
-                Err(e) => anyhow::bail!(e),
+                // `{e:#}` preserves the full anyhow source chain instead
+                // of the `.to_string()` that bare `anyhow::bail!(e)` would
+                // produce — operators get the whole crash trace, not just
+                // the outermost message.
+                Err(e) => anyhow::bail!("failed to construct source '{source_name}': {e:#}"),
             }
 
             if let Some(reg_source) = keyhog_core::registry::get_source_registry().get(source_name)
@@ -276,7 +280,11 @@ fn get_staged_files(repo_path: Option<&std::path::Path>) -> Result<Vec<PathBuf>>
     }
 
     if files.is_empty() {
-        anyhow::bail!("no staged files found");
+        anyhow::bail!(
+            "no staged files found in {}. Stage files first with `git add <path>`, \
+             or drop --git-staged to scan the working tree.",
+            base.display()
+        );
     }
 
     Ok(files)

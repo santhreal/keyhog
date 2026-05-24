@@ -67,7 +67,12 @@ impl Client {
     pub async fn recv(&mut self) -> Result<Response> {
         match frame::read_response(&mut self.reader).await? {
             Some(r) => Ok(r),
-            None => bail!("daemon client: connection closed before response"),
+            None => bail!(
+                "daemon client: connection closed before response. \
+                 The daemon may have crashed or been restarted mid-request. \
+                 Try `keyhog daemon stop && keyhog daemon start`, or rerun \
+                 the scan with `--no-daemon` to bypass the daemon path."
+            ),
         }
     }
 

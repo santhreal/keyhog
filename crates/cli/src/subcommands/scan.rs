@@ -146,7 +146,10 @@ async fn run_via_daemon(args: &ScanArgs) -> Result<ExitCode> {
             .await?;
         unwrap_scan_results(resp)?
     } else {
-        bail!("daemon route invoked without --stdin and without a single-file path");
+        bail!(
+            "daemon route requires either --stdin or a single file path. \
+             For directory scans, pass `--no-daemon` to use the in-process scanner."
+        );
     };
 
     let findings = finalize_for_report(matches, args);

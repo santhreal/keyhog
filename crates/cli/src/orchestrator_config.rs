@@ -197,7 +197,12 @@ fn load_detectors_embedded_or_fail(path: &Path) -> Result<Vec<DetectorSpec>> {
             }
         }
         if detectors.is_empty() {
-            anyhow::bail!("no detectors loaded from embedded data");
+            anyhow::bail!(
+                "no detectors loaded from embedded data — every embedded TOML \
+                 failed to parse. Fix: pass `--detectors <DIR>` to load from a \
+                 directory of TOMLs, or rebuild keyhog from source so the \
+                 build.rs detector-embedding step re-runs."
+            );
         }
         return Ok(detectors);
     }
