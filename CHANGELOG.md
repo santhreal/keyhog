@@ -4,6 +4,25 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ## Unreleased
 
+## v0.5.14 — 2026-05-23 — macOS x86_64 + Windows release binaries
+
+### Added
+
+`release.yml` now produces five assets per tag instead of two:
+
+- `keyhog-linux-x86_64` (default features, dynamic Hyperscan)
+- `keyhog-macos-aarch64` (Apple Silicon, `portable` features)
+- `keyhog-macos-x86_64` (Intel mac, `portable` features) — **new**
+- `keyhog-windows-x86_64.exe` (MSVC, `portable` features) — **new**
+
+The Windows + Intel-mac variants share the existing `portable`
+feature subset (every detector data feature, every git / web /
+github / s3 / docker / verify source backend, no Hyperscan /
+Ghidra / CUDA system libs). Daemon IPC is `#[cfg(unix)]`-gated,
+so it compiles to a stub on Windows hosts without disabling the
+rest of the binary surface. v0.5.13 only shipped the prior two
+assets because the matrix change landed after the tag was cut.
+
 ## v0.5.13 — 2026-05-23 — SARIF dedup so GitHub Code Scanning accepts uploads
 
 ### Fixed
