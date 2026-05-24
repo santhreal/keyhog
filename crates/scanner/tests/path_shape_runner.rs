@@ -208,9 +208,12 @@ fn every_positive_fires_at_production_paths_and_records_suppressed_rate() {
         (suppressed_hits as f64 / suppressed_runs.max(1) as f64) * 100.0,
     );
 
+    // Strict-by-default: production-path recall is observed at
+    // 100% on the shipped corpus. Any regression below that turns
+    // CI red. KEYHOG_PATH_SHAPE_STRICT=0 opts out for debugging.
     let strict = std::env::var("KEYHOG_PATH_SHAPE_STRICT")
-        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-        .unwrap_or(false);
+        .map(|v| !(v == "0" || v.eq_ignore_ascii_case("false")))
+        .unwrap_or(true);
 
     if !production_misses.is_empty() {
         let total = production_misses.len();

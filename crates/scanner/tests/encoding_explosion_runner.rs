@@ -317,9 +317,12 @@ fn every_positive_swept_through_every_encoding() {
     }
     eprintln!("{summary}");
 
+    // Strict-by-default: floors (88% base64/hex, 75% url-percent,
+    // 99% identity) are observed baselines after the v0.5.15 splice
+    // fix. Any decode-pipeline regression flips this red.
     let strict = std::env::var("KEYHOG_ENCODING_STRICT")
-        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-        .unwrap_or(false);
+        .map(|v| !(v == "0" || v.eq_ignore_ascii_case("false")))
+        .unwrap_or(true);
 
     if !decoded_misses.is_empty() && strict {
         panic!(
