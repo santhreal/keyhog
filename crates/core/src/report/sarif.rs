@@ -214,9 +214,25 @@ impl<W: Write + Send> SarifReporter<W> {
 
     fn build_sarif_result(finding: &VerifiedFinding) -> SarifResult {
         let locations = vec![Self::location_to_sarif(&finding.location)];
+        // GitHub Code Scanning rejects SARIF whose `relatedLocations`
+        // contains duplicate items. Some detector pipelines emit the
+        // same location twice (e.g. a credential found via two rules
+        // pointing at the same span). Dedup by the canonical
+        // (file_path, line, offset) tuple — that's what makes two
+        // locations "the same finding" for UI purposes.
+        let mut seen_related: std::collections::HashSet<(String, Option<usize>, usize)> =
+            std::collections::HashSet::new();
         let related_locations: Vec<SarifLocation> = finding
             .additional_locations
             .iter()
+            .filter(|loc| {
+                let key = (
+                    loc.file_path.clone().unwrap_or_default().to_string(),
+                    loc.line,
+                    loc.offset,
+                );
+                seen_related.insert(key)
+            })
             .map(Self::location_to_sarif)
             .collect();
 
