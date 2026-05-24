@@ -136,6 +136,24 @@ jobs:
       # fails on missing files. vyre's own CI formats vyre.
       - run: cargo fmt -p keyhog-core -p keyhog-scanner -p keyhog -p keyhog-verifier -p keyhog-sources -- --check
 
+  deny:
+    name: Supply-chain (cargo deny)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-deny
+        run: cargo install --locked cargo-deny
+      # `cargo deny check` walks up the directory tree looking for the
+      # nearest deny.toml; without an explicit --config it would find
+      # the Santh-monorepo policy at /media/.../Santh/deny.toml which
+      # rejects MPL-2.0 + duplicate versions. Pinning the local one is
+      # what keeps the gate honest.
+      - name: Run cargo deny
+        working-directory: .
+        run: cargo deny check --config deny.toml
+
   audit:
     name: Security Audit
     runs-on: ubuntu-latest
@@ -156,7 +174,8 @@ jobs:
             --ignore RUSTSEC-2023-0071 \
             --ignore RUSTSEC-2024-0436 \
             --ignore RUSTSEC-2026-0002 \
-            --ignore RUSTSEC-2026-0097
+            --ignore RUSTSEC-2026-0097 \
+            --ignore RUSTSEC-2025-0141
 
   build:
     name: Build Release

@@ -1,0 +1,54 @@
+# cargo-deny configuration for keyhog.
+#
+# Project-local policy so `cargo deny check` against this repo does not
+# inherit the strict Santh-wide /media/mukund-thiru/SanthData/Santh/
+# deny.toml, which rejects MPL-2.0 (transitively pulled by gix → uluru)
+# and hard-fails on duplicate crate versions the wgpu / gix / proptest
+# trees naturally introduce.
+
+[advisories]
+version = 2
+yanked = "deny"
+# Same advisory ignores as audit.toml, kept in sync manually because
+# cargo-deny and cargo-audit have separate config files.
+ignore = [
+    "RUSTSEC-2023-0071",   # rsa Marvin attack — keyhog uses OAEP only
+    "RUSTSEC-2024-0436",   # paste — proc-macro, no runtime presence
+    "RUSTSEC-2026-0002",   # lru::LruCache::iter_mut — not called
+    "RUSTSEC-2026-0097",   # rand::rng — keyhog never replaces global rng
+    "RUSTSEC-2025-0141",   # bincode 1.x unmaintained — only via vendored vyre
+]
+
+[licenses]
+version = 2
+confidence-threshold = 0.9
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "CC0-1.0",
+    "Unlicense",
+    # gix → uluru (LRU cache) is MPL-2.0. MPL-2.0 is file-level copyleft,
+    # which is compatible with keyhog's Apache-2.0 OR MIT distribution.
+    "MPL-2.0",
+]
+
+[bans]
+# wgpu, gix, proptest, and tokio each unify around different transitive
+# versions (bitflags, hashbrown, getrandom, thiserror). Hard-denying
+# duplicates is unrealistic until those upstream crates align — keep
+# the visibility (`warn`) without breaking CI.
+multiple-versions = "warn"
+wildcards = "warn"
+highlight = "all"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
