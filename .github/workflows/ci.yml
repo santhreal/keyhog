@@ -5,6 +5,14 @@ on:
     branches: [main]
   pull_request:
 
+# Cancel older in-flight CI when a newer push lands on the same ref.
+# Without this a rapid succession of pushes stacks 5+ deep — each one
+# burning ~25 minutes of macOS + linux runner time on already-stale
+# code. Burned through that 5-deep queue 2026-05-23.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
 
