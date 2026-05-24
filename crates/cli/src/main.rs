@@ -44,16 +44,6 @@ fn reset_sigpipe() {}
 async fn main() -> ExitCode {
     reset_sigpipe();
 
-    tokio::spawn(async move {
-        if let Ok(()) = tokio::signal::ctrl_c().await {
-            let scanned = SCANNED_CHUNKS.load(std::sync::atomic::Ordering::SeqCst);
-            let total = TOTAL_CHUNKS.load(std::sync::atomic::Ordering::SeqCst);
-            let findings = FINDINGS_COUNT.load(std::sync::atomic::Ordering::SeqCst);
-            eprintln!("\nScan interrupted. {scanned}/{total} files scanned. {findings} findings.");
-            std::process::exit(130);
-        }
-    });
-
     // `env::args()` panics on non-UTF-8 args (Linux allows raw-byte
     // paths). The version check only needs to recognize literal ASCII
     // flags, so iterate args_os() and lossy-compare; non-UTF-8 args
@@ -65,24 +55,44 @@ async fn main() -> ExitCode {
             .unwrap_or(false)
     });
 
+    // Fast-path: --version skips Ctrl-C handler spawn, tracing
+    // subscriber install, and Cli::parse(). The cold-start kimi audit
+    // measured this at ~25ms saved per invocation (on top of the 230ms
+    // -> 3ms hardware-probe skip already in print_version_info). Net:
+    // production CI scripts that probe `keyhog --version` for
+    // capability detection see sub-3ms wall-clock instead of ~30ms.
+    if is_version {
+        print_version_info();
+        return ExitCode::SUCCESS;
+    }
+
+    tokio::spawn(async move {
+        if let Ok(()) = tokio::signal::ctrl_c().await {
+            let scanned = SCANNED_CHUNKS.load(std::sync::atomic::Ordering::SeqCst);
+            let total = TOTAL_CHUNKS.load(std::sync::atomic::Ordering::SeqCst);
+            let findings = FINDINGS_COUNT.load(std::sync::atomic::Ordering::SeqCst);
+            eprintln!("\nScan interrupted. {scanned}/{total} files scanned. {findings} findings.");
+            std::process::exit(130);
+        }
+    });
+
     tracing_subscriber::fmt()
         .with_writer(std::io::stderr)
         .with_env_filter(
-            tracing_subscriber::EnvFilter::from_default_env().add_directive(if is_version {
-                "keyhog=error".parse().unwrap_or_else(|_| {
-                    tracing_subscriber::filter::Directive::from(tracing::Level::ERROR)
-                })
-            } else {
+            tracing_subscriber::EnvFilter::from_default_env().add_directive(
                 "keyhog=warn".parse().unwrap_or_else(|_| {
                     tracing_subscriber::filter::Directive::from(tracing::Level::INFO)
-                })
-            }),
+                }),
+            ),
         )
         .with_target(false)
         .init();
 
     let cli = Cli::parse();
 
+    // --version already handled above (fast-path); the field is still
+    // valid here in case Cli::parse() surfaces other version-like
+    // states (e.g. a future `keyhog --version --json`).
     if cli.version {
         print_version_info();
         return ExitCode::SUCCESS;
