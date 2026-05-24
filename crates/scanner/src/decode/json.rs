@@ -1,4 +1,4 @@
-use super::pipeline::push_decoded_text_chunk;
+use super::pipeline::push_decoded_text_chunk_spliced;
 use super::Decoder;
 use keyhog_core::Chunk;
 
@@ -14,7 +14,18 @@ impl Decoder for JsonDecoder {
         let mut decoded_chunks = Vec::new();
         for json_string in extract_json_strings(&chunk.data) {
             if let Ok(unescaped) = json_unescape(&json_string) {
-                push_decoded_text_chunk(&mut decoded_chunks, chunk, unescaped, self.name());
+                // Splice the unescaped value over its escaped form
+                // in the parent so the JSON key (`"api_key": "…"`)
+                // stays adjacent — exactly the companion anchor most
+                // detectors need. Closes the JSON-wrapper miss class
+                // surfaced by adversarial_explosion_runner.
+                push_decoded_text_chunk_spliced(
+                    &mut decoded_chunks,
+                    chunk,
+                    &json_string,
+                    unescaped,
+                    self.name(),
+                );
             }
         }
         decoded_chunks

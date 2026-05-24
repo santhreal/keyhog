@@ -163,6 +163,40 @@ pub(super) fn push_decoded_text_chunk(
     text: String,
     decoder_name: &str,
 ) {
+    // Legacy entrypoint with no source-blob info. Forwards to the
+    // splice-aware variant with `original_encoded = ""`, which falls
+    // back to the old "decoded text alone" chunk shape. New decoders
+    // should call `push_decoded_text_chunk_spliced` so the parent's
+    // companion context lands adjacent to the decoded credential.
+    push_decoded_text_chunk_spliced(decoded_chunks, chunk, "", text, decoder_name);
+}
+
+/// Push a decoded chunk that **splices** the decoded text back into
+/// the parent at the position of the original encoded blob. This
+/// keeps the parent's companion context (the `aws_secret =` /
+/// `Authorization: Bearer` / `api_key:` anchors) adjacent to the
+/// decoded credential, which is what detector regexes need to fire.
+///
+/// Pass an empty `original_encoded` to fall back to the legacy
+/// "decoded text alone" behavior.
+///
+/// Why this exists
+/// ---------------
+/// Before the splice path, `push_decoded_text_chunk` always emitted
+/// the decoded bytes in a brand-new chunk with NO surrounding text.
+/// The `encoding_explosion_runner` (tests/encoding_explosion_runner.rs)
+/// surfaced the resulting recall gap: base64/hex/url-percent
+/// encodings recovered only ~30% of contract credentials because
+/// every companion-anchored detector lost its anchor when the chunk
+/// was reduced to a bare decoded string. Splicing preserves the
+/// anchor and is the single biggest decode-through recall lever.
+pub(super) fn push_decoded_text_chunk_spliced(
+    decoded_chunks: &mut Vec<Chunk>,
+    chunk: &Chunk,
+    original_encoded: &str,
+    text: String,
+    decoder_name: &str,
+) {
     // Fast ASCII check: control chars are always in 0x00-0x1F range.
     // Byte-level iteration avoids UTF-8 decode overhead.
     let bytes = text.as_bytes();
@@ -174,8 +208,23 @@ pub(super) fn push_decoded_text_chunk(
         return;
     }
 
+    // Build the new chunk's payload. Default: just the decoded text
+    // (legacy shape). If we know the original encoded blob AND it
+    // appears in the parent, splice the decoded text in at the first
+    // occurrence so the companion context survives. Cap the splice
+    // path on chunk size so a multi-MB parent doesn't blow memory.
+    const MAX_SPLICE_PARENT_BYTES: usize = 256 * 1024;
+    let payload = if !original_encoded.is_empty()
+        && chunk.data.len() <= MAX_SPLICE_PARENT_BYTES
+        && chunk.data.as_str().contains(original_encoded)
+    {
+        chunk.data.as_str().replacen(original_encoded, &text, 1)
+    } else {
+        text
+    };
+
     decoded_chunks.push(Chunk {
-        data: text.into(),
+        data: payload.into(),
         metadata: ChunkMetadata {
             // Defect #80 (root cause D): decoded-chunk findings used to
             // report `offset: 0` regardless of where the encoded blob
@@ -215,7 +264,18 @@ where
     let mut decoded_chunks = Vec::new();
     for candidate in candidates {
         if let Ok(text) = decode(&candidate) {
-            push_decoded_text_chunk(&mut decoded_chunks, chunk, text, decoder_name);
+            // Splice each decoded value back over its original
+            // candidate string in the parent — keeps companion
+            // context (assignment keys, format-specific anchors)
+            // adjacent to the decoded credential. Same recall-gap
+            // fix as base64/hex/json.
+            push_decoded_text_chunk_spliced(
+                &mut decoded_chunks,
+                chunk,
+                &candidate,
+                text,
+                decoder_name,
+            );
         }
     }
     decoded_chunks
