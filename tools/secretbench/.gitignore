@@ -1,0 +1,7 @@
+# The generated mirror corpus + scoreboard runs are large
+# (~500 MB at default size) and reproducible from the generator,
+# so we don't commit them. The generator itself + scoring scripts
+# are versioned.
+mirror/corpus/
+results/*.json
+!results/.gitkeep
