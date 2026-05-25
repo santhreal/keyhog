@@ -36,7 +36,7 @@ fn url_encode(s: &str) -> String {
 /// truncate log lines, or terminate strings mid-write in C-FFI sinks.
 /// Real credentials never contain control bytes, so dropping them is
 /// safe and removes the entire attack surface.
-fn sanitize_raw_value(s: &str) -> String {
+pub(crate) fn sanitize_raw_value(s: &str) -> String {
     s.chars()
         .filter(|c| {
             // Allow tab (0x09) — some legitimate JWT segments / Basic

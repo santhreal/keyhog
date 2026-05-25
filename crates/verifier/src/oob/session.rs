@@ -29,6 +29,41 @@ use tokio::task::JoinHandle;
 use tracing::{debug, info, warn};
 
 use super::client::{Interaction, InteractionProtocol, InteractshClient};
+use super::InteractshError;
+
+/// Format an [`InteractshError`] for log output WITHOUT including the
+/// underlying reqwest URL. reqwest::Error's Display embeds the full
+/// request URL, and the interactsh poll URL contains the session
+/// secret as a query parameter (`?secret=<session-secret>`). A naive
+/// `error = %e` log therefore leaks the secret to anyone who can
+/// read tracing output. Strip to error category only for transport
+/// failures; pass through for other variants whose Display is safe.
+fn redact_interactsh_error(e: &InteractshError) -> String {
+    match e {
+        InteractshError::Transport(req_err) => {
+            // Build a category-only description: kind (connect/timeout/etc)
+            // plus the root cause's Display if it's a non-reqwest error type.
+            let kind = if req_err.is_connect() {
+                "connect"
+            } else if req_err.is_timeout() {
+                "timeout"
+            } else if req_err.is_request() {
+                "request"
+            } else if req_err.is_body() {
+                "body"
+            } else if req_err.is_decode() {
+                "decode"
+            } else if req_err.is_status() {
+                "status"
+            } else {
+                "transport"
+            };
+            format!("interactsh transport error: kind={kind} (url redacted)")
+        }
+        // Every other variant's Display is hand-written and contains no URL.
+        other => format!("{other}"),
+    }
+}
 
 /// Runtime configuration for the OOB session. Surfaced through the CLI as
 /// `--verify-oob`, `--oob-server`, `--oob-timeout`.
@@ -404,9 +439,19 @@ fn spawn_poller(session: Arc<OobSession>) -> JoinHandle<()> {
                     // Backoff progressively, but cap so we don't go silent for
                     // ages on a flaky collector.
                     let backoff_secs = (1u64 << consecutive_errors.min(5)).min(30);
+                    // CREDENTIAL LEAK FIX: reqwest::Error's Display includes
+                    // the request URL, which for the interactsh poll is
+                    // `https://oast.fun/poll?id=<corr>&secret=<session-secret>`.
+                    // Logging the raw error therefore writes the interactsh
+                    // session secret to tracing — possession of that secret
+                    // lets anyone poll the collector for this scan's OOB
+                    // interactions. Redact to error kind only; the operator
+                    // doesn't need the URL to diagnose connectivity issues.
+                    // Kimi verifier-audit finding #2 (MED).
+                    let redacted = redact_interactsh_error(&e);
                     warn!(
                         target: "keyhog::oob",
-                        error = %e,
+                        error = %redacted,
                         consecutive_errors,
                         backoff_secs,
                         "interactsh poll failed; backing off"
@@ -445,6 +490,56 @@ mod tests {
         assert_eq!(c.server, "oast.fun");
         assert!(c.default_timeout <= c.max_timeout);
         assert!(c.poll_interval < c.default_timeout);
+    }
+
+    /// Regression guard for the credential-leak finding: a transport
+    /// error whose Display would otherwise embed the full poll URL
+    /// (`?secret=<session-secret>`) must be redacted to category-only.
+    #[tokio::test]
+    async fn redact_interactsh_error_strips_url_from_transport() {
+        // Force a real reqwest transport failure by hitting a guaranteed-
+        // unreachable port on the loopback. The error Display will contain
+        // the URL — `redact_interactsh_error` must not propagate it.
+        let secret_token = "0123456789abcdef-secret-value";
+        let url = format!("http://127.0.0.1:1/path?secret={secret_token}");
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_millis(200))
+            .build()
+            .unwrap();
+        let err = client.get(&url).send().await.unwrap_err();
+        // Sanity: the raw reqwest error display DOES embed the URL.
+        let raw = format!("{err}");
+        assert!(
+            raw.contains(secret_token) || raw.contains("127.0.0.1"),
+            "test precondition: reqwest Display should include URL/host; got: {raw}"
+        );
+        // Now wrap and redact — the redacted form must drop both the URL
+        // and the secret entirely.
+        let wrapped = InteractshError::Transport(err);
+        let redacted = redact_interactsh_error(&wrapped);
+        assert!(
+            !redacted.contains(secret_token),
+            "redacted form leaks secret: {redacted}"
+        );
+        assert!(
+            !redacted.contains("127.0.0.1"),
+            "redacted form leaks host: {redacted}"
+        );
+        assert!(
+            redacted.contains("kind=") && redacted.contains("url redacted"),
+            "redacted form missing structured kind/redaction marker: {redacted}"
+        );
+    }
+
+    /// Non-transport variants pass through. They contain hand-written
+    /// Display strings with no URL, so redaction is a no-op for them.
+    #[test]
+    fn redact_interactsh_error_passes_through_non_transport() {
+        let err = InteractshError::BadResponse("malformed json".to_string());
+        let redacted = redact_interactsh_error(&err);
+        assert!(redacted.contains("malformed json"));
+        // Sanity: no spurious "url redacted" framing on non-transport.
+        assert!(!redacted.contains("url redacted"));
     }
 
     fn test_session() -> Arc<OobSession> {
