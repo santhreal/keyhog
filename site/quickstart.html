@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Quickstart · keyhog</title>
+  <meta name="description" content="Your first keyhog scan in under a minute.">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<header class="site">
+  <a href="index.html" class="brand">
+    <span class="mark">k</span>
+    keyhog
+    <span class="v">v0.5.16</span>
+  </a>
+  <nav class="top">
+    <a href="detectors.html">Detectors</a>
+    <a href="ci.html">CI</a>
+    <a href="api.html">API</a>
+    <a href="https://github.com/santhsecurity/keyhog" class="gh">GitHub →</a>
+  </nav>
+</header>
+
+<div class="layout">
+<aside class="sidebar">
+  <h4>Getting started</h4>
+  <ul>
+    <li><a href="index.html">Introduction</a></li>
+    <li><a href="install.html">Installation</a></li>
+    <li><a href="quickstart.html">Quickstart</a></li>
+  </ul>
+  <h4>Scanning</h4>
+  <ul>
+    <li><a href="scan.html">Scan command</a></li>
+    <li><a href="output.html">Output formats</a></li>
+    <li><a href="baseline.html">Baselines</a></li>
+    <li><a href="ignore.html">Allowlists</a></li>
+  </ul>
+  <h4>Integrations</h4>
+  <ul>
+    <li><a href="ci.html">CI / SARIF</a></li>
+    <li><a href="hooks.html">Pre-commit hooks</a></li>
+    <li><a href="daemon.html">Daemon mode</a></li>
+    <li><a href="system.html">System triage</a></li>
+  </ul>
+  <h4>Reference</h4>
+  <ul>
+    <li><a href="detectors.html">Detector catalog</a></li>
+    <li><a href="config.html">Configuration</a></li>
+    <li><a href="api.html">Library API</a></li>
+  </ul>
+  <h4>Internals</h4>
+  <ul>
+    <li><a href="architecture.html">Architecture</a></li>
+    <li><a href="performance.html">Performance</a></li>
+    <li><a href="lockdown.html">Lockdown mode</a></li>
+    <li><a href="faq.html">FAQ</a></li>
+  </ul>
+</aside>
+
+<main class="content">
+<article>
+<h1>Quickstart</h1>
+<p class="lede">
+  Scan a directory, filter by severity, output JSON for CI. Three commands
+  cover 80% of usage.
+</p>
+
+<h2>1 — Scan a directory</h2>
+
+<pre><code><span class="prompt">$</span> keyhog scan .</code></pre>
+
+<p>keyhog probes your hardware, picks the fastest backend, walks the tree
+(respecting <code>.gitignore</code>), and prints findings as they fire.
+Default output is human-readable text, redacted credentials, severity-sorted.</p>
+
+<h3>What you'll see</h3>
+
+<pre><code><span class="a">keyhog v0.5.16 | 16 cores | SIMD: AVX-512 | Hyperscan | 891 detectors</span>
+<span class="a">scanning 1,247 files…</span>
+
+<span class="c">.env.production:3</span>
+  <span class="k">stripe-secret-key</span>  <span class="s">sk_live_4eC39HqLyjW…</span>  <span class="a">[critical · 0.99]</span>
+  <span class="a">rotate at: https://dashboard.stripe.com/apikeys</span>
+
+<span class="c">terraform/main.tf:42</span>
+  <span class="k">aws-access-key</span>  <span class="s">AKIAIOSFODNN7EXAMPLE</span>  <span class="a">[high · 0.96]</span>
+
+<span class="a">2 findings · 0.4s · 1,247 files scanned</span></code></pre>
+
+<p><strong>Exit codes:</strong> <code>0</code> = no findings, <code>1</code> = findings
+above the severity floor, <code>2</code> = error (bad path, unreadable file,
+unsupported argument).</p>
+
+<h2>2 — Filter what fires</h2>
+
+<pre><code><span class="prompt">$</span> keyhog scan . --severity high            <span class="c"># medium+ ignored</span>
+<span class="prompt">$</span> keyhog scan . --min-confidence 0.7       <span class="c"># raise the ML floor</span>
+<span class="prompt">$</span> keyhog scan . --detector aws-access-key  <span class="c"># single detector</span>
+<span class="prompt">$</span> keyhog scan . --exclude '**/test/**'     <span class="c"># skip test trees</span></code></pre>
+
+<p>Severity is one of <code>info · low · medium · high · critical</code>.
+Combine flags freely — they AND together.</p>
+
+<h2>3 — JSON / SARIF for CI</h2>
+
+<pre><code><span class="prompt">$</span> keyhog scan . --format json -o keyhog.json
+<span class="prompt">$</span> keyhog scan . --format sarif -o keyhog.sarif</code></pre>
+
+<p>SARIF outputs CWE-798 and OWASP&nbsp;A07:2021 taxa on every finding so it
+slots straight into <a href="ci.html">GitHub Advanced Security</a>, GitLab
+Security Dashboard, or any SARIF-aware tool.</p>
+
+<h2>Common workflows</h2>
+
+<div class="grid two">
+  <a href="hooks.html" class="card">
+    <h3>Pre-commit hook</h3>
+    <p>Block secrets before they land on disk. <code>keyhog hook install</code>
+    or via the <code>pre-commit</code> framework.</p>
+  </a>
+  <a href="ci.html" class="card">
+    <h3>GitHub Actions</h3>
+    <p>One <code>uses:</code> line. Auto-uploads SARIF to code scanning,
+    falls back to source build if no prebuilt binary matches.</p>
+  </a>
+  <a href="baseline.html" class="card">
+    <h3>Adopt an existing repo</h3>
+    <p>Snapshot today's findings, then only break the build on
+    <strong>new</strong> ones. <code>keyhog scan --create-baseline</code>.</p>
+  </a>
+  <a href="ignore.html" class="card">
+    <h3>Allowlist a known leak</h3>
+    <p>Drop a hash, path glob, or detector id in <code>.keyhogignore</code>.
+    Add <code>reason</code> + <code>expires</code> for governance.</p>
+  </a>
+</div>
+
+<h2>Other useful invocations</h2>
+
+<pre><code><span class="c"># Scan only what's staged for commit (perfect for pre-commit)</span>
+<span class="prompt">$</span> keyhog scan --git-staged
+
+<span class="c"># Diff against a branch / tag</span>
+<span class="prompt">$</span> keyhog scan --git-diff main
+
+<span class="c"># Full git history (every commit, every branch — slow)</span>
+<span class="prompt">$</span> keyhog scan --git-history .
+
+<span class="c"># Pipe through stdin</span>
+<span class="prompt">$</span> cat config.yaml | keyhog scan --stdin
+
+<span class="c"># Scan a Docker image</span>
+<span class="prompt">$</span> keyhog scan --image registry.example/app:v1.2.3
+
+<span class="c"># Scan an S3 bucket</span>
+<span class="prompt">$</span> keyhog scan --s3 s3://logs-prod/
+
+<span class="c"># Scan an entire GitHub org</span>
+<span class="prompt">$</span> keyhog scan --github-org santhsecurity --token "$GITHUB_TOKEN"</code></pre>
+
+<h2>Live verification</h2>
+
+<pre><code><span class="prompt">$</span> keyhog scan . --verify</code></pre>
+
+<p>For findings that keyhog knows how to verify (GitHub PATs, AWS keys, Slack
+tokens, Stripe keys, OpenAI keys, ~80 services), keyhog hits the vendor API
+read-only to confirm the credential is live. Unverified findings are marked
+with <code>[unverified]</code>; live ones get <code>[verified ✓]</code>.</p>
+
+<div class="callout warn">
+  <strong>Verification sends credentials over the network.</strong> Disabled
+  by default; refuses to run under <code>--lockdown</code>. Pair with
+  <code>--severity high</code> to limit the verification cost.
+</div>
+
+<h2>Where to go next</h2>
+
+<ul>
+  <li><a href="scan.html">Scan command reference</a> — every flag with defaults and shape.</li>
+  <li><a href="output.html">Output formats</a> — text / JSON / JSONL / SARIF spec.</li>
+  <li><a href="config.html">Configuration</a> — <code>.keyhog.toml</code> for shared team defaults.</li>
+  <li><a href="detectors.html">Detector catalog</a> — all 891 detectors, filterable.</li>
+</ul>
+</article>
+</main>
+</div>
+
+<footer class="site">
+  <div class="left">
+    <strong>keyhog</strong> · secret scanner by
+    <a href="https://github.com/santhsecurity">santhsecurity</a>. MIT licensed.
+  </div>
+  <div class="right">
+    <a href="https://github.com/santhsecurity/keyhog">GitHub</a>
+    <a href="https://crates.io/crates/keyhog">crates.io</a>
+    <a href="https://github.com/santhsecurity/keyhog/issues">Issues</a>
+    <a href="https://github.com/santhsecurity/keyhog/blob/main/CHANGELOG.md">Changelog</a>
+  </div>
+</footer>
+
+<script src="js/nav.js" defer></script>
+</body>
+</html>

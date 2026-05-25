@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Configuration · keyhog</title>
+  <meta name="description" content="Per-repo defaults via .keyhog.toml. Environment variables. Precedence.">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<header class="site">
+  <a href="index.html" class="brand">
+    <span class="mark">k</span>
+    keyhog
+    <span class="v">v0.5.16</span>
+  </a>
+  <nav class="top">
+    <a href="detectors.html">Detectors</a>
+    <a href="ci.html">CI</a>
+    <a href="api.html">API</a>
+    <a href="https://github.com/santhsecurity/keyhog" class="gh">GitHub →</a>
+  </nav>
+</header>
+
+<div class="layout">
+<aside class="sidebar">
+  <h4>Getting started</h4>
+  <ul>
+    <li><a href="index.html">Introduction</a></li>
+    <li><a href="install.html">Installation</a></li>
+    <li><a href="quickstart.html">Quickstart</a></li>
+  </ul>
+  <h4>Scanning</h4>
+  <ul>
+    <li><a href="scan.html">Scan command</a></li>
+    <li><a href="output.html">Output formats</a></li>
+    <li><a href="baseline.html">Baselines</a></li>
+    <li><a href="ignore.html">Allowlists</a></li>
+  </ul>
+  <h4>Integrations</h4>
+  <ul>
+    <li><a href="ci.html">CI / SARIF</a></li>
+    <li><a href="hooks.html">Pre-commit hooks</a></li>
+    <li><a href="daemon.html">Daemon mode</a></li>
+    <li><a href="system.html">System triage</a></li>
+  </ul>
+  <h4>Reference</h4>
+  <ul>
+    <li><a href="detectors.html">Detector catalog</a></li>
+    <li><a href="config.html">Configuration</a></li>
+    <li><a href="api.html">Library API</a></li>
+  </ul>
+  <h4>Internals</h4>
+  <ul>
+    <li><a href="architecture.html">Architecture</a></li>
+    <li><a href="performance.html">Performance</a></li>
+    <li><a href="lockdown.html">Lockdown mode</a></li>
+    <li><a href="faq.html">FAQ</a></li>
+  </ul>
+</aside>
+
+<main class="content">
+<article>
+<h1>Configuration</h1>
+<p class="lede">
+  Most users never need a config file — every flag has a sane default. When
+  your team standardizes on a set of defaults (severity floor, exclude
+  patterns, output format), drop a <code>.keyhog.toml</code> at the repo
+  root and commit it.
+</p>
+
+<h2>Precedence</h2>
+
+<p>Highest precedence wins (later overrides earlier):</p>
+
+<ol>
+  <li>Compiled-in defaults.</li>
+  <li>System config: <code>/etc/keyhog/config.toml</code>.</li>
+  <li>User config: <code>~/.config/keyhog/config.toml</code>.</li>
+  <li>Repo config: <code>.keyhog.toml</code> walking up from the scanned path.</li>
+  <li>Environment variables (<code>KEYHOG_*</code>).</li>
+  <li>CLI flags.</li>
+</ol>
+
+<h2>.keyhog.toml — full reference</h2>
+
+<pre><code><span class="c"># Scan defaults</span>
+<span class="k">[scan]</span>
+severity        = <span class="s">"high"</span>          <span class="c"># info | low | medium | high | critical</span>
+min_confidence  = 0.5
+max_file_size   = <span class="s">"10M"</span>          <span class="c"># K / M / G suffixes</span>
+respect_gitignore = true
+exclude = [
+  <span class="s">"**/test/fixtures/**"</span>,
+  <span class="s">"**/*.snap"</span>,
+  <span class="s">"vendor/"</span>,
+]
+include = []                  <span class="c"># empty = include everything; otherwise allowlist</span>
+
+<span class="c"># Output defaults</span>
+<span class="k">[output]</span>
+format     = <span class="s">"text"</span>             <span class="c"># text | json | jsonl | sarif</span>
+color      = <span class="s">"auto"</span>             <span class="c"># auto | always | never</span>
+show_secrets = false
+quiet      = false
+
+<span class="c"># Backend routing — usually leave as auto</span>
+<span class="k">[backend]</span>
+choice  = <span class="s">"auto"</span>                <span class="c"># auto | gpu | simd | cpu | mega-scan</span>
+threads = 0                   <span class="c"># 0 = auto-detect (1 per core)</span>
+
+<span class="c"># Detector overrides — disable or down-tune specific detectors</span>
+<span class="k">[detector.aws-access-key]</span>
+enabled   = true
+severity  = <span class="s">"critical"</span>          <span class="c"># override the shipped severity</span>
+min_confidence = 0.6          <span class="c"># per-detector confidence floor</span>
+
+<span class="k">[detector.generic-api-key]</span>
+enabled = false               <span class="c"># turn off a noisy detector globally</span>
+
+<span class="c"># Allowlists — repo-wide governance metadata</span>
+<span class="k">[allowlist]</span>
+file      = <span class="s">".keyhogignore"</span>
+require_reason       = true   <span class="c"># reject ignore entries without a reason</span>
+require_approved_by  = true
+max_expires_days     = 180    <span class="c"># reject expires &gt; 180 days out</span>
+
+<span class="c"># Verification</span>
+<span class="k">[verify]</span>
+enabled         = false       <span class="c"># --verify must be passed explicitly</span>
+timeout_secs    = 5
+parallel        = 8
+allowed_services = [<span class="s">"github"</span>, <span class="s">"aws"</span>, <span class="s">"stripe"</span>]   <span class="c"># empty = all</span>
+
+<span class="c"># Incremental cache</span>
+<span class="k">[incremental]</span>
+enabled = true
+cache_path = <span class="s">"~/.cache/keyhog/merkle.idx"</span>
+
+<span class="c"># Daemon</span>
+<span class="k">[daemon]</span>
+socket_path = <span class="s">"$XDG_RUNTIME_DIR/keyhog.sock"</span>
+auto_connect = true           <span class="c"># --daemon attempted by default if socket exists</span>
+
+<span class="c"># Lockdown enforcement — fail closed if the env can't honor lockdown</span>
+<span class="k">[lockdown]</span>
+require = false               <span class="c"># true = refuse to run without --lockdown</span></code></pre>
+
+<h2>Environment variables</h2>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Variable</th><th>Effect</th></tr></thead>
+  <tbody>
+    <tr><td><code>KEYHOG_BACKEND</code></td><td>Force a backend (<code>gpu|simd|cpu|mega-scan</code>)</td></tr>
+    <tr><td><code>KEYHOG_THREADS</code></td><td>Pin rayon worker count</td></tr>
+    <tr><td><code>KEYHOG_CONFIG</code></td><td>Override config file search</td></tr>
+    <tr><td><code>KEYHOG_CACHE_DIR</code></td><td>Override <code>~/.cache/keyhog/</code></td></tr>
+    <tr><td><code>KEYHOG_NO_COLOR</code> / <code>NO_COLOR</code></td><td>Disable ANSI output</td></tr>
+    <tr><td><code>KEYHOG_DAEMON_SOCKET</code></td><td>Override daemon socket path</td></tr>
+    <tr><td><code>KEYHOG_LOG</code></td><td><code>env_logger</code> filter (<code>trace|debug|info|warn|error</code>)</td></tr>
+    <tr><td><code>KEYHOG_LOCKDOWN_REQUIRE</code></td><td>Refuse to run without <code>--lockdown</code> (same as <code>[lockdown] require</code>)</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2>Verify your config</h2>
+
+<pre><code><span class="prompt">$</span> keyhog config print
+<span class="a">[scan]</span>
+<span class="a">severity = "high"                  ← .keyhog.toml:2</span>
+<span class="a">min_confidence = 0.5               ← .keyhog.toml:3</span>
+<span class="a">max_file_size = "10M"              ← compiled default</span>
+<span class="a">[output]</span>
+<span class="a">format = "sarif"                   ← env KEYHOG_FORMAT</span>
+<span class="a">...</span></code></pre>
+
+<p>Each merged value is annotated with where it came from — perfect for
+"why is the severity floor wrong?" debugging.</p>
+
+<h2>Project conventions</h2>
+
+<ul>
+  <li>Commit <code>.keyhog.toml</code> and <code>.keyhogignore</code> at the
+  repo root.</li>
+  <li>Commit <code>.keyhog-baseline.json</code> if you're using baselines.</li>
+  <li>Add <code>.cache/keyhog/</code> and <code>keyhog.sarif</code> to
+  <code>.gitignore</code>.</li>
+  <li>Don't commit per-user output (<code>--output</code> targets).</li>
+</ul>
+</article>
+</main>
+</div>
+
+<footer class="site">
+  <div class="left">
+    <strong>keyhog</strong> · secret scanner by
+    <a href="https://github.com/santhsecurity">santhsecurity</a>. MIT licensed.
+  </div>
+  <div class="right">
+    <a href="https://github.com/santhsecurity/keyhog">GitHub</a>
+    <a href="https://crates.io/crates/keyhog">crates.io</a>
+    <a href="https://github.com/santhsecurity/keyhog/issues">Issues</a>
+    <a href="https://github.com/santhsecurity/keyhog/blob/main/CHANGELOG.md">Changelog</a>
+  </div>
+</footer>
+
+<script src="js/nav.js" defer></script>
+</body>
+</html>

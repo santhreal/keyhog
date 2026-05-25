@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Scan command · keyhog</title>
+  <meta name="description" content="Full reference for keyhog scan — every flag, every source, every output.">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<header class="site">
+  <a href="index.html" class="brand">
+    <span class="mark">k</span>
+    keyhog
+    <span class="v">v0.5.16</span>
+  </a>
+  <nav class="top">
+    <a href="detectors.html">Detectors</a>
+    <a href="ci.html">CI</a>
+    <a href="api.html">API</a>
+    <a href="https://github.com/santhsecurity/keyhog" class="gh">GitHub →</a>
+  </nav>
+</header>
+
+<div class="layout">
+<aside class="sidebar">
+  <h4>Getting started</h4>
+  <ul>
+    <li><a href="index.html">Introduction</a></li>
+    <li><a href="install.html">Installation</a></li>
+    <li><a href="quickstart.html">Quickstart</a></li>
+  </ul>
+  <h4>Scanning</h4>
+  <ul>
+    <li><a href="scan.html">Scan command</a></li>
+    <li><a href="output.html">Output formats</a></li>
+    <li><a href="baseline.html">Baselines</a></li>
+    <li><a href="ignore.html">Allowlists</a></li>
+  </ul>
+  <h4>Integrations</h4>
+  <ul>
+    <li><a href="ci.html">CI / SARIF</a></li>
+    <li><a href="hooks.html">Pre-commit hooks</a></li>
+    <li><a href="daemon.html">Daemon mode</a></li>
+    <li><a href="system.html">System triage</a></li>
+  </ul>
+  <h4>Reference</h4>
+  <ul>
+    <li><a href="detectors.html">Detector catalog</a></li>
+    <li><a href="config.html">Configuration</a></li>
+    <li><a href="api.html">Library API</a></li>
+  </ul>
+  <h4>Internals</h4>
+  <ul>
+    <li><a href="architecture.html">Architecture</a></li>
+    <li><a href="performance.html">Performance</a></li>
+    <li><a href="lockdown.html">Lockdown mode</a></li>
+    <li><a href="faq.html">FAQ</a></li>
+  </ul>
+</aside>
+
+<main class="content">
+<article>
+<h1>Scan command</h1>
+<p class="lede">
+  <code>keyhog scan</code> is the workhorse. Same command for filesystem,
+  stdin, git history, Docker images, S3 buckets, and GitHub orgs.
+</p>
+
+<h2>Synopsis</h2>
+
+<pre><code><span class="prompt">$</span> keyhog scan [SOURCE...] [OPTIONS]</code></pre>
+
+<p>If no source is given, the current directory is scanned. All sources can
+be combined in one invocation; findings stream as they fire.</p>
+
+<h2>Sources</h2>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Flag / form</th><th>What it scans</th></tr></thead>
+  <tbody>
+    <tr><td><code>keyhog scan PATH</code></td><td>Directory or file (respects <code>.gitignore</code>)</td></tr>
+    <tr><td><code>--stdin</code></td><td>Read bytes from stdin (e.g. <code>cat | keyhog scan --stdin</code>)</td></tr>
+    <tr><td><code>--git-staged</code></td><td>Only files staged for the next commit</td></tr>
+    <tr><td><code>--git-diff REF</code></td><td>Files changed since branch / tag / commit</td></tr>
+    <tr><td><code>--git-history PATH</code></td><td>Every blob in every commit of every branch</td></tr>
+    <tr><td><code>--image REF</code></td><td>Docker image layers (pulls if not cached)</td></tr>
+    <tr><td><code>--s3 s3://bucket/prefix</code></td><td>S3 objects (uses default AWS credentials)</td></tr>
+    <tr><td><code>--github-org ORG</code></td><td>Every public + accessible private repo in the org</td></tr>
+    <tr><td><code>--url URL</code></td><td>HTML page + linked .js / .map / .json assets</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2>Filtering</h2>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Flag</th><th>Default</th><th>Effect</th></tr></thead>
+  <tbody>
+    <tr><td><code>--severity LEVEL</code></td><td><code>info</code></td><td>Drop findings below LEVEL (<code>info|low|medium|high|critical</code>)</td></tr>
+    <tr><td><code>--min-confidence F</code></td><td><code>0.3</code></td><td>Drop findings below confidence score F</td></tr>
+    <tr><td><code>--detector ID</code></td><td>—</td><td>Run only this detector (repeatable)</td></tr>
+    <tr><td><code>--exclude GLOB</code></td><td>—</td><td>Skip paths matching glob (repeatable)</td></tr>
+    <tr><td><code>--include GLOB</code></td><td>—</td><td>Only scan paths matching glob (repeatable)</td></tr>
+    <tr><td><code>--max-file-size BYTES</code></td><td><code>10M</code></td><td>Skip files above size; summary line at the end</td></tr>
+    <tr><td><code>--respect-gitignore</code></td><td>on</td><td>Use <code>--no-respect-gitignore</code> to scan ignored files</td></tr>
+    <tr><td><code>--baseline FILE</code></td><td>—</td><td>Only report findings NOT in the baseline</td></tr>
+    <tr><td><code>--keyhogignore FILE</code></td><td><code>.keyhogignore</code></td><td>Override the allowlist file path</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2>Output</h2>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Flag</th><th>Default</th><th>Effect</th></tr></thead>
+  <tbody>
+    <tr><td><code>--format FORMAT</code></td><td><code>text</code></td><td><code>text | json | jsonl | sarif</code></td></tr>
+    <tr><td><code>-o, --output FILE</code></td><td>stdout</td><td>Write to file</td></tr>
+    <tr><td><code>--stream</code></td><td>off</td><td>Emit JSONL one-finding-per-line as discovered</td></tr>
+    <tr><td><code>--show-secrets</code></td><td>off</td><td>Print full credentials (refused under <code>--lockdown</code>)</td></tr>
+    <tr><td><code>--no-color</code></td><td>auto</td><td>Disable ANSI color (forced off when stdout isn't a TTY)</td></tr>
+    <tr><td><code>--quiet</code></td><td>off</td><td>Suppress the progress ticker</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>See <a href="output.html">Output formats →</a> for the JSON/SARIF schema.</p>
+
+<h2>Speed knobs</h2>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Flag</th><th>Effect</th></tr></thead>
+  <tbody>
+    <tr><td><code>--fast</code></td><td>Skip ML, entropy, and decode-through. Pre-commit speed.</td></tr>
+    <tr><td><code>--deep</code></td><td>Maximum detection depth: multi-level decode, generic+entropy fallback, all companions checked.</td></tr>
+    <tr><td><code>--incremental</code></td><td>BLAKE3 Merkle index — unchanged files skip the scanner. 10–100× CI speedup.</td></tr>
+    <tr><td><code>--incremental-cache FILE</code></td><td>Override cache path (default <code>~/.cache/keyhog/merkle.idx</code>)</td></tr>
+    <tr><td><code>--daemon</code></td><td>Connect to a running <code>keyhog daemon</code> over Unix socket (~105× cold-start savings)</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2>Backend control</h2>
+
+<p>keyhog routes automatically. Override only if you have a reason.</p>
+
+<pre><code><span class="prompt">$</span> KEYHOG_BACKEND=gpu  keyhog scan .   <span class="c"># force GPU zero-copy</span>
+<span class="prompt">$</span> KEYHOG_BACKEND=simd keyhog scan .   <span class="c"># force Hyperscan</span>
+<span class="prompt">$</span> KEYHOG_BACKEND=cpu  keyhog scan .   <span class="c"># force CPU fallback</span>
+<span class="prompt">$</span> KEYHOG_THREADS=8    keyhog scan .   <span class="c"># pin rayon worker count</span></code></pre>
+
+<p>Inspect the routing matrix at any time:</p>
+
+<pre><code><span class="prompt">$</span> keyhog backend
+<span class="prompt">$</span> keyhog backend --probe-bytes $((300 * 1024 * 1024))</code></pre>
+
+<h2>Verification</h2>
+
+<pre><code><span class="prompt">$</span> keyhog scan . --verify              <span class="c"># live-verify all eligible findings</span>
+<span class="prompt">$</span> keyhog scan . --verify --severity high <span class="c"># only verify high+critical</span>
+<span class="prompt">$</span> keyhog scan . --verify --verify-timeout 5s</code></pre>
+
+<p>Each verifiable detector ships a verifier (GitHub PATs hit
+<code>GET /user</code>, AWS keys hit STS GetCallerIdentity, Slack hits
+<code>auth.test</code>, etc.). Read-only; never writes; refused under
+<code>--lockdown</code>.</p>
+
+<h2>Exit codes</h2>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Code</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><code>0</code></td><td>No findings above the severity floor</td></tr>
+    <tr><td><code>1</code></td><td>One or more findings above the severity floor</td></tr>
+    <tr><td><code>2</code></td><td>Error: bad path, unreadable file, non-UTF-8 filename, unsupported flag, bad config</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>This contract is enforced — <strong>nonexistent paths and unreadable files
+exit 2</strong>, never silently exit 0. CI gates that rely on
+<code>$?&nbsp;==&nbsp;0</code> won't be misled into reporting clean scans on
+broken inputs.</p>
+</article>
+</main>
+</div>
+
+<footer class="site">
+  <div class="left">
+    <strong>keyhog</strong> · secret scanner by
+    <a href="https://github.com/santhsecurity">santhsecurity</a>. MIT licensed.
+  </div>
+  <div class="right">
+    <a href="https://github.com/santhsecurity/keyhog">GitHub</a>
+    <a href="https://crates.io/crates/keyhog">crates.io</a>
+    <a href="https://github.com/santhsecurity/keyhog/issues">Issues</a>
+    <a href="https://github.com/santhsecurity/keyhog/blob/main/CHANGELOG.md">Changelog</a>
+  </div>
+</footer>
+
+<script src="js/nav.js" defer></script>
+</body>
+</html>
