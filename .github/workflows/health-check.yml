@@ -1,0 +1,19 @@
+name: health-check
+
+# Minimal workflow to verify GitHub Actions dispatch is working on this repo.
+# Every other workflow has been failing to dispatch in 1-3s with 0 jobs;
+# this one is the bare-minimum control to isolate whether the issue is
+# infrastructural (this also fails) vs workflow-specific (this passes).
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/health-check.yml
+
+jobs:
+  ok:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "actions dispatch is working"
