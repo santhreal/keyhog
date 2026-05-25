@@ -59,45 +59,9 @@ fn is_empty_input_hash(credential: &str) -> bool {
 
 fn is_sequential_placeholder(credential: &str) -> bool {
     // Strip ALL known service prefixes before checking for sequential/placeholder patterns.
-    // This list MUST stay in sync with KNOWN_PREFIXES in confidence/prefixes.rs.
+    // Single source of truth: crate::confidence::KNOWN_PREFIXES.
     // Missing a prefix here = false positive (placeholder not suppressed).
-    const PREFIXES: &[&str] = &[
-        "ghp_",
-        "gho_",
-        "ghs_",
-        "ghu_",
-        "ghr_",
-        "github_pat_",
-        "sk-proj-",
-        "sk-ant-",
-        "sk-",
-        "sk_test_",
-        "sk_live_",
-        "pk_test_",
-        "pk_live_",
-        "rk_test_",
-        "rk_live_",
-        "AKIA",
-        "ASIA",
-        "xoxb-",
-        "xoxp-",
-        "xoxa-",
-        "xoxr-",
-        "xoxs-",
-        "SG.",
-        "hf_",
-        "npm_",
-        "pypi-",
-        "glpat-",
-        "glcbt-",
-        "glrt-",
-        "dop_v1_",
-        "eyJ",
-        "vercel_",
-        "sbp_",
-        "0x",
-    ];
-    let body = PREFIXES
+    let body = crate::confidence::KNOWN_PREFIXES
         .iter()
         .find_map(|prefix| credential.strip_prefix(prefix))
         .unwrap_or(credential);
@@ -122,47 +86,13 @@ fn is_sequential_placeholder(credential: &str) -> bool {
 }
 
 fn is_hex_sequential_placeholder(credential: &str) -> bool {
-    let body = PREFIXES
+    // Same canonical prefix list as is_sequential_placeholder. Strip the
+    // prefix before the hex-sequence check so e.g. `ghp_0123456789abcdef`
+    // still trips the "monotonic hex" suppression on the BODY.
+    let body = crate::confidence::KNOWN_PREFIXES
         .iter()
         .find_map(|prefix| credential.strip_prefix(prefix))
         .unwrap_or(credential);
-
-    // Reuse the same prefix list from is_sequential_placeholder
-    const PREFIXES: &[&str] = &[
-        "ghp_",
-        "gho_",
-        "ghs_",
-        "ghu_",
-        "ghr_",
-        "github_pat_",
-        "sk-proj-",
-        "sk-ant-",
-        "sk-",
-        "sk_test_",
-        "sk_live_",
-        "pk_test_",
-        "pk_live_",
-        "rk_test_",
-        "rk_live_",
-        "AKIA",
-        "ASIA",
-        "xoxb-",
-        "xoxp-",
-        "xoxa-",
-        "xoxr-",
-        "SG.",
-        "hf_",
-        "npm_",
-        "pypi-",
-        "glpat-",
-        "glcbt-",
-        "glrt-",
-        "dop_v1_",
-        "eyJ",
-        "vercel_",
-        "sbp_",
-        "0x",
-    ];
 
     if body.len() < 16 || !body.bytes().all(|b| b.is_ascii_hexdigit()) {
         return false;

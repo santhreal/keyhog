@@ -8,7 +8,7 @@ mod signals;
 pub use penalties::apply_calibration_multiplier;
 pub use penalties::apply_path_confidence_penalties;
 pub use penalties::apply_post_ml_penalties;
-pub use prefixes::known_prefix_confidence_floor;
+pub use prefixes::{known_prefix_confidence_floor, KNOWN_PREFIXES};
 pub use signals::ConfidenceSignals;
 
 use crate::entropy::{HIGH_ENTROPY_THRESHOLD, VERY_HIGH_ENTROPY_THRESHOLD};
