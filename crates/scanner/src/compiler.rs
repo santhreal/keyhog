@@ -99,13 +99,29 @@ pub fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileState> {
                 if expanded_prefix == *prefix {
                     continue;
                 }
-                let Some(suffix) = pattern.regex.strip_prefix(prefix.as_str()) else {
-                    // Prefix appears in the regex parse tree but isn't a
-                    // leading literal slice (e.g. inside an alternation).
-                    // Skip — there's no safe text rewrite we can do.
+                let full_homoglyph_regex = if let Some(suffix) =
+                    pattern.regex.strip_prefix(prefix.as_str())
+                {
+                    // Simple case: prefix is the literal head of the regex.
+                    format!("{expanded_prefix}{suffix}")
+                } else if let Some(rewritten) =
+                    rewrite_alternation_prefix(&pattern.regex, &expanded_prefix)
+                {
+                    // Alternation case: regex is `(?:p1|p2|...)body`. Replace
+                    // the leading `(?:...)` with the expanded prefix so the
+                    // homoglyph variant still requires the rest of the pattern
+                    // to match. Without this, every alternation-prefix detector
+                    // silently skipped its homoglyph fallback — leaving
+                    // Cyrillic/full-width spoofed credentials of the form
+                    // `[ɡ̅р][hн]p_<body>` invisible to the scanner.
+                    rewritten
+                } else {
+                    // Prefix appears in the parse tree but isn't a leading
+                    // literal slice and isn't a trivially-rewritable alternation
+                    // (e.g. it sits inside a nested group). Skip — there's no
+                    // safe text rewrite we can do here.
                     continue;
                 };
-                let full_homoglyph_regex = format!("{expanded_prefix}{suffix}");
                 if let Ok(re) = Regex::new(&full_homoglyph_regex) {
                     fallback.push((
                         CompiledPattern {
@@ -156,6 +172,71 @@ pub fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileState> {
         companions,
         quality_warnings,
     })
+}
+
+/// If `regex` is `(?:p1|p2|...)body` (with optional inline flags / `?:`
+/// variants), replace the leading alternation group with `expanded_prefix`.
+/// Returns the rewritten regex source; returns `None` if the regex doesn't
+/// start with a non-capturing alternation group we know how to rewrite.
+///
+/// This is the homoglyph counterpart of `extract_literal_prefixes`'s
+/// alternation handling — when the prefix extractor returned a literal
+/// from inside `(?:ghp_|github_pat_)`, the homoglyph compiler needs the
+/// matching surgical rewrite to splice the expanded prefix into the
+/// regex without losing the trailing body constraint.
+fn rewrite_alternation_prefix(regex: &str, expanded_prefix: &str) -> Option<String> {
+    // Strip a leading inline flag group like `(?i)`.
+    let (flag_prefix, body) = split_leading_inline_flag(regex);
+    if !body.starts_with("(?:") && !body.starts_with("(?i:")
+        && !body.starts_with("(?m:")
+        && !body.starts_with("(?s:")
+        && !body.starts_with("(?im:")
+        && !body.starts_with("(?is:")
+        && !body.starts_with("(?ms:")
+        && !body.starts_with('(')
+    {
+        return None;
+    }
+    // Find the matching closing `)` for the leading group.
+    let bytes = body.as_bytes();
+    let mut depth: i32 = 0;
+    let mut close_at: Option<usize> = None;
+    for (i, &b) in bytes.iter().enumerate() {
+        match b {
+            b'(' => depth += 1,
+            b')' => {
+                depth -= 1;
+                if depth == 0 {
+                    close_at = Some(i);
+                    break;
+                }
+            }
+            // Don't track escapes — we only need to find the *top-level*
+            // closing paren, and within a regex source a literal `(` or
+            // `)` inside a character class is rare in real detectors.
+            _ => {}
+        }
+    }
+    let close = close_at?;
+    // Trailing body after the alternation group.
+    let suffix = &body[close + 1..];
+    Some(format!("{flag_prefix}{expanded_prefix}{suffix}"))
+}
+
+fn split_leading_inline_flag(s: &str) -> (&str, &str) {
+    if !s.starts_with("(?") {
+        return ("", s);
+    }
+    let bytes = s.as_bytes();
+    let mut i = 2;
+    while i < bytes.len() && matches!(bytes[i], b'i' | b'm' | b's' | b'x' | b'u' | b'U') {
+        i += 1;
+    }
+    if i < bytes.len() && bytes[i] == b')' {
+        (&s[..=i], &s[i + 1..])
+    } else {
+        ("", s)
+    }
 }
 
 pub fn build_ac_pattern_set(literals: &[String]) -> Result<Option<AhoCorasick>> {
@@ -424,4 +505,63 @@ pub fn compile_companion(spec: &CompanionSpec, detector_id: &str) -> Result<Comp
         within_lines: spec.within_lines,
         required: spec.required,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn alternation_rewrite_basic() {
+        let out = rewrite_alternation_prefix("(?:ghp_|github_pat_)[a-zA-Z0-9_]{36}", "[gɡ]hp_");
+        assert_eq!(out.unwrap(), "[gɡ]hp_[a-zA-Z0-9_]{36}");
+    }
+
+    #[test]
+    fn alternation_rewrite_with_inline_flag() {
+        let out = rewrite_alternation_prefix(
+            "(?i)(?:ghp_|github_pat_)[a-zA-Z0-9_]{36}",
+            "[gɡ]hp_",
+        );
+        assert_eq!(out.unwrap(), "(?i)[gɡ]hp_[a-zA-Z0-9_]{36}");
+    }
+
+    #[test]
+    fn alternation_rewrite_with_alternative_flag_prefix() {
+        let out = rewrite_alternation_prefix("(?i:abc|def)\\w+", "[a]bc");
+        assert_eq!(out.unwrap(), "[a]bc\\w+");
+    }
+
+    #[test]
+    fn alternation_rewrite_handles_nested_groups() {
+        // Inner `(\d+)` should not confuse the depth tracker.
+        let out = rewrite_alternation_prefix(
+            "(?:abc(?:\\d{2})|def)body",
+            "[a]bc",
+        );
+        assert_eq!(out.unwrap(), "[a]bcbody");
+    }
+
+    #[test]
+    fn alternation_rewrite_returns_none_for_literal_head() {
+        // No leading group → caller should fall through to strip_prefix.
+        let out = rewrite_alternation_prefix("AKIA[A-Z0-9]{16}", "[a]kia");
+        // Caller handles this via the simple strip_prefix branch; the
+        // alternation rewriter conservatively returns Some with the
+        // body stripped from the (single) leading group — but since
+        // there's no '(' at position 0, we expect None.
+        assert!(out.is_none());
+    }
+
+    #[test]
+    fn split_leading_inline_flag_parses_common_shapes() {
+        assert_eq!(split_leading_inline_flag("(?i)body"), ("(?i)", "body"));
+        assert_eq!(split_leading_inline_flag("(?im)body"), ("(?im)", "body"));
+        assert_eq!(split_leading_inline_flag("(?ims)body"), ("(?ims)", "body"));
+        assert_eq!(split_leading_inline_flag("body"), ("", "body"));
+        assert_eq!(
+            split_leading_inline_flag("(?:abc|def)body"),
+            ("", "(?:abc|def)body")
+        );
+    }
 }
