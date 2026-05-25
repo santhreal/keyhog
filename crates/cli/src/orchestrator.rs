@@ -945,8 +945,20 @@ impl ScanOrchestrator {
         // Apply the user's per-service rate cap to the global token-bucket
         // limiter BEFORE the engine starts dispatching verifies. The
         // limiter is a process-wide OnceLock so this needs to land before
-        // the first `wait()` call inside `verify_with_retry`.
-        keyhog_verifier::rate_limit::set_global_default_rps(self.args.verify_rate);
+        // the first `wait()` call inside `verify_with_retry`. Surface
+        // any silent clamping (negative / NaN / infinity → 1 rps) at
+        // this layer instead of letting the user think their flag took
+        // effect.
+        let rate = self.args.verify_rate;
+        if !rate.is_finite() || rate <= 0.0 {
+            tracing::warn!(
+                requested = rate,
+                effective_rps = 1.0,
+                "--verify-rate must be finite and > 0; \
+                 clamping to 1 rps (one request per service per second)"
+            );
+        }
+        keyhog_verifier::rate_limit::set_global_default_rps(rate);
 
         // `--verify-batch`: serialize live verifications per service on
         // top of the rate cap. Useful when the scanned tree has hundreds
