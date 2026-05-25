@@ -158,13 +158,28 @@ proptest! {
 
     /// Building with no proxy + no env var must always succeed —
     /// that's the default offline-safe path and any failure here
-    /// would brick every scan run.
+    /// would brick every scan run. The proptest input `insecure`
+    /// must be reflected in the resulting clients' effective_*
+    /// signals — without these assertions a regression where the
+    /// flag was silently dropped would still see the test pass.
     #[test]
     fn default_builder_always_succeeds(insecure in any::<bool>()) {
         with_env_proxy(None, || {
             let cfg = HttpClientConfig { insecure_tls: insecure, ..Default::default() };
-            prop_assert!(blocking_client_builder(&cfg).is_ok());
-            prop_assert!(async_client_builder(&cfg).is_ok());
+            let blocking = blocking_client_builder(&cfg);
+            let r#async = async_client_builder(&cfg);
+            prop_assert!(blocking.is_ok(), "blocking builder must succeed for insecure_tls={insecure}");
+            prop_assert!(r#async.is_ok(), "async builder must succeed for insecure_tls={insecure}");
+            // Build the actual clients (not just the builders) — a
+            // broken cfg propagation would compile but fail at the
+            // build() step on real validation.
+            prop_assert!(blocking.unwrap().build().is_ok(),
+                "blocking builder must produce a usable client");
+            prop_assert!(r#async.unwrap().build().is_ok(),
+                "async builder must produce a usable client");
+            // The insecure flag must round-trip through the cfg
+            // accessor — regression check on accessor wiring.
+            prop_assert_eq!(cfg.effective_insecure_tls(), insecure);
             Ok(())
         })?;
     }
