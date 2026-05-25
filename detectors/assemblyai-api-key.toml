@@ -11,7 +11,7 @@ severity = "high"
 keywords = ["ASSEMBLYAI_API_KEY", "assemblyai"]
 
 [[detector.patterns]]
-regex = "(?:ASSEMBLYAI|assemblyai)[=:\\s\"'']+([a-f0-9]{32})"
+regex = "(?i)assemblyai[_.]?(?:api[_.]?key|token|key)?[=:\\s\"']+([a-f0-9]{32})"
 description = "AssemblyAI API key with context anchor"
 group = 1
 
