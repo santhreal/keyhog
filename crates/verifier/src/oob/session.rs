@@ -120,10 +120,16 @@ struct StoredInteraction {
 pub struct OobSession {
     client: Arc<InteractshClient>,
     config: OobConfig,
-    /// id → first observed interaction. Once observed, future polls for the
-    /// same id are no-ops (we keep the entry until GC for late waiters that
-    /// haven't called `wait_for` yet).
-    observations: Arc<DashMap<String, StoredInteraction>>,
+    /// id → all observed interactions for that id.
+    ///
+    /// One callback URL typically triggers a DNS lookup AND an HTTP request
+    /// (DNS first, then HTTP to the resolved IP) — both arrive at interactsh
+    /// with the same `unique_id` but different protocols. The previous
+    /// first-write-wins storage discarded the second one, which silently
+    /// turned `OobProtocol::Http` detectors into FNs whenever DNS happened
+    /// to arrive first. We now store every interaction; `peek_match`
+    /// filters by protocol at read time.
+    observations: Arc<DashMap<String, Vec<StoredInteraction>>>,
     /// id → notify handle. Populated by `wait_for` before it parks; the
     /// poller signals on match. `Mutex<HashMap>` over a `DashMap` because
     /// we need atomic insert-and-check-existing; contention is bounded
@@ -323,10 +329,13 @@ impl OobSession {
     }
 
     fn peek_match(&self, unique_id: &str, accepts: OobAccept) -> Option<OobObservation> {
-        let stored = self.observations.get(unique_id)?;
-        if !accepts.matches(stored.interaction.protocol) {
-            return None;
-        }
+        let entries = self.observations.get(unique_id)?;
+        // Earliest-matching-protocol wins. The poller stores in arrival
+        // order, so the first matching entry is also the first one we
+        // received with that protocol.
+        let stored = entries
+            .iter()
+            .find(|s| accepts.matches(s.interaction.protocol))?;
         Some(OobObservation::Observed {
             protocol: stored.interaction.protocol,
             remote_address: stored.interaction.remote_address.clone(),
@@ -337,17 +346,11 @@ impl OobSession {
 
     fn store_and_notify(&self, interaction: Interaction) {
         let id = interaction.unique_id.clone();
-        // First-write-wins. Repeat callbacks for the same id (a service that
-        // hits us twice) don't overwrite — the first observation is what the
-        // verifier will see.
-        let inserted = self
-            .observations
-            .entry(id.clone())
-            .or_insert_with(|| StoredInteraction {
-                interaction,
-                received_at: Instant::now(),
-            });
-        let _ = inserted; // hold guard scope
+        let stored = StoredInteraction {
+            interaction,
+            received_at: Instant::now(),
+        };
+        self.observations.entry(id.clone()).or_default().push(stored);
         if let Some(notify) = self.waiters.lock().get(&id) {
             notify.notify_waiters();
         }
@@ -357,8 +360,12 @@ impl OobSession {
         let cutoff = Instant::now()
             .checked_sub(self.config.max_observation_age)
             .unwrap_or_else(Instant::now);
-        self.observations
-            .retain(|_, stored| stored.received_at >= cutoff);
+        // Drop stale per-id entries (Vec inside the map) first, then evict
+        // any id whose Vec is now empty.
+        self.observations.retain(|_, entries| {
+            entries.retain(|stored| stored.received_at >= cutoff);
+            !entries.is_empty()
+        });
     }
 
     /// Test-only constructor that bypasses both the network registration and
@@ -621,22 +628,69 @@ mod tests {
     async fn wait_for_filters_by_protocol() {
         let session = test_session();
         let id = "protofilteridprotofilteridprotofi";
-        // Store wrong-protocol first.
+        // Store wrong-protocol only.
         session.store_and_notify_for_test(fake_interaction(id, InteractionProtocol::Dns));
-        // Wait for HTTP — the DNS interaction is in the DashMap but
-        // doesn't satisfy the OobAccept::Http filter.
+        // Wait for HTTP — the DNS interaction is stored but doesn't satisfy
+        // the OobAccept::Http filter, and no HTTP entry ever arrives, so
+        // the wait must time out at NotObserved.
         let s = Arc::clone(&session);
         let task = tokio::spawn(async move {
             s.wait_for(id, OobAccept::Http, Duration::from_millis(500))
                 .await
         });
         tokio::time::sleep(Duration::from_millis(50)).await;
-        // wait_for is parked. Verdict: NotObserved within the 500ms timeout
-        // because the DNS observation doesn't match Http. (DashMap stores
-        // first-write-wins, so a subsequent Http store wouldn't overwrite —
-        // documenting that semantic with this assertion.)
         let obs = task.await.expect("task panicked");
         assert!(matches!(obs, OobObservation::NotObserved));
+    }
+
+    /// Regression for the first-write-wins FN bug: a real service typically
+    /// triggers DNS resolution BEFORE the HTTP fetch (the HTTP fetch needs
+    /// the resolved IP). The poller therefore stores DNS first, then HTTP.
+    /// The previous storage was `DashMap<id, StoredInteraction>` with
+    /// `or_insert_with`, which silently dropped the second arrival — so
+    /// a detector with `protocol = "http"` would return NotObserved even
+    /// though the HTTP exfil was observed. Storage is now per-id Vec; this
+    /// pins that an HTTP wait sees the HTTP entry even when DNS came first.
+    #[tokio::test]
+    async fn wait_for_finds_http_when_dns_arrived_first_for_same_id() {
+        let session = test_session();
+        let id = "dnsfirstidsdnsfirstidsdnsfirstid";
+        session.store_and_notify_for_test(fake_interaction(id, InteractionProtocol::Dns));
+        session.store_and_notify_for_test(fake_interaction(id, InteractionProtocol::Http));
+
+        let obs = session
+            .wait_for(id, OobAccept::Http, Duration::from_millis(500))
+            .await;
+        match obs {
+            OobObservation::Observed { protocol, .. } => {
+                assert!(
+                    matches!(protocol, InteractionProtocol::Http),
+                    "HTTP filter must surface the HTTP entry even when DNS \
+                     arrived first; got protocol {protocol:?}"
+                );
+            }
+            other => panic!("expected Observed(Http), got {other:?}"),
+        }
+    }
+
+    /// Companion to the above: when only DNS exists but the wait accepts
+    /// Any protocol, the DNS entry surfaces (no FN). Pins the OobAccept::Any
+    /// short-circuit through the new iteration logic.
+    #[tokio::test]
+    async fn wait_for_any_finds_dns_when_only_dns_present() {
+        let session = test_session();
+        let id = "anymatchidsanymatchidsanymatchids";
+        session.store_and_notify_for_test(fake_interaction(id, InteractionProtocol::Dns));
+        let obs = session
+            .wait_for(id, OobAccept::Any, Duration::from_millis(500))
+            .await;
+        assert!(matches!(
+            obs,
+            OobObservation::Observed {
+                protocol: InteractionProtocol::Dns,
+                ..
+            }
+        ));
     }
 
     /// Shutdown wakes parked waiters instead of leaving them to time out.
