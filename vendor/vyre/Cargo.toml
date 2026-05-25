@@ -175,29 +175,29 @@ private_intra_doc_links = "warn"
 # version (the `version` is required so a published crate can resolve its
 # workspace siblings from crates.io after publication).
 [workspace.dependencies]
-vyre = { version = "0.4.1", path = "vyre-core", default-features = false }
-vyre-foundation = { version = "0.4.1", path = "vyre-foundation" }
-vyre-driver = { version = "0.4.1", path = "vyre-driver" }
-vyre-driver-wgpu = { version = "0.4.1", path = "vyre-driver-wgpu" }
-vyre-driver-cuda = { version = "0.4.1", path = "vyre-driver-cuda" }
-vyre-driver-reference = { version = "0.4.1", path = "vyre-driver-reference" }
-vyre-driver-spirv = { version = "0.4.1", path = "vyre-driver-spirv" }
-vyre-reference = { version = "0.4.1", path = "vyre-reference" }
-vyre-spec = { version = "0.4.1", path = "vyre-spec" }
-vyre-macros = { version = "0.4.1", path = "vyre-macros" }
-vyre-primitives = { version = "0.4.1", path = "vyre-primitives" }
-vyre-runtime = { version = "0.4.1", path = "vyre-runtime" }
-vyre-libs = { version = "0.4.1", path = "vyre-libs" }
-vyre-self-substrate = { version = "0.4.1", path = "vyre-self-substrate" }
-vyre-intrinsics = { version = "0.4.1", path = "vyre-intrinsics" }
-vyre-aot = { version = "0.4.1", path = "vyre-aot" }
-vyre-bench = { version = "0.4.1", path = "vyre-bench" }
-vyre-test-harness = { version = "0.4.1", path = "conform/vyre-test-harness" }
-vyre-harness = { version = "0.4.1", path = "vyre-harness" }
-vyre-lower = { version = "0.4.1", path = "vyre-lower" }
-vyre-emit-naga = { version = "0.4.1", path = "vyre-emit-naga" }
-vyre-emit-ptx = { version = "0.4.1", path = "vyre-emit-ptx" }
-vyre-emit-spirv = { version = "0.4.1", path = "vyre-emit-spirv" }
+vyre = { version = "0.4.2", path = "vyre-core", default-features = false }
+vyre-foundation = { version = "0.4.2", path = "vyre-foundation" }
+vyre-driver = { version = "0.4.2", path = "vyre-driver" }
+vyre-driver-wgpu = { version = "0.4.2", path = "vyre-driver-wgpu" }
+vyre-driver-cuda = { version = "0.4.2", path = "vyre-driver-cuda" }
+vyre-driver-reference = { version = "0.4.2", path = "vyre-driver-reference" }
+vyre-driver-spirv = { version = "0.4.2", path = "vyre-driver-spirv" }
+vyre-reference = { version = "0.4.2", path = "vyre-reference" }
+vyre-spec = { version = "0.4.2", path = "vyre-spec" }
+vyre-macros = { version = "0.4.2", path = "vyre-macros" }
+vyre-primitives = { version = "0.4.2", path = "vyre-primitives" }
+vyre-runtime = { version = "0.4.2", path = "vyre-runtime" }
+vyre-libs = { version = "0.4.2", path = "vyre-libs" }
+vyre-self-substrate = { version = "0.4.2", path = "vyre-self-substrate" }
+vyre-intrinsics = { version = "0.4.2", path = "vyre-intrinsics" }
+vyre-aot = { version = "0.4.2", path = "vyre-aot" }
+vyre-bench = { version = "0.4.2", path = "vyre-bench" }
+vyre-test-harness = { version = "0.4.2", path = "conform/vyre-test-harness" }
+vyre-harness = { version = "0.4.2", path = "vyre-harness" }
+vyre-lower = { version = "0.4.2", path = "vyre-lower" }
+vyre-emit-naga = { version = "0.4.2", path = "vyre-emit-naga" }
+vyre-emit-ptx = { version = "0.4.2", path = "vyre-emit-ptx" }
+vyre-emit-spirv = { version = "0.4.2", path = "vyre-emit-spirv" }
 weir = { version = "0.0.1", path = "../../../dataflow/weir" }
 
 # Shared third-party pins; every member agrees on versions.

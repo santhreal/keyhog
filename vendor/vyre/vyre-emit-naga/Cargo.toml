@@ -16,11 +16,11 @@ name = "vyre_emit_naga"
 path = "src/lib.rs"
 
 [dependencies]
-vyre-lower = { version = "0.4.2", path = "../vyre-lower" }
+vyre-lower = { workspace = true }
 naga = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
-vyre-foundation = { version = "0.4.2", path = "../vyre-foundation" }
+vyre-foundation = { workspace = true }
 vyre-driver = { workspace = true }
 vyre-spec = { workspace = true }
 rustc-hash = { workspace = true }
@@ -29,4 +29,4 @@ serde_json.workspace = true
 blake3 = { workspace = true }
 
 [dev-dependencies]
-vyre-libs = { version = "0.4.2", path = "../vyre-libs", features = ["c-parser"] }
+vyre-libs = { workspace = true, features = ["c-parser"] }

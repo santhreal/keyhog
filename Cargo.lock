@@ -310,6 +310,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "bogon"
+version = "0.1.0"
+
+[[package]]
 name = "bstr"
 version = "1.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2819,6 +2823,7 @@ version = "0.5.16"
 dependencies = [
  "aes",
  "base64",
+ "bogon",
  "cfb-mode",
  "codewalk",
  "dashmap",

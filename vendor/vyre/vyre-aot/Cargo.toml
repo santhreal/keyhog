@@ -19,7 +19,7 @@ workspace = true
 [dependencies]
 vyre-foundation.workspace = true
 vyre-driver.workspace = true
-vyre-primitives = { version = "0.4.2", path = "../vyre-primitives", default-features = false, features = ["math", "graph", "fixpoint", "bitset", "reduce", "inventory-registry"] }
+vyre-primitives = { workspace = true, features = ["math", "graph", "fixpoint", "bitset", "reduce", "inventory-registry"] }
 vyre-spec.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true

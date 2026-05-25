@@ -21,7 +21,7 @@ vyre-lower = { workspace = true }
 naga = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
-vyre-foundation = { version = "0.4.2", path = "../vyre-foundation" }
+vyre-foundation = { workspace = true }
 
 [dev-dependencies]
 vyre-emit-ptx = { workspace = true }

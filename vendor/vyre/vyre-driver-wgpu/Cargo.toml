@@ -67,9 +67,9 @@ vyre.workspace = true
 vyre-harness.workspace = true
 vyre-self-substrate = { workspace = true }
 vyre-libs = { workspace = true, features = ["matching", "parsing", "c-parser", "nn-attention", "cpu-parity"] }
-vyre-primitives = { version = "0.4.2", path = "../vyre-primitives", default-features = false, features = ["graph", "predicate", "cpu-parity"] }
+vyre-primitives = { workspace = true, features = ["graph", "predicate", "cpu-parity"] }
 vyre-reference = { workspace = true, features = ["subgroup-ops"] }
-vyre-runtime = { version = "0.4.2", path = "../vyre-runtime", features = ["self-substrate-adapters"] }
+vyre-runtime = { workspace = true, features = ["self-substrate-adapters"] }
 vyre-test-harness.workspace = true
 vyre-intrinsics.workspace = true
 tracing-subscriber.workspace = true

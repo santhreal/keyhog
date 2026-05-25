@@ -38,6 +38,7 @@ lazy_static = { workspace = true }
 parking_lot = { workspace = true }
 dashmap = { workspace = true }
 url = { workspace = true }
+bogon = { path = "../../vendor/bogon" }
 
 # OOB verification — embedded interactsh client (gated behind --verify-oob).
 rsa = { workspace = true }

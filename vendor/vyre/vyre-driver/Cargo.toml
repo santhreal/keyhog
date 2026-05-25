@@ -27,7 +27,7 @@ default = []
 self-substrate-adapters = ["dep:vyre-self-substrate"]
 
 [dependencies]
-vyre-foundation = { version = "0.4.2", path = "../vyre-foundation" }
+vyre-foundation = { workspace = true }
 vyre-self-substrate = { workspace = true, optional = true }
 vyre-spec.workspace = true
 vyre-macros.workspace = true
@@ -50,7 +50,7 @@ fs2.workspace = true
 workspace = true
 
 [dev-dependencies]
-vyre-reference = { version = "0.4.2", path = "../vyre-reference" }
+vyre-reference = { workspace = true }
 vyre-self-substrate = { workspace = true }
 # The `vyre` meta-shim re-exports every driver-tier public type. Doctest
 # examples in this crate demonstrate the consumer-facing `vyre::X` path

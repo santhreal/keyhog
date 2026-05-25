@@ -47,7 +47,7 @@ dashmap.workspace = true
 tempfile.workspace = true
 serde_json.workspace = true
 vyre.workspace = true
-vyre-primitives = { version = "0.4.2", path = "../vyre-primitives", features = ["decode", "math", "cpu-parity"] }
-vyre-self-substrate = { version = "0.4.2", path = "../vyre-self-substrate", features = ["cpu-parity"] }
-vyre-libs = { version = "0.4.2", path = "../vyre-libs" }
+vyre-primitives = { workspace = true, features = ["decode", "math", "cpu-parity"] }
+vyre-self-substrate = { workspace = true, features = ["cpu-parity"] }
+vyre-libs = { workspace = true }
 pollster.workspace = true

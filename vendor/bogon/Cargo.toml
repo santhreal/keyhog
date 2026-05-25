@@ -1,0 +1,11 @@
+[package]
+name = "bogon"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT OR Apache-2.0"
+description = "Vendored bogon / non-public IP classification from libs/scanner/bogon — single source of truth for keyhog's SSRF policy."
+authors = ["Santh Project <contact@santh.dev>"]
+publish = false
+
+[dependencies]

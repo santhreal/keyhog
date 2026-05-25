@@ -96,7 +96,7 @@ vyre-spec.workspace = true
 inventory = { workspace = true, optional = true }
 
 [dev-dependencies]
-vyre-reference = { version = "0.4.2", path = "../vyre-reference" }
+vyre-reference = { workspace = true }
 vyre-foundation.workspace = true
 proptest.workspace = true
 vyre-driver-cuda = { workspace = true }
