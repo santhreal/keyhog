@@ -120,8 +120,19 @@ fn deep_recursive_symlinks_do_not_crash() {
     let source = FilesystemSource::new(dir.path().to_path_buf());
     let chunks: Vec<_> = source.chunks().collect::<Result<Vec<_>, _>>().unwrap();
 
-    // Should not crash and should complete in reasonable time
-    assert!(chunks.is_empty() || chunks.len() < 100);
+    // The symlink chain contains zero regular files — only directories
+    // and the symlinks pointing at them. The walker must return zero
+    // chunks AND must not crash. Previous assertion `is_empty() || len() < 100`
+    // accepted any chunk count ≤ 99, hiding a future regression where
+    // the walker followed the symlinks and yielded N copies of the same
+    // (non-existent) file. Pin the actual contract: exactly zero chunks.
+    assert_eq!(
+        chunks.len(),
+        0,
+        "symlink-only directory tree must produce zero chunks; got {} (paths: {:?})",
+        chunks.len(),
+        chunks.iter().filter_map(|c| c.metadata.path.as_deref()).collect::<Vec<_>>(),
+    );
 }
 
 #[test]
