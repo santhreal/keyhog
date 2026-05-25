@@ -941,14 +941,7 @@ impl CompiledScanner {
             return;
         }
 
-        static ASSIGN_RE: std::sync::LazyLock<Option<regex::Regex>> =
-            std::sync::LazyLock::new(|| {
-                regex::Regex::new(
-                    r#"(?i)([a-z0-9_-]{2,32})\s*[:=]\s*["'`]([a-zA-Z0-9/+=_-]{4,})["'`](?:;|,)?$"#,
-                )
-                .ok()
-            });
-        let Some(assign_re) = ASSIGN_RE.as_ref() else {
+        let Some(assign_re) = crate::shared_regexes::ASSIGN_RE.as_ref() else {
             return;
         };
 

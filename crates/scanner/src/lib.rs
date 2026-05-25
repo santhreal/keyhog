@@ -80,6 +80,8 @@ pub(crate) mod simd;
 #[cfg(feature = "simdsieve")]
 mod simdsieve_prefilter;
 
+pub(crate) mod shared_regexes;
+
 pub use engine::CompiledScanner;
 pub use error::{Result, ScanError};
 pub use hw_probe::{probe_hardware, select_backend, HardwareCaps, ScanBackend};

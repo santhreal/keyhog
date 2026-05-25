@@ -1,17 +1,13 @@
 use super::config::LineMapping;
 use super::preprocessor::extract_prefix;
 use crate::fragment_cache::FragmentCache;
-use regex::Regex;
+use crate::shared_regexes::ASSIGN_RE;
 
 pub(super) fn collect_structural_fragments(
     lines: &[&str],
     initial_offset: usize,
     fragment_cache: &FragmentCache,
 ) -> (Vec<String>, Vec<LineMapping>) {
-    static ASSIGN_RE: std::sync::LazyLock<Option<Regex>> = std::sync::LazyLock::new(|| {
-        Regex::new(r#"(?i)([a-z0-9_-]{2,32})\s*[:=]\s*["'`]([a-zA-Z0-9/+=_-]{4,})["'`](?:;|,)?$"#)
-            .ok()
-    });
     let Some(assign_re) = ASSIGN_RE.as_ref() else {
         return (Vec::new(), Vec::new());
     };
