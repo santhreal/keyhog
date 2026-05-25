@@ -284,7 +284,10 @@ impl CompiledScanner {
             .unwrap_or(false);
         let kernel_env_ac = matches!(std::env::var("KEYHOG_GPU_KERNEL").as_deref(), Ok("ac"));
         if kernel_env_ac || backend_is_cuda {
-            return GpuPhase1Output::Done(self.scan_coalesced_gpu_ac(chunks));
+            // Forward directly — the AC phase 1 returns the same
+            // `GpuPhase1Output` shape, so its `Hits` triples can be
+            // pipelined the same way the literal-set path's are.
+            return self.scan_coalesced_gpu_ac_phase1(chunks);
         }
 
         // Auto-degrade to the next-best backend when the GPU stack is not
@@ -749,14 +752,36 @@ impl CompiledScanner {
         &self,
         chunks: &[keyhog_core::Chunk],
     ) -> Vec<Vec<keyhog_core::RawMatch>> {
+        // Thin combined wrapper that mirrors `scan_coalesced_gpu` —
+        // every existing caller still gets the synchronous
+        // dispatch+extract behaviour. The phase-split is what the
+        // pipelined scanner thread in `cli/orchestrator.rs` uses to
+        // overlap batch N+1's GPU dispatch with batch N's CPU phase 2.
+        match self.scan_coalesced_gpu_ac_phase1(chunks) {
+            GpuPhase1Output::Hits(hits) => self.scan_coalesced_gpu_phase2(chunks, hits),
+            GpuPhase1Output::Done(results) => results,
+        }
+    }
+
+    /// AC-kernel counterpart of [`Self::scan_coalesced_gpu_phase1`].
+    /// Returns per-chunk hit triples so the orchestrator can overlap
+    /// the GPU dispatch of batch N+1 with the CPU phase 2 of batch N
+    /// the same way the literal-set path does.
+    ///
+    /// Degraded-path early-exits (no matcher / no program / no
+    /// backend / shard-dispatch error / cap overflow) all bail out via
+    /// `GpuPhase1Output::Done(self.scan_coalesced_non_gpu(...))` so
+    /// the caller still receives a fully-computed result on the
+    /// non-GPU fallback path — no separate phase 2 needed in that case.
+    pub fn scan_coalesced_gpu_ac_phase1(&self, chunks: &[keyhog_core::Chunk]) -> GpuPhase1Output {
         let Some(matcher) = self.gpu_matcher() else {
-            return self.scan_coalesced_non_gpu(chunks);
+            return GpuPhase1Output::Done(self.scan_coalesced_non_gpu(chunks));
         };
         let Some(program) = self.ac_gpu_program() else {
-            return self.scan_coalesced_non_gpu(chunks);
+            return GpuPhase1Output::Done(self.scan_coalesced_non_gpu(chunks));
         };
         if self.gpu_backend.is_none() {
-            return self.scan_coalesced_non_gpu(chunks);
+            return GpuPhase1Output::Done(self.scan_coalesced_non_gpu(chunks));
         }
 
         let (entries, mut buffer) = coalesce_chunks(chunks);
@@ -884,7 +909,7 @@ impl CompiledScanner {
                         shards = sub_end - sub_start,
                         "AC GPU batched dispatch failed, falling back to CPU: {e}"
                     );
-                    return self.scan_coalesced_non_gpu(chunks);
+                    return GpuPhase1Output::Done(self.scan_coalesced_non_gpu(chunks));
                 }
             };
 
@@ -897,7 +922,7 @@ impl CompiledScanner {
                             shard_index = i,
                             "AC GPU shard within batch failed, falling back to CPU: {e}"
                         );
-                        return self.scan_coalesced_non_gpu(chunks);
+                        return GpuPhase1Output::Done(self.scan_coalesced_non_gpu(chunks));
                     }
                 };
                 if outputs.len() < 2 {
@@ -906,7 +931,7 @@ impl CompiledScanner {
                         outputs = outputs.len(),
                         "AC GPU shard output buffer count too small; falling back to CPU"
                     );
-                    return self.scan_coalesced_non_gpu(chunks);
+                    return GpuPhase1Output::Done(self.scan_coalesced_non_gpu(chunks));
                 }
                 let count_bytes = &outputs[0];
                 let matches_bytes = &outputs[1];
@@ -915,7 +940,7 @@ impl CompiledScanner {
                         shard_index = i,
                         "AC GPU shard count buffer truncated; falling back to CPU"
                     );
-                    return self.scan_coalesced_non_gpu(chunks);
+                    return GpuPhase1Output::Done(self.scan_coalesced_non_gpu(chunks));
                 }
                 let count = u32::from_le_bytes([
                     count_bytes[0],
@@ -930,7 +955,7 @@ impl CompiledScanner {
                         shard_index = i,
                         "AC GPU shard exceeded program cap — truncation possible; falling back to CPU"
                     );
-                    return self.scan_coalesced_non_gpu(chunks);
+                    return GpuPhase1Output::Done(self.scan_coalesced_non_gpu(chunks));
                 }
                 let shard_matches = vyre_libs::scan::dispatch_io::unpack_match_triples(
                     matches_bytes,
@@ -1020,22 +1045,12 @@ impl CompiledScanner {
             }
         }
 
-        use rayon::prelude::*;
-        let mut results: Vec<Vec<keyhog_core::RawMatch>> = chunks
-            .par_iter()
-            .zip(per_chunk_hits.into_par_iter())
-            .map(|(chunk, hits)| {
-                let prepared = self.prepare_chunk(chunk);
-                let mut matches = self.scan_prepared_with_pattern_hits(prepared, hits, None);
-                // Same parity-with-SIMD post-process the literal-set
-                // path now runs (see scan_coalesced_gpu comment).
-                self.post_process_matches(chunk, &mut matches, None);
-                matches
-            })
-            .collect();
-
-        super::boundary::scan_chunk_boundaries(self, chunks, &mut results);
-        results
+        // Hand the hits back to the orchestrator so it can run phase 2
+        // on a separate thread (pipelined). Combined-wrapper callers
+        // (`scan_coalesced_gpu_ac`) call phase 2 inline immediately
+        // after this returns, preserving the original synchronous
+        // behaviour.
+        GpuPhase1Output::Hits(per_chunk_hits)
     }
 }
 

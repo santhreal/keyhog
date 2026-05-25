@@ -191,6 +191,77 @@ fn gpu_path_finds_boundary_straddled_secret() {
     );
 }
 
+/// Pipeline-refactor lock for the AC kernel path: the two-phase API
+/// `scan_coalesced_gpu_ac_phase1` → `scan_coalesced_gpu_phase2` must
+/// be a faithful split of the combined `scan_coalesced_gpu_ac`
+/// wrapper. Same rationale as the literal-set test below but exercises
+/// the AC-bounded-ranges kernel path that fires when
+/// `KEYHOG_GPU_KERNEL=ac` or the CUDA backend is active.
+#[test]
+fn scan_coalesced_gpu_ac_phase1_phase2_parity_with_wrapper() {
+    use keyhog_scanner::GpuPhase1Output;
+    let detectors = match keyhog_core::load_detectors(&detector_dir()) {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("SKIP: detectors directory unavailable: {e}");
+            return;
+        }
+    };
+    let scanner = CompiledScanner::compile(detectors).expect("scanner compile");
+
+    let chunks = vec![
+        make_chunk("// no secrets in this file", "clean.rs"),
+        make_chunk(
+            "const KEY = \"AKIAQYLPMN5HFIQR7XYA\";\nconst PAT = \"ghp_aBcD1234EFgh5678ijklMNop9012qrSTuvWX\";",
+            "fixtures/aws_github.rs",
+        ),
+        make_chunk(
+            "auth: \"sk_live_4eC39HqLyjWDarjtT1zdp7dc\"\npayload: \"AKIAQYLPMN5HFIQR7BBB\"",
+            "fixtures/stripe_aws.yml",
+        ),
+    ];
+
+    let combined = scanner.scan_coalesced_gpu_ac(&chunks);
+    let combined_keys = collect_keys(&combined);
+
+    let split = match scanner.scan_coalesced_gpu_ac_phase1(&chunks) {
+        GpuPhase1Output::Hits(per_chunk_hits) => {
+            scanner.scan_coalesced_gpu_phase2(&chunks, per_chunk_hits)
+        }
+        GpuPhase1Output::Done(results) => results,
+    };
+    let split_keys = collect_keys(&split);
+
+    if combined_keys != split_keys {
+        let only_combined: Vec<_> = combined_keys.difference(&split_keys).collect();
+        let only_split: Vec<_> = split_keys.difference(&combined_keys).collect();
+        panic!(
+            "AC phase1+phase2 split diverges from scan_coalesced_gpu_ac wrapper.\n  combined: {} keys\n  split:    {} keys\n  only in combined ({}): {:?}\n  only in split    ({}): {:?}",
+            combined_keys.len(),
+            split_keys.len(),
+            only_combined.len(),
+            only_combined.iter().take(5).collect::<Vec<_>>(),
+            only_split.len(),
+            only_split.iter().take(5).collect::<Vec<_>>(),
+        );
+    }
+
+    assert_eq!(
+        combined.len(),
+        split.len(),
+        "AC phase1+phase2 produced a different per-chunk Vec length than the wrapper"
+    );
+    for (i, (a, b)) in combined.iter().zip(split.iter()).enumerate() {
+        assert_eq!(
+            a.len(),
+            b.len(),
+            "AC chunk {i}: wrapper produced {} matches, split produced {}",
+            a.len(),
+            b.len(),
+        );
+    }
+}
+
 /// Pipeline-refactor lock: the two-phase API
 /// `scan_coalesced_gpu_phase1` + `scan_coalesced_gpu_phase2` must be a
 /// faithful split of `scan_coalesced_gpu`. The orchestrator's pipelined
