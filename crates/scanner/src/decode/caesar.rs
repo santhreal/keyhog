@@ -128,17 +128,36 @@ fn looks_credential_shaped(s: &str) -> bool {
         return false;
     }
     let mut run = 0usize;
+    let mut saw_long_run = false;
     for &b in bytes {
         if b.is_ascii_alphanumeric() {
             run += 1;
             if run >= MIN_ALNUM_RUN {
-                return true;
+                saw_long_run = true;
+                break;
             }
         } else {
             run = 0;
         }
     }
-    false
+    if !saw_long_run {
+        return false;
+    }
+    // Same rationale as `reverse::looks_reversible`: gate on a known
+    // provider prefix appearing in the decoded text. Without this, any
+    // Caesar shift of a credential-shaped input (e.g. `sk_live_...`
+    // shifted +23 → `ph_ifsb_...`) gets emitted as a decoded chunk
+    // whose substrings can incidentally collide with detector regexes
+    // (`sb_4bZ39EnIvgT...` matches the stackblitz `sb_[a-zA-Z0-9_-]{20,}`
+    // regex purely by letter coincidence). The downstream
+    // `should_suppress_named_detector_finding` bypasses the
+    // EXAMPLE / INSERT / CHANGE / REPLACE markers for `/caesar`
+    // source_types (because evasion-decoded inputs CAN legitimately
+    // be a planted-credential rotation), so the gate has to happen
+    // here at decoder-output time.
+    crate::confidence::KNOWN_PREFIXES
+        .iter()
+        .any(|prefix| s.contains(prefix))
 }
 
 #[cfg(test)]
