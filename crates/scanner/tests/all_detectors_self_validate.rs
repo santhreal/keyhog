@@ -46,7 +46,9 @@ fn detector_ids_on_disk() -> BTreeSet<String> {
             if p.extension().and_then(|s| s.to_str()) != Some("toml") {
                 return None;
             }
-            p.file_stem().and_then(|s| s.to_str()).map(|s| s.to_string())
+            p.file_stem()
+                .and_then(|s| s.to_str())
+                .map(|s| s.to_string())
         })
         .collect()
 }
@@ -60,7 +62,9 @@ fn contract_ids_on_disk() -> BTreeSet<String> {
                     if p.extension().and_then(|s| s.to_str()) != Some("toml") {
                         return None;
                     }
-                    p.file_stem().and_then(|s| s.to_str()).map(|s| s.to_string())
+                    p.file_stem()
+                        .and_then(|s| s.to_str())
+                        .map(|s| s.to_string())
                 })
                 .collect::<BTreeSet<_>>()
         })
@@ -77,9 +81,8 @@ fn contract_ids_on_disk() -> BTreeSet<String> {
 #[test]
 fn every_detector_loads() {
     let dir = detector_dir();
-    let detectors = keyhog_core::load_detectors(&dir).unwrap_or_else(|e| {
-        panic!("load_detectors({}) failed: {e}", dir.display())
-    });
+    let detectors = keyhog_core::load_detectors(&dir)
+        .unwrap_or_else(|e| panic!("load_detectors({}) failed: {e}", dir.display()));
     assert!(
         !detectors.is_empty(),
         "detectors/ contains no loadable TOML — embedded count would be 0"
@@ -100,8 +103,8 @@ fn every_detector_loads() {
 #[test]
 fn every_detector_compiles_into_scanner() {
     let detectors = keyhog_core::load_detectors(&detector_dir()).expect("load");
-    let _scanner =
-        CompiledScanner::compile(detectors).expect("scanner compile must succeed for every loaded detector");
+    let _scanner = CompiledScanner::compile(detectors)
+        .expect("scanner compile must succeed for every loaded detector");
 }
 
 /// Every detector must declare at least one keyword whose length is

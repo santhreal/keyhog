@@ -140,8 +140,7 @@ const ENTROPY_RUNGS: &[f64] = &[3.5, 4.0, 4.25, 4.5, 4.75, 5.0];
 /// Result is deterministic and rounds within ~0.15 bits of target.
 fn synth_at_entropy(target: f64, len: usize) -> String {
     let n_symbols = (2.0f64.powf(target).round() as usize).clamp(2, 64);
-    const ALPHABET: &[u8; 64] =
-        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
     let alphabet = &ALPHABET[..n_symbols];
     let mut out = String::with_capacity(len);
     for i in 0..len {
@@ -213,9 +212,7 @@ fn every_positive_swept_through_entropy_rungs() {
     );
     for (rung, (runs, hits)) in &per_rung {
         let pct = (*hits as f64 / (*runs).max(1) as f64) * 100.0;
-        summary.push_str(&format!(
-            "  {rung:<14} {hits:>4}/{runs:<4} ({pct:5.1}%)\n"
-        ));
+        summary.push_str(&format!("  {rung:<14} {hits:>4}/{runs:<4} ({pct:5.1}%)\n"));
     }
     let overall = (total_hits as f64 / total_runs.max(1) as f64) * 100.0;
     summary.push_str(&format!(

@@ -357,7 +357,7 @@ fn generic_path_looks_like_random_base64_blob(value: &str) -> bool {
         return false;
     }
     let has_padding = value.ends_with("==") || value.ends_with('=');
-    let length_mult_4 = value.len() % 4 == 0;
+    let length_mult_4 = value.len().is_multiple_of(4);
     if !has_padding && !length_mult_4 {
         return false;
     }

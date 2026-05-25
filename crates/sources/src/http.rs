@@ -134,9 +134,7 @@ pub fn blocking_client_builder(
 
 /// Async sibling for the verifier's tokio-based call sites.
 #[cfg(any(feature = "web", feature = "github", feature = "slack", feature = "s3"))]
-pub fn async_client_builder(
-    cfg: &HttpClientConfig,
-) -> Result<reqwest::ClientBuilder, String> {
+pub fn async_client_builder(cfg: &HttpClientConfig) -> Result<reqwest::ClientBuilder, String> {
     let mut builder = reqwest::Client::builder()
         .timeout(cfg.timeout.unwrap_or(DEFAULT_TIMEOUT))
         .redirect(reqwest::redirect::Policy::limited(REDIRECT_LIMIT))
@@ -173,7 +171,10 @@ mod tests {
             proxy: Some("http://flag-proxy:9090".into()),
             ..Default::default()
         };
-        assert_eq!(cfg.effective_proxy().as_deref(), Some("http://flag-proxy:9090"));
+        assert_eq!(
+            cfg.effective_proxy().as_deref(),
+            Some("http://flag-proxy:9090")
+        );
         std::env::remove_var("KEYHOG_PROXY");
     }
 

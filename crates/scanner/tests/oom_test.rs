@@ -27,7 +27,10 @@ fn test_large_chunk_skip() {
     let start = std::time::Instant::now();
     let matches = scanner.scan(&chunk);
     let elapsed = start.elapsed();
-    assert!(matches.is_empty(), "skipped chunk must produce zero matches");
+    assert!(
+        matches.is_empty(),
+        "skipped chunk must produce zero matches"
+    );
     assert!(
         elapsed < std::time::Duration::from_secs(10),
         "skip-gate must short-circuit; got {elapsed:?} (expected < 10s — \

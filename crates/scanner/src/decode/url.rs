@@ -78,11 +78,9 @@ impl Decoder for QuotedPrintableDecoder {
 /// inputs and `key=value` text return false and skip the decode.
 fn has_qp_escape(s: &str) -> bool {
     let bytes = s.as_bytes();
-    bytes.windows(3).any(|w| {
-        w[0] == b'='
-            && w[1].is_ascii_hexdigit()
-            && w[2].is_ascii_hexdigit()
-    })
+    bytes
+        .windows(3)
+        .any(|w| w[0] == b'=' && w[1].is_ascii_hexdigit() && w[2].is_ascii_hexdigit())
 }
 
 macro_rules! simple_decoder {

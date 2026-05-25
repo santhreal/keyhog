@@ -17,7 +17,7 @@
 
 use keyhog_core::{Chunk, ChunkMetadata, RawMatch};
 
-use super::{CompiledScanner, floor_char_boundary};
+use super::{floor_char_boundary, CompiledScanner};
 
 /// How much of each chunk's edge to include in a boundary buffer.
 ///

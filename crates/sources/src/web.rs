@@ -168,7 +168,9 @@ mod web_host_filter_tests {
     fn accepts_real_public_hosts() {
         assert!(!is_disallowed_web_host("https://example.com/"));
         assert!(!is_disallowed_web_host("https://cdn.jsdelivr.net/app.js"));
-        assert!(!is_disallowed_web_host("https://api.github.com/repos/foo/bar"));
+        assert!(!is_disallowed_web_host(
+            "https://api.github.com/repos/foo/bar"
+        ));
     }
 
     /// Macro-wiring regression: prove that an `HttpClientConfig.proxy`

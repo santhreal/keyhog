@@ -501,7 +501,6 @@ fn scan_git_history(
     }
 }
 
-
 fn format_bytes(n: u64) -> String {
     const KIB: u64 = 1024;
     const MIB: u64 = 1024 * 1024;

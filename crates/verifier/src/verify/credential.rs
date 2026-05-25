@@ -197,26 +197,25 @@ pub(crate) async fn verify_credential(
                 transient: false,
             };
         }
-        let resolved_target =
-            match resolved_client_for_url(
-                client,
-                &raw_url,
-                timeout,
-                allow_private_ips,
-                allow_http,
-                proxy_in_use,
-            )
-            .await
-            {
-                Ok(resolved_target) => resolved_target,
-                Err(result) => {
-                    return VerificationAttempt {
-                        result,
-                        metadata: HashMap::new(),
-                        transient: false,
-                    };
-                }
-            };
+        let resolved_target = match resolved_client_for_url(
+            client,
+            &raw_url,
+            timeout,
+            allow_private_ips,
+            allow_http,
+            proxy_in_use,
+        )
+        .await
+        {
+            Ok(resolved_target) => resolved_target,
+            Err(result) => {
+                return VerificationAttempt {
+                    result,
+                    metadata: HashMap::new(),
+                    transient: false,
+                };
+            }
+        };
 
         build_request_for_step(
             &resolved_target.client,
@@ -437,7 +436,10 @@ mod tests {
             Some("abc123"),
             "OOB metadata from final transient attempt must survive retry exhaustion"
         );
-        assert_eq!(metadata.get("trace_id").map(String::as_str), Some("xyz-789"));
+        assert_eq!(
+            metadata.get("trace_id").map(String::as_str),
+            Some("xyz-789")
+        );
     }
 
     /// On the first non-transient response the loop must return that
@@ -456,7 +458,10 @@ mod tests {
             "non-transient attempt must not be retried"
         );
         assert!(matches!(result, VerificationResult::Live));
-        assert_eq!(metadata.get("oob_unique_id").map(String::as_str), Some("abc123"));
+        assert_eq!(
+            metadata.get("oob_unique_id").map(String::as_str),
+            Some("abc123")
+        );
     }
 
     /// Retry until success: first two attempts transient, third succeeds.

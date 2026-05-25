@@ -188,9 +188,8 @@ fn n_secrets_in_one_fixture_all_fire() {
         }
     }
 
-    let mut summary = String::from(
-        "multi-secret per (pack_size × layout) per-credential hit rate:\n",
-    );
+    let mut summary =
+        String::from("multi-secret per (pack_size × layout) per-credential hit rate:\n");
     for ((size, layout), (asserts, hits)) in &per_combo {
         let pct = (*hits as f64 / (*asserts).max(1) as f64) * 100.0;
         summary.push_str(&format!(
@@ -198,8 +197,7 @@ fn n_secrets_in_one_fixture_all_fire() {
              ({pct:5.1}%)\n"
         ));
     }
-    let overall =
-        (total_hits as f64 / total_credential_assertions.max(1) as f64) * 100.0;
+    let overall = (total_hits as f64 / total_credential_assertions.max(1) as f64) * 100.0;
     summary.push_str(&format!(
         "  TOTAL {total_hits}/{total_credential_assertions} ({overall:.1}%) \
          across {total_fixtures} fixtures\n"
@@ -210,8 +208,6 @@ fn n_secrets_in_one_fixture_all_fire() {
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
         .unwrap_or(false);
     if strict && overall < 80.0 {
-        panic!(
-            "multi-secret overall hit-rate {overall:.1}% dropped below 80% floor"
-        );
+        panic!("multi-secret overall hit-rate {overall:.1}% dropped below 80% floor");
     }
 }

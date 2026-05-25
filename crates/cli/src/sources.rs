@@ -193,8 +193,8 @@ pub fn build_sources(
 
     #[cfg(feature = "s3")]
     if let Some(bucket) = &args.s3_bucket {
-        let mut source = keyhog_sources::S3Source::new(bucket.clone())
-            .with_http_config(http_cfg!("s3"));
+        let mut source =
+            keyhog_sources::S3Source::new(bucket.clone()).with_http_config(http_cfg!("s3"));
         if let Some(prefix) = &args.s3_prefix {
             source = source.with_prefix(prefix.clone());
         }

@@ -350,7 +350,10 @@ impl OobSession {
             interaction,
             received_at: Instant::now(),
         };
-        self.observations.entry(id.clone()).or_default().push(stored);
+        self.observations
+            .entry(id.clone())
+            .or_default()
+            .push(stored);
         if let Some(notify) = self.waiters.lock().get(&id) {
             notify.notify_waiters();
         }

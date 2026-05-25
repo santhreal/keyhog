@@ -95,13 +95,13 @@ fn scanner() -> CompiledScanner {
 
 #[derive(Debug, Clone, Copy)]
 enum Comment {
-    HashLine,         // # ...
-    SlashSlash,       // // ...
-    SlashStarBlock,   // /* ... */
-    HtmlBlock,        // <!-- ... -->
-    SemiLine,         // ; ... (Lisp, INI)
-    DashDashLine,     // -- ... (SQL, Haskell)
-    PercentLine,      // % ... (Erlang, MATLAB)
+    HashLine,       // # ...
+    SlashSlash,     // // ...
+    SlashStarBlock, // /* ... */
+    HtmlBlock,      // <!-- ... -->
+    SemiLine,       // ; ... (Lisp, INI)
+    DashDashLine,   // -- ... (SQL, Haskell)
+    PercentLine,    // % ... (Erlang, MATLAB)
 }
 
 impl Comment {
@@ -132,13 +132,33 @@ impl Comment {
     /// line-comment prefix; block-comment styles wrap the whole.
     fn wrap(self, text: &str) -> String {
         match self {
-            Comment::HashLine => text.lines().map(|l| format!("# {l}")).collect::<Vec<_>>().join("\n"),
-            Comment::SlashSlash => text.lines().map(|l| format!("// {l}")).collect::<Vec<_>>().join("\n"),
+            Comment::HashLine => text
+                .lines()
+                .map(|l| format!("# {l}"))
+                .collect::<Vec<_>>()
+                .join("\n"),
+            Comment::SlashSlash => text
+                .lines()
+                .map(|l| format!("// {l}"))
+                .collect::<Vec<_>>()
+                .join("\n"),
             Comment::SlashStarBlock => format!("/* {text} */"),
             Comment::HtmlBlock => format!("<!-- {text} -->"),
-            Comment::SemiLine => text.lines().map(|l| format!("; {l}")).collect::<Vec<_>>().join("\n"),
-            Comment::DashDashLine => text.lines().map(|l| format!("-- {l}")).collect::<Vec<_>>().join("\n"),
-            Comment::PercentLine => text.lines().map(|l| format!("% {l}")).collect::<Vec<_>>().join("\n"),
+            Comment::SemiLine => text
+                .lines()
+                .map(|l| format!("; {l}"))
+                .collect::<Vec<_>>()
+                .join("\n"),
+            Comment::DashDashLine => text
+                .lines()
+                .map(|l| format!("-- {l}"))
+                .collect::<Vec<_>>()
+                .join("\n"),
+            Comment::PercentLine => text
+                .lines()
+                .map(|l| format!("% {l}"))
+                .collect::<Vec<_>>()
+                .join("\n"),
         }
     }
 }
@@ -191,9 +211,7 @@ fn every_positive_swept_through_comment_styles() {
     let mut summary = String::from("comment-embed per-style hit rate:\n");
     for (style, (runs, hits)) in &per_style {
         let pct = (*hits as f64 / (*runs).max(1) as f64) * 100.0;
-        summary.push_str(&format!(
-            "  {style:<17} {hits:>4}/{runs:<4} ({pct:5.1}%)\n"
-        ));
+        summary.push_str(&format!("  {style:<17} {hits:>4}/{runs:<4} ({pct:5.1}%)\n"));
     }
     let overall = (total_hits as f64 / total_runs.max(1) as f64) * 100.0;
     summary.push_str(&format!(
@@ -205,8 +223,6 @@ fn every_positive_swept_through_comment_styles() {
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
         .unwrap_or(false);
     if strict && overall < 70.0 {
-        panic!(
-            "comment-embed overall recall {overall:.1}% dropped below 70% floor"
-        );
+        panic!("comment-embed overall recall {overall:.1}% dropped below 70% floor");
     }
 }

@@ -285,7 +285,12 @@ fn every_contract_positive_fires_under_every_format_wrapper() {
 
     if !failures.is_empty() {
         let total = failures.len();
-        let preview = failures.iter().take(50).cloned().collect::<Vec<_>>().join("\n");
+        let preview = failures
+            .iter()
+            .take(50)
+            .cloned()
+            .collect::<Vec<_>>()
+            .join("\n");
         let pct = (total as f64 / cases_run as f64) * 100.0;
         eprintln!(
             "adversarial-explosion: {total} of {cases_run} variants ({pct:.1}%) failed \

@@ -276,7 +276,7 @@ pub fn parse_jupyter(text: &str) -> Vec<ExtractedPair> {
                 let anchor = parts
                     .iter()
                     .find_map(|p| {
-                        let trimmed_end = p.trim_end_matches(|c: char| c == '\n' || c == '\r');
+                        let trimmed_end = p.trim_end_matches(['\n', '\r']);
                         if trimmed_end.is_empty() {
                             None
                         } else {
@@ -365,7 +365,11 @@ services:
             !contexts.iter().any(|c| c.is_empty()),
             "empty-context entry must be skipped, got {contexts:?}"
         );
-        assert_eq!(pairs.len(), 2, "expected two pairs after dropping the empty-key entry");
+        assert_eq!(
+            pairs.len(),
+            2,
+            "expected two pairs after dropping the empty-key entry"
+        );
     }
 
     /// Docker-compose sequence form `FOO=` (empty value, non-empty key)

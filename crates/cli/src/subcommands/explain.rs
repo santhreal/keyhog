@@ -126,4 +126,3 @@ fn rotation_guide(service: &str) -> Option<&'static str> {
         _ => None,
     }
 }
-

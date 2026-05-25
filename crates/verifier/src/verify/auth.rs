@@ -166,9 +166,15 @@ mod tests {
         // in the resulting Authorization header.
         let cred = "abc\r\nInjected: x\0DEF";
         let companions = HashMap::new();
-        let result =
-            build_request_for_auth(req, &spec, cred, &companions, Duration::from_secs(1), &client)
-                .await;
+        let result = build_request_for_auth(
+            req,
+            &spec,
+            cred,
+            &companions,
+            Duration::from_secs(1),
+            &client,
+        )
+        .await;
         match result {
             RequestBuildResult::Ready(rb) => {
                 let built = rb.build().expect("build req");
@@ -241,9 +247,15 @@ mod tests {
         };
         let companions = HashMap::new();
         let cred = "key\r\nbody";
-        let result =
-            build_request_for_auth(req, &spec, cred, &companions, Duration::from_secs(1), &client)
-                .await;
+        let result = build_request_for_auth(
+            req,
+            &spec,
+            cred,
+            &companions,
+            Duration::from_secs(1),
+            &client,
+        )
+        .await;
         match result {
             RequestBuildResult::Ready(rb) => {
                 let built = rb.build().expect("build req");
@@ -270,9 +282,15 @@ mod tests {
         };
         let cred = "tok\ten";
         let companions = HashMap::new();
-        let result =
-            build_request_for_auth(req, &spec, cred, &companions, Duration::from_secs(1), &client)
-                .await;
+        let result = build_request_for_auth(
+            req,
+            &spec,
+            cred,
+            &companions,
+            Duration::from_secs(1),
+            &client,
+        )
+        .await;
         match result {
             RequestBuildResult::Ready(rb) => {
                 let built = rb.build().expect("build req");

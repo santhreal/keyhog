@@ -131,7 +131,10 @@ fn deep_recursive_symlinks_do_not_crash() {
         0,
         "symlink-only directory tree must produce zero chunks; got {} (paths: {:?})",
         chunks.len(),
-        chunks.iter().filter_map(|c| c.metadata.path.as_deref()).collect::<Vec<_>>(),
+        chunks
+            .iter()
+            .filter_map(|c| c.metadata.path.as_deref())
+            .collect::<Vec<_>>(),
     );
 }
 

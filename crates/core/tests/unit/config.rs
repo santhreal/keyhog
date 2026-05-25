@@ -17,9 +17,16 @@ fn default_config_valid() {
         "default min_confidence should be ~0.5 (was 0.3 historically); got {}",
         config.min_confidence
     );
-    assert!(config.max_decode_depth >= 4, "default decode depth too shallow: {}", config.max_decode_depth);
+    assert!(
+        config.max_decode_depth >= 4,
+        "default decode depth too shallow: {}",
+        config.max_decode_depth
+    );
     assert!(config.entropy_enabled, "entropy must default to on");
-    assert!(config.unicode_normalization, "unicode normalization must default to on");
+    assert!(
+        config.unicode_normalization,
+        "unicode normalization must default to on"
+    );
     assert!(
         config.max_file_size >= 1024 * 1024,
         "default max_file_size too small: {}",

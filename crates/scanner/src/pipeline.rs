@@ -186,7 +186,14 @@ pub fn should_suppress_named_detector_finding(
     let bypass_shape_gates = !detector_id.starts_with("generic-")
         && !detector_id.starts_with("entropy-")
         && detector_id != "private-key";
-    should_suppress_inner(credential, path, context, source_type, false, bypass_shape_gates)
+    should_suppress_inner(
+        credential,
+        path,
+        context,
+        source_type,
+        false,
+        bypass_shape_gates,
+    )
 }
 
 fn should_suppress_inner(
@@ -499,9 +506,7 @@ fn should_suppress_inner(
     //          prose with a high-entropy substring is never a
     //          real credential. SecretBench-medium 15k seed-0:
     //          68 FPs from lorem-with-high-entropy.
-    if credential.len() > 30
-        && credential.chars().filter(|c| c.is_whitespace()).count() >= 2
-    {
+    if credential.len() > 30 && credential.chars().filter(|c| c.is_whitespace()).count() >= 2 {
         // Cheap English-word sanity check: at least one lowercase
         // alphabetic run of length 3+ between whitespace tokens —
         // characteristic of prose, not credentials.
@@ -677,7 +682,14 @@ fn should_suppress_inner(
                 && decoded
                     .chars()
                     .all(|c| !c.is_control() || c == '\n' || c == '\r' || c == '\t')
-                && should_suppress_inner(&decoded, path, context, source_type, true, bypass_shape_gates)
+                && should_suppress_inner(
+                    &decoded,
+                    path,
+                    context,
+                    source_type,
+                    true,
+                    bypass_shape_gates,
+                )
             {
                 return true;
             }
@@ -707,9 +719,7 @@ fn try_decode_b64_to_utf8(credential: &str) -> Option<String> {
     if !valid {
         return None;
     }
-    use base64::engine::general_purpose::{
-        STANDARD, STANDARD_NO_PAD, URL_SAFE, URL_SAFE_NO_PAD,
-    };
+    use base64::engine::general_purpose::{STANDARD, STANDARD_NO_PAD, URL_SAFE, URL_SAFE_NO_PAD};
     use base64::Engine;
     // Try standard, url-safe, and their no-pad variants in order.
     // A no-trait-object array sidesteps the `base64::Engine` non-
@@ -756,7 +766,9 @@ pub(crate) fn looks_like_dashed_serial_key(credential: &str) -> bool {
     if parts.len() != 5 {
         return false;
     }
-    parts.iter().all(|p| p.len() == 5 && p.chars().all(|c| c.is_ascii_alphanumeric()))
+    parts
+        .iter()
+        .all(|p| p.len() == 5 && p.chars().all(|c| c.is_ascii_alphanumeric()))
 }
 
 /// True if `credential` is a bare cryptographic hash digest
@@ -820,8 +832,7 @@ pub(crate) fn looks_like_hash_digest(credential: &str) -> bool {
     // the full-length hash; the 48/56/72 extension covers the
     // truncated-prefix variants. Each added length is justified by
     // a SecretBench-medium FP cluster.
-    matches!(credential.len(), 32 | 40 | 48 | 56 | 64 | 72 | 128)
-        && is_uniform_hex(credential)
+    matches!(credential.len(), 32 | 40 | 48 | 56 | 64 | 72 | 128) && is_uniform_hex(credential)
 }
 
 /// If `credential` begins with — OR contains — one of the well-known
@@ -894,7 +905,7 @@ fn looks_like_standard_base64_blob(credential: &str) -> bool {
         return false;
     }
     let has_padding = credential.ends_with("==") || credential.ends_with('=');
-    let length_multiple_of_4 = credential.len() % 4 == 0;
+    let length_multiple_of_4 = credential.len().is_multiple_of(4);
     if !has_padding && !length_multiple_of_4 {
         return false;
     }
@@ -1350,10 +1361,10 @@ mod placeholder_suppression_tests {
     #[test]
     fn sha1_md5_sha512_lengths_are_suppressed() {
         assert!(looks_like_pure_hash_digest_or_uuid(
-            "d41d8cd98f00b204e9800998ecf8427e"          // MD5: 32
+            "d41d8cd98f00b204e9800998ecf8427e" // MD5: 32
         ));
         assert!(looks_like_pure_hash_digest_or_uuid(
-            "da39a3ee5e6b4b0d3255bfef95601890afd80709"  // SHA1: 40
+            "da39a3ee5e6b4b0d3255bfef95601890afd80709" // SHA1: 40
         ));
         // SHA-512: 128 hex chars
         let sha512 = "abcdef0123456789".repeat(8);
@@ -1373,7 +1384,7 @@ mod placeholder_suppression_tests {
         // Real secret coincidentally looks hex-shaped but is mixed
         // case — keyhog should NOT silently drop it as a digest.
         assert!(!looks_like_pure_hash_digest_or_uuid(
-            "AbCdEf0123456789abCdEf0123456789"  // MiXeD 32-hex
+            "AbCdEf0123456789abCdEf0123456789" // MiXeD 32-hex
         ));
     }
 
@@ -1434,7 +1445,9 @@ mod placeholder_suppression_tests {
 
     #[test]
     fn dashed_serial_license_key_shape_is_suppressed() {
-        assert!(looks_like_dashed_serial_key("ABCDE-12345-FGHIJ-67890-KLMNO"));
+        assert!(looks_like_dashed_serial_key(
+            "ABCDE-12345-FGHIJ-67890-KLMNO"
+        ));
     }
 
     #[test]
@@ -1454,7 +1467,9 @@ mod placeholder_suppression_tests {
         // Adversarial: a real token that happens to embed the substring
         // `md5:` in its body but whose body after the label isn't a
         // hash-shape length. Must NOT suppress.
-        assert!(!looks_like_pure_hash_digest_or_uuid("user_md5:not_a_hash_body"));
+        assert!(!looks_like_pure_hash_digest_or_uuid(
+            "user_md5:not_a_hash_body"
+        ));
     }
 
     #[test]
@@ -1785,11 +1800,17 @@ mod line_lookup_tests {
         );
 
         // ASCII regression: pure-ASCII paths still work after the fix.
-        assert!(upper_contains_token(&"foo DUMMY bar".to_uppercase(), "DUMMY"));
+        assert!(upper_contains_token(
+            &"foo DUMMY bar".to_uppercase(),
+            "DUMMY"
+        ));
         // `_` is NOT alphanumeric → underscore-bracketed DUMMY IS a token
         // match. (Existing call sites depend on this behavior to suppress
         // `_DUMMY_TOKEN_` style placeholders.)
-        assert!(upper_contains_token(&"foo_DUMMY_bar".to_uppercase(), "DUMMY"));
+        assert!(upper_contains_token(
+            &"foo_DUMMY_bar".to_uppercase(),
+            "DUMMY"
+        ));
         // Alphanumeric on either side → reject.
         assert!(!upper_contains_token(&"XDUMMY".to_uppercase(), "DUMMY"));
         assert!(!upper_contains_token(&"DUMMYX".to_uppercase(), "DUMMY"));

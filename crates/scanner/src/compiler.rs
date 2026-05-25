@@ -99,29 +99,28 @@ pub fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileState> {
                 if expanded_prefix == *prefix {
                     continue;
                 }
-                let full_homoglyph_regex = if let Some(suffix) =
-                    pattern.regex.strip_prefix(prefix.as_str())
-                {
-                    // Simple case: prefix is the literal head of the regex.
-                    format!("{expanded_prefix}{suffix}")
-                } else if let Some(rewritten) =
-                    rewrite_alternation_prefix(&pattern.regex, &expanded_prefix)
-                {
-                    // Alternation case: regex is `(?:p1|p2|...)body`. Replace
-                    // the leading `(?:...)` with the expanded prefix so the
-                    // homoglyph variant still requires the rest of the pattern
-                    // to match. Without this, every alternation-prefix detector
-                    // silently skipped its homoglyph fallback — leaving
-                    // Cyrillic/full-width spoofed credentials of the form
-                    // `[ɡ̅р][hн]p_<body>` invisible to the scanner.
-                    rewritten
-                } else {
-                    // Prefix appears in the parse tree but isn't a leading
-                    // literal slice and isn't a trivially-rewritable alternation
-                    // (e.g. it sits inside a nested group). Skip — there's no
-                    // safe text rewrite we can do here.
-                    continue;
-                };
+                let full_homoglyph_regex =
+                    if let Some(suffix) = pattern.regex.strip_prefix(prefix.as_str()) {
+                        // Simple case: prefix is the literal head of the regex.
+                        format!("{expanded_prefix}{suffix}")
+                    } else if let Some(rewritten) =
+                        rewrite_alternation_prefix(&pattern.regex, &expanded_prefix)
+                    {
+                        // Alternation case: regex is `(?:p1|p2|...)body`. Replace
+                        // the leading `(?:...)` with the expanded prefix so the
+                        // homoglyph variant still requires the rest of the pattern
+                        // to match. Without this, every alternation-prefix detector
+                        // silently skipped its homoglyph fallback — leaving
+                        // Cyrillic/full-width spoofed credentials of the form
+                        // `[ɡ̅р][hн]p_<body>` invisible to the scanner.
+                        rewritten
+                    } else {
+                        // Prefix appears in the parse tree but isn't a leading
+                        // literal slice and isn't a trivially-rewritable alternation
+                        // (e.g. it sits inside a nested group). Skip — there's no
+                        // safe text rewrite we can do here.
+                        continue;
+                    };
                 if let Ok(re) = Regex::new(&full_homoglyph_regex) {
                     fallback.push((
                         CompiledPattern {
@@ -538,10 +537,7 @@ mod tests {
 
     #[test]
     fn alternation_rewrite_with_inline_flag() {
-        let out = rewrite_alternation_prefix(
-            "(?i)(?:ghp_|github_pat_)[a-zA-Z0-9_]{36}",
-            "[gɡ]hp_",
-        );
+        let out = rewrite_alternation_prefix("(?i)(?:ghp_|github_pat_)[a-zA-Z0-9_]{36}", "[gɡ]hp_");
         assert_eq!(out.unwrap(), "(?i)[gɡ]hp_[a-zA-Z0-9_]{36}");
     }
 
@@ -554,10 +550,7 @@ mod tests {
     #[test]
     fn alternation_rewrite_handles_nested_groups() {
         // Inner `(\d+)` should not confuse the depth tracker.
-        let out = rewrite_alternation_prefix(
-            "(?:abc(?:\\d{2})|def)body",
-            "[a]bc",
-        );
+        let out = rewrite_alternation_prefix("(?:abc(?:\\d{2})|def)body", "[a]bc");
         assert_eq!(out.unwrap(), "[a]bcbody");
     }
 

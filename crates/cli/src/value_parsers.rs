@@ -23,9 +23,7 @@ pub fn parse_verify_rate(s: &str) -> Result<f64, String> {
         .parse()
         .map_err(|_| format!("'{s}' is not a valid floating point number"))?;
     if !val.is_finite() {
-        return Err(format!(
-            "--verify-rate must be a finite number, got {val}"
-        ));
+        return Err(format!("--verify-rate must be a finite number, got {val}"));
     }
     if val <= 0.0 {
         return Err(format!(
