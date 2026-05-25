@@ -140,6 +140,13 @@ fn extract_environment_block(
             for item in seq {
                 if let Some(s) = item.as_str() {
                     if let Some((key, val)) = s.split_once('=') {
+                        // A leading `=` (e.g. `=secretvalue`) produces an
+                        // empty key — that's malformed compose and the empty
+                        // context would be useless downstream. Skip in line
+                        // with the k8s parser's empty-key policy.
+                        if key.is_empty() {
+                            continue;
+                        }
                         let line = find_line_number(text, s).unwrap_or(1);
                         pairs.push(ExtractedPair {
                             context: key.to_string(),
@@ -228,7 +235,26 @@ pub fn parse_jupyter(text: &str) -> Vec<ExtractedPair> {
                     .filter_map(|v| v.as_str().map(|s| s.to_string()))
                     .collect();
                 let joined = parts.join("");
-                let line = find_line_number(text, &joined).unwrap_or(1);
+                // The joined source contains literal `\n` characters, but
+                // the on-disk JSON encodes them as the escape sequence
+                // `\\n`. Searching for the joined whole — or even a
+                // single fragment that still ends in `\n` — therefore
+                // never matches, collapsing line attribution to 1 for
+                // every multi-string cell. Anchor on the first non-empty
+                // fragment with trailing newlines stripped: the leading
+                // bytes ARE present verbatim in the source JSON.
+                let anchor = parts
+                    .iter()
+                    .find_map(|p| {
+                        let trimmed_end = p.trim_end_matches(|c: char| c == '\n' || c == '\r');
+                        if trimmed_end.is_empty() {
+                            None
+                        } else {
+                            Some(trimmed_end.to_string())
+                        }
+                    })
+                    .unwrap_or_else(|| joined.clone());
+                let line = find_line_number(text, &anchor).unwrap_or(1);
                 (joined, line)
             }
             _ => continue,
@@ -251,4 +277,167 @@ fn find_line_number(text: &str, needle: &str) -> Option<usize> {
     let pos = text.find(needle)?;
     let line = text[..pos].chars().filter(|&c| c == '\n').count() + 1;
     Some(line)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `parse_env` round-trips simple KEY=VALUE lines and tracks line
+    /// numbers correctly.
+    #[test]
+    fn env_basic_parses_key_value_with_line_numbers() {
+        let text = "FOO=bar\nBAZ=qux\n# comment\nexport TOK=abc";
+        let pairs = parse_env(text);
+        assert_eq!(pairs.len(), 3);
+        assert_eq!(pairs[0].context, "FOO");
+        assert_eq!(pairs[0].value, "bar");
+        assert_eq!(pairs[0].line, 1);
+        assert_eq!(pairs[1].context, "BAZ");
+        assert_eq!(pairs[1].line, 2);
+        assert_eq!(pairs[2].context, "TOK");
+        assert_eq!(pairs[2].value, "abc");
+        assert_eq!(pairs[2].line, 4);
+    }
+
+    /// `parse_env` strips matching quotes.
+    #[test]
+    fn env_strips_matching_quotes() {
+        let text = "DOUBLE=\"hello world\"\nSINGLE='another'";
+        let pairs = parse_env(text);
+        assert_eq!(pairs.len(), 2);
+        assert_eq!(pairs[0].value, "hello world");
+        assert_eq!(pairs[1].value, "another");
+    }
+
+    /// Regression: a docker-compose `environment:` sequence entry like
+    /// `=secretvalue` (leading `=`) used to produce an ExtractedPair
+    /// with an empty `context`. That's malformed compose and the empty
+    /// context would be useless downstream — must be skipped, matching
+    /// the k8s parser's empty-key policy.
+    #[test]
+    fn docker_compose_sequence_skips_empty_key_with_leading_equals() {
+        let text = "\
+services:
+  app:
+    environment:
+      - FOO=bar
+      - =should_be_skipped
+      - BAZ=qux
+";
+        let pairs = parse_docker_compose(text);
+        // Three entries in the YAML, but the one with the empty key
+        // must be dropped — so we expect FOO and BAZ only.
+        let contexts: Vec<_> = pairs.iter().map(|p| p.context.as_str()).collect();
+        assert!(contexts.contains(&"FOO"));
+        assert!(contexts.contains(&"BAZ"));
+        assert!(
+            !contexts.iter().any(|c| c.is_empty()),
+            "empty-context entry must be skipped, got {contexts:?}"
+        );
+        assert_eq!(pairs.len(), 2, "expected two pairs after dropping the empty-key entry");
+    }
+
+    /// Docker-compose sequence form `FOO=` (empty value, non-empty key)
+    /// MUST still be preserved — env vars are legitimately allowed to
+    /// be set to empty.
+    #[test]
+    fn docker_compose_sequence_preserves_empty_value_with_present_key() {
+        let text = "\
+services:
+  app:
+    environment:
+      - EMPTY_VAR=
+      - SET_VAR=value
+";
+        let pairs = parse_docker_compose(text);
+        let by_key: std::collections::HashMap<_, _> = pairs
+            .iter()
+            .map(|p| (p.context.clone(), p.value.clone()))
+            .collect();
+        assert_eq!(by_key.get("EMPTY_VAR"), Some(&String::new()));
+        assert_eq!(by_key.get("SET_VAR"), Some(&"value".to_string()));
+    }
+
+    /// Regression: a Jupyter notebook code cell with `source` as an
+    /// array of strings (the canonical .ipynb form) used to attribute
+    /// every cell to line 1 because the joined source contained literal
+    /// `\n` while the on-disk JSON encodes them as the escape sequence
+    /// `\\n`. The line lookup therefore always missed. Now we anchor
+    /// on the first non-empty fragment, which IS present verbatim in
+    /// the source JSON.
+    #[test]
+    fn jupyter_array_source_attributes_to_first_fragment_line() {
+        let nb = r#"{
+            "cells": [
+                {"cell_type": "markdown", "source": "header"},
+                {"cell_type": "code", "source": ["import os\n", "secret='abc'\n"]}
+            ]
+        }"#;
+        let pairs = parse_jupyter(nb);
+        assert_eq!(pairs.len(), 1, "only the code cell should be extracted");
+        let cell = &pairs[0];
+        assert!(cell.value.contains("import os"));
+        assert!(cell.value.contains("secret='abc'"));
+        // The first fragment `"import os\n"` appears in the JSON on
+        // a line >= 3, so the line attribution must not collapse to 1.
+        assert!(
+            cell.line >= 3,
+            "expected line attribution to first fragment (>=3), got {}",
+            cell.line
+        );
+    }
+
+    /// Jupyter cell with single string source still works (string path,
+    /// not the array path).
+    #[test]
+    fn jupyter_string_source_extracts_code_cell() {
+        let nb = r#"{
+            "cells": [
+                {"cell_type": "code", "source": "import os\nsecret='abc'"}
+            ]
+        }"#;
+        let pairs = parse_jupyter(nb);
+        assert_eq!(pairs.len(), 1);
+        assert!(pairs[0].value.contains("secret='abc'"));
+    }
+
+    /// k8s Secret `data:` values are base64-decoded and surfaced with
+    /// their key as context.
+    #[test]
+    fn k8s_secret_decodes_data_field() {
+        // base64("hunter2") = "aHVudGVyMg=="
+        let text = "\
+apiVersion: v1
+kind: Secret
+metadata:
+  name: my-secret
+data:
+  password: aHVudGVyMg==
+  username: dXNlcg==
+";
+        let pairs = parse_k8s_secret(text);
+        assert_eq!(pairs.len(), 2);
+        let by_key: std::collections::HashMap<_, _> = pairs
+            .iter()
+            .map(|p| (p.context.clone(), p.value.clone()))
+            .collect();
+        assert_eq!(by_key.get("password"), Some(&"hunter2".to_string()));
+        assert_eq!(by_key.get("username"), Some(&"user".to_string()));
+    }
+
+    /// k8s `stringData:` values are surfaced verbatim (no base64).
+    #[test]
+    fn k8s_secret_passes_through_string_data() {
+        let text = "\
+apiVersion: v1
+kind: Secret
+stringData:
+  token: my-plain-token
+";
+        let pairs = parse_k8s_secret(text);
+        assert_eq!(pairs.len(), 1);
+        assert_eq!(pairs[0].context, "token");
+        assert_eq!(pairs[0].value, "my-plain-token");
+    }
 }

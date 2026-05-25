@@ -89,6 +89,13 @@ fn scan_one_pair(
     bi: usize,
     per_chunk_results: &mut [Vec<RawMatch>],
 ) {
+    // kimi-engine audit: in release builds only a debug_assert protects
+    // the `per_chunk_results[ai]` / `[bi]` accesses below. Verify here
+    // and bail silently rather than panicking on a slice mismatch.
+    if ai >= per_chunk_results.len() || bi >= per_chunk_results.len() {
+        return;
+    }
+
     let a_bytes = a.data.as_ref().as_bytes();
     let b_bytes = b.data.as_ref().as_bytes();
     let a_end = a.metadata.base_offset.saturating_add(a_bytes.len());
@@ -125,7 +132,16 @@ fn scan_one_pair(
     // offset inside the boundary buffer round-trips back to the
     // correct file coordinate via the standard
     // `local_offset + base_offset` reporting path.
-    let boundary_base_offset = a.metadata.base_offset + tail_start;
+    //
+    // kimi-engine audit: caller-supplied chunk metadata sets
+    // `base_offset`. A malformed source that reports `base_offset`
+    // near `usize::MAX` would overflow the additions below — debug
+    // panic, release wrap to a bogus offset that misattributes the
+    // finding. checked_add + early return keeps the scan moving and
+    // simply skips the (impossible-on-real-input) boundary case.
+    let Some(boundary_base_offset) = a.metadata.base_offset.checked_add(tail_start) else {
+        return;
+    };
     let mut buf = String::with_capacity(tail.len() + head.len());
     buf.push_str(tail);
     let seam_local = buf.len();
@@ -140,7 +156,9 @@ fn scan_one_pair(
     };
 
     let boundary_matches = scanner.scan(&boundary_chunk);
-    let seam_file_offset = boundary_base_offset + seam_local;
+    let Some(seam_file_offset) = boundary_base_offset.checked_add(seam_local) else {
+        return;
+    };
 
     for m in boundary_matches {
         // Keep only matches that genuinely straddle the seam — i.e. the

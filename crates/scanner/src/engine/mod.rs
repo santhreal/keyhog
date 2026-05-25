@@ -1031,7 +1031,15 @@ impl CompiledScanner {
                         // same credential got different synthetic
                         // offsets depending on chunk topology.
                         m.location.line = Some(fragment_line);
-                        m.location.offset = fragment_value_offset + chunk.metadata.base_offset;
+                        // kimi-engine audit: chunk metadata can carry
+                        // `base_offset` near usize::MAX (custom sources
+                        // synthesizing chunks). Unchecked addition would
+                        // panic in debug / wrap in release; saturating
+                        // pins to MAX which is a benign garbage offset
+                        // (no legitimate file is 18 EB long) but does
+                        // not panic mid-scan.
+                        m.location.offset = fragment_value_offset
+                            .saturating_add(chunk.metadata.base_offset);
                     }
                     matches.append(&mut reassembled_matches);
                     // Zeroized automatically on drop (SensitiveString)
@@ -1076,8 +1084,26 @@ impl CompiledScanner {
                 if pat_idx >= self.ac_map.len() {
                     break;
                 }
-                for &other_idx in &self.same_prefix_patterns[pat_idx] {
-                    expanded[other_idx / 64] |= 1 << (other_idx % 64);
+                // kimi-engine audit: defensive bounds check. ac_map and
+                // same_prefix_patterns SHOULD be the same length after
+                // compilation, but if a future deserialization path
+                // restores compiled state from disk with a mismatched
+                // shape (or a bug in the compiler tears the invariant)
+                // we'd panic on the indexed access. .get() turns that
+                // into a benign skip — we lose the same-prefix expansion
+                // for this pattern rather than crashing the scan.
+                if let Some(siblings) = self.same_prefix_patterns.get(pat_idx) {
+                    for &other_idx in siblings {
+                        // Same defensive bound on the expanded write —
+                        // a stale sibling index past the bitmask end
+                        // would otherwise panic via bounds-checked
+                        // slice index. We compute the bucket up front
+                        // and silently skip out-of-range writes.
+                        let bucket = other_idx / 64;
+                        if let Some(slot) = expanded.get_mut(bucket) {
+                            *slot |= 1u64 << (other_idx % 64);
+                        }
+                    }
                 }
                 bits &= bits - 1; // clear lowest set bit
             }
