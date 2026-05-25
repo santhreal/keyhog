@@ -10,6 +10,7 @@ mod json;
 mod pipeline;
 mod reverse;
 mod url;
+mod util;
 
 pub use base64::{base64_decode, find_base64_strings, z85_decode};
 pub use hex::hex_decode;

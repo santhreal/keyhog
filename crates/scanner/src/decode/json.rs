@@ -1,4 +1,5 @@
 use super::pipeline::push_decoded_text_chunk_spliced;
+use super::util::take_hex_digits;
 use super::Decoder;
 use keyhog_core::Chunk;
 
@@ -135,16 +136,4 @@ fn json_unescape(input: &str) -> Result<String, ()> {
     }
 
     Ok(decoded)
-}
-
-fn take_hex_digits<I>(chars: &mut std::iter::Peekable<I>, count: usize) -> Result<u32, ()>
-where
-    I: Iterator<Item = char>,
-{
-    let mut value = 0u32;
-    for _ in 0..count {
-        let ch = chars.next().ok_or(())?;
-        value = (value << 4) | ch.to_digit(16).ok_or(())?;
-    }
-    Ok(value)
 }
