@@ -330,33 +330,50 @@ fn should_suppress_inner(
     }
 
     // ── 3. Repetitive masking patterns ──
+    // These all gate on !bypass_shape_gates: a named detector whose
+    // regex specifically requested e.g. `[A-Z0-9]{5,10}` for a
+    // Paylocity company ID has already vetted that the credential
+    // shape is real; suppressing `AAA12345` on a "three identical
+    // leading chars" heuristic silently drops the company ID for
+    // any tenant whose ID starts with a triple. Kimi-suppress
+    // findings #2-5. Generic / entropy detectors (bypass_shape_gates
+    // = false) keep the gates because their anchor is keyword-class,
+    // not vendor-fingerprint, and the masks DO catch real noise on
+    // those paths.
     // 5+ consecutive 'x' or 'X' (e.g., xxxxx, XXXXXXX) — masks and placeholders.
     // 3x can appear in real base64/hex, so only suppress longer runs.
-    if upper.contains("XXXXX") {
+    if !bypass_shape_gates && upper.contains("XXXXX") {
         return true;
     }
     // 5+ consecutive identical characters in any credential, or 3+ in short credentials.
     // Real secrets can have short runs (e.g., "000" in base64) but rarely 5+.
-    if credential.len() < 20 && has_three_or_more_consecutive_identical(credential) {
+    if !bypass_shape_gates
+        && credential.len() < 20
+        && has_three_or_more_consecutive_identical(credential)
+    {
         return true;
     }
-    if has_n_or_more_consecutive_identical(credential, 5) {
+    if !bypass_shape_gates && has_n_or_more_consecutive_identical(credential, 5) {
         return true;
     }
-    if has_repeated_block_mask(credential) {
+    if !bypass_shape_gates && has_repeated_block_mask(credential) {
         return true;
     }
     // Entirely filler symbols
-    if credential
-        .chars()
-        .all(|c| c == 'x' || c == 'X' || c == '*' || c == '-' || c == '.')
+    if !bypass_shape_gates
+        && credential
+            .chars()
+            .all(|c| c == 'x' || c == 'X' || c == '*' || c == '-' || c == '.')
     {
         return true;
     }
     // Purely symbolic strings that look like filler/placeholder
     // (e.g., "********", "--------") — NOT real passwords like "!@#$%^&*()"
     // Check for ≤2 unique chars without heap allocation.
-    if credential.len() >= 8 && credential.chars().all(|c| !c.is_alphanumeric()) {
+    if !bypass_shape_gates
+        && credential.len() >= 8
+        && credential.chars().all(|c| !c.is_alphanumeric())
+    {
         let bytes = credential.as_bytes();
         let first = bytes[0];
         let mut second = first;
@@ -945,36 +962,17 @@ fn has_three_or_more_consecutive_identical(s: &str) -> bool {
 }
 
 fn known_prefix_body(credential: &str) -> Option<&str> {
-    const PREFIXES: &[&str] = &[
-        "ghp_",
-        "gho_",
-        "ghu_",
-        "ghs_",
-        "ghr_",
-        "github_pat_",
-        "sk_live_",
-        "sk_test_",
-        "pk_live_",
-        "pk_test_",
-        "rk_live_",
-        "AKIA",
-        "ASIA",
-        "xoxb-",
-        "xoxp-",
-        "xoxa-",
-        "xoxr-",
-        "sk-proj-",
-        "sk-ant-",
-        "SG.",
-        "hf_",
-        "npm_",
-        "pypi-",
-        "glpat-",
-        "dop_v1_",
-        "PRIVATE KEY",
-        "eyJ",
-    ];
-    PREFIXES
+    // Single source of truth: crate::confidence::KNOWN_PREFIXES.
+    // Pre-2026-05-24 this function carried a hand-curated 27-entry list
+    // that drifted from the canonical 38-entry KNOWN_PREFIXES. Missing
+    // entries (sk-, xoxs-, glcbt-, glrt-, vercel_, sbp_, 0x, rk_test_,
+    // -----BEGIN, TESTKEY_) meant credentials with those prefixes
+    // bypassed the early-return-false fast path and fell into the
+    // repetitive-mask/filler gates below, where a legitimate
+    // `sk-abcdefghijklmnopqrstuvwxyz...` OpenAI key with naturally-
+    // occurring repeated characters would be dropped. Kimi-suppress
+    // audit finding #1.
+    crate::confidence::KNOWN_PREFIXES
         .iter()
         .find_map(|prefix| credential.strip_prefix(prefix))
 }
