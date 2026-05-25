@@ -201,13 +201,14 @@ fn entropy_path_looks_like_kebab_identifier(value: &str) -> bool {
     if dash_count == 0 {
         return false;
     }
-    let lower_count = bytes.iter().filter(|&&b| (b as char).is_ascii_lowercase()).count();
+    let lower_count = bytes
+        .iter()
+        .filter(|&&b| (b as char).is_ascii_lowercase())
+        .count();
     if lower_count * 2 < bytes.len() {
         return false;
     }
-    !bytes
-        .iter()
-        .any(|&b| matches!(b as char, '+' | '/' | '='))
+    !bytes.iter().any(|&b| matches!(b as char, '+' | '/' | '='))
 }
 
 #[cfg(feature = "entropy")]
@@ -216,7 +217,7 @@ fn entropy_path_looks_like_random_base64_blob(value: &str) -> bool {
         return false;
     }
     let has_padding = value.ends_with("==") || value.ends_with('=');
-    let length_mult_4 = value.len() % 4 == 0;
+    let length_mult_4 = value.len().is_multiple_of(4);
     if !has_padding && !length_mult_4 {
         return false;
     }

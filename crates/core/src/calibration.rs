@@ -267,14 +267,8 @@ mod tests {
         // test backdoor to prove the saturating_add contract.
         {
             let mut guard = c.inner.write();
-            guard
-                .entry("saturating".to_string())
-                .or_default()
-                .alpha = u32::MAX;
-            guard
-                .entry("saturating".to_string())
-                .or_default()
-                .beta = u32::MAX;
+            guard.entry("saturating".to_string()).or_default().alpha = u32::MAX;
+            guard.entry("saturating".to_string()).or_default().beta = u32::MAX;
         }
         // Both increments must NOT panic in debug and NOT wrap to 0.
         c.record_true_positive("saturating");

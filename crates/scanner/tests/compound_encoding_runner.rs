@@ -189,8 +189,7 @@ fn every_positive_swept_through_two_layer_encodings() {
     );
 
     // Per (outer, inner): (runs, decode_hits)
-    let mut per_pair: BTreeMap<(&'static str, &'static str), (usize, usize)> =
-        BTreeMap::new();
+    let mut per_pair: BTreeMap<(&'static str, &'static str), (usize, usize)> = BTreeMap::new();
     let mut total_runs: usize = 0;
     let mut total_hits: usize = 0;
 
@@ -210,11 +209,7 @@ fn every_positive_swept_through_two_layer_encodings() {
                     // Encode credential inner then outer: outer(inner(cred)).
                     let inner_encoded = inner.encode(&p.credential);
                     let outer_encoded = outer.encode(&inner_encoded);
-                    let text = wrap_with_encoded_cred(
-                        &p.text,
-                        &p.credential,
-                        &outer_encoded,
-                    );
+                    let text = wrap_with_encoded_cred(&p.text, &p.credential, &outer_encoded);
                     scanner.clear_fragment_cache();
                     let chunk = make_chunk(&text);
                     let matches = scanner.scan(&chunk);
@@ -233,9 +228,7 @@ fn every_positive_swept_through_two_layer_encodings() {
         }
     }
 
-    let mut summary = String::from(
-        "compound-encoding per (outer × inner) pair decode-hit rate:\n",
-    );
+    let mut summary = String::from("compound-encoding per (outer × inner) pair decode-hit rate:\n");
     for ((outer, inner), (runs, hits)) in &per_pair {
         let pct = (*hits as f64 / (*runs).max(1) as f64) * 100.0;
         summary.push_str(&format!(
@@ -256,8 +249,6 @@ fn every_positive_swept_through_two_layer_encodings() {
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
         .unwrap_or(false);
     if strict && overall < 50.0 {
-        panic!(
-            "compound-encoding overall recall {overall:.1}% dropped below 50% floor"
-        );
+        panic!("compound-encoding overall recall {overall:.1}% dropped below 50% floor");
     }
 }

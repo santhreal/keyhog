@@ -486,9 +486,8 @@ pub fn compute_spec_hash(detectors: &[DetectorSpec]) -> [u8; 32] {
     let mut keys: Vec<String> = detectors
         .iter()
         .flat_map(|d| {
-            let mut entries = Vec::with_capacity(
-                2 + d.patterns.len() + d.companions.len() + d.keywords.len(),
-            );
+            let mut entries =
+                Vec::with_capacity(2 + d.patterns.len() + d.companions.len() + d.keywords.len());
             entries.push(format!("id:{}", d.id));
             entries.push(format!("sev:{:?}", d.severity));
             for p in &d.patterns {

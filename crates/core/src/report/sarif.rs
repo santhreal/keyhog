@@ -550,10 +550,7 @@ impl<W: Write + Send> WriterBackedReporter for SarifReporter<W> {
 
 fn is_windows_absolute(s: &str) -> bool {
     let b = s.as_bytes();
-    b.len() >= 3
-        && b[0].is_ascii_alphabetic()
-        && b[1] == b':'
-        && (b[2] == b'/' || b[2] == b'\\')
+    b.len() >= 3 && b[0].is_ascii_alphabetic() && b[1] == b':' && (b[2] == b'/' || b[2] == b'\\')
 }
 
 /// Percent-encode a filesystem path per RFC 3986 unreserved + path-safe set.
@@ -562,8 +559,8 @@ fn is_windows_absolute(s: &str) -> bool {
 fn percent_encode_path(path: &str) -> String {
     let mut out = String::with_capacity(path.len());
     for byte in path.bytes() {
-        let safe = byte.is_ascii_alphanumeric()
-            || matches!(byte, b'-' | b'_' | b'.' | b'~' | b'/' | b':');
+        let safe =
+            byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~' | b'/' | b':');
         if safe {
             out.push(byte as char);
         } else {

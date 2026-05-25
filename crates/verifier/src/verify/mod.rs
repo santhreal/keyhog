@@ -231,7 +231,9 @@ impl VerificationEngine {
             danger_allow_private_ips: config.danger_allow_private_ips,
             danger_allow_http: config.danger_allow_http,
             proxy_in_use: config.proxy.is_some()
-                || std::env::var("KEYHOG_PROXY").ok().is_some_and(|p| !p.is_empty()),
+                || std::env::var("KEYHOG_PROXY")
+                    .ok()
+                    .is_some_and(|p| !p.is_empty()),
             oob_session: None,
         })
     }

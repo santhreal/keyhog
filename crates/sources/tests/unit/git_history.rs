@@ -75,13 +75,21 @@ fn git_history_source_collects_added_files_commit_by_commit() {
     // "we silently dropped commit.author from the chunk metadata"
     // regression class.
     for chunk in &chunks {
-        let commit = chunk.metadata.commit.as_deref().expect("commit must be set");
+        let commit = chunk
+            .metadata
+            .commit
+            .as_deref()
+            .expect("commit must be set");
         assert!(
             commit.len() == 40 && commit.chars().all(|c| c.is_ascii_hexdigit()),
             "commit must be 40-char hex SHA; got {commit:?}"
         );
 
-        let author = chunk.metadata.author.as_deref().expect("author must be set");
+        let author = chunk
+            .metadata
+            .author
+            .as_deref()
+            .expect("author must be set");
         assert!(
             author.contains("test@example.com"),
             "author must include the configured test email; got {author:?}"

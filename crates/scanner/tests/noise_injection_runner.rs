@@ -228,9 +228,7 @@ fn every_positive_survives_noise_padding() {
                     let chunk = make_chunk(&text);
                     let matches = scanner.scan(&chunk);
                     let hit = any_credential_contains(&matches, &p.credential);
-                    let bucket = per_combo
-                        .entry((size, kind.label()))
-                        .or_insert((0, 0));
+                    let bucket = per_combo.entry((size, kind.label())).or_insert((0, 0));
                     bucket.0 += 1;
                     total_runs += 1;
                     if hit {
@@ -260,8 +258,6 @@ fn every_positive_survives_noise_padding() {
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
         .unwrap_or(false);
     if strict && overall < 80.0 {
-        panic!(
-            "noise-injection overall recall {overall:.1}% dropped below 80% floor"
-        );
+        panic!("noise-injection overall recall {overall:.1}% dropped below 80% floor");
     }
 }

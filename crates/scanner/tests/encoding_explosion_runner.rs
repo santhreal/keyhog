@@ -253,8 +253,7 @@ fn every_positive_swept_through_every_encoding() {
                 let chunk = make_chunk(&text);
                 let matches = scanner.scan(&chunk);
                 let decode_hit = any_credential_contains(&matches, &p.credential);
-                let incidental_hit =
-                    !decode_hit && any_credential_contains(&matches, &encoded);
+                let incidental_hit = !decode_hit && any_credential_contains(&matches, &encoded);
                 let bucket = per_enc.entry(enc.label()).or_insert((0, 0, 0));
                 bucket.0 += 1;
                 if decode_hit {

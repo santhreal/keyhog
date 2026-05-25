@@ -18,9 +18,7 @@
 
 use proptest::prelude::*;
 
-use keyhog_sources::http::{
-    async_client_builder, blocking_client_builder, HttpClientConfig,
-};
+use keyhog_sources::http::{async_client_builder, blocking_client_builder, HttpClientConfig};
 
 const CASES: u32 = 10_000;
 

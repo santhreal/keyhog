@@ -1038,8 +1038,8 @@ impl CompiledScanner {
                         // pins to MAX which is a benign garbage offset
                         // (no legitimate file is 18 EB long) but does
                         // not panic mid-scan.
-                        m.location.offset = fragment_value_offset
-                            .saturating_add(chunk.metadata.base_offset);
+                        m.location.offset =
+                            fragment_value_offset.saturating_add(chunk.metadata.base_offset);
                     }
                     matches.append(&mut reassembled_matches);
                     // Zeroized automatically on drop (SensitiveString)

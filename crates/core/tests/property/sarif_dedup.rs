@@ -27,7 +27,7 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 
-use keyhog_core::{MatchLocation, Severity, SarifReporter, VerificationResult, VerifiedFinding};
+use keyhog_core::{MatchLocation, SarifReporter, Severity, VerificationResult, VerifiedFinding};
 use proptest::prelude::*;
 
 const CASES: u32 = 10_000;
@@ -103,8 +103,7 @@ fn render_to_sarif(finding: &VerifiedFinding) -> Vec<u8> {
 /// we dedup on. Returns an empty vec when the SARIF document had no
 /// `relatedLocations` field (which is also a valid post-dedup state).
 fn extract_related_keys(sarif: &[u8]) -> Vec<(String, Option<u64>, u64)> {
-    let v: serde_json::Value =
-        serde_json::from_slice(sarif).expect("SARIF is valid JSON");
+    let v: serde_json::Value = serde_json::from_slice(sarif).expect("SARIF is valid JSON");
     let runs = v.get("runs").and_then(|r| r.as_array());
     let Some(runs) = runs else { return vec![] };
     let mut out = Vec::new();
@@ -113,8 +112,7 @@ fn extract_related_keys(sarif: &[u8]) -> Vec<(String, Option<u64>, u64)> {
             continue;
         };
         for r in results {
-            let Some(related) = r.get("relatedLocations").and_then(|r| r.as_array())
-            else {
+            let Some(related) = r.get("relatedLocations").and_then(|r| r.as_array()) else {
                 continue;
             };
             for loc in related {

@@ -9,7 +9,10 @@
 /// (`url`, `json`, `unicode_escape`) all call the same implementation —
 /// the pre-2026-05-24 state had a byte-for-byte identical copy in each
 /// of those three files (kimi-dedup audit row #1).
-pub(super) fn take_hex_digits<I>(chars: &mut std::iter::Peekable<I>, count: usize) -> Result<u32, ()>
+pub(super) fn take_hex_digits<I>(
+    chars: &mut std::iter::Peekable<I>,
+    count: usize,
+) -> Result<u32, ()>
 where
     I: Iterator<Item = char>,
 {

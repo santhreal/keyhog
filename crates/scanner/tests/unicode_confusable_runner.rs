@@ -221,8 +221,7 @@ fn every_positive_swept_through_unicode_confusables() {
     // identical to the contracts_runner positive path). If this
     // falls below 99%, the runner itself is broken.
     let none_runs_hits = per_density.get("none").copied().unwrap_or((0, 0));
-    let none_pct =
-        (none_runs_hits.1 as f64 / none_runs_hits.0.max(1) as f64) * 100.0;
+    let none_pct = (none_runs_hits.1 as f64 / none_runs_hits.0.max(1) as f64) * 100.0;
     assert!(
         none_pct >= 99.0,
         "unicode-confusable control (no swap) dropped below 99%: {none_pct:.1}% — \

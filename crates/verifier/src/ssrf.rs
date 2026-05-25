@@ -55,9 +55,8 @@ pub fn is_private_url(url_str: &str) -> bool {
                 // explicit `0x`-prefixed `from_str_radix(16)` covers
                 // that gap; the leading-zero radix-8 parse covers the
                 // octal variant for completeness.
-                let maybe_ip = if let Some(hex) = d
-                    .strip_prefix("0x")
-                    .or_else(|| d.strip_prefix("0X"))
+                let maybe_ip = if let Some(hex) =
+                    d.strip_prefix("0x").or_else(|| d.strip_prefix("0X"))
                 {
                     u32::from_str_radix(hex, 16).ok().map(Ipv4Addr::from)
                 } else if d.starts_with('0') && d.len() > 1 && d.chars().all(|c| c.is_ascii_digit())
