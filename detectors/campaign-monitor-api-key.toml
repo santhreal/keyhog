@@ -11,11 +11,11 @@ severity = "critical"
 keywords = ["campaignmonitor", "CAMPAIGNMONITOR", "campaign_monitor", "createsend"]
 
 [[detector.patterns]]
-regex = '(?i)(?:campaign[_-]?monitor|createsend)[_-]?(?:api[_-]?)?key[=:\s"'']+([a-f0-9]{40})'
+regex = """(?i)(?:campaign[_-]?monitor|createsend)[_-]?(?:api[_-]?)?key[=:\\s\"']+([a-f0-9]{40})"""
 description = "Campaign Monitor API key (40 hex chars) with context anchor"
 group = 1
 
 [[detector.patterns]]
-regex = '(?i)campaign[_-]?monitor[_-]?(?:client[_-]?)?id[=:\s"'']+([a-f0-9]{32})'
+regex = """(?i)campaign[_-]?monitor[_-]?(?:client[_-]?)?id[=:\\s\"']+([a-f0-9]{32})"""
 description = "Campaign Monitor Client ID"
 group = 1

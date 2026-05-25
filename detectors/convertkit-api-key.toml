@@ -11,11 +11,11 @@ severity = "critical"
 keywords = ["convertkit", "CONVERTKIT", "api_secret", "api_key"]
 
 [[detector.patterns]]
-regex = '(?i)convertkit[_-]?(?:api[_-]?)?(?:secret|key)[=:\s"'']+([a-zA-Z0-9_-]{20,})'
+regex = """(?i)convertkit[_-]?(?:api[_-]?)?(?:secret|key)[=:\\s\"']+([a-zA-Z0-9_-]{20,})"""
 description = "ConvertKit API Secret/Key with context anchor"
 group = 1
 
 [[detector.patterns]]
-regex = '(?i)convertkit[_-]?(?:api[_-]?)?key[_-]?(?:v3)?[=:\s"'']+([a-zA-Z0-9_-]{20,})'
+regex = """(?i)convertkit[_-]?(?:api[_-]?)?key[_-]?(?:v3)?[=:\\s\"']+([a-zA-Z0-9_-]{20,})"""
 description = "ConvertKit V3 API Key"
 group = 1
