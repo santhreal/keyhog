@@ -32,6 +32,14 @@ use aes::Aes256;
 use cfb_mode::cipher::{AsyncStreamCipher, KeyIvInit};
 type Aes256CfbDec = cfb_mode::Decryptor<Aes256>;
 
+/// Stable bucket name for the global rate limiter. Every OOB call across
+/// every detector shares this bucket so the aggregate request rate to the
+/// upstream collector never exceeds the configured `--verify-rate`. Using
+/// the literal string `"oob.interactsh"` (not the server URL) means the
+/// budget covers all configured collectors collectively — the limit is
+/// about our own machine not blasting traffic, not about per-host fairness.
+const OOB_SERVICE: &str = "oob.interactsh";
+
 /// All errors that can arise from the OOB client. `Transient` errors mean the
 /// caller should retry (network blip, rate-limit); everything else is final.
 #[derive(Debug, Error)]
@@ -262,6 +270,15 @@ impl InteractshClient {
             secret_key: &secret_key,
             correlation_id: &correlation_id,
         };
+        // SECURITY/POLITENESS: kimi verifier audit LOW finding. Every OOB
+        // request — register, poll, deregister — shares the same upstream
+        // interactsh collector. Without rate limiting, a scan that fires
+        // 200 detector-verify subscriptions in parallel would hammer the
+        // collector with 200 register calls in flight at once, get IP-banned,
+        // and silently lose all OOB observability for the rest of the run.
+        // We bucket every OOB call under a single service id so the global
+        // limiter (default 5 rps) governs the aggregate.
+        crate::rate_limit::get_rate_limiter().wait(OOB_SERVICE).await;
         let resp = http
             .post(format!("{server}/register"))
             .json(&body)
@@ -314,6 +331,9 @@ impl InteractshClient {
     /// Poll once. Returns every interaction the collector has buffered for
     /// this correlation id since the last poll.
     pub async fn poll(&self) -> Result<Vec<Interaction>, InteractshError> {
+        // See `register` for the rate-limiter rationale — same bucket so all
+        // OOB traffic to the collector aggregates under one budget.
+        crate::rate_limit::get_rate_limiter().wait(OOB_SERVICE).await;
         let resp = self
             .http
             .get(format!("{}/poll", self.server))
@@ -374,6 +394,8 @@ impl InteractshClient {
             #[serde(rename = "secret-key")]
             secret_key: &'a str,
         }
+        // See `register` for the rate-limiter rationale.
+        crate::rate_limit::get_rate_limiter().wait(OOB_SERVICE).await;
         let _ = self
             .http
             .post(format!("{}/deregister", self.server))
