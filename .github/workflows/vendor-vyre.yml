@@ -28,9 +28,6 @@ concurrency:
   group: vendor-vyre-${{ github.ref }}
   cancel-in-progress: true
 
-permissions:
-  contents: write
-
 jobs:
   refresh:
     # Skip when the triggering push is itself a vendor refresh — this
@@ -41,6 +38,14 @@ jobs:
       !startsWith(github.event.head_commit.message, '[vendor]')
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # Per-job permissions: top-level `permissions:` triggers a
+    # dispatch-time rejection on this repo (workflow exits in 1-3s
+    # with 0 jobs); per-job is functionally equivalent and dispatches
+    # cleanly. See ci.yml — which has no permissions block — as the
+    # only top-level-permissions-less workflow that has been
+    # dispatching reliably.
+    permissions:
+      contents: write
     steps:
       - name: checkout keyhog
         uses: actions/checkout@v4

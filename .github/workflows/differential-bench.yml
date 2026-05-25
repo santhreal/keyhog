@@ -20,14 +20,15 @@ on:
         required: false
         default: "0"
 
-permissions:
-  contents: read
-
 jobs:
   bench:
     name: keyhog vs trufflehog vs gitleaks
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # Per-job permissions — see keyhog.yml header note. Top-level
+    # `permissions:` rejected at dispatch time on this repo.
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
 

@@ -17,15 +17,18 @@ concurrency:
   group: keyhog-${{ github.ref }}
   cancel-in-progress: true
 
-permissions:
-  contents: read
-  security-events: write   # upload SARIF to Code Scanning
-
 jobs:
   scan:
     name: keyhog scan
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # Per-job permissions instead of workflow-level — some org/repo
+    # policy configurations reject dispatch of any workflow that
+    # declares top-level `permissions:`. Per-job is equivalent in
+    # effect, dispatch-safe everywhere.
+    permissions:
+      contents: read
+      security-events: write   # upload SARIF to Code Scanning
     steps:
       - name: checkout
         uses: actions/checkout@v4

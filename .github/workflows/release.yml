@@ -18,12 +18,13 @@ on:
         description: 'Existing tag to build assets for (e.g. v0.5.7). Manual re-run.'
         required: true
 
-permissions:
-  contents: write  # required by gh release upload to attach assets
-
 jobs:
   build:
     name: Build ${{ matrix.asset }}
+    # Per-job permissions — see keyhog.yml header note. Top-level
+    # `permissions:` rejected at dispatch time on this repo.
+    permissions:
+      contents: write  # required by gh release upload to attach assets
     strategy:
       fail-fast: false
       matrix:
@@ -48,8 +49,11 @@ jobs:
             install: ''
             features: '--no-default-features --features portable'
           # macOS x86_64 (Intel) — same feature subset as Apple-Silicon.
-          # macos-13 still runs on x86_64 GitHub-hosted hardware.
-          - os: macos-13
+          # macos-15-intel is GitHub's supported x86_64 runner after the
+          # macos-13 retirement (2026-04). actionlint flags `macos-13`
+          # as an unknown label and the matrix arm silently fails to
+          # dispatch, which loses the Intel-mac asset on every tag push.
+          - os: macos-15-intel
             asset: keyhog-macos-x86_64
             install: ''
             features: '--no-default-features --features portable'
