@@ -67,8 +67,39 @@ pub(super) fn read_file_safe(path: &Path) -> std::io::Result<Vec<u8>> {
     Ok(bytes)
 }
 
+/// Internal sanity cap for mmap-based reads. The walker has already
+/// applied the user's `max_file_size` based on the walker-stat, but a
+/// TOCTOU race (file grows between walker stat and our open) could
+/// hand us a multi-GiB file that mmap maps in one call. This cap is
+/// the second line of defense: re-stat AFTER open and refuse the
+/// mmap path if the live size crossed the threshold. Kimi sources-
+/// audit MEDIUM finding on read_file_mmap.
+///
+/// 2 GiB chosen as the boundary — any legitimate text file the
+/// scanner cares about (source code, configs, JSON dumps) fits in
+/// well under that; anything larger is either a binary blob or a
+/// race-attack file.
+const MMAP_TOCTOU_SANITY_CAP_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+
 pub(super) fn read_file_mmap(path: &Path) -> Option<String> {
     let mut file = open_file_safe(path).ok()?;
+
+    // Post-open re-stat: defeat the walker-stat-then-write race where
+    // an attacker grows the file to multi-GiB between the walker's
+    // size check and our mmap. The walker's max_file_size is the
+    // user-configurable budget; this constant is a HARD ceiling on
+    // any mmap-based read regardless of user config.
+    if let Ok(meta) = file.metadata() {
+        if meta.len() > MMAP_TOCTOU_SANITY_CAP_BYTES {
+            tracing::warn!(
+                path = %path.display(),
+                live_size = meta.len(),
+                cap = MMAP_TOCTOU_SANITY_CAP_BYTES,
+                "refusing to mmap file: live size exceeds sanity cap (likely TOCTOU growth)"
+            );
+            return None;
+        }
+    }
 
     #[cfg(unix)]
     {
@@ -273,6 +304,24 @@ pub(super) fn read_file_windowed_mmap(
 ) -> Option<Vec<FileWindow>> {
     debug_assert!(window_size > overlap, "window must exceed overlap");
     let file = open_file_safe(path).ok()?;
+
+    // Post-open re-stat: defeat the walker-stat-then-grow race. See
+    // read_file_mmap for the full rationale + MMAP_TOCTOU_SANITY_CAP_BYTES
+    // ceiling justification. Kimi sources-audit MEDIUM finding on the
+    // windowed-mmap path. The walker decides which files reach this
+    // function based on its own size budget; this cap is a defense
+    // against the file growing AFTER the walker's stat completed.
+    if let Ok(meta) = file.metadata() {
+        if meta.len() > MMAP_TOCTOU_SANITY_CAP_BYTES {
+            tracing::warn!(
+                path = %path.display(),
+                live_size = meta.len(),
+                cap = MMAP_TOCTOU_SANITY_CAP_BYTES,
+                "refusing to windowed-mmap file: live size exceeds sanity cap (likely TOCTOU growth)"
+            );
+            return None;
+        }
+    }
 
     #[cfg(unix)]
     {
