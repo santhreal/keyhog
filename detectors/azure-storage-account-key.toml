@@ -1,0 +1,45 @@
+# Docs: https://learn.microsoft.com/en-us/azure/storage/common/storage-account-keys-manage
+# Format: Standard base64, 86 chars + 2 chars '=' padding = 88 chars total.
+# Verify: GET https://<account>.blob.core.windows.net/?comp=list with Shared Key auth.
+# Prefix: none (the key body itself has no prefix; we anchor on the
+#         many AZURE_*-style env-var/keyword surfaces it appears under).
+
+[detector]
+id = "azure-storage-account-key"
+name = "Azure Storage Account Key"
+service = "azure"
+severity = "critical"
+keywords = [
+    "AZURE_STORAGE_KEY",
+    "AZURE_STORAGE_ACCOUNT_KEY",
+    "AZURE_STORAGE_CONNECTION_STRING",
+    "AccountKey",
+    "DefaultEndpointsProtocol",
+    "storage_account_key",
+    "STORAGE_ACCOUNT_KEY",
+    "AzureWebJobsStorage",
+]
+
+[[detector.patterns]]
+# `AZURE_STORAGE_KEY=<88-char b64>` env / properties / yaml / json
+regex = "(?:AZURE_STORAGE_KEY|AZURE_STORAGE_ACCOUNT_KEY|STORAGE_ACCOUNT_KEY|storage_account_key)[=:\\s\"']+([A-Za-z0-9+/]{86}={1,2})"
+description = "Azure Storage account key with env-var/key-name anchor"
+group = 1
+
+[[detector.patterns]]
+# `AccountKey=<88-char b64>;` connection-string form (most common in code)
+regex = "AccountKey=([A-Za-z0-9+/]{86}={1,2})"
+description = "Azure Storage connection-string AccountKey segment"
+group = 1
+
+[[detector.patterns]]
+# `AzureWebJobsStorage=DefaultEndpointsProtocol=https;...AccountKey=...;`
+regex = "AzureWebJobsStorage[=:\\s\"']+[^\"']*AccountKey=([A-Za-z0-9+/]{86}={1,2})"
+description = "Azure WebJobs storage AccountKey"
+group = 1
+
+# NOTE: no `[detector.verify]` block — Azure Shared Key auth requires
+# HMAC-SHA256 of a canonicalized request signed with the key. That sign
+# algorithm isn't an `AuthSpec::Bearer|Basic|Query|AwsV4|Header|Script`
+# variant; until a dedicated `AuthSpec::AzureSharedKey` lands, this
+# detector reports unverified. The key is still flagged.

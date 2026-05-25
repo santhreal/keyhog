@@ -11,8 +11,16 @@ severity = "high"
 keywords = ["HONEYBADGER_API_KEY", "honeybadger_api_key", "HONEYBADGER-API-KEY", "api_key"]
 
 [[detector.patterns]]
-regex = "(?:HONEYBADGER[_\\-]?API[_\\-]?KEY|honeybadger[_\\-]?api[_\\-]?key|api_key)[=:\\s\\\"']+([a-f0-9]{32,48})"
-description = "Honeybadger API key (32-48 hex chars with context anchor)"
+# Honeybadger keys are EXACTLY 32 or 48 hex chars per the docs,
+# not "32 to 48". The previous `{32,48}` quantifier was a greedy
+# range that captured the first 48 hex chars of any longer hex
+# span (e.g. it grabbed 48 of a 64-char sha256 hash, defeating
+# the bare-hash suppression which requires the FULL hash length).
+# Anchor with a non-hex lookaround so the capture only fires on
+# values whose length is exactly 32 or 48 and which are bounded
+# by a non-hex character (quote, whitespace, eol, punctuation).
+regex = "(?:HONEYBADGER[_\\-]?API[_\\-]?KEY|honeybadger[_\\-]?api[_\\-]?key|api_key)[=:\\s\\\"']+([a-f0-9]{32}|[a-f0-9]{48})(?:[^a-f0-9]|$)"
+description = "Honeybadger API key (exactly 32 or 48 hex chars, terminated by non-hex)"
 group = 1
 
 [detector.verify]

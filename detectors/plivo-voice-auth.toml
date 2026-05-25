@@ -8,16 +8,21 @@ id = "plivo-voice-auth"
 name = "Plivo Voice Auth Credentials"
 service = "plivo"
 severity = "critical"
-keywords = ["PLIVO_AUTH_ID", "PLIVO_AUTH_TOKEN", "plivo", "auth_id", "auth_token"]
+keywords = ["PLIVO_AUTH_ID", "PLIVO_AUTH_TOKEN", "plivo", "plivo_auth_id", "plivo_auth_token"]
 
 [[detector.patterns]]
-regex = "(?:PLIVO_AUTH_ID|plivo_auth_id|auth_id)[\"\\'\\s]*[=:]\\s*[\"\\']?([a-zA-Z0-9]{20})[\"\\']?"
-description = "Plivo Auth ID with context anchor"
+# Tightened: drop the bare `auth_id` alternative. Real Plivo
+# integrations always spell `PLIVO_AUTH_ID`/`plivo_auth_id`;
+# the catch-all `auth_id` form fired on any 20-char alnum next
+# to any field named auth_id (the dominant FP on base64-
+# protobuf / k8s fixtures in the SecretBench mirror corpus).
+regex = "(?:PLIVO_AUTH_ID|plivo_auth_id)[\"\\'\\s]*[=:]\\s*[\"\\']?([a-zA-Z0-9]{20})[\"\\']?"
+description = "Plivo Auth ID with PLIVO-specific anchor"
 group = 1
 
 [[detector.patterns]]
-regex = "(?:PLIVO_AUTH_TOKEN|plivo_auth_token|auth_token)[\"\\'\\s]*[=:]\\s*[\"\\']?([a-zA-Z0-9]{40})[\"\\']?"
-description = "Plivo Auth Token with context anchor"
+regex = "(?:PLIVO_AUTH_TOKEN|plivo_auth_token)[\"\\'\\s]*[=:]\\s*[\"\\']?([a-zA-Z0-9]{40})[\"\\']?"
+description = "Plivo Auth Token with PLIVO-specific anchor"
 group = 1
 
 # Auth ID and Auth Token are used together as a pair

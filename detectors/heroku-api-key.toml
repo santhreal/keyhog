@@ -8,11 +8,16 @@ id = "heroku-api-key"
 name = "Heroku API Key"
 service = "heroku"
 severity = "critical"
-keywords = ["HEROKU_API_KEY", "heroku_api_key", "Heroku API Key"]
+keywords = ["HEROKU_API_KEY", "heroku_api_key", "Heroku API Key", "herokuApiKey"]
 
 [[detector.patterns]]
-regex = "(?:HEROKU_API_KEY|heroku_api_key)[=:\\s\"']+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"
-description = "Heroku API key in environment variable or config format"
+regex = '''(?i)(?:HEROKU_API_KEY|heroku_api_key|herokuApiKey|heroku-api-key)\s*[=:]\s*["']?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})["']?'''
+description = "Heroku API key in env/yaml/json/kebab/camelCase context, UUID format."
+group = 1
+
+[[detector.patterns]]
+regex = '''(?:heroku\.api\.key)\s*=\s*([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})'''
+description = "Heroku API key in INI/properties dotted-key context."
 group = 1
 
 [detector.verify]

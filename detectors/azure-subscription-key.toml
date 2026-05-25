@@ -8,16 +8,22 @@ id = "azure-subscription-key"
 name = "Azure Subscription Key"
 service = "azure"
 severity = "high"
-keywords = ["Ocp-Apim-Subscription-Key", "azure_subscription_key", "subscription-key"]
+keywords = [
+  "Ocp-Apim-Subscription-Key",
+  "azure_subscription_key",
+  "subscription-key",
+  "AZURE_SUBSCRIPTION_KEY",
+  "azureSubscriptionKey",
+]
 
 [[detector.patterns]]
-regex = "(?:Ocp-Apim-Subscription-Key|azure_subscription_key|subscription_key)[=:\\s\"']+([a-f0-9]{32})"
-description = "Azure subscription key with context anchor"
+regex = '''(?i)(?:ocp[-_.]?apim[-_.]?subscription[-_.]?key|azure[_.-]?subscription[_.-]?key|azureSubscriptionKey)\s*[=:]\s*["']?([a-f0-9]{32})["']?'''
+description = "Azure subscription key — case-insensitive anchor (env / yaml / camelCase / kebab / dotted)."
 group = 1
 
 [[detector.patterns]]
-regex = "Ocp-Apim-Subscription-Key\\s*[:=]\\s*([a-f0-9]{32})"
-description = "Azure subscription key in HTTP header format"
+regex = '''Ocp-Apim-Subscription-Key\s*[:=]\s*([a-f0-9]{32})'''
+description = "Azure subscription key in HTTP header format."
 group = 1
 
 [detector.verify]

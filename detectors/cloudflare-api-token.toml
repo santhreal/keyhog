@@ -8,16 +8,16 @@ id = "cloudflare-api-token"
 name = "Cloudflare API Token"
 service = "cloudflare"
 severity = "critical"
-keywords = ["cloudflare", "CLOUDFLARE", "CF_API_TOKEN"]
+keywords = ["cloudflare", "CLOUDFLARE", "CF_API_TOKEN", "cloudflareApiToken"]
 
 [[detector.patterns]]
-regex = "(?:cloudflare|CLOUDFLARE)[_\\s]?(?:api_token|API_TOKEN|token)[=:\\s\"']+([a-zA-Z0-9_-]{40})"
-description = "Cloudflare API token with context anchor"
+regex = '''(?i)(?:cloudflare[_.-]?api[_.-]?token|cf[_.-]?api[_.-]?token|cloudflareApiToken)\s*[=:]\s*["']?([a-zA-Z0-9_-]{40})["']?'''
+description = "Cloudflare API token with case-insensitive context anchor."
 group = 1
 
 [[detector.patterns]]
-regex = "CF_API_TOKEN[=:\\s\"']+([a-zA-Z0-9_-]{40})"
-description = "Cloudflare API token from environment variable"
+regex = '''CF_API_TOKEN[=:\s"']+([a-zA-Z0-9_-]{40})'''
+description = "Cloudflare API token from CF_API_TOKEN env var."
 group = 1
 
 [detector.verify]
