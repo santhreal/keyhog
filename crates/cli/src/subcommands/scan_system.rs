@@ -15,10 +15,11 @@ use crate::args::ScanSystemArgs;
 use anyhow::{Context, Result};
 use keyhog_scanner::CompiledScanner;
 use std::path::{Path, PathBuf};
+use std::process::ExitCode;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
-pub fn run(args: ScanSystemArgs) -> Result<()> {
+pub fn run(args: ScanSystemArgs) -> Result<ExitCode> {
     // kimi-wave3 §5: lockdown forbids --include-network on scan-system
     // because NFS/SMB/sshfs mounts host other tenants' data and a
     // scan-system run would walk straight through them.
@@ -158,7 +159,16 @@ pub fn run(args: ScanSystemArgs) -> Result<()> {
         }
     }
 
-    Ok(())
+    // Exit-code contract (kimi CLI-001): scan-system has to surface
+    // "found credentials" via a non-zero exit code or CI pipelines
+    // can't gate on it. Match the rest of the CLI: 0 = clean,
+    // 1 = findings above floor, 2 = error (handled by caller's
+    // Result<_> path).
+    if all_findings.is_empty() {
+        Ok(ExitCode::SUCCESS)
+    } else {
+        Ok(ExitCode::from(1))
+    }
 }
 
 /// Enumerate mounted filesystems on the current OS, filtering pseudo-FS

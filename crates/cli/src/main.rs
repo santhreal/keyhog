@@ -113,9 +113,7 @@ async fn main() -> ExitCode {
             return ExitCode::SUCCESS;
         }
         Some(Command::Backend(args)) => subcommands::backend::run(args),
-        Some(Command::ScanSystem(args)) => {
-            subcommands::scan_system::run(args).map(|()| ExitCode::SUCCESS)
-        }
+        Some(Command::ScanSystem(args)) => subcommands::scan_system::run(args),
         Some(Command::Daemon(args)) => subcommands::daemon::run(args).await,
         None => {
             use clap::CommandFactory;
