@@ -87,15 +87,36 @@ async fn test_verify_json_path_exhaustion() {
         confidence: None,
     };
 
-    // Because this process may crash from serde_json stack overflow
+    // The verifier MUST NOT stack-overflow on a 10k-deep JSON response.
+    // The verification path either:
+    //   - Bails on serde_json's own depth/parse failure with Error(...)
+    //   - Walks the json-path `/a/a/a` to a leaf and returns Live (the
+    //     `"val"` string is present but doesn't carry our `success`
+    //     gate — implementations may treat any present value as a hit
+    //     depending on the json-path matcher).
+    //   - Returns Dead if the path resolution gave a non-matching value.
+    //
+    // The previous assertion just checked `!result.is_empty()`, which
+    // would have passed even if the verifier returned RateLimited or
+    // Unverifiable — neither of which proves the stack-overflow guard
+    // held. Pin the shape: exactly one finding back (we sent one
+    // group), and the verification result must be a non-skipped,
+    // non-rate-limited variant — i.e. the verifier actually walked
+    // the response, didn't punt or get throttled.
     let result = engine.verify_all(vec![group]).await;
-    // We assert something to ensure no dead code.
-    // If it reaches here without a stack overflow, it passes. If it overflows, the main test runner will crash, which is slightly bad,
-    // so we should isolate it via subprocess without using a dead-code stub.
-    // However, given the instructions, if a crate is naturally going to abort, we can just let it abort or run it in a subprocess that explicitly runs the test.
-    // Since we don't want a dead-code stub, we just run the actual verification here.
-    // If it crashes, it will fail the test suite, which is a finding.
-    assert!(!result.is_empty(), "Expected findings from deep json test");
+    assert_eq!(result.len(), 1, "one input group must produce one finding");
+    let verification = &result[0].verification;
+    let is_decisive = matches!(
+        verification,
+        keyhog_core::VerificationResult::Live
+            | keyhog_core::VerificationResult::Dead
+            | keyhog_core::VerificationResult::Revoked
+            | keyhog_core::VerificationResult::Error(_)
+    );
+    assert!(
+        is_decisive,
+        "verifier must reach a decisive outcome on deep JSON (Live/Dead/Revoked/Error); got {verification:?}"
+    );
 }
 
 #[tokio::test]
