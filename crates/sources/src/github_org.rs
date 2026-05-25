@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use keyhog_core::{Chunk, ChunkMetadata, Source, SourceError};
 use regex::Regex;
 use reqwest::blocking::Client;
-use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION, USER_AGENT};
+use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION};
 use serde::Deserialize;
 
 use crate::FilesystemSource;
@@ -28,6 +28,12 @@ use crate::FilesystemSource;
 pub struct GitHubOrgSource {
     org: String,
     token: String,
+    /// Shared HTTP policy (proxy, insecure_tls, ua_suffix, timeout). Defaults
+    /// to `HttpClientConfig::default()`. Set via `with_http_config` so the
+    /// CLI's `--proxy` / `--insecure` reach the GitHub API client; without
+    /// this every `/orgs/<org>/repos` call would silently bypass the
+    /// configured corporate proxy.
+    http: crate::http::HttpClientConfig,
 }
 
 impl GitHubOrgSource {
@@ -43,7 +49,21 @@ impl GitHubOrgSource {
     /// assert_eq!(source.name(), "github-org");
     /// ```
     pub fn new(org: String, token: String) -> Self {
-        Self { org, token }
+        Self {
+            org,
+            token,
+            http: crate::http::HttpClientConfig {
+                ua_suffix: Some("github-org".into()),
+                ..Default::default()
+            },
+        }
+    }
+
+    /// Override the shared HTTP policy. Threads CLI `--proxy` / `--insecure`
+    /// into the GitHub API client.
+    pub fn with_http_config(mut self, http: crate::http::HttpClientConfig) -> Self {
+        self.http = http;
+        self
     }
 }
 
@@ -53,7 +73,7 @@ impl Source for GitHubOrgSource {
     }
 
     fn chunks(&self) -> Box<dyn Iterator<Item = Result<Chunk, SourceError>> + '_> {
-        match collect_org_chunks(&self.org, &self.token) {
+        match collect_org_chunks(&self.org, &self.token, &self.http) {
             Ok(chunks) => Box::new(chunks.into_iter().map(Ok)),
             Err(err) => Box::new(std::iter::once(Err(err))),
         }
@@ -176,10 +196,14 @@ mod url_name_validation_tests {
     }
 }
 
-fn collect_org_chunks(org: &str, token: &str) -> Result<Vec<Chunk>, SourceError> {
+fn collect_org_chunks(
+    org: &str,
+    token: &str,
+    http: &crate::http::HttpClientConfig,
+) -> Result<Vec<Chunk>, SourceError> {
     use rayon::prelude::*;
 
-    let client = build_client(token)?;
+    let client = build_client(token, http)?;
     let repos = list_repos(&client, org)?;
     let temp_dir = tempfile::tempdir().map_err(SourceError::Io)?;
     let temp_root = temp_dir.path().to_path_buf();
@@ -222,23 +246,24 @@ fn collect_org_chunks(org: &str, token: &str) -> Result<Vec<Chunk>, SourceError>
     Ok(chunks)
 }
 
-fn build_client(token: &str) -> Result<Client, SourceError> {
+fn build_client(token: &str, http: &crate::http::HttpClientConfig) -> Result<Client, SourceError> {
     let mut headers = HeaderMap::new();
     headers.insert(
         ACCEPT,
         HeaderValue::from_static("application/vnd.github+json"),
     );
-    headers.insert(
-        USER_AGENT,
-        HeaderValue::from_static("keyhog-github-org-scanner"),
-    );
+    // USER_AGENT is set by `blocking_client_builder` (`keyhog/<version>
+    // (github-org)`). We intentionally don'"'"'t set it in default_headers —
+    // reqwest's user_agent() takes precedence anyway and the duplicate
+    // header would confuse GitHub'"'"'s rate-limiting which keys off UA.
     headers.insert(
         AUTHORIZATION,
         HeaderValue::from_str(&format!("Bearer {token}"))
             .map_err(|e| SourceError::Other(format!("invalid GitHub authorization header: {e}")))?,
     );
 
-    Client::builder()
+    crate::http::blocking_client_builder(http)
+        .map_err(SourceError::Other)?
         .default_headers(headers)
         // SECURITY: kimi-5 audit finding #3. Without an explicit redirect
         // policy, reqwest follows up to 10 redirects and re-sends the
@@ -247,7 +272,9 @@ fn build_client(token: &str) -> Result<Client, SourceError> {
         // bounce us to an attacker-controlled host and capture the
         // token. The GitHub REST API never legitimately redirects
         // /orgs/.../repos, so blocking redirects entirely is the safe
-        // default.
+        // default. `blocking_client_builder` sets a 5-hop limit by
+        // default; we override to none() here because GitHub auth
+        // tokens are higher-value than the average scan target.
         .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|e| SourceError::Other(format!("failed to build GitHub client: {e}")))

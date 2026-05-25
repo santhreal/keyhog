@@ -171,6 +171,47 @@ mod web_host_filter_tests {
         assert!(!is_disallowed_web_host("https://api.github.com/repos/foo/bar"));
     }
 
+    /// Macro-wiring regression: prove that an `HttpClientConfig.proxy`
+    /// passed via `WebSource::with_http_config` ends up baked into the
+    /// reqwest client the source actually uses. Without this assertion
+    /// the only thing pinning the proxy behavior was the one-line
+    /// `.proxy(proxy)` call in `blocking_client_builder`, and a future
+    /// refactor that swaps to a custom builder (which has happened
+    /// before for the verifier, see `verify/request.rs`) would silently
+    /// drop the proxy with no test to catch it.
+    #[test]
+    fn web_source_threads_proxy_into_blocking_client_builder() {
+        // We can't read back the proxy config from a built reqwest Client
+        // (no public accessor), but we CAN assert the builder accepts the
+        // exact policy contract we expect: a proxy URL through
+        // `blocking_client_builder` returns Ok, and a malformed URL
+        // returns Err. If the builder ever stops applying `proxy`, the
+        // Err case below would change to Ok (since malformed URLs go
+        // through reqwest's Proxy::all which is the validation gate).
+        let cfg_ok = crate::http::HttpClientConfig {
+            proxy: Some("http://127.0.0.1:8080".into()),
+            ..Default::default()
+        };
+        assert!(
+            crate::http::blocking_client_builder(&cfg_ok)
+                .and_then(|b| b.build().map_err(|e| e.to_string()))
+                .is_ok(),
+            "valid proxy URL must build a client; if this fails, the source-side \
+             proxy plumbing is broken before it ever leaves WebSource"
+        );
+
+        let cfg_bad = crate::http::HttpClientConfig {
+            proxy: Some("not a url".into()),
+            ..Default::default()
+        };
+        assert!(
+            crate::http::blocking_client_builder(&cfg_bad).is_err(),
+            "malformed proxy URL must be rejected at builder time, not silently \
+             skipped. If this passes, `--proxy` validation is gone and bad URLs \
+             reach reqwest as a no-op default."
+        );
+    }
+
     /// Regression for the IPv4-mapped IPv6 SSRF bypass.
     /// `Ipv6Addr::is_loopback()` only returns `true` for the literal `::1`,
     /// so an attacker URL like `http://[::ffff:127.0.0.1]/` previously

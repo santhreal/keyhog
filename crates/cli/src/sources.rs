@@ -167,17 +167,34 @@ pub fn build_sources(
         ));
     }
 
+    // Build a fresh HttpClientConfig from the global --proxy /
+    // --insecure flags, parameterized only by the per-source UA suffix.
+    // Used by every network-facing source so the proxy + TLS policy
+    // reaches all of them, not just WebSource.
+    #[allow(unused_macros)] // some feature combos compile no consumers
+    macro_rules! http_cfg {
+        ($ua:expr) => {
+            keyhog_sources::http::HttpClientConfig {
+                proxy: args.proxy.clone(),
+                insecure_tls: args.insecure,
+                ua_suffix: Some(($ua).into()),
+                ..Default::default()
+            }
+        };
+    }
+
     #[cfg(feature = "github")]
     if let (Some(org), Some(token)) = (&args.github_org, &args.github_token) {
-        sources.push(Box::new(keyhog_sources::GitHubOrgSource::new(
-            org.clone(),
-            token.clone(),
-        )));
+        sources.push(Box::new(
+            keyhog_sources::GitHubOrgSource::new(org.clone(), token.clone())
+                .with_http_config(http_cfg!("github-org")),
+        ));
     }
 
     #[cfg(feature = "s3")]
     if let Some(bucket) = &args.s3_bucket {
-        let mut source = keyhog_sources::S3Source::new(bucket.clone());
+        let mut source = keyhog_sources::S3Source::new(bucket.clone())
+            .with_http_config(http_cfg!("s3"));
         if let Some(prefix) = &args.s3_prefix {
             source = source.with_prefix(prefix.clone());
         }
@@ -196,18 +213,8 @@ pub fn build_sources(
 
     #[cfg(feature = "web")]
     if let Some(urls) = &args.url {
-        // Thread --proxy / --insecure through to the WebSource HTTP
-        // client. WebSource owns its own HttpClientConfig so the env-
-        // var fallbacks (KEYHOG_PROXY, HTTPS_PROXY, ...) still kick in
-        // when neither CLI flag was passed.
-        let http = keyhog_sources::http::HttpClientConfig {
-            proxy: args.proxy.clone(),
-            insecure_tls: args.insecure,
-            ua_suffix: Some("web".into()),
-            ..Default::default()
-        };
         sources.push(Box::new(
-            keyhog_sources::WebSource::new(urls.clone()).with_http_config(http),
+            keyhog_sources::WebSource::new(urls.clone()).with_http_config(http_cfg!("web")),
         ));
     }
 

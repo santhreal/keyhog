@@ -33,6 +33,11 @@ pub struct S3Source {
     prefix: Option<String>,
     endpoint: Option<String>,
     max_objects: usize,
+    /// Shared HTTP policy (proxy, insecure_tls, ua_suffix, timeout). Defaults
+    /// to `HttpClientConfig::default()` (env-var fallbacks honored). Set via
+    /// `with_http_config` so the CLI's `--proxy` / `--insecure` reach this
+    /// source instead of silently bypassing it.
+    http: crate::http::HttpClientConfig,
 }
 
 impl S3Source {
@@ -53,7 +58,20 @@ impl S3Source {
             prefix: None,
             endpoint: None,
             max_objects: DEFAULT_MAX_OBJECTS,
+            http: crate::http::HttpClientConfig {
+                ua_suffix: Some("s3".into()),
+                ..Default::default()
+            },
         }
+    }
+
+    /// Override the shared HTTP policy (proxy, insecure TLS, UA suffix,
+    /// per-request timeout). Used by the CLI to thread `--proxy` /
+    /// `--insecure` through to the S3 client; without this every S3 fetch
+    /// would silently bypass the configured proxy and corp-mandated MITM CA.
+    pub fn with_http_config(mut self, http: crate::http::HttpClientConfig) -> Self {
+        self.http = http;
+        self
     }
 
     /// Limit scanning to objects whose keys start with `prefix`.
@@ -116,6 +134,7 @@ impl Source for S3Source {
             self.prefix.as_deref(),
             self.endpoint.as_deref(),
             self.max_objects,
+            &self.http,
         ) {
             Ok(chunks) => Box::new(chunks.into_iter().map(Ok)),
             Err(error) => Box::new(std::iter::once(Err(error))),
@@ -131,10 +150,21 @@ fn collect_s3_chunks(
     prefix: Option<&str>,
     endpoint: Option<&str>,
     max_objects: usize,
+    http: &crate::http::HttpClientConfig,
 ) -> Result<Vec<Chunk>, SourceError> {
     let bucket = validate_bucket_name(bucket)?;
-    let client = Client::builder()
-        .timeout(crate::timeouts::HTTP_REQUEST)
+    // Honor the shared HTTP policy (proxy, insecure TLS, UA). Falls back to
+    // the per-source default timeout when `http.timeout` is None — keeps the
+    // existing behavior for callers that don't override.
+    let http = if http.timeout.is_none() {
+        let mut h = http.clone();
+        h.timeout = Some(crate::timeouts::HTTP_REQUEST);
+        h
+    } else {
+        http.clone()
+    };
+    let client = crate::http::blocking_client_builder(&http)
+        .map_err(SourceError::Other)?
         .build()
         .map_err(|e| SourceError::Other(format!("failed to build S3 client: {e}")))?;
     let base_url = build_base_url(&bucket, endpoint)?;

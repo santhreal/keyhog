@@ -11,6 +11,12 @@ use serde::Deserialize;
 pub struct SlackSource {
     token: String,
     lookback_messages: usize,
+    /// Shared HTTP policy (proxy, insecure_tls, ua_suffix, timeout). Defaults
+    /// to `HttpClientConfig::default()` (env-var fallbacks honored). Set via
+    /// `with_http_config` so the CLI's `--proxy` / `--insecure` reach this
+    /// source. Without this every Slack API call would silently bypass the
+    /// configured corporate proxy and the operator'"'"'s Burp interception.
+    http: crate::http::HttpClientConfig,
 }
 
 impl SlackSource {
@@ -19,12 +25,23 @@ impl SlackSource {
         Self {
             token: token.into(),
             lookback_messages: 1000,
+            http: crate::http::HttpClientConfig {
+                ua_suffix: Some("slack".into()),
+                ..Default::default()
+            },
         }
     }
 
     /// Set how many messages to fetch per channel.
     pub fn with_lookback(mut self, n: usize) -> Self {
         self.lookback_messages = n;
+        self
+    }
+
+    /// Override the shared HTTP policy. Threads CLI `--proxy` / `--insecure`
+    /// into the Slack API client.
+    pub fn with_http_config(mut self, http: crate::http::HttpClientConfig) -> Self {
+        self.http = http;
         self
     }
 }
@@ -79,8 +96,15 @@ struct Message {
 
 impl SlackSource {
     fn collect_chunks(&self) -> Result<Vec<Chunk>, SourceError> {
-        let client = Client::builder()
-            .timeout(crate::timeouts::HTTP_REQUEST)
+        let http = if self.http.timeout.is_none() {
+            let mut h = self.http.clone();
+            h.timeout = Some(crate::timeouts::HTTP_REQUEST);
+            h
+        } else {
+            self.http.clone()
+        };
+        let client = crate::http::blocking_client_builder(&http)
+            .map_err(SourceError::Other)?
             .build()
             .map_err(|e| SourceError::Other(format!("failed to build Slack client: {e}")))?;
 
