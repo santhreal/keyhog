@@ -211,16 +211,19 @@ fn every_contract_passes_positives_negatives_evasions() {
             // "this detector did not fire on this text."
             let detector_fired = matches.iter().any(|m| m.detector_id.as_ref() == label);
             if detector_fired {
+                let captured: Vec<&str> = matches
+                    .iter()
+                    .filter(|m| m.detector_id.as_ref() == label)
+                    .map(|m| m.credential.as_ref())
+                    .collect();
                 failures.push(format!(
                     "{}: false positive on negative — text {:?} should NOT have fired \
-                     ({}); scanner saw {} matches under this detector",
+                     ({}); scanner saw {} matches under this detector: {:?}",
                     label,
                     n.text,
                     path.display(),
-                    matches
-                        .iter()
-                        .filter(|m| m.detector_id.as_ref() == label)
-                        .count(),
+                    captured.len(),
+                    captured,
                 ));
             }
         }
