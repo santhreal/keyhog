@@ -66,6 +66,17 @@ impl Decoder for CaesarDecoder {
             if candidate.len() < MIN_CAESAR_LEN {
                 continue;
             }
+            // kimi-decode audit: caesar_shift is the identity for
+            // digits / punctuation / non-ASCII. A pure-digit candidate
+            // (e.g. a 16-digit PIN) produces 25 IDENTICAL shifts, all
+            // equal to the original. The seen-set later dedups them
+            // but each unnecessarily walks the full detector pipeline
+            // and emits a bare decoded chunk that scans the same text
+            // we already scanned in the parent. Skip if the input has
+            // no a-z/A-Z character to shift.
+            if !candidate.chars().any(|c| c.is_ascii_alphabetic()) {
+                continue;
+            }
             for shift in 1..=25u8 {
                 let decoded = caesar_shift(&candidate, shift);
                 if !looks_credential_shaped(&decoded) {

@@ -434,8 +434,19 @@ impl CompiledScanner {
         // Without this, a single regex producing 100k+ matches on an
         // adversarial chunk (false_prefix_storm, regex catastrophic
         // backtracking) would run unboundedly even with --timeout.
+        //
+        // kimi-engine audit: when deadline is None (--timeout unset)
+        // the above guard never fires and a regex matching every byte
+        // on a 64 MiB chunk would loop ~64M times. The deadline path
+        // is the operator's defense; this hard cap is the per-pattern
+        // budget. 1M iterations per pattern is ~6 orders of magnitude
+        // above any legitimate detector's per-chunk match count.
+        const MAX_INNER_LOOP_ITERS: usize = 1_000_000;
         let mut match_count: usize = 0;
         while cursor <= cursor_end {
+            if match_count >= MAX_INNER_LOOP_ITERS {
+                break;
+            }
             if let Some(deadline) = deadline {
                 if match_count.is_multiple_of(64)
                     && match_count > 0
@@ -564,6 +575,13 @@ impl CompiledScanner {
         // iteration index used for deadline gating, not a generic
         // enumerator); the function-level `clippy::explicit_counter_loop`
         // allow keeps that clearer naming.
+        //
+        // kimi-engine audit: same hard cap as `extract_grouped_matches`.
+        // When deadline is None the previous logic had no bound — a
+        // pattern matching every byte on a 64 MiB chunk looped ~64M
+        // times. 1M iterations per pattern is a generous floor still
+        // 6 orders of magnitude above any legitimate detector count.
+        const MAX_INNER_LOOP_ITERS: usize = 1_000_000;
         let mut match_count: usize = 0;
         // `find_iter` doesn't take a start position; walk it manually
         // via `find_at` so the anchored-window path stays cheap. The
@@ -571,6 +589,9 @@ impl CompiledScanner {
         // identically to the prior `find_iter` loop.
         let mut cursor = range_start;
         while cursor <= range_end {
+            if match_count >= MAX_INNER_LOOP_ITERS {
+                break;
+            }
             if let Some(deadline) = deadline {
                 if match_count.is_multiple_of(64)
                     && match_count > 0

@@ -184,6 +184,14 @@ fn percent_decode(input: &str) -> Result<String, ()> {
 }
 
 fn url_decode(input: &str) -> Result<String, ()> {
+    // kimi-decode audit: bail before doing any work when there is no
+    // valid `%XX` percent-escape in the candidate. The previous flow
+    // copied trailing bare `%` or `%X` (one-char-short) unchanged and
+    // returned the identical string — wasted decode work that the
+    // `seen` dedup later dropped. Refuse the candidate earlier.
+    if !contains_percent_escape(input) {
+        return Err(());
+    }
     let decoded = percent_decode(input)?;
     if contains_percent_escape(&decoded) {
         percent_decode(&decoded)

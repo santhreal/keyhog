@@ -420,24 +420,18 @@ pub fn compile_detector_pattern(
     let prefixes = extract_literal_prefixes(&pattern.regex);
 
     // Proactive Homoglyph Expansion:
-    // For high-confidence patterns (with literal prefixes), add an expanded
-    // version that handles common Unicode lookalike characters.
-    for prefix in &prefixes {
-        if prefix.len() >= 3 {
-            let expanded_prefix = crate::homoglyph::expand_homoglyphs(prefix);
-            if expanded_prefix != *prefix {
-                if let Ok(re) = Regex::new(&format!("^{}", expanded_prefix)) {
-                    let expanded_pattern = CompiledPattern {
-                        detector_index,
-                        regex: std::sync::Arc::new(re),
-                        group: pattern.group,
-                    };
-                    // Always put homoglyph variants in fallback (they are regexes)
-                    fallback.push((expanded_pattern, detector.keywords.clone()));
-                }
-            }
-        }
-    }
+    // kimi-decode audit: the previous flow here built a fallback regex
+    // shaped `^<expanded_prefix>` with NO body constraint, which would
+    // match any string starting with the homoglyph variant of the
+    // prefix — the exact same flutterwave-FP bug the production path
+    // (`compile_pattern`, earlier in this file) was already fixed for
+    // via `rewrite_alternation_prefix`. Since this `compile_detector_pattern`
+    // entry point has zero internal call sites and is only retained as
+    // a `pub` surface for hypothetical external consumers, the safe
+    // move is to skip the prefix-only homoglyph fallback here entirely.
+    // Callers needing homoglyph defense should route through the live
+    // CompiledScanner::compile pipeline which applies the validated
+    // rewrite + full-body anchoring.
 
     if !prefixes.is_empty() {
         tracing::debug!(
