@@ -67,14 +67,31 @@ impl RateLimiter {
             });
             let mut limit = entry.value().lock();
             let now = Instant::now();
-            let elapsed = now.duration_since(limit.last_request);
-            if elapsed < limit.interval {
-                let wait = limit.interval - elapsed;
-                limit.last_request = now + wait;
-                Some(wait)
-            } else {
+            // `last_request` is the start of the most-recent SLOT (real or
+            // reserved-for-an-in-flight-waiter). The next legal slot is at
+            // `last_request + interval`.
+            //
+            // Earlier flow used `now.duration_since(last_request)` which
+            // saturates to zero when `last_request` is in the future (a
+            // previous caller reserved a slot we haven'"'"'t reached yet).
+            // That made the second-and-onward queued caller wait `interval`
+            // from THEIR arrival instead of `interval` after the previous
+            // reserved slot — back-to-back arrivals therefore burst at
+            // close to 1 request per slot-arrival-rate, blowing past the
+            // configured per-service cap.
+            //
+            // Fix: always queue strictly after `last_request + interval`,
+            // computed from `last_request` (not `now`), and roll
+            // `last_request` forward by exactly one interval per queued
+            // caller so the next arrival queues after this one'"'"'s slot.
+            let next_slot = limit.last_request + limit.interval;
+            if now >= next_slot {
                 limit.last_request = now;
                 None
+            } else {
+                let wait = next_slot.saturating_duration_since(now);
+                limit.last_request = next_slot;
+                Some(wait)
             }
         };
         if let Some(wait) = wait_time {
@@ -161,5 +178,39 @@ mod tests {
         assert_eq!(r.default_interval(), Duration::from_millis(200));
         r.set_default_rps(20.0);
         assert_eq!(r.default_interval(), Duration::from_millis(50));
+    }
+
+    /// Three back-to-back arrivals at 20 rps (50ms interval) must take at
+    /// least ~85ms total — the first fires immediately, the second waits
+    /// ~50ms, the third waits ~100ms from start. Before the
+    /// `next_slot`-based fix, the third arrival used `Instant::now() -
+    /// last_request` which saturated to zero (because `last_request` was
+    /// in the future from the second arrival's reservation) and the
+    /// third caller waited only one interval from ITS arrival instead of
+    /// two — finishing in ~50ms total and bursting at ~3× the configured
+    /// rate. Wall-clock timed (no `start_paused` because tokio's test-util
+    /// feature isn't in our dev-deps), with generous tolerance to absorb
+    /// timer jitter on busy CI runners.
+    #[tokio::test]
+    async fn burst_arrivals_respect_configured_interval() {
+        let r = std::sync::Arc::new(RateLimiter::new(20.0)); // 50ms interval
+        let start = Instant::now();
+
+        let r1 = std::sync::Arc::clone(&r);
+        let r2 = std::sync::Arc::clone(&r);
+        let r3 = std::sync::Arc::clone(&r);
+        let t1 = tokio::spawn(async move { r1.wait("svc").await });
+        let t2 = tokio::spawn(async move { r2.wait("svc").await });
+        let t3 = tokio::spawn(async move { r3.wait("svc").await });
+        let _ = tokio::join!(t1, t2, t3);
+
+        let elapsed = start.elapsed();
+        assert!(
+            elapsed >= Duration::from_millis(85),
+            "three requests at 20rps must take ≥~85ms (2 intervals minus jitter); \
+             took {elapsed:?}. This is the burst-rate regression — under the old \
+             code, queued callers used Instant::now() instead of the reserved \
+             future slot and bursted at ~3× rate (would finish in <60ms)."
+        );
     }
 }
