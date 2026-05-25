@@ -1,4 +1,4 @@
-use super::pipeline::{extract_encoded_values, push_decoded_text_chunk};
+use super::pipeline::{extract_encoded_values, push_decoded_text_chunk_spliced};
 use super::Decoder;
 use keyhog_core::Chunk;
 
@@ -71,7 +71,21 @@ impl Decoder for CaesarDecoder {
                 if !looks_credential_shaped(&decoded) {
                     continue;
                 }
-                push_decoded_text_chunk(&mut out, chunk, decoded, self.name());
+                // Splice the decoded variant back over the original
+                // candidate so any companion anchor (`api_key=`,
+                // `Authorization:`, `AWS_SECRET=`) attached to the
+                // original blob still sits next to the decoded
+                // credential when the downstream regex fires. Without
+                // the splice, every Caesar decode-through loses its
+                // companion gate and the detector silently drops the
+                // hit — same recall-gap that the base64/hex paths fixed.
+                push_decoded_text_chunk_spliced(
+                    &mut out,
+                    chunk,
+                    &candidate,
+                    decoded,
+                    self.name(),
+                );
             }
         }
         out
