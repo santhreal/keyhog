@@ -187,16 +187,34 @@ pub fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileState> {
 fn rewrite_alternation_prefix(regex: &str, expanded_prefix: &str) -> Option<String> {
     // Strip a leading inline flag group like `(?i)`.
     let (flag_prefix, body) = split_leading_inline_flag(regex);
-    if !body.starts_with("(?:") && !body.starts_with("(?i:")
-        && !body.starts_with("(?m:")
-        && !body.starts_with("(?s:")
-        && !body.starts_with("(?im:")
-        && !body.starts_with("(?is:")
-        && !body.starts_with("(?ms:")
-        && !body.starts_with('(')
-    {
+    // Only consider non-capturing groups — `(?:p1|p2|...)`. A bare
+    // `(...)` is a capturing group around the whole credential, NOT an
+    // alternation of prefixes; rewriting it as "{expanded_prefix}{suffix}"
+    // would drop the credential body and leave a regex that matches just
+    // the prefix. That was the flutterwave false-positive on negative:
+    // `(FLWSECK_(?:TEST|LIVE)-[a-f0-9]{32,64}-X)` got rewritten to
+    // `FLW[SСＳ][EЕΕＥ]C[KКΚＫ]_` which then matched bare `FLWSECK_`
+    // anywhere in the text.
+    let group_open_end = if let Some(rest) = body.strip_prefix("(?:") {
+        body.len() - rest.len()
+    } else if let Some(rest) = body.strip_prefix("(?i:") {
+        body.len() - rest.len()
+    } else if let Some(rest) = body.strip_prefix("(?m:") {
+        body.len() - rest.len()
+    } else if let Some(rest) = body.strip_prefix("(?s:") {
+        body.len() - rest.len()
+    } else if let Some(rest) = body.strip_prefix("(?im:") {
+        body.len() - rest.len()
+    } else if let Some(rest) = body.strip_prefix("(?is:") {
+        body.len() - rest.len()
+    } else if let Some(rest) = body.strip_prefix("(?ms:") {
+        body.len() - rest.len()
+    } else {
+        // Bare `(` or no leading group — refuse to rewrite. The simple
+        // strip_prefix path in the caller handles literal-head regexes;
+        // this function is strictly for `(?:...)` alternation prefixes.
         return None;
-    }
+    };
     // Find the matching closing `)` for the leading group.
     let bytes = body.as_bytes();
     let mut depth: i32 = 0;
@@ -218,6 +236,13 @@ fn rewrite_alternation_prefix(regex: &str, expanded_prefix: &str) -> Option<Stri
         }
     }
     let close = close_at?;
+    // The leading group must actually contain a `|` — without one this
+    // is just `(?:singleton)pattern`, not an alternation, and rewriting
+    // would silently drop the singleton body.
+    let inside = &body[group_open_end..close];
+    if !inside.contains('|') {
+        return None;
+    }
     // Trailing body after the alternation group.
     let suffix = &body[close + 1..];
     Some(format!("{flag_prefix}{expanded_prefix}{suffix}"))
@@ -546,10 +571,33 @@ mod tests {
     fn alternation_rewrite_returns_none_for_literal_head() {
         // No leading group → caller should fall through to strip_prefix.
         let out = rewrite_alternation_prefix("AKIA[A-Z0-9]{16}", "[a]kia");
-        // Caller handles this via the simple strip_prefix branch; the
-        // alternation rewriter conservatively returns Some with the
-        // body stripped from the (single) leading group — but since
-        // there's no '(' at position 0, we expect None.
+        assert!(out.is_none());
+    }
+
+    #[test]
+    fn alternation_rewrite_returns_none_for_capturing_full_pattern() {
+        // `(FLWSECK_(?:TEST|LIVE)-[a-f0-9]{32,64}-X)` is a CAPTURING group
+        // around the full credential, not an alternation of prefixes.
+        // Rewriting it would silently drop the credential body and leave
+        // just the expanded prefix matching anywhere in the chunk — the
+        // exact bug that caused flutterwave-api-key to fire on prose
+        // `FLWSECK_TEST-short-X`. Refuse to rewrite capturing groups.
+        let out = rewrite_alternation_prefix(
+            "(FLWSECK_(?:TEST|LIVE)-[a-f0-9]{32,64}-X)",
+            "FLW[SСＳ]ECK_TEST-",
+        );
+        assert!(
+            out.is_none(),
+            "must not rewrite a capturing-group-around-full-credential; \
+             a non-None result here matches the prefix anywhere"
+        );
+    }
+
+    #[test]
+    fn alternation_rewrite_returns_none_for_singleton_group() {
+        // `(?:foobody)` has no `|` so it's not an alternation; rewriting
+        // would silently drop the `body` part. Refuse.
+        let out = rewrite_alternation_prefix("(?:foobody)tail", "[fF]oo");
         assert!(out.is_none());
     }
 
