@@ -674,11 +674,12 @@ impl CompiledScanner {
             chunk.metadata.path.as_deref(),
             documentation_lines,
         );
-        if crate::pipeline::should_suppress_known_example_credential_with_source(
+        if crate::pipeline::should_suppress_named_detector_finding(
             credential,
             chunk.metadata.path.as_deref(),
             inferred_context,
             Some(chunk.metadata.source_type.as_str()),
+            detector.id.as_ref(),
         ) {
             return;
         }

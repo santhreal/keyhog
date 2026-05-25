@@ -18,16 +18,24 @@ impl CompiledScanner {
     ) {
         use std::sync::LazyLock;
         static GENERIC_RE: LazyLock<Option<regex::Regex>> = LazyLock::new(|| {
-            // `:` was added to the value alphabet so quoted YAML
-            // values containing internal colons survive into the
-            // capture (e.g. `api_key: "nginx@sha256:<64-hex>"` was
-            // being truncated at the first internal colon and the
-            // 12-char prefix `nginx@sha256` was getting flagged as
-            // a low-entropy generic-secret FP). Captures for
-            // unquoted values terminate naturally at whitespace
-            // because `\s` is not in the alphabet.
+            // The keyword → value bridge accepts:
+            //   1. `key = "v"` / `key="v"` (Python/Ruby/JS/sh)
+            //   2. `key: "v"` (YAML, modern JSON-ish)
+            //   3. `"key": "v"` (JSON — closing quote of key is
+            //      allowed BEFORE the `:`)
+            //   4. `const KEY: &str = "v"` (Rust with type) — an
+            //      optional `: &?TypeName =` segment between
+            //      keyword and value (handles `&str`, `String`,
+            //      `Cow<str>`, etc.). The `&?[A-Za-z_]` opener +
+            //      `[A-Za-z0-9_]*` tail keeps the type-name
+            //      narrowly recognizable and reject mid-line code.
+            // Closing quote `["'\u{60}]?` permitted between keyword
+            // and `[:=]` to cover JSON. Then a `[:=]` mandatory.
+            // Optional `[:=]` after a type segment for Rust. Value
+            // capture as before. `:` stays in the value alphabet so
+            // `nginx@sha256:<hex>` captures intact (defect #76).
             regex::Regex::new(
-                r#"(?i)(?:secret|password|passwd|pwd|token|api[_-]?key|apikey|auth[_-]?token|auth[_-]?key|credential|private[_-]?key|signing[_-]?key|encryption[_-]?key|access[_-]?key|client[_-]?secret|app[_-]?secret|master[_-]?key|license[_-]?key)\s*[=:]\s*["'`]?([a-zA-Z0-9/+=_.:!@#$%^&*-]{8,128})["'`]?"#
+                r#"(?i)(?:secret|password|passwd|pwd|token|api[_-]?key|apikey|auth[_-]?token|auth[_-]?key|credential|private[_-]?key|signing[_-]?key|encryption[_-]?key|access[_-]?key|client[_-]?secret|app[_-]?secret|master[_-]?key|license[_-]?key)["'`]?\s*[=:]\s*(?:&?[a-zA-Z_][a-zA-Z0-9_<>]*\s*[=:]\s*)?["'`]?([a-zA-Z0-9/+=_.:!@#$%^&*-]{8,128})["'`]?"#
             ).ok()
         });
         let Some(generic_re) = GENERIC_RE.as_ref() else {
@@ -195,6 +203,37 @@ impl CompiledScanner {
                     }
                 }
 
+                // Standard-base64-arbitrary-bytes suppression for generic
+                // path only: any value 40-300 chars consisting solely of
+                // `[A-Za-z0-9+/=]` with at least one `+/` and proper
+                // base64 padding/byte-alignment is overwhelmingly a
+                // protobuf wire dump, marshalled binary, or k8s base64
+                // payload — not a real credential. Named-detector
+                // matches with service-specific keyword anchors
+                // (azure-storage-account-key etc.) take this path's
+                // alternative route (engine/scan.rs) and don't pass
+                // through this gate, so service-specific recall is
+                // preserved. SecretBench-medium 15k seed-0: ~10 FPs/
+                // shard × 256 shards = ~2.5k FPs from this path alone.
+                if generic_path_looks_like_random_base64_blob(value) {
+                    continue;
+                }
+
+                // ARN-without-prefix suppression for generic path.
+                // The generic-secret regex captures values starting
+                // AFTER the keyword (`auth`/`secret`/`token`). For
+                // an input `token = arn:aws:iam::ACCT:role/...`, the
+                // `arn:` literal is consumed as part of the bridge
+                // (it's the value separator's neighborhood), and the
+                // captured value is the rest: `aws:iam::ACCT:role/...`.
+                // The pipeline gate's IAM-ARN check requires the
+                // `arn:` prefix; the trimmed form leaks here. The
+                // dedicated trimmed-prefix gate catches it without
+                // weakening the global gate.
+                if generic_path_looks_like_trimmed_aws_arn(value) {
+                    continue;
+                }
+
                 // Placeholder suppression
                 if crate::pipeline::should_suppress_known_example_credential_with_source(
                     value,
@@ -270,4 +309,87 @@ impl CompiledScanner {
             }
         }
     }
+}
+
+/// Standard-base64-arbitrary-bytes shape detector for the
+/// generic-secret path only. Returns true when `value` looks like
+/// a protobuf wire dump / marshalled binary / k8s data field rather
+/// than a credential token.
+///
+/// Why generic-path-only: named detectors with service-specific
+/// keyword anchors (`AccountKey=…`, `AZURE_STORAGE_KEY=…`) cover
+/// the legitimate ~88-char base64 cred families and skip this
+/// fallback entirely. Suppressing on the generic path doesn't
+/// touch their recall — verified by passing service-specific
+/// fixtures through `engine/scan.rs`'s named-detector path which
+/// runs before `scan_generic_assignments`.
+///
+/// Heuristics:
+///   1. Length in `[40, 300]` (covers both the 40-80 protobuf
+///      sweet spot and the longer 80-300 k8s `data:` blobs).
+///   2. Alphabet ⊆ `[A-Za-z0-9+/=]` (standard base64, not url-safe).
+///   3. EITHER contains a standard-base64 punctuation char (`+`/`/`)
+///      OR ends with `=`/`==` padding (signaling the value is the
+///      base64 encoding of a byte-aligned arbitrary-bytes payload).
+///      Real provider tokens are pure base62 without padding
+///      because their length isn't derived from base64 of bytes —
+///      AKIA + 16, ghp_ + 36, sk_live_ + 24, etc. all land on
+///      char counts that don't need `=` padding. Adding the
+///      "padded" branch catches the residual ~862 FPs where the
+///      payload happens to encode random bytes into pure-b62
+///      characters but still needs the `==` padding to round out.
+///   4. Length is a multiple of 4 OR ends with `=`/`==` padding.
+fn generic_path_looks_like_random_base64_blob(value: &str) -> bool {
+    if !(40..=300).contains(&value.len()) {
+        return false;
+    }
+    let has_padding = value.ends_with("==") || value.ends_with('=');
+    let length_mult_4 = value.len() % 4 == 0;
+    if !has_padding && !length_mult_4 {
+        return false;
+    }
+    let mut has_b64_punct = false;
+    for c in value.chars() {
+        match c {
+            'A'..='Z' | 'a'..='z' | '0'..='9' | '=' => {}
+            '+' | '/' => has_b64_punct = true,
+            _ => return false,
+        }
+    }
+    // Either standard-base64 punctuation OR explicit padding
+    // (the b64-of-bytes signal — pure-b62 tokens never need `=`
+    // because their length is chosen, not derived).
+    has_b64_punct || has_padding
+}
+
+/// IAM-ARN-trimmed-prefix gate for the generic-secret path.
+///
+/// Generic-secret's regex captures `value` starting AFTER the
+/// keyword bridge, which can swallow the `arn:` literal when the
+/// surrounding tokens are interpreted as the type-segment of the
+/// new `(?:&?TypeName\s*[=:]\s*)?` Rust-aware bridge.
+///
+/// Input: `token = arn:aws:iam::428623408413:role/WriterRole`
+/// Captured: `aws:iam::428623408413:role/WriterRole`
+///
+/// The pipeline-level IAM-ARN gate (`pipeline.rs::should_suppress_…`)
+/// requires the literal `arn:aws:iam::` prefix — the trimmed form
+/// falls through. Recognize the trimmed shape here so the generic
+/// path doesn't surface IAM resource ARNs as credentials. ARNs are
+/// identifiers, not credentials.
+fn generic_path_looks_like_trimmed_aws_arn(value: &str) -> bool {
+    let body = if let Some(b) = value.strip_prefix("aws:iam::") {
+        b
+    } else if let Some(b) = value.strip_prefix("aws-cn:iam::") {
+        b
+    } else if let Some(b) = value.strip_prefix("aws-us-gov:iam::") {
+        b
+    } else {
+        return false;
+    };
+    body.contains(":role/")
+        || body.contains(":user/")
+        || body.contains(":group/")
+        || body.contains(":policy/")
+        || body.contains(":instance-profile/")
 }

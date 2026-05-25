@@ -413,6 +413,10 @@ impl CompiledScanner {
         let fallback_always_active: Vec<bool> = state
             .fallback
             .iter()
+            // Mirrors `compiler::build_fallback_keyword_ac`'s
+            // 4-char floor — see the rationale comment there. The
+            // experimental 3-char floor measured a net F1 regression
+            // on SecretBench-medium, so both checks stay at 4.
             .map(|(_, keywords)| !keywords.iter().any(|k| k.len() >= 4))
             .collect();
 

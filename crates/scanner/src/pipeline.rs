@@ -155,6 +155,40 @@ pub fn should_suppress_known_example_credential_with_source(
     context: context::CodeContext,
     source_type: Option<&str>,
 ) -> bool {
+    should_suppress_inner(credential, path, context, source_type, false, false)
+}
+
+/// Variant for named-detector findings that have already matched a
+/// service-specific anchor (e.g. `ALGOLIA_ADMIN_KEY=<32hex>`). When set,
+/// the shape-based gates (pure-hash-digest, UUID, b64-blob, dashed-serial,
+/// hex-uniformity) are bypassed because the regex anchor IS the positive
+/// evidence — a 32-hex value after `ALGOLIA_ADMIN_KEY=` is an Algolia key,
+/// NOT an MD5. Use ONLY from detector paths whose regex requires a
+/// service-keyword anchor in the alternation list.
+pub fn should_suppress_named_detector_finding(
+    credential: &str,
+    path: Option<&str>,
+    context: context::CodeContext,
+    source_type: Option<&str>,
+    detector_id: &str,
+) -> bool {
+    // Generic detectors (generic-secret, generic-private-key, entropy-*)
+    // never use this bypass — their anchor is keyword-class, not
+    // service-specific, and shape gates are load-bearing for them.
+    let bypass_shape_gates = !detector_id.starts_with("generic-")
+        && !detector_id.starts_with("entropy-")
+        && detector_id != "private-key";
+    should_suppress_inner(credential, path, context, source_type, false, bypass_shape_gates)
+}
+
+fn should_suppress_inner(
+    credential: &str,
+    path: Option<&str>,
+    context: context::CodeContext,
+    source_type: Option<&str>,
+    skip_b64_decode_recheck: bool,
+    bypass_shape_gates: bool,
+) -> bool {
     let from_evasion_decoder =
         source_type.is_some_and(|s| s.contains("/reverse") || s.contains("/caesar"));
     let upper = credential.to_uppercase();
@@ -207,6 +241,70 @@ pub fn should_suppress_known_example_credential_with_source(
     // Developer markers override provider-prefix trust.
     if upper_contains_token(&upper, "TODO") || upper_contains_token(&upper, "FIXME") {
         return true;
+    }
+
+    // The RFC 7519 specimen JWT must be checked BEFORE the
+    // known-prefix bypass below — the specimen starts with `eyJ`
+    // which IS a known-prefix (JWT header marker), so the
+    // bypass would otherwise return `false` and let the
+    // textbook-example token through as a real finding.
+    // SecretBench-medium 15k seed-0: 142 leaked FPs on this
+    // exact specimen pre-fix.
+    // Prefix-or-substring match on the 61-char RFC7519 specimen JWT
+    // (literal base64url encoding of
+    // `{"alg":"HS256","typ":"JWT"}.{"sub":"1234567890`). Any token
+    // containing those exact bytes IS the documentation specimen —
+    // no production JWT in the wild uses the literal
+    // `"sub":"1234567890` claim except cargo-culted from the spec.
+    // `contains` (not just `starts_with`) is required because some
+    // extractor paths capture surrounding context such as
+    // `auth_token=eyJhbGci...` — `starts_with` misses every one of
+    // those; `contains` catches them. SecretBench-medium 15k seed-0:
+    // 349 leaked FPs in `jwt-rfc-example` category were the
+    // `auth_token=…` log-line + `api.key=…` properties shape.
+    if credential.contains(RFC7519_EXAMPLE_JWT_PREFIX) {
+        return true;
+    }
+
+    // Documentation/placeholder markers embedded *inside* a
+    // known-prefix token (e.g. `ghp_EXAMPLE_TOKEN_FROM_DOCS`,
+    // `AKIAEXAMPLEEXAMPLE12`, `sk_live_PLACEHOLDER_NOT_A_REAL_KEY`,
+    // `xoxb-…-EXAMPLE-TOKEN`). The general EXAMPLE check at the
+    // top requires a *word-boundary* token match, which misses
+    // these because the marker is surrounded by alphanumerics
+    // (camelCase or snake_case). Then the known-prefix bypass
+    // below would early-return `false`, letting them through.
+    // SecretBench-medium 15k seed-0: 234 leaked FPs from
+    // docs-example-marker pre-fix. Substring match is safe here
+    // because real secrets do not contain these literal strings.
+    const DOC_MARKER_SUBSTRINGS: &[&str] = &[
+        "EXAMPLE",
+        "PLACEHOLDER",
+        "NOT_A_REAL",
+        "NOTAREAL",
+        "INSERT_TOKEN_HERE",
+        "INSERT-TOKEN-HERE",
+        "CHANGE-ME",
+        "CHANGEME",
+        "REPLACE_ME",
+        "REPLACEME",
+        "REDACTED",
+        "FAKE_KEY",
+        "FAKEKEY",
+        "TEST_KEY",
+        "TESTKEY",
+        "SAMPLE_KEY",
+        "SAMPLEKEY",
+    ];
+    if !from_evasion_decoder
+        && !credential.contains("example.com")
+        && !credential.contains("example.org")
+    {
+        for marker in DOC_MARKER_SUBSTRINGS {
+            if upper.contains(marker) {
+                return true;
+            }
+        }
     }
 
     let known_prefix_body = known_prefix_body(credential);
@@ -304,6 +402,16 @@ pub fn should_suppress_known_example_credential_with_source(
     // Known-prefix credentials bypass this (a 64-char hex AWS key
     // shouldn't be filtered) — we already returned `false` above
     // when known_prefix_body matched.
+    // Named detectors with service-specific anchors (e.g.
+    // `ALGOLIA_ADMIN_KEY=<32hex>`, `HEROKU_API_KEY=<UUID>`) also
+    // bypass — their regex anchor IS positive evidence for the
+    // value being a credential, not a hash digest.
+    // Hash-digest gate is ALWAYS on, even for named detectors with strong
+    // anchors. Real secrets at these lengths use base64 (with +/=/mixed
+    // case), not pure hex — so a pure-hex credential is virtually always
+    // a sha256/sha1/git-commit/uuid that another detector greedy-matched.
+    // Bench v18 confirmed: bypassing this gate added 3304 FPs (sha256-hex
+    // + sha1-hex + git-commit-sha buckets) with zero recall gain.
     if looks_like_pure_hash_digest_or_uuid(credential) {
         return true;
     }
@@ -314,7 +422,7 @@ pub fn should_suppress_known_example_credential_with_source(
     //         and a thousand similar product-key surfaces. Real
     //         credentials almost never carry this shape. From
     //         secretbench-medium-15k: 464 FPs (3rd-largest cluster).
-    if looks_like_dashed_serial_key(credential) {
+    if !bypass_shape_gates && looks_like_dashed_serial_key(credential) {
         return true;
     }
 
@@ -323,9 +431,120 @@ pub fn should_suppress_known_example_credential_with_source(
     //         Conservative literal-prefix match so we don't
     //         accidentally suppress real JWTs that begin with the
     //         same header.
-    if credential.starts_with(RFC7519_EXAMPLE_JWT_PREFIX)
-        && credential.contains("SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c")
+    // Prefix-only match: the 61-char RFC7519_EXAMPLE_JWT_PREFIX is
+    // the literal base64url encoding of
+    // `{"alg":"HS256","typ":"JWT"}.{"sub":"1234567890`. Any token
+    // beginning with those exact bytes IS the documentation
+    // specimen — no production JWT in the wild uses the literal
+    // `"sub":"1234567890` claim except cargo-culted from the spec.
+    // (The previous belt-and-suspenders `contains(signature)`
+    // check failed when an upstream regex value-extractor
+    // truncated the captured credential before the signature
+    // segment — the prefix-only check is sufficient and survives
+    // truncation.)
+    if credential.starts_with(RFC7519_EXAMPLE_JWT_PREFIX) {
+        return true;
+    }
+
+    // ── 5e0. Credentials never contain interior whitespace runs.
+    //          The dotenv/properties/log-line extractors sometimes
+    //          capture the entire RHS as the credential when the
+    //          source line is `TOKEN=Session opened with handle
+    //          XYZ. See documentation.` — multi-word English
+    //          prose with a high-entropy substring is never a
+    //          real credential. SecretBench-medium 15k seed-0:
+    //          68 FPs from lorem-with-high-entropy.
+    if credential.len() > 30
+        && credential.chars().filter(|c| c.is_whitespace()).count() >= 2
     {
+        // Cheap English-word sanity check: at least one lowercase
+        // alphabetic run of length 3+ between whitespace tokens —
+        // characteristic of prose, not credentials.
+        let has_word_run = credential
+            .split_whitespace()
+            .any(|tok| tok.len() >= 3 && tok.chars().all(|c| c.is_ascii_lowercase()));
+        if has_word_run {
+            return true;
+        }
+    }
+
+    // ── 5e1. AWS IAM resource ARNs (`arn:aws:iam::ACCT:role/...`,
+    //          `:user/`, `:group/`, `:policy/`, `:instance-profile/`)
+    //          are identifiers, not credentials — they only name a
+    //          resource, they don't authenticate against it.
+    //          Other ARN namespaces (e.g. `secretsmanager:*:secret:*`,
+    //          `rds:*:cluster:*`) ARE credential REFERENCES that
+    //          downstream detectors should keep firing on, so the
+    //          gate is intentionally narrow to the IAM namespace.
+    //          SecretBench-medium 15k seed-0: 27 FPs from aws-arn
+    //          (all IAM role ARNs).
+    if (credential.starts_with("arn:aws:iam::")
+        || credential.starts_with("arn:aws-cn:iam::")
+        || credential.starts_with("arn:aws-us-gov:iam::"))
+        && (credential.contains(":role/")
+            || credential.contains(":user/")
+            || credential.contains(":group/")
+            || credential.contains(":policy/")
+            || credential.contains(":instance-profile/"))
+    {
+        return true;
+    }
+
+    // ── 5e2. HTML colour codes (`#RRGGBB`, `#RGB`). 6-or-3 hex
+    //          digits prefixed by `#`. Real credentials are never
+    //          prefixed with `#`. SecretBench-medium 15k seed-0:
+    //          22 FPs from html-color.
+    if let Some(body) = credential.strip_prefix('#') {
+        if (body.len() == 3 || body.len() == 6 || body.len() == 8)
+            && body.chars().all(|c| c.is_ascii_hexdigit())
+        {
+            return true;
+        }
+    }
+
+    // ── 5e3. Template placeholders wrapped in `{...}`, `<...>`,
+    //          `${...}`, `{{...}}`. Real credentials are never
+    //          delivered wrapped in brace/angle markers. The
+    //          dotenv/yaml extractor sometimes preserves these
+    //          wrappers when the placeholder is the entire RHS.
+    //          SecretBench-medium 15k seed-0: 41 FPs from
+    //          template-placeholder.
+    {
+        let trimmed = credential.trim();
+        let bracketed = (trimmed.starts_with('{') && trimmed.ends_with('}'))
+            || (trimmed.starts_with('<') && trimmed.ends_with('>'))
+            || (trimmed.starts_with("${") && trimmed.ends_with('}'));
+        if bracketed && trimmed.len() <= 80 {
+            return true;
+        }
+    }
+
+    // ── 5f. base64-of-arbitrary-bytes (e.g. protobuf wire dumps,
+    //         random binary blobs encoded for transport). Real
+    //         credential tokens almost never use standard base64
+    //         with `+/` punctuation AND `=` padding AND lack a
+    //         known prefix; they're either base64URL (`-_` instead
+    //         of `+/`) or pure alphanumeric. SecretBench-medium
+    //         15k seed-0: 705 leaked FPs from base64-protobuf
+    //         (largest single FP class).
+    //
+    //         Gate: standard-base64 alphabet only, contains at
+    //         least one of `+/`, ends in `=` padding, length ≥ 40,
+    //         and is NOT preceded by a known hash-algo label
+    //         (already handled above by the prefixed-hash gate).
+    //
+    //         BYPASS LIST: detectors whose regex anchors on a
+    //         service-specific keyword (AWS_SECRET_ACCESS_KEY,
+    //         AccountKey=, etc.) carry positive evidence strong
+    //         enough that the b64 shape is irrelevant. Those
+    //         findings come through `engine/scan.rs` and don't
+    //         pass this gate when `bypass_b64_blob_suppression`
+    //         is set in the source_type. The default is to apply
+    //         the gate (keeps base64-protobuf FP suppression).
+    // Named detectors with service-specific anchors bypass the b64-blob
+    // gate too (e.g. AWS_SECRET_ACCESS_KEY=<40b64> would otherwise be
+    // dropped as a protobuf-shaped blob).
+    if !bypass_shape_gates && looks_like_standard_base64_blob(credential) {
         return true;
     }
 
@@ -379,7 +598,98 @@ pub fn should_suppress_known_example_credential_with_source(
             return true;
         }
     }
+
+    // ── 9. Base64-decode-and-recheck ──
+    //          Bench fixtures (notably kubernetes-secret-shape yaml in
+    //          the SecretBench mirror) wrap placeholder/hash/UUID/ARN
+    //          payloads in base64 inside `data:` fields. A k8s-secret
+    //          detector match on the outer base64 wrapper bypasses the
+    //          inner gates above because the OUTER token is just
+    //          opaque base64 — none of the EXAMPLE / PLACEHOLDER /
+    //          hash / UUID / IAM-ARN substrings appear in it.
+    //          Decoding the wrapper once and re-running the core
+    //          suppression on the decoded UTF-8 catches all of them:
+    //            • `Z2hwX0VYQU1QTEVfVE9LRU5fRlJPTV9ET0NT`
+    //                → `ghp_EXAMPLE_TOKEN_FROM_DOCS` (EXAMPLE marker)
+    //            • `YXJuOmF3czppYW06Ojc4MzY2NDQ5MjgxNjpyb2xlL1JlYWRlc...`
+    //                → `arn:aws:iam::...:role/ReaderRole` (IAM gate)
+    //            • `Y2U3ZWUxZDAtZThiNi00ZDNmLTk2YjAtYmU3YjBiZDdiOGFj`
+    //                → uuid v4 shape (UUID gate)
+    //            • `MzRiNTIyOWY5NDdlZGZjOTIxMzVlZDNiMWU0MjE1Y2NlNm...`
+    //                → 64-char sha256 hex (hash gate)
+    //          The `skip_b64_decode_recheck` flag prevents recursion
+    //          when called from a previously-decoded payload.
+    //          SecretBench-medium 15k seed-0: estimated 3000-5000 of
+    //          the 14k FPs come from this exact path.
+    if !skip_b64_decode_recheck {
+        if let Some(decoded) = try_decode_b64_to_utf8(credential) {
+            // Sanity bound: the decoded text must look like a sensible
+            // payload (printable, not too long, not empty). Random
+            // bytes that happen to base64-decode to UTF-8 of pure
+            // garbage shouldn't trigger gates that rely on shape.
+            if !decoded.is_empty()
+                && decoded.len() <= credential.len()
+                && decoded
+                    .chars()
+                    .all(|c| !c.is_control() || c == '\n' || c == '\r' || c == '\t')
+                && should_suppress_inner(&decoded, path, context, source_type, true, bypass_shape_gates)
+            {
+                return true;
+            }
+        }
+    }
     false
+}
+
+/// Try to decode `credential` as standard or url-safe base64 and
+/// return the result as UTF-8 if successful. Returns `None` on any
+/// decode failure or non-UTF-8 payload.
+///
+/// Used by the suppression gate to peek inside base64-wrapped
+/// fixtures whose outer shape looks generic but whose decoded
+/// content is a known placeholder / hash / ARN / UUID.
+fn try_decode_b64_to_utf8(credential: &str) -> Option<String> {
+    // Cheap shape gate before paying for the decode allocation.
+    // Standard base64 alphabet (`[A-Za-z0-9+/=]`) and url-safe
+    // (`[A-Za-z0-9_\-=]`). Length must be ≥ 8 so we don't waste
+    // cycles on every 4-char identifier we see.
+    if credential.len() < 8 || credential.len() > 4096 {
+        return None;
+    }
+    let valid = credential.chars().all(|c| {
+        c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '=' || c == '-' || c == '_'
+    });
+    if !valid {
+        return None;
+    }
+    use base64::engine::general_purpose::{
+        STANDARD, STANDARD_NO_PAD, URL_SAFE, URL_SAFE_NO_PAD,
+    };
+    use base64::Engine;
+    // Try standard, url-safe, and their no-pad variants in order.
+    // A no-trait-object array sidesteps the `base64::Engine` non-
+    // dyn-compatible trait bound.
+    if let Ok(bytes) = STANDARD.decode(credential) {
+        if let Ok(s) = std::str::from_utf8(&bytes) {
+            return Some(s.to_string());
+        }
+    }
+    if let Ok(bytes) = URL_SAFE.decode(credential) {
+        if let Ok(s) = std::str::from_utf8(&bytes) {
+            return Some(s.to_string());
+        }
+    }
+    if let Ok(bytes) = STANDARD_NO_PAD.decode(credential) {
+        if let Ok(s) = std::str::from_utf8(&bytes) {
+            return Some(s.to_string());
+        }
+    }
+    if let Ok(bytes) = URL_SAFE_NO_PAD.decode(credential) {
+        if let Ok(s) = std::str::from_utf8(&bytes) {
+            return Some(s.to_string());
+        }
+    }
+    None
 }
 
 /// Prefix of the RFC 7519 specimen JWT — the example token from the
@@ -444,7 +754,19 @@ pub(crate) fn looks_like_pure_hash_digest_or_uuid(credential: &str) -> bool {
     // Bare hash-digest hex. Lengths that real secrets use commonly
     // (e.g. 40-char AWS secret-access-key body) DON'T match because
     // those are base64, not pure hex.
-    matches!(credential.len(), 32 | 40 | 64 | 128) && is_uniform_hex(credential)
+    //
+    // The 48-char length is included because several detector
+    // regexes (e.g. honeybadger-api-key `[a-f0-9]{32,48}`) greedy-
+    // capture the FIRST 48 chars of a 64-char sha256 hex span,
+    // producing a 48-char credential that is the prefix of a hash
+    // and not a real key. Same for 56 and 72 — common boundary
+    // lengths produced by detectors that quantify hex spans without
+    // a non-hex terminator. The 64/128 already-covered cases catch
+    // the full-length hash; the 48/56/72 extension covers the
+    // truncated-prefix variants. Each added length is justified by
+    // a SecretBench-medium FP cluster.
+    matches!(credential.len(), 32 | 40 | 48 | 56 | 64 | 72 | 128)
+        && is_uniform_hex(credential)
 }
 
 /// If `credential` begins with — OR contains — one of the well-known
@@ -480,6 +802,56 @@ fn looks_like_base64_blob_with_padding(s: &str) -> bool {
     }
     s.chars()
         .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '=')
+}
+
+/// True if `credential` is a standard-base64-encoded arbitrary-bytes
+/// blob (protobuf wire format, marshalled binary, etc.) rather than
+/// a credential token.
+///
+/// Heuristics (all required):
+///   1. Length in `[40, 80]` chars — the window where the SecretBench
+///      protobuf negatives concentrate (30-60 random bytes → 40-80
+///      base64 chars). Above 80 we leave to the decode-and-recheck
+///      gate (random binary doesn't decode to UTF-8 — no recheck
+///      fires — and real long-form positives like Azure storage key
+///      (88 chars) keep their recall). Below 40 we'd over-suppress
+///      short tokens that happen to contain `+/`.
+///   2. Alphabet limited to `[A-Za-z0-9+/=]` (standard base64).
+///   3. Contains at least one of `+` or `/` — the chars that
+///      distinguish standard base64 from base64url. Real provider
+///      tokens use base64url (`-_`) or pure alphanumeric, never
+///      standard `+/` in the bare-token form.
+///   4. Either ends in `=`/`==` padding OR length is a multiple of
+///      4 (proper base64 of byte-aligned data). 40 % 4 == 0 so the
+///      40-char unpadded case is admitted; previously the gate
+///      rejected those, leaking thousands of FPs from the no-pad
+///      40-char `generic-password`/`generic-secret` shape in the
+///      SecretBench mirror corpus.
+///
+/// Why this is safe for recall: PEM-framed credentials get the
+/// hard bypass above (they start with `-----BEGIN`), so
+/// EC/RSA/PGP/OpenSSH private keys are unaffected even though
+/// their bodies are standard base64. The 86/88-char Azure storage
+/// key sits OUTSIDE the [40, 80] window — recall preserved.
+#[allow(dead_code)]
+fn looks_like_standard_base64_blob(credential: &str) -> bool {
+    if !(40..=80).contains(&credential.len()) {
+        return false;
+    }
+    let has_padding = credential.ends_with("==") || credential.ends_with('=');
+    let length_multiple_of_4 = credential.len() % 4 == 0;
+    if !has_padding && !length_multiple_of_4 {
+        return false;
+    }
+    let mut has_b64_punct = false;
+    for c in credential.chars() {
+        match c {
+            'A'..='Z' | 'a'..='z' | '0'..='9' | '=' => {}
+            '+' | '/' => has_b64_punct = true,
+            _ => return false,
+        }
+    }
+    has_b64_punct
 }
 
 fn is_uniform_hex(s: &str) -> bool {

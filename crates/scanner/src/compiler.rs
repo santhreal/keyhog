@@ -248,6 +248,16 @@ pub fn build_fallback_keyword_ac(
 
     for (pattern_idx, (_, keywords)) in fallback.iter().enumerate() {
         for kw in keywords {
+            // Floor stays at 4: lowering it to 3 to admit
+            // mailchimp's `-us`/`-eu`/`-uk` and openai/anthropic's
+            // `sk-`/`sk-ant-`/`pk-` measured a NET F1 regression
+            // (-67 TP, +28 FP) on SecretBench-medium 15k seed-0
+            // because (a) too-broad fallback detectors like
+            // helicone-api-key `sk-[a-zA-Z0-9]{20,}` fired
+            // wrongly on neighboring lines and (b) the recall
+            // gain on mailchimp was small. The right fix for
+            // those detectors is per-detector keyword tightening,
+            // not a global threshold change.
             if kw.len() < 4 {
                 continue;
             }
