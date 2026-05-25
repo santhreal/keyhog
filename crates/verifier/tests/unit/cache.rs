@@ -32,10 +32,26 @@ fn cache_ttl_expiry() {
 #[test]
 fn evict_expired() {
     let cache = VerificationCache::new(Duration::from_millis(1));
-    cache.put("cred", "det", VerificationResult::Dead, HashMap::new());
+    // Insert TWO entries — one we let expire, one we insert AFTER the
+    // sleep so it's still fresh when evict_expired runs. Pre-fix the
+    // assertion was just `is_empty()`, which would still pass on a
+    // bug that removed every entry regardless of TTL.
+    cache.put("cred-expired", "det", VerificationResult::Dead, HashMap::new());
     std::thread::sleep(Duration::from_millis(2));
+    cache.put("cred-fresh", "det", VerificationResult::Dead, HashMap::new());
     cache.evict_expired();
-    assert!(cache.is_empty());
+    // The expired entry must be GONE; the fresh entry must STILL be in
+    // the cache. is_empty() conflated these two cases.
+    assert!(
+        cache.get("cred-expired", "det").is_none(),
+        "expired entry must be evicted"
+    );
+    assert!(
+        cache.get("cred-fresh", "det").is_some(),
+        "fresh entry must survive evict_expired (would fail if evict \
+         dropped all entries regardless of TTL)"
+    );
+    assert_eq!(cache.len(), 1, "cache should contain exactly the fresh entry");
 }
 
 #[test]

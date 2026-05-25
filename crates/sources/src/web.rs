@@ -72,6 +72,90 @@ fn redact_url(url: &str) -> std::borrow::Cow<'_, str> {
     std::borrow::Cow::Owned(out)
 }
 
+/// Returns `true` if `url` resolves (without DNS lookup) to a host that
+/// WebSource refuses to fetch on SSRF grounds. Covers:
+///   - literal loopback IPs (127.0.0.0/8, ::1)
+///   - private IP ranges (RFC 1918, fc00::/7, 169.254.0.0/16 link-local,
+///     and the IPv4 cloud-metadata special 169.254.169.254)
+///   - hostname aliases (localhost, *.local, *.internal, *.localdomain)
+///   - the metadata.google.internal alias
+///
+/// This is a STRING-level pre-filter — it doesn't resolve DNS. Hosts
+/// that look public but resolve to private IPs aren't caught here;
+/// that requires a custom resolver with post-connect re-check, which
+/// reqwest doesn't currently expose. The check matches the same shape
+/// of defense the verifier uses in `crates/verifier/src/ssrf.rs` (via
+/// the bogon crate); duplicating without the crate dep keeps WebSource
+/// from pulling in verifier-only crypto deps just for this gate.
+fn is_disallowed_web_host(url: &str) -> bool {
+    let parsed = match reqwest::Url::parse(url) {
+        Ok(u) => u,
+        Err(_) => return true, // refuse malformed
+    };
+    let Some(host) = parsed.host() else {
+        return true; // file://, mailto://, no host
+    };
+    match host {
+        url::Host::Ipv4(ip) => {
+            ip.is_loopback() || ip.is_private() || ip.is_link_local()
+                || ip.is_multicast() || ip.is_broadcast() || ip.is_unspecified()
+        }
+        url::Host::Ipv6(ip) => {
+            ip.is_loopback() || ip.is_multicast() || ip.is_unspecified()
+                || ip.segments()[0] & 0xfe00 == 0xfc00 // fc00::/7 unique-local
+                || ip.segments()[0] & 0xffc0 == 0xfe80 // fe80::/10 link-local
+        }
+        url::Host::Domain(d) => {
+            let lower = d.to_ascii_lowercase();
+            lower == "localhost"
+                || lower.ends_with(".local")
+                || lower.ends_with(".internal")
+                || lower.ends_with(".localdomain")
+                || lower == "metadata.google.internal"
+        }
+    }
+}
+
+#[cfg(test)]
+mod web_host_filter_tests {
+    use super::is_disallowed_web_host;
+
+    #[test]
+    fn rejects_cloud_metadata_endpoints() {
+        assert!(is_disallowed_web_host(
+            "http://169.254.169.254/latest/meta-data/iam/security-credentials/"
+        ));
+        assert!(is_disallowed_web_host(
+            "http://metadata.google.internal/computeMetadata/v1/"
+        ));
+    }
+
+    #[test]
+    fn rejects_loopback_and_private() {
+        assert!(is_disallowed_web_host("http://127.0.0.1/"));
+        assert!(is_disallowed_web_host("http://10.0.0.5/"));
+        assert!(is_disallowed_web_host("http://192.168.1.1/"));
+        assert!(is_disallowed_web_host("http://172.16.0.5/"));
+        assert!(is_disallowed_web_host("http://[::1]/"));
+        assert!(is_disallowed_web_host("http://localhost/"));
+        assert!(is_disallowed_web_host("http://machine.local/"));
+        assert!(is_disallowed_web_host("http://svc.internal/api"));
+    }
+
+    #[test]
+    fn rejects_malformed_or_hostless() {
+        assert!(is_disallowed_web_host("not a url"));
+        assert!(is_disallowed_web_host("file:///etc/passwd"));
+    }
+
+    #[test]
+    fn accepts_real_public_hosts() {
+        assert!(!is_disallowed_web_host("https://example.com/"));
+        assert!(!is_disallowed_web_host("https://cdn.jsdelivr.net/app.js"));
+        assert!(!is_disallowed_web_host("https://api.github.com/repos/foo/bar"));
+    }
+}
+
 #[cfg(test)]
 mod redact_url_tests {
     use super::redact_url;
@@ -220,6 +304,20 @@ impl Source for WebSource {
 
 /// Fetch a single URL and produce one or more chunks based on content type.
 fn fetch_url(client: &reqwest::blocking::Client, url: &str) -> Vec<Result<Chunk, SourceError>> {
+    // SSRF defense: the verifier already has this gate via bogon for live
+    // verifications; WebSource was the missing surface. Without this,
+    // `WebSource::new(vec!["http://169.254.169.254/latest/meta-data/iam/..."])`
+    // would happily fetch the cloud metadata endpoint and extract IAM
+    // credentials. Kimi sources-audit web-source SSRF finding.
+    if is_disallowed_web_host(url) {
+        let safe_url = redact_url(url);
+        return vec![Err(SourceError::Other(format!(
+            "refusing to fetch {safe_url}: host resolves to a private / \
+             loopback / link-local / metadata-service address — \
+             WebSource only fetches public URLs"
+        )))];
+    }
+
     let resp = match client.get(url).send() {
         Ok(r) => r,
         Err(e) => {

@@ -13,6 +13,19 @@ use crate::FilesystemSource;
 
 const MAX_TAR_ENTRY_BYTES: u64 = 128 * 1024 * 1024;
 
+/// Cumulative cap across ALL entries in one Docker archive. The
+/// per-entry [`MAX_TAR_ENTRY_BYTES`] cap alone is bypassed by a
+/// zip-bomb that ships thousands of entries each just under 128 MiB
+/// — the validator passed every entry individually and unpack()
+/// happily wrote N × 128 MiB to disk. With this aggregate cap the
+/// validator rejects the archive before unpack starts.
+///
+/// 8 GiB is generous for any real Docker image (the biggest common
+/// base images max out around 1 GiB) but small enough that a 1000-
+/// entry × 127 MiB ≈ 127 GiB zip-bomb is rejected on entry ~64. Kimi
+/// sources-audit finding #docker-zip-bomb.
+const MAX_TAR_TOTAL_BYTES: u64 = 8 * 1024 * 1024 * 1024;
+
 /// Scan a Docker image by saving it as a tar archive and unpacking each layer.
 ///
 /// # Examples
@@ -183,6 +196,7 @@ fn unpack_tar(archive_path: &Path, destination: &Path) -> Result<(), SourceError
 fn validate_extracted_tree<R: std::io::Read>(
     archive: &mut tar::Archive<R>,
 ) -> Result<(), SourceError> {
+    let mut cumulative_bytes: u64 = 0;
     for entry in archive.entries().map_err(SourceError::Io)? {
         let entry = entry.map_err(SourceError::Io)?;
         let path = entry.path().map_err(SourceError::Io)?;
@@ -222,6 +236,19 @@ fn validate_extracted_tree<R: std::io::Read>(
                 "docker archive entry '{}' exceeds {} bytes",
                 path.display(),
                 MAX_TAR_ENTRY_BYTES
+            )));
+        }
+        // Zip-bomb defense: a malicious archive can ship 1000+ entries
+        // each just under MAX_TAR_ENTRY_BYTES (127 MiB × 1000 = 127 GiB).
+        // Each entry passes the per-entry gate but the cumulative
+        // unpack exhausts disk. Reject before unpack starts.
+        cumulative_bytes = cumulative_bytes.saturating_add(size);
+        if cumulative_bytes > MAX_TAR_TOTAL_BYTES {
+            return Err(SourceError::Other(format!(
+                "docker archive cumulative size exceeds {} bytes at entry '{}' \
+                 (likely zip-bomb)",
+                MAX_TAR_TOTAL_BYTES,
+                path.display(),
             )));
         }
     }

@@ -19,7 +19,7 @@ status = "alpha"
 [features]
 default = ["git", "web"]
 git = ["gix"]
-web = ["dep:reqwest", "dep:serde_json"]
+web = ["dep:reqwest", "dep:serde_json", "dep:url"]
 github = ["dep:reqwest", "dep:tempfile", "dep:serde", "dep:serde_json", "dep:base64"]
 slack = ["dep:reqwest", "dep:serde", "dep:serde_json"]
 s3 = [
@@ -99,6 +99,15 @@ optional = true
 
 [dependencies.unicode-normalization]
 workspace = true
+
+# url crate is used by the WebSource SSRF filter (web.rs::is_disallowed_web_host)
+# to match reqwest::Url::host() into Ipv4 / Ipv6 / Domain variants. The
+# variant types are re-exported from reqwest internally but not as a
+# public path, so we depend on `url` directly. Optional because only
+# the `web` feature compiles the SSRF gate.
+[dependencies.url]
+workspace = true
+optional = true
 
 [dependencies.hmac]
 workspace = true
