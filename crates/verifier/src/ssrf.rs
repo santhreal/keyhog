@@ -40,8 +40,30 @@ pub fn is_private_url(url_str: &str) -> bool {
                     return true;
                 }
 
-                // Block integer-encoded IP addresses (e.g. http://2130706433/)
-                let maybe_ip = if let Ok(n) = d.parse::<u32>() {
+                // Block integer-encoded IP addresses across every radix
+                // a permissive resolver might canonicalize:
+                //
+                //   - Decimal:  http://2130706433/                  → 127.0.0.1
+                //   - Hex:      http://0x7f000001/                  → 127.0.0.1
+                //   - Octal:    http://017700000001/                → 127.0.0.1
+                //   - Dotted:   http://127.0.0.1/                   (Ipv4Addr::parse)
+                //
+                // glibc's getaddrinfo + several musl-based resolvers
+                // accept all four. Blocking only the decimal form
+                // (the pre-fix behavior) left an SSRF bypass via the
+                // hex variant — VRF-001 from the kimi review. The
+                // explicit `0x`-prefixed `from_str_radix(16)` covers
+                // that gap; the leading-zero radix-8 parse covers the
+                // octal variant for completeness.
+                let maybe_ip = if let Some(hex) = d
+                    .strip_prefix("0x")
+                    .or_else(|| d.strip_prefix("0X"))
+                {
+                    u32::from_str_radix(hex, 16).ok().map(Ipv4Addr::from)
+                } else if d.starts_with('0') && d.len() > 1 && d.chars().all(|c| c.is_ascii_digit())
+                {
+                    u32::from_str_radix(d, 8).ok().map(Ipv4Addr::from)
+                } else if let Ok(n) = d.parse::<u32>() {
                     Some(Ipv4Addr::from(n))
                 } else {
                     d.parse::<Ipv4Addr>().ok()
