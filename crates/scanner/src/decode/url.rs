@@ -55,7 +55,15 @@ impl Decoder for QuotedPrintableDecoder {
                 chunk,
                 candidates
                     .into_iter()
-                    .filter(|candidate| candidate.contains('='))
+                    // Real Quoted-Printable encodes a non-ASCII byte as `=XX`
+                    // (hex). A plain trailing `=` (`token=`) or a string of
+                    // `=` signs is NOT QP — the decoder used to copy it
+                    // through unchanged and re-scan, wasting one full
+                    // scan pass per `key=value`-shaped line. Require at
+                    // least one well-formed `=XX` sequence with hex chars
+                    // before treating the candidate as QP-encoded.
+                    // Kimi-decode audit finding #2.
+                    .filter(|candidate| has_qp_escape(candidate))
                     .collect(),
                 quoted_printable_decode,
                 self.name(),
@@ -63,6 +71,18 @@ impl Decoder for QuotedPrintableDecoder {
         }
         decoded_chunks
     }
+}
+
+/// True if `s` contains at least one well-formed Quoted-Printable
+/// escape (`=XX` where `XX` is two hex digits). Trailing-bare-`=`
+/// inputs and `key=value` text return false and skip the decode.
+fn has_qp_escape(s: &str) -> bool {
+    let bytes = s.as_bytes();
+    bytes.windows(3).any(|w| {
+        w[0] == b'='
+            && w[1].is_ascii_hexdigit()
+            && w[2].is_ascii_hexdigit()
+    })
 }
 
 macro_rules! simple_decoder {

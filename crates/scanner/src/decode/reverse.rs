@@ -42,25 +42,41 @@ fn reverse_str(s: &str) -> String {
 }
 
 /// Reverse-decode is asymmetric: every string trivially "decodes" to its
-/// reverse, so we'd emit O(N) decoy chunks for normal text. Gate on a
-/// cheap heuristic — at least one ASCII alphanumeric run of 12+ chars in
-/// the reversed direction (the kind of run real credentials contain after
-/// reversal). Keeps the chunk-count budget out of the bin while still
-/// catching the obvious evasion.
+/// reverse, so we'd emit O(N) decoy chunks for normal text. Two cheap gates:
+///
+/// 1. A 12+ ASCII alphanumeric run in the reversed direction (filters out
+///    `a-b-c-d-...` and other punctuated text).
+/// 2. The reversed text must contain at least one known credential prefix
+///    from `confidence::KNOWN_PREFIXES`. Without this, plain prose like
+///    `ABCDEFGHIJKLMNOPQRSTUVWXYZ` reverses to `ZYXWVUTSRQPONMLKJIHGFEDCBA`,
+///    passes the alphanumeric-run gate, and gets emitted as a decoy chunk
+///    on every chunk that contains a long alphanumeric word — pure noise
+///    that hammers the dedup layer. Kimi-decode audit finding #4.
 fn looks_reversible(candidate: &str) -> bool {
     let bytes = candidate.as_bytes();
     let mut run = 0usize;
+    let mut saw_long_run = false;
     for &b in bytes.iter().rev() {
         if b.is_ascii_alphanumeric() {
             run += 1;
             if run >= 12 {
-                return true;
+                saw_long_run = true;
+                break;
             }
         } else {
             run = 0;
         }
     }
-    false
+    if !saw_long_run {
+        return false;
+    }
+    // Only emit a reverse-decoded chunk when the reversed string would
+    // contain a known provider prefix. Stops `ZYXWVUTSRQPONMLKJIHGFEDCBA`
+    // from looking like a candidate just because it has a long alnum run.
+    let reversed = reverse_str(candidate);
+    crate::confidence::KNOWN_PREFIXES
+        .iter()
+        .any(|prefix| reversed.contains(prefix))
 }
 
 #[cfg(test)]
@@ -77,7 +93,10 @@ mod tests {
     }
 
     #[test]
-    fn looks_reversible_accepts_long_alnum_runs() {
+    fn looks_reversible_accepts_aws_key_reversal() {
+        // The original adversarial fixture: reversed AWS access-key-id.
+        // Reversing it produces a string starting with AKIA, which is
+        // a KNOWN_PREFIXES entry — the gate fires.
         assert!(looks_reversible("ELPMAXE7NNDOFSOIAIKA"));
     }
 
@@ -85,5 +104,13 @@ mod tests {
     fn looks_reversible_rejects_short_or_punctuated() {
         assert!(!looks_reversible("hello"));
         assert!(!looks_reversible("a-b-c-d-e-f-g-h-i-j"));
+    }
+
+    #[test]
+    fn looks_reversible_rejects_alphabetic_prose() {
+        // Long alnum run but reversing it (`ZYX...CBA`) doesn't contain
+        // any known credential prefix. Used to slip through as a decoy.
+        assert!(!looks_reversible("ABCDEFGHIJKLMNOPQRSTUVWXYZ"));
+        assert!(!looks_reversible("0123456789abcdefghijklmnopqr"));
     }
 }

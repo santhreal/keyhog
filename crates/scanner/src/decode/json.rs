@@ -14,6 +14,15 @@ impl Decoder for JsonDecoder {
     fn decode_chunk(&self, chunk: &Chunk) -> Vec<Chunk> {
         let mut decoded_chunks = Vec::new();
         for json_string in extract_json_strings(&chunk.data) {
+            // Cheap gate: json_unescape() is a copy-through for strings
+            // that contain no `\` escape. Without this gate, every plain
+            // string ≥ 4 chars in JSON would produce a duplicate spliced
+            // chunk that the engine re-scans for nothing — every
+            // `{"k": "EXAMPLE"}` triggered a full extra scan pass.
+            // Kimi-decode audit finding #1.
+            if !json_string.contains('\\') {
+                continue;
+            }
             if let Ok(unescaped) = json_unescape(&json_string) {
                 // Splice the unescaped value over its escaped form
                 // in the parent so the JSON key (`"api_key": "…"`)
