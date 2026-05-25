@@ -108,7 +108,14 @@ fn test_1mb_parse_decode_depth() {
 fn test_1mb_parse_min_confidence() {
     let mut large_str = String::from("0.");
     large_str.push_str(&"1".repeat(1024 * 1024));
-    assert!(parse_min_confidence(&large_str).is_ok()); // Valid long fractional string
+    // 1 MB fractional string parses to a value extremely close to (but not
+    // equal to) 0.111…, and must stay strictly inside (0, 1). Assert the
+    // returned value instead of merely "didn't error" — the previous
+    // assertion would still pass if parse_min_confidence returned NaN or
+    // any other in-range nonsense.
+    let parsed = parse_min_confidence(&large_str).expect("1MB 0.111… must parse");
+    assert!(parsed > 0.1, "expected 0.111…ish, got {parsed}");
+    assert!(parsed < 0.2, "expected 0.111…ish, got {parsed}");
 }
 
 #[test]
@@ -267,7 +274,14 @@ fn test_empty_unit_byte_size() {
 
 #[test]
 fn test_byte_size_lowercase_unit() {
-    assert!(parse_byte_size("10gb").is_ok()); // Just a sanity check that standard works
+    // Lowercase unit must parse to the exact same byte count as the
+    // upper-case form. The previous assertion `parse_byte_size("10gb").is_ok()`
+    // would still pass if the parser silently treated `gb` as bytes (10 bytes)
+    // or as MB instead of GB; assert the actual value.
+    let lower = parse_byte_size("10gb").expect("lowercase gb must parse");
+    let upper = parse_byte_size("10GB").expect("uppercase GB must parse");
+    assert_eq!(lower, upper, "lowercase gb should match uppercase GB");
+    assert_eq!(lower, 10 * 1024 * 1024 * 1024, "10gb must be 10 GiB");
 }
 
 #[test]
