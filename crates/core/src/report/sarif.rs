@@ -289,7 +289,7 @@ impl<W: Write + Send> SarifReporter<W> {
                             .location
                             .file_path
                             .as_deref()
-                            .map(|s| s.to_string())
+                            .map(Self::file_path_to_sarif_uri)
                             .unwrap_or_default(),
                         uri_base_id: None,
                     },
@@ -341,6 +341,30 @@ impl<W: Write + Send> SarifReporter<W> {
         }
     }
 
+    /// Render a `MatchLocation.file_path` value as a SARIF v2.1.0
+    /// `artifactLocation.uri`.
+    ///
+    /// SARIF §3.4.4 requires either a relative URI reference (resolved
+    /// against `uriBaseId`) or a valid absolute URI. A bare absolute
+    /// filesystem path like `/etc/secrets.env` or `C:\creds\aws.txt`
+    /// is *not* a valid URI — GitHub Code Scanning rejects the SARIF
+    /// upload with `invalid artifact location`. We detect that shape
+    /// and promote it to a `file://` URI with the path percent-encoded
+    /// per RFC 3986.
+    fn file_path_to_sarif_uri(path: &str) -> String {
+        if path.starts_with('/') {
+            // POSIX absolute path → `file:///<encoded>`.
+            format!("file://{}", percent_encode_path(path))
+        } else if is_windows_absolute(path) {
+            // Windows absolute path. SARIF spec example: `file:///C:/foo/bar`.
+            let normalised = path.replace('\\', "/");
+            format!("file:///{}", percent_encode_path(&normalised))
+        } else {
+            // Relative path (or "stdin", or already a URI) — pass through.
+            path.to_string()
+        }
+    }
+
     fn build_rule(finding: &VerifiedFinding) -> SarifRule {
         SarifRule {
             id: finding.detector_id.to_string(),
@@ -379,7 +403,7 @@ impl<W: Write + Send> SarifReporter<W> {
         let uri = loc
             .file_path
             .as_ref()
-            .map(|p| p.to_string())
+            .map(|p| Self::file_path_to_sarif_uri(p))
             .unwrap_or_else(|| "stdin".to_string());
 
         let artifact_location = Some(SarifArtifactLocation {
@@ -524,6 +548,34 @@ impl<W: Write + Send> WriterBackedReporter for SarifReporter<W> {
     }
 }
 
+fn is_windows_absolute(s: &str) -> bool {
+    let b = s.as_bytes();
+    b.len() >= 3
+        && b[0].is_ascii_alphabetic()
+        && b[1] == b':'
+        && (b[2] == b'/' || b[2] == b'\\')
+}
+
+/// Percent-encode a filesystem path per RFC 3986 unreserved + path-safe set.
+/// Forward slash is preserved as the path separator; everything outside the
+/// `unreserved` set (`A-Z a-z 0-9 - _ . ~`) is encoded as `%XX`.
+fn percent_encode_path(path: &str) -> String {
+    let mut out = String::with_capacity(path.len());
+    for byte in path.bytes() {
+        let safe = byte.is_ascii_alphanumeric()
+            || matches!(byte, b'-' | b'_' | b'.' | b'~' | b'/' | b':');
+        if safe {
+            out.push(byte as char);
+        } else {
+            out.push('%');
+            const HEX: &[u8; 16] = b"0123456789ABCDEF";
+            out.push(HEX[(byte >> 4) as usize] as char);
+            out.push(HEX[(byte & 0x0F) as usize] as char);
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -605,5 +657,82 @@ mod tests {
             .as_array()
             .expect("results array");
         assert!(results.is_empty());
+    }
+
+    #[test]
+    fn sarif_uri_relative_path_passes_through() {
+        assert_eq!(
+            SarifReporter::<Vec<u8>>::file_path_to_sarif_uri("config.env"),
+            "config.env"
+        );
+        assert_eq!(
+            SarifReporter::<Vec<u8>>::file_path_to_sarif_uri("src/lib.rs"),
+            "src/lib.rs"
+        );
+        assert_eq!(
+            SarifReporter::<Vec<u8>>::file_path_to_sarif_uri("a/b/c.txt"),
+            "a/b/c.txt"
+        );
+    }
+
+    #[test]
+    fn sarif_uri_posix_absolute_gets_file_scheme() {
+        assert_eq!(
+            SarifReporter::<Vec<u8>>::file_path_to_sarif_uri("/etc/secrets.env"),
+            "file:///etc/secrets.env"
+        );
+        assert_eq!(
+            SarifReporter::<Vec<u8>>::file_path_to_sarif_uri("/home/u/.aws/credentials"),
+            "file:///home/u/.aws/credentials"
+        );
+    }
+
+    #[test]
+    fn sarif_uri_percent_encodes_unsafe_bytes() {
+        assert_eq!(
+            SarifReporter::<Vec<u8>>::file_path_to_sarif_uri("/tmp/file with space.env"),
+            "file:///tmp/file%20with%20space.env"
+        );
+        assert_eq!(
+            SarifReporter::<Vec<u8>>::file_path_to_sarif_uri("/tmp/réport.json"),
+            "file:///tmp/r%C3%A9port.json"
+        );
+        assert_eq!(
+            SarifReporter::<Vec<u8>>::file_path_to_sarif_uri("/tmp/foo?bar#baz"),
+            "file:///tmp/foo%3Fbar%23baz"
+        );
+    }
+
+    #[test]
+    fn sarif_uri_windows_absolute_normalises_backslashes() {
+        assert_eq!(
+            SarifReporter::<Vec<u8>>::file_path_to_sarif_uri("C:\\Users\\bob\\.aws\\creds"),
+            "file:///C:/Users/bob/.aws/creds"
+        );
+        assert_eq!(
+            SarifReporter::<Vec<u8>>::file_path_to_sarif_uri("D:/secrets/key.pem"),
+            "file:///D:/secrets/key.pem"
+        );
+    }
+
+    #[test]
+    fn sarif_uri_full_run_with_absolute_path() {
+        let mut finding = synthetic_finding();
+        finding.location.file_path = Some(Arc::from("/etc/keys/aws.env"));
+        let mut buf: Vec<u8> = Vec::new();
+        {
+            let mut r = SarifReporter::new(&mut buf);
+            r.report(&finding).unwrap();
+            r.finish().unwrap();
+        }
+        let json: serde_json::Value = serde_json::from_slice(&buf).expect("valid JSON");
+        let loc_uri = json["runs"][0]["results"][0]["locations"][0]["physicalLocation"]
+            ["artifactLocation"]["uri"]
+            .as_str();
+        assert_eq!(loc_uri, Some("file:///etc/keys/aws.env"));
+        let fix_uri = json["runs"][0]["results"][0]["fixes"][0]["artifactChanges"][0]
+            ["artifactLocation"]["uri"]
+            .as_str();
+        assert_eq!(fix_uri, Some("file:///etc/keys/aws.env"));
     }
 }

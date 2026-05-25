@@ -247,14 +247,18 @@ fn entry_to_formula(entry: &SuppressEntry) -> Result<RuleFormula, String> {
 
     // AND of all conditions inside one [[suppress]] table.
     let mut iter = conditions.into_iter();
-    // Safety: the `if conditions.is_empty() { return Err(...) }` guard
-    // 9 lines above means `conditions` has at least one element by the
-    // time we reach this iterator. Promoted to expect with the
-    // invariant name so a future refactor that drops the guard gets an
-    // actionable panic message, not `called Option::unwrap on a None`.
-    let first = iter
-        .next()
-        .expect("Fix: conditions is non-empty by the is_empty() guard above");
+    // The `if conditions.is_empty() { return Err(...) }` guard ~9
+    // lines above proves non-empty here, but a future refactor that
+    // tightens the guard (or drops it) shouldn't panic the rule
+    // compiler — fall through to the same error path so the user
+    // gets the parsable "no conditions" message instead of a
+    // backtrace.
+    let Some(first) = iter.next() else {
+        return Err("no conditions specified in [[suppress]] entry; \
+             use `[[suppress]]\\nliteral_true = true` if you really want \
+             to drop every finding"
+            .into());
+    };
     let mut formula = RuleFormula::condition(first);
     for cond in iter {
         formula = RuleFormula::and(formula, RuleFormula::condition(cond));

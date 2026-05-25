@@ -197,15 +197,15 @@ pub fn dedup_cross_detector(deduped: Vec<DedupedMatch>) -> Vec<DedupedMatch> {
     for (_, mut group) in groups {
         if group.len() == 1 {
             // Safety: the `group.len() == 1` guard above means pop()
-            // returns Some. Promoted to expect with the invariant
-            // name so a future refactor of the dedup loop produces
-            // an actionable panic message instead of the bare
-            // "called Option::unwrap on a None" backtrace.
-            out.push(
-                group
-                    .pop()
-                    .expect("Fix: group has exactly one element by the len() == 1 guard"),
-            );
+            // `pop()` is None only on an empty group; the
+            // `len() == 1` guard above proves non-empty here. Use
+            // `if let` instead of `.expect()` so a future refactor
+            // of the guard turns this into a silent skip (one lost
+            // dedup pair, no findings emitted twice) rather than a
+            // worker-killing panic on the dedup hot path.
+            if let Some(only) = group.pop() {
+                out.push(only);
+            }
             continue;
         }
         // Sort: highest-confidence first, then severity desc, then detector_id asc.
