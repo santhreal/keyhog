@@ -68,7 +68,7 @@ pub fn run(args: ScanSystemArgs) -> Result<ExitCode> {
         },
     );
 
-    let detectors = load_detectors(&args.detectors)?;
+    let detectors = crate::orchestrator_config::load_detectors_or_embedded(&args.detectors)?;
     eprintln!("📋 loaded {} detectors", detectors.len());
     let scanner = Arc::new(
         CompiledScanner::compile(detectors)
@@ -501,23 +501,6 @@ fn scan_git_history(
     }
 }
 
-fn load_detectors(path: &Path) -> Result<Vec<keyhog_core::DetectorSpec>> {
-    if path.exists() && path.is_dir() {
-        let loaded = keyhog_core::load_detectors(path).context("load detectors")?;
-        crate::orchestrator_config::require_non_empty_detectors(&loaded, path)?;
-        return Ok(loaded);
-    }
-    let embedded = keyhog_core::embedded_detector_tomls();
-    let mut out = Vec::with_capacity(embedded.len());
-    for (name, body) in embedded {
-        match toml::from_str::<keyhog_core::DetectorFile>(body) {
-            Ok(f) => out.push(f.detector),
-            Err(e) => tracing::warn!("embedded detector {name}: {e}"),
-        }
-    }
-    crate::orchestrator_config::require_non_empty_detectors(&out, path)?;
-    Ok(out)
-}
 
 fn format_bytes(n: u64) -> String {
     const KIB: u64 = 1024;

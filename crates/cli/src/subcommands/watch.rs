@@ -19,13 +19,13 @@
 
 use crate::args::WatchArgs;
 use anyhow::{Context, Result};
-use keyhog_core::{Chunk, ChunkMetadata, DetectorFile};
+use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::CompiledScanner;
 use notify::{Event, EventKind, RecursiveMode, Watcher};
 use std::sync::mpsc::channel;
 
 pub fn run(args: WatchArgs) -> Result<()> {
-    let detectors = load_detectors(&args.detectors)?;
+    let detectors = crate::orchestrator_config::load_detectors_or_embedded(&args.detectors)?;
     let detector_count = detectors.len();
     let scanner = CompiledScanner::compile(detectors)
         .map_err(|e| anyhow::anyhow!("scanner compile failed: {e:?}"))?;
@@ -154,26 +154,3 @@ fn should_skip(path: &std::path::Path) -> bool {
     })
 }
 
-fn load_detectors(path: &std::path::Path) -> Result<Vec<keyhog_core::DetectorSpec>> {
-    if path.exists() && path.is_dir() {
-        let loaded = keyhog_core::load_detectors(path).context("loading detectors")?;
-        crate::orchestrator_config::require_non_empty_detectors(&loaded, path)?;
-        return Ok(loaded);
-    }
-    let embedded = keyhog_core::embedded_detector_tomls();
-    if embedded.is_empty() {
-        anyhow::bail!(
-            "detector directory '{}' not found and no embedded detectors available",
-            path.display()
-        );
-    }
-    let mut out = Vec::with_capacity(embedded.len());
-    for (name, body) in embedded {
-        match toml::from_str::<DetectorFile>(body) {
-            Ok(f) => out.push(f.detector),
-            Err(e) => eprintln!("warning: failed to parse embedded detector {name}: {e}"),
-        }
-    }
-    crate::orchestrator_config::require_non_empty_detectors(&out, path)?;
-    Ok(out)
-}

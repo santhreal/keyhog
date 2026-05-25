@@ -5,11 +5,11 @@
 //! one is known. Tier-B innovation #9 from audits/legendary-2026-04-26.
 
 use crate::args::ExplainArgs;
-use anyhow::{Context, Result};
+use anyhow::Result;
 use keyhog_core::DetectorSpec;
 
 pub fn run(args: ExplainArgs) -> Result<()> {
-    let detectors = load_detectors(&args.detectors)?;
+    let detectors = crate::orchestrator_config::load_detectors_or_embedded(&args.detectors)?;
 
     let needle = args.detector_id.to_lowercase();
     let detector = detectors
@@ -127,27 +127,3 @@ fn rotation_guide(service: &str) -> Option<&'static str> {
     }
 }
 
-fn load_detectors(path: &std::path::Path) -> Result<Vec<DetectorSpec>> {
-    if path.exists() && path.is_dir() {
-        let loaded =
-            keyhog_core::load_detectors(path).context("loading detectors from directory")?;
-        crate::orchestrator_config::require_non_empty_detectors(&loaded, path)?;
-        return Ok(loaded);
-    }
-    let embedded = keyhog_core::embedded_detector_tomls();
-    if embedded.is_empty() {
-        anyhow::bail!(
-            "detector directory '{}' not found and no embedded detectors available",
-            path.display()
-        );
-    }
-    let mut out = Vec::with_capacity(embedded.len());
-    for (name, body) in embedded {
-        match toml::from_str::<keyhog_core::DetectorFile>(body) {
-            Ok(file) => out.push(file.detector),
-            Err(e) => eprintln!("warning: failed to parse embedded detector {name}: {e}"),
-        }
-    }
-    crate::orchestrator_config::require_non_empty_detectors(&out, path)?;
-    Ok(out)
-}
