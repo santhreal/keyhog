@@ -11,11 +11,11 @@ severity = "high"
 keywords = ["amplitude", "AMPLITUDE_API_KEY", "AMPLITUDE_KEY"]
 
 [[detector.patterns]]
-regex = "(?:amplitude|AMPLITUDE)[_.]?(?:api[_.]?)?key[=:\\s\"']+([a-f0-9]{32})"
+regex = "(?i)amplitude[_.]?(?:api[_.]?)?key[=:\\s\"']+([a-f0-9]{32})"
 description = "Amplitude API key (32 hex chars) with context anchor"
 group = 1
 
 [[detector.companions]]
 name = "amplitude_secret_key"
-regex = "(?:amplitude|AMPLITUDE)[_.]?(?:secret|SECRET)[_.]?(?:key|KEY)[=:\\s\"']+([a-f0-9]{32})"
+regex = "(?i)amplitude[_.]?secret[_.]?key[=:\\s\"']+([a-f0-9]{32})"
 within_lines = 5
