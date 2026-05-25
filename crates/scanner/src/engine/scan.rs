@@ -597,6 +597,16 @@ impl CompiledScanner {
             }
             cursor = next;
             match_count += 1;
+            // Skip zero-width matches without surfacing them — same
+            // semantics as `extract_grouped_matches` (see the longer
+            // comment there). Without this guard, a regex whose
+            // outermost shape matches zero bytes (lookahead-only,
+            // empty alternation branch) emits an empty-credential
+            // finding on every iteration; downstream scoring would
+            // then be asked to grade `""`.
+            if matched.end() == matched.start() {
+                continue;
+            }
             let &(keyword_nearby, sensitive_file) =
                 signals.get_or_init(|| compute_pattern_signals(detector, chunk));
             self.process_match(

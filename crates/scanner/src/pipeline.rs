@@ -424,7 +424,7 @@ fn should_suppress_inner(
     // Bench v19 confirmed the hash gate side closes the FP regression
     // without losing recall; the contracts_runner test caught the UUID
     // over-suppression that prompted the split.
-    if looks_like_hash_digest(credential) {
+    if !bypass_shape_gates && looks_like_hash_digest(credential) {
         return true;
     }
     if !bypass_shape_gates && is_uuid_v4_shape(credential) {
@@ -1040,10 +1040,16 @@ pub fn find_companion(
     primary_line: usize,
     companion: &CompiledCompanion,
 ) -> Option<String> {
-    let start = primary_line.saturating_sub(companion.within_lines);
+    // `primary_line` is 1-based (the return of `match_line_number` is
+    // a 1-based partition_point index). Clamp the lower bound at
+    // FIRST_LINE_NUMBER so a primary on line 1 with within=3 starts
+    // at line 1, not line -2 (which saturates to 0 and would silently
+    // shift the whole window off by one).
+    let start = primary_line
+        .saturating_sub(companion.within_lines)
+        .max(FIRST_LINE_NUMBER);
     let end = primary_line.saturating_add(companion.within_lines);
-    let (window_start, window_end) =
-        line_window_offsets(preprocessed, start + FIRST_LINE_NUMBER, end)?;
+    let (window_start, window_end) = line_window_offsets(preprocessed, start, end)?;
     // Defensive: `line_window_offsets` returns offsets relative to the
     // line index, but the underlying text may have been truncated
     // mid-scan (windowed mode, decoded chunk shorter than original)
@@ -1052,7 +1058,7 @@ pub fn find_companion(
     // bogus companion lookup must never crash a worker.
     let haystack = preprocessed.text.get(window_start..window_end)?;
     let group = companion.capture_group.unwrap_or(FIRST_CAPTURE_GROUP_INDEX);
-    let line_range = (start + FIRST_LINE_NUMBER)..=end;
+    let line_range = start..=end;
 
     // Capture-group fast path: when the regex has no groups, `find_iter` is
     // strictly cheaper than `captures_iter` — `find` allocates no

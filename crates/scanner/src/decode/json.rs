@@ -34,53 +34,72 @@ impl Decoder for JsonDecoder {
 
 /// Extract JSON string values from text.
 /// Returns the raw content inside JSON string quotes (including escape backslashes).
+///
+/// UTF-8 correctness: the inner loop iterates `text` by `char_indices`
+/// (not by raw bytes) so multi-byte UTF-8 sequences (e.g. CJK strings,
+/// emoji) inside JSON values are preserved as a single `char` push,
+/// not split into Latin-1 garbage. The earlier byte-oriented loop
+/// pushed `bytes[i] as char` which interprets every high byte as
+/// U+0080..U+00FF and corrupts any non-ASCII content in the JSON
+/// values keyhog scans for secrets (some service tokens carry CJK
+/// metadata or non-ASCII URLs inside surrounding JSON).
 fn extract_json_strings(text: &str) -> Vec<String> {
     let mut strings = Vec::new();
     let bytes = text.as_bytes();
     let mut index = 0;
 
     while index < bytes.len() {
+        // memchr is byte-safe even at UTF-8 boundaries because b'"' is
+        // ASCII (< 0x80) and therefore never appears inside a multi-
+        // byte UTF-8 continuation. Same for b'\\' and the line
+        // terminators below.
         if let Some(quote_idx) = memchr::memchr(b'"', &bytes[index..]) {
             index += quote_idx;
         } else {
             break;
         }
 
-        // Found opening quote
+        // Found opening quote — step past it and walk the body as
+        // chars, tracking the byte index so we can resume the outer
+        // memchr scan correctly.
         index += 1;
         let mut content = String::with_capacity(32);
         let mut escaping = false;
         let mut closed = false;
 
-        while index < bytes.len() {
-            let current = bytes[index];
+        for (ci, ch) in text[index..].char_indices() {
             if escaping {
-                content.push(current as char);
+                content.push(ch);
                 escaping = false;
-            } else if current == b'\\' {
+            } else if ch == '\\' {
                 escaping = true;
                 content.push('\\');
-            } else if current == b'"' {
+            } else if ch == '"' {
                 closed = true;
-                index += 1;
+                index += ci + ch.len_utf8();
                 if content.len() >= 4 {
                     strings.push(content);
                 }
                 break;
-            } else if current == b'\n' || current == b'\r' {
-                // JSON strings cannot span lines unescaped
+            } else if ch == '\n' || ch == '\r' {
+                // JSON strings cannot span lines unescaped — break
+                // BEFORE advancing index so the outer loop resumes
+                // at this line terminator and re-scans for the next
+                // opening quote on the next line.
+                index += ci;
                 break;
             } else {
-                content.push(current as char);
+                content.push(ch);
             }
-            index += 1;
         }
 
         if closed {
             continue;
         }
 
-        // No closing quote found — advance to avoid infinite loop
+        // Either no closing quote OR we broke on a line terminator;
+        // advance one byte to avoid an infinite loop on the unmatched
+        // opening quote.
         index += 1;
     }
 

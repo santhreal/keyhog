@@ -14,14 +14,20 @@
 pub(super) fn has_secret_keyword_fast(data: &[u8]) -> bool {
     use aho_corasick::AhoCorasick;
     use std::sync::LazyLock;
-    static AC: LazyLock<AhoCorasick> = LazyLock::new(|| {
+    // Hold a `Result` (via `.ok()` → `Option`) instead of `.expect()`-
+    // unwrapping at LazyLock-init time. A panic in the static
+    // initializer poisons the LazyLock for the rest of the process
+    // and kills every subsequent prefilter call across all threads.
+    // The fallback (`None` → return `true`) makes this a soft no-op
+    // (the next stage filters anyway); strictly more conservative
+    // than dropping the match.
+    static AC: LazyLock<Option<AhoCorasick>> = LazyLock::new(|| {
         // Distinctive enough to be real secrets AND commonly split across
         // lines in source code. Avoid short prefixes like AKIA/eyJ that
         // appear in test fixtures.
-        AhoCorasick::new(["sk-proj-", "sk_live_", "ghp_", "xoxb-", "xoxp-"])
-            .expect("static keyword set compiles")
+        AhoCorasick::new(["sk-proj-", "sk_live_", "ghp_", "xoxb-", "xoxp-"]).ok()
     });
-    AC.find(data).is_some()
+    AC.as_ref().is_none_or(|ac| ac.find(data).is_some())
 }
 
 /// Check for generic `secret=`, `password:`, `token=` etc. keywords.
@@ -38,7 +44,10 @@ pub(super) fn has_secret_keyword_fast(data: &[u8]) -> bool {
 pub(super) fn has_generic_assignment_keyword(data: &[u8]) -> bool {
     use aho_corasick::AhoCorasick;
     use std::sync::LazyLock;
-    static AC: LazyLock<AhoCorasick> = LazyLock::new(|| {
+    // See `has_secret_keyword_fast` for the rationale; same soft-
+    // fallback (`true` on init failure) so the prefilter never causes
+    // an FN by dropping a chunk that should have been scanned.
+    static AC: LazyLock<Option<AhoCorasick>> = LazyLock::new(|| {
         AhoCorasick::builder()
             .ascii_case_insensitive(true)
             .build([
@@ -53,9 +62,9 @@ pub(super) fn has_generic_assignment_keyword(data: &[u8]) -> bool {
                 "client_secret",
                 "access_key",
             ])
-            .expect("static keyword set compiles")
+            .ok()
     });
-    AC.find(data).is_some()
+    AC.as_ref().is_none_or(|ac| ac.find(data).is_some())
 }
 
 /// Per-detector minimum entropy threshold for generic detectors.

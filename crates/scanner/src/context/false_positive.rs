@@ -59,15 +59,25 @@ static DISCLAIMER_PHRASES: std::sync::LazyLock<Vec<String>> = std::sync::LazyLoc
         phrases: Vec<String>,
     }
     let raw = include_str!("../../data/disclaimer-phrases.toml");
-    let parsed: DisclaimerFile = toml::from_str(raw)
-        .expect("crates/scanner/data/disclaimer-phrases.toml must be valid TOML");
-    // Normalize to lowercase once — `lower` haystack lookups never
-    // need to re-lower at hot-path call time.
-    parsed
-        .phrases
-        .into_iter()
-        .map(|p| p.to_ascii_lowercase())
-        .collect()
+    // Soft-fail to an empty phrase list rather than panicking the
+    // scanner worker. A corrupted-binary / broken-build state should
+    // degrade detection precision, not crash. The `tracing::warn!`
+    // surfaces the regression in logs so CI catches it.
+    match toml::from_str::<DisclaimerFile>(raw) {
+        Ok(parsed) => parsed
+            .phrases
+            .into_iter()
+            .map(|p| p.to_ascii_lowercase())
+            .collect(),
+        Err(e) => {
+            tracing::warn!(
+                error = %e,
+                "disclaimer-phrases.toml failed to parse; falling back to empty phrase list \
+                 (test-file disclaimers will not be suppressed this run)",
+            );
+            Vec::new()
+        }
+    }
 });
 
 fn has_disclaimer_comment(lower: &str) -> bool {
