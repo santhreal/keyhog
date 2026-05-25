@@ -15,6 +15,11 @@ regex = "(?i)together(?:ai)?[_.-]?(?:api[_.-]?)?key[=:\\s\"']+([a-f0-9]{64})"
 description = "Together AI API key with context anchor"
 group = 1
 
+[[detector.patterns]]
+regex = "(?i)together(?:ai)?\\s*[=:]\\s*[\"']?([a-f0-9]{64})[\"']?"
+description = "Together AI API key without explicit `key` suffix (bare keyword =)"
+group = 1
+
 [detector.verify]
 method = "GET"
 url = "https://api.together.xyz/v1/models"
