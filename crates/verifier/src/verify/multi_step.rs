@@ -20,6 +20,7 @@ pub(crate) async fn verify_multi_step(
     timeout: Duration,
     allow_private_ips: bool,
     allow_http: bool,
+    proxy_in_use: bool,
 ) -> VerificationAttempt {
     let mut all_metadata = HashMap::new();
     let mut current_companions = companions.clone();
@@ -46,6 +47,7 @@ pub(crate) async fn verify_multi_step(
             step_timeout,
             allow_private_ips,
             allow_http,
+            proxy_in_use,
         )
         .await
         {

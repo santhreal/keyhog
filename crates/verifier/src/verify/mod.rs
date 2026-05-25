@@ -51,6 +51,13 @@ struct VerifyTaskShared {
     max_inflight_keys: usize,
     danger_allow_private_ips: bool,
     danger_allow_http: bool,
+    /// `true` when the engine'"'"'s base client was built with a proxy. The
+    /// per-request DNS-pinned client rebuild path in
+    /// `resolved_client_for_url` MUST NOT fire when a proxy is in use,
+    /// or the proxy config silently gets dropped. We carry the bool
+    /// rather than the proxy URL itself because no downstream code
+    /// needs the URL — only the "skip the rebuild" signal.
+    proxy_in_use: bool,
     oob_session: Option<Arc<crate::oob::OobSession>>,
 }
 
@@ -159,6 +166,7 @@ async fn verify_group_task(shared: VerifyTaskShared, group: DedupedMatch) -> Ver
                         timeout,
                         shared.danger_allow_private_ips,
                         shared.danger_allow_http,
+                        shared.proxy_in_use,
                         shared.oob_session.as_ref(),
                     )
                     .await
@@ -185,13 +193,16 @@ impl VerificationEngine {
         detectors: &[keyhog_core::DetectorSpec],
         config: VerifyConfig,
     ) -> Result<Self, VerifyError> {
-        let client = Client::builder()
+        let mut builder = Client::builder()
             .timeout(config.timeout)
-            // SAFETY: verification traffic must keep certificate validation on.
-            .danger_accept_invalid_certs(false)
-            .redirect(reqwest::redirect::Policy::none())
-            .build()
-            .map_err(VerifyError::ClientBuild)?;
+            // Cert validation: ON by default, escape hatch ONLY through the
+            // explicit `VerifyConfig.insecure_tls` knob (or `KEYHOG_INSECURE_TLS`
+            // via CLI). Production paths never flip this.
+            .danger_accept_invalid_certs(config.insecure_tls)
+            .redirect(reqwest::redirect::Policy::none());
+        builder = crate::apply_proxy_config(builder, config.proxy.as_deref())
+            .map_err(VerifyError::ProxyConfig)?;
+        let client = builder.build().map_err(VerifyError::ClientBuild)?;
 
         let detector_map: HashMap<Arc<str>, keyhog_core::DetectorSpec> = detectors
             .iter()
@@ -219,6 +230,8 @@ impl VerificationEngine {
             max_inflight_keys: config.max_inflight_keys.max(1),
             danger_allow_private_ips: config.danger_allow_private_ips,
             danger_allow_http: config.danger_allow_http,
+            proxy_in_use: config.proxy.is_some()
+                || std::env::var("KEYHOG_PROXY").ok().is_some_and(|p| !p.is_empty()),
             oob_session: None,
         })
     }
@@ -238,6 +251,7 @@ impl VerificationEngine {
             max_inflight_keys: self.max_inflight_keys,
             danger_allow_private_ips: self.danger_allow_private_ips,
             danger_allow_http: self.danger_allow_http,
+            proxy_in_use: self.proxy_in_use,
             oob_session: self.oob_session.clone(),
         };
         let mut pending = groups.into_iter();

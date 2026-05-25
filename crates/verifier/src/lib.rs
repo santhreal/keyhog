@@ -45,6 +45,10 @@ pub enum VerifyError {
     )]
     ClientBuild(ReqwestError),
     #[error(
+        "invalid verifier proxy configuration: {0}. Fix: use a valid http://, https://, or socks5:// URL, or set 'off' to disable proxying entirely"
+    )]
+    ProxyConfig(String),
+    #[error(
         "failed to resolve verification field: {0}. Fix: use `match` or `companion.<name>` fields that exist in the detector spec"
     )]
     FieldResolution(String),
@@ -68,6 +72,10 @@ pub struct VerificationEngine {
     pub(crate) max_inflight_keys: usize,
     pub(crate) danger_allow_private_ips: bool,
     pub(crate) danger_allow_http: bool,
+    /// Snapshot of "was the base client built with a proxy" — propagated
+    /// to per-request rebuild paths so they skip the rebuild (which would
+    /// strip the proxy). See `verify/request.rs::resolved_client_for_url`.
+    pub(crate) proxy_in_use: bool,
     /// Optional OOB session. When `Some`, detectors with `[detector.verify.oob]`
     /// receive a per-finding callback URL and the engine waits for the
     /// service to call back. When `None`, those detectors fall through to
@@ -91,6 +99,17 @@ pub struct VerifyConfig {
     /// production paths must use HTTPS so credentials are never sent in the
     /// clear. Test fixtures (mock HTTP servers, in-memory listeners) opt in.
     pub danger_allow_http: bool,
+    /// Explicit upstream proxy URL applied to every verifier request and OOB
+    /// poll. `None` falls back to the `KEYHOG_PROXY` env var; literal `"off"`
+    /// disables proxying entirely. Until this was added, `--proxy` only
+    /// reached the WebSource scanner — verification traffic and interactsh
+    /// polls bypassed it silently, surprising operators who pointed Burp at
+    /// keyhog and saw only half the traffic.
+    pub proxy: Option<String>,
+    /// Accept invalid / self-signed TLS certs for verifier + OOB traffic.
+    /// Off by default. Required when intercepting through a MITM proxy
+    /// (Burp, mitmproxy) that re-signs HTTPS with its own CA.
+    pub insecure_tls: bool,
 }
 
 impl Default for VerifyConfig {
@@ -102,7 +121,34 @@ impl Default for VerifyConfig {
             max_inflight_keys: 10_000,
             danger_allow_private_ips: false,
             danger_allow_http: false,
+            proxy: None,
+            insecure_tls: false,
         }
+    }
+}
+
+/// Resolve a proxy spec into an applied `reqwest::ClientBuilder`. Handles
+/// the literal `"off"` sentinel (disables proxying inc. env-var inheritance)
+/// and the `KEYHOG_PROXY` env-var fallback when no explicit value is set.
+/// Extracted so the verifier client and OOB client share one resolver and
+/// the same env-var contract.
+pub(crate) fn apply_proxy_config(
+    builder: reqwest::ClientBuilder,
+    explicit: Option<&str>,
+) -> Result<reqwest::ClientBuilder, String> {
+    let resolved = if let Some(p) = explicit {
+        Some(p.to_string())
+    } else {
+        std::env::var("KEYHOG_PROXY").ok().filter(|s| !s.is_empty())
+    };
+    match resolved.as_deref() {
+        Some("off") | Some("none") | Some("") => Ok(builder.no_proxy()),
+        Some(url) => {
+            let proxy = reqwest::Proxy::all(url)
+                .map_err(|e| format!("invalid verifier proxy URL {url:?}: {e}"))?;
+            Ok(builder.proxy(proxy))
+        }
+        None => Ok(builder),
     }
 }
 
