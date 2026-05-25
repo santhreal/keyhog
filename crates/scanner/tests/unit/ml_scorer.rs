@@ -42,12 +42,19 @@ fn empty_string_scores_zero() {
 
 #[test]
 fn openai_key_scores_high() {
+    // sk-proj- is a top-shelf provider prefix anchored to OPENAI_API_KEY=;
+    // a "scores high" assertion below 0.5 is meaningless because the empty
+    // string in the sibling test already scores 0.0. Real bar: a known
+    // provider-prefixed credential under its env-var context must land
+    // above 0.5 — otherwise the ML scorer is barely lifting confidence at
+    // all over the no-info baseline.
     let key = "sk-proj-EXAMPLE000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000";
     let context = format!("OPENAI_API_KEY={key}");
     let s = test_score(key, &context);
     assert!(
-        s > 0.01,
-        "Realistic OpenAI key scored {:.3}, expected > 0.01",
+        s > 0.5,
+        "Realistic OpenAI key scored {:.3}, expected > 0.5 \
+         (provider-prefixed credential under explicit env-var context)",
         s
     );
 }
