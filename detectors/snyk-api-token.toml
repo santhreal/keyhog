@@ -11,7 +11,7 @@ severity = "high"
 keywords = ["SNYK_TOKEN", "snyk_token", "SNYK_API_TOKEN", "snyk_api_token", "snyk.io", "SNYK"]
 
 [[detector.patterns]]
-regex = "(?:SNYK|snyk).{0,20}(?:TOKEN|token|API|api).{0,5}[=:\\s\"']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
+regex = "(?i)snyk[_.-]?(?:api[_.-]?)?token[=:\\s\"']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
 description = "Snyk API token with context anchor (UUID format)"
 group = 1
 
