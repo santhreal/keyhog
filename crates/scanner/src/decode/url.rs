@@ -1,6 +1,7 @@
 use super::base64::base64_decode;
 use super::hex::hex_val;
 use super::pipeline::{decode_candidates, extract_encoded_values};
+use super::util::take_hex_digits;
 use super::Decoder;
 use crate::context;
 use keyhog_core::Chunk;
@@ -448,16 +449,4 @@ fn unicode_escape_decode(input: &str) -> Result<String, ()> {
         }
     }
     Ok(decoded_text)
-}
-
-fn take_hex_digits<I>(chars: &mut std::iter::Peekable<I>, count: usize) -> Result<u32, ()>
-where
-    I: Iterator<Item = char>,
-{
-    let mut value = 0u32;
-    for _ in 0..count {
-        let ch = chars.next().ok_or(())?;
-        value = (value << 4) | ch.to_digit(16).ok_or(())?;
-    }
-    Ok(value)
 }

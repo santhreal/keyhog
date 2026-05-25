@@ -58,7 +58,13 @@ impl CompiledScanner {
         // the scan_generic_assignments pre-filter from ~16 × 240 ms of
         // window-scan to a single AC pass.
         use aho_corasick::AhoCorasick;
-        static KEYWORD_AC: LazyLock<AhoCorasick> = LazyLock::new(|| {
+        // LazyLock<Option<_>> + .ok() — a panic inside a LazyLock initializer
+        // poisons the static for the rest of the process and crashes every
+        // subsequent worker thread that touches it. Convert to a soft
+        // fallback so an aho-corasick version bump that tightens validation
+        // degrades to "no keyword prefilter" (worst case: same precision,
+        // slightly slower scan) instead of killing the whole scanner.
+        static KEYWORD_AC: LazyLock<Option<AhoCorasick>> = LazyLock::new(|| {
             AhoCorasick::builder()
                 .ascii_case_insensitive(true)
                 .build([
@@ -79,8 +85,15 @@ impl CompiledScanner {
                     "master",
                     "license",
                 ])
-                .expect("static keyword set compiles")
+                .ok()
         });
+        let Some(keyword_ac) = KEYWORD_AC.as_ref() else {
+            tracing::warn!(
+                "generic-assignment keyword AC failed to compile; \
+                 skipping keyword prefilter for this scan"
+            );
+            return;
+        };
 
         // ONE chunk-level AC scan instead of N per-line scans.
         // Profile showed scan_generic_assignments at ~500 µs/chunk —
@@ -95,7 +108,7 @@ impl CompiledScanner {
         let chunk_bytes = chunk.data.as_bytes();
         let mut lines_with_keyword: Vec<usize> = Vec::new();
         let mut last_line_idx: Option<usize> = None;
-        for mat in KEYWORD_AC.find_iter(chunk_bytes) {
+        for mat in keyword_ac.find_iter(chunk_bytes) {
             // `partition_point` returns the 1-based line number;
             // subtract 1 for the 0-based code_lines index. Same
             // idiom as `match_line_number`.
