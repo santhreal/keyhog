@@ -403,6 +403,26 @@ fn process_entry(
     }
 
     if ext == "zip" || ext == "apk" || ext == "ipa" || ext == "crx" || ext == "jar" {
+        // SSRF/path-traversal defense: refuse to open archive paths
+        // that resolve through a symlink. The walker's
+        // `follow_symlinks=false` lists the symlink file itself, and
+        // openpack::open_default does NOT honor O_NOFOLLOW — a
+        // symlink named secret.zip → /etc/shadow would otherwise let
+        // an attacker stage an archive that openpack reads from the
+        // (privileged) target. symlink_metadata() does not follow
+        // links; if file_type().is_symlink() we skip the archive
+        // entirely. Kimi sources-audit HIGH finding.
+        if std::fs::symlink_metadata(&path)
+            .map(|m| m.file_type().is_symlink())
+            .unwrap_or(false)
+        {
+            tracing::warn!(
+                archive = %path.display(),
+                "refusing to open archive at a symlink path — \
+                 prevents the link-swap attack class"
+            );
+            return Vec::new();
+        }
         // Per-entry uncompressed-size cap to defeat zip-bomb DoS.
         // openpack's central directory exposes uncompressed_size; skip
         // any entry that exceeds max_size (per-file cap) and the total
