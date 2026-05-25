@@ -5,6 +5,21 @@ use super::*;
 /// `BackendError` so per-shard failures don't poison the whole batch.
 type ShardDispatchResult = std::result::Result<Vec<Vec<u8>>, vyre::BackendError>;
 
+/// Two-phase output of [`CompiledScanner::scan_coalesced_gpu_phase1`].
+///
+/// `Hits` is the headline path: GPU dispatch succeeded, per-chunk hit
+/// triples are ready, and the caller (or
+/// [`CompiledScanner::scan_coalesced_gpu_phase2`]) needs to run the
+/// CPU per-chunk extract to produce `RawMatch` outputs.
+///
+/// `Done` means the dispatch detoured to a degraded backend
+/// (`scan_coalesced_gpu_ac` / `scan_coalesced_non_gpu`) and the final
+/// match list is already computed — no phase 2 work remains.
+pub enum GpuPhase1Output {
+    Hits(Vec<Vec<(u32, u32, u32)>>),
+    Done(Vec<Vec<keyhog_core::RawMatch>>),
+}
+
 impl CompiledScanner {
     /// Dispatch `N` shards of the same program through whichever GPU
     /// backend is active.
@@ -237,6 +252,20 @@ impl CompiledScanner {
         &self,
         chunks: &[keyhog_core::Chunk],
     ) -> Vec<Vec<keyhog_core::RawMatch>> {
+        match self.scan_coalesced_gpu_phase1(chunks) {
+            GpuPhase1Output::Hits(hits) => self.scan_coalesced_gpu_phase2(chunks, hits),
+            GpuPhase1Output::Done(results) => results,
+        }
+    }
+
+    /// GPU phase 1: produce per-chunk hit triples (or return the
+    /// degraded-path matches directly when the GPU stack isn't usable).
+    /// Exposed so the orchestrator can issue this batch's GPU dispatch
+    /// while the previous batch's [`Self::scan_coalesced_gpu_phase2`]
+    /// is still running on another thread — the headline GPU↔CPU
+    /// pipeline overlap (memory says ~120 ms per batch off the 820 ms
+    /// post-process tail on the 5090 + 62 MiB corpus).
+    pub fn scan_coalesced_gpu_phase1(&self, chunks: &[keyhog_core::Chunk]) -> GpuPhase1Output {
         // Per-call kernel select. `KEYHOG_GPU_KERNEL=ac` swaps the
         // O(N×L) literal-set program for the O(L_max) AC kernel that
         // shares the same DFA. When the active backend is CUDA, the
@@ -255,17 +284,17 @@ impl CompiledScanner {
             .unwrap_or(false);
         let kernel_env_ac = matches!(std::env::var("KEYHOG_GPU_KERNEL").as_deref(), Ok("ac"));
         if kernel_env_ac || backend_is_cuda {
-            return self.scan_coalesced_gpu_ac(chunks);
+            return GpuPhase1Output::Done(self.scan_coalesced_gpu_ac(chunks));
         }
 
         // Auto-degrade to the next-best backend when the GPU stack is not
         // ready: no compiled matcher (no adapter at probe time), the cached
         // device went away, or the persistent backend is missing.
         let Some(matcher) = self.gpu_matcher() else {
-            return self.scan_coalesced_non_gpu(chunks);
+            return GpuPhase1Output::Done(self.scan_coalesced_non_gpu(chunks));
         };
         if self.gpu_backend.is_none() {
-            return self.scan_coalesced_non_gpu(chunks);
+            return GpuPhase1Output::Done(self.scan_coalesced_non_gpu(chunks));
         }
 
         let (entries, mut buffer) = coalesce_chunks(chunks);
@@ -483,7 +512,7 @@ impl CompiledScanner {
                             shards = sub_end - sub_start,
                             "GPU batched dispatch failed, falling back to CPU: {e}"
                         );
-                        return self.scan_coalesced_non_gpu(chunks);
+                        return GpuPhase1Output::Done(self.scan_coalesced_non_gpu(chunks));
                     }
                 };
 
@@ -496,7 +525,7 @@ impl CompiledScanner {
                             shard_index = i,
                             "GPU shard within batch failed, falling back to CPU: {e}"
                         );
-                        return self.scan_coalesced_non_gpu(chunks);
+                        return GpuPhase1Output::Done(self.scan_coalesced_non_gpu(chunks));
                     }
                 };
                 if outputs.len() < 2 {
@@ -505,7 +534,7 @@ impl CompiledScanner {
                         outputs = outputs.len(),
                         "GPU shard output buffer count too small; falling back to CPU"
                     );
-                    return self.scan_coalesced_non_gpu(chunks);
+                    return GpuPhase1Output::Done(self.scan_coalesced_non_gpu(chunks));
                 }
                 let count_bytes = &outputs[0];
                 let matches_bytes = &outputs[1];
@@ -514,7 +543,7 @@ impl CompiledScanner {
                         shard_index = i,
                         "GPU shard count buffer truncated; falling back to CPU"
                     );
-                    return self.scan_coalesced_non_gpu(chunks);
+                    return GpuPhase1Output::Done(self.scan_coalesced_non_gpu(chunks));
                 }
                 let count = u32::from_le_bytes([
                     count_bytes[0],
@@ -530,7 +559,7 @@ impl CompiledScanner {
                         shard_index = i,
                         "GPU shard exceeded its cap — truncation possible; falling back to CPU"
                     );
-                    return self.scan_coalesced_non_gpu(chunks);
+                    return GpuPhase1Output::Done(self.scan_coalesced_non_gpu(chunks));
                 }
                 let shard_matches = vyre_libs::scan::dispatch_io::unpack_match_triples(
                     matches_bytes,
@@ -638,6 +667,27 @@ impl CompiledScanner {
             }
         }
 
+        GpuPhase1Output::Hits(per_chunk_hits)
+    }
+
+    /// CPU post-process pass that runs after the GPU literal-set
+    /// dispatch ([`Self::scan_coalesced_gpu`]) has produced
+    /// per-chunk hits. Split out so the orchestrator can pipeline:
+    /// while one batch's CPU phase2 is running, the next batch's
+    /// `scan_coalesced_gpu_phase1` GPU dispatch can launch in parallel
+    /// on a different OS thread.
+    ///
+    /// Inputs/outputs are deliberately Send + 'static-amenable:
+    /// `chunks` is a borrow, `per_chunk_hits` is a `Vec<Vec<…>>` that
+    /// can be moved into a spawned thread, and the returned
+    /// `Vec<Vec<RawMatch>>` is owned. Combined with `Arc<Vec<Chunk>>`
+    /// on the orchestrator side this composes into a clean two-stage
+    /// pipeline.
+    pub fn scan_coalesced_gpu_phase2(
+        &self,
+        chunks: &[keyhog_core::Chunk],
+        per_chunk_hits: Vec<Vec<(u32, u32, u32)>>,
+    ) -> Vec<Vec<keyhog_core::RawMatch>> {
         use rayon::prelude::*;
         let mut results: Vec<Vec<keyhog_core::RawMatch>> = chunks
             .par_iter()

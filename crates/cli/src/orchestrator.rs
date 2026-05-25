@@ -585,6 +585,44 @@ impl ScanOrchestrator {
             } else {
                 None
             };
+
+            // Cross-batch GPU↔CPU pipeline state. When the GPU literal-set
+            // backend is in use, batch N's phase 1 (GPU dispatch) returns
+            // per-chunk hits; phase 2 (CPU per-chunk extract via rayon)
+            // is the heavy 600–700 ms tail. Holding the previous batch's
+            // phase 2 in a JoinHandle lets the next batch's phase 1
+            // launch immediately — the GPU dispatch of batch N+1 (~120 ms
+            // on a 5090, 62 MiB corpus) overlaps with phase 2 of batch N,
+            // shaving the per-batch wall by the GPU-dispatch time.
+            // See [[keyhog-gpu-perf-bottleneck-2026-05-22]].
+            let mut prev_phase2: Option<(std::thread::JoinHandle<Vec<Vec<RawMatch>>>, usize)> =
+                None;
+
+            let drain_prev =
+                |prev: Option<(std::thread::JoinHandle<Vec<Vec<RawMatch>>>, usize)>,
+                 findings: &mut Vec<RawMatch>,
+                 stderr_writer: &mut Option<std::io::LineWriter<std::io::Stderr>>| {
+                    if let Some((handle, scanned_count)) = prev {
+                        // join() panics propagate the worker panic into this
+                        // thread the same way the sync path did pre-pipeline.
+                        let per_chunk = handle.join().unwrap_or_else(|e| {
+                            std::panic::resume_unwind(e);
+                        });
+                        crate::SCANNED_CHUNKS.fetch_add(scanned_count, Ordering::Relaxed);
+                        let mut batch_findings = 0usize;
+                        for chunk_findings in per_chunk {
+                            batch_findings += chunk_findings.len();
+                            if let Some(w) = stderr_writer.as_mut() {
+                                for m in &chunk_findings {
+                                    stream_finding_preview(w, m);
+                                }
+                            }
+                            findings.extend(chunk_findings);
+                        }
+                        crate::FINDINGS_COUNT.fetch_add(batch_findings, Ordering::Relaxed);
+                    }
+                };
+
             for batch in rx {
                 if batch.is_empty() {
                     continue;
@@ -611,36 +649,102 @@ impl ScanOrchestrator {
                 // regex-NFA (MegaScan) closes that gap on the full
                 // corpus, this branch can broaden.
                 let explicit_backend = explicit_backend_override();
-                let per_chunk = match explicit_backend {
-                    Some(
-                        backend @ (keyhog_scanner::hw_probe::ScanBackend::Gpu
-                        | keyhog_scanner::hw_probe::ScanBackend::MegaScan),
-                    ) => {
+                match explicit_backend {
+                    Some(keyhog_scanner::hw_probe::ScanBackend::Gpu) => {
+                        let batch_bytes: u64 = batch.iter().map(|c| c.data.len() as u64).sum();
+                        tracing::debug!(
+                            target: "keyhog::routing",
+                            backend = "gpu",
+                            batch_bytes,
+                            chunks = scanned_count,
+                            "batch dispatched (explicit gpu, pipelined)",
+                        );
+                        // Phase 1: sync — GPU dispatch on this thread.
+                        // Done(results) = degraded path (no GPU, CUDA fallback, etc.)
+                        // already produced the final RawMatches.
+                        // Hits(per_chunk_hits) = real GPU success.
+                        match scanner.scan_coalesced_gpu_phase1(&batch) {
+                            keyhog_scanner::GpuPhase1Output::Done(per_chunk) => {
+                                // Drain prior phase 2 first to preserve
+                                // batch-order finding emission.
+                                drain_prev(prev_phase2.take(), &mut findings, &mut stderr_writer);
+                                crate::SCANNED_CHUNKS.fetch_add(scanned_count, Ordering::Relaxed);
+                                let mut batch_findings = 0usize;
+                                for chunk_findings in per_chunk {
+                                    batch_findings += chunk_findings.len();
+                                    if let Some(w) = stderr_writer.as_mut() {
+                                        for m in &chunk_findings {
+                                            stream_finding_preview(w, m);
+                                        }
+                                    }
+                                    findings.extend(chunk_findings);
+                                }
+                                crate::FINDINGS_COUNT.fetch_add(batch_findings, Ordering::Relaxed);
+                            }
+                            keyhog_scanner::GpuPhase1Output::Hits(per_chunk_hits) => {
+                                // Drain the PREVIOUS phase 2 before
+                                // launching this batch's so findings emit
+                                // in batch order (matters for the
+                                // `--stream` preview).
+                                drain_prev(prev_phase2.take(), &mut findings, &mut stderr_writer);
+                                let scanner_clone = Arc::clone(&scanner);
+                                let batch_owned = batch;
+                                let handle = std::thread::spawn(move || {
+                                    scanner_clone
+                                        .scan_coalesced_gpu_phase2(&batch_owned, per_chunk_hits)
+                                });
+                                prev_phase2 = Some((handle, scanned_count));
+                            }
+                        }
+                    }
+                    Some(backend @ keyhog_scanner::hw_probe::ScanBackend::MegaScan) => {
+                        // MegaScan has its own dispatch+extract flow that
+                        // isn't yet phase-split — keep the sync path here.
+                        // Drain any prior phase 2 first to preserve order.
+                        drain_prev(prev_phase2.take(), &mut findings, &mut stderr_writer);
                         let batch_bytes: u64 = batch.iter().map(|c| c.data.len() as u64).sum();
                         tracing::debug!(
                             target: "keyhog::routing",
                             backend = backend.label(),
                             batch_bytes,
                             chunks = scanned_count,
-                            "batch dispatched (explicit gpu override)",
+                            "batch dispatched (explicit megascan, sync)",
                         );
-                        scanner.scan_chunks_with_backend(&batch, backend)
-                    }
-                    _ => scanner.scan_coalesced(&batch),
-                };
-                crate::SCANNED_CHUNKS.fetch_add(scanned_count, Ordering::Relaxed);
-                let mut batch_findings = 0usize;
-                for chunk_findings in per_chunk {
-                    batch_findings += chunk_findings.len();
-                    if let Some(w) = stderr_writer.as_mut() {
-                        for m in &chunk_findings {
-                            stream_finding_preview(w, m);
+                        let per_chunk = scanner.scan_chunks_with_backend(&batch, backend);
+                        crate::SCANNED_CHUNKS.fetch_add(scanned_count, Ordering::Relaxed);
+                        let mut batch_findings = 0usize;
+                        for chunk_findings in per_chunk {
+                            batch_findings += chunk_findings.len();
+                            if let Some(w) = stderr_writer.as_mut() {
+                                for m in &chunk_findings {
+                                    stream_finding_preview(w, m);
+                                }
+                            }
+                            findings.extend(chunk_findings);
                         }
+                        crate::FINDINGS_COUNT.fetch_add(batch_findings, Ordering::Relaxed);
                     }
-                    findings.extend(chunk_findings);
+                    _ => {
+                        // Default (Hyperscan/SimdCpu) path — sync.
+                        drain_prev(prev_phase2.take(), &mut findings, &mut stderr_writer);
+                        let per_chunk = scanner.scan_coalesced(&batch);
+                        crate::SCANNED_CHUNKS.fetch_add(scanned_count, Ordering::Relaxed);
+                        let mut batch_findings = 0usize;
+                        for chunk_findings in per_chunk {
+                            batch_findings += chunk_findings.len();
+                            if let Some(w) = stderr_writer.as_mut() {
+                                for m in &chunk_findings {
+                                    stream_finding_preview(w, m);
+                                }
+                            }
+                            findings.extend(chunk_findings);
+                        }
+                        crate::FINDINGS_COUNT.fetch_add(batch_findings, Ordering::Relaxed);
+                    }
                 }
-                crate::FINDINGS_COUNT.fetch_add(batch_findings, Ordering::Relaxed);
             }
+            // Drain the last in-flight phase 2 before returning.
+            drain_prev(prev_phase2.take(), &mut findings, &mut stderr_writer);
             findings
         });
 

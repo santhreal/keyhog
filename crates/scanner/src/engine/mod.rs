@@ -13,6 +13,7 @@ mod scan_gpu;
 pub mod segment_attribution;
 mod windowed;
 
+pub use scan_gpu::GpuPhase1Output;
 pub use windowed::{
     floor_char_boundary, line_number_for_offset, next_window_offset, record_window_match,
     window_chunk, window_end_offset,
