@@ -89,7 +89,6 @@ pub fn gate_weight() -> &'static [f32] {
 }
 
 /// Return the gate-layer bias vector.
-/// Return the gate-layer bias vector.
 ///
 /// # Examples
 ///
@@ -106,7 +105,6 @@ fn expert_base_offset(expert_idx: usize) -> usize {
     EXPERTS_OFF + expert_idx * EXPERT_PARAM_COUNT
 }
 
-/// Return the first expert dense-layer weights for `expert_idx`.
 /// Return the first dense-layer weights for `expert_idx`.
 ///
 /// # Examples
@@ -120,7 +118,6 @@ pub fn expert_fc1_weight(expert_idx: usize) -> &'static [f32] {
     load_f32_slice(base, EXPERT_FC1_W_COUNT)
 }
 
-/// Return the first expert dense-layer bias vector for `expert_idx`.
 /// Return the first dense-layer bias vector for `expert_idx`.
 ///
 /// # Examples
@@ -134,7 +131,6 @@ pub fn expert_fc1_bias(expert_idx: usize) -> &'static [f32] {
     load_f32_slice(base, EXPERT_FC1_B_COUNT)
 }
 
-/// Return the second expert dense-layer weights for `expert_idx`.
 /// Return the second dense-layer weights for `expert_idx`.
 ///
 /// # Examples
@@ -148,7 +144,6 @@ pub fn expert_fc2_weight(expert_idx: usize) -> &'static [f32] {
     load_f32_slice(base, EXPERT_FC2_W_COUNT)
 }
 
-/// Return the second expert dense-layer bias vector for `expert_idx`.
 /// Return the second dense-layer bias vector for `expert_idx`.
 ///
 /// # Examples
@@ -166,7 +161,6 @@ pub fn expert_fc2_bias(expert_idx: usize) -> &'static [f32] {
 }
 
 /// Return the output-layer weights for `expert_idx`.
-/// Return the output-layer weights for `expert_idx`.
 ///
 /// # Examples
 ///
@@ -183,7 +177,6 @@ pub fn expert_fc3_weight(expert_idx: usize) -> &'static [f32] {
     load_f32_slice(base, EXPERT_FC3_W_COUNT)
 }
 
-/// Return the output-layer bias for `expert_idx`.
 /// Return the output-layer bias for `expert_idx`.
 ///
 /// # Examples

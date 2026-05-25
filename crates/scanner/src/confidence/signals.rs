@@ -4,7 +4,9 @@ pub struct ConfidenceSignals {
     pub has_literal_prefix: bool,
     /// Pattern uses a capture group with context anchoring.
     pub has_context_anchor: bool,
-    /// Shannon entropy of the matched credential.
+    /// Shannon entropy of the matched credential in **bits per byte** (range
+    /// `0.0..=8.0`) — NOT normalized to `0..1`. Use
+    /// `crate::entropy::normalized_entropy` for the rescaled value.
     pub entropy: f64,
     /// A secret-related keyword appears nearby.
     pub keyword_nearby: bool,
