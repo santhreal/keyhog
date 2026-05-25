@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>keyhog — the fastest, most accurate secret scanner</title>
+  <meta name="description" content="891 detectors, hardware-routed (GPU / SIMD / CPU), zero-config. 96% recall, near-zero false positives. Built in Rust.">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<header class="site">
+  <a href="index.html" class="brand">
+    <span class="mark">k</span>
+    keyhog
+    <span class="v">v0.5.16</span>
+  </a>
+  <nav class="top">
+    <a href="detectors.html">Detectors</a>
+    <a href="ci.html">CI</a>
+    <a href="api.html">API</a>
+    <a href="https://github.com/santhsecurity/keyhog" class="gh">GitHub →</a>
+  </nav>
+</header>
+
+<div class="layout">
+<aside class="sidebar">
+  <h4>Getting started</h4>
+  <ul>
+    <li><a href="index.html">Introduction</a></li>
+    <li><a href="install.html">Installation</a></li>
+    <li><a href="quickstart.html">Quickstart</a></li>
+  </ul>
+  <h4>Scanning</h4>
+  <ul>
+    <li><a href="scan.html">Scan command</a></li>
+    <li><a href="output.html">Output formats</a></li>
+    <li><a href="baseline.html">Baselines</a></li>
+    <li><a href="ignore.html">Allowlists</a></li>
+  </ul>
+  <h4>Integrations</h4>
+  <ul>
+    <li><a href="ci.html">CI / SARIF</a></li>
+    <li><a href="hooks.html">Pre-commit hooks</a></li>
+    <li><a href="daemon.html">Daemon mode</a></li>
+    <li><a href="system.html">System triage</a></li>
+  </ul>
+  <h4>Reference</h4>
+  <ul>
+    <li><a href="detectors.html">Detector catalog</a></li>
+    <li><a href="config.html">Configuration</a></li>
+    <li><a href="api.html">Library API</a></li>
+  </ul>
+  <h4>Internals</h4>
+  <ul>
+    <li><a href="architecture.html">Architecture</a></li>
+    <li><a href="performance.html">Performance</a></li>
+    <li><a href="lockdown.html">Lockdown mode</a></li>
+    <li><a href="faq.html">FAQ</a></li>
+  </ul>
+</aside>
+
+<main class="content">
+<article data-toc="off">
+
+<section class="hero">
+  <h1>Find leaked credentials <span class="mark">before</span> attackers do.</h1>
+  <p class="lede">
+    keyhog scans source trees, git history, Docker images, and S3 buckets for
+    leaked secrets. 891 detectors. Hardware-routed. Zero configuration.
+  </p>
+  <div class="ctas">
+    <a href="install.html" class="btn">Install &nbsp;→</a>
+    <a href="quickstart.html" class="btn ghost">Quickstart</a>
+    <a href="https://github.com/santhsecurity/keyhog" class="btn ghost">GitHub</a>
+  </div>
+</section>
+
+<pre data-nocopy="true"><code><span class="prompt">$</span> <span class="k">cargo</span> install keyhog
+<span class="prompt">$</span> <span class="k">keyhog</span> scan .
+<span class="a">keyhog v0.5.16 | 16 cores | SIMD: AVX-512 | Hyperscan | 891 detectors</span>
+<span class="a">scanning 1,247 files…</span>
+
+<span class="c">findings/main.tf:14</span>
+  <span class="k">aws-access-key</span>  <span class="s">AKIAIOSFODNN7EXAMPLE</span>  <span class="a">[high · 0.96]</span>
+
+<span class="c">.env.production:3</span>
+  <span class="k">stripe-secret-key</span>  <span class="s">sk_live_4eC39HqLyjW…</span>  <span class="a">[critical · 0.99]</span>
+
+<span class="a">2 findings · 0.4s · 1247 files scanned</span></code></pre>
+
+<div class="stats">
+  <div class="stat">
+    <div class="num">891</div>
+    <div class="lbl">Detectors</div>
+  </div>
+  <div class="stat">
+    <div class="num"><em>96</em>%</div>
+    <div class="lbl">Recall</div>
+  </div>
+  <div class="stat">
+    <div class="num">500 <small style="font-size:14px;color:var(--fg-muted);">MB/s</small></div>
+    <div class="lbl">Throughput</div>
+  </div>
+  <div class="stat">
+    <div class="num">0</div>
+    <div class="lbl">Config files</div>
+  </div>
+</div>
+
+<h2>Why keyhog</h2>
+
+<div class="grid two">
+  <a href="performance.html" class="card">
+    <h3>Hardware-routed</h3>
+    <p>Auto-detects your hardware on startup and picks the fastest backend: GPU
+    zero-copy (NVMe&nbsp;→&nbsp;GPU&nbsp;DMA), SIMD regex (Hyperscan),
+    or AC&nbsp;+&nbsp;regex on CPU. No flags.</p>
+  </a>
+  <a href="detectors.html" class="card">
+    <h3>891 service detectors</h3>
+    <p>Service-specific patterns with checksum validation (GitHub&nbsp;CRC32,
+    npm, Slack, PyPI), entropy gating, multiline reassembly, decode-through
+    scanning for base64, JWT, k8s YAML.</p>
+  </a>
+  <a href="ci.html" class="card">
+    <h3>SARIF + GitHub code scanning</h3>
+    <p>One-line GitHub&nbsp;Actions integration uploads SARIF to GitHub
+    Advanced Security automatically. CWE-798 + OWASP&nbsp;A07:2021 taxa
+    on every finding.</p>
+  </a>
+  <a href="lockdown.html" class="card">
+    <h3>Hardened by default</h3>
+    <p>Disables core dumps and ptrace on every startup. <code>--lockdown</code>
+    adds mlockall, refuses to start with a stale on-disk cache, and blocks
+    outbound verification.</p>
+  </a>
+  <a href="daemon.html" class="card">
+    <h3>Daemon mode — 105× faster re-scan</h3>
+    <p>Amortize the ~3&nbsp;s compile across many invocations.
+    <code>keyhog scan --stdin --daemon</code> returns in ~7&nbsp;ms.
+    Perfect for pre-commit hooks and IDE save handlers.</p>
+  </a>
+  <a href="architecture.html" class="card">
+    <h3>Built for scale</h3>
+    <p>Two-phase coalesced scan: phase&nbsp;1 Hyperscan NFA across all files
+    in parallel (95%+ pay zero cost), phase&nbsp;2 extraction on hits only.
+    Scales linearly to multi-GB monorepos.</p>
+  </a>
+</div>
+
+<h2>How it compares</h2>
+
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr><th></th><th>keyhog</th><th>Gitleaks</th><th>BetterLeaks</th><th>TruffleHog</th><th>Titus</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><strong>Recall</strong> <small>(25-secret benchmark)</small></td>
+        <td><strong>96 %</strong></td><td>72 %</td><td>72 %</td><td>28 %</td><td>32 %</td></tr>
+    <tr><td><strong>False positives</strong> <small>(Django, no real secrets)</small></td>
+        <td><strong>1</strong></td><td>0</td><td>0</td><td>0</td><td>17 481</td></tr>
+    <tr><td><strong>Speed</strong> <small>(86&nbsp;MB Django tree)</small></td>
+        <td><strong>0.5 s</strong></td><td>0.3 s</td><td>0.2 s</td><td>1.4 s</td><td>2.3 s</td></tr>
+    <tr><td><strong>Speed</strong> <small>(large monorepo)</small></td>
+        <td><strong>2.5 s</strong></td><td>—</td><td>—</td><td>—</td><td>252 s</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p class="muted" style="margin-top: -8px; font-size: 13px;">
+keyhog finds <strong>33 % more real secrets</strong> than the next-best tool
+while maintaining near-zero false positives.
+</p>
+
+<h2>Get started</h2>
+
+<div class="grid three">
+  <a href="install.html" class="card">
+    <h3>1. Install</h3>
+    <p><code>cargo install keyhog</code> — works on Linux, macOS (Intel + Apple
+    Silicon), and Windows. No config.</p>
+  </a>
+  <a href="quickstart.html" class="card">
+    <h3>2. Scan</h3>
+    <p><code>keyhog scan .</code> — full directory in seconds. Filter by
+    severity, format, or git scope.</p>
+  </a>
+  <a href="ci.html" class="card">
+    <h3>3. Ship to CI</h3>
+    <p>One-line GitHub Actions or a pre-commit hook. SARIF lands in
+    GitHub code scanning automatically.</p>
+  </a>
+</div>
+
+</article>
+</main>
+</div>
+
+<footer class="site">
+  <div class="left">
+    <strong>keyhog</strong> · secret scanner by
+    <a href="https://github.com/santhsecurity">santhsecurity</a>. MIT licensed.
+  </div>
+  <div class="right">
+    <a href="https://github.com/santhsecurity/keyhog">GitHub</a>
+    <a href="https://crates.io/crates/keyhog">crates.io</a>
+    <a href="https://github.com/santhsecurity/keyhog/issues">Issues</a>
+    <a href="https://github.com/santhsecurity/keyhog/blob/main/CHANGELOG.md">Changelog</a>
+  </div>
+</footer>
+
+<script src="js/nav.js" defer></script>
+</body>
+</html>

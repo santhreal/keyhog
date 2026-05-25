@@ -1,0 +1,112 @@
+title = "Allowlists (.keyhogignore)"
+description = "Suppress findings by path, hash, or detector. Gitignore-style syntax plus governance metadata."
+---
+<h1>Allowlists</h1>
+<p class="lede">
+  Drop a <code>.keyhogignore</code> at your repo root to suppress individually
+  known findings. Two syntaxes coexist — pick whichever is shorter for the
+  case at hand.
+</p>
+
+<h2>Gitignore-style shorthand</h2>
+
+<p>The most common case: drop in a copied-over <code>.gitignore</code> and
+have it work. Bare globs are interpreted as path matches; bare 64-char hex
+hashes are interpreted as sha256 matches against the offending credential.</p>
+
+<pre><code><span class="c"># comments start with #</span>
+*.log
+node_modules/
+vendor/**/*.json
+.cache/
+
+<span class="c"># bare 64-char hex → sha256 of the credential</span>
+9d6060e21ef8d5daec9cfe4a44b1b1bc9792246bfad28210edaaa1782a8a676a</code></pre>
+
+<p>Hashes are stable across keyhog versions: rotating to a new key produces
+a new hash, so allowlisting a rotated credential won't accidentally bless
+the next one. This is the same hash that appears in the SARIF
+<code>partialFingerprints</code> and the JSON <code>sha256</code> field.</p>
+
+<h2>Explicit prefixes (governance)</h2>
+
+<p>For entries you want to track — who allowlisted it, when it expires, why
+it's safe — use the explicit-prefix form. The metadata is structured and
+machine-readable.</p>
+
+<pre><code>hash:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08 \
+  ; reason="rotated 2026-04-25, kept for git-blame trail" \
+  ; expires=2026-07-01 \
+  ; approved_by="security@acme.example"
+
+detector:demo-token \
+  ; reason="fixture detector — only used in docs/" \
+  ; approved_by="docs-team"
+
+path:**/fixtures/*.env \
+  ; reason="snapshot test fixtures, all rotated" \
+  ; expires=2026-12-31</code></pre>
+
+<h2>Match rules</h2>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Form</th><th>Matches when</th></tr></thead>
+  <tbody>
+    <tr><td><code>*.log</code></td><td>Finding's path matches the glob (gitignore semantics — <code>**</code> = any depth)</td></tr>
+    <tr><td><code>node_modules/</code></td><td>Finding's path is under the directory</td></tr>
+    <tr><td><code>&lt;64-hex&gt;</code></td><td>sha256(credential) equals the bare hash</td></tr>
+    <tr><td><code>hash:&lt;hex&gt;</code></td><td>Same, explicit form (supports metadata)</td></tr>
+    <tr><td><code>path:GLOB</code></td><td>Same as bare glob, explicit form (supports metadata)</td></tr>
+    <tr><td><code>detector:ID</code></td><td>Detector id equals ID (suppress an entire rule)</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2>Expiration</h2>
+
+<p>Entries with <code>expires</code> in the past are silently dropped on load
+with a WARN line. This is the mechanism for "this is allowlisted for now,
+but force me to revisit it by Q3." If the allowlist auto-expires and the
+finding comes back, you can either re-allowlist with a new expiry or fix
+the underlying leak.</p>
+
+<pre><code><span class="prompt">$</span> keyhog scan .
+<span class="a">WARN: .keyhogignore:14: entry expired on 2026-04-01 — dropping</span>
+<span class="a">  hash:9d6060e2…782a8a676a  ; reason="…"  ; expires=2026-04-01</span></code></pre>
+
+<h2>Approval audit</h2>
+
+<pre><code><span class="prompt">$</span> keyhog ignore audit
+<span class="a">.keyhogignore   28 entries  ·  5 expire within 30 days  ·  0 expired</span>
+<span class="a">  by approver:</span>
+<span class="a">    security@acme.example     12</span>
+<span class="a">    docs-team                  6</span>
+<span class="a">    &lt;unspecified&gt;             10  ← consider requiring approved_by= for all entries</span></code></pre>
+
+<h2>Where files are read from</h2>
+
+<p>keyhog walks up from each scanned file looking for <code>.keyhogignore</code>
+files, the same way git locates <code>.gitignore</code>. Nested files add
+to (don't override) parent files. The repo-root file is the
+highest-precedence override.</p>
+
+<p>Override the file with <code>--keyhogignore PATH</code>. Disable
+allowlists entirely with <code>--no-keyhogignore</code> — useful when
+running a security audit that should ignore the team's own suppressions.</p>
+
+<h2>What does NOT belong here</h2>
+
+<ul>
+  <li><strong>Whole-repo "skip these directories" rules.</strong> Use
+  <code>.gitignore</code> — keyhog respects it by default. Only put paths in
+  <code>.keyhogignore</code> when you specifically want them scanned by
+  every other tool but suppressed in keyhog.</li>
+  <li><strong>"All findings from today's adoption."</strong> Use a
+  <a href="baseline.html">baseline</a>. Baselines track snapshots; the
+  ignore file tracks individually-reviewed exemptions.</li>
+  <li><strong>"All findings in test files."</strong> Use
+  <code>--exclude '**/test/**'</code> at the CLI or add it to
+  <code>.keyhog.toml</code>. The ignore file should be for individually-
+  reviewed exceptions, not bulk filters.</li>
+</ul>
