@@ -67,9 +67,36 @@ fn git_history_source_collects_added_files_commit_by_commit() {
     assert!(chunks
         .iter()
         .any(|chunk| chunk.metadata.path.as_deref() == Some("second.txt")));
-    assert!(chunks.iter().all(|chunk| chunk.metadata.commit.is_some()));
-    assert!(chunks.iter().all(|chunk| chunk.metadata.author.is_some()));
-    assert!(chunks.iter().all(|chunk| chunk.metadata.date.is_some()));
+    // Don't just assert .is_some() — those would still pass if the
+    // walker emitted empty strings or static placeholders. Pin the
+    // ACTUAL git-commit shape: 40-char hex SHA, the test-config
+    // author "Test User <test@example.com>", and a non-empty date
+    // string. Each of these would have caught the
+    // "we silently dropped commit.author from the chunk metadata"
+    // regression class.
+    for chunk in &chunks {
+        let commit = chunk.metadata.commit.as_deref().expect("commit must be set");
+        assert!(
+            commit.len() == 40 && commit.chars().all(|c| c.is_ascii_hexdigit()),
+            "commit must be 40-char hex SHA; got {commit:?}"
+        );
+
+        let author = chunk.metadata.author.as_deref().expect("author must be set");
+        assert!(
+            author.contains("test@example.com"),
+            "author must include the configured test email; got {author:?}"
+        );
+        assert!(
+            author.contains("Test User"),
+            "author must include the configured test name; got {author:?}"
+        );
+
+        let date = chunk.metadata.date.as_deref().expect("date must be set");
+        assert!(
+            date.len() >= 10,
+            "date must be a non-empty timestamp (≥10 chars to cover YYYY-MM-DD); got {date:?}"
+        );
+    }
 }
 
 #[cfg(feature = "git")]
