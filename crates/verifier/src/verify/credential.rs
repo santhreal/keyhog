@@ -30,6 +30,7 @@ pub(crate) async fn verify_with_retry(
     timeout: Duration,
     allow_private_ips: bool,
     allow_http: bool,
+    proxy_in_use: bool,
     oob_session: Option<&Arc<OobSession>>,
 ) -> (VerificationResult, HashMap<String, String>) {
     retry_loop(MAX_VERIFY_ATTEMPTS, RETRY_DELAY_MS, |_| {
@@ -41,6 +42,7 @@ pub(crate) async fn verify_with_retry(
             timeout,
             allow_private_ips,
             allow_http,
+            proxy_in_use,
             oob_session,
         )
     })
@@ -95,6 +97,7 @@ pub(crate) async fn verify_credential(
     timeout: Duration,
     allow_private_ips: bool,
     allow_http: bool,
+    proxy_in_use: bool,
     oob_session: Option<&Arc<OobSession>>,
 ) -> VerificationAttempt {
     if !spec.steps.is_empty() {
@@ -113,6 +116,7 @@ pub(crate) async fn verify_credential(
             timeout,
             allow_private_ips,
             allow_http,
+            proxy_in_use,
         )
         .await;
     }
@@ -194,8 +198,15 @@ pub(crate) async fn verify_credential(
             };
         }
         let resolved_target =
-            match resolved_client_for_url(client, &raw_url, timeout, allow_private_ips, allow_http)
-                .await
+            match resolved_client_for_url(
+                client,
+                &raw_url,
+                timeout,
+                allow_private_ips,
+                allow_http,
+                proxy_in_use,
+            )
+            .await
             {
                 Ok(resolved_target) => resolved_target,
                 Err(result) => {

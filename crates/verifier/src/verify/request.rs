@@ -34,6 +34,7 @@ pub(crate) async fn resolved_client_for_url(
     timeout: Duration,
     allow_private_ips: bool,
     allow_http: bool,
+    proxy_in_use: bool,
 ) -> std::result::Result<ResolvedTarget, VerificationResult> {
     let url = match reqwest::Url::parse(raw_url) {
         Ok(url) => url,
@@ -46,13 +47,40 @@ pub(crate) async fn resolved_client_for_url(
         return Err(VerificationResult::Error(PRIVATE_URL_ERROR.into()));
     }
 
-    // Resolve the host once and PIN that resolution into the per-request
-    // client via `resolve_to_addrs`. This is the DNS-rebinding fix
-    // (kimi-wave1 audit finding 4.2). Previously we only validated the
-    // first lookup; reqwest then re-resolved at connect time, allowing an
-    // attacker DNS server to return 1.1.1.1 the first time and 127.0.0.1
-    // the second. Pinning means the TCP connect uses the IP we already
-    // accepted — the second lookup never happens.
+    // Enforce HTTPS unconditionally in production. Plaintext loopback secret
+    // transmission was a known leak vector — see audit release-2026-04-26.
+    // Tests that need HTTP set `danger_allow_http=true` AND
+    // `danger_allow_private_ips=true` so production paths can never opt
+    // into either accidentally.
+    if !allow_http && url.scheme() != "https" {
+        return Err(VerificationResult::Error(HTTPS_ONLY_ERROR.into()));
+    }
+
+    // When a proxy is in use, DNS resolution is the proxy's job (the
+    // verifier sends an absolute-form HTTP request or HTTP CONNECT and
+    // the proxy resolves the target hostname). Pre-resolving on the
+    // verifier side and pinning via `.resolve_to_addrs` would build a
+    // per-request client that DROPS the proxy + insecure_tls config
+    // baked into `base_client` — exactly the macro-wiring bug we'"'"'re
+    // closing. Skip the pinning entirely; `base_client` already carries
+    // the proxy. The DNS-rebinding mitigation that pinning provides is
+    // moot through a proxy (the proxy resolves once; reqwest doesn'"'"'t
+    // re-resolve).
+    if proxy_in_use {
+        return Ok(ResolvedTarget {
+            client: base_client.clone(),
+            url,
+        });
+    }
+
+    // Direct connection (no proxy): resolve the host once and PIN that
+    // resolution into the per-request client via `resolve_to_addrs`. The
+    // DNS-rebinding fix (kimi-wave1 audit finding 4.2). Previously we
+    // only validated the first lookup; reqwest then re-resolved at
+    // connect time, allowing an attacker DNS server to return 1.1.1.1
+    // the first time and 127.0.0.1 the second. Pinning means the TCP
+    // connect uses the IP we already accepted — the second lookup never
+    // happens.
     let mut pinned_addrs: Vec<std::net::SocketAddr> = Vec::new();
     let host = url.host_str().unwrap_or_default().to_string();
     let port = url.port_or_known_default().unwrap_or(443);
@@ -83,15 +111,6 @@ pub(crate) async fn resolved_client_for_url(
                 ));
             }
         }
-    }
-
-    // Enforce HTTPS unconditionally in production. Plaintext loopback secret
-    // transmission was a known leak vector — see audit release-2026-04-26.
-    // Tests that need HTTP set `danger_allow_http=true` AND
-    // `danger_allow_private_ips=true` so production paths can never opt
-    // into either accidentally.
-    if !allow_http && url.scheme() != "https" {
-        return Err(VerificationResult::Error(HTTPS_ONLY_ERROR.into()));
     }
 
     // Build a per-request client that pins host→addresses. `.resolve_to_addrs`

@@ -975,6 +975,16 @@ impl ScanOrchestrator {
             VerifyConfig {
                 timeout: Duration::from_secs(self.args.timeout),
                 max_concurrent_per_service: per_service_concurrency,
+                // Macro-wiring: `--proxy` and `--insecure` were previously
+                // wired only into WebSource. Verifier requests + OOB poll
+                // traffic bypassed both, so an operator pointing Burp at
+                // keyhog saw only half their traffic and corp-mandated
+                // MITM CAs went unhonored on verifier calls. Thread them
+                // through here so every outbound HTTP from the verifier
+                // (and the OOB session it clones the client into) honors
+                // the same proxy + TLS policy as the scanner.
+                proxy: self.args.proxy.clone(),
+                insecure_tls: self.args.insecure,
                 ..Default::default()
             },
         )

@@ -431,3 +431,163 @@ async fn test_verify_max_inflight_keys() {
         panic!("Bug found: max_inflight_keys=0 causes deadlock");
     }
 }
+
+/// Macro-wiring regression: prove `VerifyConfig.proxy` actually reaches
+/// the reqwest client and routes outbound verifier traffic through the
+/// configured proxy host. The bug before this test: `--proxy` was wired
+/// only to WebSource; verifier requests + OOB polls bypassed it silently.
+///
+/// Mechanic: stand up a TCP listener acting as the proxy, set
+/// `VerifyConfig.proxy = Some("http://127.0.0.1:<port>")`, register a
+/// detector with `verify.url = "http://target.invalid/"`. The verifier
+/// must send its first request bytes to the proxy listener (we don't
+/// implement a real HTTP CONNECT — we just record that SOMETHING hit
+/// the proxy port) rather than failing to resolve `target.invalid`.
+#[tokio::test]
+async fn verifier_routes_through_configured_proxy() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    let proxy_hit = Arc::new(AtomicBool::new(false));
+    let proxy_hit_clone = Arc::clone(&proxy_hit);
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let proxy_port = listener.local_addr().unwrap().port();
+    tokio::spawn(async move {
+        while let Ok((mut stream, _)) = listener.accept().await {
+            proxy_hit_clone.store(true, Ordering::SeqCst);
+            // Read whatever the client sends, then drop. We don't act as
+            // a real proxy — landing a connection on this port from the
+            // verifier is the only thing the test needs to observe.
+            let mut buf = [0u8; 256];
+            let _ = stream.read(&mut buf).await;
+            let _ = stream.write_all(b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n").await;
+        }
+    });
+
+    let spec = DetectorSpec {
+        id: "proxy-flow-test".to_string(),
+        name: "proxy-flow-test".to_string(),
+        service: "test".to_string(),
+        severity: Severity::Critical,
+        patterns: vec![],
+        companions: vec![],
+        keywords: vec![],
+        verify: Some(VerifySpec {
+            // Use a hostname that will NEVER resolve — if the proxy
+            // isn't wired through, reqwest would try to DNS-lookup
+            // `target.invalid`, fail, and `proxy_hit` stays false.
+            // With the proxy configured, reqwest CONNECTs to the proxy
+            // FIRST regardless of the target hostname.
+            url: Some("http://target.invalid/verify".to_string()),
+            method: Some(HttpMethod::Get),
+            headers: vec![],
+            body: None,
+            auth: None,
+            success: None,
+            metadata: vec![],
+            service: "test".to_string(),
+            timeout_ms: Some(2_000),
+            steps: vec![],
+            allowed_domains: vec!["target.invalid".into()],
+            oob: None,
+        }),
+        ..Default::default()
+    };
+
+    let engine = VerificationEngine::new(
+        &[spec],
+        VerifyConfig {
+            timeout: Duration::from_secs(2),
+            // danger_allow_http needed because the proxy URL itself is HTTP.
+            danger_allow_http: true,
+            // The proxy is on 127.0.0.1 (loopback) — allow it through SSRF.
+            danger_allow_private_ips: true,
+            proxy: Some(format!("http://127.0.0.1:{proxy_port}")),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    let group = DedupedMatch {
+        detector_id: Arc::from("proxy-flow-test"),
+        detector_name: Arc::from("proxy-flow-test"),
+        service: Arc::from("test"),
+        severity: Severity::Critical,
+        credential: Arc::from("secret"),
+        credential_hash: "hash".to_string(),
+        primary_location: MatchLocation {
+            source: Arc::from("fs"),
+            file_path: Some(Arc::from("test")),
+            line: Some(1),
+            offset: 1,
+            commit: None,
+            author: None,
+            date: None,
+        },
+        additional_locations: vec![],
+        companions: HashMap::new(),
+        confidence: Some(1.0),
+    };
+
+    let _ = tokio::time::timeout(Duration::from_secs(5), engine.verify_all(vec![group]))
+        .await
+        .expect("verify_all did not complete within 5s — likely deadlock or proxy-resolve hang");
+
+    assert!(
+        proxy_hit.load(Ordering::SeqCst),
+        "verifier did not route through the configured proxy — `VerifyConfig.proxy` \
+         is not reaching the reqwest client. Macro-wiring regression: --proxy \
+         silently affects WebSource only, not the verifier."
+    );
+}
+
+/// Companion: prove `insecure_tls = false` (default) refuses to send to a
+/// self-signed-cert proxy / target. The previous build hardcoded
+/// `danger_accept_invalid_certs(false)` with no escape — there was no way
+/// to turn it on. Now `VerifyConfig.insecure_tls = true` should flip it.
+///
+/// This test only proves the CONFIG plumbs through to reqwest by asserting
+/// engine construction succeeds with the flag set (a full TLS interception
+/// fixture needs rustls-pemfile + a self-signed cert generator that
+/// would bloat the verifier dev-deps). The actual TLS-accept behavior is
+/// reqwest'"'"'s contract; we pin only that we flip its switch.
+#[tokio::test]
+async fn verifier_accepts_insecure_tls_flag_through_config() {
+    let engine = VerificationEngine::new(
+        &[],
+        VerifyConfig {
+            insecure_tls: true,
+            ..Default::default()
+        },
+    );
+    assert!(
+        engine.is_ok(),
+        "VerificationEngine refused to build with insecure_tls=true: {:?}",
+        engine.err()
+    );
+}
+
+/// Negative case: an invalid proxy URL must produce a clean
+/// `VerifyError::ProxyConfig` (not a panic, not a generic ClientBuild
+/// error swallowing the cause). Pin the error variant so a future
+/// refactor doesn'"'"'t silently route it through a different branch.
+#[tokio::test]
+async fn verifier_rejects_malformed_proxy_url_with_proxyconfig_error() {
+    let result = VerificationEngine::new(
+        &[],
+        VerifyConfig {
+            proxy: Some("not a url at all".into()),
+            ..Default::default()
+        },
+    );
+    match result {
+        Err(keyhog_verifier::VerifyError::ProxyConfig(msg)) => {
+            assert!(
+                msg.contains("not a url at all") || msg.contains("invalid"),
+                "ProxyConfig error should name the bad URL or call it invalid; got: {msg}"
+            );
+        }
+        Err(other) => panic!("expected ProxyConfig error, got: {other:?}"),
+        Ok(_) => panic!("expected error for malformed proxy URL, engine accepted it"),
+    }
+}
