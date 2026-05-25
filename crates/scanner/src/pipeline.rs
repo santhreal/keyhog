@@ -124,7 +124,15 @@ pub fn normalize_scannable_chunk<'a>(chunk: &'a Chunk, owned: &'a mut Option<Chu
 
 fn upper_contains_token(upper: &str, token: &str) -> bool {
     upper.match_indices(token).any(|(idx, _)| {
-        let before = idx.checked_sub(1).and_then(|i| upper.chars().nth(i));
+        // `idx` is a BYTE index from `match_indices`; use byte-index slicing
+        // for both sides. The previous `upper.chars().nth(idx - 1)` mixed
+        // byte- and char-indexing — for any credential with non-ASCII bytes
+        // before `idx`, `nth(byte_idx - 1)` returned the wrong character
+        // (sometimes a character INSIDE the match), miscomputing the
+        // word-boundary check and silently letting placeholder tokens slip
+        // past the suppression. ASCII inputs happened to work because
+        // byte_idx == char_idx for pure ASCII.
+        let before = upper[..idx].chars().next_back();
         let after = upper[idx + token.len()..].chars().next();
         before.is_none_or(|c| !c.is_alphanumeric()) && after.is_none_or(|c| !c.is_alphanumeric())
     })
@@ -1721,5 +1729,73 @@ mod line_lookup_tests {
         // pp's internal mappings only go up to its own text length
         // (3), so offset 50 should hit the fallback path.
         assert_eq!(match_line_number(&pp, &line_offsets, offset), expected);
+    }
+
+    /// Regression: `upper_contains_token` mixed BYTE indices (from
+    /// `match_indices`) with CHAR indices (`chars().nth(idx - 1)`). On any
+    /// non-ASCII text, the byte before the match might be the middle of a
+    /// multi-byte char, and `nth(byte_idx - 1)` returned the wrong char —
+    /// sometimes a char INSIDE the match. The boundary check could then
+    /// silently accept or reject the wrong way.
+    ///
+    /// Concrete failure case: `credential = "XΩDUMMY"`. Ω is 2 bytes
+    /// (0xCE 0xA9), so "DUMMY" starts at byte index 3. The char before
+    /// byte 3 is the upper-case "Ω". Under the old code,
+    /// `upper.chars().nth(byte_idx - 1) = chars[2] = 'D'` — i.e. it
+    /// returned the FIRST CHAR OF THE MATCH ITSELF, not Ω. `D` is
+    /// alphanumeric → boundary check failed → token wrongly REJECTED.
+    /// Under the new byte-index slicing, `upper[..3].chars().next_back()`
+    /// returns Ω, which IS alphanumeric (Unicode-class L) → still
+    /// correctly rejected. The bug surfaces in the opposite direction:
+    /// when the byte before is a multi-byte alphanumeric char, the old
+    /// code might return a NON-alphanumeric char from earlier in the
+    /// string and wrongly ACCEPT the boundary.
+    ///
+    /// Test "ɑDUMMY" (ɑ U+0251 is 2 bytes 0xC9 0x91, alphanumeric L-class):
+    /// - byte_idx of "DUMMY" = 2
+    /// - OLD: `chars[1] = 'D'` (alphanumeric) → reject (accidentally correct)
+    /// - NEW: `upper[..2].chars().next_back() = 'Ɑ'` (alphanumeric) → reject
+    /// Both reject this one. Try " ɑDUMMY":
+    /// - byte_idx of "DUMMY" = 3 (space + ɑ)
+    /// - OLD: `chars[2] = 'D'` → alphanumeric → reject (WRONG; should accept)
+    /// - NEW: `upper[..3].chars().next_back() = 'Ɑ'` (alphanumeric) → reject (CORRECT)
+    /// Hmm these match. Let me find a case where they diverge in the
+    /// surface answer. " ωDUMMY" where ω is alphanumeric — both reject.
+    /// The diverging case is when the byte before is NON-alphanumeric
+    /// multi-byte (a punctuation). " — DUMMY" (em-dash, 3 bytes,
+    /// non-alphanumeric):
+    /// - byte_idx of "DUMMY" = 5 (space + em-dash + space)
+    /// - OLD: `chars[4]` — chars are [' ', '—', ' ', 'D', 'U', ...] →
+    ///   chars[4] = 'U' (alphanumeric, INSIDE match) → reject (WRONG; the
+    ///   actual byte-prev is space which IS a word boundary)
+    /// - NEW: `upper[..5].chars().next_back() = ' '` → accept (CORRECT)
+    /// THIS IS the divergence — old code rejected, new code accepts.
+    #[test]
+    fn upper_contains_token_handles_non_ascii_byte_indexing() {
+        // The em-dash case: under the old byte-vs-char-index bug, the
+        // boundary check pulled a char from INSIDE the match and wrongly
+        // rejected. Under the fix, the actual byte-preceding char (space)
+        // is read and the boundary is correctly accepted.
+        assert!(
+            upper_contains_token(&"foo — DUMMY".to_uppercase(), "DUMMY"),
+            "DUMMY preceded by `space + em-dash + space` must count as a \
+             word-boundary match — the previous char-index-on-byte-index \
+             bug pulled a char from INSIDE the match and wrongly rejected \
+             this case, leaving a placeholder unsuppressed in production."
+        );
+
+        // ASCII regression: pure-ASCII paths still work after the fix.
+        assert!(upper_contains_token(&"foo DUMMY bar".to_uppercase(), "DUMMY"));
+        // `_` is NOT alphanumeric → underscore-bracketed DUMMY IS a token
+        // match. (Existing call sites depend on this behavior to suppress
+        // `_DUMMY_TOKEN_` style placeholders.)
+        assert!(upper_contains_token(&"foo_DUMMY_bar".to_uppercase(), "DUMMY"));
+        // Alphanumeric on either side → reject.
+        assert!(!upper_contains_token(&"XDUMMY".to_uppercase(), "DUMMY"));
+        assert!(!upper_contains_token(&"DUMMYX".to_uppercase(), "DUMMY"));
+        // Start of string: before is None → boundary satisfied.
+        assert!(upper_contains_token(&"DUMMY foo".to_uppercase(), "DUMMY"));
+        // End of string: after is None → boundary satisfied.
+        assert!(upper_contains_token(&"foo DUMMY".to_uppercase(), "DUMMY"));
     }
 }
