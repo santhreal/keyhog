@@ -11,7 +11,7 @@ severity = "critical"
 keywords = ["HEROKU_API_KEY", "heroku_api_key", "Heroku API Key", "herokuApiKey"]
 
 [[detector.patterns]]
-regex = '''(?i)(?:HEROKU_API_KEY|heroku_api_key|herokuApiKey|heroku-api-key)\s*[=:]\s*["']?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})["']?'''
+regex = '''(?i)(?:HEROKU_API_KEY|heroku_api_key|herokuApiKey|heroku-api-key)["']?\s*[=:]\s*["']?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})["']?'''
 description = "Heroku API key in env/yaml/json/kebab/camelCase context, UUID format."
 group = 1
 

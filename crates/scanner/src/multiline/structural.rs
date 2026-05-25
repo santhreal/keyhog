@@ -2,6 +2,7 @@ use super::config::LineMapping;
 use super::preprocessor::extract_prefix;
 use crate::fragment_cache::FragmentCache;
 use crate::shared_regexes::ASSIGN_RE;
+use regex::Regex;
 
 pub(super) fn collect_structural_fragments(
     lines: &[&str],
