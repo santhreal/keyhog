@@ -23,9 +23,51 @@ pub(super) fn has_secret_keyword_fast(data: &[u8]) -> bool {
     // than dropping the match.
     static AC: LazyLock<Option<AhoCorasick>> = LazyLock::new(|| {
         // Distinctive enough to be real secrets AND commonly split across
-        // lines in source code. Avoid short prefixes like AKIA/eyJ that
-        // appear in test fixtures.
-        AhoCorasick::new(["sk-proj-", "sk_live_", "ghp_", "xoxb-", "xoxp-"]).ok()
+        // lines in source code. The previous 5-entry list missed every
+        // GitHub variant after `ghp_` (ghs_, gho_, ghu_, ghr_), every
+        // Stripe live key family except `sk_live_`, every modern OpenAI
+        // org/proj key past `sk-proj-`, plus the high-volume HF/Anthropic/
+        // GCP service-key prefixes that show up split across lines in
+        // copy-pasted .env files. Avoid short prefixes (AKIA, eyJ) that
+        // appear in fixtures.
+        AhoCorasick::new([
+            // OpenAI
+            "sk-proj-",
+            "sk-svcacct-",
+            "sk-admin-",
+            // Stripe
+            "sk_live_",
+            "sk_test_",
+            "rk_live_",
+            "pk_live_",
+            // GitHub (all installation variants)
+            "ghp_",
+            "ghs_",
+            "gho_",
+            "ghu_",
+            "ghr_",
+            "github_pat_",
+            // Slack
+            "xoxb-",
+            "xoxp-",
+            "xoxa-",
+            "xoxr-",
+            "xoxs-",
+            "xapp-",
+            // Anthropic
+            "sk-ant-",
+            // HuggingFace
+            "hf_",
+            // GCP service account email shard (rarely splits, but cheap)
+            ".iam.gserviceaccount.com",
+            // GitLab
+            "glpat-",
+            // npm
+            "npm_",
+            // Heroku UUID-style key family
+            "HRKU-",
+        ])
+        .ok()
     });
     AC.as_ref().is_none_or(|ac| ac.find(data).is_some())
 }

@@ -69,8 +69,12 @@ impl BigramBloom {
             }
             bloom.insert_all(bytes);
             // Extension: terminal byte may be followed by anything in a
-            // real secret. Add `last || any`.
-            let last = *bytes.last().expect("bytes checked to have length >= 2");
+            // real secret. Add `last || any`. The `len() < 2` guard
+            // above proves non-empty; if a future refactor weakens
+            // the guard we'd rather skip the terminal extension for
+            // that literal (slight precision loss in the prefilter)
+            // than panic the scanner mid-scan.
+            let Some(&last) = bytes.last() else { continue };
             for second in 0u8..=255 {
                 bloom.insert(last, second);
             }

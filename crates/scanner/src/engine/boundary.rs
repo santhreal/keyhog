@@ -17,7 +17,7 @@
 
 use keyhog_core::{Chunk, ChunkMetadata, RawMatch};
 
-use super::CompiledScanner;
+use super::{CompiledScanner, floor_char_boundary};
 
 /// How much of each chunk's edge to include in a boundary buffer.
 ///
@@ -168,16 +168,6 @@ fn scan_one_pair(
 
         per_chunk_results[bi].push(m);
     }
-}
-
-/// Floor `index` down to the nearest UTF-8 character boundary in `text`.
-/// Mirrors the unstable std `str::floor_char_boundary`.
-fn floor_char_boundary(text: &str, index: usize) -> usize {
-    let mut i = index.min(text.len());
-    while i > 0 && !text.is_char_boundary(i) {
-        i -= 1;
-    }
-    i
 }
 
 #[cfg(test)]
