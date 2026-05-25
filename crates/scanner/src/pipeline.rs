@@ -420,27 +420,32 @@ fn should_suppress_inner(
     // shouldn't be filtered) — we already returned `false` above
     // when known_prefix_body matched.
     // Split the old "hash digest OR UUID" gate by *which side* is
-    // load-bearing:
+    // load-bearing. Both are gated by `bypass_shape_gates` — the
+    // comment used to say the hash-digest side was always-on, which
+    // contradicted the code (kimi-suppress audit caught the mismatch).
+    // The code is correct: gate both, because ~30 named detectors
+    // (Algolia 32-hex, New Relic 40-hex, Redis Labs 64-hex, AlienVault
+    // OTX, Splunk HEC, Rollbar, etc.) explicitly request pure-hex
+    // credentials in their regexes. Suppressing those would tank recall
+    // for every hex-shaped service-specific secret.
     //
     //   - Hash digest (32/40/48/56/64/72/128-char uniform hex, plus
-    //     `sha256:` / `sha512:` prefixed forms) → ALWAYS on. Real
-    //     secrets at these lengths use base64 (+/=/mixed case), not
-    //     pure hex. Bench v18 proved bypassing this added 3304 FPs
-    //     (sha256-hex 1460 + sha1-hex 1027 + git-commit-sha 817) with
-    //     zero recall gain.
+    //     `sha256:` / `sha512:` prefixed forms): bench v18 showed
+    //     unbounded suppression of bare hex added 3304 FPs
+    //     (sha256-hex 1460 + sha1-hex 1027 + git-commit-sha 817) on
+    //     generic / entropy detectors. Gate keeps generic FPs out
+    //     while letting named hex-anchored detectors fire.
     //
-    //   - UUID v4 (`xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx`) → gated by
-    //     `bypass_shape_gates`. Several real services (Heroku API key,
-    //     Cypress record key, the body of many license-server tokens)
-    //     use UUID v4 as their credential format. A named detector
-    //     with a service-specific anchor (`HEROKU_API_KEY=<uuid>`) is
-    //     positive evidence the UUID is a credential, NOT a docker
-    //     image digest or k8s resource ID. Generic / entropy detectors
-    //     stay gated because for them a bare UUID is always noise.
+    //   - UUID v4 (`xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx`): Heroku
+    //     API key, Cypress record key, the body of many license-server
+    //     tokens use UUID v4. A named detector with a service-specific
+    //     anchor is positive evidence the UUID is a credential, NOT a
+    //     docker image digest or k8s resource ID. Generic / entropy
+    //     detectors stay gated because for them a bare UUID is noise.
     //
-    // Bench v19 confirmed the hash gate side closes the FP regression
-    // without losing recall; the contracts_runner test caught the UUID
-    // over-suppression that prompted the split.
+    // Bench v19 confirmed both gates close the FP regression without
+    // losing recall; the contracts_runner test caught the earlier
+    // UUID over-suppression that prompted the split.
     if !bypass_shape_gates && looks_like_hash_digest(credential) {
         return true;
     }
