@@ -14,6 +14,53 @@ pub fn parse_min_confidence(s: &str) -> Result<f64, String> {
     }
 }
 
+/// `--verify-rate RPS`: must be finite, > 0, and <= 10_000 (a sanity
+/// cap that comfortably covers every real-world API; rejects accidental
+/// `--verify-rate 1e308` typos that would otherwise be silently clamped
+/// to 1 rps deep inside the limiter).
+pub fn parse_verify_rate(s: &str) -> Result<f64, String> {
+    let val: f64 = s
+        .parse()
+        .map_err(|_| format!("'{s}' is not a valid floating point number"))?;
+    if !val.is_finite() {
+        return Err(format!(
+            "--verify-rate must be a finite number, got {val}"
+        ));
+    }
+    if val <= 0.0 {
+        return Err(format!(
+            "--verify-rate must be > 0 rps, got {val} \
+             (use --no-verify to disable verification entirely)"
+        ));
+    }
+    if val > 10_000.0 {
+        return Err(format!(
+            "--verify-rate {val} exceeds the 10_000 rps sanity cap; \
+             no real provider permits that rate from a single IP"
+        ));
+    }
+    Ok(val)
+}
+
+/// `--ml-threshold T`: must be a finite f64 in `[0.0, 1.0]`. NaN
+/// silently becoming "every prediction passes" was the CLI-003 bug.
+pub fn parse_ml_threshold(s: &str) -> Result<f64, String> {
+    let val: f64 = s
+        .parse()
+        .map_err(|_| format!("'{s}' is not a valid floating point number"))?;
+    if !val.is_finite() {
+        return Err(format!(
+            "--ml-threshold must be a finite number (no NaN/Inf), got {val}"
+        ));
+    }
+    if !(0.0..=1.0).contains(&val) {
+        return Err(format!(
+            "--ml-threshold must be between 0.0 and 1.0, got {val}"
+        ));
+    }
+    Ok(val)
+}
+
 pub fn parse_decode_depth(s: &str) -> Result<usize, String> {
     let val: usize = s
         .parse()
@@ -117,5 +164,77 @@ pub fn parse_byte_size(s: &str) -> Result<usize, String> {
             ));
         }
         Ok(bytes_f as usize)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn verify_rate_accepts_typical_values() {
+        assert_eq!(parse_verify_rate("5").unwrap(), 5.0);
+        assert_eq!(parse_verify_rate("0.5").unwrap(), 0.5);
+        assert_eq!(parse_verify_rate("100").unwrap(), 100.0);
+        assert_eq!(parse_verify_rate("9999.9").unwrap(), 9999.9);
+    }
+
+    #[test]
+    fn verify_rate_rejects_garbage() {
+        assert!(parse_verify_rate("abc").is_err());
+        assert!(parse_verify_rate("").is_err());
+        assert!(parse_verify_rate("--").is_err());
+    }
+
+    #[test]
+    fn verify_rate_rejects_non_positive() {
+        assert!(parse_verify_rate("0").is_err());
+        assert!(parse_verify_rate("0.0").is_err());
+        assert!(parse_verify_rate("-1").is_err());
+        assert!(parse_verify_rate("-0.5").is_err());
+    }
+
+    #[test]
+    fn verify_rate_rejects_non_finite() {
+        assert!(parse_verify_rate("nan").is_err());
+        assert!(parse_verify_rate("NaN").is_err());
+        assert!(parse_verify_rate("inf").is_err());
+        assert!(parse_verify_rate("Infinity").is_err());
+        assert!(parse_verify_rate("-inf").is_err());
+    }
+
+    #[test]
+    fn verify_rate_rejects_above_sanity_cap() {
+        assert!(parse_verify_rate("10001").is_err());
+        assert!(parse_verify_rate("1e6").is_err());
+        assert!(parse_verify_rate("1e300").is_err());
+    }
+
+    #[test]
+    fn ml_threshold_accepts_in_range() {
+        assert_eq!(parse_ml_threshold("0").unwrap(), 0.0);
+        assert_eq!(parse_ml_threshold("0.5").unwrap(), 0.5);
+        assert_eq!(parse_ml_threshold("1").unwrap(), 1.0);
+    }
+
+    #[test]
+    fn ml_threshold_rejects_out_of_range() {
+        assert!(parse_ml_threshold("-0.001").is_err());
+        assert!(parse_ml_threshold("1.001").is_err());
+        assert!(parse_ml_threshold("2").is_err());
+        assert!(parse_ml_threshold("-1").is_err());
+    }
+
+    #[test]
+    fn ml_threshold_rejects_non_finite() {
+        assert!(parse_ml_threshold("nan").is_err());
+        assert!(parse_ml_threshold("inf").is_err());
+        assert!(parse_ml_threshold("-inf").is_err());
+    }
+
+    #[test]
+    fn ml_threshold_rejects_garbage() {
+        assert!(parse_ml_threshold("").is_err());
+        assert!(parse_ml_threshold("half").is_err());
     }
 }

@@ -496,7 +496,12 @@ pub struct ScanArgs {
     /// The limiter applies even with `--verify-batch` (which adds
     /// per-service serialisation on top).
     #[cfg(feature = "verify")]
-    #[arg(long, value_name = "RPS", default_value = "5.0")]
+    #[arg(
+        long,
+        value_name = "RPS",
+        default_value = "5.0",
+        value_parser = crate::value_parsers::parse_verify_rate
+    )]
     pub verify_rate: f64,
 
     /// Conservative verify mode: serialises live verifications per
@@ -554,7 +559,12 @@ pub struct ScanArgs {
     pub no_entropy: bool,
 
     /// Minimum ML confidence score for generic entropy secrets (0.0 to 1.0)
-    #[arg(long, default_value = "0.5", value_name = "THRESHOLD")]
+    #[arg(
+        long,
+        default_value = "0.5",
+        value_name = "THRESHOLD",
+        value_parser = crate::value_parsers::parse_ml_threshold
+    )]
     pub ml_threshold: f64,
 
     /// Minimum confidence score (0.0 - 1.0) to report findings

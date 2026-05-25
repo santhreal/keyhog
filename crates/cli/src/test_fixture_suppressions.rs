@@ -48,13 +48,24 @@ struct SubstringEntry {
 const BUNDLED_TOML: &str = include_str!("../data/suppressions/test-fixtures.toml");
 
 impl TestFixtureSuppressions {
-    /// Load the bundled suppression list. Panics on a malformed
-    /// TOML — that's a compile-time-detectable build error, not a
-    /// runtime condition; the file ships with the binary.
+    /// Load the bundled suppression list. A malformed bundled TOML is
+    /// a build error caught by the `bundled_loads_and_parses` unit
+    /// test — but at runtime we degrade to an empty suppression set
+    /// rather than killing the scanner mid-run if someone ships a
+    /// broken binary anyway.
     #[must_use]
     pub fn bundled() -> Self {
-        let parsed: SuppressionFile =
-            toml::from_str(BUNDLED_TOML).expect("bundled test-fixtures.toml must parse");
+        let parsed: SuppressionFile = match toml::from_str(BUNDLED_TOML) {
+            Ok(p) => p,
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    "bundled test-fixtures.toml failed to parse; \
+                     falling back to empty suppression set"
+                );
+                return Self::empty();
+            }
+        };
         let exact: HashSet<String> = parsed.exact.into_iter().map(|e| e.credential).collect();
         // Substrings are tiny and constant — leak the strings to
         // `&'static str` so we don't pay an alloc on every check.
