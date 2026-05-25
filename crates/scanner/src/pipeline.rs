@@ -402,17 +402,32 @@ fn should_suppress_inner(
     // Known-prefix credentials bypass this (a 64-char hex AWS key
     // shouldn't be filtered) — we already returned `false` above
     // when known_prefix_body matched.
-    // Named detectors with service-specific anchors (e.g.
-    // `ALGOLIA_ADMIN_KEY=<32hex>`, `HEROKU_API_KEY=<UUID>`) also
-    // bypass — their regex anchor IS positive evidence for the
-    // value being a credential, not a hash digest.
-    // Hash-digest gate is ALWAYS on, even for named detectors with strong
-    // anchors. Real secrets at these lengths use base64 (with +/=/mixed
-    // case), not pure hex — so a pure-hex credential is virtually always
-    // a sha256/sha1/git-commit/uuid that another detector greedy-matched.
-    // Bench v18 confirmed: bypassing this gate added 3304 FPs (sha256-hex
-    // + sha1-hex + git-commit-sha buckets) with zero recall gain.
-    if looks_like_pure_hash_digest_or_uuid(credential) {
+    // Split the old "hash digest OR UUID" gate by *which side* is
+    // load-bearing:
+    //
+    //   - Hash digest (32/40/48/56/64/72/128-char uniform hex, plus
+    //     `sha256:` / `sha512:` prefixed forms) → ALWAYS on. Real
+    //     secrets at these lengths use base64 (+/=/mixed case), not
+    //     pure hex. Bench v18 proved bypassing this added 3304 FPs
+    //     (sha256-hex 1460 + sha1-hex 1027 + git-commit-sha 817) with
+    //     zero recall gain.
+    //
+    //   - UUID v4 (`xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx`) → gated by
+    //     `bypass_shape_gates`. Several real services (Heroku API key,
+    //     Cypress record key, the body of many license-server tokens)
+    //     use UUID v4 as their credential format. A named detector
+    //     with a service-specific anchor (`HEROKU_API_KEY=<uuid>`) is
+    //     positive evidence the UUID is a credential, NOT a docker
+    //     image digest or k8s resource ID. Generic / entropy detectors
+    //     stay gated because for them a bare UUID is always noise.
+    //
+    // Bench v19 confirmed the hash gate side closes the FP regression
+    // without losing recall; the contracts_runner test caught the UUID
+    // over-suppression that prompted the split.
+    if looks_like_hash_digest(credential) {
+        return true;
+    }
+    if !bypass_shape_gates && is_uuid_v4_shape(credential) {
         return true;
     }
 
@@ -726,9 +741,17 @@ pub(crate) fn looks_like_dashed_serial_key(credential: &str) -> bool {
 /// the credential as a known-prefix secret (AKIA…, ghp_… etc.) has
 /// already returned `false` upstream of this function.
 pub(crate) fn looks_like_pure_hash_digest_or_uuid(credential: &str) -> bool {
-    if is_uuid_v4_shape(credential) {
-        return true;
-    }
+    // Kept as the legacy entry point (matches both shapes) for callers
+    // that still want the combined check (most generic-detector paths).
+    // Named-detector paths use the split functions below directly.
+    is_uuid_v4_shape(credential) || looks_like_hash_digest(credential)
+}
+
+/// Hash-digest sub-check of [`looks_like_pure_hash_digest_or_uuid`].
+/// Always safe to apply (real secrets at these lengths use base64, not
+/// uniform hex). Exposed so the named-detector path can apply it
+/// without the UUID arm.
+pub(crate) fn looks_like_hash_digest(credential: &str) -> bool {
     // Prefixed-hash forms emitted by docker (`sha256:<64-hex>`), npm
     // package-lock integrity (`sha512-<base64>`), python requirements
     // (`sha256:<64-hex>`) and git-LFS pointers (`sha256:<64-hex>`).
@@ -876,7 +899,7 @@ fn is_uniform_hex(s: &str) -> bool {
     !(saw_lower && saw_upper)
 }
 
-fn is_uuid_v4_shape(s: &str) -> bool {
+pub(crate) fn is_uuid_v4_shape(s: &str) -> bool {
     let b = s.as_bytes();
     if b.len() != 36 {
         return false;
