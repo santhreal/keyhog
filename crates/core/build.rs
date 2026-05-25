@@ -42,7 +42,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     write_embedded_detectors(&output_path, &entries)?;
 
+    // Re-run when the directory contents change (file add/remove).
     println!("cargo:rerun-if-changed={}", detectors_dir.display());
+    // Cargo'"'"'s `rerun-if-changed=<dir>` only watches the directory'"'"'s own
+    // mtime — which most filesystems do NOT bump when a file INSIDE the
+    // directory is modified in-place. Without per-file watchers, editing
+    // an existing detector TOML would leave a stale `embedded_detectors.rs`
+    // baked into the binary until `cargo clean`. Emit one
+    // `rerun-if-changed` line per .toml so any individual edit triggers
+    // a rebuild.
+    let toml_paths = detector_toml_paths(detectors_dir)?;
+    for path in &toml_paths {
+        println!("cargo:rerun-if-changed={}", path.display());
+    }
     println!(
         "cargo:warning=Embedded {} detectors ({} bytes)",
         entries.len(),
@@ -52,6 +64,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .sum::<usize>()
     );
     Ok(())
+}
+
+fn detector_toml_paths(detectors_dir: &Path) -> io::Result<Vec<PathBuf>> {
+    let mut paths = Vec::new();
+    for entry in fs::read_dir(detectors_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.extension().is_some_and(|ext| ext == "toml") {
+            paths.push(path);
+        }
+    }
+    paths.sort();
+    Ok(paths)
 }
 
 fn read_detector_entries(detectors_dir: &Path) -> io::Result<Vec<(String, String)>> {
