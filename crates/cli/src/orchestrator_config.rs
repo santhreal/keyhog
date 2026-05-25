@@ -1,5 +1,5 @@
 use crate::args::ScanArgs;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use keyhog_core::{load_detectors, DetectorSpec};
 use keyhog_scanner::ScannerConfig;
 use std::path::{Path, PathBuf};
@@ -178,6 +178,23 @@ pub(crate) fn require_non_empty_detectors(
         );
     }
     Ok(())
+}
+
+/// Load detectors from a directory, falling back to the embedded TOML
+/// corpus when the directory is empty / non-existent / all-rejected.
+///
+/// `pub(crate)` so the per-subcommand modules (`watch`, `explain`,
+/// `scan_system`, `detectors`) can each call this one helper instead of
+/// shipping divergent copies. Pre-2026-05-24 each subcommand had its
+/// own load+fallback wrapper and the copies had drifted on error
+/// messages and on the fallback-to-embedded branch — kimi-dedup rows #4-6.
+pub(crate) fn load_detectors_or_embedded(path: &Path) -> Result<Vec<DetectorSpec>> {
+    if path.exists() && path.is_dir() {
+        let loaded = load_detectors(path).context("loading detectors from directory")?;
+        require_non_empty_detectors(&loaded, path)?;
+        return Ok(loaded);
+    }
+    load_detectors_embedded_or_fail(path)
 }
 
 fn load_detectors_embedded_or_fail(path: &Path) -> Result<Vec<DetectorSpec>> {
