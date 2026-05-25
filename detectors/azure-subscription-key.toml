@@ -17,8 +17,8 @@ keywords = [
 ]
 
 [[detector.patterns]]
-regex = '''(?i)(?:ocp[-_.]?apim[-_.]?subscription[-_.]?key|azure[_.-]?subscription[_.-]?key|azureSubscriptionKey)\s*[=:]\s*["']?([a-f0-9]{32})["']?'''
-description = "Azure subscription key — case-insensitive anchor (env / yaml / camelCase / kebab / dotted)."
+regex = '''(?i)(?:ocp[-_.]?apim[-_.]?)?subscription[_.-]?key\s*["']?\s*[=:]\s*["']?([a-f0-9]{32})["']?'''
+description = "Azure subscription key — case-insensitive anchor (env / yaml / camelCase / kebab / dotted, including bare `subscription_key`)."
 group = 1
 
 [[detector.patterns]]

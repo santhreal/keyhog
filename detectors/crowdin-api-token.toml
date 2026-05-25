@@ -11,12 +11,12 @@ severity = "high"
 keywords = ["CROWDIN", "CROWDIN_API_KEY", "CROWDIN_TOKEN", "crowdin.com"]
 
 [[detector.patterns]]
-regex = "(?:CROWDIN|CROWDIN_API|CROWDIN_TOKEN)[_\\s]?(?:API[_\\s]?(?:KEY|TOKEN)|TOKEN|KEY)?[=:\\s\"'']+([a-f0-9]{40})"
+regex = """(?i)crowdin[_.-]?(?:api[_.-]?)?(?:key|token)["']?[=:\\s\"']+([a-f0-9]{40})"""
 description = "Crowdin API token with context anchor (personal access token)"
 group = 1
 
 [[detector.patterns]]
-regex = "crowdin\\.com.*[=:\\s\"'']+([a-f0-9]{40})"
+regex = """crowdin\\.com.*[=:\\s\"']+([a-f0-9]{40})"""
 description = "Crowdin API token with domain context"
 group = 1
 
