@@ -13,6 +13,29 @@ const PLACEHOLDER_WORDS: &[&[u8]] = &[
 
 use super::{CONFIDENCE_MAX, CONFIDENCE_MIN};
 
+/// Sanitize a confidence value so a NaN or infinity entering the
+/// pipeline can never reach the final finding.
+///
+/// kimi-confidence audit: `f64::clamp` does NOT sanitize NaN — calling
+/// `f64::NAN.clamp(0.0, 1.0)` returns NaN. The GPU-backed ML scorer
+/// reads raw f32 from a staging buffer and casts to f64 without range
+/// validation; a driver bug, shader miscompile, or adversarial weights
+/// buffer can therefore produce NaN/Inf scores that propagate through
+/// every `score *= multiplier; score.clamp(0.0, 1.0)` chain and end
+/// up serialized into the SARIF output as `confidence: NaN`.
+///
+/// Treat NaN as the "no signal" sentinel — return the minimum confidence
+/// (which is what the heuristic-only path would have produced if ML had
+/// returned `None`). Treat +/-Inf the same way the original clamp would
+/// have, since clamp handles infinities correctly.
+#[inline]
+pub(crate) fn finalize_confidence(score: f64) -> f64 {
+    if score.is_nan() {
+        return CONFIDENCE_MIN;
+    }
+    score.clamp(CONFIDENCE_MIN, CONFIDENCE_MAX)
+}
+
 /// Check if a credential contains a known placeholder word (case-insensitive).
 pub fn contains_placeholder_word(credential: &str) -> bool {
     PLACEHOLDER_WORDS
@@ -85,7 +108,7 @@ pub fn apply_post_ml_penalties(score: f64, credential: &str) -> f64 {
     if max_repeat_run(credential) > 0.5 {
         adjusted *= 0.1;
     }
-    adjusted.clamp(CONFIDENCE_MIN, CONFIDENCE_MAX)
+    finalize_confidence(adjusted)
 }
 
 /// Apply the Bayesian calibration multiplier for `detector_id`.
@@ -116,7 +139,10 @@ pub fn apply_calibration_multiplier(score: f64, detector_id: &str) -> f64 {
         Some(Calibration::load(&path))
     });
     let Some(calibration) = calibration else {
-        return score;
+        // Even the bypass path runs through finalize_confidence so a
+        // NaN entering this function (from an upstream GPU leak)
+        // doesn't propagate verbatim to the final finding.
+        return finalize_confidence(score);
     };
     // Only apply when the detector has actual observations beyond the
     // Beta(1, 1) prior — otherwise the multiplier is exactly 0.5 and would
@@ -126,15 +152,20 @@ pub fn apply_calibration_multiplier(score: f64, detector_id: &str) -> f64 {
     // the score.
     let counters = calibration.counters(detector_id);
     if counters.observations() == 0 {
-        return score;
+        return finalize_confidence(score);
     }
     let multiplier = counters.posterior_mean();
-    (score * multiplier).clamp(CONFIDENCE_MIN, CONFIDENCE_MAX)
+    finalize_confidence(score * multiplier)
 }
 
 /// Apply path-based confidence penalties for matches in test, example, or dummy directories.
 pub fn apply_path_confidence_penalties(score: f64, path: Option<&str>) -> f64 {
-    let Some(path) = path else { return score };
+    // Even when there's no path to inspect, the score must still pass
+    // through the NaN-safety barrier — a NaN entering this function
+    // would otherwise propagate verbatim into the final finding.
+    let Some(path) = path else {
+        return finalize_confidence(score);
+    };
     // Per-segment ASCII-case-insensitive compare — no full-path
     // lowercase allocation per match.
     let is_test_like = path.split(['/', '\\']).any(|component| {
@@ -148,5 +179,69 @@ pub fn apply_path_confidence_penalties(score: f64, path: Option<&str>) -> f64 {
     });
 
     let adjusted = if is_test_like { score * 0.5 } else { score };
-    adjusted.clamp(CONFIDENCE_MIN, CONFIDENCE_MAX)
+    finalize_confidence(adjusted)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// kimi-confidence regression: NaN entering any penalty function
+    /// must be sanitized rather than propagated. `f64::clamp` leaves
+    /// NaN alone, which is why we have the dedicated `finalize_confidence`
+    /// barrier — these tests pin that contract.
+    #[test]
+    fn finalize_confidence_replaces_nan_with_minimum() {
+        let out = finalize_confidence(f64::NAN);
+        assert_eq!(
+            out, CONFIDENCE_MIN,
+            "NaN must be replaced with CONFIDENCE_MIN, not propagated"
+        );
+        assert!(!out.is_nan(), "result must not be NaN");
+    }
+
+    #[test]
+    fn finalize_confidence_clamps_inf_to_max() {
+        assert_eq!(finalize_confidence(f64::INFINITY), CONFIDENCE_MAX);
+        assert_eq!(finalize_confidence(f64::NEG_INFINITY), CONFIDENCE_MIN);
+    }
+
+    #[test]
+    fn finalize_confidence_passes_through_in_range_value() {
+        assert_eq!(finalize_confidence(0.5), 0.5);
+        assert_eq!(finalize_confidence(0.0), CONFIDENCE_MIN.max(0.0));
+        assert_eq!(finalize_confidence(1.0), 1.0);
+    }
+
+    /// `apply_post_ml_penalties` must not emit a NaN finding even when
+    /// the GPU layer leaked one upstream. The previous flow ended in
+    /// `adjusted.clamp(0.0, 1.0)`, which would return NaN verbatim.
+    #[test]
+    fn apply_post_ml_penalties_sanitizes_nan_score() {
+        let out = apply_post_ml_penalties(f64::NAN, "sk_test_123");
+        assert!(!out.is_nan(), "NaN must not propagate through penalties");
+    }
+
+    /// `apply_calibration_multiplier` only multiplies and clamps; same
+    /// regression contract applies.
+    #[test]
+    fn apply_calibration_multiplier_sanitizes_nan_score() {
+        let out = apply_calibration_multiplier(f64::NAN, "stripe-secret-key");
+        assert!(!out.is_nan());
+    }
+
+    /// Path-based penalty likewise must not propagate NaN.
+    #[test]
+    fn apply_path_confidence_penalties_sanitizes_nan_score() {
+        let out = apply_path_confidence_penalties(f64::NAN, Some("tests/fixtures/.env"));
+        assert!(!out.is_nan());
+        let out_no_path = apply_path_confidence_penalties(f64::NAN, None);
+        // Even the no-path early-return runs through finalize_confidence
+        // now — the previous flow passed NaN through verbatim when no
+        // path was provided.
+        assert!(
+            !out_no_path.is_nan(),
+            "no-path branch must also sanitize NaN"
+        );
+    }
 }
