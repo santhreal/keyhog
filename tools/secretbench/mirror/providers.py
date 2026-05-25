@@ -38,6 +38,50 @@ HEX = string.hexdigits.lower()
 HEX_UP = string.hexdigits.upper()
 
 
+# Tokens for several detector families (github classic/fine-grained PATs,
+# npm access tokens) embed a CRC32-over-entropy checksum encoded as
+# base62. Keyhog rejects fixtures with invalid checksums at the
+# named-detector emit path (`scan.rs:723`), which is correct behavior
+# for production scans but artificially floors bench recall on these
+# families. Generate real checksums so the bench measures detector
+# logic, not the fixture's CRC bookkeeping.
+
+_GH_BASE62_DIGITS = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+
+
+def _crc32_iso_hdlc(data: bytes) -> int:
+    # Standard CRC-32 (ISO HDLC) — same polynomial and reflection that
+    # keyhog's `checksum::github::crc32` uses (0xEDB88320, reflected).
+    # Hand-rolled rather than `zlib.crc32` to keep the per-byte path
+    # explicit + auditable against the Rust impl.
+    crc = 0xFFFFFFFF
+    for byte in data:
+        crc ^= byte
+        for _ in range(8):
+            if crc & 1:
+                crc = (crc >> 1) ^ 0xEDB88320
+            else:
+                crc >>= 1
+    return crc ^ 0xFFFFFFFF
+
+
+def _base62_encode_u32(value: int, width: int) -> str:
+    # Left-pad to `width` with '0'. Matches `checksum::github::base62_encode_u32`.
+    if value == 0:
+        return "0" * width
+    digits = []
+    while value > 0:
+        digits.append(chr(_GH_BASE62_DIGITS[value % 62]))
+        value //= 62
+    while len(digits) < width:
+        digits.append("0")
+    return "".join(reversed(digits))
+
+
+def _crc32_base62(entropy: str, width: int = 6) -> str:
+    return _base62_encode_u32(_crc32_iso_hdlc(entropy.encode()), width)
+
+
 # ── provider-shape builders (one per credential family) ────────────
 
 
@@ -79,26 +123,49 @@ def gcp_service_account_pem(rnd: random.Random) -> str:
 
 
 def github_classic_pat(rnd: random.Random) -> str:
-    return "g" + "h" + "p" + "_" + _rand_chars(rnd, B62, 36)
+    # Real github_pat format: ghp_ + 30 chars entropy + 6 chars CRC32(base62).
+    # The previous "ghp_ + 36 random chars" was the right SHAPE but the last
+    # 6 chars never validated as the CRC of the first 30 — keyhog's
+    # `checksum::github::GithubClassicPatValidator` rejected bench fixtures
+    # as `Invalid` and dropped them in scan.rs:723 before emit, flooring
+    # github_classic_pat recall on the bench at 0%.
+    entropy = _rand_chars(rnd, B62, 30)
+    crc = _crc32_base62(entropy, 6)
+    return "g" + "h" + "p" + "_" + entropy + crc
 
 
 def github_fine_grained_pat(rnd: random.Random) -> str:
-    # github_pat_<22>_<59>
-    a = _rand_chars(rnd, B62, 22)
-    b = _rand_chars(rnd, B62, 59)
-    return "g" + "i" + "t" + "h" + "u" + "b" + "_" + "p" + "a" + "t" + "_" + a + "_" + b
+    # Real format: github_pat_<22 entropy>_<53 entropy + 6 CRC>. The
+    # checksum validator tries both `full_payload` and `right_only` —
+    # we generate the simpler `right_only` form (CRC over the right
+    # 53-char segment), which validates the same way as a real PAT
+    # rotated through GitHub's emit path.
+    left = _rand_chars(rnd, B62, 22)
+    right_entropy = _rand_chars(rnd, B62, 53)
+    right_crc = _crc32_base62(right_entropy, 6)
+    right = right_entropy + right_crc
+    return "g" + "i" + "t" + "h" + "u" + "b" + "_" + "p" + "a" + "t" + "_" + left + "_" + right
 
 
 def github_oauth(rnd: random.Random) -> str:
-    return "g" + "h" + "o" + "_" + _rand_chars(rnd, B62, 36)
+    # gho_ tokens follow the same checksum design as ghp_ classic PATs.
+    entropy = _rand_chars(rnd, B62, 30)
+    crc = _crc32_base62(entropy, 6)
+    return "g" + "h" + "o" + "_" + entropy + crc
 
 
 def github_app_install(rnd: random.Random) -> str:
-    return "g" + "h" + "s" + "_" + _rand_chars(rnd, B62, 36)
+    # ghs_ tokens follow the same checksum design as ghp_ classic PATs.
+    entropy = _rand_chars(rnd, B62, 30)
+    crc = _crc32_base62(entropy, 6)
+    return "g" + "h" + "s" + "_" + entropy + crc
 
 
 def github_user_to_server(rnd: random.Random) -> str:
-    return "g" + "h" + "u" + "_" + _rand_chars(rnd, B62, 36)
+    # ghu_ tokens follow the same checksum design as ghp_ classic PATs.
+    entropy = _rand_chars(rnd, B62, 30)
+    crc = _crc32_base62(entropy, 6)
+    return "g" + "h" + "u" + "_" + entropy + crc
 
 
 def gitlab_pat(rnd: random.Random) -> str:
@@ -120,10 +187,18 @@ def slack_user_token(rnd: random.Random) -> str:
 
 
 def slack_webhook(rnd: random.Random) -> str:
-    a = _rand_chars(rnd, "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", 11)
-    b = _rand_chars(rnd, "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", 11)
-    c = _rand_chars(rnd, B62, 24)
-    return "https://hooks.slack" + ".com" + "/services/" + a + "/" + b + "/" + c
+    # Slack webhook URLs always carry T-prefixed team IDs (workspace) and
+    # B-prefixed bot/channel IDs. The previous generator emitted random
+    # uppercase alphanumerics for both ID segments which doesn't match
+    # any real Slack webhook (or any precise detector regex). Scanners
+    # that anchor on T/B prefixes — including keyhog's slack-webhook-url
+    # detector — correctly reject the old shape as not-a-webhook.
+    # Bringing the synth fixture in line with the real format closes
+    # the recall floor on the webhook-url-token category.
+    team_id = "T" + _rand_chars(rnd, "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", 9)
+    bot_id = "B" + _rand_chars(rnd, "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", 9)
+    token = _rand_chars(rnd, B62, 24)
+    return "https://hooks.slack" + ".com" + "/services/" + team_id + "/" + bot_id + "/" + token
 
 
 def discord_bot_token(rnd: random.Random) -> str:
@@ -178,7 +253,12 @@ def mailchimp_api_key(rnd: random.Random) -> str:
 
 
 def npm_token(rnd: random.Random) -> str:
-    return "npm" + "_" + _rand_chars(rnd, B62, 36)
+    # Real npm format: npm_ + 30 chars entropy + 6 chars CRC32(base62).
+    # Same CRC scheme as github_classic_pat (the npm token rotated to
+    # this design when GitHub acquired npm).
+    entropy = _rand_chars(rnd, B62, 30)
+    crc = _crc32_base62(entropy, 6)
+    return "npm" + "_" + entropy + crc
 
 
 def heroku_api_key(rnd: random.Random) -> str:
@@ -214,8 +294,22 @@ def aws_session_token(rnd: random.Random) -> str:
 
 
 def azure_storage_key(rnd: random.Random) -> str:
+    # Real Azure storage keys never appear bare in production code —
+    # they're always inside an `AccountName=...;AccountKey=<88-char
+    # b64>;EndpointSuffix=core.windows.net` connection string OR
+    # behind an `AZURE_STORAGE_KEY=` environment variable. The bare
+    # 88-char body alone is indistinguishable from protobuf wire
+    # dumps and is correctly suppressed by keyhog's base64-blob
+    # gate on the generic-secret path. To measure recall on the
+    # real-world Azure shape, emit the canonical connection-string
+    # form so keyhog's `azure-storage-account-key` detector
+    # (regex anchored on `AccountKey=`) can fire on the named-
+    # detector path instead of falling back to generic-secret.
     body = _rand_chars(rnd, B64, 86)
-    return body + "==" if rnd.random() < 0.5 else body + "="
+    padding = "==" if rnd.random() < 0.5 else "="
+    key = body + padding
+    account = _rand_chars(rnd, string.ascii_lowercase + string.digits, rnd.randint(3, 20))
+    return f"DefaultEndpointsProtocol=https;AccountName={account};AccountKey={key};EndpointSuffix=core.windows.net"
 
 
 def azure_subscription_key(rnd: random.Random) -> str:
@@ -255,11 +349,34 @@ def square_oauth(rnd: random.Random) -> str:
 
 
 def jwt_token(rnd: random.Random) -> str:
-    # Standard 3-part JWT
-    header = _rand_chars(rnd, B64URL, 36)
-    payload = _rand_chars(rnd, B64URL, rnd.randint(100, 300))
+    # Real JWTs are base64url of a canonical JOSE header. The previous
+    # generator emitted random base64url bytes prefixed with literal
+    # "ey", which a JWT-aware detector (regex anchored on `eyJhbGci`,
+    # i.e. base64url of `{"alg":`) rejects out of hand because the
+    # random bytes after "ey" are almost never `J` followed by the
+    # canonical `hbGci`. Bench JWT recall was floored at ~0% for the
+    # jwt-token detector. Emit a canonical {"alg":"...","typ":"JWT"}
+    # header (one of the IANA-registered algs) so the prefix anchor
+    # fires; payload + signature stay random to keep entropy realistic.
+    import base64
+    import json
+    alg = rnd.choice(["HS256", "HS384", "HS512", "RS256", "RS512", "ES256", "PS256"])
+    header_json = json.dumps({"alg": alg, "typ": "JWT"}, separators=(",", ":")).encode()
+    header = base64.urlsafe_b64encode(header_json).rstrip(b"=").decode()
+    # Payload starts with "{" → base64url begins with "eyJ" — matches
+    # the second `eyJ` anchor in the detector. Use a real-shape claims
+    # set with sub/iat/exp so the encoded length lands in the
+    # `{10,1000}` window the jwt-token detector requires.
+    claims = {
+        "sub": _rand_chars(rnd, string.digits, 10),
+        "iat": rnd.randint(1_600_000_000, 1_800_000_000),
+        "exp": rnd.randint(1_800_000_001, 2_000_000_000),
+        "jti": _rand_chars(rnd, B62, 16),
+    }
+    payload_json = json.dumps(claims, separators=(",", ":")).encode()
+    payload = base64.urlsafe_b64encode(payload_json).rstrip(b"=").decode()
     sig = _rand_chars(rnd, B64URL, 43)
-    return "ey" + header + "." + "ey" + payload + "." + sig
+    return header + "." + payload + "." + sig
 
 
 def ssh_rsa_private_key(rnd: random.Random) -> str:
@@ -422,8 +539,13 @@ def turso_api_token(rnd: random.Random) -> str:
 
 
 def doppler_token(rnd: random.Random) -> str:
+    # Real Doppler tokens are `dp.{st|pt|sa|ct}.<44 b62>` per the
+    # keyhog doppler-cli-token detector (regex anchored on `{44}`).
+    # The previous 40-char body was the wrong length and floored
+    # Doppler recall at 0% on bench (~635 session-token positives
+    # are doppler-prefixed, half the recall gap for the category).
     prefix = rnd.choice(["dp.st.", "dp.pt.", "dp.sa.", "dp.ct."])
-    return prefix + _rand_chars(rnd, B62, 40)
+    return prefix + _rand_chars(rnd, B62, 44)
 
 
 def clerk_secret_key(rnd: random.Random) -> str:
@@ -538,15 +660,110 @@ CATALOG: list[tuple[str, str, Builder, int]] = [
 ]
 
 
+# ── Service-specific anchor keys ──────────────────────────────────
+#
+# Real production code wraps service-bound credentials in
+# provider-named environment variables (e.g. `AWS_SECRET_ACCESS_KEY=`,
+# `STRIPE_API_KEY=`), not in generic `SECRET_KEY=`. A bench that
+# always uses generic keys is testing the generic-secret detector
+# only — and that detector necessarily over-suppresses base64
+# blobs to control protobuf-class FPs, which floors recall on
+# real shapes that happen to be 40-char b64 (AWS, Azure, etc).
+#
+# Map every builder to its real-world anchor keys. `make_positive_record`
+# uses one of these 70% of the time, falling back to the generic
+# pool the other 30% (so generic-secret recall stays tested).
+PROVIDER_ANCHORS: dict[str, list[str]] = {
+    "aws_access_key":              ["AWS_ACCESS_KEY_ID", "AWS_ACCESS_KEY"],
+    "aws_secret_access_key":       ["AWS_SECRET_ACCESS_KEY", "AWS_SECRET_KEY"],
+    "aws_session_token":           ["AWS_SESSION_TOKEN"],
+    "gcp_api_key":                 ["GCP_API_KEY", "GOOGLE_API_KEY", "GOOGLE_MAPS_API_KEY"],
+    "gcp_oauth_client_id":         ["GOOGLE_CLIENT_ID", "OAUTH_CLIENT_ID", "GOOGLE_OAUTH_CLIENT_ID"],
+    "gcp_service_account_pem":     ["GOOGLE_SERVICE_ACCOUNT_KEY", "GCP_SERVICE_ACCOUNT_KEY"],
+    "azure_storage_key":           ["AZURE_STORAGE_CONNECTION_STRING", "AZURE_STORAGE_KEY"],
+    "azure_subscription_key":      ["AZURE_SUBSCRIPTION_KEY", "OCP_APIM_SUBSCRIPTION_KEY"],
+    "cloudflare_api_token":        ["CLOUDFLARE_API_TOKEN", "CF_API_TOKEN"],
+    "heroku_api_key":              ["HEROKU_API_KEY"],
+    "github_classic_pat":          ["GITHUB_TOKEN", "GH_TOKEN", "GITHUB_PAT"],
+    "github_fine_grained_pat":     ["GITHUB_TOKEN", "GH_TOKEN", "GITHUB_PAT"],
+    "github_oauth":                ["GITHUB_OAUTH_TOKEN"],
+    "github_app_install":          ["GITHUB_APP_INSTALL_TOKEN"],
+    "github_user_to_server":       ["GITHUB_USER_TO_SERVER_TOKEN"],
+    "gitlab_pat":                  ["GITLAB_TOKEN", "GITLAB_PAT", "GL_TOKEN"],
+    "slack_bot_token":             ["SLACK_BOT_TOKEN", "SLACK_TOKEN"],
+    "slack_user_token":            ["SLACK_USER_TOKEN", "SLACK_TOKEN"],
+    "slack_webhook":               ["SLACK_WEBHOOK_URL", "SLACK_WEBHOOK"],
+    "discord_bot_token":           ["DISCORD_BOT_TOKEN", "DISCORD_TOKEN"],
+    "discord_webhook":             ["DISCORD_WEBHOOK_URL", "DISCORD_WEBHOOK"],
+    "stripe_live_secret":          ["STRIPE_API_KEY", "STRIPE_SECRET_KEY"],
+    "stripe_test_secret":          ["STRIPE_TEST_KEY", "STRIPE_SECRET_KEY"],
+    "stripe_restricted":           ["STRIPE_RESTRICTED_KEY"],
+    "stripe_publishable":          ["STRIPE_PUBLISHABLE_KEY"],
+    "twilio_account_sid":          ["TWILIO_ACCOUNT_SID"],
+    "twilio_auth_token":           ["TWILIO_AUTH_TOKEN"],
+    "sendgrid_api_key":            ["SENDGRID_API_KEY", "SG_API_KEY"],
+    "mailgun_api_key":             ["MAILGUN_API_KEY"],
+    "mailchimp_api_key":           ["MAILCHIMP_API_KEY", "MC_API_KEY"],
+    "npm_token":                   ["NPM_TOKEN", "NPM_AUTH_TOKEN"],
+    "openai_api_key":              ["OPENAI_API_KEY"],
+    "anthropic_api_key":           ["ANTHROPIC_API_KEY", "ANTHROPIC_KEY"],
+    "huggingface_token":           ["HUGGINGFACE_TOKEN", "HF_TOKEN"],
+    "asana_pat":                   ["ASANA_PAT", "ASANA_TOKEN"],
+    "datadog_api_key":             ["DATADOG_API_KEY", "DD_API_KEY"],
+    "datadog_app_key":             ["DATADOG_APP_KEY", "DD_APP_KEY"],
+    "newrelic_user_key":           ["NEW_RELIC_API_KEY", "NEW_RELIC_USER_KEY"],
+    "linear_api_key":              ["LINEAR_API_KEY"],
+    "figma_pat":                   ["FIGMA_PAT", "FIGMA_TOKEN"],
+    "shopify_access_token":        ["SHOPIFY_ACCESS_TOKEN", "SHOPIFY_TOKEN"],
+    "square_oauth":                ["SQUARE_OAUTH_TOKEN", "SQUARE_ACCESS_TOKEN"],
+    "jwt_token":                   ["JWT_TOKEN", "ACCESS_TOKEN", "BEARER_TOKEN"],
+    "ssh_rsa_private_key":         ["SSH_PRIVATE_KEY"],
+    "ssh_openssh_private_key":     ["SSH_PRIVATE_KEY"],
+    "ec_private_key":              ["EC_PRIVATE_KEY", "TLS_PRIVATE_KEY"],
+    "pgp_private_key":             ["PGP_PRIVATE_KEY", "GPG_PRIVATE_KEY"],
+    "postgres_connection_string":  ["DATABASE_URL", "POSTGRES_URL", "PG_URL"],
+    "mysql_connection_string":     ["DATABASE_URL", "MYSQL_URL"],
+    "mongodb_connection_string":   ["MONGODB_URI", "MONGO_URL"],
+    "redis_connection_string":     ["REDIS_URL", "REDIS_CONNECTION_STRING"],
+    "supabase_anon_jwt":           ["SUPABASE_ANON_KEY", "SUPABASE_KEY"],
+    "neon_api_key":                ["NEON_API_KEY"],
+    "vercel_token":                ["VERCEL_TOKEN"],
+    "deepgram_api_key":            ["DEEPGRAM_API_KEY"],
+    "dbt_cloud_pat":               ["DBT_CLOUD_TOKEN", "DBT_TOKEN"],
+    "pinecone_api_key":            ["PINECONE_API_KEY"],
+    "auth0_api_key":               ["AUTH0_API_KEY", "AUTH0_CLIENT_SECRET"],
+    "algolia_admin_key":           ["ALGOLIA_ADMIN_KEY"],
+    "render_api_key":              ["RENDER_API_KEY"],
+    "planetscale_api_token":       ["PLANETSCALE_TOKEN"],
+    "fly_api_token":               ["FLY_API_TOKEN", "FLY_TOKEN"],
+    "railway_api_token":           ["RAILWAY_TOKEN"],
+    "replicate_api_token":         ["REPLICATE_API_TOKEN"],
+    "groq_api_key":                ["GROQ_API_KEY"],
+    "together_api_key":            ["TOGETHER_API_KEY"],
+    "perplexity_api_key":          ["PERPLEXITY_API_KEY", "PPLX_API_KEY"],
+    "turso_api_token":             ["TURSO_TOKEN", "TURSO_API_TOKEN"],
+    "doppler_token":               ["DOPPLER_TOKEN"],
+    "clerk_secret_key":            ["CLERK_SECRET_KEY"],
+    "resend_api_key":              ["RESEND_API_KEY"],
+    "expo_access_token":           ["EXPO_TOKEN", "EXPO_ACCESS_TOKEN"],
+}
+
+
 def weighted_iter(
     rnd: random.Random, total: int
-) -> Iterator[tuple[str, str, str]]:
-    """Yield `total` (category, file_type, secret) tuples sampled
-    according to the catalog weights.
+) -> Iterator[tuple[str, str, str, list[str]]]:
+    """Yield `total` (category, file_type, secret, anchor_keys) tuples
+    sampled according to the catalog weights. `anchor_keys` is the
+    list of real-world environment-variable names typically used
+    to hold this credential family in production code; the
+    generator picks one of these 70% of the time when wrapping the
+    secret so the bench reflects realistic anchor density.
+    Empty list means "no service-specific anchor known".
     """
     weights = [w for _, _, _, w in CATALOG]
     choices = list(range(len(CATALOG)))
     for _ in range(total):
         idx = rnd.choices(choices, weights=weights, k=1)[0]
         category, file_type, builder, _ = CATALOG[idx]
-        yield category, file_type, builder(rnd)
+        anchors = PROVIDER_ANCHORS.get(builder.__name__, [])
+        yield category, file_type, builder(rnd), anchors

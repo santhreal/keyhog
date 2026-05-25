@@ -1,0 +1,133 @@
+{
+  "generated_at": "2026-05-24T10:46:06.689282+00:00",
+  "corpus": "/tmp/secretbench-medium-v4",
+  "fixture_count": 95000,
+  "ranking": [
+    {
+      "rank": 1,
+      "scanner": "keyhog",
+      "f1": 0.8124,
+      "precision": 0.8845,
+      "recall": 0.7513,
+      "total_time_ms": 183454.18
+    }
+  ],
+  "scanners": {
+    "keyhog": {
+      "scanner": "keyhog",
+      "available": true,
+      "version": "",
+      "error": "",
+      "fixture_count": 95000,
+      "finding_count": 12789,
+      "total_time_ms": 183454.18,
+      "overall": {
+        "tp": 11269,
+        "fp": 1472,
+        "fn": 3731,
+        "precision": 0.8845,
+        "recall": 0.7513,
+        "f1": 0.8124
+      },
+      "per_category": {
+        "api-key": {
+          "tp": 3867,
+          "fp": 280,
+          "fn": 1174,
+          "precision": 0.9325,
+          "recall": 0.7671,
+          "f1": 0.8418
+        },
+        "authentication-key": {
+          "tp": 2501,
+          "fp": 249,
+          "fn": 176,
+          "precision": 0.9095,
+          "recall": 0.9343,
+          "f1": 0.9217
+        },
+        "base64-protobuf": {
+          "tp": 0,
+          "fp": 543,
+          "fn": 0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        },
+        "cloud-service-credential": {
+          "tp": 2131,
+          "fp": 196,
+          "fn": 1369,
+          "precision": 0.9158,
+          "recall": 0.6089,
+          "f1": 0.7314
+        },
+        "cryptographic-private-key": {
+          "tp": 358,
+          "fp": 123,
+          "fn": 172,
+          "precision": 0.7443,
+          "recall": 0.6755,
+          "f1": 0.7082
+        },
+        "database-connection-string": {
+          "tp": 521,
+          "fp": 0,
+          "fn": 136,
+          "precision": 1.0,
+          "recall": 0.793,
+          "f1": 0.8846
+        },
+        "generic-high-entropy-string": {
+          "tp": 380,
+          "fp": 35,
+          "fn": 538,
+          "precision": 0.9157,
+          "recall": 0.4139,
+          "f1": 0.5701
+        },
+        "generic-password": {
+          "tp": 195,
+          "fp": 32,
+          "fn": 56,
+          "precision": 0.859,
+          "recall": 0.7769,
+          "f1": 0.8159
+        },
+        "license-key-shape": {
+          "tp": 0,
+          "fp": 5,
+          "fn": 0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        },
+        "session-token": {
+          "tp": 510,
+          "fp": 9,
+          "fn": 110,
+          "precision": 0.9827,
+          "recall": 0.8226,
+          "f1": 0.8955
+        },
+        "ssh-key": {
+          "tp": 436,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "webhook-url-token": {
+          "tp": 370,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        }
+      }
+    }
+  },
+  "citation": "If reporting numbers from the real SecretBench dataset (not the mirror corpus), cite: Basak, S. K., Neil, L., Reaves, B., Williams, L. (2023). SecretBench: A Dataset of Software Secrets. MSR. arXiv:2303.06729."
+}

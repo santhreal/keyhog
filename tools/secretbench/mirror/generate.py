@@ -121,9 +121,11 @@ def make_positive_record(
     idx: int,
 ) -> tuple[dict, str]:
     """Build one labeled-positive (record, file_contents)."""
-    category, file_type_default, secret = next(providers.weighted_iter(rnd, 1))
+    category, file_type_default, secret, anchors = next(providers.weighted_iter(rnd, 1))
     wrapper_name, extension, wrapper_fn = wrappers.pick_wrapper(file_type_default, rnd)
-    contents = wrapper_fn(secret, rnd)
+    # 70% chance use service-anchor, 30% fall back to generic key pool.
+    key_override = wrappers.pick_anchor_key(rnd, anchors)
+    contents = wrapper_fn(secret, rnd, key_override)
 
     # Locate the secret within the wrapper's emitted text. For
     # multi-line PEMs / k8s base64 the secret may have been
@@ -189,9 +191,12 @@ def make_negative_record(
     kind, body = next(negatives.weighted_iter(rnd, 1))
     # Wrap the FP body in a realistic shape too — same wrapper pool
     # as positives, so a scanner is judged on the same file
-    # population either way.
+    # population either way. Negatives ALWAYS get a generic key
+    # (no `key_override`) — a base64 protobuf wrapped as
+    # `AWS_SECRET_ACCESS_KEY=` would be a real-world misuse worth
+    # flagging, so we keep the bench's negative shapes neutral.
     wrapper_name, extension, wrapper_fn = wrappers.pick_wrapper("env", rnd)
-    contents = wrapper_fn(body, rnd)
+    contents = wrapper_fn(body, rnd, None)
 
     pos = contents.find(body)
     if pos < 0:
