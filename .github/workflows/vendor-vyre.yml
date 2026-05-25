@@ -94,10 +94,10 @@ jobs:
           git config user.name  'santh-vendor-bot'
           git config user.email 'bot@santh.dev'
           git add vendor/vyre/
-          git commit -m "[vendor] refresh vendor/vyre to ${upstream_short}
-
-${upstream_subj}
-
-Automated drift commit from .github/workflows/vendor-vyre.yml.
-Re-apply hand-patches per vendor/vyre/PATCHES.md if any break."
+          msg_file=$(mktemp)
+          printf '%s\n\n' "[vendor] refresh vendor/vyre to ${upstream_short}" > "$msg_file"
+          printf '%s\n\n' "${upstream_subj}" >> "$msg_file"
+          printf '%s\n' "Automated drift commit from .github/workflows/vendor-vyre.yml." >> "$msg_file"
+          printf '%s\n' "Re-apply hand-patches per vendor/vyre/PATCHES.md if any break." >> "$msg_file"
+          git commit -F "$msg_file"
           git push
