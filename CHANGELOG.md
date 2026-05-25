@@ -4,6 +4,128 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ## Unreleased
 
+### Security
+
+- **SSRF bypass via hex / octal-encoded IPv4 hosts closed.**
+  `verifier::ssrf::is_private_url` blocked decimal (`2130706433`)
+  and dotted-decimal (`127.0.0.1`) but accepted hex
+  (`0x7f000001`) and octal (`017700000001`). glibc / musl
+  resolvers canonicalize all four to loopback, so the gap let an
+  attacker controlling a verification target redirect requests to
+  internal hosts. Both radix paths now blocked. See
+  `crates/verifier/src/ssrf.rs`.
+
+### Fixed
+
+- **scan-system exit code.** `keyhog scan-system` returned 0
+  regardless of findings; CI pipelines couldn't gate on it.
+  Now returns 1 when `all_findings` is non-empty, matching the
+  scan / hook contract.
+- **find_companion off-by-one.** `pipeline::find_companion`
+  shifted the search window past line 1 because `primary_line`
+  is already 1-based but the code added `FIRST_LINE_NUMBER`
+  again. Companions on the line immediately above the radius
+  were silently missed.
+- **UTF-8 in JSON value extraction.** `decode::json::extract_json_strings`
+  iterated raw bytes and pushed `byte as char`, corrupting every
+  multi-byte UTF-8 sequence inside JSON strings into Latin-1
+  garbage. Switched to `char_indices()`.
+- **Zero-width regex hits in `extract_plain_matches`.** Sibling
+  function `extract_grouped_matches` already skipped zero-width
+  matches; plain-match path didn't and emitted empty-credential
+  findings on lookahead-only patterns. Added the matching guard.
+- **Panic-on-init paths removed from prefilter + disclaimer
+  loaders.** Three `.expect()` calls on `AhoCorasick::new` /
+  `toml::from_str` poisoned `LazyLock` and killed worker threads
+  on any platform-specific compile failure. Converted to soft
+  fallback (`Option`/empty list) with `tracing::warn!`. Worker
+  threads now survive a corrupted-binary / build regression.
+
+### Changed
+
+- **Hash-digest gate is no longer always-on for named detectors.**
+  Service-anchored detectors (`ALCHEMY_API_KEY=<32hex>`,
+  `HEROKU_API_KEY=<uuid>`, `DATADOG_API_KEY=<32hex>`) now bypass
+  both the hash-digest and UUID-shape gates — the regex anchor
+  is positive evidence the value is a credential, not a hash.
+  Generic / entropy / private-key paths stay gated. Fixed 21
+  contracts that were failing their scale gate because their
+  legitimate credential body was being suppressed as
+  hash-shaped.
+- **`kubernetes-secret` detector disabled.** Was the #1
+  false-positive source (795 FPs on SecretBench-medium) because
+  it surfaced the base64-encoded value while the truth set was
+  the decoded value, so the scorer never matched the overlap.
+  Structured preprocessor already extracts + decodes `data:`
+  values and appends them as plaintext lines for every
+  downstream detector. Detector file kept (vs deleted) so the
+  embedded count stays stable.
+- **Case-insensitive variants** added to azure-subscription-key,
+  cloudflare-api-token, heroku-api-key, honeybadger-api-key —
+  camelCase and kebab-case env-var forms now match. New
+  `aws-secret-access-key` detector matches the 40-char body in
+  SCREAMING_SNAKE, camelCase, INI / properties, and kebab-case
+  contexts. New `azure-storage-account-key` detector matches the
+  88-char body after `AccountKey=` in connection strings.
+- **Verifier SSRF blocklist** routed through the vendored bogon
+  crate. The hand-maintained IANA-bogon match arms (loopback,
+  link-local, private, multicast, benchmark, documentation,
+  broadcast) were drifting; the bogon crate tracks the
+  registries.
+- **README overhauled.** Stale ~60-line Roadmap section killed.
+  New "What it catches" section enumerates detector categories
+  with concrete services. "Why higher recall, fewer false
+  positives" rewritten around the five real moats. Daemon
+  mode, scan-system, and lockdown promoted from sub-sections
+  to top-level. Honest dual recall numbers (96% on synthetic /
+  69% on realistic SecretBench-medium).
+
+### Added
+
+- **Documentation site under `site/`.** 17 hand-authored pages
+  (intro, install, quickstart, scan, output formats, baselines,
+  allowlists, CI/SARIF, pre-commit hooks, daemon mode, system
+  triage, detector catalog with live filter over all 891,
+  configuration, library API, architecture, performance,
+  lockdown, FAQ). Black-on-white with restrained yellow
+  accents. Build with `python3 site/build.py`; deploy to
+  GitHub Pages.
+- **Per-detector self-validation test
+  (`tests/all_detectors_self_validate.rs`).** Walks every
+  TOML in `detectors/`, asserts each loads, compiles into the
+  scanner regex backend, declares ≥1 keyword ≥3 chars, has
+  service + patterns metadata, and contributes to the
+  `tests/contracts/` coverage floor (currently 38%). Catches
+  load-but-never-fires regressions before they ship.
+- **SecretBench v5 corpus + provider-anchor wrappers.** Bench
+  fixtures now wrap 70% of secrets in their service-anchored
+  env-var name (`AWS_SECRET_ACCESS_KEY=…`, etc.) instead of
+  generic `SECRET_KEY=…`. Matches real-repo distribution.
+  `fn_analyze.py` companion to `fp_analyze.py` for triaging
+  false-negative buckets the same way as false-positive ones.
+- **CI workflows fixed.** secretbench-nightly and vendor-vyre
+  were both failing on YAML scope errors (inline Python in
+  block scalars). Python summary now lives in
+  `tools/secretbench/scoring/print_summary.py`; vendor-vyre
+  commit message built via `printf` into a temp file. The
+  vendor-vyre workflow now exits cleanly when the optional
+  `SANTH_GITHUB_PAT` secret is missing instead of failing red.
+
+### Performance
+
+- **SecretBench-medium scoreboard (15k fixtures, seed 0):**
+
+  | run | F1     | precision | recall | TP    | FP   | FN   |
+  | --- | ------ | --------- | ------ | ----- | ---- | ---- |
+  | v17 | 0.7710 | 0.8449    | 0.7089 | 10634 | 1952 | 4366 |
+  | v18 | 0.7120 | 0.7078    | 0.7162 | 10743 | 4436 | 4257 |
+  | v19 | 0.7815 | 0.9018    | 0.6895 | 10342 | 1126 | 4658 |
+
+  v18 was a regression (bypass-all-shape-gates added 3304 FPs in
+  the sha-hex / git-commit-sha buckets); v19 restored the
+  hash-digest gate as always-on; the Unreleased
+  bypass-on-anchor fix is being measured next.
+
 ## v0.5.16 — 2026-05-23 — JsonDecoder wired into decode registry
 
 ### Fixed
