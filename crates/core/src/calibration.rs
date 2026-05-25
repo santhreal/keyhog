@@ -55,9 +55,19 @@ impl BetaCounters {
 
     /// Number of observations (excluding the prior) the posterior is built
     /// on. Useful for "trust the recent history" UI gates.
+    ///
+    /// kimi-confidence audit: the previous form was
+    /// `alpha.saturating_sub(1) + beta.saturating_sub(1)` — the `+`
+    /// was a plain add and would panic in debug / wrap to 0 in release
+    /// once both counters reached ~`u32::MAX / 2`. Use `saturating_add`
+    /// so the result clamps at `u32::MAX` instead of wrapping. That's
+    /// still a frozen counter at saturation, but the posterior mean
+    /// stays correct and no detector silently gets disabled.
     pub fn observations(&self) -> u32 {
         // Subtract the Beta(1, 1) prior baseline.
-        self.alpha.saturating_sub(1) + self.beta.saturating_sub(1)
+        self.alpha
+            .saturating_sub(1)
+            .saturating_add(self.beta.saturating_sub(1))
     }
 }
 
@@ -135,21 +145,25 @@ impl Calibration {
     }
 
     /// Record a true positive for `detector_id` (α += 1).
+    ///
+    /// kimi-confidence audit: bare `alpha += 1` would panic in debug
+    /// and wrap to 0 in release once a single detector accumulates
+    /// 2^32 observations. Wrapping to 0 silently mutes a previously
+    /// reliable detector (posterior mean drops to 0.0/1.0 = 0). Use
+    /// `saturating_add` so the worst case is a frozen counter at
+    /// `u32::MAX`, which keeps the posterior mean correct.
     pub fn record_true_positive(&self, detector_id: &str) {
-        self.inner
-            .write()
-            .entry(detector_id.to_string())
-            .or_default()
-            .alpha += 1;
+        let mut guard = self.inner.write();
+        let entry = guard.entry(detector_id.to_string()).or_default();
+        entry.alpha = entry.alpha.saturating_add(1);
     }
 
-    /// Record a false positive for `detector_id` (β += 1).
+    /// Record a false positive for `detector_id` (β += 1). Same
+    /// `saturating_add` rationale as [`record_true_positive`].
     pub fn record_false_positive(&self, detector_id: &str) {
-        self.inner
-            .write()
-            .entry(detector_id.to_string())
-            .or_default()
-            .beta += 1;
+        let mut guard = self.inner.write();
+        let entry = guard.entry(detector_id.to_string()).or_default();
+        entry.beta = entry.beta.saturating_add(1);
     }
 
     /// Return the posterior mean for `detector_id`, falling back to 0.5
@@ -234,6 +248,44 @@ mod tests {
         c.record_true_positive("x");
         c.record_false_positive("x");
         assert_eq!(c.counters("x").observations(), 2);
+    }
+
+    /// kimi-confidence regression: `alpha += 1` and `beta += 1` used to
+    /// be bare unchecked additions that would panic in debug / wrap to
+    /// 0 in release once a counter hit `u32::MAX`. Wrapping silently
+    /// muted a previously reliable detector. Now both use
+    /// `saturating_add(1)` so the worst case is a frozen counter.
+    ///
+    /// Simulate the saturation directly by writing `u32::MAX` into the
+    /// counter and asserting one more increment doesn't overflow — we
+    /// can't actually `loop` u32::MAX times in a test.
+    #[test]
+    fn record_methods_saturate_at_u32_max() {
+        let c = Calibration::empty();
+        // Seed the counters near saturation by manipulating the inner
+        // map directly. Production paths never need to do this; it's a
+        // test backdoor to prove the saturating_add contract.
+        {
+            let mut guard = c.inner.write();
+            guard
+                .entry("saturating".to_string())
+                .or_default()
+                .alpha = u32::MAX;
+            guard
+                .entry("saturating".to_string())
+                .or_default()
+                .beta = u32::MAX;
+        }
+        // Both increments must NOT panic in debug and NOT wrap to 0.
+        c.record_true_positive("saturating");
+        c.record_false_positive("saturating");
+        let counters = c.counters("saturating");
+        assert_eq!(counters.alpha, u32::MAX, "alpha must saturate at u32::MAX");
+        assert_eq!(counters.beta, u32::MAX, "beta must saturate at u32::MAX");
+        // observations() also uses saturating_add internally — the sum
+        // of two saturated values clamps at u32::MAX rather than
+        // panicking or wrapping.
+        assert_eq!(counters.observations(), u32::MAX);
     }
 
     #[test]

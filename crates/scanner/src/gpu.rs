@@ -307,7 +307,30 @@ mod backend {
         receiver.recv().ok()?.ok()?;
         let data = slice.get_mapped_range();
         let scores: &[f32] = bytemuck::cast_slice(&data);
-        let result: Vec<f64> = scores.iter().map(|&s| s as f64).collect();
+        // kimi-confidence audit: a GPU driver bug, shader miscompile, or
+        // adversarial weights buffer can produce NaN/Inf in the f32
+        // staging buffer. The previous flow forwarded those values
+        // verbatim into the confidence pipeline, where `.clamp(0, 1)`
+        // does NOT sanitize NaN (Rust f64::clamp leaves NaN as NaN),
+        // and the NaN propagated all the way to SARIF `confidence: NaN`.
+        // Sanitize at the GPU boundary so every downstream consumer
+        // sees a finite probability in [0, 1].
+        let result: Vec<f64> = scores
+            .iter()
+            .map(|&s| {
+                let v = s as f64;
+                if v.is_finite() {
+                    v.clamp(0.0, 1.0)
+                } else {
+                    // NaN or +/-Inf: treat as "no signal" sentinel and
+                    // fall back to the neutral 0.5. The heuristic-only
+                    // path will dominate the blend (see engine/mod.rs
+                    // line 1185) so the finding still surfaces with
+                    // the score the rule alone would have produced.
+                    0.5
+                }
+            })
+            .collect();
         drop(data);
         staging_buf.unmap();
 
