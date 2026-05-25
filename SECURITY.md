@@ -9,7 +9,7 @@ built-in **Private Vulnerability Reporting**:
 2. Click **Report a vulnerability** and fill out the advisory form.
 
 If private reporting is unavailable for some reason, email
-**contactmukundthiru@gmail.com** with:
+**security@santh.dev** with:
 
 - Affected version / commit SHA
 - Reproduction steps and proof-of-concept (where safe to share)

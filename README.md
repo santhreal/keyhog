@@ -389,7 +389,7 @@ keyhog completion zsh                        # shell completions (bash/zsh/fish/
   permanent test fixture under
   [`tests/contracts/`](./crates/scanner/tests/contracts/).
 - **Security issue in keyhog itself?** Don't open a public issue —
-  email `security@santhsecurity.example` (PGP key on the org page).
+  email `security@santh.dev` (PGP key on the org page).
 
 [Changelog](./CHANGELOG.md). [Open issues](https://github.com/santhsecurity/keyhog/issues).
 

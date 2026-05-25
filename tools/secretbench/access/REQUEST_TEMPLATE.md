@@ -4,7 +4,7 @@ Subject: **SecretBench dataset access request — benchmarking keyhog secret sca
 
 To: `sbasak4@ncsu.edu`
 Cc: `lnneil@ncsu.edu`, `bgreaves@ncsu.edu`, `laurie_williams@ncsu.edu`
-From: `contactmukundthiru@gmail.com`
+From: `security@santh.dev`
 
 ---
 
@@ -49,7 +49,7 @@ about what a fair benchmark looks like.
 Best,
 Mukund Thiru
 Santh Security
-contactmukundthiru@gmail.com
+security@santh.dev
 
 ---
 

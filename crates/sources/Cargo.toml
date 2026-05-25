@@ -2,7 +2,7 @@
 name = "keyhog-sources"
 description = "keyhog-sources — pluggable input backends for KeyHog (git, S3, Docker, Web)"
 version.workspace = true
-authors = ["Santh Project <contact@santh.dev>"]
+authors = ["Santh Project <security@santh.dev>"]
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
