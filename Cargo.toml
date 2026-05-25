@@ -22,7 +22,7 @@ homepage = "https://github.com/santhsecurity/keyhog"
 documentation = "https://docs.rs/keyhog"
 keywords = ["secret-scanner", "security", "credentials", "api-keys", "git"]
 categories = ["command-line-utilities", "development-tools"]
-authors = ["Santh Project <contact@santh.dev>"]
+authors = ["Santh Project <security@santh.dev>"]
 
 [workspace.dependencies]
 keyhog-core = { version = "=0.5.16", path = "crates/core" }
