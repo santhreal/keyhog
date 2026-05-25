@@ -17,5 +17,5 @@ group = 1
 
 [[detector.companions]]
 name = "secret_access_key"
-regex = "[A-Za-z0-9/+=]{40}"
+regex = "(?:FILEBASE[_-]?SECRET(?:[_-]?KEY)?|secret[_-]?access[_-]?key|aws[_-]?secret[_-]?access[_-]?key)[=:\\s\"']+([A-Za-z0-9/+=]{40})"
 within_lines = 5
