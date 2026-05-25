@@ -459,14 +459,38 @@ fn sweep_stale_tmp_files(cache_path: &Path) {
 
 /// Compute a stable BLAKE3 digest over the canonical detector set so a
 /// later scan can detect that detectors changed. Hashes a sorted list of
-/// `id|regex|companion` strings — order-independent, comment-independent,
-/// resilient to TOML key reordering.
+/// `id|regex|companion|keyword|severity` strings — order-independent,
+/// comment-independent, resilient to TOML key reordering.
+///
+/// Hashes every field that influences scanner output:
+/// - `id`        — detector identity (add/remove invalidates).
+/// - `patterns`  — the regexes themselves.
+/// - `companions`— required companion patterns.
+/// - `keywords`  — feed into the keyword-nearby confidence signal
+///   (`engine::scan::compute_pattern_signals`). A new keyword raises a
+///   previously-skipped file's match confidence above the report
+///   threshold, so a keyword change MUST invalidate the cache.
+/// - `severity`  — surfaces in the final finding. A bump from MEDIUM to
+///   CRITICAL needs a re-scan or every cached finding stays at the old
+///   tier forever.
+///
+/// Intentionally NOT hashed:
+/// - `name`      — cosmetic only.
+/// - `service`   — used by the verifier (which doesn't run on cached
+///   skip-paths) and as a string in the finding metadata; a service
+///   rename doesn't change which credentials are flagged.
+/// - `verify`    — the verifier runs against newly-emitted findings on
+///   every scan regardless of cache. Changing verification doesn't
+///   change which files need re-scanning.
 pub fn compute_spec_hash(detectors: &[DetectorSpec]) -> [u8; 32] {
     let mut keys: Vec<String> = detectors
         .iter()
         .flat_map(|d| {
-            let mut entries = Vec::with_capacity(1 + d.patterns.len() + d.companions.len());
+            let mut entries = Vec::with_capacity(
+                2 + d.patterns.len() + d.companions.len() + d.keywords.len(),
+            );
             entries.push(format!("id:{}", d.id));
+            entries.push(format!("sev:{:?}", d.severity));
             for p in &d.patterns {
                 entries.push(format!(
                     "p:{}|g:{}",
@@ -479,6 +503,14 @@ pub fn compute_spec_hash(detectors: &[DetectorSpec]) -> [u8; 32] {
                     "c:{}|{}|w:{}|r:{}",
                     c.name, c.regex, c.within_lines, c.required
                 ));
+            }
+            // Per-detector keyword sort makes the hash stable across
+            // TOML keyword-array reorderings (a no-op edit shouldn't
+            // invalidate the cache).
+            let mut kws: Vec<&String> = d.keywords.iter().collect();
+            kws.sort();
+            for k in kws {
+                entries.push(format!("kw:{}:{}", d.id, k));
             }
             entries
         })
@@ -696,6 +728,82 @@ mod tests {
 
         let c = compute_spec_hash(&[make("alpha"), make("gamma")]);
         assert_ne!(a, c, "different detectors must produce different hashes");
+    }
+
+    /// Regression for the staleness gap: adding/removing a keyword on an
+    /// existing detector changes which previously-skipped files would now
+    /// fire on the `keyword_nearby` confidence signal — so the cache MUST
+    /// invalidate. The earlier `compute_spec_hash` only hashed
+    /// `id|regex|companion` and omitted keywords entirely, which let a
+    /// keyword edit ship without triggering re-scan of cached files.
+    #[test]
+    fn compute_spec_hash_changes_when_keywords_change() {
+        use crate::spec::{DetectorSpec, PatternSpec, Severity};
+        let base = DetectorSpec {
+            id: "test-detector".into(),
+            name: "test".into(),
+            service: "test".into(),
+            severity: Severity::Medium,
+            keywords: vec!["secret".into()],
+            patterns: vec![PatternSpec {
+                regex: "[A-Z0-9]{32}".into(),
+                description: None,
+                group: None,
+            }],
+            companions: vec![],
+            verify: None,
+        };
+        let mut with_extra_keyword = base.clone();
+        with_extra_keyword.keywords.push("api_key".into());
+
+        assert_ne!(
+            compute_spec_hash(&[base.clone()]),
+            compute_spec_hash(&[with_extra_keyword]),
+            "adding a keyword must change the spec hash so the cache invalidates \
+             and previously-skipped files get re-scanned with the new keyword signal"
+        );
+
+        // Per-detector keyword sort: changing TOML order without changing
+        // the keyword set must NOT change the hash (no-op edit, no cache
+        // bust, no needless re-scan).
+        let mut reordered = base.clone();
+        reordered.keywords = vec!["secret".into(), "api_key".into()];
+        let mut original_with_two = base.clone();
+        original_with_two.keywords = vec!["api_key".into(), "secret".into()];
+        assert_eq!(
+            compute_spec_hash(&[reordered]),
+            compute_spec_hash(&[original_with_two]),
+            "reordering the keyword array (cosmetic TOML edit) must NOT invalidate"
+        );
+    }
+
+    /// Companion to the above: bumping severity (MEDIUM → CRITICAL) must
+    /// invalidate the cache so every finding gets re-emitted at the new
+    /// tier instead of forever staying at the old tier on cached files.
+    #[test]
+    fn compute_spec_hash_changes_when_severity_changes() {
+        use crate::spec::{DetectorSpec, PatternSpec, Severity};
+        let base = DetectorSpec {
+            id: "sev-test".into(),
+            name: "sev".into(),
+            service: "sev".into(),
+            severity: Severity::Medium,
+            keywords: vec![],
+            patterns: vec![PatternSpec {
+                regex: "[A-Z]{40}".into(),
+                description: None,
+                group: None,
+            }],
+            companions: vec![],
+            verify: None,
+        };
+        let mut bumped = base.clone();
+        bumped.severity = Severity::Critical;
+        assert_ne!(
+            compute_spec_hash(&[base]),
+            compute_spec_hash(&[bumped]),
+            "bumping severity must invalidate the cache"
+        );
     }
 
     #[test]
