@@ -190,3 +190,98 @@ fn gpu_path_finds_boundary_straddled_secret() {
         results.iter().map(|v| v.len()).collect::<Vec<_>>()
     );
 }
+
+/// Pipeline-refactor lock: the two-phase API
+/// `scan_coalesced_gpu_phase1` + `scan_coalesced_gpu_phase2` must be a
+/// faithful split of `scan_coalesced_gpu`. The orchestrator's pipelined
+/// scanner thread (overlap GPU dispatch of batch N+1 with CPU
+/// post-process of batch N) sequences these manually instead of going
+/// through the combined wrapper — if the two paths ever diverge,
+/// the pipelined path silently mis-attributes findings.
+///
+/// This test asserts byte-for-byte identical
+/// `(credential, file_path, offset)` tuples between:
+///   (a) `scanner.scan_coalesced_gpu(&chunks)` — the atomic wrapper
+///   (b) manual `phase1` → match `Hits` then `phase2`, or `Done` then
+///       return directly — the same flow the orchestrator does.
+///
+/// SKIPs when no GPU adapter is available (phase 1 returns `Done`
+/// with the SIMD/CPU fallback path's matches; we still assert
+/// parity because the wrapper produces the same `Done` output via
+/// the same code path).
+#[test]
+fn scan_coalesced_gpu_phase1_phase2_parity_with_wrapper() {
+    use keyhog_scanner::GpuPhase1Output;
+    let detectors = match keyhog_core::load_detectors(&detector_dir()) {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("SKIP: detectors directory unavailable: {e}");
+            return;
+        }
+    };
+    let scanner = CompiledScanner::compile(detectors).expect("scanner compile");
+
+    // Same synthetic corpus as the SIMD-parity test so the GPU dispatch
+    // actually has substance to attribute. Three chunks gives multiple
+    // per_chunk_hits buckets; both AC-prefix detectors (AKIA, ghp_,
+    // sk_live_) and the boundary helper get exercised.
+    let chunks = vec![
+        make_chunk("// no secrets in this file", "clean.rs"),
+        make_chunk(
+            "const KEY = \"AKIAQYLPMN5HFIQR7XYA\";\nconst PAT = \"ghp_aBcD1234EFgh5678ijklMNop9012qrSTuvWX\";",
+            "fixtures/aws_github.rs",
+        ),
+        make_chunk(
+            "auth: \"sk_live_4eC39HqLyjWDarjtT1zdp7dc\"\npayload: \"AKIAQYLPMN5HFIQR7BBB\"",
+            "fixtures/stripe_aws.yml",
+        ),
+    ];
+
+    // Atomic wrapper path.
+    let combined = scanner.scan_coalesced_gpu(&chunks);
+    let combined_keys = collect_keys(&combined);
+
+    // Manual phase1+phase2 path — exactly what
+    // `cli/orchestrator.rs::scanner_thread` does on the
+    // `KEYHOG_BACKEND=gpu` route.
+    let split = match scanner.scan_coalesced_gpu_phase1(&chunks) {
+        GpuPhase1Output::Hits(per_chunk_hits) => {
+            scanner.scan_coalesced_gpu_phase2(&chunks, per_chunk_hits)
+        }
+        GpuPhase1Output::Done(results) => results,
+    };
+    let split_keys = collect_keys(&split);
+
+    if combined_keys != split_keys {
+        let only_combined: Vec<_> = combined_keys.difference(&split_keys).collect();
+        let only_split: Vec<_> = split_keys.difference(&combined_keys).collect();
+        panic!(
+            "phase1+phase2 split diverges from scan_coalesced_gpu wrapper.\n  combined: {} keys\n  split:    {} keys\n  only in combined ({}): {:?}\n  only in split    ({}): {:?}",
+            combined_keys.len(),
+            split_keys.len(),
+            only_combined.len(),
+            only_combined.iter().take(5).collect::<Vec<_>>(),
+            only_split.len(),
+            only_split.iter().take(5).collect::<Vec<_>>(),
+        );
+    }
+
+    // Also assert per-chunk Vec lengths align — the wrapper preserves
+    // chunk-index ordering and the split must too. A divergence at this
+    // level would mean a chunk's matches got reattributed to a
+    // neighbouring chunk by the refactor.
+    assert_eq!(
+        combined.len(),
+        split.len(),
+        "phase1+phase2 produced a different per-chunk Vec length than the wrapper"
+    );
+    for (i, (a, b)) in combined.iter().zip(split.iter()).enumerate() {
+        assert_eq!(
+            a.len(),
+            b.len(),
+            "chunk {i}: wrapper produced {} matches, split produced {}",
+            a.len(),
+            b.len(),
+        );
+    }
+}
