@@ -96,15 +96,8 @@ fn is_disallowed_web_host(url: &str) -> bool {
         return true; // file://, mailto://, no host
     };
     match host {
-        url::Host::Ipv4(ip) => {
-            ip.is_loopback() || ip.is_private() || ip.is_link_local()
-                || ip.is_multicast() || ip.is_broadcast() || ip.is_unspecified()
-        }
-        url::Host::Ipv6(ip) => {
-            ip.is_loopback() || ip.is_multicast() || ip.is_unspecified()
-                || ip.segments()[0] & 0xfe00 == 0xfc00 // fc00::/7 unique-local
-                || ip.segments()[0] & 0xffc0 == 0xfe80 // fe80::/10 link-local
-        }
+        url::Host::Ipv4(ip) => is_disallowed_ipv4(ip),
+        url::Host::Ipv6(ip) => is_disallowed_ipv6(ip),
         url::Host::Domain(d) => {
             let lower = d.to_ascii_lowercase();
             lower == "localhost"
@@ -114,6 +107,29 @@ fn is_disallowed_web_host(url: &str) -> bool {
                 || lower == "metadata.google.internal"
         }
     }
+}
+
+fn is_disallowed_ipv4(ip: std::net::Ipv4Addr) -> bool {
+    ip.is_loopback()
+        || ip.is_private()
+        || ip.is_link_local()
+        || ip.is_multicast()
+        || ip.is_broadcast()
+        || ip.is_unspecified()
+}
+
+fn is_disallowed_ipv6(ip: std::net::Ipv6Addr) -> bool {
+    // An IPv4-mapped IPv6 (`::ffff:a.b.c.d`) routes to the v4 address —
+    // `Ipv6Addr::is_loopback` only matches the literal `::1`, so
+    // `[::ffff:127.0.0.1]` would otherwise sneak past the loopback gate
+    // and let the WebSource exfil to a local service. Unwrap the inner
+    // v4 first and run it through the v4 disallow rules.
+    if let Some(v4) = ip.to_ipv4_mapped() {
+        return is_disallowed_ipv4(v4);
+    }
+    ip.is_loopback() || ip.is_multicast() || ip.is_unspecified()
+        || ip.segments()[0] & 0xfe00 == 0xfc00 // fc00::/7 unique-local
+        || ip.segments()[0] & 0xffc0 == 0xfe80 // fe80::/10 link-local
 }
 
 #[cfg(test)]
@@ -153,6 +169,37 @@ mod web_host_filter_tests {
         assert!(!is_disallowed_web_host("https://example.com/"));
         assert!(!is_disallowed_web_host("https://cdn.jsdelivr.net/app.js"));
         assert!(!is_disallowed_web_host("https://api.github.com/repos/foo/bar"));
+    }
+
+    /// Regression for the IPv4-mapped IPv6 SSRF bypass.
+    /// `Ipv6Addr::is_loopback()` only returns `true` for the literal `::1`,
+    /// so an attacker URL like `http://[::ffff:127.0.0.1]/` previously
+    /// passed every disallow gate and let the WebSource exfil to the
+    /// machine'"'"'s own loopback service. The fix unwraps an IPv4-mapped
+    /// IPv6 into its underlying IPv4 first and runs the v4 disallow
+    /// rules against it.
+    #[test]
+    fn rejects_ipv4_mapped_ipv6_loopback_and_private() {
+        assert!(
+            is_disallowed_web_host("http://[::ffff:127.0.0.1]/"),
+            "::ffff:127.0.0.1 must route to v4 loopback check"
+        );
+        assert!(
+            is_disallowed_web_host("http://[::ffff:10.0.0.1]/"),
+            "::ffff:10.0.0.1 must route to v4 private check"
+        );
+        assert!(
+            is_disallowed_web_host("http://[::ffff:169.254.169.254]/"),
+            "::ffff:169.254.169.254 (cloud-metadata via v6-mapped form) must block"
+        );
+        assert!(
+            is_disallowed_web_host("http://[::ffff:192.168.1.1]/"),
+            "::ffff:192.168.1.1 (private via v6-mapped form) must block"
+        );
+        assert!(
+            is_disallowed_web_host("http://[::ffff:172.16.0.5]/"),
+            "::ffff:172.16.0.5 (private via v6-mapped form) must block"
+        );
     }
 }
 
