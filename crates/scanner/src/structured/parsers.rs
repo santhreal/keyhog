@@ -91,24 +91,39 @@ pub fn parse_docker_compose(text: &str) -> Vec<ExtractedPair> {
         Ok(v) => v,
         Err(_) => return pairs,
     };
-    find_environment_pairs(&value, text, &mut pairs);
+    find_environment_pairs(&value, text, &mut pairs, 0);
     pairs
 }
 
-fn find_environment_pairs(value: &serde_yaml::Value, text: &str, pairs: &mut Vec<ExtractedPair>) {
+/// Cap recursion depth on adversarial YAML — same threat as
+/// [`MAX_TFSTATE_DEPTH`] for JSON. Real docker-compose schemas nest
+/// ~6 levels deep (`services.<name>.environment.<list>`); 256 leaves
+/// the policy permissive but guards against a malicious YAML that
+/// embeds deep `services:` chains to stack-overflow the scanner.
+const MAX_COMPOSE_DEPTH: usize = 256;
+
+fn find_environment_pairs(
+    value: &serde_yaml::Value,
+    text: &str,
+    pairs: &mut Vec<ExtractedPair>,
+    depth: usize,
+) {
+    if depth >= MAX_COMPOSE_DEPTH {
+        return;
+    }
     match value {
         serde_yaml::Value::Mapping(map) => {
             for (k, v) in map {
                 if k.as_str() == Some("environment") {
                     extract_environment_block(v, text, pairs);
                 } else {
-                    find_environment_pairs(v, text, pairs);
+                    find_environment_pairs(v, text, pairs, depth + 1);
                 }
             }
         }
         serde_yaml::Value::Sequence(seq) => {
             for v in seq {
-                find_environment_pairs(v, text, pairs);
+                find_environment_pairs(v, text, pairs, depth + 1);
             }
         }
         _ => {}
@@ -168,11 +183,26 @@ pub fn parse_tfstate(text: &str) -> Vec<ExtractedPair> {
         Ok(v) => v,
         Err(_) => return pairs,
     };
-    extract_tfstate_values(&value, text, &mut pairs);
+    extract_tfstate_values(&value, text, &mut pairs, 0);
     pairs
 }
 
-fn extract_tfstate_values(value: &serde_json::Value, text: &str, pairs: &mut Vec<ExtractedPair>) {
+/// Cap recursion depth on adversarial JSON. A 2 MiB document of
+/// nothing but `[[[...]]]` can nest >500k levels deep — beyond the
+/// 8 MiB default stack of most Linux threads. 256 is enough for any
+/// real Terraform statefile (the deepest natural nesting in the
+/// schema is ~12 levels) but bails before stack overflow.
+const MAX_TFSTATE_DEPTH: usize = 256;
+
+fn extract_tfstate_values(
+    value: &serde_json::Value,
+    text: &str,
+    pairs: &mut Vec<ExtractedPair>,
+    depth: usize,
+) {
+    if depth >= MAX_TFSTATE_DEPTH {
+        return;
+    }
     match value {
         serde_json::Value::Object(map) => {
             for (k, v) in map {
@@ -192,12 +222,12 @@ fn extract_tfstate_values(value: &serde_json::Value, text: &str, pairs: &mut Vec
                         });
                     }
                 }
-                extract_tfstate_values(v, text, pairs);
+                extract_tfstate_values(v, text, pairs, depth + 1);
             }
         }
         serde_json::Value::Array(arr) => {
             for v in arr {
-                extract_tfstate_values(v, text, pairs);
+                extract_tfstate_values(v, text, pairs, depth + 1);
             }
         }
         _ => {}
@@ -424,6 +454,38 @@ data:
             .collect();
         assert_eq!(by_key.get("password"), Some(&"hunter2".to_string()));
         assert_eq!(by_key.get("username"), Some(&"user".to_string()));
+    }
+
+    /// Deeply-nested JSON must not stack-overflow `parse_tfstate`.
+    /// 5k levels of arrays is well past the natural Terraform statefile
+    /// depth and well past what serde_json would otherwise propagate
+    /// recursively into our walker.
+    #[test]
+    fn tfstate_deeply_nested_json_does_not_overflow() {
+        let nested = "[".repeat(5_000) + &"]".repeat(5_000);
+        let pairs = parse_tfstate(&nested);
+        // Either the JSON parser rejects it OR our walker bails at the
+        // depth cap. Either way: no panic, no crash, no findings.
+        assert!(pairs.is_empty());
+    }
+
+    /// Same guard for the docker-compose path — a YAML mapping nested
+    /// thousands of levels deep must bail rather than stack-overflow.
+    #[test]
+    fn docker_compose_deeply_nested_yaml_does_not_overflow() {
+        // Build a YAML doc with 1000 levels of nested `services:` maps.
+        let mut yaml = String::new();
+        let mut indent = String::new();
+        for _ in 0..1000 {
+            yaml.push_str(&indent);
+            yaml.push_str("services:\n");
+            indent.push_str("  ");
+        }
+        // Terminate with a leaf so the YAML parses.
+        yaml.push_str(&indent);
+        yaml.push_str("dummy: 1\n");
+        let pairs = parse_docker_compose(&yaml);
+        assert!(pairs.is_empty(), "deep nesting must yield no findings");
     }
 
     /// k8s `stringData:` values are surfaced verbatim (no base64).
