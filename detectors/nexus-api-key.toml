@@ -11,11 +11,11 @@ severity = "high"
 keywords = ["NEXUS", "nexus", "NEXUS_API_KEY", "NXRM"]
 
 [[detector.patterns]]
-regex = "(?:NEXUS|nexus|NEXUS_API_KEY|nexus_api_key)[=:\\s\"'']+([a-f0-9]{64})"
+regex = "(?i)nexus[_.-]?(?:api[_.-]?)?key[=:\\s\"']+([a-f0-9]{64})"
 description = "Nexus Repository Manager API key (64 hex chars)"
 group = 1
 
 [[detector.patterns]]
-regex = "(?:NEXUS|nexus)[_\\s]*(?:USERNAME|username)[=:\\s\"'']+\\S+\\s*(?:NEXUS|nexus)[_\\s]*(?:PASSWORD|password|API_KEY|api_key)[=:\\s\"'']+([a-fA-F0-9]{32,64})"
+regex = "(?i)nexus[_.\\s-]*username[=:\\s\"']+\\S+\\s*nexus[_.\\s-]*(?:password|api[_.-]?key)[=:\\s\"']+([a-fA-F0-9]{32,64})"
 description = "Nexus credentials with API key/password"
 group = 1

@@ -15,7 +15,7 @@ regex = "sntrys_[a-zA-Z0-9+/]{64,128}"
 description = "Sentry auth token (sntrys_ prefix, base64-encoded)"
 
 [[detector.patterns]]
-regex = "(?:SENTRY|sentry).{0,20}(?:TOKEN|token|AUTH|auth).{0,5}[=:\\s\"']+([a-f0-9]{64})"
+regex = "(?i)sentry[_.-]?(?:auth[_.-]?)?token[=:\\s\"']+([a-f0-9]{64})"
 description = "Legacy Sentry auth token with context anchor (64 character hex)"
 group = 1
 

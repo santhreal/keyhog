@@ -15,6 +15,6 @@ regex = "00D[a-zA-Z0-9]{12,18}![a-zA-Z0-9\\.\\-]{100,}"
 description = "Salesforce session ID/access token with instance ID prefix (00D)"
 
 [[detector.patterns]]
-regex = "(?:SALESFORCE|salesforce|SF_|sf_).{0,20}(?:TOKEN|token|ACCESS|access).{0,5}[=:\\s\"']+([a-zA-Z0-9]{120,})"
+regex = "(?i)(?:salesforce|sf)[_.-]?(?:access[_.-]?)?token[=:\\s\"']+([a-zA-Z0-9]{120,})"
 description = "Salesforce OAuth access token with context anchor (long alphanumeric)"
 group = 1

@@ -11,7 +11,7 @@ severity = "critical"
 keywords = ["SPARKPOST", "sparkpost", "SPARKPOST_API_KEY", "sparkpost_api_key", "sparkpost.com"]
 
 [[detector.patterns]]
-regex = "(?:SPARKPOST|sparkpost).{0,20}(?:API_KEY|api_key|api-key|key|API|api).{0,5}[=:\\s\"']+([a-f0-9]{32})"
+regex = "(?i)sparkpost[_.-]?(?:api[_.-]?)?key[=:\\s\"']+([a-f0-9]{32})"
 description = "SparkPost API key with context anchor (32 hex characters)"
 group = 1
 
