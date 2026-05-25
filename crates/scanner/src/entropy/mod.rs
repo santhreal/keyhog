@@ -16,14 +16,9 @@ pub const VERY_HIGH_ENTROPY_THRESHOLD: f64 = 5.8;
 /// Threshold for keyword-independent detection in clearly sensitive files.
 pub const SENSITIVE_FILE_VERY_HIGH_ENTROPY_THRESHOLD: f64 = 5.5;
 
-/// Shannon entropy in bits per byte.
-/// Compute Shannon entropy of a byte slice, with thread-local caching.
-///
-/// At scale, many matches in the same file produce identical or overlapping
-/// credential strings. The cache eliminates redundant entropy computations
-/// using a fast hash of the input as key. Cache is bounded to prevent
-/// unbounded memory growth on adversarial input.
-/// Compute the Shannon entropy of a byte slice.
+/// Shannon entropy in bits per byte, with thread-local caching for repeat
+/// inputs ≤1KB (typical credential size). Cache evicts wholesale when full
+/// to bound memory under adversarial input.
 pub fn shannon_entropy(data: &[u8]) -> f64 {
     // Length gate: don't cache entropy for massive buffers (e.g. minified JS)
     // that won't repeat exactly. Just calculate directly.
@@ -65,8 +60,7 @@ fn shannon_entropy_uncached(data: &[u8]) -> f64 {
     crate::entropy_fast::shannon_entropy_simd(data)
 }
 
-/// Compute entropy normalized to the range `0.0..=1.0`.
-/// Compute entropy normalized to the range 0.0..=1.0.
+/// Shannon entropy rescaled to `0.0..=1.0` by dividing by `log2(unique_bytes)`.
 pub fn normalized_entropy(data: &[u8]) -> f64 {
     if data.is_empty() {
         return 0.0;
@@ -107,8 +101,7 @@ pub struct EntropyMatch {
     pub offset: usize,
 }
 
-/// Decide whether entropy scanning should run for the given path.
-/// Check if entropy analysis is appropriate for a given file path.
+/// True if the file at `path` is worth running entropy scanning on.
 pub fn is_entropy_appropriate(path: Option<&str>, allow_source_files: bool) -> bool {
     let Some(path) = path else { return true };
     // ASCII case-insensitive byte comparison — no whole-path lowercase
