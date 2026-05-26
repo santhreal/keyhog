@@ -162,98 +162,45 @@ impl CompiledScanner {
                         return self.scan(chunk);
                     }
 
-                    // Generic key=value fallback: run on SMALL non-hit files only.
-                    // Large source files (>32KB) are almost never config; scanning them
-                    // for generic assignments wastes CPU on Go/Java/Python framework code.
-                    if chunk.data.len() <= 32 * 1024
-                        && has_generic_assignment_keyword(chunk.data.as_bytes())
-                    {
-                        let code_lines: Vec<&str> = chunk.data.lines().collect();
-                        let line_offsets = crate::pipeline::compute_line_offsets(&chunk.data);
-                        let mut scan_state =
-                            crate::types::ScanState::with_static_intern(self.static_intern.clone());
-                        self.scan_generic_assignments(
-                            &code_lines,
-                            &line_offsets,
-                            chunk,
-                            &mut scan_state,
-                        );
-                        let mut matches = scan_state.into_matches();
-                        // Record fragments for cross-file secret reassembly.
-                        // When scanning a monorepo, secrets are often split across
-                        // config files (e.g., AWS_ACCESS_KEY in one, SECRET_KEY in another).
-                        let mut reassembled_candidates = Vec::new();
-                        // Pre-allocate the path Arc once per chunk instead
-                        // of once per match — every match in a single chunk
-                        // shares the same `chunk.metadata.path`, so cloning
-                        // an Arc<str> reference is cheaper than cloning the
-                        // owned String per-match. Closes one of the four
-                        // per-match heap allocations the perf kimi audit
-                        // flagged in engine/scan.rs:189-193.
-                        let path_arc: Option<std::sync::Arc<str>> = chunk
-                            .metadata
-                            .path
-                            .as_deref()
-                            .map(std::sync::Arc::<str>::from);
-                        for m in &matches {
-                            if let Some(path) = path_arc.as_ref() {
-                                let fragment = crate::fragment_cache::SecretFragment {
-                                    prefix: m.detector_id.to_string(),
-                                    var_name: m.detector_name.to_string(),
-                                    value: zeroize::Zeroizing::new(m.credential.to_string()),
-                                    line: m.location.line.unwrap_or(0),
-                                    path: Some(std::sync::Arc::clone(path)),
-                                };
-                                let reassembled =
-                                    self.fragment_cache.record_and_reassemble(fragment);
-                                reassembled_candidates.extend(reassembled);
-                            }
+                    // Task #69 follow-up: scan_fallback_patterns runs the
+                    // keyword-AC-gated prefix-less detectors (kubernetes-
+                    // bootstrap-token, asana-pat, mailchimp #3, ...). The
+                    // SIMD-hit branch above routes through that call via
+                    // scan_prepared_with_triggered; this no-hit branch
+                    // historically only ran scan_generic_assignments, so
+                    // any chunk WITHOUT a literal-prefix HS hit silently
+                    // dropped every fallback detector — including
+                    // standalone-on-a-line k8s bootstrap tokens. Fix:
+                    // route the no-hit chunk through scan_inner with an
+                    // empty triggered bitmap, mirroring what
+                    // scan_with_deadline_and_backend does for direct
+                    // (non-coalesced) scan_inner calls. scan_inner walks
+                    // scan_prepared_with_triggered which calls both
+                    // scan_fallback_patterns AND scan_generic_assignments,
+                    // so the previous generic-assignment behaviour is
+                    // preserved. The AC pre-filter inside
+                    // scan_fallback_patterns bounds cost to detectors
+                    // whose ≥4-char keyword appears in the chunk.
+                    //
+                    // Cap stays at 32 KB to match the previous
+                    // generic-assignment cap: large source files
+                    // (>32 KB) are almost never config and the per-file
+                    // fallback walk on Go/Java/Python framework code is
+                    // dead work.
+                    if chunk.data.len() <= 32 * 1024 {
+                        let mut matches = self.scan_inner(chunk, ScanBackend::SimdCpu, None);
+                        // Preserve cross-file fragment reassembly that the
+                        // previous no-hit branch did. Gated on the same
+                        // has_generic_assignment_keyword signal: cross-
+                        // file split secrets (AWS_ACCESS_KEY in one .env,
+                        // AWS_SECRET in another) always carry one of the
+                        // generic-assignment keywords, so chunks without
+                        // any wouldn't have contributed reassembly
+                        // candidates anyway.
+                        if has_generic_assignment_keyword(chunk.data.as_bytes()) {
+                            self.record_and_reassemble_for_no_hit_chunk(chunk, &mut matches);
                         }
-                        for candidate in reassembled_candidates {
-                            // `candidate` is `Zeroizing<String>` — scrubbed
-                            // when this loop iteration ends.
-                            let entropy = crate::pipeline::match_entropy(candidate.as_bytes());
-                            if entropy < 3.0 || candidate.len() < 16 {
-                                continue;
-                            }
-                            // Build the dummy chunk's text in a `Zeroizing`
-                            // and clone into the Chunk only as long as we
-                            // need it; the original `Zeroizing` then drops
-                            // and scrubs. Chunk.data is plain `String`
-                            // because the scan API consumes `&Chunk` and
-                            // we can't change that; we explicitly zero
-                            // the chunk's data after the scan completes.
-                            let mut dummy_data = String::with_capacity(candidate.len() + 24);
-                            dummy_data.push_str("reassembled_key = \"");
-                            dummy_data.push_str(candidate.as_str());
-                            dummy_data.push('"');
-                            let dummy_chunk = Chunk {
-                                data: dummy_data.into(),
-                                metadata: chunk.metadata.clone(),
-                            };
-                            // Tiny synthesized chunk for the reassembled
-                            // candidate — same rationale as
-                            // `scan_cross_chunk_fragments`: skip GPU
-                            // unconditionally because per-dispatch
-                            // overhead dwarfs the work.
-                            let backend = {
-                                #[cfg(feature = "simd")]
-                                {
-                                    crate::hw_probe::ScanBackend::SimdCpu
-                                }
-                                #[cfg(not(feature = "simd"))]
-                                {
-                                    crate::hw_probe::ScanBackend::CpuFallback
-                                }
-                            };
-                            let mut reassembled_matches =
-                                self.scan_inner(&dummy_chunk, backend, None);
-                            matches.append(&mut reassembled_matches);
-                            // Zeroized automatically (SensitiveString)
-                        }
-                        if !matches.is_empty() {
-                            return matches;
-                        }
+                        return matches;
                     }
 
                     Vec::new()
@@ -280,6 +227,65 @@ impl CompiledScanner {
         let triggered =
             self.collect_triggered_patterns_for_backend(&prepared.preprocessed.text, backend);
         self.scan_prepared_with_triggered(prepared, backend, triggered, deadline)
+    }
+
+    /// Record each match as a SecretFragment in the cross-file
+    /// reassembly cache and scan any reassembled candidates. Lifted
+    /// from the inline no-hit branch in scan_coalesced when that branch
+    /// was rerouted through scan_inner: scan_inner produces the matches,
+    /// and this helper continues the previous fragment-cache flow on
+    /// top of them so monorepo scans still pair AWS_ACCESS_KEY in one
+    /// .env with AWS_SECRET in another.
+    #[cfg(feature = "simd")]
+    fn record_and_reassemble_for_no_hit_chunk(
+        &self,
+        chunk: &Chunk,
+        matches: &mut Vec<RawMatch>,
+    ) {
+        let mut reassembled_candidates = Vec::new();
+        // Pre-allocate the path Arc once per chunk: every match in a
+        // single chunk shares the same path, so cloning an Arc<str>
+        // reference is cheaper than cloning the owned String per-match.
+        let path_arc: Option<std::sync::Arc<str>> = chunk
+            .metadata
+            .path
+            .as_deref()
+            .map(std::sync::Arc::<str>::from);
+        for m in matches.iter() {
+            if let Some(path) = path_arc.as_ref() {
+                let fragment = crate::fragment_cache::SecretFragment {
+                    prefix: m.detector_id.to_string(),
+                    var_name: m.detector_name.to_string(),
+                    value: zeroize::Zeroizing::new(m.credential.to_string()),
+                    line: m.location.line.unwrap_or(0),
+                    path: Some(std::sync::Arc::clone(path)),
+                };
+                let reassembled = self.fragment_cache.record_and_reassemble(fragment);
+                reassembled_candidates.extend(reassembled);
+            }
+        }
+        for candidate in reassembled_candidates {
+            // candidate is Zeroizing<String> — scrubbed when this
+            // iteration ends.
+            let entropy = crate::pipeline::match_entropy(candidate.as_bytes());
+            if entropy < 3.0 || candidate.len() < 16 {
+                continue;
+            }
+            let mut dummy_data = String::with_capacity(candidate.len() + 24);
+            dummy_data.push_str("reassembled_key = \"");
+            dummy_data.push_str(candidate.as_str());
+            dummy_data.push('"');
+            let dummy_chunk = Chunk {
+                data: dummy_data.into(),
+                metadata: chunk.metadata.clone(),
+            };
+            // Tiny synthesized chunk; skip GPU unconditionally —
+            // per-dispatch overhead dwarfs the work. Matches the
+            // scan_cross_chunk_fragments rationale.
+            let backend = crate::hw_probe::ScanBackend::SimdCpu;
+            let mut reassembled_matches = self.scan_inner(&dummy_chunk, backend, None);
+            matches.append(&mut reassembled_matches);
+        }
     }
 
     pub(crate) fn extract_matches(
