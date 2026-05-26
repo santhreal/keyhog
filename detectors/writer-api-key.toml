@@ -8,7 +8,7 @@ id = "writer-api-key"
 name = "Writer API Key"
 service = "writer"
 severity = "high"
-keywords = ["WRITER_API_KEY", "writer"]
+keywords = ["WRITER_API_KEY", "writer", "sk-"]
 
 [[detector.patterns]]
 regex = 'sk-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}'

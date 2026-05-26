@@ -21,6 +21,11 @@ keywords = [
     "kubeadm",
     "kubelet",
     "kube-controller-manager",
+    "kubernetes",
+    "kube",
+    "k8s",
+    "K8S",
+    "KUBERNETES",
 ]
 
 [[detector.patterns]]
