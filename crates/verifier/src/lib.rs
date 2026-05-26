@@ -72,6 +72,12 @@ pub struct VerificationEngine {
     pub(crate) max_inflight_keys: usize,
     pub(crate) danger_allow_private_ips: bool,
     pub(crate) danger_allow_http: bool,
+    /// Mirrors `VerifyConfig.insecure_tls`. The base `client` is built
+    /// with `danger_accept_invalid_certs(insecure_tls)`, but the
+    /// per-request DNS-pinning rebuild path needs the bool itself so
+    /// it can match the base client's posture. See
+    /// `verify/request.rs::resolved_client_for_url`.
+    pub(crate) insecure_tls: bool,
     /// Snapshot of "was the base client built with a proxy" — propagated
     /// to per-request rebuild paths so they skip the rebuild (which would
     /// strip the proxy). See `verify/request.rs::resolved_client_for_url`.

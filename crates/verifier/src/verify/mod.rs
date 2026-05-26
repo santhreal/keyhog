@@ -52,6 +52,13 @@ struct VerifyTaskShared {
     max_inflight_keys: usize,
     danger_allow_private_ips: bool,
     danger_allow_http: bool,
+    /// Mirrors `VerifyConfig.insecure_tls`. Threaded into
+    /// `resolved_client_for_url` so the DNS-pinned per-request client
+    /// rebuild honors the `--insecure` flag the operator set on the
+    /// engine. Without this the base client accepts invalid certs but
+    /// the rebuild path rejects them — the flag silently does nothing
+    /// for direct (non-proxy) connections. 2026-05-26.
+    insecure_tls: bool,
     /// `true` when the engine'"'"'s base client was built with a proxy. The
     /// per-request DNS-pinned client rebuild path in
     /// `resolved_client_for_url` MUST NOT fire when a proxy is in use,
@@ -168,6 +175,7 @@ async fn verify_group_task(shared: VerifyTaskShared, group: DedupedMatch) -> Ver
                         shared.danger_allow_private_ips,
                         shared.danger_allow_http,
                         shared.proxy_in_use,
+                        shared.insecure_tls,
                         shared.oob_session.as_ref(),
                     )
                     .await
@@ -231,6 +239,7 @@ impl VerificationEngine {
             max_inflight_keys: config.max_inflight_keys.max(1),
             danger_allow_private_ips: config.danger_allow_private_ips,
             danger_allow_http: config.danger_allow_http,
+            insecure_tls: config.insecure_tls,
             // Issue #2 + #3 fix: don't conflate "configured to set a proxy
             // policy" with "a proxy is actively routing traffic."
             // `proxy_is_active` resolves the documented `KEYHOG_PROXY` sentinels
@@ -266,6 +275,7 @@ impl VerificationEngine {
             max_inflight_keys: self.max_inflight_keys,
             danger_allow_private_ips: self.danger_allow_private_ips,
             danger_allow_http: self.danger_allow_http,
+            insecure_tls: self.insecure_tls,
             proxy_in_use: self.proxy_in_use,
             oob_session: self.oob_session.clone(),
         };

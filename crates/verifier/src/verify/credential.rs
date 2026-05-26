@@ -31,6 +31,7 @@ pub(crate) async fn verify_with_retry(
     allow_private_ips: bool,
     allow_http: bool,
     proxy_in_use: bool,
+    insecure_tls: bool,
     oob_session: Option<&Arc<OobSession>>,
 ) -> (VerificationResult, HashMap<String, String>) {
     retry_loop(MAX_VERIFY_ATTEMPTS, RETRY_DELAY_MS, |_| {
@@ -43,6 +44,7 @@ pub(crate) async fn verify_with_retry(
             allow_private_ips,
             allow_http,
             proxy_in_use,
+            insecure_tls,
             oob_session,
         )
     })
@@ -98,6 +100,7 @@ pub(crate) async fn verify_credential(
     allow_private_ips: bool,
     allow_http: bool,
     proxy_in_use: bool,
+    insecure_tls: bool,
     oob_session: Option<&Arc<OobSession>>,
 ) -> VerificationAttempt {
     if !spec.steps.is_empty() {
@@ -117,6 +120,7 @@ pub(crate) async fn verify_credential(
             allow_private_ips,
             allow_http,
             proxy_in_use,
+            insecure_tls,
         )
         .await;
     }
@@ -204,6 +208,7 @@ pub(crate) async fn verify_credential(
             allow_private_ips,
             allow_http,
             proxy_in_use,
+            insecure_tls,
         )
         .await
         {
