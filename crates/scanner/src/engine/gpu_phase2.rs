@@ -43,24 +43,4 @@ impl CompiledScanner {
         super::boundary::scan_chunk_boundaries(self, chunks, &mut results);
         results
     }
-
-    /// GPU coalesced scan via the `classic_ac_bounded_ranges_program`
-    /// kernel. Same input/output contract as
-    /// [`Self::scan_coalesced_gpu`] (per-chunk `Vec<RawMatch>` results,
-    /// byte-identical to SIMD on the bench corpora once parity tests
-    /// pass) — the only thing that changes is the GPU primitive that
-    /// produces the raw `(pattern_id, start, end)` triples.
-    ///
-    /// Per-byte cost drops from `O(N × L_anchor)` (literal-set walks
-    /// every detector pattern × every literal byte at every offset)
-    /// to `O(L_max)` (AC walks the suffix window once and emits every
-    /// pattern in the accepting state's flat output_links). For
-    /// keyhog's `N = 6 316`, `L_anchor ≈ 10`, `L_max ≈ 50`, that's
-    /// roughly a 1 200× per-byte op reduction.
-    ///
-    /// Caller picks this via `KEYHOG_GPU_KERNEL=ac`; the dispatch
-    /// router in [`Self::scan_coalesced_gpu`] forwards to here. Any
-    /// dispatch error falls back to the literal-set path (via
-    /// `scan_coalesced_non_gpu` for now — the simplest safe fallback
-    /// since we already know SIMD/literal_set produce parity output).
 }

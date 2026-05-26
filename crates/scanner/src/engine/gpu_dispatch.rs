@@ -2,22 +2,14 @@ use super::CompiledScanner;
 
 pub(crate) type ShardDispatchResult = std::result::Result<Vec<Vec<u8>>, vyre::BackendError>;
 
-impl CompiledScanner {
-
-/// Two-phase output of [`CompiledScanner::scan_coalesced_gpu_phase1`].
-///
-/// `Hits` is the headline path: GPU dispatch succeeded, per-chunk hit
-/// triples are ready, and the caller (or
-/// [`CompiledScanner::scan_coalesced_gpu_phase2`]) needs to run the
-/// CPU per-chunk extract to produce `RawMatch` outputs.
-///
-/// `Done` means the dispatch detoured to a degraded backend
-/// (`scan_coalesced_gpu_ac` / `scan_coalesced_non_gpu`) and the final
-/// match list is already computed — no phase 2 work remains.
-pub enum GpuPhase1Output {
-    Hits(Vec<Vec<(u32, u32, u32)>>),
-    Done(Vec<Vec<keyhog_core::RawMatch>>),
-}
+// `GpuPhase1Output` (the {Hits, Done} two-phase return type used by
+// the GPU scan_coalesced_* wrappers) is defined canonically in
+// `gpu_scan_wrappers.rs`. A duplicate copy used to live here wrapped
+// in a malformed outer `impl CompiledScanner {` opener (an enum can't
+// be a member of an impl), which left the file unparseable and broke
+// `cargo check` for the whole scanner crate — and via the dependency
+// chain, every CI job in the repo. The orphan brace was removed and
+// the duplicate enum dropped on 2026-05-26 (v0.5.17 prep).
 
 impl CompiledScanner {
     /// Dispatch `N` shards of the same program through whichever GPU
@@ -72,14 +64,11 @@ impl CompiledScanner {
             .collect();
         Ok(results)
     }
-
-    /// GPU coalesced scan via one vyre `RulePipeline` (regex-NFA)
-    /// dispatch. When the regex compile failed (vyre's
-    /// per-subgroup state cap or unsupported regex syntax) or the
-    /// coalesced buffer exceeds the pipeline's pre-built input_len
-    /// cap, gracefully degrades to the literal-set GPU dispatch
-    /// (`scan_coalesced_gpu`). Same per-chunk extraction phase as
-    /// the literal-set path, same trigger-bitmask shape — the only
-    /// thing that changes is which GPU primitive produced the raw
-    /// `(pattern_id, start, end)` triples.
 }
+
+// Note: the doc-comment describing `scan_coalesced_megascan` formerly
+// trailed here as an orphan. Its target function lives in
+// `gpu_megascan.rs`; the doc was stranded when the file was split. Do
+// not re-add `///` blocks at module scope without an item below them
+// — rustc demands a binding for outer doc comments and the broken
+// state cost a whole day of red CI.

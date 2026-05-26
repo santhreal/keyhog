@@ -408,18 +408,9 @@ impl CompiledScanner {
 
         GpuPhase1Output::Hits(per_chunk_hits)
     }
-
-    /// CPU post-process pass that runs after the GPU literal-set
-    /// dispatch ([`Self::scan_coalesced_gpu`]) has produced
-    /// per-chunk hits. Split out so the orchestrator can pipeline:
-    /// while one batch's CPU phase2 is running, the next batch's
-    /// `scan_coalesced_gpu_phase1` GPU dispatch can launch in parallel
-    /// on a different OS thread.
-    ///
-    /// Inputs/outputs are deliberately Send + 'static-amenable:
-    /// `chunks` is a borrow, `per_chunk_hits` is a `Vec<Vec<…>>` that
-    /// can be moved into a spawned thread, and the returned
-    /// `Vec<Vec<RawMatch>>` is owned. Combined with `Arc<Vec<Chunk>>`
-    /// on the orchestrator side this composes into a clean two-stage
-    /// pipeline.
 }
+
+// Phase 2 (CPU post-process that runs after this file's GPU
+// literal-set dispatch produces per-chunk hits) lives in
+// `gpu_phase2.rs`. The orphan doc-comment that previously trailed
+// here described that function and was stranded when the body moved.

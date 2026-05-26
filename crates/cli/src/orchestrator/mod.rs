@@ -18,7 +18,7 @@ use keyhog_scanner::CompiledScanner;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-pub use run::{EXIT_LIVE_CREDENTIALS, EXIT_SCANNER_PANIC};
+pub(crate) use run::{EXIT_LIVE_CREDENTIALS, EXIT_SCANNER_PANIC};
 
 #[doc(hidden)]
 pub use dispatch::explicit_backend_override;
