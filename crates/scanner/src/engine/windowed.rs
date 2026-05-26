@@ -1,5 +1,5 @@
 use super::*;
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 
 impl CompiledScanner {
     pub(super) fn scan_windowed(

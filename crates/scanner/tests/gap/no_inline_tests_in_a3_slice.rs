@@ -24,13 +24,7 @@ fn scan_rust_sources(dir: &Path, offenders: &mut Vec<PathBuf>) {
 fn no_inline_tests_in_a3_slice() {
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let mut offenders = Vec::new();
-    let pipeline = manifest.join("src/pipeline.rs");
-    if pipeline.exists() {
-        let content = std::fs::read_to_string(&pipeline).unwrap();
-        if content.lines().any(|l| l.trim().starts_with("#[cfg(test)]")) {
-            offenders.push(pipeline);
-        }
-    }
+    scan_rust_sources(&manifest.join("src/pipeline"), &mut offenders);
     scan_rust_sources(&manifest.join("src/decode"), &mut offenders);
     scan_rust_sources(&manifest.join("src/multiline"), &mut offenders);
     offenders.sort();

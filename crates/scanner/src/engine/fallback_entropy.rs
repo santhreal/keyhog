@@ -1,6 +1,8 @@
 #[cfg(feature = "entropy")]
 use super::*;
 #[cfg(feature = "entropy")]
+use keyhog_core::MatchLocation;
+#[cfg(feature = "entropy")]
 use std::collections::HashMap;
 
 #[cfg(feature = "entropy")]

@@ -1,4 +1,5 @@
 use super::*;
+use crate::context;
 #[cfg(feature = "simd")]
 use std::cell::RefCell;
 use std::collections::HashMap;

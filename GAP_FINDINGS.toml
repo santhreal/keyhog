@@ -358,7 +358,7 @@ fix_target = "0.6.0"
 [[finding]]
 id = "KH-GAP-040"
 severity = "micro-flaw"
-status = "open"
+status = "fixed"
 crate = "scanner"
 title = "forced GPU backend must not silently scan with CPU without signal."
 test = "crates/scanner/tests/gap/gpu_forced_backend_no_silent_degrade.rs"

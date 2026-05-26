@@ -10,6 +10,7 @@ pub mod confidence_signals;
 pub mod context;
 pub mod decode;
 pub mod engine;
+pub mod engine_a2_cases;
 pub mod engine_backend;
 pub mod engine_cases;
 pub mod file_gate;

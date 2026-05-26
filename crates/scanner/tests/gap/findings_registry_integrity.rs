@@ -4,7 +4,8 @@ use std::path::PathBuf;
 
 #[test]
 fn gap_findings_registry_matches_test_files() {
-    let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let repo = manifest
         .parent()
         .and_then(|p| p.parent())
         .expect("repo root");

@@ -2,11 +2,12 @@
 
 mod json;
 mod sarif;
-mod sarif_uri;
 mod text;
 
-pub mod banner;
+#[path = "report/sarif_uri.rs"]
 pub mod sarif_uri;
+
+pub mod banner;
 
 use std::io::Write;
 
