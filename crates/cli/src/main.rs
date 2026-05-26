@@ -6,18 +6,13 @@
 
 use clap::Parser;
 use keyhog::args::{Cli, Command};
+use keyhog::orchestrator::EXIT_SCANNER_PANIC;
 use keyhog::{subcommands, FINDINGS_COUNT, SCANNED_CHUNKS, SCANNER_PANICKED, TOTAL_CHUNKS};
 use std::io::IsTerminal;
 use std::process::ExitCode;
 use std::sync::atomic::Ordering;
 
 const EXIT_USER_ERROR: u8 = 2;
-// Scanner thread panicked mid-scan — exit 11 per `keyhog --help`
-// after_help. Earlier code used the same name with value 3, colliding
-// with detectors::EXIT_AUDIT_FAILED. Aligned with orchestrator's
-// EXIT_SCANNER_PANIC so CI scripts can distinguish "detector audit
-// failure" (3) from "scanner crashed" (11). 2026-05-26.
-const EXIT_SCANNER_PANIC: u8 = 11;
 
 /// Restore the default SIGPIPE handler so Unix piping works.
 ///

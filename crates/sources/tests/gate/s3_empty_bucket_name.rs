@@ -1,6 +1,8 @@
 //! LR1-A8 replacement gate: `s3/mod.rs` empty bucket name.
 
 #[cfg(feature = "s3")]
+use keyhog_core::Source;
+#[cfg(feature = "s3")]
 use keyhog_sources::S3Source;
 
 #[cfg(feature = "s3")]
