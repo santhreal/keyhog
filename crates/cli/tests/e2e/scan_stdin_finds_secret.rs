@@ -13,7 +13,12 @@ fn scan_stdin_finds_secret() {
         .stderr(Stdio::piped())
         .spawn()
         .expect("spawn");
-    child.stdin.as_mut().unwrap().write_all(b"AWS_ACCESS_KEY_ID = \"AKIAQYLPMN5HFIQR7XYA\"\n").unwrap();
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(b"AWS_ACCESS_KEY_ID = \"AKIAQYLPMN5HFIQR7XYA\"\n")
+        .unwrap();
     let output = child.wait_with_output().expect("wait");
     assert_eq!(output.status.code(), Some(1));
     let stdout = String::from_utf8_lossy(&output.stdout);

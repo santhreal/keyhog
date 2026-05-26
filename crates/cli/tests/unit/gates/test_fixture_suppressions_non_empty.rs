@@ -2,7 +2,10 @@
 
 #[test]
 fn test_fixture_suppressions_non_empty() {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/test_fixture_suppressions.rs");
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/test_fixture_suppressions.rs"
+    );
     let src = std::fs::read_to_string(path).expect("source readable");
     assert!(
         src.trim().len() >= 20,

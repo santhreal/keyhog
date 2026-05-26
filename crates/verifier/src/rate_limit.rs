@@ -152,4 +152,3 @@ pub fn get_rate_limiter() -> &'static RateLimiter {
 pub fn set_global_default_rps(rps: f64) {
     get_rate_limiter().set_default_rps(rps);
 }
-

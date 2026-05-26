@@ -12,7 +12,9 @@ fn pipeline_with_merkle_skips_already_cached_chunks() {
     let merkle = Arc::new(keyhog_core::merkle_index::MerkleIndex::empty());
     let known_hash = keyhog_core::merkle_index::MerkleIndex::hash_content(text.as_bytes());
     merkle.record(std::path::PathBuf::from("y.rs"), known_hash);
-    let sources: Vec<Box<dyn Source>> = vec![Box::new(StaticSource { chunks: vec![chunk] })];
+    let sources: Vec<Box<dyn Source>> = vec![Box::new(StaticSource {
+        chunks: vec![chunk],
+    })];
     let findings = orch.scan_sources_for_test(sources, false, Some(merkle));
     assert!(findings.is_empty(), "cached hash must skip scan");
 }

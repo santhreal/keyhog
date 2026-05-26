@@ -64,8 +64,8 @@ fn make_chunk(text: &str) -> Chunk {
 }
 
 fn scanner() -> CompiledScanner {
-    let detectors = keyhog_core::load_detectors(&detector_dir())
-        .expect("detectors directory loadable");
+    let detectors =
+        keyhog_core::load_detectors(&detector_dir()).expect("detectors directory loadable");
     CompiledScanner::compile(detectors).expect("scanner compile")
 }
 
@@ -119,7 +119,10 @@ fn chunk_contracts_pass_positives_and_negatives() {
     for chunk_id in chunk_ids() {
         let path = resolve_contract_path(&chunk_id);
         if !path.is_file() {
-            failures.push(format!("{chunk_id}: contract missing at {}", path.display()));
+            failures.push(format!(
+                "{chunk_id}: contract missing at {}",
+                path.display()
+            ));
             continue;
         }
         let c = load_toml(&path);

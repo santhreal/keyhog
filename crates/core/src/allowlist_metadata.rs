@@ -62,4 +62,3 @@ pub(super) fn today_yyyy_mm_dd() -> String {
     let year = y + i64::from(m <= 2);
     format!("{year:04}-{m:02}-{d:02}")
 }
-

@@ -1,5 +1,5 @@
 //! Migrated from `src/spec/load.rs` inline tests.
-use keyhog_core::{load_detectors_from_str, load_detectors_with_gate, SpecError, Severity};
+use keyhog_core::{load_detectors_from_str, load_detectors_with_gate, Severity, SpecError};
 fn valid_toml() -> &'static str {
     r#"
         [detector]
@@ -14,9 +14,9 @@ fn valid_toml() -> &'static str {
     "#
 }
 #[test]
-    fn load_detectors_from_str_parses_valid_detector() {
-        let specs = load_detectors_from_str(valid_toml()).unwrap();
-        assert_eq!(specs.len(), 1);
-        assert_eq!(specs[0].id, "demo");
-        assert_eq!(specs[0].severity, Severity::High);
-    }
+fn load_detectors_from_str_parses_valid_detector() {
+    let specs = load_detectors_from_str(valid_toml()).unwrap();
+    assert_eq!(specs.len(), 1);
+    assert_eq!(specs[0].id, "demo");
+    assert_eq!(specs[0].severity, Severity::High);
+}

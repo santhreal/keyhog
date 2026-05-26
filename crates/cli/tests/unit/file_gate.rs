@@ -5,13 +5,13 @@ use keyhog::args::{Cli, ScanArgs};
 use keyhog::baseline::Baseline;
 use keyhog::benchmark::{format_gpu_summary, startup_summary};
 use keyhog::config::find_config_file;
-use keyhog::daemon::protocol::{Request, Response, WIRE_VERSION, MAX_FRAME_BYTES};
 use keyhog::daemon::default_socket_path;
+use keyhog::daemon::protocol::{Request, Response, MAX_FRAME_BYTES, WIRE_VERSION};
 use keyhog::inline_suppression::filter_inline_suppressions;
 use keyhog::path_validation::validate_cli_path_arg;
 use keyhog::reporting::report_findings;
 use keyhog::test_fixture_suppressions::TestFixtureSuppressions;
-use keyhog::value_parsers::{parse_min_confidence, parse_decode_depth};
+use keyhog::value_parsers::{parse_decode_depth, parse_min_confidence};
 use keyhog_core::{MatchLocation, RawMatch, Severity};
 use std::sync::Arc;
 
@@ -169,11 +169,7 @@ fn orchestrator_happy() {
 #[test]
 fn orchestrator_error() {
     assert!(
-        validate_cli_path_arg(
-            std::path::Path::new("/nonexistent/keyhog-path"),
-            "scan"
-        )
-        .is_err()
+        validate_cli_path_arg(std::path::Path::new("/nonexistent/keyhog-path"), "scan").is_err()
     );
 }
 
@@ -188,11 +184,7 @@ fn orchestrator_config_happy() {
 #[test]
 fn path_validation_error() {
     assert!(
-        validate_cli_path_arg(
-            std::path::Path::new("/nonexistent/keyhog-path"),
-            "scan"
-        )
-        .is_err()
+        validate_cli_path_arg(std::path::Path::new("/nonexistent/keyhog-path"), "scan").is_err()
     );
 }
 
@@ -259,13 +251,9 @@ fn subcommands_diff_happy() {
     let b = dir.path().join("b.json");
     std::fs::write(&a, b"[]").unwrap();
     std::fs::write(&b, b"[]").unwrap();
-    assert!(Cli::try_parse_from([
-        "keyhog",
-        "diff",
-        a.to_str().unwrap(),
-        b.to_str().unwrap()
-    ])
-    .is_ok());
+    assert!(
+        Cli::try_parse_from(["keyhog", "diff", a.to_str().unwrap(), b.to_str().unwrap()]).is_ok()
+    );
 }
 #[test]
 fn subcommands_diff_error() {

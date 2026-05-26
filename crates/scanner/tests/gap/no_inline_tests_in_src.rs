@@ -40,7 +40,11 @@ fn no_inline_tests_in_src() {
         offenders.len(),
         offenders
             .iter()
-            .map(|p| p.strip_prefix(env!("CARGO_MANIFEST_DIR")).unwrap_or(p).display().to_string())
+            .map(|p| p
+                .strip_prefix(env!("CARGO_MANIFEST_DIR"))
+                .unwrap_or(p)
+                .display()
+                .to_string())
             .collect::<Vec<_>>()
             .join("\n  - ")
     );

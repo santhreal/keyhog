@@ -7,8 +7,14 @@ fn inline_test_offenders_orchestrator() {
         let path = entry.expect("entry").path();
         if path.extension().is_some_and(|e| e == "rs") {
             let content = std::fs::read_to_string(&path).expect("read");
-            let has_inline = content.lines().any(|l| l.trim().starts_with("#[cfg(test)]"));
-            assert!(!has_inline, "{} must migrate inline tests to tests/unit/", path.display());
+            let has_inline = content
+                .lines()
+                .any(|l| l.trim().starts_with("#[cfg(test)]"));
+            assert!(
+                !has_inline,
+                "{} must migrate inline tests to tests/unit/",
+                path.display()
+            );
         }
     }
 }

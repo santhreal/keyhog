@@ -35,10 +35,7 @@ fn sample_match(path: &str, offset: usize) -> RawMatch {
 /// Same credential across two files collapses to one group with the canonical hash.
 #[test]
 fn dedup_same_credential_one_group() {
-    let matches = vec![
-        sample_match("alpha.env", 10),
-        sample_match("beta.env", 20),
-    ];
+    let matches = vec![sample_match("alpha.env", 10), sample_match("beta.env", 20)];
 
     let deduped = dedup_matches(matches, &DedupScope::Credential);
 

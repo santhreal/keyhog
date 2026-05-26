@@ -2,6 +2,12 @@
 
 #[test]
 fn orchestrator_config_honors_keyhog_detectors_env() {
-    let src = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/orchestrator_config.rs"));
-    assert!(src.contains("KEYHOG_DETECTORS"), "orchestrator_config must honor KEYHOG_DETECTORS");
+    let src = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/orchestrator_config.rs"
+    ));
+    assert!(
+        src.contains("KEYHOG_DETECTORS"),
+        "orchestrator_config must honor KEYHOG_DETECTORS"
+    );
 }

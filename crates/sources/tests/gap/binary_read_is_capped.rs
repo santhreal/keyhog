@@ -4,11 +4,8 @@ const MAX_BINARY_READ_BYTES: usize = 64 * 1024 * 1024;
 
 #[test]
 fn binary_mod_uses_capped_read_helper() {
-    let src = std::fs::read_to_string(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/src/binary/mod.rs"
-    ))
-    .expect("binary/mod.rs readable");
+    let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/binary/mod.rs"))
+        .expect("binary/mod.rs readable");
 
     assert!(
         src.contains("read_binary_capped"),

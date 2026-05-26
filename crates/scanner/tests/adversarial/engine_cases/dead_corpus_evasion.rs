@@ -9,8 +9,8 @@
 //! substring — a function returning `Vec::new()` fails.
 
 use super::corpus_support::{
-    corpus_fixture_path, has_credential, has_detector, production_scanner, scan_corpus,
-    scan_text, AWS_ACCESS_KEY, GITHUB_PAT,
+    corpus_fixture_path, has_credential, has_detector, production_scanner, scan_corpus, scan_text,
+    AWS_ACCESS_KEY, GITHUB_PAT,
 };
 use keyhog_core::{Chunk, ChunkMetadata};
 
@@ -49,11 +49,7 @@ fn assert_not_detected(matches: &[keyhog_core::RawMatch], fixture: &str, credent
     );
 }
 
-fn assert_any_service(
-    matches: &[keyhog_core::RawMatch],
-    fixture: &str,
-    services: &[&str],
-) {
+fn assert_any_service(matches: &[keyhog_core::RawMatch], fixture: &str, services: &[&str]) {
     let hit = services.iter().any(|needle| has_detector(matches, needle));
     assert!(
         hit,
@@ -243,16 +239,8 @@ fn evasion_reversed_strings_negative_twin_suppresses_forward_example_aws() {
     // The fixture embeds a forward EXAMPLE AWS key; suppression must hold even
     // when the literal is visible without decode.
     let matches = scan_fixture("reversed_strings.py");
-    assert_not_detected(
-        &matches,
-        "reversed_strings.py",
-        FAKE_AWS_EXAMPLE,
-    );
-    assert_not_detected(
-        &matches,
-        "reversed_strings.py",
-        FAKE_GITHUB_EXAMPLE,
-    );
+    assert_not_detected(&matches, "reversed_strings.py", FAKE_AWS_EXAMPLE);
+    assert_not_detected(&matches, "reversed_strings.py", FAKE_GITHUB_EXAMPLE);
 }
 
 // ---------------------------------------------------------------------------

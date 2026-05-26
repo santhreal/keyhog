@@ -248,4 +248,3 @@ pub fn format_sigv4_timestamps(unix_secs: u64) -> (String, String) {
     let amz_date = format!("{year:04}{m:02}{d:02}T{hour:02}{minute:02}{second:02}Z");
     (date_stamp, amz_date)
 }
-

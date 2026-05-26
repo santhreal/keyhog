@@ -1,5 +1,7 @@
 //! Migrated from `src/report/sarif.rs` inline tests.
-use keyhog_core::{Reporter, MatchLocation, SarifReporter, Severity, VerificationResult, VerifiedFinding};
+use keyhog_core::{
+    MatchLocation, Reporter, SarifReporter, Severity, VerificationResult, VerifiedFinding,
+};
 use std::collections::HashMap;
 use std::sync::Arc;
 fn synthetic_finding() -> VerifiedFinding {
@@ -26,22 +28,22 @@ fn synthetic_finding() -> VerifiedFinding {
     }
 }
 #[test]
-    fn sarif_uri_full_run_with_absolute_path() {
-        let mut finding = synthetic_finding();
-        finding.location.file_path = Some(Arc::from("/etc/keys/aws.env"));
-        let mut buf: Vec<u8> = Vec::new();
-        {
-            let mut r = SarifReporter::new(&mut buf);
-            r.report(&finding).unwrap();
-            r.finish().unwrap();
-        }
-        let json: serde_json::Value = serde_json::from_slice(&buf).expect("valid JSON");
-        let loc_uri = json["runs"][0]["results"][0]["locations"][0]["physicalLocation"]
-            ["artifactLocation"]["uri"]
-            .as_str();
-        assert_eq!(loc_uri, Some("file:///etc/keys/aws.env"));
-        let fix_uri = json["runs"][0]["results"][0]["fixes"][0]["artifactChanges"][0]
-            ["artifactLocation"]["uri"]
-            .as_str();
-        assert_eq!(fix_uri, Some("file:///etc/keys/aws.env"));
+fn sarif_uri_full_run_with_absolute_path() {
+    let mut finding = synthetic_finding();
+    finding.location.file_path = Some(Arc::from("/etc/keys/aws.env"));
+    let mut buf: Vec<u8> = Vec::new();
+    {
+        let mut r = SarifReporter::new(&mut buf);
+        r.report(&finding).unwrap();
+        r.finish().unwrap();
     }
+    let json: serde_json::Value = serde_json::from_slice(&buf).expect("valid JSON");
+    let loc_uri = json["runs"][0]["results"][0]["locations"][0]["physicalLocation"]
+        ["artifactLocation"]["uri"]
+        .as_str();
+    assert_eq!(loc_uri, Some("file:///etc/keys/aws.env"));
+    let fix_uri = json["runs"][0]["results"][0]["fixes"][0]["artifactChanges"][0]
+        ["artifactLocation"]["uri"]
+        .as_str();
+    assert_eq!(fix_uri, Some("file:///etc/keys/aws.env"));
+}

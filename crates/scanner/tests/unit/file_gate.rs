@@ -11,20 +11,20 @@ use keyhog_scanner::engine::segment_attribution::{map_offsets_to_segments, Globa
 use keyhog_scanner::engine::CompiledScanner;
 use keyhog_scanner::entropy::{shannon_entropy, HIGH_ENTROPY_THRESHOLD};
 use keyhog_scanner::entropy_fast::shannon_entropy_simd;
+use keyhog_scanner::gpu::{batch_ml_inference, gpu_available, gpu_probe};
 use keyhog_scanner::jwt::{analyze, looks_like_jwt};
 use keyhog_scanner::ml_scorer::{compute_features_public, model_version, score, NUM_FEATURES};
-use keyhog_scanner::prefix_trie::build_propagation_table;
-use keyhog_scanner::{
-    compute_line_offsets, match_entropy, normalize_chunk_data, probe_hardware, select_backend,
-    ScanError,
-};
-use keyhog_scanner::gpu::{batch_ml_inference, gpu_available, gpu_probe};
 use keyhog_scanner::multiline::{preprocess_multiline, MultilineConfig};
+use keyhog_scanner::prefix_trie::build_propagation_table;
 use keyhog_scanner::resolution::resolve_matches;
 use keyhog_scanner::telemetry::{drain_events, enable_dogfood, record_example_suppression, reset};
 use keyhog_scanner::types::ScannerConfig;
 use keyhog_scanner::unicode_hardening::is_evasion_char;
 use keyhog_scanner::{bigram_bloom::BigramBloom, fragment_cache::FragmentCache};
+use keyhog_scanner::{
+    compute_line_offsets, match_entropy, normalize_chunk_data, probe_hardware, select_backend,
+    ScanError,
+};
 
 fn demo_chunk(data: &str) -> Chunk {
     Chunk {
@@ -108,10 +108,7 @@ fn checksum_gitlab_happy() {
 }
 #[test]
 fn checksum_gitlab_error() {
-    assert_eq!(
-        validate_checksum("glpat-short"),
-        ChecksumResult::Invalid
-    );
+    assert_eq!(validate_checksum("glpat-short"), ChecksumResult::Invalid);
 }
 
 // ── crates/scanner/src/checksum/mod.rs ────────────────────────────────
@@ -147,13 +144,19 @@ fn checksum_npm_error() {
 #[test]
 fn checksum_slack_happy() {
     assert_eq!(
-        validate_checksum(concat!("xox", "b-1234567890-1234567890-abcdefghijklmnopqrstuvwx")),
+        validate_checksum(concat!(
+            "xox",
+            "b-1234567890-1234567890-abcdefghijklmnopqrstuvwx"
+        )),
         ChecksumResult::Valid
     );
 }
 #[test]
 fn checksum_slack_error() {
-    assert_eq!(validate_checksum(concat!("xox", "b-bad")), ChecksumResult::Invalid);
+    assert_eq!(
+        validate_checksum(concat!("xox", "b-bad")),
+        ChecksumResult::Invalid
+    );
 }
 
 // ── crates/scanner/src/checksum/stripe.rs ─────────────────────────────
@@ -166,10 +169,7 @@ fn checksum_stripe_happy() {
 }
 #[test]
 fn checksum_stripe_error() {
-    assert_eq!(
-        validate_checksum("sk_live_short"),
-        ChecksumResult::Invalid
-    );
+    assert_eq!(validate_checksum("sk_live_short"), ChecksumResult::Invalid);
 }
 
 // ── crates/scanner/src/compiler.rs ────────────────────────────────────
@@ -239,17 +239,19 @@ fn confidence_prefixes_error() {
 // ── crates/scanner/src/confidence/signals.rs ──────────────────────────
 #[test]
 fn confidence_signals_happy() {
-    assert!(keyhog_scanner::confidence::ConfidenceSignals {
-        has_literal_prefix: true,
-        has_context_anchor: false,
-        entropy: 4.0,
-        keyword_nearby: true,
-        sensitive_file: false,
-        match_length: 20,
-        has_companion: false,
-    }
-    .entropy
-        > 0.0);
+    assert!(
+        keyhog_scanner::confidence::ConfidenceSignals {
+            has_literal_prefix: true,
+            has_context_anchor: false,
+            entropy: 4.0,
+            keyword_nearby: true,
+            sensitive_file: false,
+            match_length: 20,
+            has_companion: false,
+        }
+        .entropy
+            > 0.0
+    );
 }
 #[test]
 fn confidence_signals_error() {
@@ -281,7 +283,9 @@ fn context_documentation_error() {
 #[test]
 fn context_false_positive_happy() {
     let line = "API_TOKEN=ghp_1234567890abcdef1234567890abcdef123456 # fake credential, demo only";
-    assert!(keyhog_scanner::context::is_false_positive_match_context(line, 10, None));
+    assert!(keyhog_scanner::context::is_false_positive_match_context(
+        line, 10, None
+    ));
 }
 #[test]
 fn context_false_positive_error() {
@@ -347,7 +351,10 @@ fn decode_caesar_error() {
 // ── crates/scanner/src/decode/hex.rs ──────────────────────────────────
 #[test]
 fn decode_hex_happy() {
-    assert_eq!(String::from_utf8(hex_decode("736b").unwrap()).unwrap(), "sk");
+    assert_eq!(
+        String::from_utf8(hex_decode("736b").unwrap()).unwrap(),
+        "sk"
+    );
 }
 #[test]
 fn decode_hex_error() {
@@ -370,8 +377,10 @@ fn decode_json_error() {
 // ── crates/scanner/src/decode/mod.rs ──────────────────────────────────
 #[test]
 fn decode_mod_happy() {
-    assert!(keyhog_scanner::decode::find_base64_strings("c2s=", 2).is_empty()
-        || !keyhog_scanner::decode::find_base64_strings("c2s=", 2).is_empty());
+    assert!(
+        keyhog_scanner::decode::find_base64_strings("c2s=", 2).is_empty()
+            || !keyhog_scanner::decode::find_base64_strings("c2s=", 2).is_empty()
+    );
 }
 #[test]
 fn decode_mod_error() {
@@ -393,7 +402,10 @@ fn decode_pipeline_error() {
 // ── crates/scanner/src/decode/reverse.rs ──────────────────────────────
 #[test]
 fn decode_reverse_error() {
-    assert!(keyhog_scanner::decode::decode_chunk(&demo_chunk("forward"), 1, false, None, None).is_empty());
+    assert!(
+        keyhog_scanner::decode::decode_chunk(&demo_chunk("forward"), 1, false, None, None)
+            .is_empty()
+    );
 }
 
 // ── crates/scanner/src/decode/unicode_escape.rs ───────────────────────
@@ -416,7 +428,9 @@ fn decode_url_happy() {
 }
 #[test]
 fn decode_url_error() {
-    assert!(keyhog_scanner::decode::decode_chunk(&demo_chunk("plain"), 1, false, None, None).is_empty());
+    assert!(
+        keyhog_scanner::decode::decode_chunk(&demo_chunk("plain"), 1, false, None, None).is_empty()
+    );
 }
 
 // ── crates/scanner/src/decode/util.rs ─────────────────────────────────
@@ -428,7 +442,9 @@ fn decode_util_error() {
 // ── crates/scanner/src/decode_impl.rs ─────────────────────────────────
 #[test]
 fn decode_impl_error() {
-    assert!(keyhog_scanner::decode::decode_chunk(&demo_chunk("x"), 0, false, None, None).is_empty());
+    assert!(
+        keyhog_scanner::decode::decode_chunk(&demo_chunk("x"), 0, false, None, None).is_empty()
+    );
 }
 
 // ── engine/* — see tests/unit/engine.rs, engine_backend.rs, segment_attribution.rs
@@ -528,11 +544,8 @@ fn engine_windowed_error() {
 // ── crates/scanner/src/engine/fallback.rs + fallback_entropy + fallback_generic
 #[test]
 fn engine_fallback_happy() {
-    let scanner = CompiledScanner::compile(vec![demo_detector(
-        r"ghp_[A-Za-z0-9]{20,}",
-        "ghp_",
-    )])
-    .unwrap();
+    let scanner =
+        CompiledScanner::compile(vec![demo_detector(r"ghp_[A-Za-z0-9]{20,}", "ghp_")]).unwrap();
     let token = concat!("gh", "p_zQWBuTSOoRi4A9spHcVY5ncnsDkxkJ0mLq17");
     assert!(scanner
         .scan(&demo_chunk(&format!("export TOKEN={token}")))
@@ -541,11 +554,8 @@ fn engine_fallback_happy() {
 }
 #[test]
 fn engine_fallback_error() {
-    let scanner = CompiledScanner::compile(vec![demo_detector(
-        r"ghp_[A-Za-z0-9]{20,}",
-        "ghp_",
-    )])
-    .unwrap();
+    let scanner =
+        CompiledScanner::compile(vec![demo_detector(r"ghp_[A-Za-z0-9]{20,}", "ghp_")]).unwrap();
     assert!(scanner.scan(&demo_chunk("plain prose")).is_empty());
 }
 
@@ -559,11 +569,8 @@ fn engine_scan_filters_happy() {
 }
 #[test]
 fn engine_scan_filters_error() {
-    let scanner = CompiledScanner::compile(vec![demo_detector(
-        r"ghp_[A-Za-z0-9]{20,}",
-        "ghp_",
-    )])
-    .unwrap();
+    let scanner =
+        CompiledScanner::compile(vec![demo_detector(r"ghp_[A-Za-z0-9]{20,}", "ghp_")]).unwrap();
     let token = concat!("gh", "p_zQWBuTSOoRi4A9spHcVY5ncnsDkxkJ0mLq17");
     assert!(scanner
         .scan(&demo_chunk(&format!("api_key = \"{token}\"")))
@@ -613,17 +620,14 @@ fn engine_hot_patterns_error() {
 // ── crates/scanner/src/engine/segment_attribution.rs ──────────────────
 #[test]
 fn engine_segment_attribution_happy() {
-    let mapped = map_offsets_to_segments(
-        &[Segment::new(1, 0, 4)],
-        &[GlobalMatch::new(1, 1, 3)],
-    )
-    .unwrap();
+    let mapped =
+        map_offsets_to_segments(&[Segment::new(1, 0, 4)], &[GlobalMatch::new(1, 1, 3)]).unwrap();
     assert_eq!(mapped.len(), 1);
 }
 #[test]
 fn engine_segment_attribution_error() {
-    let err = map_offsets_to_segments(&[Segment::new(1, 0, 4)], &[GlobalMatch::new(1, 2, 10)])
-        .unwrap();
+    let err =
+        map_offsets_to_segments(&[Segment::new(1, 0, 4)], &[GlobalMatch::new(1, 2, 10)]).unwrap();
     assert!(err.is_empty());
 }
 
@@ -721,7 +725,10 @@ fn error_error_path() {
 #[test]
 fn gpu_happy() {
     let scores = batch_ml_inference(
-        &[(concat!("gh", "p_abcdefghijklmnopqrstuvwxyz0123456789"), "export TOKEN=")],
+        &[(
+            concat!("gh", "p_abcdefghijklmnopqrstuvwxyz0123456789"),
+            "export TOKEN=",
+        )],
         &ScannerConfig::default(),
     );
     assert_eq!(scores.len(), 1);
@@ -781,7 +788,10 @@ fn lib_error() {
 // ── crates/scanner/src/ml_features.rs ─────────────────────────────────
 #[test]
 fn ml_features_happy() {
-    let f = compute_features_public(concat!("gh", "p_abcdefghijklmnopqrstuvwxyz0123456789"), "TOKEN=");
+    let f = compute_features_public(
+        concat!("gh", "p_abcdefghijklmnopqrstuvwxyz0123456789"),
+        "TOKEN=",
+    );
     assert_eq!(f.len(), NUM_FEATURES);
 }
 #[test]
@@ -793,7 +803,12 @@ fn ml_features_error() {
 // ── crates/scanner/src/ml_scorer.rs ───────────────────────────────────
 #[test]
 fn ml_scorer_happy() {
-    assert!(score(concat!("gh", "p_abcdefghijklmnopqrstuvwxyz0123456789"), "export TOKEN=") >= 0.0);
+    assert!(
+        score(
+            concat!("gh", "p_abcdefghijklmnopqrstuvwxyz0123456789"),
+            "export TOKEN="
+        ) >= 0.0
+    );
 }
 #[test]
 fn ml_scorer_error() {
@@ -803,7 +818,12 @@ fn ml_scorer_error() {
 // ── crates/scanner/src/ml_weights.rs ──────────────────────────────────
 #[test]
 fn ml_weights_happy() {
-    assert!(score(concat!("gh", "p_abcdefghijklmnopqrstuvwxyz0123456789"), "TOKEN=") >= 0.0);
+    assert!(
+        score(
+            concat!("gh", "p_abcdefghijklmnopqrstuvwxyz0123456789"),
+            "TOKEN="
+        ) >= 0.0
+    );
 }
 #[test]
 fn ml_weights_error() {
@@ -866,7 +886,11 @@ fn multiline_preprocessor_happy() {
 }
 #[test]
 fn multiline_preprocessor_error() {
-    let out = preprocess_multiline("no concat", &MultilineConfig::default(), &FragmentCache::new(10));
+    let out = preprocess_multiline(
+        "no concat",
+        &MultilineConfig::default(),
+        &FragmentCache::new(10),
+    );
     assert_eq!(out.text, "no concat");
 }
 
@@ -912,9 +936,7 @@ fn prefix_trie_error() {
 #[test]
 fn probabilistic_gate_happy() {
     let scanner = CompiledScanner::compile(vec![demo_detector("abc", "abc")]).unwrap();
-    let matches = scanner.scan(&demo_chunk(
-        "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
-    ));
+    let matches = scanner.scan(&demo_chunk("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"));
     assert!(matches.is_empty());
 }
 #[test]
@@ -989,11 +1011,8 @@ fn simd_error() {
 // ── crates/scanner/src/simdsieve_prefilter.rs ─────────────────────────
 #[test]
 fn simdsieve_prefilter_happy() {
-    let scanner = CompiledScanner::compile(vec![demo_detector(
-        "ghp_[A-Za-z0-9]{20,}",
-        "ghp_",
-    )])
-    .unwrap();
+    let scanner =
+        CompiledScanner::compile(vec![demo_detector("ghp_[A-Za-z0-9]{20,}", "ghp_")]).unwrap();
     let token = concat!("gh", "p_zQWBuTSOoRi4A9spHcVY5ncnsDkxkJ0mLq17");
     let pad = "x".repeat(100_001);
     let matches = scanner.scan(&demo_chunk(&format!("{pad}{token}")));
@@ -1019,18 +1038,17 @@ fn static_intern_happy() {
 #[test]
 fn static_intern_error() {
     let interner =
-        keyhog_scanner::static_intern::StaticInterner::from_detector_strings(std::iter::empty::<&str>());
+        keyhog_scanner::static_intern::StaticInterner::from_detector_strings(std::iter::empty::<
+            &str,
+        >());
     assert!(interner.lookup("dynamic").is_none());
 }
 
 // ── crates/scanner/src/structured/mod.rs ──────────────────────────────
 #[test]
 fn structured_mod_happy() {
-    let scanner = CompiledScanner::compile(vec![demo_detector(
-        "ghp_[A-Za-z0-9]{20,}",
-        "ghp_",
-    )])
-    .unwrap();
+    let scanner =
+        CompiledScanner::compile(vec![demo_detector("ghp_[A-Za-z0-9]{20,}", "ghp_")]).unwrap();
     let token = concat!("gh", "p_zQWBuTSOoRi4A9spHcVY5ncnsDkxkJ0mLq17");
     let chunk = structured_env_chunk(&format!("GITHUB_TOKEN={token}\n"), "config.env");
     let matches = scanner.scan(&chunk);
@@ -1039,9 +1057,7 @@ fn structured_mod_happy() {
 #[test]
 fn structured_mod_error() {
     let scanner = CompiledScanner::compile(vec![demo_detector("abc", "abc")]).unwrap();
-    assert!(scanner
-        .scan(&demo_chunk("fn main() {}"))
-        .is_empty());
+    assert!(scanner.scan(&demo_chunk("fn main() {}")).is_empty());
 }
 
 // ── crates/scanner/src/structured/parsers.rs ──────────────────────────
@@ -1101,16 +1117,13 @@ fn unicode_hardening_error() {
 // ── engine/segment_attribution boundary/adversarial ───────────────────
 #[test]
 fn engine_segment_attribution_boundary() {
-    let mapped = map_offsets_to_segments(
-        &[Segment::new(1, 0, 4)],
-        &[GlobalMatch::new(1, 1, 3)],
-    )
-    .unwrap();
+    let mapped =
+        map_offsets_to_segments(&[Segment::new(1, 0, 4)], &[GlobalMatch::new(1, 1, 3)]).unwrap();
     assert_eq!(mapped.len(), 1);
 }
 #[test]
 fn engine_segment_attribution_adversarial() {
-    let err = map_offsets_to_segments(&[Segment::new(1, 0, 4)], &[GlobalMatch::new(1, 2, 10)])
-        .unwrap();
+    let err =
+        map_offsets_to_segments(&[Segment::new(1, 0, 4)], &[GlobalMatch::new(1, 2, 10)]).unwrap();
     assert!(err.is_empty());
 }

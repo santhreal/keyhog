@@ -2,7 +2,13 @@
 use keyhog_core::{MatchLocation, RuleSuppressor, Severity, VerificationResult, VerifiedFinding};
 use std::collections::HashMap;
 use std::sync::Arc;
-fn finding(detector: &str, service: &str, sev: Severity, path: &str, hash: &str) -> VerifiedFinding {
+fn finding(
+    detector: &str,
+    service: &str,
+    sev: Severity,
+    path: &str,
+    hash: &str,
+) -> VerifiedFinding {
     VerifiedFinding {
         detector_id: Arc::from(detector),
         detector_name: Arc::from(detector),
@@ -26,8 +32,8 @@ fn finding(detector: &str, service: &str, sev: Severity, path: &str, hash: &str)
     }
 }
 #[test]
-    fn path_predicates_combine() {
-        let toml = r#"
+fn path_predicates_combine() {
+    let toml = r#"
 [[suppress]]
 path_starts_with = "vendor/"
 
@@ -37,10 +43,10 @@ path_ends_with = ".min.js"
 [[suppress]]
 path_regex = "^docs/[a-z]+\\.md$"
 "#;
-        let s = RuleSuppressor::parse(toml).expect("parse");
-        let v = |p: &str| finding("any", "any", Severity::High, p, "h");
-        assert!(s.matches(&v("vendor/lib/foo.rs")));
-        assert!(s.matches(&v("dist/app.min.js")));
-        assert!(s.matches(&v("docs/readme.md")));
-        assert!(!s.matches(&v("src/main.rs")));
-    }
+    let s = RuleSuppressor::parse(toml).expect("parse");
+    let v = |p: &str| finding("any", "any", Severity::High, p, "h");
+    assert!(s.matches(&v("vendor/lib/foo.rs")));
+    assert!(s.matches(&v("dist/app.min.js")));
+    assert!(s.matches(&v("docs/readme.md")));
+    assert!(!s.matches(&v("src/main.rs")));
+}

@@ -1,6 +1,7 @@
 pub mod cache;
 pub mod domain_allowlist;
 pub mod file_gate;
+pub mod gates;
 pub mod interactsh_bare_substitutes_host;
 pub mod interactsh_does_not_url_encode_host;
 pub mod interactsh_empty_collapses_to_empty;
@@ -17,4 +18,3 @@ pub mod sigv4_epoch_zero;
 pub mod sigv4_known_aws_example;
 pub mod sigv4_leap_year_feb_29;
 pub mod ssrf;
-pub mod gates;

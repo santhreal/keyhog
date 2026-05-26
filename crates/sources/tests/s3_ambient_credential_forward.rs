@@ -58,16 +58,16 @@ fn non_aws_endpoints_do_not_pass_aws_gate() {
     for endpoint in [
         "https://minio.example.test",
         "https://minio.local:9000",
-        "https://s3.example.test",                  // generic S3-API vendor
-        "https://attacker.example",                 // attacker-controlled
-        "https://amazonaws.com.attacker.example",   // suffix-confusion attack
-        "https://s3.amazonaws.co",                  // typo'd TLD
-        "https://s3-amazonaws.com",                 // missing dot
-        "http://127.0.0.1:9000",                    // IP literal
+        "https://s3.example.test",                // generic S3-API vendor
+        "https://attacker.example",               // attacker-controlled
+        "https://amazonaws.com.attacker.example", // suffix-confusion attack
+        "https://s3.amazonaws.co",                // typo'd TLD
+        "https://s3-amazonaws.com",               // missing dot
+        "http://127.0.0.1:9000",                  // IP literal
         "http://10.0.0.5:9000",
         "https://ceph.internal.corp",
         "https://garage.internal",
-        "https://wasabisys.com",                    // S3-compatible commercial
+        "https://wasabisys.com", // S3-compatible commercial
         "https://eu-central-1.linodeobjects.com",
     ] {
         assert!(

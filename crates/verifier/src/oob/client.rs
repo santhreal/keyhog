@@ -441,4 +441,3 @@ fn normalize_server(s: &str) -> String {
         format!("https://{s}")
     }
 }
-

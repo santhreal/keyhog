@@ -5,7 +5,11 @@ use std::process::Command;
 #[test]
 fn gpu_parity_sources_do_not_use_bare_skip_return() {
     let tests_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    for name in ["gpu_parity.rs", "megakernel_parity.rs", "decode_backend_matrix.rs"] {
+    for name in [
+        "gpu_parity.rs",
+        "megakernel_parity.rs",
+        "decode_backend_matrix.rs",
+    ] {
         let path = tests_dir.join(name);
         if !path.exists() {
             continue;

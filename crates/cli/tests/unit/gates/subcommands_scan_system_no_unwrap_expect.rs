@@ -2,7 +2,10 @@
 
 #[test]
 fn subcommands_scan_system_no_unwrap_expect() {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/subcommands/scan_system.rs");
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/subcommands/scan_system.rs"
+    );
     let src = std::fs::read_to_string(path).expect("source readable");
     let mut offenders: Vec<(usize, &str)> = Vec::new();
     for (i, line) in src.lines().enumerate() {

@@ -466,4 +466,3 @@ struct InlineMetadata {
     expires: Option<String>,
     approved_by: Option<String>,
 }
-

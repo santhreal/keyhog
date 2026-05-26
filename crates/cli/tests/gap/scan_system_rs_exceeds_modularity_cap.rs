@@ -2,7 +2,10 @@
 
 #[test]
 fn scan_system_rs_exceeds_modularity_cap() {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/subcommands/scan_system.rs");
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/subcommands/scan_system.rs"
+    );
     let content = std::fs::read_to_string(path).expect("read scan_system.rs");
     let line_count = content.lines().count();
     assert!(

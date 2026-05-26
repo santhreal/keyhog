@@ -1,7 +1,9 @@
 //! Main scan run loop: hardening, sources, baseline, reporting, exit codes.
 
 use super::allowlist::{load_allowlist, load_rule_suppressor};
-use super::reporting::{dump_dogfood_trace, report_completion_summary, report_oversize_skip_summary};
+use super::reporting::{
+    dump_dogfood_trace, report_completion_summary, report_oversize_skip_summary,
+};
 use super::ScanOrchestrator;
 use crate::baseline::Baseline;
 use anyhow::Result;

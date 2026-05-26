@@ -11,7 +11,9 @@ fn pipeline_with_merkle_records_metadata_for_chunks_seen() {
     chunk.metadata.mtime_ns = Some(1_700_000_000_000_000_000);
     chunk.metadata.size_bytes = Some(123);
     let merkle = Arc::new(keyhog_core::merkle_index::MerkleIndex::empty());
-    let sources: Vec<Box<dyn Source>> = vec![Box::new(StaticSource { chunks: vec![chunk] })];
+    let sources: Vec<Box<dyn Source>> = vec![Box::new(StaticSource {
+        chunks: vec![chunk],
+    })];
     let findings = orch.scan_sources_for_test(sources, false, Some(merkle.clone()));
     assert_eq!(findings.len(), 1);
     assert!(merkle.metadata_unchanged(

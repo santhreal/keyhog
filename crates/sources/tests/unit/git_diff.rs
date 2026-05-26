@@ -183,7 +183,9 @@ fn git_diff_source_chunk_metadata_carries_path_and_commit() {
         "commit must be 40-char hex SHA; got {commit:?}"
     );
     assert!(
-        chunks[0].data.contains("ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ1234567890ab"),
+        chunks[0]
+            .data
+            .contains("ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ1234567890ab"),
         "added line content must be present; got {:?}",
         chunks[0].data
     );

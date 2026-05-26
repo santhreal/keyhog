@@ -2,7 +2,10 @@
 
 #[test]
 fn engine_fallback_entropy_non_empty() {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/engine/fallback_entropy.rs");
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/engine/fallback_entropy.rs"
+    );
     let src = std::fs::read_to_string(path).expect("source readable");
     assert!(
         src.trim().len() >= 20,

@@ -34,5 +34,7 @@ fn record_window_match_dedups() {
     let mut m = demo_match(0);
     assert!(record_window_match(text, 0, &mut m, &mut seen, &mut order));
     let mut m2 = demo_match(0);
-    assert!(!record_window_match(text, 0, &mut m2, &mut seen, &mut order));
+    assert!(!record_window_match(
+        text, 0, &mut m2, &mut seen, &mut order
+    ));
 }

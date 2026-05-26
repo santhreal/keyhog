@@ -3,11 +3,8 @@
 #[cfg(feature = "binary")]
 #[test]
 fn binary_max_decompiled_cap_in_source() {
-    let src = std::fs::read_to_string(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/src/binary/mod.rs"
-    ))
-    .expect("binary/mod.rs");
+    let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/binary/mod.rs"))
+        .expect("binary/mod.rs");
     assert!(src.contains("MAX_DECOMPILED_SIZE"));
     assert!(src.contains("50 * 1024 * 1024"));
 }

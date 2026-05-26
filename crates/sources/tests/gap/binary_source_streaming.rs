@@ -2,11 +2,8 @@
 
 #[test]
 fn binary_mod_uses_bounded_read_or_mmap() {
-    let src = std::fs::read_to_string(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/src/binary/mod.rs"
-    ))
-    .expect("binary/mod.rs");
+    let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/binary/mod.rs"))
+        .expect("binary/mod.rs");
 
     let has_mmap = src.contains("mmap") || src.contains("Mmap");
     let has_size_cap = src.contains("MAX_") || src.contains("max_bytes") || src.contains("limit");

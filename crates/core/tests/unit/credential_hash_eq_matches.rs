@@ -2,7 +2,13 @@
 use keyhog_core::{MatchLocation, RuleSuppressor, Severity, VerificationResult, VerifiedFinding};
 use std::collections::HashMap;
 use std::sync::Arc;
-fn finding(detector: &str, service: &str, sev: Severity, path: &str, hash: &str) -> VerifiedFinding {
+fn finding(
+    detector: &str,
+    service: &str,
+    sev: Severity,
+    path: &str,
+    hash: &str,
+) -> VerifiedFinding {
     VerifiedFinding {
         detector_id: Arc::from(detector),
         detector_name: Arc::from(detector),
@@ -26,24 +32,24 @@ fn finding(detector: &str, service: &str, sev: Severity, path: &str, hash: &str)
     }
 }
 #[test]
-    fn credential_hash_eq_matches() {
-        let toml = r#"
+fn credential_hash_eq_matches() {
+    let toml = r#"
 [[suppress]]
 credential_hash = "deadbeefdeadbeefdeadbeefdeadbeef"
 "#;
-        let s = RuleSuppressor::parse(toml).expect("parse");
-        assert!(s.matches(&finding(
-            "x",
-            "x",
-            Severity::High,
-            "p",
-            "deadbeefdeadbeefdeadbeefdeadbeef"
-        )));
-        assert!(!s.matches(&finding(
-            "x",
-            "x",
-            Severity::High,
-            "p",
-            "feedfacefeedfacefeedfacefeedface"
-        )));
-    }
+    let s = RuleSuppressor::parse(toml).expect("parse");
+    assert!(s.matches(&finding(
+        "x",
+        "x",
+        Severity::High,
+        "p",
+        "deadbeefdeadbeefdeadbeefdeadbeef"
+    )));
+    assert!(!s.matches(&finding(
+        "x",
+        "x",
+        Severity::High,
+        "p",
+        "feedfacefeedfacefeedfacefeedface"
+    )));
+}

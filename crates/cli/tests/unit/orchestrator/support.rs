@@ -1,9 +1,7 @@
 use clap::Parser;
 use keyhog::args::ScanArgs;
 use keyhog::orchestrator::ScanOrchestrator;
-use keyhog_core::{
-    Chunk, ChunkMetadata, DetectorSpec, PatternSpec, Severity, Source, SourceError,
-};
+use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, Severity, Source, SourceError};
 use keyhog_scanner::CompiledScanner;
 use std::sync::Arc;
 

@@ -7,7 +7,10 @@ use tempfile::TempDir;
 #[test]
 fn scan_output_writes_file() {
     let scan_dir = TempDir::new().expect("tempdir");
-    let (_fdir, path) = write_temp_file("planted.txt", "AWS_ACCESS_KEY_ID = \"AKIAQYLPMN5HFIQR7XYA\"\n");
+    let (_fdir, path) = write_temp_file(
+        "planted.txt",
+        "AWS_ACCESS_KEY_ID = \"AKIAQYLPMN5HFIQR7XYA\"\n",
+    );
     let out_path = scan_dir.path().join("findings.json");
     let output = Command::new(binary())
         .args(["scan", "--no-daemon", "--format", "json", "--output"])

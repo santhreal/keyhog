@@ -10,5 +10,8 @@ fn oversize_compressed_input_refused() {
 
     let source = FilesystemSource::new(dir.path().to_path_buf()).with_max_file_size(1024);
     let count = source.chunks().flatten().count();
-    assert_eq!(count, 0, "oversize compressed input must produce zero chunks");
+    assert_eq!(
+        count, 0,
+        "oversize compressed input must produce zero chunks"
+    );
 }

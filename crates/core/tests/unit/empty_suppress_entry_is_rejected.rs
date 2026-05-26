@@ -2,7 +2,13 @@
 use keyhog_core::{MatchLocation, RuleSuppressor, Severity, VerificationResult, VerifiedFinding};
 use std::collections::HashMap;
 use std::sync::Arc;
-fn finding(detector: &str, service: &str, sev: Severity, path: &str, hash: &str) -> VerifiedFinding {
+fn finding(
+    detector: &str,
+    service: &str,
+    sev: Severity,
+    path: &str,
+    hash: &str,
+) -> VerifiedFinding {
     VerifiedFinding {
         detector_id: Arc::from(detector),
         detector_name: Arc::from(detector),
@@ -26,11 +32,11 @@ fn finding(detector: &str, service: &str, sev: Severity, path: &str, hash: &str)
     }
 }
 #[test]
-    fn empty_suppress_entry_is_rejected() {
-        let toml = r#"
+fn empty_suppress_entry_is_rejected() {
+    let toml = r#"
 [[suppress]]
 "#;
-        let err = RuleSuppressor::parse(toml).expect_err("must reject");
-        let msg = format!("{err}");
-        assert!(msg.contains("no conditions"), "got: {msg}");
-    }
+    let err = RuleSuppressor::parse(toml).expect_err("must reject");
+    let msg = format!("{err}");
+    assert!(msg.contains("no conditions"), "got: {msg}");
+}

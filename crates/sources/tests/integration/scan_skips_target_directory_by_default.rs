@@ -14,8 +14,12 @@ fn scan_skips_target_directory_by_default() {
 ",
     )
     .expect("write");
-    std::fs::write(dir.path().join("src.env"), "TOKEN=scan-root
-").expect("write");
+    std::fs::write(
+        dir.path().join("src.env"),
+        "TOKEN=scan-root
+",
+    )
+    .expect("write");
 
     let bodies: Vec<String> = FilesystemSource::new(dir.path().to_path_buf())
         .chunks()
@@ -24,7 +28,9 @@ fn scan_skips_target_directory_by_default() {
         .collect();
     assert!(bodies.iter().any(|b| b.contains("scan-root")));
     assert!(
-        !bodies.iter().any(|b| b.contains("must-not-scan-target-dir")),
+        !bodies
+            .iter()
+            .any(|b| b.contains("must-not-scan-target-dir")),
         "target/ must be ignored by default"
     );
 }

@@ -55,7 +55,11 @@ fn main() {
                 pass += 1;
             } else {
                 dropped += 1;
-                println!("DROPPED\t{}\t{}", c.detector_id, e.text.replace('\n', "\\n"));
+                println!(
+                    "DROPPED\t{}\t{}",
+                    c.detector_id,
+                    e.text.replace('\n', "\\n")
+                );
             }
         }
     }

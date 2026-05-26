@@ -4,7 +4,9 @@ use std::path::{Path, PathBuf};
 
 fn dir_line_count(dir: &Path) -> usize {
     let mut total = 0usize;
-    for entry in std::fs::read_dir(dir).unwrap_or_else(|e| panic!("read_dir({}) failed: {e}", dir.display())) {
+    for entry in
+        std::fs::read_dir(dir).unwrap_or_else(|e| panic!("read_dir({}) failed: {e}", dir.display()))
+    {
         let path = entry.unwrap().path();
         if path.is_dir() {
             total += dir_line_count(&path);

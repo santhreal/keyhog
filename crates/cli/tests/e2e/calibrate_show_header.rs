@@ -7,5 +7,8 @@ fn calibrate_show_header() {
     let output = run(&["calibrate", "--show"]);
     assert_eq!(output.status.code(), Some(0));
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("calibration"), "calibrate --show must print header; got: {stdout}");
+    assert!(
+        stdout.contains("calibration"),
+        "calibrate --show must print header; got: {stdout}"
+    );
 }

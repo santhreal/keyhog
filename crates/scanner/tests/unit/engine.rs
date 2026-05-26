@@ -165,9 +165,7 @@ fn fallback_pattern_skips_plaintext_without_keyword() {
     detector.patterns[0].regex = r"ghp_[A-Za-z0-9]{20,}".into();
     detector.keywords = vec!["ghp_".into()];
     let scanner = CompiledScanner::compile(vec![detector]).unwrap();
-    assert!(scanner
-        .scan(&chunk("the quick brown fox"))
-        .is_empty());
+    assert!(scanner.scan(&chunk("the quick brown fox")).is_empty());
 }
 
 // ── engine/scan_gpu.rs + hot_patterns.rs (via warm_backend) ─────────
@@ -211,4 +209,3 @@ fn scan_filters_generic_assignment_fires_with_secret_keyword() {
 
 // ── engine/boundary.rs ──────────────────────────────────────────────
 // Covered by inline #[cfg(test)] in boundary.rs (lib tests).
-

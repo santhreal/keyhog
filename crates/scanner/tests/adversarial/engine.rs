@@ -13,12 +13,12 @@ mod concatenation_e2e;
 mod contexts;
 #[path = "engine_cases/corpus_support.rs"]
 mod corpus_support;
+#[path = "engine_cases/dead_corpus_evasion.rs"]
+mod dead_corpus_evasion;
 #[path = "engine_cases/dedupe.rs"]
 mod dedupe;
 #[path = "engine_cases/encoded_inputs.rs"]
 mod encoded_inputs;
-#[path = "engine_cases/dead_corpus_evasion.rs"]
-mod dead_corpus_evasion;
 #[path = "engine_cases/evasion_fixtures.rs"]
 mod evasion_fixtures;
 #[path = "engine_cases/hex_underscore.rs"]

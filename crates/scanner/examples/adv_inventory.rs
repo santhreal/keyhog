@@ -1,8 +1,8 @@
-use std::collections::{BTreeMap, HashMap};
-use std::path::PathBuf;
 use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::CompiledScanner;
 use serde::Deserialize;
+use std::collections::{BTreeMap, HashMap};
+use std::path::PathBuf;
 
 #[derive(Debug, Deserialize)]
 struct Contract {
@@ -17,11 +17,38 @@ struct Positive {
 }
 
 #[derive(Clone, Copy)]
-enum Wrapper { DotEnv, Json, Yaml, Dockerfile, ShellExport, Ini, GithubActions, KubernetesSecret }
+enum Wrapper {
+    DotEnv,
+    Json,
+    Yaml,
+    Dockerfile,
+    ShellExport,
+    Ini,
+    GithubActions,
+    KubernetesSecret,
+}
 impl Wrapper {
-    const ALL: &[Wrapper] = &[Wrapper::DotEnv, Wrapper::Json, Wrapper::Yaml, Wrapper::Dockerfile, Wrapper::ShellExport, Wrapper::Ini, Wrapper::GithubActions, Wrapper::KubernetesSecret];
+    const ALL: &[Wrapper] = &[
+        Wrapper::DotEnv,
+        Wrapper::Json,
+        Wrapper::Yaml,
+        Wrapper::Dockerfile,
+        Wrapper::ShellExport,
+        Wrapper::Ini,
+        Wrapper::GithubActions,
+        Wrapper::KubernetesSecret,
+    ];
     fn label(self) -> &'static str {
-        match self { Wrapper::DotEnv=>".env", Wrapper::Json=>"json", Wrapper::Yaml=>"yaml", Wrapper::Dockerfile=>"dockerfile", Wrapper::ShellExport=>"shell-export", Wrapper::Ini=>"ini", Wrapper::GithubActions=>"github-actions", Wrapper::KubernetesSecret=>"k8s-secret" }
+        match self {
+            Wrapper::DotEnv => ".env",
+            Wrapper::Json => "json",
+            Wrapper::Yaml => "yaml",
+            Wrapper::Dockerfile => "dockerfile",
+            Wrapper::ShellExport => "shell-export",
+            Wrapper::Ini => "ini",
+            Wrapper::GithubActions => "github-actions",
+            Wrapper::KubernetesSecret => "k8s-secret",
+        }
     }
     fn wrap(self, text: &str) -> String {
         let json_escaped = serde_json::to_string(text).unwrap_or_else(|_| String::from("\"\""));
@@ -40,7 +67,9 @@ impl Wrapper {
 
 fn main() {
     let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    d.pop(); d.pop(); d.push("detectors");
+    d.pop();
+    d.pop();
+    d.push("detectors");
     let scanner = CompiledScanner::compile(keyhog_core::load_detectors(&d).unwrap()).unwrap();
     let contracts_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/contracts");
     let mut by_detector: HashMap<String, usize> = HashMap::new();
@@ -51,7 +80,9 @@ fn main() {
     let mut samples: BTreeMap<String, String> = BTreeMap::new();
     for entry in std::fs::read_dir(&contracts_dir).unwrap().flatten() {
         let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) != Some("toml") { continue; }
+        if path.extension().and_then(|e| e.to_str()) != Some("toml") {
+            continue;
+        }
         let text = std::fs::read_to_string(&path).unwrap();
         let c: Contract = toml::from_str(&text).unwrap();
         for p in &c.positive {
@@ -59,28 +90,64 @@ fn main() {
                 total += 1;
                 scanner.clear_fragment_cache();
                 let wrapped = wrapper.wrap(&p.text);
-                let chunk = Chunk { data: wrapped.into(), metadata: ChunkMetadata { source_type: "adv".into(), path: Some("x.txt".into()), ..Default::default() } };
+                let chunk = Chunk {
+                    data: wrapped.into(),
+                    metadata: ChunkMetadata {
+                        source_type: "adv".into(),
+                        path: Some("x.txt".into()),
+                        ..Default::default()
+                    },
+                };
                 let matches = scanner.scan(&chunk);
-                let ok = matches.iter().any(|m| m.credential.as_ref().contains(&p.credential));
+                let ok = matches
+                    .iter()
+                    .any(|m| m.credential.as_ref().contains(&p.credential));
                 if !ok {
                     *by_detector.entry(c.detector_id.clone()).or_default() += 1;
                     *by_wrapper.entry(wrapper.label().to_string()).or_default() += 1;
-                    let saw: Vec<String> = matches.iter().map(|m| m.credential.as_ref().to_string()).collect();
-                    if saw.is_empty() { empty += 1; } else { partial += 1; }
-                    samples.entry(c.detector_id.clone()).or_insert_with(|| format!("wrapper={} cred={:?} saw={:?} contract={}", wrapper.label(), p.credential, saw, path.display()));
+                    let saw: Vec<String> = matches
+                        .iter()
+                        .map(|m| m.credential.as_ref().to_string())
+                        .collect();
+                    if saw.is_empty() {
+                        empty += 1;
+                    } else {
+                        partial += 1;
+                    }
+                    samples.entry(c.detector_id.clone()).or_insert_with(|| {
+                        format!(
+                            "wrapper={} cred={:?} saw={:?} contract={}",
+                            wrapper.label(),
+                            p.credential,
+                            saw,
+                            path.display()
+                        )
+                    });
                 }
             }
         }
     }
-    println!("TOTAL={} FAIL={} EMPTY={} PARTIAL={}", total, by_detector.values().sum::<usize>(), empty, partial);
+    println!(
+        "TOTAL={} FAIL={} EMPTY={} PARTIAL={}",
+        total,
+        by_detector.values().sum::<usize>(),
+        empty,
+        partial
+    );
     println!("--- by detector ---");
     let mut v: Vec<_> = by_detector.into_iter().collect();
-    v.sort_by(|a,b| b.1.cmp(&a.1));
-    for (d,n) in &v { println!("{n:4} {d}"); }
+    v.sort_by(|a, b| b.1.cmp(&a.1));
+    for (d, n) in &v {
+        println!("{n:4} {d}");
+    }
     println!("--- by wrapper ---");
     let mut w: Vec<_> = by_wrapper.into_iter().collect();
-    w.sort_by(|a,b| b.1.cmp(&a.1));
-    for (d,n) in &w { println!("{n:4} {d}"); }
+    w.sort_by(|a, b| b.1.cmp(&a.1));
+    for (d, n) in &w {
+        println!("{n:4} {d}");
+    }
     println!("--- samples ---");
-    for (d,s) in samples { println!("{d}: {s}"); }
+    for (d, s) in samples {
+        println!("{d}: {s}");
+    }
 }

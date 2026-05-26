@@ -1,4 +1,4 @@
-use keyhog_scanner::compiler_prefix::{extract_literal_prefixes, extract_inner_literals};
+use keyhog_scanner::compiler_prefix::{extract_inner_literals, extract_literal_prefixes};
 use std::collections::HashSet;
 
 #[test]
@@ -23,7 +23,8 @@ fn analyze_keyword_only_detectors() {
         };
 
         let all_keyword_only = detector.patterns.iter().all(|p| {
-            extract_literal_prefixes(&p.regex).is_empty() && extract_inner_literals(&p.regex).is_empty()
+            extract_literal_prefixes(&p.regex).is_empty()
+                && extract_inner_literals(&p.regex).is_empty()
         });
 
         if !all_keyword_only {
@@ -36,7 +37,9 @@ fn analyze_keyword_only_detectors() {
         }
 
         let all_short = kws.iter().all(|kw| kw.len() < 4);
-        let all_generic = kws.iter().all(|kw| generic.contains(kw.to_lowercase().as_str()));
+        let all_generic = kws
+            .iter()
+            .all(|kw| generic.contains(kw.to_lowercase().as_str()));
 
         if all_short {
             results.push((detector.id.clone(), "too short".to_string()));

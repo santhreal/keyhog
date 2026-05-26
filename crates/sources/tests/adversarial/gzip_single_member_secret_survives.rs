@@ -13,8 +13,11 @@ fn gzip_single_member_secret_survives() {
     let path = dir.path().join("cfg.env.gz");
     let file = File::create(&path).expect("create");
     let mut enc = GzEncoder::new(file, Compression::default());
-    enc.write_all(b"AWS_SECRET=super-secret-value
-").expect("write");
+    enc.write_all(
+        b"AWS_SECRET=super-secret-value
+",
+    )
+    .expect("write");
     enc.finish().expect("finish");
 
     let bodies: Vec<String> = FilesystemSource::new(dir.path().to_path_buf())

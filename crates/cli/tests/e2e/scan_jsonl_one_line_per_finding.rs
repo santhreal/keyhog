@@ -5,8 +5,15 @@ use std::process::Command;
 
 #[test]
 fn scan_jsonl_one_line_per_finding() {
-    let (_dir, path) = write_temp_file("planted.txt", "AWS_ACCESS_KEY.error_id = \"AKIAQYLPMN5HFIQR7XYA\"\n");
-    let output = Command::new(binary()).args(["scan", "--no-daemon", "--format", "jsonl"]).arg(&path).output().expect("spawn");
+    let (_dir, path) = write_temp_file(
+        "planted.txt",
+        "AWS_ACCESS_KEY.error_id = \"AKIAQYLPMN5HFIQR7XYA\"\n",
+    );
+    let output = Command::new(binary())
+        .args(["scan", "--no-daemon", "--format", "jsonl"])
+        .arg(&path)
+        .output()
+        .expect("spawn");
     let stdout = String::from_utf8_lossy(&output.stdout);
     let lines: Vec<&str> = stdout.lines().filter(|l| !l.trim().is_empty()).collect();
     assert!(!lines.is_empty(), "jsonl must emit at least one line");

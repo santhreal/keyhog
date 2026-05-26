@@ -6,7 +6,7 @@
 
 use clap::Parser;
 use keyhog::args::{Cli, Command};
-use keyhog::{subcommands, FINDINGS_COUNT, SCANNER_PANICKED, SCANNED_CHUNKS, TOTAL_CHUNKS};
+use keyhog::{subcommands, FINDINGS_COUNT, SCANNED_CHUNKS, SCANNER_PANICKED, TOTAL_CHUNKS};
 use std::io::IsTerminal;
 use std::process::ExitCode;
 use std::sync::atomic::Ordering;

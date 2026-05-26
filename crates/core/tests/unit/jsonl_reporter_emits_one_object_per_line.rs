@@ -1,6 +1,8 @@
 //! JSONL reporter emits one JSON object per reported finding.
 
-use keyhog_core::{JsonlReporter, MatchLocation, Reporter, Severity, VerificationResult, VerifiedFinding};
+use keyhog_core::{
+    JsonlReporter, MatchLocation, Reporter, Severity, VerificationResult, VerifiedFinding,
+};
 use std::collections::HashMap;
 use std::sync::Arc;
 

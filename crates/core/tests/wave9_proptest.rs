@@ -1,9 +1,19 @@
 //! W9 keyhog-core proptest
-use keyhog_core::{Credential, DedupScope, Severity};
 use keyhog_core::dedup_matches;
+use keyhog_core::{Credential, DedupScope, Severity};
 use keyhog_core::{MatchLocation, RawMatch};
 use proptest::prelude::*;
-fn loc() -> MatchLocation { MatchLocation { source: "fs".into(), file_path: Some("f".into()), line: Some(1), offset: 0, commit: None, author: None, date: None } }
+fn loc() -> MatchLocation {
+    MatchLocation {
+        source: "fs".into(),
+        file_path: Some("f".into()),
+        line: Some(1),
+        offset: 0,
+        commit: None,
+        author: None,
+        date: None,
+    }
+}
 fn raw(cred: &str) -> RawMatch {
     RawMatch {
         detector_id: "d".into(),

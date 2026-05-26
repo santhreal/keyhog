@@ -197,12 +197,7 @@ pub fn is_entropy_appropriate(path: Option<&str>, allow_source_files: bool) -> b
     // every `Style`/`Paragraph::new` call because filename prefix
     // "secrets" matched. After this filter, scanning a `secrets.rs`
     // requires `--entropy-source-files`.
-    const PREFIX_MATCH_NAMES: &[&[u8]] = &[
-        b".env",
-        b".npmrc",
-        b".pypirc",
-        b".netrc",
-    ];
+    const PREFIX_MATCH_NAMES: &[&[u8]] = &[b".env", b".npmrc", b".pypirc", b".netrc"];
     for name in PREFIX_MATCH_NAMES {
         let starts_ci =
             filename.len() >= name.len() && filename[..name.len()].eq_ignore_ascii_case(name);
@@ -211,12 +206,8 @@ pub fn is_entropy_appropriate(path: Option<&str>, allow_source_files: bool) -> b
         }
     }
 
-    const EXACT_OR_CONFIG_EXT_NAMES: &[&[u8]] = &[
-        b"credentials",
-        b"secrets",
-        b"apikeys",
-        b"docker-compose",
-    ];
+    const EXACT_OR_CONFIG_EXT_NAMES: &[&[u8]] =
+        &[b"credentials", b"secrets", b"apikeys", b"docker-compose"];
     const CONFIG_EXTENSIONS_AFTER_STEM: &[&[u8]] = &[
         b".env",
         b".yaml",
@@ -243,9 +234,7 @@ pub fn is_entropy_appropriate(path: Option<&str>, allow_source_files: bool) -> b
         // `apikeys.toml`, `secrets-prod.toml`. The trailing extension
         // gate keeps `secrets.rs`, `credentials.py`, etc. on the
         // source-code path (skipped unless --entropy-source-files).
-        if filename.len() > name.len()
-            && filename[..name.len()].eq_ignore_ascii_case(name)
-        {
+        if filename.len() > name.len() && filename[..name.len()].eq_ignore_ascii_case(name) {
             let tail = &filename[name.len()..];
             for ext in CONFIG_EXTENSIONS_AFTER_STEM {
                 if tail.len() >= ext.len()

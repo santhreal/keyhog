@@ -12,5 +12,10 @@ fn daemon_status_no_running_daemon() {
         .args(["daemon", "status"])
         .output()
         .expect("spawn");
-    assert_ne!(output.status.code(), Some(0), "status without daemon must not exit 0; stderr={}", String::from_utf8_lossy(&output.stderr));
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "status without daemon must not exit 0; stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }

@@ -11,8 +11,12 @@ fn filesystem_minified_js_skipped() {
         "const TOKEN='ghp_shouldNotScanMinifiedBundle';",
     )
     .expect("write");
-    std::fs::write(dir.path().join("real.env"), "TOKEN=scan-me
-").expect("write");
+    std::fs::write(
+        dir.path().join("real.env"),
+        "TOKEN=scan-me
+",
+    )
+    .expect("write");
 
     let bodies: Vec<String> = FilesystemSource::new(dir.path().to_path_buf())
         .chunks()
@@ -24,7 +28,9 @@ fn filesystem_minified_js_skipped() {
         "non-minified file must scan"
     );
     assert!(
-        !bodies.iter().any(|b| b.contains("ghp_shouldNotScanMinifiedBundle")),
+        !bodies
+            .iter()
+            .any(|b| b.contains("ghp_shouldNotScanMinifiedBundle")),
         "minified bundle must be skipped"
     );
 }

@@ -7,8 +7,10 @@ fn git_history_finds_added_line() {
     use keyhog_sources::GitHistorySource;
 
     let (_guard, repo) = crate::support::git::init_repo();
-    crate::support::git::commit(&repo, "a.txt", "old=1
-", "init");
+    crate::support::git::commit(
+        &repo, "a.txt", "old=1
+", "init",
+    );
     crate::support::git::commit(
         &repo,
         "a.txt",

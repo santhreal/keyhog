@@ -18,7 +18,10 @@ fn proxy_https_env_is_active() {
         std::env::remove_var("HTTP_PROXY");
         std::env::remove_var("ALL_PROXY");
     }
-    assert!(proxy_is_active(None), "HTTPS_PROXY alone must mark proxy active");
+    assert!(
+        proxy_is_active(None),
+        "HTTPS_PROXY alone must mark proxy active"
+    );
     for (k, v) in saved {
         unsafe {
             match v {

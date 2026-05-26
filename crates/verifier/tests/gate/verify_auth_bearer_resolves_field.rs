@@ -1,7 +1,7 @@
 //! LR1-A8 replacement gate: `verify/auth.rs` bearer field resolution.
 
-use keyhog_verifier::domain_allowlist::effective_allowlist;
 use keyhog_core::{AuthSpec, VerifySpec};
+use keyhog_verifier::domain_allowlist::effective_allowlist;
 
 #[test]
 fn bearer_auth_spec_has_no_builtin_allowlist_override() {

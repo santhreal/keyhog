@@ -139,4 +139,3 @@ pub(crate) async fn build_request_for_auth(
         }
     }
 }
-

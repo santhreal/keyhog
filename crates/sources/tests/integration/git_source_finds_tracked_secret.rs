@@ -22,7 +22,9 @@ fn git_source_finds_tracked_secret() {
         .map(|c| c.data.to_string())
         .collect();
     assert!(
-        bodies.iter().any(|b| b.contains("ghp_integrationGitSourceTest")),
+        bodies
+            .iter()
+            .any(|b| b.contains("ghp_integrationGitSourceTest")),
         "git source must surface blob text; got {bodies:?}"
     );
 }

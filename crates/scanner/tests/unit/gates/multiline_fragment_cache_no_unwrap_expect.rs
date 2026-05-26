@@ -2,7 +2,10 @@
 
 #[test]
 fn multiline_fragment_cache_no_unwrap_expect() {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/multiline/fragment_cache.rs");
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/multiline/fragment_cache.rs"
+    );
     let src = std::fs::read_to_string(path).expect("source readable");
     let mut offenders: Vec<(usize, &str)> = Vec::new();
     for (i, line) in src.lines().enumerate() {

@@ -2,7 +2,13 @@
 use keyhog_core::{MatchLocation, RuleSuppressor, Severity, VerificationResult, VerifiedFinding};
 use std::collections::HashMap;
 use std::sync::Arc;
-fn finding(detector: &str, service: &str, sev: Severity, path: &str, hash: &str) -> VerifiedFinding {
+fn finding(
+    detector: &str,
+    service: &str,
+    sev: Severity,
+    path: &str,
+    hash: &str,
+) -> VerifiedFinding {
     VerifiedFinding {
         detector_id: Arc::from(detector),
         detector_name: Arc::from(detector),
@@ -26,21 +32,21 @@ fn finding(detector: &str, service: &str, sev: Severity, path: &str, hash: &str)
     }
 }
 #[test]
-    fn severity_lte_matches_at_or_below_threshold() {
-        let toml = r#"
+fn severity_lte_matches_at_or_below_threshold() {
+    let toml = r#"
 [[suppress]]
 detector = "aws-access-key"
 severity_lte = "medium"
 "#;
-        let s = RuleSuppressor::parse(toml).expect("parse");
-        for (sev, expect) in [
-            (Severity::Info, true),
-            (Severity::Low, true),
-            (Severity::Medium, true),
-            (Severity::High, false),
-            (Severity::Critical, false),
-        ] {
-            let f = finding("aws-access-key", "aws", sev, "x", "h");
-            assert_eq!(s.matches(&f), expect, "severity={sev:?}");
-        }
+    let s = RuleSuppressor::parse(toml).expect("parse");
+    for (sev, expect) in [
+        (Severity::Info, true),
+        (Severity::Low, true),
+        (Severity::Medium, true),
+        (Severity::High, false),
+        (Severity::Critical, false),
+    ] {
+        let f = finding("aws-access-key", "aws", sev, "x", "h");
+        assert_eq!(s.matches(&f), expect, "severity={sev:?}");
     }
+}

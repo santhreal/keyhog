@@ -1,8 +1,6 @@
 //! U+FFFD replacement characters in paths round-trip through JSON.
 
-use keyhog_core::{
-    MatchLocation, Severity, VerificationResult, VerifiedFinding,
-};
+use keyhog_core::{MatchLocation, Severity, VerificationResult, VerifiedFinding};
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::Arc;

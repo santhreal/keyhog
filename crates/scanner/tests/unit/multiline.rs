@@ -96,15 +96,17 @@ fn test_feature_flags_and_single_line_concat() {
     assert!(preprocessed.text.contains("part1"));
     assert!(preprocessed.text.contains("part2"));
 
-    let inline = r#"token = concat!("xox", "b-1234567890-") + "1234567890-" + "abcdefghijABCDEFGHIJklmn""#;
+    let inline =
+        r#"token = concat!("xox", "b-1234567890-") + "1234567890-" + "abcdefghijABCDEFGHIJklmn""#;
     let inline_processed = preprocess_multiline(
         inline,
         &MultilineConfig::default(),
         &FragmentCache::new(100),
     );
-    assert!(inline_processed
-        .text
-        .contains(concat!("xox", "b-1234567890-1234567890-abcdefghijABCDEFGHIJklmn")));
+    assert!(inline_processed.text.contains(concat!(
+        "xox",
+        "b-1234567890-1234567890-abcdefghijABCDEFGHIJklmn"
+    )));
 }
 
 #[test]

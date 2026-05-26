@@ -133,7 +133,8 @@ fn megakernel_and_literal_set_produce_identical_findings() {
     let only_mega: Vec<_> = megakernel_keys.difference(&literal_keys).collect();
 
     assert_eq!(
-        literal_keys, megakernel_keys,
+        literal_keys,
+        megakernel_keys,
         "megakernel/literal-set divergence:\n  \
          literal_set_keys={} megakernel_keys={}\n  \
          only in literal_set ({}): {:?}\n  \

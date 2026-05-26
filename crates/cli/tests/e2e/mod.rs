@@ -1,4 +1,3 @@
-pub mod support;
 pub mod backend_prints_selected_backend;
 pub mod calibrate_show_header;
 pub mod daemon_status_no_running_daemon;
@@ -22,3 +21,4 @@ pub mod scan_sarif_has_runs;
 pub mod scan_severity_critical_filter;
 pub mod scan_stdin_finds_secret;
 pub mod scan_text_format_not_json;
+pub mod support;
