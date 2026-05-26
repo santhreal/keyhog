@@ -30,11 +30,12 @@ pub(crate) fn looks_like_dashed_serial_key(credential: &str) -> bool {
 /// all-upper hex. A scanner that already coincidentally classifies
 /// the credential as a known-prefix secret (AKIA…, ghp_… etc.) has
 /// already returned `false` upstream of this function.
+// Retained for test scaffolding asserting the pre-split combined-
+// shape behaviour. Production paths call `is_uuid_v4_shape` and
+// `looks_like_hash_digest` individually because the UUID arm is gated
+// by `bypass_shape_gates` while the hash arm is always-on.
+#[allow(dead_code)]
 pub(crate) fn looks_like_pure_hash_digest_or_uuid(credential: &str) -> bool {
-    // Combined-shape helper retained for test scaffolding that asserts the
-    // pre-split behavior. Production paths call `is_uuid_v4_shape` and
-    // `looks_like_hash_digest` individually because the UUID arm is gated
-    // by `bypass_shape_gates` while the hash arm is always-on.
     is_uuid_v4_shape(credential) || looks_like_hash_digest(credential)
 }
 

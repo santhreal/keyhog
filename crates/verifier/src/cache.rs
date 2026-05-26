@@ -130,14 +130,13 @@ impl VerificationCache {
         let now = Instant::now();
 
         // Per-shard read: O(1) hash, lock just one shard. Hot path for
-        // unexpired entries.
-        if let Some(entry) = self.entries.get(&key) {
-            if now < entry.expires_at {
-                return Some((entry.result.clone(), entry.metadata.clone()));
-            }
-        } else {
-            return None;
+        // unexpired entries. `?` on `Option` returns None for a miss; an
+        // expired hit falls through to the eviction path below.
+        let entry = self.entries.get(&key)?;
+        if now < entry.expires_at {
+            return Some((entry.result.clone(), entry.metadata.clone()));
         }
+        drop(entry);
 
         // Expired: lock the shard for removal. dashmap's Entry API gives us
         // CAS-style replacement so concurrent writers don't double-evict.

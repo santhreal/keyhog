@@ -25,8 +25,6 @@ pub mod segment_attribution;
 mod windowed;
 
 pub use gpu_cache::{AcConstPacks, GpuConstPacks};
-pub(crate) use gpu_coalesce::coalesce_chunks;
-pub(crate) use gpu_dispatch::ShardDispatchResult;
 pub use gpu_scan_wrappers::GpuPhase1Output;
 pub use rule_pipeline::{
     build_rule_pipeline, rule_pipeline_cached, AC_GPU_MAX_MATCHES_PER_DISPATCH, MEGASCAN_INPUT_LEN,

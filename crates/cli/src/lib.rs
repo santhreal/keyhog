@@ -17,7 +17,7 @@ pub mod config;
 pub mod daemon;
 pub mod inline_suppression;
 pub mod orchestrator;
-mod orchestrator_config;
+pub mod orchestrator_config;
 pub mod path_validation;
 pub mod reporting;
 pub mod sources;

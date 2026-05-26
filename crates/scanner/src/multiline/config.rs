@@ -140,10 +140,14 @@ pub(crate) fn has_concatenation_indicators(text: &str) -> bool {
                 && window[1] == b'\n'
                 && (window[2] == b'\'' || window[2] == b' ' || window[2] == b'\t'))
     });
-    if !has_explicit_concat && !has_backslash_cont && !has_template && !has_paste && !has_implicit {
-        if !has_var_ref_concatenation(text) {
-            return false;
-        }
+    if !has_explicit_concat
+        && !has_backslash_cont
+        && !has_template
+        && !has_paste
+        && !has_implicit
+        && !has_var_ref_concatenation(text)
+    {
+        return false;
     }
 
     for line in text.lines() {

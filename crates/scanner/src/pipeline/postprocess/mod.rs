@@ -3,10 +3,10 @@
 mod shape_gates;
 mod suppression;
 
-pub(crate) use shape_gates::{
-    is_uuid_v4_shape, looks_like_dashed_serial_key, looks_like_hash_digest,
-    looks_like_pure_hash_digest_or_uuid,
-};
+// `shape_gates::{is_uuid_v4_shape, looks_like_*}` are consumed only
+// inside `suppression.rs` (sibling), which imports via
+// `use super::shape_gates::*` directly. A `pub(crate) use` here would
+// be a no-op the unused-imports lint catches under -D warnings.
 pub use suppression::{
     should_suppress_known_example_credential, should_suppress_known_example_credential_with_source,
     should_suppress_named_detector_finding,

@@ -11,8 +11,8 @@ use keyhog_core::{VerificationResult, VerifiedFinding};
 use std::io::IsTerminal;
 use std::time::Instant;
 
-pub(crate) const EXIT_LIVE_CREDENTIALS: u8 = 10;
-pub(crate) const EXIT_SCANNER_PANIC: u8 = 11;
+pub const EXIT_LIVE_CREDENTIALS: u8 = 10;
+pub const EXIT_SCANNER_PANIC: u8 = 11;
 
 impl ScanOrchestrator {
     pub async fn run(self) -> Result<std::process::ExitCode> {
