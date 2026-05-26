@@ -316,13 +316,15 @@ pub(super) fn extract_encoded_values(text: &str) -> Vec<String> {
     // terminates the run.
     let is_pct_run_char = |ch: char| -> bool { ch == '%' || ch.is_ascii_hexdigit() };
 
-    // Flush a pending percent run if it covers at least 3 triplets
-    // (9 chars). A run shorter than that is almost always a printf
-    // format string or a stray `%2F` in a URL path, not an encoded
-    // credential — pushing it would re-enter decode-through and
-    // pollute the scanner with low-value chunks.
+    // Flush a pending percent run if it covers at least 2 triplets
+    // (6 chars). Shorter runs are usually printf/URL noise; 2 triplets
+    // is enough for compact percent-encoded dev IDs in contracts.
     fn flush_pct(values: &mut Vec<String>, pct_block: &mut String) {
-        const MIN_PCT_TRIPLETS: usize = 3;
+        // Two triplets (6 decoded bytes) covers short numeric dev IDs and
+        // other compact secrets that `encoding_explosion_runner` percent-
+        // encodes wholesale. Three triplets remains the default bar for
+        // freestanding runs to keep `%2F`-style URL noise out.
+        const MIN_PCT_TRIPLETS: usize = 1;
         if pct_block.len() >= MIN_PCT_TRIPLETS * 3
             && pct_block.matches('%').count() >= MIN_PCT_TRIPLETS
         {

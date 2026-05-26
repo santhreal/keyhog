@@ -1,1 +1,19 @@
-
+pub mod ssrf_blocks_127_shorthand;
+pub mod ssrf_blocks_aws_metadata_integer;
+pub mod ssrf_blocks_decimal_integer_localhost;
+pub mod ssrf_blocks_google_metadata_internal;
+pub mod ssrf_blocks_hex_localhost;
+pub mod ssrf_blocks_ipv4_mapped_loopback;
+pub mod ssrf_blocks_ipv6_loopback;
+pub mod ssrf_blocks_local_suffix;
+pub mod ssrf_blocks_localhost_localdomain;
+pub mod ssrf_blocks_malformed_negative_octets;
+pub mod ssrf_blocks_malformed_too_many_octets;
+pub mod ssrf_blocks_metadata_ip;
+pub mod ssrf_blocks_octal_dotted_localhost;
+pub mod ssrf_blocks_rfc1918_10_net;
+pub mod ssrf_blocks_rfc1918_172_net;
+pub mod ssrf_blocks_rfc1918_192_net;
+pub mod ssrf_blocks_url_encoded_localhost;
+pub mod ssrf_blocks_url_encoded_loopback_ip;
+pub mod ssrf_blocks_zero_address;

@@ -108,34 +108,3 @@ fn in_trusted_dir(p: &std::path::Path) -> bool {
         .iter()
         .any(|d| parent == std::path::Path::new(d))
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    #[cfg(unix)]
-    fn resolves_sh_to_known_path() {
-        // `/bin/sh` exists on every Unix variant we ship to.
-        let resolved = resolve_safe_bin("sh").expect("sh should resolve");
-        assert!(resolved.is_absolute());
-        assert!(resolved.ends_with("sh"));
-    }
-
-    #[test]
-    fn refuses_relative_path() {
-        assert!(resolve_safe_bin("./malicious").is_none());
-        assert!(resolve_safe_bin("../../../bin/sh").is_none());
-    }
-
-    #[test]
-    fn refuses_absolute_path_outside_trusted_dirs() {
-        assert!(resolve_safe_bin("/tmp/whatever").is_none());
-    }
-
-    #[test]
-    fn unknown_binary_is_none() {
-        // A name that should never exist on any system.
-        assert!(resolve_safe_bin("definitely-not-a-real-binary-xyz123").is_none());
-    }
-}

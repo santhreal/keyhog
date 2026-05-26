@@ -122,6 +122,36 @@ fn test_cache_null_bytes() {
     );
 }
 
+#[test]
+fn test_cache_overwrite_updates_result() {
+    let cache = VerificationCache::with_max_entries(Duration::from_secs(60), 100);
+    cache.put("cred", "det", VerificationResult::Dead, HashMap::new());
+    cache.put(
+        "cred",
+        "det",
+        VerificationResult::Live,
+        HashMap::from([("status".into(), "live".into())]),
+    );
+    let (result, meta) = cache.get("cred", "det").unwrap();
+    assert!(matches!(result, VerificationResult::Live));
+    assert_eq!(meta["status"], "live");
+}
+
+#[test]
+fn test_cache_distinct_detector_same_credential() {
+    let cache = VerificationCache::with_max_entries(Duration::from_secs(60), 100);
+    cache.put("shared", "det-a", VerificationResult::Live, HashMap::new());
+    cache.put("shared", "det-b", VerificationResult::Dead, HashMap::new());
+    assert!(matches!(
+        cache.get("shared", "det-a").unwrap().0,
+        VerificationResult::Live
+    ));
+    assert!(matches!(
+        cache.get("shared", "det-b").unwrap().0,
+        VerificationResult::Dead
+    ));
+}
+
 // Use rusty-fork to isolate the panic instead of custom dead-code stubs
 rusty_fork::rusty_fork_test! {
     #![rusty_fork(timeout_ms = 5000)]
@@ -186,6 +216,27 @@ async fn test_rate_limiter_concurrent_updates() {
     }
     // Should not deadlock or panic
     assert!(true, "Concurrent updates and waits should not deadlock");
+}
+
+#[tokio::test]
+async fn test_rate_limiter_per_service_isolation() {
+    let limiter = Arc::new(RateLimiter::new(1000.0));
+    let start = std::time::Instant::now();
+    let l1 = limiter.clone();
+    let l2 = limiter.clone();
+    let t1 = tokio::spawn(async move {
+        l1.wait("service-a").await;
+        l1.wait("service-a").await;
+    });
+    let t2 = tokio::spawn(async move {
+        l2.wait("service-b").await;
+        l2.wait("service-b").await;
+    });
+    let _ = tokio::join!(t1, t2);
+    assert!(
+        start.elapsed() < std::time::Duration::from_millis(200),
+        "independent services must not block each other at high rps"
+    );
 }
 
 rusty_fork::rusty_fork_test! {

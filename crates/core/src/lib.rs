@@ -1,9 +1,40 @@
+#![warn(missing_docs)]
+#![warn(clippy::pedantic)]
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::todo,
+        clippy::unimplemented,
+        clippy::panic
+    )
+)]
+#![allow(
+    clippy::module_name_repetitions,
+    clippy::must_use_candidate,
+    clippy::missing_errors_doc,
+)]
+
 //! Core types shared across all KeyHog crates.
 //!
 //! Defines the [`Source`] trait for pluggable input backends, [`DetectorSpec`]
 //! for TOML-based pattern definitions, [`RawMatch`] and [`VerifiedFinding`] for
 //! scanner output, [`DedupedMatch`] for grouped findings, and [`Reporter`] for
 //! structured result formatting.
+
+#![warn(missing_docs)]
+#![warn(clippy::pedantic)]
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::todo,
+        clippy::unimplemented,
+        clippy::panic
+    )
+)]
 
 /// Credential/path allowlist parsing and matching.
 pub mod allowlist;

@@ -17,5 +17,5 @@ group = 1
 
 [[detector.companions]]
 name = "secret_key"
-regex = "[a-zA-Z0-9+/=]{8,100}"
+regex = "(?:MINIO|minio)[._-]?(?:ROOT[._-]?PASSWORD|SECRET[._-]?KEY|secret)[=:\\s\"']+([a-zA-Z0-9+/=]{8,100})"
 within_lines = 5

@@ -11,7 +11,10 @@ impl Decoder for Base64Decoder {
 
     fn decode_chunk(&self, chunk: &Chunk) -> Vec<Chunk> {
         let mut decoded_chunks = Vec::new();
-        for b64_match in find_base64_strings(&chunk.data, 20) {
+        // Floor lowered from 20→12 so short contract credentials (7–15
+        // chars) survive encode-through in `encoding_explosion_runner`.
+        // `extract_encoded_values` already rejects noise shorter than 4.
+        for b64_match in find_base64_strings(&chunk.data, 12) {
             if let Ok(decoded) = base64_decode(&b64_match.value) {
                 if let Ok(text) = String::from_utf8(decoded) {
                     // Splice the decoded text back over the original
@@ -104,7 +107,11 @@ fn classify_base64(candidate: &str) -> Option<Base64Variant> {
             Base64Variant::Standard
         }),
         (_, true, _) => None,
-        (_, false, 1) => None,
+        (_, false, 1) => Some(if has_urlsafe {
+            Base64Variant::UrlSafeNoPad
+        } else {
+            Base64Variant::StandardNoPad
+        }),
         (true, false, _) => Some(Base64Variant::UrlSafeNoPad),
         (false, false, 0) => Some(Base64Variant::Standard),
         (false, false, _) => Some(Base64Variant::StandardNoPad),

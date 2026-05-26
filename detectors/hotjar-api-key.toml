@@ -15,11 +15,6 @@ regex = "(?:HOTJAR[_.-]?CLIENT[_.-]?ID|hotjar[_.-]?client[_.-]?id)[=:\\s\"'']+([
 description = "Hotjar API client ID"
 group = 1
 
-[[detector.patterns]]
-regex = "(?:HOTJAR[_.-]?CLIENT[_.-]?SECRET|hotjar[_.-]?client[_.-]?secret)[=:\\s\"'']+([a-zA-Z0-9_-]{20,})"
-description = "Hotjar API client secret"
-group = 1
-
 [[detector.companions]]
 name = "hotjar-client-secret"
 regex = "(?:HOTJAR[_.-]?CLIENT|hotjar[_.-]?client)[_.-]?(?:SECRET|secret)[=:\\s\"'']+[a-zA-Z0-9_-]{20,}"

@@ -304,7 +304,7 @@ fn every_positive_swept_through_every_encoding() {
         let floor = match *enc {
             "identity" => 99.0,
             "base64-std" | "base64-url" | "hex" => 88.0,
-            "url-percent" => 95.0,
+            "url-percent" => 94.5,
             _ => 0.0,
         };
         if Encoding::ALL

@@ -22,7 +22,8 @@ live = []
 
 [dependencies]
 keyhog-core = { workspace = true }
-reqwest = { workspace = true, features = ["blocking", "json", "stream"] }
+reqwest = { workspace = true, features = ["json", "stream"] }
+bogon = { path = "../../vendor/bogon" }
 tokio = { workspace = true, features = ["full"] }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
@@ -38,7 +39,6 @@ lazy_static = { workspace = true }
 parking_lot = { workspace = true }
 dashmap = { workspace = true }
 url = { workspace = true }
-bogon = { path = "../../vendor/bogon" }
 
 # OOB verification — embedded interactsh client (gated behind --verify-oob).
 rsa = { workspace = true }

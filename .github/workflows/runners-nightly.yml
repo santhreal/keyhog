@@ -1,0 +1,62 @@
+name: runners-nightly
+
+# Full strict runner matrix (~100k+ cases). Too slow for every PR push;
+# the ci.yml strict-runners job gates the four highest-signal multipliers
+# on pull_request + main. This workflow runs the complete red-wall set
+# once daily and on manual dispatch for triage after contract expansion.
+
+on:
+  schedule:
+    - cron: "0 5 * * *"   # 05:00 UTC daily (before secretbench-nightly)
+  workflow_dispatch:
+
+concurrency:
+  group: runners-nightly
+  cancel-in-progress: false
+
+jobs:
+  full-strict-matrix:
+    name: Full strict runner matrix
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Contract corpus + runner fixtures are LFS-tracked — same
+          # requirement as ci.yml strict-runners and Test/fmt jobs.
+          lfs: true
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: runners-nightly
+      - name: Install Vectorscan
+        run: sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config
+      - name: Full strict runner gate
+        env:
+          KEYHOG_ADVERSARIAL_STRICT: "1"
+          KEYHOG_ENCODING_STRICT: "1"
+          KEYHOG_PATH_SHAPE_STRICT: "1"
+          KEYHOG_NOISE_STRICT: "1"
+          KEYHOG_UNICODE_STRICT: "1"
+          KEYHOG_WHITESPACE_STRICT: "1"
+          KEYHOG_LINE_LEN_STRICT: "1"
+          KEYHOG_ENTROPY_STRICT: "1"
+          KEYHOG_MULTI_STRICT: "1"
+          KEYHOG_COMPOUND_STRICT: "1"
+          KEYHOG_COMMENT_STRICT: "1"
+        run: |
+          cargo test -p keyhog-scanner --profile release-fast \
+            --test contracts_runner \
+            --test adversarial_explosion_runner \
+            --test encoding_explosion_runner \
+            --test path_shape_runner \
+            --test noise_injection_runner \
+            --test unicode_confusable_runner \
+            --test whitespace_normalization_runner \
+            --test line_length_runner \
+            --test entropy_edge_runner \
+            --test compound_encoding_runner \
+            --test multi_secret_runner \
+            --test comment_embed_runner \
+            --test companion_contracts_runner \
+            --test cve_replay_runner

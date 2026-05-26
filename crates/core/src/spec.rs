@@ -340,33 +340,3 @@ pub enum SpecError {
         source: toml::de::Error,
     },
 }
-
-#[cfg(test)]
-mod tests {
-    use super::Severity;
-
-    #[test]
-    fn severity_downgrade_walks_one_step() {
-        assert_eq!(Severity::Critical.downgrade_one(), Severity::High);
-        assert_eq!(Severity::High.downgrade_one(), Severity::Medium);
-        assert_eq!(Severity::Medium.downgrade_one(), Severity::Low);
-        assert_eq!(Severity::Low.downgrade_one(), Severity::Info);
-    }
-
-    #[test]
-    fn severity_downgrade_floors_at_info() {
-        assert_eq!(Severity::Info.downgrade_one(), Severity::Info);
-    }
-
-    #[test]
-    fn severity_downgrade_is_monotonic() {
-        // Repeated downgrade must not loop or skip — every step must be ≤ previous.
-        let mut s = Severity::Critical;
-        for _ in 0..10 {
-            let next = s.downgrade_one();
-            assert!(next <= s);
-            s = next;
-        }
-        assert_eq!(s, Severity::Info);
-    }
-}

@@ -6,11 +6,13 @@
 
 use clap::Parser;
 use keyhog::args::{Cli, Command};
-use keyhog::{subcommands, FINDINGS_COUNT, SCANNED_CHUNKS, TOTAL_CHUNKS};
+use keyhog::{subcommands, FINDINGS_COUNT, SCANNER_PANICKED, SCANNED_CHUNKS, TOTAL_CHUNKS};
 use std::io::IsTerminal;
 use std::process::ExitCode;
+use std::sync::atomic::Ordering;
 
-const EXIT_RUNTIME_ERROR: u8 = 2;
+const EXIT_USER_ERROR: u8 = 2;
+const EXIT_SYSTEM_ERROR: u8 = 3;
 
 /// Restore the default SIGPIPE handler so Unix piping works.
 ///
@@ -124,14 +126,25 @@ async fn main() -> ExitCode {
     };
 
     match command_outcome {
-        Ok(outcome) => outcome,
+        Ok(outcome) => {
+            if SCANNER_PANICKED.load(Ordering::Relaxed) {
+                ExitCode::from(EXIT_SYSTEM_ERROR)
+            } else {
+                outcome
+            }
+        }
         Err(error) => {
             // {:#} prints the chained user-facing message
             // (`anyhow!("loading detectors").context("…").context("…")`
             // → "loading detectors: <inner>: <root>") instead of the
             // {:?} debug dump that includes Backtrace internals.
             eprintln!("error: {error:#}");
-            ExitCode::from(EXIT_RUNTIME_ERROR)
+            let code = if keyhog::SCANNER_PANICKED.load(std::sync::atomic::Ordering::SeqCst) {
+                EXIT_SYSTEM_ERROR
+            } else {
+                EXIT_USER_ERROR
+            };
+            ExitCode::from(code)
         }
     }
 }

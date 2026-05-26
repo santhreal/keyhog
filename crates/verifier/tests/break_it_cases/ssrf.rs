@@ -232,3 +232,128 @@ async fn test_ssrf_malformed_urls() {
         }
     }
 }
+
+#[tokio::test]
+async fn test_ssrf_blocks_link_local_and_metadata_hosts() {
+    let blocked = [
+        "http://169.254.169.254/latest/meta-data/",
+        "http://metadata.google.internal/computeMetadata/v1/",
+        "http://127.1/",
+    ];
+    for url in blocked {
+        let spec = DetectorSpec {
+            id: "ssrf-block".to_string(),
+            name: "ssrf".to_string(),
+            service: "test".to_string(),
+            severity: Severity::Critical,
+            patterns: vec![],
+            companions: vec![],
+            keywords: vec![],
+            verify: Some(VerifySpec {
+                url: Some(url.to_string()),
+                method: Some(HttpMethod::Get),
+                headers: vec![],
+                body: None,
+                auth: None,
+                success: None,
+                metadata: vec![],
+                service: "test".to_string(),
+                timeout_ms: None,
+                steps: vec![],
+                allowed_domains: vec!["169.254.169.254".into(), "metadata.google.internal".into()],
+                oob: None,
+            }),
+            ..Default::default()
+        };
+        let engine = VerificationEngine::new(&[spec], VerifyConfig::default()).unwrap();
+        let group = DedupedMatch {
+            detector_id: Arc::from("ssrf-block"),
+            detector_name: Arc::from("ssrf"),
+            service: Arc::from("test"),
+            severity: Severity::Critical,
+            credential: Arc::from("secret"),
+            credential_hash: "hash".to_string(),
+            primary_location: MatchLocation {
+                source: Arc::from(""),
+                file_path: None,
+                line: None,
+                offset: 0,
+                commit: None,
+                author: None,
+                date: None,
+            },
+            additional_locations: vec![],
+            companions: HashMap::new(),
+            confidence: None,
+        };
+        let findings = engine.verify_all(vec![group]).await;
+        match &findings[0].verification {
+            VerificationResult::Error(e) => {
+                assert!(
+                    e.contains("private") || e.contains("blocked:"),
+                    "SSRF {url} must be blocked before outbound request; got {e:?}"
+                );
+            }
+            other => panic!("SSRF {url} must not succeed; got {other:?}"),
+        }
+    }
+}
+
+#[tokio::test]
+async fn test_ssrf_domain_allowlist_blocks_attacker_host() {
+    let spec = DetectorSpec {
+        id: "ssrf-allow".to_string(),
+        name: "ssrf".to_string(),
+        service: "test".to_string(),
+        severity: Severity::Critical,
+        patterns: vec![],
+        companions: vec![],
+        keywords: vec![],
+        verify: Some(VerifySpec {
+            url: Some("https://attacker.example.com/exfil".to_string()),
+            method: Some(HttpMethod::Get),
+            headers: vec![],
+            body: None,
+            auth: None,
+            success: None,
+            metadata: vec![],
+            service: "test".to_string(),
+            timeout_ms: None,
+            steps: vec![],
+            allowed_domains: vec!["api.github.com".into()],
+            oob: None,
+        }),
+        ..Default::default()
+    };
+    let engine = VerificationEngine::new(&[spec], VerifyConfig::default()).unwrap();
+    let group = DedupedMatch {
+        detector_id: Arc::from("ssrf-allow"),
+        detector_name: Arc::from("ssrf"),
+        service: Arc::from("test"),
+        severity: Severity::Critical,
+        credential: Arc::from("secret"),
+        credential_hash: "hash".to_string(),
+        primary_location: MatchLocation {
+            source: Arc::from(""),
+            file_path: None,
+            line: None,
+            offset: 0,
+            commit: None,
+            author: None,
+            date: None,
+        },
+        additional_locations: vec![],
+        companions: HashMap::new(),
+        confidence: None,
+    };
+    let findings = engine.verify_all(vec![group]).await;
+    match &findings[0].verification {
+        VerificationResult::Error(e) => {
+            assert!(
+                e.contains("blocked:"),
+                "attacker host must hit domain allowlist before SSRF; got {e:?}"
+            );
+        }
+        other => panic!("attacker host must be blocked; got {other:?}"),
+    }
+}

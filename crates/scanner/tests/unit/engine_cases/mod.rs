@@ -1,0 +1,37 @@
+//! LR1-A2 hand-written unit tests (one `#[test]` per file).
+
+mod window_end_offset_ascii_stays_in_bounds;
+mod window_end_offset_multibyte_never_splits;
+mod window_end_offset_at_eof;
+mod window_end_offset_invalid_start;
+mod next_window_offset_applies_overlap;
+mod next_window_offset_zero_overlap;
+mod next_window_offset_at_text_end;
+mod window_chunk_preserves_path;
+mod window_chunk_zero_width_range;
+mod floor_char_boundary_at_zero;
+mod floor_char_boundary_past_end;
+mod floor_char_boundary_mid_multibyte;
+mod line_number_first_line;
+mod line_number_second_line;
+mod line_number_at_eof;
+mod record_window_match_dedups;
+mod record_window_match_adjusts_offset;
+mod build_rule_pipeline_simple_literal;
+mod build_rule_pipeline_rejects_lookahead;
+mod build_rule_pipeline_rejects_backreference;
+mod megascan_input_len_is_256mb;
+mod ac_gpu_max_matches_one_million;
+mod compiled_scanner_detector_count;
+mod compiled_scanner_pattern_count;
+mod scan_skips_keyhogignore_path;
+mod scan_skips_detectors_directory_path;
+mod scan_cpu_fallback_finds_match;
+mod scan_simd_cpu_empty_chunk;
+mod scan_chunks_preserves_chunk_count;
+mod clear_fragment_cache_idempotent;
+mod preferred_backend_label_nonempty;
+mod warm_backend_cpu_always_true;
+mod pattern_regex_strs_includes_ac_and_fallback;
+mod compile_rejects_invalid_regex;
+mod scan_does_not_cross_chunk_boundary;

@@ -21,15 +21,30 @@ impl Decoder for UrlDecoder {
     }
 
     fn decode_chunk(&self, chunk: &Chunk) -> Vec<Chunk> {
-        decode_candidates(
-            chunk,
-            extract_encoded_values(&chunk.data)
-                .into_iter()
-                .filter(|candidate| candidate.contains('%'))
-                .collect(),
-            url_decode,
-            self.name(),
-        )
+        let mut candidates = extract_encoded_values(&chunk.data)
+            .into_iter()
+            .filter(|candidate| candidate.contains('%'))
+            .collect::<Vec<_>>();
+        // Also pick up percent-only assignment tails the pct_block accumulator
+        // can miss when the `%` run abuts a quote or delimiter mid-chunk.
+        for line in chunk.data.lines() {
+            for (lhs, rhs) in line.split_once('=').into_iter().chain(
+                line.split_once(':').into_iter().filter(|(l, _)| {
+                    !l.contains("://") && !l.starts_with("http")
+                }),
+            ) {
+                let _ = lhs;
+                let rhs = rhs.trim().trim_matches('"').trim_matches('\'');
+                if rhs.starts_with('%')
+                    && rhs.len() >= 6
+                    && contains_percent_escape(rhs)
+                    && !candidates.iter().any(|c| c.as_str() == rhs)
+                {
+                    candidates.push(rhs.to_string());
+                }
+            }
+        }
+        decode_candidates(chunk, candidates, url_decode, self.name())
     }
 }
 

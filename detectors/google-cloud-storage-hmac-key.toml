@@ -20,11 +20,6 @@ regex = "hmac[_-]?access[_-]?key[=:\\s\"'']+(GOOG[0-9A-Z]{37,40})"
 description = "GCS HMAC access key with context anchor"
 group = 1
 
-[[detector.patterns]]
-regex = "hmac[_-]?secret[=:\\s\"'']+([a-zA-Z0-9+/]{40,})"
-description = "GCS HMAC secret with context anchor"
-group = 1
-
 [[detector.companions]]
 name = "hmac_secret"
 regex = "[a-zA-Z0-9+/]{40,}"

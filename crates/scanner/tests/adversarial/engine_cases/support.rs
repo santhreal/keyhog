@@ -56,3 +56,24 @@ pub fn test_scanner() -> CompiledScanner {
 
 /// A valid test credential that the token detector should match.
 pub const VALID_CREDENTIAL: &str = "TESTKEY_aK7xP9mQ2wE5rT8yU1iO";
+
+/// Repetitive-mask twin that must stay suppressed.
+pub const FAKE_CREDENTIAL: &str = "TESTKEY_11111111111111111111";
+
+pub fn assert_not_detected(data: &str, credential: &str) {
+    let scanner = test_scanner();
+    let matches = scanner.scan(&make_chunk(data));
+    assert!(
+        !matches.iter().any(|m| m.credential.as_ref() == credential),
+        "expected {credential} to be suppressed in:\n{data}\nmatches={:?}",
+        matches
+            .iter()
+            .map(|m| m.credential.as_ref())
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn plain_testkey_assignment_is_detected() {
+    assert_detected(&format!("export KEY=\"{VALID_CREDENTIAL}\"\n"));
+}

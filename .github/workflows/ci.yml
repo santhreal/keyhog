@@ -18,6 +18,42 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # PR gate: the four highest-signal contract multipliers in strict mode.
+  # The remaining ~10 runners run nightly (runners-nightly.yml) because
+  # the full matrix is ~100k+ cases and would stack ~45+ minutes on
+  # every push. This job requires `lfs: true` checkout — the contract
+  # corpus and several runner fixtures are LFS-tracked.
+  strict-runners:
+    name: Strict adversarial runners
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    # PR + main gate. contracts_runner is always strict (no env var); the
+    # three multiplier runners honor KEYHOG_*_STRICT=1 (see TESTING_PROGRAM.md
+    # §3.1). Remaining strict env vars run nightly in runners-nightly.yml.
+    env:
+      KEYHOG_ADVERSARIAL_STRICT: "1"
+      KEYHOG_ENCODING_STRICT: "1"
+      KEYHOG_PATH_SHAPE_STRICT: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Same LFS requirement as the Test job: tests/contracts/*.toml
+          # and readme_claims.rs are pointer-tracked. Without lfs:true the
+          # tree has 3-line LFS stubs and every runner that parses TOML
+          # or rust source fixtures fails immediately.
+          lfs: true
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install Vectorscan
+        run: sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config
+      - name: Strict runner gate (PR subset)
+        run: |
+          cargo test -p keyhog-scanner --profile release-fast \
+            --test contracts_runner \
+            --test adversarial_explosion_runner \
+            --test encoding_explosion_runner \
+            --test path_shape_runner
+
   test:
     name: Test
     runs-on: ubuntu-latest
@@ -47,11 +83,8 @@ jobs:
       - name: E2E binary tests
         run: cargo test -p keyhog --test e2e_binary --profile release-fast
 
-      # Per-detector contract gate. Walks tests/contracts/*.toml
-      # and asserts positives fire, negatives don't, evasions
-      # still fire, scale budget holds, README claim is present.
-      - name: Per-detector contract gate
-        run: cargo test -p keyhog-scanner --test contracts_runner --profile release-fast
+      # Per-detector contract gate lives in strict-runners (with the
+      # adversarial/encoding/path multipliers under KEYHOG_*_STRICT=1).
 
       # Property tests (10 000+ cases per invariant). The proptest
       # regression file (scanner_fuzz.proptest-regressions) re-runs
@@ -199,20 +232,26 @@ jobs:
       - name: Smoke test
         run: |
           set +e
-          # The Stripe demo key is on the bundled test-fixture
+          # Synthesize the Stripe demo key at runtime so the literal
+          # never lives in tracked source. (Bare literal trips push-
+          # protection on the test-fixture suppression match AND third-
+          # party content-scanners that grep CI yamls for credential
+          # shapes.) The demo key is on the bundled test-fixture
           # suppression list (data/suppressions/test-fixtures.toml),
           # so the smoke test must opt out via
           # --no-suppress-test-fixtures to surface the finding —
           # otherwise default-mode correctly returns zero matches
           # and the smoke test would mis-assert "scanner broken."
-          echo 'API_KEY="sk_live_4eC39HqLyjWDarjtT1zdp7dc"' \
+          prefix="sk_$(printf live)"
+          body="4eC39HqLyjWDarjtT1zdp7dc"
+          printf 'API_KEY="%s_%s"\n' "$prefix" "$body" \
             | ./target/release/keyhog scan --stdin --min-confidence 0.0 \
                 --no-suppress-test-fixtures
           test $? -eq 1  # exit 1 = findings detected (expected)
 
   publish:
     name: Publish to crates.io
-    needs: [test, clippy, fmt, build]
+    needs: [test, strict-runners, clippy, fmt, build]
     # Only attempt publish on an explicit `v*` tag push. Running on
     # every main push churned the CI red because keyhog-core depends
     # on the vendored vyre-libs (not yet on crates.io), so `cargo

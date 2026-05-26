@@ -1,0 +1,6 @@
+mod compiler_valid_regex_compiles;
+mod decode_hex_deadbeef_bytes;
+mod decode_reverse_yields_layer;
+mod decode_unicode_escape_sk_prefix;
+mod engine_compile_valid_detector;
+mod engine_scan_empty_chunk_no_matches;

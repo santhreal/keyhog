@@ -1,4 +1,10 @@
 pub mod basic_sources;
 pub mod binary;
+pub mod file_gate;
+pub mod filesystem;
 pub mod git_diff;
 pub mod git_history;
+pub mod http;
+pub mod lib;
+pub mod timeouts;
+pub mod gates;

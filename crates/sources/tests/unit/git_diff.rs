@@ -91,3 +91,100 @@ fn git_diff_source_rejects_nonexistent_ref() {
 
     assert!(chunk_collection.is_err());
 }
+
+#[cfg(feature = "git")]
+#[test]
+fn git_diff_source_skips_deleted_file_without_added_lines() {
+    let (_temp_dir, repo_path) = create_test_repo();
+    commit_file(
+        &repo_path,
+        "remove.txt",
+        "REMOVED_SECRET = sk-deleted\n",
+        "Add removable",
+    );
+    Command::new("git")
+        .args(["checkout", "-b", "prune"])
+        .current_dir(&repo_path)
+        .output()
+        .unwrap();
+    std::fs::remove_file(repo_path.join("remove.txt")).unwrap();
+    Command::new("git")
+        .args(["rm", "remove.txt"])
+        .current_dir(&repo_path)
+        .output()
+        .unwrap();
+    let output = Command::new("git")
+        .args(["commit", "-m", "Delete secret file"])
+        .current_dir(&repo_path)
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+
+    let source = GitDiffSource::new(repo_path, "main").with_head_ref("prune");
+    let chunks: Vec<_> = source.chunks().collect::<Result<Vec<_>, _>>().unwrap();
+
+    assert!(
+        chunks.is_empty(),
+        "delete-only diff must not emit added-line chunks; got {chunks:?}"
+    );
+}
+
+#[cfg(feature = "git")]
+#[test]
+fn git_diff_source_rejects_unsafe_ref_names() {
+    let (_temp_dir, repo_path) = create_test_repo();
+    commit_file(&repo_path, "file.txt", "content", "Initial commit");
+
+    let source = GitDiffSource::new(repo_path, "../evil");
+    let err = source
+        .chunks()
+        .next()
+        .expect("unsafe ref should yield one Err")
+        .expect_err("unsafe ref must be rejected");
+    assert!(
+        err.to_string().contains("unsafe git ref"),
+        "expected unsafe ref rejection; got {err}"
+    );
+}
+
+#[cfg(feature = "git")]
+#[test]
+fn git_diff_source_chunk_metadata_carries_path_and_commit() {
+    let (_temp_dir, repo_path) = create_test_repo();
+    commit_file(&repo_path, "first.txt", "line = 1\n", "Initial");
+    Command::new("git")
+        .args(["checkout", "-b", "feature"])
+        .current_dir(&repo_path)
+        .output()
+        .unwrap();
+    commit_file(
+        &repo_path,
+        "secrets.env",
+        "GITHUB_TOKEN=ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ1234567890ab\n",
+        "Add secret",
+    );
+
+    let source = GitDiffSource::new(repo_path.clone(), "main").with_head_ref("feature");
+    let chunks: Vec<_> = source.chunks().collect::<Result<Vec<_>, _>>().unwrap();
+
+    assert_eq!(chunks.len(), 1);
+    assert_eq!(
+        chunks[0].metadata.path.as_deref(),
+        Some("secrets.env"),
+        "added file path must appear in chunk metadata"
+    );
+    let commit = chunks[0]
+        .metadata
+        .commit
+        .as_deref()
+        .expect("commit hash must be set");
+    assert!(
+        commit.len() == 40 && commit.chars().all(|c| c.is_ascii_hexdigit()),
+        "commit must be 40-char hex SHA; got {commit:?}"
+    );
+    assert!(
+        chunks[0].data.contains("ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ1234567890ab"),
+        "added line content must be present; got {:?}",
+        chunks[0].data
+    );
+}

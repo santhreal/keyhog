@@ -118,3 +118,17 @@ fn test_fstring_support() {
     assert!(preprocessed.text.contains("sk-proj-"));
     assert!(preprocessed.text.contains("abcdef123456"));
 }
+
+#[test]
+fn split_string_testkey_concat_reassembly() {
+    let text = "head = \"TESTKEY_\"\n\
+                tail = \"aK7xP9mQ2wE5rT8yU1iO\"\n\
+                token = head + tail\n";
+    let preprocessed =
+        preprocess_multiline(text, &MultilineConfig::default(), &FragmentCache::new(100));
+    assert!(
+        preprocessed.text.contains("TESTKEY_aK7xP9mQ2wE5rT8yU1iO"),
+        "structural concat must reassemble split TESTKEY credential; got:\n{}",
+        preprocessed.text
+    );
+}

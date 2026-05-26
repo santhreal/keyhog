@@ -1,3 +1,6 @@
+use regex::Regex;
+use std::sync::LazyLock;
+
 const MAX_MULTILINE_PREPROCESS_BYTES: usize = 2 * 1024 * 1024;
 const MAX_MULTILINE_LINE_BYTES: usize = 64 * 1024;
 
@@ -138,7 +141,9 @@ pub(crate) fn has_concatenation_indicators(text: &str) -> bool {
                 && (window[2] == b'\'' || window[2] == b' ' || window[2] == b'\t'))
     });
     if !has_explicit_concat && !has_backslash_cont && !has_template && !has_paste && !has_implicit {
-        return false;
+        if !has_var_ref_concatenation(text) {
+            return false;
+        }
     }
 
     for line in text.lines() {
@@ -155,6 +160,7 @@ pub(crate) fn has_concatenation_indicators(text: &str) -> bool {
             || (trimmed.ends_with('\\') && !trimmed.ends_with("\\\\"))
             || trimmed.contains("\" \"")
             || trimmed.contains("' '")
+            || has_var_ref_concat_line(trimmed)
             || (trimmed.ends_with('`') && trimmed.matches('`').count() == 1)
         {
             return true;
@@ -162,6 +168,26 @@ pub(crate) fn has_concatenation_indicators(text: &str) -> bool {
     }
 
     false
+}
+
+/// Variable-reference concatenation: `token = head + tail` (no quoted
+/// literals on the RHS). The structural reassembly pass resolves these
+/// via `resolve_concat_reference`; without this indicator the multiline
+/// preprocessor passthroughs and the split credential never surfaces.
+fn has_var_ref_concatenation(text: &str) -> bool {
+    text.lines().any(has_var_ref_concat_line)
+}
+
+fn has_var_ref_concat_line(line: &str) -> bool {
+    static VAR_REF_CONCAT_RE: LazyLock<Option<Regex>> = LazyLock::new(|| {
+        Regex::new(
+            r#"(?i)^\s*[a-z0-9_\-\.]{2,64}\s*[:=]\s*[a-z0-9_\-]{2,32}(?:\s*\+\s*[a-z0-9_\-]{2,32}){1,8}\s*;?\s*$"#,
+        )
+        .ok()
+    });
+    VAR_REF_CONCAT_RE
+        .as_ref()
+        .is_some_and(|re| re.is_match(line))
 }
 
 pub(crate) fn should_passthrough(text: &str) -> bool {
