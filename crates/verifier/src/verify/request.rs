@@ -35,6 +35,7 @@ pub(crate) async fn resolved_client_for_url(
     allow_private_ips: bool,
     allow_http: bool,
     proxy_in_use: bool,
+    insecure_tls: bool,
 ) -> std::result::Result<ResolvedTarget, VerificationResult> {
     let url = match reqwest::Url::parse(raw_url) {
         Ok(url) => url,
@@ -119,8 +120,23 @@ pub(crate) async fn resolved_client_for_url(
     // and the TCP connect. Keep `base_client` for code paths that don't
     // resolve a URL (e.g. AwsV4 self-constructing auth).
     let client = if !pinned_addrs.is_empty() {
+        // The DNS-pinning rebuild MUST replicate the security-critical
+        // config baked into `base_client`. Reqwest's default ClientBuilder
+        // would otherwise:
+        //   - follow redirects (Policy::limited(10)) — the base client sets
+        //     Policy::none() to stop a public host from issuing a 302 to a
+        //     private IP that bypasses the pre-connect SSRF check (the pin
+        //     only covers the ORIGINAL host; the redirect target is
+        //     re-resolved via the system resolver).
+        //   - validate certs strictly — the base client honors
+        //     `--insecure` (`config.insecure_tls`); dropping that here
+        //     means the flag silently doesn't apply on the path that
+        //     actually serves the request when no proxy is in use.
+        // Both gaps were live until 2026-05-26.
         match Client::builder()
             .timeout(timeout)
+            .danger_accept_invalid_certs(insecure_tls)
+            .redirect(reqwest::redirect::Policy::none())
             .resolve_to_addrs(&host, &pinned_addrs)
             .build()
         {

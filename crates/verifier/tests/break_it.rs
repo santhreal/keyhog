@@ -12,4 +12,5 @@ include!("break_it_cases/ssrf.rs");
 include!("break_it_cases/ssrf_break_decimal_integer.rs");
 include!("break_it_cases/ssrf_break_link_local_metadata.rs");
 include!("break_it_cases/ssrf_break_allowlist_attacker_host.rs");
+include!("break_it_cases/redirect_bypass.rs");
 include!("break_it_cases/limits.rs");
