@@ -1,4 +1,4 @@
-use keyhog_scanner::compiler_prefix::{extract_inner_literals, extract_literal_prefixes};
+use keyhog_scanner::compiler::{extract_inner_literals, extract_literal_prefixes};
 use std::collections::HashSet;
 
 #[test]
