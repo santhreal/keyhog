@@ -84,7 +84,11 @@ keyhog scan . --incremental                    # BLAKE3 Merkle skip → 10–100
 ```
 
 Exit codes: `0` clean, `1` findings above the severity floor, `2` error
-(bad path, unreadable file, unsupported flag).
+(bad path, unreadable file, unsupported flag), `3` `detectors --audit`
+flagged a quality issue, `4` `backend --self-test` failed, `10` live
+credentials found (requires `--verify`), `11` scanner thread panicked
+mid-scan (state is unreliable, re-run before trusting). Matches
+`keyhog --help`.
 
 ## What it catches
 
