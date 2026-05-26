@@ -3,7 +3,7 @@
 mod shape_gates;
 mod suppression;
 
-pub use shape_gates::{
+pub(crate) use shape_gates::{
     is_uuid_v4_shape, looks_like_dashed_serial_key, looks_like_hash_digest,
     looks_like_pure_hash_digest_or_uuid,
 };

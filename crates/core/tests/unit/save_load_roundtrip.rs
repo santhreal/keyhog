@@ -1,5 +1,5 @@
 //! Migrated from `src/calibration.rs` inline tests.
-use keyhog_core::Calibration;
+use keyhog_core::calibration::Calibration;
 #[test]
     fn save_load_roundtrip() {
         let dir = tempfile::tempdir().unwrap();

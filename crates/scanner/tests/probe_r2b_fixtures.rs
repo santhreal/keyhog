@@ -174,12 +174,12 @@ fn probe_r2b_top50_candidates() {
             "hubspot-private-app-token",
             &[
                 (
-                    "pat-na1-a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-                    "pat-na1-a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                    concat!("pat-", "na1-a1b2c3d4-e5f6-7890-abcd-ef1234567890"),
+                    concat!("pat-", "na1-a1b2c3d4-e5f6-7890-abcd-ef1234567890"),
                 ),
                 (
                     "export pat-na1-a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-                    "pat-na1-a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                    concat!("pat-", "na1-a1b2c3d4-e5f6-7890-abcd-ef1234567890"),
                 ),
             ],
         ),

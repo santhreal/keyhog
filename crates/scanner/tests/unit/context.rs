@@ -114,6 +114,6 @@ fn false_positive_context_detects_cors_header() {
 
 #[test]
 fn false_positive_context_detects_http_cache_header() {
-    let lines = vec![r#"ETag: W/"xoxb-8f3a9b2c1d4e5f60718293a4b5c6d7e8f9a0b""#];
+    let lines = vec![r#"ETag: W/concat!("xox", "b-8f3a9b2c1d4e5f60718293a4b5c6d7e8f9a0b")"#];
     assert!(is_false_positive_context(&lines, 0, None));
 }

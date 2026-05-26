@@ -44,7 +44,9 @@ use std::path::{Path, PathBuf};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
-use crate::spec::DetectorSpec;
+use crate::merkle_spec_hash::{hex_encode, hex_to_array};
+
+pub use crate::merkle_spec_hash::compute_spec_hash;
 
 /// On-disk per-entry record (v2). The `mtime_ns` + `size` pair is the
 /// fast-path key: a successful match short-circuits the BLAKE3 read
@@ -455,89 +457,4 @@ fn sweep_stale_tmp_files(cache_path: &Path) {
             "swept stale cache tmp files left by an interrupted save"
         );
     }
-}
-
-/// Compute a stable BLAKE3 digest over the canonical detector set so a
-/// later scan can detect that detectors changed. Hashes a sorted list of
-/// `id|regex|companion|keyword|severity` strings — order-independent,
-/// comment-independent, resilient to TOML key reordering.
-///
-/// Hashes every field that influences scanner output:
-/// - `id`        — detector identity (add/remove invalidates).
-/// - `patterns`  — the regexes themselves.
-/// - `companions`— required companion patterns.
-/// - `keywords`  — feed into the keyword-nearby confidence signal
-///   (`engine::scan::compute_pattern_signals`). A new keyword raises a
-///   previously-skipped file's match confidence above the report
-///   threshold, so a keyword change MUST invalidate the cache.
-/// - `severity`  — surfaces in the final finding. A bump from MEDIUM to
-///   CRITICAL needs a re-scan or every cached finding stays at the old
-///   tier forever.
-///
-/// Intentionally NOT hashed:
-/// - `name`      — cosmetic only.
-/// - `service`   — used by the verifier (which doesn't run on cached
-///   skip-paths) and as a string in the finding metadata; a service
-///   rename doesn't change which credentials are flagged.
-/// - `verify`    — the verifier runs against newly-emitted findings on
-///   every scan regardless of cache. Changing verification doesn't
-///   change which files need re-scanning.
-pub fn compute_spec_hash(detectors: &[DetectorSpec]) -> [u8; 32] {
-    let mut keys: Vec<String> = detectors
-        .iter()
-        .flat_map(|d| {
-            let mut entries =
-                Vec::with_capacity(2 + d.patterns.len() + d.companions.len() + d.keywords.len());
-            entries.push(format!("id:{}", d.id));
-            entries.push(format!("sev:{:?}", d.severity));
-            for p in &d.patterns {
-                entries.push(format!(
-                    "p:{}|g:{}",
-                    p.regex,
-                    p.group.map(|g| g.to_string()).unwrap_or_default()
-                ));
-            }
-            for c in &d.companions {
-                entries.push(format!(
-                    "c:{}|{}|w:{}|r:{}",
-                    c.name, c.regex, c.within_lines, c.required
-                ));
-            }
-            // Per-detector keyword sort makes the hash stable across
-            // TOML keyword-array reorderings (a no-op edit shouldn't
-            // invalidate the cache).
-            let mut kws: Vec<&String> = d.keywords.iter().collect();
-            kws.sort();
-            for k in kws {
-                entries.push(format!("kw:{}:{}", d.id, k));
-            }
-            entries
-        })
-        .collect();
-    keys.sort();
-    let mut hasher = blake3::Hasher::new();
-    for k in keys {
-        hasher.update(k.as_bytes());
-        hasher.update(b"\n");
-    }
-    *hasher.finalize().as_bytes()
-}
-
-fn hex_encode(bytes: &[u8; 32]) -> String {
-    let mut out = String::with_capacity(64);
-    for b in bytes {
-        out.push_str(&format!("{:02x}", b));
-    }
-    out
-}
-
-fn hex_to_array(hex: &str) -> Option<[u8; 32]> {
-    if hex.len() != 64 {
-        return None;
-    }
-    let mut out = [0u8; 32];
-    for i in 0..32 {
-        out[i] = u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16).ok()?;
-    }
-    Some(out)
 }

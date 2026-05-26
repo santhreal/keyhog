@@ -1,4 +1,4 @@
-//! KH-GAP-011: `--exclude-paths` is documented but does not suppress scanned files.
+//! KH-GAP-011: `--exclude-paths` suppresses matching files from scan output.
 
 use crate::e2e::support::binary;
 use std::process::Command;

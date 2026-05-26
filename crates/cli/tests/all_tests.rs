@@ -7,3 +7,4 @@ pub mod property;
 pub mod regression;
 pub mod unit;
 pub mod e2e;
+pub mod integration;

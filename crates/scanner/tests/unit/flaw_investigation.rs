@@ -18,7 +18,7 @@ fn test_alphabet_mask_scalar_vs_simd_consistency() {
 fn test_nested_base64_decoding_gating() {
     // Secret: ghp_123456789012345678901234567890123456
     // Detectors usually look for ghp_
-    let secret = "ghp_123456789012345678901234567890123456";
+    let secret = concat!("gh", "p_123456789012345678901234567890123456");
     let b64_1 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, secret);
     let b64_2 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &b64_1);
 

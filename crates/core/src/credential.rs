@@ -263,3 +263,99 @@ fn base64_encode(input: &[u8]) -> String {
     }
     out
 }
+
+/// A heap-allocated string that is zeroized on drop.
+#[derive(Clone, Default)]
+pub struct SensitiveString {
+    inner: Arc<Zeroizing<String>>,
+}
+
+impl SensitiveString {
+    pub fn new(s: String) -> Self {
+        Self {
+            inner: Arc::new(Zeroizing::new(s)),
+        }
+    }
+
+    pub fn join(parts: &[SensitiveString], sep: &str) -> Self {
+        let mut s = String::new();
+        for (i, p) in parts.iter().enumerate() {
+            if i > 0 {
+                s.push_str(sep);
+            }
+            s.push_str(p.as_str());
+        }
+        Self::new(s)
+    }
+
+    pub fn as_str(&self) -> &str {
+        self.inner.as_str()
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        self.inner.as_bytes()
+    }
+
+    pub fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
+}
+
+impl std::ops::Deref for SensitiveString {
+    type Target = str;
+    fn deref(&self) -> &Self::Target {
+        self.as_str()
+    }
+}
+
+impl AsRef<str> for SensitiveString {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl From<String> for SensitiveString {
+    fn from(s: String) -> Self {
+        Self::new(s)
+    }
+}
+
+impl From<&str> for SensitiveString {
+    fn from(s: &str) -> Self {
+        Self::new(s.to_string())
+    }
+}
+
+impl From<&String> for SensitiveString {
+    fn from(s: &String) -> Self {
+        Self::new(s.clone())
+    }
+}
+
+impl std::fmt::Display for SensitiveString {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
+impl std::fmt::Debug for SensitiveString {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "SensitiveString({:?})", self.as_str())
+    }
+}
+
+impl Serialize for SensitiveString {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.as_str().serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for SensitiveString {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        String::deserialize(deserializer).map(Self::new)
+    }
+}

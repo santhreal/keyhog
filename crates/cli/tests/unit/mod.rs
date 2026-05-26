@@ -2,6 +2,8 @@ pub mod baseline;
 pub mod cli_misc;
 pub mod daemon_wire;
 pub mod file_gate;
+pub mod orchestrator;
 pub mod path_validation;
+pub mod sources;
 pub mod value_parsers;
 pub mod gates;

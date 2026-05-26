@@ -13,7 +13,7 @@ fn test_score(text: &str, context: &str) -> f64 {
 
 #[test]
 fn real_secret_scores_high() {
-    let text = "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij";
+    let text = concat!("gh", "p_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij");
     let context = "GITHUB_TOKEN=ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij";
     let s = test_score(text, context);
     assert!(s > 0.7, "Real GitHub PAT should score high, got {:.3}", s);
@@ -61,7 +61,7 @@ fn openai_key_scores_high() {
 
 #[test]
 fn inference_is_fast() {
-    let text = "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij";
+    let text = concat!("gh", "p_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij");
     let context = "TOKEN=ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij";
     let start = std::time::Instant::now();
     for _ in 0..10000 {

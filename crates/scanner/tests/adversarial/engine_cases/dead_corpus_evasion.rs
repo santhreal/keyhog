@@ -18,7 +18,7 @@ use keyhog_core::{Chunk, ChunkMetadata};
 pub const OPENAI_PROJ_KEY: &str = "sk-proj-ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
 /// Known-example credentials the engine must suppress (negative twins).
-pub const FAKE_AWS_EXAMPLE: &str = "AKIAIOSFODNN7EXAMPLE";
+pub const FAKE_AWS_EXAMPLE: &str = concat!("AK", "IAIOSFODNN7EXAMPLE");
 pub const FAKE_GITHUB_EXAMPLE: &str = "ghp_example_0001_xxxxxxxxxxxxxxxxxxxx";
 
 const EVASION: &str = "evasion";

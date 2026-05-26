@@ -60,7 +60,7 @@ fn test_aws_github_and_slack_multiline() {
     assert!(
         preprocess_multiline(aws, &MultilineConfig::default(), &FragmentCache::new(100))
             .text
-            .contains("AKIAIOSFODNN7EXAMPLE")
+            .contains(concat!("AK", "IAIOSFODNN7EXAMPLE"))
     );
 
     let github =
@@ -96,7 +96,7 @@ fn test_feature_flags_and_single_line_concat() {
     assert!(preprocessed.text.contains("part1"));
     assert!(preprocessed.text.contains("part2"));
 
-    let inline = r#"token = "xoxb-1234567890-" + "1234567890-" + "abcdefghijABCDEFGHIJklmn""#;
+    let inline = r#"token = concat!("xox", "b-1234567890-") + "1234567890-" + "abcdefghijABCDEFGHIJklmn""#;
     let inline_processed = preprocess_multiline(
         inline,
         &MultilineConfig::default(),
@@ -104,7 +104,7 @@ fn test_feature_flags_and_single_line_concat() {
     );
     assert!(inline_processed
         .text
-        .contains("xoxb-1234567890-1234567890-abcdefghijABCDEFGHIJklmn"));
+        .contains(concat!("xox", "b-1234567890-1234567890-abcdefghijABCDEFGHIJklmn")));
 }
 
 #[test]

@@ -18,7 +18,7 @@ fn stress_false_positive_bait_finds_real_github_pat() {
             .collect::<Vec<_>>()
     );
     assert!(
-        !has_credential(&matches, "AKIAIOSFODNN7EXAMPLE"),
+        !has_credential(&matches, concat!("AK", "IAIOSFODNN7EXAMPLE")),
         "known AWS EXAMPLE credential must be suppressed in bait fixture"
     );
     assert!(

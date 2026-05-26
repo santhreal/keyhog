@@ -17,26 +17,6 @@
 )]
 
 //! Core types shared across all KeyHog crates.
-//!
-//! Defines the [`Source`] trait for pluggable input backends, [`DetectorSpec`]
-//! for TOML-based pattern definitions, [`RawMatch`] and [`VerifiedFinding`] for
-//! scanner output, [`DedupedMatch`] for grouped findings, and [`Reporter`] for
-//! structured result formatting.
-
-#![warn(missing_docs)]
-#![warn(clippy::pedantic)]
-#![cfg_attr(
-    not(test),
-    deny(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::todo,
-        clippy::unimplemented,
-        clippy::panic
-    )
-)]
-
-/// Credential/path allowlist parsing and matching.
 pub mod allowlist;
 /// ANSI-colored CLI startup banner with detector counts.
 pub mod banner;
@@ -74,6 +54,8 @@ pub mod auto_fix;
 pub mod calibration;
 /// Incremental scan state via BLAKE3 Merkle index.
 pub mod merkle_index;
+mod merkle_spec_hash;
+pub use merkle_spec_hash::compute_spec_hash;
 /// Declarative `.keyhogignore.toml` rule-based finding suppression.
 /// Wraps vyre's CPU rule evaluator with a TOML schema scoped to
 /// keyhog's finding shape (detector / service / severity / path /

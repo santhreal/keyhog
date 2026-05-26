@@ -10,7 +10,7 @@ mod gpu_cache;
 mod gpu_forced;
 mod gpu_lazy;
 mod hot_patterns;
-mod postprocess;
+mod scan_postprocess;
 mod rule_pipeline;
 mod scan;
 mod scan_filters;

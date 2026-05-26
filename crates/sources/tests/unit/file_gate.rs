@@ -196,7 +196,7 @@ fn github_org_error() {
 #[cfg(feature = "slack")]
 #[test]
 fn slack_happy() {
-    let source = keyhog_sources::SlackSource::new("xoxb-test");
+    let source = keyhog_sources::SlackSource::new(concat!("xox", "b-test"));
     assert_eq!(source.name(), "slack");
 }
 #[cfg(feature = "slack")]

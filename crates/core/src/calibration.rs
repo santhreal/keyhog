@@ -201,6 +201,15 @@ impl Calibration {
         out.sort_by(|a, b| a.0.cmp(&b.0));
         out
     }
+
+    /// Test-only hook for saturation oracle tests in `tests/unit/`.
+    #[doc(hidden)]
+    pub fn test_seed_counters(&self, id: &str, alpha: u32, beta: u32) {
+        let mut guard = self.inner.write();
+        let entry = guard.entry(id.to_string()).or_default();
+        entry.alpha = alpha;
+        entry.beta = beta;
+    }
 }
 
 /// Default cache location: `$XDG_CACHE_HOME/keyhog/calibration.json` (or

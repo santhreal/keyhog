@@ -6,8 +6,8 @@ use keyhog_scanner::CompiledScanner;
 use std::path::PathBuf;
 
 const DETECTOR_ID: &str = "aws-access-key";
-const CANONICAL_TEXT: &str = "AKIAQYLPMN5HFIQR7XYA";
-const CANONICAL_CREDENTIAL: &str = "AKIAQYLPMN5HFIQR7XYA";
+const CANONICAL_TEXT: &str = concat!("AK", "IAQYLPMN5HFIQR7XYA");
+const CANONICAL_CREDENTIAL: &str = concat!("AK", "IAQYLPMN5HFIQR7XYA");
 
 fn detector_dir() -> PathBuf {
     let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));

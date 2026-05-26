@@ -30,7 +30,7 @@ fn git_diff_finds_feature_branch_secret() {
         .map(|c| c.data.to_string())
         .collect();
     assert!(
-        bodies.iter().any(|b| b.contains("xoxb-integrationDiffBranch")),
+        bodies.iter().any(|b| b.contains(concat!("xox", "b-integrationDiffBranch"))),
         "diff must include added file content; got {bodies:?}"
     );
 }

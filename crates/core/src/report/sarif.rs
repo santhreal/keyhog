@@ -406,7 +406,7 @@ impl<W: Write + Send> SarifReporter<W> {
         let uri = loc
             .file_path
             .as_ref()
-            .map(|p| Self::file_path_to_sarif_uri(p))
+            .map(|p| super::sarif_uri::file_path_to_sarif_uri(p.as_ref()))
             .unwrap_or_else(|| "stdin".to_string());
 
         let artifact_location = Some(SarifArtifactLocation {

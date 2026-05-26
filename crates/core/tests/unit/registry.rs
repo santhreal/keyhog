@@ -32,7 +32,7 @@ impl CustomVerifier for MockVerifier {
     fn name(&self) -> &str {
         "mock-v"
     }
-    async fn verify(&self, _m: &DedupedMatch) -> (VerificationResult, HashMap<String, String>) {
+async fn verify(&self, _m: &DedupedMatch) -> (VerificationResult, HashMap<String, String>) {
         (VerificationResult::Live, HashMap::new())
     }
 }

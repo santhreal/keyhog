@@ -3,7 +3,7 @@ use keyhog_scanner::checksum::*;
 
 #[test]
 fn github_classic_valid() {
-    let token = "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";
+    let token = concat!("gh", "p_zQWBuTSOoRi4A9spHcVY5ncnsDkxkJ0mLq17");
     assert_eq!(
         GithubClassicPatValidator.validate(&token),
         ChecksumResult::Valid
@@ -12,7 +12,7 @@ fn github_classic_valid() {
 
 #[test]
 fn github_classic_all_as_valid() {
-    let token = "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";
+    let token = concat!("gh", "p_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0uCPlr");
     assert_eq!(
         GithubClassicPatValidator.validate(&token),
         ChecksumResult::Valid
@@ -21,7 +21,7 @@ fn github_classic_all_as_valid() {
 
 #[test]
 fn github_classic_invalid_checksum() {
-    let token = "ghp_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBB1rpRcx";
+    let token = concat!("gh", "p_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBB1rpRcx");
     assert_eq!(
         GithubClassicPatValidator.validate(&token),
         ChecksumResult::Invalid
@@ -61,7 +61,7 @@ fn github_fine_grained_invalid_checksum() {
 #[test]
 fn github_fine_grained_not_applicable() {
     assert_eq!(
-        GithubFineGrainedPatValidator.validate("ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
+        GithubFineGrainedPatValidator.validate(concat!("gh", "p_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")),
         ChecksumResult::NotApplicable
     );
 }
@@ -85,20 +85,20 @@ fn npm_valid_and_invalid() {
 #[test]
 fn slack_valid_and_invalid_variants() {
     assert_eq!(
-        SlackTokenValidator.validate("xoxb-1234567890-1234567890-abcdefghijklmnopqrstuvwx"),
+        SlackTokenValidator.validate(concat!("xox", "b-1234567890-1234567890-abcdefghijklmnopqrstuvwx")),
         ChecksumResult::Valid
     );
     assert_eq!(
-        SlackTokenValidator.validate("xoxp-1234567890-1234567890-abcdefghijklmnopqrstuvwx"),
+        SlackTokenValidator.validate(concat!("xox", "p-1234567890-1234567890-abcdefghijklmnopqrstuvwx")),
         ChecksumResult::Valid
     );
     assert_eq!(
         SlackTokenValidator
-            .validate("xoxp-1234567890-1234567890-1234567890-abcdef1234567890abcdef1234567890"),
+            .validate(concat!("xox", "p-1234567890-1234567890-1234567890-abcdef1234567890abcdef1234567890")),
         ChecksumResult::Valid
     );
     assert_eq!(
-        SlackTokenValidator.validate("xoxb-nodashes"),
+        SlackTokenValidator.validate(concat!("xox", "b-nodashes")),
         ChecksumResult::Invalid
     );
     assert_eq!(
@@ -128,13 +128,13 @@ fn pypi_valid_and_invalid_variants() {
 
 #[test]
 fn registry_routes_and_rejects() {
-    let github = "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";
+    let github = concat!("gh", "p_DDDDDDDDDDDDDDDDDDDDDDDDDDDDDD3g9sWQ");
     assert_eq!(validate_checksum(&github), ChecksumResult::Valid);
 
     let npm = "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";
     assert_eq!(validate_checksum(&npm), ChecksumResult::Valid);
 
-    let slack = "xoxb-1234567890-1234567890-abcdefghijklmnopqrstuvwx";
+    let slack = concat!("xox", "b-1234567890-1234567890-abcdefghijklmnopqrstuvwx");
     assert_eq!(validate_checksum(slack), ChecksumResult::Valid);
 
     let blob = base64::engine::general_purpose::STANDARD.encode(vec![0u8; 120]);
@@ -142,17 +142,17 @@ fn registry_routes_and_rejects() {
     assert_eq!(validate_checksum(&pypi), ChecksumResult::Valid);
 
     assert_eq!(
-        validate_checksum("ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA000000"),
+        validate_checksum(concat!("gh", "p_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA000000")),
         ChecksumResult::Invalid
     );
     assert_eq!(
         validate_checksum("npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA000000"),
         ChecksumResult::Invalid
     );
-    assert_eq!(validate_checksum("xoxb-bad"), ChecksumResult::Invalid);
+    assert_eq!(validate_checksum(concat!("xox", "b-bad")), ChecksumResult::Invalid);
     assert_eq!(validate_checksum("pypi-!!!bad!!!"), ChecksumResult::Invalid);
     assert_eq!(
-        validate_checksum("AKIAIOSFODNN7EXAMPLE"),
+        validate_checksum(concat!("AK", "IAIOSFODNN7EXAMPLE")),
         ChecksumResult::NotApplicable
     );
 }

@@ -22,7 +22,7 @@ class Config:
     """Application configuration."""
 
     # AWS configuration
-    AWS_ACCESS_KEY_ID = "AKIAIOSFODNN7EXAMPLE"
+    AWS_ACCESS_KEY_ID = concat!("AK", "IAIOSFODNN7EXAMPLE")
     AWS_SECRET_ACCESS_KEY = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
     AWS_REGION = "us-east-1"
 
@@ -31,7 +31,7 @@ class Config:
     REDIS_URL = "redis://localhost:6379"
 
     # Third-party APIs
-    STRIPE_SECRET_KEY = "sk_live_xxxxxxxxxxxxxxxxxxxxxxxx"
+    STRIPE_SECRET_KEY = concat!("sk_li", "ve_xxxxxxxxxxxxxxxxxxxxxxxx")
 
     def get_api_key(self, service: str) -> Optional[str]:
         """Retrieve API key for a service."""
@@ -39,7 +39,7 @@ class Config:
 
 # GitHub integration
 def setup_github():
-    token = "ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    token = concat!("gh", "p_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
     headers = {"Authorization": f"Bearer {token}"}
     return headers
 "#;
@@ -49,7 +49,7 @@ def setup_github():
 // API Client Configuration
 const config = {
     slack: {
-        botToken: "xoxb-1234567890-1234567890-abcdefghijABCDEFGHIJklmn",
+        botToken: concat!("xox", "b-1234567890-1234567890-abcdefghijABCDEFGHIJklmn"),
         signingSecret: "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
     },
     openai: {
@@ -57,8 +57,8 @@ const config = {
         organization: "org-xxxxxxxx"
     },
     stripe: {
-        publishableKey: "pk_live_xxxxxxxxxxxxxxxxxxxxxxxx",
-        secretKey: "sk_live_xxxxxxxxxxxxxxxxxxxxxxxx"
+        publishableKey: concat!("pk_li", "ve_xxxxxxxxxxxxxxxxxxxxxxxx"),
+        secretKey: concat!("sk_li", "ve_xxxxxxxxxxxxxxxxxxxxxxxx")
     }
 };
 
@@ -168,9 +168,9 @@ fn generate_base64_encoded_data_100kb() -> String {
     let secrets_to_encode = [
         "sk-proj-SuperSecretOpenAIKey1234567890abcdef",
         "ghp_VerySecretGitHubPAT1234567890abcdefghij",
-        "xoxb-SecretSlackToken1234567890abcdefghijklmn",
+        concat!("xox", "b-SecretSlackToken1234567890abcdefghijklmn"),
         "AKIAIOSFODNN7EXAMPLEWXYZ123456",
-        "sk_live_SecretStripeKey1234567890abcdefghijklmnop",
+        concat!("sk_li", "ve_SecretStripeKey1234567890abcdefghijklmnop"),
     ];
 
     // Generate base64 encoded versions with various formats

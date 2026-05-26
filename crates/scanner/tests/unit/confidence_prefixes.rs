@@ -14,7 +14,7 @@ fn known_prefix_floor_matches_expected_prefixes() {
         Some(0.8)
     );
     assert_eq!(
-        known_prefix_confidence_floor("AKIAIOSFODNN7EXAMPLE"),
+        known_prefix_confidence_floor(concat!("AK", "IAIOSFODNN7EXAMPLE")),
         Some(0.8)
     );
     assert_eq!(

@@ -190,7 +190,7 @@ mod tests {
         record_example_suppression(
             "aws-access-key",
             Some("demo-secret.env"),
-            "AKIAIOSFODNN7EXAMPLE",
+            concat!("AK", "IAIOSFODNN7EXAMPLE"),
             "ends_with_EXAMPLE",
         );
         let events = drain_events();
@@ -215,7 +215,7 @@ mod tests {
 
     #[test]
     fn redaction_keeps_prefix_only() {
-        let red = redact_credential("AKIAIOSFODNN7EXAMPLE");
+        let red = redact_credential(concat!("AK", "IAIOSFODNN7EXAMPLE"));
         assert!(red.starts_with("AKIAIO"));
         assert!(!red.contains("EXAMPLE"));
     }

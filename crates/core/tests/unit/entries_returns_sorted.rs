@@ -1,5 +1,5 @@
 //! Migrated from `src/calibration.rs` inline tests.
-use keyhog_core::Calibration;
+use keyhog_core::calibration::Calibration;
 #[test]
     fn entries_returns_sorted() {
         let c = Calibration::empty();

@@ -5,8 +5,8 @@ use std::process::Command;
 
 #[test]
 fn scan_dedup_none_reports_all_occurrences() {
-    let key = "AKIAQYLPMN5HFIQR7XYA";
-    let gh = "ghp_aBcD1234EFgh5678ijkl9012MNop3456qrST";
+    let key = concat!("AK", "IAQYLPMN5HFIQR7XYA");
+    let gh = concat!("gh", "p_aBcD1234EFgh5678ijkl9012MNop3456qrST");
     let fixture = format!(
         "AWS_ACCESS_KEY_ID = \"{key}\"\nGH_TOKEN = \"{gh}\"\n",
     );

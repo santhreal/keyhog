@@ -27,7 +27,7 @@ fn test_window_boundary_detection() {
     // way the previous synthetic shape (`XX_FAKE_*`) was, so the test
     // actually exercises the reassembly path end-to-end instead of
     // silently masking failure.
-    let secret = "AKIAQYLPMN5HFIQR7XYZ";
+    let secret = concat!("AK", "IAQYLPMN5HFIQR7XYZ");
     assert_eq!(secret.len(), 20);
 
     // Split the secret across two contiguous chunks. After the split

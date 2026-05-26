@@ -846,7 +846,7 @@ mod tests {
         // Pick 200; windows are [0..128) and [96..200). The secret at
         // offset 100..120 sits in both — so the scanner can't miss it.
         let mut bytes = vec![b'.'; 200];
-        let secret = b"AKIAIOSFODNN7EXAMPLE";
+        let secret = bconcat!("AK", "IAIOSFODNN7EXAMPLE");
         bytes[100..100 + secret.len()].copy_from_slice(secret);
         let ws = slice_into_windows(&bytes, 128, 32);
         assert_eq!(

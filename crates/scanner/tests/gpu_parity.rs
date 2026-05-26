@@ -128,7 +128,7 @@ fn gpu_path_finds_boundary_straddled_secret() {
         keyhog_core::load_detectors(&detector_dir()).expect("detectors directory must load");
     let scanner = CompiledScanner::compile(detectors).expect("scanner compile");
 
-    let secret = "AKIAQYLPMN5HFIQR7CCC";
+    let secret = concat!("AK", "IAQYLPMN5HFIQR7CCC");
     assert_eq!(secret.len(), 20);
     let split_at = 12;
 

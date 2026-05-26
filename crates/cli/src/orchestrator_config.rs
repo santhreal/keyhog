@@ -94,6 +94,15 @@ fn sanitise_thread_count(requested: usize, physical_cores: usize, source: &'stat
     requested
 }
 
+#[doc(hidden)]
+pub fn sanitise_thread_count_for_test(
+    requested: usize,
+    physical_cores: usize,
+    source: &'static str,
+) -> usize {
+    sanitise_thread_count(requested, physical_cores, source)
+}
+
 pub(crate) fn auto_discover_detectors(path: &Path) -> Result<PathBuf> {
     if let Ok(env_path) = std::env::var("KEYHOG_DETECTORS") {
         let p = PathBuf::from(&env_path);

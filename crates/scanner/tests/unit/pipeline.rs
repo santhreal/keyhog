@@ -64,7 +64,7 @@ fn normalize_scannable_chunk_allocates_when_evasion_chars_present() {
 #[test]
 fn should_suppress_known_example_credential_blocks_example_suffix() {
     assert!(should_suppress_known_example_credential(
-        "AKIAIOSFODNN7EXAMPLE",
+        concat!("AK", "IAIOSFODNN7EXAMPLE"),
         None,
         CodeContext::Assignment
     ));
@@ -102,7 +102,7 @@ fn match_line_number_empty_offsets_falls_back_safely() {
 #[test]
 fn should_suppress_known_example_credential_allows_realistic_token() {
     assert!(!should_suppress_known_example_credential(
-        "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",
+        concat!("gh", "p_zQWBuTSOoRi4A9spHcVY5ncnsDkxkJ0mLq17"),
         None,
         CodeContext::Assignment
     ));

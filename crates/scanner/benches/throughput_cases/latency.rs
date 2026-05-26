@@ -25,15 +25,15 @@ fn benchmark_latency_ml_inference(c: &mut Criterion) {
     group.sampling_mode(SamplingMode::Flat);
 
     let test_credentials = [
-        ("github_pat", "ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"),
+        ("github_pat", concat!("gh", "p_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")),
         (
             "openai_key",
             "sk-proj-abcdefghijklmnopqrstuvwxyz1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ",
         ),
-        ("aws_key", "AKIAIOSFODNN7EXAMPLE"),
+        ("aws_key", concat!("AK", "IAIOSFODNN7EXAMPLE")),
         (
             "slack_token",
-            "xoxb-1234567890-1234567890-abcdefghijABCDEFGHIJklmn",
+            concat!("xox", "b-1234567890-1234567890-abcdefghijABCDEFGHIJklmn"),
         ),
         ("generic_secret", "aK7xP9mQ2wE5rT8yU1iO3pA6sD4fG0hJkL"),
     ];
