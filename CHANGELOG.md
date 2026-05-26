@@ -6,6 +6,17 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Security
 
+- **SSRF redirect bypass in DNS-pinned client closed.** The per-request
+  client rebuild in `verify::request::resolved_client_for_url` was
+  `Client::builder().timeout().resolve_to_addrs().build()` — silently
+  inheriting reqwest's default `Policy::limited(10)` instead of the
+  engine's `Policy::none()`. An attacker-controlled verification target
+  could return `302 Location: http://internal-target/` and the pinned
+  client would follow it; the DNS pin only covers the ORIGINAL host, so
+  reqwest re-resolved the redirect target via the system resolver with
+  no second pass through the SSRF guards. Now the rebuild explicitly
+  sets `redirect(Policy::none())`. Adversarial test
+  `pinned_client_does_not_follow_redirect_to_private_target` proves it.
 - **SSRF bypass via hex / octal-encoded IPv4 hosts closed.**
   `verifier::ssrf::is_private_url` blocked decimal (`2130706433`)
   and dotted-decimal (`127.0.0.1`) but accepted hex
@@ -17,6 +28,20 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Fixed
 
+- **`--insecure` flag now honored on the DNS-pinned path.** Same root
+  cause as the redirect bypass above: the per-request client rebuild
+  dropped `danger_accept_invalid_certs(insecure_tls)` baked into the
+  engine's base client, so `--insecure` (and `KEYHOG_INSECURE_TLS`)
+  silently did nothing for direct (non-proxy) verifications. Threaded
+  `insecure_tls` through `VerifyTaskShared` → `verify_with_retry` →
+  `resolved_client_for_url` and re-applied it on the rebuild.
+- **Scanner-panic exit code no longer collides with detector-audit.**
+  Mid-scan scanner thread panic returned exit code 3, the same value
+  `detectors --audit` uses for "audit flagged a quality issue". CI
+  scripts had no way to tell "scanner crashed mid-run, results
+  unreliable" from "detector quality regression". Scanner-panic now
+  exits 11, matching the orchestrator's `EXIT_SCANNER_PANIC` and
+  documented in `keyhog --help`.
 - **scan-system exit code.** `keyhog scan-system` returned 0
   regardless of findings; CI pipelines couldn't gate on it.
   Now returns 1 when `all_findings` is non-empty, matching the
@@ -43,6 +68,22 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Changed
 
+- **`InteractshClient::for_test` returns `Result` instead of panicking.**
+  The helper formerly carried
+  `RsaPrivateKey::new(...).expect("test RSA key generates")` — a
+  panic-in-production path the no-unwrap gate caught. Returns
+  `Result<Self, InteractshError>` now (mapped to `KeyGen`); test
+  callers wrap with `.unwrap()` at the test boundary. Source: gate
+  `oob_client_no_unwrap_expect`.
+- **`oob::client` split: `decrypt_entry` moved to `oob::decrypt`.**
+  File hit 516 lines (over the 500 modularity cap). Natural seam —
+  client owns RSA state + HTTP I/O, decrypt owns AES-256-CFB per-entry
+  decode. No behaviour change. Source: gate
+  `oob_client_file_size_cap`.
+- **README exit codes match `--help`.** Documented codes 3
+  (detectors --audit failure), 4 (backend --self-test failure), 10
+  (live findings under `--verify`), and 11 (scanner panic) — README
+  previously listed only 0/1/2.
 - **Hash-digest gate is no longer always-on for named detectors.**
   Service-anchored detectors (`ALCHEMY_API_KEY=<32hex>`,
   `HEROKU_API_KEY=<uuid>`, `DATADOG_API_KEY=<32hex>`) now bypass
