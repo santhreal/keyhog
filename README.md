@@ -60,14 +60,14 @@ Docker: `docker run --rm -v "$PWD:/src" santhsecurity/keyhog scan /src`.
 ## Quickstart
 
 ```bash
-keyhog scan .                          # scan a directory
-keyhog scan --git-staged               # pre-commit: only staged blobs
-keyhog scan --git-diff main            # files changed since base ref
-keyhog scan --git-history .            # every commit, every branch
-keyhog scan --image registry/app:v1    # Docker image layers
-keyhog scan --s3 s3://logs-prod/       # S3 objects
-keyhog scan --github-org acme          # every repo in a GitHub org
-keyhog scan-system --space 50G         # walk every drive, every git history
+keyhog scan .                                          # scan a directory
+keyhog scan --git-staged                               # pre-commit: only staged blobs
+keyhog scan --git-diff main                            # files changed since base ref
+keyhog scan --git-history .                            # every commit, every branch
+keyhog scan --docker-image registry/app:v1             # Docker image layers
+keyhog scan --s3-bucket logs-prod --s3-prefix /        # S3 objects (--s3-endpoint for non-AWS)
+keyhog scan --github-org acme --github-token "$GH_PAT" # every repo in a GitHub org (PAT required)
+keyhog scan-system --space 50G                         # walk every drive, every git history
 ```
 
 Filter, format, gate:

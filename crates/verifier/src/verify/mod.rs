@@ -230,10 +230,22 @@ impl VerificationEngine {
             max_inflight_keys: config.max_inflight_keys.max(1),
             danger_allow_private_ips: config.danger_allow_private_ips,
             danger_allow_http: config.danger_allow_http,
-            proxy_in_use: config.proxy.is_some()
-                || std::env::var("KEYHOG_PROXY")
-                    .ok()
-                    .is_some_and(|p| !p.is_empty()),
+            // Issue #2 + #3 fix: don't conflate "configured to set a proxy
+            // policy" with "a proxy is actively routing traffic."
+            // `proxy_is_active` resolves the documented `KEYHOG_PROXY` sentinels
+            // (`off`/`none`/empty) AND accounts for reqwest's standard
+            // `HTTPS_PROXY` / `HTTP_PROXY` / `ALL_PROXY` env vars that the
+            // shared client honors via reqwest defaults. proxy_in_use gates
+            // DNS-pinning rebuild in resolved_client_for_url(); a wrong value
+            // either:
+            //   #2: disables DNS pinning when no proxy is actually active
+            //       (KEYHOG_PROXY=off counted as active → rebuild skipped
+            //       → DNS-rebinding protection silently removed)
+            //   #3: keeps DNS pinning on a path that drops env-proxy +
+            //       insecure_tls config (HTTPS_PROXY invisible to the
+            //       rebuild branch → verifier connects direct → operator
+            //       interception/audit bypassed)
+            proxy_in_use: crate::proxy_is_active(config.proxy.as_deref()),
             oob_session: None,
         })
     }

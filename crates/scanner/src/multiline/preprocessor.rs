@@ -39,9 +39,21 @@ pub fn preprocess_multiline(
     let mut mappings = Vec::new();
     let mut current_offset = 0usize;
     let mut index = 0;
+    // Track whether process_line_chain actually chained two or more
+    // lines together. Without this signal, a single-line input that
+    // happens to end in `\n` produces `joined_text` == input-without-\n,
+    // which compares not-equal to `text`. The eager append below would
+    // then duplicate the entire input into `final_text`, causing every
+    // detector to fire twice — once at the original offset, once at
+    // ~original_end + 1 (past EOF on the source file). #16 regression.
+    let mut any_real_join = false;
     while index < lines.len() {
         let (joined_line, lines_consumed, line_mappings) =
             process_line_chain(&lines, index, config, current_offset);
+
+        if lines_consumed > 1 {
+            any_real_join = true;
+        }
 
         if !joined_line.is_empty() {
             let total_len = joined_line.len();
@@ -58,7 +70,7 @@ pub fn preprocess_multiline(
     let mut final_text = text.to_string();
 
     let mut appended_any = false;
-    if joined_text != text && !joined_text.is_empty() {
+    if any_real_join && joined_text != text && !joined_text.is_empty() {
         final_text.push('\n');
         final_text.push_str(&joined_text);
 

@@ -6,7 +6,7 @@
 
 #![allow(clippy::too_many_arguments)]
 
-mod timeouts;
+pub mod timeouts;
 
 use std::sync::atomic::AtomicUsize;
 
@@ -53,7 +53,7 @@ mod git;
 #[cfg(feature = "github")]
 mod github_org;
 #[cfg(feature = "s3")]
-mod s3;
+pub mod s3;
 #[cfg(feature = "slack")]
 mod slack;
 mod stdin;

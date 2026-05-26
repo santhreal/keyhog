@@ -108,6 +108,27 @@ pub fn dedup_matches(matches: Vec<RawMatch>, scope: &DedupScope) -> Vec<DedupedM
     type DedupKey = (Arc<str>, Arc<str>, Option<Arc<str>>);
     let mut groups: IndexMap<DedupKey, DedupedMatch> = IndexMap::new();
 
+    // Sort by offset ascending so that for any group of (detector, credential,
+    // file) matches the LOWEST offset becomes the primary_location and any
+    // higher-offset duplicates land in additional_locations (or get
+    // suppressed by the same-(file, line) guard below). Without this the
+    // structured-preprocessor synthetic-line alias of a match arrives in
+    // raw-vec order: parallel rayon scans can produce that alias FIRST,
+    // making "primary at offset 80 in a 51-byte file" the report. Sorting
+    // by offset is O(N log N) instead of O(N) but N is bounded by the
+    // detector recall budget (max_matches_per_chunk) so the cost is small
+    // compared to extract_matches and ML scoring. Cross-file scope keeps
+    // the same group key so per-file primary selection picks the smallest
+    // offset per file independently. #16 regression: hot-github_pat
+    // primary at offset 79 in a 64-byte file.
+    let mut matches = matches;
+    matches.sort_by(|a, b| {
+        a.location
+            .file_path
+            .cmp(&b.location.file_path)
+            .then_with(|| a.location.offset.cmp(&b.location.offset))
+    });
+
     for matched in matches {
         let detector_id_arc = Arc::clone(&matched.detector_id);
         let credential_arc = Arc::clone(&matched.credential);
@@ -123,7 +144,26 @@ pub fn dedup_matches(matches: Vec<RawMatch>, scope: &DedupScope) -> Vec<DedupedM
 
         match groups.get_mut(&key) {
             Some(existing) => {
-                existing.additional_locations.push(matched.location);
+                // Drop locations that are the same (file_path, line) as the
+                // primary OR any already-recorded additional. They are the
+                // structured-preprocessor synthetic alias of an original
+                // match: build_preprocessed_text appends a `"key: value"`
+                // line after the original chunk text so detectors that
+                // need keyword context still see the value. The regex
+                // then fires twice on the same value — once at the real
+                // offset, once at original_end+offset_within_synthetic
+                // (past EOF on a single-line .env file). #16 regression:
+                // single-secret .env reported `+1 more locations` at
+                // offset 80 in a 51-byte file. Same (file, line) implies
+                // same finding; the synthetic match adds no signal.
+                if !is_same_location(&existing.primary_location, &matched.location)
+                    && !existing
+                        .additional_locations
+                        .iter()
+                        .any(|loc| is_same_location(loc, &matched.location))
+                {
+                    existing.additional_locations.push(matched.location);
+                }
                 merge_companions(&mut existing.companions, matched.companions);
                 existing.confidence = max_confidence(existing.confidence, matched.confidence);
             }
@@ -240,6 +280,22 @@ pub fn dedup_cross_detector(deduped: Vec<DedupedMatch>) -> Vec<DedupedMatch> {
             .then_with(|| a.credential_hash.cmp(&b.credential_hash))
     });
     out
+}
+
+/// Two locations are "the same finding" when they share (source, file_path,
+/// line, commit). Offset is intentionally NOT in the tuple — the structured
+/// preprocessor's synthetic-line append produces matches whose offset lies
+/// past the source file's EOF (the offset is into final_text, not the
+/// original chunk text), but whose `line` field is correctly remapped via
+/// LineMapping to the original source line. So same-(file, line) means the
+/// dedupe SHOULD collapse them: emitting both as "primary at line 1 offset
+/// 27" + "additional at line 1 offset 80 (past EOF)" is a confusing
+/// duplicate, not two findings.
+fn is_same_location(a: &MatchLocation, b: &MatchLocation) -> bool {
+    a.source == b.source
+        && a.file_path == b.file_path
+        && a.line == b.line
+        && a.commit == b.commit
 }
 
 fn file_scope_identity(location: &MatchLocation) -> Arc<str> {

@@ -64,6 +64,74 @@ pub struct ConfigFile {
     pub test_keywords: Option<Vec<String>>,
     /// Keywords indicating a placeholder value (e.g. "change_me", "todo").
     pub placeholder_keywords: Option<Vec<String>>,
+
+    // ─── Documented nested sections (Issue #5) ──────────────────────
+    // The README documents `[scan]`, `[allowlist]`, `[detector.X]`, and
+    // `[lockdown]` nested tables. Pre-fix these were silently ignored —
+    // a user copying the README example believed lockdown enforcement
+    // was active when it never reached the runtime. The structs below
+    // PARSE those sections so config-load no longer drops them on the
+    // floor. Wiring into ScanArgs happens in `apply_config_file` per
+    // section; fields not yet wired emit a deprecation hint at load
+    // time so the user sees which lines are recognized-but-inactive
+    // instead of recognized-and-effective. New fields here should ship
+    // with both a parser entry AND the wire-up in apply_config_file.
+    /// `[scan]` — runtime scan policy. Mirrors top-level scalar fields.
+    pub scan: Option<ScanSection>,
+    /// `[allowlist]` — `.keyhogignore` discovery + governance metadata.
+    pub allowlist: Option<AllowlistSection>,
+    /// `[detector.<id>]` — per-detector overrides keyed by detector_id.
+    pub detector: Option<std::collections::HashMap<String, DetectorSection>>,
+    /// `[lockdown]` — refuse to start unless explicit `--lockdown` flag.
+    pub lockdown: Option<LockdownSection>,
+}
+
+/// `[scan]` nested table. Fields here map 1:1 to the flat top-level
+/// scalars and override them when both are present. Issue #5: README
+/// documented `[scan]` as the canonical surface; we now accept both
+/// shapes and warn-on-mismatch.
+#[derive(Debug, Default, serde::Deserialize)]
+#[serde(default)]
+pub struct ScanSection {
+    pub severity: Option<String>,
+    pub min_confidence: Option<f64>,
+    pub format: Option<String>,
+    pub exclude: Option<Vec<String>>,
+    pub threads: Option<usize>,
+    pub dedup: Option<String>,
+}
+
+/// `[allowlist]` nested table. Issue #5: README documents `file`,
+/// `require_reason`, `require_approved_by`, `max_expires_days`. The
+/// allowlist enforcement layer reads `.keyhogignore` directly so the
+/// `file` override is the wiring point; the governance flags are
+/// surfaced to the allowlist evaluator post-parse.
+#[derive(Debug, Default, serde::Deserialize)]
+#[serde(default)]
+pub struct AllowlistSection {
+    pub file: Option<String>,
+    pub require_reason: Option<bool>,
+    pub require_approved_by: Option<bool>,
+    pub max_expires_days: Option<u64>,
+}
+
+/// `[detector.<id>]` per-detector override. `enabled = false` is the
+/// primary toggle documented in the README. Wired into the scanner via
+/// `disabled_detectors` on `ScanArgs`.
+#[derive(Debug, Default, serde::Deserialize)]
+#[serde(default)]
+pub struct DetectorSection {
+    pub enabled: Option<bool>,
+    pub min_confidence: Option<f64>,
+}
+
+/// `[lockdown]` enforcement. `require = true` refuses to run unless
+/// the operator passes `--lockdown` on the CLI. Issue #5: README example
+/// implied this was active; pre-fix the table was discarded silently.
+#[derive(Debug, Default, serde::Deserialize)]
+#[serde(default)]
+pub struct LockdownSection {
+    pub require: Option<bool>,
 }
 
 /// Search for `.keyhog.toml` starting from the scan root, walking up to the
