@@ -95,6 +95,7 @@ fn sanitise_thread_count(requested: usize, physical_cores: usize, source: &'stat
 }
 
 #[doc(hidden)]
+#[allow(dead_code)]
 pub fn sanitise_thread_count_for_test(
     requested: usize,
     physical_cores: usize,
