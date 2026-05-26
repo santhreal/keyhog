@@ -9,10 +9,7 @@ fn filesystem_source_yields_file_contents() {
     std::fs::write(&file, "TOKEN=abc123\n").unwrap();
 
     let source = FilesystemSource::new(PathBuf::from(dir.path()));
-    let chunks: Vec<_> = source
-        .chunks()
-        .collect::<Result<Vec<_>, _>>()
-        .unwrap();
+    let chunks: Vec<_> = source.chunks().collect::<Result<Vec<_>, _>>().unwrap();
     assert!(!chunks.is_empty());
     assert!(chunks[0].data.contains("TOKEN=abc123"));
 }

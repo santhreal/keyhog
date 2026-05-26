@@ -387,7 +387,10 @@ mod identifier_rejection_tests {
     fn real_secret_with_digits_not_flagged() {
         // AWS access keys, GitHub PATs, Slack tokens all contain digits
         // — the identifier check must not reject them.
-        assert!(!looks_like_program_identifier(concat!("AK", "IAIOSFODNN7EXAMPLE")));
+        assert!(!looks_like_program_identifier(concat!(
+            "AK",
+            "IAIOSFODNN7EXAMPLE"
+        )));
         assert!(!looks_like_program_identifier(
             "ghp_K9pV2nL3xB5cD7eF8gH0iJ1kL2mN3oP4qR5sT"
         ));
@@ -404,7 +407,10 @@ mod identifier_rejection_tests {
     #[test]
     fn special_chars_disqualify_identifier_match() {
         // A real-looking credential with hyphens/dots is not an identifier.
-        assert!(!looks_like_program_identifier(concat!("xox", "b-1234-secret")));
+        assert!(!looks_like_program_identifier(concat!(
+            "xox",
+            "b-1234-secret"
+        )));
         assert!(!looks_like_program_identifier("my.dotted.value"));
     }
 }

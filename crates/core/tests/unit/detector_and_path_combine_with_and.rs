@@ -2,7 +2,13 @@
 use keyhog_core::{MatchLocation, RuleSuppressor, Severity, VerificationResult, VerifiedFinding};
 use std::collections::HashMap;
 use std::sync::Arc;
-fn finding(detector: &str, service: &str, sev: Severity, path: &str, hash: &str) -> VerifiedFinding {
+fn finding(
+    detector: &str,
+    service: &str,
+    sev: Severity,
+    path: &str,
+    hash: &str,
+) -> VerifiedFinding {
     VerifiedFinding {
         detector_id: Arc::from(detector),
         detector_name: Arc::from(detector),
@@ -26,35 +32,35 @@ fn finding(detector: &str, service: &str, sev: Severity, path: &str, hash: &str)
     }
 }
 #[test]
-    fn detector_and_path_combine_with_and() {
-        let toml = r#"
+fn detector_and_path_combine_with_and() {
+    let toml = r#"
 [[suppress]]
 detector = "aws-access-key"
 path_contains = "/tests/"
 "#;
-        let s = RuleSuppressor::parse(toml).expect("parse");
-        let aws_in_test = finding(
-            "aws-access-key",
-            "aws",
-            Severity::Critical,
-            "src/tests/fixtures.rs",
-            "h",
-        );
-        let aws_in_src = finding(
-            "aws-access-key",
-            "aws",
-            Severity::Critical,
-            "src/main.rs",
-            "h",
-        );
-        let stripe_in_test = finding(
-            "stripe",
-            "stripe",
-            Severity::Critical,
-            "src/tests/fixtures.rs",
-            "h",
-        );
-        assert!(s.matches(&aws_in_test));
-        assert!(!s.matches(&aws_in_src));
-        assert!(!s.matches(&stripe_in_test));
-    }
+    let s = RuleSuppressor::parse(toml).expect("parse");
+    let aws_in_test = finding(
+        "aws-access-key",
+        "aws",
+        Severity::Critical,
+        "src/tests/fixtures.rs",
+        "h",
+    );
+    let aws_in_src = finding(
+        "aws-access-key",
+        "aws",
+        Severity::Critical,
+        "src/main.rs",
+        "h",
+    );
+    let stripe_in_test = finding(
+        "stripe",
+        "stripe",
+        Severity::Critical,
+        "src/tests/fixtures.rs",
+        "h",
+    );
+    assert!(s.matches(&aws_in_test));
+    assert!(!s.matches(&aws_in_src));
+    assert!(!s.matches(&stripe_in_test));
+}

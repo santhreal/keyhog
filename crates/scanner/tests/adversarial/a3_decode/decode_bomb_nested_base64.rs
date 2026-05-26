@@ -10,7 +10,10 @@ fn nested_base64_decode_finishes_within_wall_budget() {
     for _ in 0..20 {
         s = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, s.as_bytes());
     }
-    let chunk = Chunk { data: s.into(), metadata: Default::default() };
+    let chunk = Chunk {
+        data: s.into(),
+        metadata: Default::default(),
+    };
     let start = Instant::now();
     let _ = decode_chunk(&chunk, 10, true, None, None);
     assert!(

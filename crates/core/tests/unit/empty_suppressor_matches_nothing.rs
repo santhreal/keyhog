@@ -2,7 +2,13 @@
 use keyhog_core::{MatchLocation, RuleSuppressor, Severity, VerificationResult, VerifiedFinding};
 use std::collections::HashMap;
 use std::sync::Arc;
-fn finding(detector: &str, service: &str, sev: Severity, path: &str, hash: &str) -> VerifiedFinding {
+fn finding(
+    detector: &str,
+    service: &str,
+    sev: Severity,
+    path: &str,
+    hash: &str,
+) -> VerifiedFinding {
     VerifiedFinding {
         detector_id: Arc::from(detector),
         detector_name: Arc::from(detector),
@@ -26,14 +32,14 @@ fn finding(detector: &str, service: &str, sev: Severity, path: &str, hash: &str)
     }
 }
 #[test]
-    fn empty_suppressor_matches_nothing() {
-        let s = RuleSuppressor::empty();
-        let f = finding(
-            "aws-access-key",
-            "aws",
-            Severity::Critical,
-            "src/a.rs",
-            "h1",
-        );
-        assert!(!s.matches(&f));
-    }
+fn empty_suppressor_matches_nothing() {
+    let s = RuleSuppressor::empty();
+    let f = finding(
+        "aws-access-key",
+        "aws",
+        Severity::Critical,
+        "src/a.rs",
+        "h1",
+    );
+    assert!(!s.matches(&f));
+}

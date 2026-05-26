@@ -6,7 +6,10 @@ use super::CompiledScanner;
 
 /// Error message when env forces GPU/MegaScan but the scanner cannot dispatch.
 #[must_use]
-pub fn gpu_forced_unavailable_message(scanner: &CompiledScanner, backend: ScanBackend) -> Option<String> {
+pub fn gpu_forced_unavailable_message(
+    scanner: &CompiledScanner,
+    backend: ScanBackend,
+) -> Option<String> {
     let forced = forced_backend_from_env()?;
     if !matches!(forced, ScanBackend::Gpu | ScanBackend::MegaScan) {
         return None;
@@ -37,8 +40,6 @@ pub fn deny_silent_gpu_degrade(scanner: &CompiledScanner, backend: ScanBackend) 
 impl CompiledScanner {
     /// True when literals, backend handle, and compiled matcher are all present.
     pub(crate) fn gpu_stack_usable(&self) -> bool {
-        self.gpu_literals.is_some()
-            && self.gpu_backend.is_some()
-            && self.gpu_matcher().is_some()
+        self.gpu_literals.is_some() && self.gpu_backend.is_some() && self.gpu_matcher().is_some()
     }
 }

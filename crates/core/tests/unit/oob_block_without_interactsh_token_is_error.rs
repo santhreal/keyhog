@@ -22,7 +22,11 @@ fn regex_has_capture_group(pattern: &str) -> bool {
     let mut escape = false;
     while i < bytes.len() {
         let b = bytes[i];
-        if escape { escape = false; i += 1; continue; }
+        if escape {
+            escape = false;
+            i += 1;
+            continue;
+        }
         match b {
             b'\\' => escape = true,
             b'[' if !in_class => in_class = true,
@@ -30,11 +34,17 @@ fn regex_has_capture_group(pattern: &str) -> bool {
             b'(' if !in_class => {
                 if i + 1 < bytes.len() && bytes[i + 1] == b'?' {
                     let after = &bytes[i + 2..];
-                    if after.starts_with(b"P<") { return true; }
-                    if after.starts_with(b"<") {
-                        if !(after.starts_with(b"<=") || after.starts_with(b"<!")) { return true; }
+                    if after.starts_with(b"P<") {
+                        return true;
                     }
-                } else { return true; }
+                    if after.starts_with(b"<") {
+                        if !(after.starts_with(b"<=") || after.starts_with(b"<!")) {
+                            return true;
+                        }
+                    }
+                } else {
+                    return true;
+                }
             }
             _ => {}
         }
@@ -50,7 +60,11 @@ fn regex_likely_includes_anchor_prefix(pattern: &str) -> bool {
     let mut escape = false;
     while i < bytes.len() {
         let b = bytes[i];
-        if escape { escape = false; i += 1; continue; }
+        if escape {
+            escape = false;
+            i += 1;
+            continue;
+        }
         match b {
             b'\\' => escape = true,
             b'[' if !in_class => in_class = true,
@@ -63,8 +77,8 @@ fn regex_likely_includes_anchor_prefix(pattern: &str) -> bool {
     false
 }
 #[test]
-    fn oob_block_without_interactsh_token_is_error() {
-        let toml_src = r#"
+fn oob_block_without_interactsh_token_is_error() {
+    let toml_src = r#"
 [detector]
 id = "oob-no-token"
 name = "OOB without token"
@@ -83,9 +97,9 @@ body = '{"static":"payload"}'
 [detector.verify.oob]
 protocol = "http"
 "#;
-        let errs = errors_for(toml_src);
-        assert!(
-            errs.iter().any(|e| e.contains("verify.oob is set but no")),
-            "expected oob-without-token error; got {errs:?}"
-        );
-    }
+    let errs = errors_for(toml_src);
+    assert!(
+        errs.iter().any(|e| e.contains("verify.oob is set but no")),
+        "expected oob-without-token error; got {errs:?}"
+    );
+}

@@ -8,8 +8,13 @@ fn git_diff_finds_feature_branch_secret() {
     use std::process::Command;
 
     let (_guard, repo) = crate::support::git::init_repo();
-    crate::support::git::commit(&repo, "base.txt", "stable=1
-", "base");
+    crate::support::git::commit(
+        &repo,
+        "base.txt",
+        "stable=1
+",
+        "base",
+    );
     Command::new("git")
         .args(["checkout", "-b", "feature"])
         .current_dir(&repo)
@@ -30,7 +35,9 @@ fn git_diff_finds_feature_branch_secret() {
         .map(|c| c.data.to_string())
         .collect();
     assert!(
-        bodies.iter().any(|b| b.contains(concat!("xox", "b-integrationDiffBranch"))),
+        bodies
+            .iter()
+            .any(|b| b.contains(concat!("xox", "b-integrationDiffBranch"))),
         "diff must include added file content; got {bodies:?}"
     );
 }

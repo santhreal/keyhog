@@ -6,21 +6,21 @@ mod compile;
 mod fallback;
 mod fallback_entropy;
 mod fallback_generic;
-mod gpu_cache;
-mod gpu_forced;
 mod gpu_ac_phase1;
+mod gpu_cache;
 mod gpu_coalesce;
 mod gpu_dispatch;
+mod gpu_forced;
 mod gpu_lazy;
 mod gpu_literal_phase1;
 mod gpu_megascan;
 mod gpu_phase2;
 mod gpu_scan_wrappers;
 mod hot_patterns;
-mod scan_postprocess;
 mod rule_pipeline;
 mod scan;
 mod scan_filters;
+mod scan_postprocess;
 pub mod segment_attribution;
 mod windowed;
 
@@ -29,8 +29,7 @@ pub(crate) use gpu_coalesce::coalesce_chunks;
 pub(crate) use gpu_dispatch::ShardDispatchResult;
 pub use gpu_scan_wrappers::GpuPhase1Output;
 pub use rule_pipeline::{
-    build_rule_pipeline, rule_pipeline_cached, AC_GPU_MAX_MATCHES_PER_DISPATCH,
-    MEGASCAN_INPUT_LEN,
+    build_rule_pipeline, rule_pipeline_cached, AC_GPU_MAX_MATCHES_PER_DISPATCH, MEGASCAN_INPUT_LEN,
 };
 pub use windowed::{
     floor_char_boundary, line_number_for_offset, next_window_offset, record_window_match,

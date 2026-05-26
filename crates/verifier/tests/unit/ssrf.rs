@@ -15,7 +15,9 @@ fn hex_localhost_is_private_url() {
 
 #[test]
 fn link_local_ip_addr_is_private() {
-    assert!(is_private_ip_addr(&IpAddr::V4(Ipv4Addr::new(169, 254, 169, 254))));
+    assert!(is_private_ip_addr(&IpAddr::V4(Ipv4Addr::new(
+        169, 254, 169, 254
+    ))));
 }
 
 #[test]

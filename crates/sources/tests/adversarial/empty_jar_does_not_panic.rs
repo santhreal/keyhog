@@ -10,8 +10,12 @@ fn empty_jar_does_not_panic() {
     let dir = tempfile::tempdir().expect("tempdir");
     let file = File::create(dir.path().join("empty.jar")).expect("create");
     ZipWriter::new(file).finish().expect("finish");
-    std::fs::write(dir.path().join("side.txt"), "SIDE=ok
-").expect("write");
+    std::fs::write(
+        dir.path().join("side.txt"),
+        "SIDE=ok
+",
+    )
+    .expect("write");
 
     let bodies: Vec<String> = FilesystemSource::new(dir.path().to_path_buf())
         .chunks()

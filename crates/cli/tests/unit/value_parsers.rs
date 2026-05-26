@@ -1,5 +1,6 @@
 use keyhog::value_parsers::{
-    parse_byte_size, parse_decode_depth, parse_min_confidence, parse_ml_threshold, parse_verify_rate,
+    parse_byte_size, parse_decode_depth, parse_min_confidence, parse_ml_threshold,
+    parse_verify_rate,
 };
 
 #[test]

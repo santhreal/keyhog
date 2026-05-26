@@ -333,8 +333,12 @@ mod tests {
 
     #[test]
     fn allows_public_ipv6_addresses() {
-        assert!(!ip_addr_is_bogon(v6(0x2001, 0x4860, 0x4860, 0, 0, 0, 0, 0x8888)));
-        assert!(!ip_addr_is_bogon(v6(0x2606, 0x4700, 0x4700, 0, 0, 0, 0, 0x1111)));
+        assert!(!ip_addr_is_bogon(v6(
+            0x2001, 0x4860, 0x4860, 0, 0, 0, 0, 0x8888
+        )));
+        assert!(!ip_addr_is_bogon(v6(
+            0x2606, 0x4700, 0x4700, 0, 0, 0, 0, 0x1111
+        )));
     }
 
     /// REGRESSION: if a future change drops a bogon range without

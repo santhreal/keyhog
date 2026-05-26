@@ -22,7 +22,11 @@ fn regex_has_capture_group(pattern: &str) -> bool {
     let mut escape = false;
     while i < bytes.len() {
         let b = bytes[i];
-        if escape { escape = false; i += 1; continue; }
+        if escape {
+            escape = false;
+            i += 1;
+            continue;
+        }
         match b {
             b'\\' => escape = true,
             b'[' if !in_class => in_class = true,
@@ -30,11 +34,17 @@ fn regex_has_capture_group(pattern: &str) -> bool {
             b'(' if !in_class => {
                 if i + 1 < bytes.len() && bytes[i + 1] == b'?' {
                     let after = &bytes[i + 2..];
-                    if after.starts_with(b"P<") { return true; }
-                    if after.starts_with(b"<") {
-                        if !(after.starts_with(b"<=") || after.starts_with(b"<!")) { return true; }
+                    if after.starts_with(b"P<") {
+                        return true;
                     }
-                } else { return true; }
+                    if after.starts_with(b"<") {
+                        if !(after.starts_with(b"<=") || after.starts_with(b"<!")) {
+                            return true;
+                        }
+                    }
+                } else {
+                    return true;
+                }
             }
             _ => {}
         }
@@ -50,7 +60,11 @@ fn regex_likely_includes_anchor_prefix(pattern: &str) -> bool {
     let mut escape = false;
     while i < bytes.len() {
         let b = bytes[i];
-        if escape { escape = false; i += 1; continue; }
+        if escape {
+            escape = false;
+            i += 1;
+            continue;
+        }
         match b {
             b'\\' => escape = true,
             b'[' if !in_class => in_class = true,
@@ -63,8 +77,8 @@ fn regex_likely_includes_anchor_prefix(pattern: &str) -> bool {
     false
 }
 #[test]
-    fn interactsh_token_without_oob_block_is_error() {
-        let toml_src = r#"
+fn interactsh_token_without_oob_block_is_error() {
+    let toml_src = r#"
 [detector]
 id = "token-no-oob"
 name = "Token without OOB"
@@ -80,11 +94,10 @@ method = "POST"
 url = "https://api.github.com/probe"
 body = '{"target":"https://{{interactsh}}/x"}'
 "#;
-        let errs = errors_for(toml_src);
-        assert!(
-            errs.iter().any(
-                |e| e.contains("token is referenced") && e.contains("no [detector.verify.oob]")
-            ),
-            "expected token-without-oob error; got {errs:?}"
-        );
-    }
+    let errs = errors_for(toml_src);
+    assert!(
+        errs.iter()
+            .any(|e| e.contains("token is referenced") && e.contains("no [detector.verify.oob]")),
+        "expected token-without-oob error; got {errs:?}"
+    );
+}

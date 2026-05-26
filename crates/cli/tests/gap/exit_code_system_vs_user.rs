@@ -2,9 +2,8 @@
 
 #[test]
 fn system_errors_use_exit_code_three() {
-    let main_src =
-        std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/main.rs"))
-            .expect("main.rs");
+    let main_src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/main.rs"))
+        .expect("main.rs");
 
     assert!(
         main_src.contains("EXIT_SYSTEM_ERROR"),

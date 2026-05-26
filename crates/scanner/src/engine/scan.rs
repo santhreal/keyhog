@@ -244,11 +244,7 @@ impl CompiledScanner {
     /// top of them so monorepo scans still pair AWS_ACCESS_KEY in one
     /// .env with AWS_SECRET in another.
     #[cfg(feature = "simd")]
-    fn record_and_reassemble_for_no_hit_chunk(
-        &self,
-        chunk: &Chunk,
-        matches: &mut Vec<RawMatch>,
-    ) {
+    fn record_and_reassemble_for_no_hit_chunk(&self, chunk: &Chunk, matches: &mut Vec<RawMatch>) {
         let mut reassembled_candidates = Vec::new();
         // Pre-allocate the path Arc once per chunk: every match in a
         // single chunk shares the same path, so cloning an Arc<str>

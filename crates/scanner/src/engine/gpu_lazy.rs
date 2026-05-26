@@ -18,7 +18,10 @@ impl CompiledScanner {
                 };
                 let literal_refs: Vec<&[u8]> = literals.iter().map(|v| v.as_slice()).collect();
                 let cache_dir = super::gpu_cache::gpu_matcher_cache_dir()?;
-                let cache_key = format!("lit-{}", super::gpu_cache::gpu_matcher_cache_key(&literal_refs));
+                let cache_key = format!(
+                    "lit-{}",
+                    super::gpu_cache::gpu_matcher_cache_key(&literal_refs)
+                );
                 let started = std::time::Instant::now();
                 // One-line lego-block cache wiring courtesy of
                 // `vyre_libs::scan::cached_load_or_compile`. The

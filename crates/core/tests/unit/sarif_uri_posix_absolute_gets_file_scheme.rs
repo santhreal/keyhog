@@ -1,5 +1,7 @@
 //! Migrated from `src/report/sarif.rs` inline tests.
-use keyhog_core::{Reporter, MatchLocation, SarifReporter, Severity, VerificationResult, VerifiedFinding};
+use keyhog_core::{
+    MatchLocation, Reporter, SarifReporter, Severity, VerificationResult, VerifiedFinding,
+};
 use std::collections::HashMap;
 use std::sync::Arc;
 fn synthetic_finding() -> VerifiedFinding {
@@ -26,13 +28,13 @@ fn synthetic_finding() -> VerifiedFinding {
     }
 }
 #[test]
-    fn sarif_uri_posix_absolute_gets_file_scheme() {
-        assert_eq!(
-            keyhog_core::report::sarif_uri::file_path_to_sarif_uri("/etc/secrets.env"),
-            "file:///etc/secrets.env"
-        );
-        assert_eq!(
-            keyhog_core::report::sarif_uri::file_path_to_sarif_uri("/home/u/.aws/credentials"),
-            "file:///home/u/.aws/credentials"
-        );
-    }
+fn sarif_uri_posix_absolute_gets_file_scheme() {
+    assert_eq!(
+        keyhog_core::report::sarif_uri::file_path_to_sarif_uri("/etc/secrets.env"),
+        "file:///etc/secrets.env"
+    );
+    assert_eq!(
+        keyhog_core::report::sarif_uri::file_path_to_sarif_uri("/home/u/.aws/credentials"),
+        "file:///home/u/.aws/credentials"
+    );
+}

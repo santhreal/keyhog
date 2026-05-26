@@ -14,7 +14,15 @@ fn cross_detector_single_input_passthrough() {
         credential: Arc::from("x"),
         credential_hash: "h".into(),
         companions: HashMap::new(),
-        primary_location: MatchLocation { source: Arc::from("t"), file_path: None, line: None, offset: 0, commit: None, author: None, date: None },
+        primary_location: MatchLocation {
+            source: Arc::from("t"),
+            file_path: None,
+            line: None,
+            offset: 0,
+            commit: None,
+            author: None,
+            date: None,
+        },
         additional_locations: vec![],
         confidence: None,
     };

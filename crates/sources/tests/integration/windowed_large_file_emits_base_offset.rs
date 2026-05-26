@@ -9,8 +9,7 @@ fn windowed_large_file_emits_base_offset() {
     let payload = "OFFSET_MARKER=".to_string() + &"y".repeat(9000);
     std::fs::write(dir.path().join("wide.txt"), payload).expect("write");
 
-    let source = FilesystemSource::new(dir.path().to_path_buf())
-        .with_window_config(4096, 512);
+    let source = FilesystemSource::new(dir.path().to_path_buf()).with_window_config(4096, 512);
     let chunks: Vec<_> = source.chunks().flatten().collect();
     assert!(
         chunks.len() >= 2,

@@ -18,6 +18,9 @@ fn reversed_aws_access_key_id_decoded() {
     };
     let decoded = decode_chunk(&chunk, 2, false, None, None);
     let has_forward = decoded.iter().any(|c| c.data.contains(forward));
-    assert!(has_forward, "reverse decoder must recover forward AKIA key from reversed blob");
+    assert!(
+        has_forward,
+        "reverse decoder must recover forward AKIA key from reversed blob"
+    );
     let _ = reversed; // silence unused in case of refactor
 }

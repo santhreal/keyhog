@@ -210,7 +210,6 @@ pub fn proxy_is_active(explicit: Option<&str>) -> bool {
     false
 }
 
-
 /// Convert a [`DedupedMatch`] into a [`VerifiedFinding`] with the given verification result.
 pub(crate) fn into_finding(
     group: DedupedMatch,

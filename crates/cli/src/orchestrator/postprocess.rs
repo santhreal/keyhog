@@ -4,9 +4,7 @@ use super::ScanOrchestrator;
 use anyhow::{Context, Result};
 #[cfg(feature = "verify")]
 use keyhog_core::DedupedMatch;
-use keyhog_core::{
-    dedup_matches, RawMatch, VerificationResult, VerifiedFinding,
-};
+use keyhog_core::{dedup_matches, RawMatch, VerificationResult, VerifiedFinding};
 
 impl ScanOrchestrator {
     pub(crate) fn filter_and_resolve(
@@ -75,7 +73,10 @@ impl ScanOrchestrator {
         crate::inline_suppression::filter_inline_suppressions(filtered)
     }
 
-    pub(crate) async fn finalize(&self, mut matches: Vec<RawMatch>) -> Result<Vec<VerifiedFinding>> {
+    pub(crate) async fn finalize(
+        &self,
+        mut matches: Vec<RawMatch>,
+    ) -> Result<Vec<VerifiedFinding>> {
         matches.sort_by_key(|m| std::cmp::Reverse(m.severity));
         let scope = self.args.dedup.to_core();
         let deduped = dedup_matches(matches, &scope);

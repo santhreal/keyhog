@@ -474,4 +474,3 @@ fn spawn_poller(session: Arc<OobSession>) -> JoinHandle<()> {
         debug!(target: "keyhog::oob", "poller exiting");
     })
 }
-

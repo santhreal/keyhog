@@ -2,11 +2,8 @@
 
 #[test]
 fn git_uses_resolve_safe_bin() {
-    let src = std::fs::read_to_string(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/src/git/mod.rs"
-    ))
-    .expect("git/mod.rs");
+    let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/git/mod.rs"))
+        .expect("git/mod.rs");
     assert!(
         src.contains(r#"resolve_safe_bin("git")"#),
         "git_bin must use resolve_safe_bin"
@@ -17,10 +14,7 @@ fn git_uses_resolve_safe_bin() {
     );
     for line in src.lines() {
         let trimmed = line.trim();
-        if trimmed.starts_with("//")
-            || trimmed.starts_with("///")
-            || trimmed.starts_with('*')
-        {
+        if trimmed.starts_with("//") || trimmed.starts_with("///") || trimmed.starts_with('*') {
             continue;
         }
         assert!(

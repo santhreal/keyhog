@@ -326,7 +326,6 @@ impl<W: Write + Send> SarifReporter<W> {
         }
     }
 
-
     fn build_rule(finding: &VerifiedFinding) -> SarifRule {
         SarifRule {
             id: finding.detector_id.to_string(),

@@ -7,7 +7,10 @@ use keyhog_scanner::decode::decode_chunk;
 fn validate_true_drops_nul_decoded_chunks() {
     // Z85 of bytes with embedded NUL
     let text = r#"token = "0000000000""#;
-    let chunk = Chunk { data: text.into(), metadata: Default::default() };
+    let chunk = Chunk {
+        data: text.into(),
+        metadata: Default::default(),
+    };
     let decoded = decode_chunk(&chunk, 2, true, None, None);
     assert!(
         decoded.iter().all(|c| !c.data.as_bytes().contains(&0)),

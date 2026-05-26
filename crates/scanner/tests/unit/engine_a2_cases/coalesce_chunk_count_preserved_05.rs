@@ -1,5 +1,5 @@
-use keyhog_scanner::engine::coalesce_chunks;
 use keyhog_core::Chunk;
+use keyhog_scanner::engine::coalesce_chunks;
 #[test]
 fn coalesce_chunk_count_preserved_05() {
     let n = 5;

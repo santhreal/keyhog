@@ -49,12 +49,16 @@ fn candidates(positive_text: &str, credential: &str) -> Vec<(&'static str, Strin
         out.push(("yaml_block", format!("payload: |\n  {positive_text}")));
     }
 
-    if credential.starts_with("http") || credential.contains("://") || positive_text.contains("://") {
+    if credential.starts_with("http") || credential.contains("://") || positive_text.contains("://")
+    {
         out.push(("yaml_url", format!("payload: |\n  {positive_text}")));
     }
 
     out.push(("yaml_block", format!("credentials: |\n  {positive_text}")));
-    out.push(("xml_wrap", format!("<credentials>{positive_text}</credentials>")));
+    out.push((
+        "xml_wrap",
+        format!("<credentials>{positive_text}</credentials>"),
+    ));
     out.push(("xml", format!("<token>{cred}</token>")));
     out.push(("xml_api_key", format!("<apiKey>{cred}</apiKey>")));
     out.push(("bearer", format!("Authorization: Bearer {cred}")));
@@ -76,11 +80,7 @@ fn strip_comment_prefix(text: &str) -> Option<String> {
     None
 }
 
-fn surfaces(
-    scanner: &CompiledScanner,
-    text: &str,
-    credential: &str,
-) -> bool {
+fn surfaces(scanner: &CompiledScanner, text: &str, credential: &str) -> bool {
     scanner.clear_fragment_cache();
     let chunk = Chunk {
         data: text.into(),
@@ -119,8 +119,12 @@ fn main() {
             Ok(c) => c,
             Err(_) => continue,
         };
-        let Some(pos) = c.positive.first() else { continue };
-        let Some(eva) = c.evasion.first() else { continue };
+        let Some(pos) = c.positive.first() else {
+            continue;
+        };
+        let Some(eva) = c.evasion.first() else {
+            continue;
+        };
         // Match against positive credential — evasion field may drift from surfaced value.
         let target_cred = &pos.credential;
         if surfaces(&scanner, &eva.text, target_cred) {
@@ -145,7 +149,12 @@ fn main() {
         if let Some((label, cand)) = found {
             fixed += 1;
             *pattern_counts.entry(label).or_default() += 1;
-            println!("OK\t{}\t{}\t{}", c.detector_id, label, cand.replace('\n', "\\n"));
+            println!(
+                "OK\t{}\t{}\t{}",
+                c.detector_id,
+                label,
+                cand.replace('\n', "\\n")
+            );
         } else {
             unfixed += 1;
             println!("NO\t{}", c.detector_id);

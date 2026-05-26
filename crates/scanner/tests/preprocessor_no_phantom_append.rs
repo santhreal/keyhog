@@ -71,7 +71,10 @@ fn single_line_k8s_bootstrap_token_dedups_to_one_finding_no_phantom_offsets() {
         "exactly one DedupedMatch for kubernetes-bootstrap-token. Got: {:?}",
         deduped
             .iter()
-            .map(|m| (m.detector_id.as_ref().to_string(), m.primary_location.offset))
+            .map(|m| (
+                m.detector_id.as_ref().to_string(),
+                m.primary_location.offset
+            ))
             .collect::<Vec<_>>(),
     );
 

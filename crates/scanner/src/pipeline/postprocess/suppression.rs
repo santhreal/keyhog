@@ -1,6 +1,6 @@
-use crate::context;
 use super::shape_gates::RFC7519_EXAMPLE_JWT_PREFIX;
 use super::shape_gates::*;
+use crate::context;
 
 fn upper_contains_token(upper: &str, token: &str) -> bool {
     upper.match_indices(token).any(|(idx, _)| {

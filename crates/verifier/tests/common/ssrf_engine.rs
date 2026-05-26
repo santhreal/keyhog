@@ -4,8 +4,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use keyhog_core::{
-    DedupedMatch, DetectorSpec, HttpMethod, MatchLocation, Severity, VerificationResult,
-    VerifySpec,
+    DedupedMatch, DetectorSpec, HttpMethod, MatchLocation, Severity, VerificationResult, VerifySpec,
 };
 use keyhog_verifier::{VerificationEngine, VerifyConfig};
 

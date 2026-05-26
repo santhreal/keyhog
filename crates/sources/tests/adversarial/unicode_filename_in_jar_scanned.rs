@@ -14,9 +14,11 @@ fn unicode_filename_in_jar_scanned() {
     let mut zip = ZipWriter::new(file);
     let opts = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
     zip.start_file("配置/秘密.env", opts).expect("start");
-    zip.write_all(b"GITHUB_TOKEN=ghp_unicodeJarEntryTest000000000001
-")
-        .expect("write");
+    zip.write_all(
+        b"GITHUB_TOKEN=ghp_unicodeJarEntryTest000000000001
+",
+    )
+    .expect("write");
     zip.finish().expect("finish");
 
     let bodies: Vec<String> = FilesystemSource::new(dir.path().to_path_buf())

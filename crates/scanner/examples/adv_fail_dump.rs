@@ -1,9 +1,9 @@
-use std::fs::File;
-use std::io::Write;
-use std::path::PathBuf;
 use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::CompiledScanner;
 use serde::Deserialize;
+use std::fs::File;
+use std::io::Write;
+use std::path::PathBuf;
 
 #[derive(Debug, Deserialize)]
 struct Contract {
@@ -123,7 +123,11 @@ fn main() {
                     writeln!(
                         out,
                         "{}\tbare_ok={}\twrapper={}\tpi={}\tcred={}",
-                        c.detector_id, bare, w.label(), pi, p.credential
+                        c.detector_id,
+                        bare,
+                        w.label(),
+                        pi,
+                        p.credential
                     )
                     .unwrap();
                 }

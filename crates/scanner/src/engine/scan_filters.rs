@@ -155,21 +155,22 @@ pub(super) fn extend_known_prefix_credential<'a>(
     match_start: usize,
     match_end: usize,
 ) -> (&'a str, usize) {
-    let (credential, match_end) = if crate::confidence::known_prefix_confidence_floor(credential).is_some() {
-        let bytes = data.as_bytes();
-        let mut end = match_end;
-        while end < bytes.len() && is_provider_token_byte(bytes[end]) {
-            end += 1;
-        }
+    let (credential, match_end) =
+        if crate::confidence::known_prefix_confidence_floor(credential).is_some() {
+            let bytes = data.as_bytes();
+            let mut end = match_end;
+            while end < bytes.len() && is_provider_token_byte(bytes[end]) {
+                end += 1;
+            }
 
-        if end == match_end || !data.is_char_boundary(end) {
-            (credential, match_end)
+            if end == match_end || !data.is_char_boundary(end) {
+                (credential, match_end)
+            } else {
+                (&data[match_start..end], end)
+            }
         } else {
-            (&data[match_start..end], end)
-        }
-    } else {
-        (credential, match_end)
-    };
+            (credential, match_end)
+        };
 
     extend_base64_padding(data, match_start, credential, match_end)
 }

@@ -2,11 +2,8 @@
 
 #[test]
 fn filesystem_archive_4x_budget_in_source() {
-    let src = std::fs::read_to_string(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/src/filesystem.rs"
-    ))
-    .expect("filesystem.rs");
+    let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/filesystem.rs"))
+        .expect("filesystem.rs");
     assert!(
         src.contains("total_budget: u64 = max_size.saturating_mul(4)"),
         "missing archive 4x zip-bomb budget"

@@ -143,4 +143,3 @@ pub fn companions_with_oob(
     out.insert(OOB_COMPANION_ID.to_string(), minted_id.to_string());
     out
 }
-

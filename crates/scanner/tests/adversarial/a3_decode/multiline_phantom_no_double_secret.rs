@@ -9,5 +9,9 @@ fn env_single_line_secret_not_duplicated_in_text() {
     let text = format!("GITHUB_TOKEN={secret}\n");
     let pre = preprocess_multiline(&text, &MultilineConfig::default(), &FragmentCache::new(100));
     let occurrences = pre.text.matches(secret).count();
-    assert_eq!(occurrences, 1, "secret must appear exactly once, got {occurrences} in:\n{}", pre.text);
+    assert_eq!(
+        occurrences, 1,
+        "secret must appear exactly once, got {occurrences} in:\n{}",
+        pre.text
+    );
 }

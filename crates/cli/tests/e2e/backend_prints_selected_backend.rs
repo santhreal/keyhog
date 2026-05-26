@@ -8,7 +8,10 @@ fn backend_prints_selected_backend() {
     assert_eq!(output.status.code(), Some(0));
     let stdout = String::from_utf8_lossy(&output.stdout).to_lowercase();
     assert!(
-        stdout.contains("cpu") || stdout.contains("gpu") || stdout.contains("simd") || stdout.contains("mega"),
+        stdout.contains("cpu")
+            || stdout.contains("gpu")
+            || stdout.contains("simd")
+            || stdout.contains("mega"),
         "backend must name a backend; got: {stdout}"
     );
 }

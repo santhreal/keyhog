@@ -11,12 +11,20 @@ fn lz4_random_bytes_no_panic() {
         buf.push((i.wrapping_mul(1103515245).wrapping_add(12345) >> 16) as u8);
     }
     std::fs::write(dir.path().join("noise.lz4"), &buf).expect("write");
-    std::fs::write(dir.path().join("keep.txt"), "SECRET=visible
-").expect("write");
+    std::fs::write(
+        dir.path().join("keep.txt"),
+        "SECRET=visible
+",
+    )
+    .expect("write");
 
-    let chunks: Vec<_> = FilesystemSource::new(dir.path().to_path_buf()).chunks().collect();
+    let chunks: Vec<_> = FilesystemSource::new(dir.path().to_path_buf())
+        .chunks()
+        .collect();
     assert!(
-        chunks.iter().any(|r| r.as_ref().ok().is_some_and(|c| c.data.contains("visible"))),
+        chunks
+            .iter()
+            .any(|r| r.as_ref().ok().is_some_and(|c| c.data.contains("visible"))),
         "scan must survive malformed lz4"
     );
 }

@@ -7,7 +7,12 @@ const MAX_REGEX_AST_NODES: usize = 512;
 const MAX_REGEX_ALTERNATION_BRANCHES: usize = 64;
 const MAX_REGEX_REPEAT_BOUND: u32 = 1_000;
 
-pub(crate) fn validate_regex_complexity(kind: &str, index: usize, ast: &Ast, issues: &mut Vec<QualityIssue>) {
+pub(crate) fn validate_regex_complexity(
+    kind: &str,
+    index: usize,
+    ast: &Ast,
+    issues: &mut Vec<QualityIssue>,
+) {
     let mut stats = RegexComplexityStats::default();
     collect_regex_complexity(ast, &mut stats);
     collect_redos_risks(ast, &mut stats, false);

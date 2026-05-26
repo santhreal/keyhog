@@ -7,7 +7,8 @@ use keyhog_sources::FilesystemSource;
 fn pdf_magic_file_not_scanned_as_text() {
     let dir = tempfile::tempdir().expect("tempdir");
     let mut bytes = b"%PDF-1.7
-".to_vec();
+"
+    .to_vec();
     bytes.extend_from_slice(b"SECRET=should-not-appear-as-text");
     std::fs::write(dir.path().join("doc.pdf"), bytes).expect("write");
 

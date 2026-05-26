@@ -213,4 +213,3 @@ pub fn check_url_against_spec(raw_url: &str, spec: &keyhog_core::VerifySpec) -> 
     }
     Ok(())
 }
-

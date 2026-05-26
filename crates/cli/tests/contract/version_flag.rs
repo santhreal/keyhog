@@ -10,7 +10,12 @@ fn version_flag_exits_zero_and_prints_semver() {
         .output()
         .expect("spawn keyhog");
 
-    assert_eq!(out.status.code(), Some(0), "stderr={}", String::from_utf8_lossy(&out.stderr));
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
 
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(

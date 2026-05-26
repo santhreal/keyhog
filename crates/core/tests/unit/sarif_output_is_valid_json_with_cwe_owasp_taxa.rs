@@ -1,5 +1,7 @@
 //! Migrated from `src/report/sarif.rs` inline tests.
-use keyhog_core::{Reporter, MatchLocation, SarifReporter, Severity, VerificationResult, VerifiedFinding};
+use keyhog_core::{
+    MatchLocation, Reporter, SarifReporter, Severity, VerificationResult, VerifiedFinding,
+};
 use std::collections::HashMap;
 use std::sync::Arc;
 fn synthetic_finding() -> VerifiedFinding {
@@ -26,38 +28,38 @@ fn synthetic_finding() -> VerifiedFinding {
     }
 }
 #[test]
-    fn sarif_output_is_valid_json_with_cwe_owasp_taxa() {
-        let mut buf: Vec<u8> = Vec::new();
-        {
-            let mut r = SarifReporter::new(&mut buf);
-            r.report(&synthetic_finding()).unwrap();
-            r.finish().unwrap();
-        }
-        let json: serde_json::Value =
-            serde_json::from_slice(&buf).expect("SARIF output must parse as JSON");
-
-        // Per-result properties carry CWE and OWASP refs.
-        let cwe = json["runs"][0]["results"][0]["properties"]["cwe"].as_str();
-        assert_eq!(cwe, Some("CWE-798"));
-        let owasp = json["runs"][0]["results"][0]["properties"]["owasp"].as_str();
-        assert_eq!(owasp, Some("A07:2021"));
-
-        // runs[0].taxonomies block resolves the CWE/OWASP references.
-        let tax_name = json["runs"][0]["taxonomies"][0]["name"].as_str();
-        assert_eq!(tax_name, Some("CWE"));
-        let cwe_taxa_id = json["runs"][0]["taxonomies"][0]["taxa"][0]["id"].as_str();
-        assert_eq!(cwe_taxa_id, Some("CWE-798"));
-        let owasp_name = json["runs"][0]["taxonomies"][1]["name"].as_str();
-        assert_eq!(owasp_name, Some("OWASP"));
-
-        // SARIF v2.2 fixes[]: a replacement suggestion for the leaked
-        // credential. With service="test" we expect ${TEST_KEY} fallback.
-        let fix_replacement = json["runs"][0]["results"][0]["fixes"][0]["artifactChanges"][0]
-            ["replacements"][0]["insertedContent"]["text"]
-            .as_str();
-        assert_eq!(fix_replacement, Some("${TEST_KEY}"));
-        let fix_uri = json["runs"][0]["results"][0]["fixes"][0]["artifactChanges"][0]
-            ["artifactLocation"]["uri"]
-            .as_str();
-        assert_eq!(fix_uri, Some("config.env"));
+fn sarif_output_is_valid_json_with_cwe_owasp_taxa() {
+    let mut buf: Vec<u8> = Vec::new();
+    {
+        let mut r = SarifReporter::new(&mut buf);
+        r.report(&synthetic_finding()).unwrap();
+        r.finish().unwrap();
     }
+    let json: serde_json::Value =
+        serde_json::from_slice(&buf).expect("SARIF output must parse as JSON");
+
+    // Per-result properties carry CWE and OWASP refs.
+    let cwe = json["runs"][0]["results"][0]["properties"]["cwe"].as_str();
+    assert_eq!(cwe, Some("CWE-798"));
+    let owasp = json["runs"][0]["results"][0]["properties"]["owasp"].as_str();
+    assert_eq!(owasp, Some("A07:2021"));
+
+    // runs[0].taxonomies block resolves the CWE/OWASP references.
+    let tax_name = json["runs"][0]["taxonomies"][0]["name"].as_str();
+    assert_eq!(tax_name, Some("CWE"));
+    let cwe_taxa_id = json["runs"][0]["taxonomies"][0]["taxa"][0]["id"].as_str();
+    assert_eq!(cwe_taxa_id, Some("CWE-798"));
+    let owasp_name = json["runs"][0]["taxonomies"][1]["name"].as_str();
+    assert_eq!(owasp_name, Some("OWASP"));
+
+    // SARIF v2.2 fixes[]: a replacement suggestion for the leaked
+    // credential. With service="test" we expect ${TEST_KEY} fallback.
+    let fix_replacement = json["runs"][0]["results"][0]["fixes"][0]["artifactChanges"][0]
+        ["replacements"][0]["insertedContent"]["text"]
+        .as_str();
+    assert_eq!(fix_replacement, Some("${TEST_KEY}"));
+    let fix_uri = json["runs"][0]["results"][0]["fixes"][0]["artifactChanges"][0]
+        ["artifactLocation"]["uri"]
+        .as_str();
+    assert_eq!(fix_uri, Some("config.env"));
+}

@@ -1,7 +1,7 @@
 //! FILE_GATE micro tests for sources crate src files.
 
 use keyhog_core::Source;
-use keyhog_sources::{create_source, FilesystemSource, StdinSource, reset_skipped_over_max_size};
+use keyhog_sources::{create_source, reset_skipped_over_max_size, FilesystemSource, StdinSource};
 
 // ── crates/sources/src/lib.rs ─────────────────────────────────────────
 #[test]
@@ -152,8 +152,7 @@ fn git_source_happy() {
 #[cfg(feature = "git")]
 #[test]
 fn git_diff_happy() {
-    let source =
-        keyhog_sources::GitDiffSource::new(std::env::current_dir().unwrap(), "HEAD~1");
+    let source = keyhog_sources::GitDiffSource::new(std::env::current_dir().unwrap(), "HEAD~1");
     assert_eq!(source.name(), "git-diff");
 }
 
@@ -161,7 +160,8 @@ fn git_diff_happy() {
 #[cfg(feature = "git")]
 #[test]
 fn git_history_happy() {
-    let source = keyhog_sources::GitHistorySource::new(std::env::current_dir().unwrap()).with_max_commits(1);
+    let source =
+        keyhog_sources::GitHistorySource::new(std::env::current_dir().unwrap()).with_max_commits(1);
     assert_eq!(source.name(), "git-history");
 }
 

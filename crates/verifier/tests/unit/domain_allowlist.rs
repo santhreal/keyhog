@@ -28,10 +28,7 @@ fn effective_allowlist_prefers_detector_override() {
         allowed_domains: vec!["example.com".into()],
         ..Default::default()
     };
-    assert_eq!(
-        effective_allowlist(&spec),
-        Some(vec!["example.com".into()])
-    );
+    assert_eq!(effective_allowlist(&spec), Some(vec!["example.com".into()]));
 }
 
 #[test]

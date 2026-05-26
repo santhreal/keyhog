@@ -1,5 +1,7 @@
 //! Migrated from `src/report/sarif.rs` inline tests.
-use keyhog_core::{Reporter, MatchLocation, SarifReporter, Severity, VerificationResult, VerifiedFinding};
+use keyhog_core::{
+    MatchLocation, Reporter, SarifReporter, Severity, VerificationResult, VerifiedFinding,
+};
 use std::collections::HashMap;
 use std::sync::Arc;
 fn synthetic_finding() -> VerifiedFinding {
@@ -26,17 +28,17 @@ fn synthetic_finding() -> VerifiedFinding {
     }
 }
 #[test]
-    fn sarif_uri_percent_encodes_unsafe_bytes() {
-        assert_eq!(
-            keyhog_core::report::sarif_uri::file_path_to_sarif_uri("/tmp/file with space.env"),
-            "file:///tmp/file%20with%20space.env"
-        );
-        assert_eq!(
-            keyhog_core::report::sarif_uri::file_path_to_sarif_uri("/tmp/réport.json"),
-            "file:///tmp/r%C3%A9port.json"
-        );
-        assert_eq!(
-            keyhog_core::report::sarif_uri::file_path_to_sarif_uri("/tmp/foo?bar#baz"),
-            "file:///tmp/foo%3Fbar%23baz"
-        );
-    }
+fn sarif_uri_percent_encodes_unsafe_bytes() {
+    assert_eq!(
+        keyhog_core::report::sarif_uri::file_path_to_sarif_uri("/tmp/file with space.env"),
+        "file:///tmp/file%20with%20space.env"
+    );
+    assert_eq!(
+        keyhog_core::report::sarif_uri::file_path_to_sarif_uri("/tmp/réport.json"),
+        "file:///tmp/r%C3%A9port.json"
+    );
+    assert_eq!(
+        keyhog_core::report::sarif_uri::file_path_to_sarif_uri("/tmp/foo?bar#baz"),
+        "file:///tmp/foo%3Fbar%23baz"
+    );
+}

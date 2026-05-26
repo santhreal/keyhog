@@ -61,7 +61,8 @@ fn github_fine_grained_invalid_checksum() {
 #[test]
 fn github_fine_grained_not_applicable() {
     assert_eq!(
-        GithubFineGrainedPatValidator.validate(concat!("gh", "p_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")),
+        GithubFineGrainedPatValidator
+            .validate(concat!("gh", "p_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")),
         ChecksumResult::NotApplicable
     );
 }
@@ -85,16 +86,24 @@ fn npm_valid_and_invalid() {
 #[test]
 fn slack_valid_and_invalid_variants() {
     assert_eq!(
-        SlackTokenValidator.validate(concat!("xox", "b-1234567890-1234567890-abcdefghijklmnopqrstuvwx")),
+        SlackTokenValidator.validate(concat!(
+            "xox",
+            "b-1234567890-1234567890-abcdefghijklmnopqrstuvwx"
+        )),
         ChecksumResult::Valid
     );
     assert_eq!(
-        SlackTokenValidator.validate(concat!("xox", "p-1234567890-1234567890-abcdefghijklmnopqrstuvwx")),
+        SlackTokenValidator.validate(concat!(
+            "xox",
+            "p-1234567890-1234567890-abcdefghijklmnopqrstuvwx"
+        )),
         ChecksumResult::Valid
     );
     assert_eq!(
-        SlackTokenValidator
-            .validate(concat!("xox", "p-1234567890-1234567890-1234567890-abcdef1234567890abcdef1234567890")),
+        SlackTokenValidator.validate(concat!(
+            "xox",
+            "p-1234567890-1234567890-1234567890-abcdef1234567890abcdef1234567890"
+        )),
         ChecksumResult::Valid
     );
     assert_eq!(
@@ -149,7 +158,10 @@ fn registry_routes_and_rejects() {
         validate_checksum("npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA000000"),
         ChecksumResult::Invalid
     );
-    assert_eq!(validate_checksum(concat!("xox", "b-bad")), ChecksumResult::Invalid);
+    assert_eq!(
+        validate_checksum(concat!("xox", "b-bad")),
+        ChecksumResult::Invalid
+    );
     assert_eq!(validate_checksum("pypi-!!!bad!!!"), ChecksumResult::Invalid);
     assert_eq!(
         validate_checksum(concat!("AK", "IAIOSFODNN7EXAMPLE")),

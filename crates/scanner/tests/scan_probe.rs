@@ -33,7 +33,9 @@ fn probe_splitio_and_aws() {
     let splitio = scan("split_io_api_key=YWJjZGVmZ2hpamtsbW5vcA==");
     eprintln!("splitio creds: {splitio:?}");
     assert!(
-        splitio.iter().any(|c| c.contains("YWJjZGVmZ2hpamtsbW5vcA=")),
+        splitio
+            .iter()
+            .any(|c| c.contains("YWJjZGVmZ2hpamtsbW5vcA=")),
         "splitio should surface base64 credential"
     );
 

@@ -274,7 +274,8 @@ mod tests {
 
     #[test]
     fn ordinary_comment_without_disclaimer_does_not_suppress() {
-        let line = r#"const KEY = concat!("AK", "IA1234567890ABCD12"); // production key, see vault"#;
+        let line =
+            r#"const KEY = concat!("AK", "IA1234567890ABCD12"); // production key, see vault"#;
         assert!(!has_disclaimer_comment(&line.to_ascii_lowercase()));
     }
 }

@@ -29,9 +29,9 @@ impl Decoder for UrlDecoder {
         // can miss when the `%` run abuts a quote or delimiter mid-chunk.
         for line in chunk.data.lines() {
             for (lhs, rhs) in line.split_once('=').into_iter().chain(
-                line.split_once(':').into_iter().filter(|(l, _)| {
-                    !l.contains("://") && !l.starts_with("http")
-                }),
+                line.split_once(':')
+                    .into_iter()
+                    .filter(|(l, _)| !l.contains("://") && !l.starts_with("http")),
             ) {
                 let _ = lhs;
                 let rhs = rhs.trim().trim_matches('"').trim_matches('\'');

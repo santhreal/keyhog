@@ -7,8 +7,13 @@ fn git_source_chunk_has_path_metadata() {
     use keyhog_sources::GitSource;
 
     let (_guard, repo) = crate::support::git::init_repo();
-    crate::support::git::commit(&repo, "tracked.env", "X=1
-", "init");
+    crate::support::git::commit(
+        &repo,
+        "tracked.env",
+        "X=1
+",
+        "init",
+    );
 
     let paths: Vec<String> = GitSource::new(repo)
         .with_max_commits(1)

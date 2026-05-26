@@ -12,8 +12,14 @@ fn git_history_on_non_repo_yields_error_chunk() {
     let source = GitHistorySource::new(dir.path().to_path_buf());
     assert_eq!(source.name(), "git-history");
     let first = source.chunks().next();
-    assert!(first.is_some(), "non-repo must yield at least one iterator item");
-    assert!(first.unwrap().is_err(), "non-repo git-history must surface SourceError");
+    assert!(
+        first.is_some(),
+        "non-repo must yield at least one iterator item"
+    );
+    assert!(
+        first.unwrap().is_err(),
+        "non-repo git-history must surface SourceError"
+    );
 }
 
 #[cfg(not(feature = "git"))]

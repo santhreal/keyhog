@@ -1,3 +1,4 @@
+pub mod a8_harness;
 pub mod filesystem;
 pub mod filesystem_binary_strings_fallback;
 pub mod git_diff_finds_feature_branch_secret;
@@ -7,4 +8,3 @@ pub mod git_source_finds_tracked_secret;
 pub mod node_modules_skipped_by_default;
 pub mod scan_skips_target_directory_by_default;
 pub mod windowed_large_file_emits_base_offset;
-pub mod a8_harness;

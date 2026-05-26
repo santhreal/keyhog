@@ -45,7 +45,10 @@ fn build_compile_state_collects_literals_for_detector() {
     }];
     let state = build_compile_state(&detectors).unwrap();
     assert!(!state.ac_literals.is_empty());
-    assert_eq!(build_ac_pattern_set(&state.ac_literals).unwrap().is_some(), true);
+    assert_eq!(
+        build_ac_pattern_set(&state.ac_literals).unwrap().is_some(),
+        true
+    );
 }
 
 #[test]
@@ -169,7 +172,8 @@ fn scanner_config_default_is_constructible() {
 
 #[test]
 fn looks_like_jwt_accepts_well_formed_token() {
-    let header = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(b"{\"alg\":\"HS256\",\"typ\":\"JWT\"}");
+    let header = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .encode(b"{\"alg\":\"HS256\",\"typ\":\"JWT\"}");
     let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(b"{\"sub\":\"123\"}");
     let token = format!("{header}.{payload}.signature");
     assert!(looks_like_jwt(&token));

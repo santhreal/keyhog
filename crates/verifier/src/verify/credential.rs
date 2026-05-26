@@ -404,4 +404,3 @@ pub(crate) fn verification_timeout(
         .map(Duration::from_millis)
         .unwrap_or(default_timeout)
 }
-

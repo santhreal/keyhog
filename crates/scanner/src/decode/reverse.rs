@@ -85,7 +85,10 @@ mod tests {
 
     #[test]
     fn round_trip_reverse() {
-        assert_eq!(reverse_str(concat!("AK", "IAIOSFODNN7EXAMPLE")), "ELPMAXE7NNDOFSOIAIKA");
+        assert_eq!(
+            reverse_str(concat!("AK", "IAIOSFODNN7EXAMPLE")),
+            "ELPMAXE7NNDOFSOIAIKA"
+        );
         assert_eq!(
             reverse_str(&reverse_str(concat!("AK", "IAIOSFODNN7EXAMPLE"))),
             concat!("AK", "IAIOSFODNN7EXAMPLE")

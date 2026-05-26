@@ -34,11 +34,7 @@ fn keys(results: &[Vec<keyhog_core::RawMatch>]) -> std::collections::BTreeSet<Ke
         .map(|m| {
             (
                 m.credential.as_ref().to_string(),
-                m.location
-                    .file_path
-                    .as_deref()
-                    .unwrap_or("")
-                    .to_string(),
+                m.location.file_path.as_deref().unwrap_or("").to_string(),
                 m.location.offset,
             )
         })
@@ -82,7 +78,8 @@ fn megakernel_literal_set_parity() {
     }
 
     assert_eq!(
-        literal, mega,
+        literal,
+        mega,
         "KH-GAP-001: megakernel/literal-set divergence — only_literal={:?} only_mega={:?}",
         literal.difference(&mega).collect::<Vec<_>>(),
         mega.difference(&literal).collect::<Vec<_>>()

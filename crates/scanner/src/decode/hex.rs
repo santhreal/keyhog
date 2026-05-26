@@ -14,11 +14,7 @@ impl Decoder for HexDecoder {
         // Floor lowered from 32→16 hex chars (8 decoded bytes) so
         // short API keys encode-through in `encoding_explosion_runner`.
         for hex_match in find_hex_strings(&chunk.data, 16) {
-            let cleaned: String = hex_match
-                .value
-                .chars()
-                .filter(|c| *c != '_')
-                .collect();
+            let cleaned: String = hex_match.value.chars().filter(|c| *c != '_').collect();
             if let Ok(decoded) = hex_decode(&cleaned) {
                 if let Ok(text) = String::from_utf8(decoded) {
                     // Splice over the *original* encoded blob (with `_` if present)
@@ -50,9 +46,7 @@ fn find_hex_strings(text: &str, min_length: usize) -> Vec<EncodedString> {
             && cleaned.len().is_multiple_of(2)
             && cleaned.chars().all(|ch| ch.is_ascii_hexdigit())
         {
-            results.push(EncodedString {
-                value: candidate,
-            });
+            results.push(EncodedString { value: candidate });
         }
     }
     results
@@ -93,11 +87,7 @@ mod tests {
                     _51_52_53_54_55_56_57_58_59_5a_61_62_63_64_65_66\"";
         let found = find_hex_strings(body, 32);
         assert_eq!(found.len(), 1);
-        let cleaned: String = found[0]
-            .value
-            .chars()
-            .filter(|c| *c != '_')
-            .collect();
+        let cleaned: String = found[0].value.chars().filter(|c| *c != '_').collect();
         assert!(cleaned.chars().all(|c| c.is_ascii_hexdigit()));
         assert_eq!(cleaned.len(), 64);
         let decoded = hex_decode(&found[0].value).expect("decodes");

@@ -3,7 +3,10 @@ use keyhog_scanner::types::{CompiledCompanion, ScannerPreprocessedText};
 
 #[test]
 fn companion_beyond_within_lines_returns_none() {
-    let text = (0..20).map(|i| format!("line{i}")).collect::<Vec<_>>().join("\n");
+    let text = (0..20)
+        .map(|i| format!("line{i}"))
+        .collect::<Vec<_>>()
+        .join("\n");
     let pre = ScannerPreprocessedText::passthrough(&text);
     let companion = CompiledCompanion {
         name: "far".into(),

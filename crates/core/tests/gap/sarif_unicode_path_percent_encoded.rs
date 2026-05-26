@@ -1,4 +1,6 @@
-use keyhog_core::{MatchLocation, Reporter, SarifReporter, Severity, VerificationResult, VerifiedFinding};
+use keyhog_core::{
+    MatchLocation, Reporter, SarifReporter, Severity, VerificationResult, VerifiedFinding,
+};
 use std::borrow::Cow;
 use std::collections::HashMap;
 
@@ -37,6 +39,12 @@ fn sarif_unicode_path_is_percent_encoded_in_uri() {
         r.finish().expect("finish");
     }
     let json: serde_json::Value = serde_json::from_slice(&buf).expect("json");
-    let uri = json["runs"][0]["results"][0]["locations"][0]["physicalLocation"]["artifactLocation"]["uri"].as_str().expect("uri");
-    assert!(uri.contains("%C3%A9"), "unicode path must be percent-encoded, got {uri}");
+    let uri = json["runs"][0]["results"][0]["locations"][0]["physicalLocation"]["artifactLocation"]
+        ["uri"]
+        .as_str()
+        .expect("uri");
+    assert!(
+        uri.contains("%C3%A9"),
+        "unicode path must be percent-encoded, got {uri}"
+    );
 }

@@ -7,6 +7,9 @@ fn ssrf_classifies_loopback_urls_as_private() {
         "http://2130706433/",
         "http://0x7f000001/",
     ] {
-        assert!(is_private_url(url), "loopback URL {url} must classify private");
+        assert!(
+            is_private_url(url),
+            "loopback URL {url} must classify private"
+        );
     }
 }

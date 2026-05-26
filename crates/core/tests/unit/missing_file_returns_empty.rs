@@ -2,7 +2,13 @@
 use keyhog_core::{MatchLocation, RuleSuppressor, Severity, VerificationResult, VerifiedFinding};
 use std::collections::HashMap;
 use std::sync::Arc;
-fn finding(detector: &str, service: &str, sev: Severity, path: &str, hash: &str) -> VerifiedFinding {
+fn finding(
+    detector: &str,
+    service: &str,
+    sev: Severity,
+    path: &str,
+    hash: &str,
+) -> VerifiedFinding {
     VerifiedFinding {
         detector_id: Arc::from(detector),
         detector_name: Arc::from(detector),
@@ -26,8 +32,8 @@ fn finding(detector: &str, service: &str, sev: Severity, path: &str, hash: &str)
     }
 }
 #[test]
-    fn missing_file_returns_empty() {
-        let path = std::path::PathBuf::from("/nonexistent/.keyhogignore.toml");
-        let s = RuleSuppressor::load(&path).expect("load");
-        assert!(s.is_empty());
-    }
+fn missing_file_returns_empty() {
+    let path = std::path::PathBuf::from("/nonexistent/.keyhogignore.toml");
+    let s = RuleSuppressor::load(&path).expect("load");
+    assert!(s.is_empty());
+}

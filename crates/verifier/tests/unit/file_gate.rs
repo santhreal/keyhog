@@ -66,7 +66,10 @@ fn interpolate_happy() {
 }
 #[test]
 fn interpolate_error() {
-    assert_eq!(resolve_field("literal", "secret", &HashMap::new()), "literal");
+    assert_eq!(
+        resolve_field("literal", "secret", &HashMap::new()),
+        "literal"
+    );
 }
 
 // ── crates/verifier/src/oob/mod.rs ────────────────────────────────────
@@ -79,7 +82,10 @@ fn oob_mod_happy() {
 // ── crates/verifier/src/oob/client.rs ───────────────────────────────────
 #[test]
 fn oob_client_error() {
-    assert!(!matches!(InteractionProtocol::Dns, InteractionProtocol::Http));
+    assert!(!matches!(
+        InteractionProtocol::Dns,
+        InteractionProtocol::Http
+    ));
 }
 
 // ── crates/verifier/src/oob/session.rs ──────────────────────────────────

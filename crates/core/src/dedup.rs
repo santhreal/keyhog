@@ -292,10 +292,7 @@ pub fn dedup_cross_detector(deduped: Vec<DedupedMatch>) -> Vec<DedupedMatch> {
 /// 27" + "additional at line 1 offset 80 (past EOF)" is a confusing
 /// duplicate, not two findings.
 fn is_same_location(a: &MatchLocation, b: &MatchLocation) -> bool {
-    a.source == b.source
-        && a.file_path == b.file_path
-        && a.line == b.line
-        && a.commit == b.commit
+    a.source == b.source && a.file_path == b.file_path && a.line == b.line && a.commit == b.commit
 }
 
 fn file_scope_identity(location: &MatchLocation) -> Arc<str> {
@@ -348,4 +345,3 @@ fn sha256_hash(s: &str) -> String {
     hasher.update(s.as_bytes());
     hex::encode(hasher.finalize())
 }
-
