@@ -8,14 +8,14 @@ pub fn print_banner<W: Write>(
     detector_count: usize,
 ) -> std::io::Result<()> {
     if ascii {
-        let banner = r#"
+        let banner = r"
     ⠀⣠⣶⣿⣿⣿⣿⣶⣄⠀
     ⠀⣿⣿⠉⠛⠛⠉⣿⣿⠀
     ⠀⢿⣿⣶⣿⣿⣶⣿⡿⠀
     ⠀⠀⠙⣿⣦⣴⣿⠋⠀⠀
     ⠀⠀⠀⢸⣿⣿⡇⠀⠀⠀
     ⠀⠀⠀⣼⣿⣿⣧⠀⠀⠀
-"#;
+";
         if colors {
             writeln!(w, "\x1b[38;5;208m{}\x1b[0m", banner)?;
         } else {

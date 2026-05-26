@@ -281,5 +281,3 @@ impl CompiledScanner {
         GpuPhase1Output::Hits(per_chunk_hits)
     }
 }
-
-}

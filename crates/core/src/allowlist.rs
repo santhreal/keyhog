@@ -343,6 +343,7 @@ fn segment_match(pattern: &str, text: &str) -> bool {
     segment_match_chars(pattern, text)
 }
 
+#[allow(clippy::similar_names)] // star_pi / star_ti name the same Kleene-star state in two coordinate systems
 fn segment_match_ascii(pattern: &[u8], text: &[u8]) -> bool {
     let mut pi = 0usize;
     let mut ti = 0usize;
@@ -380,6 +381,7 @@ fn segment_match_ascii(pattern: &[u8], text: &[u8]) -> bool {
     pi == pattern.len()
 }
 
+#[allow(clippy::similar_names)] // star_pi / star_ti name the same Kleene-star state in two coordinate systems
 fn segment_match_chars(pattern: &str, text: &str) -> bool {
     let pattern_chars: Vec<char> = pattern.chars().collect();
     let text_chars: Vec<char> = text.chars().collect();
