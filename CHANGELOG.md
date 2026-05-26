@@ -4,6 +4,8 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ## Unreleased
 
+## v0.5.17 — 2026-05-26 — SSRF redirect closure + --insecure honor + oob hygiene
+
 ### Security
 
 - **SSRF redirect bypass in DNS-pinned client closed.** The per-request
