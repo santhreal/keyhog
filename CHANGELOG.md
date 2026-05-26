@@ -4,6 +4,70 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ## Unreleased
 
+## v0.5.20 — 2026-05-26 — hot-pattern correctness + identifier filter extension + service-detector tightening
+
+### Critical correctness
+
+- **`SG.` hot-pattern fired on `MSG.length` JavaScript substrings.**
+  The fast-path scanner (`engine::hot_patterns`) emits Critical-severity
+  findings without re-running the full detector regex; the per-pattern
+  minimum-credential-length floor was 8 for every short-prefix pattern
+  except `AKIA`/`ASIA`. `PASTE_HERE_MSG.length` contains the substring
+  `SG.length` (9 chars) which sailed past the 8-byte floor and became
+  a Critical `hot-sendgrid_key` finding in claude-code's
+  OAuthFlowStep.tsx. Same class affected `ghp_` (8-byte `ghp_xxxx`
+  passes), `sk-proj-`, `xoxb-`, `xoxp-`, `sq0csp-`. Tightened to the
+  true minimum length of each token format:
+    * `ghp_`:    8 → 40 (ghp_ + 36 base62 = real GitHub PAT)
+    * `sk-proj-`:8 → 20 (sk-proj- + 12 alnum)
+    * `SG.`:     8 → 26 (SG. + 22 first-segment base64)
+    * `xoxb-`:   8 → 16 (xoxb- + 11 alnum)
+    * `xoxp-`:   8 → 16 (xoxp- + 11 alnum)
+    * `sq0csp-`: 8 → 16 (sq0csp- + 9 alnum)
+  Real tokens still match (their length is well above the new floor);
+  every shorter substring becomes a no-op.
+
+### Precision
+
+- **`looks_like_pure_identifier` widened.** The single-underscore /
+  kebab-case shape escaped the prior `>= 2 underscores` or `0 separators`
+  branches. Added `<= 1 separator (_ or -) + pure ASCII letters + no
+  digit + 8..=40 chars` arm. Covers `curlx_strdup` (curl/lib/netrc.c),
+  `auth_decoders` (curl/lib/http_aws_sigv4.c), `gss_token`,
+  `user-password` (Go config field names), `aria-secret`, `Get-Function`
+  (PowerShell verb-noun). All slipped through v0.5.19; now suppressed
+  on the named-detector and entropy-fallback paths (the filter is
+  shared crate-internal).
+
+- **blockcypher-api-token: dropped the global `token=<hex>` pattern.**
+  Was `token[=:\s\"']+([a-f0-9]{24,32})` — fired on every
+  `Authorization: token <hex>` line in any REST-API test fixture (41
+  Shopify API test SHAs in v0.5.19 dogfood). Replaced with host-scoped
+  pattern requiring `api.blockcypher.com` in the URL. **41 → 0 FPs.**
+
+- **oxylabs-credentials: dropped the global `user-X:X` pattern.**
+  Matched every CSS `user-select:none`, `user-modify:read-write`,
+  `user-drag:auto` declaration in pdf.js viewer.css / font-awesome /
+  store-brave-com bundle.css. Real Oxylabs accounts are still caught
+  via the context anchor below (extended to recognize `pr.oxylabs.io`
+  / `dc.oxylabs.io` hostnames). **20+ CSS FPs killed.**
+
+### Dogfood scope
+
+49-target sweep with all v0.5.20 fixes:
+
+| metric                  | v0.5.19 | v0.5.20 |
+|-------------------------|--------:|--------:|
+| blockcypher-api-token   |    41   |     0   |
+| oxylabs-credentials     |    21   |     0   |
+| generic-password        |    90   |    77   |
+| hot-sendgrid_key (FP)   |     2   |     0   |
+| total findings          |  1212   |  1125   |
+| zero-finding targets    |    15   |    15   |
+
+Real positives preserved: openssl 816 (test PEMs), PayloadsAllTheThings
+61 (security-training examples), wafrift-cf-deploy 78 (test fixtures).
+
 ## v0.5.19 — 2026-05-26 — entropy-fallback FP sweep (gogs 149 → 27, -82%; entropy total -79%)
 
 ### Precision

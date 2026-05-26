@@ -74,16 +74,32 @@ impl CompiledScanner {
                 // additional tightening needs its own per-pattern
                 // regression gate first.
                 //
+                // Per-pattern minimum credential length, in bytes.
+                // Each pattern's floor matches the actual minimum length
+                // a valid token of that shape can have — fast-path
+                // findings are emitted as Critical severity without
+                // re-running the full detector regex, so a too-loose
+                // floor turns every `SG.length` / `ghp_xxxx` / `xoxb-abc`
+                // substring into a hard finding.
+                //
                 // Index aligns with simdsieve_prefilter::HOT_PATTERNS:
-                //   0 ghp_      8
-                //   1 sk-proj-  8
-                //   2 AKIA     20  (tightened — see scanner_stress)
-                //   3 ASIA     20  (tightened — see scanner_stress)
-                //   4 SG.       8
-                //   5 xoxb-     8
-                //   6 xoxp-     8
-                //   7 sq0csp-   8
-                const PER_PATTERN_MIN_LEN: &[usize] = &[8, 8, 20, 20, 8, 8, 8, 8];
+                //   0 ghp_      40  (ghp_ + 36 base62 = real GitHub PAT)
+                //   1 sk-proj-  20  (sk-proj- + 12 — anthropic/openai newer keys)
+                //   2 AKIA      20  (AKIA + 16 — already tightened, scanner_stress)
+                //   3 ASIA      20  (ASIA + 16 — temporary AWS sts session creds)
+                //   4 SG.       26  (SG. + 22 first-segment base64 minimum;
+                //                    full SG.X22+.Y43+ is 69+ chars total)
+                //   5 xoxb-     16  (xoxb- + 11 alnum minimum slack bot token)
+                //   6 xoxp-     16  (xoxp- + 11 alnum minimum slack user token)
+                //   7 sq0csp-   16  (sq0csp- + 9 alnum minimum square secret)
+                //
+                // Dogfood: pre-tightening the v0.5.19 binary fired
+                // `SG.length` in claude-code's OAuthFlowStep.tsx
+                // (PASTE_HERE_MSG.length substring) as Critical
+                // sendgrid_key. SG. floor of 8 meant `SG.length` (9
+                // chars) cleared. 26-floor leaves the first-segment
+                // shape intact while killing the JS-property FP.
+                const PER_PATTERN_MIN_LEN: &[usize] = &[40, 20, 20, 20, 26, 16, 16, 16];
                 let min_len = PER_PATTERN_MIN_LEN.get(pattern_idx).copied().unwrap_or(8);
                 if credential.len() < min_len
                     || crate::pipeline::should_suppress_known_example_credential_with_source(
