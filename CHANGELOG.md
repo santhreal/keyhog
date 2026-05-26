@@ -4,6 +4,66 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ## Unreleased
 
+## v0.5.19 — 2026-05-26 — entropy-fallback FP sweep (gogs 149 → 27, -82%; entropy total -79%)
+
+### Precision
+
+- **CI workflow files**: entropy fallbacks no longer fire in
+  `.github/workflows/`, `.gitlab-ci.yml`, `.circleci/`, `azure-pipelines*`,
+  `bitbucket-pipelines*`, `.travis.yml`, `Jenkinsfile`. Real secrets in
+  CI configs live behind `${{ secrets.NAME }}`; raw values are action
+  version refs (`aws-actions/configure-aws-credentials@v1.0`), step
+  names (`Setup Node`), bash subshells (`$(echo ${SHA} | base64)`).
+  Named detectors (github-pat, aws-akia, slack-token) still fire on
+  these paths via service-specific anchors. 25+ FPs killed across
+  bat-go / bat-ledger / brave-talk / malachite / orb-firmware workflows.
+
+- **Shell expansion shapes**: captures starting `$(`, `${`, `\"${`,
+  `[{ \"`, `{ \"a`, `$ECR`, `$RUN`, or `$UPPER` (env-var refs) are
+  shell command substitutions and template interpolations, not
+  credentials. Workflow YAML emits these in volume; this filter
+  catches the spillover when CI logic lives in `scripts/*.sh` or
+  `Makefile` outside `.github/`.
+
+- **i18n / translation files**: entropy-* now skipped in `/locale/`,
+  `/locales/`, `/i18n/`, `/l10n/`, `/translations/`, `/lang/`,
+  `/langs/` directories, `.po` / `.pot` files (gettext), and
+  filename conventions like `locale_<region>.<ext>`,
+  `messages_<lang>.properties`, `strings_<lang>.xml`. Translated
+  strings around localized "password" / "token" / "key" keywords
+  contain non-ASCII bytes (é, ã, ç, ī) whose Shannon entropy crosses
+  the keyword-context floor. **103 → 0 entropy-password FPs in gogs
+  locale_*.ini alone**; whole-target drop 149 → 27 findings (-82%).
+
+- **Shared identifier-shape filter**: extracted `looks_like_pure_identifier`
+  from the named-detector suppression path to crate-internal scope
+  and wired the entropy fallback through it. Previously the
+  `_password = getParameter(…)` and German "Benutzername" cases were
+  suppressed via the named path but the entropy fallback emitted them
+  directly — same shape, different code path. Now both share one
+  identifier-shape contract (snake_case≥2_no-digit, CamelCase no-digit,
+  pure-alphabetic word 8..=32).
+
+### Dogfood scope (proof, not sample)
+
+23-target sweep; entropy-* family delta:
+
+| detector            | v0.5.18 | v0.5.19 | Δ    |
+|---------------------|--------:|--------:|-----:|
+| entropy-password    |   107   |    11   | -90% |
+| entropy-token       |    26   |    13   | -50% |
+| entropy-api-key     |    21   |     8   | -62% |
+| **entropy total**   |   154   |    32   | -79% |
+
+Per-target highlights: gogs 149 → 27 (-82%), brave-talk 5 → 0,
+orb-firmware 13 → 1 (-92%), malachite 10 → 1 (-90%), webgoat 5 → 2,
+bat-ledger 14 → 9, bat-go 29 → 21. Twelve targets in the 23-target
+sweep now report 0 findings (brave-talk, colly, constellation, diffvg,
+mpc-lib, nitriding-daemon, orb-relay-messages, qtrap, spill, _self —
+keyhog scanning itself — plus the existing two). openssl's 816 are
+test-PEM private-key findings (true positives in fixtures, not FPs);
+PayloadsAllTheThings's 61 are intentional security-training examples.
+
 ## v0.5.18 — 2026-05-26 — dogfood FP sweep (12-target deep scan, 160 → 83 findings, ~48% FP reduction)
 
 ### Precision
