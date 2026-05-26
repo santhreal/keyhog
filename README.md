@@ -393,6 +393,16 @@ keyhog completion zsh                        # shell completions (bash/zsh/fish/
 
 [Changelog](./CHANGELOG.md). [Open issues](https://github.com/santhsecurity/keyhog/issues).
 
+## Credits
+
+keyhog stands on prior secret-scanning work. Ideas borrowed from:
+
+- [trufflehog](https://github.com/trufflesecurity/trufflehog) — detector breadth + verification semantics
+- **betterleaks** — entropy/keyword fusion and false-positive suppression
+- **titus** — scanning ergonomics and severity calibration
+
+Thanks to these projects and their contributors.
+
 ## License
 
 MIT. Use commercially, embed, fork, sell a hosted version. The
