@@ -152,6 +152,250 @@ pub(crate) fn apply_proxy_config(
     }
 }
 
+/// Returns true iff the resolved proxy policy actually routes traffic
+/// through a proxy. Mirrors [`apply_proxy_config`]'s mode resolution:
+///   - explicit `Some(url)` or `KEYHOG_PROXY=<url>` → `true`
+///   - explicit `Some("off"|"none"|"")` or `KEYHOG_PROXY=off|none|""` → `false`
+///   - none of those set → checks reqwest's standard env-proxy vars
+///     (`HTTPS_PROXY`, `HTTP_PROXY`, `ALL_PROXY`). `NO_PROXY` alone does
+///     not make a proxy active. Empty strings count as unset, matching
+///     reqwest's own builder behavior.
+///
+/// Issue #2: pre-fix `proxy_in_use` was set from `KEYHOG_PROXY.is_some()`
+/// alone — `KEYHOG_PROXY=off` (documented "disable" sentinel) ALSO set
+/// the flag to true, which in turn disabled DNS pinning in
+/// `resolved_client_for_url()` even though no proxy was active. Operators
+/// using `KEYHOG_PROXY=off` for direct-connect verification lost DNS-
+/// rebinding protection.
+///
+/// Issue #3: pre-fix the check ignored reqwest's standard `HTTPS_PROXY`
+/// / `HTTP_PROXY` / `ALL_PROXY` env vars even though the shared client
+/// honored them via reqwest defaults. A user with `HTTPS_PROXY=http://burp:8080`
+/// got `proxy_in_use == false` → verifier rebuilt the pinned client
+/// from scratch and dropped the env-proxy. The pinned path then connected
+/// direct, bypassing the operator's interception/audit layer. Including
+/// the reqwest env vars closes that gap.
+pub fn proxy_is_active(explicit: Option<&str>) -> bool {
+    let resolved = if let Some(p) = explicit {
+        Some(p.to_string())
+    } else {
+        std::env::var("KEYHOG_PROXY").ok().filter(|s| !s.is_empty())
+    };
+    match resolved.as_deref() {
+        Some("off") | Some("none") | Some("") => return false,
+        Some(_) => return true,
+        None => {}
+    }
+    for var in [
+        "HTTPS_PROXY",
+        "https_proxy",
+        "HTTP_PROXY",
+        "http_proxy",
+        "ALL_PROXY",
+        "all_proxy",
+    ] {
+        if std::env::var(var)
+            .ok()
+            .is_some_and(|v| !v.trim().is_empty())
+        {
+            return true;
+        }
+    }
+    false
+}
+
+#[cfg(test)]
+mod proxy_is_active_tests {
+    //! Contract test for issues #2 + #3. The matrix here is the only
+    //! place that asserts the documented `KEYHOG_PROXY` semantics: `off`
+    //! / `none` / empty disable proxying entirely; explicit URLs and
+    //! the reqwest env-proxy vars enable it. Each row catches a real
+    //! regression class — pre-fix every "non-empty `KEYHOG_PROXY`"
+    //! disabled DNS pinning, and `HTTPS_PROXY=http://burp:8080` was
+    //! invisible to the rebuild path. Test holds a serialization
+    //! mutex so the env-var manipulations don't race other tests in
+    //! this crate.
+    use std::sync::Mutex;
+
+    static ENV_MUTEX: Mutex<()> = Mutex::new(());
+
+    fn with_env<F: FnOnce()>(set: &[(&str, Option<&str>)], f: F) {
+        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let saved: Vec<(String, Option<String>)> = set
+            .iter()
+            .map(|(k, _)| ((*k).into(), std::env::var(k).ok()))
+            .collect();
+        for (k, v) in set {
+            // SAFETY: ENV_MUTEX serializes mutation; restore on drop.
+            unsafe {
+                match v {
+                    Some(v) => std::env::set_var(k, v),
+                    None => std::env::remove_var(k),
+                }
+            }
+        }
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f));
+        for (k, v) in saved {
+            unsafe {
+                match v {
+                    Some(v) => std::env::set_var(&k, v),
+                    None => std::env::remove_var(&k),
+                }
+            }
+        }
+        if let Err(e) = result {
+            std::panic::resume_unwind(e);
+        }
+    }
+
+    #[test]
+    fn keyhog_proxy_off_is_not_active() {
+        with_env(
+            &[
+                ("KEYHOG_PROXY", Some("off")),
+                ("HTTPS_PROXY", None),
+                ("HTTP_PROXY", None),
+                ("ALL_PROXY", None),
+                ("https_proxy", None),
+                ("http_proxy", None),
+                ("all_proxy", None),
+            ],
+            || {
+                assert!(
+                    !super::proxy_is_active(None),
+                    "KEYHOG_PROXY=off must NOT count as an active proxy (issue #2)",
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn keyhog_proxy_none_and_empty_are_not_active() {
+        for value in ["none", ""] {
+            with_env(
+                &[
+                    ("KEYHOG_PROXY", Some(value)),
+                    ("HTTPS_PROXY", None),
+                    ("HTTP_PROXY", None),
+                    ("ALL_PROXY", None),
+                    ("https_proxy", None),
+                    ("http_proxy", None),
+                    ("all_proxy", None),
+                ],
+                || {
+                    assert!(
+                        !super::proxy_is_active(None),
+                        "KEYHOG_PROXY={value:?} must NOT count as active",
+                    );
+                },
+            );
+        }
+    }
+
+    #[test]
+    fn keyhog_proxy_url_is_active() {
+        with_env(
+            &[
+                ("KEYHOG_PROXY", Some("http://burp:8080")),
+                ("HTTPS_PROXY", None),
+                ("HTTP_PROXY", None),
+                ("ALL_PROXY", None),
+            ],
+            || {
+                assert!(
+                    super::proxy_is_active(None),
+                    "explicit KEYHOG_PROXY URL must be active",
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn explicit_off_overrides_env_proxy() {
+        with_env(
+            &[
+                ("KEYHOG_PROXY", None),
+                ("HTTPS_PROXY", Some("http://corp-burp:8080")),
+            ],
+            || {
+                assert!(
+                    !super::proxy_is_active(Some("off")),
+                    "explicit Some(\"off\") must take precedence over HTTPS_PROXY",
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn https_proxy_env_alone_is_active() {
+        with_env(
+            &[
+                ("KEYHOG_PROXY", None),
+                ("HTTPS_PROXY", Some("http://burp:8080")),
+                ("HTTP_PROXY", None),
+                ("ALL_PROXY", None),
+            ],
+            || {
+                assert!(
+                    super::proxy_is_active(None),
+                    "HTTPS_PROXY env var must count as active (issue #3) — pre-fix \
+                     the rebuild path dropped reqwest-managed env proxies and \
+                     verifier traffic bypassed the operator's interception",
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn http_proxy_and_all_proxy_env_vars_count() {
+        for var in ["HTTP_PROXY", "ALL_PROXY", "http_proxy", "all_proxy"] {
+            with_env(
+                &[
+                    ("KEYHOG_PROXY", None),
+                    ("HTTPS_PROXY", None),
+                    ("HTTP_PROXY", None),
+                    ("ALL_PROXY", None),
+                    ("https_proxy", None),
+                    ("http_proxy", None),
+                    ("all_proxy", None),
+                    (var, Some("http://corp:8080")),
+                ],
+                || {
+                    assert!(
+                        super::proxy_is_active(None),
+                        "{var} env var alone must mark proxy active",
+                    );
+                },
+            );
+        }
+    }
+
+    #[test]
+    fn no_proxy_alone_is_not_active() {
+        // NO_PROXY without any other proxy var means "no proxy in use at
+        // all" — it's a deny-list relative to nothing. Must NOT mark
+        // proxy active or rebuild-path drops DNS pinning gratuitously.
+        with_env(
+            &[
+                ("KEYHOG_PROXY", None),
+                ("HTTPS_PROXY", None),
+                ("HTTP_PROXY", None),
+                ("ALL_PROXY", None),
+                ("https_proxy", None),
+                ("http_proxy", None),
+                ("all_proxy", None),
+                ("NO_PROXY", Some("*.internal.corp")),
+            ],
+            || {
+                assert!(
+                    !super::proxy_is_active(None),
+                    "NO_PROXY alone is not a proxy — must NOT mark active",
+                );
+            },
+        );
+    }
+}
+
 /// Convert a [`DedupedMatch`] into a [`VerifiedFinding`] with the given verification result.
 pub(crate) fn into_finding(
     group: DedupedMatch,

@@ -124,6 +124,40 @@ pub fn is_entropy_appropriate(path: Option<&str>, allow_source_files: bool) -> b
         return true;
     }
 
+    // Last segment after `/` or `\` — index into bytes, no alloc.
+    let last_sep = bytes
+        .iter()
+        .rposition(|&b| b == b'/' || b == b'\\')
+        .map(|i| i + 1)
+        .unwrap_or(0);
+    let filename = &bytes[last_sep..];
+
+    // Package-manifest exclusion: Cargo.toml / package.json / pyproject.toml
+    // / Pipfile / Gemfile / pom.xml / build.gradle have [package.keywords]
+    // / "keywords" / "categories" array data that look like high-entropy
+    // strings but are package metadata, not credentials. Entropy fires on
+    // ["compression", "encryption", "history"] as `entropy-api-key`
+    // because the array literal happens to clear the keyword + entropy
+    // thresholds. Suppress on stem match, ASCII case-insensitive.
+    // #15 regression: envseal dogfood, ~10 FPs per Cargo.toml.
+    for stem in [
+        b"Cargo.toml".as_slice(),
+        b"package.json",
+        b"pyproject.toml",
+        b"composer.json",
+        b"Pipfile",
+        b"Gemfile",
+        b"pom.xml",
+        b"build.gradle",
+        b"build.gradle.kts",
+        b"build.sbt",
+        b"mix.exs",
+    ] {
+        if filename.eq_ignore_ascii_case(stem) {
+            return false;
+        }
+    }
+
     for extension in [
         b".env".as_slice(),
         b".yaml",
@@ -145,28 +179,81 @@ pub fn is_entropy_appropriate(path: Option<&str>, allow_source_files: bool) -> b
         }
     }
 
-    // Last segment after `/` or `\` — index into bytes, no alloc.
-    let last_sep = bytes
-        .iter()
-        .rposition(|&b| b == b'/' || b == b'\\')
-        .map(|i| i + 1)
-        .unwrap_or(0);
-    let filename = &bytes[last_sep..];
-    for name in [
-        b".env".as_slice(),
+    // Filename-prefix match: `.env-staging`, `.env.production` should count
+    // as a secret file. But `secrets.rs`, `credentials.py`, `apikeys.go`
+    // are source code ABOUT credentials, not credential files — the
+    // surrounding code uses `secret` / `credential` / `apikey` as
+    // identifiers, and the entropy fallback was misclassifying every
+    // identifier-shaped value on those lines as `entropy-api-key`.
+    //
+    // Split policy:
+    //   - `.env` keeps the prefix-match semantics (legitimate variants
+    //     exist: `.env-staging`, `.env.production`, `.envfile`).
+    //   - All other names require an EXACT filename match (no extension)
+    //     OR a prefix match followed by a known config extension
+    //     (`secrets.env`, `credentials.yaml`, `apikeys.toml`).
+    //
+    // #15 regression: envseal/cli/src/tui/secrets.rs fired entropy on
+    // every `Style`/`Paragraph::new` call because filename prefix
+    // "secrets" matched. After this filter, scanning a `secrets.rs`
+    // requires `--entropy-source-files`.
+    const PREFIX_MATCH_NAMES: &[&[u8]] = &[
+        b".env",
+        b".npmrc",
+        b".pypirc",
+        b".netrc",
+    ];
+    for name in PREFIX_MATCH_NAMES {
+        let starts_ci =
+            filename.len() >= name.len() && filename[..name.len()].eq_ignore_ascii_case(name);
+        if starts_ci {
+            return true;
+        }
+    }
+
+    const EXACT_OR_CONFIG_EXT_NAMES: &[&[u8]] = &[
         b"credentials",
         b"secrets",
         b"apikeys",
         b"docker-compose",
-        b".npmrc",
-        b".pypirc",
-        b".netrc",
-    ] {
-        let starts_ci =
-            filename.len() >= name.len() && filename[..name.len()].eq_ignore_ascii_case(name);
-        let eq_ci = filename.eq_ignore_ascii_case(name);
-        if starts_ci || eq_ci {
+    ];
+    const CONFIG_EXTENSIONS_AFTER_STEM: &[&[u8]] = &[
+        b".env",
+        b".yaml",
+        b".yml",
+        b".toml",
+        b".properties",
+        b".cfg",
+        b".conf",
+        b".ini",
+        b".config",
+        b".secrets",
+        b".pem",
+        b".key",
+        b".tfvars",
+        b".hcl",
+        b".enc",
+        b".vault",
+    ];
+    for name in EXACT_OR_CONFIG_EXT_NAMES {
+        if filename.eq_ignore_ascii_case(name) {
             return true;
+        }
+        // Prefix + config extension: `secrets.yaml`, `credentials.env`,
+        // `apikeys.toml`, `secrets-prod.toml`. The trailing extension
+        // gate keeps `secrets.rs`, `credentials.py`, etc. on the
+        // source-code path (skipped unless --entropy-source-files).
+        if filename.len() > name.len()
+            && filename[..name.len()].eq_ignore_ascii_case(name)
+        {
+            let tail = &filename[name.len()..];
+            for ext in CONFIG_EXTENSIONS_AFTER_STEM {
+                if tail.len() >= ext.len()
+                    && tail[tail.len() - ext.len()..].eq_ignore_ascii_case(ext)
+                {
+                    return true;
+                }
+            }
         }
     }
     false

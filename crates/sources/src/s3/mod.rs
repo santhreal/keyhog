@@ -168,7 +168,35 @@ fn collect_s3_chunks(
         .build()
         .map_err(|e| SourceError::Other(format!("failed to build S3 client: {e}")))?;
     let base_url = build_base_url(&bucket, endpoint)?;
-    let aws_auth = AwsSigV4Config::from_env(&base_url);
+    // Issue #4: scope SigV4 auto-signing to AWS-owned endpoints. When the
+    // user points `--s3-endpoint` at a non-AWS host (MinIO, Ceph, attacker-
+    // controlled), reading `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`
+    // and attaching a signed `Authorization` header to that request hands
+    // the developer's AWS identity material to a third party they never
+    // explicitly opted into. Default policy: refuse to forward ambient
+    // creds to custom endpoints. The operator opts in via
+    // `KEYHOG_S3_ALLOW_CREDENTIAL_FORWARD=1` (env-only, no CLI surface
+    // so it can't be set accidentally by shell history) when they've
+    // verified the endpoint and accept the credential-leak exposure.
+    let aws_auth = if endpoint.is_none() || endpoint_is_aws(endpoint.unwrap_or("")) {
+        AwsSigV4Config::from_env(&base_url)
+    } else if credential_forward_allowed() {
+        tracing::warn!(
+            endpoint = %endpoint.unwrap_or(""),
+            "KEYHOG_S3_ALLOW_CREDENTIAL_FORWARD=1: forwarding ambient AWS \
+             credentials to non-AWS endpoint. Verify you trust this host."
+        );
+        AwsSigV4Config::from_env(&base_url)
+    } else {
+        if std::env::var("AWS_ACCESS_KEY_ID").is_ok() {
+            tracing::warn!(
+                endpoint = %endpoint.unwrap_or(""),
+                "AWS credentials present but endpoint is non-AWS; refusing to \
+                 forward. Set KEYHOG_S3_ALLOW_CREDENTIAL_FORWARD=1 to opt in."
+            );
+        }
+        None
+    };
     let mut continuation_token = None::<String>;
     let mut chunks = Vec::new();
     let mut listed_objects = 0usize;
@@ -355,6 +383,44 @@ fn fetch_object_chunk(
             size_bytes: None,
         },
     }))
+}
+
+/// True iff `endpoint` resolves to an AWS-owned host (S3 regional or
+/// dual-stack). Issue #4: only AWS-owned endpoints should receive
+/// ambient `AWS_ACCESS_KEY_ID` SigV4-signed traffic by default.
+///
+/// AWS S3 hostnames take the shape `<bucket>.s3.<region>.amazonaws.com`,
+/// `<bucket>.s3.amazonaws.com`, or the dual-stack variant
+/// `<bucket>.s3.dualstack.<region>.amazonaws.com`. We treat any host
+/// whose registrable suffix is `amazonaws.com` as AWS-owned and
+/// everything else as third-party. Conservative on purpose: a typo'd
+/// host (`s3.amazonaws.co`) falls into the non-AWS bucket and the
+/// operator must opt in explicitly.
+pub fn endpoint_is_aws(endpoint: &str) -> bool {
+    let parsed = match reqwest::Url::parse(endpoint) {
+        Ok(u) => u,
+        Err(_) => return false,
+    };
+    let host = match parsed.host_str() {
+        Some(h) => h.to_ascii_lowercase(),
+        None => return false,
+    };
+    host == "amazonaws.com"
+        || host.ends_with(".amazonaws.com")
+        || host.ends_with(".amazonaws.com.cn")
+}
+
+/// True iff the operator has explicitly opted into forwarding ambient
+/// AWS credentials to non-AWS endpoints. `KEYHOG_S3_ALLOW_CREDENTIAL_FORWARD`
+/// is env-only (no CLI surface) so it can't be silently set by shell
+/// history or a stale `--flag` in someone's notes.
+pub fn credential_forward_allowed() -> bool {
+    matches!(
+        std::env::var("KEYHOG_S3_ALLOW_CREDENTIAL_FORWARD")
+            .ok()
+            .as_deref(),
+        Some("1") | Some("true") | Some("yes") | Some("on")
+    )
 }
 
 fn build_base_url(bucket: &str, endpoint: Option<&str>) -> Result<String, SourceError> {
