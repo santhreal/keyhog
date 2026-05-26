@@ -164,6 +164,4 @@ impl CompiledScanner {
         super::boundary::scan_chunk_boundaries(self, chunks, &mut results);
         results
     }
-
-    /// GPU coalesced scan via one Vyre literal-set dispatch.
 }
