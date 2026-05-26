@@ -40,6 +40,7 @@
 //! 8. POST `/deregister` on shutdown.
 
 mod client;
+mod decrypt;
 mod session;
 
 pub use client::{Interaction, InteractionProtocol, InteractshClient, InteractshError};
