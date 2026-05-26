@@ -16,6 +16,7 @@ mod floor_char_boundary_utf8;
 mod generic_detector_suppresses_identifier_shape;
 mod generic_password_does_not_suppress_alphanumeric_credential;
 mod generic_password_suppresses_german_dictionary_word;
+mod entropy_suppresses_ci_workflow_findings;
 mod generic_password_suppresses_java_getparameter;
 mod is_within_hex_context_hex_line_true;
 mod is_within_hex_context_neighbor;

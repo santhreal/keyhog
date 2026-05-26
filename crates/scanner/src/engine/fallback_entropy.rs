@@ -131,6 +131,58 @@ impl CompiledScanner {
                 continue;
             }
 
+            // Pure-identifier shape: CamelCase, snake_case_no_digit,
+            // or pure-alphabetic dictionary word. The named-detector
+            // path applies this through `should_suppress_named_detector_finding`,
+            // but the entropy fallback emits matches directly so it
+            // needs its own gate. Without this, WebGoat's German i18n
+            // .properties file fires `entropy-password` on
+            // `Benutzername` (12 letters, no digit — clearly a
+            // dictionary word, not a credential).
+            if crate::pipeline::looks_like_pure_identifier(&entropy_match.value) {
+                continue;
+            }
+
+            // CI workflow file context: entropy-* in `.github/workflows/`,
+            // `.gitlab-ci.yml`, `.circleci/config.yml`, `azure-pipelines.yml`
+            // is almost exclusively FPs. Real secrets in CI configs live
+            // behind `${{ secrets.NAME }}` references (or equivalent),
+            // never as raw values. What entropy-* catches in workflow
+            // files is action version refs (`aws-actions/configure-aws-
+            // credentials@v1.0`), step names (`Setup Node`,
+            // `Upload to Codecov`), bash subshells (`$(echo ${SHA} | ...)`),
+            // and GitHub context interpolations. Named detectors
+            // (github-pat, aws-akia, slack-token, …) still fire here
+            // because their keyword anchors give independent positive
+            // evidence — entropy-fallback's "lots of varied bytes" is
+            // not enough signal in this context. 25+ FPs across bat-go,
+            // bat-ledger, brave-talk, malachite, orb-firmware dogfood.
+            if entropy_path_is_ci_workflow_file(chunk.metadata.path.as_deref()) {
+                continue;
+            }
+
+            // Shell-expansion / template-literal shapes: values starting
+            // with `$(`, `${`, `$ECR`, `$RUN`, `$VAR`, `\"${`, or `[{ \"`
+            // are shell command substitutions, env-var refs, or JSON
+            // matrix bodies — not credentials. Workflow files generate
+            // these in volume.
+            if entropy_match.value.starts_with("$(")
+                || entropy_match.value.starts_with("${")
+                || entropy_match.value.starts_with("\\\"${")
+                || entropy_match.value.starts_with("[{ \"")
+                || entropy_match.value.starts_with("{ \"a")
+                || entropy_match.value.starts_with("$ECR")
+                || entropy_match.value.starts_with("$RUN")
+                || (entropy_match.value.starts_with('$')
+                    && entropy_match
+                        .value
+                        .chars()
+                        .nth(1)
+                        .is_some_and(|c| c.is_ascii_uppercase()))
+            {
+                continue;
+            }
+
             // Same standard-base64-arbitrary-bytes suppression the
             // generic-secret path applies. Reuses the [40, 300]
             // window + `+/` requirement; covers protobuf wire
@@ -224,6 +276,33 @@ fn entropy_path_looks_like_kebab_identifier(value: &str) -> bool {
         return false;
     }
     !bytes.iter().any(|&b| matches!(b as char, '+' | '/' | '='))
+}
+
+/// True when the file path looks like a CI/CD workflow definition.
+/// Covers GitHub Actions, GitLab CI, CircleCI, Azure Pipelines,
+/// Bitbucket Pipelines, Travis, Jenkins(file). Real secrets in these
+/// files live behind `${{ secrets.* }}` (or equivalent) references,
+/// not raw values — what entropy-* fires on is action versions, step
+/// names, bash subshell expressions, and template interpolations.
+/// Named detectors (github-pat, aws-akia, slack-token, …) continue
+/// to fire because they require service-specific keyword anchors;
+/// only the entropy fallback is suppressed here.
+#[cfg(feature = "entropy")]
+fn entropy_path_is_ci_workflow_file(path: Option<&str>) -> bool {
+    let Some(p) = path else {
+        return false;
+    };
+    p.contains("/.github/workflows/")
+        || p.contains("/.github/actions/")
+        || p.contains("/.gitlab-ci.yml")
+        || p.ends_with(".gitlab-ci.yml")
+        || p.contains("/.circleci/")
+        || p.contains("/azure-pipelines")
+        || p.contains("/bitbucket-pipelines")
+        || p.contains("/.travis.yml")
+        || p.ends_with(".travis.yml")
+        || p.contains("/Jenkinsfile")
+        || p.ends_with("/Jenkinsfile")
 }
 
 /// Values ending in a common file extension are filenames being

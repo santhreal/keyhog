@@ -12,4 +12,5 @@ pub use postprocess::{
     build_raw_match, should_suppress_known_example_credential,
     should_suppress_known_example_credential_with_source, should_suppress_named_detector_finding,
 };
+pub(crate) use postprocess::looks_like_pure_identifier;
 pub use scan_loop::{is_within_hex_context, match_entropy};

@@ -112,7 +112,7 @@ pub fn should_suppress_named_detector_finding(
 ///     by `(?i)password[=:]<word>` shapes in i18n .properties files.
 /// Real credentials almost always have a digit, hyphen, slash, or other
 /// non-letter byte — this filter never trips on those.
-fn looks_like_pure_identifier(credential: &str) -> bool {
+pub(crate) fn looks_like_pure_identifier(credential: &str) -> bool {
     let bytes = credential.as_bytes();
     if bytes.is_empty() {
         return false;

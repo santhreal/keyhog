@@ -11,6 +11,7 @@ pub use suppression::{
     should_suppress_known_example_credential, should_suppress_known_example_credential_with_source,
     should_suppress_named_detector_finding,
 };
+pub(crate) use suppression::looks_like_pure_identifier;
 
 use crate::types::*;
 use keyhog_core::{Chunk, MatchLocation, RawMatch};
