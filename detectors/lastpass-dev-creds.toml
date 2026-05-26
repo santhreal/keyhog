@@ -3,8 +3,8 @@ id = "lastpass-dev-creds"
 name = "LastPass 2022 Developer Credentials"
 service = "lastpass"
 severity = "critical"
-keywords = ["lastpass", "id", "key"]
+keywords = ["lastpass", "LastPass", "LASTPASS"]
 
 [[detector.patterns]]
-regex = '(?i)id[=:]\s*([0-9]{7,})'
+regex = '(?i)lastpass[\s_\-:.=]*\bid[=:]\s*([0-9]{7,})'
 group = 1
