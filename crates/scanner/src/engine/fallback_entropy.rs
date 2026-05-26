@@ -118,6 +118,19 @@ impl CompiledScanner {
                 continue;
             }
 
+            // Filename-shape suppression: values ending in a common
+            // file extension (`.jks`, `.yml`, `.yaml`, `.toml`,
+            // `.json`, `.properties`, `.pem`, `.key`, `.crt`, `.cer`,
+            // `.pfx`, `.p12`, `.keystore`, `.truststore`) are
+            // file/keystore references next to a `KEYSTORE_FILENAME:`
+            // / `TRUSTSTORE_FILENAME:` keyword anchor — NOT
+            // credentials. Bat-go's docker-compose.yml had 4+
+            // entropy-api-key FPs on `kafka.broker1.keystore.jks`
+            // /`kafka.broker1.truststore.jks`.
+            if entropy_path_looks_like_filename(&entropy_match.value) {
+                continue;
+            }
+
             // Same standard-base64-arbitrary-bytes suppression the
             // generic-secret path applies. Reuses the [40, 300]
             // window + `+/` requirement; covers protobuf wire
@@ -211,6 +224,39 @@ fn entropy_path_looks_like_kebab_identifier(value: &str) -> bool {
         return false;
     }
     !bytes.iter().any(|&b| matches!(b as char, '+' | '/' | '='))
+}
+
+/// Values ending in a common file extension are filenames being
+/// quoted in YAML/JSON config (kafka keystores, TLS certs, java
+/// .properties refs), not credentials. Suffix check is anchored
+/// (`ends_with`) so trailing-dot variants survive but versioned
+/// strings like `v1.0.2` (no recognizable extension) don't get
+/// suppressed.
+#[cfg(feature = "entropy")]
+fn entropy_path_looks_like_filename(value: &str) -> bool {
+    const FILENAME_SUFFIXES: &[&str] = &[
+        ".jks",
+        ".yml",
+        ".yaml",
+        ".toml",
+        ".json",
+        ".properties",
+        ".pem",
+        ".key",
+        ".crt",
+        ".cer",
+        ".pfx",
+        ".p12",
+        ".keystore",
+        ".truststore",
+        ".conf",
+        ".ini",
+        ".env",
+        ".lock",
+        ".log",
+    ];
+    let lower = value.to_ascii_lowercase();
+    FILENAME_SUFFIXES.iter().any(|s| lower.ends_with(s))
 }
 
 #[cfg(feature = "entropy")]

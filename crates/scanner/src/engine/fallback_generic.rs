@@ -171,6 +171,43 @@ impl CompiledScanner {
                 {
                     continue;
                 }
+                // C++ / Rust scope-resolution (`Class::Member`, `Etc::passwd`,
+                // `PrivateKey::<T>`) is the dominant generic-secret FP class
+                // in source-code scans. The first `:` slips because the bridge
+                // already consumed one `:`; the second stays in-value because
+                // `:` is in the alphabet to keep `nginx@sha256:<hex>` intact.
+                // Two filters together cover the family:
+                //   * value starts with `:` — jinja lexer enum-style captures
+                //     like `:open_paren:` from `case token::open_paren:` (32+
+                //     FPs in llama-cpp's jinja lexer).
+                //   * value contains `::` — Rust scope captures like
+                //     `PrivateKey::`, `Etc::passwd`, `K256Config::SigningKey`
+                //     (malachite's signing-ecdsa had 6+ findings of this
+                //     shape).  Real sha256 / git-blob digests never have
+                //     `::`, so this never weakens digest recall.
+                if value.starts_with(':') || value.contains("::") {
+                    continue;
+                }
+                // Type-name / fully-qualified-path shape: starts with an
+                // uppercase letter, has ≥ 2 uppercase letters, has lowercase
+                // letters, length 8..=40, pure ASCII alphanumeric. Catches
+                // Rust/Java/C# type names like `K256SigningKey`,
+                // `ShopifyToken`, `P256VerifyingKey` (the digit prevented
+                // the suppression-pipeline pure-CamelCase filter from
+                // firing, because that filter requires no-digit).  Real
+                // credentials follow this regular alternating-case structure
+                // only as a coincidence; a 14-char value with two upper-case
+                // clusters and a digit triplet is overwhelmingly a type
+                // identifier.
+                if value.len() >= 8
+                    && value.len() <= 40
+                    && value.as_bytes()[0].is_ascii_uppercase()
+                    && value.bytes().all(|b| b.is_ascii_alphanumeric())
+                    && value.bytes().filter(u8::is_ascii_uppercase).count() >= 2
+                    && value.bytes().any(|b| b.is_ascii_lowercase())
+                {
+                    continue;
+                }
                 // Allow dots ONLY in JWT-like patterns (exactly 2 dots separating
                 // base64 segments). Reject other dotted values (method chains, FQDNs).
                 //

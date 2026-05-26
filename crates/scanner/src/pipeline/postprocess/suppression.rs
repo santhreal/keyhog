@@ -100,12 +100,18 @@ pub fn should_suppress_named_detector_finding(
     )
 }
 
-/// True if `credential` is a C/Rust-identifier shape rather than a
-/// credential: only ASCII alphanumeric + underscore, no digit anywhere,
-/// and ≥ 2 underscores (a single underscore can appear in real keys,
-/// e.g. `sk_test_…`). Matches function names like
-/// `sk_SRP_user_pwd_new_null` that the generic-password regex captures
-/// from C source code.
+/// True if `credential` is an identifier / natural-language shape rather
+/// than a real credential. Covers three FP families seen in dogfood:
+///   * snake_case-no-digit (≥ 2 underscores) — C/Rust function names like
+///     `sk_SRP_user_pwd_new_null` (openssl) captured by `_pwd = ` regexes.
+///   * CamelCase-no-digit alphabetic — Java/JS method references like
+///     `getParameter` captured by `password = getParameter(...)` shapes
+///     (webgoat WebgoatContext.java, line 93).
+///   * Pure-alphabetic words ≥ 8 chars — natural-language strings like
+///     German "Benutzername" or English "yourpasswordisbasic" captured
+///     by `(?i)password[=:]<word>` shapes in i18n .properties files.
+/// Real credentials almost always have a digit, hyphen, slash, or other
+/// non-letter byte — this filter never trips on those.
 fn looks_like_pure_identifier(credential: &str) -> bool {
     let bytes = credential.as_bytes();
     if bytes.is_empty() {
@@ -113,18 +119,46 @@ fn looks_like_pure_identifier(credential: &str) -> bool {
     }
     let mut underscore_count = 0usize;
     let mut has_digit = false;
+    let mut has_upper = false;
+    let mut has_lower = false;
+    let mut alpha_count = 0usize;
     for &b in bytes {
         if b == b'_' {
             underscore_count += 1;
         } else if b.is_ascii_digit() {
             has_digit = true;
-        } else if !b.is_ascii_alphabetic() {
+        } else if b.is_ascii_uppercase() {
+            has_upper = true;
+            alpha_count += 1;
+        } else if b.is_ascii_lowercase() {
+            has_lower = true;
+            alpha_count += 1;
+        } else {
             // Any non-alnum-underscore byte means this is NOT a pure
             // identifier: real credentials have `-`, `!`, `=`, `/`, etc.
             return false;
         }
     }
-    !has_digit && underscore_count >= 2
+    if has_digit {
+        return false;
+    }
+    // snake_case_no_digit: ≥ 2 underscores
+    if underscore_count >= 2 {
+        return true;
+    }
+    // CamelCase or pure-alphabetic word: 8..=32 letters, no underscores,
+    // no digits. Bounded above 32 so a real long random alpha-only key
+    // (rare but possible) isn't suppressed — the dogfood FPs are all
+    // 12-20 char identifier / English-or-German words. Real credentials
+    // beyond 32 chars almost always include digits or symbols.
+    if underscore_count == 0
+        && alpha_count >= 8
+        && alpha_count <= 32
+        && (has_upper || has_lower)
+    {
+        return true;
+    }
+    false
 }
 
 fn should_suppress_inner(
