@@ -118,6 +118,7 @@ pub(crate) fn looks_like_pure_identifier(credential: &str) -> bool {
         return false;
     }
     let mut underscore_count = 0usize;
+    let mut hyphen_count = 0usize;
     let mut has_digit = false;
     let mut has_upper = false;
     let mut has_lower = false;
@@ -125,6 +126,8 @@ pub(crate) fn looks_like_pure_identifier(credential: &str) -> bool {
     for &b in bytes {
         if b == b'_' {
             underscore_count += 1;
+        } else if b == b'-' {
+            hyphen_count += 1;
         } else if b.is_ascii_digit() {
             has_digit = true;
         } else if b.is_ascii_uppercase() {
@@ -134,26 +137,34 @@ pub(crate) fn looks_like_pure_identifier(credential: &str) -> bool {
             has_lower = true;
             alpha_count += 1;
         } else {
-            // Any non-alnum-underscore byte means this is NOT a pure
-            // identifier: real credentials have `-`, `!`, `=`, `/`, etc.
+            // Any byte outside `[A-Za-z0-9_-]` means this is NOT a
+            // pure identifier: real credentials reach here through `!`,
+            // `=`, `/`, `+`, `:`, etc. in the value alphabet.
             return false;
         }
     }
     if has_digit {
         return false;
     }
-    // snake_case_no_digit: ≥ 2 underscores
+    // snake_case_no_digit: ≥ 2 underscores. Covers `sk_SRP_user_pwd_new_null`
+    // (openssl), `auth_decoders`, `gss_token`-style C/Rust identifiers.
     if underscore_count >= 2 {
         return true;
     }
-    // CamelCase or pure-alphabetic word: 8..=32 letters, no underscores,
-    // no digits. Bounded above 32 so a real long random alpha-only key
-    // (rare but possible) isn't suppressed — the dogfood FPs are all
-    // 12-20 char identifier / English-or-German words. Real credentials
-    // beyond 32 chars almost always include digits or symbols.
-    if underscore_count == 0
+    // CamelCase / pure-alphabetic / single-separator identifier: bytes
+    // are all `[A-Za-z_-]` (no digit), length 8..=40, ≤ 1 underscore,
+    // ≤ 1 hyphen, ≥ 8 alphabetic characters. Covers:
+    //   * `getParameter`, `Benutzername` — pure alphabetic CamelCase
+    //     or natural-language word
+    //   * `curlx_strdup`, `auth_decoders` — single-underscore C names
+    //   * `user-password`, `aria-secret`, `Get-Function` — kebab-case
+    //     / PowerShell verb-noun identifiers
+    // Bounded above 40 so a real long random alpha-only credential
+    // (rare) isn't suppressed. Real credentials have at least one
+    // digit / symbol — none of the FP shapes do.
+    if (underscore_count + hyphen_count) <= 1
         && alpha_count >= 8
-        && alpha_count <= 32
+        && alpha_count <= 40
         && (has_upper || has_lower)
     {
         return true;
