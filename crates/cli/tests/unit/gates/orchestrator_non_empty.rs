@@ -2,7 +2,7 @@
 
 #[test]
 fn orchestrator_non_empty() {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/orchestrator.rs");
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/orchestrator/mod.rs");
     let src = std::fs::read_to_string(path).expect("source readable");
     assert!(
         src.trim().len() >= 20,

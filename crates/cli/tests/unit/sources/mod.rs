@@ -1,0 +1,10 @@
+pub mod merge_scan_ignore_paths_includes_cli_exclude;
+pub mod merge_scan_ignore_paths_preserves_defaults;
+pub mod merge_scan_ignore_paths_no_default_excludes_omits_vendor;
+pub mod merge_scan_ignore_paths_merges_allowlist_and_exclude;
+pub mod merge_scan_ignore_paths_empty_when_no_excludes;
+pub mod exclude_paths_parses_from_cli;
+pub mod exclude_paths_multiple_values_from_cli;
+pub mod merge_scan_ignore_paths_appends_multiple_excludes;
+pub mod merge_scan_ignore_paths_order_defaults_then_allowlist_then_cli;
+pub mod sources_merge_preserves_allowlist_when_defaults_off;

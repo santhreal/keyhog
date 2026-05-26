@@ -1,5 +1,5 @@
 //! Migrated from `src/auto_fix.rs` inline tests.
-use keyhog_core::{env_var_name_for_service, fix_replacement_text};
+use keyhog_core::auto_fix::{env_var_name_for_service, fix_replacement_text};
 #[test]
     fn curated_services_map_correctly() {
         assert_eq!(env_var_name_for_service("aws"), "AWS_ACCESS_KEY_ID");

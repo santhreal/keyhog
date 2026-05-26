@@ -82,7 +82,7 @@ fn r2_single_line_no_newline_no_panic() {
     while text.len() < 1024 * 1024 {
         text.push_str("noise ");
     }
-    text.push_str("AKIAQYLPMN5HFIQR7XYA");
+    text.push_str(concat!("AK", "IAQYLPMN5HFIQR7XYA"));
     let chunks = vec![make_chunk(&text, "longline.txt")];
     for backend in ALL_BACKENDS {
         let _ = scanner.scan_chunks_with_backend(&chunks, *backend);

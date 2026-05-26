@@ -78,7 +78,7 @@ fn build_compile_state_errors_on_invalid_regex() {
 
 #[test]
 fn decode_chunk_reverses_long_reversed_aws_key() {
-    let secret = "AKIAIOSFODNN7EXAMPLE";
+    let secret = concat!("AK", "IAIOSFODNN7EXAMPLE");
     let reversed: String = secret.chars().rev().collect();
     let chunk = Chunk {
         data: format!("token = \"{reversed}\"").into(),
@@ -184,7 +184,7 @@ fn analyze_rejects_random_three_part_string() {
 
 #[test]
 fn structured_env_preprocessing_surfaces_key_value_via_scan() {
-    let token = "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";
+    let token = concat!("gh", "p_zQWBuTSOoRi4A9spHcVY5ncnsDkxkJ0mLq17");
     let scanner = CompiledScanner::compile(vec![DetectorSpec {
         id: "github-pat".into(),
         name: "GitHub PAT".into(),

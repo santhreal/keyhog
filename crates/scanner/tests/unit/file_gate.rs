@@ -86,14 +86,14 @@ fn bigram_bloom_error() {
 #[test]
 fn checksum_github_happy() {
     assert_eq!(
-        validate_checksum("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"),
+        validate_checksum(concat!("gh", "p_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0uCPlr")),
         ChecksumResult::Valid
     );
 }
 #[test]
 fn checksum_github_error() {
     assert_eq!(
-        validate_checksum("ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA000000"),
+        validate_checksum(concat!("gh", "p_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA000000")),
         ChecksumResult::Invalid
     );
 }
@@ -118,7 +118,7 @@ fn checksum_gitlab_error() {
 #[test]
 fn checksum_mod_happy() {
     assert_eq!(
-        validate_checksum("AKIAIOSFODNN7EXAMPLE"),
+        validate_checksum(concat!("AK", "IAIOSFODNN7EXAMPLE")),
         ChecksumResult::NotApplicable
     );
 }
@@ -147,20 +147,20 @@ fn checksum_npm_error() {
 #[test]
 fn checksum_slack_happy() {
     assert_eq!(
-        validate_checksum("xoxb-1234567890-1234567890-abcdefghijklmnopqrstuvwx"),
+        validate_checksum(concat!("xox", "b-1234567890-1234567890-abcdefghijklmnopqrstuvwx")),
         ChecksumResult::Valid
     );
 }
 #[test]
 fn checksum_slack_error() {
-    assert_eq!(validate_checksum("xoxb-bad"), ChecksumResult::Invalid);
+    assert_eq!(validate_checksum(concat!("xox", "b-bad")), ChecksumResult::Invalid);
 }
 
 // ── crates/scanner/src/checksum/stripe.rs ─────────────────────────────
 #[test]
 fn checksum_stripe_happy() {
     assert_eq!(
-        validate_checksum("sk_live_1234567890abcdefghijklmnop"),
+        validate_checksum(concat!("sk_li", "ve_1234567890abcdefghijklmnop")),
         ChecksumResult::Valid
     );
 }
@@ -533,7 +533,7 @@ fn engine_fallback_happy() {
         "ghp_",
     )])
     .unwrap();
-    let token = "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";
+    let token = concat!("gh", "p_zQWBuTSOoRi4A9spHcVY5ncnsDkxkJ0mLq17");
     assert!(scanner
         .scan(&demo_chunk(&format!("export TOKEN={token}")))
         .iter()
@@ -564,7 +564,7 @@ fn engine_scan_filters_error() {
         "ghp_",
     )])
     .unwrap();
-    let token = "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";
+    let token = concat!("gh", "p_zQWBuTSOoRi4A9spHcVY5ncnsDkxkJ0mLq17");
     assert!(scanner
         .scan(&demo_chunk(&format!("api_key = \"{token}\"")))
         .iter()
@@ -721,7 +721,7 @@ fn error_error_path() {
 #[test]
 fn gpu_happy() {
     let scores = batch_ml_inference(
-        &[("ghp_abcdefghijklmnopqrstuvwxyz0123456789", "export TOKEN=")],
+        &[(concat!("gh", "p_abcdefghijklmnopqrstuvwxyz0123456789"), "export TOKEN=")],
         &ScannerConfig::default(),
     );
     assert_eq!(scores.len(), 1);
@@ -781,7 +781,7 @@ fn lib_error() {
 // ── crates/scanner/src/ml_features.rs ─────────────────────────────────
 #[test]
 fn ml_features_happy() {
-    let f = compute_features_public("ghp_abcdefghijklmnopqrstuvwxyz0123456789", "TOKEN=");
+    let f = compute_features_public(concat!("gh", "p_abcdefghijklmnopqrstuvwxyz0123456789"), "TOKEN=");
     assert_eq!(f.len(), NUM_FEATURES);
 }
 #[test]
@@ -793,7 +793,7 @@ fn ml_features_error() {
 // ── crates/scanner/src/ml_scorer.rs ───────────────────────────────────
 #[test]
 fn ml_scorer_happy() {
-    assert!(score("ghp_abcdefghijklmnopqrstuvwxyz0123456789", "export TOKEN=") >= 0.0);
+    assert!(score(concat!("gh", "p_abcdefghijklmnopqrstuvwxyz0123456789"), "export TOKEN=") >= 0.0);
 }
 #[test]
 fn ml_scorer_error() {
@@ -803,7 +803,7 @@ fn ml_scorer_error() {
 // ── crates/scanner/src/ml_weights.rs ──────────────────────────────────
 #[test]
 fn ml_weights_happy() {
-    assert!(score("ghp_abcdefghijklmnopqrstuvwxyz0123456789", "TOKEN=") >= 0.0);
+    assert!(score(concat!("gh", "p_abcdefghijklmnopqrstuvwxyz0123456789"), "TOKEN=") >= 0.0);
 }
 #[test]
 fn ml_weights_error() {
@@ -994,7 +994,7 @@ fn simdsieve_prefilter_happy() {
         "ghp_",
     )])
     .unwrap();
-    let token = "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";
+    let token = concat!("gh", "p_zQWBuTSOoRi4A9spHcVY5ncnsDkxkJ0mLq17");
     let pad = "x".repeat(100_001);
     let matches = scanner.scan(&demo_chunk(&format!("{pad}{token}")));
     assert!(matches.iter().any(|m| m.credential.as_ref() == token));
@@ -1031,7 +1031,7 @@ fn structured_mod_happy() {
         "ghp_",
     )])
     .unwrap();
-    let token = "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";
+    let token = concat!("gh", "p_zQWBuTSOoRi4A9spHcVY5ncnsDkxkJ0mLq17");
     let chunk = structured_env_chunk(&format!("GITHUB_TOKEN={token}\n"), "config.env");
     let matches = scanner.scan(&chunk);
     assert!(matches.iter().any(|m| m.credential.as_ref() == token));

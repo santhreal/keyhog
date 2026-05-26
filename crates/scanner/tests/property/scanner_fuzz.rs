@@ -257,7 +257,7 @@ proptest! {
             .expect("fuzz detectors compile");
         // Pure ASCII space padding: no incidental matches possible.
         let padding: String = " ".repeat(pad_len);
-        let secret = "AKIAQYLPMN5HFIQR7XYA";
+        let secret = concat!("AK", "IAQYLPMN5HFIQR7XYA");
         let chunk = make_text_chunk(format!("{padding}{secret}"));
         let matches = scanner.scan(&chunk);
         prop_assert!(

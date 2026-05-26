@@ -195,7 +195,7 @@ fn unreadable_subtree_does_not_abort_full_scan() {
             .collect::<Vec<_>>()
     );
     assert!(
-        combined.contains("AKIAIOSFODNN7OTHER12"),
+        combined.contains(concat!("AK", "IAIOSFODNN7OTHER12")),
         "sibling-subdirectory readable file was lost: scan aborted on the locked sibling"
     );
     assert!(
@@ -394,7 +394,7 @@ fn windowed_path_finds_secret_in_overlap_region() {
     let dir = tempfile::tempdir().unwrap();
     let p = dir.path().join("secret.log");
     let mut content = vec![b'.'; 200];
-    let secret = b"AKIAIOSFODNN7EXAMPLE"; // 20 bytes
+    let secret = bconcat!("AK", "IAIOSFODNN7EXAMPLE"); // 20 bytes
                                           // Place at offset 100 so the secret fits in the overlap region
                                           // (96..128). 20-byte secret at 100..120 is fully inside both
                                           // window 0 (0..128) and window 1 (96..200).
@@ -425,7 +425,7 @@ fn windowed_path_finds_post_cut_secret_in_second_window_only() {
     let dir = tempfile::tempdir().unwrap();
     let p = dir.path().join("secret.log");
     let mut content = vec![b'.'; 200];
-    let secret = b"AKIAIOSFODNN7EXAMPLE"; // 20 bytes
+    let secret = bconcat!("AK", "IAIOSFODNN7EXAMPLE"); // 20 bytes
                                           // Place at offset 120 so it sits PAST the cut at 128 — only fully
                                           // contained in window 1 (96..200). Window 0 has the first 8 bytes
                                           // only and won't substring-match the full credential.

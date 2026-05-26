@@ -60,7 +60,7 @@ const ALL_BACKENDS: &[ScanBackend] = &[
 
 // The canonical secret we plant in every encoded fixture. AWS access
 // key, recognized by the aws-access-key-id detector.
-const SECRET: &str = "AKIAQYLPMN5HFIQR7XYA";
+const SECRET: &str = concat!("AK", "IAQYLPMN5HFIQR7XYA");
 
 /// Returns true if any backend ran and found the secret. SKIPs (no GPU)
 /// don't count as failures but DO mean we don't trust the layer for

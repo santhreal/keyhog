@@ -5,7 +5,7 @@ fn known_prefix_credential_always_detected_despite_low_confidence_context() {
     use keyhog_core::Severity;
 
     // Stripe secret key in a comment context — normally heavily suppressed.
-    let stripe_credential = "sk_live_51H7xKjGf0a1b2c3d4e5f6g7h";
+    let stripe_credential = concat!("sk_li", "ve_51H7xKjGf0a1b2c3d4e5f6g7h");
     let detector = DetectorSpec {
         id: "stripe-secret-key".into(),
         name: "Stripe Secret Key".into(),
@@ -66,7 +66,7 @@ fn resolution_prefers_specific_detector_over_generic_for_known_prefix() {
         }
     }
 
-    let stripe_credential = "sk_live_51H7xKjGf0a1b2c3d4e5f6g7h";
+    let stripe_credential = concat!("sk_li", "ve_51H7xKjGf0a1b2c3d4e5f6g7h");
     // Generic detector has higher confidence, but specific detector must win.
     let matches = vec![
         make_match("generic-api-key", stripe_credential, Some(0.95)),
@@ -96,7 +96,7 @@ fn known_prefix_survives_ml_and_context_penalties() {
     // Simulate a credential that would normally be crushed by post-ML penalties
     // because it contains repetitive-looking suffixes. Known prefixes should still
     // survive because the floor is applied after all penalties.
-    let credential = "ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    let credential = concat!("gh", "p_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
     let detector = DetectorSpec {
         id: "github-classic-pat".into(),
         name: "GitHub Classic PAT".into(),

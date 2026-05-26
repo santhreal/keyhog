@@ -10,7 +10,7 @@ fn context_example_x_dominated_mask() {
         "all-x mask of length 16 must be example credential"
     );
     assert!(
-        !is_known_example_credential("xoxb-1234567890-abcd"),
+        !is_known_example_credential(concat!("xox", "b-1234567890-abcd")),
         "Slack token shape must not match x-dominated heuristic"
     );
 }

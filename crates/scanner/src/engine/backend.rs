@@ -1,5 +1,7 @@
 use super::*;
+use crate::context;
 use crate::hw_probe::ScanBackend;
+use crate::unicode_hardening;
 use keyhog_core::Chunk;
 
 pub(crate) struct PreparedChunk<'a> {

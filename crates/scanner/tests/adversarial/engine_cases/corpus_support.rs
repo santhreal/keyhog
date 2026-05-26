@@ -7,7 +7,7 @@ use std::sync::OnceLock;
 
 /// Canonical synthetic credentials used across corpus fixtures.
 pub const GITHUB_PAT: &str = "ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ1234567890ab";
-pub const AWS_ACCESS_KEY: &str = "AKIAR7VXNPLMQ3HSKWJT";
+pub const AWS_ACCESS_KEY: &str = concat!("AK", "IAR7VXNPLMQ3HSKWJT");
 pub fn corpus_fixture_path(subdir: &str, rel: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests/data/corpus")

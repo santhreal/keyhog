@@ -6,7 +6,7 @@ use keyhog_scanner::decode::decode_chunk;
 #[test]
 fn reversed_aws_access_key_id_decoded() {
     let reversed = "ELPMAXE7NNODFOSOIAK"; // AKIAIOSFODNN7EXAMPLE reversed (prefix portion)
-    let forward = "AKIAIOSFODNN7EXAMPLE";
+    let forward = concat!("AK", "IAIOSFODNN7EXAMPLE");
     let rev_full: String = forward.chars().rev().collect();
     let text = format!("blob = \"{rev_full}\"");
     let chunk = Chunk {

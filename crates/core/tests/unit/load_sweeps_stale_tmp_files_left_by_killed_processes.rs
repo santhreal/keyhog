@@ -1,6 +1,7 @@
 //! Migrated from `src/merkle_index.rs` inline tests.
-use keyhog_core::merkle_index::{compute_spec_hash, MerkleIndex};
-use keyhog_core::spec::{CompanionSpec, DetectorSpec, PatternSpec, Severity};
+use keyhog_core::merkle_index::MerkleIndex;
+use keyhog_core::compute_spec_hash;
+use keyhog_core::{CompanionSpec, DetectorSpec, PatternSpec, Severity};
 use std::path::{Path, PathBuf};
 
 #[cfg(unix)]

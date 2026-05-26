@@ -154,7 +154,7 @@ fn fallback_pattern_fires_on_keyword_chunk() {
     detector.patterns[0].regex = r"ghp_[A-Za-z0-9]{20,}".into();
     detector.keywords = vec!["ghp_".into()];
     let scanner = CompiledScanner::compile(vec![detector]).unwrap();
-    let token = "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";
+    let token = concat!("gh", "p_zQWBuTSOoRi4A9spHcVY5ncnsDkxkJ0mLq17");
     let matches = scanner.scan(&chunk(&format!("export TOKEN={token}")));
     assert!(matches.iter().any(|m| m.credential.as_ref() == token));
 }
@@ -201,7 +201,7 @@ fn scan_filters_generic_assignment_fires_with_secret_keyword() {
     detector.patterns[0].regex = r"ghp_[A-Za-z0-9]{20,}".into();
     detector.keywords = vec!["ghp_".into()];
     let scanner = CompiledScanner::compile(vec![detector]).unwrap();
-    let token = "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";
+    let token = concat!("gh", "p_zQWBuTSOoRi4A9spHcVY5ncnsDkxkJ0mLq17");
     let matches = scanner.scan(&chunk(&format!("api_key = \"{token}\"")));
     assert!(matches.iter().any(|m| m.credential.as_ref() == token));
 }

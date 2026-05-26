@@ -1,4 +1,5 @@
 use crate::context;
+use super::shape_gates::RFC7519_EXAMPLE_JWT_PREFIX;
 use super::shape_gates::*;
 
 fn upper_contains_token(upper: &str, token: &str) -> bool {
@@ -688,7 +689,3 @@ fn try_decode_b64_to_utf8(credential: &str) -> Option<String> {
     }
     None
 }
-
-/// Prefix of the RFC 7519 specimen JWT — the example token from the
-/// JWT spec, copy-pasted into thousands of "how to use JWTs" blog
-/// posts and docs. NOT a real secret.

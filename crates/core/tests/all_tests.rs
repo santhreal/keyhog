@@ -4,3 +4,4 @@ pub mod gap;
 pub mod property;
 pub mod regression;
 pub mod unit;
+pub mod integration;

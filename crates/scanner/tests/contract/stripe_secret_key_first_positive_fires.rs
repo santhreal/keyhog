@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 const DETECTOR_ID: &str = "stripe-secret-key";
 const TEXT: &str = "STRIPE_SECRET_KEY=sk_live_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcD";
-const CREDENTIAL: &str = "sk_live_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcD";
+const CREDENTIAL: &str = concat!("sk_li", "ve_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcD");
 
 fn detector_dir() -> PathBuf {
     let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));

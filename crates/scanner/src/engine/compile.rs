@@ -156,15 +156,4 @@ impl CompiledScanner {
         self.config = config;
         self
     }
-
-    /// Lazily compile the GPU literal-set on first call. Returns `None`
-    /// when no compatible adapter was detected at probe time.
-    ///
-    /// Persists the compiled matcher to `~/.cache/keyhog/programs/<hash>.bin`
-    /// using the new `GpuLiteralSet::to_bytes/from_bytes` (vyre 0.6+).
-    /// On a cache hit the matcher is loaded from disk and the GPU
-    /// recompile is skipped entirely — biggest cold-start win on
-    /// `keyhog scan` / `scan-system` runs that re-launch repeatedly.
-    /// Cache misses (no file, version-mismatch, corrupt blob) silently
-    /// recompile and re-cache.
 }

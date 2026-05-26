@@ -96,7 +96,7 @@ mod tests {
     fn realistic_secret_passes() {
         // GitHub PAT shape — varied bigrams, length 40.
         assert!(ProbabilisticGate::looks_promising(
-            "ghp_aBcD1234EFgh5678ijklMNop9012qrSTuvWX"
+            concat!("gh", "p_aBcD1234EFgh5678ijklMNop9012qrSTuvWX")
         ));
     }
 

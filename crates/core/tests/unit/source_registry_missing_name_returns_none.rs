@@ -16,7 +16,7 @@ struct MockVerifier;
 #[async_trait::async_trait]
 impl CustomVerifier for MockVerifier {
     fn name(&self) -> &str { "mock-v" }
-    async fn verify(&self, _m: &DedupedMatch) -> (VerificationResult, HashMap<String, String>) {
+async fn verify(&self, _m: &DedupedMatch) -> (VerificationResult, HashMap<String, String>) {
         (VerificationResult::Skipped, HashMap::new())
     }
 }

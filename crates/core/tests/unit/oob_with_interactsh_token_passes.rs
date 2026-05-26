@@ -1,5 +1,5 @@
 //! Migrated from `src/spec/validate.rs` inline tests.
-use keyhog_core::spec::load_detectors_from_str;
+use keyhog_core::load_detectors_from_str;
 use keyhog_core::{validate_detector, AuthSpec, QualityIssue};
 
 fn errors_for(toml_src: &str) -> Vec<String> {

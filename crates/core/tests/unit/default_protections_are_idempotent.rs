@@ -1,5 +1,5 @@
 //! Migrated from `src/hardening.rs` inline tests.
-use keyhog_core::{apply_default_protections, HardeningReport};
+use keyhog_core::hardening::{apply_default_protections, HardeningReport};
 #[test]
     fn default_protections_are_idempotent() {
         // Calling twice in quick succession must not error or change

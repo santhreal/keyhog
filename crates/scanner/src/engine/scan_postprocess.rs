@@ -1,3 +1,4 @@
+use super::CompiledScanner;
 use crate::compiler::*;
 use crate::context;
 use crate::pipeline::*;
@@ -155,7 +156,7 @@ impl CompiledScanner {
                 let candidates = self.fragment_cache.record_and_reassemble(fragment);
                 for candidate in candidates {
                     // `candidate` is `Zeroizing<String>` (kimi-wave1 fix).
-                    let entropy = crate::pipeline::match_entropy(candidate.as_bytes());
+                    let entropy = crate::pipeline::match_entropy(candidate.as_str().as_bytes());
                     if entropy < 3.0 || candidate.len() < 16 {
                         continue;
                     }
@@ -225,7 +226,7 @@ impl CompiledScanner {
         has_assignment && has_quote
     }
 
-    fn expand_triggered_patterns(&self, triggered_patterns: &[u64]) -> Vec<u64> {
+    pub(crate) fn expand_triggered_patterns(&self, triggered_patterns: &[u64]) -> Vec<u64> {
         // Propagate ONLY via `same_prefix_patterns`: when AC matches a
         // literal prefix shared by patterns X and Y, both X and Y need
         // to be evaluated since they're different regexes that happen
@@ -280,7 +281,7 @@ impl CompiledScanner {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn extract_confirmed_patterns(
+    pub(crate) fn extract_confirmed_patterns(
         &self,
         confirmed_patterns: &[usize],
         preprocessed: &ScannerPreprocessedText,
@@ -322,7 +323,7 @@ impl CompiledScanner {
     }
 
     #[cfg(feature = "ml")]
-    fn apply_ml_batch_scores(&self, scan_state: &mut ScanState) {
+    pub(crate) fn apply_ml_batch_scores(&self, scan_state: &mut ScanState) {
         if scan_state.ml_pending.is_empty() {
             return;
         }

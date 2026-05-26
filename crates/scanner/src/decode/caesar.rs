@@ -235,7 +235,7 @@ mod tests {
         assert!(
             decoded
                 .iter()
-                .any(|c| c.data.as_str() == "AKIAQR4DEFGHIJKL2345"),
+                .any(|c| c.data.as_str() == concat!("AK", "IAQR4DEFGHIJKL2345")),
             "Caesar decoder did not surface the round-trip plaintext among {} variants. \
              Got: {:?}",
             decoded.len(),

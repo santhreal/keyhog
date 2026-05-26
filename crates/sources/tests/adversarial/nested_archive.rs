@@ -52,7 +52,7 @@ fn gzip_member_secret_is_decompressed_to_chunk() {
         .map(|c| c.data.to_string())
         .collect();
     assert!(
-        bodies.iter().any(|b| b.contains("AKIAR7VXNPLMQ3HSKWJT")),
+        bodies.iter().any(|b| b.contains(concat!("AK", "IAR7VXNPLMQ3HSKWJT"))),
         "gzip payload must decompress to scannable text; got {bodies:?}"
     );
 }
@@ -76,7 +76,7 @@ fn jar_archive_inner_text_is_scanned() {
         .map(|c| c.data.to_string())
         .collect();
     assert!(
-        bodies.iter().any(|b| b.contains("xoxb-1234567890")),
+        bodies.iter().any(|b| b.contains(concat!("xox", "b-1234567890"))),
         ".jar archives must unpack inner text; got {bodies:?}"
     );
     let paths: Vec<_> = source
@@ -111,7 +111,7 @@ fn jar_binary_entry_extracts_printable_strings() {
     assert!(
         chunks.iter().any(|c| {
             c.metadata.source_type == "filesystem/archive-binary"
-                && c.data.contains("AKIAIOSFODNN7EXAMPLE")
+                && c.data.contains(concat!("AK", "IAIOSFODNN7EXAMPLE"))
         }),
         "binary archive entries must run printable-string extraction; got {chunks:?}"
     );

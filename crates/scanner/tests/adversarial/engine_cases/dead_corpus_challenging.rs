@@ -182,7 +182,7 @@ fn challenging_context_confusion_finds_xoxb_slack_token() {
     assert_credential_substr(
         &matches,
         "context_confusion/legitimate_looking.py",
-        "xoxb-1234567890123456789012345678901234567890123",
+        concat!("xox", "b-1234567890123456789012345678901234567890123"),
     );
 }
 

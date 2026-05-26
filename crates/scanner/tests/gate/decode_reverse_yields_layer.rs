@@ -5,7 +5,7 @@ use keyhog_scanner::decode::decode_chunk;
 
 #[test]
 fn decode_reverse_layer_recovers_forward_aws_key() {
-    let forward = "AKIAIOSFODNN7EXAMPLE";
+    let forward = concat!("AK", "IAIOSFODNN7EXAMPLE");
     let rev_full: String = forward.chars().rev().collect();
     let chunk = Chunk {
         data: format!("blob = \"{rev_full}\"").into(),

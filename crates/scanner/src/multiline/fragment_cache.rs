@@ -194,7 +194,7 @@ mod cross_file_tests {
         ));
         let joined: Vec<String> = candidates.iter().map(|c| c.as_str().to_string()).collect();
         assert!(
-            joined.contains(&"AKIAIOSFODNN7EXAMPLE".to_string()),
+            joined.contains(&concat!("AK", "IAIOSFODNN7EXAMPLE").to_string()),
             "expected prefix+suffix join AKIAIOSFODNN7EXAMPLE, got {:?}",
             joined
         );

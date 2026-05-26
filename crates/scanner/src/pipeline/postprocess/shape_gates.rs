@@ -1,4 +1,4 @@
-const RFC7519_EXAMPLE_JWT_PREFIX: &str =
+pub(crate) const RFC7519_EXAMPLE_JWT_PREFIX: &str =
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkw";
 
 /// True if `credential` matches the XXXXX-XXXXX-XXXXX-XXXXX-XXXXX
@@ -147,7 +147,7 @@ fn looks_like_base64_blob_with_padding(s: &str) -> bool {
 /// their bodies are standard base64. The 86/88-char Azure storage
 /// key sits OUTSIDE the [40, 80] window — recall preserved.
 #[allow(dead_code)]
-fn looks_like_standard_base64_blob(credential: &str) -> bool {
+pub(crate) fn looks_like_standard_base64_blob(credential: &str) -> bool {
     if !(40..=80).contains(&credential.len()) {
         return false;
     }
@@ -217,7 +217,7 @@ pub(crate) fn is_uuid_v4_shape(s: &str) -> bool {
 }
 
 /// Return true if the credential contains three or more consecutive identical characters.
-fn has_three_or_more_consecutive_identical(s: &str) -> bool {
+pub(crate) fn has_three_or_more_consecutive_identical(s: &str) -> bool {
     let bytes = s.as_bytes();
     let mut i = 0;
     while i < bytes.len() {
@@ -234,7 +234,7 @@ fn has_three_or_more_consecutive_identical(s: &str) -> bool {
     false
 }
 
-fn known_prefix_body(credential: &str) -> Option<&str> {
+pub(crate) fn known_prefix_body(credential: &str) -> Option<&str> {
     // Single source of truth: crate::confidence::KNOWN_PREFIXES.
     // Pre-2026-05-24 this function carried a hand-curated 27-entry list
     // that drifted from the canonical 38-entry KNOWN_PREFIXES. Missing
@@ -250,7 +250,7 @@ fn known_prefix_body(credential: &str) -> Option<&str> {
         .find_map(|prefix| credential.strip_prefix(prefix))
 }
 
-fn looks_like_prefixed_masked_sequence(body: &str) -> bool {
+pub(crate) fn looks_like_prefixed_masked_sequence(body: &str) -> bool {
     // Trailing-ellipsis is an unambiguous placeholder signal: real secrets
     // never end in `...`. UI prompt strings like `ghp_1a2b3c4...` (vscode
     // input-box placeholder) and docs snippets like `sk_live_abcd1234...`
@@ -266,7 +266,7 @@ fn looks_like_prefixed_masked_sequence(body: &str) -> bool {
     starts_with_mask && contains_fake_sequence
 }
 
-fn has_repeated_block_mask(s: &str) -> bool {
+pub(crate) fn has_repeated_block_mask(s: &str) -> bool {
     let bytes = s.as_bytes();
     let mut long_runs = 0usize;
     let mut i = 0;
@@ -287,7 +287,7 @@ fn has_repeated_block_mask(s: &str) -> bool {
     false
 }
 
-fn has_n_or_more_consecutive_identical(s: &str, n: usize) -> bool {
+pub(crate) fn has_n_or_more_consecutive_identical(s: &str, n: usize) -> bool {
     let bytes = s.as_bytes();
     let mut i = 0;
     while i < bytes.len() {

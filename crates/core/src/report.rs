@@ -2,9 +2,11 @@
 
 mod json;
 mod sarif;
+mod sarif_uri;
 mod text;
 
 pub mod banner;
+pub mod sarif_uri;
 
 use std::io::Write;
 

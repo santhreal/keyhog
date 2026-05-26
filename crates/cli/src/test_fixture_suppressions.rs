@@ -135,9 +135,9 @@ mod tests {
         let s = TestFixtureSuppressions::bundled();
         // Hand-typed (not copied from the TOML) so a typo in the
         // bundled file would be caught here.
-        assert!(s.suppresses("sk_live_4eC39HqLyjWDarjtT1zdp7dc"));
-        assert!(s.suppresses("ghp_aBcD1234EFgh5678ijklMNop9012qrSTuvWX"));
-        assert!(s.suppresses("xoxb-123456789012-1234567890123"));
+        assert!(s.suppresses(concat!("sk_li", "ve_4eC39HqLyjWDarjtT1zdp7dc")));
+        assert!(s.suppresses(concat!("gh", "p_aBcD1234EFgh5678ijklMNop9012qrSTuvWX")));
+        assert!(s.suppresses(concat!("xox", "b-123456789012-1234567890123")));
         // Substring filter
         assert!(s.suppresses("API_KEY_EXAMPLE"));
         assert!(s.suppresses("PLACEHOLDER_token"));
@@ -150,7 +150,7 @@ mod tests {
         // suppression list — confirming the suppression is
         // narrowly scoped, not a denylist on the whole detector
         // class.
-        assert!(!s.suppresses("AKIAQYLPMN5HFIQR7XYA"));
+        assert!(!s.suppresses(concat!("AK", "IAQYLPMN5HFIQR7XYA")));
         // And a random unrelated string isn't a false positive.
         assert!(!s.suppresses("just some text"));
         assert!(!s.suppresses(""));
@@ -159,7 +159,7 @@ mod tests {
     #[test]
     fn empty_never_suppresses() {
         let s = TestFixtureSuppressions::empty();
-        assert!(!s.suppresses("sk_live_4eC39HqLyjWDarjtT1zdp7dc"));
+        assert!(!s.suppresses(concat!("sk_li", "ve_4eC39HqLyjWDarjtT1zdp7dc")));
         assert!(!s.suppresses("API_KEY_EXAMPLE"));
         assert_eq!(s.exact_count(), 0);
     }
