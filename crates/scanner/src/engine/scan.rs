@@ -171,35 +171,41 @@ impl CompiledScanner {
                     // any chunk WITHOUT a literal-prefix HS hit silently
                     // dropped every fallback detector — including
                     // standalone-on-a-line k8s bootstrap tokens. Fix:
-                    // route the no-hit chunk through scan_inner with an
-                    // empty triggered bitmap, mirroring what
-                    // scan_with_deadline_and_backend does for direct
-                    // (non-coalesced) scan_inner calls. scan_inner walks
-                    // scan_prepared_with_triggered which calls both
-                    // scan_fallback_patterns AND scan_generic_assignments,
-                    // so the previous generic-assignment behaviour is
-                    // preserved. The AC pre-filter inside
-                    // scan_fallback_patterns bounds cost to detectors
-                    // whose ≥4-char keyword appears in the chunk.
+                    // for chunks that plausibly carry a secret (have a
+                    // generic-assignment-keyword OR an explicit secret-
+                    // prefix substring like ghp_/sk-proj-/etc.) route
+                    // through scan_inner, which walks
+                    // scan_prepared_with_triggered → scan_fallback_patterns
+                    // → scan_generic_assignments → scan_entropy_fallback.
+                    //
+                    // Bound on plausibility: pure source-code files
+                    // without any secret-related keyword stay on the
+                    // Vec::new() fast path so the per-chunk prepare +
+                    // re-Hyperscan cost doesn't regress monorepo scans
+                    // (gitlabhq: 64k mostly-source files would otherwise
+                    // pay 64k * ~150µs per-chunk fallback walks). The
+                    // gate is intentionally permissive — `token`,
+                    // `password`, `secret`, `api_key` cover every config
+                    // file shape that planted-credential corpora use.
                     //
                     // Cap stays at 32 KB to match the previous
                     // generic-assignment cap: large source files
                     // (>32 KB) are almost never config and the per-file
                     // fallback walk on Go/Java/Python framework code is
                     // dead work.
-                    if chunk.data.len() <= 32 * 1024 {
+                    if chunk.data.len() <= 32 * 1024
+                        && (has_generic_assignment_keyword(chunk.data.as_bytes())
+                            || has_secret_keyword_fast(chunk.data.as_bytes()))
+                    {
                         let mut matches = self.scan_inner(chunk, ScanBackend::SimdCpu, None);
-                        // Preserve cross-file fragment reassembly that the
-                        // previous no-hit branch did. Gated on the same
-                        // has_generic_assignment_keyword signal: cross-
-                        // file split secrets (AWS_ACCESS_KEY in one .env,
-                        // AWS_SECRET in another) always carry one of the
-                        // generic-assignment keywords, so chunks without
-                        // any wouldn't have contributed reassembly
-                        // candidates anyway.
-                        if has_generic_assignment_keyword(chunk.data.as_bytes()) {
-                            self.record_and_reassemble_for_no_hit_chunk(chunk, &mut matches);
-                        }
+                        // Preserve cross-file fragment reassembly that
+                        // the previous no-hit branch did. The fragment
+                        // cache is mostly populated by named-detector
+                        // matches that scan_inner now produces (e.g.
+                        // an `AWS_ACCESS_KEY=` match in one .env file
+                        // gets recorded for later reassembly with an
+                        // `AWS_SECRET=` match in another).
+                        self.record_and_reassemble_for_no_hit_chunk(chunk, &mut matches);
                         return matches;
                     }
 

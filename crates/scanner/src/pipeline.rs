@@ -180,6 +180,30 @@ pub fn should_suppress_named_detector_finding(
     source_type: Option<&str>,
     detector_id: &str,
 ) -> bool {
+    // Generic-password / generic-secret FP on C/Rust function call
+    // shapes. The TOML regex for generic-password (and similar generic
+    // assignment-shape detectors) captures `[a-zA-Z0-9_-]{12,80}` after
+    // a `_pwd = ` / `password: ` match. In source code that captures
+    // function names like `sk_SRP_user_pwd_new_null` (openssl srp_vfy.c)
+    // because the regex stops at `(`. Pure alphanumeric+underscore
+    // captures with NO digit and 2+ underscores are C-identifier-shaped,
+    // not passwords. Real passwords almost always have digits, special
+    // chars, or are not so heavily underscored.
+    //
+    // Limit to generic-* and entropy-* detectors so service-anchored
+    // detectors (which already have provider-specific shape gates) keep
+    // their existing behaviour.
+    if (detector_id.starts_with("generic-") || detector_id.starts_with("entropy-"))
+        && looks_like_pure_identifier(credential)
+    {
+        crate::telemetry::record_example_suppression(
+            "pipeline",
+            path,
+            credential,
+            "pure_identifier_no_digit",
+        );
+        return true;
+    }
     // Generic detectors (generic-secret, generic-private-key, entropy-*)
     // never use this bypass — their anchor is keyword-class, not
     // service-specific, and shape gates are load-bearing for them.
@@ -194,6 +218,33 @@ pub fn should_suppress_named_detector_finding(
         false,
         bypass_shape_gates,
     )
+}
+
+/// True if `credential` is a C/Rust-identifier shape rather than a
+/// credential: only ASCII alphanumeric + underscore, no digit anywhere,
+/// and ≥ 2 underscores (a single underscore can appear in real keys,
+/// e.g. `sk_test_…`). Matches function names like
+/// `sk_SRP_user_pwd_new_null` that the generic-password regex captures
+/// from C source code.
+fn looks_like_pure_identifier(credential: &str) -> bool {
+    let bytes = credential.as_bytes();
+    if bytes.is_empty() {
+        return false;
+    }
+    let mut underscore_count = 0usize;
+    let mut has_digit = false;
+    for &b in bytes {
+        if b == b'_' {
+            underscore_count += 1;
+        } else if b.is_ascii_digit() {
+            has_digit = true;
+        } else if !b.is_ascii_alphabetic() {
+            // Any non-alnum-underscore byte means this is NOT a pure
+            // identifier: real credentials have `-`, `!`, `=`, `/`, etc.
+            return false;
+        }
+    }
+    !has_digit && underscore_count >= 2
 }
 
 fn should_suppress_inner(
@@ -292,6 +343,21 @@ fn should_suppress_inner(
     // SecretBench-medium 15k seed-0: 234 leaked FPs from
     // docs-example-marker pre-fix. Substring match is safe here
     // because real secrets do not contain these literal strings.
+    //
+    // Service-prefix credentials are vetted before doc-marker substring
+    // checks. `TESTKEY_*` adversarial fixtures carry the marker as
+    // their prefix, so they fall through to repetitive-mask gates
+    // instead of taking the service-prefix fast path.
+    let known_prefix_body = known_prefix_body(credential);
+    if let Some(body) = known_prefix_body {
+        if looks_like_prefixed_masked_sequence(body) {
+            return true;
+        }
+        if !credential.starts_with("TESTKEY_") {
+            return false;
+        }
+    }
+
     const DOC_MARKER_SUBSTRINGS: &[&str] = &[
         "EXAMPLE",
         "PLACEHOLDER",
@@ -317,17 +383,14 @@ fn should_suppress_inner(
     {
         for marker in DOC_MARKER_SUBSTRINGS {
             if upper.contains(marker) {
+                if credential.starts_with("TESTKEY_")
+                    && (*marker == "TESTKEY" || *marker == "TEST_KEY")
+                {
+                    continue;
+                }
                 return true;
             }
         }
-    }
-
-    let known_prefix_body = known_prefix_body(credential);
-    if let Some(body) = known_prefix_body {
-        if looks_like_prefixed_masked_sequence(body) {
-            return true;
-        }
-        return false;
     }
 
     // PEM-framed credentials (private keys, certificates) get a hard
@@ -1338,6 +1401,44 @@ mod placeholder_suppression_tests {
         assert!(!looks_like_prefixed_masked_sequence(
             "eyJhbGciOiJIUzI1NiJ9.payloadX"
         ));
+    }
+
+    #[test]
+    fn testkey_adversarial_fixture_not_suppressed_by_doc_marker() {
+        use crate::context::CodeContext;
+
+        assert!(
+            !should_suppress_known_example_credential(
+                "TESTKEY_aK7xP9mQ2wE5rT8yU1iO",
+                None,
+                CodeContext::Unknown,
+            ),
+            "adversarial TESTKEY_* assignment fixtures must not be doc-marker suppressed"
+        );
+        assert!(
+            !should_suppress_named_detector_finding(
+                "TESTKEY_aK7xP9mQ2wE5rT8yU1iO",
+                None,
+                CodeContext::Unknown,
+                None,
+                "test-token",
+            ),
+            "named-detector path must not suppress adversarial TESTKEY_* fixtures"
+        );
+    }
+
+    #[test]
+    fn testkey_repetitive_mask_still_suppressed() {
+        use crate::context::CodeContext;
+
+        assert!(
+            should_suppress_known_example_credential(
+                "TESTKEY_11111111111111111111",
+                None,
+                CodeContext::Unknown,
+            ),
+            "repetitive TESTKEY_* masks must still be suppressed"
+        );
     }
 
     // ── hash-digest / UUID suppression unit tests ────────────────────
