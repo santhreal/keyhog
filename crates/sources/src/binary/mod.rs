@@ -10,7 +10,11 @@
 //! The Ghidra integration is a runtime dependency, not compile-time.
 //! `cargo build -F binary` pulls in `goblin` for format detection; Ghidra is optional.
 
+/// Maximum bytes read for strings/section extraction — prevents OOM on multi-GB binaries.
+pub const MAX_BINARY_READ_BYTES: usize = 64 * 1024 * 1024;
+
 use std::io::BufRead;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -212,7 +216,7 @@ impl BinarySource {
     }
 
     fn strings_chunks(&self) -> Vec<Chunk> {
-        let bytes = match std::fs::read(&self.path) {
+        let bytes = match read_binary_capped(&self.path, MAX_BINARY_READ_BYTES) {
             Ok(b) => b,
             Err(_) => return Vec::new(),
         };
@@ -270,6 +274,15 @@ impl Source for BinarySource {
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
+}
+
+/// Read at most `cap` bytes from `path` for strings extraction (OOM guard).
+fn read_binary_capped(path: &Path, cap: usize) -> std::io::Result<Vec<u8>> {
+    let file = std::fs::File::open(path)?;
+    let mut limited = file.take(cap as u64);
+    let mut bytes = Vec::new();
+    limited.read_to_end(&mut bytes)?;
+    Ok(bytes)
 }
 
 pub(crate) fn extract_printable_strings(

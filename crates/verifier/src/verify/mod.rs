@@ -29,6 +29,7 @@ use crate::cache;
 use crate::{into_finding, DedupedMatch, VerificationEngine, VerifyConfig, VerifyError};
 
 pub(crate) use aws::build_aws_probe;
+pub use aws::format_sigv4_timestamps;
 pub(crate) use credential::{verify_with_retry, VerificationAttempt};
 pub(crate) use request::{
     build_request_for_step, execute_request, resolved_client_for_url, RequestBuildResult,

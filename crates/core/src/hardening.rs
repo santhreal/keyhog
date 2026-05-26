@@ -169,27 +169,3 @@ pub fn lockdown_disk_cache_violations() -> Vec<PathBuf> {
     }
     hits
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn default_protections_are_idempotent() {
-        // Calling twice in quick succession must not error or change
-        // outcomes — bits are already set on the second call.
-        let first = apply_default_protections();
-        let second = apply_default_protections();
-        assert_eq!(first.no_core_dumps, second.no_core_dumps);
-        assert_eq!(first.no_ptrace, second.no_ptrace);
-    }
-
-    #[test]
-    fn report_starts_empty() {
-        let r = HardeningReport::default();
-        assert!(!r.no_core_dumps);
-        assert!(!r.no_ptrace);
-        assert!(!r.mlocked);
-        assert!(r.failures.is_empty());
-    }
-}

@@ -42,3 +42,4 @@ pub fn decode_standard_base64(input: &str) -> Result<Vec<u8>, String> {
     }
     Ok(out)
 }
+

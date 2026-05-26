@@ -1,0 +1,17 @@
+pub mod args_rs_exceeds_modularity_cap;
+pub mod backend_self_test_exit_code_four_in_src;
+pub mod detectors_audit_exit_code_three_in_src;
+pub mod exclude_paths_flag_not_wired;
+pub mod exit_code_system_vs_user;
+pub mod inline_test_offenders_detectors_subcommand;
+pub mod inline_test_offenders_orchestrator;
+pub mod inline_test_offenders_value_parsers;
+pub mod main_defines_user_and_system_exit_codes;
+pub mod main_maps_scanner_panic_to_system_exit;
+pub mod no_inline_tests_in_src;
+pub mod orchestrator_config_honors_keyhog_detectors_env;
+pub mod orchestrator_config_honors_keyhog_threads_env;
+pub mod orchestrator_defines_live_exit_ten;
+pub mod orchestrator_defines_scanner_panic_exit_eleven;
+pub mod orchestrator_modularity_cap;
+pub mod scan_system_rs_exceeds_modularity_cap;

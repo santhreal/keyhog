@@ -6,11 +6,9 @@
 //! bit-equivalent between the two paths. This test runs the same
 //! fixture through both and asserts identical credential sets.
 //!
-//! Skipped at runtime when no compatible GPU adapter is available
-//! (CI without a real adapter, software-only adapters that the
-//! routing layer rejects, or megakernel init failures). The skip is
-//! explicit (`eprintln!`) rather than silent so a "no GPU" pass
-//! doesn't pretend to have validated the megakernel path.
+//! Hard-fail parity: megakernel and literal-set GPU paths must produce
+//! identical findings. Adapter/init failure or divergence panics —
+//! no silent skip, no WARN-only downgrade.
 
 use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::{CompiledScanner, ScanBackend};
@@ -58,13 +56,8 @@ fn collect_keys(results: &[Vec<keyhog_core::RawMatch>]) -> std::collections::BTr
 
 #[test]
 fn megakernel_and_literal_set_produce_identical_findings() {
-    let detectors = match keyhog_core::load_detectors(&detector_dir()) {
-        Ok(d) => d,
-        Err(e) => {
-            eprintln!("SKIP: detectors directory unavailable: {e}");
-            return;
-        }
-    };
+    let detectors =
+        keyhog_core::load_detectors(&detector_dir()).expect("detectors directory must load");
     let scanner = CompiledScanner::compile(detectors).expect("scanner compile");
 
     let chunks = vec![
@@ -106,18 +99,11 @@ fn megakernel_and_literal_set_produce_identical_findings() {
         return;
     }
 
-    // Soft parity: megakernel is gated behind KEYHOG_USE_MEGAKERNEL
-    // and currently has a known recall gap on multi-literal detectors
-    // (the DFA-per-literal layout drops some literals in the rule
-    // table; tracked in docs/vyre-usage.md megakernel section). When
-    // megakernel becomes the default GPU path this assertion flips
-    // back to a hard fail.
     if literal_keys != megakernel_keys {
         let only_literal: Vec<_> = literal_keys.difference(&megakernel_keys).collect();
         let only_mega: Vec<_> = megakernel_keys.difference(&literal_keys).collect();
-        eprintln!(
-            "WARN megakernel/literal-set divergence (expected while \
-             vyre per-pattern hit reporting is unimplemented):\n  \
+        panic!(
+            "megakernel/literal-set parity broken (KH-GAP-001).\n  \
              literal_set_keys: {}\n  megakernel_keys:  {}\n  \
              only in literal_set ({}): {:?}\n  \
              only in megakernel ({}): {:?}",
@@ -133,5 +119,30 @@ fn megakernel_and_literal_set_produce_identical_findings() {
     assert!(
         !literal_keys.is_empty(),
         "fixture must produce findings on the literal-set baseline"
+    );
+
+    if megakernel_results.iter().all(|c| c.is_empty()) && !literal_keys.is_empty() {
+        panic!(
+            "megakernel returned zero findings vs {} literal-set findings — \
+             adapter init failure must fail loudly, not silently degrade",
+            literal_keys.len()
+        );
+    }
+
+    let only_literal: Vec<_> = literal_keys.difference(&megakernel_keys).collect();
+    let only_mega: Vec<_> = megakernel_keys.difference(&literal_keys).collect();
+
+    assert_eq!(
+        literal_keys, megakernel_keys,
+        "megakernel/literal-set divergence:\n  \
+         literal_set_keys={} megakernel_keys={}\n  \
+         only in literal_set ({}): {:?}\n  \
+         only in megakernel ({}): {:?}",
+        literal_keys.len(),
+        megakernel_keys.len(),
+        only_literal.len(),
+        only_literal.iter().take(10).collect::<Vec<_>>(),
+        only_mega.len(),
+        only_mega.iter().take(10).collect::<Vec<_>>(),
     );
 }

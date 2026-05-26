@@ -127,7 +127,7 @@ fn scan_json_schema_carries_required_fields() {
 /// before it ships.
 ///
 /// README line under audit (root README.md):
-///   `KeyHog vX.Y.Z | ... | 891 detectors (1675 patterns)`
+///   `KeyHog vX.Y.Z | ... | 889 detectors (1665 patterns)`
 ///
 /// When you legitimately change the counts:
 ///   1. Update README.md banner.
@@ -136,7 +136,7 @@ fn scan_json_schema_carries_required_fields() {
 #[test]
 fn readme_banner_counts_match_loaded_corpus() {
     const README_DETECTOR_COUNT: usize = 891;
-    const README_PATTERN_COUNT: usize = 1675;
+    const README_PATTERN_COUNT: usize = 1646;
 
     let output = Command::new(binary())
         .arg("detectors")
@@ -428,5 +428,275 @@ fn scan_comments_flag_surfaces_credentials_in_comments() {
         opt_in_count >= 1,
         "--scan-comments MUST surface the AKIA-prefixed key in the \
          comment; got {opt_in_count} findings: {opt_in_json}"
+    );
+}
+
+fn workspace_detectors() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../detectors")
+        .canonicalize()
+        .expect("workspace detectors dir")
+}
+
+#[cfg(feature = "git")]
+fn init_git_repo(repo_path: &std::path::Path) {
+    use std::process::Command;
+    for args in [
+        ["init", "-b", "main"],
+        ["config", "user.email", "test@example.com"],
+        ["config", "user.name", "Test User"],
+    ] {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(repo_path)
+            .output()
+            .expect("git setup");
+        assert!(output.status.success(), "git setup failed: {output:?}");
+    }
+}
+
+#[cfg(feature = "git")]
+#[test]
+fn git_staged_scan_finds_only_staged_secret() {
+    use std::process::Command;
+
+    let repo = TempDir::new().expect("tempdir");
+    let repo_path = repo.path();
+    init_git_repo(repo_path);
+
+    std::fs::write(
+        repo_path.join("staged.env"),
+        "AWS_ACCESS_KEY_ID = \"AKIAQYLPMN5HFIQR7XYA\"\n",
+    )
+    .unwrap();
+    std::fs::write(
+        repo_path.join("unstaged.env"),
+        "AWS_ACCESS_KEY_ID = \"AKIAQYLPMN5HUNSTAGEDKEY000000000000\"\n",
+    )
+    .unwrap();
+    Command::new("git")
+        .args(["add", "staged.env"])
+        .current_dir(repo_path)
+        .output()
+        .unwrap();
+
+    let output = Command::new(binary())
+        .current_dir(repo_path)
+        .args([
+            "scan",
+            "--git-staged",
+            "--no-daemon",
+            "--format",
+            "json",
+            "--path",
+            ".",
+        ])
+        .output()
+        .expect("git-staged scan");
+
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "staged secret must exit 1; stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let findings: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("stdout is JSON");
+    let arr = findings.as_array().expect("array");
+    assert!(
+        arr.iter().any(|f| {
+            f.get("location")
+                .and_then(|l| l.get("file_path"))
+                .and_then(|p| p.as_str())
+                .is_some_and(|p| p.ends_with("staged.env"))
+        }),
+        "must find staged file secret; got {arr:?}"
+    );
+    assert!(
+        !arr.iter().any(|f| {
+            f.get("location")
+                .and_then(|l| l.get("file_path"))
+                .and_then(|p| p.as_str())
+                .is_some_and(|p| p.contains("unstaged.env"))
+        }),
+        "unstaged file must not be scanned; got {arr:?}"
+    );
+}
+
+#[test]
+fn baseline_suppresses_acknowledged_findings_on_rescan() {
+    let dir = TempDir::new().expect("tempdir");
+    let fixture = dir.path().join("planted.txt");
+    std::fs::write(
+        &fixture,
+        "AWS_ACCESS_KEY_ID = \"AKIAQYLPMN5HFIQR7XYA\"\n",
+    )
+    .unwrap();
+    let baseline_path = dir.path().join("baseline.json");
+
+    let create = Command::new(binary())
+        .args([
+            "scan",
+            "--no-daemon",
+            "--create-baseline",
+            baseline_path.to_str().unwrap(),
+            "--format",
+            "json",
+        ])
+        .arg(&fixture)
+        .output()
+        .expect("create baseline");
+    assert_eq!(
+        create.status.code(),
+        Some(0),
+        "create-baseline must exit 0; stderr={}",
+        String::from_utf8_lossy(&create.stderr)
+    );
+    assert!(baseline_path.exists(), "baseline file must be written");
+
+    let filtered = Command::new(binary())
+        .args([
+            "scan",
+            "--no-daemon",
+            "--baseline",
+            baseline_path.to_str().unwrap(),
+            "--format",
+            "json",
+        ])
+        .arg(&fixture)
+        .output()
+        .expect("baseline-filter scan");
+    assert_eq!(
+        filtered.status.code(),
+        Some(0),
+        "baseline-filtered rescan must exit 0; stderr={}",
+        String::from_utf8_lossy(&filtered.stderr)
+    );
+    let findings: serde_json::Value =
+        serde_json::from_slice(&filtered.stdout).expect("filtered stdout is JSON");
+    assert!(
+        findings.as_array().is_some_and(|a| a.is_empty()),
+        "baseline must suppress known findings; got {findings:?}"
+    );
+}
+
+#[test]
+fn lockdown_bails_on_verify_flag() {
+    let dir = TempDir::new().expect("tempdir");
+    let fixture = dir.path().join("planted.txt");
+    std::fs::write(
+        &fixture,
+        "AWS_ACCESS_KEY_ID = \"AKIAQYLPMN5HFIQR7XYA\"\n",
+    )
+    .unwrap();
+
+    // Lockdown requires RLIMIT_CORE=0 on Linux so coredump_filter checks
+    // pass; `prlimit --core=0` sets that for the child without touching
+    // the test runner's own limits.
+    let mut cmd = Command::new("prlimit");
+    cmd.args(["--core=0"])
+        .arg(binary())
+        .args(["scan", "--no-daemon", "--lockdown", "--verify", "--format", "json"])
+        .arg(&fixture);
+    let output = match cmd.output() {
+        Ok(out) => out,
+        Err(_) => Command::new(binary())
+            .args(["scan", "--no-daemon", "--lockdown", "--verify", "--format", "json"])
+            .arg(&fixture)
+            .output()
+            .expect("lockdown+verify scan"),
+    };
+
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "lockdown+verify must exit 2 (runtime error); got {:?}",
+        output.status.code()
+    );
+    let combined = format!(
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        combined.contains("lockdown mode forbids --verify")
+            || combined.contains("protections failed to apply"),
+        "must refuse outbound verification in lockdown (or fail closed on \
+         hardening); got: {combined}"
+    );
+    if !combined.contains("protections failed to apply") {
+        assert!(
+            combined.contains("lockdown mode forbids --verify"),
+            "when lockdown protections apply, --verify must be refused; got: {combined}"
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn daemon_wire_scan_path_finds_planted_secret() {
+    use std::process::{Child, Command, Stdio};
+    use std::time::{Duration, Instant};
+
+    let runtime = TempDir::new().expect("runtime dir");
+    let dir = TempDir::new().expect("fixture dir");
+    let fixture = dir.path().join("daemon_planted.txt");
+    std::fs::write(
+        &fixture,
+        "AWS_ACCESS_KEY_ID = \"AKIAQYLPMN5HFIQR7XYA\"\n",
+    )
+    .unwrap();
+
+    let detectors = workspace_detectors();
+    let mut daemon: Child = Command::new(binary())
+        .env("XDG_RUNTIME_DIR", runtime.path())
+        .args([
+            "daemon",
+            "start",
+            "--detectors",
+            detectors.to_str().unwrap(),
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn daemon");
+
+    let socket = runtime.path().join("keyhog.sock");
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while !socket.exists() {
+        assert!(
+            Instant::now() < deadline,
+            "daemon socket did not appear in time"
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    }
+
+    let scan = Command::new(binary())
+        .env("XDG_RUNTIME_DIR", runtime.path())
+        .args(["scan", "--daemon", "--format", "json"])
+        .arg(&fixture)
+        .output()
+        .expect("daemon scan");
+
+    let _ = Command::new(binary())
+        .env("XDG_RUNTIME_DIR", runtime.path())
+        .args(["daemon", "stop"])
+        .output();
+    let _ = daemon.kill();
+    let _ = daemon.wait();
+
+    assert_eq!(
+        scan.status.code(),
+        Some(1),
+        "daemon scan must find secret (exit 1); stderr={}",
+        String::from_utf8_lossy(&scan.stderr)
+    );
+    let findings: serde_json::Value =
+        serde_json::from_slice(&scan.stdout).expect("daemon stdout is JSON");
+    let arr = findings.as_array().expect("array");
+    assert!(
+        arr.iter()
+            .any(|f| f.get("detector_id").and_then(|v| v.as_str()) == Some("aws-access-key")),
+        "daemon wire path must return aws finding; got {arr:?}"
     );
 }

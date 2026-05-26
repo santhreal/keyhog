@@ -1,0 +1,9 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 1bcb7657fee09dcf1fe9014e13a9c18b4f37d95100c57f61e6cc0a5764e7f91a # shrinks to additional = [MatchLocation { source: "fs", file_path: Some("a.rs"), line: None, offset: 1, commit: None, author: None, date: None }]
+cc 4e3d036d1f037219c58a39fd23482a78587ba00bb97504f0dbc04c7e02323c97 # shrinks to additional = [MatchLocation { source: "fs", file_path: Some("a.rs"), line: None, offset: 1, commit: None, author: None, date: None }]
+cc 0748070f360faa699e40fce903dc8a081c616afa0c70cc346110711d8c75768a # shrinks to additional = [MatchLocation { source: "fs", file_path: Some("b.rs"), line: None, offset: 0, commit: None, author: None, date: None }, MatchLocation { source: "fs", file_path: Some("b.rs"), line: None, offset: 1, commit: None, author: None, date: None }]

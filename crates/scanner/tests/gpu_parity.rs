@@ -2,15 +2,17 @@
 //! the GPU and SIMD backends must produce the same set of credentials
 //! at the same offsets.
 //!
-//! Skipped at runtime when no compatible GPU adapter is available
-//! (CI without `--features gpu`, headless containers, software-only
-//! adapters that the routing layer rejects). The skip is explicit
-//! (printed with `eprintln!`) rather than silent so a "no GPU
-//! detected" pass doesn't pretend to have validated the GPU path.
+//! Hard-fail parity: adapter/init failure or divergence panics —
+//! no silent skip, no WARN-only downgrade. Set `KEYHOG_REQUIRE_GPU=1`
+//! in CI to mandate a compatible adapter.
+
+#[path = "support/mod.rs"]
+mod support;
 
 use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::{CompiledScanner, ScanBackend};
 use std::path::PathBuf;
+use support::gpu_gate::{assert_gpu_not_silent_empty, require_gpu_or_panic};
 
 fn detector_dir() -> PathBuf {
     let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -60,13 +62,9 @@ fn collect_keys(results: &[Vec<keyhog_core::RawMatch>]) -> std::collections::BTr
 
 #[test]
 fn gpu_and_simd_produce_identical_findings_on_same_corpus() {
-    let detectors = match keyhog_core::load_detectors(&detector_dir()) {
-        Ok(d) => d,
-        Err(e) => {
-            eprintln!("SKIP: detectors directory unavailable: {e}");
-            return;
-        }
-    };
+    require_gpu_or_panic("gpu_and_simd_produce_identical_findings_on_same_corpus");
+    let detectors =
+        keyhog_core::load_detectors(&detector_dir()).expect("detectors directory must load");
     let scanner = CompiledScanner::compile(detectors).expect("scanner compile");
 
     // Synthetic corpus designed to exercise: AKIA/ASIA prefix path,
@@ -92,15 +90,11 @@ fn gpu_and_simd_produce_identical_findings_on_same_corpus() {
     let gpu_results = scanner.scan_chunks_with_backend(&chunks, ScanBackend::Gpu);
     let gpu_keys = collect_keys(&gpu_results);
 
-    // If the GPU stack isn't available, scan_chunks_with_backend's
-    // internal routing falls back to a non-GPU backend and returns
-    // results identical to SIMD by construction. That degenerate
-    // case is uninteresting for parity; surface it as a SKIP so
-    // CI doesn't trumpet a no-op pass.
-    if gpu_results.iter().all(|c| c.is_empty()) && simd_results.iter().any(|c| !c.is_empty()) {
-        eprintln!("SKIP: GPU returned zero findings vs {} SIMD findings — likely no compatible adapter; not a parity failure", simd_keys.len());
-        return;
-    }
+    assert_gpu_not_silent_empty(
+        gpu_results.iter().all(|c| c.is_empty()),
+        simd_keys.len(),
+        "gpu_and_simd_produce_identical_findings_on_same_corpus",
+    );
 
     if simd_keys != gpu_keys {
         let only_simd: Vec<_> = simd_keys.difference(&gpu_keys).collect();
@@ -129,13 +123,9 @@ fn gpu_path_finds_boundary_straddled_secret() {
     // skips boundary scan" — a real correctness gap that shipped in
     // v0.5.4 before the GPU sweep, where the SIMD path got boundary
     // reassembly and the GPU path didn't.
-    let detectors = match keyhog_core::load_detectors(&detector_dir()) {
-        Ok(d) => d,
-        Err(e) => {
-            eprintln!("SKIP: detectors directory unavailable: {e}");
-            return;
-        }
-    };
+    require_gpu_or_panic("gpu_path_finds_boundary_straddled_secret");
+    let detectors =
+        keyhog_core::load_detectors(&detector_dir()).expect("detectors directory must load");
     let scanner = CompiledScanner::compile(detectors).expect("scanner compile");
 
     let secret = "AKIAQYLPMN5HFIQR7CCC";
@@ -200,13 +190,9 @@ fn gpu_path_finds_boundary_straddled_secret() {
 #[test]
 fn scan_coalesced_gpu_ac_phase1_phase2_parity_with_wrapper() {
     use keyhog_scanner::GpuPhase1Output;
-    let detectors = match keyhog_core::load_detectors(&detector_dir()) {
-        Ok(d) => d,
-        Err(e) => {
-            eprintln!("SKIP: detectors directory unavailable: {e}");
-            return;
-        }
-    };
+    require_gpu_or_panic("scan_coalesced_gpu_ac_phase1_phase2_parity_with_wrapper");
+    let detectors =
+        keyhog_core::load_detectors(&detector_dir()).expect("detectors directory must load");
     let scanner = CompiledScanner::compile(detectors).expect("scanner compile");
 
     let chunks = vec![
@@ -276,20 +262,12 @@ fn scan_coalesced_gpu_ac_phase1_phase2_parity_with_wrapper() {
 ///   (b) manual `phase1` → match `Hits` then `phase2`, or `Done` then
 ///       return directly — the same flow the orchestrator does.
 ///
-/// SKIPs when no GPU adapter is available (phase 1 returns `Done`
-/// with the SIMD/CPU fallback path's matches; we still assert
-/// parity because the wrapper produces the same `Done` output via
-/// the same code path).
 #[test]
 fn scan_coalesced_gpu_phase1_phase2_parity_with_wrapper() {
     use keyhog_scanner::GpuPhase1Output;
-    let detectors = match keyhog_core::load_detectors(&detector_dir()) {
-        Ok(d) => d,
-        Err(e) => {
-            eprintln!("SKIP: detectors directory unavailable: {e}");
-            return;
-        }
-    };
+    require_gpu_or_panic("scan_coalesced_gpu_phase1_phase2_parity_with_wrapper");
+    let detectors =
+        keyhog_core::load_detectors(&detector_dir()).expect("detectors directory must load");
     let scanner = CompiledScanner::compile(detectors).expect("scanner compile");
 
     // Same synthetic corpus as the SIMD-parity test so the GPU dispatch

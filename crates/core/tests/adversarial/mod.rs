@@ -1,1 +1,9 @@
-pub mod path_traversal;
+mod allowlist_comment_only_file_is_empty;
+mod config_negative_confidence_rejected;
+mod dedup_cross_detector_empty_vec;
+mod dedup_empty_input;
+mod encoding_empty_string_decodes_empty;
+mod merkle_empty_index_save_load;
+mod path_traversal;
+mod redact_short_ascii_fully_masked;
+mod severity_ordering_total;

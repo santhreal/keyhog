@@ -14,7 +14,7 @@ pub fn is_private_ip_addr(ip: &IpAddr) -> bool {
 
 /// Returns true if the URL points to a private or loopback address.
 pub fn is_private_url(url_str: &str) -> bool {
-    let url = match reqwest::Url::parse(url_str) {
+    let url = match url::Url::parse(url_str) {
         Ok(u) => u,
         Err(_) => return true, // Block malformed URLs
     };

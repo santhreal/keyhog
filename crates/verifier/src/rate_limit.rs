@@ -47,7 +47,7 @@ impl RateLimiter {
     }
 
     /// Default interval as a `Duration`. Lock-free.
-    fn default_interval(&self) -> Duration {
+    pub fn default_interval(&self) -> Duration {
         Duration::from_nanos(self.default_interval_nanos.load(Ordering::Relaxed))
     }
 
@@ -153,64 +153,3 @@ pub fn set_global_default_rps(rps: f64) {
     get_rate_limiter().set_default_rps(rps);
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn rps_to_nanos_clamps_invalid_input() {
-        assert_eq!(rps_to_nanos(0.0), 1_000_000_000);
-        assert_eq!(rps_to_nanos(-1.0), 1_000_000_000);
-        assert_eq!(rps_to_nanos(f64::NAN), 1_000_000_000);
-        assert_eq!(rps_to_nanos(f64::INFINITY), 1_000_000_000);
-    }
-
-    #[test]
-    fn rps_to_nanos_typical_rates() {
-        assert_eq!(rps_to_nanos(1.0), 1_000_000_000);
-        assert_eq!(rps_to_nanos(5.0), 200_000_000);
-        assert_eq!(rps_to_nanos(100.0), 10_000_000);
-    }
-
-    #[test]
-    fn set_default_rps_updates_atomically() {
-        let r = RateLimiter::new(5.0);
-        assert_eq!(r.default_interval(), Duration::from_millis(200));
-        r.set_default_rps(20.0);
-        assert_eq!(r.default_interval(), Duration::from_millis(50));
-    }
-
-    /// Three back-to-back arrivals at 20 rps (50ms interval) must take at
-    /// least ~85ms total — the first fires immediately, the second waits
-    /// ~50ms, the third waits ~100ms from start. Before the
-    /// `next_slot`-based fix, the third arrival used `Instant::now() -
-    /// last_request` which saturated to zero (because `last_request` was
-    /// in the future from the second arrival's reservation) and the
-    /// third caller waited only one interval from ITS arrival instead of
-    /// two — finishing in ~50ms total and bursting at ~3× the configured
-    /// rate. Wall-clock timed (no `start_paused` because tokio's test-util
-    /// feature isn't in our dev-deps), with generous tolerance to absorb
-    /// timer jitter on busy CI runners.
-    #[tokio::test]
-    async fn burst_arrivals_respect_configured_interval() {
-        let r = std::sync::Arc::new(RateLimiter::new(20.0)); // 50ms interval
-        let start = Instant::now();
-
-        let r1 = std::sync::Arc::clone(&r);
-        let r2 = std::sync::Arc::clone(&r);
-        let r3 = std::sync::Arc::clone(&r);
-        let t1 = tokio::spawn(async move { r1.wait("svc").await });
-        let t2 = tokio::spawn(async move { r2.wait("svc").await });
-        let t3 = tokio::spawn(async move { r3.wait("svc").await });
-        let _ = tokio::join!(t1, t2, t3);
-
-        let elapsed = start.elapsed();
-        assert!(
-            elapsed >= Duration::from_millis(85),
-            "three requests at 20rps must take ≥~85ms (2 intervals minus jitter); \
-             took {elapsed:?}. This is the burst-rate regression — under the old \
-             code, queued callers used Instant::now() instead of the reserved \
-             future slot and bursted at ~3× rate (would finish in <60ms)."
-        );
-    }
-}

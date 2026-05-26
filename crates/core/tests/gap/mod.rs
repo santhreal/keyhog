@@ -1,0 +1,10 @@
+pub mod allowlist_oversized_glob_segment_rejected;
+pub mod cross_detector_single_input_passthrough;
+pub mod dedup_same_credential_one_group;
+pub mod encoding_rejects_oversized_input;
+pub mod lib_rs_duplicate_lint_preamble;
+pub mod lint_preamble;
+pub mod lint_preamble_present;
+pub mod merkle_load_without_spec_invalidates_legacy_save;
+pub mod no_inline_tests_in_src;
+pub mod sarif_unicode_path_percent_encoded;

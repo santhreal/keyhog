@@ -1,0 +1,9 @@
+//! Unknown metadata keys must not prevent parsing known fields.
+
+use keyhog_core::Allowlist;
+
+#[test]
+fn allowlist_unknown_metadata_keys_not_fatal() {
+    let al = Allowlist::parse("detector:bar ; foo=bar; reason=ok ; expires=2099-12-31");
+    assert!(al.ignored_detectors.contains("bar"));
+}

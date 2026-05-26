@@ -1,0 +1,26 @@
+// LR1-A3: one #[test] per file
+mod base64_decode_rejects_invalid_padding;
+mod base64_decode_rejects_mixed_alphabets;
+mod base64_decode_rejects_oversized_input;
+mod base64_decode_standard_padding;
+mod base64_decode_urlsafe_nopad;
+mod decode_chunk_base64_splices_companion_anchor;
+mod decode_chunk_dedups_identical_outputs;
+mod decode_chunk_empty_input;
+mod decode_chunk_hex_splices_companion_anchor;
+mod decode_chunk_html_entity_splice;
+mod decode_chunk_inherits_parent_base_offset;
+mod decode_chunk_json_unescape_splices_key;
+mod decode_chunk_rejects_nul_when_validate;
+mod decode_chunk_respects_max_depth;
+mod decode_chunk_reverse_fires_on_reversed_aws;
+mod decode_chunk_source_type_tags_decoder;
+mod decode_chunk_url_percent_splices_bearer;
+mod find_base64_in_assignment;
+mod find_base64_in_quoted_string;
+mod find_base64_respects_min_length;
+mod hex_decode_lowercase;
+mod hex_decode_rejects_odd_length;
+mod hex_decode_with_underscores;
+mod z85_decode_four_null_bytes;
+mod z85_decode_rejects_bad_length;

@@ -155,21 +155,52 @@ pub(super) fn extend_known_prefix_credential<'a>(
     match_start: usize,
     match_end: usize,
 ) -> (&'a str, usize) {
-    if crate::confidence::known_prefix_confidence_floor(credential).is_none() {
+    let (credential, match_end) = if crate::confidence::known_prefix_confidence_floor(credential).is_some() {
+        let bytes = data.as_bytes();
+        let mut end = match_end;
+        while end < bytes.len() && is_provider_token_byte(bytes[end]) {
+            end += 1;
+        }
+
+        if end == match_end || !data.is_char_boundary(end) {
+            (credential, match_end)
+        } else {
+            (&data[match_start..end], end)
+        }
+    } else {
+        (credential, match_end)
+    };
+
+    extend_base64_padding(data, match_start, credential, match_end)
+}
+
+/// Swallow up to two trailing `=` when the captured body is base64-shaped.
+/// Regexes often end with `=?` or `{20,}=?` and drop the second padding
+/// char on values like `YWJj…vcA==` — `splitio-api-key` and friends.
+fn extend_base64_padding<'a>(
+    data: &'a str,
+    match_start: usize,
+    credential: &'a str,
+    match_end: usize,
+) -> (&'a str, usize) {
+    if !credential
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '/' | '-' | '_' | '='))
+    {
         return (credential, match_end);
     }
-
     let bytes = data.as_bytes();
     let mut end = match_end;
-    while end < bytes.len() && is_provider_token_byte(bytes[end]) {
+    let mut pad = 0u8;
+    while end < bytes.len() && bytes[end] == b'=' && pad < 2 {
         end += 1;
+        pad += 1;
     }
-
-    if end == match_end || !data.is_char_boundary(end) {
-        return (credential, match_end);
+    if pad > 0 && data.is_char_boundary(end) {
+        (&data[match_start..end], end)
+    } else {
+        (credential, match_end)
     }
-
-    (&data[match_start..end], end)
 }
 
 fn is_provider_token_byte(byte: u8) -> bool {

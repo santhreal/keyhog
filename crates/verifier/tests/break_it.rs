@@ -9,4 +9,7 @@ include!("break_it_cases/cache_rate.rs");
 include!("break_it_cases/mock_verify.rs");
 include!("break_it_cases/json_aws_headers.rs");
 include!("break_it_cases/ssrf.rs");
+include!("break_it_cases/ssrf_break_decimal_integer.rs");
+include!("break_it_cases/ssrf_break_link_local_metadata.rs");
+include!("break_it_cases/ssrf_break_allowlist_attacker_host.rs");
 include!("break_it_cases/limits.rs");

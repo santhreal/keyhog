@@ -114,13 +114,8 @@ pub struct InteractshClient {
 }
 
 impl InteractshClient {
-    /// Test-only constructor that fabricates an `InteractshClient` without
-    /// going through `register()`. The HTTP client is real but never used
-    /// (tests drive the session directly via `store_and_notify_for_test`).
-    /// The RSA keypair is generated locally so any decrypt-side test
-    /// fixtures still see consistent crypto material.
-    #[cfg(test)]
-    pub(crate) fn for_test(server: &str) -> Self {
+    /// Test-only constructor without network registration.
+    pub fn for_test(server: &str) -> Self {
         let private_key = RsaPrivateKey::new(&mut OsRng, 1024).expect("test RSA key generates");
         Self {
             http: Client::new(),
@@ -519,100 +514,3 @@ fn normalize_server(s: &str) -> String {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn normalize_server_forces_https() {
-        assert_eq!(normalize_server("oast.fun"), "https://oast.fun");
-        assert_eq!(normalize_server("oast.fun/"), "https://oast.fun");
-        assert_eq!(normalize_server("https://oast.fun"), "https://oast.fun");
-        assert_eq!(normalize_server("http://oast.fun"), "https://oast.fun");
-        assert_eq!(normalize_server("  https://oast.fun/ "), "https://oast.fun");
-    }
-
-    #[test]
-    fn protocol_parse_is_case_insensitive() {
-        assert_eq!(InteractionProtocol::parse("DNS"), InteractionProtocol::Dns);
-        assert_eq!(
-            InteractionProtocol::parse("Http"),
-            InteractionProtocol::Http
-        );
-        assert_eq!(
-            InteractionProtocol::parse("smtp-mail"),
-            InteractionProtocol::Smtp
-        );
-        assert_eq!(
-            InteractionProtocol::parse("websocket"),
-            InteractionProtocol::Other
-        );
-    }
-
-    /// End-to-end crypto round trip with a fixed AES key + IV. Mirrors what
-    /// the server does: AES-256-CFB encrypt a JSON blob, prepend IV, base64.
-    /// We then run our decrypt path and confirm the parsed Interaction.
-    #[test]
-    fn decrypt_entry_round_trip() {
-        use aes::Aes256;
-        use cfb_mode::cipher::{AsyncStreamCipher, KeyIvInit};
-        type Enc = cfb_mode::Encryptor<Aes256>;
-
-        let aes_key = [0x42u8; 32];
-        let iv = [0x17u8; 16];
-        let payload = serde_json::json!({
-            "protocol": "http",
-            "unique-id": "abcdefghijklmnopqrstuvwxyz0123456",
-            "full-id":   "abcdefghijklmnopqrstuvwxyz0123456",
-            "remote-address": "203.0.113.7",
-            "timestamp": "2026-05-06T00:00:00Z",
-            "raw-request": "GET /x HTTP/1.1\r\nHost: abc...example\r\n\r\n",
-        })
-        .to_string();
-        let mut buf = payload.as_bytes().to_vec();
-        Enc::new_from_slices(&aes_key, &iv)
-            .unwrap()
-            .encrypt(&mut buf);
-
-        let mut wire = Vec::with_capacity(16 + buf.len());
-        wire.extend_from_slice(&iv);
-        wire.extend_from_slice(&buf);
-        let b64 = B64.encode(&wire);
-
-        let interaction = decrypt_entry(&aes_key, &b64).unwrap().unwrap();
-        assert_eq!(interaction.unique_id.len(), 33);
-        assert_eq!(interaction.protocol, InteractionProtocol::Http);
-        assert_eq!(interaction.remote_address, "203.0.113.7");
-        assert!(interaction.raw_payload.starts_with("GET /x"));
-    }
-
-    #[test]
-    fn decrypt_entry_rejects_short_ciphertext() {
-        let err = decrypt_entry(&[0u8; 32], &B64.encode([1u8; 8])).unwrap_err();
-        match err {
-            InteractshError::Decrypt(msg) => assert!(msg.contains("too short")),
-            other => panic!("expected Decrypt, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn decrypt_entry_skips_invalid_json() {
-        // Garbage that decrypts to non-JSON bytes (with a real AES key it'd be
-        // junk; with all-zero key + IV the plaintext is just the ciphertext
-        // XOR-pattern, which won't parse). Either way, we expect Ok(None),
-        // never a hard failure that aborts the whole poll batch.
-        let aes_key = [0u8; 32];
-        let iv = [0u8; 16];
-        let mut buf = b"definitely not json {{{".to_vec();
-        use aes::Aes256;
-        use cfb_mode::cipher::{AsyncStreamCipher, KeyIvInit};
-        type Enc = cfb_mode::Encryptor<Aes256>;
-        Enc::new_from_slices(&aes_key, &iv)
-            .unwrap()
-            .encrypt(&mut buf);
-        let mut wire = iv.to_vec();
-        wire.extend_from_slice(&buf);
-        let b64 = B64.encode(&wire);
-        assert!(decrypt_entry(&aes_key, &b64).unwrap().is_none());
-    }
-}

@@ -225,11 +225,7 @@ fn get_signature_key(
 
 /// Format the SigV4 timestamps from a Unix epoch second value.
 /// Returns `(date_stamp = "YYYYMMDD", amz_date = "YYYYMMDDTHHMMSSZ")`.
-///
-/// Hand-rolled UTC formatter — avoids pulling in `chrono` for the verifier crate
-/// and keeps `SystemTime::now()` as the single source of truth (AWS rejects
-/// signatures whose timestamp drifts more than ~15 minutes from server clock).
-fn format_sigv4_timestamps(unix_secs: u64) -> (String, String) {
+pub fn format_sigv4_timestamps(unix_secs: u64) -> (String, String) {
     // Civil-from-days, after Howard Hinnant's date algorithm.
     let days = (unix_secs / 86_400) as i64;
     let secs_of_day = (unix_secs % 86_400) as u32;
@@ -253,79 +249,3 @@ fn format_sigv4_timestamps(unix_secs: u64) -> (String, String) {
     (date_stamp, amz_date)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::format_sigv4_timestamps;
-
-    #[test]
-    fn epoch_zero() {
-        let (d, a) = format_sigv4_timestamps(0);
-        assert_eq!(d, "19700101");
-        assert_eq!(a, "19700101T000000Z");
-    }
-
-    #[test]
-    fn known_aws_example() {
-        // RFC 7231: 1970-01-01T00:00:00Z + 1_704_067_200s = 2024-01-01T00:00:00Z.
-        let (d, a) = format_sigv4_timestamps(1_704_067_200);
-        assert_eq!(d, "20240101");
-        assert_eq!(a, "20240101T000000Z");
-    }
-
-    #[test]
-    fn leap_year_feb_29() {
-        // 2024-02-29T12:34:56Z = 1_709_210_096
-        let (d, a) = format_sigv4_timestamps(1_709_210_096);
-        assert_eq!(d, "20240229");
-        assert_eq!(a, "20240229T123456Z");
-    }
-
-    #[test]
-    fn year_end_to_year_start() {
-        // 2025-12-31T23:59:59Z = 1_767_225_599
-        let (d, a) = format_sigv4_timestamps(1_767_225_599);
-        assert_eq!(d, "20251231");
-        assert_eq!(a, "20251231T235959Z");
-
-        // One second later — 2026-01-01T00:00:00Z = 1_767_225_600
-        let (d, a) = format_sigv4_timestamps(1_767_225_600);
-        assert_eq!(d, "20260101");
-        assert_eq!(a, "20260101T000000Z");
-    }
-
-    #[test]
-    fn non_leap_year_feb_28_to_mar_1() {
-        // 2025-02-28T23:59:59Z = 1_740_787_199 (2025 is NOT a leap year)
-        let (d, a) = format_sigv4_timestamps(1_740_787_199);
-        assert_eq!(d, "20250228");
-        assert_eq!(a, "20250228T235959Z");
-
-        // One second later — 2025-03-01T00:00:00Z, NOT Feb 29.
-        let (d, a) = format_sigv4_timestamps(1_740_787_200);
-        assert_eq!(d, "20250301");
-        assert_eq!(a, "20250301T000000Z");
-    }
-
-    #[test]
-    fn century_year_2100_is_not_leap() {
-        // 2100 is divisible by 100 but not 400 — Gregorian rule says NOT a
-        // leap year. Verify Feb 28 → Mar 1 (no Feb 29).
-        // 2100-02-28T00:00:00Z = 4_107_456_000
-        let (d, _) = format_sigv4_timestamps(4_107_456_000);
-        assert_eq!(d, "21000228");
-        // +86400s → must skip to March 1, not Feb 29.
-        let (d, _) = format_sigv4_timestamps(4_107_456_000 + 86_400);
-        assert_eq!(d, "21000301");
-    }
-
-    #[test]
-    fn year_2000_was_leap() {
-        // 2000 IS divisible by 400 — leap year. Feb 29 must exist.
-        // 2000-02-29T00:00:00Z = 951_782_400
-        let (d, _) = format_sigv4_timestamps(951_782_400);
-        assert_eq!(d, "20000229");
-        // +86400s → 2000-03-01.
-        let (d, _) = format_sigv4_timestamps(951_782_400 + 86_400);
-        assert_eq!(d, "20000301");
-    }
-}

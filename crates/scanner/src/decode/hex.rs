@@ -11,13 +11,19 @@ impl Decoder for HexDecoder {
 
     fn decode_chunk(&self, chunk: &Chunk) -> Vec<Chunk> {
         let mut decoded_chunks = Vec::new();
-        for hex_match in find_hex_strings(&chunk.data, 32) {
-            if let Ok(decoded) = hex_decode(&hex_match.value) {
+        // Floor lowered from 32→16 hex chars (8 decoded bytes) so
+        // short API keys encode-through in `encoding_explosion_runner`.
+        for hex_match in find_hex_strings(&chunk.data, 16) {
+            let cleaned: String = hex_match
+                .value
+                .chars()
+                .filter(|c| *c != '_')
+                .collect();
+            if let Ok(decoded) = hex_decode(&cleaned) {
                 if let Ok(text) = String::from_utf8(decoded) {
-                    // Splice the decoded text over the hex blob in
-                    // the parent so companion context survives — see
-                    // base64.rs / pipeline.rs for the recall-gap
-                    // explanation.
+                    // Splice over the *original* encoded blob (with `_` if present)
+                    // so companion context survives — passing the cleaned form
+                    // misses the parent substring and drops the anchor.
                     push_decoded_text_chunk_spliced(
                         &mut decoded_chunks,
                         chunk,
@@ -44,7 +50,9 @@ fn find_hex_strings(text: &str, min_length: usize) -> Vec<EncodedString> {
             && cleaned.len().is_multiple_of(2)
             && cleaned.chars().all(|ch| ch.is_ascii_hexdigit())
         {
-            results.push(EncodedString { value: cleaned });
+            results.push(EncodedString {
+                value: candidate,
+            });
         }
     }
     results
@@ -55,10 +63,11 @@ const MAX_HEX_INPUT_LEN: usize = 32 * 1024 * 1024; // 32 MB -> 16 MB decoded
 
 #[allow(clippy::result_unit_err)]
 pub fn hex_decode(input: &str) -> Result<Vec<u8>, ()> {
-    if !input.len().is_multiple_of(2) || input.len() > MAX_HEX_INPUT_LEN {
+    let cleaned: String = input.chars().filter(|c| *c != '_').collect();
+    if !cleaned.len().is_multiple_of(2) || cleaned.len() > MAX_HEX_INPUT_LEN {
         return Err(());
     }
-    hex_simd::decode_to_vec(input).map_err(|_| ())
+    hex_simd::decode_to_vec(&cleaned).map_err(|_| ())
 }
 
 pub(super) fn hex_val(byte: u8) -> Result<u8, ()> {
@@ -74,6 +83,8 @@ pub(super) fn hex_val(byte: u8) -> Result<u8, ()> {
 mod tests {
     use super::*;
 
+    const VALID_CREDENTIAL: &str = "TESTKEY_aK7xP9mQ2wE5rT8yU1iO";
+
     #[test]
     fn underscored_hex_is_recognized() {
         // 64 hex chars (32 bytes) split into 2-char groups by `_`.
@@ -82,11 +93,50 @@ mod tests {
                     _51_52_53_54_55_56_57_58_59_5a_61_62_63_64_65_66\"";
         let found = find_hex_strings(body, 32);
         assert_eq!(found.len(), 1);
-        // Underscores stripped; only hex remains.
-        assert!(found[0].value.chars().all(|c| c.is_ascii_hexdigit()));
-        assert_eq!(found[0].value.len(), 64);
+        let cleaned: String = found[0]
+            .value
+            .chars()
+            .filter(|c| *c != '_')
+            .collect();
+        assert!(cleaned.chars().all(|c| c.is_ascii_hexdigit()));
+        assert_eq!(cleaned.len(), 64);
         let decoded = hex_decode(&found[0].value).expect("decodes");
         assert_eq!(&decoded[..16], b"ABCDEFGHIJKLMNOP");
+    }
+
+    #[test]
+    fn underscored_testkey_hex_decodes_to_credential() {
+        let hex: String = VALID_CREDENTIAL
+            .bytes()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        let underscored = hex
+            .as_bytes()
+            .chunks(4)
+            .map(|chunk| std::str::from_utf8(chunk).unwrap())
+            .collect::<Vec<_>>()
+            .join("_");
+        let body = format!("const token_hex = \"{underscored}\";");
+        let found = find_hex_strings(&body, 32);
+        assert_eq!(found.len(), 1, "underscored TESTKEY hex must be found");
+        let decoded = String::from_utf8(hex_decode(&found[0].value).unwrap()).unwrap();
+        assert_eq!(decoded, VALID_CREDENTIAL);
+    }
+
+    #[test]
+    fn hex_decode_strips_underscore_separators() {
+        let hex: String = VALID_CREDENTIAL
+            .bytes()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        let underscored = hex
+            .as_bytes()
+            .chunks(4)
+            .map(|chunk| std::str::from_utf8(chunk).unwrap())
+            .collect::<Vec<_>>()
+            .join("_");
+        let decoded = String::from_utf8(hex_decode(&underscored).unwrap()).unwrap();
+        assert_eq!(decoded, VALID_CREDENTIAL);
     }
 
     #[test]

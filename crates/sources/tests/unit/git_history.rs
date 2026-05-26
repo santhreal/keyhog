@@ -123,3 +123,85 @@ fn git_history_source_honors_max_commits() {
     assert_eq!(chunks.len(), 1);
     assert_eq!(chunks[0].metadata.path.as_deref(), Some("second.txt"));
 }
+
+#[cfg(feature = "git")]
+#[test]
+fn git_history_source_ignores_deleted_file_hunks() {
+    let (_temp_dir, repo_path) = create_test_repo();
+    commit_file(
+        &repo_path,
+        "temp.txt",
+        "TEMP_SECRET = sk-should-not-resurface\n",
+        "Add temp",
+    );
+    std::fs::write(repo_path.join("temp.txt"), "removed\n").unwrap();
+    Command::new("git")
+        .args(["add", "temp.txt"])
+        .current_dir(&repo_path)
+        .output()
+        .unwrap();
+    let output = Command::new("git")
+        .args(["commit", "-m", "Remove temp"])
+        .current_dir(&repo_path)
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+
+    let chunks: Vec<_> = GitHistorySource::new(repo_path)
+        .with_max_commits(1)
+        .chunks()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+
+    assert!(
+        chunks
+            .iter()
+            .all(|c| !c.data.contains("sk-should-not-resurface")),
+        "deleted-file hunks must not resurface removed secrets; got {chunks:?}"
+    );
+}
+
+#[cfg(feature = "git")]
+#[test]
+fn git_history_source_rejects_non_repository_path() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("plain.txt"), "not a repo").unwrap();
+
+    let err = GitHistorySource::new(dir.path().to_path_buf())
+        .chunks()
+        .next()
+        .expect("non-repo should yield Err")
+        .expect_err("non-repo path must be rejected");
+
+    assert!(
+        err.to_string().contains("not a git repository"),
+        "expected git repository validation error; got {err}"
+    );
+}
+
+#[cfg(feature = "git")]
+#[test]
+fn git_history_source_sanitizes_traversal_paths_in_metadata() {
+    let (_temp_dir, repo_path) = create_test_repo();
+    commit_file(
+        &repo_path,
+        "safe.txt",
+        "TOKEN = sk-safe-path\n",
+        "Add safe file",
+    );
+
+    let chunks: Vec<_> = GitHistorySource::new(repo_path)
+        .with_max_commits(1)
+        .chunks()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+
+    for chunk in &chunks {
+        if let Some(path) = chunk.metadata.path.as_deref() {
+            assert!(
+                !path.contains("..") && !path.starts_with('/'),
+                "metadata path must be repo-relative and normalized; got {path:?}"
+            );
+        }
+    }
+}

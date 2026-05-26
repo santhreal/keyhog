@@ -38,6 +38,24 @@ const DEFAULT_EXCLUDE_PATTERNS: &[&str] = &[
     "**/tsconfig*.json",
 ];
 
+/// Merge default excludes, `.keyhogignore` paths, and `--exclude-paths`.
+pub fn merge_scan_ignore_paths(args: &ScanArgs, allowlist_paths: Vec<String>) -> Vec<String> {
+    let mut merged = if args.no_default_excludes {
+        allowlist_paths
+    } else {
+        let mut paths: Vec<String> = DEFAULT_EXCLUDE_PATTERNS
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        paths.extend(allowlist_paths);
+        paths
+    };
+    if let Some(exclude) = &args.exclude_paths {
+        merged.extend(exclude.iter().cloned());
+    }
+    merged
+}
+
 pub fn build_sources(
     args: &ScanArgs,
     ignore_paths: Vec<String>,
@@ -52,16 +70,7 @@ pub fn build_sources(
         Vec::new()
     };
 
-    let merged_ignore_paths = if args.no_default_excludes {
-        ignore_paths
-    } else {
-        let mut merged: Vec<String> = DEFAULT_EXCLUDE_PATTERNS
-            .iter()
-            .map(|s| s.to_string())
-            .collect();
-        merged.extend(ignore_paths);
-        merged
-    };
+    let merged_ignore_paths = merge_scan_ignore_paths(args, ignore_paths);
 
     if let Some(ref path) = args.path {
         // Existence + readability pre-flight. The codewalk-driven

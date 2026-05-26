@@ -348,6 +348,10 @@ pub fn select_backend(
 /// Recognized values: `gpu`, `mega-scan`, `simd`, `cpu` (case-
 /// insensitive). `mega-scan` selects the regex-NFA pipeline
 /// (`RulePipeline`) instead of the literal-set engine.
+pub fn forced_backend_from_env() -> Option<ScanBackend> {
+    backend_env_override()
+}
+
 fn backend_env_override() -> Option<ScanBackend> {
     let raw = std::env::var("KEYHOG_BACKEND").ok()?;
     match raw.trim().to_ascii_lowercase().as_str() {

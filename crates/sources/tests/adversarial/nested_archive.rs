@@ -56,3 +56,89 @@ fn gzip_member_secret_is_decompressed_to_chunk() {
         "gzip payload must decompress to scannable text; got {bodies:?}"
     );
 }
+
+#[test]
+fn jar_archive_inner_text_is_scanned() {
+    let dir = tempfile::tempdir().unwrap();
+    let secret = b"SLACK_TOKEN=xoxb-1234567890-1234567890-abcdefghijklmnopqrstuvwx\n";
+    let file = File::create(dir.path().join("app.jar")).unwrap();
+    let mut zip = zip::ZipWriter::new(file);
+    let options =
+        zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    zip.start_file("META-INF/config.env", options).unwrap();
+    zip.write_all(secret).unwrap();
+    zip.finish().unwrap();
+
+    let source = FilesystemSource::new(dir.path().to_path_buf());
+    let bodies: Vec<String> = source
+        .chunks()
+        .flatten()
+        .map(|c| c.data.to_string())
+        .collect();
+    assert!(
+        bodies.iter().any(|b| b.contains("xoxb-1234567890")),
+        ".jar archives must unpack inner text; got {bodies:?}"
+    );
+    let paths: Vec<_> = source
+        .chunks()
+        .flatten()
+        .filter_map(|c| c.metadata.path.clone())
+        .collect();
+    assert!(
+        paths.iter().any(|p| p.contains("config.env")),
+        "archive entry path must be surfaced; got {paths:?}"
+    );
+}
+
+#[test]
+fn jar_binary_entry_extracts_printable_strings() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut binary = Vec::new();
+    binary.extend_from_slice(&[0x00, 0x01, 0x02, 0x03]);
+    binary.extend_from_slice(b"HARDCODED_API=AKIAIOSFODNN7EXAMPLE");
+    binary.extend_from_slice(&[0xff, 0xfe]);
+
+    let file = File::create(dir.path().join("binary.jar")).unwrap();
+    let mut zip = zip::ZipWriter::new(file);
+    let options =
+        zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    zip.start_file("classes/Secret.class", options).unwrap();
+    zip.write_all(&binary).unwrap();
+    zip.finish().unwrap();
+
+    let source = FilesystemSource::new(dir.path().to_path_buf());
+    let chunks: Vec<_> = source.chunks().flatten().collect();
+    assert!(
+        chunks.iter().any(|c| {
+            c.metadata.source_type == "filesystem/archive-binary"
+                && c.data.contains("AKIAIOSFODNN7EXAMPLE")
+        }),
+        "binary archive entries must run printable-string extraction; got {chunks:?}"
+    );
+}
+
+#[test]
+fn archive_at_symlink_path_is_not_opened() {
+    let dir = tempfile::tempdir().unwrap();
+    let secret = b"GITHUB_TOKEN=ghp_symlinkBypassShouldNotReadThis000000000000\n";
+    let outer = tempfile::tempdir().unwrap();
+    let real = outer.path().join("real.jar");
+    let file = File::create(&real).unwrap();
+    let mut zip = zip::ZipWriter::new(file);
+    let options =
+        zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    zip.start_file("inner.env", options).unwrap();
+    zip.write_all(secret).unwrap();
+    zip.finish().unwrap();
+
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(&real, dir.path().join("linked.jar")).unwrap();
+        let source = FilesystemSource::new(dir.path().to_path_buf());
+        let count = source.chunks().flatten().count();
+        assert_eq!(
+            count, 0,
+            "symlinked archive paths must be skipped (link-swap defense)"
+        );
+    }
+}

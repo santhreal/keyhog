@@ -21,5 +21,5 @@ group = 1
 
 [[detector.companions]]
 name = "sanity_project_id"
-regex = "[a-z0-9]{8,12}"
+regex = "(?:SANITY|sanity)[_\\s]?(?:PROJECT[_\\s]?ID|project[_\\s]?id)[=:\\s\"']+([a-z0-9]{8,12})"
 within_lines = 5

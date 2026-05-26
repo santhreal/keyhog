@@ -1,0 +1,12 @@
+//! Plain path/detector lines without metadata must load.
+
+use keyhog_core::Allowlist;
+
+#[test]
+fn allowlist_entries_without_metadata_load() {
+    let al = Allowlist::parse("path:**/*.md
+detector:demo
+");
+    assert!(al.ignored_paths.iter().any(|p| p == "**/*.md"));
+    assert!(al.ignored_detectors.contains("demo"));
+}

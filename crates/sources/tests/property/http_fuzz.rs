@@ -22,6 +22,8 @@ use keyhog_sources::http::{async_client_builder, blocking_client_builder, HttpCl
 
 const CASES: u32 = 10_000;
 
+static ENV_PROXY_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 // ── strategies ──────────────────────────────────────────────────────
 
 /// A proxy URL the operator might plausibly pass — covers `http://`,
@@ -69,6 +71,7 @@ fn any_env_proxy() -> impl Strategy<Value = Option<String>> {
 /// binary; the broader race is across `cargo test --jobs N` binaries,
 /// which each get their own process and env.
 fn with_env_proxy<R>(env: Option<&str>, f: impl FnOnce() -> R) -> R {
+    let _guard = ENV_PROXY_LOCK.lock().unwrap();
     let prev = std::env::var("KEYHOG_PROXY").ok();
     match env {
         Some(v) => std::env::set_var("KEYHOG_PROXY", v),
@@ -239,6 +242,53 @@ proptest! {
             }
             Ok(())
         })?;
+    }
+
+    /// Proxy disable sentinels (`off`, `none`, empty) must round-trip
+    /// through `effective_proxy` verbatim so builders can call
+    /// `.no_proxy()` — a regression would silently inherit env proxies.
+    #[test]
+    fn proxy_disable_sentinels_are_preserved(flag in prop_oneof![
+        Just("off".to_string()),
+        Just("none".to_string()),
+        Just(String::new()),
+    ]) {
+        with_env_proxy(Some("http://env-should-not-win:8080"), || {
+            let cfg = HttpClientConfig {
+                proxy: Some(flag.clone()),
+                ..Default::default()
+            };
+            let resolved = cfg.effective_proxy();
+            prop_assert_eq!(resolved.as_deref(), Some(flag.as_str()));
+            Ok(())
+        })?;
+    }
+
+    /// Custom timeout must propagate to builder construction without
+    /// panicking — callers (Slack/S3/web) rely on per-source overrides.
+    #[test]
+    fn custom_timeout_builder_succeeds(secs in 1u64..120) {
+        let cfg = HttpClientConfig {
+            timeout: Some(std::time::Duration::from_secs(secs)),
+            ..Default::default()
+        };
+        prop_assert!(blocking_client_builder(&cfg).is_ok());
+        prop_assert!(async_client_builder(&cfg).is_ok());
+    }
+
+    /// UA suffix must not break builder construction for any short label.
+    #[test]
+    fn ua_suffix_builder_succeeds(suffix in "[a-z]{0,16}") {
+        let cfg = HttpClientConfig {
+            ua_suffix: if suffix.is_empty() {
+                None
+            } else {
+                Some(suffix)
+            },
+            ..Default::default()
+        };
+        prop_assert!(blocking_client_builder(&cfg).unwrap().build().is_ok());
+        prop_assert!(async_client_builder(&cfg).unwrap().build().is_ok());
     }
 }
 

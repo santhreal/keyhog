@@ -1,0 +1,16 @@
+mod backend_subcommand_parses;
+mod benchmark_gpu_summary_nonempty;
+mod calibrate_show_flag_parses;
+mod completion_bash_shell_parses;
+mod daemon_status_action_parses;
+mod daemon_wire_version_nonzero;
+mod detectors_subcommand_parses;
+mod explain_detector_id_parses;
+mod hook_install_subcommand_parses;
+mod orchestrator_deep_flag_parses;
+mod path_validation_existing_dir_ok;
+mod reporting_empty_findings_stdout;
+mod scan_subcommand_parses;
+mod scan_system_subcommand_parses;
+mod sources_build_filesystem_ok;
+mod watch_default_path_parses;

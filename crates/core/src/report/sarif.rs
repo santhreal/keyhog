@@ -156,6 +156,8 @@ struct SarifRegion {
     end_line: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     end_column: Option<usize>,
+    #[serde(rename = "charOffset", skip_serializing_if = "Option::is_none")]
+    char_offset: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     snippet: Option<SarifSnippet>,
 }
@@ -299,6 +301,7 @@ impl<W: Write + Send> SarifReporter<W> {
                             start_column: None,
                             end_line: None,
                             end_column: None,
+                            char_offset: None,
                             snippet: None,
                         },
                         inserted_content: SarifSnippet {
@@ -411,13 +414,22 @@ impl<W: Write + Send> SarifReporter<W> {
             uri_base_id: None,
         });
 
-        let region = loc.line.map(|line| SarifRegion {
-            start_line: Some(line),
-            start_column: None,
-            end_line: None,
-            end_column: None,
-            snippet: None,
-        });
+        let region = if loc.line.is_some() || loc.offset != 0 {
+            Some(SarifRegion {
+                start_line: loc.line,
+                start_column: None,
+                end_line: None,
+                end_column: None,
+                char_offset: if loc.offset != 0 {
+                    Some(loc.offset)
+                } else {
+                    None
+                },
+                snippet: None,
+            })
+        } else {
+            None
+        };
 
         let mut logical_locations = Vec::new();
 
@@ -571,165 +583,4 @@ fn percent_encode_path(path: &str) -> String {
         }
     }
     out
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::{MatchLocation, VerificationResult};
-    use std::collections::HashMap;
-    use std::sync::Arc;
-
-    fn synthetic_finding() -> VerifiedFinding {
-        VerifiedFinding {
-            detector_id: Arc::from("test-detector"),
-            detector_name: Arc::from("Test Detector"),
-            service: Arc::from("test"),
-            severity: Severity::High,
-            credential_redacted: std::borrow::Cow::Borrowed("****redacted"),
-            credential_hash: "abcdefabcdefabcdef".into(),
-            location: MatchLocation {
-                source: Arc::from("filesystem"),
-                file_path: Some(Arc::from("config.env")),
-                line: Some(42),
-                offset: 0,
-                commit: None,
-                author: None,
-                date: None,
-            },
-            verification: VerificationResult::Unverifiable,
-            metadata: HashMap::new(),
-            additional_locations: vec![],
-            confidence: Some(0.9),
-        }
-    }
-
-    #[test]
-    fn sarif_output_is_valid_json_with_cwe_owasp_taxa() {
-        let mut buf: Vec<u8> = Vec::new();
-        {
-            let mut r = SarifReporter::new(&mut buf);
-            r.report(&synthetic_finding()).unwrap();
-            r.finish().unwrap();
-        }
-        let json: serde_json::Value =
-            serde_json::from_slice(&buf).expect("SARIF output must parse as JSON");
-
-        // Per-result properties carry CWE and OWASP refs.
-        let cwe = json["runs"][0]["results"][0]["properties"]["cwe"].as_str();
-        assert_eq!(cwe, Some("CWE-798"));
-        let owasp = json["runs"][0]["results"][0]["properties"]["owasp"].as_str();
-        assert_eq!(owasp, Some("A07:2021"));
-
-        // runs[0].taxonomies block resolves the CWE/OWASP references.
-        let tax_name = json["runs"][0]["taxonomies"][0]["name"].as_str();
-        assert_eq!(tax_name, Some("CWE"));
-        let cwe_taxa_id = json["runs"][0]["taxonomies"][0]["taxa"][0]["id"].as_str();
-        assert_eq!(cwe_taxa_id, Some("CWE-798"));
-        let owasp_name = json["runs"][0]["taxonomies"][1]["name"].as_str();
-        assert_eq!(owasp_name, Some("OWASP"));
-
-        // SARIF v2.2 fixes[]: a replacement suggestion for the leaked
-        // credential. With service="test" we expect ${TEST_KEY} fallback.
-        let fix_replacement = json["runs"][0]["results"][0]["fixes"][0]["artifactChanges"][0]
-            ["replacements"][0]["insertedContent"]["text"]
-            .as_str();
-        assert_eq!(fix_replacement, Some("${TEST_KEY}"));
-        let fix_uri = json["runs"][0]["results"][0]["fixes"][0]["artifactChanges"][0]
-            ["artifactLocation"]["uri"]
-            .as_str();
-        assert_eq!(fix_uri, Some("config.env"));
-    }
-
-    #[test]
-    fn empty_run_still_produces_valid_sarif() {
-        let mut buf: Vec<u8> = Vec::new();
-        {
-            let mut r = SarifReporter::new(&mut buf);
-            r.finish().unwrap();
-        }
-        let json: serde_json::Value = serde_json::from_slice(&buf).expect("valid JSON");
-        assert_eq!(json["version"].as_str(), Some("2.1.0"));
-        let results = json["runs"][0]["results"]
-            .as_array()
-            .expect("results array");
-        assert!(results.is_empty());
-    }
-
-    #[test]
-    fn sarif_uri_relative_path_passes_through() {
-        assert_eq!(
-            SarifReporter::<Vec<u8>>::file_path_to_sarif_uri("config.env"),
-            "config.env"
-        );
-        assert_eq!(
-            SarifReporter::<Vec<u8>>::file_path_to_sarif_uri("src/lib.rs"),
-            "src/lib.rs"
-        );
-        assert_eq!(
-            SarifReporter::<Vec<u8>>::file_path_to_sarif_uri("a/b/c.txt"),
-            "a/b/c.txt"
-        );
-    }
-
-    #[test]
-    fn sarif_uri_posix_absolute_gets_file_scheme() {
-        assert_eq!(
-            SarifReporter::<Vec<u8>>::file_path_to_sarif_uri("/etc/secrets.env"),
-            "file:///etc/secrets.env"
-        );
-        assert_eq!(
-            SarifReporter::<Vec<u8>>::file_path_to_sarif_uri("/home/u/.aws/credentials"),
-            "file:///home/u/.aws/credentials"
-        );
-    }
-
-    #[test]
-    fn sarif_uri_percent_encodes_unsafe_bytes() {
-        assert_eq!(
-            SarifReporter::<Vec<u8>>::file_path_to_sarif_uri("/tmp/file with space.env"),
-            "file:///tmp/file%20with%20space.env"
-        );
-        assert_eq!(
-            SarifReporter::<Vec<u8>>::file_path_to_sarif_uri("/tmp/réport.json"),
-            "file:///tmp/r%C3%A9port.json"
-        );
-        assert_eq!(
-            SarifReporter::<Vec<u8>>::file_path_to_sarif_uri("/tmp/foo?bar#baz"),
-            "file:///tmp/foo%3Fbar%23baz"
-        );
-    }
-
-    #[test]
-    fn sarif_uri_windows_absolute_normalises_backslashes() {
-        assert_eq!(
-            SarifReporter::<Vec<u8>>::file_path_to_sarif_uri("C:\\Users\\bob\\.aws\\creds"),
-            "file:///C:/Users/bob/.aws/creds"
-        );
-        assert_eq!(
-            SarifReporter::<Vec<u8>>::file_path_to_sarif_uri("D:/secrets/key.pem"),
-            "file:///D:/secrets/key.pem"
-        );
-    }
-
-    #[test]
-    fn sarif_uri_full_run_with_absolute_path() {
-        let mut finding = synthetic_finding();
-        finding.location.file_path = Some(Arc::from("/etc/keys/aws.env"));
-        let mut buf: Vec<u8> = Vec::new();
-        {
-            let mut r = SarifReporter::new(&mut buf);
-            r.report(&finding).unwrap();
-            r.finish().unwrap();
-        }
-        let json: serde_json::Value = serde_json::from_slice(&buf).expect("valid JSON");
-        let loc_uri = json["runs"][0]["results"][0]["locations"][0]["physicalLocation"]
-            ["artifactLocation"]["uri"]
-            .as_str();
-        assert_eq!(loc_uri, Some("file:///etc/keys/aws.env"));
-        let fix_uri = json["runs"][0]["results"][0]["fixes"][0]["artifactChanges"][0]
-            ["artifactLocation"]["uri"]
-            .as_str();
-        assert_eq!(fix_uri, Some("file:///etc/keys/aws.env"));
-    }
 }

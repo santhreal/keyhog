@@ -1,0 +1,8 @@
+mod git_diff_invalid_ref_errors;
+mod git_history_non_repo_yields_no_chunks;
+mod git_source_non_repo_name_only;
+mod http_default_no_explicit_proxy;
+mod s3_empty_bucket_name;
+mod stdin_name_is_stdin;
+mod strings_binary_extracts_ascii;
+mod filesystem_read_missing_path_err;

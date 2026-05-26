@@ -1,0 +1,20 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc cca7c0e969d31945e55c328774c88752bc44b3d56bb3fe4bf8163a3753d62396 # shrinks to noise = 251
+cc 89d0ab3e6e106174b84c8f72fa812635485dc34d3d4b89ce551985526dc964f8 # shrinks to env = ""
+cc 328df8913029d54607e70a6cb85463244783e3254a49ad54692815cea7057dce # shrinks to _seed = 3635553497
+cc 93b49ac75b88d65d93513e79cae3ef10240da701c8bf3a890768b97656523870 # shrinks to _seed = 245541155
+cc 0d55101a73f36f871c118b89adf92f1a9d833199fa5a2084186b175fdaaf7719 # shrinks to noise = 12
+cc 1b688974cfbc57792d033260362a9059ab78951d46798a28c3fa7116aa938c39 # shrinks to env = "http://zeb:C40j08U2IeCiQZ9@g619.uu8:51506"
+cc 652f485f9bd241ec9d21ff4656f79e2d29ca962379a28970b8e922a2f7bca570 # shrinks to _seed = 115753590
+cc 50c36362c72553250556db86e29bb3fbdc5e802590ad1b6fc96819b441c45b01 # shrinks to noise = 61
+cc 598c311835c7032d05a7dc9419499ff8022caa5cdea637fd7a452b4bdfa39e4d # shrinks to value = "1"
+cc 189e47757a721050438314cd10955867fa8715601ca1aee5d4b86458aab9bc54 # shrinks to noise = 121
+cc 504dedb1ab7af7de4b9cb914efabbbaa4664ae765da199c827e05797bf067c24 # shrinks to _seed = 4129223711
+cc 2edeb39d1f08943f6e0c886c766b44786e4975fd7aa232e02cf6cde826dde755 # shrinks to env = "socks5://q3q.hgj.7-v.k-4z.gd..jh-:42380"
+cc 2439c2bcdbff8a08f842bb81b439a802b19309ade5e2afe1ed2700f9cd2f6a4e # shrinks to value = "KhEGP9h"
+cc b991c1e89fd75922c5937862311099dfc45946cb723753e0fcffe20459c57d85 # shrinks to _seed = 703495909

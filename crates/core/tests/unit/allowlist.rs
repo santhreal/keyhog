@@ -196,8 +196,10 @@ hash:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
         let al = Allowlist::parse(content);
         assert_eq!(al.credential_hashes.len(), 1);
     });
-    assert!(logs.contains("invalid allowlist entry"));
+    // Bare non-prefixed lines are path globs (gitignore-style); only malformed
+    // `hash:` / `detector:` / `path:` entries emit hash/detector warnings.
     assert!(logs.contains("invalid hash allowlist entry"));
+    assert!(logs.contains("invalid detector allowlist entry"));
 }
 
 #[test]
