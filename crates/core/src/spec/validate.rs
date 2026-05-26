@@ -5,9 +5,12 @@ use regex_syntax::ast;
 use serde::Serialize;
 
 const MAX_REGEX_PATTERN_LEN: usize = 4096;
-const MAX_REGEX_AST_NODES: usize = 512;
-const MAX_REGEX_ALTERNATION_BRANCHES: usize = 64;
-const MAX_REGEX_REPEAT_BOUND: u32 = 1_000;
+// MAX_REGEX_AST_NODES / MAX_REGEX_ALTERNATION_BRANCHES /
+// MAX_REGEX_REPEAT_BOUND were originally defined here too but are the
+// canonical constants in `validate_regex.rs` (which is where they're
+// actually consumed). Duplicates here had no consumers — clippy
+// `dead_code` flagged them. Re-imports happen via the `use
+// validate_regex::validate_regex_complexity;` below.
 
 /// Quality issue found in a detector spec.
 ///

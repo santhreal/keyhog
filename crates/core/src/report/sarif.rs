@@ -273,7 +273,7 @@ impl<W: Write + Send> SarifReporter<W> {
                             .location
                             .file_path
                             .as_deref()
-                            .map(|p| super::sarif_uri::file_path_to_sarif_uri(p))
+                            .map(super::sarif_uri::file_path_to_sarif_uri)
                             .unwrap_or_default(),
                         uri_base_id: None,
                     },

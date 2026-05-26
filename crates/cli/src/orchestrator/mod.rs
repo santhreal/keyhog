@@ -18,7 +18,7 @@ use keyhog_scanner::CompiledScanner;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-pub(crate) use run::{EXIT_LIVE_CREDENTIALS, EXIT_SCANNER_PANIC};
+pub use run::{EXIT_LIVE_CREDENTIALS, EXIT_SCANNER_PANIC};
 
 #[doc(hidden)]
 pub use dispatch::explicit_backend_override;
@@ -161,4 +161,6 @@ impl ScanOrchestrator {
     }
 }
 
-pub(crate) use reporting::dump_dogfood_trace;
+// `reporting::dump_dogfood_trace` is consumed by sibling `run.rs` via
+// `use reporting::{dump_dogfood_trace, …};` directly. The re-export
+// that lived here was unused and tripped the unused-imports lint.

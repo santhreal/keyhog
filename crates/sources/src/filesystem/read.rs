@@ -570,6 +570,11 @@ fn has_utf16_nul_pattern(bytes: &[u8]) -> bool {
 }
 
 fn decode_utf16(bytes: &[u8]) -> Option<String> {
+    // BOM dispatch: try LE first, then BE; bail if neither matches.
+    // The two arms can't be flattened into a single `?` because each
+    // BOM also carries the endianness flag the rest of the function
+    // needs — clippy::question_mark gets this wrong.
+    #[allow(clippy::question_mark)]
     let (little_endian, payload) = if let Some(rest) = bytes.strip_prefix(&[0xFF, 0xFE]) {
         (true, rest)
     } else if let Some(rest) = bytes.strip_prefix(&[0xFE, 0xFF]) {

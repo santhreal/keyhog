@@ -1,5 +1,5 @@
-use keyhog_core::Chunk;
-
+// The function signature below references `keyhog_core::Chunk` via the
+// full path; no top-level `use` is needed.
 const COALESCE_SEPARATOR_LEN: usize = 8;
 const COALESCE_SEPARATOR_BYTE: u8 = 0xFF;
 

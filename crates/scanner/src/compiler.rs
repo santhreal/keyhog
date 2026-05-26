@@ -194,26 +194,17 @@ fn rewrite_alternation_prefix(regex: &str, expanded_prefix: &str) -> Option<Stri
     // `(FLWSECK_(?:TEST|LIVE)-[a-f0-9]{32,64}-X)` got rewritten to
     // `FLW[SСＳ][EЕΕＥ]C[KКΚＫ]_` which then matched bare `FLWSECK_`
     // anywhere in the text.
-    let group_open_end = if let Some(rest) = body.strip_prefix("(?:") {
-        body.len() - rest.len()
-    } else if let Some(rest) = body.strip_prefix("(?i:") {
-        body.len() - rest.len()
-    } else if let Some(rest) = body.strip_prefix("(?m:") {
-        body.len() - rest.len()
-    } else if let Some(rest) = body.strip_prefix("(?s:") {
-        body.len() - rest.len()
-    } else if let Some(rest) = body.strip_prefix("(?im:") {
-        body.len() - rest.len()
-    } else if let Some(rest) = body.strip_prefix("(?is:") {
-        body.len() - rest.len()
-    } else if let Some(rest) = body.strip_prefix("(?ms:") {
-        body.len() - rest.len()
-    } else {
-        // Bare `(` or no leading group — refuse to rewrite. The simple
-        // strip_prefix path in the caller handles literal-head regexes;
-        // this function is strictly for `(?:...)` alternation prefixes.
-        return None;
-    };
+    // Bare `(` or no leading group — refuse to rewrite. The simple
+    // strip_prefix path in the caller handles literal-head regexes;
+    // this function is strictly for `(?:...)` alternation prefixes.
+    // We accept the 7 common non-capturing forms (?:, (?i:, (?m:, (?s:,
+    // (?im:, (?is:, (?ms:) and bail out otherwise.
+    let group_open_end = ["(?:", "(?i:", "(?m:", "(?s:", "(?im:", "(?is:", "(?ms:"]
+        .iter()
+        .find_map(|prefix| {
+            body.strip_prefix(prefix)
+                .map(|rest| body.len() - rest.len())
+        })?;
     // Find the matching closing `)` for the leading group.
     let bytes = body.as_bytes();
     let mut depth: i32 = 0;
