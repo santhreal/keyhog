@@ -4,6 +4,85 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ## Unreleased
 
+## v0.5.18 — 2026-05-26 — dogfood FP sweep (12-target deep scan, 160 → 83 findings, ~48% FP reduction)
+
+### Precision
+
+- **deel-api-key matched Java JNI macro names.** Pattern was
+  `org_[a-zA-Z0-9_-]{30,}` which fired on every `org_sqlite_jni_capi_CApi_*`
+  macro in `javah`-generated C headers (41 FPs in sqlite alone, applies
+  to every Java-bindings library shipping JNI). Tightened to
+  `org_[a-zA-Z0-9]{30,}` — real Deel org tokens are opaque base62 with
+  no underscores or hyphens. Same fix for the `organization_` variant.
+- **generic-secret captured C++ / Rust scope resolution.** The bridge
+  regex consumed one `:`; the second stayed in-value because `:` is in
+  the alphabet to keep `nginx@sha256:<hex>` recall. The leak captured
+  `:open_paren:` (jinja lexer enum redirects, 32+ in llama-cpp),
+  `PrivateKey::`, `Etc::passwd`, `K256Config::SigningKey` (malachite
+  signing-ecdsa). Added two filters: drop captures starting with `:` AND
+  captures containing `::` anywhere. Sha256 digests pass both filters
+  (start with hex, no `::`).
+- **generic-secret captured Rust/Java/C# type names.** Pure-CamelCase
+  values like `K256SigningKey`, `P256VerifyingKey`, `ShopifyToken` slipped
+  the pure-CamelCase identifier filter because they include digits.
+  Added a "type-name shape" filter: 8..=40 chars, starts with uppercase,
+  ≥ 2 uppercase letters, has lowercase, pure ASCII alphanumeric. Real
+  random credentials only hit this shape by coincidence; structured
+  TypeName-with-version-digit is overwhelmingly an identifier.
+- **generic-password captured Java method references.** Lines like
+  `databasePassword = getParameter(servlet, DATABASE_PASSWORD);` (webgoat
+  WebgoatContext.java) captured `getParameter` (12-char pure CamelCase,
+  no digit). Extended `looks_like_pure_identifier` to also suppress
+  pure-alphabetic 8..=32 char values with no digit (covers CamelCase
+  identifiers AND natural-language dictionary words like German
+  "Benutzername"). Real credentials have at least one digit or symbol.
+- **entropy-api-key captured Java keystore filenames.** Bat-go's
+  docker-compose.yml had 4+ findings on `kafka.broker1.keystore.jks` /
+  `kafka.broker1.truststore.jks` next to `KEYSTORE_FILENAME:` anchors.
+  Added a filename-suffix filter that drops values ending in `.jks`,
+  `.yml`, `.yaml`, `.toml`, `.json`, `.properties`, `.pem`, `.key`,
+  `.crt`, `.cer`, `.pfx`, `.p12`, `.keystore`, `.truststore`, `.conf`,
+  `.ini`, `.env`, `.lock`, `.log`. Real credentials never end in a known
+  file extension.
+
+### CI / tests
+
+- **Test gate stayed red on integration-test type drift.** `bconcat!`
+  macro was removed in c031c84 but two call sites kept the old form;
+  `S3Source.name()` test didn't import the `Source` trait. Both fixed:
+  `bconcat!(...)` → `concat!(...).as_bytes()`, `use keyhog_core::Source;`
+  added to the S3 gate.
+- **Exit code consolidation.** `main.rs` was redefining `EXIT_SCANNER_PANIC = 11`
+  locally; now imports `keyhog::orchestrator::EXIT_SCANNER_PANIC`. One source
+  of truth.
+
+### Dogfood scope (proof of FP reduction, not a sample)
+
+Twelve real-world targets, all pre-v0.5.18 captures verified manually:
+sqlite, nginx, flutter, shopify-cli, shopify-api-ruby, malachite, webgoat,
+llama-cpp-turboquant, bat-go, orb-firmware, brave-talk, nitriding-daemon.
+Per-target totals:
+
+| target              | v0.5.17 | v0.5.18 | Δ   |
+|---------------------|--------:|--------:|----:|
+| sqlite (deel JNI)   |    41   |     6   | -85%|
+| llama-cpp (jinja)   |    41   |     7   | -83%|
+| webgoat (Java)      |     5   |     3   | -40%|
+| malachite (Rust)    |    10   |     8   | -20%|
+| shopify-api-ruby    |    10   |     8   | -20%|
+| shopify-cli         |     5   |     4   | -20%|
+| bat-go (filenames)  |    29   |    28   | -3% |
+| orb-firmware        |    13   |    13   |  0  |
+| brave-talk          |     5   |     5   |  0  |
+| nginx               |     1   |     1   |  0  |
+| nitriding-daemon    |     0   |     0   |  ✓  |
+| _self (keyhog repo) |     0   |     0   |  ✓  |
+| **total**           |   160   |    83   | -48%|
+
+Detector-level deltas: deel-api-key 35→0 (-100%), generic-secret 61→22
+(-64%), generic-password 4→0 (-100%), entropy-api-key 27→27 (filename
+filter wave 2 still pending wider rollout).
+
 ## v0.5.17 — 2026-05-26 — SSRF redirect closure + --insecure honor + oob hygiene
 
 ### Security
