@@ -161,6 +161,19 @@ impl CompiledScanner {
                 continue;
             }
 
+            // i18n / translation file context: gogs ships ~150 .ini
+            // locale files (locale_en-US.ini, locale_hu-HU.ini, etc.)
+            // with translation strings around "password", "token",
+            // "key" keywords. The entropy fallback fires on the
+            // translated text (Hungarian "Jelszó", Portuguese "Senha",
+            // Latvian "Parole") because non-ASCII bytes have high
+            // entropy. 103 entropy-password FPs in gogs alone.
+            // The same family covers .po (gettext), .properties
+            // (Java i18n), and any path with /locale/ or /i18n/.
+            if entropy_path_is_i18n_file(chunk.metadata.path.as_deref()) {
+                continue;
+            }
+
             // Shell-expansion / template-literal shapes: values starting
             // with `$(`, `${`, `$ECR`, `$RUN`, `$VAR`, `\"${`, or `[{ \"`
             // are shell command substitutions, env-var refs, or JSON
@@ -303,6 +316,45 @@ fn entropy_path_is_ci_workflow_file(path: Option<&str>) -> bool {
         || p.ends_with(".travis.yml")
         || p.contains("/Jenkinsfile")
         || p.ends_with("/Jenkinsfile")
+}
+
+/// True when the file path looks like an i18n / translation file.
+/// Translation strings live near localized variants of "password",
+/// "token", "key" keywords; the values they contain are natural-
+/// language sentences in Hungarian / Portuguese / Latvian / Italian
+/// / etc. The high-entropy bytes are the non-ASCII characters of the
+/// translated text, not credentials. 103+ entropy-password FPs in
+/// gogs locale_*.ini alone.
+#[cfg(feature = "entropy")]
+fn entropy_path_is_i18n_file(path: Option<&str>) -> bool {
+    let Some(p) = path else {
+        return false;
+    };
+    p.contains("/locale/")
+        || p.contains("/locales/")
+        || p.contains("/i18n/")
+        || p.contains("/l10n/")
+        || p.contains("/translations/")
+        || p.contains("/lang/")
+        || p.contains("/langs/")
+        || p.ends_with(".po")
+        || p.ends_with(".pot")
+        || {
+            // Locale filename convention: `locale_<region>.<ext>` (gogs),
+            // `messages_<lang>.properties` (Java), `strings_<lang>.xml`
+            // (Android). Detect the `_xx-XX.` or `_xx.` infix before the
+            // final extension.
+            let name = p.rsplit('/').next().unwrap_or(p);
+            (name.starts_with("locale_")
+                || name.starts_with("messages_")
+                || name.starts_with("strings_"))
+                && (name.ends_with(".ini")
+                    || name.ends_with(".properties")
+                    || name.ends_with(".xml")
+                    || name.ends_with(".json")
+                    || name.ends_with(".yaml")
+                    || name.ends_with(".yml"))
+        }
 }
 
 /// Values ending in a common file extension are filenames being
