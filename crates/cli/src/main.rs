@@ -12,7 +12,12 @@ use std::process::ExitCode;
 use std::sync::atomic::Ordering;
 
 const EXIT_USER_ERROR: u8 = 2;
-const EXIT_SYSTEM_ERROR: u8 = 3;
+// Scanner thread panicked mid-scan — exit 11 per `keyhog --help`
+// after_help. Earlier code used the same name with value 3, colliding
+// with detectors::EXIT_AUDIT_FAILED. Aligned with orchestrator's
+// EXIT_SCANNER_PANIC so CI scripts can distinguish "detector audit
+// failure" (3) from "scanner crashed" (11). 2026-05-26.
+const EXIT_SCANNER_PANIC: u8 = 11;
 
 /// Restore the default SIGPIPE handler so Unix piping works.
 ///
@@ -128,7 +133,7 @@ async fn main() -> ExitCode {
     match command_outcome {
         Ok(outcome) => {
             if SCANNER_PANICKED.load(Ordering::Relaxed) {
-                ExitCode::from(EXIT_SYSTEM_ERROR)
+                ExitCode::from(EXIT_SCANNER_PANIC)
             } else {
                 outcome
             }
@@ -140,7 +145,7 @@ async fn main() -> ExitCode {
             // {:?} debug dump that includes Backtrace internals.
             eprintln!("error: {error:#}");
             let code = if keyhog::SCANNER_PANICKED.load(std::sync::atomic::Ordering::SeqCst) {
-                EXIT_SYSTEM_ERROR
+                EXIT_SCANNER_PANIC
             } else {
                 EXIT_USER_ERROR
             };
