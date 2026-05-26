@@ -25,8 +25,11 @@ fn every_detector_id_has_contract() {
         .flatten()
         .filter_map(|e| {
             let p = e.path();
-            (p.extension().and_then(|s| s.to_str()) == Some("toml"))
-                .then(|| p.file_stem()?.to_str()?.to_string())
+            if p.extension().and_then(|s| s.to_str()) != Some("toml") {
+                return None;
+            }
+            let stem = p.file_stem()?.to_str()?.to_string();
+            Some(stem)
         })
         .collect();
 

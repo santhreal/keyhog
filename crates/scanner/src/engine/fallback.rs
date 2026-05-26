@@ -249,7 +249,7 @@ impl CompiledScanner {
     fn calculate_final_score(
         &self,
         heuristic_conf: f64,
-        context: CodeContext,
+        context: context::CodeContext,
         credential: &str,
         data: &str,
         line: usize,

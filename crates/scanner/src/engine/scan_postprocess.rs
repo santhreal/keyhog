@@ -1,9 +1,9 @@
 use super::CompiledScanner;
 use crate::compiler::*;
-use crate::context;
+use crate::context::{self, CodeContext};
 use crate::pipeline::*;
 use crate::types::*;
-use keyhog_core::{Chunk, RawMatch};
+use keyhog_core::{Chunk, MatchLocation, RawMatch};
 use std::collections::HashSet;
 use std::sync::Arc;
 

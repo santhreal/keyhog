@@ -8,6 +8,10 @@ use crate::{MatchLocation, Severity, VerifiedFinding};
 
 use super::{ReportError, Reporter, WriterBackedReporter};
 
+#[path = "sarif_taxonomies.rs"]
+mod sarif_taxonomies;
+use sarif_taxonomies::sarif_taxonomies_json;
+
 /// SARIF v2.1.0 reporter — STREAMING.
 ///
 /// Writes the SARIF document skeleton on construction and emits each
@@ -50,18 +54,6 @@ struct SarifRule {
 #[serde(rename_all = "camelCase")]
 struct SarifMessage {
     text: String,
-}
-
-// Note: `SarifRun` and `SarifLog` are no longer constructed since the
-// streaming reporter writes the document skeleton manually. They remain as
-// schema documentation for readers; mark `#[allow(dead_code)]` so the
-// compiler warns us if a non-streaming consumer reuses them.
-#[allow(dead_code)]
-#[derive(Debug, Clone, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-struct SarifRun {
-    tool: SarifTool,
-    results: Vec<SarifResult>,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -175,16 +167,6 @@ struct SarifLogicalLocation {
     kind: String,
 }
 
-#[allow(dead_code)]
-#[derive(Debug, Clone, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-struct SarifLog {
-    version: String,
-    #[serde(rename = "$schema")]
-    schema: String,
-    runs: Vec<SarifRun>,
-}
-
 impl<W: Write + Send> SarifReporter<W> {
     pub fn new(writer: W) -> Self {
         Self {
@@ -291,7 +273,7 @@ impl<W: Write + Send> SarifReporter<W> {
                             .location
                             .file_path
                             .as_deref()
-                            .map(Self::file_path_to_sarif_uri)
+                            .map(|p| super::sarif_uri::file_path_to_sarif_uri(p))
                             .unwrap_or_default(),
                         uri_base_id: None,
                     },
@@ -344,29 +326,6 @@ impl<W: Write + Send> SarifReporter<W> {
         }
     }
 
-    /// Render a `MatchLocation.file_path` value as a SARIF v2.1.0
-    /// `artifactLocation.uri`.
-    ///
-    /// SARIF §3.4.4 requires either a relative URI reference (resolved
-    /// against `uriBaseId`) or a valid absolute URI. A bare absolute
-    /// filesystem path like `/etc/secrets.env` or `C:\creds\aws.txt`
-    /// is *not* a valid URI — GitHub Code Scanning rejects the SARIF
-    /// upload with `invalid artifact location`. We detect that shape
-    /// and promote it to a `file://` URI with the path percent-encoded
-    /// per RFC 3986.
-    fn file_path_to_sarif_uri(path: &str) -> String {
-        if path.starts_with('/') {
-            // POSIX absolute path → `file:///<encoded>`.
-            format!("file://{}", percent_encode_path(path))
-        } else if is_windows_absolute(path) {
-            // Windows absolute path. SARIF spec example: `file:///C:/foo/bar`.
-            let normalised = path.replace('\\', "/");
-            format!("file:///{}", percent_encode_path(&normalised))
-        } else {
-            // Relative path (or "stdin", or already a URI) — pass through.
-            path.to_string()
-        }
-    }
 
     fn build_rule(finding: &VerifiedFinding) -> SarifRule {
         SarifRule {
@@ -514,37 +473,7 @@ impl<W: Write + Send> Reporter for SarifReporter<W> {
         // Scanning, Splunk) resolve `result.properties.cwe = "CWE-798"`
         // against this block. Tier-B #16 from audits/legendary-2026-04-26.
         write!(self.writer, ",\"taxonomies\":")?;
-        let taxonomies = serde_json::json!([
-            {
-                "name": "CWE",
-                "version": "4.13",
-                "informationUri": "https://cwe.mitre.org/data/definitions/798.html",
-                "shortDescription": { "text": "Common Weakness Enumeration" },
-                "taxa": [{
-                    "id": "CWE-798",
-                    "name": "Use of Hard-coded Credentials",
-                    "shortDescription": {
-                        "text": "The product contains hard-coded credentials, such as a password or cryptographic key, which it uses for its own inbound authentication, outbound communication to external components, or encryption of internal data."
-                    },
-                    "helpUri": "https://cwe.mitre.org/data/definitions/798.html"
-                }]
-            },
-            {
-                "name": "OWASP",
-                "version": "2021",
-                "informationUri": "https://owasp.org/Top10/A07_2021-Identification_and_Authentication_Failures/",
-                "shortDescription": { "text": "OWASP Top 10:2021" },
-                "taxa": [{
-                    "id": "A07:2021",
-                    "name": "Identification and Authentication Failures",
-                    "shortDescription": {
-                        "text": "Confirmation of the user's identity, authentication, and session management is critical to protect against authentication-related attacks."
-                    },
-                    "helpUri": "https://owasp.org/Top10/A07_2021-Identification_and_Authentication_Failures/"
-                }]
-            }
-        ]);
-        serde_json::to_writer(&mut self.writer, &taxonomies)?;
+        serde_json::to_writer(&mut self.writer, &sarif_taxonomies_json())?;
 
         write!(self.writer, "}}]}}")?;
         writeln!(self.writer)?;
@@ -558,29 +487,4 @@ impl<W: Write + Send> WriterBackedReporter for SarifReporter<W> {
     fn writer_mut(&mut self) -> &mut Self::Writer {
         &mut self.writer
     }
-}
-
-fn is_windows_absolute(s: &str) -> bool {
-    let b = s.as_bytes();
-    b.len() >= 3 && b[0].is_ascii_alphabetic() && b[1] == b':' && (b[2] == b'/' || b[2] == b'\\')
-}
-
-/// Percent-encode a filesystem path per RFC 3986 unreserved + path-safe set.
-/// Forward slash is preserved as the path separator; everything outside the
-/// `unreserved` set (`A-Z a-z 0-9 - _ . ~`) is encoded as `%XX`.
-fn percent_encode_path(path: &str) -> String {
-    let mut out = String::with_capacity(path.len());
-    for byte in path.bytes() {
-        let safe =
-            byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~' | b'/' | b':');
-        if safe {
-            out.push(byte as char);
-        } else {
-            out.push('%');
-            const HEX: &[u8; 16] = b"0123456789ABCDEF";
-            out.push(HEX[(byte >> 4) as usize] as char);
-            out.push(HEX[(byte & 0x0F) as usize] as char);
-        }
-    }
-    out
 }
