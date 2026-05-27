@@ -4,6 +4,28 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ## Unreleased
 
+### No silent GPU fallbacks
+
+- **`scanner/src/gpu.rs`** (MoE inference path): when the GPU MoE
+  context fails to initialise on a host that has a GPU, we now
+  `eprintln!` a loud warning instead of `tracing::debug!`-ing into
+  the void. The user paid for the GPU; they need to know we couldn't
+  use it. `KEYHOG_NO_GPU=1` silences the warning (operator opted
+  in to CPU). `KEYHOG_REQUIRE_GPU=1` exits with code 2 instead of
+  falling back.
+- **`scanner/src/engine/backend.rs`** (scan dispatch path): when
+  `scan_chunks_with_backend_internal` is called with
+  `ScanBackend::Gpu` or `ScanBackend::MegaScan` but the compiled
+  scanner has no GPU literals or no GPU backend, the same loud
+  one-shot warning fires via `warn_on_gpu_degradation` and the same
+  env-var contract applies. The hot-path branch was previously
+  silent; on every scan a user with a probe-detected-but-runtime-
+  unavailable GPU would have sat at SIMD throughput thinking they
+  were on the GPU path.
+- A `OnceLock` guard makes the warning fire exactly once per process
+  regardless of how many chunks pass through (CI scanning thousands
+  of files doesn't spam stderr).
+
 ## v0.5.30 - 2026-05-27 - premium interactive installer + CUDA-on-Linux release variant + star tracker
 
 ### New: premium interactive installer
