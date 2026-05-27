@@ -12,6 +12,7 @@
 
 - [How detection works](./detection.md)
 - [Detectors](./detectors.md)
+- [HTTP and wire scanning](./http-wire.md)
 - [Suppressions](./suppressions.md)
 - [Verification](./verification.md)
 
