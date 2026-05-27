@@ -48,6 +48,7 @@ mod binary;
 #[cfg(feature = "docker")]
 mod docker;
 mod filesystem;
+mod har;
 #[cfg(feature = "git")]
 mod git;
 #[cfg(feature = "github")]

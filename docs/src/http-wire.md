@@ -19,7 +19,7 @@ few flags and sources. This page is the map.
 | Scan a public JS bundle                   | `keyhog scan --url https://app.example.com/static/main.js`   |
 | Scan every URL in a list                  | `keyhog scan --url $(cat urls.txt)`                          |
 | Scan a source-map exposed by Webpack      | `keyhog scan --url https://app.example.com/static/main.js.map` |
-| Scan a HAR export from DevTools           | `keyhog scan capture.har` *(planned, see [Roadmap](#roadmap))* |
+| Scan a HAR export from DevTools           | `keyhog scan capture.har`  (see [HAR auto-expansion](#har-auto-expansion))   |
 | Scan a single curl response               | `curl -s https://api/... \| keyhog scan --stdin`             |
 | Scan a saved Burp / mitmproxy capture     | `keyhog scan dump.txt`  *(treats as text — no protocol parsing)* |
 | Route every fetch through Burp            | `keyhog scan --url https://... --proxy http://burp:8080 --insecure` |
@@ -86,6 +86,43 @@ Order: explicit flag → KEYHOG_PROXY → standard env vars.
 `User-Agent: keyhog/<version>` is always set so you can grep your
 proxy logs for keyhog traffic without guessing.
 
+## HAR auto-expansion
+
+Any file with a `.har` extension is recognised by the filesystem
+source and expanded into one chunk per request and one chunk per
+response. Each chunk carries a source-type that tells you which
+side of the exchange it came from:
+
+| Chunk            | `source_type`         | What it contains                                              |
+|------------------|-----------------------|---------------------------------------------------------------|
+| Request          | `wire:har:request`    | `<METHOD> <URL>`, every request header, query string, POST body. |
+| Response         | `wire:har:response`   | `<STATUS> <statusText>`, every response header, response body.   |
+
+Finding `file_path` becomes `<har-path>#<request-url>`, so the same
+HAR with five different requests produces five distinct paths.
+Editors that jump-to-file on `path:line` URIs land on the HAR but
+the URL tail makes the location unambiguous.
+
+```sh
+keyhog scan capture.har --format json | \
+  jq '.[] | select(.location.source == "wire:har:request")'
+```
+
+filters down to outbound credentials only — the bug-bounty
+"what did I send" view. Swap `request` for `response` to see what
+the upstream reflected back at you.
+
+A HAR that fails to parse (truncated export from a crashed
+browser) falls through to plain text scanning so credentials still
+surface; the file isn't silently dropped.
+
+Defenses:
+- 4× `--max-file-size` budget on cumulative request+response body
+  bytes. Defeats a malicious HAR that decompresses to gigabytes.
+- The cheap pre-sniff (`{"log"` + `"entries"` in the first 2 KiB)
+  bails before invoking the JSON parser on a 200 MiB blob that
+  obviously isn't HAR.
+
 ## Scanning a single HTTP exchange (stdin)
 
 The most common ad-hoc workflow:
@@ -135,33 +172,24 @@ Those land in the roadmap below.
 The wire-scanning surface is intentionally narrow today. Items
 queued for a later release, with their issue links:
 
-1. **`.har` file auto-detection.** Browser DevTools "Save all as
-   HAR with content" produces a single JSON file with every
-   request + response. Today you can `keyhog scan capture.har` and
-   it scans the JSON as text (works, but no provenance). The
-   roadmap is to detect the `.har` extension, parse the JSON, and
-   emit one chunk per `entries[i].request` (tagged
-   `wire:har:request`) and `entries[i].response` (tagged
-   `wire:har:response`). Findings would then carry the URL,
-   method, and which side of the exchange they came from.
-
-2. **mitmproxy `.mitm` flow-dump support.** Same shape as HAR but
+1. **mitmproxy `.mitm` flow-dump support.** Same shape as HAR but
    binary-framed. Use the `mitmproxy-rs` crate to decode.
 
-3. **Header / body / URL-param provenance.** Once HAR/mitm parsing
-   lands, attach `wire_location: header:<name> | body | query`
+2. **Header / body / URL-param provenance.** HAR expansion lands
+   one chunk per request and one chunk per response today. The
+   next step is attaching `wire_location: header:<name> | body | query`
    to each finding so the JSON consumer can filter
    `wire_location == "header:Authorization"` for the highest-
    signal subset (intentional auth tokens vs accidental body
    leaks vs URL-logged secrets).
 
-4. **Live proxy mode.** Run `keyhog proxy --listen :8080` and have
+3. **Live proxy mode.** Run `keyhog proxy --listen :8080` and have
    it act as an HTTP proxy that scans every flow inline, writing
    findings to stdout. The use case is recording a browsing
    session against a target and getting a single report of every
    credential the site shipped to the client.
 
-5. **WebSocket frame scanning.** HAR files don't include WebSocket
+4. **WebSocket frame scanning.** HAR files don't include WebSocket
    payloads. mitmproxy dumps do. Frame-level scanning would catch
    tokens passed over upgraded connections (Slack, Discord,
    collaborative editors).
