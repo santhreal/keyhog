@@ -183,6 +183,22 @@ fn has_var_ref_concatenation(text: &str) -> bool {
 }
 
 fn has_var_ref_concat_line(line: &str) -> bool {
+    // Cheap precheck: var-ref concatenation REQUIRES at least one `+`
+    // separator between two identifiers. Lines without one cannot
+    // possibly match — skip the regex entirely. Without this, the
+    // `(?:\s*\+\s*[a-z0-9_\-]{2,32}){1,8}` repeated-group bound forces
+    // the regex crate's NFA to evaluate every starting position on
+    // identifier-dense source lines, which on Apple Silicon
+    // (regex 1.12, lazy-DFA construction stalled by the `{1,8}`-bounded
+    // alternation) burns minutes of CPU per line. Surfaced during
+    // v0.5.25 cross-platform dogfood: a 171-byte Go file with shape
+    // `var token = receiver.Flag("x", "y").Required().String()` hung
+    // for 6+ minutes on Mac arm64 portable while Linux x86_64
+    // completed it in 0.6 s. The precheck is correctness-preserving:
+    // when no `+` exists in the line, the regex *cannot* match.
+    if !line.contains('+') {
+        return false;
+    }
     static VAR_REF_CONCAT_RE: LazyLock<Option<Regex>> = LazyLock::new(|| {
         Regex::new(
             r#"(?i)^\s*[a-z0-9_\-\.]{2,64}\s*[:=]\s*[a-z0-9_\-]{2,32}(?:\s*\+\s*[a-z0-9_\-]{2,32}){1,8}\s*;?\s*$"#,

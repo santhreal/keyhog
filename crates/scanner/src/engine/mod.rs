@@ -45,6 +45,34 @@ use std::sync::OnceLock;
 
 pub use vyre_libs::scan::LiteralMatch;
 
+/// Read `KEYHOG_PER_CHUNK_TIMEOUT_MS` and turn it into a per-chunk
+/// deadline `Instant`. Returns `None` when the env var is unset or
+/// malformed — the historical "scan until done" behavior.
+///
+/// Wired into the public `scan` / `scan_with_backend` entry points
+/// so a hostile or pathological input (e.g. the Apple Silicon
+/// regex-DFA construction stall surfaced during cross-platform
+/// dogfood — a single 171-byte line with `var token = identifier.Flag(...)`
+/// shape spends minutes inside the multiline preprocessor) bails
+/// after the configured budget instead of hanging the entire
+/// `keyhog scan <repo>` run. The CLI orchestrator path runs scans
+/// in parallel via rayon; a stuck worker would otherwise keep one
+/// core pinned at 100% indefinitely.
+///
+/// Default unset (no timeout) preserves prior behavior. Recommend
+/// `export KEYHOG_PER_CHUNK_TIMEOUT_MS=30000` (30 s) for production
+/// scans where bounded latency matters more than scan completeness.
+fn env_per_chunk_deadline() -> Option<std::time::Instant> {
+    static MS: std::sync::OnceLock<Option<u64>> = std::sync::OnceLock::new();
+    let ms = *MS.get_or_init(|| {
+        std::env::var("KEYHOG_PER_CHUNK_TIMEOUT_MS")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+            .filter(|&v| v > 0)
+    });
+    ms.map(|ms| std::time::Instant::now() + std::time::Duration::from_millis(ms))
+}
+
 pub enum MlScoreResult {
     /// Score is final and the match can be pushed immediately.
     Final(f64),
@@ -151,7 +179,7 @@ impl CompiledScanner {
 
     /// Scan a chunk of text and return all raw credential matches.
     pub fn scan(&self, chunk: &Chunk) -> Vec<RawMatch> {
-        self.scan_with_deadline(chunk, None)
+        self.scan_with_deadline(chunk, env_per_chunk_deadline())
     }
 
     /// Scan a chunk using a caller-selected backend.
@@ -160,7 +188,7 @@ impl CompiledScanner {
         chunk: &Chunk,
         backend: crate::hw_probe::ScanBackend,
     ) -> Vec<RawMatch> {
-        self.scan_with_deadline_and_backend(chunk, None, Some(backend))
+        self.scan_with_deadline_and_backend(chunk, env_per_chunk_deadline(), Some(backend))
     }
 
     /// Scan multiple chunks using a caller-selected backend.
