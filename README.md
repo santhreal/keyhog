@@ -29,7 +29,7 @@ present:
 Backend selection is automatic. On startup:
 
 ```
-KeyHog v0.5.17 | 16 cores | SIMD: AVX-512 | Hyperscan | 891 detectors
+KeyHog v0.5.33 | 16 cores | SIMD: AVX-512 | Hyperscan | 891 detectors
 ```
 
 📘 **Full documentation:** [santhsecurity.github.io/keyhog](https://santhsecurity.github.io/keyhog/)
@@ -184,7 +184,7 @@ your own fixtures.
 ### GitHub Actions
 
 ```yaml
-- uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.17
+- uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.33
   with:
     path: .
     severity: high       # info | low | medium | high | critical
@@ -212,7 +212,7 @@ Or via the `pre-commit` framework:
 ```yaml
 repos:
   - repo: https://github.com/santhsecurity/keyhog
-    rev: v0.5.17
+    rev: v0.5.33
     hooks:
       - id: keyhog
 ```
