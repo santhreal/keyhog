@@ -4,6 +4,32 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ## Unreleased
 
+## v0.5.29 - 2026-05-27 - HAR (HTTP Archive) auto-expansion + http/wire docs + Bazel scaffolding untracked
+
+### New: HAR auto-expansion
+
+- **`keyhog scan capture.har`** now parses the HAR 1.2 JSON and expands it into one chunk per request and one chunk per response. Each chunk's `source_type` is `wire:har:request` or `wire:har:response`, so a bug-bounty hunter can filter findings to outbound credentials only:
+  ```sh
+  keyhog scan capture.har --format json | \
+    jq '.[] | select(.location.source == "wire:har:request")'
+  ```
+  The `file_path` for each finding is `<har-path>#<request-url>`. New `crates/sources/src/har.rs` module; 4 unit tests covering positive expansion, non-HAR JSON, non-JSON binary, and malformed-JSON fallthrough. 4x `max_size` budget on cumulative request+response body bytes guards against decompressed-gigabyte DoS.
+- `serde` + `serde_json` promoted from optional (per-feature) to unconditional deps in `keyhog-sources` because the always-on filesystem path now depends on them. Removed redundant `dep:serde` / `dep:serde_json` from `web` / `github` / `slack` / `s3` feature lists.
+
+### Docs
+
+- **New chapter:** [HTTP and wire scanning](http-wire.md). Documents the existing `--url` flag (Web Source: JS / sourcemap / WASM routing + SSRF defenses), proxy + TLS policy (`--proxy`, `KEYHOG_PROXY`, `KEYHOG_INSECURE_TLS`), the stdin curl-pipe workflow, and the new HAR auto-expansion. Roadmap section calls out mitmproxy `.mitm` support, header/body provenance, live proxy mode, and WebSocket frame scanning as the next wire-scanning items.
+- `docs/src/detectors.md` documents the `client-safe` severity tier + `client_safe = true` per-pattern flag.
+- `docs/src/reference/cli.md` documents `--hide-client-safe` + the `KEYHOG_NO_GPU` / `KEYHOG_PER_CHUNK_TIMEOUT_MS` / `KEYHOG_BACKEND` / `KEYHOG_THREADS` / `KEYHOG_DETECTORS` / `KEYHOG_CACHE_DIR` env vars in one place.
+
+### Repo hygiene
+
+- **Bazel scaffolding untracked.** The 8 in-tree Bazel files (`.bazelrc`, `.bazelversion`, root + 5 per-crate `BUILD.bazel`, `MODULE.bazel`, `MODULE.bazel.lock`) were a 2026-05-21-throttle-driven PoC that never finished — every per-crate BUILD was a comment-only stub and `MODULE.bazel` was pinned to keyhog `0.5.7` while we ship 0.5.29 via cargo. Per the STANDARD prod-repo-doc-bleed rule, advertising a Bazel surface that doesn't build anything is a stub-not-evasion lie. Files stay on disk for the day Bazel becomes load-bearing; `.gitignore` catches future Bazel scratch.
+
+### Detector tagging (client-safe)
+
+- `clerk-api-key`: publishable `pk_live_*` / `pk_test_*` — same shape as `clerk-frontend-api-key` from v0.5.28. Total client-safe-tagged patterns now: 9 across 8 detectors.
+
 ## v0.5.28 - 2026-05-27 - KEYHOG_NO_GPU short-circuit + bare `-` stdin + more client-safe tags
 
 ### Cross-platform / safety nets
