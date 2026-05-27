@@ -226,7 +226,7 @@ mod tests {
     #[test]
     fn boundary_reassembles_secret_split_across_two_contiguous_chunks() {
         let scanner = CompiledScanner::compile(vec![straddle_detector()]).unwrap();
-        let secret = "STRADDLE_ABCDEFGHIJKLMNOPQRST"; // 29 chars total
+        let secret = "STRADDLE_A1CDEFGH2JKLMNOPQ8ST"; // 29 chars total
         let split_at = 14; // first 14 chars in chunk A, rest in chunk B
         let pad = "x".repeat(2000);
         let mut a_data = pad.clone();
@@ -256,7 +256,7 @@ mod tests {
         // Overlap means the in-chunk scan already covers the seam.
         // Boundary helper must not fire here — that would double-count.
         let scanner = CompiledScanner::compile(vec![straddle_detector()]).unwrap();
-        let secret = "STRADDLE_ABCDEFGHIJKLMNOPQRST";
+        let secret = "STRADDLE_A1CDEFGH2JKLMNOPQ8ST";
         let pad = "x".repeat(100);
 
         let mut a_data = pad.clone();
@@ -293,7 +293,7 @@ mod tests {
     #[test]
     fn boundary_ignores_chunks_with_different_paths() {
         let scanner = CompiledScanner::compile(vec![straddle_detector()]).unwrap();
-        let secret = "STRADDLE_ABCDEFGHIJKLMNOPQRST";
+        let secret = "STRADDLE_A1CDEFGH2JKLMNOPQ8ST";
         let split = 14;
         let mut a_data = String::from("xxx");
         a_data.push_str(&secret[..split]);
@@ -315,7 +315,7 @@ mod tests {
         // Pre-populate chunk B's results with an identical (offset, hash)
         // entry; the boundary scan must NOT add it again.
         let scanner = CompiledScanner::compile(vec![straddle_detector()]).unwrap();
-        let secret = "STRADDLE_ABCDEFGHIJKLMNOPQRST";
+        let secret = "STRADDLE_A1CDEFGH2JKLMNOPQ8ST";
         let split = 14;
         let pad = "x".repeat(50);
         let mut a_data = pad.clone();

@@ -276,6 +276,7 @@ pub fn should_suppress_named_detector_finding(
 ///   * Pure-alphabetic words ≥ 8 chars — natural-language strings like
 ///     German "Benutzername" or English "yourpasswordisbasic" captured
 ///     by `(?i)password[=:]<word>` shapes in i18n .properties files.
+///
 /// Real credentials almost always have a digit, hyphen, slash, or other
 /// non-letter byte — this filter never trips on those.
 pub(crate) fn looks_like_pure_identifier(credential: &str) -> bool {
@@ -329,8 +330,7 @@ pub(crate) fn looks_like_pure_identifier(credential: &str) -> bool {
     // (rare) isn't suppressed. Real credentials have at least one
     // digit / symbol — none of the FP shapes do.
     if (underscore_count + hyphen_count) <= 1
-        && alpha_count >= 8
-        && alpha_count <= 40
+        && (8..=40).contains(&alpha_count)
         && (has_upper || has_lower)
     {
         return true;
@@ -372,9 +372,7 @@ pub(crate) fn looks_like_word_separated_identifier(value: &str) -> bool {
     }
     // Split on either separator. Real credentials use one consistent separator
     // (or none); programmer identifiers can mix `_` and `-`.
-    let words: Vec<&str> = value
-        .split(|c: char| c == '_' || c == '-')
-        .collect();
+    let words: Vec<&str> = value.split(['_', '-']).collect();
     // No empty words (rejects `--foo`, `foo--bar`, `_foo`, `foo_`)
     if words.iter().any(|w| w.is_empty()) {
         return false;
@@ -417,7 +415,7 @@ pub(crate) fn looks_like_scheme_prefixed_uri(value: &str) -> bool {
     let Some(colon_idx) = bytes.iter().position(|&b| b == b':') else {
         return false;
     };
-    if colon_idx < 3 || colon_idx > 15 {
+    if !(3..=15).contains(&colon_idx) {
         return false;
     }
     // Scheme part [0..colon_idx) must be alpha (allow `-` for `secret-token`)
@@ -438,13 +436,13 @@ pub(crate) fn looks_like_scheme_prefixed_uri(value: &str) -> bool {
         return true;
     }
     // URN form: at least one more `:` in the rest of the value
-    if after.iter().any(|&b| b == b':') {
+    if after.contains(&b':') {
         return true;
     }
     // Compound-scheme single-colon form: scheme contains `-`
     // (`secret-token`, `auth-token`, `bearer-token`). Real credentials don't
     // have a colon `<8` chars in from the start; URI-like prefixes do.
-    if scheme.iter().any(|&b| b == b'-') {
+    if scheme.contains(&b'-') {
         return true;
     }
     // Common content-addressable hash schemes — `sha256:<hex>`, `sha1:<hex>`,
@@ -568,7 +566,7 @@ pub(crate) fn looks_like_email_address(value: &str) -> bool {
         return false;
     }
     // Domain part: must contain at least one `.`
-    if !domain.iter().any(|&b| b == b'.') {
+    if !domain.contains(&b'.') {
         return false;
     }
     // Domain alphabet: alphanumeric + `_`, `-`, `.`
@@ -596,7 +594,7 @@ pub(crate) fn contains_uuid_v4_substring(value: &str) -> bool {
         if slice[8] == b'-' && slice[13] == b'-' && slice[18] == b'-' && slice[23] == b'-' {
             let all_hex_or_dash = slice.iter().enumerate().all(|(j, &c)| match j {
                 8 | 13 | 18 | 23 => c == b'-',
-                _ => matches!(c, b'0'..=b'9' | b'a'..=b'f' | b'A'..=b'F'),
+                _ => c.is_ascii_hexdigit(),
             });
             if all_hex_or_dash {
                 return true;
@@ -777,6 +775,7 @@ pub(crate) fn looks_like_vendored_minified_path(path: Option<&str>) -> bool {
 ///   * leading `!` (JS/TS truthy coercion) — `!!apiKeyOrOAuthToken`
 ///   * trailing `:` after pure-alpha — `Password:`, `Username:`
 ///   * trailing `!` after pure-alpha (TS non-null assertion) — `privateAccessToken!`
+///
 /// Real credentials don't start or end with these tokens.
 pub(crate) fn looks_like_punctuation_decorated_identifier(value: &str) -> bool {
     if value.is_empty() {
