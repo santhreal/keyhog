@@ -198,7 +198,27 @@ mod backend {
                 Some(ctx)
             }
             Err(e) => {
-                tracing::debug!("GPU init failed, using CPU fallback: {e}");
+                // No silent fallbacks. If the user has a GPU and we
+                // can't use it, they need to know - otherwise they'll
+                // sit at CPU throughput and assume that's what
+                // "GPU-accelerated keyhog" means.
+                let no_gpu = std::env::var("KEYHOG_NO_GPU").as_deref() == Ok("1");
+                let require_gpu =
+                    std::env::var("KEYHOG_REQUIRE_GPU").as_deref() == Ok("1");
+                if require_gpu {
+                    eprintln!(
+                        "keyhog: KEYHOG_REQUIRE_GPU=1 but GPU MoE init failed: {e}"
+                    );
+                    std::process::exit(2);
+                }
+                if !no_gpu {
+                    eprintln!(
+                        "keyhog: GPU MoE init failed ({e}); falling back to CPU scoring. \
+Set KEYHOG_NO_GPU=1 to silence this warning, KEYHOG_REQUIRE_GPU=1 to hard-fail \
+on missing GPU instead."
+                    );
+                }
+                tracing::warn!("GPU MoE init failed, using CPU fallback: {e}");
                 None
             }
         })

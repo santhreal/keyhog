@@ -3,6 +3,19 @@ use crate::context;
 use crate::hw_probe::ScanBackend;
 use crate::unicode_hardening;
 use keyhog_core::Chunk;
+use std::sync::OnceLock;
+
+/// One-shot guard so the GPU-degradation warning fires exactly once
+/// per process, not per chunk. Set the first time we discover the
+/// scan was dispatched with ScanBackend::Gpu / ScanBackend::MegaScan
+/// but no actual GPU literals + backend pair were compiled. Per
+/// CLAUDE.md "no silent fallbacks": the user MUST be told that the
+/// hardware probe said GPU but the scan-time wiring couldn't honour
+/// it. The reason is almost always a config bug (driver gone after
+/// probe, libcuda.so unloaded, software adapter slipped through),
+/// and silently running on CPU at 5% the throughput is worse than a
+/// noisy warning.
+static GPU_DEGRADATION_WARNED: OnceLock<()> = OnceLock::new();
 
 pub(crate) struct PreparedChunk<'a> {
     /// Borrowed handle on the caller's chunk. Was `Chunk` (owned)
@@ -97,8 +110,11 @@ impl CompiledScanner {
     ) -> Vec<Vec<RawMatch>> {
         // GPU paths: literal-set (Gpu) and regex-NFA (MegaScan). Both
         // require a working GPU adapter + compiled matchers; the lazy
-        // compile is gated below so a missing GPU silently degrades to
-        // SIMD via `scan_with_backend` per chunk.
+        // compile is gated below so a missing GPU degrades to SIMD via
+        // `scan_with_backend` per chunk. The degradation is announced
+        // by `warn_on_gpu_degradation` and respects
+        // KEYHOG_NO_GPU / KEYHOG_REQUIRE_GPU, per the no-silent-
+        // fallback rule.
         let gpu_path = matches!(backend, ScanBackend::Gpu | ScanBackend::MegaScan);
         if !gpu_path || chunks.is_empty() {
             // Parallel CPU path: rayon's global pool is configured by the
@@ -134,9 +150,13 @@ impl CompiledScanner {
         // GPU batch path: `scan_coalesced_gpu` produces full per-chunk
         // RawMatch results in one device dispatch + parallel post-process.
         // The previous `populate_gpu_batch_triggers` was a comment-only TODO
-        // that threw the GPU results away — see audit release-2026-04-26.
+        // that threw the GPU results away. See audit release-2026-04-26.
         if self.gpu_literals.is_none() || self.gpu_backend.is_none() {
             let fallback_backend = self.degraded_backend_after_gpu_failure();
+            // Hardware probe said GPU but the compiled scanner doesn't
+            // actually have the GPU pair. This is a config-bug shape
+            // per the project rule (you have a GPU, always). Surface it.
+            warn_on_gpu_degradation(backend, fallback_backend, self);
             use rayon::prelude::*;
             return chunks
                 .par_iter()
@@ -671,5 +691,67 @@ impl CompiledScanner {
             return ScanBackend::SimdCpu;
         }
         ScanBackend::CpuFallback
+    }
+}
+
+/// Fire-once warning when the scanner is asked to run on GPU but the
+/// compiled GPU pair isn't available. The hardware probe upstream
+/// already decided GPU was the right call, so reaching this branch
+/// means either:
+///   - the GPU adapter went away between probe and scan (driver
+///     unload, container resource cap, etc.), OR
+///   - compile() couldn't acquire literals or backend (missing
+///     library, OOM at compile time, software adapter slipped past
+///     the gpu_is_software check), OR
+///   - the caller hand-set ScanBackend::Gpu on a CompiledScanner that
+///     was built without GPU features in the first place.
+///
+/// In every case the user thinks they're getting GPU-accelerated
+/// scanning and is about to silently get the CPU path at a fraction
+/// of the throughput. Surface that loudly. KEYHOG_NO_GPU=1 silences
+/// the warning (the user opted in to CPU). KEYHOG_REQUIRE_GPU=1
+/// exits with code 2 instead of falling back.
+fn warn_on_gpu_degradation(
+    requested: ScanBackend,
+    fallback: ScanBackend,
+    scanner: &CompiledScanner,
+) {
+    let no_gpu = std::env::var("KEYHOG_NO_GPU").as_deref() == Ok("1");
+    let require_gpu = std::env::var("KEYHOG_REQUIRE_GPU").as_deref() == Ok("1");
+
+    let reason = if scanner.gpu_literals.is_none() && scanner.gpu_backend.is_none() {
+        "neither GPU literals nor GPU backend were compiled"
+    } else if scanner.gpu_literals.is_none() {
+        "GPU literals weren't compiled"
+    } else {
+        "GPU backend wasn't acquired"
+    };
+
+    if require_gpu {
+        eprintln!(
+            "keyhog: KEYHOG_REQUIRE_GPU=1 but {reason}; refusing to degrade to {fallback:?}."
+        );
+        std::process::exit(2);
+    }
+
+    if no_gpu {
+        // Operator explicitly turned GPU off. No warning needed; the
+        // hw_probe + dispatch should already have routed past Gpu but
+        // some compiled-scanner paths historically still landed here.
+        return;
+    }
+
+    if GPU_DEGRADATION_WARNED.set(()).is_ok() {
+        eprintln!(
+            "keyhog: requested {requested:?} but {reason}; scanning on {fallback:?} instead. \
+This is usually a config bug (driver lost, libcuda.so unloaded, software \
+adapter passed the probe). Set KEYHOG_NO_GPU=1 to silence, or \
+KEYHOG_REQUIRE_GPU=1 to hard-fail next time."
+        );
+        tracing::warn!(
+            requested = ?requested,
+            fallback = ?fallback,
+            "GPU scanner degraded to CPU path ({reason})",
+        );
     }
 }
