@@ -57,7 +57,7 @@ configuration. `keyhog scan .` works out of the box.
 
 Prebuilt binaries attached to each [release](https://github.com/santhsecurity/keyhog/releases).
 The install scripts detect OS + CPU arch and pull the right asset.
-Pin a version with `KEYHOG_VERSION=v0.5.28`; change the install dir
+Pin a version with `KEYHOG_VERSION=v0.5.29`; change the install dir
 with `KEYHOG_INSTALL=/usr/local/bin`.
 
 Daemon mode (sub-100 ms pre-commit scans) is Unix only. Everything
