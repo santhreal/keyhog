@@ -485,7 +485,22 @@ fn shared_regex(pattern: &str) -> std::result::Result<std::sync::Arc<Regex>, reg
     if let Some(hit) = cache.lock().get(pattern) {
         return Ok(Arc::clone(hit));
     }
+    // ASCII case-insensitive to match Hyperscan's `PatternFlags::CASELESS`
+    // (simd.rs:64) — otherwise the SIMD path and fallback path disagree on
+    // case-varied input. Detectors with mixed-case alternations
+    // (`(?:FRAMER|framer)[_=:\s"']+(?:api[_-]?)?(?:key|token)`) bake the
+    // uppercase variant ONLY in the leading anchor and leave `api`/`key`
+    // lowercase. Without caseless here, `FRAMER_API_KEY=<token>` doesn't
+    // match the fallback regex even though Hyperscan would have. ~30
+    // contract-runner positives + evasions in `framer-api-credentials`,
+    // `cortex-api-key`, `splitio-api-key`, `abstract-api-credentials`,
+    // `fedex-api-credentials` etc. were all silent-MISSED by this drift.
+    // Detectors that need case-sensitive matching (`AKIA…`, `ghp_…`)
+    // are anchored by their literal prefix in the regex anyway —
+    // case-folding only widens what `key|api|token`-style middle words
+    // accept, which is exactly what we want.
     let regex = regex::RegexBuilder::new(pattern)
+        .case_insensitive(true)
         .size_limit(REGEX_SIZE_LIMIT_BYTES)
         .dfa_size_limit(REGEX_SIZE_LIMIT_BYTES)
         .crlf(true)
