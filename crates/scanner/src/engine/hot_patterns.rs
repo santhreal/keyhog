@@ -145,6 +145,18 @@ impl CompiledScanner {
                 {
                     continue;
                 }
+                // Secret-scanner source files (the dogfooded file IS itself
+                // a secret scanner — claude-code's teamMemorySync/
+                // secretScanner.ts, trufflehog/, gitleaks/, etc.) emit
+                // hot-pattern findings on their own detector regex
+                // DEFINITIONS. The `looks_like_regex_literal_tail` check
+                // catches the common forms; decoder-mangled trailing
+                // sigils slip past — this filter closes the gap.
+                if crate::pipeline::looks_like_secret_scanner_source(
+                    chunk.metadata.path.as_deref(),
+                ) {
+                    continue;
+                }
 
                 // Same partition_point binary-search idiom as
                 // `match_line_number` — `line_offsets` is sorted

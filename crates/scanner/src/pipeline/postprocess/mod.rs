@@ -14,8 +14,8 @@ pub use suppression::{
 pub(crate) use suppression::{
     looks_like_pure_identifier, looks_like_punctuation_decorated_identifier,
     looks_like_regex_literal_tail, looks_like_scheme_prefixed_uri,
-    looks_like_url_or_path_segment, looks_like_vendored_minified_path,
-    looks_like_word_separated_identifier,
+    looks_like_secret_scanner_source, looks_like_url_or_path_segment,
+    looks_like_vendored_minified_path, looks_like_word_separated_identifier,
 };
 
 use crate::types::*;
