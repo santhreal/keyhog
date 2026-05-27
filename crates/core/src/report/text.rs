@@ -29,6 +29,12 @@ pub struct TextReporter<W: Write + Send> {
     /// all". Set by the caller before `finish()`; default 0 keeps the
     /// original behavior for callers that don't track it.
     example_suppressions: usize,
+    /// True when the caller is running with --dogfood (or
+    /// KEYHOG_DOGFOOD=1). The empty-findings line drops the
+    /// "Pass --dogfood to see them" hint in that case, since the user
+    /// has clearly already done so. Set by the caller before
+    /// `finish()`; default false matches the historical behavior.
+    dogfood_active: bool,
 }
 
 impl<W: Write + Send> TextReporter<W> {
@@ -64,6 +70,7 @@ impl<W: Write + Send> TextReporter<W> {
             live_count: 0,
             dead_count: 0,
             example_suppressions: 0,
+            dogfood_active: false,
         }
     }
 
@@ -74,6 +81,14 @@ impl<W: Write + Send> TextReporter<W> {
     /// as "Your code is clean"). Idempotent; later calls replace.
     pub fn set_example_suppressions(&mut self, n: usize) {
         self.example_suppressions = n;
+    }
+
+    /// Tell the reporter that the caller is already running with
+    /// `--dogfood` (or `KEYHOG_DOGFOOD=1`). Suppresses the
+    /// "Pass --dogfood to see them" hint in the empty-findings line,
+    /// since the user has clearly already passed it. Idempotent.
+    pub fn set_dogfood_active(&mut self, active: bool) {
+        self.dogfood_active = active;
     }
 
     fn print_header(&mut self) -> Result<(), ReportError> {
@@ -269,10 +284,17 @@ impl<W: Write + Send> Reporter for TextReporter<W> {
                 } else {
                     "s"
                 };
-                let msg = format!(
-                    "No real secrets, but {} example/test key{} suppressed. Pass --dogfood to see them.",
-                    self.example_suppressions, plural
-                );
+                let msg = if self.dogfood_active {
+                    format!(
+                        "No real secrets, but {} example/test key{} suppressed (see --dogfood output above for the full list).",
+                        self.example_suppressions, plural
+                    )
+                } else {
+                    format!(
+                        "No real secrets, but {} example/test key{} suppressed. Pass --dogfood to see them.",
+                        self.example_suppressions, plural
+                    )
+                };
                 writeln!(self.writer, "  {}\n", colorize(&msg, "1;33", self.color))?;
             } else {
                 writeln!(

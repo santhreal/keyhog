@@ -63,6 +63,7 @@ fn report_with<W: std::io::Write + 'static + Send>(
             let mut reporter = TextReporter::with_color(w, color);
             reporter
                 .set_example_suppressions(keyhog_scanner::telemetry::example_suppression_count());
+            reporter.set_dogfood_active(keyhog_scanner::telemetry::is_dogfood_enabled());
             finish_reporter(reporter, findings)
         }
         OutputFormat::Json => finish_reporter(JsonReporter::new(w)?, findings),
