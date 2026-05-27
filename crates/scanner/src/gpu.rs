@@ -532,10 +532,29 @@ pub fn vyre_gpu_self_test() -> Result<VyreGpuSelfTest, String> {
 }
 
 /// Probe GPU availability and adapter metadata without panicking.
+///
+/// Honours `KEYHOG_NO_GPU=1` (and the usual on/off/true/false/0
+/// negatives) by reporting "no GPU available" without ever calling
+/// `backend::get_gpu()`. The MoE compute-shader init happens lazily
+/// inside `get_gpu()`, so this short-circuit is the difference
+/// between "Metal adapter request blocks for minutes on certain Mac
+/// configurations" (the v0.5.27 reproduction on Apple M4 Pro that
+/// the env var was added to escape) and "scanner starts in ~10ms
+/// like every other CPU-only tool".
 #[must_use]
 pub fn gpu_probe() -> (bool, Option<String>, Option<u64>) {
+    if env_no_gpu() {
+        return (false, None, None);
+    }
     if let Some(gpu) = backend::get_gpu() {
         return (true, Some(gpu.gpu_name().to_string()), gpu.vram_mb());
     }
     (false, None, None)
+}
+
+fn env_no_gpu() -> bool {
+    std::env::var("KEYHOG_NO_GPU")
+        .ok()
+        .map(|v| !matches!(v.as_str(), "" | "0" | "false" | "FALSE" | "off" | "OFF"))
+        .unwrap_or(false)
 }
