@@ -217,12 +217,48 @@ fn run_self_test() -> Result<ExitCode> {
         }
     }
 
-    // Test 2: vyre literal-set GPU dispatch — the actual scan path.
+    // Test 2: vyre literal-set GPU dispatch. This path is NOT the
+    // production scan path on the current vyre version (the
+    // canonical pre-emit lowering rejects the subgroup form that
+    // append_match_subgroup emits, so the production scan flow
+    // routes through the AC kernel in scan_coalesced_gpu_ac_phase1).
+    // The literal_set scanner is exercised here only as a
+    // diagnostic; a FAIL with "_vyre_match_leader is referenced
+    // before binding" reflects a known vyre IR-lowering gap, not a
+    // missing GPU stack. We report it as a known limitation so
+    // operators don't conclude their GPU is broken when scans
+    // actually still run on the AC kernel path.
     print!("  vyre_literal_set ... ");
     match keyhog_scanner::gpu::vyre_gpu_self_test() {
         Ok(report) => println!(
             "\x1b[32mPASS\x1b[0m  (direct={}, coalesced={})",
             report.direct_matches, report.coalesced_matches
+        ),
+        Err(error) => {
+            let known_lowering_gap = error.contains("_vyre_match_leader")
+                || error.contains("canonical pre-emit lowering")
+                || error.contains("subgroup_ballot");
+            if known_lowering_gap {
+                println!(
+                    "\x1b[33mKNOWN\x1b[0m vyre IR lowering rejects literal_set's subgroup form; \
+                     scans use the AC kernel instead (works on this box)."
+                );
+            } else {
+                println!("\x1b[31mFAIL\x1b[0m  {error}");
+                all_ok = false;
+            }
+        }
+    }
+
+    // Test 3: AC kernel dispatch (the production scan path for every
+    // GPU backend after the literal_set rejection moved everything to
+    // AC by default). Build a minimal one-detector CompiledScanner
+    // and route a scan through scan_coalesced_gpu_ac_phase1.
+    print!("  vyre_ac_kernel   ... ");
+    match keyhog_scanner::gpu::vyre_ac_kernel_self_test() {
+        Ok(report) => println!(
+            "\x1b[32mPASS\x1b[0m  (matches={}, backend={})",
+            report.matches, report.backend_id
         ),
         Err(error) => {
             println!("\x1b[31mFAIL\x1b[0m  {error}");
@@ -232,10 +268,10 @@ fn run_self_test() -> Result<ExitCode> {
 
     println!();
     if all_ok {
-        println!("\x1b[32m✓ GPU self-test passed\x1b[0m — scans on this box can route to GPU.");
+        println!("\x1b[32m✓ GPU self-test passed\x1b[0m, scans on this box can route to GPU.");
         Ok(ExitCode::SUCCESS)
     } else {
-        eprintln!("\x1b[31m✗ GPU self-test failed\x1b[0m — keyhog will fall back to SIMD/CPU on this box.");
+        eprintln!("\x1b[31m✗ GPU self-test failed\x1b[0m, keyhog will fall back to SIMD/CPU on this box.");
         Ok(ExitCode::from(EXIT_SELF_TEST_FAILED))
     }
 }

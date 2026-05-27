@@ -4,6 +4,31 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ## Unreleased
 
+### Deep vyre: AC kernel becomes the default GPU scan path
+
+- **`gpu_literal_phase1.rs`** previously routed all WGPU hosts through the
+  `literal_set` GpuLiteralSet program, gating the AC-kernel workaround
+  to CUDA only. The vyre canonical pre-emit lowering actually rejects
+  the subgroup form (`subgroup_ballot` + `subgroup_shuffle`) emitted by
+  `append_match_subgroup` BEFORE driver-specific emission, so WGPU
+  hosts hit the same `_vyre_match_leader is referenced before binding`
+  rejection and silently dropped to CPU. The kernel select is now
+  AC-by-default for every GPU backend; `KEYHOG_GPU_KERNEL=literal-set`
+  is the diagnostic opt-in for bisection / vyre IR work.
+- **`keyhog backend --self-test`** gained a new `vyre_ac_kernel` step
+  that compiles a one-detector scanner, runs a scan through
+  `scan_coalesced_gpu_ac_phase1`, and verifies the planted `"needle"`
+  literal surfaces a phase-1 hit on the live GPU backend. Reports the
+  active backend id (`cuda` / `wgpu`) on PASS.
+- The existing `vyre_literal_set` self-test no longer reports
+  red `FAIL` when it hits the documented lowering gap; it surfaces
+  yellow `KNOWN` with a one-line explanation that scans use the AC
+  kernel instead. Same exit code as before for any OTHER literal_set
+  failure (genuine GPU regression still hard-fails).
+- **`crates/scanner/src/gpu.rs`** gained `vyre_ac_kernel_self_test()`
+  + `VyreAcKernelSelfTest` so the diagnostic CLI can surface the
+  match count and backend id rather than just PASS/FAIL.
+
 ## v0.5.31 - 2026-05-27 - no-silent-GPU-fallback enforcement + banner CUDA/WGPU split + SHA256 verification + UX fixes
 
 ### Coherence: startup banner now distinguishes CUDA vs WGPU
