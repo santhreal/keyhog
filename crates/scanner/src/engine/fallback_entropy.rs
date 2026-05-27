@@ -263,10 +263,7 @@ impl CompiledScanner {
                 // backslash, every Windows scan misses this filename
                 // gate and emits FP entropy-* findings on legitimate
                 // base64-tagged files.
-                let basename = lower
-                    .rsplit(['/', '\\'])
-                    .next()
-                    .unwrap_or(&lower);
+                let basename = lower.rsplit(['/', '\\']).next().unwrap_or(&lower);
                 basename.starts_with("base64_") || basename.contains("base64_string")
             }) {
                 continue;

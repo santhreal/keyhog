@@ -7,16 +7,16 @@ mod suppression;
 // inside `suppression.rs` (sibling), which imports via
 // `use super::shape_gates::*` directly. A `pub(crate) use` here would
 // be a no-op the unused-imports lint catches under -D warnings.
+pub(crate) use suppression::{
+    contains_uuid_v4_substring, looks_like_email_address,
+    looks_like_punctuation_decorated_identifier, looks_like_pure_identifier,
+    looks_like_regex_literal_tail, looks_like_scheme_prefixed_uri,
+    looks_like_secret_scanner_source, looks_like_url_or_path_segment,
+    looks_like_vendored_minified_path, looks_like_word_separated_identifier,
+};
 pub use suppression::{
     should_suppress_known_example_credential, should_suppress_known_example_credential_with_source,
     should_suppress_named_detector_finding,
-};
-pub(crate) use suppression::{
-    contains_uuid_v4_substring, looks_like_email_address, looks_like_pure_identifier,
-    looks_like_punctuation_decorated_identifier, looks_like_regex_literal_tail,
-    looks_like_scheme_prefixed_uri, looks_like_secret_scanner_source,
-    looks_like_url_or_path_segment, looks_like_vendored_minified_path,
-    looks_like_word_separated_identifier,
 };
 
 use crate::types::*;
