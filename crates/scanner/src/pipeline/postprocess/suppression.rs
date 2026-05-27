@@ -60,32 +60,35 @@ pub fn should_suppress_named_detector_finding(
     source_type: Option<&str>,
     detector_id: &str,
 ) -> bool {
-    // Generic-password / generic-secret FP on C/Rust function call
-    // shapes. The TOML regex for generic-password (and similar generic
-    // assignment-shape detectors) captures `[a-zA-Z0-9_-]{12,80}` after
-    // a `_pwd = ` / `password: ` match. In source code that captures
-    // function names like `sk_SRP_user_pwd_new_null` (openssl srp_vfy.c)
-    // because the regex stops at `(`. Pure alphanumeric+underscore
-    // captures with NO digit and 2+ underscores are C-identifier-shaped,
-    // not passwords. Real passwords almost always have digits, special
-    // chars, or are not so heavily underscored.
+    // Shape filters split into two tiers based on whether the shape
+    // can legitimately appear as the body of a real service-anchored
+    // credential.
     //
-    // Limit to generic-* and entropy-* detectors so service-anchored
-    // detectors (which already have provider-specific shape gates) keep
-    // their existing behaviour.
-    // The five identifier-shape filters apply to ALL detectors, not just
-    // generic-/entropy-. Real credentials are cryptographically random —
-    // they never have ALL-letter CamelCase shape (digit-free), never have
-    // scheme prefixes like `urn:`, never start with `--`/`&`/`@`/`!`/`/`,
-    // and never look like multi-segment paths. A service detector firing
-    // on `SetMultipartFormData` (cryptocompare on alist Go method),
-    // `bool:false` (llama-cpp help text), `s3_secret_access_key` (alist
-    // const), `user/auth/forgot_passwd` (gogs template) is a regex-anchor
-    // collision, not a leaked credential. Each filter has an internal
-    // `!has_digit` guard or max-word-length cap that keeps real
-    // credentials (which contain digits and/or long random suffixes)
-    // outside the rejection set.
-    if looks_like_pure_identifier(credential) {
+    // **Tier A — applies to ALL detectors.** Only `punctuation_decorated`
+    // stays universal — `--api-secret`, `&password`, `Password:` are
+    // grammar / syntax markers, never the body of a real credential
+    // regardless of which detector matched.
+    //
+    // **Tier B — generic-* / entropy-* only.** These shapes CAN appear
+    // as legitimate credential bodies when paired with a service-
+    // specific regex anchor. The anchor is positive evidence that the
+    // value is a credential, so the shape filter would be wrong to drop
+    // it. (Examples the contract corpus enforces:
+    //   * `powerbi-credentials` — body IS a UUID
+    //   * `mongodb-atlas-credentials` — body IS `mongodb://...` URI
+    //   * `cockroachdb-api-key` — body has underscore-separated words
+    //   * `avalanche-api-credentials` — body IS an RPC URL
+    //   * `aws-secret-access-key` — body has `/+=` URL-segment chars
+    // These all DROPPED when the Tier-B filters fired on named
+    // detectors. The generic-* / entropy-* fallbacks have no anchor —
+    // there the shape filter IS the only positive-evidence gate, so
+    // it must stay.)
+    //
+    // The previous flow applied Tier B universally and dropped 400+
+    // contract evasions. See task #41 + the 2026-05-27 audit.
+    let apply_tier_b = is_generic_or_entropy_detector(detector_id);
+
+    if apply_tier_b && looks_like_pure_identifier(credential) {
         crate::telemetry::record_example_suppression(
             "pipeline",
             path,
@@ -94,7 +97,7 @@ pub fn should_suppress_named_detector_finding(
         );
         return true;
     }
-    if looks_like_word_separated_identifier(credential) {
+    if apply_tier_b && looks_like_word_separated_identifier(credential) {
         crate::telemetry::record_example_suppression(
             "pipeline",
             path,
@@ -103,7 +106,7 @@ pub fn should_suppress_named_detector_finding(
         );
         return true;
     }
-    if looks_like_scheme_prefixed_uri(credential) {
+    if apply_tier_b && looks_like_scheme_prefixed_uri(credential) {
         crate::telemetry::record_example_suppression(
             "pipeline",
             path,
@@ -121,7 +124,7 @@ pub fn should_suppress_named_detector_finding(
         );
         return true;
     }
-    if looks_like_url_or_path_segment(credential) {
+    if apply_tier_b && looks_like_url_or_path_segment(credential) {
         crate::telemetry::record_example_suppression(
             "pipeline",
             path,
@@ -131,12 +134,11 @@ pub fn should_suppress_named_detector_finding(
         return true;
     }
     // Captured value contains a UUID v4 / RFC-4122 substring anywhere.
-    // The entropy detector often grabs `<KEY>=<uuid>` env-var assignments
-    // as one chunk (bat-go docker-compose.reputation.yml `TOKEN_LIST=
-    // 636765a9-1f92-4b40-ab0b-85ebd1e2c23d`); the value's high-entropy
-    // payload is just the UUID, which is a public identifier, not a
-    // credential.
-    if contains_uuid_v4_substring(credential) {
+    // Tier B because many real credentials are UUIDs (powerbi
+    // client_id, opsgenie heartbeat, docusign integration key,
+    // launchdarkly sdk-key, etc.) — only suppress in generic/entropy
+    // paths where there's no service anchor.
+    if apply_tier_b && contains_uuid_v4_substring(credential) {
         crate::telemetry::record_example_suppression(
             "pipeline",
             path,
@@ -592,6 +594,16 @@ pub(crate) fn looks_like_secret_scanner_source(path: Option<&str>) -> bool {
         || lower.contains("gitleaks")
         || lower.contains("detect-secrets")
         || lower.contains("detect_secrets")
+}
+
+/// True if the detector that fired has no service-specific anchor —
+/// only the generic `generic-password`, `generic-secret`,
+/// `entropy-*` fallbacks. Used by `should_suppress_named_detector_finding`
+/// to decide whether the Tier-B shape filters apply: anchored
+/// detectors (everything else) have positive evidence in their regex
+/// that the shape filter would otherwise destroy.
+fn is_generic_or_entropy_detector(detector_id: &str) -> bool {
+    detector_id.starts_with("generic-") || detector_id.starts_with("entropy-")
 }
 
 /// Path-segment substring test that tolerates either `/seg/` (POSIX)
