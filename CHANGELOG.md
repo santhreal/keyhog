@@ -4,6 +4,25 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ## Unreleased
 
+## v0.5.27 - 2026-05-27 - client-safe severity tier + `--hide-client-safe` (bug-bounty workflow)
+
+### Feature
+
+- **`Severity::ClientSafe`** is a new tier below `Low`. Detectors with a per-pattern `client_safe = true` flag in their TOML force the finding to this tier regardless of the detector's nominal severity. Tagged patterns ship 5 detectors / 6 patterns in this release: Sentry DSN (both patterns), Mapbox `pk.eyJ` (sk.eyJ stays critical), PostHog `phc_` (phx_ stays high), Mixpanel project token, Algolia search-only key (admin key is a separate detector and stays critical).
+- **`--hide-client-safe` CLI flag** filters every ClientSafe finding before the reporter sees them. Bug-bounty / exfiltration-impact workflow: `keyhog scan --hide-client-safe target/` shows only credentials that grant server-side access. Default scans keep the tier visible (CLIENT-SAFE stripe in text output) so a misconfigured publishable key wired into a server-only detector still surfaces.
+- **`KEYHOG_NO_GPU=1` env-var** bypasses the CUDA / wgpu init path entirely and routes every chunk through the SIMD/CPU regex backend. Workaround for the Mac arm64 Metal stall surfaced during v0.5.26 dogfood when scanning identifier-dense source. Set in CI or in the user's shell rc when GPU latency matters less than predictable scan times.
+- **`KEYHOG_PER_CHUNK_TIMEOUT_MS` env-var** attaches an `Instant` deadline to the public `scan` / `scan_with_backend` entry points. Any future pathological pattern that escapes the per-pattern `MAX_INNER_LOOP_ITERS` cap times out at the per-chunk boundary instead of hanging the whole scan. Default unset preserves prior behavior.
+
+### Schema
+
+- `[[detector.patterns]]` blocks accept a new `client_safe: bool` field (default `false`). Additive; existing detector TOMLs continue to parse unchanged. Per-pattern (not per-detector) so detectors that fire on both the public AND the secret prefix can tag only the public one.
+
+### Reporter changes
+
+- Text format: new `CLIENT-SAFE` 11-char label rendered in dim cyan (`2;36`) with a public-by-design remediation action ("Public by design (client bundle key) — verify scope restrictions."). All severities right-justified to 11 chars so bordered boxes line up regardless of which tier fires.
+- SARIF: `ClientSafe` → SARIF `note` level (same as `Info` / `Low`).
+- Rule-filter / `.keyhogignore` severity-name: `client-safe` (kebab-case, matches the new serde `rename_all`).
+
 ## v0.5.26 - 2026-05-27 - Mac arm64 hang fix (var-ref-concat regex DFA stall) + Windows UNC path strip + repo-hygiene gitignore
 
 ### Cross-platform
