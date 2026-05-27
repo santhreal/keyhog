@@ -4,6 +4,8 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ## Unreleased
 
+## v0.5.31 - 2026-05-27 - no-silent-GPU-fallback enforcement + banner CUDA/WGPU split + SHA256 verification + UX fixes
+
 ### Coherence: startup banner now distinguishes CUDA vs WGPU
 
 - The `⚡ KeyHog ...| backend=Gpu` startup banner used to collapse the
@@ -37,6 +39,49 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - A `OnceLock` guard makes the warning fire exactly once per process
   regardless of how many chunks pass through (CI scanning thousands
   of files doesn't spam stderr).
+- **`scanner/src/engine/compile.rs`** (CUDA acquisition path): when
+  the CUDA factory fails on a host that has libcuda.so or
+  /proc/driver/nvidia (NVIDIA userland present but broken or version-
+  mismatched), we eprintln a one-shot warning instead of debug-logging
+  into the void. The wgpu fallback is the documented "5-10x slower"
+  path; users installing the CUDA variant on NVIDIA hardware must know
+  when they've silently dropped to WGPU.
+- **`scanner/src/engine/gpu_forced.rs`** (runtime GPU dispatch
+  failure): `deny_silent_gpu_degrade` previously only panicked when
+  `KEYHOG_BACKEND` forced GPU. The unforced default case was silent.
+  Now a runtime degradation (vyre IR lowering rejecting a program,
+  transient CUDA driver error, exceeded shard cap) fires a one-shot
+  stderr warning. Surfaced by running `keyhog backend --self-test` on
+  a real CUDA host, which exposed a vyre IR lowering issue that
+  rejects the GpuLiteralSet program ("variable `_vyre_match_leader`
+  is referenced before binding"). The AC kernel path used by the
+  actual scan flow on CUDA hosts is a documented workaround for the
+  same vyre limitation; WGPU-only hosts hitting the lowering rejection
+  would previously have degraded silently.
+
+### SHA256 checksum verification (rustup-style)
+
+- `release.yml` emits a `.sha256` file alongside each binary asset
+  using portable `sha256sum` / `shasum` across the three runner OSes.
+- `install.sh` and `install.ps1` download the `.sha256` alongside the
+  binary, compute the local hash, and refuse to install on mismatch.
+  When the checksum file is absent (pre-v0.5.31 release tags), both
+  installers skip verification with a dim log line rather than failing,
+  so the change is backward-compatible.
+
+### UX
+
+- **install.sh** on Linux + NVIDIA hosts no longer prints
+  "Detected NVIDIA NVIDIA GeForce RTX 5090" (the double "NVIDIA"
+  came from concatenating our own prefix with `nvidia-smi --query-gpu=name`
+  output, which already prefixes "NVIDIA").
+- **`crates/core/src/report/text.rs:273`**: the
+  "No real secrets - but N example/test keys suppressed." reporter line
+  used a literal em dash. Replaced with a comma so the user-facing
+  output matches the no-em-dash global rule.
+- **`crates/core/src/report/text.rs:238`**: ClientSafe severity
+  remediation text "Public by design (client bundle key) - verify
+  scope restrictions." had the same em dash; replaced with a semicolon.
 
 ## v0.5.30 - 2026-05-27 - premium interactive installer + CUDA-on-Linux release variant + star tracker
 
