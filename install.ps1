@@ -159,6 +159,35 @@ function Download-Asset {
     Invoke-WebRequest -Uri $url -OutFile $OutPath -UseBasicParsing
 }
 
+function Verify-Checksum {
+    param($BinaryPath, $AssetName)
+    $checksumUrl = "https://github.com/$Repo/releases/download/$($Script:Tag)/$AssetName.sha256"
+    $expected = $null
+    try {
+        $line = Invoke-RestMethod -Uri $checksumUrl -ErrorAction Stop
+        if ($line) {
+            $expected = ($line -split '\s+')[0]
+        }
+    } catch {
+        Dim "  (no .sha256 file for $($Script:Tag), skipping checksum verification)"
+        return $true
+    }
+    if (-not $expected) {
+        Dim "  (no .sha256 file for $($Script:Tag), skipping checksum verification)"
+        return $true
+    }
+    $hash = (Get-FileHash -Algorithm SHA256 -Path $BinaryPath).Hash.ToLower()
+    if ($hash -eq $expected.ToLower()) {
+        Ok "SHA256 verified ($expected)."
+        return $true
+    }
+    Err "SHA256 mismatch on $AssetName!"
+    Err "  Expected: $expected"
+    Err "  Got:      $hash"
+    Err "Refusing to install. The download may have been corrupted or tampered with."
+    return $false
+}
+
 function Stage-Install {
     $tmp = [System.IO.Path]::GetTempFileName()
     try {
@@ -166,6 +195,10 @@ function Stage-Install {
     } catch {
         Err "Download failed. Is the release published yet? Browse https://github.com/$Repo/releases"
         Err "Underlying error: $_"
+        Remove-Item -Force $tmp -ErrorAction SilentlyContinue
+        exit 1
+    }
+    if (-not (Verify-Checksum -BinaryPath $tmp -AssetName $Script:Asset)) {
         Remove-Item -Force $tmp -ErrorAction SilentlyContinue
         exit 1
     }

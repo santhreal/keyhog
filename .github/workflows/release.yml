@@ -135,6 +135,21 @@ jobs:
           else
             cp target/release/keyhog "${{ matrix.asset }}"
           fi
+          # Per-asset SHA256 checksum. install.sh verifies this when
+          # downloading the binary so a partial transfer / tampered
+          # mirror / corrupted CDN cache surfaces loudly instead of
+          # silently installing garbage. Portable across the three
+          # runner OSes: ubuntu has sha256sum, macOS has shasum, Git
+          # Bash on Windows ships sha256sum via msys2.
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum "${{ matrix.asset }}" > "${{ matrix.asset }}.sha256"
+          elif command -v shasum >/dev/null 2>&1; then
+            shasum -a 256 "${{ matrix.asset }}" > "${{ matrix.asset }}.sha256"
+          else
+            echo "ERROR: no sha256 tool found on $(uname -s)" >&2
+            exit 1
+          fi
+          cat "${{ matrix.asset }}.sha256"
 
       - name: Upload to release
         env:
@@ -156,6 +171,8 @@ jobs:
               --repo "$GITHUB_REPOSITORY" \
               --title "${{ steps.tag.outputs.tag }}" \
               --notes "Prebuilt keyhog binaries for ${{ steps.tag.outputs.tag }}. See CHANGELOG.md." || true
-          gh release upload "${{ steps.tag.outputs.tag }}" "${{ matrix.asset }}" \
+          gh release upload "${{ steps.tag.outputs.tag }}" \
+            "${{ matrix.asset }}" \
+            "${{ matrix.asset }}.sha256" \
             --repo "$GITHUB_REPOSITORY" \
             --clobber
