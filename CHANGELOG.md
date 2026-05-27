@@ -4,6 +4,23 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ## Unreleased
 
+## v0.5.28 - 2026-05-27 - KEYHOG_NO_GPU short-circuit + bare `-` stdin + more client-safe tags
+
+### Cross-platform / safety nets
+
+- **`KEYHOG_NO_GPU=1` now ACTUALLY bypasses the GPU stack.** The v0.5.27 commit only short-circuited the compile-time CUDA/wgpu factory call. The MoE GPU context init runs lazily on the FIRST `backend::get_gpu()` call, and the hardware probe path (`hw_probe.rs:82 -> gpu_probe -> backend::get_gpu`) reaches it before `compile()` even runs. On hosts where Metal adapter request blocks for minutes (Apple M4 Pro / macOS 26.3 reproduction) the env var fired AFTER the user had already paid the stall. `gpu_probe()` now checks the env var BEFORE calling `get_gpu()`; on set, returns `(false, None, None)` so `hw_probe` reports `gpu_available: false`, MoE init never runs, and the scanner starts in ~10 ms.
+
+### CLI UX
+
+- **`keyhog scan -` (bare dash positional) now reads from stdin.** Grep / wc / curl convention. Previously errored with `error: path '-' does not exist`. `keyhog scan - --stdin <<<...` and `keyhog scan - <<<...` both work now; `--stdin` is no longer required when the path is `-`.
+
+### Detector tagging (client-safe)
+
+- `segment-write-key`: write-only keys shipped in every `analytics.js` / Analytics SDK init. Server-side admin is `segment-sources-api-token` (stays high).
+- `clerk-frontend-api-key`: `pk_live_*` / `pk_test_*` shipped alongside `<ClerkProvider>` in Next.js / browser bundles. Clerk secret key is a separate detector.
+
+Total client-safe-tagged detectors now: 7 (Sentry DSN both patterns, Mapbox `pk.`, PostHog `phc_`, Mixpanel project token, Algolia search-only both patterns, Segment write key, Clerk frontend `pk_*`).
+
 ## v0.5.27 - 2026-05-27 - client-safe severity tier + `--hide-client-safe` (bug-bounty workflow)
 
 ### Feature
