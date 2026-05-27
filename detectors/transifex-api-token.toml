@@ -16,8 +16,13 @@ description = "Transifex API token with context anchor"
 group = 1
 
 [[detector.patterns]]
-regex = "transifex\\.com.*[=:\\s\"'']+([a-zA-Z0-9_-]{40,})"
-description = "Transifex API token with domain context"
+# `[\s\S]` rather than `.` so the domain anchor can be on a separate
+# line from the credential — the canonical curl/comment shape is
+# `# https://www.transifex.com/api/3/\nAuthorization: Bearer <tok>`,
+# which `.*` (no `s` flag in Hyperscan) would not span. Lazy `*?` so
+# we don't accidentally swallow trailing tokens on the same chunk.
+regex = "transifex\\.com[\\s\\S]*?[=:\\s\"'' ]+([a-zA-Z0-9_-]{40,})"
+description = "Transifex API token with domain context (multi-line tolerant)"
 group = 1
 
 [[detector.patterns]]
