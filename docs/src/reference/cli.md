@@ -52,6 +52,18 @@ runtime error.
 | `--enable-detectors <ID,..>`  | Only run these detectors. Implies disable-rest. |
 | `--no-suppress-test-fixtures` | Show findings on bundled example credentials.  |
 | `--baseline <FILE>`           | Compare against a prior scan; show only new.   |
+| `--hide-client-safe`          | Drop every `CLIENT-SAFE` finding (Sentry DSN, Stripe `pk_*`, Mapbox `pk.`, PostHog `phc_`, etc.) before reporting. Use this for bug-bounty / exfiltration-impact workflows where keys public by design are noise. |
+
+### Environment variables
+
+| Variable                              | Effect                                                                |
+|---------------------------------------|-----------------------------------------------------------------------|
+| `KEYHOG_BACKEND=gpu\|simd\|cpu\|auto`  | Force a scan backend instead of letting the auto-router choose.        |
+| `KEYHOG_NO_GPU=1`                     | Short-circuit GPU init at hardware-probe time. The scanner runs as if no GPU adapter existed. Use this when Metal / CUDA init blocks on a given host (Apple Silicon Mac configurations have reproduced this) and you want predictable startup. |
+| `KEYHOG_PER_CHUNK_TIMEOUT_MS=<MS>`    | Attach an `Instant` deadline to every chunk scan. Default unset = no timeout (original behaviour). Recommend `30000` for production scans where bounded latency matters more than scan completeness. |
+| `KEYHOG_THREADS=<N>`                  | Pin the rayon worker count. Default = physical-core count.            |
+| `KEYHOG_DETECTORS=<DIR>`              | Override the auto-discovered detector directory.                       |
+| `KEYHOG_CACHE_DIR=<DIR>`              | Override the regex / database cache location (must sit under `$HOME` or `/tmp/keyhog-cache-<uid>` for safety).                 |
 
 ## `keyhog detectors`
 
