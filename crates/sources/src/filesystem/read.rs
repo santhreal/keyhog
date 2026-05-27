@@ -555,11 +555,40 @@ fn looks_binary(bytes: &[u8]) -> bool {
 }
 
 fn has_binary_magic(bytes: &[u8]) -> bool {
+    // Common executable / archive / image / serialized-data magic bytes.
+    // Each of these unambiguously identifies a binary file format whose
+    // bytes cannot be a credential — short-circuiting here saves the
+    // O(n) controls-density scan for files that already declare what
+    // they are. Adding new magics here is cheap; removing them is the
+    // dangerous direction.
     const MAGIC_HEADERS: &[&[u8]] = &[
         b"%PDF-",
-        b"PK\x03\x04",
+        b"PK\x03\x04",            // ZIP / JAR / DOCX / XLSX / PPTX / APK / OOXML
         b"\x89PNG\r\n\x1a\n",
-        b"\xD0\xCF\x11\xE0",
+        b"\xD0\xCF\x11\xE0",      // OLE compound document (older Office)
+        b"\x7fELF",                // Linux / BSD executables, .so, .o, .a
+        b"\xfe\xed\xfa\xce",      // Mach-O 32-bit (macOS, iOS executables)
+        b"\xfe\xed\xfa\xcf",      // Mach-O 64-bit
+        b"\xcf\xfa\xed\xfe",      // Mach-O 64-bit reversed
+        b"\xca\xfe\xba\xbe",      // Java .class (universal Mach-O collision)
+        b"MZ",                     // Windows PE / .exe / .dll / .sys
+        b"\x1f\x8b",              // gzip (.gz)
+        b"BZh",                    // bzip2 (.bz2)
+        b"\xfd7zXZ\x00",          // xz (.xz)
+        b"7z\xbc\xaf\x27\x1c",    // 7z (.7z)
+        b"Rar!\x1a\x07",          // RAR
+        b"GIF87a",                 // GIF
+        b"GIF89a",                 // GIF
+        b"\xff\xd8\xff",          // JPEG (any variant)
+        b"BM",                     // BMP — too short alone, but combined with the
+                                   // density check below this is safe
+        b"\x00\x00\x01\x00",      // ICO
+        b"OggS",                   // Ogg container
+        b"ID3",                    // MP3 with ID3 tag
+        b"fLaC",                   // FLAC
+        b"\x00asm",                // WebAssembly module
+        b"!<arch>\n",              // Unix `ar` archives (.a, .deb)
+        b"\x80\x02",              // Python pickle (protocol 2+) — common stub
     ];
     MAGIC_HEADERS.iter().any(|header| bytes.starts_with(header))
 }

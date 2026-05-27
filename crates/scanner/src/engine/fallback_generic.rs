@@ -292,6 +292,13 @@ impl CompiledScanner {
                 if crate::pipeline::looks_like_url_or_path_segment(value) {
                     continue;
                 }
+                // Vendored 3rd-party minified bundle: drop generic-secret
+                // hits in vendored codemirror/pdfjs/wp-includes/etc. paths.
+                if crate::pipeline::looks_like_vendored_minified_path(
+                    chunk.metadata.path.as_deref(),
+                ) {
+                    continue;
+                }
                 // Regex-literal suppression: the fast-path hot patterns and
                 // generic-secret regex sometimes capture rules being defined
                 // in source code that itself implements a secret scanner.
@@ -301,7 +308,7 @@ impl CompiledScanner {
                 // Source: claude-code's teamMemorySync/secretScanner.ts had
                 // 3 hot-aws_session_key / hot-slack_bot_token findings on
                 // its own regex definitions.
-                if looks_like_regex_literal_tail(value) {
+                if crate::pipeline::looks_like_regex_literal_tail(value) {
                     continue;
                 }
 
@@ -441,42 +448,6 @@ impl CompiledScanner {
 ///      payload happens to encode random bytes into pure-b62
 ///      characters but still needs the `==` padding to round out.
 ///   4. Length is a multiple of 4 OR ends with `=`/`==` padding.
-/// True when the captured value looks like a regex pattern literal
-/// rather than a credential. Source files that implement secret
-/// scanners (claude-code's teamMemorySync/secretScanner.ts, every
-/// trufflehog / gitleaks competitor) emit hot-pattern findings on
-/// their own regex DEFINITIONS — `AKIA[A-Z0-9]{16,17}/g`,
-/// `ASIA[A-Z0-9]{16})\b`, `xoxb-[0-9-]*`. Real credentials never
-/// end in regex sigils because real services don't use those bytes
-/// in their token alphabets. Tail-suffix check keeps the cost O(1).
-fn looks_like_regex_literal_tail(value: &str) -> bool {
-    const REGEX_SIGIL_SUFFIXES: &[&str] = &[
-        ")/g",  // /g flag
-        ")/gi", // /gi flag
-        ")/i",  // /i flag
-        ")/m",  // /m flag
-        ")\\b", // word boundary
-        "})\\b",
-        "})\\\\b", // doubly-escaped backslash in JSON-encoded regex
-        "]+",
-        "]*",
-        "]?",
-        "]+/",
-        "]+\\b",
-        "*/g",
-        "+/g",
-        "+/i",
-        ")*",
-        ")+",
-        ")?",
-        ")?$",
-        ")$",
-    ];
-    REGEX_SIGIL_SUFFIXES
-        .iter()
-        .any(|sig| value.ends_with(sig))
-}
-
 fn generic_path_looks_like_random_base64_blob(value: &str) -> bool {
     if !(40..=300).contains(&value.len()) {
         return false;
