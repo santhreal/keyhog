@@ -4,6 +4,8 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ## Unreleased
 
+## v0.5.32 - 2026-05-27 - vyre depth: AC kernel becomes the default GPU scan path + honest GPU self-test
+
 ### Deep vyre: AC kernel becomes the default GPU scan path
 
 - **`gpu_literal_phase1.rs`** previously routed all WGPU hosts through the
