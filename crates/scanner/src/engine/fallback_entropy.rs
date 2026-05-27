@@ -182,9 +182,84 @@ impl CompiledScanner {
             if crate::pipeline::looks_like_url_or_path_segment(&entropy_match.value) {
                 continue;
             }
+            // UUID v4 substring (`TOKEN_LIST=636765a9-1f92-4b40-ab0b-85ebd1e2c23d`
+            // in bat-go docker-compose.reputation.yml). The entropy fallback
+            // grabs the whole env-var assignment; the high-entropy payload
+            // is just the UUID, which is a public identifier, not a credential.
+            if crate::pipeline::contains_uuid_v4_substring(&entropy_match.value) {
+                continue;
+            }
+            // Email address (gogs TestInit.golden.ini:89 `USER=noreply@gogs.localhost`
+            // captured as entropy-password due to nearby `PASSWORD=` line).
+            if crate::pipeline::looks_like_email_address(&entropy_match.value) {
+                continue;
+            }
+            // Blockchain / network address keyword context: the line
+            // containing the entropy hit is a `<KEY>=<value>` assignment
+            // where KEY names a blockchain or network public identifier
+            // (`SOLANA_BAT_MINT_ADDRS=EPeU…1Tpz`, `OWNER_PUBKEY=…`,
+            // `CONTRACT_ADDRESS=0x…`, `WALLET=…`). These are PUBLIC
+            // identifiers, not credentials. Cheap line lookup via the
+            // preprocessed text + line_offsets table.
+            let line_idx = entropy_match.line.saturating_sub(1);
+            if let Some(&line_start) = line_offsets.get(line_idx) {
+                let line_end = line_offsets
+                    .get(line_idx + 1)
+                    .copied()
+                    .unwrap_or(preprocessed.text.len());
+                if let Some(line_text) = preprocessed.text.get(line_start..line_end) {
+                    let line_upper = line_text.to_ascii_uppercase();
+                    const BLOCKCHAIN_ADDR_KEYWORDS: &[&str] = &[
+                        "_ADDR=",
+                        "_ADDR ",
+                        "_ADDR\"",
+                        "_ADDR:",
+                        "_ADDRS=",
+                        "_ADDRS ",
+                        "_ADDRS\"",
+                        "_ADDRESS=",
+                        "_ADDRESS ",
+                        "_ADDRESS\"",
+                        "_WALLET=",
+                        "_WALLET ",
+                        "_WALLET\"",
+                        "_MINT_ADDR",
+                        "_PUBKEY=",
+                        "_PUBKEY ",
+                        "_PUBLIC_KEY=",
+                        "_PUBLIC_KEY ",
+                        "_PUBLIC_KEY\"",
+                        "_CONTRACT=",
+                        "_CONTRACT ",
+                        "_OWNER=",
+                        "_ACCOUNT_ID=",
+                        "_PEER_ID=",
+                        "_NODE_ID=",
+                    ];
+                    if BLOCKCHAIN_ADDR_KEYWORDS
+                        .iter()
+                        .any(|kw| line_upper.contains(kw))
+                    {
+                        continue;
+                    }
+                }
+            }
             // Vendored 3rd-party minified bundle: any "secret-like"
             // sequence is a minification coincidence, not a leak.
             if crate::pipeline::looks_like_vendored_minified_path(chunk.metadata.path.as_deref()) {
+                continue;
+            }
+            // Raw base64 files (`.b64`, `.base64`, `base64_string.txt`):
+            // alphabet-coincidence matches inside the base64 stream are
+            // not credentials.
+            if chunk.metadata.path.as_deref().is_some_and(|p| {
+                let lower = p.to_ascii_lowercase();
+                if lower.ends_with(".b64") || lower.ends_with(".base64") {
+                    return true;
+                }
+                let basename = lower.rsplit('/').next().unwrap_or(&lower);
+                basename.starts_with("base64_") || basename.contains("base64_string")
+            }) {
                 continue;
             }
 
