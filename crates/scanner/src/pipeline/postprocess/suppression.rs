@@ -130,6 +130,33 @@ pub fn should_suppress_named_detector_finding(
         );
         return true;
     }
+    // Captured value contains a UUID v4 / RFC-4122 substring anywhere.
+    // The entropy detector often grabs `<KEY>=<uuid>` env-var assignments
+    // as one chunk (bat-go docker-compose.reputation.yml `TOKEN_LIST=
+    // 636765a9-1f92-4b40-ab0b-85ebd1e2c23d`); the value's high-entropy
+    // payload is just the UUID, which is a public identifier, not a
+    // credential.
+    if contains_uuid_v4_substring(credential) {
+        crate::telemetry::record_example_suppression(
+            "pipeline",
+            path,
+            credential,
+            "contains_uuid_v4",
+        );
+        return true;
+    }
+    // Email-address shape: `noreply@gogs.localhost` (gogs golden test
+    // ini), `bob.norman@mail.example.com` (shopify test response).
+    // Email addresses are public identifiers, not credentials.
+    if looks_like_email_address(credential) {
+        crate::telemetry::record_example_suppression(
+            "pipeline",
+            path,
+            credential,
+            "email_address",
+        );
+        return true;
+    }
     // Vendored 3rd-party minified bundle path: applies to ALL detectors,
     // not just generic-*. A "secret-like" sequence in a minified
     // codemirror/pdfjs/jquery/etc. bundle is never a real leak.
@@ -174,7 +201,8 @@ pub fn should_suppress_named_detector_finding(
         );
         return true;
     }
-    // Files explicitly marked as base64 (`.b64`, `.base64`) hold base64-
+    // Files explicitly marked as base64 (`.b64`, `.base64`, or basename
+    // starting with `base64_` / containing `base64_string`) hold base64-
     // encoded blobs — usually images or binaries that the operator
     // wants the base64 decoder to handle. Raw text-mode hits inside the
     // base64 stream (AIza, sk-, ASIA, etc.) are alphabet coincidences,
@@ -184,7 +212,13 @@ pub fn should_suppress_named_detector_finding(
     // scanned normally.
     if path.is_some_and(|p| {
         let lower = p.to_ascii_lowercase();
-        lower.ends_with(".b64") || lower.ends_with(".base64")
+        if lower.ends_with(".b64") || lower.ends_with(".base64") {
+            return true;
+        }
+        let basename = lower.rsplit('/').next().unwrap_or(&lower);
+        basename.starts_with("base64_")
+            || basename.contains("base64_string")
+            || basename == "base64.txt"
     }) && source_type.is_some_and(|s| s == "filesystem")
     {
         crate::telemetry::record_example_suppression(
@@ -498,6 +532,75 @@ pub(crate) fn looks_like_regex_literal_tail(value: &str) -> bool {
         .any(|sig| value.ends_with(sig))
 }
 
+/// True if `value` looks like an email address. Captures FP shapes where
+/// the entropy detector or generic regex grabs an email from a `USER=`
+/// or `FROM=` config line (gogs TestInit.golden.ini:89
+/// `USER=noreply@gogs.localhost`, then PASSWORD=…@host pattern fires).
+/// Real credentials are never email-shaped.
+pub(crate) fn looks_like_email_address(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    if bytes.len() < 5 || bytes.len() > 64 {
+        return false;
+    }
+    let at = match bytes.iter().position(|&b| b == b'@') {
+        Some(idx) => idx,
+        None => return false,
+    };
+    // Exactly one `@`
+    if bytes.iter().skip(at + 1).any(|&b| b == b'@') {
+        return false;
+    }
+    let local = &bytes[..at];
+    let domain = &bytes[at + 1..];
+    if local.is_empty() || domain.is_empty() {
+        return false;
+    }
+    // Local part: alphanumeric + `_`, `-`, `.`, `+`
+    if !local.iter().all(|&b| {
+        b.is_ascii_alphanumeric() || b == b'_' || b == b'-' || b == b'.' || b == b'+'
+    }) {
+        return false;
+    }
+    // Domain part: must contain at least one `.`
+    if !domain.iter().any(|&b| b == b'.') {
+        return false;
+    }
+    // Domain alphabet: alphanumeric + `_`, `-`, `.`
+    domain
+        .iter()
+        .all(|&b| b.is_ascii_alphanumeric() || b == b'-' || b == b'.')
+}
+
+/// True if `value` contains a UUID v4 / RFC-4122 substring anywhere
+/// inside it. Catches `TOKEN_LIST=636765a9-1f92-4b40-ab0b-85ebd1e2c23d`
+/// (bat-go docker-compose.reputation.yml:42) — the entropy detector
+/// captures the whole env-var assignment but the actual high-entropy
+/// content is the UUID identifier, which is not a credential. Real
+/// credentials with UUIDs embedded as part of their structure
+/// (extremely rare) would also benefit from suppression here — UUIDs
+/// are public identifiers, not secrets.
+pub(crate) fn contains_uuid_v4_substring(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    if bytes.len() < 36 {
+        return false;
+    }
+    let mut i = 0;
+    while i + 36 <= bytes.len() {
+        let slice = &bytes[i..i + 36];
+        if slice[8] == b'-' && slice[13] == b'-' && slice[18] == b'-' && slice[23] == b'-' {
+            let all_hex_or_dash = slice.iter().enumerate().all(|(j, &c)| match j {
+                8 | 13 | 18 | 23 => c == b'-',
+                _ => matches!(c, b'0'..=b'9' | b'a'..=b'f' | b'A'..=b'F'),
+            });
+            if all_hex_or_dash {
+                return true;
+            }
+        }
+        i += 1;
+    }
+    false
+}
+
 /// True if the file at `path` is itself a secret-scanner source file.
 /// Such files contain detector regex patterns (`/AKIA[A-Z0-9]{16}/g`,
 /// `'(?:ASIA|AKIA)[A-Z2-7]{16}'`, `dn_[a-zA-Z0-9_-]{20,}`) that the engine
@@ -628,6 +731,8 @@ pub(crate) fn looks_like_punctuation_decorated_identifier(value: &str) -> bool {
     //   `@` — SQL/Ruby/Rust attribute (`@v_password`, `@api_key`, `@deprecated`)
     //   `!` — JS truthy coercion (`!!apiKeyOrOAuthToken`)
     //   `/` — Unix absolute path (`/etc/passwd:/etc/passwd:ro` docker mount).
+    //   `$` — GraphQL variable reference (`apiKey: $api_key`), shell var
+    //          expansion (`$API_KEY`), template placeholder (`${SECRET}`).
     let starts_with_double_dash =
         bytes.starts_with(b"--") && bytes.len() >= 3 && bytes[2] != b'-';
     if starts_with_double_dash
@@ -635,6 +740,7 @@ pub(crate) fn looks_like_punctuation_decorated_identifier(value: &str) -> bool {
         || bytes[0] == b'@'
         || bytes[0] == b'!'
         || bytes[0] == b'/'
+        || bytes[0] == b'$'
     {
         return true;
     }

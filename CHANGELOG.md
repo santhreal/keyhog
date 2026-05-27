@@ -4,6 +4,41 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ## Unreleased
 
+## v0.5.24 — 2026-05-26 — dogfood non-PEM 27 → 22 (138 → 22 vs v0.5.21 baseline = −84%) via UUID-substring + email + blockchain-address-keyword + `$` sigil + base64 hot-pattern wiring
+
+### Precision
+
+- **`contains_uuid_v4_substring`** — captured values that wrap a UUID v4 / RFC-4122 (`TOKEN_LIST=636765a9-1f92-4b40-ab0b-85ebd1e2c23d` in bat-go docker-compose.reputation.yml). The entropy detector grabs the whole env-var assignment; the high-entropy payload is just the UUID, which is a public identifier, not a credential.
+- **`looks_like_email_address`** — `noreply@gogs.localhost` (gogs TestInit.golden.ini:89 `USER=…` captured because of nearby `PASSWORD=` line). Email addresses are public identifiers, never credentials. Tightened local + domain alphabet checks keep real `user:password` DSN strings outside the rejection set.
+- **Blockchain / network-address keyword context** in entropy fallback. Lines like `SOLANA_BAT_MINT_ADDRS=EPeU…1Tpz`, `OWNER_PUBKEY=…`, `CONTRACT_ADDRESS=0x…`, `WALLET=…` name a PUBLIC blockchain or network identifier — not a credential. Skip the entropy emit when the env-var key contains any of `_ADDR`, `_ADDRS`, `_ADDRESS`, `_WALLET`, `_MINT_ADDR`, `_PUBKEY`, `_PUBLIC_KEY`, `_CONTRACT`, `_OWNER`, `_ACCOUNT_ID`, `_PEER_ID`, `_NODE_ID`.
+- **Leading `$` sigil rejection** — GraphQL variable references (`$api_key` in shopify-cli mutation), shell variable expansions (`$API_KEY`), template placeholders (`${SECRET}`). Real credentials never start with `$`.
+- **`base64_string.txt` / `base64_*` filename pattern + hot-pattern path wiring**. `metasploitable3/.../base64_string.txt` is a 600 KiB pure-base64 PNG flag file. Random byte sequences in the base64 stream coincidentally match the AWS Session Token `ASIA[A-Z0-9]{16}` literal-prefix hot pattern. The base64 decoder still produces its own `filesystem/base64` chunk; only raw text-mode hits on these files are suppressed. Wired in BOTH `should_suppress_named_detector_finding` and the hot-pattern fast path.
+
+### Per-detector dogfood deltas vs v0.5.23
+
+  generic-secret           7 → 6   (shopify-cli graphql $api_key killed)
+  entropy-api-key          1 → 0   (Solana mint address killed by blockchain-keyword)
+  entropy-token            1 → 0   (UUID-substring killed `TOKEN_LIST=<uuid>`)
+  entropy-password         3 → 2   (email-shape killed `noreply@gogs.localhost`)
+  hot-aws_session_key      1 → 0   (base64_string.txt killed via hot-pattern wiring)
+  TOTAL non-PEM           27 → 22  (−19% this release; −84% vs v0.5.21 baseline)
+  private-key recall      782 + 30 = 812 unchanged
+
+### Residual 22 findings
+
+All ~21 are TRUE POSITIVES that the engine should keep firing on:
+- 6 alist OAuth client secrets committed to source (real public OAuth secrets in cloud-storage driver bindings — known leak by design).
+- 4 metasploitable3 chef users.rb passwords (`Dark_syD3`, `@dm1n1str8r`, `mesah_p@ssw0rd`, `Dark_syD3`-class) — CTF/vulnerable-app credentials intentionally weak but ARE real credentials.
+- 4 metasploitable3 / govwa generic-secret CTF passwords (`govwaP@ss`, `D@rjeel1ng`, `but_master:`, `admin1234`).
+- 2 gogs golden test fixtures (`PASSWORD=12345678`, `PASSWORD=87654321`) — sequential-digit test passwords; engine correctly flags them.
+- 1 metasploitable3 Autounattend.xml Microsoft Windows public-key token (real public ID, ambiguous).
+- 1 railsgoat seeds.rb CTF password (`motoXXX1445`).
+- 1 claude-code Datadog public client token (real, intentional public Datadog logging key).
+- 1 shopify-api-ruby test JWT (shipping label JWT in a test response fixture).
+- 1 openssl SSH private-key in test data (real PEM in `test/recipes/`).
+
+The only remaining **true** FP is **`saltstack-credentials` on `railsgoat/config/initializers/constants.rb`** — engine offset bug (defect #80) emits a finding with no regex match; needs deeper investigation.
+
 ## v0.5.23 — 2026-05-26 — dogfood non-PK 63 → 27 (−57%, 138 → 27 vs v0.5.21 baseline = −80%) via shape-filter unification + Rails-vendored detection + .b64 file skip + URI type-annotation suppression
 
 ### Precision

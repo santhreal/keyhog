@@ -157,6 +157,19 @@ impl CompiledScanner {
                 ) {
                     continue;
                 }
+                // Raw base64 / pure-alphabet files: alphabet-coincidence
+                // matches inside the base64 stream (AKIA/ASIA/etc.) are
+                // not credentials.
+                if chunk.metadata.path.as_deref().is_some_and(|p| {
+                    let lower = p.to_ascii_lowercase();
+                    if lower.ends_with(".b64") || lower.ends_with(".base64") {
+                        return true;
+                    }
+                    let basename = lower.rsplit('/').next().unwrap_or(&lower);
+                    basename.starts_with("base64_") || basename.contains("base64_string")
+                }) {
+                    continue;
+                }
 
                 // Same partition_point binary-search idiom as
                 // `match_line_number` — `line_offsets` is sorted
