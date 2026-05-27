@@ -4,6 +4,31 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ## Unreleased
 
+## v0.5.25 — 2026-05-27 — cross-platform fixes (Windows build, basename `\` separators, UTF-16 BOM decode) + contract recall (412 → 52 regressions restored via shape-filter Tier-A/Tier-B split + caseless fallback regex)
+
+### Cross-platform
+
+- **Windows build (E0432/E0433)** — `daemon` module gated `#[cfg(unix)]`. It hard-imported `tokio::net::UnixStream` and `std::os::unix::net::UnixStream`, neither of which exist on Windows. `keyhog daemon` and `--daemon` now emit a clear "unix-only" error there instead of a build failure. Per-named-pipe Windows IPC support is tracked but unimplemented.
+- **Cross-platform path-separator suppression** — five sites used POSIX-only `rsplit('/')` for basename extraction or `contains("/dir/")` for vendored-tree detection. Windows checkouts (`C:\src\app\node_modules\…`) silently skipped every gate. Switched to `rsplit(['/', '\\'])` + new `contains_path_segment` helper that tests both `/seg/` and `\seg\`. Behaviour on POSIX paths unchanged.
+- **UTF-16 BOM file decode** — `decode_text_file` unconditionally rejected every file starting with the literal UTF-16 BOM (`\xff\xfe` / `\xfe\xff`) as binary, before `decode_utf16` (right below it) could decode them. Every UTF-16-BOM PowerShell / .NET config that ships on Windows was silently invisible to the scanner. Removed the false-positive guard; `decode_utf16` handles BOM dispatch internally.
+
+### Recall — contract evasions restored (412 → 52)
+
+- **Shape-filter Tier-A / Tier-B split.** Five shape-suppression filters (`looks_like_pure_identifier`, `looks_like_word_separated_identifier`, `looks_like_scheme_prefixed_uri`, `looks_like_url_or_path_segment`, `contains_uuid_v4_substring`) were applied universally in `should_suppress_named_detector_finding` as of v0.5.21..v0.5.24. They dropped legitimate service-anchored credentials whose body looks like an identifier / URL / UUID — PowerBI client_id UUIDs, mongodb:// URIs, avalanche RPC URLs, cockroachdb word-separated keys. Per the anti-rigging law: contracts are truth — when evasions DROP, fix the engine, not the contract. New `is_generic_or_entropy_detector` helper gates the five filters as Tier-B (generic-* / entropy-* only). `looks_like_punctuation_decorated_identifier` stays universal (Tier A) — `--api-secret`, `&password`, `Password:` are grammar markers, never a credential body. Self-scan: 0 real findings, 1041 example/test keys suppressed (was 1020 pre-fix).
+- **Fallback regex compiler — caseless to match Hyperscan.** `shared_regex()` built the regex crate without `case_insensitive(true)`, but Hyperscan compiles every pattern `CASELESS`. Detectors with mixed-case alternations (`(?:FRAMER|framer)[_=:\s"']+(?:api[_-]?)?(?:key|token)`) bake uppercase only in the leading anchor, leaving `api`/`key` lowercase. `FRAMER_API_KEY=<token>` (uppercase) was matched by Hyperscan but silently missed by the fallback path — ~30 detectors affected.
+
+### Detector-specific
+
+- **`transifex-api-token`** — second-pattern regex was `transifex\.com.*[=:\s"']+(...)`. Hyperscan `.*` doesn't span `\n`, so the canonical `# https://transifex.com/api/3/\nAuthorization: Bearer <token>` shape never matched. Switched to `[\s\S]*?` (lazy any-char). Keeps existing positives; restores the documented evasion.
+- **`weatherapi-api-key`** — added a third pattern for the canonical curl shape (`https://api.weatherapi.com/v1/...?key=<key>`) where the domain appears BEFORE the key. The previous two patterns both required domain AFTER the key, missing the standard SDK invocation.
+- **`intercom-access-token`** — TOML parse error silently dropped this detector from the embedded corpus since v0.5.21. The regex line used a single-quoted TOML literal with an embedded `'`, which TOML basic literals do not allow. Switched to triple-quoted literal. Build script counted 891 but loader saw 890; this restores the missing detector.
+
+### Test infrastructure
+
+- **Boundary tests** — `STRADDLE_ABCDEFGHIJKLMNOPQRST` (29 pure-alpha chars) was tripping `looks_like_pure_identifier` after v0.5.21's filter widened to catch CamelCase / single-underscore identifiers in the 8..=40 alpha range. Test fixture now uses `STRADDLE_A1CDEFGH2JKLMNOPQ8ST` (digits sprinkled in), matching the AWS-access-key shape the test was designed to mirror.
+- **README banner pattern count** — `README_PATTERN_COUNT = 1646` → `1647` (one pattern added by the weatherapi third regex + one restored by the intercom fix).
+- **Clippy 1.95** — ten new lints (`doc_lazy_continuation`, `manual_range_contains`, `manual_pattern_char_comparison`, `manual_contains`, `manual_char_is_ascii`) on pre-existing code in `suppression.rs`. Idiom-only modernizations, no behavior change.
+
 ## v0.5.24 — 2026-05-26 — dogfood non-PEM 27 → 22 (138 → 22 vs v0.5.21 baseline = −84%) via UUID-substring + email + blockchain-address-keyword + `$` sigil + base64 hot-pattern wiring
 
 ### Precision
