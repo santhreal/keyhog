@@ -4,6 +4,18 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ## Unreleased
 
+### Coherence: startup banner now distinguishes CUDA vs WGPU
+
+- The `⚡ KeyHog ...| backend=Gpu` startup banner used to collapse the
+  CUDA path and the WGPU fallback under the same `Gpu` label, so a
+  user on an NVIDIA box couldn't tell whether the CUDA-feature build
+  was actually using CUDA or had silently dropped to WGPU. Banner now
+  reads `... | backend=Gpu | gpu=cuda` (or `gpu=wgpu`, `gpu=none`),
+  pulling the live `VyreBackend::id()` of the acquired backend. New
+  `CompiledScanner::gpu_backend_label()` exposes the same info to
+  any downstream consumer (daemon health endpoint, `keyhog backend`
+  diagnostics, future GH-Action telemetry).
+
 ### No silent GPU fallbacks
 
 - **`scanner/src/gpu.rs`** (MoE inference path): when the GPU MoE

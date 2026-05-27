@@ -117,8 +117,9 @@ impl ScanOrchestrator {
                 true,
                 self.detectors.len(),
             );
+            let gpu_label = self.scanner.gpu_backend_label().unwrap_or("none");
             eprintln!(
-                "⚡ {} | backend={preferred_backend}",
+                "⚡ {} | backend={preferred_backend} | gpu={gpu_label}",
                 keyhog_scanner::hw_probe::startup_banner(
                     hw,
                     self.detectors.len(),
