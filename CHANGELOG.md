@@ -4,6 +4,30 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ## Unreleased
 
+## v0.5.30 - 2026-05-27 - premium interactive installer + CUDA-on-Linux release variant + star tracker
+
+### New: premium interactive installer
+
+- **`install.sh` + `install.ps1` rewritten.** The Linux / macOS installer now detects host state (OS, arch, NVIDIA GPU, loadable `libcuda.so`, existing keyhog install, PATH config), summarizes what it would do, and (when stdin is a TTY) prompts for the variant + optional post-install steps. Curl-pipe-sh keeps working: a non-TTY stdin drops to auto-detect mode and prints a tip for the interactive path.
+- **New modes:** `--diagnose` prints a full host + binary status report and changes nothing. `--repair` re-downloads the right variant for the current host even when the existing binary still runs (useful after CUDA userland is installed and the WGPU build should be swapped for the CUDA build). `--uninstall` removes the binary but deliberately leaves shell-rc PATH entries and completions in place so the installer doesn't silently edit user-owned files.
+- **Post-install wizard (when interactive):** opt-in prompts for adding the install dir to your shell PATH (with explicit append to `.bashrc` / `.zshrc` / `config.fish`), installing shell completions, wiring keyhog as a Claude Code pre-tool hook, and wiring keyhog as a git pre-commit hook in the current directory. Defaults are conservative; nothing happens without an explicit "y".
+- **Overrides:** `KEYHOG_VARIANT=cuda` / `=cpu` force a variant. `--yes` / `-y` accepts every default for non-interactive runs. `--no-color` disables ANSI output for log capture. `KEYHOG_VERSION` and `KEYHOG_INSTALL` env-vars work as before.
+
+### New: CUDA-on-Linux release variant
+
+- **`keyhog-linux-x86_64-cuda` ships as a 5th release asset.** Built with `--features cuda` after provisioning CUDA 12.6 toolkit on the GH ubuntu runner via `Jimver/cuda-toolkit@v0.2.19`. The installer prefers this asset on Linux hosts where `nvidia-smi` reports a GPU AND `libcuda.so` is loadable (via ldconfig or the four common path probes). On the same host with no CUDA, the installer keeps picking the existing default `keyhog-linux-x86_64` build (WGPU + SIMD). Apple Silicon, Intel Mac, and Windows hosts keep their existing assets; Apple Silicon hosts get an explicit "Metal GPU acceleration coming soon" preface so users understand the WGPU + SIMD tradeoff up front.
+- **install.sh falls back gracefully** when the `-cuda` asset is not yet published for the resolved tag: it tries the CUDA asset, on 404 it logs the fallback and downloads the base asset instead. This means the script is forward-compatible with older release tags.
+
+### Tests
+
+- **`tests/install/scenarios.sh`** is a 12-scenario harness that mocks `uname` / `nvidia-smi` / `ldconfig` / `curl` per scenario via a sandbox dir prepended to PATH. Covers: CUDA host, macOS arm64, macOS x86_64, `KEYHOG_VARIANT=cuda` / `=cpu` overrides, unsupported platform, `--help` / `--uninstall` mode dispatch. The two scenarios that require simulating "NVIDIA but no libcuda" or "no GPU at all" skip on a real CUDA host (the script's path-fallback probes leak through the sandbox) and run for real on no-CUDA CI runners.
+- **End-to-end smoke test on real Apple Silicon hardware:** the install path was verified over SSH against an M-series macbook, upgrading v0.5.28 to v0.5.29 cleanly and reporting the Metal-coming-soon note. `--repair` and `--diagnose` were exercised on the upgraded macbook to confirm post-install behavior.
+
+### Metrics / repo hygiene
+
+- **Daily star tracker.** `metrics/stars.json` records `{date, count}` snapshots; `.github/workflows/record-stars.yml` runs at 07:17 UTC, calls the GitHub API for the current count, dedupes per date, and commits if changed. README gains a live stars badge linking to star-history.com. wafrift gets the same tracker (see `santhsecurity/wafrift`).
+- **README backend table accuracy.** Removed the stale "cudagrep NVMe -> VRAM DMA" claim. The actual code routes the GPU path through vyre (WGPU cross-platform, optional CUDA feature) with no cudagrep or warpstate references anywhere in the tree.
+
 ## v0.5.29 - 2026-05-27 - HAR (HTTP Archive) auto-expansion + http/wire docs + Bazel scaffolding untracked
 
 ### New: HAR auto-expansion
