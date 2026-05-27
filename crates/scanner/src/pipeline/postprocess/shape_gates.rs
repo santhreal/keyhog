@@ -146,8 +146,7 @@ fn looks_like_base64_blob_with_padding(s: &str) -> bool {
 /// hard bypass above (they start with `-----BEGIN`), so
 /// EC/RSA/PGP/OpenSSH private keys are unaffected even though
 /// their bodies are standard base64. The 86/88-char Azure storage
-/// key sits OUTSIDE the [40, 80] window — recall preserved.
-#[allow(dead_code)]
+/// key sits OUTSIDE the [40, 80] window so recall is preserved.
 pub(crate) fn looks_like_standard_base64_blob(credential: &str) -> bool {
     if !(40..=80).contains(&credential.len()) {
         return false;
