@@ -31,31 +31,37 @@ Backend selection is automatic. On startup:
 KeyHog v0.5.17 | 16 cores | SIMD: AVX-512 | Hyperscan | 891 detectors
 ```
 
-📘 **Full documentation:** [`/site/`](./site/) — install, scan, output formats,
-CI integration, detector catalog (all 891 filterable), architecture,
-lockdown mode, FAQ. Build with `python3 site/build.py`; host on GitHub Pages.
+📘 **Full documentation:** [santhsecurity.github.io/keyhog](https://santhsecurity.github.io/keyhog/)
+. install, first scan, output formats, detection internals,
+suppressions, verification, pre-commit + CI integration, CLI
+reference, exit codes, env vars, contributing. Source under `docs/`.
 
 ---
 
 ## Install
 
 ```bash
-# Recommended: SIMD + ML + decode + multiline + verification
-cargo install keyhog
+# Linux / macOS
+curl -fsSL https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.sh | sh
 
-# With GPU acceleration (NVMe → VRAM DMA, multi-GB monorepo scans)
-cargo install keyhog --features gpu
+# Windows (PowerShell)
+iwr https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.ps1 -useb | iex
 
-# From source (latest main)
+# From source (any platform)
 git clone https://github.com/santhsecurity/keyhog.git
-cd keyhog && cargo install --path crates/cli
+cd keyhog && cargo build --release -p keyhog
 ```
 
 Works on **Linux**, **macOS** (Intel + Apple Silicon), **Windows**. Zero
-configuration — `keyhog scan .` works out of the box.
+configuration. `keyhog scan .` works out of the box.
 
 Prebuilt binaries attached to each [release](https://github.com/santhsecurity/keyhog/releases).
-Docker: `docker run --rm -v "$PWD:/src" santhsecurity/keyhog scan /src`.
+The install scripts detect OS + CPU arch and pull the right asset.
+Pin a version with `KEYHOG_VERSION=v0.5.25`; change the install dir
+with `KEYHOG_INSTALL=/usr/local/bin`.
+
+Daemon mode (sub-100 ms pre-commit scans) is Unix only. Everything
+else works identically on Windows.
 
 ## Quickstart
 
@@ -94,26 +100,26 @@ mid-scan (state is unreliable, re-run before trusting). Matches
 
 891 service-specific detectors with checksum / companion validation:
 
-- **Cloud providers** — AWS (access key + secret + STS verification),
+- **Cloud providers** . AWS (access key + secret + STS verification),
   Azure (subscription key, storage account key, SAS), GCP (service account,
   API key), Cloudflare, Heroku, Vercel, Supabase.
-- **Payment processors** — Stripe, Braintree, Razorpay, Paddle, Plaid,
-  Square, PayPal — all with companion-required validation (a Braintree
+- **Payment processors** . Stripe, Braintree, Razorpay, Paddle, Plaid,
+  Square, PayPal . all with companion-required validation (a Braintree
   private key without its public counterpart never fires).
-- **Source forges** — GitHub PATs (with CRC32 checksum), GitLab tokens,
+- **Source forges** . GitHub PATs (with CRC32 checksum), GitLab tokens,
   Bitbucket app passwords, npm tokens (with checksum), Gitea / Forgejo
   / Codeberg.
-- **Auth / SSO** — Okta, Auth0, Clerk, JumpCloud, Kinde.
-- **Comms** — Slack, Discord, Twilio, SendGrid, Postmark, Mailgun,
+- **Auth / SSO** . Okta, Auth0, Clerk, JumpCloud, Kinde.
+- **Comms** . Slack, Discord, Twilio, SendGrid, Postmark, Mailgun,
   Resend, Loops.
-- **AI / ML** — OpenAI (sk-/sk-proj-), Anthropic, Google AI Studio,
+- **AI / ML** . OpenAI (sk-/sk-proj-), Anthropic, Google AI Studio,
   Cohere, Mistral, HuggingFace, Replicate.
-- **Databases** — Postgres connection strings, MongoDB Atlas, Supabase
+- **Databases** . Postgres connection strings, MongoDB Atlas, Supabase
   service-role, PlanetScale, Neon, Turso, MySQL, Redis URLs.
-- **Generic + entropy fallback** — `API_KEY=<high-entropy-blob>` catches
+- **Generic + entropy fallback** . `API_KEY=<high-entropy-blob>` catches
   credentials with no named detector, gated by per-context entropy
   thresholds + ML scoring.
-- **Cryptographic material** — RSA / EC / SSH private keys, PGP private
+- **Cryptographic material** . RSA / EC / SSH private keys, PGP private
   blocks, JWT signing secrets.
 
 Each detector ships as a [TOML file](./detectors/) (data, not code):
@@ -121,19 +127,19 @@ service metadata, regex patterns, keywords, companion fields,
 verification handler. Adding a new detector is 5–10 lines of TOML;
 the [contributor guide](./CONTRIBUTING.md) walks through it.
 
-Browse the full catalog at [`/site/detectors.html`](./site/detectors.html) —
+Browse the full catalog at [`/site/detectors.html`](./site/detectors.html) -
 loads all 891 with severity + service + keyword filter.
 
 ## Why higher recall, fewer false positives
 
 - **Decode-through scanning.** Kubernetes `Secret` manifests, JWT payloads,
-  base64-wrapped envs, helm values, docker-config `auth:` blobs — the
+  base64-wrapped envs, helm values, docker-config `auth:` blobs . the
   structured preprocessor decodes them in place and feeds every
   downstream detector the plaintext, so detectors don't each need to
   re-implement decoding.
 - **Multiline reassembly.** `"sk-proj-" + \` continuation in JavaScript,
   YAML multi-line strings, Makefile backslash-continuation, Helm /
-  Jinja templated outputs — all reassembled before regex matching.
+  Jinja templated outputs . all reassembled before regex matching.
 - **Companion-required validation.** AWS access key without its 40-char
   secret? Skipped. Twilio API key without its auth token? Skipped.
   Two-out-of-two signals are required for the high-noise detectors,
@@ -158,8 +164,8 @@ Measured head-to-head against the major scanners on the same corpora:
 | **Precision** <small>(SecretBench-medium)</small> | **90 %** | 87 % | 81 % | 73 % | 19 % |
 | **False positives** <small>(Django, 0 real secrets)</small> | **1** | 0 | 0 | 0 | 17 481 |
 | **Speed** <small>(Django 86 MB)</small> | **0.5 s** | 0.3 s | 0.2 s | 1.4 s | 2.3 s |
-| **Speed** <small>(Kubernetes 397 MB)</small> | **1.1 s** | — | — | — | 3.5 s |
-| **Speed** <small>(large monorepo, 4.2 GB)</small> | **2.5 s** | — | — | — | 252 s |
+| **Speed** <small>(Kubernetes 397 MB)</small> | **1.1 s** | . | . | . | 3.5 s |
+| **Speed** <small>(large monorepo, 4.2 GB)</small> | **2.5 s** | . | . | . | 252 s |
 
 KeyHog finds **33 % more real secrets** than the next-best tool while
 maintaining near-zero false positives. The two recall numbers are both
@@ -214,7 +220,7 @@ repos:
 
 Every keyhog invocation pays a ~3 s cold start to compile 891 detectors
 into Hyperscan. Run keyhog as a daemon and that cost is paid once per
-host — every subsequent scan is **~7 ms**:
+host . every subsequent scan is **~7 ms**:
 
 ```bash
 keyhog daemon start                    # Unix socket on $XDG_RUNTIME_DIR
@@ -261,9 +267,9 @@ keyhog scan . --lockdown
 
 Enforces:
 
-- `mlockall(MCL_CURRENT|MCL_FUTURE)` on Linux — credentials never page
+- `mlockall(MCL_CURRENT|MCL_FUTURE)` on Linux . credentials never page
   to swap.
-- `PR_SET_DUMPABLE = 0` (always on, even outside lockdown) — disables
+- `PR_SET_DUMPABLE = 0` (always on, even outside lockdown) . disables
   core dumps, ptrace, `/proc/<pid>/mem` reads. macOS gets
   `PT_DENY_ATTACH`.
 - Refuses to run if `~/.cache/keyhog/*` exists, refuses
@@ -272,7 +278,7 @@ Enforces:
   would dump anonymous pages.
 
 The always-on hardening (everything except mlock + cache refusal) is
-applied to every keyhog invocation — even without `--lockdown` a
+applied to every keyhog invocation . even without `--lockdown` a
 keyhog binary can't be coredumped or ptraced.
 
 ## Library API
@@ -324,11 +330,11 @@ Precedence (later overrides earlier): compiled defaults → system →
 user → repo → env → CLI flags. Full reference:
 [`site/config.html`](./site/config.html).
 
-Allowlist a known leak with a hash, path glob, or detector id — plus
+Allowlist a known leak with a hash, path glob, or detector id . plus
 optional `reason` / `expires` / `approved_by` governance metadata:
 
 ```
-# .keyhogignore — gitignore-style shorthand
+# .keyhogignore . gitignore-style shorthand
 *.log
 node_modules/
 9d6060e21ef8d5daec9cfe4a44b1b1bc9792246bfad28210edaaa1782a8a676a
@@ -357,14 +363,14 @@ tools/        SecretBench mirror + scoring + leaderboard harness
 
 Two-phase coalesced scan:
 
-1. **Phase 1** — Hyperscan NFA on raw bytes, parallel across all files
+1. **Phase 1** . Hyperscan NFA on raw bytes, parallel across all files
    via rayon. 95 %+ of files have no hits and pay zero cost.
-2. **Phase 2** — full extraction on hits only: regex capture groups,
+2. **Phase 2** . full extraction on hits only: regex capture groups,
    companion matching, checksum validation, entropy gating, ML
    confidence + Bayesian damping.
 
 Result: a multi-GB monorepo scans in seconds. Determinism is part of
-the contract — same input → same output, byte-exact, every time.
+the contract . same input → same output, byte-exact, every time.
 
 Full architecture writeup, hardware routing matrix, profiling tips:
 [`site/architecture.html`](./site/architecture.html) and
@@ -392,7 +398,7 @@ keyhog completion zsh                        # shell completions (bash/zsh/fish/
   redacted credential shape and detector id; each report becomes a
   permanent test fixture under
   [`tests/contracts/`](./crates/scanner/tests/contracts/).
-- **Security issue in keyhog itself?** Don't open a public issue —
+- **Security issue in keyhog itself?** Don't open a public issue -
   email `security@santh.dev` (PGP key on the org page).
 
 [Changelog](./CHANGELOG.md). [Open issues](https://github.com/santhsecurity/keyhog/issues).
@@ -401,14 +407,14 @@ keyhog completion zsh                        # shell completions (bash/zsh/fish/
 
 keyhog stands on prior secret-scanning work. Ideas borrowed from:
 
-- [trufflehog](https://github.com/trufflesecurity/trufflehog) — detector breadth + verification semantics
-- **betterleaks** — entropy/keyword fusion and false-positive suppression
-- **titus** — scanning ergonomics and severity calibration
+- [trufflehog](https://github.com/trufflesecurity/trufflehog) . detector breadth + verification semantics
+- **betterleaks** . entropy/keyword fusion and false-positive suppression
+- **titus** . scanning ergonomics and severity calibration
 
 Thanks to these projects and their contributors.
 
 ## License
 
 MIT. Use commercially, embed, fork, sell a hosted version. The
-detector TOMLs are also MIT — adding one is a 5-line PR with zero
+detector TOMLs are also MIT . adding one is a 5-line PR with zero
 legal friction.
