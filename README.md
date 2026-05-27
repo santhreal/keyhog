@@ -56,10 +56,34 @@ cd keyhog && cargo build --release -p keyhog
 Works on **Linux**, **macOS** (Intel + Apple Silicon), **Windows**. Zero
 configuration. `keyhog scan .` works out of the box.
 
-Prebuilt binaries attached to each [release](https://github.com/santhsecurity/keyhog/releases).
-The install scripts detect OS + CPU arch and pull the right asset.
-Pin a version with `KEYHOG_VERSION=v0.5.29`; change the install dir
-with `KEYHOG_INSTALL=/usr/local/bin`.
+The installer auto-detects host state and picks the fastest variant:
+on Linux with an NVIDIA GPU plus loadable `libcuda.so` you get the
+dedicated `keyhog-linux-x86_64-cuda` build (significantly faster than
+WGPU on large scans), everywhere else you get the default WGPU + SIMD
+binary. Apple Silicon hosts get an explicit "Metal GPU acceleration
+coming soon" note. Each download is SHA256-verified against the
+release-side checksum file before install.
+
+Override the variant with `KEYHOG_VARIANT=cuda` (force CUDA, requires
+libcuda.so) or `KEYHOG_VARIANT=cpu` (force the default WGPU + SIMD
+build). Pin a version with `KEYHOG_VERSION=v0.5.33`. Change the
+install dir with `KEYHOG_INSTALL=/usr/local/bin`.
+
+Three diagnostic modes ship with the same script:
+```bash
+sh install.sh --diagnose    # print host + binary state, change nothing
+sh install.sh --repair      # re-download the right variant for this host
+sh install.sh --uninstall   # remove the binary (leaves PATH entries alone)
+```
+
+For an interactive install (variant prompts + post-install wizard for
+PATH, shell completions, Claude Code / Cursor hook, git pre-commit
+hook), download the script first instead of piping into sh:
+```bash
+curl -fsSL https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.sh \
+    -o keyhog-install.sh
+sh keyhog-install.sh
+```
 
 Daemon mode (sub-100 ms pre-commit scans) is Unix only. Everything
 else works identically on Windows.
