@@ -425,16 +425,17 @@ post_install_wizard() {
         install_completions
     fi
 
-    if confirm "Wire keyhog into a Claude Code pre-tool hook?" N; then
-        dim "  Run: keyhog hook install --agent claude-code"
-        "$INSTALL_DIR/keyhog" hook install --agent claude-code 2>/dev/null || \
-            warn "  hook subcommand not in this build, skipping (upgrade to v0.5.30+)."
-    fi
+    # Claude Code / Cursor agent-hook wiring is roadmap, not shipped.
+    # The previous prompt called `keyhog hook install --agent claude-code`
+    # which never existed as a flag, so the wizard always graceful-
+    # failed with a misleading "upgrade" message. Drop the prompt until
+    # the feature lands.
 
     if confirm "Wire keyhog as a git pre-commit hook in the CURRENT directory?" N; then
         if [ -d .git ]; then
-            "$INSTALL_DIR/keyhog" hook install --pre-commit 2>/dev/null || \
-                warn "  hook subcommand not in this build, skipping (upgrade to v0.5.30+)."
+            "$INSTALL_DIR/keyhog" hook install 2>/dev/null && \
+                ok "  Pre-commit hook installed in $(pwd)/.git/hooks/pre-commit" || \
+                warn "  keyhog hook install failed in this directory."
         else
             warn "  No .git directory here, skipping."
         fi

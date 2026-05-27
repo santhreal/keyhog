@@ -43,11 +43,13 @@ Then it prompts (default in brackets):
 
 - Add `~/.local/bin` to your shell `PATH`? `[Y/n]`
 - Install shell completions for bash / zsh / fish? `[y/N]`
-- Wire keyhog into a Claude Code pre-tool hook? `[y/N]`
 - Wire keyhog as a git pre-commit hook in this dir? `[y/N]`
 
 Each prompt is opt-in. Nothing in your `.bashrc` / `.zshrc` / git
-hooks dir is touched without an explicit "y".
+hooks dir is touched without an explicit "y". Claude Code / Cursor
+agent-hook integration is on the roadmap but not yet shipped; the
+prompt was removed in v0.5.34 once it became clear the underlying
+`keyhog hook install --agent <name>` flag wasn't real yet.
 
 ## One-liner: Windows
 
