@@ -84,6 +84,59 @@ pub fn should_suppress_named_detector_finding(
         );
         return true;
     }
+    // Word-separated identifier with digits (s3_secret_access_key,
+    // d2i_PKCS7_bio, X-Shopify-Access-Token). Covers the digit-bearing
+    // FPs that `looks_like_pure_identifier`'s `!has_digit` guard misses.
+    if (detector_id.starts_with("generic-") || detector_id.starts_with("entropy-"))
+        && looks_like_word_separated_identifier(credential)
+    {
+        crate::telemetry::record_example_suppression(
+            "pipeline",
+            path,
+            credential,
+            "word_separated_identifier",
+        );
+        return true;
+    }
+    // Scheme-prefixed URI / URN (urn:shopify:..., secret-token:...).
+    // These appear in API docs, README log examples, and OAuth grant types.
+    if (detector_id.starts_with("generic-") || detector_id.starts_with("entropy-"))
+        && looks_like_scheme_prefixed_uri(credential)
+    {
+        crate::telemetry::record_example_suppression(
+            "pipeline",
+            path,
+            credential,
+            "scheme_prefixed_uri",
+        );
+        return true;
+    }
+    // Punctuation-decorated identifier (--api-secret, &gss_token, @v_password,
+    // !!apiKey, Password:, privateAccessToken!).
+    if (detector_id.starts_with("generic-") || detector_id.starts_with("entropy-"))
+        && looks_like_punctuation_decorated_identifier(credential)
+    {
+        crate::telemetry::record_example_suppression(
+            "pipeline",
+            path,
+            credential,
+            "punctuation_decorated_identifier",
+        );
+        return true;
+    }
+    // URL or path-fragment shape (`user/settings/password`,
+    // `/api/v1/access_token`).
+    if (detector_id.starts_with("generic-") || detector_id.starts_with("entropy-"))
+        && looks_like_url_or_path_segment(credential)
+    {
+        crate::telemetry::record_example_suppression(
+            "pipeline",
+            path,
+            credential,
+            "url_or_path_segment",
+        );
+        return true;
+    }
     // Generic detectors (generic-secret, generic-private-key, entropy-*)
     // never use this bypass — their anchor is keyword-class, not
     // service-specific, and shape gates are load-bearing for them.
@@ -168,6 +221,209 @@ pub(crate) fn looks_like_pure_identifier(credential: &str) -> bool {
         && (has_upper || has_lower)
     {
         return true;
+    }
+    false
+}
+
+/// Word-separated identifier with embedded digits. Catches the FP class
+/// that `looks_like_pure_identifier` misses because digits short-circuit
+/// its `!has_digit` guard:
+///   * `s3_secret_access_key` (alist const.go) — snake_case constant
+///   * `d2i_PKCS7_bio`, `sqlite3_int`, `sqlite3_malloc64` (openssl, sqlite)
+///   * `curlx_memdup0` (curl ntlm_sspi.c)
+///   * `X-Shopify-Access-Token`, `Shopify-Storefront-Private-Token` (shopify-api-js headers)
+///
+/// Distinguishes from real credentials like `sk_live_4eC39HqLyjWDarjtT1zdp7dc`
+/// (Stripe) by requiring every separator-delimited word to be ≤ 10 chars.
+/// Real credentials have ≥1 long-random segment (24+ chars of base58/base64)
+/// AFTER the prefix; programmer identifiers are sequences of short
+/// dictionary-word fragments.
+pub(crate) fn looks_like_word_separated_identifier(value: &str) -> bool {
+    if value.len() < 8 || value.len() > 50 {
+        return false;
+    }
+    // Pure ASCII alphanumeric + `_` + `-`
+    if !value
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+    {
+        return false;
+    }
+    // Must have at least one separator
+    let sep_count = value
+        .bytes()
+        .filter(|&b| b == b'_' || b == b'-')
+        .count();
+    if sep_count == 0 {
+        return false;
+    }
+    // Split on either separator. Real credentials use one consistent separator
+    // (or none); programmer identifiers can mix `_` and `-`.
+    let words: Vec<&str> = value
+        .split(|c: char| c == '_' || c == '-')
+        .collect();
+    // No empty words (rejects `--foo`, `foo--bar`, `_foo`, `foo_`)
+    if words.iter().any(|w| w.is_empty()) {
+        return false;
+    }
+    // Every word must contain at least one ASCII letter — pure-digit
+    // segments like `12345` are not identifier words.
+    if !words
+        .iter()
+        .all(|w| w.bytes().any(|b| b.is_ascii_alphabetic()))
+    {
+        return false;
+    }
+    // Max word length ≤ 10. Real credentials concentrate randomness in one
+    // long suffix (e.g. `sk_live_<24-char-base58>`); programmer identifiers
+    // are short dictionary fragments throughout.
+    let max_word_len = words.iter().map(|w| w.len()).max().unwrap_or(0);
+    if max_word_len > 10 {
+        return false;
+    }
+    true
+}
+
+/// True if `value` looks like a URI / URN / scheme-prefixed string.
+/// Captures these FP shapes seen in dogfood:
+///   * `urn:shopify:params:oauth:token-type:online-access-token`
+///     (shopify-api-js token-exchange.ts)
+///   * `secret-token:wjOtYCQypY5ky1AM_co1lTXNJdOe3Q_waNnnfdyl5u3eOKHCKL-galY9Wklf`
+///     (bat-go merchant README log-line example)
+///   * `something://...`
+///
+/// Pattern: starts with a lowercase-alpha scheme of length 3-15,
+/// followed by `:` and ≥2 more `:` chars (URN) OR `//` (URL).
+/// Real credentials never have this leading-scheme shape.
+pub(crate) fn looks_like_scheme_prefixed_uri(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    if bytes.len() < 6 {
+        return false;
+    }
+    // Find first `:`
+    let Some(colon_idx) = bytes.iter().position(|&b| b == b':') else {
+        return false;
+    };
+    if colon_idx < 3 || colon_idx > 15 {
+        return false;
+    }
+    // Scheme part [0..colon_idx) must be alpha (allow `-` for `secret-token`)
+    let scheme = &bytes[..colon_idx];
+    if !scheme
+        .iter()
+        .all(|&b| b.is_ascii_alphabetic() || b == b'-')
+    {
+        return false;
+    }
+    // Must have at least one letter in the scheme
+    if !scheme.iter().any(|b| b.is_ascii_alphabetic()) {
+        return false;
+    }
+    let after = &bytes[colon_idx + 1..];
+    // URL form: starts with `//`
+    if after.starts_with(b"//") {
+        return true;
+    }
+    // URN form: at least one more `:` in the rest of the value
+    if after.iter().any(|&b| b == b':') {
+        return true;
+    }
+    // Compound-scheme single-colon form: scheme contains `-`
+    // (`secret-token`, `auth-token`, `bearer-token`). Real credentials don't
+    // have a colon `<8` chars in from the start; URI-like prefixes do.
+    if scheme.iter().any(|&b| b == b'-') {
+        return true;
+    }
+    // Common content-addressable hash schemes — `sha256:<hex>`, `sha1:<hex>`,
+    // `md5:<hex>`. These are integrity digests, not credentials; the generic
+    // regex captures them when an `image: sha256:<hex>` config line appears.
+    let scheme_str = std::str::from_utf8(scheme).unwrap_or("");
+    if matches!(
+        scheme_str,
+        "sha256" | "sha512" | "sha1" | "md5" | "blake3" | "blake2"
+    ) {
+        return true;
+    }
+    false
+}
+
+/// True if `value` looks like a `/`-separated path or URL fragment.
+/// Catches Go template paths `user/settings/password` (gogs setting.go),
+/// `user/auth/forgot_passwd` (gogs auth.go), URL fragments like
+/// `/api/v1/access_token` (alist 123_open/api.go). Real credentials don't
+/// have multiple `/` segments — they're random opaque tokens.
+///
+/// Pattern: value contains `/` AND every `/`-delimited non-empty segment
+/// looks like a path component (alphanumeric + `_-.`, contains a letter).
+/// Requires ≥ 2 segments to avoid suppressing single-`/` opaque tokens.
+pub(crate) fn looks_like_url_or_path_segment(value: &str) -> bool {
+    if !value.contains('/') {
+        return false;
+    }
+    let segments: Vec<&str> = value.split('/').filter(|s| !s.is_empty()).collect();
+    if segments.len() < 2 {
+        return false;
+    }
+    segments.iter().all(|s| {
+        s.bytes().all(|b| {
+            b.is_ascii_alphanumeric() || b == b'_' || b == b'-' || b == b'.'
+        }) && s.bytes().any(|b| b.is_ascii_alphabetic())
+    })
+}
+
+/// True if `value` is a non-credential punctuation/prefix shape:
+///   * leading `--` (CLI flag) — `--api-secret`, `--api-key`
+///   * leading `&` (C/Go pointer reference) — `&gss_recv_token`, `&password`
+///   * leading `@` (SQL/Ruby variable) — `@v_password`, `@api_key`
+///   * leading `!` (JS/TS truthy coercion) — `!!apiKeyOrOAuthToken`
+///   * trailing `:` after pure-alpha — `Password:`, `Username:`
+///   * trailing `!` after pure-alpha (TS non-null assertion) — `privateAccessToken!`
+/// Real credentials don't start or end with these tokens.
+pub(crate) fn looks_like_punctuation_decorated_identifier(value: &str) -> bool {
+    if value.is_empty() {
+        return false;
+    }
+    let bytes = value.as_bytes();
+    // Leading sigils that real credentials never start with.
+    //   `-` — CLI flag (`--api-secret`)
+    //   `&` — C/Go pointer reference (`&password`, `&gss_recv_token`)
+    //   `@` — SQL/Ruby/Rust attribute (`@v_password`, `@api_key`, `@deprecated`)
+    //   `!` — JS truthy coercion (`!!apiKeyOrOAuthToken`)
+    //   `/` — Unix absolute path (`/etc/passwd:/etc/passwd:ro` docker mount)
+    if bytes[0] == b'-'
+        || bytes[0] == b'&'
+        || bytes[0] == b'@'
+        || bytes[0] == b'!'
+        || bytes[0] == b'/'
+    {
+        return true;
+    }
+    let last = bytes[bytes.len() - 1];
+    // Trailing `:` after a value of pure-alpha + colon shape.
+    if last == b':' {
+        // Allow only if everything before the trailing `:` is alpha (UI label
+        // shape `Password:`, `Username:`). A real credential containing `:`
+        // mid-string lands elsewhere (scheme reject above).
+        let prefix = &bytes[..bytes.len() - 1];
+        if !prefix.is_empty()
+            && prefix
+                .iter()
+                .all(|&b| b.is_ascii_alphabetic())
+        {
+            return true;
+        }
+    }
+    // Trailing `!` (TypeScript non-null assertion on a variable name).
+    if last == b'!' && bytes.len() >= 4 {
+        let prefix = &bytes[..bytes.len() - 1];
+        // Variable-name shape: all `[A-Za-z0-9_]`, has letter
+        let pure_ident = prefix
+            .iter()
+            .all(|&b| b.is_ascii_alphanumeric() || b == b'_');
+        let has_letter = prefix.iter().any(|b| b.is_ascii_alphabetic());
+        if pure_ident && has_letter {
+            return true;
+        }
     }
     false
 }
