@@ -8,17 +8,22 @@ id = "bandwidth-api-key"
 name = "Bandwidth API Credentials"
 service = "bandwidth"
 severity = "critical"
-keywords = ["BANDWIDTH", "BANDWIDTH_API_USER", "BANDWIDTH_API_TOKEN", "BANDWIDTH_USERNAME", "BANDWIDTH_PASSWORD", "ClientID", "ClientSecret"]
+keywords = ["BANDWIDTH", "BANDWIDTH_API_USER", "BANDWIDTH_API_TOKEN", "BANDWIDTH_USERNAME", "BANDWIDTH_PASSWORD"]
 
 [[detector.patterns]]
 regex = "(?:BANDWIDTH|bandwidth)[_\\s]*(?:API[_\\s]*)?(?:USER|USERNAME|TOKEN|PASSWORD|SECRET)[=:\\s\"']+([a-zA-Z0-9_-]{20,})"
 description = "Bandwidth API credential with context anchor"
 group = 1
 
-[[detector.patterns]]
-regex = "(?:ClientID|ClientSecret)[=:\\s\"']+([a-zA-Z0-9_-]{20,})"
-description = "Bandwidth WebRTC Client credential"
-group = 1
+# Removed the bare `(?:ClientID|ClientSecret)` pattern — `ClientID` /
+# `ClientSecret` are generic OAuth2 terminology, not Bandwidth-specific.
+# alist's drivers/pikpak/util.go, drivers/thunder/driver.go,
+# drivers/pcloud/util.go all have `ClientSecret = "..."` for Xunlei /
+# PikPak / PCloud OAuth flows; attributing those to Bandwidth was
+# wrong (the values ARE leaked client secrets, but for entirely
+# different services). The generic-secret fallback catches the same
+# values via the `client[_-]?secret` keyword in its alternation, so
+# recall is preserved at correct service attribution.
 
 [detector.verify]
 method = "POST"

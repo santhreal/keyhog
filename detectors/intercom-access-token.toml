@@ -10,9 +10,20 @@ service = "intercom"
 severity = "critical"
 keywords = ["dG9r"]
 
+# Real Intercom tokens are base64 strings whose underlying bytes
+# start with the ASCII "tok" — so `dG9r` IS the literal first four
+# characters of the token. The original pattern matched `dG9r`
+# anywhere in a base64 blob, which fires inside any macaroon /
+# JWT / arbitrary protobuf whose base64 encoding happens to spell
+# "tok" at the right 3-byte alignment.  bat-go's services/skus/
+# skus.go ships 9 Brave SKU macaroons that contain `dG9r` (= "tok"
+# in macaroon's `... sku token v1` identifier string).  Anchor the
+# pattern to the start of a quote/equals/colon-bounded literal so
+# it only fires on actual leading-`dG9r` strings.
 [[detector.patterns]]
-regex = 'dG9r[a-zA-Z0-9+/]{100,}={0,2}'
-description = "Intercom access token (base64 encoded)"
+regex = '(?:^|[="''\s])(dG9r[a-zA-Z0-9+/]{100,}={0,2})'
+description = "Intercom access token (base64 encoded, anchored to start)"
+group = 1
 
 [detector.verify]
 method = "GET"
