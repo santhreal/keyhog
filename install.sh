@@ -35,7 +35,7 @@ case "$OS-$ARCH" in
     ;;
 esac
 
-# Pick the tag. KEYHOG_VERSION=v0.5.25 sh install.sh pins a specific
+# Pick the tag. KEYHOG_VERSION=v0.5.26 sh install.sh pins a specific
 # release; otherwise we ask the GitHub API for the latest published
 # tag. The API call is unauthenticated and rate-limited at 60/hour
 # per IP, which is fine for one-shot installs.
@@ -47,7 +47,7 @@ else
         | head -n 1)
     if [ -z "$TAG" ]; then
         echo "ERROR: could not resolve latest release tag from GitHub API." >&2
-        echo "Try setting KEYHOG_VERSION=v0.5.25 (or another known tag) explicitly." >&2
+        echo "Try setting KEYHOG_VERSION=v0.5.26 (or another known tag) explicitly." >&2
         exit 1
     fi
 fi

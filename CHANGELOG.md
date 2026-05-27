@@ -4,6 +4,23 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ## Unreleased
 
+## v0.5.26 - 2026-05-27 - Mac arm64 hang fix (var-ref-concat regex DFA stall) + Windows UNC path strip + repo-hygiene gitignore
+
+### Cross-platform
+
+- **Mac arm64 `keyhog scan` hang on identifier-dense source.** Cross-platform dogfood on Apple M4 Pro / macOS 26.3 / portable build (no Hyperscan) reproduced a 6+ minute stall on a 171-byte input: `var token = circleCiScan.Flag("token", "X").Required().Envar("X").String()`. Root cause is the var-ref-concat regex in `multiline::config::has_var_ref_concat_line` - the `{1,8}`-bounded alternation drives `regex` 1.12's lazy-DFA construction into a quadratic loop on aarch64-apple-darwin. Linux x86_64 portable runs the same input in 0.6 s. Fix: cheap precheck - if the line contains no `+`, bail before the regex (the pattern requires at least one `+` to match, so this is correctness-preserving). Adds `KEYHOG_PER_CHUNK_TIMEOUT_MS` env-var deadline as a belt-and-suspenders backstop on the public `scan` / `scan_with_backend` entry points so any future pathological pattern caps out instead of hanging the whole scan.
+- **Windows UNC verbatim-prefix strip.** Every finding's `location.file_path` rendered as `\\?\C:\Users\...` (Rust's `std::fs::canonicalize` always returns the extended-length form on Windows). Editors don't jump-to-file on the verbatim form and the prefix leaks through JSON output as `"\\\\?\\C:\\..."`. Added `pub(crate) display_path(&Path) -> String` in `keyhog-sources::filesystem` that strips the `\\?\` prefix on Windows; the underlying `PathBuf` we use for I/O keeps the UNC form so >260-char paths still resolve. Wired through eight chunk-emit sites (`filesystem.rs` windowed mmap + buffered fallback + plain file + archive entries text/binary; `binary/mod.rs` ghidra decompiled + strings + section/strings).
+- **Cross-platform detector-dir discovery.** `auto_discover_detectors` hardcoded `/usr/share/keyhog/detectors` and `/usr/local/share/keyhog/detectors` which silently no-op on Windows. Wrapped the Unix paths in `cfg!(unix)` and added `dirs::data_dir()` / `dirs::data_local_dir()` lookups so Windows users get `%APPDATA%\keyhog\detectors` / `%LOCALAPPDATA%\keyhog\detectors` discovery. Embedded detectors remain the default; the dir paths are only consulted when a user supplies a custom detector set.
+
+### Repo hygiene
+
+- **Untrack coordination / plan / audit scratch files.** Per the new Santh STANDARD `prod-repo doc bleed` rule, standalone repos like `santhsecurity/keyhog` track exactly README + SPEC + CHANGELOG + `docs/`. The 31 internal coordination files (`coordination/` round briefs, `ROUNDS.md`, `TESTING_PROGRAM.md`, `KEYHOG_LINUX_QUALITY_PROGRAM.md`, `WAVE10_AGENT_PUSH.md`, `GAP_FINDINGS.toml`, `TODO.md`) were untracked from git and added to `.gitignore`. Files stay on disk via the backup `santhsecurity/Santh` monorepo - they just stop polluting the prod repo a crates.io / GitHub-Pages reader sees. Extended `.gitignore` with `WAVE*.md`, `*_AUDIT*.md`, `*_PROGRAM.md`, `plan.md`, `.audits/`, `plans/` patterns so future scratch files are caught at write-time.
+
+### Build / test
+
+- **`build_scanner_config`: pub(crate) → pub.** Four integration tests under `crates/cli/tests/unit/orchestrator/build_scanner_config_*.rs` import the function and need it externally visible. Was a pre-existing breakage in `cargo test --workspace --no-run` that CI didn't catch because the failing tests aren't in the per-crate `--lib` subset CI runs.
+- **`exclude_paths_parses_from_cli` Rust-1.83 fix.** Old assertion `Some(&["a.txt"[..]])` produced `&[str; 1]` which Rust 1.83+ rejects as an unsized array element. Rebuilt as a `Vec<&str>` collected from the `Vec<String>` field.
+
 ## v0.5.25 - 2026-05-27 - cross-platform fixes (Windows build, basename `\` separators, UTF-16 BOM decode) + contract recall (412 → 52 regressions restored via shape-filter Tier-A/Tier-B split + caseless fallback regex)
 
 ### Cross-platform
