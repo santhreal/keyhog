@@ -257,7 +257,16 @@ impl CompiledScanner {
                 if lower.ends_with(".b64") || lower.ends_with(".base64") {
                     return true;
                 }
-                let basename = lower.rsplit('/').next().unwrap_or(&lower);
+                // Split on both `/` and `\` so Windows-form paths
+                // (`C:\foo\bar\base64_blob.txt`) produce the same
+                // basename as their Unix counterparts. Without the
+                // backslash, every Windows scan misses this filename
+                // gate and emits FP entropy-* findings on legitimate
+                // base64-tagged files.
+                let basename = lower
+                    .rsplit(['/', '\\'])
+                    .next()
+                    .unwrap_or(&lower);
                 basename.starts_with("base64_") || basename.contains("base64_string")
             }) {
                 continue;
@@ -425,17 +434,32 @@ fn entropy_path_is_ci_workflow_file(path: Option<&str>) -> bool {
     let Some(p) = path else {
         return false;
     };
+    // Cross-platform separator handling: each `contains("/x/")` form
+    // also has a `\x\` Windows counterpart, otherwise scanning a
+    // Windows checkout of a project with `.github\workflows\ci.yml`
+    // would skip this gate and surface FP entropy-* findings on
+    // every `${{ secrets.NAME }}` reference (the original FP cluster
+    // this filter was built to silence).
     p.contains("/.github/workflows/")
+        || p.contains("\\.github\\workflows\\")
         || p.contains("/.github/actions/")
+        || p.contains("\\.github\\actions\\")
         || p.contains("/.gitlab-ci.yml")
+        || p.contains("\\.gitlab-ci.yml")
         || p.ends_with(".gitlab-ci.yml")
         || p.contains("/.circleci/")
+        || p.contains("\\.circleci\\")
         || p.contains("/azure-pipelines")
+        || p.contains("\\azure-pipelines")
         || p.contains("/bitbucket-pipelines")
+        || p.contains("\\bitbucket-pipelines")
         || p.contains("/.travis.yml")
+        || p.contains("\\.travis.yml")
         || p.ends_with(".travis.yml")
         || p.contains("/Jenkinsfile")
+        || p.contains("\\Jenkinsfile")
         || p.ends_with("/Jenkinsfile")
+        || p.ends_with("\\Jenkinsfile")
 }
 
 /// True when the file path looks like an i18n / translation file.
@@ -450,13 +474,26 @@ fn entropy_path_is_i18n_file(path: Option<&str>) -> bool {
     let Some(p) = path else {
         return false;
     };
+    // Tolerate both `/foo/locale/bar.po` (Unix) and
+    // `C:\foo\locale\bar.po` (Windows). Backslash variants are not
+    // present in any of our internal fixtures, but the moment a
+    // Windows user runs `keyhog scan` against an i18n tree the path
+    // gate has to recognize the same shape — otherwise we'd surface
+    // entropy-* FPs on every translation file there.
     p.contains("/locale/")
+        || p.contains("\\locale\\")
         || p.contains("/locales/")
+        || p.contains("\\locales\\")
         || p.contains("/i18n/")
+        || p.contains("\\i18n\\")
         || p.contains("/l10n/")
+        || p.contains("\\l10n\\")
         || p.contains("/translations/")
+        || p.contains("\\translations\\")
         || p.contains("/lang/")
+        || p.contains("\\lang\\")
         || p.contains("/langs/")
+        || p.contains("\\langs\\")
         || p.ends_with(".po")
         || p.ends_with(".pot")
         || {
@@ -464,7 +501,7 @@ fn entropy_path_is_i18n_file(path: Option<&str>) -> bool {
             // `messages_<lang>.properties` (Java), `strings_<lang>.xml`
             // (Android). Detect the `_xx-XX.` or `_xx.` infix before the
             // final extension.
-            let name = p.rsplit('/').next().unwrap_or(p);
+            let name = p.rsplit(['/', '\\']).next().unwrap_or(p);
             (name.starts_with("locale_")
                 || name.starts_with("messages_")
                 || name.starts_with("strings_"))

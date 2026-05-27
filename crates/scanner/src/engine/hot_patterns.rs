@@ -165,7 +165,13 @@ impl CompiledScanner {
                     if lower.ends_with(".b64") || lower.ends_with(".base64") {
                         return true;
                     }
-                    let basename = lower.rsplit('/').next().unwrap_or(&lower);
+                    // `/` AND `\\` for Windows paths — keeps the
+                    // hot-pattern base64 filename gate working when
+                    // the scanner runs against a Windows checkout.
+                    let basename = lower
+                        .rsplit(['/', '\\'])
+                        .next()
+                        .unwrap_or(&lower);
                     basename.starts_with("base64_") || basename.contains("base64_string")
                 }) {
                     continue;
