@@ -149,12 +149,7 @@ pub fn should_suppress_named_detector_finding(
     // ini), `bob.norman@mail.example.com` (shopify test response).
     // Email addresses are public identifiers, not credentials.
     if looks_like_email_address(credential) {
-        crate::telemetry::record_example_suppression(
-            "pipeline",
-            path,
-            credential,
-            "email_address",
-        );
+        crate::telemetry::record_example_suppression("pipeline", path, credential, "email_address");
         return true;
     }
     // Vendored 3rd-party minified bundle path: applies to ALL detectors,
@@ -180,8 +175,7 @@ pub fn should_suppress_named_detector_finding(
     // `binary` feature (Ghidra-based extraction with context), not via
     // brute-force strings. Skip every named-detector finding here so
     // we don't ship FPs from compiled apps' rodata.
-    if source_type.is_some_and(|s| s.contains("binary-strings") || s.contains("archive-binary"))
-    {
+    if source_type.is_some_and(|s| s.contains("binary-strings") || s.contains("archive-binary")) {
         crate::telemetry::record_example_suppression(
             "pipeline",
             path,
@@ -218,10 +212,7 @@ pub fn should_suppress_named_detector_finding(
         // Both `/` and `\` so Windows paths (`C:\foo\base64_x.txt`)
         // collapse to the same basename. Same rationale as the
         // fallback_entropy path-gate sibling.
-        let basename = lower
-            .rsplit(['/', '\\'])
-            .next()
-            .unwrap_or(&lower);
+        let basename = lower.rsplit(['/', '\\']).next().unwrap_or(&lower);
         basename.starts_with("base64_")
             || basename.contains("base64_string")
             || basename == "base64.txt"
@@ -363,10 +354,7 @@ pub(crate) fn looks_like_word_separated_identifier(value: &str) -> bool {
         return false;
     }
     // Must have at least one separator
-    let sep_count = value
-        .bytes()
-        .filter(|&b| b == b'_' || b == b'-')
-        .count();
+    let sep_count = value.bytes().filter(|&b| b == b'_' || b == b'-').count();
     if sep_count == 0 {
         return false;
     }
@@ -420,10 +408,7 @@ pub(crate) fn looks_like_scheme_prefixed_uri(value: &str) -> bool {
     }
     // Scheme part [0..colon_idx) must be alpha (allow `-` for `secret-token`)
     let scheme = &bytes[..colon_idx];
-    if !scheme
-        .iter()
-        .all(|&b| b.is_ascii_alphabetic() || b == b'-')
-    {
+    if !scheme.iter().all(|&b| b.is_ascii_alphabetic() || b == b'-') {
         return false;
     }
     // Must have at least one letter in the scheme
@@ -490,9 +475,9 @@ pub(crate) fn looks_like_url_or_path_segment(value: &str) -> bool {
         return false;
     }
     segments.iter().all(|s| {
-        s.bytes().all(|b| {
-            b.is_ascii_alphanumeric() || b == b'_' || b == b'-' || b == b'.'
-        }) && s.bytes().any(|b| b.is_ascii_alphabetic())
+        s.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-' || b == b'.')
+            && s.bytes().any(|b| b.is_ascii_alphabetic())
     })
 }
 
@@ -506,34 +491,11 @@ pub(crate) fn looks_like_url_or_path_segment(value: &str) -> bool {
 /// Real credentials don't end in regex sigils.
 pub(crate) fn looks_like_regex_literal_tail(value: &str) -> bool {
     const REGEX_SIGIL_SUFFIXES: &[&str] = &[
-        ")/g",
-        ")/g,", // JS object literal: `key: /pattern/g, ...`
-        ")/gi",
-        ")/gi,",
-        ")/i",
-        ")/i,",
-        ")/m",
-        ")/m,",
-        ")\\b",
-        "})\\b",
-        "})\\\\b",
-        "]+",
-        "]*",
-        "]?",
-        "]+/",
-        "]+\\b",
-        "*/g",
-        "+/g",
-        "+/i",
-        ")*",
-        ")+",
-        ")?",
-        ")?$",
-        ")$",
+        ")/g", ")/g,", // JS object literal: `key: /pattern/g, ...`
+        ")/gi", ")/gi,", ")/i", ")/i,", ")/m", ")/m,", ")\\b", "})\\b", "})\\\\b", "]+", "]*",
+        "]?", "]+/", "]+\\b", "*/g", "+/g", "+/i", ")*", ")+", ")?", ")?$", ")$",
     ];
-    REGEX_SIGIL_SUFFIXES
-        .iter()
-        .any(|sig| value.ends_with(sig))
+    REGEX_SIGIL_SUFFIXES.iter().any(|sig| value.ends_with(sig))
 }
 
 /// True if `value` looks like an email address. Captures FP shapes where
@@ -560,9 +522,10 @@ pub(crate) fn looks_like_email_address(value: &str) -> bool {
         return false;
     }
     // Local part: alphanumeric + `_`, `-`, `.`, `+`
-    if !local.iter().all(|&b| {
-        b.is_ascii_alphanumeric() || b == b'_' || b == b'-' || b == b'.' || b == b'+'
-    }) {
+    if !local
+        .iter()
+        .all(|&b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-' || b == b'.' || b == b'+')
+    {
         return false;
     }
     // Domain part: must contain at least one `.`
@@ -793,8 +756,7 @@ pub(crate) fn looks_like_punctuation_decorated_identifier(value: &str) -> bool {
     //   `/` — Unix absolute path (`/etc/passwd:/etc/passwd:ro` docker mount).
     //   `$` — GraphQL variable reference (`apiKey: $api_key`), shell var
     //          expansion (`$API_KEY`), template placeholder (`${SECRET}`).
-    let starts_with_double_dash =
-        bytes.starts_with(b"--") && bytes.len() >= 3 && bytes[2] != b'-';
+    let starts_with_double_dash = bytes.starts_with(b"--") && bytes.len() >= 3 && bytes[2] != b'-';
     if starts_with_double_dash
         || bytes[0] == b'&'
         || bytes[0] == b'@'
@@ -811,11 +773,7 @@ pub(crate) fn looks_like_punctuation_decorated_identifier(value: &str) -> bool {
         // shape `Password:`, `Username:`). A real credential containing `:`
         // mid-string lands elsewhere (scheme reject above).
         let prefix = &bytes[..bytes.len() - 1];
-        if !prefix.is_empty()
-            && prefix
-                .iter()
-                .all(|&b| b.is_ascii_alphabetic())
-        {
+        if !prefix.is_empty() && prefix.iter().all(|&b| b.is_ascii_alphabetic()) {
             return true;
         }
     }

@@ -134,14 +134,8 @@ impl CompiledScanner {
                 // Native-binary string extraction: skip hot-pattern hits
                 // on the strings-fallback source — same coverage rationale
                 // as `should_suppress_named_detector_finding`.
-                if chunk
-                    .metadata
-                    .source_type
-                    .contains("binary-strings")
-                    || chunk
-                        .metadata
-                        .source_type
-                        .contains("archive-binary")
+                if chunk.metadata.source_type.contains("binary-strings")
+                    || chunk.metadata.source_type.contains("archive-binary")
                 {
                     continue;
                 }
@@ -152,9 +146,8 @@ impl CompiledScanner {
                 // DEFINITIONS. The `looks_like_regex_literal_tail` check
                 // catches the common forms; decoder-mangled trailing
                 // sigils slip past — this filter closes the gap.
-                if crate::pipeline::looks_like_secret_scanner_source(
-                    chunk.metadata.path.as_deref(),
-                ) {
+                if crate::pipeline::looks_like_secret_scanner_source(chunk.metadata.path.as_deref())
+                {
                     continue;
                 }
                 // Raw base64 / pure-alphabet files: alphabet-coincidence
@@ -168,10 +161,7 @@ impl CompiledScanner {
                     // `/` AND `\\` for Windows paths — keeps the
                     // hot-pattern base64 filename gate working when
                     // the scanner runs against a Windows checkout.
-                    let basename = lower
-                        .rsplit(['/', '\\'])
-                        .next()
-                        .unwrap_or(&lower);
+                    let basename = lower.rsplit(['/', '\\']).next().unwrap_or(&lower);
                     basename.starts_with("base64_") || basename.contains("base64_string")
                 }) {
                     continue;
@@ -247,4 +237,3 @@ impl CompiledScanner {
         }
     }
 }
-
