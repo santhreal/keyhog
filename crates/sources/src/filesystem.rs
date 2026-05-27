@@ -558,6 +558,21 @@ fn process_entry(
         return archive_chunks;
     } else if ext == "gz" || ext == "zst" || ext == "lz4" || ext == "sz" {
         return extract_compressed_chunks(&path, max_size);
+    } else if ext == "har" {
+        // Browser DevTools "Save all as HAR with content" export.
+        // Expand into one chunk per request + one per response so
+        // findings carry the `wire:har:request` / `wire:har:response`
+        // source-type distinction (outbound credential leak vs
+        // inbound credential reflection). Falls through to the
+        // regular text scan when the file fails to parse — better to
+        // grep a malformed HAR than to silently drop it.
+        if let Ok(bytes) = std::fs::read(&path) {
+            let path_str = display_path(&path);
+            if let Some(har_chunks) = crate::har::try_expand_har(&bytes, &path_str, max_size) {
+                return har_chunks;
+            }
+        }
+        // fall through to the regular text scan below
     }
 
     let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");

@@ -19,12 +19,14 @@ status = "alpha"
 [features]
 default = ["git", "web"]
 git = ["gix"]
-web = ["dep:reqwest", "dep:serde_json", "dep:url"]
-github = ["dep:reqwest", "dep:tempfile", "dep:serde", "dep:serde_json", "dep:base64"]
-slack = ["dep:reqwest", "dep:serde", "dep:serde_json"]
+# `dep:serde` / `dep:serde_json` removed from these feature gates —
+# they're unconditional now (serde for the HAR parser in
+# filesystem.rs::har, which is in the always-on path).
+web = ["dep:reqwest", "dep:url"]
+github = ["dep:reqwest", "dep:tempfile", "dep:base64"]
+slack = ["dep:reqwest"]
 s3 = [
     "dep:reqwest",
-    "dep:serde",
     "dep:quick-xml",
     "dep:urlencoding",
     "dep:hmac",
@@ -75,11 +77,14 @@ optional = true
 
 [dependencies.serde]
 workspace = true
-optional = true
+features = ["derive"]
+# `har::HarDocument` derive uses serde unconditionally — the HAR
+# expansion in filesystem.rs is part of the always-on filesystem
+# source path. The `web`/`github`/`slack` features that previously
+# pulled in serde optionally now share this unconditional dep.
 
 [dependencies.serde_json]
 workspace = true
-optional = true
 
 [dependencies.tempfile]
 workspace = true
