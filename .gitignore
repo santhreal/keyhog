@@ -25,3 +25,28 @@ __pycache__/
 FP_AUDIT_REPORT.md
 .keyhog-cache.json
 detectors/.keyhog-cache.json
+
+# Local coordination scratch — agent handoffs, dispatch notes, dogfood
+# corpora paths. Never published to santhsecurity/keyhog. (STANDARD.md:
+# prod-repo doc bleed rule.)
+coordination/
+# Top-level scratch/audit/plan files that belong in the backup monorepo
+# (santhsecurity/Santh) and `.audits/`, not in the standalone prod repo.
+ROUNDS.md
+TODO.md
+GAP_FINDINGS.toml
+TESTING_PROGRAM.md
+KEYHOG_LINUX_QUALITY_PROGRAM.md
+WAVE*_AGENT_PUSH.md
+WAVE*.md
+*_AUDIT*.md
+*_AUDIT*.toml
+FP_AUDIT_REPORT.md
+*_PROGRAM.md
+KIMI_AUDIT_*.md
+CURSOR_AUDIT_*.md
+CLAUDE_AUDIT_*.md
+plan.md
+PLAN.md
+plans/
+.audits/
