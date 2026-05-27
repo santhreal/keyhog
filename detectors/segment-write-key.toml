@@ -14,3 +14,9 @@ keywords = ["segment", "SEGMENT_WRITE_KEY", "writeKey", "write_key"]
 regex = "(?:segment|SEGMENT)[_.]?(?:write[_.]?)?key[=:\\s\"']+([A-Za-z0-9+/]{30,}=?)"
 description = "Segment write key (base64) with context anchor"
 group = 1
+# Segment write keys are write-only and ship in every analytics.js /
+# Analytics SDK initialization on the client. They can track events
+# from the browser but cannot read source data; server-side admin
+# access uses a Segment Sources API token (separate detector,
+# segment-sources-api-token, which stays high).
+client_safe = true
