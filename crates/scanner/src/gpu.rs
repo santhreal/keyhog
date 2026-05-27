@@ -551,6 +551,88 @@ pub fn vyre_gpu_self_test() -> Result<VyreGpuSelfTest, String> {
     })
 }
 
+/// Status report from the AC-kernel GPU self-test. Returned by
+/// [`vyre_ac_kernel_self_test`] so the diagnostic CLI can display
+/// the active backend and match count rather than just PASS/FAIL.
+pub struct VyreAcKernelSelfTest {
+    /// Number of GPU phase-1 match triples emitted.
+    pub matches: usize,
+    /// `VyreBackend::id()` of the backend that ran the test, e.g.
+    /// `"cuda"` or `"wgpu"`. Lets the caller surface "PASS via cuda"
+    /// vs "PASS via wgpu" so an operator can tell which driver was
+    /// actually exercised.
+    pub backend_id: &'static str,
+}
+
+/// Build a minimal one-detector `CompiledScanner` and dispatch a
+/// scan through the AC-kernel GPU phase-1 path. This is the GPU
+/// scan path the production flow uses (the literal-set program is
+/// rejected by vyre's canonical pre-emit lowering until the IR
+/// gap is closed). A PASS here means the GPU scan path is healthy
+/// end to end on this host: device acquired, AC program compiled
+/// and lowered successfully, dispatch executed, hits returned to
+/// the host.
+///
+/// # Errors
+///
+/// Returns `Err` when GPU acquisition didn't happen during
+/// compile, when phase-1 returned the CPU-degrade variant, or when
+/// the dispatch returned zero hits for the planted literal.
+pub fn vyre_ac_kernel_self_test() -> Result<VyreAcKernelSelfTest, String> {
+    use crate::engine::{CompiledScanner, GpuPhase1Output};
+    use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, Severity};
+
+    let detector = DetectorSpec {
+        id: "kh-gpu-self-test".into(),
+        name: "GPU self-test".into(),
+        service: "test".into(),
+        severity: Severity::Low,
+        patterns: vec![PatternSpec {
+            regex: "needle".into(),
+            description: None,
+            group: None,
+            client_safe: false,
+        }],
+        keywords: vec!["needle".into()],
+        ..Default::default()
+    };
+
+    let scanner = CompiledScanner::compile(vec![detector])
+        .map_err(|e| format!("CompiledScanner::compile failed during self-test: {e}"))?;
+
+    let backend_id = scanner
+        .gpu_backend_label()
+        .ok_or_else(|| "no GPU backend acquired during self-test compile".to_string())?;
+
+    let chunk = Chunk {
+        data: "the quick brown needle jumps over the lazy fox".into(),
+        metadata: ChunkMetadata::default(),
+    };
+
+    match scanner.scan_coalesced_gpu_ac_phase1(&[chunk]) {
+        GpuPhase1Output::Hits(hits) => {
+            let total: usize = hits.iter().map(Vec::len).sum();
+            if total == 0 {
+                return Err(
+                    "AC kernel ran on GPU but reported zero hits for the planted 'needle' \
+literal. Indicates either a phase-1 lowering regression or a workgroup-size mismatch."
+                        .to_string(),
+                );
+            }
+            Ok(VyreAcKernelSelfTest {
+                matches: total,
+                backend_id,
+            })
+        }
+        GpuPhase1Output::Done(_) => Err(
+            "AC phase 1 returned Done (CPU fallback) instead of Hits. The GPU AC \
+program, the GPU matcher, or the GPU backend wasn't available at scan time even \
+though compile said one was acquired."
+                .to_string(),
+        ),
+    }
+}
+
 /// Probe GPU availability and adapter metadata without panicking.
 ///
 /// Honours `KEYHOG_NO_GPU=1` (and the usual on/off/true/false/0

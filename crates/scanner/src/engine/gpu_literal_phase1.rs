@@ -2,27 +2,25 @@ use super::*;
 
 impl CompiledScanner {
     pub fn scan_coalesced_gpu_phase1(&self, chunks: &[keyhog_core::Chunk]) -> GpuPhase1Output {
-        // Per-call kernel select. `KEYHOG_GPU_KERNEL=ac` swaps the
-        // O(N×L) literal-set program for the O(L_max) AC kernel that
-        // shares the same DFA. When the active backend is CUDA, the
-        // AC kernel is forced ON regardless of the env var because
-        // the literal_set program embeds `append_match_subgroup`
-        // (subgroup_ballot + subgroup_shuffle) and vyre-driver-cuda's
-        // canonical pre-emit lowering currently rejects that form
-        // ("variable `_vyre_match_leader` is referenced before
-        // binding"). The AC kernel exposes a `use_subgroup_coalesce`
-        // selector and is built with `false` on CUDA — same recall,
-        // different atomic-coalescing strategy.
-        let backend_is_cuda = self
-            .gpu_backend
-            .as_ref()
-            .map(|b| b.id() == "cuda")
-            .unwrap_or(false);
-        let kernel_env_ac = matches!(std::env::var("KEYHOG_GPU_KERNEL").as_deref(), Ok("ac"));
-        if kernel_env_ac || backend_is_cuda {
-            // Forward directly — the AC phase 1 returns the same
-            // `GpuPhase1Output` shape, so its `Hits` triples can be
-            // pipelined the same way the literal-set path's are.
+        // The literal_set program embeds `append_match_subgroup`
+        // (subgroup_ballot + subgroup_shuffle), and vyre's canonical
+        // pre-emit lowering rejects that subgroup form regardless of
+        // the downstream emitter ("variable `_vyre_match_leader` is
+        // referenced before binding"). This was previously gated to
+        // CUDA only, but the rejection happens BEFORE driver-specific
+        // emission, so WGPU hosts (Apple Silicon, Intel Mac, Windows)
+        // hit the same rejection on the literal_set path and silently
+        // dropped to CPU.
+        //
+        // Until the vyre pre-emit lowering accepts the subgroup form
+        // (tracked separately), the AC kernel path is the working
+        // GPU code path for both CUDA and WGPU. KEYHOG_GPU_KERNEL=
+        // literal-set forces the broken path for diagnostic /
+        // bisection use; the default is now AC for every GPU backend.
+        let kernel_env = std::env::var("KEYHOG_GPU_KERNEL").ok();
+        let force_literal_set =
+            matches!(kernel_env.as_deref(), Some("literal-set") | Some("literal_set"));
+        if !force_literal_set {
             return self.scan_coalesced_gpu_ac_phase1(chunks);
         }
 
