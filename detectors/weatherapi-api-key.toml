@@ -20,6 +20,17 @@ regex = "(?:key|KEY)[=:\\s\"'']+([a-zA-Z0-9]{20,})[^a-zA-Z0-9].*(?:weatherapi|ap
 description = "WeatherAPI.com key parameter with URL context"
 group = 1
 
+[[detector.patterns]]
+# Canonical curl/SDK shape: `https://api.weatherapi.com/v1/...?key=<key>`
+# where the domain appears BEFORE the key in the URL. The previous
+# `key=...weatherapi` pattern only fires when the domain comes
+# AFTER the key, missing the standard curl invocation. `[?&]` so
+# we only fire on URL-style query parameters (avoids matching
+# `weatherapi.com/key=...` host literal which is not a real shape).
+regex = "(?:weatherapi\\.com|api\\.weatherapi\\.com)[^\"'\\s]*[?&](?:key|KEY)[=:]([a-zA-Z0-9]{20,})"
+description = "WeatherAPI.com URL with key query param (domain-before-key shape)"
+group = 1
+
 [detector.verify]
 method = "GET"
 url = "https://api.weatherapi.com/v1/current.json?q=London&key={{match}}"

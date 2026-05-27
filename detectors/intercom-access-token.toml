@@ -21,7 +21,13 @@ keywords = ["dG9r"]
 # pattern to the start of a quote/equals/colon-bounded literal so
 # it only fires on actual leading-`dG9r` strings.
 [[detector.patterns]]
-regex = '(?:^|[="''\s])(dG9r[a-zA-Z0-9+/]{100,}={0,2})'
+# Triple-quoted literal so the single-quote inside the character
+# class (`["='\s]`) doesn't collapse a TOML basic literal string.
+# The previous form `'...["''\s]...'` is a TOML parse error — a
+# single-quoted literal cannot contain `'`. The detector silently
+# vanished from the embedded corpus (the build counted 891 but
+# 890 actually loaded). 2026-05-26.
+regex = '''(?:^|[="'\s])(dG9r[a-zA-Z0-9+/]{100,}={0,2})'''
 description = "Intercom access token (base64 encoded, anchored to start)"
 group = 1
 

@@ -14,6 +14,14 @@ pub mod args;
 pub mod baseline;
 pub mod benchmark;
 pub mod config;
+// Daemon uses Unix-domain sockets (`tokio::net::UnixListener` and
+// `std::os::unix::net`). Windows lacks both surfaces in the form
+// this server uses, and named pipes have a totally different
+// auth model; we don't ship a Windows IPC story yet. Gate the
+// module so the rest of the CLI still builds on Windows — the
+// `daemon` subcommand and the `--daemon` flag emit a clear
+// "unix-only" error there (see `main.rs` and `subcommands/scan.rs`).
+#[cfg(unix)]
 pub mod daemon;
 pub mod inline_suppression;
 pub mod orchestrator;

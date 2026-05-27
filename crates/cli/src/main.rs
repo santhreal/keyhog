@@ -116,7 +116,15 @@ async fn main() -> ExitCode {
         }
         Some(Command::Backend(args)) => subcommands::backend::run(args),
         Some(Command::ScanSystem(args)) => subcommands::scan_system::run(args),
+        #[cfg(unix)]
         Some(Command::Daemon(args)) => subcommands::daemon::run(args).await,
+        #[cfg(not(unix))]
+        Some(Command::Daemon(_args)) => Err(anyhow::anyhow!(
+            "`keyhog daemon` is a unix-only command (it serves scans over a \
+             Unix-domain socket). On Windows, run scans in-process: \
+             `keyhog scan <path>`. Daemon-mode Windows support (via named \
+             pipes) is tracked but not yet implemented."
+        )),
         None => {
             use clap::CommandFactory;
             let mut cmd = Cli::command();

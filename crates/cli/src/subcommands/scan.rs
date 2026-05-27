@@ -13,20 +13,58 @@
 //! advisory in those cases.
 
 use crate::args::ScanArgs;
+// Daemon module is unix-only — Windows has no `tokio::net::UnixListener`
+// or `std::os::unix::net::UnixStream`, so the whole `crate::daemon`
+// subtree is `#[cfg(unix)]`. See `lib.rs` for the rationale. On
+// Windows, the `--daemon` flag and the daemon auto-route in
+// `daemon_route` short-circuit to `Forbidden` (or emit a clear
+// "daemon is unix-only" error if the user explicitly passed
+// `--daemon`).
+#[cfg(unix)]
 use crate::daemon::client;
+#[cfg(unix)]
 use crate::daemon::protocol::{Request, Response};
+#[cfg(unix)]
 use crate::daemon::server::default_socket_path;
 use crate::orchestrator::ScanOrchestrator;
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, Result};
+// The daemon-only result-massaging path (unwrap_scan_results,
+// finalize_for_report) is the only consumer of `RawMatch` /
+// `VerifiedFinding` / the dedup helpers in this file. The
+// in-process orchestrator path handles its own conversion inside
+// `ScanOrchestrator::run`. Cfg-gate the imports so Windows builds
+// don't trip the unused-imports denial.
+#[cfg(unix)]
+use anyhow::Context;
+#[cfg(unix)]
 use keyhog_core::{
     dedup_cross_detector, dedup_matches, RawMatch, VerificationResult, VerifiedFinding,
 };
+#[cfg(unix)]
 use std::path::Path;
 use std::process::ExitCode;
 
+#[cfg(unix)]
 const EXIT_CREDENTIALS_FOUND: u8 = 1;
 
 pub async fn run(args: ScanArgs) -> Result<ExitCode> {
+    // On Windows, the daemon route is never available (the `crate::daemon`
+    // module is cfg(unix)). If the user explicitly passed `--daemon`,
+    // refuse loudly so they don't silently get the in-process path; if
+    // they didn't, fall straight through to the orchestrator.
+    #[cfg(not(unix))]
+    {
+        if args.daemon {
+            bail!(
+                "`--daemon` is a unix-only flag (the daemon serves scans \
+                 over a Unix-domain socket). Drop the flag to run \
+                 in-process, or pass `--no-daemon` to be explicit."
+            );
+        }
+        let orchestrator = ScanOrchestrator::new(args)?;
+        return orchestrator.run().await;
+    }
+    #[cfg(unix)]
     match daemon_route(&args) {
         DaemonRoute::Required => run_via_daemon(&args).await,
         DaemonRoute::Opportunistic => match run_via_daemon(&args).await {
@@ -47,12 +85,14 @@ pub async fn run(args: ScanArgs) -> Result<ExitCode> {
     }
 }
 
+#[cfg(unix)]
 enum DaemonRoute {
     Required,
     Opportunistic,
     Forbidden,
 }
 
+#[cfg(unix)]
 fn daemon_route(args: &ScanArgs) -> DaemonRoute {
     if args.no_daemon {
         return DaemonRoute::Forbidden;
@@ -102,6 +142,7 @@ fn daemon_route(args: &ScanArgs) -> DaemonRoute {
     }
 }
 
+#[cfg(unix)]
 fn effective_single_file_path(args: &ScanArgs) -> Option<&Path> {
     let raw = args.path.as_deref().or(args.input.as_deref())?;
     let meta = std::fs::metadata(raw).ok()?;
@@ -119,6 +160,7 @@ fn effective_single_file_path(args: &ScanArgs) -> Option<&Path> {
     Some(raw)
 }
 
+#[cfg(unix)]
 async fn run_via_daemon(args: &ScanArgs) -> Result<ExitCode> {
     let socket = default_socket_path();
     let mut conn = client::connect(&socket).await.with_context(|| {
@@ -162,6 +204,7 @@ async fn run_via_daemon(args: &ScanArgs) -> Result<ExitCode> {
     }
 }
 
+#[cfg(unix)]
 fn read_stdin_to_string() -> Result<String> {
     use std::io::Read;
     const STDIN_CAP_BYTES: usize = 10 * 1024 * 1024;
@@ -180,6 +223,7 @@ fn read_stdin_to_string() -> Result<String> {
     Ok(String::from_utf8_lossy(&buf).into_owned())
 }
 
+#[cfg(unix)]
 fn unwrap_scan_results(resp: Response) -> Result<Vec<RawMatch>> {
     match resp {
         Response::ScanResults {
@@ -210,6 +254,7 @@ fn unwrap_scan_results(resp: Response) -> Result<Vec<RawMatch>> {
     }
 }
 
+#[cfg(unix)]
 fn finalize_for_report(matches: Vec<RawMatch>, args: &ScanArgs) -> Vec<VerifiedFinding> {
     // Test-fixture suppression mirrors the orchestrator's
     // pipeline_tests::* filter: known-public example credentials

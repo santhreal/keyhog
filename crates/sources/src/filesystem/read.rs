@@ -429,8 +429,15 @@ pub(super) fn slice_into_windows(
 
 fn decode_text_file(bytes: &[u8]) -> Option<String> {
     // Cheap O(1) header rejects first — no full pass needed to know a PDF or
-    // ZIP isn't a text file.
-    if has_binary_magic(bytes) || has_utf16_nul_pattern(bytes) {
+    // ZIP isn't a text file. NOTE: `has_utf16_nul_pattern` (which previously
+    // co-gated this early-return) checks for the literal UTF-16 BOM, which is
+    // also the correct way to START a UTF-16 text file. Including it here
+    // unconditionally rejected every UTF-16-BOM file before `decode_utf16`
+    // (below) ever got a chance to decode them — silently losing Windows /
+    // PowerShell / .NET config files that ship as UTF-16. The BOM dispatch
+    // now happens inside `decode_utf16`; only fall through to `looks_binary`
+    // when decode_utf16 returns None on a NUL-rich buffer that lacks a BOM.
+    if has_binary_magic(bytes) {
         return None;
     }
     // BOM-keyed UTF-16 fast path (rejects in ~6 bytes when the BOM doesn't

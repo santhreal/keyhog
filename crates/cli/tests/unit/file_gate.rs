@@ -5,7 +5,12 @@ use keyhog::args::{Cli, ScanArgs};
 use keyhog::baseline::Baseline;
 use keyhog::benchmark::{format_gpu_summary, startup_summary};
 use keyhog::config::find_config_file;
+// The `keyhog::daemon::*` modules are unix-only (Unix-domain sockets).
+// Gate the imports and the daemon_* tests below so the file compiles
+// on Windows.
+#[cfg(unix)]
 use keyhog::daemon::default_socket_path;
+#[cfg(unix)]
 use keyhog::daemon::protocol::{Request, Response, MAX_FRAME_BYTES, WIRE_VERSION};
 use keyhog::inline_suppression::filter_inline_suppressions;
 use keyhog::path_validation::validate_cli_path_arg;
@@ -79,6 +84,8 @@ fn config_error() {
 }
 
 // ── crates/cli/src/daemon/mod.rs ──────────────────────────────────────
+// Daemon tests are unix-only — see file header.
+#[cfg(unix)]
 #[test]
 fn daemon_mod_happy() {
     let path = default_socket_path();
@@ -86,6 +93,7 @@ fn daemon_mod_happy() {
 }
 
 // ── crates/cli/src/daemon/client.rs ─────────────────────────────────────
+#[cfg(unix)]
 #[test]
 fn daemon_client_happy() {
     let path = default_socket_path();
@@ -93,11 +101,13 @@ fn daemon_client_happy() {
 }
 
 // ── crates/cli/src/daemon/frame.rs ──────────────────────────────────────
+#[cfg(unix)]
 #[test]
 fn daemon_frame_happy() {
     let json = serde_json::to_string(&Request::Hello).unwrap();
     assert!(json.contains("hello"));
 }
+#[cfg(unix)]
 #[test]
 fn daemon_frame_error() {
     let json = serde_json::to_string(&Response::Hello {
@@ -111,21 +121,25 @@ fn daemon_frame_error() {
 }
 
 // ── crates/cli/src/daemon/protocol.rs ───────────────────────────────────
+#[cfg(unix)]
 #[test]
 fn daemon_protocol_happy() {
     assert_eq!(WIRE_VERSION, 2);
 }
+#[cfg(unix)]
 #[test]
 fn daemon_protocol_error() {
     assert!(MAX_FRAME_BYTES > 0);
 }
 
 // ── crates/cli/src/daemon/server.rs ─────────────────────────────────────
+#[cfg(unix)]
 #[test]
 fn daemon_server_happy() {
     let path = default_socket_path();
     assert!(!path.as_os_str().is_empty());
 }
+#[cfg(unix)]
 #[test]
 fn daemon_server_error() {
     assert_ne!(WIRE_VERSION, 0);
