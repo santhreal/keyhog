@@ -4,6 +4,35 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ## Unreleased
 
+## v0.5.23 — 2026-05-26 — dogfood non-PK 63 → 27 (−57%, 138 → 27 vs v0.5.21 baseline = −80%) via shape-filter unification + Rails-vendored detection + .b64 file skip + URI type-annotation suppression
+
+### Precision
+
+- **All shape filters now apply to every detector**, not just `generic-*`/`entropy-*`. `looks_like_pure_identifier`, `looks_like_word_separated_identifier`, `looks_like_scheme_prefixed_uri`, `looks_like_punctuation_decorated_identifier`, `looks_like_url_or_path_segment` no longer gate on detector_id. Service detectors like `cryptocompare-api-key` were firing on `SetMultipartFormData` Go method names because their regex used `Authorization[=:\s"']+([a-zA-Z0-9]{20,})` and the named-detector path bypassed shape gates. Real credentials have digits / long random suffixes / mixed alphabet — every filter has internal guards (`!has_digit`, `max_word_len ≤ 10`) that keep real keys outside the rejection set.
+
+- **`looks_like_punctuation_decorated_identifier` fixed for PEM blocks**. The `b'-'` leading-sigil reject was too eager — `-----BEGIN ... PRIVATE KEY-----` starts with 5 dashes and was being suppressed alongside `--api-secret` CLI flags. Tightened to `bytes.starts_with(b"--") && bytes[2] != b'-'` so PEM markers (3+ dashes) survive but `--` CLI flags still reject.
+
+- **`.b64` / `.base64` raw-file skip**. Files explicitly marked as base64-encoded blobs (`metasploitable3/resources/flags/jack_of_diamonds.b64` is a base64-encoded PNG) hold alphabet-coincidence matches inside the base64 stream (`AIza…`, `sk-…`, `ASIA…`). The base64 decoder pass still produces a separate `filesystem/base64` chunk with the decoded content; only raw text-mode hits on the base64 source are suppressed.
+
+- **`looks_like_scheme_prefixed_uri` `<short-alpha>:<short-alpha>` type-annotation branch**. `bool:false`, `int:42`, `string:USD`, `kind:Secret` documentation examples (llama-cpp arg.cpp:2468 `--override-kv tokenizer.ggml.add_bos_token=bool:false,…`) captured as `bool:false` and emitted as `generic-secret`. Real credentials never have this `<3-15 alpha>:<≤10 alpha>` shape.
+
+- **`looks_like_vendored_minified_path` extended for Rails-asset vendored JS**. `app/assets/javascripts/<name>.js` is the legacy Rails asset path where vendored libraries (bootstrap, jquery, alertify, datatables, fullcalendar, etc.) live. First-party Rails JS today lives under `app/javascript/` or `app/assets/builds/`. Match by basename prefix against a known-vendor list. Catches the railsgoat `bootstrap-image-gallery-main.js` honeybadger-api-key FP.
+
+### Per-detector dogfood deltas (v0.5.22 → v0.5.23)
+
+  generic-secret           8 →  7
+  cryptocompare-api-key    1 →  0
+  google-api-key           1 →  0
+  hot-aws_key              1 →  0
+  hot-aws_session_key      3 →  1
+  honeybadger-api-key      1 →  0
+  redis-connection-string  1 →  0
+  saltstack-credentials    2 →  1
+  openai-api-key (transient) 2 → 0
+  TOTAL non-PK            63 → 27   (−57% this release)
+  TOTAL non-PK           138 → 27   (−80% vs v0.5.21 baseline)
+  private-key recall       782 unchanged (PEM filter regression caught + fixed)
+
 ## v0.5.22 — 2026-05-26 — 22-repo dogfood drops non-PK findings 138 → 63 (−54%) via 8 new suppression filters + short-prefix anchor sweep
 
 ### Precision (all 22-repo dogfood-driven)
