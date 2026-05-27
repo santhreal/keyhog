@@ -190,12 +190,23 @@ impl ScanOrchestrator {
 
         let rule_suppressor = load_rule_suppressor(self.args.path.as_deref());
         let pre_rule_count = findings_pre_rules.len();
+        let hide_client_safe = self.args.hide_client_safe;
+        let mut client_safe_dropped = 0usize;
         let findings: Vec<VerifiedFinding> = findings_pre_rules
             .into_iter()
-            .filter(|f| !rule_suppressor.matches(f))
+            .filter(|f| {
+                if rule_suppressor.matches(f) {
+                    return false;
+                }
+                if hide_client_safe && f.severity == keyhog_core::Severity::ClientSafe {
+                    client_safe_dropped += 1;
+                    return false;
+                }
+                true
+            })
             .collect();
         if show_progress && !rule_suppressor.is_empty() {
-            let dropped = pre_rule_count - findings.len();
+            let dropped = pre_rule_count - findings.len() - client_safe_dropped;
             if dropped > 0 {
                 eprintln!(
                     "\n  Suppressed {} finding(s) via .keyhogignore.toml ({} rule(s) loaded)",
@@ -203,6 +214,12 @@ impl ScanOrchestrator {
                     rule_suppressor.len()
                 );
             }
+        }
+        if show_progress && client_safe_dropped > 0 {
+            eprintln!(
+                "\n  Suppressed {} client-safe finding(s) via --hide-client-safe (public-by-design keys)",
+                client_safe_dropped
+            );
         }
 
         if let Some(ref path) = self.args.create_baseline {

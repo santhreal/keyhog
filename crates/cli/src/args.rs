@@ -656,6 +656,22 @@ pub struct ScanArgs {
     #[arg(long, value_name = "WEIGHT")]
     pub ml_weight: Option<f64>,
 
+    /// Drop every `client-safe` finding before reporting. Use this
+    /// for bug-bounty / exfiltration-impact workflows where keys that
+    /// are public by design (Sentry DSN, Stripe `pk_*`, Firebase web,
+    /// Mapbox `pk.`, PostHog project, Google Maps browser, Mixpanel
+    /// project, Algolia search, Datadog browser RUM) are noise: the
+    /// vendor *expects* them to ship in client bundles and no
+    /// attacker gains server-side access from finding one.
+    ///
+    /// Default off: client-safe findings still appear in scan output
+    /// at the `CLIENT-SAFE` tier (below `LOW`) so a misconfigured
+    /// "publishable" key wired into a server-only detector still
+    /// surfaces. `--hide-client-safe` is the explicit opt-in to
+    /// silence them.
+    #[arg(long)]
+    pub hide_client_safe: bool,
+
     /// Treat credentials inside source-code comments (// … / # … /
     /// /* … */ / <!-- … -->) as first-class findings instead of
     /// applying the default comment-context confidence penalty.

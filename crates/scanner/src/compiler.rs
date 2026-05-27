@@ -127,6 +127,7 @@ pub fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileState> {
                             detector_index,
                             regex: std::sync::Arc::new(re),
                             group: pattern.group,
+                            client_safe: pattern.client_safe,
                         },
                         detector.keywords.clone(),
                     ));
@@ -462,6 +463,7 @@ pub fn compile_pattern(
             source: e,
         })?,
         group: spec.group,
+        client_safe: spec.client_safe,
     })
 }
 

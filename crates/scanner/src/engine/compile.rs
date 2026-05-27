@@ -18,8 +18,18 @@ impl CompiledScanner {
         // failures: if libcuda.so is missing or the driver refuses,
         // `acquire()` returns Err and we fall through to wgpu so
         // nothing regresses on non-CUDA hosts.
+        let gpu_disabled = std::env::var("KEYHOG_NO_GPU")
+            .ok()
+            .map(|v| !matches!(v.as_str(), "" | "0" | "false" | "FALSE" | "off" | "OFF"))
+            .unwrap_or(false);
+        if gpu_disabled {
+            tracing::info!(
+                target: "keyhog::routing",
+                "KEYHOG_NO_GPU set — bypassing CUDA/wgpu init, routing every chunk through the CPU/SIMD path"
+            );
+        }
         let (gpu_literals, gpu_backend, wgpu_backend) =
-            if crate::hw_probe::probe_hardware().gpu_available {
+            if !gpu_disabled && crate::hw_probe::probe_hardware().gpu_available {
                 let literals = build_gpu_literals(&state.ac_literals);
                 let cuda_backend: Option<Arc<dyn vyre::VyreBackend>> = {
                     #[cfg(feature = "cuda")]

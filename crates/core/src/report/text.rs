@@ -129,6 +129,7 @@ impl<W: Write + Send> Reporter for TextReporter<W> {
             Severity::High => "31",
             Severity::Medium => "33",
             Severity::Low => "36",
+            Severity::ClientSafe => "2;36",
             Severity::Info => "90",
         };
 
@@ -234,6 +235,7 @@ impl<W: Write + Send> Reporter for TextReporter<W> {
         let remediation = match finding.severity {
             Severity::Critical | Severity::High => "Revoke immediately and rotate.",
             Severity::Medium => "Review usage and rotate if active.",
+            Severity::ClientSafe => "Public by design (client bundle key) — verify scope restrictions.",
             _ => "Remove from codebase.",
         };
         writeln!(
@@ -361,9 +363,15 @@ fn format_severity(severity: Severity, color: bool) -> String {
         Severity::High => ("HIGH", "31"),
         Severity::Medium => ("MEDIUM", "33"),
         Severity::Low => ("LOW", "36"),
+        // Dim cyan + 2;36 (faint cyan). The label is wider than the
+        // others (10 vs 8 chars) so right-pad to 10; the surrounding
+        // `:>8` width fmt is fine for shorter labels but the constant
+        // here matches the longest variant so all bordered boxes line
+        // up regardless of which severity fires.
+        Severity::ClientSafe => ("CLIENT-SAFE", "2;36"),
         Severity::Info => ("INFO", "90"),
     };
-    colorize(&format!("{:>8}", label), style, color)
+    colorize(&format!("{:>11}", label), style, color)
 }
 
 fn format_verification(result: &VerificationResult, color: bool) -> String {

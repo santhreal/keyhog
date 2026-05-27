@@ -13,7 +13,12 @@ keywords = ["sentry.io", "sentry_dsn", "dsn", "o0.ingest", "o1.ingest"]
 [[detector.patterns]]
 regex = 'https://[a-f0-9]{32}@o[0-9]+\.ingest\.sentry\.io/[0-9]+'
 description = "Sentry DSN with organization ID"
+# DSN = public key by design. Shipped in every browser-SDK / mobile-SDK
+# bundle; the host-side rate-limit + project-scope IS the security
+# boundary. `--hide-client-safe` drops these.
+client_safe = true
 
 [[detector.patterns]]
 regex = 'https://[a-f0-9]{32}@[a-z0-9-]+\.ingest\.sentry\.io/[0-9]+'
 description = "Sentry DSN with custom organization subdomain"
+client_safe = true

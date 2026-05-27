@@ -13,6 +13,10 @@ keywords = ["phc_", "phx_", "POSTHOG_API_KEY"]
 [[detector.patterns]]
 regex = "phc_[a-zA-Z0-9]{32}"
 description = "PostHog project API key (phc_ prefix)"
+# `phc_*` is the browser/mobile-SDK key — designed to ship in client
+# bundles. Project ACL + scope restrictions are the security boundary.
+# Personal/admin tokens use `phx_` and stay full-severity.
+client_safe = true
 
 [[detector.patterns]]
 regex = "phx_[a-zA-Z0-9]{32,48}"

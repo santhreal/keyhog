@@ -799,6 +799,7 @@ impl CompiledScanner {
                     entropy,
                     confidence,
                     scan_state,
+                    entry.client_safe,
                 );
                 scan_state.push_match(raw_match, self.config.max_matches_per_chunk);
             }
@@ -819,6 +820,7 @@ impl CompiledScanner {
                     entropy,
                     heuristic_conf,
                     scan_state,
+                    entry.client_safe,
                 );
                 scan_state.ml_pending.push(crate::types::MlPendingMatch {
                     raw_match,

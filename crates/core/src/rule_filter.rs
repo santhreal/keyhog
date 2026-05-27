@@ -106,6 +106,7 @@ impl<'a> FindingContext<'a> {
     fn severity_str(&self) -> &'static str {
         match self.severity {
             Severity::Info => "info",
+            Severity::ClientSafe => "client-safe",
             Severity::Low => "low",
             Severity::Medium => "medium",
             Severity::High => "high",

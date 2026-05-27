@@ -138,6 +138,11 @@ pub struct CompiledPattern {
     pub detector_index: usize,
     pub regex: std::sync::Arc<Regex>,
     pub group: Option<usize>,
+    /// Mirrors `PatternSpec::client_safe` for the compiled side. A
+    /// match against a pattern with this set collapses the finding's
+    /// severity to `Severity::ClientSafe` so `--hide-client-safe`
+    /// can drop it without affecting any other detector's tier.
+    pub client_safe: bool,
 }
 
 /// An optional compiled companion pattern for a detector.
