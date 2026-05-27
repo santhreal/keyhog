@@ -1,21 +1,24 @@
-# keyhog install script - Windows (PowerShell 5+).
+# keyhog install script (Windows, PowerShell 5+).
 #
 # Usage:
 #   iwr https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.ps1 -useb | iex
 #
-# Or with explicit install location:
-#   $env:KEYHOG_INSTALL = "C:\Tools\keyhog"
-#   iwr ... | iex
+# With an explicit install location:
+#   $env:KEYHOG_INSTALL = "C:\Tools\keyhog"; iwr ... | iex
 #
-# Detects CPU arch (x86_64 only for now - Windows ARM64 native builds
-# are not produced by the release workflow yet), fetches the
-# corresponding binary from the latest GitHub release, drops it in
-# $env:KEYHOG_INSTALL (default: %LOCALAPPDATA%\keyhog\bin), and
-# verifies the install by running --version.
+# What it does:
+#   - Verifies the host is Windows x86_64 (ARM64 native builds are
+#     not produced by the release workflow yet).
+#   - Detects whether an NVIDIA GPU is present (informational; a
+#     dedicated CUDA-on-Windows build variant is on the roadmap but
+#     not yet shipped, so today we install the same WGPU + SIMD
+#     binary regardless).
+#   - Drops the binary in $env:KEYHOG_INSTALL (default
+#     %LOCALAPPDATA%\keyhog\bin) and verifies it runs.
 #
-# Daemon mode is unix-only and refuses to start on Windows with a
-# clear error; everything else (scan, detectors, watch, hook, etc.)
-# works the same way.
+# Daemon mode is Unix-only and refuses to start on Windows with a
+# clear error; everything else (scan, detectors, watch, hook) works
+# the same.
 
 $ErrorActionPreference = 'Stop'
 
@@ -36,6 +39,27 @@ if ($Arch -ne 9) {
     exit 1
 }
 $Asset = 'keyhog-windows-x86_64.exe'
+
+# Informational GPU detection. Today every Windows host gets the same
+# binary regardless; we only print a note so the user understands
+# what they will and won't get. A dedicated CUDA-on-Windows variant
+# is roadmap, not shipped.
+try {
+    $Gpus = Get-CimInstance -ClassName Win32_VideoController -ErrorAction SilentlyContinue |
+        Select-Object -ExpandProperty Name -ErrorAction SilentlyContinue
+} catch {
+    $Gpus = @()
+}
+$HasNvidia = ($Gpus | Where-Object { $_ -match 'NVIDIA' }) -ne $null
+
+if ($HasNvidia) {
+    $nv = ($Gpus | Where-Object { $_ -match 'NVIDIA' } | Select-Object -First 1)
+    Write-Host "keyhog: detected NVIDIA GPU ($nv). Installing the WGPU + SIMD Windows build. A dedicated CUDA-on-Windows variant (significantly faster on large scans) is on the roadmap." -ForegroundColor Cyan
+} elseif ($Gpus.Count -gt 0) {
+    Write-Host "keyhog: detected non-NVIDIA GPU(s): $($Gpus -join ', '). Installing the WGPU + SIMD Windows build; WGPU will use any compatible adapter, with SIMD on the CPU path as the fallback." -ForegroundColor Cyan
+} else {
+    Write-Host "keyhog: no GPU detected. Installing the WGPU + SIMD Windows build; the CPU SIMD path is plenty fast for typical scans." -ForegroundColor Cyan
+}
 
 # Pick the tag. $env:KEYHOG_VERSION = 'v0.5.29' pins a specific
 # release; otherwise we ask the GitHub API for the latest published

@@ -21,7 +21,7 @@ on:
 jobs:
   build:
     name: Build ${{ matrix.asset }}
-    # Per-job permissions — see keyhog.yml header note. Top-level
+    # Per-job permissions: see keyhog.yml header note. Top-level
     # `permissions:` rejected at dispatch time on this repo.
     permissions:
       contents: write  # required by gh release upload to attach assets
@@ -33,12 +33,27 @@ jobs:
             asset: keyhog-linux-x86_64
             # libhyperscan-dev is what the `simd` feature links against
             # on Linux. Ship a default-feature build matching the
-            # crates.io release.
+            # crates.io release. This is the fallback when the host
+            # has no NVIDIA GPU / no libcuda.so: WGPU still drives any
+            # compatible adapter, SIMD covers the CPU path.
             install: sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config
             features: ''
+            cuda_toolkit: false
+          # CUDA-enabled Linux build. install.sh prefers this asset
+          # when nvidia-smi + libcuda.so are both present at install
+          # time, since the CUDA backend is meaningfully faster than
+          # the WGPU fallback on large (>=256 MiB) scans. Requires
+          # libcuda.so at RUNTIME (which is what we detect for); the
+          # CUDA toolkit is only needed at LINK time, which we
+          # provision here on the GH runner via the official action.
+          - os: ubuntu-latest
+            asset: keyhog-linux-x86_64-cuda
+            install: sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config
+            features: '--features cuda'
+            cuda_toolkit: true
           # macOS: no `libhyperscan-dev` in the homebrew repo, so the
           # default `cargo build` fails on the simd feature. We ship a
-          # feature-subset binary (no Hyperscan) for now — the `portable`
+          # feature-subset binary (no Hyperscan) for now. The `portable`
           # alias in `crates/cli/Cargo.toml` enables every keyhog-scanner
           # data feature plus every git/web/github/s3/docker/verify
           # source backend, just without the Hyperscan / Ghidra / CUDA
@@ -48,7 +63,7 @@ jobs:
             asset: keyhog-macos-aarch64
             install: ''
             features: '--no-default-features --features portable'
-          # macOS x86_64 (Intel) — same feature subset as Apple-Silicon.
+          # macOS x86_64 (Intel): same feature subset as Apple Silicon.
           # macos-15-intel is GitHub's supported x86_64 runner after the
           # macos-13 retirement (2026-04). actionlint flags `macos-13`
           # as an unknown label and the matrix arm silently fails to
@@ -57,7 +72,7 @@ jobs:
             asset: keyhog-macos-x86_64
             install: ''
             features: '--no-default-features --features portable'
-          # Windows MSVC — same portable subset. Hyperscan is not
+          # Windows MSVC: same portable subset. Hyperscan is not
           # shipped on Windows, and daemon IPC is Unix-socket-only
           # (already gated with #[cfg(unix)]), so the portable
           # surface compiles natively here.
@@ -91,6 +106,18 @@ jobs:
         if: matrix.install != ''
         shell: bash
         run: ${{ matrix.install }}
+
+      # CUDA toolkit (link-time only). The runtime libcuda.so requirement
+      # is checked by install.sh on the user's machine, not on the GH
+      # runner. Pinning 12.6 because that's what vyre-driver-cuda's
+      # `cuda` feature is tested against.
+      - name: Install CUDA toolkit
+        if: matrix.cuda_toolkit == true
+        uses: Jimver/cuda-toolkit@v0.2.19
+        with:
+          cuda: '12.6.0'
+          method: 'network'
+          sub-packages: '["nvcc", "cudart", "nvrtc", "nvrtc-dev"]'
 
       - name: Build keyhog
         shell: bash
