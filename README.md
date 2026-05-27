@@ -6,6 +6,7 @@
   <a href="https://crates.io/crates/keyhog"><img src="https://img.shields.io/crates/v/keyhog?style=flat-square&color=D93025" alt="crates.io" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="MIT" /></a>
   <a href="https://github.com/santhsecurity/keyhog/actions"><img src="https://img.shields.io/github/actions/workflow/status/santhsecurity/keyhog/ci.yml?style=flat-square&label=CI" alt="CI" /></a>
+  <a href="https://star-history.com/#santhsecurity/keyhog&Date"><img src="https://img.shields.io/github/stars/santhsecurity/keyhog?style=flat-square&color=yellow&label=stars" alt="GitHub stars" /></a>
 </p>
 
 ![KeyHog Demo](keyhog-demo.gif)
@@ -21,7 +22,7 @@ present:
 
 | Backend | When | How |
 |---|---|---|
-| `gpu-zero-copy` | discrete GPU + ≥256 MiB scan | vyre AC automaton on GPU cores; cudagrep NVMe → VRAM DMA |
+| `gpu-zero-copy` | discrete GPU + ≥256 MiB scan | vyre AC automaton on GPU via WGPU (cross-platform) or optional CUDA backend |
 | `simd-regex` | AVX-512 / AVX2 / NEON + Hyperscan | parallel multi-pattern NFA at ~500 MB/s |
 | `cpu-fallback` | no SIMD, no GPU | Aho-Corasick prefix + Rust `regex` extraction |
 
