@@ -73,9 +73,19 @@ pub fn should_suppress_named_detector_finding(
     // Limit to generic-* and entropy-* detectors so service-anchored
     // detectors (which already have provider-specific shape gates) keep
     // their existing behaviour.
-    if (detector_id.starts_with("generic-") || detector_id.starts_with("entropy-"))
-        && looks_like_pure_identifier(credential)
-    {
+    // The five identifier-shape filters apply to ALL detectors, not just
+    // generic-/entropy-. Real credentials are cryptographically random —
+    // they never have ALL-letter CamelCase shape (digit-free), never have
+    // scheme prefixes like `urn:`, never start with `--`/`&`/`@`/`!`/`/`,
+    // and never look like multi-segment paths. A service detector firing
+    // on `SetMultipartFormData` (cryptocompare on alist Go method),
+    // `bool:false` (llama-cpp help text), `s3_secret_access_key` (alist
+    // const), `user/auth/forgot_passwd` (gogs template) is a regex-anchor
+    // collision, not a leaked credential. Each filter has an internal
+    // `!has_digit` guard or max-word-length cap that keeps real
+    // credentials (which contain digits and/or long random suffixes)
+    // outside the rejection set.
+    if looks_like_pure_identifier(credential) {
         crate::telemetry::record_example_suppression(
             "pipeline",
             path,
@@ -84,12 +94,7 @@ pub fn should_suppress_named_detector_finding(
         );
         return true;
     }
-    // Word-separated identifier with digits (s3_secret_access_key,
-    // d2i_PKCS7_bio, X-Shopify-Access-Token). Covers the digit-bearing
-    // FPs that `looks_like_pure_identifier`'s `!has_digit` guard misses.
-    if (detector_id.starts_with("generic-") || detector_id.starts_with("entropy-"))
-        && looks_like_word_separated_identifier(credential)
-    {
+    if looks_like_word_separated_identifier(credential) {
         crate::telemetry::record_example_suppression(
             "pipeline",
             path,
@@ -98,11 +103,7 @@ pub fn should_suppress_named_detector_finding(
         );
         return true;
     }
-    // Scheme-prefixed URI / URN (urn:shopify:..., secret-token:...).
-    // These appear in API docs, README log examples, and OAuth grant types.
-    if (detector_id.starts_with("generic-") || detector_id.starts_with("entropy-"))
-        && looks_like_scheme_prefixed_uri(credential)
-    {
+    if looks_like_scheme_prefixed_uri(credential) {
         crate::telemetry::record_example_suppression(
             "pipeline",
             path,
@@ -111,11 +112,7 @@ pub fn should_suppress_named_detector_finding(
         );
         return true;
     }
-    // Punctuation-decorated identifier (--api-secret, &gss_token, @v_password,
-    // !!apiKey, Password:, privateAccessToken!).
-    if (detector_id.starts_with("generic-") || detector_id.starts_with("entropy-"))
-        && looks_like_punctuation_decorated_identifier(credential)
-    {
+    if looks_like_punctuation_decorated_identifier(credential) {
         crate::telemetry::record_example_suppression(
             "pipeline",
             path,
@@ -124,11 +121,7 @@ pub fn should_suppress_named_detector_finding(
         );
         return true;
     }
-    // URL or path-fragment shape (`user/settings/password`,
-    // `/api/v1/access_token`).
-    if (detector_id.starts_with("generic-") || detector_id.starts_with("entropy-"))
-        && looks_like_url_or_path_segment(credential)
-    {
+    if looks_like_url_or_path_segment(credential) {
         crate::telemetry::record_example_suppression(
             "pipeline",
             path,
@@ -178,6 +171,27 @@ pub fn should_suppress_named_detector_finding(
             path,
             credential,
             "secret_scanner_source",
+        );
+        return true;
+    }
+    // Files explicitly marked as base64 (`.b64`, `.base64`) hold base64-
+    // encoded blobs — usually images or binaries that the operator
+    // wants the base64 decoder to handle. Raw text-mode hits inside the
+    // base64 stream (AIza, sk-, ASIA, etc.) are alphabet coincidences,
+    // not credentials. The base64-decoder pass produces a separate
+    // `filesystem/base64` chunk with the decoded content; that chunk
+    // hits `has_binary_magic` if it's image/binary, otherwise it's
+    // scanned normally.
+    if path.is_some_and(|p| {
+        let lower = p.to_ascii_lowercase();
+        lower.ends_with(".b64") || lower.ends_with(".base64")
+    }) && source_type.is_some_and(|s| s == "filesystem")
+    {
+        crate::telemetry::record_example_suppression(
+            "pipeline",
+            path,
+            credential,
+            "raw_base64_file",
         );
         return true;
     }
@@ -403,6 +417,20 @@ pub(crate) fn looks_like_scheme_prefixed_uri(value: &str) -> bool {
     ) {
         return true;
     }
+    // Type-annotation / documentation `<short-alpha>:<short-alpha>` shape:
+    // both sides are pure-alpha ≤ 10 chars, total length ≤ 20. Catches
+    // `bool:false`, `int:42`, `string:USD`, `kind:Secret` documentation
+    // examples (llama-cpp arg.cpp:2468 has
+    // `--override-kv tokenizer.ggml.add_bos_token=bool:false,...` whose
+    // `token=bool:false` substring captures as `bool:false`). Real
+    // credentials never have this shape.
+    if bytes.len() <= 20
+        && after.iter().all(|&b| b.is_ascii_alphabetic())
+        && !after.is_empty()
+        && after.len() <= 10
+    {
+        return true;
+    }
     false
 }
 
@@ -513,7 +541,7 @@ pub(crate) fn looks_like_vendored_minified_path(path: Option<&str>) -> bool {
     let Some(p) = path else {
         return false;
     };
-    p.contains("/node_modules/")
+    if p.contains("/node_modules/")
         || p.contains("/public/plugins/")
         || p.contains("/public/static/")
         || p.contains("/public/vendor/")
@@ -526,9 +554,56 @@ pub(crate) fn looks_like_vendored_minified_path(path: Option<&str>) -> bool {
         || p.contains("/site-packages/")
         || p.contains("/dist/vendor")
         || p.contains("/dist/assets/")
+        || p.contains("/vendor/assets/")
         || p.ends_with(".min.js")
         || p.ends_with(".bundle.js")
         || p.ends_with(".min.css")
+    {
+        return true;
+    }
+    // Rails legacy asset path: `app/assets/javascripts/<name>.js`. First-
+    // party Rails JS today lives in `app/javascript/` (Webpacker era) or
+    // `app/assets/builds/` (esbuild/Vite era). The `app/assets/javascripts/`
+    // directory predominantly holds vendored libraries (bootstrap-*,
+    // jquery-*, alertify, datatables, fullcalendar, jsapi). Match the
+    // most common vendored filename prefixes.
+    if p.contains("/app/assets/javascripts/") || p.contains("/vendor/javascripts/") {
+        let basename = p.rsplit('/').next().unwrap_or(p).to_ascii_lowercase();
+        const VENDORED_JS_PREFIXES: &[&str] = &[
+            "bootstrap",
+            "jquery",
+            "react.",
+            "react-",
+            "vue.",
+            "vue-",
+            "angular",
+            "ember",
+            "backbone",
+            "lodash",
+            "underscore",
+            "moment",
+            "alertify",
+            "fullcalendar",
+            "datatables",
+            "highcharts",
+            "chart.",
+            "chart-",
+            "select2",
+            "tinymce",
+            "ckeditor",
+            "codemirror",
+            "html5",
+            "modernizr",
+            "respond",
+        ];
+        if VENDORED_JS_PREFIXES
+            .iter()
+            .any(|prefix| basename.starts_with(prefix))
+        {
+            return true;
+        }
+    }
+    false
 }
 
 /// True if `value` is a non-credential punctuation/prefix shape:
@@ -545,12 +620,17 @@ pub(crate) fn looks_like_punctuation_decorated_identifier(value: &str) -> bool {
     }
     let bytes = value.as_bytes();
     // Leading sigils that real credentials never start with.
-    //   `-` — CLI flag (`--api-secret`)
+    //   `--` — CLI flag (`--api-secret`). A SINGLE leading `-` is allowed
+    //          for tokens like `xoxb-…`, and `-----` (5+ dashes) is a PEM
+    //          block marker which is a legitimate private-key TP — only
+    //          reject `--X` where `X` is NOT another dash.
     //   `&` — C/Go pointer reference (`&password`, `&gss_recv_token`)
     //   `@` — SQL/Ruby/Rust attribute (`@v_password`, `@api_key`, `@deprecated`)
     //   `!` — JS truthy coercion (`!!apiKeyOrOAuthToken`)
-    //   `/` — Unix absolute path (`/etc/passwd:/etc/passwd:ro` docker mount)
-    if bytes[0] == b'-'
+    //   `/` — Unix absolute path (`/etc/passwd:/etc/passwd:ro` docker mount).
+    let starts_with_double_dash =
+        bytes.starts_with(b"--") && bytes.len() >= 3 && bytes[2] != b'-';
+    if starts_with_double_dash
         || bytes[0] == b'&'
         || bytes[0] == b'@'
         || bytes[0] == b'!'
