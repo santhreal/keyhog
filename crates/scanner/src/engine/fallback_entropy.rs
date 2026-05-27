@@ -182,6 +182,11 @@ impl CompiledScanner {
             if crate::pipeline::looks_like_url_or_path_segment(&entropy_match.value) {
                 continue;
             }
+            // Vendored 3rd-party minified bundle: any "secret-like"
+            // sequence is a minification coincidence, not a leak.
+            if crate::pipeline::looks_like_vendored_minified_path(chunk.metadata.path.as_deref()) {
+                continue;
+            }
 
             // CI workflow file context: entropy-* in `.github/workflows/`,
             // `.gitlab-ci.yml`, `.circleci/config.yml`, `azure-pipelines.yml`

@@ -10,9 +10,14 @@ service = "clickup"
 severity = "high"
 keywords = ["pk_", "clickup"]
 
+# Anchor `pk_` to start-of-string or non-identifier byte. The prefix
+# is too common in serialized PHP/JS object dumps (e.g. metasploitable3
+# wordpress/update_ip.ps1 has `s:10:""""public_key"""";s:32:""""pk_<32hex>"""";`
+# where the hex hits 32 alphanumerics) to fire without context.
 [[detector.patterns]]
-regex = 'pk_[a-zA-Z0-9]{20,40}'
-description = "ClickUp personal API token (pk_ prefix)"
+regex = '(?:^|[^A-Za-z0-9_])(pk_[a-zA-Z0-9]{20,40})'
+description = "ClickUp personal API token (pk_ prefix, anchored)"
+group = 1
 
 [detector.verify]
 method = "GET"

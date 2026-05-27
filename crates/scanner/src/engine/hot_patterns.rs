@@ -119,7 +119,30 @@ impl CompiledScanner {
                 // on their own regex DEFINITIONS — `AKIA[A-Z0-9]{16,17})/g`,
                 // `ASIA[A-Z0-9]{16})\b`, `xoxb-[0-9-]*`. Real tokens never
                 // end in regex sigils. The tail-suffix check is O(1).
-                if looks_like_regex_literal_tail(credential) {
+                if crate::pipeline::looks_like_regex_literal_tail(credential) {
+                    continue;
+                }
+                // Vendored 3rd-party minified bundle: same rationale as
+                // the named-detector path. Random byte sequences in
+                // minified codemirror/pdfjs/jquery/wp-includes bundles
+                // routinely hit `AKIA…`/`ASIA…` literal-prefix patterns.
+                if crate::pipeline::looks_like_vendored_minified_path(
+                    chunk.metadata.path.as_deref(),
+                ) {
+                    continue;
+                }
+                // Native-binary string extraction: skip hot-pattern hits
+                // on the strings-fallback source — same coverage rationale
+                // as `should_suppress_named_detector_finding`.
+                if chunk
+                    .metadata
+                    .source_type
+                    .contains("binary-strings")
+                    || chunk
+                        .metadata
+                        .source_type
+                        .contains("archive-binary")
+                {
                     continue;
                 }
 
@@ -194,34 +217,3 @@ impl CompiledScanner {
     }
 }
 
-/// Regex-literal tail check, same semantics as the copy in
-/// `fallback_generic`. Duplicated here to keep `hot_patterns` self-
-/// contained — promoting both to a shared `engine/util.rs` is the
-/// next cleanup if a third call site shows up.
-fn looks_like_regex_literal_tail(value: &str) -> bool {
-    const REGEX_SIGIL_SUFFIXES: &[&str] = &[
-        ")/g",
-        ")/gi",
-        ")/i",
-        ")/m",
-        ")\\b",
-        "})\\b",
-        "})\\\\b",
-        "]+",
-        "]*",
-        "]?",
-        "]+/",
-        "]+\\b",
-        "*/g",
-        "+/g",
-        "+/i",
-        ")*",
-        ")+",
-        ")?",
-        ")?$",
-        ")$",
-    ];
-    REGEX_SIGIL_SUFFIXES
-        .iter()
-        .any(|sig| value.ends_with(sig))
-}

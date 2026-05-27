@@ -10,9 +10,13 @@ service = "stabilityai"
 severity = "critical"
 keywords = ["sk-", "stability", "stabilityai"]
 
+# Anchor `sk-` to start-of-string or non-identifier byte. Unanchored
+# the prefix fires inside ELF binary content (metasploitable3 sinatra
+# aws/loader, 2 FPs in dogfood 2026-05-26) and Caesar-decoded text.
 [[detector.patterns]]
-regex = 'sk-[a-zA-Z0-9]{48}'
-description = "Stability AI API key (sk-)"
+regex = '(?:^|[^A-Za-z0-9_])(sk-[a-zA-Z0-9]{48})'
+description = "Stability AI API key (sk- prefix, anchored)"
+group = 1
 
 [detector.verify]
 method = "GET"

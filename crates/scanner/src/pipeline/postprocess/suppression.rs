@@ -137,6 +137,54 @@ pub fn should_suppress_named_detector_finding(
         );
         return true;
     }
+    // Vendored 3rd-party minified bundle path: applies to ALL detectors,
+    // not just generic-*. A "secret-like" sequence in a minified
+    // codemirror/pdfjs/jquery/etc. bundle is never a real leak.
+    if looks_like_vendored_minified_path(path) {
+        crate::telemetry::record_example_suppression(
+            "pipeline",
+            path,
+            credential,
+            "vendored_minified_path",
+        );
+        return true;
+    }
+    // Native-binary string extraction (`filesystem:binary-strings`,
+    // `filesystem/archive-binary`): the file is an ELF / Mach-O / PE /
+    // wasm / archived binary whose printable strings were extracted as
+    // a fallback. Short-prefix detectors (openai `sk-`, stabilityai
+    // `sk-`, helicone `sk-`/`pk-`/`eu-`, clickup `pk_`, AKIA / ASIA,
+    // K00M, AIza, dn_, …) generate noise on random compiled-code byte
+    // sequences that happen to start with the prefix. A real credential
+    // embedded in a native binary is best caught via the optional
+    // `binary` feature (Ghidra-based extraction with context), not via
+    // brute-force strings. Skip every named-detector finding here so
+    // we don't ship FPs from compiled apps' rodata.
+    if source_type.is_some_and(|s| s.contains("binary-strings") || s.contains("archive-binary"))
+    {
+        crate::telemetry::record_example_suppression(
+            "pipeline",
+            path,
+            credential,
+            "native_binary_strings",
+        );
+        return true;
+    }
+    // Regex-literal tail: applies to ALL detectors. A capture ending
+    // in `)/g`, `)/g,`, `]+`, `})\\b`, etc. is a JS/Go/Python regex
+    // pattern definition (often in another secret-scanner's own
+    // source code), not a credential. claude-code's Feedback.tsx
+    // has 1 `hot-aws_key` finding on its own AWS regex definition
+    // `/AKIA[A-Z0-9]{16,17}/g,`.
+    if looks_like_regex_literal_tail(credential) {
+        crate::telemetry::record_example_suppression(
+            "pipeline",
+            path,
+            credential,
+            "regex_literal_tail",
+        );
+        return true;
+    }
     // Generic detectors (generic-secret, generic-private-key, entropy-*)
     // never use this bypass — their anchor is keyword-class, not
     // service-specific, and shape gates are load-bearing for them.
@@ -369,6 +417,81 @@ pub(crate) fn looks_like_url_or_path_segment(value: &str) -> bool {
             b.is_ascii_alphanumeric() || b == b'_' || b == b'-' || b == b'.'
         }) && s.bytes().any(|b| b.is_ascii_alphabetic())
     })
+}
+
+/// True if `value` ends in a regex-literal sigil (`)/g`, `]+`, `})\\b`,
+/// `)?$`, etc.). These are JavaScript / Python / Go / Rust regex pattern
+/// definitions captured by a credential detector running on a *secret
+/// scanner's own source code* (e.g. claude-code's
+/// `teamMemorySync/secretScanner.ts` had `hot-aws_session_key` /
+/// `hot-slack_bot_token` findings on its own regex definitions).
+///
+/// Real credentials don't end in regex sigils.
+pub(crate) fn looks_like_regex_literal_tail(value: &str) -> bool {
+    const REGEX_SIGIL_SUFFIXES: &[&str] = &[
+        ")/g",
+        ")/g,", // JS object literal: `key: /pattern/g, ...`
+        ")/gi",
+        ")/gi,",
+        ")/i",
+        ")/i,",
+        ")/m",
+        ")/m,",
+        ")\\b",
+        "})\\b",
+        "})\\\\b",
+        "]+",
+        "]*",
+        "]?",
+        "]+/",
+        "]+\\b",
+        "*/g",
+        "+/g",
+        "+/i",
+        ")*",
+        ")+",
+        ")?",
+        ")?$",
+        ")$",
+    ];
+    REGEX_SIGIL_SUFFIXES
+        .iter()
+        .any(|sig| value.ends_with(sig))
+}
+
+/// True if `path` looks like a vendored 3rd-party JS/CSS/wasm bundle.
+/// These are minified copies of libraries the project does NOT author —
+/// any "secret-like" match inside them is a coincidence in the minified
+/// byte stream, not a leaked credential.
+///
+/// Catches:
+///   * `gogs/public/plugins/codemirror-5.17.0/mode/dockerfile/dockerfile.js`
+///     (`variable-2`/`variable-3` token classes captured as generic-secret)
+///   * `gogs/public/plugins/pdfjs-5.2.133/web/wasm/openjpeg_nowasm_fallback.js`
+///     (minified WASM glue with `ASIA` random byte sequence triggering
+///     `hot-aws_session_key`)
+///   * `node_modules/`, `vendor/`, `wp-includes/`, `wp-content/plugins/`
+///     (npm / Composer / WordPress vendored trees)
+pub(crate) fn looks_like_vendored_minified_path(path: Option<&str>) -> bool {
+    let Some(p) = path else {
+        return false;
+    };
+    p.contains("/node_modules/")
+        || p.contains("/public/plugins/")
+        || p.contains("/public/static/")
+        || p.contains("/public/vendor/")
+        || p.contains("/static/vendor/")
+        || p.contains("/wp-includes/")
+        || p.contains("/wp-content/plugins/")
+        || p.contains("/wp-content/themes/")
+        || p.contains("/bower_components/")
+        || p.contains("/jspm_packages/")
+        || p.contains("/site-packages/")
+        || p.contains("/dist/vendor")
+        || p.contains("/dist/assets/")
+        || p.ends_with(".min.js")
+        || p.ends_with(".bundle.js")
+        || p.ends_with(".min.css")
 }
 
 /// True if `value` is a non-credential punctuation/prefix shape:

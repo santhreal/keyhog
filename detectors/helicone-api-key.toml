@@ -10,14 +10,21 @@ service = "helicone"
 severity = "high"
 keywords = ["sk-", "pk-", "eu-", "HELICONE_API_KEY", "Helicone-Auth"]
 
+# Anchor each short prefix to start-of-string or a non-identifier byte.
+# Unanchored, `sk-` / `pk-` / `eu-` match mid-identifier in C/JS/Go
+# source and inside Caesar-decoded natural-language runs (sqlite
+# GNUmakefile via /caesar fired 1 FP in dogfood 2026-05-26).
 [[detector.patterns]]
-regex = 'sk-[a-zA-Z0-9]{20,}'
-description = "Helicone read API key (sk- prefix)"
+regex = '(?:^|[^A-Za-z0-9_])(sk-[a-zA-Z0-9]{20,})'
+description = "Helicone read API key (sk- prefix, anchored)"
+group = 1
 
 [[detector.patterns]]
-regex = 'pk-[a-zA-Z0-9]{20,}'
-description = "Helicone write API key (pk- prefix)"
+regex = '(?:^|[^A-Za-z0-9_])(pk-[a-zA-Z0-9]{20,})'
+description = "Helicone write API key (pk- prefix, anchored)"
+group = 1
 
 [[detector.patterns]]
-regex = 'eu-[a-zA-Z0-9]{20,}'
-description = "Helicone EU region API key (eu- prefix)"
+regex = '(?:^|[^A-Za-z0-9_])(eu-[a-zA-Z0-9]{20,})'
+description = "Helicone EU region API key (eu- prefix, anchored)"
+group = 1
