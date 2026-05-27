@@ -47,7 +47,7 @@ pub fn run(args: ScanSystemArgs) -> Result<ExitCode> {
                 lockdown.failures
             );
         }
-        eprintln!("🔒 LOCKDOWN MODE — coredump-blocked, mlocked, network mounts refused");
+        eprintln!("🔒 LOCKDOWN MODE: coredump-blocked, mlocked, network mounts refused");
     }
 
     // Always-on hardening: every scan-system run disables core dumps and

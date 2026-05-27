@@ -52,7 +52,7 @@ fn print_show(calibration: &Calibration, cache_path: &std::path::Path) {
     println!("    cache: {}", cache_path.display());
     if entries.is_empty() {
         println!();
-        println!("    (no observations yet — record outcomes with `--tp <id>` or `--fp <id>`)");
+        println!("    (no observations yet; record outcomes with `--tp <id>` or `--fp <id>`)");
         return;
     }
 

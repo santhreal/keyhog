@@ -83,7 +83,7 @@ fn print_explanation(d: &DetectorSpec) {
         }
         println!("    Steps: {}", verify.steps.len());
     } else {
-        println!("  Verification:  (none — pattern match only)");
+        println!("  Verification:  (none; pattern match only)");
     }
 
     if let Some(rotation) = rotation_guide(&d.service) {
@@ -94,7 +94,7 @@ fn print_explanation(d: &DetectorSpec) {
 
     println!();
     println!("If this finding lands in your scan, the canonical remediation is:");
-    println!("  1. Treat the credential as compromised — assume it has been read.");
+    println!("  1. Treat the credential as compromised; assume it has been read.");
     println!("  2. Rotate it at the issuer (see rotation-guide URL above).");
     println!("  3. Audit access logs for the old credential's identifier.");
     println!("  4. Replace the leaked value with an env-var reference and add to `.gitignore`.");
