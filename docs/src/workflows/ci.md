@@ -119,7 +119,7 @@ The install scripts pull the latest release by default. For
 reproducible CI, pin a specific version:
 
 ```sh
-curl -fsSL ...install.sh | KEYHOG_VERSION=v0.5.25 sh
+curl -fsSL ...install.sh | KEYHOG_VERSION=v0.5.33 sh
 ```
 
 Update the pin via a Renovate / Dependabot config or just bump it
@@ -135,7 +135,7 @@ it across runs:
         uses: actions/cache@v4
         with:
           path: ~/.local/bin/keyhog
-          key: keyhog-${{ runner.os }}-v0.5.25
+          key: keyhog-${{ runner.os }}-v0.5.33
 ```
 
 Bump the cache key when you bump the pinned version.
