@@ -261,6 +261,37 @@ impl CompiledScanner {
                 if crate::pipeline::looks_like_pure_identifier(value) {
                     continue;
                 }
+                // Word-separated identifier with embedded digits: catches
+                // FPs missed by `looks_like_pure_identifier`'s `!has_digit`
+                // guard. `s3_secret_access_key` (alist), `d2i_PKCS7_bio`
+                // (openssl ts.c), `sqlite3_int` (sqlite fts5), `curlx_memdup0`
+                // (curl ntlm_sspi.c), `X-Shopify-Access-Token` (shopify-api
+                // headers). Real credentials concentrate randomness in one
+                // long segment; programmer identifiers are sequences of
+                // short dictionary fragments.
+                if crate::pipeline::looks_like_word_separated_identifier(value) {
+                    continue;
+                }
+                // Scheme-prefixed URI / URN: `urn:shopify:params:oauth:...`,
+                // `secret-token:<base64>` (bat-go merchant README). Documented
+                // OAuth grant types and protocol URIs that the regex captures
+                // via the trailing `token-type:...token` keyword.
+                if crate::pipeline::looks_like_scheme_prefixed_uri(value) {
+                    continue;
+                }
+                // Punctuation-decorated identifier: `--api-secret` (CLI flag),
+                // `&gss_recv_token` (C pointer), `@v_password` (SQL bind),
+                // `!!apiKeyOrOAuthToken` (JS coercion), `Password:` (UI label),
+                // `privateAccessToken!` (TS non-null assertion).
+                if crate::pipeline::looks_like_punctuation_decorated_identifier(value) {
+                    continue;
+                }
+                // URL / path-fragment shape: `user/settings/password` (gogs
+                // template constants), `user/auth/forgot_passwd` (gogs auth
+                // templates), `/api/v1/access_token` (alist OAuth URL).
+                if crate::pipeline::looks_like_url_or_path_segment(value) {
+                    continue;
+                }
                 // Regex-literal suppression: the fast-path hot patterns and
                 // generic-secret regex sometimes capture rules being defined
                 // in source code that itself implements a secret scanner.

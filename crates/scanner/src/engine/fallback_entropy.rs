@@ -142,6 +142,46 @@ impl CompiledScanner {
             if crate::pipeline::looks_like_pure_identifier(&entropy_match.value) {
                 continue;
             }
+            // Whitespace-bearing values are natural-language labels or
+            // free-text identifiers, not credentials. Real credentials
+            // are tokenized strings without internal whitespace. Catches
+            // macaroon `id: "brave-talk-free sku token v1"` (bat-go),
+            // YAML descriptions, log-line excerpts.
+            if entropy_match.value.bytes().any(|b| b == b' ' || b == b'\t') {
+                continue;
+            }
+            // Comma-bearing values are config/DSN-style metadata, not
+            // credentials. Catches Redis DSN
+            // `tcp,addr=:6379,password=macaron,db=0,pool_size=100,...`
+            // (gogs conf/app.ini commented redis config), CSV rows,
+            // multi-key=value config blobs.
+            if entropy_match.value.contains(',') {
+                continue;
+            }
+            // Word-separated identifier with embedded digits (digits
+            // short-circuit `looks_like_pure_identifier`). Catches
+            // `broker1_keystore_creds` (bat-go docker-compose),
+            // `s3_secret_access_key` (alist), train-case HTTP header
+            // names, snake_case Go consts, etc.
+            if crate::pipeline::looks_like_word_separated_identifier(&entropy_match.value) {
+                continue;
+            }
+            // Scheme-prefixed URI / URN (`urn:shopify:...`,
+            // `secret-token:<base64>`).
+            if crate::pipeline::looks_like_scheme_prefixed_uri(&entropy_match.value) {
+                continue;
+            }
+            // Punctuation-decorated identifier (`--api-secret`,
+            // `&gss_token`, `@v_password`, `!!apiKey`, `Password:`,
+            // `privateAccessToken!`, `/etc/passwd:/etc/passwd:ro`).
+            if crate::pipeline::looks_like_punctuation_decorated_identifier(&entropy_match.value) {
+                continue;
+            }
+            // URL / path-fragment shape (`user/settings/password`,
+            // `/api/v1/access_token`).
+            if crate::pipeline::looks_like_url_or_path_segment(&entropy_match.value) {
+                continue;
+            }
 
             // CI workflow file context: entropy-* in `.github/workflows/`,
             // `.gitlab-ci.yml`, `.circleci/config.yml`, `azure-pipelines.yml`
