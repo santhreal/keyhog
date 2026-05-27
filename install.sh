@@ -226,7 +226,16 @@ resolve_asset() {
                 ASSET="keyhog-linux-x86_64-cuda"
                 ASSET_FALLBACK="keyhog-linux-x86_64"
                 gpu=$(gpu_name)
-                GPU_NOTE="NVIDIA ${gpu:-GPU} with libcuda.so detected. Picking the CUDA build (significantly faster than WGPU on large scans)."
+                # nvidia-smi --query-gpu=name already prefixes "NVIDIA"
+                # ("NVIDIA GeForce RTX 5090"). Skip our own prefix when
+                # the reported name already starts with NVIDIA so we
+                # don't print "NVIDIA NVIDIA GeForce RTX 5090".
+                label="${gpu:-NVIDIA GPU}"
+                case "$label" in
+                    NVIDIA*) ;;
+                    *) label="NVIDIA $label" ;;
+                esac
+                GPU_NOTE="${label} with libcuda.so detected. Picking the CUDA build (significantly faster than WGPU on large scans)."
                 ;;
               missing-lib)
                 ASSET="keyhog-linux-x86_64"

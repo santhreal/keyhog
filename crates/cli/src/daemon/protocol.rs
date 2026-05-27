@@ -77,7 +77,7 @@ pub enum Response {
     /// scanner pipeline matched and then suppressed as known examples
     /// (`*EXAMPLE`, `DUMMY`, etc.) inside the daemon's process. The
     /// client merges this into its own telemetry counter so the
-    /// empty-findings reporter line ("0 real secrets — but N
+    /// empty-findings reporter line ("0 real secrets, but N
     /// example/test keys suppressed") fires even when the suppression
     /// happened on the other side of the socket.
     ///
