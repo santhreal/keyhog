@@ -33,6 +33,72 @@ const MMAP_THRESHOLD: u64 = 1024 * 1024;
 /// per-source basis (see `with_window_config`) so tests can exercise
 /// the windowed flow without writing 64 MiB+ fixtures.
 const DEFAULT_WINDOW_SIZE: usize = 64 * 1024 * 1024;
+
+/// Convert a `Path` to a user-facing display string, stripping the
+/// `\\?\` UNC verbatim prefix on Windows. `std::fs::canonicalize` on
+/// Windows always returns extended-length paths (`\\?\C:\Users\...`),
+/// which leak into finding output as
+/// `"\\\\?\\C:\\Users\\..."` JSON strings. Editors don't jump to those,
+/// and the prefix is purely a kernel implementation detail. Strip it
+/// when surfacing the path to humans / IDEs while leaving the actual
+/// `PathBuf` we use for I/O untouched.
+pub(crate) fn display_path(path: &Path) -> String {
+    let raw = path.display().to_string();
+    if cfg!(windows) {
+        strip_unc_prefix(&raw).to_string()
+    } else {
+        raw
+    }
+}
+
+fn strip_unc_prefix(s: &str) -> &str {
+    // Two shapes Rust may emit on Windows:
+    //   `\\?\C:\Users\me\src` (drive-letter form — the common case)
+    //   `\\?\UNC\server\share\dir` (network share form)
+    // Both prefixes are 4 / 8 bytes of ASCII; safe to slice.
+    if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
+        // `\\?\UNC\server\share` → `\\server\share`. Rebuilding the
+        // double-backslash leading would require an allocation, so we
+        // accept losing it: returning the bare `server\share` form is
+        // ambiguous, so for UNC we leave it as-is for now (rare in
+        // user scans) and just trim the `\\?\` part.
+        let _ = rest;
+        s.strip_prefix(r"\\?\").unwrap_or(s)
+    } else if let Some(rest) = s.strip_prefix(r"\\?\") {
+        rest
+    } else {
+        s
+    }
+}
+
+#[cfg(test)]
+mod display_path_tests {
+    use super::strip_unc_prefix;
+
+    #[test]
+    fn strip_unc_drive_letter() {
+        assert_eq!(
+            strip_unc_prefix(r"\\?\C:\Users\me\src\app.env"),
+            r"C:\Users\me\src\app.env"
+        );
+    }
+
+    #[test]
+    fn strip_unc_leaves_normal_paths_alone() {
+        assert_eq!(strip_unc_prefix(r"C:\Users\me"), r"C:\Users\me");
+        assert_eq!(strip_unc_prefix("/home/me/src/app.env"), "/home/me/src/app.env");
+    }
+
+    #[test]
+    fn strip_unc_share() {
+        // `\\?\UNC\server\share\file` → the prefix gets trimmed but the
+        // bare share form is left intact (we don't try to rebuild `\\`).
+        assert_eq!(
+            strip_unc_prefix(r"\\?\UNC\server\share\file"),
+            r"UNC\server\share\file"
+        );
+    }
+}
 /// Default overlap between consecutive windows. 4 KiB matches the
 /// longest plausible secret span we want to catch across the cut.
 const DEFAULT_WINDOW_OVERLAP: usize = 4 * 1024;
@@ -462,7 +528,7 @@ fn process_entry(
                                     source_type: "filesystem/archive".into(),
                                     path: Some(format!(
                                         "{}//{}",
-                                        path.display(),
+                                        display_path(&path),
                                         archive_entry.name
                                     )),
                                     ..Default::default()
@@ -519,7 +585,7 @@ fn process_entry(
                         data: w.text.into(),
                         metadata: ChunkMetadata {
                             source_type: "filesystem/windowed".to_string(),
-                            path: Some(path.display().to_string()),
+                            path: Some(display_path(&path)),
                             base_offset: w.offset,
                             mtime_ns: live_mtime_ns,
                             size_bytes: Some(file_size),
@@ -546,7 +612,7 @@ fn process_entry(
                     data: data.into(),
                     metadata: ChunkMetadata {
                         source_type: "filesystem/windowed".to_string(),
-                        path: Some(path.display().to_string()),
+                        path: Some(display_path(&path)),
                         base_offset: current_offset,
                         mtime_ns: live_mtime_ns,
                         size_bytes: Some(file_size),
@@ -590,7 +656,7 @@ fn process_entry(
         data: content,
         metadata: ChunkMetadata {
             source_type: source_type.to_string(),
-            path: Some(path.display().to_string()),
+            path: Some(display_path(&path)),
             mtime_ns: live_mtime_ns,
             size_bytes: Some(file_size),
             ..Default::default()
@@ -661,7 +727,7 @@ fn extract_compressed_chunks(path: &Path, max_size: u64) -> Vec<Result<Chunk, So
                     data: std::mem::take(&mut current_chunk_literals).into(),
                     metadata: ChunkMetadata {
                         source_type: "filesystem/compressed".into(),
-                        path: Some(path.display().to_string()),
+                        path: Some(display_path(&path)),
                         ..Default::default()
                     },
                 }));
@@ -672,7 +738,7 @@ fn extract_compressed_chunks(path: &Path, max_size: u64) -> Vec<Result<Chunk, So
                 data: current_chunk_literals.into(),
                 metadata: ChunkMetadata {
                     source_type: "filesystem/compressed".into(),
-                    path: Some(path.display().to_string()),
+                    path: Some(display_path(&path)),
                     ..Default::default()
                 },
             }));

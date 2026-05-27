@@ -181,7 +181,7 @@ impl BinarySource {
                 metadata: ChunkMetadata {
                     base_offset: 0,
                     source_type: "binary:ghidra:decompiled".to_string(),
-                    path: Some(self.path.display().to_string()),
+                    path: Some(crate::filesystem::display_path(&self.path)),
                     commit: None,
                     author: None,
                     date: None,
@@ -198,7 +198,7 @@ impl BinarySource {
                 metadata: ChunkMetadata {
                     base_offset: 0,
                     source_type: "binary:ghidra:strings".to_string(),
-                    path: Some(self.path.display().to_string()),
+                    path: Some(crate::filesystem::display_path(&self.path)),
                     commit: None,
                     author: None,
                     date: None,
@@ -222,7 +222,7 @@ impl BinarySource {
         };
 
         let mut chunks = Vec::new();
-        let path_str = self.path.display().to_string();
+        let path_str = crate::filesystem::display_path(&self.path);
 
         // Try section-aware extraction using goblin (ELF/PE/Mach-O)
         #[cfg(feature = "binary")]
