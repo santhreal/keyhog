@@ -307,6 +307,38 @@ download_asset() {
     fi
 }
 
+# Verify the SHA256 of $1 against the per-asset .sha256 file on the
+# release. Returns 0 on match OR when no checksum file is published
+# (we can't enforce verification against releases that pre-date the
+# checksum feature). Returns 1 only on an actual mismatch.
+verify_checksum() {
+    binary="$1"
+    asset_name="$2"
+    checksum_url="https://github.com/$REPO/releases/download/$TAG/$asset_name.sha256"
+    expected=$(curl -fsSL "$checksum_url" 2>/dev/null | awk '{print $1}' | head -n1)
+    if [ -z "$expected" ]; then
+        dim "  (no .sha256 file for $TAG, skipping checksum verification)"
+        return 0
+    fi
+    if command -v sha256sum >/dev/null 2>&1; then
+        actual=$(sha256sum "$binary" | awk '{print $1}')
+    elif command -v shasum >/dev/null 2>&1; then
+        actual=$(shasum -a 256 "$binary" | awk '{print $1}')
+    else
+        warn "  (no sha256sum / shasum tool installed, skipping checksum verification)"
+        return 0
+    fi
+    if [ "$expected" = "$actual" ]; then
+        ok "SHA256 verified ($expected)."
+        return 0
+    fi
+    err "SHA256 mismatch on $asset_name!"
+    err "  Expected: $expected"
+    err "  Got:      $actual"
+    err "Refusing to install. The download may have been corrupted or tampered with."
+    return 1
+}
+
 stage_and_install() {
     tmp=$(mktemp)
     # shellcheck disable=SC2064
@@ -326,6 +358,12 @@ stage_and_install() {
             err "Browse https://github.com/$REPO/releases to confirm."
             exit 1
         fi
+    fi
+
+    if ! verify_checksum "$tmp" "$ASSET"; then
+        rm -f "$tmp"
+        trap - EXIT INT TERM
+        exit 1
     fi
 
     mkdir -p "$INSTALL_DIR"
