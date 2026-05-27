@@ -4,6 +4,42 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ## Unreleased
 
+## v0.5.21 — 2026-05-26 — regex-literal suppression + fallback identifier sharing + bandwidth promiscuous-pattern fix
+
+### Precision
+
+- **Regex-literal-tail suppression** (hot-patterns fast-path AND
+  generic-secret fallback). Source files that ship secret-scanner
+  code (claude-code's `teamMemorySync/secretScanner.ts`,
+  `components/Feedback.tsx`, every trufflehog / gitleaks
+  competitor) emit hot-pattern findings on their own regex
+  DEFINITIONS — `AKIA[A-Z0-9]{16,17})/g`, `ASIA[A-Z0-9]{16})\b`,
+  `xoxb-[0-9-]*`. Real tokens never end in regex sigils (no service
+  uses `)/g` or `})\b` in its token alphabet). Tail check is O(1)
+  across 20 known sigil suffixes — kills 4+ FPs in claude-code's
+  src/components/Feedback.tsx + utils/teamMemorySync/secretScanner.ts.
+
+- **`looks_like_pure_identifier` now wired into fallback_generic**.
+  Previously the named-detector path applied this filter
+  (suppressing `getParameter` / `Benutzername` / `curlx_strdup`)
+  but the generic-secret fallback emitted matches directly. Same
+  pattern as the entropy-fallback fix in v0.5.19. `Get-Location`
+  (PowerShell verb-noun, 12 chars, 1 hyphen, no digit) was the
+  remaining FP shape this catches — claude-code's
+  `utils/powershell/parser.ts` line 1343
+  (`pwd: 'Get-Location'`).
+
+- **bandwidth-api-key dropped its bare `ClientID`/`ClientSecret`
+  pattern.** Those tokens are generic OAuth2 terminology, not
+  Bandwidth-specific. alist's drivers/pikpak/util.go,
+  drivers/thunder/driver.go, drivers/pcloud/util.go all have
+  `ClientSecret = "..."` for Xunlei/PikPak/PCloud OAuth flows —
+  the captured values ARE leaked client secrets, but for entirely
+  different services. The generic-secret fallback catches the same
+  values via its `client[_-]?secret` keyword alternation, so recall
+  is preserved at correct service attribution. **7 → 0 mis-attributed
+  bandwidth-api-key findings.**
+
 ## v0.5.20 — 2026-05-26 — hot-pattern correctness + identifier filter extension + service-detector tightening
 
 ### Critical correctness

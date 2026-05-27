@@ -112,6 +112,17 @@ impl CompiledScanner {
                     continue;
                 }
 
+                // Regex-literal suppression for the hot-pattern fast-path.
+                // Source files that ship secret-scanner code (claude-code's
+                // teamMemorySync/secretScanner.ts, components/Feedback.tsx,
+                // every trufflehog / gitleaks competitor) emit hot findings
+                // on their own regex DEFINITIONS — `AKIA[A-Z0-9]{16,17})/g`,
+                // `ASIA[A-Z0-9]{16})\b`, `xoxb-[0-9-]*`. Real tokens never
+                // end in regex sigils. The tail-suffix check is O(1).
+                if looks_like_regex_literal_tail(credential) {
+                    continue;
+                }
+
                 // Same partition_point binary-search idiom as
                 // `match_line_number` — `line_offsets` is sorted
                 // ascending, so the first offset > `offset` IS the
@@ -181,4 +192,36 @@ impl CompiledScanner {
             }
         }
     }
+}
+
+/// Regex-literal tail check, same semantics as the copy in
+/// `fallback_generic`. Duplicated here to keep `hot_patterns` self-
+/// contained — promoting both to a shared `engine/util.rs` is the
+/// next cleanup if a third call site shows up.
+fn looks_like_regex_literal_tail(value: &str) -> bool {
+    const REGEX_SIGIL_SUFFIXES: &[&str] = &[
+        ")/g",
+        ")/gi",
+        ")/i",
+        ")/m",
+        ")\\b",
+        "})\\b",
+        "})\\\\b",
+        "]+",
+        "]*",
+        "]?",
+        "]+/",
+        "]+\\b",
+        "*/g",
+        "+/g",
+        "+/i",
+        ")*",
+        ")+",
+        ")?",
+        ")?$",
+        ")$",
+    ];
+    REGEX_SIGIL_SUFFIXES
+        .iter()
+        .any(|sig| value.ends_with(sig))
 }
