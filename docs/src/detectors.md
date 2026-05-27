@@ -49,9 +49,21 @@ findings (e.g. "you leaked 3 stripe credentials"); a single service
 can have multiple detectors (`stripe-secret-key`,
 `stripe-restricted-key`, `stripe-publishable-key`).
 
-`detector.severity` - one of `critical | high | medium | low | info`.
+`detector.severity` - one of `critical | high | medium | low | client-safe | info`.
 The CLI's exit code only depends on whether ANY finding exists, but
 SARIF / GitHub Code Scanning surface severity prominently.
+
+`client-safe` is the bug-bounty tier for keys public by design
+(Sentry DSN, Stripe `pk_*`, Mapbox `pk.`, PostHog `phc_`, Firebase
+Web API key, Google Maps browser key, Mixpanel project token,
+Algolia search-only, Datadog browser RUM, Bugsnag, Segment write
+key). The detector still fires (a token grep is a token grep), but
+the finding renders below `low` and `--hide-client-safe` filters it
+out entirely. Set per-pattern via the `client_safe = true` field on
+a `[[detector.patterns]]` block — detectors that fire on both the
+public and the secret prefix (Stripe `pk_*` vs `sk_*`, Mapbox `pk.`
+vs `sk.`) tag only the public pattern so a misused secret key still
+surfaces at its nominal severity.
 
 `detector.keywords` - strings the prefilter ahokorasick matches on.
 At least ONE keyword in the chunk is required before the regex even
@@ -65,6 +77,13 @@ near a real credential (`stripe`, `sk_live_`, `STRIPE_SECRET_KEY`).
 - `group` - which capture group is the credential. `0` = whole match,
   `1` = first captured group, etc.
 - `description` - what shape this captures (env var, header, URL, …).
+- `client_safe` - optional bool, default `false`. When `true`, any
+  match against this pattern collapses to `Severity::ClientSafe`
+  regardless of the detector's nominal severity. Use for patterns
+  that capture keys the vendor expects to ship in client bundles
+  (Sentry DSN, Stripe `pk_*`, etc.). Per-pattern (not per-detector)
+  so a detector that covers both the public and the secret prefix
+  can tag only the public one.
 
 Multiple patterns means "any of these shapes". A typical detector has
 1–3 patterns covering env-var, JSON, and inline forms.
