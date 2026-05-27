@@ -14,11 +14,16 @@ keywords = ["ALGOLIA_SEARCH_KEY", "algolia_search_key", "search_only_api_key", "
 regex = "(?i)algolia[_.-]?(?:search|api)[_.-]?key[=:\\s\"']+([a-f0-9]{32})"
 description = "Algolia search-only API key with context anchor"
 group = 1
+# Algolia search-only keys are designed for browser delivery — they
+# permit read-only queries against indexes and the per-key ACL caps
+# what an attacker can do. `--hide-client-safe` drops these.
+client_safe = true
 
 [[detector.patterns]]
 regex = "search_only_api_key[=:\\s\"']+([a-f0-9]{32})"
 description = "Algolia search-only API key under the dedicated env-var name"
 group = 1
+client_safe = true
 
 [[detector.companions]]
 name = "application_id"

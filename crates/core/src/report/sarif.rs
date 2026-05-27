@@ -322,6 +322,7 @@ impl<W: Write + Send> SarifReporter<W> {
             Severity::High => "error",
             Severity::Medium => "warning",
             Severity::Low => "note",
+            Severity::ClientSafe => "note",
             Severity::Info => "note",
         }
     }

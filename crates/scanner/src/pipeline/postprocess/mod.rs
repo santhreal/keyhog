@@ -33,6 +33,7 @@ pub fn build_raw_match(
     ent: f64,
     confidence: f64,
     scan_state: &mut ScanState,
+    pattern_client_safe: bool,
 ) -> RawMatch {
     // Diff-aware severity: a credential whose only sighting is in non-HEAD
     // git history (the developer already removed it from `main`) is still
@@ -41,7 +42,18 @@ pub fn build_raw_match(
     // backend tagged this chunk as `git/history`. Everything else (live
     // filesystem, `git/head`, S3/Docker/Web/etc) keeps the detector's
     // declared severity.
-    let severity = if chunk.metadata.source_type == "git/history" {
+    //
+    // Client-safe tier: a match against a pattern marked `client_safe = true`
+    // (Sentry DSN, Stripe pk_*, Firebase web key, etc.) is collapsed to
+    // `Severity::ClientSafe` regardless of the detector's nominal severity
+    // and regardless of the git-diff state. The credential is real but it
+    // was *intended* to ship in client bundles — bug-bounty hunters running
+    // `--hide-client-safe` drop these entirely; defaults still surface them
+    // below `Low` so a misconfigured "publishable" key on a server-only
+    // detector still gets flagged.
+    let severity = if pattern_client_safe {
+        keyhog_core::Severity::ClientSafe
+    } else if chunk.metadata.source_type == "git/history" {
         detector.severity.downgrade_one()
     } else {
         detector.severity

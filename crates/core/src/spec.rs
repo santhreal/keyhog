@@ -54,6 +54,19 @@ pub struct PatternSpec {
     pub description: Option<String>,
     /// Optional capture group index containing the secret.
     pub group: Option<usize>,
+    /// When true, a match against THIS pattern downgrades the
+    /// finding to `Severity::ClientSafe` (regardless of the detector's
+    /// nominal severity). Used by services that intentionally ship
+    /// public-facing keys in client bundles:
+    ///   - Sentry DSN (the `https://<key>@` URL is meant for the browser)
+    ///   - Stripe `pk_live_` / `pk_test_` (publishable, sk_ is secret)
+    ///   - Mapbox `pk.` (public, `sk.` is secret)
+    ///   - Firebase Web API key, Google Maps browser key
+    ///   - PostHog / Mixpanel / Algolia search / Datadog browser RUM
+    /// Per-pattern (not per-detector) so detectors that fire on both
+    /// the public *and* the secret prefix can tag only the public one.
+    #[serde(default)]
+    pub client_safe: bool,
 }
 
 /// Secondary pattern used to confirm a primary match or provide extra context.
@@ -265,11 +278,24 @@ pub struct SuccessSpec {
 }
 
 /// Severity level for a finding.
+///
+/// `ClientSafe` is the bug-bounty tier for keys that are public by
+/// design and shipped in client bundles: Sentry DSNs, Stripe `pk_*`
+/// publishable keys, Mapbox `pk.` public tokens, PostHog project keys,
+/// Firebase Web API keys, Google Maps browser keys, Algolia search
+/// keys, Datadog browser RUM tokens, Mixpanel project tokens. The
+/// detector still fires (a token grep is a token grep) but the
+/// finding is rendered below `Low` and gated by `--hide-client-safe`
+/// so a hunter running `keyhog scan --hide-client-safe target/` only
+/// sees credentials that an attacker could actually exfiltrate
+/// server-side.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Default)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "kebab-case")]
 pub enum Severity {
     #[default]
     Info,
+    #[serde(alias = "client_safe")]
+    ClientSafe,
     Low,
     Medium,
     High,
@@ -294,7 +320,8 @@ impl Severity {
             Severity::Critical => Severity::High,
             Severity::High => Severity::Medium,
             Severity::Medium => Severity::Low,
-            Severity::Low => Severity::Info,
+            Severity::Low => Severity::ClientSafe,
+            Severity::ClientSafe => Severity::Info,
             Severity::Info => Severity::Info,
         }
     }
