@@ -30,6 +30,21 @@ detectors/.keyhog-cache.json
 # corpora paths. Never published to santhsecurity/keyhog. (STANDARD.md:
 # prod-repo doc bleed rule.)
 coordination/
+
+# Bazel scaffolding — currently a PoC stub (every per-crate BUILD.bazel
+# is comment-only, MODULE.bazel pinned to 0.5.7 while we're shipping
+# 0.5.28). `bazel build //...` does not produce a working keyhog
+# binary today; cargo is the real build system. Untracking until
+# Bazel is fully wired and tested end-to-end, so we don't advertise a
+# capability that doesn't exist.
+.bazelrc
+.bazelversion
+BUILD.bazel
+**/BUILD.bazel
+MODULE.bazel
+MODULE.bazel.lock
+WORKSPACE
+WORKSPACE.bazel
 # Top-level scratch/audit/plan files that belong in the backup monorepo
 # (santhsecurity/Santh) and `.audits/`, not in the standalone prod repo.
 ROUNDS.md
