@@ -38,14 +38,12 @@ impl CompiledScanner {
                             Ok(boxed) => {
                                 tracing::info!(
                                     target: "keyhog::routing",
-                                    "CUDA backend acquired — bypassing wgpu/naga/WGSL path"
+                                    "CUDA backend acquired, bypassing wgpu/naga/WGSL path"
                                 );
                                 Some(Arc::from(boxed))
                             }
                             Err(error) => {
-                                tracing::debug!(
-                                    "CUDA backend unavailable, will try wgpu fallback: {error}"
-                                );
+                                surface_cuda_acquisition_failure(&error);
                                 None
                             }
                         }
@@ -166,4 +164,74 @@ impl CompiledScanner {
         self.config = config;
         self
     }
+}
+
+/// One-shot guard so the CUDA-acquisition-failed warning fires
+/// exactly once per process, not on every recompile. The CUDA factory
+/// is called inside `compile()` and a binary that re-compiles a
+/// scanner per-job (daemon mode, watch mode) would otherwise spam.
+#[cfg(feature = "cuda")]
+static CUDA_FALLBACK_WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+
+/// Surface a CUDA-backend acquisition failure when the host looks
+/// like it should have a working CUDA stack. We don't want to warn
+/// on plain non-NVIDIA Linux (the wgpu fall-through is the right
+/// path); we DO want to warn when the user is on an NVIDIA box with
+/// libcuda.so or /proc/driver/nvidia present, because in that case
+/// they paid for the CUDA stack and we just dropped them onto the
+/// 5-10x slower wgpu path silently. KEYHOG_REQUIRE_GPU=1 turns the
+/// warning into a hard exit, matching the contract used by the MoE
+/// init and the scan dispatch paths.
+#[cfg(feature = "cuda")]
+fn surface_cuda_acquisition_failure(error: &dyn std::fmt::Display) {
+    let on_nvidia_host = nvidia_userland_present();
+    let require_gpu = std::env::var("KEYHOG_REQUIRE_GPU").as_deref() == Ok("1");
+    let no_gpu = std::env::var("KEYHOG_NO_GPU").as_deref() == Ok("1");
+
+    if require_gpu && on_nvidia_host {
+        eprintln!(
+            "keyhog: KEYHOG_REQUIRE_GPU=1 but CUDA backend acquisition failed on \
+an NVIDIA host: {error}. Refusing to fall back to WGPU."
+        );
+        std::process::exit(2);
+    }
+
+    if no_gpu {
+        return;
+    }
+
+    if on_nvidia_host && CUDA_FALLBACK_WARNED.set(()).is_ok() {
+        eprintln!(
+            "keyhog: CUDA backend unavailable on this NVIDIA host ({error}); \
+falling back to WGPU (typically 5-10x slower than CUDA on the same hardware). \
+This is usually a libcuda.so version mismatch or a driver upgrade pending a \
+reboot. Set KEYHOG_NO_GPU=1 to silence this warning, or KEYHOG_REQUIRE_GPU=1 \
+to hard-fail next time."
+        );
+    }
+    tracing::warn!("CUDA backend unavailable, falling back to wgpu: {error}");
+}
+
+/// Check the common libcuda.so locations + /proc/driver/nvidia to
+/// decide whether this host appears to have an NVIDIA CUDA userland
+/// installed. Mirrors the probes install.sh uses so the runtime view
+/// matches the install-time view.
+#[cfg(feature = "cuda")]
+fn nvidia_userland_present() -> bool {
+    if std::path::Path::new("/proc/driver/nvidia").exists() {
+        return true;
+    }
+    for p in [
+        "/usr/lib/x86_64-linux-gnu/libcuda.so",
+        "/usr/lib/x86_64-linux-gnu/libcuda.so.1",
+        "/usr/lib64/libcuda.so",
+        "/usr/lib64/libcuda.so.1",
+        "/usr/local/cuda/lib64/libcuda.so",
+        "/opt/cuda/lib64/libcuda.so",
+    ] {
+        if std::path::Path::new(p).exists() {
+            return true;
+        }
+    }
+    false
 }
