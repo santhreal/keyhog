@@ -170,6 +170,17 @@ pub fn should_suppress_named_detector_finding(
         );
         return true;
     }
+    // The file at `path` is itself a secret scanner — every detector
+    // routinely matches its own regex definitions inside the source.
+    if looks_like_secret_scanner_source(path) {
+        crate::telemetry::record_example_suppression(
+            "pipeline",
+            path,
+            credential,
+            "secret_scanner_source",
+        );
+        return true;
+    }
     // Regex-literal tail: applies to ALL detectors. A capture ending
     // in `)/g`, `)/g,`, `]+`, `})\\b`, etc. is a JS/Go/Python regex
     // pattern definition (often in another secret-scanner's own
@@ -457,6 +468,32 @@ pub(crate) fn looks_like_regex_literal_tail(value: &str) -> bool {
     REGEX_SIGIL_SUFFIXES
         .iter()
         .any(|sig| value.ends_with(sig))
+}
+
+/// True if the file at `path` is itself a secret-scanner source file.
+/// Such files contain detector regex patterns (`/AKIA[A-Z0-9]{16}/g`,
+/// `'(?:ASIA|AKIA)[A-Z2-7]{16}'`, `dn_[a-zA-Z0-9_-]{20,}`) that the engine
+/// will match against itself — every named detector + hot pattern routinely
+/// emits a finding on its own regex DEFINITION. Most of these are caught
+/// by `looks_like_regex_literal_tail`, but the unicode-escape / caesar
+/// decoders mangle the trailing sigil out of recognition. Skipping the
+/// whole file (any source whose path or basename contains a secret-scanner
+/// keyword) is safer than playing whack-a-mole with decoder variants.
+pub(crate) fn looks_like_secret_scanner_source(path: Option<&str>) -> bool {
+    let Some(p) = path else {
+        return false;
+    };
+    let lower = p.to_ascii_lowercase();
+    lower.contains("secretscanner")
+        || lower.contains("secret-scanner")
+        || lower.contains("secret_scanner")
+        || lower.contains("credentialscanner")
+        || lower.contains("credential-scanner")
+        || lower.contains("credential_scanner")
+        || lower.contains("trufflehog")
+        || lower.contains("gitleaks")
+        || lower.contains("detect-secrets")
+        || lower.contains("detect_secrets")
 }
 
 /// True if `path` looks like a vendored 3rd-party JS/CSS/wasm bundle.
