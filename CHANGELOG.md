@@ -4,6 +4,36 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ## Unreleased
 
+## v0.5.33 - 2026-05-27 - WGPU AC kernel actually works (use_subgroup_coalesce=false everywhere)
+
+### Critical: WGPU hosts now actually run scans on the GPU
+
+The v0.5.32 workaround moved every GPU backend onto the AC kernel
+path, but the AC kernel still passed `use_subgroup_coalesce=true`
+on WGPU (the original gate was `backend_id != "cuda"`). Runtime
+testing on Apple Silicon M4 Pro with vyre v0.4.2 confirmed the AC
+kernel hits the SAME `_vyre_match_leader is referenced before
+binding` lowering rejection on the wgpu path as the literal_set
+program does on the CUDA path: the lowering gap is in vyre's
+substrate-neutral pre-emit step, not in the driver-specific
+emitter, so wgpu has the same blocker.
+
+`use_subgroup_coalesce` is now hardcoded `false` on every backend.
+We lose the ~32x atomic-contention reduction the subgroup form
+would have provided (Innovation I.17), but recall and correctness
+are preserved; the plain `append_match` path produces bit-identical
+match output, just with more atomic pressure on the shared count
+buffer.
+
+**This fixes silent CPU fallback on every WGPU host:** macOS Apple
+Silicon, macOS Intel, Windows, and Linux without CUDA. Before this
+release, those hosts probed a GPU at startup, compiled the
+GpuLiteralSet + AC matchers, then EVERY scan failed at GPU dispatch
+and silently degraded to SIMD. The v0.5.31 visibility warning
+caught this on the macbook self-test and the actual scan path; the
+fix here closes the underlying bug. Verified end-to-end on Apple
+Silicon M4 Pro: `vyre_ac_kernel PASS (backend=wgpu)`.
+
 ## v0.5.32 - 2026-05-27 - vyre depth: AC kernel becomes the default GPU scan path + honest GPU self-test
 
 ### Deep vyre: AC kernel becomes the default GPU scan path

@@ -73,19 +73,25 @@ impl CompiledScanner {
             .get_or_init(|| {
                 let matcher = self.gpu_matcher()?;
                 let pattern_count = matcher.pattern_lengths.len() as u32;
-                // Pick the match-append strategy based on what the
-                // active backend can actually lower. wgpu emits
-                // `subgroup_ballot` + `subgroup_shuffle` natively
-                // (gives ~32x atomic-contention reduction via
-                // Innovation I.17). vyre-driver-cuda rejects the
-                // subgroup form during canonical pre-emit lowering
-                // ("variable `_vyre_match_leader` is referenced
-                // before binding") so the CUDA path must use the
-                // plain `append_match` variant for now. Either path
-                // produces bit-identical match output; the difference
-                // is purely atomic-coalescing strategy.
+                // Pick the match-append strategy. The subgroup form
+                // (subgroup_ballot + subgroup_shuffle producing
+                // _vyre_match_leader) was originally gated to wgpu
+                // only because vyre-driver-cuda rejects it during
+                // canonical pre-emit lowering. Runtime testing on
+                // Apple Silicon M4 Pro with vyre v0.4.2 confirmed
+                // the SAME "_vyre_match_leader referenced before
+                // binding" rejection on the wgpu path: the lowering
+                // gap is in vyre's substrate-neutral pre-emit step,
+                // not the driver-specific emitter. Until the IR gap
+                // is closed, use_subgroup_coalesce stays false on
+                // every backend. We lose the ~32x atomic-contention
+                // reduction the subgroup form would have provided
+                // (Innovation I.17), but recall and correctness are
+                // preserved; the plain append_match path produces
+                // bit-identical match output, just with more atomic
+                // pressure on the shared count buffer.
                 let backend_id = self.gpu_backend.as_ref().map(|b| b.id()).unwrap_or("none");
-                let use_subgroup_coalesce = backend_id != "cuda";
+                let use_subgroup_coalesce = false;
                 let program = vyre_libs::scan::classic_ac::build_ac_bounded_ranges_program_ext(
                     &matcher.dfa,
                     pattern_count,
