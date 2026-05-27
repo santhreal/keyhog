@@ -1,115 +1,27 @@
+# Build artifacts
 target/
-scripts/logs/
+**/*.rs.bk
+Cargo.lock.bak
 
-# ── Generated detector parse cache (created at runtime by load_detectors_with_cache) ──
-detectors/.keyhog-cache.json
+# IDE / editor noise
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
 
-*.pyc
+# mdBook local build output. The deploy workflow publishes its own
+# build to GitHub Pages; nobody should be committing this dir.
+docs/book/
+
+# Local scratch + dogfood output
+*.local
+*.dogfood
+dogfood-output*.json
+
+# Pre-existing local-noise paths
 __pycache__/
-*.log
-
-# ── Test data (contains secret-like patterns for testing) ──
-tests/
-benches/
-!crates/*/benches/
-!crates/*/benches/**
-crates/scanner/tests/
-crates/scanner/src/adversarial_tests/
-crates/verifier/tests/
-!crates/*/tests/
-!crates/*/tests/**
-!crates/scanner/tests/
-!crates/scanner/tests/**
-!crates/verifier/tests/
-!crates/verifier/tests/**
-
-# ── ML training data (contains secret examples) ──
-ml/
-
-# ── Internal audit docs ──
-audits/
-
-# ── Benchmark results (downloadable from releases) ──
-BENCHMARKS.md
-VALIDATION.md
-benchmarks/
-
-# ── Non-Rust project dirs (separate repos) ──
-deno/
-go/
-laravel/
-linux/
-ruff/
-tailwind/
-react/
-benchmark-harness/
-.work-linux.bundle
-
-# Local implementation handoff plan — not for upstream.
-PLAN.md
-
-# Throwaway debug / scratch scripts (not part of the project tree).
-# Leading `/` anchors these to the repo root so they don't accidentally
-# shadow `scripts/fix_*.py` or `vendor/vyre/.internals/scratch/*.py`.
-/debug_*.py
-/fix*.py
-/run_*.py
-/test_*.py
-/dump_*.py
-/prove_*.py
-/ast_dump.txt
-crates/scanner/ast_dump.txt
-crates/scanner/src/engine/scan_gpu.rs.patch
-
-# ── Santh-internal artifacts (BEGIN — managed; do not edit between markers) ──
-# Operator-private working notes, plans, audits, scoreboards, status
-# trackers, and "legendary" markers leak workflow context and must never
-# ship publicly. The only governance artifacts that DO ship publicly are
-# CODE_OF_CONDUCT.md, SECURITY.md, CONTRIBUTING.md, and LICENSE-* — those
-# are explicitly allow-listed. Everything else internal is denied here.
-
-# Internal working dirs
-.internal/
-jules_tickets/
-
-# AI/agent tool artefacts (operator-private)
-CLAUDE.md
-AGENTS.md
-AGENT.md
-agents.md
-GEMINI.md
-.claude/
-.agents/
-.codex/
-.cursor/
-.cursorrules
-.windsurf/
-.windsurfrules
-.aider*
-
-# Plans, TODOs, audits, backlogs, scoreboards, "legendary" markers
-*LEGENDARY*
-*_PLAN.md
-*_PLAN_*.md
-*_AUDIT.md
-*_AUDIT_*.md
-*_BACKLOG.md
-*_BACKLOG_*.md
-TODO.md
-NOTES.md
-SCRATCH.md
-*_TODO.md
-*_NOTES.md
-ENGINE_GAPS.md
-SCOREBOARD*.md
-*_status_*.md
-.audits/
-
-# Allow-list: governance artifacts that ARE public
-!CODE_OF_CONDUCT.md
-!SECURITY.md
-!CONTRIBUTING.md
-!LICENSE
-!LICENSE-APACHE
-!LICENSE-MIT
-# ── Santh-internal artifacts (END) ──
+FP_AUDIT_REPORT.md
+.keyhog-cache.json
+detectors/.keyhog-cache.json

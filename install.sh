@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
 #
-# keyhog install script — Linux + macOS.
+# keyhog install script - Linux + macOS.
 #
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.sh | sh
@@ -70,7 +70,7 @@ chmod +x "$INSTALL_DIR/keyhog"
 printf 'keyhog: installed %s to %s/keyhog\n' "$TAG" "$INSTALL_DIR"
 "$INSTALL_DIR/keyhog" --version
 
-# Friendly PATH hint — don't pollute shell rc files, just tell the
+# Friendly PATH hint - don't pollute shell rc files, just tell the
 # user what to add if their PATH doesn't already include the install
 # dir.
 case ":$PATH:" in

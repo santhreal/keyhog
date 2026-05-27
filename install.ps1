@@ -1,4 +1,4 @@
-# keyhog install script — Windows (PowerShell 5+).
+# keyhog install script - Windows (PowerShell 5+).
 #
 # Usage:
 #   iwr https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.ps1 -useb | iex
@@ -7,7 +7,7 @@
 #   $env:KEYHOG_INSTALL = "C:\Tools\keyhog"
 #   iwr ... | iex
 #
-# Detects CPU arch (x86_64 only for now — Windows ARM64 native builds
+# Detects CPU arch (x86_64 only for now - Windows ARM64 native builds
 # are not produced by the release workflow yet), fetches the
 # corresponding binary from the latest GitHub release, drops it in
 # $env:KEYHOG_INSTALL (default: %LOCALAPPDATA%\keyhog\bin), and
@@ -71,7 +71,7 @@ try {
 Write-Host "keyhog: installed $Tag to $Dest"
 & $Dest --version
 
-# Friendly PATH hint — don't touch the user's registry/profile, just
+# Friendly PATH hint - don't touch the user's registry/profile, just
 # tell them what to do.
 $pathEntries = $env:PATH -split ';'
 if ($pathEntries -notcontains $InstallDir) {

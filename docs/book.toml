@@ -1,0 +1,28 @@
+[book]
+title = "KeyHog"
+authors = ["Santh Project"]
+description = "The fastest, most accurate secret scanner."
+language = "en"
+src = "src"
+
+[output.html]
+default-theme = "keyhog"
+preferred-dark-theme = "keyhog"
+git-repository-url = "https://github.com/santhsecurity/keyhog"
+edit-url-template = "https://github.com/santhsecurity/keyhog/edit/main/docs/{path}"
+site-url = "/keyhog/"
+no-section-label = true
+additional-css = ["theme/css/keyhog.css"]
+
+[output.html.search]
+enable = true
+limit-results = 25
+use-boolean-and = true
+
+[output.html.fold]
+enable = true
+level = 1
+
+[output.html.playground]
+runnable = false
+copyable = false
