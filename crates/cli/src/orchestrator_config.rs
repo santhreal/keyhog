@@ -113,14 +113,20 @@ pub(crate) fn auto_discover_detectors(path: &Path) -> Result<PathBuf> {
     }
 
     if path == Path::new("detectors") && !path.exists() {
-        let default_dirs = [
+        let mut default_dirs: Vec<Option<PathBuf>> = vec![
             dirs::home_dir().map(|h| h.join(".keyhog/detectors")),
-            Some(PathBuf::from("/usr/share/keyhog/detectors")),
-            Some(PathBuf::from("/usr/local/share/keyhog/detectors")),
+            dirs::data_dir().map(|d| d.join("keyhog/detectors")),
+            dirs::data_local_dir().map(|d| d.join("keyhog/detectors")),
+        ];
+        if cfg!(unix) {
+            default_dirs.push(Some(PathBuf::from("/usr/share/keyhog/detectors")));
+            default_dirs.push(Some(PathBuf::from("/usr/local/share/keyhog/detectors")));
+        }
+        default_dirs.push(
             std::env::current_exe()
                 .ok()
                 .and_then(|p| p.parent().map(|p| p.join("detectors"))),
-        ];
+        );
         for dir in default_dirs.into_iter().flatten() {
             if dir.exists() && dir.is_dir() {
                 tracing::info!(detectors_dir = %dir.display(), "auto-detected detectors directory");
@@ -241,7 +247,7 @@ fn load_detectors_embedded_or_fail(path: &Path) -> Result<Vec<DetectorSpec>> {
     )
 }
 
-pub(crate) fn build_scanner_config(args: &ScanArgs) -> ScannerConfig {
+pub fn build_scanner_config(args: &ScanArgs) -> ScannerConfig {
     let mut config = if args.fast {
         ScannerConfig::fast()
     } else if args.deep {
