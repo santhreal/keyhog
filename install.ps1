@@ -37,7 +37,7 @@ if ($Arch -ne 9) {
 }
 $Asset = 'keyhog-windows-x86_64.exe'
 
-# Pick the tag. $env:KEYHOG_VERSION = 'v0.5.25' pins a specific
+# Pick the tag. $env:KEYHOG_VERSION = 'v0.5.26' pins a specific
 # release; otherwise we ask the GitHub API for the latest published
 # tag. Unauthenticated API calls are rate-limited at 60/hour per IP.
 if ($env:KEYHOG_VERSION) {
@@ -48,7 +48,7 @@ if ($env:KEYHOG_VERSION) {
         $Tag = $Release.tag_name
     } catch {
         Write-Host "ERROR: could not resolve latest release tag from GitHub API: $_" -ForegroundColor Red
-        Write-Host "       Set `$env:KEYHOG_VERSION = 'v0.5.25' (or another known tag) explicitly." -ForegroundColor Red
+        Write-Host "       Set `$env:KEYHOG_VERSION = 'v0.5.26' (or another known tag) explicitly." -ForegroundColor Red
         exit 1
     }
 }
