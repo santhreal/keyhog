@@ -153,6 +153,18 @@ impl CompiledScanner {
         )
     }
 
+    /// Identifier of the GPU backend acquired at compile time, or
+    /// None if scanning routes to CPU/SIMD only. Mirrors
+    /// `VyreBackend::id()` which returns "cuda", "wgpu", or the
+    /// driver-defined name. The startup banner uses this so the
+    /// operator can tell at a glance whether they got CUDA (the
+    /// headline 5-10x faster path on NVIDIA hardware) or the WGPU
+    /// fallback, rather than just "Gpu" which collapses both.
+    #[must_use]
+    pub fn gpu_backend_label(&self) -> Option<&'static str> {
+        self.gpu_backend.as_ref().map(|b| b.id())
+    }
+
     /// Return the steady-state backend label used for startup reporting.
     #[must_use]
     pub fn preferred_backend_label(&self) -> &'static str {
