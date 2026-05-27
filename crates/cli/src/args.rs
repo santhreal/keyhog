@@ -37,11 +37,11 @@ pub enum Command {
     #[command(verbatim_doc_comment)]
     Detectors(DetectorArgs),
 
-    /// 📖 Explain a detector — spec, regex, severity, rotation guide
+    /// 📖 Explain a detector: spec, regex, severity, rotation guide
     #[command(verbatim_doc_comment)]
     Explain(ExplainArgs),
 
-    /// 🔀 Diff two baseline JSON files — show NEW / RESOLVED / UNCHANGED
+    /// 🔀 Diff two baseline JSON files: show NEW / RESOLVED / UNCHANGED
     #[command(verbatim_doc_comment)]
     Diff(DiffArgs),
 
@@ -108,13 +108,13 @@ pub struct ScanSystemArgs {
     /// Hard ceiling on total bytes scanned. Walker tracks running total
     /// and stops when the next file would push past this. Examples:
     ///   --space 50G   --space 1T   --space 500M
-    /// Default 50 GiB — enough to cover most home directories without
+    /// Default 50 GiB; enough to cover most home directories without
     /// drowning the scan on a NAS-mount.
     #[arg(long, default_value = "50G", value_parser = parse_byte_size)]
     pub space: u64,
 
     /// Include network-mounted filesystems (NFS, SMB, sshfs). Off by
-    /// default — these are typically slow and contain other people's
+    /// default; these are typically slow and contain other people's
     /// secrets the user hasn't authorized scanning.
     #[arg(long, default_value_t = false)]
     pub include_network: bool,
@@ -126,7 +126,7 @@ pub struct ScanSystemArgs {
     #[arg(long, default_value_t = false)]
     pub no_git_history: bool,
 
-    /// Honor `.gitignore` like `keyhog scan` does. Default OFF — system
+    /// Honor `.gitignore` like `keyhog scan` does. Default OFF; system
     /// scans are paranoid because an attacker stashing a leaked key
     /// would `.gitignore` it. Set this to behave like a normal scan.
     #[arg(long, default_value_t = false)]
@@ -206,7 +206,7 @@ pub struct WatchArgs {
     /// Detector TOML directory. Falls back to embedded corpus if missing.
     #[arg(short, long, default_value = "detectors")]
     pub detectors: PathBuf,
-    /// Quiet mode — only print findings (suppress "watching X" status).
+    /// Quiet mode: only print findings (suppress "watching X" status).
     #[arg(long)]
     pub quiet: bool,
 }
@@ -379,7 +379,7 @@ pub struct ScanArgs {
 
     /// Interactsh server for OOB verification. Defaults to projectdiscovery's
     /// public collector at `oast.fun`. Use a self-hosted server for sensitive
-    /// scans — the collector sees correlation IDs and the IPs of services
+    /// scans; the collector sees correlation IDs and the IPs of services
     /// that call back, never the credential itself. Only meaningful with
     /// `--verify-oob`; clap rejects the flag without it instead of silently
     /// ignoring it (the prior behavior gave false confidence that an
@@ -435,7 +435,7 @@ pub struct ScanArgs {
     /// printing anything. Each line is a single redacted preview
     /// (`SEVERITY  SERVICE/DETECTOR  PATH:LINE`). The final
     /// formatted report (text/json/sarif/jsonl) still lands on stdout
-    /// or `--output` after dedup + verification complete — the stream
+    /// or `--output` after dedup + verification complete; the stream
     /// is purely a UX hint that the scanner is making progress on
     /// long-running runs (large monorepos, scan-system, GitHub orgs).
     #[arg(long)]
@@ -491,7 +491,7 @@ pub struct ScanArgs {
     /// Steady-state cap for verification calls *per service*, in
     /// requests-per-second. Default 5.0. Drop this to be polite to
     /// upstream APIs when scanning a tree with hundreds of legitimate
-    /// findings (test fixtures, examples) — every finding produces a
+    /// findings (test fixtures, examples); every finding produces a
     /// live verify call and most public APIs throttle aggressively.
     /// The limiter applies even with `--verify-batch` (which adds
     /// per-service serialisation on top).
@@ -520,7 +520,7 @@ pub struct ScanArgs {
 
     /// Maximum file size to scan. Files larger than this are listed in
     /// the end-of-scan "files skipped: exceeded --max-file-size"
-    /// summary. Default is 100 MiB — chosen to match the
+    /// summary. Default is 100 MiB, chosen to match the
     /// `FilesystemSource` ceiling (files above 64 MiB already use
     /// windowed scanning). kimi-dogfood-3 #135: prior help text said
     /// "10MB" but no default was wired; the 100 MiB FilesystemSource
@@ -632,7 +632,7 @@ pub struct ScanArgs {
     /// docs example `sk_live_4eC39...`, GitHub's docs example
     /// `ghp_aBcD...`, the keyhog test fixtures, etc.) so the report
     /// stays focused on real leaks rather than tutorial copies. Pass
-    /// this flag when you intentionally want those surfaced — useful
+    /// this flag when you intentionally want those surfaced. Useful
     /// for differential benchmarking against gitleaks / trufflehog
     /// (which do NOT suppress these), or for auditing the suppression
     /// list itself.
@@ -680,7 +680,7 @@ pub struct ScanArgs {
     /// sees inside a comment because the most common case is an
     /// engineer pasting an EXAMPLE token into a doc comment. The
     /// drawback is that genuine secrets pasted into a TODO ("rotate
-    /// this key — Bob") or a debug-trace comment never surface.
+    /// this key, Bob") or a debug-trace comment never surface.
     /// Pass `--scan-comments` for repos where comments are part of
     /// the threat surface: shared snippets directories, leak
     /// post-mortems, training corpora, and CTF-style audits.
@@ -724,7 +724,7 @@ pub struct DetectorArgs {
     /// Apply safe automated fixes to the detector TOMLs in `--detectors`.
     /// Currently rewrites single-brace template references (`{name}`) to
     /// the double-brace form (`{{name}}`) within `[detector.verify*]`
-    /// blocks — the one fix the interpolator's contract makes safe to
+    /// blocks: the one fix the interpolator's contract makes safe to
     /// perform mechanically. Other validator findings are left alone
     /// (they need human judgement). Use `--dry-run` to preview rewrites
     /// without touching the filesystem.
