@@ -38,6 +38,19 @@ pub struct ScanOrchestrator {
 
 impl ScanOrchestrator {
     pub fn new(mut args: ScanArgs) -> Result<Self> {
+        // Grep/wc/curl convention: a positional `-` means "read from
+        // stdin". Some users will try `keyhog scan - --stdin <<<...`
+        // and otherwise hit `error: path '-' does not exist`. Promote
+        // bare `-` to `--stdin` and drop it from the path slot so the
+        // existing stdin-reading source picks up. Falls through cleanly
+        // when `--stdin` was already passed.
+        if matches!(args.input.as_deref().and_then(|p| p.to_str()), Some("-"))
+            || matches!(args.path.as_deref().and_then(|p| p.to_str()), Some("-"))
+        {
+            args.stdin = true;
+            args.input = None;
+            args.path = None;
+        }
         if args.path.is_none() {
             args.path = args.input.clone();
         }
