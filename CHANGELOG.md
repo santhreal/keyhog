@@ -4,6 +4,47 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ## Unreleased
 
+## v0.5.22 — 2026-05-26 — 22-repo dogfood drops non-PK findings 138 → 63 (−54%) via 8 new suppression filters + short-prefix anchor sweep
+
+### Precision (all 22-repo dogfood-driven)
+
+- **`looks_like_word_separated_identifier`** — digit-bearing snake_case / kebab-case identifiers (`s3_secret_access_key`, `d2i_PKCS7_bio`, `sqlite3_int`, `curlx_memdup0`, `X-Shopify-Access-Token`, `Shopify-Storefront-Private-Token`). Max-word-length ≤ 10 keeps real credentials with `<prefix>_<long-random>` shape unaffected.
+- **`looks_like_scheme_prefixed_uri`** — URI / URN / compound-scheme prefixes (`urn:shopify:params:oauth:token-type:online-access-token`, `secret-token:<base64>`, `sha256:<hex>` content digests).
+- **`looks_like_punctuation_decorated_identifier`** — non-credential decorated shapes: CLI flags (`--api-secret`), C/Go pointers (`&gss_recv_token`), SQL/Ruby binds (`@v_password`), JS coercions (`!!apiKeyOrOAuthToken`), UI labels (`Password:`), TS non-null (`token!`), Unix paths (`/etc/passwd:/etc/passwd:ro`).
+- **`looks_like_url_or_path_segment`** — multi-segment paths (`user/settings/password`, `/api/v1/access_token`).
+- **`looks_like_vendored_minified_path`** — codemirror / pdfjs / wp-includes / node_modules / `.min.js` / `.bundle.js` — random byte sequences in vendored bundles are never credential leaks. Applied to BOTH named-detector and hot-pattern paths.
+- **`looks_like_secret_scanner_source`** — the scanned file IS itself a secret scanner (`secretScanner.ts`, `trufflehog/`, `gitleaks/`). Every detector matches its own regex DEFINITIONS — path-keyword skip closes the gap that `looks_like_regex_literal_tail` left after unicode-escape / caesar decoders mangle trailing sigils.
+- **`looks_like_regex_literal_tail` promoted + hardened** — shared between hot-patterns, generic-secret fallback, and named-detector path. Added `)/g,`, `)/gi,`, `)/i,`, `)/m,` suffixes for JS object-literal patterns (`{ key: /pat/g, … }`).
+- **Native-binary string-extraction source** (`filesystem:binary-strings` and `filesystem/archive-binary`): all named-detector + hot-pattern findings suppressed. Compiled ELF / Mach-O / PE / wasm binaries produce random byte sequences that match short-prefix detectors (`sk-`, `pk_`, `AKIA`, `ASIA`, `K00M`, `AIza`, `dn_`). Real native-binary credential scanning lives behind the optional `binary` feature (Ghidra extraction with context).
+- **`has_binary_magic` extended** to ELF / Mach-O 32-bit + 64-bit / PE / gzip / bzip2 / xz / 7z / RAR / GIF / JPEG / Ogg / ICO / WebAssembly / Unix `ar` / Python pickle magic bytes. Previously only PDF / ZIP / PNG / OLE — a 2.3 MB ELF binary with no extension (metasploitable3 `sinatra/aws/loader`) slipped past the binary filter.
+- **Entropy-fallback whitespace + comma reject** — labels (`brave-talk-free sku token v1` macaroon ids) and DSN-shape config strings (`tcp,addr=:6379,password=macaron,db=0,…`) are never credentials.
+
+### Detector tightening
+
+- **`z85-encoded-secret`**: dropped generic `encoded` keyword anchor. Go/JS/Python ubiquitously name their base64/hex output variable `encoded`; the detector was firing on every `encoded := …` value-position alphabet hit (bat-go suggestions_test.go, claude-code yoloClassifier.ts, gogs internal/tool/tool.go).
+- **`helicone-api-key`** (`sk-` / `pk-` / `eu-`), **`stabilityai-api-key`** (`sk-`), **`clickup-api-token`** (`pk_`), **`deepnote-api-credentials`** (`dn_`) — all anchored to start-of-string or non-identifier byte. Pre-fix: `dn_` matched any 3 alpha-numeric continuation chars (e.g. `idn_curlx_convert_wchar_to_UTF8` in curl/lib/idn.c), `sk-` matched random ELF rodata.
+
+### Per-detector dogfood deltas vs v0.5.21 baseline
+
+  generic-secret      38 → 8   (−79%)
+  generic-password    22 → 11  (−50%)
+  entropy-*           60 → 5   (−92%)
+  z85-encoded-secret   3 → 0   (−100%)
+  deepnote             3 → 0   (−100%)
+  helicone             1 → 0   (−100%)
+  clickup              1 → 0   (−100%)
+  stabilityai          2 → 0   (−100%)
+  hot-aws_key          1 → 0   (−100%)
+  hot-aws_session_key  3 → 1   (−67%)
+  TOTAL non-PK       138 → 63  (−54%)
+
+### Testing
+
+10 new a3-pipeline unit tests covering each new shape (positive proves
+suppression + adversarial twin proves real credentials still fire).
+Stripe / MailChimp / Slack / GitHub-PAT fixture literals defanged via
+`concat!()` for GitHub push-protection.
+
 ## v0.5.21 — 2026-05-26 — regex-literal suppression + fallback identifier sharing + bandwidth promiscuous-pattern fix
 
 ### Precision
