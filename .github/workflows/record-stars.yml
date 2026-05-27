@@ -1,0 +1,49 @@
+name: Record star count
+
+# Daily snapshot of stargazers_count into metrics/stars.json.
+# Lets us plot growth over time without depending on
+# star-history.com staying up. Runs at 07:17 UTC so we don't
+# collide with the wall of cron jobs that fire on the minute.
+
+on:
+  schedule:
+    - cron: '17 7 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  record:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Append today's count
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p metrics
+          [ -f metrics/stars.json ] || echo '[]' > metrics/stars.json
+          count=$(gh api "repos/${GITHUB_REPOSITORY}" --jq '.stargazers_count')
+          today=$(date -u +%Y-%m-%d)
+          jq --arg d "$today" --argjson c "$count" '
+            map(select(.date != $d)) + [{date: $d, count: $c}]
+            | sort_by(.date)
+          ' metrics/stars.json > metrics/stars.json.tmp
+          mv metrics/stars.json.tmp metrics/stars.json
+          printf 'recorded %s stars on %s\n' "$count" "$today"
+
+      - name: Commit if changed
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          if git diff --quiet metrics/stars.json; then
+            echo 'no change; skipping commit'
+            exit 0
+          fi
+          git add metrics/stars.json
+          git commit -m 'chore(metrics): record star count [skip ci]'
+          git push
