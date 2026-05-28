@@ -47,7 +47,7 @@ you're trying to do, not by filename.
 
 ## Integration
 
-- [surgec-integration.md](surgec-integration.md) — surgec ↔ vyre
+- [surgec-integration.md](surgec-integration.md) — downstream integration
   contract: ProgramGraph ABI, tier dispatch, shim policy.
 - [parsing-and-frontends.md](parsing-and-frontends.md) — parser
   crates and how they feed vyre.

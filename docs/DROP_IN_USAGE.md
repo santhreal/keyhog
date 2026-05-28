@@ -2,7 +2,10 @@
 
 Copy-paste integrations for KeyHog. Every snippet here is a complete,
 self-contained config: drop it in the indicated file, commit, and it
-works. No additional setup required beyond `cargo install keyhog`.
+works. No additional setup required beyond installing keyhog via the
+[one-line installer](https://github.com/santhsecurity/keyhog#install)
+(`curl -fsSL .../install.sh | sh` on Linux/macOS, `iwr .../install.ps1 -useb | iex`
+on Windows) or a source build (`cargo build --release` inside the repo).
 
 If you only need one section, jump to:
 
@@ -171,9 +174,11 @@ jobs:
 ```yaml
 keyhog:
   stage: test
-  image: rust:latest
+  image: alpine:latest
   before_script:
-    - cargo install keyhog --locked
+    - apk add --no-cache bash curl ca-certificates
+    - curl -fsSL https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.sh | sh
+    - export PATH="$HOME/.local/bin:$PATH"
   script:
     - keyhog scan . --format json -o keyhog.json --min-confidence 0.3
     - keyhog scan . --severity high --min-confidence 0.5
@@ -195,12 +200,14 @@ version: 2.1
 jobs:
   keyhog:
     docker:
-      - image: cimg/rust:1.83
+      - image: cimg/base:stable
     steps:
       - checkout
       - run:
           name: Install keyhog
-          command: cargo install keyhog --locked
+          command: |
+            curl -fsSL https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.sh | sh
+            echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$BASH_ENV"
       - run:
           name: Scan working tree
           command: keyhog scan . --format json -o keyhog.json --min-confidence 0.3
@@ -224,9 +231,11 @@ kind: pipeline
 name: keyhog
 steps:
   - name: scan
-    image: rust:latest
+    image: alpine:latest
     commands:
-      - cargo install keyhog --locked
+      - apk add --no-cache bash curl ca-certificates
+      - curl -fsSL https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.sh | sh
+      - export PATH="$HOME/.local/bin:$PATH"
       - keyhog scan . --min-confidence 0.3 --format json -o keyhog.json
       - keyhog scan . --severity high --min-confidence 0.5
 ```
@@ -239,7 +248,8 @@ steps:
 steps:
   - label: ":mag: keyhog secret scan"
     command: |
-      cargo install keyhog --locked
+      curl -fsSL https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.sh | sh
+      export PATH="$HOME/.local/bin:$PATH"
       keyhog scan . --min-confidence 0.3 --format text
       keyhog scan . --severity high --min-confidence 0.5
     artifact_paths:
@@ -286,7 +296,8 @@ pipeline {
         stage('keyhog') {
             steps {
                 sh '''
-                    cargo install keyhog --locked
+                    curl -fsSL https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.sh | sh
+                    export PATH="$HOME/.local/bin:$PATH"
                     keyhog scan . --format json -o keyhog.json --min-confidence 0.3
                     keyhog scan . --severity high --min-confidence 0.5
                 '''

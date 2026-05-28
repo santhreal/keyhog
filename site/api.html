@@ -12,7 +12,7 @@
   <a href="index.html" class="brand">
     <span class="mark">k</span>
     keyhog
-    <span class="v">v0.5.16</span>
+    <span class="v">v0.5.35</span>
   </a>
   <nav class="top">
     <a href="detectors.html">Detectors</a>
@@ -76,7 +76,7 @@
     <tr><td><code>keyhog-core</code></td><td>Detector loading, finding types, severity, reporting (text/JSON/SARIF), allowlist matching. No scanning.</td></tr>
     <tr><td><code>keyhog-scanner</code></td><td><code>CompiledScanner</code>: compile detectors → scan a <code>Chunk</code> → get <code>Vec&lt;Finding&gt;</code>. Hardware routing, decode-through, entropy, ML.</td></tr>
     <tr><td><code>keyhog-sources</code></td><td>File system walker, git source (staged/diff/history), stdin, Docker, S3, GitHub org. Streams <code>Chunk</code>s into a scanner.</td></tr>
-    <tr><td><code>keyhog-verifier</code></td><td>Live verification against vendor APIs (~80 services).</td></tr>
+    <tr><td><code>keyhog-verifier</code></td><td>Live verification against vendor APIs (341 detectors with a vendor verifier endpoint).</td></tr>
   </tbody>
 </table>
 </div>
@@ -102,23 +102,31 @@ fn main() -&gt; anyhow::Result&lt;()&gt; {
     Ok(())
 }</code></pre>
 
-<p>Add to <code>Cargo.toml</code>:</p>
+<p>Add to <code>Cargo.toml</code> using a git path until crates.io
+publishing lands:</p>
 
 <pre><code><span class="k">[dependencies]</span>
-keyhog-core    = <span class="s">"0.5"</span>
-keyhog-scanner = <span class="s">"0.5"</span></code></pre>
+keyhog-core    = { <span class="k">git</span> = <span class="s">"https://github.com/santhsecurity/keyhog"</span>, <span class="k">tag</span> = <span class="s">"v0.5.34"</span> }
+keyhog-scanner = { <span class="k">git</span> = <span class="s">"https://github.com/santhsecurity/keyhog"</span>, <span class="k">tag</span> = <span class="s">"v0.5.34"</span> }</code></pre>
 
 <h2>Embedded detectors (no detectors/ directory)</h2>
 
 <p>For library users who don't want to ship a <code>detectors/</code>
-directory alongside their binary, the embedded set is available behind a
-feature flag:</p>
+directory alongside their binary, the embedded set is always
+compiled into <code>keyhog-core</code> by <code>build.rs</code>; no
+feature flag required. Wrap the parse step in a helper so the
+subsequent examples can call it inline:</p>
 
-<pre><code><span class="k">[dependencies]</span>
-keyhog-core = { <span class="k">version</span> = <span class="s">"0.5"</span>, <span class="k">features</span> = [<span class="s">"embedded-detectors"</span>] }</code></pre>
+<pre><code><span class="c">// (name, toml_string) tuples for every detector in detectors/.</span>
+fn parse_embedded() -&gt; Vec&lt;keyhog_core::DetectorSpec&gt; {
+    keyhog_core::embedded_detector_tomls()
+        .iter()
+        .filter_map(|(_name, body)| toml::from_str::&lt;keyhog_core::DetectorFile&gt;(body).ok())
+        .map(|file| file.detector)
+        .collect()
+}
 
-<pre><code>let detectors = keyhog_core::embedded_detectors();
-let scanner = CompiledScanner::compile(detectors)?;</code></pre>
+let scanner = CompiledScanner::compile(parse_embedded())?;</code></pre>
 
 <h2>Custom detectors</h2>
 
@@ -144,7 +152,7 @@ let scanner = CompiledScanner::compile(mine)?;</code></pre>
 
 <p>Mix shipped + custom by concatenating before compile:</p>
 
-<pre><code>let mut all = keyhog_core::embedded_detectors();
+<pre><code>let mut all = parse_embedded();
 all.extend(mine);
 let scanner = CompiledScanner::compile(all)?;</code></pre>
 
@@ -153,7 +161,7 @@ let scanner = CompiledScanner::compile(all)?;</code></pre>
 <pre><code>use keyhog_sources::FsSource;
 use keyhog_scanner::CompiledScanner;
 
-let scanner = CompiledScanner::compile(keyhog_core::embedded_detectors())?;
+let scanner = CompiledScanner::compile(parse_embedded())?;
 let source = FsSource::new(<span class="s">"."</span>)
     .respect_gitignore(true)
     .max_file_size(10 * 1024 * 1024);
@@ -172,7 +180,7 @@ so they compose with rayon / async-std / tokio however you like.</p>
 
 <pre><code>use rayon::prelude::*;
 
-let scanner = CompiledScanner::compile(keyhog_core::embedded_detectors())?;
+let scanner = CompiledScanner::compile(parse_embedded())?;
 let chunks: Vec&lt;_&gt; = FsSource::new(<span class="s">"."</span>).chunks().collect::&lt;Result&lt;_, _&gt;&gt;()?;
 
 let findings: Vec&lt;_&gt; = chunks.par_iter()

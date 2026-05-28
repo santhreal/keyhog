@@ -1,100 +1,169 @@
-# Contributing to Keyhog
+# Contributing to keyhog
 
-First off, thank you for considering contributing to Keyhog! It's people like you that make Keyhog such a great tool. 
+Thanks for considering a contribution. The most useful contributions
+are the smallest: a false-positive report with a one-line snippet, a
+detector regex tweak, a missing test case. The repo is laid out so a
+new contributor can do real work after one read of this file.
 
-This document provides a set of guidelines and instructions for contributing to the project.
+Before opening a PR, please skim the [Code of Conduct](CODE_OF_CONDUCT.md)
+and the project's anti-rigging law: a test must assert truth, not
+shape; positive findings get a negative twin; every fix ships an
+adversarial test alongside the proving test.
 
-## 1. How to add a new detector
+## Repo layout
 
-Adding a new detector is trivially easy and requires no Rust code. All detectors are defined as TOML files in the `detectors/` directory.
+- `crates/core/` - shared types, detector specs, hardening, the
+  `Source` and `Reporter` traits.
+- `crates/scanner/` - the engine: compiler, AC + Hyperscan + GPU
+  backends, suppression, confidence, decoding, entropy.
+- `crates/sources/` - filesystem, git, web, archive backends behind
+  the `Source` trait.
+- `crates/verifier/` - live credential probes (auth/identity
+  endpoints) for `--verify`.
+- `crates/cli/` - the `keyhog` binary, subcommands, args, daemon.
+- `detectors/` - 891 TOML detector specs, the project's moat. No
+  Rust code touched when you add one.
+- `vendor/vyre/` - vendored AC/GPU primitives. Path-dep only,
+  pinned per-release.
+- `tests/`, `fuzz/`, `metrics/` - corpus, fuzz harnesses, perf
+  dashboards.
+- `.github/actions/keyhog/` - the in-tree composite action
+  consumers reference as
+  `santhsecurity/keyhog/.github/actions/keyhog@<tag>`.
 
-1. Copy an existing TOML file in the `detectors/` directory. For example:
-   ```bash
-   cp detectors/stripe-secret-key.toml detectors/my-new-service-key.toml
-   ```
-2. Open your new `my-new-service-key.toml` file and fill in the required fields:
-   - `id`: A unique identifier for the detector (e.g., `my-new-service-key`).
-   - `name`: A human-readable name.
-   - `pattern`: The regex pattern used to detect the secret.
-   - `keywords`: A list of keywords that help pre-filter the search.
-   - `confidence`: The confidence level of the regex (`high`, `medium`, `low`).
-3. Run the validation script to ensure your new detector is correctly formatted:
-   ```bash
-   cargo test --package keyhog-core --test detector_validation
-   ```
+## How to add a new detector
 
-## 2. How to add a new source backend
+No Rust code required. Detectors are TOML manifests under
+`detectors/`. Copy the closest existing detector and edit:
 
-To add a new source backend (e.g., a new version control system or cloud storage provider), you need to implement the `Source` trait.
+```bash
+cp detectors/stripe-secret-key.toml detectors/my-service-key.toml
+$EDITOR detectors/my-service-key.toml
+```
 
-1. Navigate to the `crates/sources/src/` directory.
-2. Create a new module for your source backend.
-3. Implement the `keyhog_core::Source` trait for your new backend. This typically involves implementing methods to iterate over files or data streams.
-4. Register your new source in the main `keyhog` application so it can be invoked via the command line.
-5. Add appropriate unit and integration tests for your source.
+The required keys live under `[detector]` and one or more
+`[[detector.patterns]]` blocks. Fields:
 
-## 3. How to add a new output format
+- `id` - unique kebab-case identifier, matches the filename.
+- `name` - human-readable display name.
+- `service` - lowercase vendor / protocol name.
+- `severity` - `info | low | medium | high | critical`.
+- `keywords` - case-aware substrings used to short-circuit the
+  scan when none appear in a chunk. At least one is required.
+- `[[detector.patterns]]` blocks - one or more, each with a
+  `regex`, a one-line `description`, and a `group` for the
+  match-group that captures the actual secret.
+- `[detector.verify]` (optional) - if the service has a public
+  status / identity endpoint that returns 200 on a live key and
+  401/403 otherwise, fill this out and `--verify` will probe it.
 
-To add a new output format (e.g., a new reporting standard like SARIF or a custom JSON structure), you need to implement the `Reporter` trait.
+Run the in-tree validation gate before committing:
 
-1. Navigate to the `crates/cli/src/reporters/` directory.
-2. Create a new module for your output format.
-3. Implement the `keyhog_core::Reporter` trait. This trait defines how findings are formatted and written to the output stream.
-4. Add your new reporter to the CLI options in `crates/cli/src/args.rs`.
-5. Write tests verifying the output format exactly matches the expected schema.
+```bash
+cargo test -p keyhog-core --test all_tests detector_
+```
 
-## 4. How to improve the ML model
+Then run the full scan against the keyhog repo to confirm the
+detector fires on a fixture you added and does not fire on the
+existing corpus:
 
-If you are working on the ML-based secret verification or false-positive reduction, follow these steps:
+```bash
+cargo run --release -- scan tests/fixtures
+cargo run --release -- scan .   # zero new findings expected on a clean repo
+```
 
-1. **Generate Data**: Use the provided scripts in the `ml/` directory to generate or curate training data. Ensure you have a balanced dataset of true positives and false positives.
-2. **Train**: Run the training pipeline (usually a Python script in `ml/`). 
-   ```bash
-   cd ml/
-   python train.py --dataset path/to/dataset
-   ```
-3. **Test**: Evaluate the model's precision and recall using the test suite. 
-4. **Export**: Export the trained model weights to the format expected by the Rust inference engine and update the model file in the repository.
+## How to add a new source backend
 
-## 5. How to run tests
+Source backends live in `crates/sources/src/`. Each implements
+`keyhog_core::Source` (`crates/core/src/source.rs`).
 
-We use `make` to simplify running common development tasks.
+1. Add a new module under `crates/sources/src/` and gate it behind
+   a feature flag in `crates/sources/Cargo.toml` so consumers can
+   opt in.
+2. Implement `keyhog_core::Source` for your backend. The
+   `filesystem` and `git` modules are the reference implementations.
+3. Wire the backend into the CLI dispatch in
+   `crates/cli/src/orchestrator/` so a subcommand or flag selects it.
+4. Add adversarial tests under `crates/sources/tests/` covering
+   the happy path and at least one failure mode (auth refusal,
+   rate limit, malformed response).
 
-- **Run all tests**: 
-  ```bash
-  make test
-  ```
-- **Run the linter (Clippy)**:
-  ```bash
-  make clippy
-  ```
-- **Run benchmarks**:
-  ```bash
-  make bench
-  ```
+## How to add a new output format
 
-## 6. Code Style Guide
+Reporters live in `crates/core/src/report/` and the dispatch lives
+in `crates/cli/src/reporting.rs`. Each reporter implements the
+`keyhog_core::Reporter` trait (`crates/core/src/report.rs`):
 
-We strive for Linux-level elegance and strictly follow standard Rust conventions.
+```rust
+pub trait Reporter: Send {
+    fn report(&mut self, finding: &VerifiedFinding) -> Result<(), ReportError>;
+    fn finish(&mut self) -> Result<(), ReportError>;
+}
+```
 
-- **Import Ordering**: Group imports into `std`, external crates, and internal `crate::` modules.
-- **Naming**: 
-  - Types use `PascalCase`.
-  - Functions and variables use `snake_case`.
-  - Constants use `SCREAMING_SNAKE_CASE`.
-  - Boolean variables should read as questions (e.g., `is_valid`, `has_findings`).
-- **Error Handling**: 
-  - Zero `unwrap()` or `expect()` in non-test code.
-  - Use `?` for error propagation.
-  - Error messages must be lowercase, actionable, and specific.
-- **Documentation**: All public items must have doc comments (`///`).
+1. Add a new module under `crates/core/src/report/`. Pattern-match
+   `text.rs`, `json.rs`, or `sarif.rs`.
+2. Re-export the type from `crates/core/src/report.rs`.
+3. Add the corresponding `OutputFormat` variant in
+   `crates/cli/src/args/enums.rs`.
+4. Wire it into `crates/cli/src/reporting.rs::write_findings`.
+5. Add a golden-file test confirming the byte-exact output for a
+   canonical finding.
 
-## 7. PR Checklist
+## How to run tests
 
-Before submitting a Pull Request, please ensure the following:
+The workspace uses standard `cargo` commands. There is no
+Makefile; the few one-off scripts live in `scripts/`. The most
+commonly-used commands:
 
-- [ ] **Tests pass**: Run `make test` and ensure all tests are green.
-- [ ] **Clippy clean**: Run `make clippy` and ensure there are zero warnings. We treat warnings as errors.
-- [ ] **No rigged tests**: Ensure tests realistically cover the code and aren't just asserting hardcoded values without exercising the logic.
-- [ ] **Doc comments**: All new public functions, traits, and types have comprehensive doc comments.
-- [ ] **No Stubs**: Ensure all implemented functions perform real work and are not just placeholders.
+```bash
+cargo test --workspace                      # full test suite
+cargo test -p keyhog-scanner                # only the engine
+cargo test -p keyhog-core --test all_tests  # core invariants
+cargo clippy --workspace --all-targets -- -D warnings
+cargo build --release -p keyhog             # production binary
+cargo run --release -- scan .               # dogfood
+cargo bench -p keyhog-scanner               # microbenchmarks
+```
+
+For the multi-hour adversarial / corpus suites, see
+`tests/README.md` (when present) or the workflows under
+`.github/workflows/`.
+
+## Code style
+
+We follow standard Rust conventions enforced by `cargo fmt` and
+`cargo clippy`:
+
+- Import ordering: `std`, external crates, internal `crate::`.
+- Types `PascalCase`, fns + vars `snake_case`, consts
+  `SCREAMING_SNAKE_CASE`.
+- Booleans read as questions (`is_valid`, `has_findings`).
+- Zero `unwrap()` / `expect()` in non-test code; propagate with `?`.
+- Error messages lowercase, actionable, specific. Include the
+  fix the user should try whenever possible.
+- Public items have doc comments.
+- Files cap at ~500 lines. Split when you cross it.
+
+## PR checklist
+
+Before opening a PR:
+
+- [ ] `cargo test --workspace` passes.
+- [ ] `cargo clippy --workspace --all-targets -- -D warnings` is
+      green.
+- [ ] If you added a detector, you also added a positive fixture
+      AND an adversarial (false-positive) fixture.
+- [ ] If you fixed a bug, you added a test that fails before your
+      patch and passes after.
+- [ ] No stubs (`todo!()`, `unimplemented!()`, no-op loops,
+      `// TODO` placeholders).
+- [ ] New public items are documented.
+- [ ] Commit messages explain *why*, not just *what*.
+
+## Reporting a vulnerability
+
+Do **not** open a public issue for a security report. Use GitHub's
+private advisory flow at
+[/security/advisories/new](https://github.com/santhsecurity/keyhog/security/advisories/new)
+or email **security@santh.dev**.

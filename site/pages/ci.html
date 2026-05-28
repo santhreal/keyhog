@@ -22,7 +22,7 @@ description = "GitHub Actions, GitLab, CircleCI, Drone, BuildKite, Jenkins recip
       - <span class="k">uses</span>: actions/checkout@v4
         <span class="k">with</span>:
           <span class="k">fetch-depth</span>: 0      <span class="c"># needed for --git-history</span>
-      - <span class="k">uses</span>: santhsecurity/keyhog/.github/actions/keyhog@v0.5.16
+      - <span class="k">uses</span>: santhsecurity/keyhog/.github/actions/keyhog@v0.5.34
         <span class="k">with</span>:
           <span class="k">path</span>: .
           <span class="k">severity</span>: high        <span class="c"># info | low | medium | high | critical</span>
@@ -37,7 +37,7 @@ when <code>format: sarif</code>.</p>
 
 <h3>Block PRs on new findings only</h3>
 
-<pre><code>      - <span class="k">uses</span>: santhsecurity/keyhog/.github/actions/keyhog@v0.5.16
+<pre><code>      - <span class="k">uses</span>: santhsecurity/keyhog/.github/actions/keyhog@v0.5.34
         <span class="k">with</span>:
           <span class="k">path</span>: .
           <span class="k">baseline</span>: .keyhog-baseline.json
@@ -51,7 +51,7 @@ findings (not in the baseline) fire. See <a href="baseline.html">Baselines →</
 
 <pre><code>      - <span class="k">name</span>: build image
         <span class="k">run</span>: docker build -t app:${{ github.sha }} .
-      - <span class="k">uses</span>: santhsecurity/keyhog/.github/actions/keyhog@v0.5.16
+      - <span class="k">uses</span>: santhsecurity/keyhog/.github/actions/keyhog@v0.5.34
         <span class="k">with</span>:
           <span class="k">image</span>: app:${{ github.sha }}
           <span class="k">format</span>: sarif</code></pre>
@@ -63,7 +63,7 @@ findings (not in the baseline) fire. See <a href="baseline.html">Baselines →</
   <span class="k">stage</span>: test
   <span class="k">before_script</span>:
     - apt-get update &amp;&amp; apt-get install -y --no-install-recommends ca-certificates curl
-    - curl -L https://github.com/santhsecurity/keyhog/releases/latest/download/keyhog-x86_64-unknown-linux-gnu.tar.gz | tar -xz
+    - curl -L https://github.com/santhsecurity/keyhog/releases/latest/download/keyhog-linux-x86_64 -o keyhog && chmod +x keyhog
     - install keyhog /usr/local/bin/
   <span class="k">script</span>:
     - keyhog scan . --format sarif -o keyhog.sarif --severity high
@@ -86,7 +86,7 @@ findings (not in the baseline) fire. See <a href="baseline.html">Baselines →</
       - checkout
       - <span class="k">run</span>:
           <span class="k">name</span>: install keyhog
-          <span class="k">command</span>: cargo install keyhog
+          <span class="k">command</span>: curl -fsSL https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.sh | sh
       - <span class="k">run</span>:
           <span class="k">name</span>: scan
           <span class="k">command</span>: keyhog scan . --format sarif -o keyhog.sarif --severity high
@@ -101,7 +101,7 @@ findings (not in the baseline) fire. See <a href="baseline.html">Baselines →</
     stage('keyhog') {
       steps {
         sh '''
-          curl -L https://github.com/santhsecurity/keyhog/releases/latest/download/keyhog-x86_64-unknown-linux-gnu.tar.gz | tar -xz
+          curl -L https://github.com/santhsecurity/keyhog/releases/latest/download/keyhog-linux-x86_64 -o keyhog && chmod +x keyhog
           ./keyhog scan . --format sarif -o keyhog.sarif --severity high
         '''
         recordIssues tools: [sarif(pattern: 'keyhog.sarif')]
@@ -115,7 +115,7 @@ findings (not in the baseline) fire. See <a href="baseline.html">Baselines →</
 <pre><code><span class="k">steps</span>:
   - <span class="k">label</span>: <span class="s">"🔑 keyhog"</span>
     <span class="k">command</span>: |
-      cargo install keyhog
+      curl -fsSL https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.sh | sh
       keyhog scan . --format sarif -o keyhog.sarif --severity high
     <span class="k">artifact_paths</span>: keyhog.sarif</code></pre>
 
@@ -127,7 +127,7 @@ findings (not in the baseline) fire. See <a href="baseline.html">Baselines →</
   - <span class="k">name</span>: keyhog
     <span class="k">image</span>: rust:1.89
     <span class="k">commands</span>:
-      - cargo install keyhog
+      - curl -fsSL https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.sh | sh
       - keyhog scan . --format sarif -o keyhog.sarif --severity high</code></pre>
 
 <h2>Why SARIF is the right CI format</h2>
@@ -148,7 +148,7 @@ findings (not in the baseline) fire. See <a href="baseline.html">Baselines →</
 
 <h2>Optional: live verification in CI</h2>
 
-<pre><code>      - <span class="k">uses</span>: santhsecurity/keyhog/.github/actions/keyhog@v0.5.16
+<pre><code>      - <span class="k">uses</span>: santhsecurity/keyhog/.github/actions/keyhog@v0.5.34
         <span class="k">with</span>:
           <span class="k">path</span>: .
           <span class="k">verify</span>: <span class="s">'true'</span>
@@ -177,7 +177,7 @@ findings (not in the baseline) fire. See <a href="baseline.html">Baselines →</
   PR base, instead of the whole tree.</li>
 </ul>
 
-<pre><code>      - <span class="k">uses</span>: santhsecurity/keyhog/.github/actions/keyhog@v0.5.16
+<pre><code>      - <span class="k">uses</span>: santhsecurity/keyhog/.github/actions/keyhog@v0.5.34
         <span class="k">with</span>:
           <span class="k">git-diff</span>: ${{ github.event.pull_request.base.sha }}
           <span class="k">incremental</span>: <span class="s">'true'</span></code></pre>

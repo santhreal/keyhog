@@ -94,7 +94,7 @@ The installer auto-detects, but you can override:
 |-----------------------------------------|---------------------------------------------------------------|
 | `KEYHOG_VARIANT=cuda` (or `--variant=cuda`) | Force the CUDA-accelerated Linux build (requires libcuda.so). |
 | `KEYHOG_VARIANT=cpu`  (or `--variant=cpu`)  | Force the default WGPU + SIMD build, skip GPU detection.      |
-| `KEYHOG_VERSION=v0.5.30` (or `--version=v0.5.30`) | Pin a specific release tag.                            |
+| `KEYHOG_VERSION=v0.5.34` (or `--version=v0.5.34`) | Pin a specific release tag (default: most recent release with assets attached). |
 | `KEYHOG_INSTALL=/usr/local/bin` (or `--install-dir=...`) | Install into a different directory.            |
 | `--yes` / `-y`                          | Non-interactive: accept all defaults, no prompts.             |
 | `--no-color`                            | Disable ANSI colors (e.g. for log capture).                   |
@@ -207,9 +207,10 @@ keyhog detectors | head     # smoke-test the embedded detector corpus
 keyhog scan README.md       # scan a single file; exit 0 = clean
 ```
 
-If `keyhog --version` reports `0.5.30` (or whatever the latest
-release is) and `keyhog detectors` lists hundreds of detectors,
-you're set. Move on to [Your first scan](./first-scan.md).
+If `keyhog --version` reports the latest release (currently
+`0.5.34` from prebuilt assets, or `0.5.35` from a source build of
+`main`) and `keyhog detectors` lists hundreds of detectors, you're
+set. Move on to [Your first scan](./first-scan.md).
 
 You can also run the installer in diagnostic mode at any time to
 print a full status report:

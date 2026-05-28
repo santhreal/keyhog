@@ -2,10 +2,11 @@
 
 KeyHog speaks four formats. Pick the one that fits the consumer.
 
-## `--format human` (default)
+## `--format text` (default)
 
 Human-readable table. Best for terminal use, pre-commit hook output,
-and screenshots. Colors auto-detect TTY; pipe through `cat` to disable.
+and screenshots. Colors auto-detect TTY; pipe through `cat` (or set
+`NO_COLOR=1`) to disable.
 
 ```text
 src/config/staging.env:14:12  HIGH  stripe-secret-key
@@ -52,14 +53,14 @@ Findings show up in the **Security → Code scanning** tab with the
 detector ID as the rule, file path + line as the location, and the
 redacted credential as the message.
 
-## `--format ndjson`
+## `--format jsonl`
 
 Newline-delimited JSON - one finding per line, no outer array. Better
 than `--format json` for streaming consumers that want to start
 processing before the scan finishes:
 
 ```sh
-keyhog scan /huge/monorepo --format ndjson \
+keyhog scan /huge/monorepo --format jsonl \
   | while read line; do
       echo "$line" | jq -r '.location.file_path'
     done

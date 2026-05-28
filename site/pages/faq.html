@@ -67,9 +67,10 @@ see <a href="ignore.html">Allowlists →</a>. Add
 
 <p>~28 MB stripped, ~110 MB unstripped Docker image. The detector
 database alone compiles to ~6 MB; Hyperscan + Vectorscan + wgpu account
-for most of the rest. <code>cargo install keyhog
---no-default-features --features regex-engine</code> shrinks to ~3 MB at
-the cost of throughput and decode-through scanning.</p>
+for most of the rest. A source build with
+<code>cargo build --release -p keyhog --no-default-features --features portable</code>
+shrinks the binary to ~3 MB at the cost of throughput and decode-through
+scanning.</p>
 
 <h2>Does keyhog have a SaaS / hosted version?</h2>
 

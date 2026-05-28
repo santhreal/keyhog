@@ -12,7 +12,7 @@
   <a href="index.html" class="brand">
     <span class="mark">k</span>
     keyhog
-    <span class="v">v0.5.16</span>
+    <span class="v">v0.5.35</span>
   </a>
   <nav class="top">
     <a href="detectors.html">Detectors</a>
@@ -70,17 +70,24 @@
 <h2>Bundled installer (simplest)</h2>
 
 <pre><code><span class="prompt">$</span> keyhog hook install
-<span class="a">installed .git/hooks/pre-commit (3.2 KB)</span>
-<span class="a">  on commit: keyhog scan --git-staged --severity high --daemon</span></code></pre>
+<span class="a">installed .git/hooks/pre-commit</span>
+<span class="a">  on commit: keyhog scan --fast --git-staged</span></code></pre>
 
 <p>Writes <code>.git/hooks/pre-commit</code> directly. No
 <code>pre-commit</code> framework needed. The hook runs
-<code>keyhog scan --git-staged</code> over the staged blobs only, exits
-non-zero on findings, and the commit aborts.</p>
+<code>keyhog scan --fast --git-staged</code> over the staged blobs
+only, exits non-zero on findings, and the commit aborts. If a
+<code>.git/hooks/pre-commit</code> already exists,
+<code>keyhog hook install</code> refuses to overwrite it; remove
+the existing file (or run <code>keyhog hook uninstall</code>) and
+re-install.</p>
 
-<pre><code><span class="prompt">$</span> keyhog hook install --severity critical    <span class="c"># only block critical+ findings</span>
-<span class="prompt">$</span> keyhog hook install --no-daemon            <span class="c"># skip daemon connection, ~1 s slower</span>
-<span class="prompt">$</span> keyhog hook uninstall                      <span class="c"># restore the prior hook if any</span></code></pre>
+<pre><code><span class="prompt">$</span> keyhog hook uninstall                      <span class="c"># remove the keyhog-generated pre-commit hook</span></code></pre>
+
+<p>For a fast-path scan that reuses the daemon's compiled scanner,
+start the daemon first (<code>keyhog daemon start</code>) before
+committing - the in-process scan transparently routes through the
+running daemon when the socket is reachable.</p>
 
 <h2>pre-commit framework</h2>
 
@@ -89,7 +96,7 @@ add this to <code>.pre-commit-config.yaml</code>:</p>
 
 <pre><code><span class="k">repos</span>:
   - <span class="k">repo</span>: https://github.com/santhsecurity/keyhog
-    <span class="k">rev</span>: v0.5.16
+    <span class="k">rev</span>: v0.5.34
     <span class="k">hooks</span>:
       - <span class="k">id</span>: keyhog</code></pre>
 
@@ -158,7 +165,7 @@ git, not keyhog. To make bypass impossible:</p>
 
 KEYHOG=${KEYHOG_BIN:-keyhog}
 if ! command -v "$KEYHOG" &gt;/dev/null 2&gt;&amp;1; then
-  echo "keyhog not on PATH; skipping (install: cargo install keyhog)"
+  echo "keyhog not on PATH; skipping (install: curl -fsSL .../install.sh | sh)"
   exit 0
 fi
 exec "$KEYHOG" scan --git-staged --severity high --daemon</code></pre>

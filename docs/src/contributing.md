@@ -25,9 +25,9 @@ keyhog/
     sources/          # Filesystem, git, web, docker, S3 backends
     verifier/         # Live credential verification
     cli/              # The `keyhog` binary, subcommand dispatch
-  detectors/          # ~900 service-specific detector TOMLs
-  data/
-    suppressions/     # Test-fixture suppression list
+  detectors/          # 891 service-specific detector TOMLs
+  crates/cli/data/
+    suppressions/     # Test-fixture suppression list, baked into the binary
   docs/               # This documentation (mdBook source)
   install.sh          # Linux/macOS install script
   install.ps1         # Windows install script

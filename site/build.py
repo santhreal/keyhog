@@ -49,7 +49,7 @@ NAV = [
     ]),
 ]
 
-VERSION = "v0.5.16"
+VERSION = "v0.5.35"
 
 def sidebar() -> str:
     out = ['<aside class="sidebar">']
