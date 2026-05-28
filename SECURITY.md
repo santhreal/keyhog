@@ -40,12 +40,13 @@ fix ships.
 
 ## RustSec Advisory Assessment (v0.5.3)
 
-A `cargo audit` of `Cargo.lock` surfaces six advisories (3 vulnerability,
-3 informational). Each was reviewed against keyhog's actual usage of
-the affected crate and given an explicit accept-with-rationale decision
-or a fix path. The accepts are reflected in the `[advisories]` ignore
-list at the workspace-root `audit.toml`; `cargo audit` exits clean with
-that file in place.
+A `cargo audit` of `Cargo.lock` surfaces seven advisories total (3
+vulnerability, 4 informational across the workspace + vendored vyre).
+Each was reviewed against keyhog's actual usage of the affected crate
+and given an explicit accept-with-rationale decision or a fix path.
+The accepts are reflected in the `[advisories]` ignore list at the
+workspace-root `audit.toml`; `cargo audit` exits clean with that file
+in place.
 
 ### Accepted (rationale-documented)
 
@@ -92,6 +93,20 @@ default `OsRng` seed path. Our tracing logger does not call into rand.
 time; it produces no runtime code in keyhog binaries. An unmaintained
 proc-macro can't introduce runtime CVEs. We will migrate when a
 suitable replacement appears in our transitive dep tree.
+
+#### RUSTSEC-2025-0141 - `bincode 1.x` unmaintained
+
+**Risk:** bincode 1.x is unmaintained upstream; future advisories
+against it will not be patched.
+
+**Why not applicable now:** keyhog itself does not depend on bincode
+directly. It is only pulled in transitively through the vendored
+vyre GPU stack (`vendor/vyre/`), which uses bincode for serializing
+compiled GPU pattern databases. The serialization surface is local
+disk caches keyed under `$KEYHOG_CACHE_DIR`; there is no untrusted
+network input deserialized through bincode. This advisory clears
+when vyre cuts a release that drops bincode 1.x or migrates to
+bincode 2.x.
 
 ### Resolved in v0.5.3
 

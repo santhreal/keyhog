@@ -237,7 +237,7 @@ jobs:
           # protection on the test-fixture suppression match AND third-
           # party content-scanners that grep CI yamls for credential
           # shapes.) The demo key is on the bundled test-fixture
-          # suppression list (data/suppressions/test-fixtures.toml),
+          # suppression list (crates/cli/data/suppressions/test-fixtures.toml),
           # so the smoke test must opt out via
           # --no-suppress-test-fixtures to surface the finding —
           # otherwise default-mode correctly returns zero matches

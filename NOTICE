@@ -1,0 +1,31 @@
+keyhog
+Copyright 2025-2026 The Santh Project
+
+This product is dual-licensed under the Apache License, Version 2.0
+and the MIT License at the user's option. See LICENSE, LICENSE-APACHE,
+and LICENSE-MIT for the full license texts.
+
+================================================================================
+Notices for bundled components
+================================================================================
+
+This product includes detectors, signatures, and regex contributions from
+the public-domain secret-scanning community. Wherever a detector specifies an
+upstream reference (a CVE ID, a vendor advisory, or a public POC URL) in its
+TOML manifest, that reference is the canonical source for the detection
+pattern.
+
+This product depends on third-party crates from the Rust ecosystem; see
+Cargo.toml and `cargo tree --workspace` for the full transitive dependency
+graph. Each upstream retains its own copyright and license; transitively-
+bundled licenses are surfaced by `cargo about generate` when building a
+distribution package.
+
+================================================================================
+Third-party trademarks
+================================================================================
+
+Service names referenced in detector identifiers (AWS, GCP, Slack, Stripe,
+GitHub, etc.) are trademarks of their respective owners. References exist
+only to identify the cloud or SaaS provider whose credential format a
+particular detector targets. No affiliation or endorsement is implied.

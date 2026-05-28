@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Wrapper around `cargo audit` that applies the four ignores we have
+# Wrapper around `cargo audit` that applies the ignores we have
 # accept-with-rationale write-ups for in `audit.toml` + `SECURITY.md`.
 #
 # `cargo audit` 0.22 doesn't auto-load `audit.toml` from the project
@@ -13,4 +13,5 @@ exec cargo audit \
     --ignore RUSTSEC-2024-0436 \
     --ignore RUSTSEC-2026-0002 \
     --ignore RUSTSEC-2026-0097 \
+    --ignore RUSTSEC-2025-0141 \
     "$@"
