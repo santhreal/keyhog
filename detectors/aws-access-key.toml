@@ -11,7 +11,11 @@ severity = "critical"
 keywords = ["AKIA", "ASIA"]
 
 [[detector.patterns]]
-regex = "(AKIA|ASIA)[0-9A-Z]{16}"
+# `(?-i)` forces case-sensitive matching (keyhog compiles every regex
+# case-insensitive by default). AKIA/ASIA ids are ALWAYS uppercase; without
+# this the lowercase look-alike `Akiaqylpmn…` (a doc/test placeholder) matches
+# and surfaces a false positive.
+regex = "(?-i)(AKIA|ASIA)[0-9A-Z]{16}"
 description = "AWS access key ID"
 
 # NOT marked `required`: a leaked AKIA on its own is still a reportable
