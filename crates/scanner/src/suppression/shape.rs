@@ -370,12 +370,13 @@ pub(crate) fn looks_like_syntactic_punctuation_marker(value: &str) -> bool {
 
 /// True if `value` carries punctuation that *looks* like decoration but can
 /// equally be a legitimate credential body:
-///   * leading `/` - Unix path (`/etc/passwd:…`) OR base64 body (`/ZM9…`,
-///                    `/7j3…`). LINE channel tokens + paloalto keys start `/`.
-///   * leading `!` - JS truthy coercion (`!!token`) OR a session secret that
-///                    legitimately starts `!` (keystonejs `!t1c!_…`).
-///   * trailing `!` - TS non-null assertion (`token!`) OR a password ending
-///                    `!` (`SnowFlakePass123!`, `SourceTreePass1234!`).
+/// * leading `/` - Unix path (`/etc/passwd:…`) OR base64 body (`/ZM9…`, `/7j3…`,
+///   LINE channel tokens + paloalto keys start `/`).
+/// * leading `!` - JS truthy coercion (`!!token`) OR a session secret that
+///   legitimately starts `!` (keystonejs `!t1c!_…`).
+///
+/// A *trailing* `!` is intentionally NOT here (see the body note): a password
+/// ending `!` is too common to treat as decoration.
 ///
 /// For an *unanchored* generic/entropy match these are FP signals, so this is
 /// applied Tier-B only. A named, service-anchored detector (e.g. the regex
