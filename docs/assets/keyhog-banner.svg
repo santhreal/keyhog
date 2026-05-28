@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 360" width="720" height="360" role="img" aria-label="KEYHOG mascot">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0c0d12"/>
+      <stop offset="1" stop-color="#07080b"/>
+    </linearGradient>
+  </defs>
+  <rect width="720" height="360" rx="10" fill="url(#bg)"/>
+  <g font-family="ui-monospace, 'JetBrains Mono', 'SF Mono', 'Cascadia Code', 'DejaVu Sans Mono', 'Liberation Mono', Menlo, Consolas, monospace" text-anchor="middle">
+    <g fill="#ffd60a" font-size="20" font-weight="700" xml:space="preserve">
+      <text x="360" y="60">⠀⣠⣶⣿⣿⣿⣿⣶⣄⠀</text>
+      <text x="360" y="84">⠀⣿⣿⠉⠛⠛⠉⣿⣿⠀</text>
+      <text x="360" y="108">⠀⢿⣿⣶⣿⣿⣶⣿⡿⠀</text>
+      <text x="360" y="132">⠀⠀⠙⣿⣦⣴⣿⠋⠀⠀</text>
+      <text x="360" y="156">⠀⠀⠀⢸⣿⣿⡇⠀⠀⠀</text>
+      <text x="360" y="180">⠀⠀⠀⣼⣿⣿⣧⠀⠀⠀</text>
+    </g>
+    <text x="360" y="232" font-size="32" font-weight="800" letter-spacing="10" fill="#ffd60a">K E Y H O G</text>
+    <text x="360" y="256" font-size="14" fill="#3a3a40" letter-spacing="2">──────────────────</text>
+    <text x="360" y="290" font-size="14" fill="#9aa0b4" letter-spacing="2">secret scanner  ·  891 detectors  ·  gpu</text>
+    <text x="360" y="318" font-size="12" fill="#5b6273" letter-spacing="3">santh.dev</text>
+  </g>
+</svg>
