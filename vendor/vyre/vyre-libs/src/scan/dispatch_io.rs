@@ -17,7 +17,7 @@
 //! Each of those was duplicated 2x as I added the second matcher
 //! (`RulePipeline::scan`). Centralising them here makes the *next*
 //! matcher (parser combinators, taint-flow scan, custom regex
-//! compositions in `downstream analyzer`) free to compose — write the unique
+//! compositions in `frontend`) free to compose — write the unique
 //! plumbing, reuse the shared four.
 //!
 //! The output-unpacking step is intentionally **not** centralised:

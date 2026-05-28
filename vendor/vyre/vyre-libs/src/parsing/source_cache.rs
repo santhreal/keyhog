@@ -9,7 +9,7 @@
 //!
 //! ## Why content hash, not string identity
 //!
-//! In the downstream analyzer scan loop the same `.h` header is included from
+//! In the frontend scan loop the same `.h` header is included from
 //! many translation units. Identity-keyed memoisation misses every
 //! caller because each caller holds its own `String`. Content-hash
 //! lookup lets every translation unit share a single parse.

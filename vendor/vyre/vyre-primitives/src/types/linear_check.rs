@@ -14,7 +14,7 @@
 ///
 /// Mirrors `vyre_foundation::ir::LinearType` but lives at the
 /// primitive layer so external crates (the type-checker pass, future
-/// effect-system frontends, downstream analyzer rule lowering) can refer to the
+/// effect-system frontends, frontend rule lowering) can refer to the
 /// discipline without pulling in the IR.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]

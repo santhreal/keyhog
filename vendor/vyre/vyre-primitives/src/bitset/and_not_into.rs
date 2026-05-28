@@ -1,7 +1,7 @@
 //! `bitset_and_not_into` — in-place per-word `target &= !subtrahend`.
 //!
 //! Set-difference accumulator: subtract `subtrahend` from `target` in
-//! place. Used by a downstream analyzer's `flows_to_not_via` lowering to drop
+//! place. Used by a downstream frontend's `flows_to_not_via` lowering to drop
 //! waypoint nodes from a frontier as it grows, without allocating a
 //! fresh output buffer per masking step.
 

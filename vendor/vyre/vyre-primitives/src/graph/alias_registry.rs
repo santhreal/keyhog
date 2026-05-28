@@ -76,7 +76,7 @@ impl AliasRegistry {
 }
 
 /// Registers the lock-free alias solver dynamically onto the compiler engine.
-/// When the downstream analyzer compiler encounters `x == y` under aliased semantic boundaries,
+/// When the frontend compiler encounters `x == y` under aliased semantic boundaries,
 /// the lowering phase will map the AST into this Extern execution route.
 pub fn register_alias_ops(registry: &mut AliasRegistry) {
     registry.register(ALIAS_UNION_OP_ID, AliasOpDescriptor::alias_union());

@@ -149,7 +149,7 @@ pub mod nn;
 
 /// Graph primitives (topological sort, reachability, CSR traversal,
 /// SCC decomposition, path reconstruction — the Tier 2.5 substrate
-/// that a downstream analyzer's stdlib rules compose against).
+/// that a downstream frontend's stdlib rules compose against).
 #[cfg(feature = "graph")]
 pub mod graph;
 
@@ -220,7 +220,7 @@ pub mod bitset;
 pub mod reduce;
 
 /// Label → NodeSet resolver — turn a TagFamily bitmask into a
-/// NodeSet bitset. Implements the `@family` lookup that a downstream analyzer's
+/// NodeSet bitset. Implements the `@family` lookup that a downstream frontend's
 /// label surface surfaces.
 #[cfg(feature = "label")]
 pub mod label;

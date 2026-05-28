@@ -3,14 +3,14 @@
 //!
 //! The taint-reachability semantics (*does taint flow from source
 //! NodeSet to sink NodeSet given this ProgramGraph?*) live in the
-//! source-query dialect stdlib at `downstream analyzer/rules/stdlib/flows_to.srg`:
+//! source-query dialect stdlib at `frontend/rules/stdlib/flows_to.srg`:
 //!
 //! ```text
 //! rec reached = source ∪ csr_forward_traverse(reached, all_edges)
 //!   where fixpoint on reached
 //! ```
 //!
-//! vyre-libs ships one dispatch step that a downstream analyzer's fixpoint driver
+//! vyre-libs ships one dispatch step that a downstream frontend's fixpoint driver
 //! iterates. Op id stays stable; the dead v2 edges_from/edges_to
 //! signature from the inert v2 API has been deleted — the shim
 //! now takes only the canonical frontier / sink buffer names.
@@ -187,7 +187,7 @@ mod tests {
 
     #[test]
     fn flows_to_and_taint_flow_convergence_contracts_match_intentionally() {
-        // taint_flow is the downstream analyzer-facing predicate name; flows_to is the
+        // taint_flow is the frontend-facing predicate name; flows_to is the
         // vyre-side primitive. Both close the same FLOWS_TO_MASK forward
         // closure and therefore share the same convergence regime —
         // matching `max_iterations` is the contract, not a hygiene gap.

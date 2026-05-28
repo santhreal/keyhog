@@ -18,7 +18,7 @@
 //! | `MaxPlus` (+, max) | scheduling, rate analysis | critical-path of dispatch graph for #22 megakernel scheduler |
 //! | `BoolOr` (∧, ∨) | reachability in `vyre-libs::dataflow` | Region-tree reachability for #26 dataflow fixpoint |
 //! | `MaxTimes` (×, max) | Viterbi/HMM forward in ML consumers | rule-conflict probability resolution |
-//! | `Provenance` | `vyre-libs::scallop_join` (#39) | rule provenance tracking in downstream analyzer |
+//! | `Provenance` | `vyre-libs::scallop_join` (#39) | rule provenance tracking in frontend |
 //! | `Gf2` (∧, ⊕) | crypto / linear-code dialects | bitset adjacency under XOR closure |
 //!
 //! Six self-consumers, six user-dialect consumers — clears the recursion-thesis

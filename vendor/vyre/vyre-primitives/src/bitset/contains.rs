@@ -1,7 +1,7 @@
 //! `bitset_contains` — query one bit at a given index.
 //!
 //! `out[0] = (input[index / 32] >> (index % 32)) & 1`. Single-lane
-//! Program. Consumed by a downstream analyzer's point-lookup predicates (e.g.
+//! Program. Consumed by a downstream frontend's point-lookup predicates (e.g.
 //! `target ∈ frontier`).
 
 use std::sync::Arc;

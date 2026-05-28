@@ -41,7 +41,7 @@ impl<E: MatchScan> Pipeline<E> {
     }
 
     /// Wrap an engine with a caller-supplied post-processor. Use when
-    /// downstream consumers need different scoring (e.g. a downstream analyzer's
+    /// downstream consumers need different scoring (e.g. a downstream frontend's
     /// taint-flow reduction, or a benchmark harness that wants
     /// passthrough).
     #[must_use]

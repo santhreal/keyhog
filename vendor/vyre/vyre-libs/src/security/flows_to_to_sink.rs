@@ -14,7 +14,7 @@
 //! plus a fresh accumulator buffer per invocation). Centralising it
 //! here as one fused Region:
 //!
-//! * cuts a downstream analyzer's per-call lowering surface from ~5 sub-programs
+//! * cuts a downstream frontend's per-call lowering surface from ~5 sub-programs
 //!   merged via `merge_programs` to one helper invocation;
 //! * gives the optimizer one Region with a stable op id to fuse,
 //!   cache, and CSE across rules;

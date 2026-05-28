@@ -1,7 +1,7 @@
 //! Kahn-style topological sort with LIFO worklist — CPU reference +
 //! single-invocation GPU `Program` builder.
 //!
-//! Consumed by the optimizer's reaching-defs pass, downstream analyzer
+//! Consumed by the optimizer's reaching-defs pass, frontend
 //! `dominator_tree`, and graph-IR analyses that need a DAG walk.
 //!
 //! AUDIT_2026-04-24 F-TS-04: `toposort_program` emits a single-invocation

@@ -1,11 +1,11 @@
 //! `aliases_dataflow` — bidirectional dataflow reachability over
 //! the launch shape's `aliases($x, $y)` semantic.
 //!
-//! Pre-promotion this lived inline in a downstream analyzer's `lower_aliases` as 9
+//! Pre-promotion this lived inline in a downstream frontend's `lower_aliases` as 9
 //! `merge_programs` calls composing flows_to + bitset_or_into +
 //! bitset_and. Every aliases-using launch shape (stack_overflow_*,
 //! heap_overflow_*, oob_*, use_after_free_double_drop) re-emitted the
-//! same composition. Promoted to a single primitive: downstream analyzer calls
+//! same composition. Promoted to a single primitive: frontend calls
 //! once, vyre owns the composition shape.
 //!
 //! ## Semantics

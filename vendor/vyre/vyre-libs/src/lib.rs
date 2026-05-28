@@ -97,7 +97,7 @@ pub mod region;
 
 /// Domain-neutral byte-range ordering predicates. Previously lived inside
 /// `vyre-libs::security::topology`; hoisted out so non-security callers
-/// (a downstream analyzer's `Before`/`After` predicates, future dialects) do not pull the
+/// (a downstream frontend's `Before`/`After` predicates, future dialects) do not pull the
 /// security dialect through the import graph. See CRITIQUE_VISION_ALIGNMENT_2026-04-23 V5.
 /// Library component.
 /// Library component.
@@ -240,7 +240,7 @@ pub mod representation;
 
 /// GPU parser infrastructure (Phase L3+): bracket matching, DFA
 /// lexer driver, LR(1) table walker. Grammar tables are generated
-/// host-side by `downstream analyzer-grammar-gen` and loaded as ReadOnly buffers.
+/// host-side by the frontend grammar generator and loaded as ReadOnly buffers.
 /// Library component.
 /// Library component.
 pub mod parsing;
@@ -266,7 +266,7 @@ pub use compiler::{
 /// Security / taint compositions for static program analysis.
 /// Every op registers via `inventory::submit!` and lives under a
 /// stable op id. The implementations compose graph and dataflow
-/// primitives so downstream analyzers lower to one production GPU-facing
+/// primitives so frontends lower to one production GPU-facing
 /// surface.
 #[cfg(feature = "security")]
 pub mod security;

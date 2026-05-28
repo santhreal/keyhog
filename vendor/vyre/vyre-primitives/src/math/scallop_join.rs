@@ -40,7 +40,7 @@
 //! - **User dialect consumer**: probabilistic Datalog programs (Scallop
 //!   programs compile each rule body to one `scallop_join`). Substrate
 //!   for neuro-symbolic reasoning systems.
-//! - **vyre-self consumer**: rule-provenance tracking for downstream analyzer / any
+//! - **vyre-self consumer**: rule-provenance tracking for frontend / any
 //!   substrate that needs to ask "which input rule produced this output
 //!   finding?" The answer is a Datalog query over (rule_id, derives,
 //!   finding_id), and `scallop_join` is the GPU-resident execution.
