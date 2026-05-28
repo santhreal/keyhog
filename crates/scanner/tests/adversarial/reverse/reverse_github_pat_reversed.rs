@@ -7,7 +7,9 @@ use std::path::PathBuf;
 #[test]
 fn reverse_github_pat_reversed() {
     let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    d.pop(); d.pop(); d.push("detectors");
+    d.pop();
+    d.pop();
+    d.push("detectors");
     let scanner = CompiledScanner::compile(keyhog_core::load_detectors(&d).expect("detectors"))
         .expect("compile");
     let secret = "ghp_abcdefghijklmnopqrstuvwxyz1234567890AB";
@@ -22,8 +24,14 @@ fn reverse_github_pat_reversed() {
     };
     let matches = scanner.scan(&chunk);
     assert!(
-        matches.iter().any(|m| m.detector_id.as_ref() == "github-classic-pat" && m.credential.as_ref() == secret),
+        matches
+            .iter()
+            .any(|m| m.detector_id.as_ref() == "github-classic-pat"
+                && m.credential.as_ref() == secret),
         "reverse-encoded github-classic-pat must surface; matches={:?}",
-        matches.iter().map(|m| (m.detector_id.as_ref(), m.credential.as_ref())).collect::<Vec<_>>()
+        matches
+            .iter()
+            .map(|m| (m.detector_id.as_ref(), m.credential.as_ref()))
+            .collect::<Vec<_>>()
     );
 }

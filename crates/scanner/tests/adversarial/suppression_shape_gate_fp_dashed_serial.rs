@@ -6,8 +6,5 @@ use oracle_support::assert_detector_silent;
 
 #[test]
 fn generic_password_dashed_serial_shape_suppressed_in_pipeline() {
-    assert_detector_silent(
-        "generic-password",
-        "password=ABCDE-FGHIJ-KLMNO-PQRST-UVWXY",
-    );
+    assert_detector_silent("generic-password", "password=ABCDE-FGHIJ-KLMNO-PQRST-UVWXY");
 }

@@ -4,7 +4,7 @@
 //! programs, large program sets, and cache key stability.
 
 use keyhog_scanner::engine::gpu_program_fusion::{
-    try_fuse, fuse_or_fallback, fusion_cache_key, FUSION_CACHE_VERSION,
+    fuse_or_fallback, fusion_cache_key, try_fuse, FUSION_CACHE_VERSION,
 };
 
 // ────────────────────────────────────────────────────────────

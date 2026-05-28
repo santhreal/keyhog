@@ -12,6 +12,13 @@ key = head + tail
 "#;
     let matches = scan_text(body, "concat.txt");
 
-    let hits: Vec<_> = matches.iter().filter(|m| m.detector_id.as_ref() == "aws-access-key").collect();
-    assert!(hits.is_empty(), "concat near-miss must stay silent; got {:?}", hits);
+    let hits: Vec<_> = matches
+        .iter()
+        .filter(|m| m.detector_id.as_ref() == "aws-access-key")
+        .collect();
+    assert!(
+        hits.is_empty(),
+        "concat near-miss must stay silent; got {:?}",
+        hits
+    );
 }

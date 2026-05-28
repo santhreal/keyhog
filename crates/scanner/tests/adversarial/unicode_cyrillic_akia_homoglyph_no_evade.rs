@@ -17,6 +17,9 @@ fn unicode_cyrillic_akia_homoglyph_no_evade() {
     assert!(
         !aws_hits.is_empty(),
         "homoglyph-prefixed AKIA body must not evade aws-access-key; matches={:?}",
-        matches.iter().map(|m| m.credential.as_ref()).collect::<Vec<_>>()
+        matches
+            .iter()
+            .map(|m| m.credential.as_ref())
+            .collect::<Vec<_>>()
     );
 }

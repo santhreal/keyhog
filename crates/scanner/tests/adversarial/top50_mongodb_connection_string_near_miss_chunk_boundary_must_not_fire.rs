@@ -6,5 +6,8 @@ use oracle_support::assert_detector_silent_across_chunk_boundary;
 
 #[test]
 fn top50_mongodb_connection_string_near_miss_chunk_boundary_must_not_fire() {
-    assert_detector_silent_across_chunk_boundary("mongodb-connection-string", "mongodb://localhost");
+    assert_detector_silent_across_chunk_boundary(
+        "mongodb-connection-string",
+        "mongodb://localhost",
+    );
 }

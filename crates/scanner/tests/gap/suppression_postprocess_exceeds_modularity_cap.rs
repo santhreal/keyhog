@@ -5,8 +5,7 @@ use std::path::PathBuf;
 
 #[test]
 fn suppression_postprocess_under_standard_modularity_cap() {
-    let path =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/suppression/mod.rs");
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/suppression/mod.rs");
     let lines = std::fs::read_to_string(&path)
         .expect("read suppression.rs")
         .lines()

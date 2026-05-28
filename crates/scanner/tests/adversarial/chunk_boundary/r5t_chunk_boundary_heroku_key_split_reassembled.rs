@@ -7,7 +7,9 @@ use std::path::PathBuf;
 #[test]
 fn r5t_chunk_boundary_heroku_key_split_reassembled() {
     let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    d.pop(); d.pop(); d.push("detectors");
+    d.pop();
+    d.pop();
+    d.push("detectors");
     let scanner = CompiledScanner::compile(keyhog_core::load_detectors(&d).expect("detectors"))
         .expect("compile");
     let secret = "01234567-89ab-cdef-0123-456789abcdef";
@@ -37,6 +39,12 @@ fn r5t_chunk_boundary_heroku_key_split_reassembled() {
         },
     };
     let results = scanner.scan_coalesced(&[chunk_a, chunk_b]);
-    let found = results.iter().flatten().any(|m| m.detector_id.as_ref() == "heroku-api-key" && m.credential.as_ref() == secret);
-    assert!(found, "heroku-api-key split across chunk seam must reassemble");
+    let found = results
+        .iter()
+        .flatten()
+        .any(|m| m.detector_id.as_ref() == "heroku-api-key" && m.credential.as_ref() == secret);
+    assert!(
+        found,
+        "heroku-api-key split across chunk seam must reassemble"
+    );
 }

@@ -7,7 +7,9 @@ use std::path::PathBuf;
 #[test]
 fn chunk_boundary_google_api_key_split_reassembled() {
     let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    d.pop(); d.pop(); d.push("detectors");
+    d.pop();
+    d.pop();
+    d.push("detectors");
     let scanner = CompiledScanner::compile(keyhog_core::load_detectors(&d).expect("detectors"))
         .expect("compile");
 
@@ -40,6 +42,12 @@ fn chunk_boundary_google_api_key_split_reassembled() {
     };
 
     let results = scanner.scan_coalesced(&[chunk_a, chunk_b]);
-    let found = results.iter().flatten().any(|m| m.detector_id.as_ref() == "google-api-key" && m.credential.as_ref() == "AIzaSyABCDEFGHIJKLMNOPQRSTUVWXYZabcd");
-    assert!(found, "google-api-key split across chunk seam must reassemble");
+    let found = results.iter().flatten().any(|m| {
+        m.detector_id.as_ref() == "google-api-key"
+            && m.credential.as_ref() == "AIzaSyABCDEFGHIJKLMNOPQRSTUVWXYZabcd"
+    });
+    assert!(
+        found,
+        "google-api-key split across chunk seam must reassemble"
+    );
 }

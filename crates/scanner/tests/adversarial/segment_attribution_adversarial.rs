@@ -22,7 +22,11 @@ fn empty_segments_empty_matches() {
 
 #[test]
 fn empty_segments_with_matches() {
-    let matches = [GlobalMatch { start: 0, end: 5, pattern_id: 0 }];
+    let matches = [GlobalMatch {
+        start: 0,
+        end: 5,
+        pattern_id: 0,
+    }];
     let result = map_offsets_to_segments(&[], &matches);
     // Should return Ok with no attributions (no segments to map to).
     assert!(result.is_ok());
@@ -46,7 +50,11 @@ fn segments_with_empty_matches() {
 #[test]
 fn match_fully_inside_segment() {
     let segments = [Segment::new(0, 0, 100)];
-    let matches = [GlobalMatch { start: 10, end: 20, pattern_id: 0 }];
+    let matches = [GlobalMatch {
+        start: 10,
+        end: 20,
+        pattern_id: 0,
+    }];
     let result = map_offsets_to_segments(&segments, &matches);
     assert!(result.is_ok());
     let attributed = result.unwrap();
@@ -57,7 +65,11 @@ fn match_fully_inside_segment() {
 #[test]
 fn match_at_segment_start() {
     let segments = [Segment::new(0, 0, 100)];
-    let matches = [GlobalMatch { start: 0, end: 5, pattern_id: 0 }];
+    let matches = [GlobalMatch {
+        start: 0,
+        end: 5,
+        pattern_id: 0,
+    }];
     let result = map_offsets_to_segments(&segments, &matches);
     assert!(result.is_ok());
     assert_eq!(result.unwrap().len(), 1);
@@ -66,7 +78,11 @@ fn match_at_segment_start() {
 #[test]
 fn match_at_segment_end() {
     let segments = [Segment::new(0, 0, 100)];
-    let matches = [GlobalMatch { start: 95, end: 100, pattern_id: 0 }];
+    let matches = [GlobalMatch {
+        start: 95,
+        end: 100,
+        pattern_id: 0,
+    }];
     let result = map_offsets_to_segments(&segments, &matches);
     assert!(result.is_ok());
     assert_eq!(result.unwrap().len(), 1);
@@ -78,11 +94,12 @@ fn match_at_segment_end() {
 
 #[test]
 fn match_spanning_two_segments() {
-    let segments = [
-        Segment::new(0, 0, 50),
-        Segment::new(1, 50, 50),
-    ];
-    let matches = [GlobalMatch { start: 45, end: 55, pattern_id: 0 }];
+    let segments = [Segment::new(0, 0, 50), Segment::new(1, 50, 50)];
+    let matches = [GlobalMatch {
+        start: 45,
+        end: 55,
+        pattern_id: 0,
+    }];
     let result = map_offsets_to_segments(&segments, &matches);
     // The match spans two segments — implementation should handle this
     // gracefully (attribute to first, second, or both).
@@ -99,7 +116,11 @@ fn overlapping_segments() {
         Segment::new(0, 0, 60),
         Segment::new(1, 40, 60), // overlaps with segment 0
     ];
-    let matches = [GlobalMatch { start: 50, end: 55, pattern_id: 0 }];
+    let matches = [GlobalMatch {
+        start: 50,
+        end: 55,
+        pattern_id: 0,
+    }];
     let result = map_offsets_to_segments(&segments, &matches);
     // Overlapping segments are rejected at validation stage.
     assert!(result.is_err());
@@ -124,7 +145,11 @@ fn zero_length_segment() {
         Segment::new(0, 50, 0), // zero length
         Segment::new(1, 50, 100),
     ];
-    let matches = [GlobalMatch { start: 50, end: 55, pattern_id: 0 }];
+    let matches = [GlobalMatch {
+        start: 50,
+        end: 55,
+        pattern_id: 0,
+    }];
     let result = map_offsets_to_segments(&segments, &matches);
     // Should not panic on zero-length segment.
     assert!(result.is_ok());
@@ -172,9 +197,7 @@ fn segment_end_overflows_u32() {
 
 #[test]
 fn many_segments_many_matches() {
-    let segments: Vec<Segment> = (0..100)
-        .map(|i| Segment::new(i, i * 100, 100))
-        .collect();
+    let segments: Vec<Segment> = (0..100).map(|i| Segment::new(i, i * 100, 100)).collect();
     let matches: Vec<GlobalMatch> = (0..100)
         .map(|i| GlobalMatch {
             start: i * 100 + 10,
@@ -197,7 +220,11 @@ fn duplicate_segments_same_range() {
         Segment::new(0, 0, 100),
         Segment::new(1, 0, 100), // exact duplicate range
     ];
-    let matches = [GlobalMatch { start: 50, end: 60, pattern_id: 0 }];
+    let matches = [GlobalMatch {
+        start: 50,
+        end: 60,
+        pattern_id: 0,
+    }];
     let result = map_offsets_to_segments(&segments, &matches);
     // Exact duplicate ranges overlap and are rejected at validation stage.
     assert!(result.is_err());
@@ -219,7 +246,11 @@ fn duplicate_segments_same_range() {
 #[test]
 fn match_outside_all_segments() {
     let segments = [Segment::new(0, 0, 50)];
-    let matches = [GlobalMatch { start: 60, end: 70, pattern_id: 0 }];
+    let matches = [GlobalMatch {
+        start: 60,
+        end: 70,
+        pattern_id: 0,
+    }];
     let result = map_offsets_to_segments(&segments, &matches);
     assert!(result.is_ok());
     // Match is outside the segment — should not be attributed.
