@@ -9,7 +9,7 @@ use super::tier::{
 use super::{HardwareCaps, ScanBackend};
 
 thread_local! {
-    pub(crate) static TEST_BACKEND_OVERRIDE: std::cell::RefCell<Option<Option<ScanBackend>>> = std::cell::RefCell::new(None);
+    pub(crate) static TEST_BACKEND_OVERRIDE: std::cell::RefCell<Option<Option<ScanBackend>>> = const { std::cell::RefCell::new(None) };
 }
 
 pub fn set_test_backend_override(val: Option<ScanBackend>) {

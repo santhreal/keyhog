@@ -299,9 +299,7 @@ fn check_nesting_depth(json: &[u8], max_depth: usize) -> bool {
                     return false;
                 }
             } else if b == b'}' || b == b']' {
-                if depth > 0 {
-                    depth -= 1;
-                }
+                depth = depth.saturating_sub(1);
             }
         }
     }

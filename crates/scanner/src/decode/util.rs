@@ -9,6 +9,11 @@
 /// (`url`, `json`, `unicode_escape`) all call the same implementation -
 /// the pre-2026-05-24 state had a byte-for-byte identical copy in each
 /// of those three files (kimi-dedup audit row #1).
+///
+/// `Err(())` is intentional: the only failure mode is "fewer than `count` hex
+/// digits available", and every caller just falls back to the raw text, so a
+/// richer error type would be ceremony with no consumer.
+#[allow(clippy::result_unit_err)]
 pub fn take_hex_digits<I>(chars: &mut std::iter::Peekable<I>, count: usize) -> Result<u32, ()>
 where
     I: Iterator<Item = char>,

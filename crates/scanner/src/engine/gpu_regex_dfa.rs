@@ -118,6 +118,10 @@ impl From<RegexCompileError> for RegexDfaError {
 ///
 /// This is deliberately conservative: patterns like `AKIA[A-Z0-9]{16}`
 /// extract `b"AKIA"`, while `[a-z]+` extracts nothing (empty vec).
+// The body advances `chars` (a Peekable) inside the loop, so a `for` loop
+// over the iterator would move it and break the look-ahead - while-let is the
+// correct shape here.
+#[allow(clippy::while_let_on_iterator)]
 pub fn extract_literal_core(pattern: &str) -> Vec<u8> {
     let mut literal = Vec::new();
     let mut chars = pattern.chars().peekable();

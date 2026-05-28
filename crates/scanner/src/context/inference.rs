@@ -334,8 +334,8 @@ fn is_in_test_function(lines: &[&str], line_idx: usize) -> bool {
         {
             let pre_start = candidate_line_idx.saturating_sub(3);
             let mut is_test_attr = false;
-            for i in pre_start..candidate_line_idx {
-                let pre_trimmed = lines[i].trim();
+            for pre_line in &lines[pre_start..candidate_line_idx] {
+                let pre_trimmed = pre_line.trim();
                 if pre_trimmed == "#[test]"
                     || pre_trimmed == concat!("#[cfg(", "test)]")
                     || pre_trimmed.starts_with("#[tokio::test")

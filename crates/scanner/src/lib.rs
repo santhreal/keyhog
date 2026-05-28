@@ -194,6 +194,13 @@ pub mod testing {
     pub use crate::decode::util::take_hex_digits;
     pub use crate::gpu::{env_no_gpu, is_ci_environment};
 
+    /// # Safety
+    ///
+    /// Dispatches to the AVX-512 entropy kernel, which requires the running
+    /// CPU to support the `avx512f`/`avx512bw` target features. The caller
+    /// must only invoke this after confirming those features are present
+    /// (e.g. via `is_x86_feature_detected!`); calling it on a CPU without
+    /// them is undefined behavior.
     pub unsafe fn calculate_shannon_entropy(chunk: &[u8]) -> f64 {
         unsafe { crate::entropy_avx512::calculate_shannon_entropy(chunk) }
     }
