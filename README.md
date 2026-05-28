@@ -18,8 +18,6 @@
   Release notes: <a href="https://santh.dev/blog/keyhog-v0-5-34/">Inside keyhog v0.5.34: contract-tested secret detection</a>
 </p>
 
-![KeyHog Demo](keyhog-demo.gif)
-
 ---
 
 **KeyHog** scans source trees, git history, Docker images, S3 buckets, and
