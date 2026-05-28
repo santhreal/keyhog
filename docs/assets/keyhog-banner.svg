@@ -1,16 +1,15 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 340" width="720" height="340" role="img" aria-label="KEYHOG mascot">
-  <rect width="720" height="340" fill="#000"/>
-  <g font-family="ui-monospace, 'JetBrains Mono', 'SF Mono', 'Cascadia Code', 'DejaVu Sans Mono', 'Liberation Mono', Menlo, Consolas, monospace" text-anchor="middle">
-    <g fill="#ffd60a" font-size="20" font-weight="700" xml:space="preserve">
-      <text x="360" y="44">⠀⣠⣶⣿⣿⣿⣿⣶⣄⠀</text>
-      <text x="360" y="68">⠀⣿⣿⠉⠛⠛⠉⣿⣿⠀</text>
-      <text x="360" y="92">⠀⢿⣿⣶⣿⣿⣶⣿⡿⠀</text>
-      <text x="360" y="116">⠀⠀⠙⣿⣦⣴⣿⠋⠀⠀</text>
-      <text x="360" y="140">⠀⠀⠀⢸⣿⣿⡇⠀⠀⠀</text>
-      <text x="360" y="164">⠀⠀⠀⣼⣿⣿⣧⠀⠀⠀</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 480" width="720" height="480" role="img" aria-label="keyhog">
+  <g text-anchor="middle">
+    <g font-family="ui-monospace, 'JetBrains Mono', 'SF Mono', 'Cascadia Code', 'DejaVu Sans Mono', 'Liberation Mono', Menlo, Consolas, monospace" fill="#ffd60a" font-size="28" xml:space="preserve">
+      <text x="360" y="62">⠀⣠⣶⣿⣿⣿⣿⣶⣄⠀</text>
+      <text x="360" y="96">⠀⣿⣿⠉⠛⠛⠉⣿⣿⠀</text>
+      <text x="360" y="130">⠀⢿⣿⣶⣿⣿⣶⣿⡿⠀</text>
+      <text x="360" y="164">⠀⠀⠙⣿⣦⣴⣿⠋⠀⠀</text>
+      <text x="360" y="198">⠀⠀⠀⢸⣿⣿⡇⠀⠀⠀</text>
+      <text x="360" y="232">⠀⠀⠀⣼⣿⣿⣧⠀⠀⠀</text>
     </g>
-    <text x="360" y="216" font-size="32" font-weight="800" letter-spacing="10" fill="#ffd60a">K E Y H O G</text>
-    <text x="360" y="252" font-size="13" fill="#9aa0b4" letter-spacing="2.5">v0.5.35  ·  secret scanner  ·  891 detectors  ·  gpu</text>
-    <text x="360" y="284" font-size="11" fill="#5b6273" letter-spacing="2">github.com / santhsecurity / keyhog</text>
+    <text x="360" y="320" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Inter, 'Helvetica Neue', Arial, sans-serif" font-size="56" font-weight="800" letter-spacing="-2" fill="#ffd60a">keyhog</text>
+    <text x="360" y="368" font-family="ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace" font-size="13" fill="#9aa0b4" letter-spacing="2">v0.5.35  ·  secret scanner  ·  891 detectors  ·  gpu</text>
+    <text x="360" y="404" font-family="ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace" font-size="11" fill="#5b6273" letter-spacing="1.5">github.com / santhsecurity / keyhog</text>
   </g>
 </svg>
