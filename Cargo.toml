@@ -11,7 +11,7 @@ exclude = ["vendor/vyre", "vendor/shared"]
 default-members = ["crates/cli"]
 
 [workspace.package]
-version = "0.5.34"
+version = "0.5.35"
 edition = "2021"
 rust-version = "1.89"
 license = "MIT"

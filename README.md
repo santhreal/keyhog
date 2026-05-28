@@ -1,4 +1,6 @@
-<h1 align="center">KeyHog</h1>
+<p align="center">
+  <img src="docs/assets/keyhog-banner.svg" alt="KEYHOG" width="640" />
+</p>
 
 <h3 align="center">The fastest, most accurate secret scanner. Built in Rust.</h3>
 

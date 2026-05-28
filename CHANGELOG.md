@@ -2,6 +2,60 @@
 
 All notable changes to KeyHog. Versions follow [Semantic Versioning](https://semver.org/).
 
+## v0.5.35 - 2026-05-28 - Adversarial wrapper harness: 216 to 152 wrapper-test misses (30% reduction)
+
+### Detector regex fixes
+
+- **deepnote-api-credentials** pattern 2: matches multi-word suffix
+  sequences (`DEEPNOTE_API_KEY=`, `DEEPNOTE_SECRET_TOKEN=`). The prior
+  `[_\s]*(API|TOKEN|KEY)` could only span one of API / TOKEN / KEY,
+  so the doubled-up env-var forms missed entirely. Group renumbered
+  from 2 to 1.
+- **cloudsmith-api-key** pattern 2: separator class now includes `=`
+  and `:`. `CLOUDSMITH_API_KEY="value"` and `cloudsmith.api.key=value`
+  failed under the prior `[\s"']+`-only separator.
+- **aws-lambda-function-url-secret** pattern 2: path class includes
+  `/`. Multi-segment paths like `/api/v1?token=...` now match.
+- **five9-api-credentials**: regex rewritten. The prior `five9apikey=`
+  literal missed every real env-var form. New pattern allows
+  separators and covers api_key / client_secret / secret / token /
+  key / password suffixes.
+- **fedex-api-credentials**: SECRET-suffix pattern promoted from a
+  companion (only fires if anchored by another primary pattern) to a
+  primary pattern. `fedex.api.secret=...` on its own now surfaces.
+
+### Contract body-length fixes
+
+Contracts whose positive credential bodies were 1-2 chars short of
+the detector regex's floor (no detector changes):
+
+- **fedex** pos#0, pos#1: 31 to 32 chars (regex needs `{32,64}`).
+- **finicity** pos#1: 31 to 32 chars (regex needs `{32,40}`).
+- **footprint** pos#0: 30 to 32 chars (regex needs exactly 32).
+- **mistral** pos#1: 33 to 32 chars (Mistral spec is exactly 32).
+
+### Diagnostic
+
+`KEYHOG_ADVERSARIAL_FULL_LOG=<path>` writes the full wrapper-harness
+failure list at panic time, so a 100+ detector regression can be
+diffed end-to-end without re-running the test. The first 50 entries
+still appear inline in the panic message.
+
+### Known remaining 152 misses (v0.5.36 target)
+
+- **Group B (~144 misses)**: helicone, keystonejs, line, paloalto,
+  snowflake, sourcetree, tower, deepnote pos#0. Canonical positives
+  surface (`contracts_runner` green) but wrapped variants do not.
+  Root cause sits between the scanner's cheap-filter window and the
+  extract phase: the AC literal-set returns a keyword position the
+  regex engine cannot consume the preceding byte from. Tracing
+  continues in v0.5.36.
+- **Group A.3 (~24 misses)**: bandwidth pos#1 and vertexai pos#0,
+  pos#1 have positive text that is not actually a credential
+  (`ClientID=...` with no Bandwidth keyword; bare env-var name
+  `GOOGLE_APPLICATION_CREDENTIALS` instead of the service-account
+  JSON). Both need contract redesign.
+
 ## v0.5.34 - 2026-05-27 - Multi-TB perf: adaptive GPU dispatch + shard batching, monolith splits, more silent fallbacks surfaced
 
 ### Multi-TB scanning: RAM-adaptive GPU shard batching
