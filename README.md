@@ -92,6 +92,27 @@ sh keyhog-install.sh
 Daemon mode (sub-100 ms pre-commit scans) is Unix only. Everything
 else works identically on Windows.
 
+## Keep keyhog healthy and up to date
+
+Once installed, keyhog maintains itself - the install script is only
+needed for the first install:
+```bash
+keyhog doctor                # health check: host probe + end-to-end scan self-test
+keyhog update                # self-update to the latest release (verified download + atomic swap)
+keyhog update --check        # is a newer release available? (exits 10 if yes, 0 if current)
+keyhog update --variant cuda # update to the CUDA build instead of the portable one
+keyhog repair                # reinstall a known-good binary if the self-test fails (--force to force)
+keyhog uninstall             # remove the binary (dry run; pass --yes to actually delete)
+```
+
+`keyhog doctor` reuses the scanner's own hardware probe and runs a real
+end-to-end self-test - it plants a synthetic secret and confirms the
+binary detects it - so it is the authoritative "will keyhog work here?"
+check (the installer runs it automatically after install). `update` and
+`repair` download the raw release binary over HTTPS and atomically swap
+the running binary in place; on a healthy host `keyhog update` is the
+one-command upgrade path.
+
 ## Quickstart
 
 ```bash
