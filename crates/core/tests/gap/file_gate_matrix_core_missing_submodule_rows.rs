@@ -1,0 +1,60 @@
+//! KH-GAP-146: every core src module must appear in FILE_GATE_MATRIX.
+
+use std::path::{Path, PathBuf};
+
+fn repo_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+}
+
+fn collect_rs_files(dir: &Path, out: &mut Vec<PathBuf>) -> std::io::Result<()> {
+    for entry in std::fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_dir() {
+            collect_rs_files(&path, out)?;
+        } else if path.extension().and_then(|e| e.to_str()) == Some("rs") {
+            out.push(path);
+        }
+    }
+    Ok(())
+}
+
+fn matrix_paths(raw: &str) -> Vec<String> {
+    raw.lines()
+        .filter_map(|line| {
+            line.strip_prefix("path = \"")
+                .and_then(|p| p.strip_suffix('"'))
+                .map(str::to_string)
+        })
+        .collect()
+}
+
+#[test]
+fn file_gate_matrix_lists_every_core_src_module() {
+    let raw = std::fs::read_to_string(repo_root().join("tests/FILE_GATE_MATRIX.toml"))
+        .expect("FILE_GATE_MATRIX.toml");
+    let listed = matrix_paths(&raw);
+    let root = repo_root().join("crates/core/src");
+    let mut paths = Vec::new();
+    collect_rs_files(&root, &mut paths).expect("walk core src");
+    let required: Vec<String> = paths
+        .iter()
+        .map(|path| {
+            path.strip_prefix(repo_root())
+                .expect("under repo root")
+                .to_string_lossy()
+                .replace('\\', "/")
+        })
+        .collect();
+    let missing: Vec<_> = required
+        .iter()
+        .filter(|p| !listed.contains(p))
+        .cloned()
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "FILE_GATE_MATRIX missing core src rows: {missing:?}"
+    );
+}
