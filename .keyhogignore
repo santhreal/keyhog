@@ -161,6 +161,18 @@ path:react/
 path:ruff/
 path:run_decoder
 path:scripts/
+# Docs site: regenerated from detectors/*.toml on every build, embeds
+# the example/regex tokens from each detector definition. The example
+# tokens are by-design tutorial content, not live credentials.
+path:site/
+# Source files that document detector regex shape in doc-comments.
+# Both contain illustrative AWS-access-key-shaped strings inside /// blocks
+# (regex literals and reverse-decoder fixtures). They are documentation,
+# not credentials, but the hot-pattern detector matches the shape every
+# CI run; suppress at the path level so the keyhog dog-food scan stays
+# at 0 findings.
+path:crates/scanner/src/decode/reverse.rs
+path:crates/scanner/src/pipeline/postprocess/suppression/path_filter.rs
 path:tailwind/
 path:target/
 path:test_extract
