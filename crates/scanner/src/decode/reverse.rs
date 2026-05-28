@@ -11,7 +11,7 @@ use keyhog_core::Chunk;
 /// emits a decoded chunk when the candidate is at least 16 chars long; below
 /// that, reversed strings collide with normal text and produce too many
 /// useless chunks for the scanner to dedup.
-pub(super) struct ReverseDecoder;
+pub struct ReverseDecoder;
 
 const MIN_REVERSE_LEN: usize = 16;
 
@@ -37,7 +37,7 @@ impl Decoder for ReverseDecoder {
     }
 }
 
-fn reverse_str(s: &str) -> String {
+pub fn reverse_str(s: &str) -> String {
     s.chars().rev().collect()
 }
 
@@ -52,7 +52,7 @@ fn reverse_str(s: &str) -> String {
 ///    passes the alphanumeric-run gate, and gets emitted as a decoy chunk
 ///    on every chunk that contains a long alphanumeric word - pure noise
 ///    that hammers the dedup layer. Kimi-decode audit finding #4.
-fn looks_reversible(candidate: &str) -> bool {
+pub fn looks_reversible(candidate: &str) -> bool {
     let bytes = candidate.as_bytes();
     let mut run = 0usize;
     let mut saw_long_run = false;
@@ -77,43 +77,4 @@ fn looks_reversible(candidate: &str) -> bool {
     crate::confidence::KNOWN_PREFIXES
         .iter()
         .any(|prefix| reversed.contains(prefix))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn round_trip_reverse() {
-        assert_eq!(
-            reverse_str(concat!("AK", "IAIOSFODNN7EXAMPLE")),
-            "ELPMAXE7NNDOFSOIAIKA"
-        );
-        assert_eq!(
-            reverse_str(&reverse_str(concat!("AK", "IAIOSFODNN7EXAMPLE"))),
-            concat!("AK", "IAIOSFODNN7EXAMPLE")
-        );
-    }
-
-    #[test]
-    fn looks_reversible_accepts_aws_key_reversal() {
-        // The original adversarial fixture: reversed AWS access-key-id.
-        // Reversing it produces a string starting with AKIA, which is
-        // a KNOWN_PREFIXES entry - the gate fires.
-        assert!(looks_reversible("ELPMAXE7NNDOFSOIAIKA"));
-    }
-
-    #[test]
-    fn looks_reversible_rejects_short_or_punctuated() {
-        assert!(!looks_reversible("hello"));
-        assert!(!looks_reversible("a-b-c-d-e-f-g-h-i-j"));
-    }
-
-    #[test]
-    fn looks_reversible_rejects_alphabetic_prose() {
-        // Long alnum run but reversing it (`ZYX...CBA`) doesn't contain
-        // any known credential prefix. Used to slip through as a decoy.
-        assert!(!looks_reversible("ABCDEFGHIJKLMNOPQRSTUVWXYZ"));
-        assert!(!looks_reversible("0123456789abcdefghijklmnopqr"));
-    }
 }

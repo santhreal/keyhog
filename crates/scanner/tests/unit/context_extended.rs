@@ -41,7 +41,7 @@ fn x_dominated_below_threshold_not_suppressed() {
 #[test]
 fn x_dominated_too_short_not_suppressed() {
     // < 16 chars, even if x-dominated
-    let cred = "xxxxxxxx"; // 8 chars, all x
+    let cred = "xxxxaxxx"; // 8 chars, 7 x (dominated but not monotonic)
     assert!(!is_known_example_credential(cred));
 }
 
@@ -53,7 +53,9 @@ fn empty_string_not_example() {
 
 #[test]
 fn md5_of_empty_is_example() {
-    assert!(is_known_example_credential("d41d8cd98f00b204e9800998ecf8427e"));
+    assert!(is_known_example_credential(
+        "d41d8cd98f00b204e9800998ecf8427e"
+    ));
 }
 
 #[test]
@@ -91,7 +93,10 @@ fn ascending_hex_pairs_is_example() {
 #[test]
 fn assignment_has_highest_multiplier() {
     let assign = CodeContext::Assignment.confidence_multiplier();
-    assert_eq!(assign, 1.0, "Assignment multiplier must be 1.0 (no penalty)");
+    assert_eq!(
+        assign, 1.0,
+        "Assignment multiplier must be 1.0 (no penalty)"
+    );
 }
 
 #[test]
@@ -100,8 +105,14 @@ fn encrypted_has_lowest_multiplier() {
     let test_code = CodeContext::TestCode.confidence_multiplier();
     let documentation = CodeContext::Documentation.confidence_multiplier();
     // Encrypted should be the lowest (0.05)
-    assert!(encrypted < test_code, "Encrypted must have lower multiplier than TestCode");
-    assert!(encrypted < documentation, "Encrypted must have lower multiplier than Documentation");
+    assert!(
+        encrypted < test_code,
+        "Encrypted must have lower multiplier than TestCode"
+    );
+    assert!(
+        encrypted < documentation,
+        "Encrypted must have lower multiplier than Documentation"
+    );
 }
 
 #[test]
@@ -209,12 +220,20 @@ fn double_quoted_string_is_string_literal() {
 fn spec_directory_treated_as_test_code() {
     let lines = vec!["token = 'some_value'"];
     let ctx = infer_context(&lines, 0, Some("spec/features/auth_spec.rb"));
-    assert_eq!(ctx, CodeContext::TestCode, "spec/ directory must classify as TestCode");
+    assert_eq!(
+        ctx,
+        CodeContext::TestCode,
+        "spec/ directory must classify as TestCode"
+    );
 }
 
 #[test]
 fn fixture_directory_treated_as_test_code() {
     let lines = vec!["API_KEY=testvalue"];
     let ctx = infer_context(&lines, 0, Some("tests/fixtures/creds.env"));
-    assert_eq!(ctx, CodeContext::TestCode, "fixtures/ directory must classify as TestCode");
+    assert_eq!(
+        ctx,
+        CodeContext::TestCode,
+        "fixtures/ directory must classify as TestCode"
+    );
 }

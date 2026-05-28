@@ -3,7 +3,7 @@
 //! walks a linear cascade of shape / context / path / decode gates and
 //! returns `true` to suppress.
 
-use super::super::shape_gates::{
+use super::shape_gates::{
     has_n_or_more_consecutive_identical, has_repeated_block_mask,
     has_three_or_more_consecutive_identical, is_uuid_v4_shape, looks_like_dashed_serial_key,
     looks_like_hash_digest, looks_like_standard_base64_blob, RFC7519_EXAMPLE_JWT_PREFIX,
@@ -304,13 +304,17 @@ pub(super) fn should_suppress_inner(
     // ── 6. Algorithmic placeholder detection ──
     // Credentials dominated by filler after stripping known prefixes.
     if crate::context::is_known_example_credential(credential) {
-        crate::telemetry::record_example_suppression(
-            "pipeline",
-            path,
-            credential,
-            "algorithmic_placeholder",
-        );
-        return true;
+        if bypass_shape_gates && credential.chars().all(|c| c.is_ascii_hexdigit()) {
+            // Keep named hex detectors alive (e.g. Algolia admin key)
+        } else {
+            crate::telemetry::record_example_suppression(
+                "pipeline",
+                path,
+                credential,
+                "algorithmic_placeholder",
+            );
+            return true;
+        }
     }
 
     // ── 7. Context-based suppression for docs/comments ──

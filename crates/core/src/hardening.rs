@@ -124,23 +124,55 @@ pub fn apply_lockdown_protections() -> HardeningReport {
             report.failures.push(format!("mlockall: {err}"));
         }
 
-        // Verify the kernel's coredump_filter is restrictive. Default is
-        // 0x33 which allows anonymous private pages - exactly where
-        // credentials live. Refuse to run with `failures` populated when
-        // it's wide open, so the lockdown caller hard-aborts.
+        // Hard-kill any core dump regardless of coredump_filter by
+        // setting RLIMIT_CORE to 0. The kernel refuses to write a core
+        // file at all when the soft limit is 0, so anonymous pages can
+        // never reach disk via the dump path. This makes lockdown a
+        // true one-flag toggle: the user no longer has to pre-set the
+        // coredump filter outside keyhog.
+        // SAFETY: documented syscall; failure non-fatal (we still try
+        // PR_SET_DUMPABLE in apply_default_protections).
+        let rlim_zero = libc::rlimit {
+            rlim_cur: 0,
+            rlim_max: 0,
+        };
+        let rc = unsafe { libc::setrlimit(libc::RLIMIT_CORE, &rlim_zero) };
+        if rc != 0 {
+            let err = std::io::Error::last_os_error();
+            report
+                .failures
+                .push(format!("setrlimit(RLIMIT_CORE, 0): {err}"));
+        }
+
+        // With RLIMIT_CORE=0 set above the kernel cannot write any core
+        // file, so coredump_filter is moot. We still record what was
+        // configured for observability, but a non-zero filter is no
+        // longer a fatal failure - the rlimit covers it. Only escalate
+        // when *both* RLIMIT_CORE could not be set AND the filter is
+        // open, which is the only scenario where credentials could
+        // actually reach disk.
         let filter = std::fs::read_to_string("/proc/self/coredump_filter")
             .ok()
             .and_then(|s| u32::from_str_radix(s.trim(), 16).ok());
+        let rlimit_blocked = rc == 0;
         match filter {
             Some(0) => report.coredump_filter_safe = true,
+            Some(_other) if rlimit_blocked => {
+                // Filter is open but RLIMIT_CORE=0 prevents any dump.
+                report.coredump_filter_safe = true;
+            }
             Some(other) => report.failures.push(format!(
                 "/proc/self/coredump_filter = 0x{other:x} - anonymous pages would be dumped; \
-                 set RLIMIT_CORE=0 or write 0 to /proc/self/coredump_filter before exec"
+                 RLIMIT_CORE could not be set to 0 either. Set ulimit -c 0 in the parent shell."
             )),
             None => {
-                report
-                    .failures
-                    .push("could not read /proc/self/coredump_filter".into());
+                if rlimit_blocked {
+                    report.coredump_filter_safe = true;
+                } else {
+                    report
+                        .failures
+                        .push("could not read /proc/self/coredump_filter".into());
+                }
             }
         }
     }

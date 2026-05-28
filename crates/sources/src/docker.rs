@@ -15,8 +15,8 @@ const MAX_TAR_ENTRY_BYTES: u64 = 128 * 1024 * 1024;
 
 /// Cumulative cap across ALL entries in one Docker archive. The
 /// per-entry [`MAX_TAR_ENTRY_BYTES`] cap alone is bypassed by a
-/// zip-bomb that ships thousands of entries each just under 128 MiB
-/// - the validator passed every entry individually and unpack()
+/// zip-bomb that ships thousands of entries each just under 128 MiB:
+/// the validator passed every entry individually and unpack()
 /// happily wrote N × 128 MiB to disk. With this aggregate cap the
 /// validator rejects the archive before unpack starts.
 ///

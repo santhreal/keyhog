@@ -66,7 +66,8 @@ fn redaction_keeps_prefix_only() {
     let events = drain_events();
     let red: &str = match &events[0] {
         DogfoodEvent::ExampleSuppressed {
-            credential_redacted, ..
+            credential_redacted,
+            ..
         } => credential_redacted.as_str(),
     };
     assert!(red.starts_with("AKIAIO"));
@@ -82,7 +83,8 @@ fn redaction_handles_short_credentials() {
     let events = drain_events();
     match &events[0] {
         DogfoodEvent::ExampleSuppressed {
-            credential_redacted, ..
+            credential_redacted,
+            ..
         } => assert_eq!(credential_redacted.as_str(), "[redacted]"),
     }
 }

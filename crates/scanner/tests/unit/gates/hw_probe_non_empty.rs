@@ -2,7 +2,7 @@
 
 #[test]
 fn hw_probe_non_empty() {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/hw_probe.rs");
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/hw_probe/mod.rs");
     let src = std::fs::read_to_string(path).expect("source readable");
     assert!(
         src.trim().len() >= 20,

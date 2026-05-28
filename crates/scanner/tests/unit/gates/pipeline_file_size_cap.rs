@@ -2,7 +2,7 @@
 
 #[test]
 fn pipeline_file_size_cap() {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/pipeline.rs");
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/pipeline/mod.rs");
     let src = std::fs::read_to_string(path).expect("source readable");
     let lines = src.lines().count();
     assert!(

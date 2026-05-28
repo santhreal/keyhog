@@ -134,3 +134,109 @@ fn split_string_testkey_concat_reassembly() {
         preprocessed.text
     );
 }
+
+#[test]
+fn two_fragments_same_dir_join() {
+    use keyhog_scanner::fragment_cache::SecretFragment;
+    use std::sync::Arc;
+    use zeroize::Zeroizing;
+
+    let cache = FragmentCache::new(1024);
+    // First fragment recorded - no candidates yet, cluster size 1.
+    let frag1 = SecretFragment {
+        prefix: "aws_key".to_string(),
+        var_name: "AWS_PREFIX".to_string(),
+        value: Zeroizing::new("AKIAIOSFODNN7".to_string()),
+        line: 10,
+        path: Some(Arc::from("/repo/config/a.py")),
+    };
+    let candidates = cache.record_and_reassemble(frag1);
+    assert!(
+        candidates.is_empty(),
+        "single fragment can't form a join candidate"
+    );
+    // Second fragment in the SAME directory with the SAME prefix -
+    // cluster size hits 2, joiner produces both orderings.
+    let frag2 = SecretFragment {
+        prefix: "aws_key".to_string(),
+        var_name: "AWS_SUFFIX".to_string(),
+        value: Zeroizing::new("EXAMPLE".to_string()),
+        line: 12,
+        path: Some(Arc::from("/repo/config/b.py")),
+    };
+    let candidates = cache.record_and_reassemble(frag2);
+    let joined: Vec<String> = candidates.iter().map(|c| c.as_str().to_string()).collect();
+    assert!(
+        joined.contains(&concat!("AK", "IAIOSFODNN7EXAMPLE").to_string()),
+        "expected prefix+suffix join AKIAIOSFODNN7EXAMPLE, got {:?}",
+        joined
+    );
+}
+
+#[test]
+fn fragments_in_different_directories_do_not_join() {
+    use keyhog_scanner::fragment_cache::SecretFragment;
+    use std::sync::Arc;
+    use zeroize::Zeroizing;
+
+    let cache = FragmentCache::new(1024);
+    let frag1 = SecretFragment {
+        prefix: "key".to_string(),
+        var_name: "PREFIX".to_string(),
+        value: Zeroizing::new("AKIAIOSFODNN7".to_string()),
+        line: 10,
+        path: Some(Arc::from("/repo/config/a.py")),
+    };
+    cache.record_and_reassemble(frag1);
+    let frag2 = SecretFragment {
+        prefix: "key".to_string(),
+        var_name: "SUFFIX".to_string(),
+        value: Zeroizing::new("EXAMPLE".to_string()),
+        line: 12,
+        path: Some(Arc::from("/repo/vendor/some_lib/b.py")),
+    };
+    let candidates = cache.record_and_reassemble(frag2);
+    assert!(
+        candidates.is_empty(),
+        "cross-directory fragments must not join: got {:?}",
+        candidates
+            .iter()
+            .map(|c| c.as_str().to_string())
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn three_fragments_emit_all_pairwise_joins() {
+    use keyhog_scanner::fragment_cache::SecretFragment;
+    use std::sync::Arc;
+    use zeroize::Zeroizing;
+
+    let cache = FragmentCache::new(1024);
+    let frag = |prefix: &str, var: &str, value: &str, path: &str, line: usize| SecretFragment {
+        prefix: prefix.to_string(),
+        var_name: var.to_string(),
+        value: Zeroizing::new(value.to_string()),
+        line,
+        path: Some(Arc::from(path)),
+    };
+
+    cache.record_and_reassemble(frag("p", "A", "111", "/d/a.py", 1));
+    cache.record_and_reassemble(frag("p", "B", "222", "/d/b.py", 2));
+    let candidates = cache.record_and_reassemble(frag("p", "C", "333", "/d/c.py", 3));
+    assert_eq!(
+        candidates.len(),
+        6,
+        "expected 6 pairwise joins for cluster size 3, got {}",
+        candidates.len()
+    );
+    let joined: std::collections::BTreeSet<String> =
+        candidates.iter().map(|c| c.as_str().to_string()).collect();
+    for expected in ["111222", "222111", "111333", "333111", "222333", "333222"] {
+        assert!(
+            joined.contains(expected),
+            "missing join `{expected}` from {:?}",
+            joined
+        );
+    }
+}

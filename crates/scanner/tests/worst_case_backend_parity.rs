@@ -194,7 +194,11 @@ fn full_corpus_multi_backend_worst_case_parity() {
     for (name, chunks) in &fixtures {
         let reference_keys = scan_fixture(&scanner, chunks, ScanBackend::SimdCpu);
 
-        for backend in backends.iter().copied().filter(|b| *b != ScanBackend::SimdCpu) {
+        for backend in backends
+            .iter()
+            .copied()
+            .filter(|b| *b != ScanBackend::SimdCpu)
+        {
             total_cells += 1;
             let keys = scan_fixture(&scanner, chunks, backend);
 

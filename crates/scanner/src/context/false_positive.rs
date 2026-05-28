@@ -105,12 +105,18 @@ fn has_disclaimer_comment_bytes(bytes: &[u8]) -> bool {
 }
 
 /// Check whether a line-level match sits in known false-positive context.
+///
+/// The path parameter is consumed case-insensitively via
+/// `ends_with_ignore_ascii_case`, so callers no longer need to pre-lower
+/// it. The `_with_path` form kept as a stable alias for downstream
+/// consumers that already passed a lowered path through.
 pub fn is_false_positive_context(lines: &[&str], line_idx: usize, file_path: Option<&str>) -> bool {
-    let path_lower = file_path.map(str::to_ascii_lowercase);
-    is_false_positive_context_with_path(lines, line_idx, path_lower.as_deref())
+    is_false_positive_context_with_path(lines, line_idx, file_path)
 }
 
-/// Same as [`is_false_positive_context`] but accepts a pre-lowered path.
+/// Same as [`is_false_positive_context`]. Retained for source compatibility
+/// with callers that historically pre-lowered the path; the body no longer
+/// requires a lowered string thanks to byte-wise case-insensitive checks.
 pub fn is_false_positive_context_with_path(
     lines: &[&str],
     line_idx: usize,
@@ -135,8 +141,10 @@ pub fn is_false_positive_context_with_path(
         || is_http_cache_header_context(lines, line_idx, line_bytes)
 }
 
-fn is_go_sum_checksum_bytes(bytes: &[u8], path_lower: Option<&str>) -> bool {
-    ci_find(bytes, b"h1:") || path_lower.is_some_and(|path| path.ends_with("go.sum"))
+fn is_go_sum_checksum_bytes(bytes: &[u8], path: Option<&str>) -> bool {
+    ci_find(bytes, b"h1:")
+        || path
+            .is_some_and(|p| crate::ascii_ci::ends_with_ignore_ascii_case(p.as_bytes(), b"go.sum"))
 }
 
 fn is_integrity_hash_context(lines: &[&str], line_idx: usize, line_bytes: &[u8]) -> bool {
@@ -161,7 +169,11 @@ fn is_configmap_binary_data_bytes(bytes: &[u8]) -> bool {
     ci_find(bytes, b"binarydata:")
 }
 
-fn is_git_lfs_pointer_context_with_lines(lines: &[&str], line_idx: usize, line_bytes: &[u8]) -> bool {
+fn is_git_lfs_pointer_context_with_lines(
+    lines: &[&str],
+    line_idx: usize,
+    line_bytes: &[u8],
+) -> bool {
     is_git_lfs_pointer_context_bytes(line_bytes)
         || nearby_lines_contain(lines, line_idx, 3, |candidate| {
             is_git_lfs_pointer_context_bytes(candidate.as_bytes())
@@ -172,7 +184,11 @@ fn is_git_lfs_pointer_context_bytes(bytes: &[u8]) -> bool {
     ci_find(bytes, b"oid sha256:") || ci_find(bytes, b"git-lfs")
 }
 
-fn is_renovate_digest_context_with_lines(lines: &[&str], line_idx: usize, line_bytes: &[u8]) -> bool {
+fn is_renovate_digest_context_with_lines(
+    lines: &[&str],
+    line_idx: usize,
+    line_bytes: &[u8],
+) -> bool {
     is_renovate_digest_context_bytes(line_bytes)
         || surrounding_lines_contain(lines, line_idx, 2, |candidate| {
             is_renovate_digest_context_bytes(candidate.as_bytes())
@@ -195,7 +211,10 @@ fn is_http_cache_header_context(lines: &[&str], line_idx: usize, line_bytes: &[u
 }
 
 fn is_http_cache_header_bytes(bytes: &[u8]) -> bool {
-    let trimmed_start = bytes.iter().position(|b| !b.is_ascii_whitespace()).unwrap_or(bytes.len());
+    let trimmed_start = bytes
+        .iter()
+        .position(|b| !b.is_ascii_whitespace())
+        .unwrap_or(bytes.len());
     let trimmed = &bytes[trimmed_start..];
     trimmed
         .get(..4)
@@ -259,42 +278,4 @@ fn surrounding_lines_contain(
     let start = line_idx.saturating_sub(radius);
     let end = (line_idx + radius + 1).min(lines.len());
     lines[start..end].iter().copied().any(predicate)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn trailing_slash_comment_disclaimer_suppresses() {
-        let line = "const KEY = \"AKIAIOSFODNN7EXAMPLE\"; // not a real aws key";
-        assert!(has_disclaimer_comment_bytes(line.as_bytes()));
-    }
-
-    #[test]
-    fn trailing_hash_comment_disclaimer_suppresses() {
-        let line =
-            "API_TOKEN=ghp_1234567890abcdef1234567890abcdef123456 # fake credential, demo only";
-        assert!(has_disclaimer_comment_bytes(line.as_bytes()));
-    }
-
-    #[test]
-    fn html_comment_disclaimer_suppresses() {
-        let line = "secret=xyz <!-- replace with your value -->";
-        assert!(has_disclaimer_comment_bytes(line.as_bytes()));
-    }
-
-    #[test]
-    fn disclaimer_outside_comment_does_not_suppress() {
-        // The word "fake" appears as part of a real value, not in a comment.
-        let line = r#"password = "FakePassword!2024" + suffix"#;
-        assert!(!has_disclaimer_comment_bytes(line.as_bytes()));
-    }
-
-    #[test]
-    fn ordinary_comment_without_disclaimer_does_not_suppress() {
-        let line =
-            r#"const KEY = concat!("AK", "IA1234567890ABCD12"); // production key, see vault"#;
-        assert!(!has_disclaimer_comment_bytes(line.as_bytes()));
-    }
 }

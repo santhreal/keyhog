@@ -47,7 +47,9 @@ fn empty_payload_segment_rejected() {
 
 #[test]
 fn empty_sig_segment_rejected() {
-    assert!(!looks_like_jwt(&format!("{HEADER_HS256}.{PAYLOAD_FUTURE}.")));
+    assert!(!looks_like_jwt(&format!(
+        "{HEADER_HS256}.{PAYLOAD_FUTURE}."
+    )));
 }
 
 #[test]
@@ -77,7 +79,10 @@ fn valid_hs256_jwt_parses_correctly() {
     let analysis = analyze(&token).expect("should parse a valid JWT");
     assert_eq!(analysis.alg, "HS256");
     assert_eq!(analysis.typ.as_deref(), Some("JWT"));
-    assert!(analysis.anomalies.is_empty(), "no anomalies expected for HS256");
+    assert!(
+        analysis.anomalies.is_empty(),
+        "no anomalies expected for HS256"
+    );
 }
 
 #[test]
@@ -120,7 +125,10 @@ fn unknown_alg_flags_anomaly() {
     let token = format!("{custom_header}.{empty_payload}.{SIG}");
     let analysis = analyze(&token).expect("parse ok");
     assert!(
-        analysis.anomalies.iter().any(|a| matches!(a, JwtAnomaly::UnknownAlg(_))),
+        analysis
+            .anomalies
+            .iter()
+            .any(|a| matches!(a, JwtAnomaly::UnknownAlg(_))),
         "expected UnknownAlg anomaly"
     );
 }
@@ -200,7 +208,10 @@ fn rs256_is_known_alg() {
     let token = format!("{rs256_header}.{empty_payload}.{SIG}");
     if let Some(analysis) = analyze(&token) {
         assert!(
-            !analysis.anomalies.iter().any(|a| matches!(a, JwtAnomaly::UnknownAlg(_))),
+            !analysis
+                .anomalies
+                .iter()
+                .any(|a| matches!(a, JwtAnomaly::UnknownAlg(_))),
             "RS256 should not produce UnknownAlg"
         );
     }
@@ -214,7 +225,10 @@ fn es256_is_known_alg() {
     let token = format!("{es256_header}.{empty_payload}.{SIG}");
     if let Some(analysis) = analyze(&token) {
         assert!(
-            !analysis.anomalies.iter().any(|a| matches!(a, JwtAnomaly::UnknownAlg(_))),
+            !analysis
+                .anomalies
+                .iter()
+                .any(|a| matches!(a, JwtAnomaly::UnknownAlg(_))),
             "ES256 should not produce UnknownAlg"
         );
     }

@@ -472,33 +472,18 @@ fn generic_path_looks_like_random_base64_blob(value: &str) -> bool {
 }
 
 /// IAM-ARN-trimmed-prefix gate for the generic-secret path.
-///
-/// Generic-secret's regex captures `value` starting AFTER the
-/// keyword bridge, which can swallow the `arn:` literal when the
-/// surrounding tokens are interpreted as the type-segment of the
-/// new `(?:&?TypeName\s*[=:]\s*)?` Rust-aware bridge.
-///
-/// Input: `token = arn:aws:iam::428623408413:role/WriterRole`
-/// Captured: `aws:iam::428623408413:role/WriterRole`
-///
-/// The pipeline-level IAM-ARN gate (`pipeline.rs::should_suppress_…`)
-/// requires the literal `arn:aws:iam::` prefix - the trimmed form
-/// falls through. Recognize the trimmed shape here so the generic
-/// path doesn't surface IAM resource ARNs as credentials. ARNs are
-/// identifiers, not credentials.
+/// Recognizes `aws:iam::...` shapes without `arn:` prefix.
 fn generic_path_looks_like_trimmed_aws_arn(value: &str) -> bool {
-    let body = if let Some(b) = value.strip_prefix("aws:iam::") {
-        b
-    } else if let Some(b) = value.strip_prefix("aws-cn:iam::") {
-        b
-    } else if let Some(b) = value.strip_prefix("aws-us-gov:iam::") {
-        b
-    } else {
+    let prefixes = ["aws:iam::", "aws-cn:iam::", "aws-us-gov:iam::"];
+    let Some(body) = prefixes.iter().find_map(|&p| value.strip_prefix(p)) else {
         return false;
     };
-    body.contains(":role/")
-        || body.contains(":user/")
-        || body.contains(":group/")
-        || body.contains(":policy/")
-        || body.contains(":instance-profile/")
+    let targets = [
+        ":role/",
+        ":user/",
+        ":group/",
+        ":policy/",
+        ":instance-profile/",
+    ];
+    targets.iter().any(|&t| body.contains(t))
 }

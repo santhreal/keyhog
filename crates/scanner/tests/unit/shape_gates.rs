@@ -12,7 +12,6 @@
 ///
 /// For each gate, at least one positive (should suppress) and one negative
 /// (should NOT suppress) case is present.
-use std::borrow::Cow;
 use keyhog_scanner::context::CodeContext;
 use keyhog_scanner::{normalize_chunk_data, should_suppress_known_example_credential};
 
@@ -114,8 +113,14 @@ fn test_code_context_suppresses_low_confidence_below_half() {
     // CodeContext::TestCode hard-suppresses when confidence < 0.5
     // (tested through the context multiplier contract, not shape-gate directly)
     let ctx = CodeContext::TestCode;
-    assert!(ctx.should_hard_suppress(0.4), "TestCode at conf<0.5 must hard-suppress");
-    assert!(!ctx.should_hard_suppress(0.6), "TestCode at conf>0.5 must not hard-suppress");
+    assert!(
+        ctx.should_hard_suppress(0.4),
+        "TestCode at conf<0.5 must hard-suppress"
+    );
+    assert!(
+        !ctx.should_hard_suppress(0.6),
+        "TestCode at conf>0.5 must not hard-suppress"
+    );
 }
 
 #[test]
@@ -141,7 +146,10 @@ fn ascii_data_borrowed_without_allocation() {
     use std::borrow::Cow;
     let data = "plain ascii secret token abc123";
     let result = normalize_chunk_data(data);
-    assert!(matches!(result, Cow::Borrowed(_)), "ASCII must return Borrowed");
+    assert!(
+        matches!(result, Cow::Borrowed(_)),
+        "ASCII must return Borrowed"
+    );
     assert_eq!(result.as_ref(), data);
 }
 
@@ -153,5 +161,8 @@ fn unicode_text_without_evasion_returned_unchanged() {
     let result = normalize_chunk_data(data);
     // The result may be Borrowed or Owned depending on whether any evasion
     // chars were found, but the content must not have had genuine text stripped.
-    assert!(result.contains("r") && result.contains("sum"), "legitimate Unicode preserved");
+    assert!(
+        result.contains("r") && result.contains("sum"),
+        "legitimate Unicode preserved"
+    );
 }

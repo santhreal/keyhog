@@ -59,8 +59,8 @@ fn finding_inside_keyhog_repo(file_path: &str) -> bool {
     let Some(root) = keyhog_repo_root() else {
         return false;
     };
-    let canonical = std::fs::canonicalize(file_path)
-        .unwrap_or_else(|_| std::path::PathBuf::from(file_path));
+    let canonical =
+        std::fs::canonicalize(file_path).unwrap_or_else(|_| std::path::PathBuf::from(file_path));
     canonical.starts_with(root)
 }
 

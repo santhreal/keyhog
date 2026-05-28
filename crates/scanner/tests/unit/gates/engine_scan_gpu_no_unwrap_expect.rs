@@ -2,7 +2,7 @@
 
 #[test]
 fn engine_scan_gpu_no_unwrap_expect() {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/engine/scan_gpu.rs");
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/engine/gpu_phase2.rs");
     let src = std::fs::read_to_string(path).expect("source readable");
     let mut offenders: Vec<(usize, &str)> = Vec::new();
     for (i, line) in src.lines().enumerate() {

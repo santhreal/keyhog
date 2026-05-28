@@ -1,5 +1,4 @@
 use super::*;
-use crate::context;
 use crate::hw_probe::ScanBackend;
 use keyhog_core::Chunk;
 

@@ -164,4 +164,3 @@ pub fn parse_byte_size(s: &str) -> Result<usize, String> {
         Ok(bytes_f as usize)
     }
 }
-

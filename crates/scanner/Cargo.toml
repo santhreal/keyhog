@@ -94,6 +94,7 @@ io-uring = { workspace = true }
 # Optional: Vectorscan SIMD backend
 
 [dev-dependencies]
+chrono = { workspace = true }
 criterion = { workspace = true }
 keyhog-verifier = { workspace = true }
 proptest = { workspace = true }

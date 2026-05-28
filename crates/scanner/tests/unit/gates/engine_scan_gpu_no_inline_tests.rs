@@ -2,7 +2,7 @@
 
 #[test]
 fn engine_scan_gpu_no_inline_tests() {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/engine/scan_gpu.rs");
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/engine/gpu_phase2.rs");
     let src = std::fs::read_to_string(path).expect("source readable");
     assert!(
         !src.contains("#[cfg(test)]"),

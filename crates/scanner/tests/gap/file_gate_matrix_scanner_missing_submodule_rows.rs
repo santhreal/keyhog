@@ -1,4 +1,4 @@
-//! KH-GAP-144: every scanner src module must appear in FILE_GATE_MATRIX.
+//! KH-GAP-176: every scanner src module must appear in FILE_GATE_MATRIX.
 
 use std::path::{Path, PathBuf};
 

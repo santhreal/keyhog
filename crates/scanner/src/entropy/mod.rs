@@ -225,6 +225,8 @@ pub fn is_entropy_appropriate(path: Option<&str>, allow_source_files: bool) -> b
         b".hcl",
         b".enc",
         b".vault",
+        b".prod",
+        b".txt",
     ];
     for name in EXACT_OR_CONFIG_EXT_NAMES {
         if filename.eq_ignore_ascii_case(name) {

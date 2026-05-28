@@ -41,8 +41,8 @@ fn analyze_flags_alg_none() {
 #[test]
 fn analyze_flags_unknown_alg() {
     use base64::Engine;
-    let header = base64::engine::general_purpose::URL_SAFE_NO_PAD
-        .encode(br#"{"alg":"XX256","typ":"JWT"}"#);
+    let header =
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(br#"{"alg":"XX256","typ":"JWT"}"#);
     let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(b"{}");
     let token = format!("{header}.{payload}.AAAA");
     let a = analyze(&token).expect("analyzes");

@@ -101,7 +101,9 @@ fn chunk_boundary_twins(text: &str, path: &str) -> Vec<Vec<Chunk>> {
 }
 
 fn detector_fired(matches: &[keyhog_core::RawMatch], detector_id: &str) -> bool {
-    matches.iter().any(|m| m.detector_id.as_ref() == detector_id)
+    matches
+        .iter()
+        .any(|m| m.detector_id.as_ref() == detector_id)
 }
 
 #[test]
@@ -186,7 +188,12 @@ fn every_detector_has_hostile_near_miss_twin() {
         failures.is_empty(),
         "per-detector hostile near-miss failures (first {}):\n  - {}",
         failures.len(),
-        failures.iter().take(20).cloned().collect::<Vec<_>>().join("\n  - ")
+        failures
+            .iter()
+            .take(20)
+            .cloned()
+            .collect::<Vec<_>>()
+            .join("\n  - ")
     );
 
     assert!(
@@ -208,15 +215,16 @@ fn every_detector_has_hostile_near_miss_twin() {
 fn near_miss_contract_row_floor_meets_detector_count() {
     let detectors = keyhog_core::load_detectors(&detector_dir()).expect("load detectors");
     let contracts = load_contracts();
-    let rows: BTreeMap<String, usize> = contracts.iter().fold(BTreeMap::new(), |mut acc, (_, c)| {
-        let count = if c.negative.is_empty() {
-            usize::from(!c.positive.is_empty())
-        } else {
-            c.negative.len()
-        };
-        acc.insert(c.detector_id.clone(), count);
-        acc
-    });
+    let rows: BTreeMap<String, usize> =
+        contracts.iter().fold(BTreeMap::new(), |mut acc, (_, c)| {
+            let count = if c.negative.is_empty() {
+                usize::from(!c.positive.is_empty())
+            } else {
+                c.negative.len()
+            };
+            acc.insert(c.detector_id.clone(), count);
+            acc
+        });
 
     assert_eq!(
         rows.len(),

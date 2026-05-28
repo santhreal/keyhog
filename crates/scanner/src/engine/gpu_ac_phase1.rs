@@ -115,14 +115,25 @@ impl CompiledScanner {
             })
             .collect();
 
-        // Sub-batched dispatch: same MAX_SHARDS_PER_GPU_BATCH=64 budget
-        // as the literal-set path keeps the transient host-side packing
-        // memory bounded on multi-GiB scans while leaving vyre's
-        // 2048-slot readback ring deeply under-subscribed.
-        const MAX_SHARDS_PER_GPU_BATCH: usize = 64;
+        // Sub-batched dispatch: dynamically scaled MAX_SHARDS_PER_GPU_BATCH
+        // budget based on system RAM keeps transient host-side memory
+        // bounded while maximizing dispatch concurrency for high-tier GPUs
+        // and leaving vyre's 2048-slot readback ring deeply under-subscribed.
+        let max_shards_per_gpu_batch: usize = {
+            let total_ram_mb = crate::hw_probe::probe_hardware()
+                .total_memory_mb
+                .unwrap_or(0);
+            if total_ram_mb >= 32 * 1024 {
+                256
+            } else if total_ram_mb >= 16 * 1024 {
+                128
+            } else {
+                64
+            }
+        };
         let mut matches: Vec<vyre_libs::scan::LiteralMatch> = Vec::new();
-        for sub_start in (0..shard_count).step_by(MAX_SHARDS_PER_GPU_BATCH) {
-            let sub_end = (sub_start + MAX_SHARDS_PER_GPU_BATCH).min(shard_count);
+        for sub_start in (0..shard_count).step_by(max_shards_per_gpu_batch) {
+            let sub_end = (sub_start + max_shards_per_gpu_batch).min(shard_count);
             let sub_inputs: Vec<&[&[u8]]> = (sub_start..sub_end)
                 .map(|i| &shard_input_arrays[i][..])
                 .collect();

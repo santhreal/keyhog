@@ -1,10 +1,11 @@
 //! Tier-B test-fixture suppression list. Loaded from the bundled
-//! `data/suppressions/test-fixtures.toml`; previously hardcoded in
-//! `orchestrator.rs` as a chain of `cred == concat!("sk_", "live_",
-//! …)` branches. Moving the data out of code lets a user
-//! contribute a new suppression without re-compiling, lets the
-//! differential bench harness honour the same list, and lets users
-//! opt out entirely via `--no-suppress-test-fixtures`.
+//! `crates/cli/data/suppressions/test-fixtures.toml` via `include_str!`
+//! at build time; previously hardcoded in `orchestrator.rs` as a chain
+//! of `cred == concat!("sk_", "live_", …)` branches. Moving the data
+//! out of code lets a user contribute a new suppression without
+//! re-compiling, lets the differential bench harness honour the same
+//! list, and lets users opt out entirely via
+//! `--no-suppress-test-fixtures`.
 
 use std::collections::HashSet;
 
@@ -110,4 +111,3 @@ impl TestFixtureSuppressions {
         self.exact.len()
     }
 }
-

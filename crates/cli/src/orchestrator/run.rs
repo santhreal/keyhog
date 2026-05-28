@@ -38,6 +38,21 @@ impl ScanOrchestrator {
         }
 
         if self.args.lockdown {
+            #[cfg(feature = "verify")]
+            if self.args.verify {
+                anyhow::bail!(
+                    "lockdown mode forbids --verify (would send credentials \
+                     to outbound HTTPS endpoints). Drop --verify or drop --lockdown."
+                );
+            }
+
+            if self.args.show_secrets {
+                anyhow::bail!(
+                    "lockdown mode forbids --show-secrets (would print plaintext credentials \
+                     to stdout/stderr). Drop --show-secrets or drop --lockdown."
+                );
+            }
+
             let lockdown = keyhog_core::hardening::apply_lockdown_protections();
             if !lockdown.failures.is_empty() {
                 anyhow::bail!(

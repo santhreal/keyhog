@@ -36,3 +36,9 @@ fn popcount_grows_monotonically() {
     bloom.insert_all(b"hello world");
     assert!(bloom.popcount() > before);
 }
+
+#[test]
+fn empty_literal_prefix_does_not_panic() {
+    let bloom = BigramBloom::from_literal_prefixes(&["".to_string(), "a".to_string()]);
+    assert!(bloom.maybe_overlaps(b"abc"));
+}

@@ -2,7 +2,7 @@ use super::*;
 
 impl CompiledScanner {
     pub fn compile(detectors: Vec<DetectorSpec>) -> Result<Self> {
-        let state = build_compile_state(&detectors)?;
+        let mut state = build_compile_state(&detectors)?;
         let ac = build_ac_pattern_set(&state.ac_literals)?;
         // GPU is unconditional in the build; runtime probe decides whether to
         // actually use it. `gpu_available` is set by hw_probe based on adapter
@@ -90,6 +90,32 @@ impl CompiledScanner {
             };
         let prefix_propagation = build_prefix_propagation(&state.ac_literals);
         let same_prefix_patterns = build_same_prefix_patterns(&state.ac_literals);
+
+        // Build the Hyperscan scanner BEFORE the keyword fallback so we
+        // learn which ac_map patterns Hyperscan rejected (over-long, or an
+        // unsupported construct like a large `{100,200}` bounded repeat).
+        // A rejected pattern produces zero HS matches, and because it took
+        // the literal-prefix (ac_map) branch in build_compile_state it is
+        // NOT in the keyword fallback either - so it is silently dead under
+        // the HS backend (the default on Linux/CI). Reroute each one into
+        // the keyword fallback, gated by its detector's keywords, so it
+        // fires via the backend-independent regex sweep. Closes the
+        // contracts_runner recall hole on line/paloalto/tower/keystonejs/
+        // snowflake/bandwidth and the matching adversarial-wrapper misses.
+        #[cfg(feature = "simd")]
+        let (simd_prefilter, hs_index_map) =
+            match super::build_simd_scanner(&state.ac_map, &state.fallback) {
+                Some((scanner, index_map, unsupported_ac)) => {
+                    for ac_idx in unsupported_ac {
+                        let pattern = state.ac_map[ac_idx].clone();
+                        let keywords = detectors[pattern.detector_index].keywords.clone();
+                        state.fallback.push((pattern, keywords));
+                    }
+                    (Some(scanner), index_map)
+                }
+                None => (None, Vec::new()),
+            };
+
         let (fallback_keyword_ac, fallback_keyword_to_patterns) =
             build_fallback_keyword_ac(&state.fallback);
         // Precompute the per-pattern "always-active" bitmap so the per-chunk
@@ -106,12 +132,6 @@ impl CompiledScanner {
             .collect();
 
         log_quality_warnings(&state.quality_warnings);
-
-        #[cfg(feature = "simd")]
-        let (simd_prefilter, hs_index_map) =
-            backend::build_simd_scanner(&state.ac_map, &state.fallback)
-                .map(|(s, m)| (Some(s), m))
-                .unwrap_or((None, Vec::new()));
 
         let mut alphabet_targets = state.ac_literals.clone();
         for (_, keywords) in &state.fallback {
@@ -155,6 +175,8 @@ impl CompiledScanner {
             ac_gpu_program: OnceLock::new(),
 
             rule_pipeline: OnceLock::new(),
+            fused_program: OnceLock::new(),
+            fused_decode_programs: OnceLock::new(),
             static_intern,
             ac_map: state.ac_map,
             prefix_propagation,

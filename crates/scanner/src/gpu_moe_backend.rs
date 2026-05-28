@@ -1,6 +1,7 @@
 //! MoE GPU inference backend (wgpu compute).
 
 use super::gpu_shader::MOE_SHADER;
+
 use bytemuck::{Pod, Zeroable};
 use std::sync::OnceLock;
 use wgpu::util::DeviceExt;
@@ -19,7 +20,7 @@ struct GpuParams {
 }
 
 pub(super) struct GpuContext {
-    /// Shared device+queue from vyre — NOT a second device.
+    /// Shared device+queue from vyre - NOT a second device.
     device_queue: std::sync::Arc<(wgpu::Device, wgpu::Queue)>,
     adapter_info: wgpu::AdapterInfo,
     device_limits: wgpu::Limits,
@@ -59,7 +60,7 @@ static GPU: OnceLock<Option<GpuContext>> = OnceLock::new();
 fn init_gpu() -> Result<GpuContext, Box<dyn std::error::Error + Send + Sync>> {
     // Reuse the vyre WgpuBackend's device instead of creating a second one.
     // This shares the adapter probe, device request, and queue with the
-    // literal-set/MegaScan GPU scanner — halving init time and memory.
+    // literal-set/MegaScan GPU scanner - halving init time and memory.
     let vyre_backend = vyre_driver_wgpu::WgpuBackend::shared()
         .map_err(|e| format!("vyre WgpuBackend unavailable: {e}"))?;
 
@@ -184,7 +185,28 @@ pub fn get_gpu() -> Option<&'static GpuContext> {
             Some(ctx)
         }
         Err(e) => {
-            tracing::debug!("GPU init failed, using CPU fallback: {e}");
+            // No silent fallbacks. If the user has a GPU and we
+            // can't use it, they need to know - otherwise they'll
+            // sit at CPU throughput and assume that's what
+            // "GPU-accelerated keyhog" means.
+            // env_no_gpu() covers both the explicit env var AND
+            // the auto-detected CI environment - on CI the GPU
+            // probe was guaranteed to fail and the warning would
+            // be noise.
+            let no_gpu = super::env_no_gpu();
+            let require_gpu = std::env::var("KEYHOG_REQUIRE_GPU").as_deref() == Ok("1");
+            if require_gpu {
+                eprintln!("keyhog: KEYHOG_REQUIRE_GPU=1 but GPU MoE init failed: {e}");
+                std::process::exit(2);
+            }
+            if !no_gpu {
+                eprintln!(
+                    "keyhog: GPU MoE init failed ({e}); falling back to CPU scoring. \
+Set KEYHOG_NO_GPU=1 to silence this warning, KEYHOG_REQUIRE_GPU=1 to hard-fail \
+on missing GPU instead."
+                );
+            }
+            tracing::warn!("GPU MoE init failed, using CPU fallback: {e}");
             None
         }
     })
@@ -290,7 +312,27 @@ pub fn batch_score_features(features: &[[f32; INPUT_DIM]]) -> Option<Vec<f64>> {
     });
     device.poll(wgpu::Maintain::Wait);
 
-    receiver.recv().ok()?.ok()?;
+    // GPU MoE staging-buffer read. The double `.ok()?` here used
+    // to swallow BOTH the channel `recv` failure (the wgpu callback
+    // was never invoked) AND the `map_async` failure (driver
+    // rejected the map) silently, falling back to the CPU MoE
+    // path without any breadcrumb. Surface both as a warn so the
+    // operator can see why their RTX-class card stopped accelerating
+    // confidence scoring mid-scan.
+    let map_recv = match receiver.recv() {
+        Ok(r) => r,
+        Err(error) => {
+            tracing::warn!(%error, "GPU MoE staging-buffer recv() failed; falling back to CPU MoE for this scan");
+            return None;
+        }
+    };
+    if let Err(error) = map_recv {
+        tracing::warn!(
+            ?error,
+            "GPU MoE staging-buffer map_async failed; falling back to CPU MoE for this scan"
+        );
+        return None;
+    }
     let data = slice.get_mapped_range();
     let scores: &[f32] = bytemuck::cast_slice(&data);
     // kimi-confidence audit: a GPU driver bug, shader miscompile, or

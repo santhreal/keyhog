@@ -40,9 +40,7 @@
 //! `RulePipeline`: SHA-256-keyed, atomic-rename writes,
 //! `~/.cache/keyhog/programs/dfa-<hash>.bin`.
 
-use vyre_libs::scan::{
-    compile_regex_set, CompiledRegexSet, RegexCompileError,
-};
+use vyre_libs::scan::{compile_regex_set, CompiledRegexSet, RegexCompileError};
 
 /// Cache version for the on-disk serialized `RegexDfaPipeline`. Bump
 /// when the wire layout or compilation strategy changes.
@@ -120,7 +118,7 @@ impl From<RegexCompileError> for RegexDfaError {
 ///
 /// This is deliberately conservative: patterns like `AKIA[A-Z0-9]{16}`
 /// extract `b"AKIA"`, while `[a-z]+` extracts nothing (empty vec).
-fn extract_literal_core(pattern: &str) -> Vec<u8> {
+pub fn extract_literal_core(pattern: &str) -> Vec<u8> {
     let mut literal = Vec::new();
     let mut chars = pattern.chars().peekable();
     let mut escaped = false;
@@ -359,82 +357,5 @@ impl RegexDfaPipeline {
         }
         results.sort_unstable();
         results
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn extract_literal_core_simple() {
-        assert_eq!(extract_literal_core("AKIA"), b"AKIA");
-    }
-
-    #[test]
-    fn extract_literal_core_with_class() {
-        assert_eq!(extract_literal_core("AKIA[A-Z]{16}"), b"AKIA");
-    }
-
-    #[test]
-    fn extract_literal_core_pure_regex() {
-        assert!(extract_literal_core("[a-z]+").is_empty());
-    }
-
-    #[test]
-    fn extract_literal_core_escaped() {
-        assert_eq!(extract_literal_core(r"foo\.bar"), b"foo.bar");
-    }
-
-    #[test]
-    fn extract_literal_core_shorthand_stops() {
-        assert_eq!(extract_literal_core(r"key\d+"), b"key");
-    }
-
-    #[test]
-    fn build_regex_dfa_simple_literal() {
-        let result = build_regex_dfa(&["AKIA"], 64);
-        assert!(result.is_ok());
-        let pipeline = result.unwrap();
-        assert_eq!(pipeline.pattern_count, 1);
-        assert!(pipeline.dfa.state_count > 0);
-    }
-
-    #[test]
-    fn build_regex_dfa_mixed_patterns() {
-        let result = build_regex_dfa(&["AKIA", "ghp_[a-zA-Z0-9]{36}"], 64);
-        assert!(result.is_ok());
-        let pipeline = result.unwrap();
-        assert_eq!(pipeline.pattern_count, 2);
-    }
-
-    #[test]
-    fn build_regex_dfa_empty_set_errors() {
-        let result = build_regex_dfa(&[], 64);
-        assert!(matches!(result, Err(RegexDfaError::EmptyPatternSet)));
-    }
-
-    #[test]
-    fn build_regex_dfa_no_literals_errors() {
-        let result = build_regex_dfa(&["[a-z]+"], 64);
-        assert!(matches!(result, Err(RegexDfaError::DfaBudgetExceeded { .. })));
-    }
-
-    #[test]
-    fn reference_scan_finds_literal_in_haystack() {
-        let pipeline = build_regex_dfa(&["AKIA", "ghp_"], 256).unwrap();
-        let haystack = b"prefix AKIA suffix ghp_ tail";
-        let matches = pipeline.reference_scan(haystack);
-        assert!(!matches.is_empty(), "should find at least one match");
-        // Verify AKIA is found.
-        assert!(
-            matches.iter().any(|m| m.pattern_id == 0),
-            "should find AKIA (pattern 0)"
-        );
-        // Verify ghp_ is found.
-        assert!(
-            matches.iter().any(|m| m.pattern_id == 1),
-            "should find ghp_ (pattern 1)"
-        );
     }
 }

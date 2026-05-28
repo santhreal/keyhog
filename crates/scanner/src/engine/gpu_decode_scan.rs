@@ -37,8 +37,6 @@
 //! error), the caller falls back to the existing CPU decode pipeline.
 //! This module never panics on GPU failure.
 
-use std::sync::OnceLock;
-
 /// Supported encoding types for fused GPU decode→scan.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FusedEncoding {
@@ -88,10 +86,7 @@ pub struct FusedDecodeScanPrograms {
 ///
 /// `FusedDecodeScanPrograms` with both base64 and hex fused programs.
 /// If construction fails for either, that field is `None`.
-pub fn build_fused_programs(
-    state_count: u32,
-    input_len: u32,
-) -> FusedDecodeScanPrograms {
+pub fn build_fused_programs(state_count: u32, input_len: u32) -> FusedDecodeScanPrograms {
     // Buffer names follow vyre convention for interop with existing
     // dispatch infrastructure.
     let base64_program = std::panic::catch_unwind(|| {
@@ -225,79 +220,4 @@ pub fn detect_encoding(data: &[u8]) -> Option<FusedEncoding> {
     }
 
     None
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn detect_empty_is_none() {
-        assert_eq!(detect_encoding(b""), None);
-    }
-
-    #[test]
-    fn detect_hex_even_length() {
-        assert_eq!(
-            detect_encoding(b"48656c6c6f"),
-            Some(FusedEncoding::Hex)
-        );
-    }
-
-    #[test]
-    fn detect_base64_with_padding() {
-        assert_eq!(
-            detect_encoding(b"SGVsbG8gV29ybGQ="),
-            Some(FusedEncoding::Base64)
-        );
-    }
-
-    #[test]
-    fn detect_binary_is_none() {
-        assert_eq!(detect_encoding(&[0xFF, 0xFE, 0x00, 0x01, 0x80, 0x90]), None);
-    }
-
-    #[test]
-    fn detect_base64_without_padding() {
-        // "Hello" in base64 without padding is "SGVsbG8" — 7 chars, not
-        // multiple of 4, but contains base64-only chars (G, V, s).
-        assert_eq!(
-            detect_encoding(b"SGVsbG8"),
-            Some(FusedEncoding::Base64)
-        );
-    }
-
-    #[test]
-    fn fused_encoding_labels() {
-        assert_eq!(FusedEncoding::Base64.label(), "base64");
-        assert_eq!(FusedEncoding::Hex.label(), "hex");
-    }
-
-    #[test]
-    fn build_fused_programs_does_not_panic() {
-        // With state_count=0 this should either produce empty programs
-        // or gracefully return None.
-        let programs = build_fused_programs(0, 0);
-        // We don't assert on the result — just verify no panic.
-        let _ = programs.any_available();
-    }
-
-    #[test]
-    fn build_fused_programs_small_automaton() {
-        // Minimal 2-state DFA (start + one accept state).
-        let programs = build_fused_programs(2, 64);
-        // At least one should succeed with valid state count.
-        // (May fail if vyre rejects tiny programs — that's OK.)
-        let _ = programs.any_available();
-    }
-
-    #[test]
-    fn program_for_returns_correct_variant() {
-        let programs = build_fused_programs(4, 128);
-        // program_for should return the right variant or None.
-        let b64 = programs.program_for(FusedEncoding::Base64);
-        let hex = programs.program_for(FusedEncoding::Hex);
-        // Both may be None if vyre rejects — that's fine.
-        let _ = (b64, hex);
-    }
 }

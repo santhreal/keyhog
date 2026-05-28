@@ -1,7 +1,5 @@
 //! GPU parity tests must not silently skip when KEYHOG_REQUIRE_GPU=1.
 
-use std::process::Command;
-
 #[test]
 fn gpu_parity_sources_do_not_use_bare_skip_return() {
     let tests_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));

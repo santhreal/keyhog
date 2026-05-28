@@ -72,9 +72,10 @@ pub(crate) async fn verify_with_retry(
 /// can be unit-tested without HTTP.
 ///
 /// The previous inline loop dropped the last transient attempt's `metadata`
-/// when retries were exhausted - `(last_error.unwrap_or(...), HashMap::new())`
-/// - which silently lost OOB observation IDs and any partially-extracted
-/// fields on a server that 500'd every attempt. This helper preserves both.
+/// when retries were exhausted (it returned `(last_error.unwrap_or(...),
+/// HashMap::new())`), silently losing OOB observation IDs and any
+/// partially-extracted fields on a server that 500'd every attempt. This
+/// helper preserves both.
 async fn retry_loop<F, Fut>(
     max_attempts: usize,
     base_delay_ms: u64,

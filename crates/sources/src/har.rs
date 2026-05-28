@@ -305,7 +305,10 @@ mod tests {
         assert_eq!(chunks.len(), 2, "one request + one response per entry");
         assert_eq!(chunks[0].metadata.source_type, "wire:har:request");
         assert_eq!(chunks[1].metadata.source_type, "wire:har:response");
-        assert!(chunks[0].data.as_ref().contains("Authorization: Bearer ghp_"));
+        assert!(chunks[0]
+            .data
+            .as_ref()
+            .contains("Authorization: Bearer ghp_"));
         assert!(chunks[1].data.as_ref().contains("Content-Type"));
         assert!(chunks[1].data.as_ref().contains("u-123"));
         assert_eq!(

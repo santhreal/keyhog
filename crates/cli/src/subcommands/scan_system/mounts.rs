@@ -7,12 +7,12 @@
 //! sshfs / 9p / ceph) so a `scan-system` run can't accidentally walk
 //! other tenants' data.
 
-use anyhow::Result;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 use anyhow::Context;
-use std::path::PathBuf;
+use anyhow::Result;
 #[cfg(target_os = "windows")]
 use std::path::Path;
+use std::path::PathBuf;
 
 /// Enumerate mounted filesystems on the current OS, filtering pseudo-FS
 /// and (optionally) network mounts. Returns root paths.
@@ -78,7 +78,16 @@ fn linux_mounts(include_network: bool) -> Result<Vec<PathBuf>> {
     ];
     const SKIP_PATH_PREFIXES: &[&str] = &["/run/", "/proc/", "/sys/", "/dev/", "/snap/"];
     const NETWORK_FS_TYPES: &[&str] = &[
-        "nfs", "nfs4", "cifs", "smb", "smbfs", "fuse.sshfs", "fuse.rclone", "9p", "afs", "ceph",
+        "nfs",
+        "nfs4",
+        "cifs",
+        "smb",
+        "smbfs",
+        "fuse.sshfs",
+        "fuse.rclone",
+        "9p",
+        "afs",
+        "ceph",
     ];
 
     let mounts_text = std::fs::read_to_string("/proc/mounts").context("read /proc/mounts")?;

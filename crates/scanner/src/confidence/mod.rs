@@ -1,7 +1,7 @@
 //! Confidence scoring: combines multiple signals into a 0.0–1.0 score.
 //! Higher confidence means more likely to be a real secret.
 
-mod penalties;
+pub mod penalties;
 mod prefixes;
 mod signals;
 

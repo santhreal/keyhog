@@ -4,9 +4,9 @@
 /// This file adds: off-by-one lengths, non-alphanumeric bodies, empty strings,
 /// very long payloads, stripe boundary cases, and gitlab token coverage.
 use keyhog_scanner::checksum::{
-    ChecksumResult, GithubClassicPatValidator, GithubFineGrainedPatValidator, GitlabTokenValidator,
-    NpmTokenValidator, PypiTokenValidator, SlackTokenValidator, StripeTokenValidator,
-    ChecksumValidator,
+    ChecksumResult, ChecksumValidator, GithubClassicPatValidator, GithubFineGrainedPatValidator,
+    GitlabTokenValidator, NpmTokenValidator, PypiTokenValidator, SlackTokenValidator,
+    StripeTokenValidator,
 };
 
 // ── GitHub classic PAT boundaries ─────────────────────────────────────────────
@@ -14,7 +14,7 @@ use keyhog_scanner::checksum::{
 #[test]
 fn github_classic_payload_35_chars_not_applicable() {
     // Payload must be exactly 36 chars; 35 → NotApplicable (not enough entropy)
-    let token = concat!("gh", "p_") .to_string() + &"A".repeat(35);
+    let token = concat!("gh", "p_").to_string() + &"A".repeat(35);
     assert_eq!(
         GithubClassicPatValidator.validate(&token),
         ChecksumResult::NotApplicable
@@ -53,13 +53,19 @@ fn github_classic_body_with_special_chars_is_invalid() {
 
 #[test]
 fn npm_empty_string_not_applicable() {
-    assert_eq!(NpmTokenValidator.validate(""), ChecksumResult::NotApplicable);
+    assert_eq!(
+        NpmTokenValidator.validate(""),
+        ChecksumResult::NotApplicable
+    );
 }
 
 #[test]
 fn npm_payload_35_chars_not_applicable() {
     let token = "npm_".to_string() + &"A".repeat(35);
-    assert_eq!(NpmTokenValidator.validate(&token), ChecksumResult::NotApplicable);
+    assert_eq!(
+        NpmTokenValidator.validate(&token),
+        ChecksumResult::NotApplicable
+    );
 }
 
 #[test]
@@ -75,7 +81,10 @@ fn npm_payload_with_special_chars_is_invalid() {
 fn stripe_sk_live_short_payload_invalid() {
     // Payload only 23 chars — below 24 minimum
     let token = "sk_live_".to_string() + &"A".repeat(23);
-    assert_eq!(StripeTokenValidator.validate(&token), ChecksumResult::Invalid);
+    assert_eq!(
+        StripeTokenValidator.validate(&token),
+        ChecksumResult::Invalid
+    );
 }
 
 #[test]
@@ -94,7 +103,10 @@ fn stripe_sk_test_exact_48_chars_valid() {
 fn stripe_sk_live_49_chars_invalid() {
     // 49 chars — above 48 maximum
     let token = "sk_live_".to_string() + &"A".repeat(49);
-    assert_eq!(StripeTokenValidator.validate(&token), ChecksumResult::Invalid);
+    assert_eq!(
+        StripeTokenValidator.validate(&token),
+        ChecksumResult::Invalid
+    );
 }
 
 #[test]
@@ -119,13 +131,19 @@ fn stripe_unknown_prefix_not_applicable() {
 
 #[test]
 fn stripe_empty_is_not_applicable() {
-    assert_eq!(StripeTokenValidator.validate(""), ChecksumResult::NotApplicable);
+    assert_eq!(
+        StripeTokenValidator.validate(""),
+        ChecksumResult::NotApplicable
+    );
 }
 
 #[test]
 fn stripe_body_with_special_chars_invalid() {
     let token = "sk_live_".to_string() + &"A".repeat(23) + "!";
-    assert_eq!(StripeTokenValidator.validate(&token), ChecksumResult::Invalid);
+    assert_eq!(
+        StripeTokenValidator.validate(&token),
+        ChecksumResult::Invalid
+    );
 }
 
 // ── Slack token boundaries ────────────────────────────────────────────────────
@@ -141,14 +159,20 @@ fn slack_xoxb_too_short_is_invalid() {
 
 #[test]
 fn slack_empty_string_not_applicable() {
-    assert_eq!(SlackTokenValidator.validate(""), ChecksumResult::NotApplicable);
+    assert_eq!(
+        SlackTokenValidator.validate(""),
+        ChecksumResult::NotApplicable
+    );
 }
 
 #[test]
 fn slack_xoxb_with_non_alnum_body_invalid() {
     // Valid numeric segments, but body has special chars
     assert_eq!(
-        SlackTokenValidator.validate(concat!("xox", "b-1234567890-1234567890-abc!@#defghijklmnopq")),
+        SlackTokenValidator.validate(concat!(
+            "xox",
+            "b-1234567890-1234567890-abc!@#defghijklmnopq"
+        )),
         ChecksumResult::Invalid
     );
 }
@@ -161,7 +185,11 @@ fn gitlab_valid_personal_access_token() {
     let token = "glpat-".to_string() + &"A".repeat(20);
     let result = GitlabTokenValidator.validate(&token);
     // Should be Valid or NotApplicable — not Invalid (format is correct)
-    assert_ne!(result, ChecksumResult::Invalid, "valid glpat format must not be Invalid");
+    assert_ne!(
+        result,
+        ChecksumResult::Invalid,
+        "valid glpat format must not be Invalid"
+    );
 }
 
 #[test]
@@ -174,7 +202,10 @@ fn gitlab_unknown_prefix_not_applicable() {
 
 #[test]
 fn gitlab_empty_is_not_applicable() {
-    assert_eq!(GitlabTokenValidator.validate(""), ChecksumResult::NotApplicable);
+    assert_eq!(
+        GitlabTokenValidator.validate(""),
+        ChecksumResult::NotApplicable
+    );
 }
 
 // ── PyPI boundary ─────────────────────────────────────────────────────────────

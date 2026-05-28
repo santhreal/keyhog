@@ -250,7 +250,9 @@ impl<W: Write + Send> Reporter for TextReporter<W> {
         let remediation = match finding.severity {
             Severity::Critical | Severity::High => "Revoke immediately and rotate.",
             Severity::Medium => "Review usage and rotate if active.",
-            Severity::ClientSafe => "Public by design (client bundle key); verify scope restrictions.",
+            Severity::ClientSafe => {
+                "Public by design (client bundle key); verify scope restrictions."
+            }
             _ => "Remove from codebase.",
         };
         writeln!(

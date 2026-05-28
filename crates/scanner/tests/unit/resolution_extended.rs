@@ -39,7 +39,13 @@ fn make_match_at(
 
 #[test]
 fn single_match_is_returned_unchanged() {
-    let m = make_match_at("github-pat", "ghp_FAKE0000000000000000000000000000000", Some(0.9), "a.env", 1);
+    let m = make_match_at(
+        "github-pat",
+        "ghp_FAKE0000000000000000000000000000000",
+        Some(0.9),
+        "a.env",
+        1,
+    );
     let resolved = resolve_matches(vec![m.clone()]);
     assert_eq!(resolved.len(), 1);
     assert_eq!(resolved[0].detector_id.as_ref(), "github-pat");
@@ -53,8 +59,20 @@ fn empty_input_produces_empty_output() {
 
 #[test]
 fn entropy_suppressed_when_named_on_same_line() {
-    let named = make_match_at("aws-access-key", "AKIA_FAKE_KEY_0000000", Some(0.8), "creds.env", 3);
-    let entropy = make_match_at("entropy", "AKIA_FAKE_KEY_0000000", Some(0.95), "creds.env", 3);
+    let named = make_match_at(
+        "aws-access-key",
+        "AKIA_FAKE_KEY_0000000",
+        Some(0.8),
+        "creds.env",
+        3,
+    );
+    let entropy = make_match_at(
+        "entropy",
+        "AKIA_FAKE_KEY_0000000",
+        Some(0.95),
+        "creds.env",
+        3,
+    );
     let resolved = resolve_matches(vec![named, entropy]);
     assert_eq!(resolved.len(), 1);
     assert_eq!(resolved[0].detector_id.as_ref(), "aws-access-key");
@@ -64,8 +82,20 @@ fn entropy_suppressed_when_named_on_same_line() {
 fn entropy_suppressed_on_adjacent_line_within_window() {
     // Named detector fires on line 5; entropy on line 6 (distance = 1, within
     // ADJACENT_LINE_DISTANCE=2) → entropy must be suppressed.
-    let named = make_match_at("stripe-key", "sk_test_FAKEKEYVALUE000000000000", Some(0.8), "a.py", 5);
-    let entropy = make_match_at("entropy", "sk_test_FAKEKEYVALUE000000000000", Some(0.95), "a.py", 6);
+    let named = make_match_at(
+        "stripe-key",
+        "sk_test_FAKEKEYVALUE000000000000",
+        Some(0.8),
+        "a.py",
+        5,
+    );
+    let entropy = make_match_at(
+        "entropy",
+        "sk_test_FAKEKEYVALUE000000000000",
+        Some(0.95),
+        "a.py",
+        6,
+    );
     let resolved = resolve_matches(vec![named, entropy]);
     // entropy should be suppressed since it's within the adjacency window
     assert!(
@@ -77,8 +107,20 @@ fn entropy_suppressed_on_adjacent_line_within_window() {
 #[test]
 fn entropy_on_distant_line_not_suppressed() {
     // Named detector on line 1, entropy on line 10 (well outside window)
-    let named = make_match_at("stripe-key", "sk_test_FAKEKEYVALUE000000000000", Some(0.8), "a.py", 1);
-    let entropy = make_match_at("entropy", "different_FAKEHIGHENTROPY_value", Some(0.95), "a.py", 10);
+    let named = make_match_at(
+        "stripe-key",
+        "sk_test_FAKEKEYVALUE000000000000",
+        Some(0.8),
+        "a.py",
+        1,
+    );
+    let entropy = make_match_at(
+        "entropy",
+        "different_FAKEHIGHENTROPY_value",
+        Some(0.95),
+        "a.py",
+        10,
+    );
     let resolved = resolve_matches(vec![named, entropy]);
     // entropy on a distant line with a different credential must survive
     assert!(
@@ -100,8 +142,20 @@ fn higher_confidence_named_detector_wins_over_lower() {
 #[test]
 fn entropy_detector_with_prefix_treated_as_entropy() {
     // Detectors starting with "entropy-" should also be suppressed near named
-    let named = make_match_at("npm-token", "npm_FAKECRED0000000000000000000000000000", Some(0.9), "b.env", 2);
-    let entropy_variant = make_match_at("entropy-high", "npm_FAKECRED0000000000000000000000000000", Some(0.99), "b.env", 2);
+    let named = make_match_at(
+        "npm-token",
+        "npm_FAKECRED0000000000000000000000000000",
+        Some(0.9),
+        "b.env",
+        2,
+    );
+    let entropy_variant = make_match_at(
+        "entropy-high",
+        "npm_FAKECRED0000000000000000000000000000",
+        Some(0.99),
+        "b.env",
+        2,
+    );
     let resolved = resolve_matches(vec![named, entropy_variant]);
     assert_eq!(resolved.len(), 1);
     assert_ne!(resolved[0].detector_id.as_ref(), "entropy-high");
@@ -119,8 +173,20 @@ fn different_files_not_cross_suppressed() {
 
 #[test]
 fn multiple_named_detectors_both_survive_on_different_lines() {
-    let m1 = make_match_at("stripe-key", "sk_test_FAKEVALUEONE0000000000000", Some(0.8), "c.py", 1);
-    let m2 = make_match_at("npm-token", "npm_FAKEVALUETWO00000000000000000000000000", Some(0.85), "c.py", 5);
+    let m1 = make_match_at(
+        "stripe-key",
+        "sk_test_FAKEVALUEONE0000000000000",
+        Some(0.8),
+        "c.py",
+        1,
+    );
+    let m2 = make_match_at(
+        "npm-token",
+        "npm_FAKEVALUETWO00000000000000000000000000",
+        Some(0.85),
+        "c.py",
+        5,
+    );
     let resolved = resolve_matches(vec![m1, m2]);
     assert_eq!(resolved.len(), 2);
 }

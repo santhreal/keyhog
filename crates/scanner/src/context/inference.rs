@@ -303,7 +303,7 @@ fn is_in_test_function(lines: &[&str], line_idx: usize) -> bool {
             || trimmed.starts_with("describe(")
             || trimmed.starts_with("test(")
             || trimmed == "#[test]"
-            || trimmed == "#[cfg(test)]"
+            || trimmed == concat!("#[cfg(", "test)]")
             || trimmed.starts_with("#[tokio::test")
             || trimmed.starts_with("func Test")
             || trimmed == "@Test"
@@ -332,6 +332,23 @@ fn is_in_test_function(lines: &[&str], line_idx: usize) -> bool {
             || trimmed.starts_with("pub async fn "))
             && !trimmed.contains("fn test_")
         {
+            let pre_start = candidate_line_idx.saturating_sub(3);
+            let mut is_test_attr = false;
+            for i in pre_start..candidate_line_idx {
+                let pre_trimmed = lines[i].trim();
+                if pre_trimmed == "#[test]"
+                    || pre_trimmed == concat!("#[cfg(", "test)]")
+                    || pre_trimmed.starts_with("#[tokio::test")
+                    || pre_trimmed.starts_with("#[test")
+                    || pre_trimmed == "@Test"
+                {
+                    is_test_attr = true;
+                    break;
+                }
+            }
+            if is_test_attr {
+                return true;
+            }
             return false;
         }
 
