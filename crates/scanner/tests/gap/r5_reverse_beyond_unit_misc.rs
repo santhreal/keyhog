@@ -10,5 +10,8 @@ fn r5_reverse_beyond_unit_misc() {
         .filter_map(|e| e.ok())
         .filter(|e| e.file_name().to_string_lossy().starts_with("reverse_"))
         .count();
-    assert!(count >= 6, "KH-GAP-160: reverse adversarial floor, got {count}");
+    assert!(
+        count >= 6,
+        "KH-GAP-160: reverse adversarial floor, got {count}"
+    );
 }

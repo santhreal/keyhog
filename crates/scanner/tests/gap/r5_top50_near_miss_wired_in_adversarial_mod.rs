@@ -20,5 +20,8 @@ fn r5_top50_near_miss_wired_in_adversarial_mod() {
         })
         .map(|p| p.display().to_string())
         .collect();
-    assert!(missing.is_empty(), "KH-GAP-149: unwired top50 near-miss modules: {missing:?}");
+    assert!(
+        missing.is_empty(),
+        "KH-GAP-149: unwired top50 near-miss modules: {missing:?}"
+    );
 }

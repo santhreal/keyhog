@@ -20,5 +20,8 @@ fn count_rs(root: &PathBuf) -> usize {
 fn r5_adversarial_expansion_total_floor_155() {
     let adv = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/adversarial");
     let count = count_rs(&adv);
-    assert!(count >= 155, "KH-GAP-161: adversarial rs floor 155, got {count}");
+    assert!(
+        count >= 155,
+        "KH-GAP-161: adversarial rs floor 155, got {count}"
+    );
 }

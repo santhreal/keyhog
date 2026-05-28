@@ -7,7 +7,9 @@
 use std::path::{Path, PathBuf};
 
 fn scan_platform_cfg_files(dir: &Path, count: &mut usize) {
-    for entry in std::fs::read_dir(dir).unwrap_or_else(|e| panic!("read_dir({}) failed: {e}", dir.display())) {
+    for entry in
+        std::fs::read_dir(dir).unwrap_or_else(|e| panic!("read_dir({}) failed: {e}", dir.display()))
+    {
         let entry = entry.unwrap();
         let path = entry.path();
         if path.is_dir() {

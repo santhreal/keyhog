@@ -187,7 +187,7 @@ pub(crate) fn extract_prefix(var_name: &str) -> String {
 fn extract_string_part(
     line: &str,
     config: &MultilineConfig,
-    _is_continuation: bool,
+    is_continuation: bool,
 ) -> (String, bool, ContinuationType) {
     let trimmed = line.trim();
 
@@ -197,6 +197,11 @@ fn extract_string_part(
             .strip_suffix('\\')
             .unwrap_or(line)
             .trim_end();
+        if config.plus_concatenation && without_backslash.trim().contains('+') {
+            if let Some((part, _)) = extract_plus_concatenation(without_backslash) {
+                return (part, true, ContinuationType::Backslash);
+            }
+        }
         let part = extract_string_content(without_backslash);
         return (part, true, ContinuationType::Backslash);
     }
@@ -223,11 +228,15 @@ fn extract_string_part(
         }
     }
 
-    (line.to_string(), false, ContinuationType::None)
+    if is_continuation {
+        (extract_string_content(line), false, ContinuationType::None)
+    } else {
+        (line.to_string(), false, ContinuationType::None)
+    }
 }
 
 fn extract_string_content(line: &str) -> String {
-    let trimmed = line.trim();
+    let trimmed = line.trim().trim_end_matches([';', ',', ' ']);
     for (open, close) in [('"', '"'), ('\'', '\''), ('`', '`')] {
         if let Some(content) = extract_quoted_content(trimmed, open, close) {
             return content;

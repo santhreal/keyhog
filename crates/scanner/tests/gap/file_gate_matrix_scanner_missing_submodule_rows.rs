@@ -58,7 +58,9 @@ fn file_gate_matrix_lists_every_scanner_src_module() {
         "FILE_GATE_MATRIX missing scanner src rows: {missing:?}"
     );
     assert!(
-        !listed.iter().any(|p| p == "crates/scanner/src/engine/scan_gpu.rs"),
+        !listed
+            .iter()
+            .any(|p| p == "crates/scanner/src/engine/scan_gpu.rs"),
         "stale scan_gpu.rs row must be removed from matrix"
     );
 }

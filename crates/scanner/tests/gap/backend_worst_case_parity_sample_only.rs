@@ -14,9 +14,7 @@ fn full_corpus_multi_backend_worst_case_parity_test_exists() {
         "worst_case_backend_parity.rs",
         "all_detectors_backend_parity.rs",
     ];
-    let exists = candidates
-        .iter()
-        .any(|name| tests_dir.join(name).is_file());
+    let exists = candidates.iter().any(|name| tests_dir.join(name).is_file());
     assert!(
         exists,
         "KH-GAP-125: no worst-case full-corpus CPU/SIMD/GPU parity harness — \

@@ -10,7 +10,10 @@ fn a3_adversarial_decode_has_five_tests() {
             let path = entry.path();
             if path.extension().map(|x| x == "rs").unwrap_or(false) {
                 let name = path.file_name().unwrap().to_string_lossy();
-                if name == "mod.rs" || name.starts_with("decode_hostile_") || name.starts_with("r5t_") {
+                if name == "mod.rs"
+                    || name.starts_with("decode_hostile_")
+                    || name.starts_with("r5t_")
+                {
                     false
                 } else {
                     true

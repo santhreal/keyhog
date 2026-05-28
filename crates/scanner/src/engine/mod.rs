@@ -16,7 +16,7 @@ mod gpu_ac_phase1;
 mod gpu_cache;
 mod gpu_coalesce;
 #[allow(dead_code)]
-pub(crate) mod gpu_decode_scan;
+pub mod gpu_decode_scan;
 mod gpu_dispatch;
 mod gpu_forced;
 mod gpu_lazy;
@@ -25,9 +25,9 @@ mod gpu_megascan;
 mod gpu_phase2;
 pub(crate) mod gpu_postprocess;
 #[allow(dead_code)]
-pub(crate) mod gpu_program_fusion;
+pub mod gpu_program_fusion;
 #[allow(dead_code)]
-pub(crate) mod gpu_regex_dfa;
+pub mod gpu_regex_dfa;
 mod gpu_scan_wrappers;
 mod hot_patterns;
 mod process;
@@ -42,6 +42,7 @@ pub(crate) use backend_prepared::{build_simd_scanner, PreparedChunk};
 pub use gpu_cache::{AcConstPacks, GpuConstPacks};
 pub use gpu_coalesce::coalesce_chunks;
 pub use gpu_scan_wrappers::GpuPhase1Output;
+pub use gpu_regex_dfa::{build_regex_dfa, RegexDfaError};
 pub use rule_pipeline::{
     build_rule_pipeline, megascan_input_len, rule_pipeline_cached, AC_GPU_MAX_MATCHES_PER_DISPATCH,
     MEGASCAN_INPUT_LEN, MEGASCAN_INPUT_LEN_DEFAULT,

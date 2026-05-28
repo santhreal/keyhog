@@ -8,7 +8,11 @@ fn r5_decode_hostile_adversarial_floor_15() {
     let count = std::fs::read_dir(&dir)
         .expect("a3_decode")
         .filter_map(|e| e.ok())
-        .filter(|e| e.file_name().to_string_lossy().starts_with("decode_hostile_"))
+        .filter(|e| {
+            e.file_name()
+                .to_string_lossy()
+                .starts_with("decode_hostile_")
+        })
         .count();
     assert!(count >= 15, "KH-GAP-144: floor 15, got {count}");
 }

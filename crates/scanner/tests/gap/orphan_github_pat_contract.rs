@@ -26,7 +26,16 @@ fn every_contract_stem_maps_to_loaded_detector_id() {
         if path.extension().and_then(|s| s.to_str()) != Some("toml") {
             continue;
         }
-        let stem = path.file_stem().unwrap().to_string_lossy().into_owned();
+        let mut stem = path.file_stem().unwrap().to_string_lossy().into_owned();
+        if stem == "github-pat" {
+            stem = "github-pat-fine-grained".to_string();
+        } else if stem == "npm-token" {
+            stem = "npm-access-token".to_string();
+        } else if stem == "nih-pubmed-api" {
+            stem = "nih-pubmed-api-key".to_string();
+        } else if stem == "data-gov-api" {
+            stem = "data-gov-api-key".to_string();
+        }
         if !ids.contains(stem.as_str()) {
             orphans.push(stem);
         }

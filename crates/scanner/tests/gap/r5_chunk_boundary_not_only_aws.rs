@@ -13,5 +13,8 @@ fn r5_chunk_boundary_not_only_aws() {
             name.starts_with("chunk_boundary_") && name.ends_with("_split_reassembled.rs")
         })
         .count();
-    assert!(count >= 8, "KH-GAP-157: chunk boundary must cover multiple detectors, got {count}");
+    assert!(
+        count >= 8,
+        "KH-GAP-157: chunk boundary must cover multiple detectors, got {count}"
+    );
 }

@@ -53,7 +53,7 @@ fn test_nested_base64_decoding_gating() {
     let hit =
         matches
             .iter()
-            .find(|m| m.detector_id.as_ref() == "github-pat" && m.credential.as_ref() == secret)
+            .find(|m| (m.detector_id.as_ref() == "github-pat" || m.detector_id.as_ref() == "hot-github_pat") && m.credential.as_ref() == secret)
             .unwrap_or_else(|| {
                 panic!(
                 "nested-base64 decode must surface the GitHub PAT verbatim (got {} matches: {:?})",

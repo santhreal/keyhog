@@ -18,7 +18,10 @@ fn no_scanner_src_file_exceeds_standard_500_loc_cap() {
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let offenders = [
         ("engine/scan.rs", manifest.join("src/engine/scan.rs")),
-        ("pipeline/postprocess/suppression.rs", manifest.join("src/pipeline/postprocess/suppression.rs")),
+        (
+            "suppression/mod.rs",
+            manifest.join("src/suppression/mod.rs"),
+        ),
         ("engine/backend.rs", manifest.join("src/engine/backend.rs")),
         ("hw_probe.rs", manifest.join("src/hw_probe.rs")),
         ("gpu.rs", manifest.join("src/gpu.rs")),
