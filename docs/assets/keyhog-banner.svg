@@ -12,16 +12,8 @@
   </defs>
   <rect width="1280" height="320" rx="14" fill="url(#bg)"/>
   <rect width="1280" height="320" rx="14" fill="url(#glow)"/>
-  <g transform="translate(28,24)">
-    <circle cx="0" cy="0" r="7" fill="#ff5f56"/>
-    <circle cx="22" cy="0" r="7" fill="#ffbd2e"/>
-    <circle cx="44" cy="0" r="7" fill="#27c93f"/>
-  </g>
   <g font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Inter, Helvetica, Arial, sans-serif">
-    <text x="640" y="200" text-anchor="middle" font-size="180" font-weight="900" letter-spacing="-4" fill="#ffd60a">KEYHOG</text>
-    <text x="640" y="252" text-anchor="middle" font-size="20" font-weight="600" letter-spacing="6" fill="#9aa0b4">SECRET SCANNER · 891 DETECTORS · GPU ACCELERATED</text>
-  </g>
-  <g font-family="ui-monospace, 'JetBrains Mono', 'SF Mono', Consolas, monospace" font-size="16" fill="#6c7086">
-    <text x="80" y="29">~/code</text>
+    <text x="640" y="186" text-anchor="middle" font-size="180" font-weight="900" letter-spacing="-4" fill="#ffd60a">KEYHOG</text>
+    <text x="640" y="240" text-anchor="middle" font-size="20" font-weight="600" letter-spacing="6" fill="#9aa0b4">SECRET SCANNER · 891 DETECTORS · GPU ACCELERATED</text>
   </g>
 </svg>
