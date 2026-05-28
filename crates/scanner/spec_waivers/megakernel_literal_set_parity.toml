@@ -1,0 +1,8 @@
+# SPEC waiver — KH-GAP-043 / megakernel_literal_set_parity.rs
+# Megakernel dispatch is intentionally unwired until vyre FileBatch hook is stable.
+gap_id = "KH-GAP-043"
+kind = "spec"
+reason = "MegakernelScanner dispatch is not wired in engine/ until vyre exposes a stable FileBatch hook; KEYHOG_USE_MEGAKERNEL must remain a no-op until parity contract can be enforced."
+expires = "2026-08-01"
+owner = "scanner-engine"
+fix_target = "0.6.0"
