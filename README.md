@@ -2,25 +2,20 @@
   <img src="docs/assets/keyhog-banner.svg" alt="keyhog - secret scanner - 891 detectors - gpu" width="560" />
 </p>
 
-<h3 align="center">The fastest, most accurate secret scanner. Built in Rust.</h3>
-
 <p align="center">
-  <a href="https://crates.io/crates/keyhog"><img src="https://img.shields.io/crates/v/keyhog?style=flat-square&color=D93025" alt="crates.io" /></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="MIT" /></a>
-  <a href="https://github.com/santhsecurity/keyhog/actions"><img src="https://img.shields.io/github/actions/workflow/status/santhsecurity/keyhog/ci.yml?style=flat-square&label=CI" alt="CI" /></a>
-  <a href="https://star-history.com/#santhsecurity/keyhog&Date"><img src="https://img.shields.io/github/stars/santhsecurity/keyhog?style=flat-square&color=yellow&label=stars" alt="GitHub stars" /></a>
-  <a href="https://santh.dev"><img src="https://img.shields.io/badge/site-santh.dev-863bff?style=flat-square" alt="santh.dev" /></a>
-  <a href="https://x.com/SanthProject"><img src="https://img.shields.io/badge/X-@SanthProject-000?style=flat-square&logo=x" alt="X / @SanthProject" /></a>
+  <a href="https://crates.io/crates/keyhog"><img src="https://img.shields.io/crates/v/keyhog?style=flat-square&color=ffd60a&labelColor=0a0a0a" alt="crates.io" /></a>&nbsp;
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-9aa0b4?style=flat-square&labelColor=0a0a0a" alt="MIT" /></a>&nbsp;
+  <a href="https://github.com/santhsecurity/keyhog/actions"><img src="https://img.shields.io/github/actions/workflow/status/santhsecurity/keyhog/ci.yml?style=flat-square&label=CI&labelColor=0a0a0a" alt="CI" /></a>&nbsp;
+  <a href="https://star-history.com/#santhsecurity/keyhog&Date"><img src="https://img.shields.io/github/stars/santhsecurity/keyhog?style=flat-square&color=ffd60a&label=stars&labelColor=0a0a0a" alt="GitHub stars" /></a>
 </p>
 
 <p align="center">
-  Part of <a href="https://santh.dev">Santh</a> - open source Rust security and infrastructure tooling.<br/>
-  Release notes: <a href="https://santh.dev/blog/keyhog-v0-5-34/">Inside keyhog v0.5.34: contract-tested secret detection</a>
+  <sub>Part of <a href="https://santh.dev">Santh</a> &nbsp;·&nbsp; <a href="https://santh.dev/blog/keyhog/">blog</a> &nbsp;·&nbsp; <a href="https://x.com/SanthProject">@SanthProject</a></sub>
 </p>
 
 ---
 
-**KeyHog** scans source trees, git history, Docker images, S3 buckets, and
+**keyhog** scans source trees, git history, Docker images, S3 buckets, and
 running systems for leaked credentials. It compiles **891 service-specific
 detectors** into a single Hyperscan NFA database, decodes nested encodings
 before matching, calibrates confidence per detector via Bayesian
@@ -36,13 +31,10 @@ present:
 Backend selection is automatic. On startup:
 
 ```
-KeyHog v0.5.34 | 16 cores | SIMD: AVX-512 | Hyperscan | 891 detectors
+keyhog v0.5.35 | 16 cores | SIMD: AVX-512 | Hyperscan | 891 detectors
 ```
 
-📘 **Full documentation:** [santhsecurity.github.io/keyhog](https://santhsecurity.github.io/keyhog/)
-. install, first scan, output formats, detection internals,
-suppressions, verification, pre-commit + CI integration, CLI
-reference, exit codes, env vars, contributing. Source under `docs/`.
+**Full documentation:** [santhsecurity.github.io/keyhog](https://santhsecurity.github.io/keyhog/) - install, first scan, output formats, detection internals, suppressions, verification, pre-commit + CI integration, CLI reference, exit codes, env vars, contributing. Source under `docs/`.
 
 ---
 
