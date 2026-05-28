@@ -3,7 +3,7 @@
 //!
 //! The dominance frontier of node `n` is the set of nodes `m` such
 //! that `n` dominates a predecessor of `m` but does NOT dominate `m`
-//! itself. SSA phi placement uses this directly; downstream analyzer rules can
+//! itself. SSA phi placement uses this directly; frontend rules can
 //! reach for it via the `vyre.graph.dominator_frontier.v1` ExternCall.
 //!
 //! Soundness: exact when the supplied dominator-tree CSR is

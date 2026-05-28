@@ -1,7 +1,7 @@
 //! `literal_of` — `NodeSet = { v : nodes[v] == Literal AND
 //!                                  literal_values[v] == probe }`.
 //!
-//! The IR-level primitive filters by NodeKind only; a downstream analyzer's
+//! The IR-level primitive filters by NodeKind only; a downstream frontend's
 //! type-inference ensures `literal_of(probe)` is only lowered against
 //! literal-typed frontiers. A runtime match on the literal value can
 //! be composed by re-filtering with a dedicated literal-payload

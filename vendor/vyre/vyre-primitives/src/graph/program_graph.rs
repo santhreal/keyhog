@@ -241,7 +241,7 @@ pub enum GraphValidationError {
 
 /// Validate an in-memory `ProgramGraph` against the wire invariants.
 ///
-/// Called by conform harnesses on synthetic fixtures and by downstream analyzer on
+/// Called by conform harnesses on synthetic fixtures and by frontend on
 /// freshly-emitted graphs before dispatch. The backend dispatcher
 /// rejects any graph whose CSR breaks these invariants.
 pub fn validate_program_graph(

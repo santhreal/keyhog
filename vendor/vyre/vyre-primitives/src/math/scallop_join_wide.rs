@@ -2,7 +2,7 @@
 //!
 //! Extends `#39 scallop_join` from a 32-rule (single u32) capacity to
 //! `W` rules per cell for `W ∈ {2, 4, 8}`. This allows up to 256-rule
-//! provenance tracking for large Scallop programs or downstream analyzer closures.
+//! provenance tracking for large Scallop programs or frontend closures.
 //!
 //! Composes `semiring_gemm_wide` under the `Lineage` semantics with
 //! `persistent_fixpoint`.

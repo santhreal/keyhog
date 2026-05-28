@@ -1,7 +1,7 @@
 //! Transitive reachability over an edge list — CPU reference + Tier-2.5
 //! GPU Program builder.
 //!
-//! Consumed by downstream analyzer `flows_to` taint analysis and graph analyses
+//! Consumed by frontend `flows_to` taint analysis and graph analyses
 //! that need "is B reachable from A given these edges?"
 //!
 //! AUDIT_2026-04-24 F-REACH-02 (RESOLVED): `reachable_program` now

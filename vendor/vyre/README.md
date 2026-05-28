@@ -50,7 +50,7 @@ Vyre grows by adding verified capability, not by rewriting working systems.
 | `vyre-emit-ptx`, `vyre-emit-naga`, `vyre-emit-spirv` | stable | codegen adapters |
 | `vyre-lower`, `vyre-harness`, `vyre-macros`, `vyre-lints` | stable | compiler pipeline helpers |
 | `vyre-bench`, `vyre-aot`, `vyre-frontend-c`, `vyre-cc` | beta | scoped feature work; APIs are additive |
-| `vyre-driver-cuda`, `weir` | in planning | research or downstream coordination work |
+| `vyre-driver-cuda`, `vyre-driver-dxil`, `vyre-driver-metal` | in planning | GPU backend research and integration |
 | `vyre-driver-dxil`, `vyre-driver-metal` | planned | target work in progress |
 
 Planned work is tracked in `docs/targets.md` and each item is labeled there by status.
@@ -321,7 +321,7 @@ Community knowledge that does not require Rust can be expressed as TOML rules. D
 
 ## Who uses vyre
 
-- **Internal security tooling.** Pipelines compose regex, entropy, graph, and parser workflows into vyre IR and drive evaluation under the same conformance rules. `gossan` contributes fingerprint matching, tech-stack detection, and DNS graph walks with this stack.
+- **Internal security workflows.** Pipelines compose regex, entropy, graph, and parser operations into vyre IR and run under the same conformance contract.
 - **First external consumer:** [keyhog](https://github.com/santhsecurity/keyhog) — GPU-backed regex, entropy, and hash detectors.
 - **Research compilers** build toward language-tooling workloads without shader-level codegen.
 

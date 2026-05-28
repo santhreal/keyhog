@@ -9,7 +9,7 @@
 //! resolver in the current label path.
 //!
 //! Feature-gated behind `intern` (off by default — enabled by
-//! a downstream analyzer's label resolver when the label corpus grows past the
+//! a downstream frontend's label resolver when the label corpus grows past the
 //! linear threshold).
 
 /// CHD perfect-hash construction + lookup.

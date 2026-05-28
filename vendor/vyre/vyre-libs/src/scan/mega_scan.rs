@@ -1,6 +1,6 @@
 //! Mega-scan integrator.
 //!
-//! Fuses the G-stack innovations into one `RulePipeline` that downstream analyzer
+//! Fuses the G-stack innovations into one `RulePipeline` that frontend
 //! dispatches. Right now the integrator wires G1 (subgroup-cooperative
 //! NFA scan) end-to-end. As G2-G10 land their composition hooks here,
 //! keeping one authoritative entry point for every scan configuration.
@@ -9,7 +9,7 @@
 //!
 //! Each innovation has its own buffer contracts (lane-major NFA
 //! transition tables, CHD perfect-hash buckets, persistent-engine
-//! work queues, etc.). Attempting to wire those inside downstream analyzer would
+//! work queues, etc.). Attempting to wire those inside frontend would
 //! push backend-specific knowledge into the language compiler —
 //! exactly the coupling vyre's layer boundaries exist to prevent.
 //! `RulePipeline::new` holds the composition rules; callers hand in
@@ -184,7 +184,7 @@ impl RulePipeline {
 }
 
 /// Integrator entry point. Takes a pattern set + the input length the
-/// pipeline will be dispatched against and returns everything downstream analyzer
+/// pipeline will be dispatched against and returns everything frontend
 /// needs to issue a single dispatch.
 ///
 /// Additional G-stack options land here as optional parameters —

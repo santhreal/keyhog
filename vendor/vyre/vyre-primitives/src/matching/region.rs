@@ -1,7 +1,7 @@
 //! Span-region dedup primitive.
 //!
 //! Every multimatch consumer (`vyre-libs::matching` engines, secret-scanning consumer,
-//! downstream analyzer) ends up doing the same operation after the GPU dispatch
+//! frontend) ends up doing the same operation after the GPU dispatch
 //! returns: take the raw `Vec<Match>`, collapse adjacent overlapping
 //! or duplicate spans into a representative, return the deduped set.
 //! Each consumer wrote it differently — some by `(detector_id,
@@ -237,7 +237,7 @@ pub fn sort_regions_cpu(input: &mut [RegionTriple]) {
 /// This is a single-dispatch O(n²) rank sort, like
 /// [`crate::reduce::radix_sort`]. The algorithm is correct for any
 /// `count`; bench-scale dispatches (up to ~10K matches per scan
-/// window) are the secret-scanning consumer/downstream analyzer target. The multi-dispatch radix
+/// window) are the secret-scanning consumer/frontend target. The multi-dispatch radix
 /// pipeline can replace this body once pipeline-level scratch is
 /// available — the function signature is stable.
 #[must_use]

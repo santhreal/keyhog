@@ -7,7 +7,7 @@
 //! ReadWrite half on the merged Program. This in-place variant exposes
 //! ONE binding for the accumulator and a separate binding for the
 //! addend, matching the target-text contract for fixpoint composition. Used
-//! by the downstream analyzer rule lowering to grow a reachability accumulator
+//! by the frontend rule lowering to grow a reachability accumulator
 //! across persistent-dispatch iterations.
 
 use std::sync::Arc;

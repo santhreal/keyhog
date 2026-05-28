@@ -1,6 +1,6 @@
 //! `bitset_copy` — per-word bitwise copy (`target = source`).
 //!
-//! Replaces the `bitset_or_into` "OR-into-zero" idiom that downstream analyzer was
+//! Replaces the `bitset_or_into` "OR-into-zero" idiom that frontend was
 //! using as a structural copy. Explicit primitive: doc-clear,
 //! semantics obvious, kernel one assignment per word. Downstream analyzer's
 //! lower_expr's BindingRef arm (and any other "structural copy

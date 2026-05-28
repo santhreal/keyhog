@@ -7,7 +7,7 @@
 //! drops the ReadWrite half. This in-place variant exposes ONE
 //! binding for the accumulator and a separate binding for the mask.
 //!
-//! Used by downstream analyzer to mask a flowing frontier against an allow set
+//! Used by frontend to mask a flowing frontier against an allow set
 //! without allocating a fresh output buffer per step — the same
 //! pattern the `flows_to_not_via` lowering uses to subtract waypoint
 //! nodes can be expressed in fewer dispatches when the caller is

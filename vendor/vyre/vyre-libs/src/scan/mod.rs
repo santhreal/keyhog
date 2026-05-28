@@ -195,7 +195,7 @@ pub mod direct_gpu;
 /// commit + G7 persistent-engine work items + G8 content-hash
 /// cache key + G4 adaptive CSR/dense graph traversal + G9 CHD
 /// perfect hash + G10 differential scan file selection. One
-/// object downstream analyzer dispatches.
+/// object frontend dispatches.
 #[cfg(feature = "matching-nfa")]
 pub mod mega_scan;
 

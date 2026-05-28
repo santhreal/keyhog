@@ -16,7 +16,7 @@ pub const OP_ID: &str = "vyre-primitives::predicate::edge";
 
 /// Build a Program. The body is a `Region { generator: edge::OP_ID }`
 /// wrapping the underlying `csr_forward_traverse` so callers (the
-/// downstream analyzer motif lowerer in particular) can locate the edge dispatch
+/// frontend motif lowerer in particular) can locate the edge dispatch
 /// by its own op id rather than the delegate's.
 #[must_use]
 pub fn edge(

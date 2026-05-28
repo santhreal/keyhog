@@ -16,7 +16,7 @@ use vyre::ir::{BufferAccess, BufferDecl, DataType, Expr, Node, Program};
 /// This composition itself is **not** registered with the harness because the
 /// buffer-reference passing in `Expr::Call` args here is a compile-time
 /// sketch that the reference interpreter does not execute — the real
-/// executable form is the fused megakernel produced by downstream analyzer against the
+/// executable form is the fused megakernel produced by frontend against the
 /// individual sub-op registrations. Register this wrapper only after `Expr::Call`
 /// can carry buffer references or the inline-expansion pass can splice the
 /// callee bodies directly.

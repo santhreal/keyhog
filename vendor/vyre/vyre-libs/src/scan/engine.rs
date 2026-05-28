@@ -29,7 +29,7 @@
 //! # Cache wiring rule (Torvalds-style: do it once)
 //!
 //! [`cached_load_or_compile`] is the only blessed way to wire a cache.
-//! Consumers (secret-scanning consumer, downstream analyzer) should never re-implement the load/compile
+//! Consumers (secret-scanning consumer, frontend) should never re-implement the load/compile
 //! /save dance. If a new engine needs special cache invalidation logic
 //! (e.g. dropping the cache on certain ABI bumps), extend this helper —
 //! don't fork it.
