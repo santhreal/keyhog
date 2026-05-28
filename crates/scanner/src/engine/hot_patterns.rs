@@ -152,17 +152,27 @@ impl CompiledScanner {
                 }
                 // Raw base64 / pure-alphabet files: alphabet-coincidence
                 // matches inside the base64 stream (AKIA/ASIA/etc.) are
-                // not credentials.
+                // not credentials. Skim raw path bytes case-insensitively
+                // so a per-match `.to_ascii_lowercase()` allocation never
+                // lands on the hot-pattern path (this branch fires for
+                // every AKIA/ASIA literal in every chunk).
                 if chunk.metadata.path.as_deref().is_some_and(|p| {
-                    let lower = p.to_ascii_lowercase();
-                    if lower.ends_with(".b64") || lower.ends_with(".base64") {
+                    let bytes = p.as_bytes();
+                    if crate::ascii_ci::ends_with_ignore_ascii_case(bytes, b".b64")
+                        || crate::ascii_ci::ends_with_ignore_ascii_case(bytes, b".base64")
+                    {
                         return true;
                     }
                     // `/` AND `\\` for Windows paths - keeps the
                     // hot-pattern base64 filename gate working when
                     // the scanner runs against a Windows checkout.
-                    let basename = lower.rsplit(['/', '\\']).next().unwrap_or(&lower);
-                    basename.starts_with("base64_") || basename.contains("base64_string")
+                    let basename = bytes
+                        .iter()
+                        .rposition(|&b| b == b'/' || b == b'\\')
+                        .map(|i| &bytes[i + 1..])
+                        .unwrap_or(bytes);
+                    crate::ascii_ci::starts_with_ignore_ascii_case(basename, b"base64_")
+                        || crate::ascii_ci::ci_find(basename, b"base64_string")
                 }) {
                     continue;
                 }

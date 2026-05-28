@@ -3,6 +3,8 @@
 //! whole files (`looks_like_secret_scanner_source`) or whole subdirectories
 //! (`looks_like_vendored_minified_path`).
 
+use crate::ascii_ci::{ci_find, contains_path_segment, contains_path_segment_two};
+
 /// True if the file at `path` is itself a secret-scanner source file.
 /// Such files contain detector regex patterns (`/AKIA[A-Z0-9]{16}/g`,
 /// `'(?:ASIA|AKIA)[A-Z2-7]{16}'`, `dn_[a-zA-Z0-9_-]{20,}`) that the engine
@@ -16,53 +18,23 @@ pub(crate) fn looks_like_secret_scanner_source(path: Option<&str>) -> bool {
     let Some(p) = path else {
         return false;
     };
-    let lower = p.to_ascii_lowercase();
-    lower.contains("secretscanner")
-        || lower.contains("secret-scanner")
-        || lower.contains("secret_scanner")
-        || lower.contains("credentialscanner")
-        || lower.contains("credential-scanner")
-        || lower.contains("credential_scanner")
-        || lower.contains("trufflehog")
-        || lower.contains("gitleaks")
-        || lower.contains("detect-secrets")
-        || lower.contains("detect_secrets")
-}
-
-/// Path-segment substring test that tolerates either `/seg/` (POSIX)
-/// or `\seg\` (Windows). Used by the vendored-path gate below so that
-/// Windows checkouts (`C:\src\app\node_modules\…`) get the same
-/// suppression treatment as POSIX checkouts. No allocations - walks
-/// `path` once with `find()`.
-fn contains_path_segment(path: &str, segment: &str) -> bool {
-    let mut needle_unix = String::with_capacity(segment.len() + 2);
-    needle_unix.push('/');
-    needle_unix.push_str(segment);
-    needle_unix.push('/');
-    let mut needle_win = String::with_capacity(segment.len() + 2);
-    needle_win.push('\\');
-    needle_win.push_str(segment);
-    needle_win.push('\\');
-    path.contains(needle_unix.as_str()) || path.contains(needle_win.as_str())
-}
-
-/// Two-segment variant: matches `/a/b/` (POSIX) or `\a\b\` (Windows).
-/// Used for the `public/plugins`, `wp-content/plugins`, etc. matches
-/// where both segments must be present in sequence.
-fn contains_path_segment_two(path: &str, a: &str, b: &str) -> bool {
-    let mut needle_unix = String::with_capacity(a.len() + b.len() + 3);
-    needle_unix.push('/');
-    needle_unix.push_str(a);
-    needle_unix.push('/');
-    needle_unix.push_str(b);
-    needle_unix.push('/');
-    let mut needle_win = String::with_capacity(a.len() + b.len() + 3);
-    needle_win.push('\\');
-    needle_win.push_str(a);
-    needle_win.push('\\');
-    needle_win.push_str(b);
-    needle_win.push('\\');
-    path.contains(needle_unix.as_str()) || path.contains(needle_win.as_str())
+    // Avoid the per-match `p.to_ascii_lowercase()` allocation by skimming
+    // raw path bytes against pre-lowered needles via `ci_find`. Same
+    // ten-needle alternation, zero allocations.
+    let bytes = p.as_bytes();
+    const NEEDLES: &[&[u8]] = &[
+        b"secretscanner",
+        b"secret-scanner",
+        b"secret_scanner",
+        b"credentialscanner",
+        b"credential-scanner",
+        b"credential_scanner",
+        b"trufflehog",
+        b"gitleaks",
+        b"detect-secrets",
+        b"detect_secrets",
+    ];
+    NEEDLES.iter().any(|n| ci_find(bytes, n))
 }
 
 /// True if `path` looks like a vendored 3rd-party JS/CSS/wasm bundle.
@@ -123,43 +95,42 @@ pub(crate) fn looks_like_vendored_minified_path(path: Option<&str>) -> bool {
     {
         // `rsplit(['/', '\\'])` so Windows-style paths still collapse
         // to the bare filename - the prefix list below would otherwise
-        // never match on Windows checkouts.
-        let basename = p
-            .rsplit(['/', '\\'])
-            .next()
-            .unwrap_or(p)
-            .to_ascii_lowercase();
-        const VENDORED_JS_PREFIXES: &[&str] = &[
-            "bootstrap",
-            "jquery",
-            "react.",
-            "react-",
-            "vue.",
-            "vue-",
-            "angular",
-            "ember",
-            "backbone",
-            "lodash",
-            "underscore",
-            "moment",
-            "alertify",
-            "fullcalendar",
-            "datatables",
-            "highcharts",
-            "chart.",
-            "chart-",
-            "select2",
-            "tinymce",
-            "ckeditor",
-            "codemirror",
-            "html5",
-            "modernizr",
-            "respond",
+        // never match on Windows checkouts. No allocation: we match
+        // case-insensitively against the borrowed `&str` directly.
+        let basename = p.rsplit(['/', '\\']).next().unwrap_or(p);
+        let basename_bytes = basename.as_bytes();
+        const VENDORED_JS_PREFIXES: &[&[u8]] = &[
+            b"bootstrap",
+            b"jquery",
+            b"react.",
+            b"react-",
+            b"vue.",
+            b"vue-",
+            b"angular",
+            b"ember",
+            b"backbone",
+            b"lodash",
+            b"underscore",
+            b"moment",
+            b"alertify",
+            b"fullcalendar",
+            b"datatables",
+            b"highcharts",
+            b"chart.",
+            b"chart-",
+            b"select2",
+            b"tinymce",
+            b"ckeditor",
+            b"codemirror",
+            b"html5",
+            b"modernizr",
+            b"respond",
         ];
-        if VENDORED_JS_PREFIXES
-            .iter()
-            .any(|prefix| basename.starts_with(prefix))
-        {
+        if VENDORED_JS_PREFIXES.iter().any(|prefix| {
+            basename_bytes
+                .get(..prefix.len())
+                .is_some_and(|p| p.eq_ignore_ascii_case(prefix))
+        }) {
             return true;
         }
     }
