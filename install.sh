@@ -667,6 +667,23 @@ do_repair() {
 }
 
 do_diagnose() {
+    # Prefer the binary's own `keyhog doctor` when it runs: it reuses the same
+    # hw_probe the scanner uses and runs an end-to-end scan self-test, so it is
+    # authoritative in a way this shell (which only guesses from the outside)
+    # can't be. We still append the install-side "latest release / would
+    # install" lines, which doctor doesn't know about. Falls back to the full
+    # shell diagnostic below when there's no runnable binary to ask.
+    bin=$(current_binary)
+    if [ -n "$bin" ] && "$bin" --version >/dev/null 2>&1; then
+        "$bin" doctor
+        printf '\n%sLatest release%s\n' "$C_BOLD" "$C_RESET"
+        resolve_tag
+        say "  Tag: $TAG"
+        resolve_asset
+        say "  Would install: $ASSET"
+        return
+    fi
+
     info "Diagnostic report ($(date -u +%Y-%m-%dT%H:%M:%SZ))"
     printf '\n%sHost%s\n' "$C_BOLD" "$C_RESET"
     say "  OS:    $OS"
