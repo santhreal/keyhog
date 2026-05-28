@@ -1,5 +1,36 @@
 use super::inference::surrounding_line_window;
 
+/// Case-insensitive ASCII byte substring search.
+///
+/// `needle_lower` is assumed already-lowercase. `haystack` is matched against
+/// it without allocating a lowered copy. Used by every line-context check to
+/// avoid the `to_ascii_lowercase()` allocation that would otherwise fire once
+/// per surrounding line × per match in dense-hit chunks.
+///
+/// Uses `memchr::memchr2_iter` so on text where neither the lowercase nor
+/// uppercase first byte appears, we skim past whole 64 B chunks via SIMD
+/// rather than walking byte by byte.
+fn ci_find(haystack: &[u8], needle_lower: &[u8]) -> bool {
+    if needle_lower.is_empty() {
+        return true;
+    }
+    let n = needle_lower.len();
+    if haystack.len() < n {
+        return false;
+    }
+    let first_lower = needle_lower[0];
+    let first_upper = first_lower.to_ascii_uppercase();
+    for start in memchr::memchr2_iter(first_lower, first_upper, haystack) {
+        if start + n > haystack.len() {
+            break;
+        }
+        if haystack[start..start + n].eq_ignore_ascii_case(needle_lower) {
+            return true;
+        }
+    }
+    false
+}
+
 /// Returns `true` if the match is in a context that indicates a false positive.
 pub fn is_false_positive_match_context(
     text: &str,
@@ -17,29 +48,24 @@ pub fn is_false_positive_match_context_with_path(
     _file_path: Option<&str>,
     path_lower: Option<&str>,
 ) -> bool {
+    // Raw bytes against pre-lowered needles via `ci_find`. The earlier shape
+    // copied the window into a stack buffer, made it ascii-lowercase, then
+    // `.to_string()`-allocated for the heap form before running 8 substring
+    // searches on it. Every match was paying that 1-2 µs of memcpy + heap
+    // copy even when the very first `ci_find` would have returned false
+    // immediately. The `ci_find` path skims via memchr2 SIMD and only walks
+    // bytes when a candidate first-byte is actually present.
     let window = surrounding_line_window(text, match_start, 1);
-    // Use a stack-allocated lowercase buffer for short windows (covers 99% of cases).
-    // Only heap-allocate for windows > 512 bytes.
-    let lower = if window.len() <= 512 {
-        let mut buf = [0u8; 512];
-        let bytes = window.as_bytes();
-        let len = bytes.len().min(512);
-        buf[..len].copy_from_slice(&bytes[..len]);
-        buf[..len].make_ascii_lowercase();
-        // SAFETY: input was valid ASCII/UTF-8, make_ascii_lowercase preserves validity
-        unsafe { std::str::from_utf8_unchecked(&buf[..len]) }.to_string()
-    } else {
-        window.to_ascii_lowercase()
-    };
+    let bytes = window.as_bytes();
 
-    is_go_sum_checksum(&lower, path_lower)
-        || is_integrity_hash(&lower)
-        || is_configmap_binary_data(&lower)
-        || is_git_lfs_pointer_context(&lower)
-        || is_renovate_digest_context(&lower)
-        || is_cors_header(&lower)
-        || is_http_cache_header(&lower)
-        || has_disclaimer_comment(&lower)
+    is_go_sum_checksum_bytes(bytes, path_lower)
+        || is_integrity_hash_bytes(bytes)
+        || is_configmap_binary_data_bytes(bytes)
+        || is_git_lfs_pointer_context_bytes(bytes)
+        || is_renovate_digest_context_bytes(bytes)
+        || is_cors_header_bytes(bytes)
+        || is_http_cache_header_bytes(bytes)
+        || has_disclaimer_comment_bytes(bytes)
 }
 
 /// Detect trailing/leading comment disclaimers like `// not a real key`,
@@ -80,21 +106,29 @@ static DISCLAIMER_PHRASES: std::sync::LazyLock<Vec<String>> = std::sync::LazyLoc
     }
 });
 
-fn has_disclaimer_comment(lower: &str) -> bool {
-    const COMMENT_MARKERS: &[&str] = &["//", "#", "--", "/*", "<!--", "rem "];
+/// Case-insensitive variant that avoids lowering the haystack. The needles
+/// (comment markers + disclaimer phrases) are all ASCII lowercase already,
+/// so we match the haystack against them case-insensitively via `ci_find`.
+fn has_disclaimer_comment_bytes(bytes: &[u8]) -> bool {
+    const COMMENT_MARKERS: &[&[u8]] = &[b"//", b"#", b"--", b"/*", b"<!--", b"rem "];
     let phrases: &[String] = &DISCLAIMER_PHRASES;
-    let bytes = lower.as_bytes();
     for marker in COMMENT_MARKERS {
-        let mut search_from = 0usize;
-        while let Some(rel) = memchr::memmem::find(&bytes[search_from..], marker.as_bytes()) {
-            let comment_start = search_from + rel + marker.len();
-            let comment_tail = &lower[comment_start..];
+        let m_len = marker.len();
+        let first_lower = marker[0];
+        let first_upper = first_lower.to_ascii_uppercase();
+        for start in memchr::memchr2_iter(first_lower, first_upper, bytes) {
+            if start + m_len > bytes.len() {
+                break;
+            }
+            if !bytes[start..start + m_len].eq_ignore_ascii_case(marker) {
+                continue;
+            }
+            let comment_tail = &bytes[start + m_len..];
             for phrase in phrases {
-                if memchr::memmem::find(comment_tail.as_bytes(), phrase.as_bytes()).is_some() {
+                if ci_find(comment_tail, phrase.as_bytes()) {
                     return true;
                 }
             }
-            search_from = comment_start;
         }
     }
     false
@@ -116,95 +150,110 @@ pub fn is_false_positive_context_with_path(
         return false;
     }
 
-    let line = lines[line_idx];
-    let lower = line.to_ascii_lowercase();
+    // Operate on raw bytes against pre-lowered needles via `ci_find`. The
+    // previous shape allocated a `String` per current line + per surrounding
+    // line (radius up to 8) on every match; on a 100 KiB dense-hit chunk that
+    // was ~24k transient `String`s landing in the per-match hot path.
+    let line_bytes = lines[line_idx].as_bytes();
 
-    is_go_sum_checksum(&lower, path_lower)
-        || is_integrity_hash_context(lines, line_idx, &lower)
-        || is_configmap_binary_data_context(lines, line_idx, &lower)
-        || is_git_lfs_pointer_context_with_lines(lines, line_idx, &lower)
-        || is_renovate_digest_context_with_lines(lines, line_idx, &lower)
-        || is_cors_header(&lower)
-        || is_http_cache_header_context(lines, line_idx, &lower)
+    is_go_sum_checksum_bytes(line_bytes, path_lower)
+        || is_integrity_hash_context(lines, line_idx, line_bytes)
+        || is_configmap_binary_data_context(lines, line_idx, line_bytes)
+        || is_git_lfs_pointer_context_with_lines(lines, line_idx, line_bytes)
+        || is_renovate_digest_context_with_lines(lines, line_idx, line_bytes)
+        || is_cors_header_bytes(line_bytes)
+        || is_http_cache_header_context(lines, line_idx, line_bytes)
 }
 
-fn is_go_sum_checksum(lower: &str, path_lower: Option<&str>) -> bool {
-    memchr::memmem::find(lower.as_bytes(), b"h1:").is_some()
-        || path_lower.is_some_and(|path| path.ends_with("go.sum"))
+fn is_go_sum_checksum_bytes(bytes: &[u8], path_lower: Option<&str>) -> bool {
+    ci_find(bytes, b"h1:") || path_lower.is_some_and(|path| path.ends_with("go.sum"))
 }
 
-fn is_integrity_hash_context(lines: &[&str], line_idx: usize, lower: &str) -> bool {
-    is_integrity_hash(lower)
+fn is_integrity_hash_context(lines: &[&str], line_idx: usize, line_bytes: &[u8]) -> bool {
+    is_integrity_hash_bytes(line_bytes)
         || surrounding_lines_contain(lines, line_idx, 2, |candidate| {
-            is_integrity_hash(&candidate.to_ascii_lowercase())
+            is_integrity_hash_bytes(candidate.as_bytes())
         })
 }
 
-fn is_integrity_hash(lower: &str) -> bool {
-    memchr::memmem::find(lower.as_bytes(), b"integrity").is_some()
-        && (memchr::memmem::find(lower.as_bytes(), b"sha256-").is_some()
-            || memchr::memmem::find(lower.as_bytes(), b"sha512-").is_some())
+fn is_integrity_hash_bytes(bytes: &[u8]) -> bool {
+    ci_find(bytes, b"integrity") && (ci_find(bytes, b"sha256-") || ci_find(bytes, b"sha512-"))
 }
 
-fn is_configmap_binary_data_context(lines: &[&str], line_idx: usize, lower: &str) -> bool {
-    is_configmap_binary_data(lower)
+fn is_configmap_binary_data_context(lines: &[&str], line_idx: usize, line_bytes: &[u8]) -> bool {
+    is_configmap_binary_data_bytes(line_bytes)
         || nearby_lines_contain(lines, line_idx, 8, |candidate| {
-            let candidate = candidate.trim().to_ascii_lowercase();
-            is_configmap_binary_data(&candidate)
+            is_configmap_binary_data_bytes(candidate.trim().as_bytes())
         })
 }
 
-fn is_configmap_binary_data(lower: &str) -> bool {
-    memchr::memmem::find(lower.as_bytes(), b"binarydata:").is_some()
+fn is_configmap_binary_data_bytes(bytes: &[u8]) -> bool {
+    ci_find(bytes, b"binarydata:")
 }
 
-fn is_git_lfs_pointer_context_with_lines(lines: &[&str], line_idx: usize, lower: &str) -> bool {
-    is_git_lfs_pointer_context(lower)
+fn is_git_lfs_pointer_context_with_lines(lines: &[&str], line_idx: usize, line_bytes: &[u8]) -> bool {
+    is_git_lfs_pointer_context_bytes(line_bytes)
         || nearby_lines_contain(lines, line_idx, 3, |candidate| {
-            is_git_lfs_pointer_context(&candidate.to_ascii_lowercase())
+            is_git_lfs_pointer_context_bytes(candidate.as_bytes())
         })
 }
 
-fn is_git_lfs_pointer_context(lower: &str) -> bool {
-    memchr::memmem::find(lower.as_bytes(), b"oid sha256:").is_some()
-        || memchr::memmem::find(lower.as_bytes(), b"git-lfs").is_some()
+fn is_git_lfs_pointer_context_bytes(bytes: &[u8]) -> bool {
+    ci_find(bytes, b"oid sha256:") || ci_find(bytes, b"git-lfs")
 }
 
-fn is_renovate_digest_context_with_lines(lines: &[&str], line_idx: usize, lower: &str) -> bool {
-    is_renovate_digest_context(lower)
+fn is_renovate_digest_context_with_lines(lines: &[&str], line_idx: usize, line_bytes: &[u8]) -> bool {
+    is_renovate_digest_context_bytes(line_bytes)
         || surrounding_lines_contain(lines, line_idx, 2, |candidate| {
-            is_renovate_digest_context(&candidate.to_ascii_lowercase())
+            is_renovate_digest_context_bytes(candidate.as_bytes())
         })
 }
 
-fn is_renovate_digest_context(lower: &str) -> bool {
-    memchr::memmem::find(lower.as_bytes(), b"renovate/").is_some() && contains_hex_sequence(lower)
+fn is_renovate_digest_context_bytes(bytes: &[u8]) -> bool {
+    ci_find(bytes, b"renovate/") && contains_hex_sequence_bytes(bytes)
 }
 
-fn is_cors_header(lower: &str) -> bool {
-    memchr::memmem::find(lower.as_bytes(), b"access-control-").is_some()
+fn is_cors_header_bytes(bytes: &[u8]) -> bool {
+    ci_find(bytes, b"access-control-")
 }
 
-fn is_http_cache_header_context(lines: &[&str], line_idx: usize, lower: &str) -> bool {
-    is_http_cache_header(lower)
+fn is_http_cache_header_context(lines: &[&str], line_idx: usize, line_bytes: &[u8]) -> bool {
+    is_http_cache_header_bytes(line_bytes)
         || surrounding_lines_contain(lines, line_idx, 1, |candidate| {
-            is_http_cache_header(&candidate.to_ascii_lowercase())
+            is_http_cache_header_bytes(candidate.as_bytes())
         })
 }
 
-fn is_http_cache_header(lower: &str) -> bool {
-    lower.trim_start().starts_with("etag") || has_token(lower, "etag")
+fn is_http_cache_header_bytes(bytes: &[u8]) -> bool {
+    let trimmed_start = bytes.iter().position(|b| !b.is_ascii_whitespace()).unwrap_or(bytes.len());
+    let trimmed = &bytes[trimmed_start..];
+    trimmed
+        .get(..4)
+        .is_some_and(|p| p.eq_ignore_ascii_case(b"etag"))
+        || has_token_bytes(bytes, b"etag")
 }
 
-fn has_token(text: &str, token: &str) -> bool {
-    text.split(|c: char| !c.is_alphanumeric())
-        .any(|part| part.eq_ignore_ascii_case(token))
+fn has_token_bytes(text: &[u8], token: &[u8]) -> bool {
+    let n = token.len();
+    if n == 0 {
+        return true;
+    }
+    let mut start = 0usize;
+    for (i, &b) in text.iter().enumerate() {
+        if !b.is_ascii_alphanumeric() {
+            if i - start == n && text[start..i].eq_ignore_ascii_case(token) {
+                return true;
+            }
+            start = i + 1;
+        }
+    }
+    text.len() - start == n && text[start..].eq_ignore_ascii_case(token)
 }
 
-fn contains_hex_sequence(lower: &str) -> bool {
+fn contains_hex_sequence_bytes(bytes: &[u8]) -> bool {
     let mut run = 0usize;
-    for ch in lower.chars() {
-        if ch.is_ascii_hexdigit() {
+    for &b in bytes {
+        if b.is_ascii_hexdigit() {
             run += 1;
             if run >= 8 {
                 return true;
@@ -249,33 +298,33 @@ mod tests {
     #[test]
     fn trailing_slash_comment_disclaimer_suppresses() {
         let line = "const KEY = \"AKIAIOSFODNN7EXAMPLE\"; // not a real aws key";
-        assert!(has_disclaimer_comment(&line.to_ascii_lowercase()));
+        assert!(has_disclaimer_comment_bytes(line.as_bytes()));
     }
 
     #[test]
     fn trailing_hash_comment_disclaimer_suppresses() {
         let line =
             "API_TOKEN=ghp_1234567890abcdef1234567890abcdef123456 # fake credential, demo only";
-        assert!(has_disclaimer_comment(&line.to_ascii_lowercase()));
+        assert!(has_disclaimer_comment_bytes(line.as_bytes()));
     }
 
     #[test]
     fn html_comment_disclaimer_suppresses() {
         let line = "secret=xyz <!-- replace with your value -->";
-        assert!(has_disclaimer_comment(&line.to_ascii_lowercase()));
+        assert!(has_disclaimer_comment_bytes(line.as_bytes()));
     }
 
     #[test]
     fn disclaimer_outside_comment_does_not_suppress() {
         // The word "fake" appears as part of a real value, not in a comment.
         let line = r#"password = "FakePassword!2024" + suffix"#;
-        assert!(!has_disclaimer_comment(&line.to_ascii_lowercase()));
+        assert!(!has_disclaimer_comment_bytes(line.as_bytes()));
     }
 
     #[test]
     fn ordinary_comment_without_disclaimer_does_not_suppress() {
         let line =
             r#"const KEY = concat!("AK", "IA1234567890ABCD12"); // production key, see vault"#;
-        assert!(!has_disclaimer_comment(&line.to_ascii_lowercase()));
+        assert!(!has_disclaimer_comment_bytes(line.as_bytes()));
     }
 }
