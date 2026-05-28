@@ -17,5 +17,6 @@ pub mod scan;
 pub mod scan_system;
 #[cfg(feature = "tui")]
 pub mod tui;
+pub mod uninstall;
 pub mod update;
 pub mod watch;
