@@ -7,6 +7,13 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="MIT" /></a>
   <a href="https://github.com/santhsecurity/keyhog/actions"><img src="https://img.shields.io/github/actions/workflow/status/santhsecurity/keyhog/ci.yml?style=flat-square&label=CI" alt="CI" /></a>
   <a href="https://star-history.com/#santhsecurity/keyhog&Date"><img src="https://img.shields.io/github/stars/santhsecurity/keyhog?style=flat-square&color=yellow&label=stars" alt="GitHub stars" /></a>
+  <a href="https://santh.dev"><img src="https://img.shields.io/badge/site-santh.dev-863bff?style=flat-square" alt="santh.dev" /></a>
+  <a href="https://x.com/SanthProject"><img src="https://img.shields.io/badge/X-@SanthProject-000?style=flat-square&logo=x" alt="X / @SanthProject" /></a>
+</p>
+
+<p align="center">
+  Part of <a href="https://santh.dev">Santh</a> - open source Rust security and infrastructure tooling.<br/>
+  Release notes: <a href="https://santh.dev/blog/keyhog-v0-5-34/">Inside keyhog v0.5.34: contract-tested secret detection</a>
 </p>
 
 ![KeyHog Demo](keyhog-demo.gif)
