@@ -737,3 +737,30 @@ fn doctor_reports_corpus_and_passes_scan_self_test() {
         "doctor must display the real embedded corpus count ({corpus}); got:\n{stdout}"
     );
 }
+
+#[test]
+fn update_subcommand_is_wired_with_its_flags() {
+    // `keyhog update`'s download/replace path is network-bound (it queries the
+    // GitHub releases API), so it can't be a deterministic offline snapshot -
+    // its pure logic (asset selection, semver compare, executable-magic guard)
+    // is unit-tested in subcommands::update. This e2e confirms the subcommand
+    // and its flags are actually registered in the CLI (a wiring regression
+    // would otherwise only surface when a user runs it).
+    let output = Command::new(binary())
+        .arg("update")
+        .arg("--help")
+        .output()
+        .expect("run keyhog update --help");
+    assert!(
+        output.status.success(),
+        "`keyhog update --help` must succeed; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let help = String::from_utf8_lossy(&output.stdout);
+    for flag in ["--check", "--version", "--variant"] {
+        assert!(
+            help.contains(flag),
+            "`keyhog update --help` must document {flag}; got:\n{help}"
+        );
+    }
+}
