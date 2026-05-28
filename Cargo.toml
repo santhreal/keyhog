@@ -25,10 +25,10 @@ categories = ["command-line-utilities", "development-tools"]
 authors = ["Santh Project <security@santh.dev>"]
 
 [workspace.dependencies]
-keyhog-core = { version = "=0.5.34", path = "crates/core" }
-keyhog-scanner = { version = "=0.5.34", path = "crates/scanner", default-features = false }
-keyhog-verifier = { version = "=0.5.34", path = "crates/verifier" }
-keyhog-sources = { version = "=0.5.34", path = "crates/sources" }
+keyhog-core = { version = "=0.5.35", path = "crates/core" }
+keyhog-scanner = { version = "=0.5.35", path = "crates/scanner", default-features = false }
+keyhog-verifier = { version = "=0.5.35", path = "crates/verifier" }
+keyhog-sources = { version = "=0.5.35", path = "crates/sources" }
 
 # Serialization
 serde = { version = "=1.0.228", features = ["derive"] }
