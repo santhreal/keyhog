@@ -788,3 +788,31 @@ fn repair_subcommand_is_wired_with_its_flags() {
         );
     }
 }
+
+#[test]
+fn uninstall_dry_run_does_not_remove_the_binary() {
+    // Safety contract: `keyhog uninstall` without `--yes` must be a no-op dry
+    // run - it must NOT delete the binary. (Running it against the test binary
+    // is safe precisely because of this guarantee; a regression here would
+    // delete the test runner's own binary.)
+    let bin = binary();
+    let output = Command::new(&bin)
+        .arg("uninstall")
+        .output()
+        .expect("run keyhog uninstall");
+    assert!(
+        output.status.success(),
+        "dry-run uninstall must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let out = String::from_utf8_lossy(&output.stdout).to_lowercase();
+    assert!(
+        out.contains("dry run"),
+        "uninstall without --yes must announce it's a dry run; got:\n{out}"
+    );
+    assert!(
+        bin.exists(),
+        "dry-run uninstall MUST NOT delete the binary at {}",
+        bin.display()
+    );
+}

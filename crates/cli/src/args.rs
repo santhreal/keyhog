@@ -77,6 +77,10 @@ pub enum Command {
     #[command(verbatim_doc_comment)]
     Repair(RepairArgs),
 
+    /// 🗑  Uninstall keyhog: remove the binary (dry run unless --yes)
+    #[command(verbatim_doc_comment)]
+    Uninstall(UninstallArgs),
+
     /// 🛰  Recursive system-wide scan: every mounted drive, every git history
     #[command(verbatim_doc_comment)]
     ScanSystem(ScanSystemArgs),
@@ -287,6 +291,15 @@ pub struct RepairArgs {
     /// WGPU+SIMD build (default).
     #[arg(long)]
     pub variant: Option<String>,
+}
+
+/// Arguments for `keyhog uninstall`.
+#[derive(Parser)]
+pub struct UninstallArgs {
+    /// Actually remove the binary. Without this, uninstall is a safe dry run
+    /// that only reports what would be removed.
+    #[arg(long)]
+    pub yes: bool,
 }
 
 #[derive(Parser)]
