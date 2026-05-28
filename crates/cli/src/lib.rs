@@ -15,6 +15,7 @@ pub mod baseline;
 pub mod benchmark;
 pub mod config;
 pub mod format;
+pub mod installer;
 // Daemon uses Unix-domain sockets (`tokio::net::UnixListener` and
 // `std::os::unix::net`). Windows lacks both surfaces in the form
 // this server uses, and named pipes have a totally different

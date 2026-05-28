@@ -11,10 +11,9 @@
 //! can fail closed on a broken binary.
 
 use crate::args::DoctorArgs;
+use crate::installer::scan_engine_self_test;
 use anyhow::Result;
-use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, Severity};
 use keyhog_scanner::hw_probe::probe_hardware;
-use keyhog_scanner::CompiledScanner;
 use std::process::ExitCode;
 
 const GREEN: &str = "\x1b[32m";
@@ -142,36 +141,4 @@ pub fn run(_args: DoctorArgs) -> Result<ExitCode> {
         eprintln!("{RED}{BOLD}✗ keyhog is unhealthy - see failures above.{RESET}");
         Ok(ExitCode::from(EXIT_DOCTOR_UNHEALTHY))
     }
-}
-
-/// Build a one-detector scanner, plant a matching synthetic secret, and
-/// confirm it surfaces. Uses a unique non-generic prefix so it neither
-/// collides with a real detector nor trips example/placeholder suppression.
-fn scan_engine_self_test() -> Result<bool> {
-    const PLANTED: &str = "KHDOCTOR_A1b2C3d4E5f6";
-    let detector = DetectorSpec {
-        id: "kh-doctor-selftest".into(),
-        name: "doctor self-test".into(),
-        service: "doctor".into(),
-        severity: Severity::Low,
-        patterns: vec![PatternSpec {
-            regex: "KHDOCTOR_[A-Za-z0-9]{12}".into(),
-            description: None,
-            group: None,
-            client_safe: false,
-        }],
-        keywords: vec!["KHDOCTOR".into()],
-        ..Default::default()
-    };
-    let scanner = CompiledScanner::compile(vec![detector])?;
-    let chunk = Chunk {
-        data: format!("api_secret = {PLANTED}").into(),
-        metadata: ChunkMetadata {
-            source_type: "doctor".into(),
-            path: Some("doctor-selftest.txt".into()),
-            ..Default::default()
-        },
-    };
-    let matches = scanner.scan(&chunk);
-    Ok(matches.iter().any(|m| m.credential.as_ref() == PLANTED))
 }

@@ -129,6 +129,7 @@ async fn main() -> ExitCode {
         Some(Command::Backend(args)) => subcommands::backend::run(args),
         Some(Command::Doctor(args)) => subcommands::doctor::run(args),
         Some(Command::Update(args)) => subcommands::update::run(args).await,
+        Some(Command::Repair(args)) => subcommands::repair::run(args).await,
         Some(Command::ScanSystem(args)) => subcommands::scan_system::run(args),
         #[cfg(unix)]
         Some(Command::Daemon(args)) => subcommands::daemon::run(args).await,
