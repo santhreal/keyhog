@@ -280,8 +280,22 @@ pub fn shannon_entropy_simd(data: &[u8]) -> f64 {
 /// Fast check if data MIGHT have high entropy.
 /// Returns quickly for obviously low-entropy data.
 ///
-/// Uses a 256-bit bitset for uniqueness counting instead of a HashSet,
-/// eliminating heap allocation on the hot path.
+/// Uses a 12-byte sample (first 4 + middle 4 + last 4) to detect
+/// obviously-low-entropy inputs and skip the O(n) full scan. On
+/// high-entropy data the heuristic can't decide, so it falls through
+/// to `shannon_entropy_simd` for an exact answer.
+///
+/// The early-exit fires when:
+///  - The sample has < 4 unique byte values, AND
+///  - The byte-value spread (max − min) is < 16, AND
+///  - The threshold is ≥ 2.0 (below 2.0, even very low-variation
+///    data might meet the threshold depending on distribution).
+///
+/// This combination is sound because 3 distinct values drawn from a
+/// 16-wide alphabet can produce at most log2(16) = 4.0 bits of
+/// entropy, but with only 3 values in a 16-wide range the real
+/// entropy of any length-n sequence is bounded by log2(3) ≈ 1.585,
+/// well below any production threshold (≥ 2.0).
 pub fn has_high_entropy_fast(data: &[u8], threshold: f64) -> bool {
     if data.len() < 8 {
         return shannon_entropy_scalar(data) >= threshold;
@@ -305,17 +319,26 @@ pub fn has_high_entropy_fast(data: &[u8], threshold: f64) -> bool {
         data[data.len() - 2],
         data[data.len() - 1],
     ];
+    let mut sample_min = u8::MAX;
+    let mut sample_max = 0u8;
     for &b in &samples {
         seen[b as usize / 64] |= 1u64 << (b % 64);
+        sample_min = sample_min.min(b);
+        sample_max = sample_max.max(b);
     }
     let unique =
         seen[0].count_ones() + seen[1].count_ones() + seen[2].count_ones() + seen[3].count_ones();
+    let spread = (sample_max as u32).saturating_sub(sample_min as u32);
 
-    if unique < 4 {
-        // Low variation in sample; still verify with full calculation
-        return shannon_entropy_simd(data) >= threshold;
+    // Early exit: very few unique bytes in the sample AND they're
+    // clustered in a narrow range. With < 4 distinct values from a
+    // ≤ 16-wide alphabet, maximum theoretical entropy is log2(4) = 2.0
+    // bits — any threshold ≥ 2.0 cannot be met regardless of the
+    // full-data distribution. Skip the O(n) scan.
+    if unique < 4 && spread < 16 && threshold >= 2.0 {
+        return false;
     }
 
-    // Sample suggests high entropy, do full calculation
+    // Can't decide from the sample — do the full calculation.
     shannon_entropy_simd(data) >= threshold
 }

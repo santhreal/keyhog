@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 3f5a1b3876772b725424bfc5a828af4cdecb763f7653e6daf6f8f1908908dbb2 # shrinks to input_matches = [RawMatch { detector_id: "a", detector_name: "a", service: "mock_service", severity: Medium, credential: <redacted 1 bytes>, credential_hash: "mock_hash", companions: <0 redacted companions>, location: MatchLocation { source: "filesystem", file_path: None, line: Some(1), offset: 0, commit: None, author: None, date: None }, entropy: Some(4.5), confidence: Some(0.0) }, RawMatch { detector_id: "a", detector_name: "a", service: "mock_service", severity: Medium, credential: <redacted 1 bytes>, credential_hash: "mock_hash", companions: <0 redacted companions>, location: MatchLocation { source: "filesystem", file_path: None, line: Some(1), offset: 0, commit: None, author: None, date: None }, entropy: Some(4.5), confidence: Some(0.3577090000768253) }]

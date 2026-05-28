@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc ab362f2dacb55f22f411d0930ed74de0f6c3d7626447f9877cddbd82d458bff2 # shrinks to initial_start = 0, segment_spec = [(0, 0), (37, 0)], valid_match_spec = [(0, 0), (1, 185)], invalid_match_spec = []
+cc 8edd22e476695fc12ec9c46ecb5f8678fd8d03ea334f1675513aff77f2751e3f # shrinks to initial_start = 0, segment_spec = [(0, 0), (0, 564), (1, 0)], valid_match_spec = [], invalid_match_spec = [(0, 0, 0), (0, 0, 1)]

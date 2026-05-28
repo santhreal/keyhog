@@ -1,31 +1,108 @@
 pub mod a3_decode;
 pub mod a3_multiline;
 pub mod a3_pipeline;
+// a4_lr2: requires `keyhog_scanner::testing` which needs `simd` feature.
+// Wiring these to the default build requires feature-gating the module.
+// TODO: gate behind #[cfg(feature = "simd")] when CI enables it.
+// pub mod a4_lr2;
 pub mod alphabet_filter;
+pub mod bigram_bloom;
 pub mod checksum;
+pub mod checksum_extended;
+pub mod compiler_alternation_rewrite_nested_groups;
+pub mod compiler_build_ac_empty_returns_none;
+pub mod compiler_build_prefix_propagation_longer_extends;
+pub mod compiler_build_same_prefix_patterns_pairs;
+pub mod compiler_extract_prefix_alternation_akia_asia;
+pub mod compiler_extract_prefix_inline_flag_strip;
+pub mod compiler_fallback_keyword_skips_short;
+pub mod compiler_gpu_literals_empty_disables_gpu;
+pub mod compiler_inner_literal_akia_mid_pattern;
+pub mod compiler_is_escaped_literal_bracket;
 pub mod confidence;
+pub mod confidence_char_diversity_low_penalty;
+pub mod confidence_exact_max_score_one;
+pub mod confidence_literal_prefix_exact_thirty_five;
+pub mod confidence_max_repeat_run_penalty;
+pub mod confidence_moderate_entropy_exact_weight;
+pub mod confidence_path_penalty_halves_test_dir;
+pub mod confidence_path_penalty_none_path_passes_through;
+pub mod confidence_path_penalty_preserves_production_path;
 pub mod confidence_penalties;
+pub mod confidence_post_ml_placeholder_exact_factor;
+pub mod confidence_prefix_floor_jwt_eyj;
+pub mod confidence_prefix_floor_slack_xoxb;
 pub mod confidence_prefixes;
+pub mod confidence_sensitive_file_weight_ten_percent;
 pub mod confidence_signals;
 pub mod context;
+pub mod context_assignment_yaml_mapping;
+pub mod context_comparison_eq_not_assignment;
+pub mod context_disclaimer_match_context_suppresses;
+pub mod context_docstring_assignment_not_documentation;
+pub mod context_encrypted_pgp_block;
+pub mod context_encrypted_sops_marker;
+pub mod context_example_credential_example_suffix;
+pub mod context_example_empty_md5_hash;
+pub mod context_example_x_dominated_mask;
+pub mod context_extended;
+pub mod context_fixtures_directory;
+pub mod context_go_func_test_boundary;
+pub mod context_go_test_file_suffix;
+pub mod context_hard_suppress_assignment_never;
+pub mod context_hard_suppress_documentation_below_half;
+pub mod context_hard_suppress_encrypted_below_point_eight;
+pub mod context_markdown_fence_marks_documentation;
+pub mod context_out_of_bounds_returns_unknown;
+pub mod context_python_non_test_function_boundary;
+pub mod context_rust_test_file_suffix;
+pub mod context_string_literal_detects_quotes;
+pub mod context_test_directory_component;
+pub mod context_tokio_test_attribute;
+pub mod context_unknown_no_quotes_no_assignment;
 pub mod decode;
 pub mod engine;
 pub mod engine_a2_cases;
 pub mod engine_backend;
 pub mod engine_cases;
 pub mod entropy;
+pub mod entropy_cargo_toml_not_appropriate;
+pub mod entropy_credentials_env_exact_or_config;
+pub mod entropy_data_uri_rejected;
+pub mod entropy_env_staging_prefix_match;
 pub mod entropy_fast;
+pub mod entropy_fast_extended;
+pub mod entropy_jwt_shape_rejected;
+pub mod entropy_package_lock_not_appropriate;
+pub mod entropy_placeholder_upper_example;
+pub mod entropy_secrets_rs_not_appropriate;
+pub mod entropy_secrets_yaml_is_appropriate;
+pub mod entropy_shannon_cache_matches_uncached;
 pub mod file_gate;
+pub mod flaw_investigation;
 pub mod gates;
 pub mod gpu_cases;
+// gpu_regex_dfa_basic: requires `keyhog_scanner::engine::{build_regex_dfa, RegexDfaError}`
+// which are not publicly exported. Needs engine API export or test restructuring.
+// pub mod gpu_regex_dfa_basic;
 pub mod hw_probe;
 pub mod hw_probe_cases;
+// inline_migrated: requires `keyhog_scanner::testing` which needs `simd` feature.
+// pub mod inline_migrated;
 pub mod is_sequential_placeholder_robustness;
+pub mod jwt_analysis;
 pub mod ml_scorer;
 pub mod multiline;
 pub mod pipeline;
 pub mod prefix_trie;
+pub mod prefix_trie_extended;
 pub mod resolution;
+pub mod resolution_extended;
 pub mod scanner_misc;
 pub mod segment_attribution;
+// shape_gates: uses `std::borrow::Cow` import that triggers a warning,
+// and has type issues. Fixed separately.
+pub mod shape_gates;
+// structured_parsers: requires `keyhog_scanner::testing` parsers.
+// pub mod structured_parsers;
 pub mod unicode_hardening;

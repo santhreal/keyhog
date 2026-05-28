@@ -36,12 +36,12 @@ fn test_nested_base64_decoding_gating() {
         companions: Vec::new(),
         verify: None,
         keywords: vec!["ghp_".into()],
-    ..Default::default(),
+    ..Default::default()
     }];
 
     let scanner = CompiledScanner::compile(detectors).unwrap();
     let chunk = Chunk {
-        data: format!("data = \"{}\"", b64_2),
+        data: format!("data = \"{}\"", b64_2).into(),
         metadata: ChunkMetadata {
                     base_offset: 0,
             source_type: "test".into(),

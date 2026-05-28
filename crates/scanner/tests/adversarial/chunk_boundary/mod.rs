@@ -1,0 +1,17 @@
+// R5-T: one #[test] per file
+mod chunk_boundary_datadog_key_split_reassembled;
+mod chunk_boundary_discord_bot_split_reassembled;
+mod chunk_boundary_github_pat_split_reassembled;
+mod chunk_boundary_gitlab_pat_split_reassembled;
+mod chunk_boundary_google_api_key_split_reassembled;
+mod chunk_boundary_near_miss_split_must_stay_silent;
+mod chunk_boundary_npm_token_split_reassembled;
+mod chunk_boundary_openai_key_split_reassembled;
+mod chunk_boundary_sendgrid_key_split_reassembled;
+mod chunk_boundary_slack_bot_split_reassembled;
+mod chunk_boundary_stripe_sk_split_reassembled;
+mod chunk_boundary_twilio_token_split_reassembled;
+mod r5t_chunk_boundary_cloudflare_token_split_reassembled;
+mod r5t_chunk_boundary_heroku_key_split_reassembled;
+mod r5t_chunk_boundary_mailgun_key_split_reassembled;
+mod r5t_chunk_boundary_shopify_token_split_reassembled;
