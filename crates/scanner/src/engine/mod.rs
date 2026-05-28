@@ -41,8 +41,8 @@ mod windowed;
 pub(crate) use backend_prepared::{build_simd_scanner, PreparedChunk};
 pub use gpu_cache::{AcConstPacks, GpuConstPacks};
 pub use gpu_coalesce::coalesce_chunks;
-pub use gpu_scan_wrappers::GpuPhase1Output;
 pub use gpu_regex_dfa::{build_regex_dfa, RegexDfaError};
+pub use gpu_scan_wrappers::GpuPhase1Output;
 pub use rule_pipeline::{
     build_rule_pipeline, megascan_input_len, rule_pipeline_cached, AC_GPU_MAX_MATCHES_PER_DISPATCH,
     MEGASCAN_INPUT_LEN, MEGASCAN_INPUT_LEN_DEFAULT,

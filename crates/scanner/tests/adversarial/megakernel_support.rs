@@ -76,7 +76,8 @@ pub fn assert_cpu_megakernel_parity(text: &str, path: &str, label: &str) {
     }
 
     assert_eq!(
-        cpu, mega,
+        cpu,
+        mega,
         "{label}: megakernel GPU findings must match CPU fallback; cpu_only={:?} mega_only={:?}",
         cpu.difference(&mega).collect::<Vec<_>>(),
         mega.difference(&cpu).collect::<Vec<_>>()

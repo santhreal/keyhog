@@ -7,7 +7,9 @@ use std::path::PathBuf;
 #[test]
 fn reverse_aws_key_reversed_in_quotes() {
     let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    d.pop(); d.pop(); d.push("detectors");
+    d.pop();
+    d.pop();
+    d.push("detectors");
     let scanner = CompiledScanner::compile(keyhog_core::load_detectors(&d).expect("detectors"))
         .expect("compile");
     let secret = "AKIAQYLPMN5HFIQR7XYA";
@@ -22,8 +24,13 @@ fn reverse_aws_key_reversed_in_quotes() {
     };
     let matches = scanner.scan(&chunk);
     assert!(
-        matches.iter().any(|m| m.detector_id.as_ref() == "aws-access-key" && m.credential.as_ref() == secret),
+        matches
+            .iter()
+            .any(|m| m.detector_id.as_ref() == "aws-access-key" && m.credential.as_ref() == secret),
         "reverse-encoded aws-access-key must surface; matches={:?}",
-        matches.iter().map(|m| (m.detector_id.as_ref(), m.credential.as_ref())).collect::<Vec<_>>()
+        matches
+            .iter()
+            .map(|m| (m.detector_id.as_ref(), m.credential.as_ref()))
+            .collect::<Vec<_>>()
     );
 }

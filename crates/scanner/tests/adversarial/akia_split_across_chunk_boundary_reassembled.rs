@@ -7,7 +7,9 @@ use std::path::PathBuf;
 #[test]
 fn akia_split_across_chunk_boundary_reassembled() {
     let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    d.pop(); d.pop(); d.push("detectors");
+    d.pop();
+    d.pop();
+    d.push("detectors");
     let scanner = CompiledScanner::compile(keyhog_core::load_detectors(&d).expect("detectors"))
         .expect("compile");
 
@@ -40,6 +42,9 @@ fn akia_split_across_chunk_boundary_reassembled() {
     };
 
     let results = scanner.scan_coalesced(&[chunk_a, chunk_b]);
-    let found = results.iter().flatten().any(|m| m.credential.as_ref() == secret);
+    let found = results
+        .iter()
+        .flatten()
+        .any(|m| m.credential.as_ref() == secret);
     assert!(found, "split AKIA must reassemble across chunk seam");
 }

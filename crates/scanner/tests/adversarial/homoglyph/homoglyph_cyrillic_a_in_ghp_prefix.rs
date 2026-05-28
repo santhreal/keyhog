@@ -10,9 +10,7 @@ fn homoglyph_cyrillic_a_in_ghp_prefix() {
     let tail = "abcdefghijklmnopqrstuvwxyz1234567890AB";
     let matches = scan_text(text, "homoglyph.env");
     assert!(
-        matches
-            .iter()
-            .any(|m| m.credential.as_ref().contains(tail)),
+        matches.iter().any(|m| m.credential.as_ref().contains(tail)),
         "Cyrillic-prefixed ghp body must not fully evade — tail {tail:?}; matches={:?}",
         matches
             .iter()

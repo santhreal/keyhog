@@ -17,7 +17,10 @@ fn empty_regex_set_returns_error() {
 fn single_char_regex() {
     // Single-char patterns are valid and should compile.
     let result = build_regex_dfa(&["a"], 64);
-    assert!(result.is_ok(), "single-char regex should compile: {result:?}");
+    assert!(
+        result.is_ok(),
+        "single-char regex should compile: {result:?}"
+    );
     let pipeline = result.unwrap();
     let matches = pipeline.reference_scan(b"bab");
     assert!(
@@ -54,10 +57,7 @@ fn very_long_regex_pattern_10k_chars() {
         Err(err) => {
             // Must be a structured error, not a panic.
             let msg = format!("{err}");
-            assert!(
-                !msg.is_empty(),
-                "error should have a descriptive message"
-            );
+            assert!(!msg.is_empty(), "error should have a descriptive message");
         }
     }
 }

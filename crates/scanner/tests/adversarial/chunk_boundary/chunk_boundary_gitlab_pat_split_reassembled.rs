@@ -7,7 +7,9 @@ use std::path::PathBuf;
 #[test]
 fn chunk_boundary_gitlab_pat_split_reassembled() {
     let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    d.pop(); d.pop(); d.push("detectors");
+    d.pop();
+    d.pop();
+    d.push("detectors");
     let scanner = CompiledScanner::compile(keyhog_core::load_detectors(&d).expect("detectors"))
         .expect("compile");
 
@@ -40,6 +42,9 @@ fn chunk_boundary_gitlab_pat_split_reassembled() {
     };
 
     let results = scanner.scan_coalesced(&[chunk_a, chunk_b]);
-    let found = results.iter().flatten().any(|m| m.detector_id.as_ref() == "gitlab-pat" && m.credential.as_ref() == "glpat-abcdefghijklmnopqrst");
+    let found = results.iter().flatten().any(|m| {
+        m.detector_id.as_ref() == "gitlab-pat"
+            && m.credential.as_ref() == "glpat-abcdefghijklmnopqrst"
+    });
     assert!(found, "gitlab-pat split across chunk seam must reassemble");
 }

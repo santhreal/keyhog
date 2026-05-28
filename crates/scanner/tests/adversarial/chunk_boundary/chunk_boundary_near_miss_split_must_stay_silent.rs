@@ -7,7 +7,9 @@ use std::path::PathBuf;
 #[test]
 fn chunk_boundary_near_miss_split_must_stay_silent() {
     let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    d.pop(); d.pop(); d.push("detectors");
+    d.pop();
+    d.pop();
+    d.push("detectors");
     let scanner = CompiledScanner::compile(keyhog_core::load_detectors(&d).expect("detectors"))
         .expect("compile");
 
@@ -41,6 +43,12 @@ fn chunk_boundary_near_miss_split_must_stay_silent() {
 
     let results = scanner.scan_coalesced(&[chunk_a, chunk_b]);
     let flat: Vec<_> = results.into_iter().flatten().collect();
-    let fired = flat.iter().any(|m| m.detector_id.as_ref() == "aws-access-key");
-    assert!(!fired, "truncated near-miss split across boundary must stay silent; got {:?}", flat);
+    let fired = flat
+        .iter()
+        .any(|m| m.detector_id.as_ref() == "aws-access-key");
+    assert!(
+        !fired,
+        "truncated near-miss split across boundary must stay silent; got {:?}",
+        flat
+    );
 }

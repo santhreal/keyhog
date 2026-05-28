@@ -17,6 +17,8 @@ fn no_generic_password_finding_on_shape_gated_near_miss() {
     assert!(
         hits.is_empty(),
         "shape-gated near-miss must not surface as generic-password finding; got {:?}",
-        hits.iter().map(|m| m.credential.as_ref()).collect::<Vec<_>>()
+        hits.iter()
+            .map(|m| m.credential.as_ref())
+            .collect::<Vec<_>>()
     );
 }

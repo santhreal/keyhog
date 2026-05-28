@@ -7,7 +7,9 @@ use std::path::PathBuf;
 #[test]
 fn empty_corpus_zero_findings() {
     let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    d.pop(); d.pop(); d.push("detectors");
+    d.pop();
+    d.pop();
+    d.push("detectors");
     let scanner = CompiledScanner::compile(keyhog_core::load_detectors(&d).expect("detectors"))
         .expect("compile");
 
@@ -24,6 +26,9 @@ fn empty_corpus_zero_findings() {
         matches.len(),
         0,
         "empty corpus must not produce spurious findings: {:?}",
-        matches.iter().map(|m| m.detector_id.as_ref()).collect::<Vec<_>>()
+        matches
+            .iter()
+            .map(|m| m.detector_id.as_ref())
+            .collect::<Vec<_>>()
     );
 }

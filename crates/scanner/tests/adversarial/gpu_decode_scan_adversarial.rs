@@ -4,9 +4,7 @@
 //! decode→scan pipeline to ensure graceful degradation (never panics,
 //! never produces phantom matches on invalid input).
 
-use keyhog_scanner::engine::gpu_decode_scan::{
-    detect_encoding, FusedEncoding,
-};
+use keyhog_scanner::engine::gpu_decode_scan::{detect_encoding, FusedEncoding};
 
 // ────────────────────────────────────────────────────────────
 // Encoding detection adversarial
