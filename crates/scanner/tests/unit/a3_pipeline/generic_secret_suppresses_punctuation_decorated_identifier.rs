@@ -13,7 +13,7 @@ fn cli_flag_pointer_ref_sql_bind_label_suppressed() {
         None,
         "generic-secret",
     ));
-    // curl lib/socks_gssapi.c:299 — `gss_token = &gss_recv_token;`
+    // curl lib/socks_gssapi.c:299 - `gss_token = &gss_recv_token;`
     assert!(should_suppress_named_detector_finding(
         "&gss_recv_token",
         Some("curl/lib/socks_gssapi.c"),
@@ -21,7 +21,7 @@ fn cli_flag_pointer_ref_sql_bind_label_suppressed() {
         None,
         "generic-secret",
     ));
-    // webgoat Login_i.java:41 — `PASSWORD = @v_password`
+    // webgoat Login_i.java:41 - `PASSWORD = @v_password`
     // (T-SQL stored procedure parameter binding).
     assert!(should_suppress_named_detector_finding(
         "@v_password",
@@ -30,7 +30,7 @@ fn cli_flag_pointer_ref_sql_bind_label_suppressed() {
         None,
         "generic-secret",
     ));
-    // claude-code setupGitHubActions.ts:129 —
+    // claude-code setupGitHubActions.ts:129 -
     //   `has_api_key: !!apiKeyOrOAuthToken,`
     // JS truthy coercion captured with leading `!!`.
     assert!(should_suppress_named_detector_finding(
@@ -40,7 +40,7 @@ fn cli_flag_pointer_ref_sql_bind_label_suppressed() {
         None,
         "generic-secret",
     ));
-    // shopify-cli lib/project_types/theme/messages/messages.rb:58 —
+    // shopify-cli lib/project_types/theme/messages/messages.rb:58 -
     //   `ask_password: "Password:",`
     // UI prompt label captured with trailing colon.
     assert!(should_suppress_named_detector_finding(
@@ -50,7 +50,7 @@ fn cli_flag_pointer_ref_sql_bind_label_suppressed() {
         None,
         "generic-password",
     ));
-    // shopify-api-js storefront-api-client.ts:71 —
+    // shopify-api-js storefront-api-client.ts:71 -
     //   `privateAccessToken: privateAccessToken!,`
     // TS non-null assertion captured with trailing `!`.
     assert!(should_suppress_named_detector_finding(

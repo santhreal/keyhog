@@ -71,7 +71,7 @@ def apply_fixes(fixes: dict[str, tuple[str, str]], limit: int | None) -> list[st
             continue
         replacement = m.group(1) + toml_str(new_text)
         new_content = content[: m.start()] + replacement + content[m.end() :]
-        reason = f"Adversarial {pattern} envelope — credential must still surface under this detector."
+        reason = f"Adversarial {pattern} envelope - credential must still surface under this detector."
         new_content = re.sub(
             r"(\[\[evasion\]\][\s\S]*?reason\s*=\s*)\"[^\"]*\"",
             lambda mo: mo.group(1) + toml_str(reason),

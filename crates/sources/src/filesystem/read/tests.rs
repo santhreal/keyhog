@@ -1,0 +1,414 @@
+//! Tests for the read module. Kept in one place so cross-module
+//! invariants (e.g. mmap-vs-pure-helper equivalence) are easy to
+//! verify side-by-side. Submodules expose the test-visible helpers
+//! through `pub(in crate::filesystem::read)`.
+
+use super::bytes::read_file_for_compressed_input;
+use super::decode::{decode_text_file, decode_utf16, looks_binary};
+use super::window::{read_file_windowed_mmap, slice_into_windows};
+
+#[test]
+fn looks_binary_empty_input_is_text() {
+    assert!(!looks_binary(&[]));
+}
+
+#[test]
+fn looks_binary_clean_ascii_is_text() {
+    let s = "hello world\nfoo = bar\n".repeat(1024);
+    assert!(!looks_binary(s.as_bytes()));
+}
+
+#[test]
+fn looks_binary_dense_controls_is_binary() {
+    let mut bytes = vec![b'a'; 1024];
+    for b in bytes.iter_mut().take(200) {
+        *b = 0x03; // ETX, well over the 5% threshold
+    }
+    assert!(looks_binary(&bytes));
+}
+
+#[test]
+fn looks_binary_sparse_controls_is_text() {
+    // Below threshold - exactly 5% would equal `suspicious * 20 == total`,
+    // which is `>` test → still text.
+    let mut bytes = vec![b'a'; 1000];
+    for b in bytes.iter_mut().take(50) {
+        *b = 0x03;
+    }
+    assert!(!looks_binary(&bytes));
+}
+
+#[test]
+fn looks_binary_short_circuit_matches_full_scan() {
+    // Random fixed-seed mix; exhaustive comparison against the
+    // previous "filter().count()" implementation for several sizes
+    // and densities, including the page-boundary cases where the
+    // remaining-bytes early-text exit fires.
+    for size in [1, 100, 4095, 4096, 4097, 8192, 16384, 100_000] {
+        for density in [0u8, 1, 4, 5, 6, 50] {
+            let mut bytes = vec![b'.'; size];
+            for i in (0..size)
+                .step_by(100usize.saturating_div(density.max(1) as usize).max(1))
+                .take((size * density as usize) / 100)
+            {
+                bytes[i] = 0x03;
+            }
+            let suspicious = bytes
+                .iter()
+                .filter(|&&b| b < 0x20 && !matches!(b, b'\n' | b'\r' | b'\t' | 0x0C))
+                .count() as u64;
+            let expected = suspicious * 20 > bytes.len().max(1) as u64;
+            assert_eq!(
+                looks_binary(&bytes),
+                expected,
+                "size={size} density={density}"
+            );
+        }
+    }
+}
+
+#[test]
+fn decode_utf16_le_round_trip() {
+    let s = "hello, 世界! 🌍";
+    let mut bytes = vec![0xFF, 0xFE];
+    for u in s.encode_utf16() {
+        bytes.extend_from_slice(&u.to_le_bytes());
+    }
+    assert_eq!(decode_utf16(&bytes).as_deref(), Some(s));
+}
+
+#[test]
+fn decode_utf16_be_round_trip() {
+    let s = "hello, 世界! 🌍";
+    let mut bytes = vec![0xFE, 0xFF];
+    for u in s.encode_utf16() {
+        bytes.extend_from_slice(&u.to_be_bytes());
+    }
+    assert_eq!(decode_utf16(&bytes).as_deref(), Some(s));
+}
+
+#[test]
+fn decode_utf16_no_bom_is_none() {
+    let s = "hello";
+    let mut bytes = Vec::new();
+    for u in s.encode_utf16() {
+        bytes.extend_from_slice(&u.to_le_bytes());
+    }
+    assert!(decode_utf16(&bytes).is_none());
+}
+
+#[test]
+fn decode_utf16_odd_length_payload_is_none() {
+    let bytes = [0xFF, 0xFE, 0x68];
+    assert!(decode_utf16(&bytes).is_none());
+}
+
+#[test]
+fn decode_utf16_unpaired_surrogate_is_none() {
+    // Lone high surrogate followed by ASCII - invalid UTF-16.
+    let bytes = [0xFF, 0xFE, 0x00, 0xD8, b'a', 0x00];
+    assert!(decode_utf16(&bytes).is_none());
+}
+
+#[test]
+fn decode_text_file_valid_utf8_takes_fast_path() {
+    let s = "let x = 1;\nfn main() {}\n".repeat(500);
+    assert_eq!(decode_text_file(s.as_bytes()).as_deref(), Some(s.as_str()));
+}
+
+#[test]
+fn decode_text_file_with_bom_strips_bom() {
+    let mut bytes = vec![0xEF, 0xBB, 0xBF];
+    bytes.extend_from_slice(b"hello world");
+    assert_eq!(decode_text_file(&bytes).as_deref(), Some("hello world"));
+}
+
+#[test]
+fn decode_text_file_pdf_magic_is_rejected() {
+    let mut bytes = b"%PDF-1.7\n".to_vec();
+    bytes.extend_from_slice(&vec![b'a'; 4096]);
+    assert!(decode_text_file(&bytes).is_none());
+}
+
+#[test]
+fn decode_text_file_invalid_utf8_falls_back_to_lossy() {
+    // Invalid continuation byte mid-stream. Strict from_utf8 rejects;
+    // looks_binary verdict is text (low control density); lossy path
+    // returns the original with U+FFFD replacements.
+    let mut bytes = b"valid prefix ".to_vec();
+    bytes.push(0xFF); // lone byte - invalid UTF-8
+    bytes.extend_from_slice(b" suffix");
+    let decoded = decode_text_file(&bytes).expect("lossy fallback runs");
+    assert!(decoded.contains("valid prefix"));
+    assert!(decoded.contains("suffix"));
+    assert!(decoded.contains('\u{FFFD}'));
+}
+
+#[test]
+fn decode_text_file_dense_controls_in_header_rejected() {
+    // Valid UTF-8 but with >5% C0 controls in the first 4 KiB -
+    // should hit the looks_binary_header_check path.
+    let mut bytes = vec![b'a'; 4096];
+    for b in bytes.iter_mut().take(400) {
+        *b = 0x01;
+    }
+    assert!(decode_text_file(&bytes).is_none());
+}
+
+// ----- slice_into_windows: pure-function boundary behavior -----
+
+#[test]
+fn slice_into_windows_empty_input_returns_empty() {
+    assert!(slice_into_windows(&[], 64, 8).is_empty());
+}
+
+#[test]
+fn slice_into_windows_smaller_than_window_yields_one_window() {
+    let bytes = b"hello, world";
+    let ws = slice_into_windows(bytes, 64, 8);
+    assert_eq!(ws.len(), 1);
+    assert_eq!(ws[0].offset, 0);
+    assert_eq!(ws[0].text, "hello, world");
+}
+
+#[test]
+fn slice_into_windows_exactly_one_window_size() {
+    let bytes = vec![b'a'; 64];
+    let ws = slice_into_windows(&bytes, 64, 8);
+    assert_eq!(ws.len(), 1);
+    assert_eq!(ws[0].offset, 0);
+    assert_eq!(ws[0].text.len(), 64);
+}
+
+#[test]
+fn slice_into_windows_one_byte_over_window_emits_two_windows() {
+    // A 65-byte input with window=64, overlap=8 - stride is 56,
+    // so window 1 starts at offset 56 and runs 56..65 = 9 bytes.
+    let bytes: Vec<u8> = (0..65u8).collect();
+    let ws = slice_into_windows(&bytes, 64, 8);
+    assert_eq!(ws.len(), 2);
+    assert_eq!(ws[0].offset, 0);
+    assert_eq!(ws[0].text.len(), 64);
+    assert_eq!(ws[1].offset, 56);
+    assert_eq!(ws[1].text.len(), 9);
+}
+
+#[test]
+fn slice_into_windows_overlap_bytes_match_between_neighbours() {
+    // The whole point of overlap: a secret straddling the cut
+    // appears in both windows. Use ASCII-only input so lossy
+    // decode is a no-op and byte length is preserved across
+    // the String round-trip - otherwise U+FFFD substitution
+    // makes the post-decode lengths drift from the raw slice.
+    let bytes: Vec<u8> = b"0123456789abcdefghijklmnopqrstuvwxyz"
+        .iter()
+        .copied()
+        .cycle()
+        .take(200)
+        .collect();
+    let ws = slice_into_windows(&bytes, 100, 16);
+    assert!(ws.len() >= 2);
+    for pair in ws.windows(2) {
+        let prev = &pair[0];
+        let next = &pair[1];
+        let prev_tail = &prev.text.as_bytes()[prev.text.len() - 16..];
+        let next_head = &next.text.as_bytes()[..16];
+        assert_eq!(prev_tail, next_head, "overlap mismatch at {}", next.offset);
+        assert_eq!(next.offset - prev.offset, 100 - 16);
+    }
+}
+
+#[test]
+fn slice_into_windows_offsets_cover_the_whole_input() {
+    // Coverage check requires that decoded text length equals raw
+    // slice length, so use ASCII-only bytes and assert that
+    // every byte offset is touched by at least one window.
+    let bytes: Vec<u8> = (b'a'..=b'z').cycle().take(10_000).collect();
+    let ws = slice_into_windows(&bytes, 256, 32);
+    let mut covered = vec![false; bytes.len()];
+    for w in &ws {
+        assert_eq!(
+            w.text.len(),
+            (w.offset + w.text.len()).min(bytes.len()) - w.offset,
+            "ASCII input → text len equals slice len"
+        );
+        let end = (w.offset + w.text.len()).min(bytes.len());
+        covered[w.offset..end].fill(true);
+    }
+    assert!(
+        covered.iter().all(|&c| c),
+        "every byte must be covered by some window"
+    );
+}
+
+#[test]
+fn slice_into_windows_secret_straddling_cut_present_in_both_windows() {
+    // Motivating case. window=128, overlap=32 → stride=96.
+    // For exactly 2 windows we need len in (128, 128+96] = (128, 224].
+    // Pick 200; windows are [0..128) and [96..200). The secret at
+    // offset 100..120 sits in both - so the scanner can't miss it.
+    let mut bytes = vec![b'.'; 200];
+    // Bytes form is needed because `copy_from_slice` requires &[u8].
+    // `bconcat!` was a defunct internal macro removed in c031c84;
+    // the equivalent is `concat!(...).as_bytes()`.
+    let secret = concat!("AK", "IAIOSFODNN7EXAMPLE").as_bytes();
+    bytes[100..100 + secret.len()].copy_from_slice(secret);
+    let ws = slice_into_windows(&bytes, 128, 32);
+    assert_eq!(
+        ws.len(),
+        2,
+        "expected exactly 2 windows for len=200, ws=128, ov=32"
+    );
+    let s = std::str::from_utf8(secret).unwrap();
+    assert!(
+        ws[0].text.contains(s),
+        "window 0 must carry the straddling secret"
+    );
+    assert!(
+        ws[1].text.contains(s),
+        "window 1 must carry the straddling secret"
+    );
+}
+
+#[test]
+fn slice_into_windows_invalid_utf8_at_boundary_decodes_lossy() {
+    // A multi-byte UTF-8 sequence cut by the window edge must not
+    // panic - it becomes U+FFFD on the side that has the partial
+    // bytes, and decodes correctly on the side that has the full
+    // sequence. Use the snowman (☃, 0xE2 0x98 0x83) split at the
+    // cut between window 0 (ends at byte 64) and window 1
+    // (starts at byte 56). Picked len=120 for exactly 2 windows
+    // given window=64, overlap=8 → stride=56 (max len for 2 wins
+    // is 64+56=120).
+    let mut bytes = vec![b'a'; 120];
+    bytes[63] = 0xE2;
+    bytes[64] = 0x98;
+    bytes[65] = 0x83;
+    let ws = slice_into_windows(&bytes, 64, 8);
+    assert_eq!(ws.len(), 2, "expected 2 windows for len=120, ws=64, ov=8");
+    // Window 0 covers 0..64 → only 0xE2 of the sequence is present.
+    // Lossy decode replaces the dangling lead byte with U+FFFD.
+    assert!(ws[0].text.ends_with('\u{FFFD}'));
+    // Window 1 covers 56..120 → full snowman at relative 7..10.
+    assert!(ws[1].text.contains('☃'));
+}
+
+#[test]
+fn slice_into_windows_large_input_window_count_matches_formula() {
+    // len = 4096, window = 1024, overlap = 64 → stride = 960.
+    // Windows: starts at 0, 960, 1920, 2880, 3840 - 5 windows
+    // (the last one ending exactly at 4096).
+    let bytes = vec![b'x'; 4096];
+    let ws = slice_into_windows(&bytes, 1024, 64);
+    assert_eq!(ws.len(), 5);
+    assert_eq!(ws[0].offset, 0);
+    assert_eq!(ws[1].offset, 960);
+    assert_eq!(ws[2].offset, 1920);
+    assert_eq!(ws[3].offset, 2880);
+    assert_eq!(ws[4].offset, 3840);
+    assert_eq!(ws[4].text.len(), 256);
+}
+
+#[test]
+#[should_panic(expected = "window must exceed overlap")]
+fn slice_into_windows_panics_when_overlap_geq_window() {
+    // Same-as-window overlap means stride == 0 → infinite loop.
+    // Catch it as a programming error at the API surface.
+    slice_into_windows(b"abc", 16, 16);
+}
+
+#[test]
+fn read_file_windowed_mmap_roundtrip_matches_pure_helper() {
+    // The mmap path is just slice_into_windows over the mmap'd
+    // bytes. Write a small file, run both, assert identical.
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("big.txt");
+    let bytes: Vec<u8> = (0..u8::MAX).cycle().take(8192).collect();
+    std::fs::write(&path, &bytes).unwrap();
+
+    let pure = slice_into_windows(&bytes, 1024, 32);
+    let mapped = read_file_windowed_mmap(&path, 1024, 32).expect("mmap windows");
+    assert_eq!(pure.len(), mapped.len());
+    for (a, b) in pure.iter().zip(mapped.iter()) {
+        assert_eq!(a.offset, b.offset);
+        assert_eq!(a.text, b.text);
+    }
+}
+
+#[test]
+fn read_file_for_compressed_input_returns_full_contents_via_mmap() {
+    // The mmap-or-bytes wrapper must round-trip an arbitrary
+    // non-empty byte sequence - covers the common case where
+    // compressed inputs are well within the size cap.
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("blob.bin");
+    // Use a payload with a mix of bytes so any truncation
+    // manifests as a mismatch, not coincidentally-equal heads.
+    let payload: Vec<u8> = (0..=255u8).cycle().take(8192).collect();
+    std::fs::write(&path, &payload).unwrap();
+
+    let fb = read_file_for_compressed_input(&path, 1024 * 1024).expect("read ok");
+    assert_eq!(fb.as_slice(), &payload[..]);
+    assert_eq!(fb.len(), payload.len());
+}
+
+#[test]
+fn read_file_for_compressed_input_handles_empty_file() {
+    // mmap of zero-byte files is rejected on some platforms; the
+    // helper must return Some(Owned(empty)) so callers don't
+    // misinterpret None as a hard failure.
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("empty.bin");
+    std::fs::write(&path, b"").unwrap();
+
+    let fb = read_file_for_compressed_input(&path, 1024).expect("empty ok");
+    assert!(fb.as_slice().is_empty());
+    assert_eq!(fb.len(), 0);
+}
+
+#[test]
+fn read_file_for_compressed_input_refuses_oversize_input() {
+    // size_cap is the gate that keeps a 100 GiB compressed blob
+    // out of memory entirely. The helper returns None and emits
+    // a tracing warning - caller treats as "skip this file".
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("big.bin");
+    std::fs::write(&path, vec![0u8; 4096]).unwrap();
+
+    // cap below file size → refused.
+    let fb = read_file_for_compressed_input(&path, 1024);
+    assert!(fb.is_none(), "input exceeding size_cap must return None");
+
+    // cap at-or-above file size → accepted.
+    let fb = read_file_for_compressed_input(&path, 4096);
+    assert!(fb.is_some(), "input at-or-below size_cap must succeed");
+}
+
+#[test]
+fn read_file_for_compressed_input_returns_none_for_missing_path() {
+    // Nonexistent path must NOT panic, and must return None so
+    // the caller can move on cleanly. (Earlier implementations
+    // did `std::fs::read(path)?` and bubbled the error; the new
+    // wrapper folds that into None to match the Option-shaped
+    // API the windowed helper uses.)
+    let fb = read_file_for_compressed_input(
+        std::path::Path::new("/nonexistent/keyhog/test/path"),
+        1024,
+    );
+    assert!(fb.is_none());
+}
+
+#[test]
+fn read_file_windowed_mmap_handles_empty_file() {
+    // Zero-byte mmap is a corner case some platforms reject. The
+    // helper must return either Some(empty vec) or None - never
+    // panic. Either way the caller won't emit chunks.
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("empty.txt");
+    std::fs::write(&path, b"").unwrap();
+    // `None` is also acceptable: mmap of zero-length is refused
+    // on some platforms. Either way the caller won't emit chunks.
+    if let Some(v) = read_file_windowed_mmap(&path, 1024, 32) {
+        assert!(v.is_empty());
+    }
+}

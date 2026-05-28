@@ -1,4 +1,4 @@
-//! Migrated from `src/banner.rs` — zero detector count renders without panic.
+//! Migrated from `src/banner.rs` - zero detector count renders without panic.
 
 use keyhog_core::banner::print_banner;
 

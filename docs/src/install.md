@@ -13,13 +13,21 @@ Drops a binary in `~/.local/bin/keyhog`. The installer detects your
 CPU, GPU, and existing install before downloading, and tells you the
 asset it picked and why.
 
-On Linux with an NVIDIA GPU plus a loadable `libcuda.so`, the
-installer picks the dedicated `keyhog-linux-x86_64-cuda` build, which
-is significantly faster than the WGPU fallback on large scans.
-Otherwise (Linux without CUDA, Intel Mac, Apple Silicon) you get the
-default WGPU + SIMD binary. Apple Silicon hosts get an explicit
-"Metal GPU acceleration coming soon" note; until that lands, Apple
-Silicon runs SIMD on CPU plus WGPU on the integrated GPU.
+The default is the **WGPU + SIMD** build everywhere: it already
+dispatches the same vyre AC / RulePipeline on your GPU via the vulkan
+backend, with a smaller binary and no `libcuda.so` runtime
+dependency. The dedicated `keyhog-linux-x86_64-cuda` build is only
+auto-selected on Linux when the host has the **full CUDA toolkit
+installed** - `nvcc` on PATH, `$CUDA_HOME` set, or `/usr/local/cuda`
+present. A driver-only NVIDIA host (libcuda.so loadable but no
+toolkit) stays on the WGPU build, since the native-CUDA dispatch
+saves only single-digit percent on typical repo scans and the
+binary footprint + runtime dependency are not worth it for the
+non-CUDA-developer case. Pass `--variant=cuda` (or set
+`KEYHOG_VARIANT=cuda`) to force the CUDA build anyway. Apple
+Silicon hosts get an explicit "Metal GPU acceleration coming soon"
+note; until that lands, Apple Silicon runs SIMD on CPU plus WGPU
+on the integrated GPU.
 
 ## Interactive mode (recommended for first install)
 
@@ -90,6 +98,17 @@ The installer auto-detects, but you can override:
 | `KEYHOG_INSTALL=/usr/local/bin` (or `--install-dir=...`) | Install into a different directory.            |
 | `--yes` / `-y`                          | Non-interactive: accept all defaults, no prompts.             |
 | `--no-color`                            | Disable ANSI colors (e.g. for log capture).                   |
+
+### Runtime env vars (consumed by the `keyhog` binary itself)
+
+| Env var                  | Effect                                                                                                                                                                                                                                       |
+|--------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `KEYHOG_NO_GPU=1`        | Force the CPU + SIMD path; skip every GPU init (saves ~250 ms of cold-start on hosts with no usable GPU).                                                                                                                                    |
+| `KEYHOG_NO_GPU=0`        | Force GPU init even when CI auto-detection would otherwise skip it. Useful on self-hosted GitHub / GitLab runners with a real GPU.                                                                                                            |
+| `KEYHOG_REQUIRE_GPU=1`   | Hard-fail (`exit 2`) instead of silently degrading when the GPU stack is unavailable. Pairs with the no-silent-fallback contract.                                                                                                            |
+| `KEYHOG_BACKEND=gpu\|mega-scan\|simd\|cpu` | Force a specific scan backend regardless of hardware probe. Mostly for benches; production code should let auto-select route.                                                                                                  |
+
+**CI auto-detect.** When `CI=true` is set (or any of `GITHUB_ACTIONS`, `GITLAB_CI`, `CIRCLECI`, `TRAVIS`, `JENKINS_URL`, `TF_BUILD`, `BUILDKITE`, `DRONE`, `APPVEYOR`, `TEAMCITY_VERSION`, `CODEBUILD_BUILD_ID`, `BITBUCKET_BUILD_NUMBER`, `WERCKER`, `SEMAPHORE`), keyhog skips the GPU probe entirely and goes straight to the SIMD + CPU path. The savings: ~250 ms of cold-start per `keyhog` invocation, plus no confusing "GPU MoE init failed" warning when the runner's only GPU is `llvmpipe`. Override with `KEYHOG_NO_GPU=0` on self-hosted GPU runners.
 
 When a CUDA variant asset isn't published for the resolved release
 tag yet, the installer logs the fallback and downloads the default

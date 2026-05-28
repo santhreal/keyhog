@@ -2,12 +2,12 @@
 //!
 //! Walks `tests/contracts/companion/*.toml` and enforces the
 //! three-part companion contract:
-//!   1. positive_with_companion — primary + companion both present
+//!   1. positive_with_companion - primary + companion both present
 //!      → primary fires AND companions map is populated.
-//!   2. positive_primary_only — primary alone
+//!   2. positive_primary_only - primary alone
 //!      → if companion is scanner-required, no match;
 //!      otherwise primary fires but companions map is empty.
-//!   3. negative_companion_lookalike — companion-shaped noise, no primary
+//!   3. negative_companion_lookalike - companion-shaped noise, no primary
 //!      → primary must NOT fire.
 //!
 //! The TOML also carries a `must_not_verify` flag documenting the
@@ -139,7 +139,7 @@ fn every_companion_contract_passes() {
     let contracts = load_companion_contracts();
     assert!(
         !contracts.is_empty(),
-        "tests/contracts/companion/ has no *.toml — at least one companion contract must ship"
+        "tests/contracts/companion/ has no *.toml - at least one companion contract must ship"
     );
 
     let mut failures: Vec<String> = Vec::new();
@@ -150,7 +150,7 @@ fn every_companion_contract_passes() {
 
         // --- positive_with_companion ---
         let case = &c.positive_with_companion;
-        // See engine/mod.rs:747-760 — the cross-file fragment cache
+        // See engine/mod.rs:747-760 - the cross-file fragment cache
         // accumulates across every scan() call on a reused scanner,
         // so braintree's `sandbox_…` positive can resurface as a
         // finding for a later detector's fixture in CI's
@@ -162,7 +162,7 @@ fn every_companion_contract_passes() {
             let found = findings_for_detector(&matches, expected);
             if found.is_empty() {
                 failures.push(format!(
-                    "{}: positive_with_companion MISSED — detector {} should fire on text {:?} ({}); \
+                    "{}: positive_with_companion MISSED - detector {} should fire on text {:?} ({}); \
                      scanner saw {:?}",
                     label,
                     expected,
@@ -180,7 +180,7 @@ fn every_companion_contract_passes() {
                     let actual = primary.companions.get(comp_name);
                     if actual != Some(comp_val) {
                         parity_issues.push(format!(
-                            "{}: positive_with_companion companion mismatch — expected companions[{}]={:?}, got {:?}",
+                            "{}: positive_with_companion companion mismatch - expected companions[{}]={:?}, got {:?}",
                             label, comp_name, comp_val, actual,
                         ));
                     }
@@ -197,7 +197,7 @@ fn every_companion_contract_passes() {
             let found = findings_for_detector(&matches, expected);
             if found.is_empty() {
                 failures.push(format!(
-                    "{}: positive_primary_only MISSED — detector {} should fire on text {:?} ({}); \
+                    "{}: positive_primary_only MISSED - detector {} should fire on text {:?} ({}); \
                      scanner saw {:?}",
                     label,
                     expected,
@@ -212,7 +212,7 @@ fn every_companion_contract_passes() {
             let found = findings_for_detector(&matches, label);
             if !found.is_empty() {
                 parity_issues.push(format!(
-                    "{}: positive_primary_only SURPLUS — detector {} fired unexpectedly on text {:?} ({}); \
+                    "{}: positive_primary_only SURPLUS - detector {} fired unexpectedly on text {:?} ({}); \
                      this suggests the scanner finds the primary without its required companion",
                     label,
                     label,
@@ -235,7 +235,7 @@ fn every_companion_contract_passes() {
                     for companion in &det.companions {
                         if primary.companions.contains_key(&companion.name) {
                             parity_issues.push(format!(
-                                "{}: positive_primary_only VERIFY-RISK — primary fired with companion {} populated; \
+                                "{}: positive_primary_only VERIFY-RISK - primary fired with companion {} populated; \
                                  verification may succeed even though must_not_verify is asserted",
                                 label, companion.name,
                             ));
@@ -255,7 +255,7 @@ fn every_companion_contract_passes() {
             let found = findings_for_detector(&matches, expected_empty);
             if found.is_empty() {
                 failures.push(format!(
-                    "{}: negative_companion_lookalike MISSED — detector {} should fire on text {:?} ({})",
+                    "{}: negative_companion_lookalike MISSED - detector {} should fire on text {:?} ({})",
                     label,
                     expected_empty,
                     case.text,
@@ -266,7 +266,7 @@ fn every_companion_contract_passes() {
         let primary_found = findings_for_detector(&matches, label);
         if !primary_found.is_empty() {
             parity_issues.push(format!(
-                "{}: negative_companion_lookalike SURPLUS — detector {} fired on companion-only text {:?} ({})",
+                "{}: negative_companion_lookalike SURPLUS - detector {} fired on companion-only text {:?} ({})",
                 label,
                 label,
                 case.text,
@@ -276,7 +276,7 @@ fn every_companion_contract_passes() {
     }
 
     // Print parity issues as warnings so they appear in test output,
-    // but do not fail the suite — they become engineer tickets.
+    // but do not fail the suite - they become engineer tickets.
     if !parity_issues.is_empty() {
         eprintln!(
             "\n=== COMPANION PARITY ISSUES ({} found) ===",

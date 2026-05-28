@@ -8,18 +8,21 @@ use std::time::Instant;
 
 /// Returns the backend the user explicitly forced via `KEYHOG_BACKEND`
 /// or `--backend <name>`.
+///
+/// Thin re-export over `keyhog_scanner::hw_probe::forced_backend_from_env`
+/// so the orchestrator and the scanner agree on the parsed override
+/// set (including aliases like `literal-set` and `regex-nfa`). The
+/// previous hand-rolled match here drifted from the scanner-side
+/// match table; consolidating means new aliases only need to land in
+/// one place.
 pub fn explicit_backend_override() -> Option<keyhog_scanner::hw_probe::ScanBackend> {
-    let raw = std::env::var("KEYHOG_BACKEND").ok()?;
-    use keyhog_scanner::hw_probe::ScanBackend;
-    match raw.trim().to_ascii_lowercase().as_str() {
-        "gpu" | "gpu-zero-copy" | "literal-set" => Some(ScanBackend::Gpu),
-        "mega-scan" | "gpu-mega-scan" | "regex-nfa" | "rule-pipeline" => {
-            Some(ScanBackend::MegaScan)
-        }
-        "simd" | "simd-regex" | "hyperscan" => Some(ScanBackend::SimdCpu),
-        "cpu" | "cpu-fallback" | "scalar" => Some(ScanBackend::CpuFallback),
-        _ => None,
-    }
+    // Use the uncached parser. This is called once per scan startup, not
+    // per-file, so the per-file cache that `forced_backend_from_env` shares
+    // with `select_backend` is unnecessary here - and using it would have a
+    // subtle side effect: integration tests that flip `KEYHOG_BACKEND`
+    // between cases in a single test binary would all observe the first
+    // value the cache locked in.
+    keyhog_scanner::hw_probe::forced_backend_from_env_uncached()
 }
 
 impl ScanOrchestrator {
@@ -47,11 +50,81 @@ impl ScanOrchestrator {
         let incremental_path = self.incremental_cache_path();
 
         const BATCH_CHUNK_LIMIT: usize = 4096;
-        const BATCH_BYTES_BUDGET: usize = 256 * 1024 * 1024;
-        const PIPELINE_DEPTH: usize = 1;
+        // Bytes budget per coalesced batch. Sized to match the
+        // engine's `megascan_input_len()` (the pre-compiled
+        // `RulePipeline` input cap) so the GPU dispatch never
+        // auto-degrades to literal-set on oversized batches and we
+        // capture every regex-NFA win. The engine sizes its cap by
+        // VRAM (1 GiB on RTX 4090/5090, 256 MiB default), so the
+        // orchestrator inherits that scaling automatically.
+        //
+        // Clamped so worst-case resident memory (`pipeline_depth ×
+        // batch_bytes_budget`) stays under 1/8 of system RAM. On a
+        // 16 GiB CI runner with a hypothetical 24+ GiB-VRAM card,
+        // the engine's 1 GiB cap × depth 3 would otherwise float
+        // toward 3 GiB resident which earlyoom flags before the
+        // scanner gets useful work done. Safer to cap the batch
+        // (still well over the dispatch breakeven for any card big
+        // enough to want the bigger buffer) than to break the
+        // memory-safety invariant.
+        let batch_bytes_budget: usize = {
+            let engine_cap = keyhog_scanner::engine::megascan_input_len();
+            let total_ram_bytes = keyhog_scanner::hw_probe::probe_hardware()
+                .total_memory_mb
+                .map(|mb| (mb as usize) * 1024 * 1024)
+                .unwrap_or(0);
+            // Pipeline depth here is still being computed below, so
+            // assume the max (3) for the headroom clamp. Worst case
+            // is the orchestrator picking depth=1 and only using a
+            // third of the headroom - safe in the under-direction.
+            let headroom_cap = total_ram_bytes / (8 * 3);
+            if headroom_cap == 0 {
+                engine_cap
+            } else {
+                engine_cap.min(headroom_cap)
+            }
+        };
+        // Producer/scanner pipeline depth. Each in-flight batch holds up
+        // to `batch_bytes_budget` (256 MiB default, up to 1 GiB on
+        // big-VRAM cards) of coalesced chunks, so the worst-case
+        // resident memory floor is depth * batch_bytes_budget. Higher
+        // depth lets the reader prefetch the next batch while the
+        // scanner is still grinding the previous one - critical at
+        // multi-TB scale where IO and GPU dispatch take similar wall-
+        // clock time and depth=1 leaves whichever finishes first
+        // idling. The previous fixed depth=1 fully serialized the two
+        // sides; on a 96 GB workstation reading 5 TB of source, that
+        // costs roughly half of total throughput.
+        //
+        // Adaptive by total system memory:
+        //   - >= 32 GiB: depth 3 (~3x readahead).
+        //   - >= 16 GiB: depth 2.
+        //   -  < 16 GiB: depth 1 (the safe original behavior, since
+        //                 jumping to a multi-batch peak on a small host
+        //                 risks earlyoom).
+        //
+        // The peak resident is now `depth × batch_bytes_budget`, where
+        // batch_bytes_budget is itself capped at RAM/24 above, so even
+        // depth=3 cannot push us past 1/8 of system RAM.
+        let pipeline_depth: usize = {
+            let caps = keyhog_scanner::hw_probe::probe_hardware();
+            match caps.total_memory_mb {
+                Some(mb) if mb >= 32 * 1024 => 3,
+                Some(mb) if mb >= 16 * 1024 => 2,
+                _ => 1,
+            }
+        };
 
         let scanner = Arc::clone(&self.scanner);
-        let (tx, rx) = std::sync::mpsc::sync_channel::<Vec<keyhog_core::Chunk>>(PIPELINE_DEPTH);
+        let (tx, rx) = std::sync::mpsc::sync_channel::<Vec<keyhog_core::Chunk>>(pipeline_depth);
+
+        tracing::debug!(
+            target: "keyhog::routing",
+            pipeline_depth,
+            batch_bytes_budget,
+            batch_chunk_limit = BATCH_CHUNK_LIMIT,
+            "scan dispatch pipeline sized"
+        );
 
         let stream = self.args.stream;
 
@@ -231,7 +304,7 @@ impl ScanOrchestrator {
                         batch.push(c);
                         batch_bytes += len;
                         crate::TOTAL_CHUNKS.fetch_add(1, Ordering::Relaxed);
-                        if batch.len() >= BATCH_CHUNK_LIMIT || batch_bytes >= BATCH_BYTES_BUDGET {
+                        if batch.len() >= BATCH_CHUNK_LIMIT || batch_bytes >= batch_bytes_budget {
                             send_batch(&mut batch, &mut batch_bytes, &mut pipeline_alive);
                             if !pipeline_alive {
                                 break 'sources;

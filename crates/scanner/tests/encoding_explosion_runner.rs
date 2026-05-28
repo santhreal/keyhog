@@ -1,4 +1,4 @@
-//! Encoding-explosion runner — decode-through recall coverage.
+//! Encoding-explosion runner - decode-through recall coverage.
 //!
 //! Walks every `tests/contracts/*.toml` positive and re-encodes just
 //! the credential bytes (the secret half of the positive text) into
@@ -20,7 +20,7 @@
 //! Surface
 //! -------
 //! 348 contracts × ~2 positives × 7 encodings ≈ **4 800 cases per
-//! run**. Default mode is report-only — `KEYHOG_ENCODING_STRICT=1`
+//! run**. Default mode is report-only - `KEYHOG_ENCODING_STRICT=1`
 //! flips the "decoded encodings must hit" gates into hard failures
 //! once the per-encoding floor numbers stabilize.
 
@@ -99,7 +99,7 @@ fn scanner() -> CompiledScanner {
 // ── encoders ────────────────────────────────────────────────────────
 
 /// Every encoding we exercise. The `Identity` variant is the
-/// control — it MUST hit (mirrors the contracts_runner positive
+/// control - it MUST hit (mirrors the contracts_runner positive
 /// case) and surfaces any bug in the runner itself before the more
 /// interesting decoders take the blame.
 #[derive(Debug, Clone, Copy)]
@@ -164,7 +164,7 @@ impl Encoding {
     }
 }
 
-/// Percent-encode every byte — the strictest form. Real-world URL
+/// Percent-encode every byte - the strictest form. Real-world URL
 /// encoding only escapes reserved chars, but for the decode-through
 /// pipeline the strict form is the harder test.
 fn percent_encode_all(bytes: &[u8]) -> String {
@@ -214,7 +214,7 @@ fn wrap_with_encoded_cred(text: &str, raw: &str, encoded: &str) -> String {
         out
     } else {
         // The contract's `credential` should appear in `text`; if
-        // it doesn't, the contract itself is malformed — skip
+        // it doesn't, the contract itself is malformed - skip
         // gracefully so the runner stays robust.
         text.to_string()
     }
@@ -228,7 +228,7 @@ fn every_positive_swept_through_every_encoding() {
     let contracts = load_contracts();
     assert!(
         !contracts.is_empty(),
-        "tests/contracts/ has no *.toml — the encoding runner has \
+        "tests/contracts/ has no *.toml - the encoding runner has \
          nothing to drive"
     );
 
@@ -285,7 +285,7 @@ fn every_positive_swept_through_every_encoding() {
         // that drops below floor surfaces here. Identity stays at
         // 100%. The base64/hex/url-percent numbers are below where
         // the README's "4 layers of decode-through" claim implies
-        // they should be — the working hypothesis is that the
+        // they should be - the working hypothesis is that the
         // decode-through scans the decoded text as a fresh chunk but
         // the companion context from the original chunk doesn't
         // carry through, so detectors that need an anchor adjacent

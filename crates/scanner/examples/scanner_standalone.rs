@@ -11,6 +11,7 @@ fn main() -> Result<(), keyhog_scanner::ScanError> {
             regex: "demo_[A-Z0-9]{8}".into(),
             description: None,
             group: None,
+            client_safe: false,
         }],
         companions: Vec::new(),
         verify: None,

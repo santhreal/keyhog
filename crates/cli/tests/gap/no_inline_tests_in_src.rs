@@ -33,7 +33,7 @@ fn no_inline_tests_in_src() {
     offenders.sort();
     assert!(
         offenders.is_empty(),
-        "{} cli/src files still contain #[cfg(test)] — migrate to tests/unit/:\n  - {}",
+        "{} cli/src files still contain #[cfg(test)] - migrate to tests/unit/:\n  - {}",
         offenders.len(),
         offenders
             .iter()

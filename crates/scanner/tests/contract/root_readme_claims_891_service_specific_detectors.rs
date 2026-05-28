@@ -16,6 +16,6 @@ fn root_readme_claims_891_service_specific_detectors() {
 
     assert!(
         readme.contains("891 service-specific"),
-        "README must claim 891 service-specific detectors — front-page count drift breaks catalog trust"
+        "README must claim 891 service-specific detectors - front-page count drift breaks catalog trust"
     );
 }

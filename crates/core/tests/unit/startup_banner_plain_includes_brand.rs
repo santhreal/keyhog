@@ -1,4 +1,4 @@
-//! Migrated from `src/banner.rs` — plain banner includes brand and detector count.
+//! Migrated from `src/banner.rs` - plain banner includes brand and detector count.
 
 use keyhog_core::banner::print_banner;
 

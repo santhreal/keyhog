@@ -161,7 +161,7 @@ fn unicode_escape_decode_finds_aws_key_on_every_backend() {
 
 #[test]
 fn json_string_escape_decode_finds_aws_key_on_every_backend() {
-    // JSON-escaped credential — \", \\ inside a JSON string literal.
+    // JSON-escaped credential - \", \\ inside a JSON string literal.
     let plain = format!("AWS_ACCESS_KEY_ID={SECRET}");
     let text = format!("{{\"cred\":\"{plain}\"}}\n");
     check_decoder_cells("json-string", &make_chunk(&text, "payload.json"));

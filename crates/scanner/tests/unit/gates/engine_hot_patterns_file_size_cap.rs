@@ -7,6 +7,6 @@ fn engine_hot_patterns_file_size_cap() {
     let lines = src.lines().count();
     assert!(
         lines <= 500,
-        "engine::hot_patterns: {lines} lines exceeds 500-line cap — split module"
+        "engine::hot_patterns: {lines} lines exceeds 500-line cap - split module"
     );
 }

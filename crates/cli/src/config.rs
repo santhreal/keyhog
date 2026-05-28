@@ -67,7 +67,7 @@ pub struct ConfigFile {
 
     // ─── Documented nested sections (Issue #5) ──────────────────────
     // The README documents `[scan]`, `[allowlist]`, `[detector.X]`, and
-    // `[lockdown]` nested tables. Pre-fix these were silently ignored —
+    // `[lockdown]` nested tables. Pre-fix these were silently ignored -
     // a user copying the README example believed lockdown enforcement
     // was active when it never reached the runtime. The structs below
     // PARSE those sections so config-load no longer drops them on the
@@ -76,13 +76,13 @@ pub struct ConfigFile {
     // time so the user sees which lines are recognized-but-inactive
     // instead of recognized-and-effective. New fields here should ship
     // with both a parser entry AND the wire-up in apply_config_file.
-    /// `[scan]` — runtime scan policy. Mirrors top-level scalar fields.
+    /// `[scan]` - runtime scan policy. Mirrors top-level scalar fields.
     pub scan: Option<ScanSection>,
-    /// `[allowlist]` — `.keyhogignore` discovery + governance metadata.
+    /// `[allowlist]` - `.keyhogignore` discovery + governance metadata.
     pub allowlist: Option<AllowlistSection>,
-    /// `[detector.<id>]` — per-detector overrides keyed by detector_id.
+    /// `[detector.<id>]` - per-detector overrides keyed by detector_id.
     pub detector: Option<std::collections::HashMap<String, DetectorSection>>,
-    /// `[lockdown]` — refuse to start unless explicit `--lockdown` flag.
+    /// `[lockdown]` - refuse to start unless explicit `--lockdown` flag.
     pub lockdown: Option<LockdownSection>,
 }
 

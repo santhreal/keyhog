@@ -7,6 +7,6 @@ fn static_intern_file_size_cap() {
     let lines = src.lines().count();
     assert!(
         lines <= 500,
-        "static_intern: {lines} lines exceeds 500-line cap — split module"
+        "static_intern: {lines} lines exceeds 500-line cap - split module"
     );
 }

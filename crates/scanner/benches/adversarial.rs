@@ -1,4 +1,4 @@
-//! Adversarial benchmarks — designed to stress weaknesses, not the
+//! Adversarial benchmarks - designed to stress weaknesses, not the
 //! happy path. Each fixture targets a class of input where naive
 //! scanners regress, so we can keep an eye on whether incidental
 //! refactors hurt the cases that matter most in real repos.
@@ -8,7 +8,7 @@
 //! - `false_prefix_storm`: 1 MiB of strings that look like real
 //!   credential prefixes (AKIA…, ghp_…, sk_live_…) but each is
 //!   truncated or otherwise invalid. A correct scanner must enter
-//!   regex evaluation for every prefix and reject — exactly the
+//!   regex evaluation for every prefix and reject - exactly the
 //!   path AC would have skipped on a fully-uninteresting buffer.
 //!   This is where regex backtracking + companion lookups dominate.
 //!
@@ -16,14 +16,14 @@
 //!   designed to trip the entropy fallback. Tests how aggressively
 //!   the entropy gate filters real noise vs. burning cycles on it.
 //!
-//! - `long_lines`: a single 64 KiB line — no newlines anywhere.
+//! - `long_lines`: a single 64 KiB line - no newlines anywhere.
 //!   Stresses the `code_lines.collect()` + line-offset path and
 //!   any per-line accumulator that scales badly without bounds.
 //!
 //! - `keyword_dense_no_match`: 1 MiB of code that mentions "secret",
 //!   "token", "api_key" etc. on most lines but never assigns a
 //!   high-entropy value. Stresses `scan_generic_assignments` after
-//!   the AC pre-filter passes — every line runs the regex.
+//!   the AC pre-filter passes - every line runs the regex.
 //!
 //! - `deep_concat_chain`: 64 KiB of deeply-fragmented concatenation
 //!   chains (`"AK" + "IA" + "EXAMPLE…"`). Stresses multiline

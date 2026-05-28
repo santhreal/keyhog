@@ -10,6 +10,6 @@ fn multiline_fragment_cache_file_size_cap() {
     let lines = src.lines().count();
     assert!(
         lines <= 500,
-        "multiline::fragment_cache: {lines} lines exceeds 500-line cap — split module"
+        "multiline::fragment_cache: {lines} lines exceeds 500-line cap - split module"
     );
 }

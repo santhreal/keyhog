@@ -90,7 +90,7 @@ fn {fn}() {{
     let lines = src.lines().count();
     assert!(
         lines <= {FILE_CAP},
-        "{mod}: {{lines}} lines exceeds {FILE_CAP}-line cap — split module"
+        "{mod}: {{lines}} lines exceeds {FILE_CAP}-line cap - split module"
     );
 }}
 """

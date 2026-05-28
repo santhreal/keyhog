@@ -66,7 +66,7 @@ pub const KNOWN_PREFIXES: &[&str] = &[
     // Hex-prefixed credentials (Ethereum-style addresses + a few API
     // keys that ship as 0x<hex>).
     "0x",
-    // Bare keyword used as a credential — the upstream detector already
+    // Bare keyword used as a credential - the upstream detector already
     // gated on `PRIVATE KEY` substring so this floor only lifts captured
     // bodies, not arbitrary PEM blocks.
     "PRIVATE KEY",

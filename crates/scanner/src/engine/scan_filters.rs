@@ -1,12 +1,12 @@
 /// Fast check for secret-related keywords in file content.
-/// Used to gate the multiline fallback — only files that mention
+/// Used to gate the multiline fallback - only files that mention
 /// secret/key/token/password are worth reassembling.
 ///
 /// Only the Hyperscan-prefilter path of `scan_coalesced` calls this,
 /// so gate it on `simd` to avoid a dead-code warning in the
 /// no-Hyperscan Windows build.
 ///
-/// Single-pass Aho-Corasick over all distinctive prefixes — replaces the
+/// Single-pass Aho-Corasick over all distinctive prefixes - replaces the
 /// previous loop of N independent `memmem` scans (each O(n)) which traversed
 /// the chunk N times. With the AC automaton the scan is O(n) total, with
 /// one memory walk and shared cache lines.
@@ -76,11 +76,11 @@ pub(super) fn has_secret_keyword_fast(data: &[u8]) -> bool {
 /// Broader than `has_secret_keyword_fast` (which is for multiline only).
 ///
 /// Same single-pass AC strategy as `has_secret_keyword_fast`, but with the
-/// case-insensitive variants folded into one automaton — `aho-corasick`'s
+/// case-insensitive variants folded into one automaton - `aho-corasick`'s
 /// `ascii_case_insensitive` builder option matches both `secret` and
 /// `SECRET` from a single literal at scan-time, halving the pattern count.
 ///
-/// Same simd gate as [`has_secret_keyword_fast`] — only the
+/// Same simd gate as [`has_secret_keyword_fast`] - only the
 /// Hyperscan-prefilter path consumes it.
 #[cfg(feature = "simd")]
 pub(super) fn has_generic_assignment_keyword(data: &[u8]) -> bool {
@@ -142,7 +142,7 @@ pub(super) fn looks_like_variable_name(s: &str) -> bool {
     if bytes.is_empty() || bytes.len() > 64 {
         return false;
     }
-    // Pure ASCII check — byte ops are ~4x faster than .chars().all()
+    // Pure ASCII check - byte ops are ~4x faster than .chars().all()
     // because they skip UTF-8 decode and char boundary tracking.
     bytes
         .iter()
@@ -177,7 +177,7 @@ pub(super) fn extend_known_prefix_credential<'a>(
 
 /// Swallow up to two trailing `=` when the captured body is base64-shaped.
 /// Regexes often end with `=?` or `{20,}=?` and drop the second padding
-/// char on values like `YWJj…vcA==` — `splitio-api-key` and friends.
+/// char on values like `YWJj…vcA==` - `splitio-api-key` and friends.
 fn extend_base64_padding<'a>(
     data: &'a str,
     match_start: usize,

@@ -1,4 +1,4 @@
-//! Empty dedup input yields empty output — no panic, no phantom groups.
+//! Empty dedup input yields empty output - no panic, no phantom groups.
 
 use keyhog_core::{dedup_matches, DedupScope};
 

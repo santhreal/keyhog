@@ -60,7 +60,7 @@ Algolia search-only, Datadog browser RUM, Bugsnag, Segment write
 key). The detector still fires (a token grep is a token grep), but
 the finding renders below `low` and `--hide-client-safe` filters it
 out entirely. Set per-pattern via the `client_safe = true` field on
-a `[[detector.patterns]]` block — detectors that fire on both the
+a `[[detector.patterns]]` block - detectors that fire on both the
 public and the secret prefix (Stripe `pk_*` vs `sk_*`, Mapbox `pk.`
 vs `sk.`) tag only the public pattern so a misused secret key still
 surfaces at its nominal severity.

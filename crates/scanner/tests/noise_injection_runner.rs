@@ -1,10 +1,10 @@
-//! Noise-injection runner — tests detector behavior with padding.
+//! Noise-injection runner - tests detector behavior with padding.
 //!
 //! Real-world secrets often land in lines that aren't bare
 //! `KEY=value` shapes: a 4 KB JSON log row, a base64-encoded
 //! audit-trail entry, a Vec-of-structs printout from a debug dump,
 //! a stack trace that happens to mention the credential. Some
-//! detectors use a fixed-size span/window around the credential —
+//! detectors use a fixed-size span/window around the credential -
 //! if the companion keyword sits past the window boundary, the
 //! detector misses.
 //!
@@ -16,7 +16,7 @@
 //! runner` exercise the credential at near-zero noise (the wrappers
 //! add at most ~150 bytes). This runner pads N bytes of varying
 //! shapes on both sides of the credential and reports the recall
-//! decay curve — a window regression that loses recall on a 4 KB
+//! decay curve - a window regression that loses recall on a 4 KB
 //! noisy line shows up as a flat hit-rate that drops off at the
 //! window boundary.
 //!
@@ -206,7 +206,7 @@ fn every_positive_survives_noise_padding() {
     let contracts = load_contracts();
     assert!(
         !contracts.is_empty(),
-        "tests/contracts/ has no *.toml — noise runner has nothing to drive"
+        "tests/contracts/ has no *.toml - noise runner has nothing to drive"
     );
 
     // Per (noise_size, noise_kind): (runs, hits)
@@ -249,7 +249,7 @@ fn every_positive_survives_noise_padding() {
     }
     let overall = (total_hits as f64 / total_runs.max(1) as f64) * 100.0;
     summary.push_str(&format!(
-        "  TOTAL {total_hits}/{total_runs} ({overall:.1}%) — \
+        "  TOTAL {total_hits}/{total_runs} ({overall:.1}%) - \
          decay across sizes is the legendary metric here\n"
     ));
     eprintln!("{summary}");

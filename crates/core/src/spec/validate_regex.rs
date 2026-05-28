@@ -97,12 +97,12 @@ fn collect_redos_risks(ast: &Ast, stats: &mut RegexComplexityStats, inside_repet
             // Flag nested quantifiers only when they can cause exponential backtracking.
             //
             // SAFE patterns (char class quantifier inside group quantifier):
-            //   (?:api[_\s.-]*)? — [_\s.-]* is atomic, can't overlap
-            //   (?:key|token)[=:\s"']+  — char class quantifier, deterministic
+            //   (?:api[_\s.-]*)? - [_\s.-]* is atomic, can't overlap
+            //   (?:key|token)[=:\s"']+  - char class quantifier, deterministic
             //
             // DANGEROUS patterns (group/concat quantifier inside quantifier):
-            //   (a+)+       — classic ReDoS
-            //   (\w+\s*)+   — overlapping quantifiers on non-atomic elements
+            //   (a+)+       - classic ReDoS
+            //   (\w+\s*)+   - overlapping quantifiers on non-atomic elements
             //
             // Strategy: only flag when THIS repetition wraps a non-atomic element
             // AND we're inside another repetition, OR when our inner AST itself
@@ -123,7 +123,7 @@ fn collect_redos_risks(ast: &Ast, stats: &mut RegexComplexityStats, inside_repet
             );
             // Only flag when BOTH the outer and this repetition are unbounded
             // and this wraps a non-atomic element. (?:group)? is safe because
-            // ? is {0,1} — it can't cause exponential backtracking.
+            // ? is {0,1} - it can't cause exponential backtracking.
             if inside_repetition && !this_is_simple_atom && this_is_unbounded {
                 stats.has_nested_quantifier = true;
             }

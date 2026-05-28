@@ -19,7 +19,7 @@ fn detector_count_is_891() {
     assert_eq!(
         detectors.len(),
         EXPECTED,
-        "loaded detector count must match contract — update EXPECTED only after \
+        "loaded detector count must match contract - update EXPECTED only after \
          intentional catalog change"
     );
 }

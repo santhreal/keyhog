@@ -23,7 +23,7 @@ fn vendored_3rd_party_bundle_suppressed_regardless_of_detector() {
         None,
         "generic-secret",
     ));
-    // node_modules — npm vendored tree
+    // node_modules - npm vendored tree
     assert!(should_suppress_named_detector_finding(
         "ASIAY5KQQ4PWG3MX5VHN",
         Some("app/node_modules/lodash/lodash.min.js"),

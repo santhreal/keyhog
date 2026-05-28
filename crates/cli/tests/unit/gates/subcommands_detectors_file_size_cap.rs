@@ -7,6 +7,6 @@ fn subcommands_detectors_file_size_cap() {
     let lines = src.lines().count();
     assert!(
         lines <= 500,
-        "subcommands::detectors: {lines} lines exceeds 500-line cap — split module"
+        "subcommands::detectors: {lines} lines exceeds 500-line cap - split module"
     );
 }

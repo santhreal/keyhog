@@ -24,7 +24,7 @@ pub enum DedupScope {
 
 /// A group of related raw matches representing a single distinct secret finding.
 ///
-/// Manual `Debug` impl redacts the `credential` field — the previous
+/// Manual `Debug` impl redacts the `credential` field - the previous
 /// derive-`Debug` was a CRITICAL leak vector (kimi-wave1 audit finding 1.2).
 #[derive(Clone, Serialize)]
 pub struct DedupedMatch {
@@ -104,7 +104,7 @@ pub fn dedup_matches(matches: Vec<RawMatch>, scope: &DedupScope) -> Vec<DedupedM
     // amortized insert like HashMap PLUS deterministic iteration order
     // (insertion order, which we sort post-pass for cross-run stability).
     // BTreeMap was O(log N) per insert and dominated dedup time on 1M+
-    // matches — see audits/legendary-2026-04-26.
+    // matches - see audits/legendary-2026-04-26.
     type DedupKey = (Arc<str>, Arc<str>, Option<Arc<str>>);
     let mut groups: IndexMap<DedupKey, DedupedMatch> = IndexMap::new();
 
@@ -150,7 +150,7 @@ pub fn dedup_matches(matches: Vec<RawMatch>, scope: &DedupScope) -> Vec<DedupedM
                 // match: build_preprocessed_text appends a `"key: value"`
                 // line after the original chunk text so detectors that
                 // need keyword context still see the value. The regex
-                // then fires twice on the same value — once at the real
+                // then fires twice on the same value - once at the real
                 // offset, once at original_end+offset_within_synthetic
                 // (past EOF on a single-line .env file). #16 regression:
                 // single-secret .env reported `+1 more locations` at
@@ -198,14 +198,14 @@ pub fn dedup_matches(matches: Vec<RawMatch>, scope: &DedupScope) -> Vec<DedupedM
 
 /// Cross-detector dedup at emit time.
 ///
-/// One credential value commonly matches multiple detectors — `AIza...` keys
+/// One credential value commonly matches multiple detectors - `AIza...` keys
 /// fire google-api, google-maps, google-places, google-translate; opaque
 /// 32-hex strings fire entropy + several service-specific generic detectors.
 /// The first-pass `dedup_matches` keeps each `(detector, credential)` pair
 /// separate. This second pass groups the deduped Vec by `credential_hash`
 /// and folds related detectors into the WINNING DedupedMatch's companions
 /// map under a `cross_detector` namespace, so a reporter sees ONE finding
-/// per credential with the alternate service guesses listed as evidence —
+/// per credential with the alternate service guesses listed as evidence -
 /// audits/legendary-2026-04-26 innovation #5, "Cuts noise ~30%".
 ///
 /// The winning detector is chosen by:
@@ -221,7 +221,7 @@ pub fn dedup_cross_detector(deduped: Vec<DedupedMatch>) -> Vec<DedupedMatch> {
         return deduped;
     }
 
-    // Group by (credential_hash, primary_location.file_path) — splitting by
+    // Group by (credential_hash, primary_location.file_path) - splitting by
     // file keeps file-scope dedup intact when the caller used DedupScope::File.
     type GroupKey = (String, Option<Arc<str>>);
     let mut groups: IndexMap<GroupKey, Vec<DedupedMatch>> = IndexMap::new();
@@ -283,7 +283,7 @@ pub fn dedup_cross_detector(deduped: Vec<DedupedMatch>) -> Vec<DedupedMatch> {
 }
 
 /// Two locations are "the same finding" when they share (source, file_path,
-/// line, commit). Offset is intentionally NOT in the tuple — the structured
+/// line, commit). Offset is intentionally NOT in the tuple - the structured
 /// preprocessor's synthetic-line append produces matches whose offset lies
 /// past the source file's EOF (the offset is into final_text, not the
 /// original chunk text), but whose `line` field is correctly remapped via

@@ -1,4 +1,4 @@
-//! Migrated from `src/config.rs` — fast preset caps recursive decode depth at 2.
+//! Migrated from `src/config.rs` - fast preset caps recursive decode depth at 2.
 
 use keyhog_core::ScanConfig;
 

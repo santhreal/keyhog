@@ -12,8 +12,7 @@ fn compute_spec_hash_changes_when_severity_changes() {
         keywords: vec![],
         patterns: vec![PatternSpec {
             regex: "[A-Z]{40}".into(),
-            description: None,
-            group: None,
+            ..Default::default()
         }],
         companions: vec![],
         verify: None,

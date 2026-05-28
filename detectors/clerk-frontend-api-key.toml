@@ -14,6 +14,6 @@ keywords = ["pk_live_", "pk_test_"]
 regex = 'pk_(?:live|test)_[a-zA-Z0-9]{32}'
 description = "Clerk frontend publishable API key (pk_live_ or pk_test_)"
 # Clerk frontend key is designed to ship in Next.js / browser bundles
-# alongside `<ClerkProvider>` — explicitly publishable. Server-side
+# alongside `<ClerkProvider>` - explicitly publishable. Server-side
 # auth uses the Clerk secret key (separate detector).
 client_safe = true

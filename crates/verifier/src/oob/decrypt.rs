@@ -17,7 +17,7 @@ use super::client::{Interaction, InteractionProtocol, InteractshError};
 type Aes256CfbDec = cfb_mode::Decryptor<Aes256>;
 
 /// Upstream interactsh-server interaction shape. `serde(default)` keeps
-/// the deserializer tolerant to new fields the server adds — every
+/// the deserializer tolerant to new fields the server adds - every
 /// unrecognized key is dropped, every missing key falls to its
 /// type-default. Field renames match the Go upstream `pkg/server/types.go`.
 #[derive(Deserialize, Default)]

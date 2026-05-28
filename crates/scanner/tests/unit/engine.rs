@@ -15,6 +15,7 @@ fn demo_detector() -> DetectorSpec {
             regex: "abc".into(),
             description: None,
             group: None,
+            client_safe: false,
         }],
         companions: vec![],
         verify: None,
@@ -84,7 +85,7 @@ fn line_number_for_offset_counts_newlines() {
     assert_eq!(line_number_for_offset(text, text.len()), 3);
 }
 
-// ── engine/mod.rs — compile + rule pipeline ─────────────────────────
+// ── engine/mod.rs - compile + rule pipeline ─────────────────────────
 
 #[test]
 fn compiled_scanner_compile_happy_path() {

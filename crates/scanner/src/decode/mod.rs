@@ -1,6 +1,6 @@
 //! Decode-through scanning: decode base64 and hex strings before pattern matching.
 //!
-//! Catches secrets hidden behind encoding layers — Kubernetes manifests,
+//! Catches secrets hidden behind encoding layers - Kubernetes manifests,
 //! CI/CD configs, and hex-encoded credentials.
 
 mod base64;

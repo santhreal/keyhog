@@ -45,7 +45,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Re-run when the directory contents change (file add/remove).
     println!("cargo:rerun-if-changed={}", detectors_dir.display());
     // Cargo'"'"'s `rerun-if-changed=<dir>` only watches the directory'"'"'s own
-    // mtime — which most filesystems do NOT bump when a file INSIDE the
+    // mtime - which most filesystems do NOT bump when a file INSIDE the
     // directory is modified in-place. Without per-file watchers, editing
     // an existing detector TOML would leave a stale `embedded_detectors.rs`
     // baked into the binary until `cargo clean`. Emit one

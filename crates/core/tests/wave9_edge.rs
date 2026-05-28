@@ -11,12 +11,21 @@ macro_rules! w9_edge {
         }
     };
 }
+use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
+
 fn loc() -> MatchLocation {
+    // Each helper call gets a distinct (line, offset) so that two
+    // `raw()` invocations for the same credential look like two REAL
+    // occurrences (one primary + one additional), not two
+    // synthetic-preprocessor aliases at the same (file, line) which
+    // dedup_matches deliberately collapses to a single finding.
+    static CALL_COUNT: AtomicUsize = AtomicUsize::new(0);
+    let n = CALL_COUNT.fetch_add(1, AtomicOrdering::Relaxed);
     MatchLocation {
         source: "fs".into(),
         file_path: Some("a.txt".into()),
-        line: Some(1),
-        offset: 0,
+        line: Some(1 + n),
+        offset: n * 16,
         commit: None,
         author: None,
         date: None,

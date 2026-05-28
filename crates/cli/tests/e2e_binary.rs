@@ -3,11 +3,11 @@
 //! Per the per-rule contract (CLAUDE.md test type 10), "the product
 //! is the binary." These tests:
 //!
-//! * use `env!("CARGO_BIN_EXE_keyhog")` — cargo points this at the
+//! * use `env!("CARGO_BIN_EXE_keyhog")` - cargo points this at the
 //!   freshly built `keyhog` binary in `target/<profile>/keyhog`, so we
 //!   exercise the same executable users get;
 //! * write a planted-credential fixture to `tempfile::TempDir` (out of
-//!   the workspace, so `.gitignore` skip rules don't interfere — keyhog
+//!   the workspace, so `.gitignore` skip rules don't interfere - keyhog
 //!   walks `.internal/` etc. as gitignored, which this test would
 //!   otherwise trip);
 //! * parse `--format json` stdout, verify shape + counts;
@@ -136,7 +136,7 @@ fn scan_json_schema_carries_required_fields() {
 #[test]
 fn readme_banner_counts_match_loaded_corpus() {
     const README_DETECTOR_COUNT: usize = 891;
-    const README_PATTERN_COUNT: usize = 1647;
+    const README_PATTERN_COUNT: usize = 1646;
 
     let output = Command::new(binary())
         .arg("detectors")
@@ -211,7 +211,7 @@ fn detectors_subcommand_emits_json_array() {
 /// Tier-B suppression flag: by default keyhog suppresses Stripe's
 /// public docs demo key (and other documented test fixtures), so
 /// scanning a fixture containing it surfaces 0 findings. Passing
-/// `--no-suppress-test-fixtures` flips that — the same fixture
+/// `--no-suppress-test-fixtures` flips that - the same fixture
 /// produces the finding gitleaks and trufflehog also report.
 ///
 /// This is the binding test for the Tier-B move (task #60). If
@@ -277,8 +277,8 @@ fn no_suppress_test_fixtures_surfaces_stripe_demo_key() {
 /// Regression for the demo-secret.env UX bug originally flagged
 /// in TODO.md (2026-05-17): scanning a file that holds an
 /// AWS-published EXAMPLE credential (AKIAIOSFODNN7EXAMPLE) used to
-/// print "No secrets found. Your code is clean." — identical to a
-/// genuinely clean repo — because the test-fixture suppression
+/// print "No secrets found. Your code is clean." - identical to a
+/// genuinely clean repo - because the test-fixture suppression
 /// filtered the match BEFORE the example-suppression telemetry
 /// counter saw it. The reporter then read counter=0 and chose the
 /// clean-repo summary.
@@ -333,7 +333,7 @@ fn explicit_format_text_does_not_emit_json() {
     let path = dir.path().join("planted.txt");
     std::fs::write(&path, fixture).expect("write fixture");
 
-    // Don't share the json-format helper here — text-format is the
+    // Don't share the json-format helper here - text-format is the
     // contrast case we're asserting.
     let output = Command::new(binary())
         .arg("scan")
@@ -350,7 +350,7 @@ fn explicit_format_text_does_not_emit_json() {
     // Text mode is the human-facing default. The hard contract:
     // (1) stdout MUST NOT start with `[` (would mean JSON leaked
     //     through), and (2) the combined stream must reference the
-    //     finding somewhere — text reporter writes to stdout or
+    //     finding somewhere - text reporter writes to stdout or
     //     stderr depending on `--output`; we accept either.
     assert!(
         !stdout.trim_start().starts_with('['),
@@ -378,7 +378,7 @@ fn scan_comments_flag_surfaces_credentials_in_comments() {
     // and the finding falls below `min_confidence`; --scan-comments
     // lifts it.
     let aws_key = concat!("AKIA", "ROTATIONNEEDED7777Q");
-    let fixture = format!("// TODO: rotate this — {aws_key}\n");
+    let fixture = format!("// TODO: rotate this - {aws_key}\n");
 
     let dir = TempDir::new().expect("tempdir");
     let path = dir.path().join("comment_planted.go");
@@ -388,7 +388,7 @@ fn scan_comments_flag_surfaces_credentials_in_comments() {
     // strong enough to still fire on this one, so we don't assert
     // the *absence* of the finding (that would be brittle to
     // confidence-floor tuning). What we DO assert is that
-    // --scan-comments AT LEAST matches the default — never silently
+    // --scan-comments AT LEAST matches the default - never silently
     // hides findings the default would surface.
     let default_out = Command::new(binary())
         .arg("scan")

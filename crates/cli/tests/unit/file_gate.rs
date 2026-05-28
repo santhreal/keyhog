@@ -84,7 +84,7 @@ fn config_error() {
 }
 
 // ── crates/cli/src/daemon/mod.rs ──────────────────────────────────────
-// Daemon tests are unix-only — see file header.
+// Daemon tests are unix-only - see file header.
 #[cfg(unix)]
 #[test]
 fn daemon_mod_happy() {

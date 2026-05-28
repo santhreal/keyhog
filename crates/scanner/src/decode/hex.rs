@@ -18,7 +18,7 @@ impl Decoder for HexDecoder {
             if let Ok(decoded) = hex_decode(&cleaned) {
                 if let Ok(text) = String::from_utf8(decoded) {
                     // Splice over the *original* encoded blob (with `_` if present)
-                    // so companion context survives — passing the cleaned form
+                    // so companion context survives - passing the cleaned form
                     // misses the parent substring and drops the anchor.
                     push_decoded_text_chunk_spliced(
                         &mut decoded_chunks,
@@ -39,7 +39,7 @@ fn find_hex_strings(text: &str, min_length: usize) -> Vec<EncodedString> {
     for candidate in extract_encoded_values(text) {
         // Hex literals in firmware dumps and config files commonly use `_`
         // every 2/4/8 chars for readability (`A1_B2_C3_...`). Strip those
-        // before validating — audit class #5 (release-2026-04-26) noted
+        // before validating - audit class #5 (release-2026-04-26) noted
         // the previous all-hex check missed this evasion entirely.
         let cleaned: String = candidate.chars().filter(|c| *c != '_').collect();
         if cleaned.len() >= min_length

@@ -2,7 +2,7 @@
 //!
 //! Instead of treating code as flat text, we infer the structural context of
 //! each match (assignment, comment, test code, encrypted block, documentation)
-//! and adjust confidence accordingly. Not an AST parser — just fast,
+//! and adjust confidence accordingly. Not an AST parser - just fast,
 //! language-agnostic structural inference.
 
 mod documentation;
@@ -13,7 +13,10 @@ pub use documentation::documentation_line_flags;
 pub use false_positive::{
     is_false_positive_context, is_false_positive_context_with_path, is_false_positive_match_context,
 };
-pub use inference::{infer_context, infer_context_with_documentation, is_known_example_credential};
+pub use inference::{
+    infer_context, infer_context_with_documentation, is_known_example_credential,
+    is_sequential_placeholder,
+};
 
 const ASSIGNMENT_CONFIDENCE_MULTIPLIER: f64 = 1.0;
 const STRING_LITERAL_CONFIDENCE_MULTIPLIER: f64 = 0.9;

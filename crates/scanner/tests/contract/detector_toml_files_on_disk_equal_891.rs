@@ -22,6 +22,6 @@ fn detector_toml_files_on_disk_equal_891() {
 
     assert_eq!(
         count, EXPECTED,
-        "detectors/ must contain exactly {EXPECTED} TOML files — README and loader both claim 891"
+        "detectors/ must contain exactly {EXPECTED} TOML files - README and loader both claim 891"
     );
 }

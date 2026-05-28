@@ -1,4 +1,4 @@
-//! `keyhog watch <path>` — daemon mode.
+//! `keyhog watch <path>` - daemon mode.
 //!
 //! Tier-B moat innovation #7 from audits/legendary-2026-04-26: compile-once,
 //! scan-many. The detector corpus + Hyperscan database are built ONCE at
@@ -85,7 +85,7 @@ pub fn run(args: WatchArgs) -> Result<()> {
 fn scan_file(scanner: &CompiledScanner, path: &std::path::Path) {
     let data = match std::fs::read_to_string(path) {
         Ok(s) => s,
-        Err(_) => return, // not text, deleted, or permission denied — skip
+        Err(_) => return, // not text, deleted, or permission denied - skip
     };
     if data.is_empty() {
         return;
@@ -123,7 +123,7 @@ fn scan_file(scanner: &CompiledScanner, path: &std::path::Path) {
 }
 
 fn should_skip(path: &std::path::Path) -> bool {
-    // Walk path components — handles both `/` and `\` natively and
+    // Walk path components - handles both `/` and `\` natively and
     // doesn't allocate a lowercased copy of the entire path on every
     // watch event. The previous flow (a) didn't skip Windows paths
     // because the SKIP literals were POSIX-only and (b) burned a

@@ -34,7 +34,7 @@ pub fn preprocess(text: &str, path: Option<&str>) -> Option<ScannerPreprocessedT
 }
 
 fn detect_and_parse(text: &str, path: Option<&str>) -> Option<Vec<ExtractedPair>> {
-    // ASCII case-insensitive byte compares — every chunk runs through this
+    // ASCII case-insensitive byte compares - every chunk runs through this
     // detector to decide whether a structured parser applies. The previous
     // flow built a fully-lowercased copy of the path on every call.
     let path_bytes = path.map(str::as_bytes).unwrap_or(&[]);

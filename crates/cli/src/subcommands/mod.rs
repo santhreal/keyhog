@@ -13,4 +13,6 @@ pub mod explain;
 pub mod hook;
 pub mod scan;
 pub mod scan_system;
+#[cfg(feature = "tui")]
+pub mod tui;
 pub mod watch;

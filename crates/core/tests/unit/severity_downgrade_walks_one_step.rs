@@ -1,4 +1,4 @@
-//! Migrated from `src/spec.rs` — severity downgrade steps one tier.
+//! Migrated from `src/spec.rs` - severity downgrade steps one tier.
 
 use keyhog_core::Severity;
 

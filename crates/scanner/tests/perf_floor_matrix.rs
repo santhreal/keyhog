@@ -8,10 +8,10 @@
 //! product surface that real users hit:
 //!
 //!   * SimdCpu × {benign, dense-credential} × {64KiB, 1MiB, 16MiB}
-//!   * CpuFallback × same — scalar reference floor (always slower
+//!   * CpuFallback × same - scalar reference floor (always slower
 //!     than SimdCpu by construction).
-//!   * Gpu × same — when adapter present; SKIP otherwise.
-//!   * MegaScan × same — when adapter present; SKIP otherwise.
+//!   * Gpu × same - when adapter present; SKIP otherwise.
+//!   * MegaScan × same - when adapter present; SKIP otherwise.
 //!
 //! The point isn't to bench-mark steady-state throughput (that's
 //! `crates/scanner/benches/`); it's to fail CI when **any** backend
@@ -62,7 +62,7 @@ impl Size {
 const KIB: usize = 1024;
 const MIB: usize = 1024 * 1024;
 
-/// Pseudo-Go-source filler — same shape as perf_floor.rs but
+/// Pseudo-Go-source filler - same shape as perf_floor.rs but
 /// parametric in length. The text avoids triggering generic-
 /// detectors so the measurement is the fast-path (alphabet screen +
 /// bigram bloom + AC pre-filter).
@@ -133,7 +133,7 @@ fn floor_mib_per_s(backend: ScanBackend, size_mib: f64, dense: bool) -> f64 {
     // slow path (regex + ML). Floors diverge accordingly.
     // Floors calibrated from the first matrix run on a 9950X + RTX 5090
     // (perf_floor_matrix log, 2026-05-21). Measured steady-state was 1.0-
-    // 2.5 MiB/s across all backends/sizes/shapes on small fixtures — the
+    // 2.5 MiB/s across all backends/sizes/shapes on small fixtures - the
     // hot path is dominated by 889-detector compile/intern overhead, not
     // per-byte scanning. Floors sit at 50% of measured so a 2x regression
     // on any cell trips; the hard-throughput numbers live in

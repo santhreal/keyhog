@@ -7,7 +7,7 @@
 //! fixture through both and asserts identical credential sets.
 //!
 //! Hard-fail parity: megakernel and literal-set GPU paths must produce
-//! identical findings. Adapter/init failure or divergence panics —
+//! identical findings. Adapter/init failure or divergence panics -
 //! no silent skip, no WARN-only downgrade.
 
 use keyhog_core::{Chunk, ChunkMetadata};
@@ -75,7 +75,7 @@ fn megakernel_and_literal_set_produce_identical_findings() {
     // Baseline = sharded GpuLiteralSet path (KEYHOG_USE_MEGAKERNEL unset).
     // SAFETY: this test mutates the process-wide env var. Tests run in
     // parallel by default, so isolate via a process-local mutex would
-    // be ideal — but the env var only flips routing, not data, so a
+    // be ideal - but the env var only flips routing, not data, so a
     // racing test sees correct-but-maybe-different routing. The
     // assertion compares the TWO scans within this test only.
     unsafe { std::env::remove_var("KEYHOG_USE_MEGAKERNEL") };
@@ -91,7 +91,7 @@ fn megakernel_and_literal_set_produce_identical_findings() {
         && literal_set_results.iter().any(|c| !c.is_empty())
     {
         eprintln!(
-            "SKIP: megakernel returned zero findings vs {} literal-set findings — \
+            "SKIP: megakernel returned zero findings vs {} literal-set findings - \
              likely no compatible adapter or megakernel init failed; falling back to \
              literal-set-as-baseline test in gpu_parity.rs",
             literal_keys.len()
@@ -123,7 +123,7 @@ fn megakernel_and_literal_set_produce_identical_findings() {
 
     if megakernel_results.iter().all(|c| c.is_empty()) && !literal_keys.is_empty() {
         panic!(
-            "megakernel returned zero findings vs {} literal-set findings — \
+            "megakernel returned zero findings vs {} literal-set findings - \
              adapter init failure must fail loudly, not silently degrade",
             literal_keys.len()
         );

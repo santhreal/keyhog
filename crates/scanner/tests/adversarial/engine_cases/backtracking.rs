@@ -14,6 +14,7 @@ fn catastrophic_backtracking_input_does_not_hang() {
             regex: r"token[=:]\s*[a-zA-Z0-9+/]{20,}={0,2}".into(),
             description: None,
             group: None,
+            client_safe: false,
         }],
         companions: Vec::new(),
         verify: None,
@@ -30,6 +31,6 @@ fn catastrophic_backtracking_input_does_not_hang() {
     let elapsed = start.elapsed();
     assert!(
         elapsed.as_secs() < 5,
-        "scan took {elapsed:?} — possible catastrophic backtracking"
+        "scan took {elapsed:?} - possible catastrophic backtracking"
     );
 }

@@ -3,7 +3,7 @@
 //
 // Bug history (2026-05-26): the rebuild path in
 // `verify/request.rs::resolved_client_for_url` was
-// `Client::builder().timeout(t).resolve_to_addrs(host, addrs).build()` —
+// `Client::builder().timeout(t).resolve_to_addrs(host, addrs).build()` -
 // which silently re-enabled reqwest's default `Policy::limited(10)`. An
 // attacker-controlled public host could issue
 // `302 Location: http://internal-target/` and the rebuilt client would
@@ -17,19 +17,19 @@
 // `danger_allow_private_ips=true` + `danger_allow_http=true` so the
 // original URL passes the SSRF gate and the rebuild path actually
 // fires. If redirects are followed, mock-2 sees >=1 request and the
-// assertion fails — exactly the bypass we're closing.
+// assertion fails - exactly the bypass we're closing.
 
 // Note: this file is wired in via `include!` from
 // `crates/verifier/tests/break_it.rs`. All imports it needs already
 // arrive through `mock_verify.rs` (TcpListener, async IO, engine,
-// detector spec, atomic) — adding `use` statements here would create
+// detector spec, atomic) - adding `use` statements here would create
 // duplicates inside the merged break_it.rs translation unit. Keep the
 // file free of imports.
 
 #[tokio::test]
 async fn pinned_client_does_not_follow_redirect_to_private_target() {
     // Mock-2: the would-be SSRF target. Counts how many times the
-    // verifier reached it — must stay at zero.
+    // verifier reached it - must stay at zero.
     let mock2_hits = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let mock2_listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
@@ -136,7 +136,7 @@ async fn pinned_client_does_not_follow_redirect_to_private_target() {
         mock2_count, findings[0].verification
     );
 
-    // The exact `VerificationResult` here is incidental — `Live`,
+    // The exact `VerificationResult` here is incidental - `Live`,
     // `Dead`, `Unverifiable`, or `Error(_)` are all consistent with the
     // redirect being blocked (no `success` spec → live signal collapses
     // to whatever the 302 response evaluates to under the default

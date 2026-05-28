@@ -49,7 +49,7 @@ fn every_loaded_detector_id_has_contract() {
 
     assert!(
         missing.is_empty(),
-        "{}/{} loaded detectors missing tests/contracts/<id>.toml — first 20:\n  - {}",
+        "{}/{} loaded detectors missing tests/contracts/<id>.toml - first 20:\n  - {}",
         missing.len(),
         detectors.len(),
         missing.iter().take(20).cloned().collect::<Vec<_>>().join("\n  - ")

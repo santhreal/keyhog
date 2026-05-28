@@ -3,7 +3,7 @@
 //! Locks the headline GPU invariant: **every backend produces
 //! byte-identical findings on the same input.** A divergence between
 //! GPU/MegaScan/SimdCpu/CpuFallback on a single fixture means a real
-//! bug — either the GPU kernel dropped a match, or the CPU path is
+//! bug - either the GPU kernel dropped a match, or the CPU path is
 //! over-firing, or the chunk-boundary path is asymmetric.
 //!
 //! Each (backend × fixture) pair is its own cell. SimdCpu is the
@@ -69,12 +69,12 @@ struct Fixture {
 }
 
 /// Six synthetic corpora that each exercise a distinct engine path:
-///   1. Pure clean text (zero findings — backend must agree on "nothing")
+///   1. Pure clean text (zero findings - backend must agree on "nothing")
 ///   2. AKIA + ghp_ literal-prefix path (the GPU literal-set hot path)
 ///   3. Stripe sk_live_ + ASIA mixed
 ///   4. Multi-chunk same-file (tests chunk-id propagation)
 ///   5. Unicode + non-ASCII surrounding (tests byte-offset accounting)
-///   6. False-prefix storm (many literal-prefix hits, few real matches —
+///   6. False-prefix storm (many literal-prefix hits, few real matches -
 ///      catches GPU bitmap-vs-locations regressions)
 fn build_fixtures() -> Vec<Fixture> {
     vec![
@@ -175,7 +175,7 @@ fn run_cell(
     // SKIP heuristic: GPU/MegaScan returning empty while SIMD found
     // anything is almost certainly a no-adapter fallback (the helper
     // silently falls back to SIMD inside scan_chunks_with_backend on
-    // GPU init failure — that case prints zeros here). Don't flag
+    // GPU init failure - that case prints zeros here). Don't flag
     // that as a parity failure; the routing layer's own job is to
     // pick a real backend, and the `gpu_smoke` test asserts the
     // adapter is present when expected.

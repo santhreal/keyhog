@@ -11,7 +11,7 @@ severity = "critical"
 keywords = ["dG9r"]
 
 # Real Intercom tokens are base64 strings whose underlying bytes
-# start with the ASCII "tok" — so `dG9r` IS the literal first four
+# start with the ASCII "tok" - so `dG9r` IS the literal first four
 # characters of the token. The original pattern matched `dG9r`
 # anywhere in a base64 blob, which fires inside any macaroon /
 # JWT / arbitrary protobuf whose base64 encoding happens to spell
@@ -23,7 +23,7 @@ keywords = ["dG9r"]
 [[detector.patterns]]
 # Triple-quoted literal so the single-quote inside the character
 # class (`["='\s]`) doesn't collapse a TOML basic literal string.
-# The previous form `'...["''\s]...'` is a TOML parse error — a
+# The previous form `'...["''\s]...'` is a TOML parse error - a
 # single-quoted literal cannot contain `'`. The detector silently
 # vanished from the embedded corpus (the build counted 891 but
 # 890 actually loaded). 2026-05-26.

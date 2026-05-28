@@ -7,6 +7,6 @@ fn rule_filter_file_size_cap() {
     let lines = src.lines().count();
     assert!(
         lines <= 500,
-        "rule_filter: {lines} lines exceeds 500-line cap — split module"
+        "rule_filter: {lines} lines exceeds 500-line cap - split module"
     );
 }

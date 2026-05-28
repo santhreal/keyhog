@@ -3,12 +3,12 @@
 //! Real-world files come in with: a UTF-8 BOM (`EF BB BF`), CRLF
 //! line endings (Windows), CR-only line endings (legacy Mac), tabs
 //! instead of spaces, NBSP between tokens (Word-pasted .env files),
-//! trailing whitespace, and zero-width characters (ZWSP/ZWJ — copy-
+//! trailing whitespace, and zero-width characters (ZWSP/ZWJ - copy-
 //! pasted from web docs). Every one of these has been observed in
 //! actual leaked-secret commits in the wild.
 //!
 //! A correct scanner treats all of these as semantically equivalent
-//! to the canonical positive — the credential surfaces regardless.
+//! to the canonical positive - the credential surfaces regardless.
 //! A scanner that string-matches on `\n` or assumes UTF-8 starts at
 //! offset 0 silently misses them. This runner is the per-variant
 //! gate.
@@ -101,7 +101,7 @@ enum Variant {
     TrailingWhitespace,
     TabsForSpaces,
     DoubleSpaces,
-    /// ZWSP/ZWJ inserted at boundaries OUTSIDE the credential — must
+    /// ZWSP/ZWJ inserted at boundaries OUTSIDE the credential - must
     /// not affect detection. (Inside-credential ZW chars are tested
     /// by `unicode_confusable_runner` and are a separate question.)
     ZwspBoundary,
@@ -152,7 +152,7 @@ impl Variant {
             Variant::TabsForSpaces => text.replace("  ", "\t").replace("   ", "\t\t"),
             Variant::DoubleSpaces => text.replace(' ', "  "),
             Variant::ZwspBoundary => {
-                // Insert ZWSP at line boundaries — never inside a token.
+                // Insert ZWSP at line boundaries - never inside a token.
                 text.lines()
                     .map(|l| format!("\u{200B}{l}\u{200B}"))
                     .collect::<Vec<_>>()
@@ -185,7 +185,7 @@ fn every_positive_survives_whitespace_variants() {
     let contracts = load_contracts();
     assert!(
         !contracts.is_empty(),
-        "tests/contracts/ has no *.toml — whitespace runner has nothing to drive"
+        "tests/contracts/ has no *.toml - whitespace runner has nothing to drive"
     );
 
     let mut per_variant: BTreeMap<&'static str, (usize, usize)> = BTreeMap::new();
@@ -220,7 +220,7 @@ fn every_positive_survives_whitespace_variants() {
     }
     let overall = (total_hits as f64 / total_runs.max(1) as f64) * 100.0;
     summary.push_str(&format!(
-        "  TOTAL {total_hits}/{total_runs} ({overall:.1}%) — \
+        "  TOTAL {total_hits}/{total_runs} ({overall:.1}%) - \
          baseline parity is the bar; tabs/CRLF/BOM should be within 1%\n"
     ));
     eprintln!("{summary}");
@@ -240,7 +240,7 @@ fn every_positive_survives_whitespace_variants() {
             if (baseline - pct).abs() > 2.0 {
                 panic!(
                     "whitespace variant {variant} drift {pct:.1}% vs baseline {baseline:.1}% \
-                     exceeds 2% tolerance — normalization regression"
+                     exceeds 2% tolerance - normalization regression"
                 );
             }
         }

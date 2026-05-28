@@ -4,9 +4,9 @@
 //!
 //! 1. **Always-on counters** for things the reporter wants to surface
 //!    even on a default run (e.g. "no secrets, but 3 example/test keys
-//!    were suppressed — pass `--dogfood` to see them"). These are
+//!    were suppressed - pass `--dogfood` to see them"). These are
 //!    cheap atomic increments.
-//! 2. **Opt-in event capture** (`enable_dogfood()`) — the engine logs
+//! 2. **Opt-in event capture** (`enable_dogfood()`) - the engine logs
 //!    per-decision detail so a user can answer "why didn't keyhog fire
 //!    on my fixture?" without rebuilding with debug instrumentation.
 //!
@@ -20,7 +20,7 @@ use std::borrow::Cow;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Mutex, OnceLock};
 
-/// A single dogfood event. Variants are intentionally narrow — anything
+/// A single dogfood event. Variants are intentionally narrow - anything
 /// scanner-internal that would help a user understand a missed or
 /// suppressed credential should go here.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -94,7 +94,7 @@ pub fn example_suppression_count() -> usize {
 /// Zero the suppression counter without disturbing the dogfood
 /// enable-flag or any in-flight events. Used by the daemon between
 /// scan requests so per-request counts don't accumulate across
-/// clients — the count we ship over the wire belongs to one scan.
+/// clients - the count we ship over the wire belongs to one scan.
 pub fn reset_example_suppression_count() {
     cell().example_suppressions.store(0, Ordering::Relaxed);
 }
@@ -142,7 +142,7 @@ pub fn reset() {
 
 /// Redact a credential for safe inclusion in dogfood output: keep a
 /// short prefix (so the user can recognise which detector fired) and
-/// mask the rest. Never emits the full credential — the whole point of
+/// mask the rest. Never emits the full credential - the whole point of
 /// `--dogfood` is "show me decisions", not "leak the secrets I'm
 /// scanning for to my terminal scrollback or log file".
 fn redact_credential(credential: &str) -> String {

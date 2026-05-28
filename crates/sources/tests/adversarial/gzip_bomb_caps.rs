@@ -2,7 +2,7 @@
 //! input. The audit release-2026-04-26 hardening added a 4× per-file
 //! decompression budget on top of the existing per-file cap, but a
 //! malformed `.gz` (truncated header, bad CRC, invalid block) should
-//! also be tolerated cleanly — empty Vec returned, no panic.
+//! also be tolerated cleanly - empty Vec returned, no panic.
 
 use keyhog_core::Source;
 use keyhog_sources::FilesystemSource;
@@ -57,12 +57,12 @@ fn empty_gzip_is_handled() {
 #[test]
 fn random_bytes_with_gz_extension_dont_panic() {
     let dir = tempfile::tempdir().unwrap();
-    // 256 random-ish bytes labelled .gz — the format dispatcher will
+    // 256 random-ish bytes labelled .gz - the format dispatcher will
     // route them to the gzip path; ziftsieve should bail cleanly.
     let mut buf = Vec::with_capacity(256);
     for i in 0..256u32 {
         // Knuth's multiplicative hash; wrapping_mul to avoid the overflow
-        // panic in debug builds — we just want a deterministic byte stream.
+        // panic in debug builds - we just want a deterministic byte stream.
         buf.push((i.wrapping_mul(2654435761) >> 24) as u8);
     }
     fs::write(dir.path().join("rand.gz"), &buf).unwrap();

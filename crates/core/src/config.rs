@@ -41,7 +41,7 @@ pub struct ScanConfig {
 
     /// When `true`, credentials inside source-code comments
     /// (//, #, /* */, <!-- -->) get the same confidence treatment as
-    /// credentials in regular code. Default `false` — comment context
+    /// credentials in regular code. Default `false` - comment context
     /// downgrades confidence on the theory that examples are the
     /// common case. CLI exposes this as `--scan-comments`; opt-in
     /// because the rate of EXAMPLE secrets pasted into doc comments
@@ -65,8 +65,11 @@ pub const MAX_DECODE_DEPTH_LIMIT: usize = 16;
 /// Errors returned while validating a scan configuration.
 #[derive(Debug, Error)]
 pub enum ConfigError {
+    /// `min_confidence` was outside the closed unit interval `[0.0, 1.0]`.
     #[error("min_confidence must be between 0.0 and 1.0, found {0}")]
     InvalidConfidence(f64),
+    /// `max_decode_depth` exceeded the safety ceiling
+    /// [`MAX_DECODE_DEPTH_LIMIT`].
     #[error("max_decode_depth exceeds limit of {MAX_DECODE_DEPTH_LIMIT}, found {0}")]
     DepthTooHigh(usize),
 }

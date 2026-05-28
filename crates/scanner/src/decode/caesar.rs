@@ -10,7 +10,7 @@ use keyhog_core::Chunk;
 /// "Plausibly shaped" gates the explosion: a 100-char chunk would otherwise
 /// produce 25 sibling chunks per candidate. We require:
 ///   1. The decoded variant contains ≥1 ASCII digit (most modern API key
-///      formats include digits — pure-letter Caesar output rarely indicates
+///      formats include digits - pure-letter Caesar output rarely indicates
 ///      a real secret).
 ///   2. The decoded variant has at least 8 ASCII alphanumeric chars in a
 ///      contiguous run (matches AWS / GitHub / Slack token shapes).
@@ -18,7 +18,7 @@ use keyhog_core::Chunk;
 /// Both checks together keep the chunk count flat on prose-heavy inputs.
 ///
 /// Source-code files are skipped entirely. Real secrets are never Caesar-
-/// encoded inside source — the 25-shift fan-out on every prose-comment in
+/// encoded inside source - the 25-shift fan-out on every prose-comment in
 /// a codebase just hallucinates detector matches from random letter runs
 /// (helicone-api-key on a `//! Source trait` doc comment was the original
 /// reproducer; see dogfood-2026-05-21.md finding #5).
@@ -28,7 +28,7 @@ const MIN_CAESAR_LEN: usize = 16;
 const MIN_ALNUM_RUN: usize = 8;
 
 /// File extensions where Caesar-decoding is pure noise. Matched against the
-/// suffix of `chunk.metadata.path` (lower-cased). Kept short — only the
+/// suffix of `chunk.metadata.path` (lower-cased). Kept short - only the
 /// dominant source-code extensions a scanner is realistically pointed at.
 const SOURCE_CODE_EXTENSIONS: &[&str] = &[
     ".rs", ".py", ".go", ".js", ".jsx", ".ts", ".tsx", ".java", ".kt", ".scala", ".c", ".cc",
@@ -197,7 +197,7 @@ mod tests {
     #[test]
     fn source_code_path_skips_caesar_decoder() {
         use keyhog_core::{Chunk, ChunkMetadata};
-        // Comment in a Rust file that should never be Caesar-shifted — was the
+        // Comment in a Rust file that should never be Caesar-shifted - was the
         // source.rs:1 false positive that fired helicone-api-key in production.
         let chunk = Chunk {
             data: "//! Source trait and chunk types: pluggable input backends.".into(),

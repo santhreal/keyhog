@@ -66,7 +66,7 @@ fn suppress_entropy_matches_near_named_detectors(matches: &mut Vec<RawMatch>) {
 }
 
 fn resolve_match_groups(mut matches: Vec<RawMatch>) -> Vec<RawMatch> {
-    // Group by (file_path, line) — matches on the same line in the same file
+    // Group by (file_path, line) - matches on the same line in the same file
     // are competing for the same secret, even if their credential strings differ
     // slightly (e.g., exact-length vs greedy regex match).
     let mut groups: HashMap<(Arc<str>, usize), Vec<RawMatch>> = HashMap::new();

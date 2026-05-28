@@ -41,7 +41,7 @@ pub(crate) fn report_completion_summary(count: usize, elapsed: f64) {
     report_oversize_skip_summary();
 }
 
-/// Live progress ticker — overwrites the previous line via CR every
+/// Live progress ticker - overwrites the previous line via CR every
 /// 250 ms while the scan runs.
 pub(crate) fn progress_ticker(done: Arc<std::sync::atomic::AtomicBool>, started: Instant) {
     use std::io::IsTerminal;

@@ -71,7 +71,7 @@ fn megakernel_literal_set_parity() {
 
     if mega.is_empty() && !literal.is_empty() {
         panic!(
-            "KH-GAP-001: megakernel returned zero findings vs {} literal-set keys — \
+            "KH-GAP-001: megakernel returned zero findings vs {} literal-set keys - \
              GPU path must not silently lose recall",
             literal.len()
         );
@@ -80,7 +80,7 @@ fn megakernel_literal_set_parity() {
     assert_eq!(
         literal,
         mega,
-        "KH-GAP-001: megakernel/literal-set divergence — only_literal={:?} only_mega={:?}",
+        "KH-GAP-001: megakernel/literal-set divergence - only_literal={:?} only_mega={:?}",
         literal.difference(&mega).collect::<Vec<_>>(),
         mega.difference(&literal).collect::<Vec<_>>()
     );

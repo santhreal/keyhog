@@ -5,12 +5,12 @@
 //!    analyzer + decompiler, parses decompiled C output for string literals, data
 //!    section dumps, and cross-references. Catches secrets embedded in optimized code.
 //! 2. **Strings mode** (fallback): extracts printable ASCII runs ≥ 8 chars from raw
-//!    bytes. Fast but shallow — misses encoded or split secrets.
+//!    bytes. Fast but shallow - misses encoded or split secrets.
 //!
 //! The Ghidra integration is a runtime dependency, not compile-time.
 //! `cargo build -F binary` pulls in `goblin` for format detection; Ghidra is optional.
 
-/// Maximum bytes read for strings/section extraction — prevents OOM on multi-GB binaries.
+/// Maximum bytes read for strings/section extraction - prevents OOM on multi-GB binaries.
 pub const MAX_BINARY_READ_BYTES: usize = 64 * 1024 * 1024;
 
 use std::io::BufRead;
@@ -218,7 +218,14 @@ impl BinarySource {
     fn strings_chunks(&self) -> Vec<Chunk> {
         let bytes = match read_binary_capped(&self.path, MAX_BINARY_READ_BYTES) {
             Ok(b) => b,
-            Err(_) => return Vec::new(),
+            Err(error) => {
+                tracing::debug!(
+                    path = %self.path.display(),
+                    %error,
+                    "binary strings read failed; no strings extracted from this file"
+                );
+                return Vec::new();
+            }
         };
 
         let mut chunks = Vec::new();

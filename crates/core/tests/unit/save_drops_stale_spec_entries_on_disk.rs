@@ -12,7 +12,7 @@ fn save_drops_stale_spec_entries_on_disk() {
     // spec, those entries are stale (a future load_with_spec
     // would invalidate them anyway). The save path uses
     // load_with_spec internally, so spec-mismatched disk entries
-    // are NOT merged in — only the current process's in-memory
+    // are NOT merged in - only the current process's in-memory
     // entries get written.
     let dir = tempfile::tempdir().unwrap();
     let cache_path = dir.path().join("merkle.idx");

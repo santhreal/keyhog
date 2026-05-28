@@ -8,7 +8,7 @@
 //! engine does not treat known non-secrets as credentials.
 //!
 //! CLAUDE.md anti-rigging rule: every positive names a detector/service needle
-//! and/or expected credential substring — a function returning `Vec::new()` fails.
+//! and/or expected credential substring - a function returning `Vec::new()` fails.
 
 use super::corpus_support::{
     has_credential, has_detector, production_scanner, recall_fixture_path, scan_recall,
@@ -68,7 +68,7 @@ fn assert_no_credential_substr(
 }
 
 // ---------------------------------------------------------------------------
-// decode_through_confusion.json — base64-looking secrets + decode traps
+// decode_through_confusion.json - base64-looking secrets + decode traps
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -90,7 +90,7 @@ fn challenging_decode_through_confusion_finds_base64_wrapped_secrets() {
 fn challenging_decode_through_confusion_negative_sha256_empty_hash() {
     let matches = scan_fixture("decode_through_confusion.json");
     // e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 is the
-    // SHA-256 of the empty string — a common false-positive trap in the fixture.
+    // SHA-256 of the empty string - a common false-positive trap in the fixture.
     assert_no_credential_substr(
         &matches,
         "decode_through_confusion.json",
@@ -99,7 +99,7 @@ fn challenging_decode_through_confusion_negative_sha256_empty_hash() {
 }
 
 // ---------------------------------------------------------------------------
-// multipart_secrets — split / encoded / reassembled credentials
+// multipart_secrets - split / encoded / reassembled credentials
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -114,7 +114,7 @@ fn challenging_multipart_secrets_finds_plain_or_encoded_ghp() {
 }
 
 // ---------------------------------------------------------------------------
-// no_literal_prefix.env — high-entropy secrets without ghp_/AKIA prefixes
+// no_literal_prefix.env - high-entropy secrets without ghp_/AKIA prefixes
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -134,7 +134,7 @@ fn challenging_no_literal_prefix_finds_jwt_or_generic_secret() {
 }
 
 // ---------------------------------------------------------------------------
-// ac_prefilter_bypass.env — patterns that stress AC literal extraction
+// ac_prefilter_bypass.env - patterns that stress AC literal extraction
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -144,7 +144,7 @@ fn challenging_ac_prefilter_bypass_finds_something() {
     // high-entropy assignments. At least one planted secret must survive AC routing.
     assert!(
         !matches.is_empty(),
-        "ac_prefilter_bypass.env: zero findings — AC prefilter may be dropping \
+        "ac_prefilter_bypass.env: zero findings - AC prefilter may be dropping \
          prefixless or alternation-shaped secrets entirely. matches={:?}",
         matches
     );
@@ -153,7 +153,7 @@ fn challenging_ac_prefilter_bypass_finds_something() {
 #[test]
 fn challenging_ac_prefilter_bypass_finds_k8s_base64_secret() {
     let matches = scan_fixture("ac_prefilter_bypass.env");
-    // K8S_FULL_SECRET is base64("calico-on-kube-auth-key") — planted in the fixture
+    // K8S_FULL_SECRET is base64("calico-on-kube-auth-key") - planted in the fixture
     // to stress prefixless / decode-through paths after AC routing.
     assert_credential_substr(
         &matches,
@@ -163,7 +163,7 @@ fn challenging_ac_prefilter_bypass_finds_k8s_base64_secret() {
 }
 
 // ---------------------------------------------------------------------------
-// context_confusion/legitimate_looking.py — secrets disguised as hashes/UUIDs
+// context_confusion/legitimate_looking.py - secrets disguised as hashes/UUIDs
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -187,7 +187,7 @@ fn challenging_context_confusion_finds_xoxb_slack_token() {
 }
 
 // ---------------------------------------------------------------------------
-// encoding_evasion/mixed_encodings.json — UTF-8/16/URL/HTML encoding attacks
+// encoding_evasion/mixed_encodings.json - UTF-8/16/URL/HTML encoding attacks
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -201,7 +201,7 @@ fn challenging_mixed_encodings_finds_aws_or_github() {
 }
 
 // ---------------------------------------------------------------------------
-// steganography/whitespace_hidden.txt — zero-width / whitespace-hidden secrets
+// steganography/whitespace_hidden.txt - zero-width / whitespace-hidden secrets
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -215,7 +215,7 @@ fn challenging_whitespace_hidden_finds_ghp_or_aws() {
 }
 
 // ---------------------------------------------------------------------------
-// polyglot_secrets.txt — same secret valid in multiple syntactic contexts
+// polyglot_secrets.txt - same secret valid in multiple syntactic contexts
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -225,7 +225,7 @@ fn challenging_polyglot_secrets_finds_github_or_slack() {
 }
 
 // ---------------------------------------------------------------------------
-// unicode_normalization_attacks.txt — homoglyph / ZWJ / RTL / fullwidth attacks
+// unicode_normalization_attacks.txt - homoglyph / ZWJ / RTL / fullwidth attacks
 // ---------------------------------------------------------------------------
 
 #[test]

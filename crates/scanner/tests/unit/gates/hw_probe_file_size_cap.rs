@@ -7,6 +7,6 @@ fn hw_probe_file_size_cap() {
     let lines = src.lines().count();
     assert!(
         lines <= 500,
-        "hw_probe: {lines} lines exceeds 500-line cap — split module"
+        "hw_probe: {lines} lines exceeds 500-line cap - split module"
     );
 }

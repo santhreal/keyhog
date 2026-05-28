@@ -67,7 +67,7 @@ pub struct VerificationEngine {
     cache: Arc<cache::VerificationCache>,
     /// One in-flight request per (detector_id, credential). DashMap (per-shard
     /// locking) replaces the previous parking_lot::Mutex<HashMap> which was an
-    /// async anti-pattern — see audits/legendary-2026-04-26.
+    /// async anti-pattern - see audits/legendary-2026-04-26.
     pub(crate) inflight: Arc<DashMap<(Arc<str>, Arc<str>), Arc<Notify>>>,
     pub(crate) max_inflight_keys: usize,
     pub(crate) danger_allow_private_ips: bool,
@@ -78,7 +78,7 @@ pub struct VerificationEngine {
     /// it can match the base client's posture. See
     /// `verify/request.rs::resolved_client_for_url`.
     pub(crate) insecure_tls: bool,
-    /// Snapshot of "was the base client built with a proxy" — propagated
+    /// Snapshot of "was the base client built with a proxy" - propagated
     /// to per-request rebuild paths so they skip the rebuild (which would
     /// strip the proxy). See `verify/request.rs::resolved_client_for_url`.
     pub(crate) proxy_in_use: bool,
@@ -108,7 +108,7 @@ pub struct VerifyConfig {
     /// Explicit upstream proxy URL applied to every verifier request and OOB
     /// poll. `None` falls back to the `KEYHOG_PROXY` env var; literal `"off"`
     /// disables proxying entirely. Until this was added, `--proxy` only
-    /// reached the WebSource scanner — verification traffic and interactsh
+    /// reached the WebSource scanner - verification traffic and interactsh
     /// polls bypassed it silently, surprising operators who pointed Burp at
     /// keyhog and saw only half the traffic.
     pub proxy: Option<String>,
@@ -168,7 +168,7 @@ pub(crate) fn apply_proxy_config(
 ///     reqwest's own builder behavior.
 ///
 /// Issue #2: pre-fix `proxy_in_use` was set from `KEYHOG_PROXY.is_some()`
-/// alone — `KEYHOG_PROXY=off` (documented "disable" sentinel) ALSO set
+/// alone - `KEYHOG_PROXY=off` (documented "disable" sentinel) ALSO set
 /// the flag to true, which in turn disabled DNS pinning in
 /// `resolved_client_for_url()` even though no proxy was active. Operators
 /// using `KEYHOG_PROXY=off` for direct-connect verification lost DNS-

@@ -1,9 +1,9 @@
-# `.keyhogignore.toml` — declarative finding suppression
+# `.keyhogignore.toml` - declarative finding suppression
 
 A `.keyhogignore.toml` file in your scan root expresses suppression
 rules in TOML, evaluated per-finding via vyre's CPU rule engine
 (`vyre_libs::rule`). Sits alongside the legacy line-based
-`.keyhogignore` — both are loaded; either alone suppresses a finding.
+`.keyhogignore` - both are loaded; either alone suppresses a finding.
 
 ## Schema
 
@@ -60,13 +60,13 @@ path_regex = "^docs/[a-z]+\\.md$"
 The legacy `.keyhogignore` is one allowlist entry per line:
 `hash:<sha>`, `detector:<id>`, `path:<glob>`. That covers the simple
 cases but can't express "drop aws-access-key findings ONLY in
-`/tests/`" — the conditions need to combine.
+`/tests/`" - the conditions need to combine.
 
 The TOML schema compiles into a vyre `RuleFormula` tree (And/Or/Not
 of typed conditions like `FieldInSet` and `SubstringMatch`). Vyre's
 CPU evaluator (`vyre_libs::rule::cpu_eval`) walks the tree once per
 finding (~µs cost). The same `RuleFormula` shape can also lower to
-GPU IR via `vyre_libs::rule::build_rule_program` — useful when a
+GPU IR via `vyre_libs::rule::build_rule_program` - useful when a
 future scan path wants to evaluate the rule alongside the literal-set
 dispatch instead of post-process.
 

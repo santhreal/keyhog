@@ -35,7 +35,7 @@ fn zip_extension_skipped_in_default_filesystem_walk() {
     let count = source.chunks().flatten().count();
     assert_eq!(
         count, 0,
-        ".zip files are in SKIP_EXTENSIONS — archive unpack path is not reached via walk"
+        ".zip files are in SKIP_EXTENSIONS - archive unpack path is not reached via walk"
     );
 }
 

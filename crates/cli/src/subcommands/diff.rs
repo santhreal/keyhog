@@ -1,4 +1,4 @@
-//! `keyhog diff <baseline-a.json> <baseline-b.json>` — finding-set diff.
+//! `keyhog diff <baseline-a.json> <baseline-b.json>` - finding-set diff.
 //!
 //! Tier-B moat innovation #10 from audits/legendary-2026-04-26: surface the
 //! delta between two scan results so CI can gate merges on "no NEW secrets"
@@ -8,13 +8,13 @@
 //! (so the same format applies to ad-hoc snapshots taken in CI).
 //!
 //! Outputs three sections:
-//!   NEW       — entries present in `after` that were not in `before`.
-//!   RESOLVED  — entries present in `before` that are no longer in `after`.
-//!   UNCHANGED — entries present in both (suppressible with --hide-unchanged).
+//!   NEW       - entries present in `after` that were not in `before`.
+//!   RESOLVED  - entries present in `before` that are no longer in `after`.
+//!   UNCHANGED - entries present in both (suppressible with --hide-unchanged).
 //!
 //! Exit codes:
-//!   0 — no NEW entries.
-//!   1 — NEW entries exist (signals a regression to CI).
+//!   0 - no NEW entries.
+//!   1 - NEW entries exist (signals a regression to CI).
 
 use crate::args::DiffArgs;
 use crate::baseline::Baseline;

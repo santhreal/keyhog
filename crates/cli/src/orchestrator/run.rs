@@ -181,7 +181,7 @@ impl ScanOrchestrator {
         )?;
         if sources.is_empty() {
             anyhow::bail!(
-                "no input source specified — use --path, --stdin, --git, --git-diff, --git-history, --github-org, --s3-bucket, or --docker-image"
+                "no input source specified. Use --path, --stdin, --git, --git-diff, --git-history, --github-org, --s3-bucket, or --docker-image"
             );
         }
 
@@ -283,7 +283,7 @@ impl ScanOrchestrator {
         dump_dogfood_trace();
 
         tracing::info!(
-            "Done in {:.1}s — {} findings",
+            "Done in {:.1}s. {} findings",
             elapsed,
             report_findings.len()
         );

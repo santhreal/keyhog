@@ -14,7 +14,7 @@ keywords = ["dapi", "DATABRICKS", "databricks"]
 # Require WORD boundary before `dapi` and 32+ hex chars after. Word
 # boundary stops `the dapi prefix marks...` (prose mention) and
 # `dapi-too-short` (no hex body, dash is not in [a-f0-9]) from
-# firing — both used to slip through on the bare `dapi` AC literal.
+# firing - both used to slip through on the bare `dapi` AC literal.
 regex = "(?:\\b)(dapi[a-f0-9]{32,})(?:\\b)"
 description = "Databricks personal access token (dapi prefix, hex body, word-bounded)"
 group = 1
@@ -30,7 +30,7 @@ name = "workspace_url"
 # stray cloud.databricks.com URL in a comment doesn't qualify; the auto-
 # detected capture group makes `{{companion.workspace_url}}` resolve to
 # just the URL portion. (CompiledCompanion picks group 1 whenever the
-# regex has any capture group — see scanner/compiler.rs:369.)
+# regex has any capture group - see scanner/compiler.rs:369.)
 regex = "(?:DATABRICKS|databricks)[._-]?(?:host|workspace)[=:\\s\"'']+(https?://[a-z0-9-]+\\.cloud\\.databricks\\.com)"
 within_lines = 5
 [detector.verify]

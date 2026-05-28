@@ -6,7 +6,7 @@
 /// any character isn't a valid hex digit (`0-9` / `a-f` / `A-F`).
 ///
 /// Lives in this shared util module so the three decoders that need it
-/// (`url`, `json`, `unicode_escape`) all call the same implementation —
+/// (`url`, `json`, `unicode_escape`) all call the same implementation -
 /// the pre-2026-05-24 state had a byte-for-byte identical copy in each
 /// of those three files (kimi-dedup audit row #1).
 pub(super) fn take_hex_digits<I>(

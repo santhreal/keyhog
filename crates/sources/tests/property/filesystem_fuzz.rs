@@ -1,6 +1,6 @@
 //! Random-input fuzz: 50 files with random bytes + random extensions
 //! into a temp dir, drain `FilesystemSource::chunks()` to completion.
-//! No assertion on contents — only that the iterator doesn't panic and
+//! No assertion on contents - only that the iterator doesn't panic and
 //! we get back at most one Result per file.
 
 use keyhog_core::Source;
@@ -36,7 +36,7 @@ proptest! {
                 Some(e) => dir.path().join(format!("{i}_{stem}.{e}")),
                 None => dir.path().join(format!("{i}_{stem}")),
             };
-            // Some random byte slices may not be valid UTF-8 — write them
+            // Some random byte slices may not be valid UTF-8 - write them
             // raw so the source's binary-detection path also gets covered.
             let _ = std::fs::write(&path, bytes);
         }

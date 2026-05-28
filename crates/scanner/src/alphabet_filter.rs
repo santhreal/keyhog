@@ -43,8 +43,17 @@ impl AlphabetMask {
         Self { mask }
     }
 
+    /// Build an [`AlphabetMask`] from `bytes` using the NEON-friendly
+    /// 16-byte-chunked loop. Public so the prefilter-robustness
+    /// proptest can compare SIMD output to the scalar fallback.
+    ///
+    /// # Safety
+    /// Caller must run on an aarch64 target with NEON available. The
+    /// `#[cfg(target_arch = "aarch64")]` gate guarantees the first;
+    /// NEON is baseline on every Rust-supported aarch64 target so the
+    /// second is trivially true. The body is otherwise safe Rust.
     #[cfg(target_arch = "aarch64")]
-    unsafe fn from_bytes_neon(bytes: &[u8]) -> Self {
+    pub unsafe fn from_bytes_neon(bytes: &[u8]) -> Self {
         let mut mask = [0u64; 4];
         let chunks = bytes.chunks_exact(16);
         let remainder = chunks.remainder();
@@ -62,9 +71,17 @@ impl AlphabetMask {
         Self { mask }
     }
 
+    /// Build an [`AlphabetMask`] from `bytes` using the 4-byte unrolled
+    /// AVX2 body. Public so the prefilter-robustness proptest can
+    /// compare SIMD output to the scalar fallback.
+    ///
+    /// # Safety
+    /// Caller must run on an x86_64 CPU that supports AVX2. The
+    /// `#[target_feature(enable = "avx2")]` attribute makes this a
+    /// caller obligation; invoking on a non-AVX2 host is UB.
     #[cfg(target_arch = "x86_64")]
     #[target_feature(enable = "avx2")]
-    unsafe fn from_bytes_avx2(bytes: &[u8]) -> Self {
+    pub unsafe fn from_bytes_avx2(bytes: &[u8]) -> Self {
         let mut mask = [0u64; 4];
 
         let chunks = bytes.chunks_exact(4);
@@ -84,9 +101,18 @@ impl AlphabetMask {
         Self { mask }
     }
 
+    /// Build an [`AlphabetMask`] from `bytes` using the SSE2 baseline.
+    /// Public so the prefilter-robustness proptest can compare SIMD
+    /// output to the scalar fallback.
+    ///
+    /// # Safety
+    /// Caller must run on an x86_64 CPU. SSE2 is mandatory on x86_64
+    /// per the SysV ABI, so the safety requirement is trivially met on
+    /// any host the `#[cfg]` permits; the `#[target_feature]` attribute
+    /// formalizes the caller obligation.
     #[cfg(target_arch = "x86_64")]
     #[target_feature(enable = "sse2")]
-    unsafe fn from_bytes_sse2(bytes: &[u8]) -> Self {
+    pub unsafe fn from_bytes_sse2(bytes: &[u8]) -> Self {
         let mut mask = [0u64; 4];
         for &b in bytes {
             mask[(b / 64) as usize] |= 1 << (b % 64);
@@ -119,7 +145,7 @@ impl AlphabetMask {
 /// A pre-filter that uses an [`AlphabetMask`] to quickly skip chunks.
 #[derive(Clone, Debug, Default)]
 pub struct AlphabetScreen {
-    target_mask: AlphabetMask,
+    pub target_mask: AlphabetMask,
 }
 
 impl AlphabetScreen {
@@ -154,13 +180,21 @@ impl AlphabetScreen {
         self.target_mask.intersects(&AlphabetMask::from_bytes(data))
     }
 
+    /// AVX2 implementation of [`screen`](Self::screen). Public so the
+    /// prefilter-robustness proptest can compare SIMD output to the
+    /// scalar fallback.
+    ///
+    /// # Safety
+    /// Caller must run on an x86_64 CPU that supports AVX2. The
+    /// `#[target_feature(enable = "avx2")]` attribute makes this a
+    /// caller obligation; invoking on a non-AVX2 host is UB.
     #[cfg(target_arch = "x86_64")]
     #[target_feature(enable = "avx2")]
-    unsafe fn screen_avx2(&self, data: &[u8]) -> bool {
+    pub unsafe fn screen_avx2(&self, data: &[u8]) -> bool {
         use std::arch::x86_64::*;
 
         // SAFETY: `target_mask.mask` is `[u64; 4]` (32 bytes total). Slicing
-        // `[..2]` gives 16 bytes / `[2..]` gives 16 bytes — exactly what
+        // `[..2]` gives 16 bytes / `[2..]` gives 16 bytes - exactly what
         // `_mm_loadu_si128` needs. Loadu permits unaligned pointers.
         // AVX2 availability is enforced by the surrounding
         // `#[target_feature(enable = "avx2")]`. kimi-wave1 finding 6.LOW.alphabet_filter.rs.162.

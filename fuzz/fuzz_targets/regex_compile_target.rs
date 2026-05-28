@@ -30,7 +30,7 @@ fuzz_target!(|data: &[u8]| {
         group: None,
     };
     // Any outcome is acceptable EXCEPT panic. The Result branch is
-    // discarded — we are not asserting which inputs compile, only
+    // discarded - we are not asserting which inputs compile, only
     // that the compiler is panic-free for every input shape.
     let _ = compile_pattern(0, 0, &spec, "fuzz-detector");
 });

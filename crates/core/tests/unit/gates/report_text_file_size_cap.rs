@@ -7,6 +7,6 @@ fn report_text_file_size_cap() {
     let lines = src.lines().count();
     assert!(
         lines <= 500,
-        "report::text: {lines} lines exceeds 500-line cap — split module"
+        "report::text: {lines} lines exceeds 500-line cap - split module"
     );
 }

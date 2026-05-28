@@ -2,7 +2,7 @@
 //!
 //! When the `simd` feature is enabled, this replaces the AC+fallback approach
 //! with Hyperscan's simultaneous multi-pattern matching using SIMD instructions.
-//! Gives 3-5x throughput improvement. Accuracy is identical — same patterns, faster engine.
+//! Gives 3-5x throughput improvement. Accuracy is identical - same patterns, faster engine.
 
 #[cfg(feature = "simd")]
 pub(crate) mod backend {
@@ -59,7 +59,7 @@ pub(crate) mod backend {
                     unsupported.push(i);
                     continue;
                 }
-                // CASELESS only. No SOM_LEFTMOST — it causes "Pattern too large"
+                // CASELESS only. No SOM_LEFTMOST - it causes "Pattern too large"
                 // on complex regexes. Match positions extracted by regex crate.
                 let flags = PatternFlags::CASELESS;
                 match Pattern::with_flags(regex, flags) {
@@ -97,7 +97,7 @@ pub(crate) mod backend {
                     }
                     path
                 } else {
-                    // SAFETY: see geteuid() above — trivial syscall.
+                    // SAFETY: see geteuid() above - trivial syscall.
                     let uid = unsafe { libc::geteuid() };
                     PathBuf::from(format!("/tmp/keyhog-cache-{}", uid))
                 };
@@ -212,7 +212,7 @@ pub(crate) mod backend {
                     data.extend_from_slice(&CACHE_VERSION.to_le_bytes());
                     data.extend_from_slice(ser.as_ref());
 
-                    // NamedTempFile + persist for atomic write — same
+                    // NamedTempFile + persist for atomic write - same
                     // rationale as `merkle_index::save`. The previous
                     // pid-suffixed tmp leaked on panic between write
                     // and rename; the Drop impl on NamedTempFile
@@ -224,7 +224,13 @@ pub(crate) mod backend {
                         if std::io::Write::write_all(&mut tmp, &data).is_ok()
                             && tmp.as_file().sync_all().is_ok()
                         {
-                            let _ = tmp.persist(&cache_path);
+                            if let Err(error) = tmp.persist(&cache_path) {
+                                tracing::debug!(
+                                    cache = %cache_path.display(),
+                                    error = %error,
+                                    "HS DB cache persist failed; next run will recompile"
+                                );
+                            }
                         }
                     }
                     tracing::info!(cache = %cache_path.display(), "HS cached");
@@ -369,7 +375,7 @@ pub(crate) mod backend {
     ///
     /// Hyperscan logs `unsupported.len()` at `tracing::info!`
     /// (silenced by default). The regex crate raises a
-    /// `CompiledTooBig` error inside `CompiledScanner::compile` —
+    /// `CompiledTooBig` error inside `CompiledScanner::compile` -
     /// but that fails LATE, only when keyhog binds a real scanner
     /// at runtime, NOT in any unit test that compiles individual
     /// patterns in isolation. Together the two engines let a
@@ -387,7 +393,7 @@ pub(crate) mod backend {
     /// This gate runs every embedded detector pattern through BOTH
     /// engines with the same size limits the production paths use,
     /// and fails with the offending regex string the moment either
-    /// engine rejects it — catching the silent-drop class at PR time.
+    /// engine rejects it - catching the silent-drop class at PR time.
     #[cfg(test)]
     mod silent_drop_regression {
         use super::*;
@@ -401,14 +407,14 @@ pub(crate) mod backend {
                 match keyhog_core::load_detectors_from_str(toml_text) {
                     Ok(parsed) => specs.extend(parsed),
                     Err(err) => panic!(
-                        "embedded detector `{name}` failed to parse — fix the TOML \
+                        "embedded detector `{name}` failed to parse - fix the TOML \
                          first. Inner: {err}"
                     ),
                 }
             }
             assert!(
                 !specs.is_empty(),
-                "embedded_detector_tomls() returned empty after parse — build.rs \
+                "embedded_detector_tomls() returned empty after parse - build.rs \
                  likely skipped embedding; rebuild keyhog-core from a clean target/."
             );
 
@@ -429,7 +435,7 @@ pub(crate) mod backend {
                                 dropped.push((
                                     spec.id.to_string(),
                                     regex_str.to_string(),
-                                    "Hyperscan: single-pattern compile returned unsupported — \
+                                    "Hyperscan: single-pattern compile returned unsupported - \
                                      probable DFA-size or unsupported-feature rejection"
                                         .to_string(),
                                 ));

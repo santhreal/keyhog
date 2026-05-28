@@ -9,7 +9,7 @@ pub fn require_gpu_or_panic(context: &str) {
     }
     if !keyhog_scanner::gpu::gpu_available() {
         panic!(
-            "{context}: KEYHOG_REQUIRE_GPU=1 but no compatible GPU adapter — \
+            "{context}: KEYHOG_REQUIRE_GPU=1 but no compatible GPU adapter - \
              fail loudly instead of skipping GPU gates"
         );
     }
@@ -19,7 +19,7 @@ pub fn require_gpu_or_panic(context: &str) {
 pub fn assert_gpu_not_silent_empty(gpu_empty: bool, reference_finding_count: usize, context: &str) {
     if gpu_empty && reference_finding_count > 0 {
         panic!(
-            "{context}: GPU returned zero findings vs {reference_finding_count} reference findings — \
+            "{context}: GPU returned zero findings vs {reference_finding_count} reference findings - \
              adapter init failure or silent CPU fallback must fail loudly, not skip"
         );
     }

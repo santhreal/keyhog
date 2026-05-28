@@ -34,7 +34,7 @@ fn interpolate_match_in_url() {
     // Assert the exact substituted URL, not just substring containment.
     // The contains() assertion would still pass if the interpolator
     // produced `https://api.example.com/check?key={{match}}abc123` or
-    // `abc123foo` — both shapes are broken HTTP requests that would
+    // `abc123foo` - both shapes are broken HTTP requests that would
     // hit unexpected endpoints in production.
     assert_eq!(result, "https://api.example.com/check?key=abc123");
 }

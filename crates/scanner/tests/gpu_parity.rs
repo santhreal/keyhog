@@ -1,8 +1,8 @@
-//! GPU ↔ SIMD parity test: identical input, identical detectors —
+//! GPU ↔ SIMD parity test: identical input, identical detectors -
 //! the GPU and SIMD backends must produce the same set of credentials
 //! at the same offsets.
 //!
-//! Hard-fail parity: adapter/init failure or divergence panics —
+//! Hard-fail parity: adapter/init failure or divergence panics -
 //! no silent skip, no WARN-only downgrade. Set `KEYHOG_REQUIRE_GPU=1`
 //! in CI to mandate a compatible adapter.
 
@@ -34,7 +34,7 @@ fn make_chunk(text: &str, path: &str) -> Chunk {
     }
 }
 
-/// (credential_hash, file_path, file_offset) — the smallest tuple that
+/// (credential_hash, file_path, file_offset) - the smallest tuple that
 /// uniquely identifies a finding for cross-backend comparison. We
 /// intentionally don't compare detector_id because the GPU literal-set
 /// can attribute a literal to a different detector when multiple
@@ -120,7 +120,7 @@ fn gpu_and_simd_produce_identical_findings_on_same_corpus() {
 fn gpu_path_finds_boundary_straddled_secret() {
     // Same boundary-reassembly test as window_boundary.rs but driven
     // through the GPU backend. Catches the regression "GPU dispatch
-    // skips boundary scan" — a real correctness gap that shipped in
+    // skips boundary scan" - a real correctness gap that shipped in
     // v0.5.4 before the GPU sweep, where the SIMD path got boundary
     // reassembly and the GPU path didn't.
     require_gpu_or_panic("gpu_path_finds_boundary_straddled_secret");
@@ -253,14 +253,14 @@ fn scan_coalesced_gpu_ac_phase1_phase2_parity_with_wrapper() {
 /// faithful split of `scan_coalesced_gpu`. The orchestrator's pipelined
 /// scanner thread (overlap GPU dispatch of batch N+1 with CPU
 /// post-process of batch N) sequences these manually instead of going
-/// through the combined wrapper — if the two paths ever diverge,
+/// through the combined wrapper - if the two paths ever diverge,
 /// the pipelined path silently mis-attributes findings.
 ///
 /// This test asserts byte-for-byte identical
 /// `(credential, file_path, offset)` tuples between:
-///   (a) `scanner.scan_coalesced_gpu(&chunks)` — the atomic wrapper
+///   (a) `scanner.scan_coalesced_gpu(&chunks)` - the atomic wrapper
 ///   (b) manual `phase1` → match `Hits` then `phase2`, or `Done` then
-///       return directly — the same flow the orchestrator does.
+///       return directly - the same flow the orchestrator does.
 ///
 #[test]
 fn scan_coalesced_gpu_phase1_phase2_parity_with_wrapper() {
@@ -290,7 +290,7 @@ fn scan_coalesced_gpu_phase1_phase2_parity_with_wrapper() {
     let combined = scanner.scan_coalesced_gpu(&chunks);
     let combined_keys = collect_keys(&combined);
 
-    // Manual phase1+phase2 path — exactly what
+    // Manual phase1+phase2 path - exactly what
     // `cli/orchestrator.rs::scanner_thread` does on the
     // `KEYHOG_BACKEND=gpu` route.
     let split = match scanner.scan_coalesced_gpu_phase1(&chunks) {
@@ -315,7 +315,7 @@ fn scan_coalesced_gpu_phase1_phase2_parity_with_wrapper() {
         );
     }
 
-    // Also assert per-chunk Vec lengths align — the wrapper preserves
+    // Also assert per-chunk Vec lengths align - the wrapper preserves
     // chunk-index ordering and the split must too. A divergence at this
     // level would mean a chunk's matches got reattributed to a
     // neighbouring chunk by the refactor.

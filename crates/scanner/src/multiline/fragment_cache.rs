@@ -22,7 +22,7 @@ const MAX_FRAGMENTS_PER_SCOPE: usize = 8;
 /// scan, and reassembled candidates were materialized into a `Chunk`
 /// that re-embedded the secret in a `format!`-built dummy line. The
 /// `Debug` derive is also intentionally NOT wired through `value`
-/// — `Zeroizing<String>` prints redacted in `{:?}`.
+/// - `Zeroizing<String>` prints redacted in `{:?}`.
 #[derive(Clone)]
 pub struct SecretFragment {
     pub prefix: String,
@@ -65,7 +65,7 @@ impl FragmentCache {
 
     /// Record a fragment and return a list of "complete" candidates if any.
     /// The returned `Zeroizing<String>` lets the caller scope the
-    /// reassembled credential's lifetime tightly — drop it (or pass it
+    /// reassembled credential's lifetime tightly - drop it (or pass it
     /// to a scan that consumes by reference) and the heap copy is zeroed.
     pub fn record_and_reassemble(&self, fragment: SecretFragment) -> Vec<Zeroizing<String>> {
         let key = scoped_key(&fragment);
@@ -154,7 +154,7 @@ mod cross_file_tests {
     //! `record_and_reassemble`. Without this, a secret split across
     //! `config/key_prefix.py` and `config/key_suffix.py` would only
     //! fire if the scanner happened to look at both files inside the
-    //! same chunk window — which the chunked walker explicitly does
+    //! same chunk window - which the chunked walker explicitly does
     //! not guarantee.
     use super::*;
 
@@ -171,7 +171,7 @@ mod cross_file_tests {
     #[test]
     fn two_fragments_same_dir_join() {
         let cache = FragmentCache::new(1024);
-        // First fragment recorded — no candidates yet, cluster size 1.
+        // First fragment recorded - no candidates yet, cluster size 1.
         let candidates = cache.record_and_reassemble(frag(
             "aws_key",
             "AWS_PREFIX",
@@ -183,7 +183,7 @@ mod cross_file_tests {
             candidates.is_empty(),
             "single fragment can't form a join candidate"
         );
-        // Second fragment in the SAME directory with the SAME prefix —
+        // Second fragment in the SAME directory with the SAME prefix -
         // cluster size hits 2, joiner produces both orderings.
         let candidates = cache.record_and_reassemble(frag(
             "aws_key",
@@ -202,7 +202,7 @@ mod cross_file_tests {
 
     #[test]
     fn fragments_in_different_directories_do_not_join() {
-        // `scoped_key` keys on the parent directory — a `config/` and
+        // `scoped_key` keys on the parent directory - a `config/` and
         // a `vendor/` fragment must NOT be joined, even when the
         // prefix matches. Real-world: vendored example tokens MUST
         // NOT combine with first-party config.
@@ -223,7 +223,7 @@ mod cross_file_tests {
         ));
         assert!(
             candidates.is_empty(),
-            "cross-directory fragments must not join — got {:?}",
+            "cross-directory fragments must not join: got {:?}",
             candidates
                 .iter()
                 .map(|c| c.as_str().to_string())
@@ -235,7 +235,7 @@ mod cross_file_tests {
     fn three_fragments_emit_all_pairwise_joins() {
         // Cluster of 3 produces 6 ordered pairs (3 * 2 = 6 = N * (N-1)).
         // The brute-force pairing in fragment_cache.rs:95-117 covers
-        // both `f_i + f_j` and `f_j + f_i` — the scanner downstream
+        // both `f_i + f_j` and `f_j + f_i` - the scanner downstream
         // disambiguates by matching the joined value against detector
         // regexes, so we let it see all orderings.
         let cache = FragmentCache::new(1024);
@@ -243,7 +243,7 @@ mod cross_file_tests {
         cache.record_and_reassemble(frag("p", "B", "222", "/d/b.py", 2));
         let candidates = cache.record_and_reassemble(frag("p", "C", "333", "/d/c.py", 3));
         // record_and_reassemble returns join candidates for the
-        // CLUSTER AT THE TIME OF RECORDING — the third call sees a
+        // CLUSTER AT THE TIME OF RECORDING - the third call sees a
         // 3-element cluster and emits all 6 ordered pairs.
         assert_eq!(
             candidates.len(),

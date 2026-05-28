@@ -7,6 +7,6 @@ fn ssrf_file_size_cap() {
     let lines = src.lines().count();
     assert!(
         lines <= 500,
-        "ssrf: {lines} lines exceeds 500-line cap — split module"
+        "ssrf: {lines} lines exceeds 500-line cap - split module"
     );
 }

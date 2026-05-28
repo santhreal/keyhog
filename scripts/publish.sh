@@ -26,7 +26,7 @@ WAIT_BETWEEN_PUBLISH="${WAIT_BETWEEN_PUBLISH:-45}"
 
 # Pull the version out of the workspace Cargo.toml so the echo lines
 # stay accurate without a per-release edit. `awk` over the [workspace.package]
-# table is enough — the version key is unique within Cargo.toml.
+# table is enough - the version key is unique within Cargo.toml.
 VERSION=$(awk -F'"' '
     /^\[workspace\.package\]/ { in_pkg = 1; next }
     in_pkg && /^version[[:space:]]*=/ { print $2; exit }
@@ -52,15 +52,15 @@ publish() {
     fi
 }
 
-# Tier 1 — foundation (no internal deps).
+# Tier 1 - foundation (no internal deps).
 publish keyhog-core
 
-# Tier 2 — depend on core.
+# Tier 2 - depend on core.
 publish keyhog-verifier
 publish keyhog-sources
 publish keyhog-scanner
 
-# Tier 3 — the CLI binary, pulls in the whole stack.
+# Tier 3 - the CLI binary, pulls in the whole stack.
 publish keyhog
 
 echo

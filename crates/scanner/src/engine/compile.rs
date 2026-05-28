@@ -18,15 +18,30 @@ impl CompiledScanner {
         // failures: if libcuda.so is missing or the driver refuses,
         // `acquire()` returns Err and we fall through to wgpu so
         // nothing regresses on non-CUDA hosts.
-        let gpu_disabled = std::env::var("KEYHOG_NO_GPU")
-            .ok()
-            .map(|v| !matches!(v.as_str(), "" | "0" | "false" | "FALSE" | "off" | "OFF"))
-            .unwrap_or(false);
+        // `crate::gpu::env_no_gpu()` is the single source of truth for
+        // "skip every GPU init path". Explicit KEYHOG_NO_GPU wins both
+        // directions; in its absence the helper auto-detects CI runners
+        // (CI=true + a dozen platform-specific markers) and returns
+        // true, since CI runners have no discrete GPU - the wgpu probe
+        // would enumerate llvmpipe, get rejected as software, and the
+        // operator would see a confusing "GPU MoE init failed" warning
+        // after burning ~250ms on cold-start. Set KEYHOG_NO_GPU=0 in CI
+        // to opt back in on self-hosted GPU runners.
+        let gpu_disabled = crate::gpu::env_no_gpu();
         if gpu_disabled {
-            tracing::info!(
-                target: "keyhog::routing",
-                "KEYHOG_NO_GPU set — bypassing CUDA/wgpu init, routing every chunk through the CPU/SIMD path"
-            );
+            let in_ci = crate::gpu::is_ci_environment() && std::env::var("KEYHOG_NO_GPU").is_err();
+            if in_ci {
+                tracing::info!(
+                    target: "keyhog::routing",
+                    "CI environment detected (CI= or platform-specific marker set); bypassing CUDA/wgpu init. \
+                     Set KEYHOG_NO_GPU=0 to force GPU on self-hosted GPU runners."
+                );
+            } else {
+                tracing::info!(
+                    target: "keyhog::routing",
+                    "KEYHOG_NO_GPU set: bypassing CUDA/wgpu init, routing every chunk through the CPU/SIMD path"
+                );
+            }
         }
         let (gpu_literals, gpu_backend, wgpu_backend) =
             if !gpu_disabled && crate::hw_probe::probe_hardware().gpu_available {
@@ -60,7 +75,14 @@ impl CompiledScanner {
                             let trait_obj: Arc<dyn vyre::VyreBackend> = wgpu.clone();
                             (literals, Some(trait_obj), Some(wgpu))
                         }
-                        Err(_) => (literals, None, None),
+                        Err(error) => {
+                            tracing::warn!(
+                                target: "keyhog::routing",
+                                %error,
+                                "wgpu backend unavailable; scan will use CPU-only path"
+                            );
+                            (literals, None, None)
+                        }
                     },
                 }
             } else {
@@ -77,7 +99,7 @@ impl CompiledScanner {
             .fallback
             .iter()
             // Mirrors `compiler::build_fallback_keyword_ac`'s
-            // 4-char floor — see the rationale comment there. The
+            // 4-char floor - see the rationale comment there. The
             // experimental 3-char floor measured a net F1 regression
             // on SecretBench-medium, so both checks stay at 4.
             .map(|(_, keywords)| !keywords.iter().any(|k| k.len() >= 4))

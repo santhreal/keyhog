@@ -38,7 +38,7 @@ impl RateLimiter {
     /// Replace the default per-service interval. Existing per-service
     /// entries created via [`Self::update_limit`] are left at their
     /// override; only the lazily-created defaults pick up the new pace.
-    /// Non-finite or non-positive `rps` falls back to 1.0 — the same
+    /// Non-finite or non-positive `rps` falls back to 1.0 - the same
     /// guard as `new()` so a caller can't drive the limiter into a
     /// zero-interval (= infinite-rate) state by accident.
     pub fn set_default_rps(&self, rps: f64) {
@@ -76,7 +76,7 @@ impl RateLimiter {
             // previous caller reserved a slot we haven'"'"'t reached yet).
             // That made the second-and-onward queued caller wait `interval`
             // from THEIR arrival instead of `interval` after the previous
-            // reserved slot — back-to-back arrivals therefore burst at
+            // reserved slot - back-to-back arrivals therefore burst at
             // close to 1 request per slot-arrival-rate, blowing past the
             // configured per-service cap.
             //

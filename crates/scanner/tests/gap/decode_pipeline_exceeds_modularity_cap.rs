@@ -10,6 +10,6 @@ fn decode_pipeline_exceeds_modularity_cap() {
     const CAP: usize = 400;
     assert!(
         line_count <= CAP,
-        "decode/pipeline.rs is {line_count} lines — exceeds A3 modularity cap {CAP}; split extract_encoded_values and splice helpers"
+        "decode/pipeline.rs is {line_count} lines - exceeds A3 modularity cap {CAP}; split extract_encoded_values and splice helpers"
     );
 }

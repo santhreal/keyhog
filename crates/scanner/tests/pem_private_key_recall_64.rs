@@ -1,4 +1,4 @@
-//! Regression gate for task #64 — PEM private-key recall on the
+//! Regression gate for task #64 - PEM private-key recall on the
 //! production CLI path.
 //!
 //! The contract-runner-level test passes on raw `scanner.scan(&chunk)`,
@@ -10,7 +10,7 @@
 //! bypass) MUST keep both layers passing.
 //!
 //! This test verifies the SCANNER layer reports confidence ≥ 0.5 for
-//! a PEM-framed credential — a guard against any future change that
+//! a PEM-framed credential - a guard against any future change that
 //! re-lowers the confidence floor below the CLI's default
 //! min_confidence filter.
 

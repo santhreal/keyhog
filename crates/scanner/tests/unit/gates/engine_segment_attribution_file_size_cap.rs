@@ -10,6 +10,6 @@ fn engine_segment_attribution_file_size_cap() {
     let lines = src.lines().count();
     assert!(
         lines <= 500,
-        "engine::segment_attribution: {lines} lines exceeds 500-line cap — split module"
+        "engine::segment_attribution: {lines} lines exceeds 500-line cap - split module"
     );
 }

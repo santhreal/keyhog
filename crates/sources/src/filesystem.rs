@@ -17,7 +17,7 @@ mod read;
 ///
 ///   * Linux / macOS: mmap setup is sub-microsecond and avoids the
 ///     `read(2)` copy from kernel page cache to userland buffer. Worth
-///     it as soon as the file is at least one page (4 KiB) — pick
+///     it as soon as the file is at least one page (4 KiB) - pick
 ///     64 KiB to keep tiny-config-file scans on the buffered path
 ///     where the syscall floor dominates either way.
 ///   * Windows: `MapViewOfFile` has more setup cost (security tokens,
@@ -53,7 +53,7 @@ pub(crate) fn display_path(path: &Path) -> String {
 
 fn strip_unc_prefix(s: &str) -> &str {
     // Two shapes Rust may emit on Windows:
-    //   `\\?\C:\Users\me\src` (drive-letter form — the common case)
+    //   `\\?\C:\Users\me\src` (drive-letter form - the common case)
     //   `\\?\UNC\server\share\dir` (network share form)
     // Both prefixes are 4 / 8 bytes of ASCII; safe to slice.
     if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
@@ -116,7 +116,7 @@ pub struct FilesystemSource {
     respect_gitignore: bool,
     /// Optional merkle-index handle. When set, the iterator consults the
     /// index per file BEFORE reading: if `(path, mtime_ns, size)` matches
-    /// a stored entry the file is skipped without an open() / read() —
+    /// a stored entry the file is skipped without an open() / read() -
     /// the dominant cost on cold-cache disk. Doubles as an output sink:
     /// when `record_metadata` is true, the source records the live
     /// `(mtime, size)` of every chunk it does emit so the orchestrator
@@ -142,7 +142,7 @@ impl FilesystemSource {
         let root = root.canonicalize().unwrap_or(root);
         Self {
             root,
-            max_file_size: 100 * 1024 * 1024, // 100 MB default — large files use windowed scanning
+            max_file_size: 100 * 1024 * 1024, // 100 MB default - large files use windowed scanning
             ignore_paths: Vec::new(),
             include_paths: Vec::new(),
             respect_gitignore: true,
@@ -232,10 +232,10 @@ const SKIP_EXTENSIONS: &[&str] = &[
     "wav",
     "ogg",
     "webm",
-    // Archives (binary — secrets inside are caught by archive source, not filesystem)
+    // Archives (binary - secrets inside are caught by archive source, not filesystem)
     "tar",
     // gz / zst / lz4 / sz are handled by `extract_compressed_chunks`
-    // below, NOT skipped — earlier versions had them in this list,
+    // below, NOT skipped - earlier versions had them in this list,
     // which silently bypassed the streaming-decompression path. See
     // the dispatch on line ~340 for the actual decoder routing.
     "tgz",
@@ -325,7 +325,7 @@ impl Source for FilesystemSource {
         }
         // Use walk_iter (NOT walk()) so per-entry errors don't
         // collapse the entire scan. `walk()` collects into a Vec
-        // via `.collect()` on a Result iterator — a single
+        // via `.collect()` on a Result iterator - a single
         // permission-denied (chmod 000 sub-tree, EACCES on a
         // sibling) short-circuits the whole walk and the user
         // gets ZERO findings. Production-grade behaviour is to
@@ -366,13 +366,13 @@ impl Source for FilesystemSource {
 
         // Parallel file producer: walker enumeration is fast (dir tree
         // syscalls amortize cheaply), but per-file I/O + decode + chunk
-        // assembly was previously serial — at ~16 MiB/s/core that meant a
+        // assembly was previously serial - at ~16 MiB/s/core that meant a
         // 16-core box scanned at the speed of one core. Now a spawned
         // producer thread fans the entry list across the rayon pool
         // (which the CLI sizes to `--threads`/physical cores), and each
         // worker pushes finished chunks through a bounded channel. The
         // bound (64) caps peak in-flight memory at ~64 × max-chunk-size
-        // independent of corpus size; backpressure is automatic — when
+        // independent of corpus size; backpressure is automatic - when
         // the scanner thread (downstream) falls behind, workers block on
         // `send` and stop reading new files. Nosey Parker uses the same
         // pattern (ignore::WalkBuilder::build_parallel); the gap was
@@ -411,10 +411,10 @@ impl Source for FilesystemSource {
 /// closure so it can run on a rayon worker via
 /// `into_par_iter().for_each_with`. Reads the file (or archive, or
 /// compressed stream) and returns the resulting `Chunk`s in one batch
-/// — the parallel producer fans calls out across the rayon pool so
+/// - the parallel producer fans calls out across the rayon pool so
 /// per-file I/O overlaps freely.
 ///
-/// Pure function — captures nothing; all state arrives via parameters
+/// Pure function - captures nothing; all state arrives via parameters
 /// so the rayon closure stays `Sync` and free of `&'_ self` borrows.
 fn process_entry(
     entry: codewalk::FileEntry,
@@ -428,7 +428,7 @@ fn process_entry(
     let file_size = entry.size;
 
     // Over-size audit. codewalk used to silently drop files past
-    // `max_file_size` (filter.rs:46) — the user only saw a smaller
+    // `max_file_size` (filter.rs:46) - the user only saw a smaller
     // findings list with no signal about which files were suppressed.
     // We now disable codewalk's own cap (walker_config sets it to 0
     // = unlimited) and gate here so each over-size skip emits a warn
@@ -457,7 +457,7 @@ fn process_entry(
 
     // Fast-path skip: stat the file once, ask the cache "have I
     // seen this exact (path, mtime, size) tuple?" If yes, never
-    // open() or read() — the dominant cost on cold-cache disk.
+    // open() or read() - the dominant cost on cold-cache disk.
     // Stored alongside the chunk so the orchestrator can refresh
     // the index entry post-scan without a second stat.
     let live_mtime_ns = file_mtime_ns(&path);
@@ -472,7 +472,7 @@ fn process_entry(
         // SSRF/path-traversal defense: refuse to open archive paths
         // that resolve through a symlink. The walker's
         // `follow_symlinks=false` lists the symlink file itself, and
-        // openpack::open_default does NOT honor O_NOFOLLOW — a
+        // openpack::open_default does NOT honor O_NOFOLLOW - a
         // symlink named secret.zip → /etc/shadow would otherwise let
         // an attacker stage an archive that openpack reads from the
         // (privileged) target. symlink_metadata() does not follow
@@ -484,7 +484,7 @@ fn process_entry(
         {
             tracing::warn!(
                 archive = %path.display(),
-                "refusing to open archive at a symlink path — \
+                "refusing to open archive at a symlink path - \
                  prevents the link-swap attack class"
             );
             return Vec::new();
@@ -564,7 +564,7 @@ fn process_entry(
         // findings carry the `wire:har:request` / `wire:har:response`
         // source-type distinction (outbound credential leak vs
         // inbound credential reflection). Falls through to the
-        // regular text scan when the file fails to parse — better to
+        // regular text scan when the file fails to parse - better to
         // grep a malformed HAR than to silently drop it.
         if let Ok(bytes) = std::fs::read(&path) {
             let path_str = display_path(&path);
@@ -611,7 +611,7 @@ fn process_entry(
                 .collect();
         }
         // Buffered fallback: mmap refused (locked writer, unsupported
-        // filesystem). Same semantics as before — working buffer +
+        // filesystem). Same semantics as before - working buffer +
         // seek-back overlap. Sized to the configured window so test
         // overrides apply here too.
         let mut window_chunks = Vec::new();
@@ -692,7 +692,7 @@ fn extract_compressed_chunks(path: &Path, max_size: u64) -> Vec<Result<Chunk, So
         _ => ziftsieve::CompressionFormat::Snappy,
     };
 
-    // mmap the compressed file when possible — ziftsieve only takes a
+    // mmap the compressed file when possible - ziftsieve only takes a
     // contiguous `&[u8]`, so a streaming decoder isn't on the menu, but
     // mmap lets us hand it the whole file without a corresponding heap
     // allocation. A 1 GiB `.zst` previously turned into a 1 GiB
@@ -742,7 +742,7 @@ fn extract_compressed_chunks(path: &Path, max_size: u64) -> Vec<Result<Chunk, So
                     data: std::mem::take(&mut current_chunk_literals).into(),
                     metadata: ChunkMetadata {
                         source_type: "filesystem/compressed".into(),
-                        path: Some(display_path(&path)),
+                        path: Some(display_path(path)),
                         ..Default::default()
                     },
                 }));
@@ -753,7 +753,7 @@ fn extract_compressed_chunks(path: &Path, max_size: u64) -> Vec<Result<Chunk, So
                 data: current_chunk_literals.into(),
                 metadata: ChunkMetadata {
                     source_type: "filesystem/compressed".into(),
-                    path: Some(display_path(&path)),
+                    path: Some(display_path(path)),
                     ..Default::default()
                 },
             }));
@@ -792,7 +792,7 @@ fn is_default_excluded(path: &str) -> bool {
         return true;
     }
 
-    // Directory contents — segment-walk catches both separators.
+    // Directory contents - segment-walk catches both separators.
     const SKIP_SEGMENTS: &[&[u8]] = &[
         b"node_modules",
         b".git",
@@ -816,7 +816,7 @@ fn is_default_excluded(path: &str) -> bool {
         }
     }
 
-    // Specific filename matches (the trailing component only —
+    // Specific filename matches (the trailing component only -
     // intermediate-dir matches were already handled above).
     const FILENAMES: &[&[u8]] = &[
         b"package-lock.json",
@@ -850,7 +850,7 @@ fn is_default_excluded(path: &str) -> bool {
 
 /// Read the mtime as nanoseconds-since-UNIX-epoch via a single `stat`.
 /// Returns `None` when the platform/filesystem doesn't expose a usable
-/// modified time — in that case the cache fast-path simply doesn't fire,
+/// modified time - in that case the cache fast-path simply doesn't fire,
 /// which is strictly better than a false skip.
 fn file_mtime_ns(path: &Path) -> Option<u64> {
     let meta = std::fs::metadata(path).ok()?;
@@ -886,7 +886,7 @@ fn walker_config(max_file_size: u64, ignore_paths: &[String]) -> WalkConfig {
     // skip into `process_entry` where we can warn + count it
     // (kimi-1 dogfood #130). codewalk's size filter runs before its
     // binary-detect read, so disabling it adds ~4 KiB of extra read
-    // per over-size file — negligible at the scale where users hit
+    // per over-size file - negligible at the scale where users hit
     // the cap.
     let _ = max_file_size;
 

@@ -6,7 +6,7 @@
 # Verify: no API endpoint (private keys are not call-time verifiable).
 # Prefix: -----BEGIN
 
-# The detector ID is intentionally `private-key`, NOT `generic-private-key` —
+# The detector ID is intentionally `private-key`, NOT `generic-private-key` -
 # the `generic-` prefix routes findings through the probabilistic-gate
 # entropy floor in `scan_filters.rs`, which (correctly) rejects short
 # credentials like the bare literal string `PRIVATE KEY`. PEM markers ARE
@@ -20,11 +20,11 @@ severity = "critical"
 keywords = ["BEGIN", "PRIVATE KEY"]
 
 # Multi-line PEM body capture. `[\s\S]*?` (lazy) keeps the match bounded
-# to one BEGIN/END pair — without `?` a file containing two adjacent
+# to one BEGIN/END pair - without `?` a file containing two adjacent
 # PEM blocks would be captured as one giant credential including the
 # `END … BEGIN` text between them. Algorithms enumerated rather than
 # captured via `[A-Z ]*` because Hyperscan's NFA can drop OPENSSH
-# matches when a greedy character class straddles `PRIVATE` — the
+# matches when a greedy character class straddles `PRIVATE` - the
 # explicit alternation gives the compiler a fixed branching factor.
 # `PGP PRIVATE KEY BLOCK` is the only variant that uses the literal
 # `BLOCK` suffix; the `(?: BLOCK)?` group handles it without a

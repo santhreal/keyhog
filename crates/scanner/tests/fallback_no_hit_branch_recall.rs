@@ -11,7 +11,7 @@
 //! by keyword AC ("kubernetes", "kubeadm", "bootstrap-token", ...).
 //! When a chunk contains ONLY this detector's pattern + keywords
 //! (typical k8s config file with one bootstrap token), phase 1 of
-//! scan_coalesced produces hits=0 — and pre-fix, the no-hit branch
+//! scan_coalesced produces hits=0 - and pre-fix, the no-hit branch
 //! only ran scan_generic_assignments, never scan_fallback_patterns.
 //! The detector was silently dead on its own canonical input.
 
@@ -41,7 +41,7 @@ fn make_chunk(text: &str, path: &str) -> Chunk {
 
 #[test]
 fn kubernetes_bootstrap_token_fires_in_direct_scan() {
-    // Sanity check — via scanner.scan(&chunk) the bootstrap detector
+    // Sanity check - via scanner.scan(&chunk) the bootstrap detector
     // already worked pre-fix. If THIS test fails, my edits broke the
     // direct scan path; the coalesced-path tests below would be
     // diagnosing a different bug.

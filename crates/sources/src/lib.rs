@@ -26,7 +26,7 @@ pub fn reset_skipped_over_max_size() {
 }
 
 /// Local HTTP compatibility shim backed by reqwest. Only present when
-/// at least one feature that pulls in `reqwest` is enabled —
+/// at least one feature that pulls in `reqwest` is enabled -
 /// otherwise this module would `pub use reqwest::*` against a crate
 /// that wasn't compiled in, which fails resolution on stable rustc
 /// (especially on Windows where `--no-default-features` is the
@@ -37,9 +37,9 @@ pub mod reqwest {
 }
 
 /// Shared HTTP-client policy (proxy, TLS, UA) used by every source
-/// + verifier site that talks to the network. Always compiled — the
+/// + verifier site that talks to the network. Always compiled - the
 /// `HttpClientConfig` type is the thread-through even when the
-/// reqwest-backed builders are feature-gated out — so the CLI can
+/// reqwest-backed builders are feature-gated out - so the CLI can
 /// construct one without caring about which feature set is active.
 pub mod http;
 
@@ -86,7 +86,7 @@ pub use web::WebSource;
 use keyhog_core::registry::get_source_registry;
 // Arc is used by the registry-registration plugins below. The cfg
 // match has to track the *actual* `Arc::new(...)` call sites, not
-// every feature flag the file references — gating broader than this
+// every feature flag the file references - gating broader than this
 // triggers `unused_imports` on builds that include only Docker
 // (which doesn't go through the registry).
 #[cfg(any(feature = "slack", feature = "s3"))]

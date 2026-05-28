@@ -23,11 +23,11 @@ use keyhog_core::{Chunk, ChunkMetadata, DetectorFile, DetectorSpec};
 use keyhog_scanner::CompiledScanner;
 
 const SIZES: &[usize] = &[
-    4 * 1024,         // 4 KB — well below GPU break-even
-    64 * 1024,        // 64 KB — typical small source file
-    1024 * 1024,      // 1 MB — typical medium file
-    8 * 1024 * 1024,  // 8 MB — large file
-    64 * 1024 * 1024, // 64 MB — coalesced-batch territory
+    4 * 1024,         // 4 KB - well below GPU break-even
+    64 * 1024,        // 64 KB - typical small source file
+    1024 * 1024,      // 1 MB - typical medium file
+    8 * 1024 * 1024,  // 8 MB - large file
+    64 * 1024 * 1024, // 64 MB - coalesced-batch territory
 ];
 
 const PATTERN_COUNTS: &[usize] = &[10, 100, 500];

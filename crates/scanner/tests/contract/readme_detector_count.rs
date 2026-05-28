@@ -1,4 +1,4 @@
-//! Contract: README claims 891 detectors — tree must match exactly.
+//! Contract: README claims 891 detectors - tree must match exactly.
 
 use std::path::PathBuf;
 

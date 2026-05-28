@@ -1,6 +1,6 @@
 [package]
 name = "keyhog-core"
-description = "keyhog-core — shared data model and detector specifications for the KeyHog secret scanner"
+description = "keyhog-core: shared data model and detector specifications for the KeyHog secret scanner"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

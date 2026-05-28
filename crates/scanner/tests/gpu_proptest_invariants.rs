@@ -6,19 +6,19 @@
 //!
 //! The invariants:
 //!
-//!   * **P1** — SIMD and GPU produce the same finding set on any input
+//!   * **P1** - SIMD and GPU produce the same finding set on any input
 //!     within the safe alphabet (no embedded NULs that would split
 //!     C-string buffers in the GPU shader). Catches divergence.
-//!   * **P2** — `CpuFallback` is a strict superset of any backend's
+//!   * **P2** - `CpuFallback` is a strict superset of any backend's
 //!     findings on adversarial inputs (it's the ground-truth scalar
 //!     reference). If SIMD reports a finding CpuFallback doesn't, the
 //!     finding is suspect.
-//!   * **P3** — chunk-boundary splits do not change the finding set
+//!   * **P3** - chunk-boundary splits do not change the finding set
 //!     (the boundary scanner reassembles).
-//!   * **P4** — no input causes any backend to panic.
+//!   * **P4** - no input causes any backend to panic.
 //!
 //! These invariants generate 1000s of test cases per run from a
-//! handful of generators — exactly the "thousands of tests" coverage
+//! handful of generators - exactly the "thousands of tests" coverage
 //! the GPU axis needs.
 
 use keyhog_core::{Chunk, ChunkMetadata, RawMatch};
@@ -41,13 +41,13 @@ fn detector_dir() -> PathBuf {
 /// seconds into minutes.
 ///
 /// The returned `MutexGuard` serializes scanner access ACROSS test
-/// FUNCTIONS — cargo runs `#[test]`s concurrently by default, and the
+/// FUNCTIONS - cargo runs `#[test]`s concurrently by default, and the
 /// shared `CompiledScanner` has interior-mutable state (the
 /// `fragment_cache`). Without this guard, p1's mid-scan can see
 /// fragments freshly cleared by p3 / pollution mid-flight by p4, and
 /// the backend-parity assertion fails on what looks like an engine
 /// divergence but is actually a test-harness race. The mutex is
-/// CHEAP — every property holds it for the duration of its 2 scans
+/// CHEAP - every property holds it for the duration of its 2 scans
 /// only, and proptest cases inside one function are serial anyway.
 fn locked_scanner() -> MutexGuard<'static, &'static CompiledScanner> {
     static SCANNER: OnceLock<Option<CompiledScanner>> = OnceLock::new();
@@ -88,7 +88,7 @@ fn make_chunk(text: &str) -> Chunk {
 ///    `KEY = "..."` lines), the structural preprocessor appends a
 ///    cluster-joined synthetic line containing the concatenated values.
 ///    Detector regexes can fire inside that synthetic region, producing
-///    findings whose `credential` is the concatenation — not a string the
+///    findings whose `credential` is the concatenation - not a string the
 ///    user ever wrote. Both backends emit such synthetic findings, but
 ///    the EXACT set they emit depends on AC vs Hyperscan triggering
 ///    superset/subset behavior and where each anchors inside the
@@ -142,7 +142,7 @@ fn arb_chunk_text() -> impl Strategy<Value = String> {
 }
 
 /// Strategy for inputs that DELIBERATELY contain known-prefix
-/// substrings — boosts the proptest-coverage on the "literal-prefix
+/// substrings - boosts the proptest-coverage on the "literal-prefix
 /// hits, regex may or may not confirm" code path.
 fn arb_chunk_text_with_prefix_seeds() -> impl Strategy<Value = String> {
     (
@@ -189,7 +189,7 @@ fn arb_chunk_text_with_prefix_seeds() -> impl Strategy<Value = String> {
 
 proptest! {
     #![proptest_config(ProptestConfig {
-        // Keep cases tight for cross-backend properties — every case
+        // Keep cases tight for cross-backend properties - every case
         // runs 2 full scanner.scan() invocations. 64 cases × 2 scans
         // × ~5ms = ~640ms per property, fits a CI test budget.
         cases: 64,
@@ -197,7 +197,7 @@ proptest! {
     })]
 
     /// P1: SIMD and CpuFallback agree on every ASCII input.
-    /// CpuFallback is the scalar ground truth — if SIMD reports
+    /// CpuFallback is the scalar ground truth - if SIMD reports
     /// something the scalar AC + regex didn't, it's an over-firing
     /// regression on the Hyperscan path.
     #[test]
@@ -208,7 +208,7 @@ proptest! {
         // the FIRST backend's scan populates fragments that the SECOND
         // backend's scan then reads, producing different cross-file
         // reassembly findings. That's a TEST-isolation issue, not an
-        // engine bug — production callers scan once per process so the
+        // engine bug - production callers scan once per process so the
         // cache only accumulates within a single intentional scan run.
         scanner.clear_fragment_cache();
         let chunks = vec![make_chunk(&input)];
@@ -284,7 +284,7 @@ proptest! {
         ), &input);
 
         // The split finding set must contain every single-chunk finding.
-        // (It MAY add boundary findings the single-chunk pass missed —
+        // (It MAY add boundary findings the single-chunk pass missed -
         // those are the symmetric case we care about, but they only
         // happen if a secret literally straddles the split point.)
         for key in &single {
@@ -297,7 +297,7 @@ proptest! {
     }
 
     /// P4: no panic on any input. The scanner must handle every byte
-    /// sequence without aborting the rayon worker — that's the contract
+    /// sequence without aborting the rayon worker - that's the contract
     /// of a process-safe scanner.
     #[test]
     fn p4_simd_no_panic_on_arbitrary_input(

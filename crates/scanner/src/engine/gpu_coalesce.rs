@@ -3,11 +3,10 @@
 const COALESCE_SEPARATOR_LEN: usize = 8;
 const COALESCE_SEPARATOR_BYTE: u8 = 0xFF;
 
-pub(crate) fn coalesce_chunks(
-    chunks: &[keyhog_core::Chunk],
-) -> (Vec<(usize, usize, usize)>, Vec<u8>) {
+pub fn coalesce_chunks(chunks: &[keyhog_core::Chunk]) -> (Vec<(usize, usize, usize)>, Vec<u8>) {
     // Reserve once: data + (n-1) separators. Empirically this single big
-    // allocation is the main cost of `coalesce_chunks` on a 256 MiB batch;
+    // allocation is the main cost of `coalesce_chunks` on a typical
+    // 256 MiB batch (and even more on 1 GiB batches on big-VRAM hosts);
     // pre-sizing avoids the geometric `Vec::push` regrowth path entirely.
     let total_bytes: usize = chunks.iter().map(|chunk| chunk.data.len()).sum();
     let separators_total = chunks.len().saturating_sub(1) * COALESCE_SEPARATOR_LEN;

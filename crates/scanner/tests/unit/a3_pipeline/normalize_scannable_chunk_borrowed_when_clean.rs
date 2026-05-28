@@ -9,6 +9,7 @@ fn clean_ascii_chunk_borrowed() {
     };
     let mut owned = None;
     let out = normalize_scannable_chunk(&chunk, &mut owned);
-    assert!(owned.is_none());
     assert_eq!(out.data.as_str(), "plain_ascii");
+    drop(out);
+    assert!(owned.is_none());
 }

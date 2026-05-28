@@ -8,7 +8,7 @@ fn sample_hash(s: &[u8]) -> [u8; 32] {
 }
 #[test]
 fn save_overwrites_disk_entry_for_same_path() {
-    // The merge is "in-memory wins" — if both disk and memory
+    // The merge is "in-memory wins" - if both disk and memory
     // hold a record for the same path, the freshly-saved one
     // (memory) takes precedence. Otherwise a stale disk entry
     // could "resurrect" itself across saves and never get

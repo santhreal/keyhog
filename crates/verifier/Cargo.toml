@@ -1,6 +1,6 @@
 [package]
 name = "keyhog-verifier"
-description = "keyhog-verifier — parallel async credential verification framework"
+description = "keyhog-verifier: parallel async credential verification framework"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

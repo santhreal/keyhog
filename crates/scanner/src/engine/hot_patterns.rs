@@ -24,7 +24,7 @@ impl CompiledScanner {
         let text_bytes = text.as_bytes();
         // SimdSieve takes `&[&[u8]]`; HOT_PATTERNS is already exactly
         // that, so pass it through. The previous flow built a fresh
-        // `Vec<&[u8]>` per chunk via `.to_vec()` — wasted on every
+        // `Vec<&[u8]>` per chunk via `.to_vec()` - wasted on every
         // file in a 100k-file scan.
         let Ok(sieve) = SimdSieve::new(text_bytes, HOT_PATTERNS) else {
             return;
@@ -60,7 +60,7 @@ impl CompiledScanner {
                 // The 8-byte blanket floor would let `AKIA12345`
                 // (9 bytes, only 5 after the 4-byte `AKIA` prefix)
                 // through as a "real" AWS access key. Real AKIA
-                // tokens are AKIA + 16 = 20 bytes minimum — tighten
+                // tokens are AKIA + 16 = 20 bytes minimum - tighten
                 // the floor per-pattern so the fast-path never emits
                 // a credential the matching detector's regex would
                 // reject. See
@@ -76,7 +76,7 @@ impl CompiledScanner {
                 //
                 // Per-pattern minimum credential length, in bytes.
                 // Each pattern's floor matches the actual minimum length
-                // a valid token of that shape can have — fast-path
+                // a valid token of that shape can have - fast-path
                 // findings are emitted as Critical severity without
                 // re-running the full detector regex, so a too-loose
                 // floor turns every `SG.length` / `ghp_xxxx` / `xoxb-abc`
@@ -84,9 +84,9 @@ impl CompiledScanner {
                 //
                 // Index aligns with simdsieve_prefilter::HOT_PATTERNS:
                 //   0 ghp_      40  (ghp_ + 36 base62 = real GitHub PAT)
-                //   1 sk-proj-  20  (sk-proj- + 12 — anthropic/openai newer keys)
-                //   2 AKIA      20  (AKIA + 16 — already tightened, scanner_stress)
-                //   3 ASIA      20  (ASIA + 16 — temporary AWS sts session creds)
+                //   1 sk-proj-  20  (sk-proj- + 12 - anthropic/openai newer keys)
+                //   2 AKIA      20  (AKIA + 16 - already tightened, scanner_stress)
+                //   3 ASIA      20  (ASIA + 16 - temporary AWS sts session creds)
                 //   4 SG.       26  (SG. + 22 first-segment base64 minimum;
                 //                    full SG.X22+.Y43+ is 69+ chars total)
                 //   5 xoxb-     16  (xoxb- + 11 alnum minimum slack bot token)
@@ -116,7 +116,7 @@ impl CompiledScanner {
                 // Source files that ship secret-scanner code (claude-code's
                 // teamMemorySync/secretScanner.ts, components/Feedback.tsx,
                 // every trufflehog / gitleaks competitor) emit hot findings
-                // on their own regex DEFINITIONS — `AKIA[A-Z0-9]{16,17})/g`,
+                // on their own regex DEFINITIONS - `AKIA[A-Z0-9]{16,17})/g`,
                 // `ASIA[A-Z0-9]{16})\b`, `xoxb-[0-9-]*`. Real tokens never
                 // end in regex sigils. The tail-suffix check is O(1).
                 if crate::pipeline::looks_like_regex_literal_tail(credential) {
@@ -132,7 +132,7 @@ impl CompiledScanner {
                     continue;
                 }
                 // Native-binary string extraction: skip hot-pattern hits
-                // on the strings-fallback source — same coverage rationale
+                // on the strings-fallback source - same coverage rationale
                 // as `should_suppress_named_detector_finding`.
                 if chunk.metadata.source_type.contains("binary-strings")
                     || chunk.metadata.source_type.contains("archive-binary")
@@ -140,12 +140,12 @@ impl CompiledScanner {
                     continue;
                 }
                 // Secret-scanner source files (the dogfooded file IS itself
-                // a secret scanner — claude-code's teamMemorySync/
+                // a secret scanner - claude-code's teamMemorySync/
                 // secretScanner.ts, trufflehog/, gitleaks/, etc.) emit
                 // hot-pattern findings on their own detector regex
                 // DEFINITIONS. The `looks_like_regex_literal_tail` check
                 // catches the common forms; decoder-mangled trailing
-                // sigils slip past — this filter closes the gap.
+                // sigils slip past - this filter closes the gap.
                 if crate::pipeline::looks_like_secret_scanner_source(chunk.metadata.path.as_deref())
                 {
                     continue;
@@ -158,7 +158,7 @@ impl CompiledScanner {
                     if lower.ends_with(".b64") || lower.ends_with(".base64") {
                         return true;
                     }
-                    // `/` AND `\\` for Windows paths — keeps the
+                    // `/` AND `\\` for Windows paths - keeps the
                     // hot-pattern base64 filename gate working when
                     // the scanner runs against a Windows checkout.
                     let basename = lower.rsplit(['/', '\\']).next().unwrap_or(&lower);
@@ -168,12 +168,12 @@ impl CompiledScanner {
                 }
 
                 // Same partition_point binary-search idiom as
-                // `match_line_number` — `line_offsets` is sorted
+                // `match_line_number` - `line_offsets` is sorted
                 // ascending, so the first offset > `offset` IS the
                 // 1-based line number directly.
                 let line = line_offsets.partition_point(|&lo| lo <= offset).max(1);
 
-                // Use the pre-formatted static tables — eliminates the
+                // Use the pre-formatted static tables - eliminates the
                 // two `format!()` heap allocations the perf kimi audit
                 // flagged at this site (one per match, 16 bytes each).
                 // Index-parallel with HOT_PATTERN_NAMES; the parallel-

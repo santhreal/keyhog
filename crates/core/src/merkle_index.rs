@@ -5,19 +5,19 @@
 //! On a fresh scan we compute, for every input chunk, a metadata tuple
 //! `(mtime_ns, size, BLAKE3(content))` and store it under the file's
 //! canonical path. On the next run, files whose `(mtime, size)` match
-//! the stored values can be skipped *without re-reading the bytes* —
+//! the stored values can be skipped *without re-reading the bytes* -
 //! they almost certainly haven't changed (rsync-style trust). When
 //! `(mtime, size)` differ but BLAKE3 matches we record the new mtime
-//! and still skip — same content, different stat (touched, copied).
+//! and still skip - same content, different stat (touched, copied).
 //!
 //! Tier-B moat innovation #3 from audits/legendary-2026-04-26: "10–100×
 //! speedup on CI re-runs" by skipping the 99% of files that didn't change.
 //!
 //! ## Schema versions
 //!
-//! - **v1 (legacy)** — `path → BLAKE3 hex` only. Loadable but lacks the
+//! - **v1 (legacy)** - `path → BLAKE3 hex` only. Loadable but lacks the
 //!   metadata short-circuit; treated as cold-start to avoid mixing schemas.
-//! - **v2 (current)** — `path → (mtime_ns, size, BLAKE3 hex)` plus a
+//! - **v2 (current)** - `path → (mtime_ns, size, BLAKE3 hex)` plus a
 //!   top-level `spec_hash` derived from the loaded detector set. A
 //!   spec-hash mismatch invalidates the entire cache; this is the
 //!   correctness fix for "added a detector but unchanged files were
@@ -92,7 +92,7 @@ fn shard_index(path: &Path) -> usize {
 }
 
 /// In-memory per-entry record. Mirrors [`EntryV2`] but holds the hash as
-/// a fixed-size array — saves the per-lookup hex-decode cost on the
+/// a fixed-size array - saves the per-lookup hex-decode cost on the
 /// `unchanged` hot path.
 #[derive(Debug, Clone, Copy)]
 struct CacheEntry {
@@ -113,6 +113,7 @@ pub struct MerkleIndex {
 }
 
 impl MerkleIndex {
+    /// Construct a fresh, empty [`MerkleIndex`] with no cached entries.
     pub fn empty() -> Self {
         Self {
             shards: (0..MERKLE_SHARDS)
@@ -123,7 +124,7 @@ impl MerkleIndex {
 
     /// Load the index from `path` without spec-hash gating. Returns an
     /// empty index when the file doesn't exist (first run) or fails to
-    /// parse (treat as cold start — safer than poisoning the cache from
+    /// parse (treat as cold start - safer than poisoning the cache from
     /// a corrupted artifact). v1 caches are intentionally rejected as
     /// cold-start because they lack metadata fields.
     pub fn load(path: &Path) -> Self {
@@ -144,7 +145,15 @@ impl MerkleIndex {
     fn load_with_spec_inner(path: &Path, expected_spec_hash: Option<&[u8; 32]>) -> Self {
         let bytes = match std::fs::read(path) {
             Ok(b) => b,
-            Err(_) => return Self::empty(),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Self::empty(),
+            Err(e) => {
+                tracing::warn!(
+                    cache = %path.display(),
+                    error = %e,
+                    "merkle index file read failed; treating as cold start"
+                );
+                return Self::empty();
+            }
         };
         let on_disk: OnDisk = match serde_json::from_slice(&bytes) {
             Ok(d) => d,
@@ -231,7 +240,7 @@ impl MerkleIndex {
         //
         // To minimise data loss on concurrent saves, READ the
         // current on-disk entries first and merge our in-memory
-        // state on top — entries in memory take precedence (we just
+        // state on top - entries in memory take precedence (we just
         // observed those files in this scan), but disk entries that
         // we DIDN'T touch are preserved. This narrows the data-loss
         // window from "entire scan" to "between read-and-rename"
@@ -240,11 +249,11 @@ impl MerkleIndex {
         // A truly race-free solution needs an OS-level file lock
         // (`fcntl(F_SETLK)` / `LockFileEx`); that would block the
         // second writer entirely. We accept the small remaining
-        // race as a correctness/perf trade — losing a few entries
+        // race as a correctness/perf trade - losing a few entries
         // means an extra rescan, not a missed leak.
         let mut merged = HashMap::<PathBuf, CacheEntry>::new();
         // Read existing on-disk entries first. Use the SAME spec
-        // hash we're about to write — if disk was written under a
+        // hash we're about to write - if disk was written under a
         // different spec, those entries are stale (a future load
         // would invalidate them) and we drop them now. If spec
         // matches (or this is the no-spec save path), preserve.
@@ -258,7 +267,7 @@ impl MerkleIndex {
         for shard in &on_disk_now.shards {
             merged.extend(shard.lock().iter().map(|(p, e)| (p.clone(), *e)));
         }
-        // In-memory entries layer on top — last-write-wins by path.
+        // In-memory entries layer on top - last-write-wins by path.
         for shard in &self.shards {
             merged.extend(shard.lock().iter().map(|(p, e)| (p.clone(), *e)));
         }
@@ -287,7 +296,7 @@ impl MerkleIndex {
         // `NamedTempFile::new_in` creates a randomly-named file in
         // the same directory as the final target, then `persist`
         // atomic-renames it. If we panic between create and persist,
-        // NamedTempFile's Drop deletes the tmp file — earlier code
+        // NamedTempFile's Drop deletes the tmp file - earlier code
         // used `path.with_extension(format!("tmp.{pid}"))` and
         // leaked the tmp on panic. A SIGTERM/SIGKILL still leaks
         // (Drop doesn't run); the only complete fix for that is a
@@ -317,10 +326,10 @@ impl MerkleIndex {
     }
 
     /// Returns `true` when `(path, mtime_ns, size)` exactly matches a
-    /// stored entry. This is the **fast-path skip** — it avoids reading
+    /// stored entry. This is the **fast-path skip** - it avoids reading
     /// the file at all, which is the dominant cost on cold-cache disk.
     /// A `false` return means "either we've never seen this path, or
-    /// metadata differs — caller must read + hash to decide."
+    /// metadata differs - caller must read + hash to decide."
     pub fn metadata_unchanged(&self, path: &Path, mtime_ns: u64, size: u64) -> bool {
         let i = shard_index(path);
         self.shards[i]
@@ -342,7 +351,7 @@ impl MerkleIndex {
     }
 
     /// Record a file's content hash. Back-compat shim that drops to a
-    /// zero-metadata entry — calls into [`Self::record_with_metadata`]
+    /// zero-metadata entry - calls into [`Self::record_with_metadata`]
     /// with `mtime_ns = 0` and `size = 0` so existing callers keep
     /// working but won't benefit from the metadata fast-path.
     pub fn record(&self, path: PathBuf, content_hash: [u8; 32]) {
@@ -376,6 +385,7 @@ impl MerkleIndex {
         self.shards.iter().map(|s| s.lock().len()).sum()
     }
 
+    /// Returns true if no cached entries are present across any shard.
     pub fn is_empty(&self) -> bool {
         self.shards.iter().all(|s| s.lock().is_empty())
     }
@@ -395,7 +405,7 @@ pub fn default_cache_path() -> Option<PathBuf> {
 }
 
 /// Stale-tmp-file age cutoff. `tempfile::NamedTempFile`'s Drop impl
-/// cleans up on panic but NOT on SIGKILL/SIGTERM — those leak a
+/// cleans up on panic but NOT on SIGKILL/SIGTERM - those leak a
 /// random-named tmp file in the cache directory. Older than this
 /// cutoff means "no chance an in-flight save by another keyhog
 /// process is still using it." 1 hour is generous; the longest
@@ -427,7 +437,7 @@ fn sweep_stale_tmp_files(cache_path: &Path) {
             continue;
         };
         // tempfile::NamedTempFile uses random hex-suffixed names with
-        // a `.tmp` prefix — match conservatively to avoid eating
+        // a `.tmp` prefix - match conservatively to avoid eating
         // unrelated files: `<stem>.tmp*` OR `.tmp<hex>`.
         let is_tmp_sibling =
             name_str.starts_with(&format!("{stem}.tmp")) || name_str.starts_with(".tmp");
@@ -441,7 +451,7 @@ fn sweep_stale_tmp_files(cache_path: &Path) {
         };
         let age = match now.duration_since(modified) {
             Ok(d) => d,
-            Err(_) => continue, // mtime in the future — skip rather than guess
+            Err(_) => continue, // mtime in the future - skip rather than guess
         };
         if age.as_secs() < STALE_TMP_CUTOFF_SECS {
             continue;

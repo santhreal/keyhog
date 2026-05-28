@@ -75,7 +75,7 @@ pub fn parse_decode_depth(s: &str) -> Result<usize, String> {
 
 pub fn parse_byte_size(s: &str) -> Result<usize, String> {
     let trimmed = s.trim();
-    // Empty input keeps the historical Ok(0) contract — clap callers
+    // Empty input keeps the historical Ok(0) contract - clap callers
     // that accept an optional size flag rely on it. Only inputs that
     // are POSITIVELY malformed (bare numbers, overflow, bad unit)
     // should error.
@@ -95,7 +95,7 @@ pub fn parse_byte_size(s: &str) -> Result<usize, String> {
             // fixtures explicitly assert this must error rather than
             // silently mean bytes.
             return Err(format!(
-                "byte size '{trimmed}' is missing a unit — use `B`, `K`/`KB`, `M`/`MB`, `G`/`GB`, or `T`/`TB`."
+                "byte size '{trimmed}' is missing a unit. Use `B`, `K`/`KB`, `M`/`MB`, `G`/`GB`, or `T`/`TB`."
             ));
         }
         "B" => 1,
@@ -105,7 +105,7 @@ pub fn parse_byte_size(s: &str) -> Result<usize, String> {
         "T" | "TB" | "TIB" => 1024_u64.pow(4),
         other => {
             return Err(format!(
-                "unknown size suffix '{other}' — supported: B, K/KB, M/MB, G/GB, T/TB"
+                "unknown size suffix '{other}'. Supported: B, K/KB, M/MB, G/GB, T/TB"
             ))
         }
     };
@@ -165,74 +165,3 @@ pub fn parse_byte_size(s: &str) -> Result<usize, String> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn verify_rate_accepts_typical_values() {
-        assert_eq!(parse_verify_rate("5").unwrap(), 5.0);
-        assert_eq!(parse_verify_rate("0.5").unwrap(), 0.5);
-        assert_eq!(parse_verify_rate("100").unwrap(), 100.0);
-        assert_eq!(parse_verify_rate("9999.9").unwrap(), 9999.9);
-    }
-
-    #[test]
-    fn verify_rate_rejects_garbage() {
-        assert!(parse_verify_rate("abc").is_err());
-        assert!(parse_verify_rate("").is_err());
-        assert!(parse_verify_rate("--").is_err());
-    }
-
-    #[test]
-    fn verify_rate_rejects_non_positive() {
-        assert!(parse_verify_rate("0").is_err());
-        assert!(parse_verify_rate("0.0").is_err());
-        assert!(parse_verify_rate("-1").is_err());
-        assert!(parse_verify_rate("-0.5").is_err());
-    }
-
-    #[test]
-    fn verify_rate_rejects_non_finite() {
-        assert!(parse_verify_rate("nan").is_err());
-        assert!(parse_verify_rate("NaN").is_err());
-        assert!(parse_verify_rate("inf").is_err());
-        assert!(parse_verify_rate("Infinity").is_err());
-        assert!(parse_verify_rate("-inf").is_err());
-    }
-
-    #[test]
-    fn verify_rate_rejects_above_sanity_cap() {
-        assert!(parse_verify_rate("10001").is_err());
-        assert!(parse_verify_rate("1e6").is_err());
-        assert!(parse_verify_rate("1e300").is_err());
-    }
-
-    #[test]
-    fn ml_threshold_accepts_in_range() {
-        assert_eq!(parse_ml_threshold("0").unwrap(), 0.0);
-        assert_eq!(parse_ml_threshold("0.5").unwrap(), 0.5);
-        assert_eq!(parse_ml_threshold("1").unwrap(), 1.0);
-    }
-
-    #[test]
-    fn ml_threshold_rejects_out_of_range() {
-        assert!(parse_ml_threshold("-0.001").is_err());
-        assert!(parse_ml_threshold("1.001").is_err());
-        assert!(parse_ml_threshold("2").is_err());
-        assert!(parse_ml_threshold("-1").is_err());
-    }
-
-    #[test]
-    fn ml_threshold_rejects_non_finite() {
-        assert!(parse_ml_threshold("nan").is_err());
-        assert!(parse_ml_threshold("inf").is_err());
-        assert!(parse_ml_threshold("-inf").is_err());
-    }
-
-    #[test]
-    fn ml_threshold_rejects_garbage() {
-        assert!(parse_ml_threshold("").is_err());
-        assert!(parse_ml_threshold("half").is_err());
-    }
-}

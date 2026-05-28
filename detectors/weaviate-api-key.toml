@@ -17,7 +17,7 @@ group = 1
 
 # Weaviate is self-hosted: every deployment lives under a customer-chosen
 # host with no fixed apex domain. The previous verify used single-brace
-# `{host}` (which the interpolator didn't honor) and had no allowlist —
+# `{host}` (which the interpolator didn't honor) and had no allowlist -
 # unsafe to verify. We capture the host via companion only when a
 # `WEAVIATE_URL=` / `WEAVIATE_HOST=` declaration is nearby, and pin the
 # allowlist to the Weaviate Cloud Service network. For self-hosted

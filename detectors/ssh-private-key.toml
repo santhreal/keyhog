@@ -16,7 +16,7 @@ description = "SSH/TLS private key in PEM format"
 
 [[detector.patterns]]
 regex = "-----BEGIN ENCRYPTED PRIVATE KEY-----"
-description = "Encrypted private key (still sensitive — password may be weak)"
+description = "Encrypted private key (still sensitive - password may be weak)"
 
 [detector.verify]
 method = "GET"

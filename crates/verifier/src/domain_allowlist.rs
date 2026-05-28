@@ -5,10 +5,10 @@
 //! attacker-owned domains. See kimi-wave1 audit finding 4.1 and wave3 §1.
 //!
 //! Resolution order for the effective allowlist of a given `VerifySpec`:
-//!   1. `spec.allowed_domains` (per-detector explicit list) — if non-empty,
+//!   1. `spec.allowed_domains` (per-detector explicit list) - if non-empty,
 //!      this is the only list used.
 //!   2. Otherwise, the builtin map keyed by `spec.service`.
-//!   3. Otherwise, REJECT — better to refuse verification than exfil.
+//!   3. Otherwise, REJECT - better to refuse verification than exfil.
 //!
 //! "Match" means the URL's host (lowercased) equals an allowlist entry, OR is
 //! a subdomain of an allowlist entry (e.g. `api.github.com` matches
@@ -146,8 +146,8 @@ pub fn builtin_service_domains() -> &'static HashMap<&'static str, &'static [&'s
         m.insert("bigcommerce", &["bigcommerce.com"]);
         m.insert("wechat", &["weixin.qq.com", "wechat.com"]);
         m.insert("huawei", &["huaweicloud.com", "huawei.com"]);
-        m.insert("jwt", &[]); // structural validation only — no network
-        m.insert("generic", &[]); // generic high-entropy — never network-verify
+        m.insert("jwt", &[]); // structural validation only - no network
+        m.insert("generic", &[]); // generic high-entropy - never network-verify
         m
     })
 }

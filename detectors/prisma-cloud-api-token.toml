@@ -23,7 +23,7 @@ group = 1
 # Console URL companion: needed to template the verify host. Pin to the
 # documented Prisma Cloud Compute SaaS hosts; self-hosted Twistlock
 # deployments live on customer-chosen hosts and aren't safely verifiable
-# without an explicit per-customer URL — those will fall to Unverifiable.
+# without an explicit per-customer URL - those will fall to Unverifiable.
 [[detector.companions]]
 name = "prisma_console"
 regex = 'https?://[a-zA-Z0-9-]+\.(?:prismacloud\.io|paloaltonetworks\.com|twistlock\.com)'

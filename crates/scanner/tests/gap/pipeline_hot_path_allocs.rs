@@ -1,4 +1,4 @@
-//! KH-GAP-014: pipeline god-file split — total pipeline module LOC under LR2 phase-1 budget.
+//! KH-GAP-014: pipeline god-file split - total pipeline module LOC under LR2 phase-1 budget.
 
 use std::path::{Path, PathBuf};
 
@@ -28,7 +28,7 @@ fn pipeline_module_loc_below_lr2_phase1_budget() {
     const BUDGET: usize = 1400;
     assert!(
         total <= BUDGET,
-        "src/pipeline/ is {total} LOC — exceeds LR2-A3 phase-1 budget {BUDGET}; \
+        "src/pipeline/ is {total} LOC - exceeds LR2-A3 phase-1 budget {BUDGET}; \
          further splits deferred to LR3"
     );
 }

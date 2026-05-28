@@ -1,5 +1,11 @@
 //! Logic for the `detectors` subcommand.
 
+mod brace_rewrite;
+
+use brace_rewrite::{
+    fix_single_brace_in_verify_blocks, rewrite_braces, rewrite_braces_in_string_literals,
+};
+
 use crate::args::DetectorArgs;
 use anyhow::{Context, Result};
 use keyhog_core::{validate_detector, DetectorFile, DetectorSpec, QualityIssue};
@@ -36,7 +42,7 @@ fn run_list(args: DetectorArgs) -> Result<()> {
     };
 
     // Apply --search filter case-insensitively against the four most useful
-    // fields. The 888-strong corpus is otherwise hard to navigate by eye —
+    // fields. The 888-strong corpus is otherwise hard to navigate by eye -
     // `keyhog detectors --search aws` should beat `grep -r aws detectors/`.
     fn contains_ci(haystack: &str, needle: &[u8]) -> bool {
         if needle.is_empty() || needle.len() > haystack.len() {
@@ -224,7 +230,7 @@ fn run_fix(args: &DetectorArgs) -> Result<ExitCode> {
     if !args.detectors.exists() || !args.detectors.is_dir() {
         anyhow::bail!(
             "--fix requires a real detectors directory; '{}' does not exist or is not a directory. \
-             Embedded detectors are immutable — clone the detectors/ tree from the repo and pass \
+             Embedded detectors are immutable: clone the detectors/ tree from the repo and pass \
              --detectors <DIR>.",
             args.detectors.display()
         );
@@ -254,7 +260,7 @@ fn run_fix(args: &DetectorArgs) -> Result<ExitCode> {
         // it (we corrupted the TOML), back off rather than save garbage.
         if toml::from_str::<DetectorFile>(&rewritten).is_err() {
             eprintln!(
-                "warn: skipping {} — rewrite produced invalid TOML; please file a bug",
+                "warn: skipping {}: rewrite produced invalid TOML; please file a bug",
                 entry.display()
             );
             continue;
@@ -324,150 +330,6 @@ fn atomic_write(path: &Path, content: &str) -> Result<()> {
     Ok(())
 }
 
-/// Rewrite single-brace `{name}` references to `{{name}}` inside lines
-/// that belong to a `[detector.verify*]` block. Returns the new content
-/// and the number of rewrites performed.
-///
-/// Scoped to verify blocks because that's the only place the templating
-/// engine runs — `detector.patterns[].regex` and `detector.companions[].regex`
-/// also contain braces (regex quantifiers like `{4,6}`) and must not be
-/// rewritten. The interpolator is tolerant of `{{var}}` outside verify
-/// blocks too, but applying the rewrite there would risk corrupting
-/// regex quantifiers.
-fn fix_single_brace_in_verify_blocks(toml_text: &str) -> (String, usize) {
-    let mut out = String::with_capacity(toml_text.len());
-    let mut in_verify = false;
-    let mut total = 0usize;
-    for line in toml_text.lines() {
-        let trimmed = line.trim_start();
-        if let Some(rest) = trimmed.strip_prefix('[') {
-            let header = rest.trim_end_matches(['\r', ' ', '\t']);
-            // Header forms: `[detector.verify]`, `[[detector.verify.steps]]`,
-            // `[detector.verify.oob]`, etc. Anything else flips us out.
-            in_verify = header.starts_with("detector.verify")
-                || header.starts_with("[detector.verify")
-                || header == "detector.verify]"
-                || header == "[detector.verify]]";
-            if !in_verify {
-                let stripped = header.trim_matches(['[', ']'].as_ref());
-                in_verify = stripped.starts_with("detector.verify");
-            }
-        }
-        if in_verify {
-            let (rewritten, count) = rewrite_braces_in_string_literals(line);
-            total += count;
-            out.push_str(&rewritten);
-        } else {
-            out.push_str(line);
-        }
-        out.push('\n');
-    }
-    // Preserve absence of trailing newline if the original lacked one.
-    if !toml_text.ends_with('\n') && out.ends_with('\n') {
-        out.pop();
-    }
-    (out, total)
-}
-
-/// Rewrite `{name}` → `{{name}}` ONLY inside double-quoted (`"..."`) or
-/// single-quoted (`'...'`) string literals on a TOML line. Skips
-/// unquoted regions (so regex quantifiers in unkeyed positions don't
-/// get touched) and skips already-doubled `{{var}}` patterns.
-fn rewrite_braces_in_string_literals(line: &str) -> (String, usize) {
-    let mut out = String::with_capacity(line.len());
-    let mut count = 0usize;
-    let bytes = line.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        let b = bytes[i];
-        if b == b'"' || b == b'\'' {
-            // Find matching quote (TOML doesn't support escapes inside
-            // single-quoted literal strings; double-quoted strings allow
-            // `\"`, which we honour).
-            let quote = b;
-            out.push(quote as char);
-            let mut j = i + 1;
-            let mut literal = String::new();
-            while j < bytes.len() {
-                let c = bytes[j];
-                if quote == b'"' && c == b'\\' && j + 1 < bytes.len() {
-                    literal.push(c as char);
-                    literal.push(bytes[j + 1] as char);
-                    j += 2;
-                    continue;
-                }
-                if c == quote {
-                    break;
-                }
-                literal.push(c as char);
-                j += 1;
-            }
-            let (rewritten_literal, c) = rewrite_braces(&literal);
-            count += c;
-            out.push_str(&rewritten_literal);
-            if j < bytes.len() {
-                out.push(quote as char);
-                i = j + 1;
-            } else {
-                i = j;
-            }
-        } else {
-            out.push(b as char);
-            i += 1;
-        }
-    }
-    (out, count)
-}
-
-/// Replace `{name}` with `{{name}}` where `name` matches
-/// `[A-Za-z_][A-Za-z0-9_.]*`. Leaves already-doubled `{{name}}` alone
-/// and ignores braces that don't open an identifier.
-fn rewrite_braces(s: &str) -> (String, usize) {
-    let bytes = s.as_bytes();
-    let mut out = String::with_capacity(s.len());
-    let mut count = 0usize;
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'{' {
-            // Already `{{`? Skip the run of opening braces unchanged.
-            if i + 1 < bytes.len() && bytes[i + 1] == b'{' {
-                out.push('{');
-                out.push('{');
-                i += 2;
-                continue;
-            }
-            // Try to parse `{ident}` from here.
-            let start = i + 1;
-            if start < bytes.len() && (bytes[start].is_ascii_alphabetic() || bytes[start] == b'_') {
-                let mut end = start + 1;
-                while end < bytes.len()
-                    && (bytes[end].is_ascii_alphanumeric()
-                        || bytes[end] == b'_'
-                        || bytes[end] == b'.')
-                {
-                    end += 1;
-                }
-                if end < bytes.len() && bytes[end] == b'}' {
-                    // Successful `{ident}` capture — promote to `{{ident}}`.
-                    out.push_str("{{");
-                    out.push_str(&s[start..end]);
-                    out.push_str("}}");
-                    count += 1;
-                    i = end + 1;
-                    continue;
-                }
-            }
-            // Not a templated identifier — pass through.
-            out.push('{');
-            i += 1;
-        } else {
-            out.push(bytes[i] as char);
-            i += 1;
-        }
-    }
-    (out, count)
-}
-
 fn print_detector_verbose(d: &DetectorSpec) {
     println!();
     println!("  {}", d.id);
@@ -505,79 +367,17 @@ fn print_detector_verbose(d: &DetectorSpec) {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+#[doc(hidden)]
+pub fn rewrite_braces_for_test(s: &str) -> (String, usize) {
+    rewrite_braces(s)
+}
 
-    #[test]
-    fn rewrites_single_brace_to_double() {
-        let (out, n) = rewrite_braces("https://api.example.com/{shop}/orders/{id}");
-        assert_eq!(out, "https://api.example.com/{{shop}}/orders/{{id}}");
-        assert_eq!(n, 2);
-    }
+#[doc(hidden)]
+pub fn fix_single_brace_in_verify_blocks_for_test(toml_text: &str) -> (String, usize) {
+    fix_single_brace_in_verify_blocks(toml_text)
+}
 
-    #[test]
-    fn leaves_already_doubled_alone() {
-        let (out, n) = rewrite_braces("https://api.example.com/{{shop}}/orders/{{id}}");
-        assert_eq!(out, "https://api.example.com/{{shop}}/orders/{{id}}");
-        assert_eq!(n, 0);
-    }
-
-    #[test]
-    fn dotted_identifier_is_recognised() {
-        let (out, n) = rewrite_braces("https://api.example.com/{companion.shop}/charge");
-        assert_eq!(out, "https://api.example.com/{{companion.shop}}/charge");
-        assert_eq!(n, 1);
-    }
-
-    #[test]
-    fn non_identifier_braces_left_intact() {
-        // Regex quantifier shape — must NOT be rewritten.
-        let (out, n) = rewrite_braces("[A-Z]{4,6}");
-        assert_eq!(out, "[A-Z]{4,6}");
-        assert_eq!(n, 0);
-    }
-
-    #[test]
-    fn rewrites_only_inside_verify_block() {
-        let toml = r#"
-[detector]
-id = "x"
-
-[[detector.patterns]]
-regex = "[A-Z]{4}"
-
-[detector.verify]
-url = "https://api.example.com/{shop}/orders"
-"#;
-        let (out, n) = fix_single_brace_in_verify_blocks(toml);
-        assert_eq!(n, 1, "only the verify URL should be rewritten");
-        assert!(
-            out.contains("regex = \"[A-Z]{4}\""),
-            "regex quantifier untouched"
-        );
-        assert!(out.contains("/{{shop}}/orders"), "verify URL rewritten");
-    }
-
-    #[test]
-    fn handles_string_with_escape_sequences() {
-        let (out, n) =
-            rewrite_braces_in_string_literals(r#"body = "Hello {name}, payload=\"{{value}}\"""#);
-        assert!(out.contains("{{name}}"), "got: {out}");
-        assert_eq!(n, 1);
-    }
-
-    #[test]
-    fn rewrite_is_noop_on_clean_file() {
-        let toml = r#"
-[detector]
-id = "demo"
-
-[detector.verify]
-url = "https://api.example.com/{{companion.shop}}"
-"#;
-        let (out, n) = fix_single_brace_in_verify_blocks(toml);
-        assert_eq!(n, 0);
-        assert_eq!(out.trim(), toml.trim());
-    }
+#[doc(hidden)]
+pub fn rewrite_braces_in_string_literals_for_test(line: &str) -> (String, usize) {
+    rewrite_braces_in_string_literals(line)
 }

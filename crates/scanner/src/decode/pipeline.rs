@@ -37,11 +37,11 @@ fn get_decoders() -> &'static [Box<dyn Decoder>] {
             Box::new(OctalEscapeDecoder),
             Box::new(MimeEncodedWordDecoder),
             Box::new(UnicodeEscapeDecoder),
-            // JSON unescape — strips `\"` / `\\` / `\n` style escapes
+            // JSON unescape - strips `\"` / `\\` / `\n` style escapes
             // inside JSON string values so credentials stored as
             // JSON-encoded fields (the most common shape after .env)
             // survive into the scanner. Originally implemented but
-            // never registered — the adversarial_explosion_runner's
+            // never registered - the adversarial_explosion_runner's
             // `json` wrapper class surfaced ~73 misses that wiring
             // this in closed (5792/5792 variants now fire).
             Box::new(JsonDecoder),
@@ -58,10 +58,10 @@ pub fn register_decoder(decoder: Box<dyn Decoder>) {
     // After initialization, the decoder list is immutable for lock-free reads.
     // Custom decoders must be registered before the first scan.
     if DECODERS.get().is_some() {
-        tracing::warn!("register_decoder called after initialization — decoder ignored. Fix: register custom decoders before scanning.");
+        tracing::warn!("register_decoder called after initialization: decoder ignored. Fix: register custom decoders before scanning.");
         return;
     }
-    // KEEP THIS LIST IN SYNC with `get_decoders()` above — they're
+    // KEEP THIS LIST IN SYNC with `get_decoders()` above - they're
     // two paths to the same initialized state, and a decoder missing
     // here would silently vanish from any custom-decoder-registered
     // run.
@@ -128,7 +128,7 @@ pub fn decode_chunk(
                 if seen.insert(hash_fast(decoded.data.as_bytes())) {
                     // Optional sanitization (kimi-wave1 audit finding 5.1).
                     // When `validate=true`, drop decoded chunks containing
-                    // NUL bytes — these are typically buggy-decoder output
+                    // NUL bytes - these are typically buggy-decoder output
                     // (mis-decoded binary, broken-encoded base64) and feed
                     // garbage into downstream regex scanning. C1 controls
                     // (0x80-0x9F) are kept because legitimate UTF-8 multi-
@@ -146,7 +146,7 @@ pub fn decode_chunk(
                     if decoded_chunks.len() >= MAX_DECODED_CHUNKS_PER_ROOT
                         || total_bytes > MAX_DECODED_TOTAL_BYTES
                     {
-                        // Demoted from `warn!` — hitting the recursive
+                        // Demoted from `warn!` - hitting the recursive
                         // decode limit is a benign cap, not an error.
                         // Files with dense nested encoding (audit logs,
                         // sealed blobs, base64-of-base64-of-zlib...)
@@ -156,7 +156,7 @@ pub fn decode_chunk(
                         // scanner failures use `warn!`/`error!`.
                         tracing::debug!(
                             path = ?chunk.metadata.path,
-                            "decode depth/size cap reached — chunk truncated to limit"
+                            "decode depth/size cap reached: chunk truncated to limit"
                         );
                         return decoded_chunks;
                     }
@@ -241,14 +241,14 @@ pub(super) fn push_decoded_text_chunk_spliced(
         metadata: ChunkMetadata {
             // Defect #80 (root cause D): decoded-chunk findings used to
             // report `offset: 0` regardless of where the encoded blob
-            // sat in the parent file — a Z85-decoded credential at
+            // sat in the parent file - a Z85-decoded credential at
             // offset 166332 of a 156955-byte file is meaningless to
             // anyone trying to navigate to it. Inherit the parent's
             // `base_offset` so the reported file offset is at least
             // anchored to the parent window/file, not the decoded
             // synthetic stream. Per-blob precision (offset OF the
             // encoded blob in parent) would need `extract_encoded_values`
-            // to return positions too — a follow-up. This is strictly
+            // to return positions too - a follow-up. This is strictly
             // closer to the truth.
             base_offset: chunk.metadata.base_offset,
             source_type: format!("{}/{}", chunk.metadata.source_type, decoder_name),
@@ -278,7 +278,7 @@ where
     for candidate in candidates {
         if let Ok(text) = decode(&candidate) {
             // Splice each decoded value back over its original
-            // candidate string in the parent — keeps companion
+            // candidate string in the parent - keeps companion
             // context (assignment keys, format-specific anchors)
             // adjacent to the decoded credential. Same recall-gap
             // fix as base64/hex/json.
@@ -296,9 +296,9 @@ where
 
 pub(super) fn extract_encoded_values(text: &str) -> Vec<String> {
     let mut values = Vec::new();
-    // Base64 block accumulator — collected in the SAME pass as quoted/assigned values.
+    // Base64 block accumulator - collected in the SAME pass as quoted/assigned values.
     let mut b64_block = String::new();
-    // Percent-encoded run accumulator — picks up freestanding `%41%57…`
+    // Percent-encoded run accumulator - picks up freestanding `%41%57…`
     // blobs that don't sit immediately after `=`/`:` (e.g.
     // `Authorization: Bearer %41%57…` where the b64 accumulator
     // breaks on `%` and the assignment-value extractor stops at the
@@ -419,7 +419,7 @@ pub(super) fn extract_encoded_values(text: &str) -> Vec<String> {
                 // same char; `%` and the hex digits are still valid
                 // base64 chars only for the alphanumerics, and we
                 // don't want a `%41%57` blob to ALSO accumulate as a
-                // base64 candidate (`4157`) — which would generate
+                // base64 candidate (`4157`) - which would generate
                 // spurious decode candidates downstream.
                 chars.next();
                 continue;

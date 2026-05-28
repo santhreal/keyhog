@@ -14,6 +14,7 @@ fn build_compile_state_accepts_valid_detector() {
             regex: "abc".into(),
             description: None,
             group: None,
+            client_safe: false,
         }],
         companions: vec![],
         verify: None,

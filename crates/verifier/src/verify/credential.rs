@@ -16,6 +16,23 @@ use crate::verify::{
 const MAX_VERIFY_ATTEMPTS: usize = 3;
 const RETRY_DELAY_MS: u64 = 500;
 
+/// Process-lifetime guard so the OOB-required-but-no-session warning
+/// fires once per process, not once per finding. A detector corpus
+/// often has dozens of OOB-bound specs and they'd each warn on every
+/// finding without this gate.
+static OOB_REQUIRED_WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+
+fn warn_oob_required_without_session_once() {
+    if OOB_REQUIRED_WARNED.set(()).is_ok() {
+        tracing::warn!(
+            "verifier: a detector spec required OOB callback verification but \
+no OOB session is active. Verification degrades to HTTP-only for this \
+finding (and any further OOB-required findings in this process). To \
+enable OOB verification pass --verify-oob to the CLI."
+        );
+    }
+}
+
 pub(crate) struct VerificationAttempt {
     pub result: VerificationResult,
     pub metadata: HashMap<String, String>,
@@ -55,8 +72,8 @@ pub(crate) async fn verify_with_retry(
 /// can be unit-tested without HTTP.
 ///
 /// The previous inline loop dropped the last transient attempt's `metadata`
-/// when retries were exhausted — `(last_error.unwrap_or(...), HashMap::new())`
-/// — which silently lost OOB observation IDs and any partially-extracted
+/// when retries were exhausted - `(last_error.unwrap_or(...), HashMap::new())`
+/// - which silently lost OOB observation IDs and any partially-extracted
 /// fields on a server that 500'd every attempt. This helper preserves both.
 async fn retry_loop<F, Fut>(
     max_attempts: usize,
@@ -104,7 +121,7 @@ pub(crate) async fn verify_credential(
     oob_session: Option<&Arc<OobSession>>,
 ) -> VerificationAttempt {
     if !spec.steps.is_empty() {
-        // Multi-step specs run the no-OOB `verify_multi_step` path —
+        // Multi-step specs run the no-OOB `verify_multi_step` path -
         // threading OOB through per-step or per-flow minting is open
         // and unfinished. No bundled detector currently combines
         // `[[steps]]` with an `oob` block, so the gap doesn't bite
@@ -126,10 +143,11 @@ pub(crate) async fn verify_credential(
     }
 
     // OOB context: mint a per-finding callback URL up front and weave it into
-    // the companions map so every interpolation pass — URL, headers, body,
-    // auth — picks up `{{interactsh}}` substitutions. We only mint when the
-    // session is active; specs with `oob` set but no session degrade silently
-    // to HTTP-only verification.
+    // the companions map so every interpolation pass - URL, headers, body,
+    // auth - picks up `{{interactsh}}` substitutions. We only mint when the
+    // session is active; specs with `oob` set but no session emit a one-shot
+    // warning so the operator notices the OOB-required detector silently
+    // degrading to HTTP-only verification.
     let oob_ctx = match (spec.oob.as_ref(), oob_session) {
         (Some(oob_spec), Some(session)) => {
             let minted = session.mint();
@@ -144,6 +162,10 @@ pub(crate) async fn verify_credential(
                     &minted.unique_id,
                 ),
             })
+        }
+        (Some(_), None) => {
+            warn_oob_required_without_session_once();
+            None
         }
         _ => None,
     };
@@ -378,7 +400,7 @@ async fn combine_oob(
                 VerificationResult::Live
             } else if http_live && !observed {
                 // HTTP says key parses but the service didn't actually call
-                // back — exfil-incapable. For the OobAndHttp policy that's
+                // back - exfil-incapable. For the OobAndHttp policy that's
                 // a soft-dead: we know the key is parsed but not exfil-live.
                 VerificationResult::Dead
             } else {

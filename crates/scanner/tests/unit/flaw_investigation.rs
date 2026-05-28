@@ -31,6 +31,7 @@ fn test_nested_base64_decoding_gating() {
             regex: "ghp_[a-zA-Z0-9]{36}".into(),
             description: None,
             group: None,
+            client_safe: false,
         }],
         companions: Vec::new(),
         verify: None,

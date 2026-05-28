@@ -113,7 +113,7 @@ pub fn build_sources(
 
         // Non-UTF-8 path pre-flight. On Unix, `PathBuf` carries raw
         // OsString bytes; codewalk stringifies the path for error
-        // reporting and loses the original bytes — the user sees a
+        // reporting and loses the original bytes - the user sees a
         // confusing `No such file or directory (os error 2)` from
         // `stat()` on a garbled string, even though the file exists.
         // Catch the case at CLI boundary so the message points at
@@ -248,7 +248,7 @@ pub fn build_sources(
                 }
                 // `{e:#}` preserves the full anyhow source chain instead
                 // of the `.to_string()` that bare `anyhow::bail!(e)` would
-                // produce — operators get the whole crash trace, not just
+                // produce - operators get the whole crash trace, not just
                 // the outermost message.
                 Err(e) => anyhow::bail!("failed to construct source '{source_name}': {e:#}"),
             }

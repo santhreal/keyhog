@@ -6,5 +6,5 @@ use keyhog_sources::StdinSource;
 #[test]
 fn stdin_source_type_metadata() {
     assert_eq!(StdinSource.name(), "stdin");
-    // Do not call chunks() — it blocks on real stdin. Name contract is sufficient here.
+    // Do not call chunks() - it blocks on real stdin. Name contract is sufficient here.
 }

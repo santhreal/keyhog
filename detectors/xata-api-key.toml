@@ -16,7 +16,7 @@ description = "Xata API key (xau_ prefix)"
 
 # Each Xata workspace lives under `<workspace>-<region>.xata.sh`. The
 # previous verify spec used single-brace `{workspace}.{region}` template
-# syntax that the interpolator never honored — every verification hit a
+# syntax that the interpolator never honored - every verification hit a
 # literal `{workspace}.{region}.xata.sh` and 4xx'd. Capture the workspace
 # URL via a companion and template the actual host into the verify URL.
 [[detector.companions]]

@@ -1,4 +1,4 @@
-//! Deeply nested base64 must not hang — wall budget or depth cap stops work.
+//! Deeply nested base64 must not hang - wall budget or depth cap stops work.
 
 use keyhog_core::Chunk;
 use keyhog_scanner::decode::decode_chunk;

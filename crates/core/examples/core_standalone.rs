@@ -13,7 +13,7 @@ fn main() {
         patterns: vec![PatternSpec {
             regex: "demo_[A-Z0-9]{8}".into(),
             description: Some("Simple standalone example".into()),
-            group: None,
+            ..Default::default()
         }],
         companions: Vec::new(),
         verify: None,

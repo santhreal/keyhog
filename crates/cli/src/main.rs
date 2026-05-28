@@ -12,24 +12,36 @@ use std::io::IsTerminal;
 use std::process::ExitCode;
 use std::sync::atomic::Ordering;
 
+// Santh STANDARD.md exit-code classes:
+// - 0 success / 1 findings present (the "headline" outcomes; not constants here)
+// - EXIT_USER_ERROR (2): the caller gave us bad input. Bad CLI flags, malformed
+//   config, missing files the user named, unknown detector IDs, etc.
+// - EXIT_SYSTEM_ERROR (3): the local environment failed. Underlying IO failures
+//   (disk full, permission denied on a path the user did not explicitly name),
+//   hardware probe failures, GPU init failures, OS-level panics. These are
+//   "not your fault, but the run can't continue."
+// - EXIT_SCANNER_PANIC (11): a scanner-thread panic, a strict subcase of system
+//   error tracked separately so CI can distinguish a bug from "disk full". A
+//   panic always also implies the system-error class.
 const EXIT_USER_ERROR: u8 = 2;
+const EXIT_SYSTEM_ERROR: u8 = 3;
 
 /// Restore the default SIGPIPE handler so Unix piping works.
 ///
 /// Rust installs `SIG_IGN` for SIGPIPE at startup so a write to a
 /// closed pipe surfaces as `Err(BrokenPipe)` instead of killing the
-/// process. That's good for libraries — but for a CLI, the standard
+/// process. That's good for libraries - but for a CLI, the standard
 /// expectation is `keyhog scan ... | head -1` exits cleanly when
 /// `head` closes the pipe (kernel kills with 128+13=141, no error
 /// printed). Without this, the user sees an error on stderr and a
 /// non-zero exit code from a perfectly normal pipe interaction.
 ///
-/// POSIX-only — Windows has no SIGPIPE.
+/// POSIX-only - Windows has no SIGPIPE.
 #[cfg(unix)]
 fn reset_sigpipe() {
     // SAFETY: Setting a process-wide signal handler before any
     // worker threads or async runtime are spawned. The default
-    // handler (`SIG_DFL`) terminates the process — exactly the
+    // handler (`SIG_DFL`) terminates the process - exactly the
     // behavior we want for a CLI piped into `head`. No memory or
     // resource invariants depend on Rust's `SIG_IGN` default
     // because every fallible write path in the codebase already
@@ -125,6 +137,8 @@ async fn main() -> ExitCode {
              `keyhog scan <path>`. Daemon-mode Windows support (via named \
              pipes) is tracked but not yet implemented."
         )),
+        #[cfg(feature = "tui")]
+        Some(Command::Tui(args)) => subcommands::tui::run(args),
         None => {
             use clap::CommandFactory;
             let mut cmd = Cli::command();
@@ -144,11 +158,16 @@ async fn main() -> ExitCode {
         Err(error) => {
             // {:#} prints the chained user-facing message
             // (`anyhow!("loading detectors").context("…").context("…")`
-            // → "loading detectors: <inner>: <root>") instead of the
+            // -> "loading detectors: <inner>: <root>") instead of the
             // {:?} debug dump that includes Backtrace internals.
             eprintln!("error: {error:#}");
             let code = if keyhog::SCANNER_PANICKED.load(std::sync::atomic::Ordering::SeqCst) {
+                // Scanner panic IS a system error (class EXIT_SYSTEM_ERROR);
+                // the EXIT_SCANNER_PANIC subcode (11) is the specific
+                // marker so CI can tell a panic from disk-full.
                 EXIT_SCANNER_PANIC
+            } else if error.chain().any(|e| e.is::<std::io::Error>()) {
+                EXIT_SYSTEM_ERROR
             } else {
                 EXIT_USER_ERROR
             };
@@ -182,7 +201,7 @@ fn print_version_info() {
     let hw = keyhog_scanner::hw_probe::probe_hardware();
     if hw.gpu_available {
         // The number `hw.gpu_vram_mb` returns is `limits.max_buffer_size`,
-        // NOT actual VRAM — wgpu/WebGPU has no portable VRAM query, and
+        // NOT actual VRAM - wgpu/WebGPU has no portable VRAM query, and
         // NVIDIA drivers routinely return the wgpu cap (256 GB) here.
         // Calling that "VRAM" is misleading on every laptop GPU we've
         // shipped to. Show the accurate label so an 8 GB RTX 3000 Ada

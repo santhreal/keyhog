@@ -1,5 +1,9 @@
 //! Source trait and chunk types: the abstraction for pluggable input backends.
 
+// Debt bucket: 9 items predating the crate floor raising `missing_docs` to
+// `warn`. Remove this allow once every Source-trait item is documented.
+#![allow(missing_docs)]
+
 use crate::SensitiveString;
 use serde::Serialize;
 use thiserror::Error;
@@ -28,6 +32,21 @@ pub struct Chunk {
     pub data: SensitiveString,
     /// Provenance details used in findings and reporters.
     pub metadata: ChunkMetadata,
+}
+
+impl From<String> for Chunk {
+    fn from(data: String) -> Self {
+        Self {
+            data: data.into(),
+            metadata: ChunkMetadata::default(),
+        }
+    }
+}
+
+impl From<&str> for Chunk {
+    fn from(data: &str) -> Self {
+        Self::from(data.to_string())
+    }
 }
 
 /// Metadata that tracks the source location for a scanned chunk.

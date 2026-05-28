@@ -28,7 +28,7 @@ pub(crate) async fn build_request_for_auth(
             RequestBuildResult::Ready(request.bearer_auth(token))
         }
         AuthSpec::Basic { username, password } => {
-            // SECURITY: same finding — Basic auth values land in the
+            // SECURITY: same finding - Basic auth values land in the
             // Authorization header after reqwest base64-encodes them, but
             // a NUL byte in the raw username/password still propagates as
             // a `\0` byte through the encoding round-trip and can confuse
@@ -42,7 +42,7 @@ pub(crate) async fn build_request_for_auth(
             RequestBuildResult::Ready(request.header(name, value))
         }
         AuthSpec::Query { param, field } => {
-            // SECURITY: same finding — query params land in the URL.
+            // SECURITY: same finding - query params land in the URL.
             // reqwest percent-encodes safe chars but control bytes can
             // still survive in raw form depending on serializer path.
             let value = sanitize_raw_value(&resolve_field(field, credential, companions));
@@ -75,7 +75,7 @@ pub(crate) async fn build_request_for_auth(
             // sandbox's isolation guarantees are not re-audited inside
             // keyhog. Refuse by default; require an explicit opt-in env
             // var on the host running keyhog. This is NOT a feature flag
-            // — it's an admin policy switch, not surfaced via CLI.
+            // - it's an admin policy switch, not surfaced via CLI.
             if std::env::var("KEYHOG_ALLOW_SCRIPT_VERIFY").as_deref() != Ok("1") {
                 return RequestBuildResult::Final {
                     result: VerificationResult::Error(

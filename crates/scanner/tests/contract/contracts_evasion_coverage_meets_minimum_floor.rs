@@ -34,6 +34,6 @@ fn contracts_evasion_coverage_meets_minimum_floor() {
 
     assert!(
         with_evasion >= MIN_WITH_EVASION,
-        "only {with_evasion}/{total} contracts ship [[evasion]] — floor is {MIN_WITH_EVASION}"
+        "only {with_evasion}/{total} contracts ship [[evasion]] - floor is {MIN_WITH_EVASION}"
     );
 }

@@ -154,7 +154,7 @@ fn collect_s3_chunks(
 ) -> Result<Vec<Chunk>, SourceError> {
     let bucket = validate_bucket_name(bucket)?;
     // Honor the shared HTTP policy (proxy, insecure TLS, UA). Falls back to
-    // the per-source default timeout when `http.timeout` is None — keeps the
+    // the per-source default timeout when `http.timeout` is None - keeps the
     // existing behavior for callers that don't override.
     let http = if http.timeout.is_none() {
         let mut h = http.clone();
@@ -240,7 +240,7 @@ fn collect_s3_chunks(
         // Concurrent per-page fetcher. S3 is designed for massive concurrent
         // GETs; the previous sequential loop wasted 90%+ of wall-clock on
         // large buckets. We use rayon (the workspace's parallelism primitive)
-        // bounded to 16 in-flight downloads — high enough to saturate
+        // bounded to 16 in-flight downloads - high enough to saturate
         // reasonable bandwidth, low enough to avoid hammering small buckets.
         use rayon::prelude::*;
         let pool = rayon::ThreadPoolBuilder::new()
@@ -330,7 +330,7 @@ fn fetch_object_chunk(
         }
     }
 
-    // Skip objects that declare a binary content type — they won't contain text secrets.
+    // Skip objects that declare a binary content type - they won't contain text secrets.
     if let Some(ct) = response
         .headers()
         .get("content-type")
@@ -365,9 +365,25 @@ fn fetch_object_chunk(
         );
         return Ok(None);
     }
+    // Strict UTF-8 because the content-type guard above already
+    // accepted this as a text object. If the bytes don't decode it
+    // usually means the server lied about Content-Type (gzip body
+    // claiming `text/plain`, EBCDIC mainframe export, etc.).
+    // Surface the skip so a user staring at "0 findings" on a bucket
+    // they know has text objects can see what happened, instead of
+    // silently dropping the chunk.
     let object_text = match String::from_utf8(body) {
         Ok(text) => text,
-        Err(_) => return Ok(None),
+        Err(error) => {
+            let valid_up_to = error.utf8_error().valid_up_to();
+            tracing::warn!(
+                bucket,
+                key,
+                valid_up_to,
+                "skipping S3 object: body claimed text content-type but failed UTF-8 decode"
+            );
+            return Ok(None);
+        }
     };
 
     Ok(Some(Chunk {

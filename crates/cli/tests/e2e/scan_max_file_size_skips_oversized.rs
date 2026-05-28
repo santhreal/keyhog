@@ -8,7 +8,7 @@ use tempfile::TempDir;
 fn scan_max_file_size_skips_oversized_file() {
     let dir = TempDir::new().expect("tempdir");
     let path = dir.path().join("large.txt");
-    // 64 bytes of payload — above a 32-byte cap.
+    // 64 bytes of payload - above a 32-byte cap.
     std::fs::write(&path, "AWS_ACCESS_KEY_ID = \"AKIAQYLPMN5HFIQR7XYA\"\n").unwrap();
 
     let output = Command::new(binary())

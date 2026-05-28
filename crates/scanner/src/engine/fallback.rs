@@ -6,7 +6,7 @@ use std::collections::HashMap;
 thread_local! {
     /// Per-thread pool for the `active_fallback_patterns` bitmap.
     ///
-    /// Every fallback scan previously did `vec![false; self.fallback.len()]` —
+    /// Every fallback scan previously did `vec![false; self.fallback.len()]` -
     /// a fresh allocation per chunk. With ~1000 fallback patterns and a
     /// 100k-file scan, that's a million tiny allocations hammering the
     /// global allocator across rayon workers. Pool one buffer per worker;
@@ -92,7 +92,7 @@ impl CompiledScanner {
         debug_assert_eq!(active.len(), self.fallback.len());
         if let Some(keyword_ac) = &self.fallback_keyword_ac {
             // Seed the bitmap from the precomputed `fallback_always_active`
-            // table — this collapses the previous `O(F × K)` per-chunk loop
+            // table - this collapses the previous `O(F × K)` per-chunk loop
             // (walking each pattern's keywords looking for any ≥4-char
             // entry) into one `copy_from_slice`. The table is built once
             // at scanner construction.
@@ -110,7 +110,7 @@ impl CompiledScanner {
                 }
             }
         } else {
-            // No keyword prefilter compiled — every fallback pattern is
+            // No keyword prefilter compiled - every fallback pattern is
             // considered active. `slice::fill` lowers to a memset.
             active.fill(true);
         }
@@ -129,7 +129,7 @@ impl CompiledScanner {
     ) {
         self.with_active_fallback_patterns(&chunk.data, |this, active_set| {
             // Walk in fallback-index order without the prior `Vec<&CompiledPattern>`
-            // collect step — the bitmap already encodes which entries are
+            // collect step - the bitmap already encodes which entries are
             // active and we don't need a second allocation just to filter.
             let mut tested: usize = 0;
             for (index, (entry, _)) in this.fallback.iter().enumerate() {
@@ -187,7 +187,7 @@ impl CompiledScanner {
         entropy: f64,
         has_companion: bool,
         // The context is computed once in `process_match` (where the
-        // suppression checks already need it) and threaded through —
+        // suppression checks already need it) and threaded through -
         // halves the per-match context-inference work.
         context: context::CodeContext,
         // `keyword_nearby` and `sensitive_file` are constant across

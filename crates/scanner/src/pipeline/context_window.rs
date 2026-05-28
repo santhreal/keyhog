@@ -37,7 +37,7 @@ pub fn match_line_number(
     preprocessed.line_for_offset(offset).unwrap_or_else(|| {
         // `line_offsets` holds the byte offset of each line start in
         // ascending order. The first offset strictly greater than
-        // `offset` is its line index — which is what
+        // `offset` is its line index - which is what
         // `partition_point` returns directly. Binary search collapses
         // the prior O(L) `position()` walk into O(log L); on a 10k-
         // line file with N matches we go from N × 10k compares to
@@ -76,14 +76,14 @@ pub fn find_companion(
     // line index, but the underlying text may have been truncated
     // mid-scan (windowed mode, decoded chunk shorter than original)
     // so the offsets can exceed `text.len()`. Use `get` to bail out
-    // cleanly instead of panicking on a `&str[..]` slice — a single
+    // cleanly instead of panicking on a `&str[..]` slice - a single
     // bogus companion lookup must never crash a worker.
     let haystack = preprocessed.text.get(window_start..window_end)?;
     let group = companion.capture_group.unwrap_or(FIRST_CAPTURE_GROUP_INDEX);
     let line_range = start..=end;
 
     // Capture-group fast path: when the regex has no groups, `find_iter` is
-    // strictly cheaper than `captures_iter` — `find` allocates no
+    // strictly cheaper than `captures_iter` - `find` allocates no
     // `Captures` object per iteration. The previous unconditional
     // `captures_iter` paid for that allocation on every match across every
     // companion lookup in every scan.
@@ -116,7 +116,7 @@ pub fn find_companion(
         };
         // Advance the cursor before any branch that might `continue`, to
         // keep the loop monotonic. Zero-width matches bump by one byte
-        // and we then align onto a UTF-8 boundary — `captures_read_at`'s
+        // and we then align onto a UTF-8 boundary - `captures_read_at`'s
         // behavior is unspecified at non-boundary positions, so we must
         // never feed it one.
         let mut next = if whole.end() == cursor {

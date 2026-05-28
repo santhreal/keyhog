@@ -33,7 +33,7 @@ mod backend {
     }
 
     pub(super) struct GpuContext {
-        /// Shared device+queue from vyre — NOT a second device.
+        /// Shared device+queue from vyre - NOT a second device.
         device_queue: std::sync::Arc<(wgpu::Device, wgpu::Queue)>,
         adapter_info: wgpu::AdapterInfo,
         device_limits: wgpu::Limits,
@@ -73,7 +73,7 @@ mod backend {
     fn init_gpu() -> Result<GpuContext, Box<dyn std::error::Error + Send + Sync>> {
         // Reuse the vyre WgpuBackend's device instead of creating a second one.
         // This shares the adapter probe, device request, and queue with the
-        // literal-set/MegaScan GPU scanner — halving init time and memory.
+        // literal-set/MegaScan GPU scanner - halving init time and memory.
         let vyre_backend = vyre_driver_wgpu::WgpuBackend::shared()
             .map_err(|e| format!("vyre WgpuBackend unavailable: {e}"))?;
 
@@ -202,13 +202,14 @@ mod backend {
                 // can't use it, they need to know - otherwise they'll
                 // sit at CPU throughput and assume that's what
                 // "GPU-accelerated keyhog" means.
-                let no_gpu = std::env::var("KEYHOG_NO_GPU").as_deref() == Ok("1");
-                let require_gpu =
-                    std::env::var("KEYHOG_REQUIRE_GPU").as_deref() == Ok("1");
+                // env_no_gpu() covers both the explicit env var AND
+                // the auto-detected CI environment - on CI the GPU
+                // probe was guaranteed to fail and the warning would
+                // be noise.
+                let no_gpu = super::env_no_gpu();
+                let require_gpu = std::env::var("KEYHOG_REQUIRE_GPU").as_deref() == Ok("1");
                 if require_gpu {
-                    eprintln!(
-                        "keyhog: KEYHOG_REQUIRE_GPU=1 but GPU MoE init failed: {e}"
-                    );
+                    eprintln!("keyhog: KEYHOG_REQUIRE_GPU=1 but GPU MoE init failed: {e}");
                     std::process::exit(2);
                 }
                 if !no_gpu {
@@ -324,7 +325,24 @@ on missing GPU instead."
         });
         device.poll(wgpu::Maintain::Wait);
 
-        receiver.recv().ok()?.ok()?;
+        // GPU MoE staging-buffer read. The double `.ok()?` here used
+        // to swallow BOTH the channel `recv` failure (the wgpu callback
+        // was never invoked) AND the `map_async` failure (driver
+        // rejected the map) silently, falling back to the CPU MoE
+        // path without any breadcrumb. Surface both as a warn so the
+        // operator can see why their RTX-class card stopped accelerating
+        // confidence scoring mid-scan.
+        let map_recv = match receiver.recv() {
+            Ok(r) => r,
+            Err(error) => {
+                tracing::warn!(%error, "GPU MoE staging-buffer recv() failed; falling back to CPU MoE for this scan");
+                return None;
+            }
+        };
+        if let Err(error) = map_recv {
+            tracing::warn!(?error, "GPU MoE staging-buffer map_async failed; falling back to CPU MoE for this scan");
+            return None;
+        }
         let data = slice.get_mapped_range();
         let scores: &[f32] = bytemuck::cast_slice(&data);
         // kimi-confidence audit: a GPU driver bug, shader miscompile, or
@@ -378,7 +396,7 @@ on missing GPU instead."
 ///
 /// Callers pass `(&str, &str)` so a hot-path scan with N matches no longer
 /// allocates 2N owned strings just to enter ML scoring. The MlPendingMatch
-/// `String` fields stay live for the duration of the call — the borrow is
+/// `String` fields stay live for the duration of the call - the borrow is
 /// safe.
 pub fn batch_ml_inference(
     candidates: &[(&str, &str)],
@@ -511,7 +529,7 @@ pub fn gpu_self_test() -> Result<GpuSelfTest, String> {
 ///
 /// Proves the scanner-side GPU dependency is available independently from
 /// Keyhog's MoE GPU scorer. Both `direct_matches` and `coalesced_matches` are
-/// populated from real GPU scans — see audit release-2026-04-26 for the prior
+/// populated from real GPU scans - see audit release-2026-04-26 for the prior
 /// rigged-test bug where `coalesced_matches` was hardcoded.
 pub fn vyre_gpu_self_test() -> Result<VyreGpuSelfTest, String> {
     use vyre_driver_wgpu::WgpuBackend;
@@ -654,9 +672,190 @@ pub fn gpu_probe() -> (bool, Option<String>, Option<u64>) {
     (false, None, None)
 }
 
-fn env_no_gpu() -> bool {
-    std::env::var("KEYHOG_NO_GPU")
-        .ok()
-        .map(|v| !matches!(v.as_str(), "" | "0" | "false" | "FALSE" | "off" | "OFF"))
-        .unwrap_or(false)
+pub(crate) fn env_no_gpu() -> bool {
+    if let Ok(v) = std::env::var("KEYHOG_NO_GPU") {
+        // Explicit user choice wins both directions. "0"/"false"/"off"
+        // is the override that says "yes I want the GPU even though
+        // CI is detected" (self-hosted GPU runners exist).
+        return !matches!(v.as_str(), "" | "0" | "false" | "FALSE" | "off" | "OFF");
+    }
+    // No explicit setting. Auto-skip GPU init on CI runners: they
+    // have no discrete GPU, the wgpu adapter probe enumerates the
+    // llvmpipe/swiftshader software fallback, gpu.rs:83 rightly
+    // rejects it as a software adapter, and the operator gets a
+    // confusing "GPU MoE init failed" warning that costs ~250ms of
+    // cold-start time for nothing. Detecting CI here turns that
+    // failure into a silent no-op (the user is on CPU + SIMD which
+    // is the right path on a CI runner anyway). Set
+    // KEYHOG_NO_GPU=0 to opt back in on self-hosted GPU runners.
+    is_ci_environment()
+}
+
+/// True when we are running inside a CI system. Used by the GPU
+/// init paths to auto-skip the wgpu adapter probe (which always
+/// fails on hosted CI runners and costs ~250ms of pointless cold-
+/// start time + emits a confusing warning).
+///
+/// Checks `CI=true` (the de-facto standard, set by GitHub Actions,
+/// GitLab CI, CircleCI, Travis, Buildkite, Drone, AppVeyor,
+/// Codeship, Wercker, and most others) plus a handful of platform-
+/// specific markers that some runners set without also setting the
+/// generic `CI` (Jenkins, TeamCity, Azure Pipelines, Bitbucket
+/// Pipelines).
+pub fn is_ci_environment() -> bool {
+    // The generic CI marker. Some runners set CI=true, some set
+    // CI=1, GitHub Actions sets both. Treat any non-empty non-false
+    // value as truthy.
+    if let Ok(v) = std::env::var("CI") {
+        if !matches!(v.as_str(), "" | "0" | "false" | "FALSE" | "off" | "OFF") {
+            return true;
+        }
+    }
+    // Platform-specific markers. Some legacy CI systems set their
+    // own variable but not the generic CI=. Hit the common ones.
+    const CI_MARKERS: &[&str] = &[
+        "GITHUB_ACTIONS",         // GitHub Actions
+        "GITLAB_CI",              // GitLab CI
+        "JENKINS_URL",            // Jenkins
+        "TF_BUILD",               // Azure Pipelines
+        "TEAMCITY_VERSION",       // TeamCity
+        "BITBUCKET_BUILD_NUMBER", // Bitbucket Pipelines
+        "BUILDKITE",              // Buildkite
+        "CIRCLECI",               // CircleCI
+        "DRONE",                  // Drone CI
+        "TRAVIS",                 // Travis CI
+        "APPVEYOR",               // AppVeyor
+        "CODEBUILD_BUILD_ID",     // AWS CodeBuild
+        "WERCKER",                // Wercker
+        "SEMAPHORE",              // Semaphore CI
+    ];
+    CI_MARKERS.iter().any(|k| std::env::var(k).is_ok())
+}
+
+#[cfg(test)]
+mod ci_autodetect_tests {
+    use super::*;
+
+    // SAFETY rationale: these tests mutate process-global env state,
+    // so they cannot run in parallel with anything else that reads
+    // CI / KEYHOG_NO_GPU. Rust's test harness runs `#[test]`s in the
+    // same module on separate threads by default; we serialize by
+    // putting all env-touching tests behind a single Mutex guard.
+    // Without this, a parallel test that reads CI mid-set sees the
+    // wrong value and flakes. The Mutex is per-module so other
+    // modules' tests aren't blocked.
+    static ENV_GUARD: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn with_clean_env<F: FnOnce()>(test: F) {
+        let _guard = ENV_GUARD.lock().unwrap_or_else(|e| e.into_inner());
+        let saved = [
+            ("CI", std::env::var("CI").ok()),
+            ("GITHUB_ACTIONS", std::env::var("GITHUB_ACTIONS").ok()),
+            ("GITLAB_CI", std::env::var("GITLAB_CI").ok()),
+            ("JENKINS_URL", std::env::var("JENKINS_URL").ok()),
+            ("KEYHOG_NO_GPU", std::env::var("KEYHOG_NO_GPU").ok()),
+        ];
+        // Clear everything to start.
+        for (k, _) in &saved {
+            // SAFETY: env mutation is unsafe in Rust 2024+ for soundness
+            // reasons (race with reads in other threads). The ENV_GUARD
+            // mutex above serializes our env-touching tests, and Rust's
+            // own env::var implementation locks internally, so a non-
+            // guarded reader still gets a consistent atomic snapshot.
+            unsafe { std::env::remove_var(k) };
+        }
+        test();
+        // Restore.
+        for (k, v) in saved {
+            unsafe {
+                match v {
+                    Some(val) => std::env::set_var(k, val),
+                    None => std::env::remove_var(k),
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn empty_env_no_ci_no_gpu_skip() {
+        with_clean_env(|| {
+            assert!(
+                !is_ci_environment(),
+                "is_ci_environment with no env vars set should be false"
+            );
+            assert!(
+                !env_no_gpu(),
+                "env_no_gpu with no env vars set should be false"
+            );
+        });
+    }
+
+    #[test]
+    fn ci_true_triggers_gpu_skip() {
+        with_clean_env(|| {
+            unsafe { std::env::set_var("CI", "true") };
+            assert!(is_ci_environment(), "CI=true should be detected as CI");
+            assert!(
+                env_no_gpu(),
+                "CI=true should imply env_no_gpu=true without explicit KEYHOG_NO_GPU"
+            );
+        });
+    }
+
+    #[test]
+    fn keyhog_no_gpu_zero_overrides_ci() {
+        with_clean_env(|| {
+            unsafe {
+                std::env::set_var("CI", "true");
+                std::env::set_var("KEYHOG_NO_GPU", "0");
+            }
+            assert!(
+                is_ci_environment(),
+                "CI=true still detected as CI even with NO_GPU=0"
+            );
+            assert!(
+                !env_no_gpu(),
+                "KEYHOG_NO_GPU=0 must override CI auto-skip (self-hosted GPU runner case)"
+            );
+        });
+    }
+
+    #[test]
+    fn keyhog_no_gpu_one_in_non_ci_skips() {
+        with_clean_env(|| {
+            unsafe { std::env::set_var("KEYHOG_NO_GPU", "1") };
+            assert!(
+                !is_ci_environment(),
+                "KEYHOG_NO_GPU=1 alone should not flag CI"
+            );
+            assert!(
+                env_no_gpu(),
+                "explicit KEYHOG_NO_GPU=1 should still disable GPU"
+            );
+        });
+    }
+
+    #[test]
+    fn github_actions_marker_alone_is_ci() {
+        with_clean_env(|| {
+            unsafe { std::env::set_var("GITHUB_ACTIONS", "true") };
+            assert!(
+                is_ci_environment(),
+                "GITHUB_ACTIONS set without CI= must still detect CI"
+            );
+            assert!(env_no_gpu(), "GITHUB_ACTIONS should imply auto-skip");
+        });
+    }
+
+    #[test]
+    fn ci_false_does_not_trigger_skip() {
+        with_clean_env(|| {
+            unsafe { std::env::set_var("CI", "false") };
+            assert!(
+                !is_ci_environment(),
+                "CI=false should not be detected as CI"
+            );
+            assert!(!env_no_gpu(), "CI=false should not imply env_no_gpu");
+        });
+    }
 }

@@ -39,7 +39,7 @@ fn url_encode(s: &str) -> String {
 pub(crate) fn sanitize_raw_value(s: &str) -> String {
     s.chars()
         .filter(|c| {
-            // Allow tab (0x09) — some legitimate JWT segments / Basic
+            // Allow tab (0x09) - some legitimate JWT segments / Basic
             // auth combinations contain it. Deny every other ASCII
             // control (0x00..0x1F, 0x7F) and the C1 controls
             // (0x80..0x9F).
@@ -75,13 +75,13 @@ pub fn interpolate(
     // `[a-z0-9.]`), and templates routinely embed it verbatim into JSON
     // bodies, headers, and URL paths where percent-encoding would corrupt
     // the structural punctuation. A hostile detector TOML can't smuggle
-    // anything novel here — every value comes from `OobSession::mint()`,
+    // anything novel here - every value comes from `OobSession::mint()`,
     // which is keyed off our own RSA correlation id, never user input.
     for (token, key) in [
         ("{{interactsh.url}}", "__keyhog_oob_url"),
         ("{{interactsh.host}}", "__keyhog_oob_host"),
         ("{{interactsh.id}}", "__keyhog_oob_id"),
-        // bare `{{interactsh}}` aliases the bare host — the form most useful
+        // bare `{{interactsh}}` aliases the bare host - the form most useful
         // inside body templates: `"{\"text\":\"https://{{interactsh}}/x\"}"`.
         ("{{interactsh}}", "__keyhog_oob_host"),
     ] {
@@ -122,7 +122,7 @@ pub fn interpolate(
 
 /// Synthetic companion-map keys used to thread an OOB minted URL through
 /// the existing interpolation surface without changing every call site's
-/// signature. `__keyhog_oob_*` names are reserved — detectors that try to
+/// signature. `__keyhog_oob_*` names are reserved - detectors that try to
 /// declare companions with these names will be rejected at validation.
 pub const OOB_COMPANION_URL: &str = "__keyhog_oob_url";
 pub const OOB_COMPANION_HOST: &str = "__keyhog_oob_host";

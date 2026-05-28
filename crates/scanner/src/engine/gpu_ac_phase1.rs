@@ -26,7 +26,7 @@ impl CompiledScanner {
         }
 
         #[cfg(target_os = "linux")]
-        // SAFETY: same contract as scan_coalesced_gpu — `buffer` is a
+        // SAFETY: same contract as scan_coalesced_gpu - `buffer` is a
         // live owned Vec describing a valid range; madvise is advisory.
         unsafe {
             libc::madvise(
@@ -181,7 +181,7 @@ impl CompiledScanner {
                         cap = super::rule_pipeline::AC_GPU_MAX_MATCHES_PER_DISPATCH,
                         count,
                         shard_index = i,
-                        "AC GPU shard exceeded program cap — truncation possible; falling back to CPU"
+                        "AC GPU shard exceeded program cap: truncation possible; falling back to CPU"
                     );
                     return self.gpu_degrade_done(chunks, crate::hw_probe::ScanBackend::Gpu);
                 }
@@ -210,68 +210,14 @@ impl CompiledScanner {
             "AC GPU batched scan completed"
         );
 
-        // Per-pid region dedup: identical to the literal-set path.
-        // Sort by `(pid, start, end)`, fold same-pid overlapping spans,
-        // re-sort by start for the chunk-attribution walk.
-        {
-            matches.sort_unstable_by(|a, b| {
-                a.pattern_id
-                    .cmp(&b.pattern_id)
-                    .then(a.start.cmp(&b.start))
-                    .then(a.end.cmp(&b.end))
-            });
-            let mut write = 0;
-            for read in 1..matches.len() {
-                if matches[read].pattern_id == matches[write].pattern_id
-                    && matches[read].start <= matches[write].end
-                {
-                    if matches[read].end > matches[write].end {
-                        matches[write] = vyre_libs::scan::LiteralMatch::new(
-                            matches[write].pattern_id,
-                            matches[write].start,
-                            matches[read].end,
-                        );
-                    }
-                } else {
-                    write += 1;
-                    matches[write] = matches[read];
-                }
-            }
-            if !matches.is_empty() {
-                matches.truncate(write + 1);
-            }
-        }
-        matches.sort_unstable_by_key(|matched| matched.start);
-
+        super::gpu_postprocess::fold_overlapping_same_pid_inplace(&mut matches);
         let total_patterns = self.ac_map.len() + self.fallback.len();
-        let mut per_chunk_hits: Vec<Vec<(u32, u32, u32)>> =
-            chunks.iter().map(|_| Vec::new()).collect();
-
-        let mut cursor = 0usize;
-        for matched in &matches {
-            let global_start = matched.start as usize;
-            let global_end = matched.end as usize;
-            while cursor < entries.len() {
-                let (_, off, len) = entries[cursor];
-                if global_start < off + len {
-                    break;
-                }
-                cursor += 1;
-            }
-            if cursor >= entries.len() {
-                break;
-            }
-            let (chunk_index, off, len) = entries[cursor];
-            if global_start < off || global_end > off + len {
-                continue;
-            }
-            let pattern_index = matched.pattern_id as usize;
-            if pattern_index < total_patterns {
-                let local_start = (global_start - off) as u32;
-                let local_end = (global_end - off) as u32;
-                per_chunk_hits[chunk_index].push((matched.pattern_id, local_start, local_end));
-            }
-        }
+        let per_chunk_hits = super::gpu_postprocess::attribute_matches_to_chunks(
+            &matches,
+            &entries,
+            total_patterns,
+            chunks.len(),
+        );
 
         // Hand the hits back to the orchestrator so it can run phase 2
         // on a separate thread (pipelined). Combined-wrapper callers

@@ -46,7 +46,7 @@ fn openai_key_scores_high() {
     // a "scores high" assertion below 0.5 is meaningless because the empty
     // string in the sibling test already scores 0.0. Real bar: a known
     // provider-prefixed credential under its env-var context must land
-    // above 0.5 — otherwise the ML scorer is barely lifting confidence at
+    // above 0.5 - otherwise the ML scorer is barely lifting confidence at
     // all over the no-info baseline.
     let key = "sk-proj-EXAMPLE000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000";
     let context = format!("OPENAI_API_KEY={key}");

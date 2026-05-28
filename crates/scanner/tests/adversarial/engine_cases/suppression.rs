@@ -21,6 +21,7 @@ fn pure_placeholder_not_flagged() {
             regex: "AKIA[0-9A-Z]{16}".into(),
             description: None,
             group: None,
+            client_safe: false,
         }],
         companions: Vec::new(),
         verify: None,
@@ -54,6 +55,7 @@ fn example_suppression_is_recorded_in_telemetry() {
             regex: "AKIA[0-9A-Z]{16}".into(),
             description: None,
             group: None,
+            client_safe: false,
         }],
         companions: Vec::new(),
         verify: None,
@@ -86,6 +88,7 @@ fn dogfood_captures_redacted_event() {
             regex: "AKIA[0-9A-Z]{16}".into(),
             description: None,
             group: None,
+            client_safe: false,
         }],
         companions: Vec::new(),
         verify: None,
@@ -97,7 +100,7 @@ fn dogfood_captures_redacted_event() {
     let events = keyhog_scanner::telemetry::drain_events();
     // Other tests may run concurrently and fire their own suppressions
     // while dogfood is globally enabled, so don't assume index 0 is ours
-    // — find the AKIAIO event explicitly.
+    // - find the AKIAIO event explicitly.
     let aws_event = events
         .iter()
         .find(|e| serde_json::to_string(e).unwrap().contains("AKIAIO"))
@@ -125,6 +128,7 @@ fn github_pat_example_suppressed() {
             regex: r"ghp_[A-Za-z0-9]{36}".into(),
             description: None,
             group: None,
+            client_safe: false,
         }],
         companions: Vec::new(),
         verify: None,
@@ -276,7 +280,7 @@ fn binary_garbage_returns_no_matches() {
         .collect();
     let chunk = make_chunk(&garbage);
     let matches = scanner.scan(&chunk);
-    // We don't assert empty — we assert it doesn't panic or hang.
+    // We don't assert empty - we assert it doesn't panic or hang.
     let _ = matches;
 }
 

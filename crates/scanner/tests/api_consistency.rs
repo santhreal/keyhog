@@ -1,13 +1,13 @@
-//! API consistency matrix — every public scanner entry point must
+//! API consistency matrix - every public scanner entry point must
 //! produce equivalent findings for the same input.
 //!
 //! CompiledScanner exposes four scan APIs:
-//!   * `scan(chunk)` — single chunk, auto-routed backend, no deadline.
-//!   * `scan_with_backend(chunk, backend)` — single chunk, caller-
+//!   * `scan(chunk)` - single chunk, auto-routed backend, no deadline.
+//!   * `scan_with_backend(chunk, backend)` - single chunk, caller-
 //!     selected backend.
-//!   * `scan_with_deadline(chunk, deadline)` — single chunk, auto-routed,
+//!   * `scan_with_deadline(chunk, deadline)` - single chunk, auto-routed,
 //!     with timeout.
-//!   * `scan_chunks_with_backend(chunks, backend)` — multi-chunk, caller-
+//!   * `scan_chunks_with_backend(chunks, backend)` - multi-chunk, caller-
 //!     selected backend, returns one Vec<RawMatch> per input chunk.
 //!
 //! All four must produce the same finding set on the same input

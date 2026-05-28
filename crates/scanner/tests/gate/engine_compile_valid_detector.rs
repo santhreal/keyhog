@@ -14,6 +14,7 @@ fn compiled_scanner_accepts_minimal_detector() {
             regex: "abc".into(),
             description: None,
             group: None,
+            client_safe: false,
         }],
         companions: vec![],
         verify: None,

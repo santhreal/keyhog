@@ -12,11 +12,11 @@ REPO = pathlib.Path(__file__).resolve().parent.parent
 COMPANION = REPO / "crates" / "scanner" / "tests" / "contracts" / "companion"
 
 MISMATCH_RE = re.compile(
-    r"^\s+- (?P<detector>[^:]+): positive_with_companion companion mismatch — "
+    r"^\s+- (?P<detector>[^:]+): positive_with_companion companion mismatch - "
     r"expected companions\[(?P<name>[^\]]+)\]=.*?, got Some\(\"(?P<actual>(?:\\.|[^\"])*)\"\)"
 )
 MISMATCH_NONE_RE = re.compile(
-    r"^\s+- (?P<detector>[^:]+): positive_with_companion companion mismatch — "
+    r"^\s+- (?P<detector>[^:]+): positive_with_companion companion mismatch - "
     r"expected companions\[(?P<name>[^\]]+)\]=.*?, got None"
 )
 

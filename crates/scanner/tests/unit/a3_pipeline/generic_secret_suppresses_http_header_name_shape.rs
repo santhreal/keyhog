@@ -7,7 +7,7 @@ fn multi_hyphen_train_case_header_name_suppressed() {
     //   `AccessToken = 'X-Shopify-Access-Token',`
     // and storefront.rb:32 has the literal `"Shopify-Storefront-Private-Token"`.
     // These are HTTP header NAMES (string literals naming a header),
-    // not header VALUES — never credentials.
+    // not header VALUES - never credentials.
     // v0.5.22 wires `looks_like_word_separated_identifier` which catches
     // multi-hyphen alpha-only train-case via max-word-length ≤ 10.
     assert!(should_suppress_named_detector_finding(

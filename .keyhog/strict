@@ -1,0 +1,3 @@
+# Touch this file to make keyhog.yml fail CI when the scanner finds anything.
+# Removing it reverts to "findings visible in Code Scanning but the PR can still merge".
+# Keep this file checked in - we eat our own dog food.

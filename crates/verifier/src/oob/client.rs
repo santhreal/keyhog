@@ -2,18 +2,18 @@
 //!
 //! A thin async wrapper around the projectdiscovery/interactsh-server register/
 //! poll/deregister endpoints. Stateless aside from the RSA keypair, secret,
-//! correlation id, and HTTP client — `OobSession` (in `session.rs`) layers
+//! correlation id, and HTTP client - `OobSession` (in `session.rs`) layers
 //! the per-finding subscription, polling loop, and notification fan-out on top.
 //!
 //! ## Crypto invariants
 //!
-//! - RSA-2048, OAEP padding, SHA-256 hash and MGF — interactsh-server speaks
+//! - RSA-2048, OAEP padding, SHA-256 hash and MGF - interactsh-server speaks
 //!   exactly this combination; `RSA_PKCS1_OAEP_PADDING` with SHA-256 in their
 //!   Go code. Other parameters won't decrypt.
 //! - AES-256-CFB with a 16-byte IV prepended to ciphertext. Each interaction
 //!   carries an independent IV; the AES key is per-poll-batch.
 //! - We never log credentials, public keys, or decrypted payloads. Errors
-//!   carry stable strings — useful for support, opaque to leaks.
+//!   carry stable strings - useful for support, opaque to leaks.
 
 use std::time::Duration;
 
@@ -32,7 +32,7 @@ use tracing::{debug, warn};
 /// every detector shares this bucket so the aggregate request rate to the
 /// upstream collector never exceeds the configured `--verify-rate`. Using
 /// the literal string `"oob.interactsh"` (not the server URL) means the
-/// budget covers all configured collectors collectively — the limit is
+/// budget covers all configured collectors collectively - the limit is
 /// about our own machine not blasting traffic, not about per-host fairness.
 const OOB_SERVICE: &str = "oob.interactsh";
 
@@ -90,7 +90,7 @@ pub struct Interaction {
     pub remote_address: String,
     pub timestamp: String,
     /// Raw protocol payload (HTTP request line + headers, DNS query, etc.).
-    /// Sized — interactsh truncates server-side, but we cap to 16 KiB here as
+    /// Sized - interactsh truncates server-side, but we cap to 16 KiB here as
     /// a defense-in-depth budget against memory abuse from a hostile server.
     pub raw_payload: String,
 }
@@ -111,7 +111,7 @@ pub struct InteractshClient {
 
 impl InteractshClient {
     /// Test-only constructor without network registration. Returns
-    /// `Err` if the RSA keygen RNG fails — which never happens on a
+    /// `Err` if the RSA keygen RNG fails - which never happens on a
     /// healthy platform, but propagating the error keeps this constructor
     /// off the no-panic-in-production gate and matches the rest of the
     /// `InteractshError` surface. Test callers wrap with `.unwrap()` at
@@ -163,7 +163,7 @@ struct PollResponse {
 /// hostile or misbehaving collector returning a multi-gigabyte JSON that
 /// would force `serde_json::from_slice` to allocate the whole thing
 /// in-memory before we can validate it. 4 MiB comfortably fits any
-/// reasonable poll batch — see the rationale at the call site.
+/// reasonable poll batch - see the rationale at the call site.
 const MAX_POLL_BODY_BYTES: usize = 4 * 1024 * 1024;
 
 /// Cap on error/diagnostic bodies. We only display the first 256 chars in
@@ -172,7 +172,7 @@ const MAX_POLL_BODY_BYTES: usize = 4 * 1024 * 1024;
 const ERROR_BODY_CAP: usize = 64 * 1024;
 
 /// Stream a response body into a Vec under a hard byte cap. Returns
-/// `BadResponse` if the cap is exceeded — abort the read rather than
+/// `BadResponse` if the cap is exceeded - abort the read rather than
 /// trust the server's framing.
 async fn read_capped_bytes(
     resp: reqwest::Response,
@@ -193,7 +193,7 @@ async fn read_capped_bytes(
     Ok(buf)
 }
 
-/// Like `read_capped_bytes` but for diagnostic error messages — never
+/// Like `read_capped_bytes` but for diagnostic error messages - never
 /// returns `Err`; on a stream failure or cap breach it returns whatever
 /// was buffered so the error log can still surface something.
 async fn read_capped_text(resp: reqwest::Response, cap: usize) -> String {
@@ -214,7 +214,7 @@ impl InteractshClient {
     /// Build, generate keys, and register with the collector. The returned
     /// client is ready to mint URLs and be polled.
     pub async fn register(http: Client, server: &str) -> Result<Self, InteractshError> {
-        // RSA-2048 keygen happens on a blocking thread — it's CPU-bound for
+        // RSA-2048 keygen happens on a blocking thread - it's CPU-bound for
         // ~100ms and would otherwise stall the runtime.
         let private_key = tokio::task::spawn_blocking(|| {
             RsaPrivateKey::new(&mut OsRng, 2048).map_err(|e| InteractshError::KeyGen(e.to_string()))
@@ -228,7 +228,7 @@ impl InteractshClient {
             .map_err(|e| InteractshError::KeyEncode(e.to_string()))?;
         let public_key_b64 = B64.encode(pem.as_bytes());
 
-        // Correlation id is 20 lowercase alphanumerics — interactsh-server
+        // Correlation id is 20 lowercase alphanumerics - interactsh-server
         // matches incoming subdomains by this prefix, so the ID space must
         // be wide enough that collisions are statistically impossible across
         // every concurrent scanner sharing the collector. 36^20 ≈ 1.3e31.
@@ -247,7 +247,7 @@ impl InteractshClient {
             correlation_id: &correlation_id,
         };
         // SECURITY/POLITENESS: kimi verifier audit LOW finding. Every OOB
-        // request — register, poll, deregister — shares the same upstream
+        // request - register, poll, deregister - shares the same upstream
         // interactsh collector. Without rate limiting, a scan that fires
         // 200 detector-verify subscriptions in parallel would hammer the
         // collector with 200 register calls in flight at once, get IP-banned,
@@ -309,7 +309,7 @@ impl InteractshClient {
     /// Poll once. Returns every interaction the collector has buffered for
     /// this correlation id since the last poll.
     pub async fn poll(&self) -> Result<Vec<Interaction>, InteractshError> {
-        // See `register` for the rate-limiter rationale — same bucket so all
+        // See `register` for the rate-limiter rationale - same bucket so all
         // OOB traffic to the collector aggregates under one budget.
         crate::rate_limit::get_rate_limiter()
             .wait(OOB_SERVICE)
@@ -354,7 +354,7 @@ impl InteractshClient {
         for entry in parsed.data {
             match super::decrypt::decrypt_entry(&aes_key, &entry) {
                 Ok(Some(interaction)) => out.push(interaction),
-                Ok(None) => {} // unparseable JSON — skip, don't fail the batch
+                Ok(None) => {} // unparseable JSON - skip, don't fail the batch
                 Err(e) => {
                     warn!(target: "keyhog::oob", error = %e, "interactsh entry decrypt failed; skipping")
                 }
@@ -364,7 +364,7 @@ impl InteractshClient {
     }
 
     /// Tear down the registration. Idempotent on the server side; a failure
-    /// to deregister is non-fatal — the server prunes inactive sessions
+    /// to deregister is non-fatal - the server prunes inactive sessions
     /// after its retention window.
     pub async fn deregister(&self) -> Result<(), InteractshError> {
         #[derive(Serialize)]
@@ -420,9 +420,9 @@ impl InteractshClient {
 pub struct MintedUrl {
     /// Full 33-char id; the value the service will reflect in DNS/HTTP host.
     pub unique_id: String,
-    /// `<unique_id>.<server-host>` — bare host without scheme.
+    /// `<unique_id>.<server-host>` - bare host without scheme.
     pub host: String,
-    /// `https://<host>` — convenience for HTTP-shaped probes.
+    /// `https://<host>` - convenience for HTTP-shaped probes.
     pub url: String,
 }
 
@@ -432,7 +432,7 @@ pub struct MintedUrl {
 fn normalize_server(s: &str) -> String {
     let s = s.trim().trim_end_matches('/');
     if let Some(rest) = s.strip_prefix("http://") {
-        // Force-upgrade. We never speak plaintext to a collector — the
+        // Force-upgrade. We never speak plaintext to a collector - the
         // wrapped AES key would leak otherwise.
         format!("https://{rest}")
     } else if s.starts_with("https://") {

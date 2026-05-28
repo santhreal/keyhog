@@ -49,7 +49,7 @@ pub(crate) async fn resolved_client_for_url(
     }
 
     // Enforce HTTPS unconditionally in production. Plaintext loopback secret
-    // transmission was a known leak vector — see audit release-2026-04-26.
+    // transmission was a known leak vector - see audit release-2026-04-26.
     // Tests that need HTTP set `danger_allow_http=true` AND
     // `danger_allow_private_ips=true` so production paths can never opt
     // into either accidentally.
@@ -62,7 +62,7 @@ pub(crate) async fn resolved_client_for_url(
     // the proxy resolves the target hostname). Pre-resolving on the
     // verifier side and pinning via `.resolve_to_addrs` would build a
     // per-request client that DROPS the proxy + insecure_tls config
-    // baked into `base_client` — exactly the macro-wiring bug we'"'"'re
+    // baked into `base_client` - exactly the macro-wiring bug we'"'"'re
     // closing. Skip the pinning entirely; `base_client` already carries
     // the proxy. The DNS-rebinding mitigation that pinning provides is
     // moot through a proxy (the proxy resolves once; reqwest doesn'"'"'t
@@ -80,14 +80,14 @@ pub(crate) async fn resolved_client_for_url(
     // only validated the first lookup; reqwest then re-resolved at
     // connect time, allowing an attacker DNS server to return 1.1.1.1
     // the first time and 127.0.0.1 the second. Pinning means the TCP
-    // connect uses the IP we already accepted — the second lookup never
+    // connect uses the IP we already accepted - the second lookup never
     // happens.
     let mut pinned_addrs: Vec<std::net::SocketAddr> = Vec::new();
     let host = url.host_str().unwrap_or_default().to_string();
     let port = url.port_or_known_default().unwrap_or(443);
 
     if !host.is_empty() {
-        // Skip DNS for raw IP literals — `lookup_host` handles them, but
+        // Skip DNS for raw IP literals - `lookup_host` handles them, but
         // be explicit for clarity.
         let target = format!("{host}:{port}");
         let addrs: std::result::Result<Vec<std::net::SocketAddr>, std::io::Error> =
@@ -123,12 +123,12 @@ pub(crate) async fn resolved_client_for_url(
         // The DNS-pinning rebuild MUST replicate the security-critical
         // config baked into `base_client`. Reqwest's default ClientBuilder
         // would otherwise:
-        //   - follow redirects (Policy::limited(10)) — the base client sets
+        //   - follow redirects (Policy::limited(10)) - the base client sets
         //     Policy::none() to stop a public host from issuing a 302 to a
         //     private IP that bypasses the pre-connect SSRF check (the pin
         //     only covers the ORIGINAL host; the redirect target is
         //     re-resolved via the system resolver).
-        //   - validate certs strictly — the base client honors
+        //   - validate certs strictly - the base client honors
         //     `--insecure` (`config.insecure_tls`); dropping that here
         //     means the flag silently doesn't apply on the path that
         //     actually serves the request when no proxy is in use.

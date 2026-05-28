@@ -2,7 +2,7 @@ use keyhog_scanner::context::CodeContext;
 use keyhog_scanner::pipeline::should_suppress_known_example_credential_with_source;
 
 // The CI-workflow path filter lives inside `engine::fallback_entropy`,
-// not the global suppression library — it's only meaningful for the
+// not the global suppression library - it's only meaningful for the
 // entropy-fallback path. This test documents the contract via a
 // related public surface: a high-entropy github-actions step name
 // must NOT be suppressed by the global pipeline (so the regression

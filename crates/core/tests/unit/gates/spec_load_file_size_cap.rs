@@ -7,6 +7,6 @@ fn spec_load_file_size_cap() {
     let lines = src.lines().count();
     assert!(
         lines <= 500,
-        "spec::load: {lines} lines exceeds 500-line cap — split module"
+        "spec::load: {lines} lines exceeds 500-line cap - split module"
     );
 }

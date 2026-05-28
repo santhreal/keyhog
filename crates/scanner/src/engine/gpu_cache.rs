@@ -1,6 +1,6 @@
 //! GPU matcher on-disk cache helpers and constant-pack types.
 
-/// Cached per-process GPU input constants — pre-packed LE byte streams
+/// Cached per-process GPU input constants - pre-packed LE byte streams
 /// for the four pattern-shape inputs the GpuLiteralSet kernel reads on
 /// every dispatch. Filled on first scan, borrowed thereafter.
 pub struct GpuConstPacks {
@@ -10,7 +10,7 @@ pub struct GpuConstPacks {
     pub pattern_count: Vec<u8>,
 }
 
-/// Cached per-process AC-kernel input constants — pre-packed LE byte
+/// Cached per-process AC-kernel input constants - pre-packed LE byte
 /// streams for the four DFA-shape inputs the AC bounded-ranges kernel
 /// reads on every dispatch. Separate from `GpuConstPacks` because the
 /// AC kernel binds different fields (`dfa.transitions`,

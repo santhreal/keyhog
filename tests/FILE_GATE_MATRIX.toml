@@ -1,0 +1,671 @@
+# FILE_GATE_MATRIX (LR2-A8 audit artifact)
+#
+# One [[module]] entry per Rust source file in workspace crates/. Used by the
+# A8 harness to enumerate the set of files that need file_gate test coverage
+# and to catch silent module-deletion (a row vanishing here is now a build
+# failure, not a quiet code drop).
+#
+# Regenerate after a module add/remove:
+#   find crates -name "*.rs" -path "*/src/*" | sort | \
+#     awk '{print "[[module]]\npath = \"" $0 "\"\n"}' > tests/FILE_GATE_MATRIX.toml
+
+[[module]]
+path = "crates/cli/src/args.rs"
+
+[[module]]
+path = "crates/cli/src/baseline.rs"
+
+[[module]]
+path = "crates/cli/src/benchmark.rs"
+
+[[module]]
+path = "crates/cli/src/config.rs"
+
+[[module]]
+path = "crates/cli/src/daemon/client.rs"
+
+[[module]]
+path = "crates/cli/src/daemon/frame.rs"
+
+[[module]]
+path = "crates/cli/src/daemon/mod.rs"
+
+[[module]]
+path = "crates/cli/src/daemon/protocol.rs"
+
+[[module]]
+path = "crates/cli/src/daemon/server.rs"
+
+[[module]]
+path = "crates/cli/src/format.rs"
+
+[[module]]
+path = "crates/cli/src/inline_suppression.rs"
+
+[[module]]
+path = "crates/cli/src/lib.rs"
+
+[[module]]
+path = "crates/cli/src/main.rs"
+
+[[module]]
+path = "crates/cli/src/orchestrator/allowlist.rs"
+
+[[module]]
+path = "crates/cli/src/orchestrator_config.rs"
+
+[[module]]
+path = "crates/cli/src/orchestrator/dispatch.rs"
+
+[[module]]
+path = "crates/cli/src/orchestrator/mod.rs"
+
+[[module]]
+path = "crates/cli/src/orchestrator/postprocess.rs"
+
+[[module]]
+path = "crates/cli/src/orchestrator/reporting.rs"
+
+[[module]]
+path = "crates/cli/src/orchestrator/run.rs"
+
+[[module]]
+path = "crates/cli/src/path_validation.rs"
+
+[[module]]
+path = "crates/cli/src/reporting.rs"
+
+[[module]]
+path = "crates/cli/src/sources.rs"
+
+[[module]]
+path = "crates/cli/src/subcommands/backend.rs"
+
+[[module]]
+path = "crates/cli/src/subcommands/calibrate.rs"
+
+[[module]]
+path = "crates/cli/src/subcommands/completion.rs"
+
+[[module]]
+path = "crates/cli/src/subcommands/daemon.rs"
+
+[[module]]
+path = "crates/cli/src/subcommands/detectors.rs"
+
+[[module]]
+path = "crates/cli/src/subcommands/diff.rs"
+
+[[module]]
+path = "crates/cli/src/subcommands/explain.rs"
+
+[[module]]
+path = "crates/cli/src/subcommands/hook.rs"
+
+[[module]]
+path = "crates/cli/src/subcommands/mod.rs"
+
+[[module]]
+path = "crates/cli/src/subcommands/scan.rs"
+
+[[module]]
+path = "crates/cli/src/subcommands/scan_system.rs"
+
+[[module]]
+path = "crates/cli/src/subcommands/tui/mod.rs"
+
+[[module]]
+path = "crates/cli/src/subcommands/tui/render.rs"
+
+[[module]]
+path = "crates/cli/src/subcommands/tui/worker.rs"
+
+[[module]]
+path = "crates/cli/src/subcommands/watch.rs"
+
+[[module]]
+path = "crates/cli/src/test_fixture_suppressions.rs"
+
+[[module]]
+path = "crates/cli/src/value_parsers.rs"
+
+[[module]]
+path = "crates/core/src/allowlist_metadata.rs"
+
+[[module]]
+path = "crates/core/src/allowlist.rs"
+
+[[module]]
+path = "crates/core/src/auto_fix.rs"
+
+[[module]]
+path = "crates/core/src/banner.rs"
+
+[[module]]
+path = "crates/core/src/calibration.rs"
+
+[[module]]
+path = "crates/core/src/config.rs"
+
+[[module]]
+path = "crates/core/src/credential.rs"
+
+[[module]]
+path = "crates/core/src/dedup.rs"
+
+[[module]]
+path = "crates/core/src/encoding.rs"
+
+[[module]]
+path = "crates/core/src/finding.rs"
+
+[[module]]
+path = "crates/core/src/hardening.rs"
+
+[[module]]
+path = "crates/core/src/lib.rs"
+
+[[module]]
+path = "crates/core/src/merkle_index.rs"
+
+[[module]]
+path = "crates/core/src/merkle_spec_hash.rs"
+
+[[module]]
+path = "crates/core/src/registry.rs"
+
+[[module]]
+path = "crates/core/src/report/banner.rs"
+
+[[module]]
+path = "crates/core/src/report/json.rs"
+
+[[module]]
+path = "crates/core/src/report.rs"
+
+[[module]]
+path = "crates/core/src/report/sarif.rs"
+
+[[module]]
+path = "crates/core/src/report/sarif_taxonomies.rs"
+
+[[module]]
+path = "crates/core/src/report/sarif_uri.rs"
+
+[[module]]
+path = "crates/core/src/report/text.rs"
+
+[[module]]
+path = "crates/core/src/rule_filter.rs"
+
+[[module]]
+path = "crates/core/src/safe_bin.rs"
+
+[[module]]
+path = "crates/core/src/source.rs"
+
+[[module]]
+path = "crates/core/src/spec/load.rs"
+
+[[module]]
+path = "crates/core/src/spec.rs"
+
+[[module]]
+path = "crates/core/src/spec/validate_regex.rs"
+
+[[module]]
+path = "crates/core/src/spec/validate.rs"
+
+[[module]]
+path = "crates/scanner/src/alphabet_filter.rs"
+
+[[module]]
+path = "crates/scanner/src/bigram_bloom.rs"
+
+[[module]]
+path = "crates/scanner/src/checksum/github.rs"
+
+[[module]]
+path = "crates/scanner/src/checksum/gitlab.rs"
+
+[[module]]
+path = "crates/scanner/src/checksum/mod.rs"
+
+[[module]]
+path = "crates/scanner/src/checksum/npm.rs"
+
+[[module]]
+path = "crates/scanner/src/checksum/slack.rs"
+
+[[module]]
+path = "crates/scanner/src/checksum/stripe.rs"
+
+[[module]]
+path = "crates/scanner/src/compiler_prefix.rs"
+
+[[module]]
+path = "crates/scanner/src/compiler.rs"
+
+[[module]]
+path = "crates/scanner/src/confidence/mod.rs"
+
+[[module]]
+path = "crates/scanner/src/confidence/penalties.rs"
+
+[[module]]
+path = "crates/scanner/src/confidence/prefixes.rs"
+
+[[module]]
+path = "crates/scanner/src/confidence/signals.rs"
+
+[[module]]
+path = "crates/scanner/src/context/documentation.rs"
+
+[[module]]
+path = "crates/scanner/src/context/false_positive.rs"
+
+[[module]]
+path = "crates/scanner/src/context/inference.rs"
+
+[[module]]
+path = "crates/scanner/src/context/mod.rs"
+
+[[module]]
+path = "crates/scanner/src/decode/base64.rs"
+
+[[module]]
+path = "crates/scanner/src/decode/caesar.rs"
+
+[[module]]
+path = "crates/scanner/src/decode/hex.rs"
+
+[[module]]
+path = "crates/scanner/src/decode_impl.rs"
+
+[[module]]
+path = "crates/scanner/src/decode/json.rs"
+
+[[module]]
+path = "crates/scanner/src/decode/mod.rs"
+
+[[module]]
+path = "crates/scanner/src/decode/pipeline.rs"
+
+[[module]]
+path = "crates/scanner/src/decode/reverse.rs"
+
+[[module]]
+path = "crates/scanner/src/decode/unicode_escape.rs"
+
+[[module]]
+path = "crates/scanner/src/decode/url.rs"
+
+[[module]]
+path = "crates/scanner/src/decode/util.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/backend.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/boundary.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/compile.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/extract.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/fallback_entropy.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/fallback_generic.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/fallback.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/gpu_ac_phase1.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/gpu_cache.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/gpu_coalesce.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/gpu_dispatch.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/gpu_forced.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/gpu_lazy.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/gpu_literal_phase1.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/gpu_megascan.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/gpu_phase2.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/gpu_postprocess.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/gpu_scan_wrappers.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/hot_patterns.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/mod.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/process.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/rule_pipeline.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/scan_filters.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/scan_postprocess.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/scan.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/segment_attribution.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/windowed.rs"
+
+[[module]]
+path = "crates/scanner/src/entropy_avx512.rs"
+
+[[module]]
+path = "crates/scanner/src/entropy_fast.rs"
+
+[[module]]
+path = "crates/scanner/src/entropy/keywords.rs"
+
+[[module]]
+path = "crates/scanner/src/entropy/mod.rs"
+
+[[module]]
+path = "crates/scanner/src/entropy/scanner.rs"
+
+[[module]]
+path = "crates/scanner/src/error.rs"
+
+[[module]]
+path = "crates/scanner/src/gpu.rs"
+
+[[module]]
+path = "crates/scanner/src/gpu_shader.rs"
+
+[[module]]
+path = "crates/scanner/src/homoglyph.rs"
+
+[[module]]
+path = "crates/scanner/src/hw_probe/banner.rs"
+
+[[module]]
+path = "crates/scanner/src/hw_probe/mod.rs"
+
+[[module]]
+path = "crates/scanner/src/hw_probe/platform.rs"
+
+[[module]]
+path = "crates/scanner/src/hw_probe/select.rs"
+
+[[module]]
+path = "crates/scanner/src/hw_probe/tests.rs"
+
+[[module]]
+path = "crates/scanner/src/hw_probe/thresholds.rs"
+
+[[module]]
+path = "crates/scanner/src/hw_probe/tier.rs"
+
+[[module]]
+path = "crates/scanner/src/jwt.rs"
+
+[[module]]
+path = "crates/scanner/src/lib.rs"
+
+[[module]]
+path = "crates/scanner/src/ml_features.rs"
+
+[[module]]
+path = "crates/scanner/src/ml_scorer.rs"
+
+[[module]]
+path = "crates/scanner/src/ml_weights.rs"
+
+[[module]]
+path = "crates/scanner/src/multiline/config.rs"
+
+[[module]]
+path = "crates/scanner/src/multiline/fragment_cache.rs"
+
+[[module]]
+path = "crates/scanner/src/multiline/mod.rs"
+
+[[module]]
+path = "crates/scanner/src/multiline/preprocessor.rs"
+
+[[module]]
+path = "crates/scanner/src/multiline/structural.rs"
+
+[[module]]
+path = "crates/scanner/src/pipeline/context_window.rs"
+
+[[module]]
+path = "crates/scanner/src/pipeline/mod.rs"
+
+[[module]]
+path = "crates/scanner/src/pipeline/postprocess/mod.rs"
+
+[[module]]
+path = "crates/scanner/src/pipeline/postprocess/shape_gates.rs"
+
+[[module]]
+path = "crates/scanner/src/pipeline/postprocess/suppression/api.rs"
+
+[[module]]
+path = "crates/scanner/src/pipeline/postprocess/suppression/decision.rs"
+
+[[module]]
+path = "crates/scanner/src/pipeline/postprocess/suppression/decode.rs"
+
+[[module]]
+path = "crates/scanner/src/pipeline/postprocess/suppression/doc_markers.rs"
+
+[[module]]
+path = "crates/scanner/src/pipeline/postprocess/suppression/mod.rs"
+
+[[module]]
+path = "crates/scanner/src/pipeline/postprocess/suppression/path_filter.rs"
+
+[[module]]
+path = "crates/scanner/src/pipeline/postprocess/suppression/shape.rs"
+
+[[module]]
+path = "crates/scanner/src/pipeline/scan_loop.rs"
+
+[[module]]
+path = "crates/scanner/src/prefix_trie.rs"
+
+[[module]]
+path = "crates/scanner/src/probabilistic_gate.rs"
+
+[[module]]
+path = "crates/scanner/src/resolution.rs"
+
+[[module]]
+path = "crates/scanner/src/shared_regexes.rs"
+
+[[module]]
+path = "crates/scanner/src/simd.rs"
+
+[[module]]
+path = "crates/scanner/src/simdsieve_prefilter.rs"
+
+[[module]]
+path = "crates/scanner/src/static_intern.rs"
+
+[[module]]
+path = "crates/scanner/src/structured/mod.rs"
+
+[[module]]
+path = "crates/scanner/src/structured/parsers.rs"
+
+[[module]]
+path = "crates/scanner/src/telemetry.rs"
+
+[[module]]
+path = "crates/scanner/src/types.rs"
+
+[[module]]
+path = "crates/scanner/src/unicode_hardening.rs"
+
+[[module]]
+path = "crates/sources/src/binary/ghidra.rs"
+
+[[module]]
+path = "crates/sources/src/binary/literals.rs"
+
+[[module]]
+path = "crates/sources/src/binary/mod.rs"
+
+[[module]]
+path = "crates/sources/src/binary/sections.rs"
+
+[[module]]
+path = "crates/sources/src/docker.rs"
+
+[[module]]
+path = "crates/sources/src/filesystem/read/bytes.rs"
+
+[[module]]
+path = "crates/sources/src/filesystem/read/decode.rs"
+
+[[module]]
+path = "crates/sources/src/filesystem/read/mod.rs"
+
+[[module]]
+path = "crates/sources/src/filesystem/read/raw.rs"
+
+[[module]]
+path = "crates/sources/src/filesystem/read/tests.rs"
+
+[[module]]
+path = "crates/sources/src/filesystem/read/window.rs"
+
+[[module]]
+path = "crates/sources/src/filesystem.rs"
+
+[[module]]
+path = "crates/sources/src/git/diff.rs"
+
+[[module]]
+path = "crates/sources/src/git/history.rs"
+
+[[module]]
+path = "crates/sources/src/github_org.rs"
+
+[[module]]
+path = "crates/sources/src/git/mod.rs"
+
+[[module]]
+path = "crates/sources/src/git/source.rs"
+
+[[module]]
+path = "crates/sources/src/har.rs"
+
+[[module]]
+path = "crates/sources/src/http.rs"
+
+[[module]]
+path = "crates/sources/src/lib.rs"
+
+[[module]]
+path = "crates/sources/src/s3/auth.rs"
+
+[[module]]
+path = "crates/sources/src/s3/listing.rs"
+
+[[module]]
+path = "crates/sources/src/s3/mod.rs"
+
+[[module]]
+path = "crates/sources/src/slack.rs"
+
+[[module]]
+path = "crates/sources/src/stdin.rs"
+
+[[module]]
+path = "crates/sources/src/strings.rs"
+
+[[module]]
+path = "crates/sources/src/timeouts.rs"
+
+[[module]]
+path = "crates/sources/src/web.rs"
+
+[[module]]
+path = "crates/verifier/src/cache.rs"
+
+[[module]]
+path = "crates/verifier/src/domain_allowlist.rs"
+
+[[module]]
+path = "crates/verifier/src/interpolate.rs"
+
+[[module]]
+path = "crates/verifier/src/lib.rs"
+
+[[module]]
+path = "crates/verifier/src/oob/client.rs"
+
+[[module]]
+path = "crates/verifier/src/oob/decrypt.rs"
+
+[[module]]
+path = "crates/verifier/src/oob/mod.rs"
+
+[[module]]
+path = "crates/verifier/src/oob/session.rs"
+
+[[module]]
+path = "crates/verifier/src/rate_limit.rs"
+
+[[module]]
+path = "crates/verifier/src/ssrf.rs"
+
+[[module]]
+path = "crates/verifier/src/verify/auth.rs"
+
+[[module]]
+path = "crates/verifier/src/verify/aws.rs"
+
+[[module]]
+path = "crates/verifier/src/verify/credential.rs"
+
+[[module]]
+path = "crates/verifier/src/verify/mod.rs"
+
+[[module]]
+path = "crates/verifier/src/verify/multi_step.rs"
+
+[[module]]
+path = "crates/verifier/src/verify/request.rs"
+
+[[module]]
+path = "crates/verifier/src/verify/response.rs"
+

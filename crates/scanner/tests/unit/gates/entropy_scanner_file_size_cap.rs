@@ -7,6 +7,6 @@ fn entropy_scanner_file_size_cap() {
     let lines = src.lines().count();
     assert!(
         lines <= 500,
-        "entropy::scanner: {lines} lines exceeds 500-line cap — split module"
+        "entropy::scanner: {lines} lines exceeds 500-line cap - split module"
     );
 }

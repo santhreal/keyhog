@@ -5,7 +5,7 @@ use std::time::Instant;
 fn load_embedded_detectors() -> Vec<keyhog_core::DetectorSpec> {
     let embedded = keyhog_core::embedded_detector_tomls();
     if embedded.is_empty() {
-        panic!("no embedded detectors — rebuild keyhog-core with detectors directory");
+        panic!("no embedded detectors - rebuild keyhog-core with detectors directory");
     }
     embedded
         .iter()
@@ -43,7 +43,7 @@ fn generate_1mb_text() -> String {
 }
 
 #[test]
-#[ignore = "perf threshold; hardware-dependent — run with --ignored locally"]
+#[ignore = "perf threshold; hardware-dependent - run with --ignored locally"]
 fn scan_1mb_with_all_detectors_under_100ms() {
     // Debug builds use 10x+ more memory for HS compilation and are 100x slower.
     // This test is meaningful only in release mode.
@@ -74,7 +74,7 @@ fn scan_1mb_with_all_detectors_under_100ms() {
 }
 
 #[test]
-#[ignore = "perf threshold; hardware-dependent — run with --ignored locally"]
+#[ignore = "perf threshold; hardware-dependent - run with --ignored locally"]
 fn pattern_compilation_under_500ms() {
     let detectors = load_embedded_detectors();
 
@@ -96,7 +96,7 @@ fn pattern_compilation_under_500ms() {
 }
 
 #[test]
-#[ignore = "perf threshold; hardware-dependent — run with --ignored locally"]
+#[ignore = "perf threshold; hardware-dependent - run with --ignored locally"]
 fn entropy_1000_chars_under_1ms() {
     let data: String = (0..1000).map(|i| ((i % 62) + 48) as u8 as char).collect();
 
@@ -154,7 +154,7 @@ fn cpu_fallback_completes_under_2s_on_4mib_corpus() {
     let total_findings: usize = results.iter().map(|m| m.len()).sum();
     assert!(
         elapsed.as_millis() < limit_ms,
-        "CpuFallback scan of 4 MiB took {} ms (limit {limit_ms} ms) — perf regression",
+        "CpuFallback scan of 4 MiB took {} ms (limit {limit_ms} ms) - perf regression",
         elapsed.as_millis()
     );
     assert!(

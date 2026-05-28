@@ -1,4 +1,4 @@
-//! Adversarial coverage for source backends — bomb-prevention,
+//! Adversarial coverage for source backends - bomb-prevention,
 //! malformed inputs, evasions.
 //!
 //! Mirrors the audit release-2026-04-26 hardening: gzip/zstd 4× budget,

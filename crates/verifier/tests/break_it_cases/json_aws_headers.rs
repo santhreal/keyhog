@@ -92,16 +92,16 @@ async fn test_verify_json_path_exhaustion() {
     //   - Bails on serde_json's own depth/parse failure with Error(...)
     //   - Walks the json-path `/a/a/a` to a leaf and returns Live (the
     //     `"val"` string is present but doesn't carry our `success`
-    //     gate — implementations may treat any present value as a hit
+    //     gate - implementations may treat any present value as a hit
     //     depending on the json-path matcher).
     //   - Returns Dead if the path resolution gave a non-matching value.
     //
     // The previous assertion just checked `!result.is_empty()`, which
     // would have passed even if the verifier returned RateLimited or
-    // Unverifiable — neither of which proves the stack-overflow guard
+    // Unverifiable - neither of which proves the stack-overflow guard
     // held. Pin the shape: exactly one finding back (we sent one
     // group), and the verification result must be a non-skipped,
-    // non-rate-limited variant — i.e. the verifier actually walked
+    // non-rate-limited variant - i.e. the verifier actually walked
     // the response, didn't punt or get throttled.
     let result = engine.verify_all(vec![group]).await;
     assert_eq!(result.len(), 1, "one input group must produce one finding");

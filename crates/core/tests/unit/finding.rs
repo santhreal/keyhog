@@ -97,7 +97,7 @@ fn redact_utf8_secret_handles_multibyte_chars() {
 
 #[test]
 fn redact_utf8_short_returns_stars() {
-    // 5 chars (20 bytes) — falls under the 8-char threshold even though
+    // 5 chars (20 bytes) - falls under the 8-char threshold even though
     // bytes-len would not. Exercises the UTF-8 char-count path.
     let s = "😀😁😂😃😄";
     assert_eq!(redact(s), "****");

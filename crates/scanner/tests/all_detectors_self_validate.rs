@@ -5,7 +5,7 @@
 //! least one canonical-shape positive that fires.
 //!
 //! The "canonical-shape positive" comes from the auto-generator
-//! in `tools/gen_contracts.py` — we don't duplicate its synthesis
+//! in `tools/gen_contracts.py` - we don't duplicate its synthesis
 //! logic in Rust. Instead, we check that EVERY detector either
 //! (i) has a contract under `tests/contracts/<id>.toml` with a
 //! positive that fires, OR (ii) we mark it as deferred-no-contract
@@ -74,7 +74,7 @@ fn contract_ids_on_disk() -> BTreeSet<String> {
 /// Every detector TOML in `detectors/` must successfully load through
 /// `keyhog_core::load_detectors`. A parse failure here means the TOML
 /// is malformed and the embedded-detectors build would have produced a
-/// dead-on-arrival entry. This is the floor — no detector ships with
+/// dead-on-arrival entry. This is the floor - no detector ships with
 /// a malformed TOML. The check is loaded-count == file-count, NOT
 /// id-matches-filename (many TOMLs use a different `id` than their
 /// stem, e.g. `data-gov-api.toml` declares `id = "data-gov-api-key"`).
@@ -85,7 +85,7 @@ fn every_detector_loads() {
         .unwrap_or_else(|e| panic!("load_detectors({}) failed: {e}", dir.display()));
     assert!(
         !detectors.is_empty(),
-        "detectors/ contains no loadable TOML — embedded count would be 0"
+        "detectors/ contains no loadable TOML - embedded count would be 0"
     );
 
     let file_count = detector_ids_on_disk().len();
@@ -99,7 +99,7 @@ fn every_detector_loads() {
 
 /// Every detector must compile into the scanner's regex backend.
 /// A regex that parses as TOML but fails Hyperscan / regex compilation
-/// is invisible at runtime — `CompiledScanner::compile` is the gate.
+/// is invisible at runtime - `CompiledScanner::compile` is the gate.
 #[test]
 fn every_detector_compiles_into_scanner() {
     let detectors = keyhog_core::load_detectors(&detector_dir()).expect("load");
@@ -175,7 +175,7 @@ fn detector_contract_coverage_meets_floor() {
     let total = detectors_on_disk.len();
     let ratio = covered as f64 / total.max(1) as f64;
     // Floor: 38% (current ~346/891). Raising this floor is a separate
-    // patch — adding a detector without raising the floor lets recall
+    // patch - adding a detector without raising the floor lets recall
     // regressions slip in; raising the floor without first writing
     // contracts breaks CI.
     let floor = 0.38;
@@ -187,18 +187,22 @@ fn detector_contract_coverage_meets_floor() {
 }
 
 /// Smoke: a single bench-emitted shape per category must fire SOMETHING.
-/// This is the "engine produces findings" backstop — if a regression
+/// This is the "engine produces findings" backstop - if a regression
 /// silently breaks the entire scanner, this test goes red.
 #[test]
 fn smoke_scanner_fires_on_canonical_aws_ghp_re_examples() {
     let detectors = keyhog_core::load_detectors(&detector_dir()).expect("load");
     let scanner = CompiledScanner::compile(detectors).expect("compile");
 
-    // (label, text containing a canonical-shape secret)
+    // (label, text containing a canonical-shape secret). Values are
+    // hand-rolled fake-but-realistic credentials, NOT the public
+    // AWS/GitHub docs placeholders (which suffix `EXAMPLE` and trip
+    // `is_known_example_credential`) - the smoke gate's job is to
+    // catch a scanner regression, not to test the placeholder filter.
     let cases: Vec<(&str, &str)> = vec![
         (
             "aws-access-key",
-            "export AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE\nexport AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+            "export AWS_ACCESS_KEY_ID=AKIAQYLPMN5HFIQR7XYA\nexport AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYxqfwh4qWqHJK",
         ),
         ("github-classic-pat", "GITHUB_TOKEN=ghp_aBcDefGhIjKlMnOpQrStUvWxYzAbCdEf01"),
         ("resend-api-key", "RESEND_API_KEY=re_aBcDefGhIjKlMnOpQrStUvWxYzAbCdEfGhIjKlMnOpQrStUvWx"),

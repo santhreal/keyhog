@@ -44,7 +44,7 @@ pub fn preprocess_multiline(
     // happens to end in `\n` produces `joined_text` == input-without-\n,
     // which compares not-equal to `text`. The eager append below would
     // then duplicate the entire input into `final_text`, causing every
-    // detector to fire twice — once at the original offset, once at
+    // detector to fire twice - once at the original offset, once at
     // ~original_end + 1 (past EOF on the source file). #16 regression.
     let mut any_real_join = false;
     while index < lines.len() {

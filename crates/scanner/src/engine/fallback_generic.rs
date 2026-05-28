@@ -21,9 +21,9 @@ impl CompiledScanner {
             // The keyword → value bridge accepts:
             //   1. `key = "v"` / `key="v"` (Python/Ruby/JS/sh)
             //   2. `key: "v"` (YAML, modern JSON-ish)
-            //   3. `"key": "v"` (JSON — closing quote of key is
+            //   3. `"key": "v"` (JSON - closing quote of key is
             //      allowed BEFORE the `:`)
-            //   4. `const KEY: &str = "v"` (Rust with type) — an
+            //   4. `const KEY: &str = "v"` (Rust with type) - an
             //      optional `: &?TypeName =` segment between
             //      keyword and value (handles `&str`, `String`,
             //      `Cow<str>`, etc.). The `&?[A-Za-z_]` opener +
@@ -58,7 +58,7 @@ impl CompiledScanner {
         // the scan_generic_assignments pre-filter from ~16 × 240 ms of
         // window-scan to a single AC pass.
         use aho_corasick::AhoCorasick;
-        // LazyLock<Option<_>> + .ok() — a panic inside a LazyLock initializer
+        // LazyLock<Option<_>> + .ok() - a panic inside a LazyLock initializer
         // poisons the static for the rest of the process and crashes every
         // subsequent worker thread that touches it. Convert to a soft
         // fallback so an aho-corasick version bump that tightens validation
@@ -96,8 +96,8 @@ impl CompiledScanner {
         };
 
         // ONE chunk-level AC scan instead of N per-line scans.
-        // Profile showed scan_generic_assignments at ~500 µs/chunk —
-        // dominant non-ML cost — and most of that was the per-line
+        // Profile showed scan_generic_assignments at ~500 µs/chunk -
+        // dominant non-ML cost - and most of that was the per-line
         // KEYWORD_AC.find overhead (per-call AC setup × N lines).
         // One contiguous find_iter over the whole chunk is the same
         // total bytes scanned but with a single overhead point and
@@ -177,10 +177,10 @@ impl CompiledScanner {
                 // already consumed one `:`; the second stays in-value because
                 // `:` is in the alphabet to keep `nginx@sha256:<hex>` intact.
                 // Two filters together cover the family:
-                //   * value starts with `:` — jinja lexer enum-style captures
+                //   * value starts with `:` - jinja lexer enum-style captures
                 //     like `:open_paren:` from `case token::open_paren:` (32+
                 //     FPs in llama-cpp's jinja lexer).
-                //   * value contains `::` — Rust scope captures like
+                //   * value contains `::` - Rust scope captures like
                 //     `PrivateKey::`, `Etc::passwd`, `K256Config::SigningKey`
                 //     (malachite's signing-ecdsa had 6+ findings of this
                 //     shape).  Real sha256 / git-blob digests never have
@@ -213,13 +213,13 @@ impl CompiledScanner {
                 //
                 // Defect #76: the old "is_jwt_like" check passed any
                 // 3-segment dotted string where each segment was 4+
-                // base64-alphabet chars — which matches every
+                // base64-alphabet chars - which matches every
                 // `this.someService.copilotToken` property access in
                 // TS/JS/Java/etc. Real JWTs always begin with `eyJ`
                 // (base64 of `{"`, the first two bytes of a JSON
                 // header); requiring that prefix on the first segment
                 // eliminates property-access FPs without losing any
-                // real JWT — the base64 alphabet only produces those
+                // real JWT - the base64 alphabet only produces those
                 // three characters from a `{"` header.
                 if value.contains('.') {
                     let dot_count = value.chars().filter(|&c| c == '.').count();
@@ -317,7 +317,7 @@ impl CompiledScanner {
                 // `[A-Za-z0-9+/=]` with at least one `+/` and proper
                 // base64 padding/byte-alignment is overwhelmingly a
                 // protobuf wire dump, marshalled binary, or k8s base64
-                // payload — not a real credential. Named-detector
+                // payload - not a real credential. Named-detector
                 // matches with service-specific keyword anchors
                 // (azure-storage-account-key etc.) take this path's
                 // alternative route (engine/scan.rs) and don't pass
@@ -366,7 +366,7 @@ impl CompiledScanner {
                     // ordinary-source base confidence so a real secret
                     // pasted into a TODO/debug-trace comment surfaces
                     // instead of getting silently filtered. Documentation
-                    // context stays downgraded — it's a different (and
+                    // context stays downgraded - it's a different (and
                     // far noisier) signal class than inline comments.
                     crate::context::CodeContext::Comment if self.config.scan_comments => 0.60,
                     crate::context::CodeContext::Comment
@@ -385,8 +385,8 @@ impl CompiledScanner {
 
                 // Defect #80: this branch hard-coded `offset: 0` for every
                 // generic-secret finding, so a `KEY = <secret>` on line 845
-                // of a 137 KiB file reported offset 0 — the start of the
-                // file — making the JSON impossible to navigate or grep.
+                // of a 137 KiB file reported offset 0 - the start of the
+                // file - making the JSON impossible to navigate or grep.
                 // The real offset is the start of the value within the
                 // line, plus the line's start in the chunk, plus the
                 // chunk's base offset in the original file (non-zero on
@@ -429,7 +429,7 @@ impl CompiledScanner {
 /// keyword anchors (`AccountKey=…`, `AZURE_STORAGE_KEY=…`) cover
 /// the legitimate ~88-char base64 cred families and skip this
 /// fallback entirely. Suppressing on the generic path doesn't
-/// touch their recall — verified by passing service-specific
+/// touch their recall - verified by passing service-specific
 /// fixtures through `engine/scan.rs`'s named-detector path which
 /// runs before `scan_generic_assignments`.
 ///
@@ -441,7 +441,7 @@ impl CompiledScanner {
 ///      OR ends with `=`/`==` padding (signaling the value is the
 ///      base64 encoding of a byte-aligned arbitrary-bytes payload).
 ///      Real provider tokens are pure base62 without padding
-///      because their length isn't derived from base64 of bytes —
+///      because their length isn't derived from base64 of bytes -
 ///      AKIA + 16, ghp_ + 36, sk_live_ + 24, etc. all land on
 ///      char counts that don't need `=` padding. Adding the
 ///      "padded" branch catches the residual ~862 FPs where the
@@ -466,7 +466,7 @@ fn generic_path_looks_like_random_base64_blob(value: &str) -> bool {
         }
     }
     // Either standard-base64 punctuation OR explicit padding
-    // (the b64-of-bytes signal — pure-b62 tokens never need `=`
+    // (the b64-of-bytes signal - pure-b62 tokens never need `=`
     // because their length is chosen, not derived).
     has_b64_punct || has_padding
 }
@@ -482,7 +482,7 @@ fn generic_path_looks_like_random_base64_blob(value: &str) -> bool {
 /// Captured: `aws:iam::428623408413:role/WriterRole`
 ///
 /// The pipeline-level IAM-ARN gate (`pipeline.rs::should_suppress_…`)
-/// requires the literal `arn:aws:iam::` prefix — the trimmed form
+/// requires the literal `arn:aws:iam::` prefix - the trimmed form
 /// falls through. Recognize the trimmed shape here so the generic
 /// path doesn't surface IAM resource ARNs as credentials. ARNs are
 /// identifiers, not credentials.

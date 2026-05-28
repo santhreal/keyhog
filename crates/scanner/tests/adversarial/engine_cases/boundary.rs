@@ -41,7 +41,7 @@ fn secret_in_large_chunk_is_detected_via_windowing() {
     let hit = matches
         .iter()
         .find(|m| m.credential.as_ref() == VALID_CREDENTIAL)
-        .expect("secret in large chunk (>1MB) must surface with exact credential bytes — \
+        .expect("secret in large chunk (>1MB) must surface with exact credential bytes - \
                  a non-empty matches vector is not enough (could be a different rule firing on filler)");
     // MatchLocation.offset is the line-start where the credential lives
     // (the engine anchors at the keyword line, not the credential byte).
@@ -51,7 +51,7 @@ fn secret_in_large_chunk_is_detected_via_windowing() {
         hit.location.offset,
         filler.len(),
         "match must anchor at the line containing API_KEY= (filler.len()={}), \
-         not at any cross-window seam — actual offset {}",
+         not at any cross-window seam - actual offset {}",
         filler.len(),
         hit.location.offset
     );

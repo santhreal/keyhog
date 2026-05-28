@@ -5,14 +5,14 @@
 //! 1. **Always on** (`apply_default_protections`): zero-cost runtime
 //!    settings that disable debugging features. No throughput impact, so
 //!    they live outside the `lockdown` feature gate. Examples:
-//!    - Linux: `prctl(PR_SET_DUMPABLE, 0)` — no core dumps, no
+//!    - Linux: `prctl(PR_SET_DUMPABLE, 0)` - no core dumps, no
 //!      `/proc/<pid>/mem` read, no `ptrace` attach from non-root.
-//!    - macOS: `ptrace(PT_DENY_ATTACH, …)` — same intent.
+//!    - macOS: `ptrace(PT_DENY_ATTACH, …)` - same intent.
 //!    - Windows: best-effort process mitigation policy.
 //!
 //! 2. **Lockdown-only** (`apply_lockdown_protections`): protections that
 //!    have a real cost or change runtime behavior. Examples:
-//!    - `mlockall(MCL_CURRENT | MCL_FUTURE)` — pin all current and
+//!    - `mlockall(MCL_CURRENT | MCL_FUTURE)` - pin all current and
 //!      future allocations into RAM. Slows allocator paths and can be
 //!      blocked by ulimits.
 //!    - Refuse to run if `/proc/self/coredump_filter` allows anonymous
@@ -23,9 +23,11 @@
 //! lockdown-mode UIs) should call both. Callers using keyhog as a normal
 //! triage tool only get the always-on tier.
 
+#![allow(missing_docs)]
+
 use std::path::PathBuf;
 
-/// Outcome of a hardening attempt — collected so callers can log which
+/// Outcome of a hardening attempt - collected so callers can log which
 /// protections actually took.
 #[derive(Debug, Default, Clone)]
 pub struct HardeningReport {
@@ -39,7 +41,7 @@ pub struct HardeningReport {
 /// Apply zero-cost process protections that should always be on for a
 /// secret-scanning binary. Returns a report of what took.
 ///
-/// Always safe to call — failures are logged and tallied but do not
+/// Always safe to call - failures are logged and tallied but do not
 /// abort. The same bits set twice are idempotent.
 pub fn apply_default_protections() -> HardeningReport {
     let mut report = HardeningReport::default();
@@ -49,7 +51,7 @@ pub fn apply_default_protections() -> HardeningReport {
         // PR_SET_DUMPABLE = 0 disables: core dumps, ptrace, /proc/<pid>/mem
         // read by other processes, and the kernel's coredump_filter. This
         // is what every credential manager (gpg-agent, ssh-agent, etc) does
-        // and it costs nothing — the kernel just sets a flag.
+        // and it costs nothing - the kernel just sets a flag.
         // SAFETY: prctl is a documented syscall; failure is non-fatal.
         let rc = unsafe { libc::prctl(libc::PR_SET_DUMPABLE, 0, 0, 0, 0) };
         if rc == 0 {
@@ -98,11 +100,11 @@ pub fn apply_default_protections() -> HardeningReport {
 }
 
 /// Apply protections that have a real cost or operational impact. Only
-/// call from `lockdown` mode — these protections trade throughput and
+/// call from `lockdown` mode - these protections trade throughput and
 /// flexibility for additional defense in depth.
 ///
 /// Returns a report of what took. Callers should treat any `failures`
-/// entry as a hard error in lockdown — it means a protection the user
+/// entry as a hard error in lockdown - it means a protection the user
 /// asked for did not engage.
 pub fn apply_lockdown_protections() -> HardeningReport {
     let mut report = apply_default_protections();
@@ -110,7 +112,7 @@ pub fn apply_lockdown_protections() -> HardeningReport {
     #[cfg(target_os = "linux")]
     {
         // mlockall(MCL_CURRENT | MCL_FUTURE) pins every page of this
-        // process — current heap + every future allocation — to RAM.
+        // process - current heap + every future allocation - to RAM.
         // No swap to disk. Costs ~30% on allocator-heavy workloads but
         // guarantees credentials never hit a swap partition.
         // SAFETY: documented syscall; failure non-fatal.
@@ -123,7 +125,7 @@ pub fn apply_lockdown_protections() -> HardeningReport {
         }
 
         // Verify the kernel's coredump_filter is restrictive. Default is
-        // 0x33 which allows anonymous private pages — exactly where
+        // 0x33 which allows anonymous private pages - exactly where
         // credentials live. Refuse to run with `failures` populated when
         // it's wide open, so the lockdown caller hard-aborts.
         let filter = std::fs::read_to_string("/proc/self/coredump_filter")
@@ -132,7 +134,7 @@ pub fn apply_lockdown_protections() -> HardeningReport {
         match filter {
             Some(0) => report.coredump_filter_safe = true,
             Some(other) => report.failures.push(format!(
-                "/proc/self/coredump_filter = 0x{other:x} — anonymous pages would be dumped; \
+                "/proc/self/coredump_filter = 0x{other:x} - anonymous pages would be dumped; \
                  set RLIMIT_CORE=0 or write 0 to /proc/self/coredump_filter before exec"
             )),
             None => {
@@ -155,7 +157,7 @@ pub fn apply_lockdown_protections() -> HardeningReport {
 }
 
 /// In lockdown mode, the engine refuses to start if any keyhog cache
-/// exists on disk — caches survive across runs and are exactly the
+/// exists on disk - caches survive across runs and are exactly the
 /// "credentials accidentally written to disk" exfil vector lockdown is
 /// supposed to prevent. Returns the offending paths, empty if clean.
 #[must_use]

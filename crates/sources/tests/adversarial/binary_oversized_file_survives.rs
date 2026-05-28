@@ -1,4 +1,4 @@
-//! Oversized binary file must not OOM — strings extraction completes via capped read.
+//! Oversized binary file must not OOM - strings extraction completes via capped read.
 
 #[cfg(feature = "binary")]
 mod capped {

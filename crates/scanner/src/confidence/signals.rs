@@ -5,7 +5,7 @@ pub struct ConfidenceSignals {
     /// Pattern uses a capture group with context anchoring.
     pub has_context_anchor: bool,
     /// Shannon entropy of the matched credential in **bits per byte** (range
-    /// `0.0..=8.0`) — NOT normalized to `0..1`. Use
+    /// `0.0..=8.0`) - NOT normalized to `0..1`. Use
     /// `crate::entropy::normalized_entropy` for the rescaled value.
     pub entropy: f64,
     /// A secret-related keyword appears nearby.
@@ -52,7 +52,7 @@ pub fn is_sensitive_path(path: &str) -> bool {
                 "config.json",
                 "config.yaml",
                 "config.toml",
-                // Sensitive extensions (matched as substrings — works because
+                // Sensitive extensions (matched as substrings - works because
                 // extensions are at end of path and names are distinctive)
                 ".pem",
                 ".key",

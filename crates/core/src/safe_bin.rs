@@ -2,18 +2,18 @@
 //!
 //! Defends against `PATH` injection (kimi-wave1 audit finding 3.PATH-x):
 //! `Command::new("git")` lets the user's `PATH` decide which `git` we
-//! actually invoke. An attacker who can prepend a directory to `PATH` —
+//! actually invoke. An attacker who can prepend a directory to `PATH` -
 //! a CI runner stage, a malicious dotfile, an override in
-//! `~/.config/fish/config.fish` — substitutes their own binary. Since
+//! `~/.config/fish/config.fish` - substitutes their own binary. Since
 //! keyhog feeds the binary credential bytes (via env vars / argv / stdin
 //! during git scans), that's a credential-exfil pivot.
 //!
 //! This module enumerates a hardcoded allowlist of system binary
 //! directories and returns the FIRST match. Anything not in those dirs
-//! is refused. The allowlist is intentionally narrow — distro-shipped
+//! is refused. The allowlist is intentionally narrow - distro-shipped
 //! binaries only. If your environment legitimately needs a different
 //! path, set the `KEYHOG_TRUSTED_BIN_DIR` env var (colon-separated on
-//! Unix, semicolon-separated on Windows) — but be aware that anyone
+//! Unix, semicolon-separated on Windows) - but be aware that anyone
 //! who can set that env var can already inject anyway, so the env-var
 //! path exists for ops convenience, not as a security boundary.
 
@@ -48,7 +48,7 @@ const EXE_SUFFIXES: &[&str] = &[".exe", ".com", ".bat", ".cmd"];
 
 /// Resolve `name` to an absolute path inside one of the trusted system
 /// binary directories. Returns `None` if not found in any trusted dir
-/// (do NOT fall back to `Command::new(name)` — that's exactly the bug).
+/// (do NOT fall back to `Command::new(name)` - that's exactly the bug).
 /// Resolve a binary name to an absolute path, defending against PATH injection.
 pub fn resolve_safe_bin(name: &str) -> Option<PathBuf> {
     if name.contains('/') || name.contains('\\') {

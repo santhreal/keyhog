@@ -64,7 +64,7 @@ async fn test_verify_all_logic() {
 
     let mut config = VerifyConfig::default();
     config.danger_allow_private_ips = true;
-    // Mock HTTP server is bound to 127.0.0.1, not behind TLS — opt into
+    // Mock HTTP server is bound to 127.0.0.1, not behind TLS - opt into
     // plaintext HTTP for the test. Production paths default to HTTPS-only.
     config.danger_allow_http = true;
 

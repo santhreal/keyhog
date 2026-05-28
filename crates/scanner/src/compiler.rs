@@ -27,7 +27,7 @@ pub fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileState> {
     // De-duplicate identical regex strings BEFORE compilation. The 888-
     // detector corpus has ~6-15% duplicate patterns (e.g. multiple
     // google-* detectors share the `AIza` regex shape). Compiling each
-    // once cuts startup-compile time and RAM proportionally — see
+    // once cuts startup-compile time and RAM proportionally - see
     // audits/legendary-2026-04-26.
     let unique_patterns: HashMap<String, ()> = detectors
         .iter()
@@ -83,7 +83,7 @@ pub fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileState> {
             // tokens where the literal prefix has been visually spoofed
             // with Cyrillic/Greek/full-width lookalikes. Earlier code
             // dropped just the expanded PREFIX into fallback as
-            // `Regex::new("^[hh][ff]_")` — anchored to start, but with
+            // `Regex::new("^[hh][ff]_")` - anchored to start, but with
             // NO body constraint, so any string beginning with the
             // prefix would match. Combined with the task #69 fallback
             // wire fix that finally runs these patterns, that turned
@@ -110,14 +110,14 @@ pub fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileState> {
                         // the leading `(?:...)` with the expanded prefix so the
                         // homoglyph variant still requires the rest of the pattern
                         // to match. Without this, every alternation-prefix detector
-                        // silently skipped its homoglyph fallback — leaving
+                        // silently skipped its homoglyph fallback - leaving
                         // Cyrillic/full-width spoofed credentials of the form
                         // `[ɡ̅р][hн]p_<body>` invisible to the scanner.
                         rewritten
                     } else {
                         // Prefix appears in the parse tree but isn't a leading
                         // literal slice and isn't a trivially-rewritable alternation
-                        // (e.g. it sits inside a nested group). Skip — there's no
+                        // (e.g. it sits inside a nested group). Skip - there's no
                         // safe text rewrite we can do here.
                         continue;
                     };
@@ -140,7 +140,7 @@ pub fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileState> {
                     ac_map.push(compiled.clone());
                 }
             } else {
-                // Prefix extraction failed — try the AST-walking inner-literal
+                // Prefix extraction failed - try the AST-walking inner-literal
                 // extractor before falling back. Patterns like
                 // `[a-zA-Z0-9]{20}_AKIA[A-Z0-9]{16}` have no leading literal
                 // but contain `_AKIA` mid-pattern; pulling that into the AC
@@ -180,14 +180,14 @@ pub fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileState> {
 /// start with a non-capturing alternation group we know how to rewrite.
 ///
 /// This is the homoglyph counterpart of `extract_literal_prefixes`'s
-/// alternation handling — when the prefix extractor returned a literal
+/// alternation handling - when the prefix extractor returned a literal
 /// from inside `(?:ghp_|github_pat_)`, the homoglyph compiler needs the
 /// matching surgical rewrite to splice the expanded prefix into the
 /// regex without losing the trailing body constraint.
 fn rewrite_alternation_prefix(regex: &str, expanded_prefix: &str) -> Option<String> {
     // Strip a leading inline flag group like `(?i)`.
     let (flag_prefix, body) = split_leading_inline_flag(regex);
-    // Only consider non-capturing groups — `(?:p1|p2|...)`. A bare
+    // Only consider non-capturing groups - `(?:p1|p2|...)`. A bare
     // `(...)` is a capturing group around the whole credential, NOT an
     // alternation of prefixes; rewriting it as "{expanded_prefix}{suffix}"
     // would drop the credential body and leave a regex that matches just
@@ -195,7 +195,7 @@ fn rewrite_alternation_prefix(regex: &str, expanded_prefix: &str) -> Option<Stri
     // `(FLWSECK_(?:TEST|LIVE)-[a-f0-9]{32,64}-X)` got rewritten to
     // `FLW[SСＳ][EЕΕＥ]C[KКΚＫ]_` which then matched bare `FLWSECK_`
     // anywhere in the text.
-    // Bare `(` or no leading group — refuse to rewrite. The simple
+    // Bare `(` or no leading group - refuse to rewrite. The simple
     // strip_prefix path in the caller handles literal-head regexes;
     // this function is strictly for `(?:...)` alternation prefixes.
     // We accept the 7 common non-capturing forms (?:, (?i:, (?m:, (?s:,
@@ -220,14 +220,14 @@ fn rewrite_alternation_prefix(regex: &str, expanded_prefix: &str) -> Option<Stri
                     break;
                 }
             }
-            // Don't track escapes — we only need to find the *top-level*
+            // Don't track escapes - we only need to find the *top-level*
             // closing paren, and within a regex source a literal `(` or
             // `)` inside a character class is rare in real detectors.
             _ => {}
         }
     }
     let close = close_at?;
-    // The leading group must actually contain a `|` — without one this
+    // The leading group must actually contain a `|` - without one this
     // is just `(?:singleton)pattern`, not an alternation, and rewriting
     // would silently drop the singleton body.
     let inside = &body[group_open_end..close];
@@ -265,7 +265,7 @@ pub fn build_ac_pattern_set(literals: &[String]) -> Result<Option<AhoCorasick>> 
     // `AKia`) that the SimdCpu backend finds, producing per-backend
     // finding divergence visible in proptest gpu_proptest_invariants
     // P1b. Detector keywords also rely on caseless matching for env-var
-    // shapes like `AWS_KEY_ID` vs `aws_key_id` — the existing
+    // shapes like `AWS_KEY_ID` vs `aws_key_id` - the existing
     // fallback_keyword_ac at build_fallback_keyword_ac (this file)
     // already uses ascii_case_insensitive(true) for the same reason.
     Ok(Some(
@@ -414,7 +414,7 @@ pub fn compile_detector_pattern(
     // kimi-decode audit: the previous flow here built a fallback regex
     // shaped `^<expanded_prefix>` with NO body constraint, which would
     // match any string starting with the homoglyph variant of the
-    // prefix — the exact same flutterwave-FP bug the production path
+    // prefix - the exact same flutterwave-FP bug the production path
     // (`compile_pattern`, earlier in this file) was already fixed for
     // via `rewrite_alternation_prefix`. Since this `compile_detector_pattern`
     // entry point has zero internal call sites and is only retained as
@@ -471,7 +471,7 @@ pub fn compile_pattern(
 /// `Arc<Regex>` across every detector that uses it. The 889-detector corpus
 /// has ~6-15% duplicate regexes (Google, JWT, Slack shapes); this collapses
 /// each duplicate set into a single compiled instance, cutting startup
-/// compile time and resident memory proportionally — see audits/legendary-
+/// compile time and resident memory proportionally - see audits/legendary-
 /// 2026-04-26 sources_verifier_detectors_legendary.md.
 ///
 /// The cache is process-wide via a `parking_lot::Mutex<HashMap<...>>`.
@@ -488,7 +488,7 @@ fn shared_regex(pattern: &str) -> std::result::Result<std::sync::Arc<Regex>, reg
         return Ok(Arc::clone(hit));
     }
     // ASCII case-insensitive to match Hyperscan's `PatternFlags::CASELESS`
-    // (simd.rs:64) — otherwise the SIMD path and fallback path disagree on
+    // (simd.rs:64) - otherwise the SIMD path and fallback path disagree on
     // case-varied input. Detectors with mixed-case alternations
     // (`(?:FRAMER|framer)[_=:\s"']+(?:api[_-]?)?(?:key|token)`) bake the
     // uppercase variant ONLY in the leading anchor and leave `api`/`key`
@@ -498,7 +498,7 @@ fn shared_regex(pattern: &str) -> std::result::Result<std::sync::Arc<Regex>, reg
     // `cortex-api-key`, `splitio-api-key`, `abstract-api-credentials`,
     // `fedex-api-credentials` etc. were all silent-MISSED by this drift.
     // Detectors that need case-sensitive matching (`AKIA…`, `ghp_…`)
-    // are anchored by their literal prefix in the regex anyway —
+    // are anchored by their literal prefix in the regex anyway -
     // case-folding only widens what `key|api|token`-style middle words
     // accept, which is exactly what we want.
     let regex = regex::RegexBuilder::new(pattern)
@@ -574,7 +574,7 @@ mod tests {
         // `(FLWSECK_(?:TEST|LIVE)-[a-f0-9]{32,64}-X)` is a CAPTURING group
         // around the full credential, not an alternation of prefixes.
         // Rewriting it would silently drop the credential body and leave
-        // just the expanded prefix matching anywhere in the chunk — the
+        // just the expanded prefix matching anywhere in the chunk - the
         // exact bug that caused flutterwave-api-key to fire on prose
         // `FLWSECK_TEST-short-X`. Refuse to rewrite capturing groups.
         let out = rewrite_alternation_prefix(

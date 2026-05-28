@@ -56,7 +56,7 @@ struct VerifyTaskShared {
     /// `resolved_client_for_url` so the DNS-pinned per-request client
     /// rebuild honors the `--insecure` flag the operator set on the
     /// engine. Without this the base client accepts invalid certs but
-    /// the rebuild path rejects them — the flag silently does nothing
+    /// the rebuild path rejects them - the flag silently does nothing
     /// for direct (non-proxy) connections. 2026-05-26.
     insecure_tls: bool,
     /// `true` when the engine'"'"'s base client was built with a proxy. The
@@ -64,7 +64,7 @@ struct VerifyTaskShared {
     /// `resolved_client_for_url` MUST NOT fire when a proxy is in use,
     /// or the proxy config silently gets dropped. We carry the bool
     /// rather than the proxy URL itself because no downstream code
-    /// needs the URL — only the "skip the rebuild" signal.
+    /// needs the URL - only the "skip the rebuild" signal.
     proxy_in_use: bool,
     oob_session: Option<Arc<crate::oob::OobSession>>,
 }
@@ -78,7 +78,7 @@ struct InflightGuard {
 impl Drop for InflightGuard {
     fn drop(&mut self) {
         // DashMap's per-shard locking means this never blocks a tokio worker
-        // for more than the time to mutate one shard — orders of magnitude
+        // for more than the time to mutate one shard - orders of magnitude
         // less than the previous global parking_lot::Mutex which was held
         // across the entire HashMap traversal in the await loop.
         self.inflight.remove(&self.key);
@@ -125,7 +125,7 @@ async fn verify_group_task(shared: VerifyTaskShared, group: DedupedMatch) -> Ver
             // Inflight dedup via DashMap: per-shard locks instead of one
             // global parking_lot::Mutex held across HashMap operations in an
             // async context (anti-pattern that stalled the tokio runtime
-            // under high concurrency — see legendary-2026-04-26).
+            // under high concurrency - see legendary-2026-04-26).
             if inflight.len() >= max_inflight_keys {
                 break None;
             }
@@ -310,7 +310,7 @@ impl VerificationEngine {
     /// HTTP success criteria with OOB observations per the detector's policy.
     ///
     /// Idempotent: a second call replaces the previous session (the old one
-    /// is shut down). Errors here do *not* abort the engine — call sites
+    /// is shut down). Errors here do *not* abort the engine - call sites
     /// log + continue with OOB disabled rather than failing the whole scan.
     pub async fn enable_oob(
         &mut self,
@@ -337,7 +337,7 @@ impl Drop for VerificationEngine {
     fn drop(&mut self) {
         // Best-effort safety net: if the caller forgot to `shutdown_oob().await`
         // before dropping the engine, we still need to stop the background
-        // poller — otherwise it keeps polling the collector indefinitely
+        // poller - otherwise it keeps polling the collector indefinitely
         // even after the scan that produced it is gone, leaking a tokio
         // task and a network connection.
         //

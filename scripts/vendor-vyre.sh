@@ -9,7 +9,7 @@
 # `vyre-*` and writes a VENDOR_INFO.txt so the next reviewer can
 # tell exactly which upstream commit landed.
 #
-# !!! WARNING — hand-edits INSIDE `vendor/vyre/vyre-*/` are obliterated
+# !!! WARNING - hand-edits INSIDE `vendor/vyre/vyre-*/` are obliterated
 # on refresh. Before running this script, READ `vendor/vyre/PATCHES.md`
 # and plan to re-apply (or upstream) every entry there. As of
 # 2026-05-23 the active set includes a macOS PhantomData fix,
@@ -174,7 +174,7 @@ for sub in "${SUBDIRS[@]}"; do
 done
 
 # Replace each vyre-* subdir atomically. We do NOT remove the parent
-# vendor/vyre directory and re-extract — that would clobber the
+# vendor/vyre directory and re-extract - that would clobber the
 # adjacent files (Cargo.toml, weir/, shared/) that aren't tracked
 # upstream and represent local-only build glue.
 echo "→ swapping subdirs into ${VENDOR_DIR}"

@@ -31,7 +31,7 @@ fn test_window_boundary_detection() {
     assert_eq!(secret.len(), 20);
 
     // Split the secret across two contiguous chunks. After the split
-    // neither chunk alone contains the full credential — only the
+    // neither chunk alone contains the full credential - only the
     // boundary reassembler can stitch it back together.
     let split_at = 12;
 

@@ -1,5 +1,5 @@
 //! Bar gate: `analyze_keyword_only.rs` must not be a decorative
-//! println-only test — real assertions or delete the file.
+//! println-only test - real assertions or delete the file.
 
 use std::path::PathBuf;
 
@@ -29,7 +29,7 @@ fn analyze_keyword_only_must_assert() {
 
     assert!(
         assertion_count > 0,
-        "analyze_keyword_only.rs exists with zero assertion macros — \
+        "analyze_keyword_only.rs exists with zero assertion macros - \
          add real gates or delete the decorative test"
     );
 }

@@ -1,23 +1,28 @@
 //! Opaque, zeroize-on-drop credential bytes.
 //!
+//! Debt bucket (`#![allow(missing_docs)]` below): 7 items predating the crate
+//! floor raising `missing_docs` to `warn`. Remove once each carries a doc.
+//!
 //! Replaces the previous `Arc<str>` credential field with a type that:
 //!
 //! 1. Zeroes its bytes on drop (`zeroize` crate). Heap pages keyhog freed
 //!    while a scan was in flight no longer leak credentials to the next
 //!    allocator request, swap, or post-mortem core dump.
-//! 2. Refuses `Debug` / `Display` printing — every leak path through `{:?}`
+//! 2. Refuses `Debug` / `Display` printing - every leak path through `{:?}`
 //!    or `{}` becomes `<redacted N bytes>` instead of the bytes themselves.
 //!    To get the bytes you must call `expose_secret()` explicitly, which
 //!    grep'ing the codebase for can audit every credential touch site.
 //! 3. Is `Clone` and serializable via `serde` (uses the `expose_secret()`
 //!    bytes for `Serialize`, decodes back to a fresh `Credential` for
 //!    `Deserialize`). The serialization channel is the responsibility of
-//!    the caller — find emitters that go to disk/JSON and either redact
+//!    the caller - find emitters that go to disk/JSON and either redact
 //!    them or wrap the entire output in EnvSeal seal.
 //!
 //! When EnvSeal embeds keyhog, this type is the only place credential
 //! bytes ever appear in process memory; an mlock + memfd backing can be
 //! added behind the `lockdown` feature gate without touching call sites.
+
+#![allow(missing_docs)]
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::cmp::Ordering;
@@ -47,11 +52,11 @@ impl Credential {
     }
 
     /// Build a `Credential` from a borrowed `str`. Same semantics as
-    /// `from_bytes` — bytes are copied into the zeroizing allocation.
+    /// `from_bytes` - bytes are copied into the zeroizing allocation.
     /// Named `from_text` (not `from_str`) to avoid the
     /// `clippy::should_implement_trait` lint and to keep the API
     /// distinct from `core::str::FromStr` (which has different error
-    /// semantics — we never fail to construct a Credential).
+    /// semantics - we never fail to construct a Credential).
     #[must_use]
     pub fn from_text(s: &str) -> Self {
         Self::from_bytes(s.as_bytes())
@@ -68,7 +73,7 @@ impl Credential {
         self.inner.is_empty()
     }
 
-    /// Expose the underlying bytes. Every call site MUST be auditable —
+    /// Expose the underlying bytes. Every call site MUST be auditable -
     /// `git grep expose_secret` should surface every place credentials
     /// leave the opaque wrapper. Treat each one as a security review item.
     ///
@@ -96,7 +101,7 @@ impl From<&str> for Credential {
 
 impl From<String> for Credential {
     fn from(s: String) -> Self {
-        // The input `String`'s buffer is dropped without zeroizing — the
+        // The input `String`'s buffer is dropped without zeroizing - the
         // caller should ideally pass `&str` so the bytes never sit in a
         // non-zeroizing `String`. We do the right thing for our own
         // allocation either way.
@@ -158,7 +163,7 @@ impl Hash for Credential {
 }
 
 impl std::fmt::Debug for Credential {
-    /// Refuse to format the bytes. This is a compile-time leak guard —
+    /// Refuse to format the bytes. This is a compile-time leak guard -
     /// every place that did `eprintln!("{:?}", cred)` or `tracing::error!(?cred)`
     /// now prints `Credential(<redacted N bytes>)` instead of the secret.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -167,7 +172,7 @@ impl std::fmt::Debug for Credential {
 }
 
 impl std::fmt::Display for Credential {
-    /// Same redaction as `Debug` — `format!("{}", cred)` returns the
+    /// Same redaction as `Debug` - `format!("{}", cred)` returns the
     /// redacted form, never the bytes.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "<redacted {} bytes>", self.inner.len())

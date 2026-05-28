@@ -1,4 +1,4 @@
-//! `keyhog explain <detector-id>` — full spec dump for one detector.
+//! `keyhog explain <detector-id>` - full spec dump for one detector.
 //!
 //! Prints id, name, service, severity, all patterns, keywords, companions,
 //! verification spec presence, and a service-keyed rotation-guide URL when

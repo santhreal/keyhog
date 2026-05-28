@@ -11,6 +11,7 @@ fn scan_simd_cpu_empty_chunk() {
             regex: "x".into(),
             description: None,
             group: None,
+            client_safe: false,
         }],
         companions: vec![],
         verify: None,

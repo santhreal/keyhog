@@ -1,0 +1,220 @@
+//! Text decoding: UTF-8 fast path, UTF-16 BOM-keyed dispatch, lossy
+//! fallback, binary rejection. Used by every read path that returns a
+//! `String` (buffered, mmap, windowed). Keeping these private helpers
+//! together makes the binary-vs-text heuristic easy to audit and
+//! changes obvious in `git diff`.
+
+pub(in crate::filesystem) fn decode_text_file(bytes: &[u8]) -> Option<String> {
+    // Cheap O(1) header rejects first - no full pass needed to know a PDF or
+    // ZIP isn't a text file. NOTE: `has_utf16_nul_pattern` (which previously
+    // co-gated this early-return) checks for the literal UTF-16 BOM, which is
+    // also the correct way to START a UTF-16 text file. Including it here
+    // unconditionally rejected every UTF-16-BOM file before `decode_utf16`
+    // (below) ever got a chance to decode them - silently losing Windows /
+    // PowerShell / .NET config files that ship as UTF-16. The BOM dispatch
+    // now happens inside `decode_utf16`; only fall through to `looks_binary`
+    // when decode_utf16 returns None on a NUL-rich buffer that lacks a BOM.
+    if has_binary_magic(bytes) {
+        return None;
+    }
+    // BOM-keyed UTF-16 fast path (rejects in ~6 bytes when the BOM doesn't
+    // match; the streaming decode fires only on real UTF-16).
+    if let Some(text) = decode_utf16(bytes) {
+        return Some(text);
+    }
+    let bytes = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(bytes);
+
+    // Valid-UTF-8 fast path (the common case for source trees): one SIMD
+    // pass via `std::str::from_utf8` validates the whole file in zero
+    // allocations. If validation succeeds AND a quick density check on the
+    // header confirms it's not a 5%-controls binary that happens to be
+    // valid UTF-8 (rare but possible - e.g. a UTF-8-encoded log of escape
+    // sequences), we take an owned copy and return.
+    //
+    // Previously we ran `looks_binary` (full O(n) controls scan) AND
+    // `from_utf8_lossy` (full O(n) validate + alloc) sequentially - two
+    // full passes. The fused path drops one of them on valid UTF-8.
+    if let Ok(s) = std::str::from_utf8(bytes) {
+        if looks_binary_header_check(bytes) {
+            return None;
+        }
+        return Some(s.to_owned());
+    }
+    // Not strictly valid UTF-8 - may be partial corruption (the lossy path
+    // is what makes us robust to minified-JS / log-tail encoding hiccups
+    // and preserves recall) or actual binary. Fall back to the full
+    // controls-density check before paying for the lossy copy.
+    if looks_binary(bytes) {
+        return None;
+    }
+    Some(String::from_utf8_lossy(bytes).into_owned())
+}
+
+/// Cheap header-only binary check used after a successful strict-UTF-8
+/// validation has already proven the rest is decodable. We've already
+/// rejected binary-magic and UTF-16 NUL patterns at this point; all that
+/// remains is the C0-controls-density heuristic. Sampling the first 4 KiB
+/// catches all-control files (UTF-8 escape blobs, encoded binaries) without
+/// re-scanning the whole file the way `looks_binary` does.
+fn looks_binary_header_check(bytes: &[u8]) -> bool {
+    let window = &bytes[..bytes.len().min(4096)];
+    if window.is_empty() {
+        return false;
+    }
+    let mut suspicious: u32 = 0;
+    for &byte in window {
+        if byte < 0x20 && !matches!(byte, b'\n' | b'\r' | b'\t' | 0x0C) {
+            suspicious += 1;
+            // Threshold matches `looks_binary` (5% suspicious bytes).
+            if (suspicious as usize) * 20 > window.len() {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+pub(in crate::filesystem::read) fn looks_binary(bytes: &[u8]) -> bool {
+    if has_binary_magic(bytes) || has_utf16_nul_pattern(bytes) {
+        return true;
+    }
+    // FIX: Be more lenient with NUL bytes. A single NUL doesn't mean it's
+    // a binary blob - minified JS or UTF-16-without-BOM might have them.
+    // Reject only if NUL density is high or near the start.
+    if let Some(first_nul) = memchr::memchr(0, bytes) {
+        if first_nul < 1024 {
+            // Check if it's UTF-16 (alternating NULs)
+            let is_utf16 = bytes.len() >= 4
+                && ((bytes[0] == 0 && bytes[1] != 0) || (bytes[0] != 0 && bytes[1] == 0));
+            if !is_utf16 {
+                return true;
+            }
+        }
+    }
+    // Threshold: `suspicious * 20 > total` (i.e. >5% of the file is C0
+    // controls other than the usual text whitespace/form-feed). The previous
+    // implementation always ran a full O(n) `filter().count()` over every
+    // byte. For source-tree scans where ~all files are obvious text, that's
+    // a wasted full pass per file.
+    //
+    // Two-sided early exit - bail in either direction the moment the verdict
+    // is provable:
+    //   * As soon as `suspicious * 20 > scanned`, it's binary.
+    //   * As soon as `(suspicious + remaining) * 20 ≤ total`, even worst-case
+    //     remaining bytes can't push us past threshold → it's text.
+    //
+    // On a 100 KiB clean text file the loop now exits after ~5 KiB once the
+    // worst-case branch concludes "no suspicious density possible." On a
+    // binary blob it exits within the first few bytes once the density is
+    // confirmed. Either way, the rare-but-pathological dense-clean-text
+    // case still walks the whole file - same complexity bound, just a much
+    // tighter constant.
+    let total = bytes.len() as u64;
+    if total == 0 {
+        return false;
+    }
+    let mut suspicious: u64 = 0;
+    for (i, &byte) in bytes.iter().enumerate() {
+        let is_susp = byte < 0x20 && !matches!(byte, b'\n' | b'\r' | b'\t' | 0x0C);
+        if is_susp {
+            suspicious += 1;
+            // Confirmed binary: ratio already over threshold.
+            if suspicious * 20 > total {
+                return true;
+            }
+        }
+        // Confirmed text: even if every remaining byte were suspicious,
+        // we couldn't reach the threshold. Sample the check once per page
+        // so we don't pay the bookkeeping per byte; 4 KiB matches the
+        // typical OS page size.
+        if i & 0xFFF == 0xFFF {
+            let scanned = (i as u64) + 1;
+            let remaining = total - scanned;
+            if (suspicious + remaining) * 20 <= total {
+                return false;
+            }
+        }
+    }
+    suspicious * 20 > total
+}
+
+fn has_binary_magic(bytes: &[u8]) -> bool {
+    // Common executable / archive / image / serialized-data magic bytes.
+    // Each of these unambiguously identifies a binary file format whose
+    // bytes cannot be a credential - short-circuiting here saves the
+    // O(n) controls-density scan for files that already declare what
+    // they are. Adding new magics here is cheap; removing them is the
+    // dangerous direction.
+    const MAGIC_HEADERS: &[&[u8]] = &[
+        b"%PDF-",
+        b"PK\x03\x04", // ZIP / JAR / DOCX / XLSX / PPTX / APK / OOXML
+        b"\x89PNG\r\n\x1a\n",
+        b"\xD0\xCF\x11\xE0",   // OLE compound document (older Office)
+        b"\x7fELF",            // Linux / BSD executables, .so, .o, .a
+        b"\xfe\xed\xfa\xce",   // Mach-O 32-bit (macOS, iOS executables)
+        b"\xfe\xed\xfa\xcf",   // Mach-O 64-bit
+        b"\xcf\xfa\xed\xfe",   // Mach-O 64-bit reversed
+        b"\xca\xfe\xba\xbe",   // Java .class (universal Mach-O collision)
+        b"MZ",                 // Windows PE / .exe / .dll / .sys
+        b"\x1f\x8b",           // gzip (.gz)
+        b"BZh",                // bzip2 (.bz2)
+        b"\xfd7zXZ\x00",       // xz (.xz)
+        b"7z\xbc\xaf\x27\x1c", // 7z (.7z)
+        b"Rar!\x1a\x07",       // RAR
+        b"GIF87a",             // GIF
+        b"GIF89a",             // GIF
+        b"\xff\xd8\xff",       // JPEG (any variant)
+        b"BM",                 // BMP - too short alone, but combined with the
+        // density check below this is safe
+        b"\x00\x00\x01\x00", // ICO
+        b"OggS",             // Ogg container
+        b"ID3",              // MP3 with ID3 tag
+        b"fLaC",             // FLAC
+        b"\x00asm",          // WebAssembly module
+        b"!<arch>\n",        // Unix `ar` archives (.a, .deb)
+        b"\x80\x02",         // Python pickle (protocol 2+) - common stub
+    ];
+    MAGIC_HEADERS.iter().any(|header| bytes.starts_with(header))
+}
+
+fn has_utf16_nul_pattern(bytes: &[u8]) -> bool {
+    bytes.len() >= 4
+        && (bytes[0] == 0xFF && bytes[1] == 0xFE || bytes[0] == 0xFE && bytes[1] == 0xFF)
+}
+
+pub(in crate::filesystem::read) fn decode_utf16(bytes: &[u8]) -> Option<String> {
+    // BOM dispatch: try LE first, then BE; bail if neither matches.
+    // The two arms can't be flattened into a single `?` because each
+    // BOM also carries the endianness flag the rest of the function
+    // needs - clippy::question_mark gets this wrong.
+    #[allow(clippy::question_mark)]
+    let (little_endian, payload) = if let Some(rest) = bytes.strip_prefix(&[0xFF, 0xFE]) {
+        (true, rest)
+    } else if let Some(rest) = bytes.strip_prefix(&[0xFE, 0xFF]) {
+        (false, rest)
+    } else {
+        return None;
+    };
+    let chunks = payload.chunks_exact(2);
+    if !chunks.remainder().is_empty() {
+        return None;
+    }
+    // Stream the u16 units straight into a String through `char::decode_utf16`,
+    // skipping the previous `Vec<u16>` intermediary. For a 1 MiB UTF-16 file
+    // that drops a half-megabyte temp allocation and frees its cache lines
+    // for the actual scan stage. ASCII-shaped UTF-16 (the common case for
+    // Windows-exported logs / config) takes the BMP fast path inside
+    // `char::from_u32`, no surrogate-pair fixups.
+    let units = chunks.map(|chunk| {
+        if little_endian {
+            u16::from_le_bytes([chunk[0], chunk[1]])
+        } else {
+            u16::from_be_bytes([chunk[0], chunk[1]])
+        }
+    });
+    let mut out = String::with_capacity(payload.len() / 2);
+    for r in char::decode_utf16(units) {
+        out.push(r.ok()?);
+    }
+    Some(out)
+}

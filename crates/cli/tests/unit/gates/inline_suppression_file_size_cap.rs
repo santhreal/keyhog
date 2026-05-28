@@ -7,6 +7,6 @@ fn inline_suppression_file_size_cap() {
     let lines = src.lines().count();
     assert!(
         lines <= 500,
-        "inline_suppression: {lines} lines exceeds 500-line cap — split module"
+        "inline_suppression: {lines} lines exceeds 500-line cap - split module"
     );
 }

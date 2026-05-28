@@ -1,4 +1,4 @@
-//! `keyhog backend` — inspect the auto-routing decision for this hardware.
+//! `keyhog backend` - inspect the auto-routing decision for this hardware.
 //!
 //! Prints detected hardware (cores, SIMD, GPU, Hyperscan, io_uring), the
 //! steady-state backend the orchestrator would pick on this box, and a
@@ -55,7 +55,7 @@ fn print_backend_report(args: &BackendArgs) -> Result<()> {
             "not detected"
         },
         if hw.gpu_is_software {
-            "(software renderer — disabled)"
+            "(software renderer: disabled)"
         } else {
             ""
         }
@@ -192,10 +192,10 @@ fn run_self_test() -> Result<ExitCode> {
         let reason = if !hw.gpu_available {
             "no GPU adapter detected"
         } else {
-            "only software adapter (llvmpipe/lavapipe/swiftshader) — won't be used for scans"
+            "only software adapter (llvmpipe/lavapipe/swiftshader): won't be used for scans"
         };
         println!("  \x1b[33mSKIP\x1b[0m: {reason}");
-        // Skip is not a failure — gracefully exit 0 so CI on a headless
+        // Skip is not a failure - gracefully exit 0 so CI on a headless
         // runner without a GPU doesn't block the release.
         return Ok(ExitCode::SUCCESS);
     }

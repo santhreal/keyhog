@@ -2,7 +2,7 @@
 
 > Live key ≠ exploitable key.
 
-Standard verification asks "does the API return 200?" — a per-service heuristic
+Standard verification asks "does the API return 200?" - a per-service heuristic
 that confirms a credential parses. For webhook-, mailer-, and callback-shaped
 credentials that's necessary but not sufficient: a 200 OK can mean "your key
 parses but has no useful scope," "the webhook URL is dead but silent," or
@@ -36,11 +36,11 @@ collector. This is intentional: OOB ships traffic to a third-party server
 
 What the collector sees:
 
-- 20-character correlation IDs — random, per-scan.
+- 20-character correlation IDs - random, per-scan.
 - 33-character per-finding subdomains.
 - Source IP, timestamp, and protocol (DNS / HTTP / SMTP) of services
   calling back.
-- Whatever the calling service includes in its outbound request — typically
+- Whatever the calling service includes in its outbound request - typically
   a User-Agent, no body, no credentials.
 
 What the collector **never** sees:
@@ -75,7 +75,7 @@ url = "{{match}}"
 body = '{"text":"https://{{interactsh}}/probe"}'
 
 [detector.verify.success]
-# Probe-level HTTP success — the webhook has to accept the payload.
+# Probe-level HTTP success - the webhook has to accept the payload.
 status = 200
 
 [detector.verify.oob]
@@ -84,9 +84,9 @@ protocol = "http"
 # Per-finding wait timeout in seconds. Optional; defaults to --oob-timeout.
 timeout_secs = 30
 # Verification policy:
-#   "oob_and_http"  — both must hold (default; strict)
-#   "oob_only"      — ignore HTTP, trust the callback
-#   "oob_optional"  — HTTP success suffices; OOB enriches metadata only
+#   "oob_and_http"  - both must hold (default; strict)
+#   "oob_only"      - ignore HTTP, trust the callback
+#   "oob_optional"  - HTTP success suffices; OOB enriches metadata only
 policy = "oob_and_http"
 ```
 
@@ -99,7 +99,7 @@ policy = "oob_and_http"
 | `{{interactsh.url}}`  | full HTTPS URL                            | `https://abc...xyz.oast.fun`                                      |
 | `{{interactsh.id}}`   | 33-char unique ID without server suffix  | `abc...xyz`                                                       |
 
-These tokens are NOT URL-encoded — the host is already URL-safe and we
+These tokens are NOT URL-encoded - the host is already URL-safe and we
 expect templates to embed it verbatim into JSON bodies, headers, and URL
 paths.
 
@@ -108,7 +108,7 @@ paths.
 `policy = "oob_and_http"` (default) is the strict mode for webhook-style
 detectors. A finding is `Live` only when both the HTTP probe succeeds AND
 the OOB callback arrives within `timeout_secs`. If HTTP says alive but no
-callback comes, the verdict is `Dead` — the credential parses but isn't
+callback comes, the verdict is `Dead` - the credential parses but isn't
 exfil-capable, which for a webhook is the security-relevant question.
 
 `policy = "oob_only"` skips HTTP success entirely. Use for credentials
@@ -123,12 +123,12 @@ before flipping to strict mode.
 
 Verified findings produced under OOB verification carry:
 
-- `oob_unique_id` — the 33-char correlation ID minted for this finding.
-- `oob_observed` — `"true"` or `"false"`.
-- `oob_protocol` — `"Dns"`, `"Http"`, `"Smtp"`, `"Other"` (when observed).
-- `oob_remote_address` — IP that called back (when observed).
-- `oob_timestamp` — collector timestamp (when observed).
-- `oob_disabled` — reason string (only when the session degraded mid-scan).
+- `oob_unique_id` - the 33-char correlation ID minted for this finding.
+- `oob_observed` - `"true"` or `"false"`.
+- `oob_protocol` - `"Dns"`, `"Http"`, `"Smtp"`, `"Other"` (when observed).
+- `oob_remote_address` - IP that called back (when observed).
+- `oob_timestamp` - collector timestamp (when observed).
+- `oob_disabled` - reason string (only when the session degraded mid-scan).
 
 These propagate to every output format (JSON, JSONL, SARIF, plain-text).
 
@@ -152,7 +152,7 @@ register POST). That cost is paid once per scan, not per finding.
 
 The polling loop adds one HTTPS request every `poll_interval` (default 2s)
 and decrypts batched interactions in-process. AES-256-CFB decryption is a
-few hundred bytes per callback — negligible relative to scan cost.
+few hundred bytes per callback - negligible relative to scan cost.
 
 The dominant added latency is the per-finding wait. For a webhook-shaped
 detector you're paying `oob_timeout` worst-case per finding that doesn't
@@ -176,5 +176,5 @@ interactsh-server \
 ```
 
 Then run keyhog with `--oob-server $YOUR_DOMAIN`. The wire protocol is
-identical to the public oast.fun deployment — keyhog's client does not
+identical to the public oast.fun deployment - keyhog's client does not
 care which it talks to.

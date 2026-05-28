@@ -23,7 +23,7 @@ fn template_path_and_url_fragment_suppressed() {
         "generic-password",
     ));
     // alist drivers/123_open/api.go:14 has `ApiToken = "/api/v1/access_token"`
-    // — that's a URL path string, not a token value.
+    // - that's a URL path string, not a token value.
     assert!(should_suppress_named_detector_finding(
         "/api/v1/access_token",
         Some("alist/drivers/123_open/api.go"),

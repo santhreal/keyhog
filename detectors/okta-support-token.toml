@@ -1,7 +1,7 @@
 # Docs: https://developer.okta.com/docs/reference/api/
 # Format: 00xxxxx... (alphanumeric, 42 chars typical)
 # Verify: GET /api/v1/users/me with Authorization: SSWS <token> returns 200 if valid
-# Prefix: 00 (weak prefix — requires strong context anchoring)
+# Prefix: 00 (weak prefix - requires strong context anchoring)
 
 [detector]
 id = "okta-support-token"

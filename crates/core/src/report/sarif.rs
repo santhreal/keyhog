@@ -12,7 +12,7 @@ use super::{ReportError, Reporter, WriterBackedReporter};
 mod sarif_taxonomies;
 use sarif_taxonomies::sarif_taxonomies_json;
 
-/// SARIF v2.1.0 reporter — STREAMING.
+/// SARIF v2.1.0 reporter - STREAMING.
 ///
 /// Writes the SARIF document skeleton on construction and emits each
 /// `runs[0].results[]` entry directly to the writer as `report()` is called.
@@ -84,7 +84,7 @@ struct SarifResult {
     properties: Option<serde_json::Map<String, serde_json::Value>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     related_locations: Option<Vec<SarifLocation>>,
-    /// SARIF v2.2.0 `fixes[]` — auto-rotation suggestions. Each entry
+    /// SARIF v2.2.0 `fixes[]` - auto-rotation suggestions. Each entry
     /// proposes replacing the leaked credential with a `${ENV_VAR_NAME}`
     /// shell-interpolation reference. Tier-B #15 + #17.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -168,6 +168,8 @@ struct SarifLogicalLocation {
 }
 
 impl<W: Write + Send> SarifReporter<W> {
+    /// Construct a streaming SARIF reporter that writes its document to
+    /// `writer`. The SARIF prefix is emitted lazily on the first finding.
     pub fn new(writer: W) -> Self {
         Self {
             writer,
@@ -202,7 +204,7 @@ impl<W: Write + Send> SarifReporter<W> {
         // contains duplicate items. Some detector pipelines emit the
         // same location twice (e.g. a credential found via two rules
         // pointing at the same span). Dedup by the canonical
-        // (file_path, line, offset) tuple — that's what makes two
+        // (file_path, line, offset) tuple - that's what makes two
         // locations "the same finding" for UI purposes.
         let mut seen_related: std::collections::HashSet<(String, Option<usize>, usize)> =
             std::collections::HashSet::new();
@@ -468,7 +470,7 @@ impl<W: Write + Send> Reporter for SarifReporter<W> {
         };
         serde_json::to_writer(&mut self.writer, &tool)?;
 
-        // SARIF taxonomies block — each entry references a canonical entry in
+        // SARIF taxonomies block - each entry references a canonical entry in
         // CWE / OWASP. Compliance dashboards (e.g. SonarQube, GitHub Code
         // Scanning, Splunk) resolve `result.properties.cwe = "CWE-798"`
         // against this block. Tier-B #16 from audits/legendary-2026-04-26.

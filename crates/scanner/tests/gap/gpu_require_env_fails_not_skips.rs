@@ -1,5 +1,5 @@
 //! KH-GAP-003: When `KEYHOG_REQUIRE_GPU=1`, GPU gates must panic/fail
-//! — never return early with an implicit skip.
+//! - never return early with an implicit skip.
 
 use keyhog_scanner::gpu::gpu_available;
 
@@ -12,7 +12,7 @@ fn gpu_required_gate() {
 
     if !gpu_available() {
         panic!(
-            "Fix: KEYHOG_REQUIRE_GPU=1 but no compatible GPU adapter — \
+            "Fix: KEYHOG_REQUIRE_GPU=1 but no compatible GPU adapter - \
              fail loudly with probe detail instead of skipping GPU gates"
         );
     }

@@ -13,7 +13,7 @@
 //! gates directly rather than spinning up a mock HTTP server because:
 //!   1. Spinning a real listener doesn't add coverage for the policy
 //!      decision; only for the wire format afterward.
-//!   2. The policy gates are the EXTERNAL CONTRACT — "for these inputs,
+//!   2. The policy gates are the EXTERNAL CONTRACT - "for these inputs,
 //!      ambient creds are or are not loaded." The wire-format check is
 //!      an implementation detail of `AwsSigV4Config::sign`.
 //!

@@ -16,7 +16,7 @@ const MAX_TAR_ENTRY_BYTES: u64 = 128 * 1024 * 1024;
 /// Cumulative cap across ALL entries in one Docker archive. The
 /// per-entry [`MAX_TAR_ENTRY_BYTES`] cap alone is bypassed by a
 /// zip-bomb that ships thousands of entries each just under 128 MiB
-/// — the validator passed every entry individually and unpack()
+/// - the validator passed every entry individually and unpack()
 /// happily wrote N × 128 MiB to disk. With this aggregate cap the
 /// validator rejects the archive before unpack starts.
 ///
@@ -80,7 +80,7 @@ fn collect_docker_chunks(image: &str) -> Result<Vec<Chunk>, SourceError> {
     let image = validate_image_name(image)?;
     let tempdir = tempfile::tempdir().map_err(SourceError::Io)?;
     // Store the temp path in a binding so RAII deletes the archive on scope exit
-    // (including panics). The old `.keep()` call disabled auto-cleanup — a crash
+    // (including panics). The old `.keep()` call disabled auto-cleanup - a crash
     // after `docker image save` would leak multi-gigabyte tar files in /tmp.
     let archive_temppath = tempfile::Builder::new()
         .prefix("keyhog-image-")
@@ -152,7 +152,7 @@ fn validate_image_name(image: &str) -> Result<String, SourceError> {
         ));
     }
 
-    // Compiled once — avoids per-call regex compilation overhead.
+    // Compiled once - avoids per-call regex compilation overhead.
     // The [-]{0,128} quantifiers are bounded to prevent ReDoS on
     // pathological inputs (previously unbounded [-]*).
     static IMAGE_PATTERN: LazyLock<Option<Regex>> = LazyLock::new(|| {
@@ -187,7 +187,7 @@ fn unpack_tar(archive_path: &Path, destination: &Path) -> Result<(), SourceError
     let mut validation_archive = tar::Archive::new(&mut file);
     validate_extracted_tree(&mut validation_archive)?;
 
-    // Rewind the same file descriptor for extraction — no second open.
+    // Rewind the same file descriptor for extraction - no second open.
     file.rewind().map_err(SourceError::Io)?;
     let mut extract_archive = tar::Archive::new(&mut file);
     extract_archive.unpack(destination).map_err(SourceError::Io)
@@ -209,7 +209,7 @@ fn validate_extracted_tree<R: std::io::Read>(
         // Also reject symlinks and hardlinks in Docker layers. These are
         // frequently used in "link-swap" attacks to write outside the
         // extraction root. Secret scanning doesn't need to resolve links
-        // inside the layer — we scan the raw file content anyway.
+        // inside the layer - we scan the raw file content anyway.
         let file_type = entry.header().entry_type();
         if file_type.is_symlink() || file_type.is_hard_link() {
             return Err(SourceError::Other(format!(

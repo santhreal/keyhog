@@ -7,6 +7,6 @@ fn domain_allowlist_file_size_cap() {
     let lines = src.lines().count();
     assert!(
         lines <= 500,
-        "domain_allowlist: {lines} lines exceeds 500-line cap — split module"
+        "domain_allowlist: {lines} lines exceeds 500-line cap - split module"
     );
 }

@@ -8,7 +8,7 @@ fn java_getparameter_camelcase_identifier_suppressed() {
     // The generic-password TOML regex matches `password = X` and
     // captures `getParameter` (12 chars, pure CamelCase, no digit,
     // no underscore). Real credentials almost always include a digit
-    // or special char — this filter never trips on those.
+    // or special char - this filter never trips on those.
     assert!(should_suppress_named_detector_finding(
         "getParameter",
         Some("webgoat/WebgoatContext.java"),

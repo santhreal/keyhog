@@ -14,7 +14,7 @@ pub(crate) fn find_ghidra_headless() -> Option<PathBuf> {
     }
 
     // SECURITY: kimi-wave1 audit finding 3.PATH-which. Don't shell out to
-    // `which` (resolved via $PATH itself) — instead enumerate trusted
+    // `which` (resolved via $PATH itself) - instead enumerate trusted
     // locations directly. The `analyzeHeadless` script is shipped by
     // Ghidra, not a system binary, so we look in the standard install
     // dirs explicitly. The previous `Command::new("which")` was
@@ -57,7 +57,7 @@ pub(crate) fn write_ghidra_script(
     output_path: &Path,
 ) -> Result<(), SourceError> {
     let script = format!(
-        r#"// KeyHog Ghidra export script — runs full analysis then decompiles all functions.
+        r#"// KeyHog Ghidra export script - runs full analysis then decompiles all functions.
 // @category KeyHog
 import ghidra.app.decompiler.DecompInterface;
 import ghidra.app.decompiler.DecompileResults;

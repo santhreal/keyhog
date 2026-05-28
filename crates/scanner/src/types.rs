@@ -94,7 +94,7 @@ pub struct PreprocessedText {
 impl PreprocessedText {
     /// Map a preprocessed-text offset back to an original line number.
     /// Binary search; same monotonic-mappings invariant as the
-    /// multiline variant — see that doc for the analysis.
+    /// multiline variant - see that doc for the analysis.
     pub fn line_for_offset(&self, offset: usize) -> Option<usize> {
         let idx = self.mappings.partition_point(|m| m.start_offset <= offset);
         if idx == 0 {
@@ -132,7 +132,7 @@ pub type ScannerPreprocessedText = PreprocessedText;
 /// share state across all detectors that use them. The 889-detector corpus
 /// has ~6-15% duplicate regex strings (especially around `AIza...`,
 /// `xoxb-...`, JWT shapes); de-duplicating cuts startup compile time and
-/// memory proportionally — see audits/legendary-2026-04-26.
+/// memory proportionally - see audits/legendary-2026-04-26.
 #[derive(Debug, Clone)]
 pub struct CompiledPattern {
     pub detector_index: usize,
@@ -239,7 +239,7 @@ impl ScannerConfig {
     /// is `false`, but `conf >= min_confidence` is also `false`,
     /// behaviour-dependent on the call site).
     ///
-    /// Idempotent — sanitising an already-sane config is a no-op.
+    /// Idempotent - sanitising an already-sane config is a no-op.
     /// Called inside `From<ScanConfig>` so any path that constructs
     /// a ScannerConfig from a user-influenced source pays this
     /// once at config-build time.
@@ -333,7 +333,7 @@ pub struct ScanState {
     pub credential_interner: HashSet<Arc<str>>,
     /// Static string cache for detector metadata. Uses
     /// `HashSet<Arc<str>>` (not `HashMap<String, Arc<str>>`) so a
-    /// cache miss allocates ONLY the `Arc<str>` — the prior shape
+    /// cache miss allocates ONLY the `Arc<str>` - the prior shape
     /// also allocated a `String` to serve as the HashMap key, paying
     /// twice for what's a single dedup slot. `HashSet::get(&s)` works
     /// via `Arc<str>: Borrow<str>`, no allocation on hits.
@@ -376,7 +376,7 @@ impl ScanState {
     ///
     /// Lookup order:
     ///   1. Scanner-wide `StaticInterner` (vyre CHD perfect hash) for
-    ///      detector metadata that's frozen at scanner construction —
+    ///      detector metadata that's frozen at scanner construction -
     ///      O(1), no allocation, no lock contention.
     ///   2. Per-scan `metadata_interner` `HashSet` for dynamic strings
     ///      (file paths, commit SHAs, author names, dates).
@@ -418,7 +418,7 @@ impl ScanState {
     }
 
     /// Drain all matches into a sorted vector. Dedups identical findings
-    /// (same detector + same credential + same offset) — two engines can
+    /// (same detector + same credential + same offset) - two engines can
     /// produce the same finding for the same pattern (e.g. ac_map's
     /// literal hit + homoglyph fallback variant both fire on plain ASCII
     /// because the homoglyph char-class includes the original char). The

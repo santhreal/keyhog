@@ -5,7 +5,7 @@
 //! daemon fast path: when `--daemon` is set (or auto-detected via a
 //! live socket), the input goes through the running `keyhog daemon`
 //! over a Unix socket and skips the ~3 s `CompiledScanner::compile`
-//! cold start. The daemon path is deliberately narrow — directory
+//! cold start. The daemon path is deliberately narrow - directory
 //! walks, git-staged scans, archive decoding, baseline filtering,
 //! merkle skip cache, and verification all still go through the
 //! orchestrator. Anything outside the stdin / single-file shape
@@ -13,7 +13,7 @@
 //! advisory in those cases.
 
 use crate::args::ScanArgs;
-// Daemon module is unix-only — Windows has no `tokio::net::UnixListener`
+// Daemon module is unix-only - Windows has no `tokio::net::UnixListener`
 // or `std::os::unix::net::UnixStream`, so the whole `crate::daemon`
 // subtree is `#[cfg(unix)]`. See `lib.rs` for the rationale. On
 // Windows, the `--daemon` flag and the daemon auto-route in
@@ -98,7 +98,7 @@ fn daemon_route(args: &ScanArgs) -> DaemonRoute {
         return DaemonRoute::Forbidden;
     }
 
-    // Daemon path doesn't run verification — the daemon process
+    // Daemon path doesn't run verification - the daemon process
     // holds a scanner but not the verifier engine. Trying to honour
     // `--verify` over a daemon-only result set would silently drop
     // every API-call-backed live-credential check; the orchestrator

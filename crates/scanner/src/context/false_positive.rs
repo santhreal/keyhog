@@ -44,7 +44,7 @@ pub fn is_false_positive_match_context_with_path(
 
 /// Detect trailing/leading comment disclaimers like `// not a real key`,
 /// `# fake credential`, `-- for demo only`. The credential value itself
-/// may look 100% legitimate (correct prefix, high entropy) — the human
+/// may look 100% legitimate (correct prefix, high entropy) - the human
 /// has just declared it isn't real. Suppress the finding.
 ///
 /// Anchored to a comment marker first so we don't accidentally suppress
@@ -52,7 +52,7 @@ pub fn is_false_positive_match_context_with_path(
 /// Disclaimer-phrase list loaded once from the embedded Tier-B TOML
 /// at `crates/scanner/data/disclaimer-phrases.toml`. Lifting this
 /// list out of source code lets the community PR new phrases
-/// without touching Rust — the moat under CLAUDE.md's Tier-B rule.
+/// without touching Rust - the moat under CLAUDE.md's Tier-B rule.
 static DISCLAIMER_PHRASES: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(|| {
     #[derive(serde::Deserialize)]
     struct DisclaimerFile {
