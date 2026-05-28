@@ -42,6 +42,9 @@ pub mod static_intern;
 pub mod types;
 
 // Internal modules.
+/// ASCII case-insensitive byte-search primitives shared by every hot path
+/// that needs to skim text without lowering the haystack first.
+pub(crate) mod ascii_ci;
 /// SIMD-accelerated alphabet pre-filtering.
 pub mod alphabet_filter;
 /// Bigram bloom filter for fast chunk gating.

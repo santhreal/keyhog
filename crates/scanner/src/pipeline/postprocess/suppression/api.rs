@@ -201,17 +201,28 @@ pub fn should_suppress_named_detector_finding(
     // hits `has_binary_magic` if it's image/binary, otherwise it's
     // scanned normally.
     if path.is_some_and(|p| {
-        let lower = p.to_ascii_lowercase();
-        if lower.ends_with(".b64") || lower.ends_with(".base64") {
+        // Case-insensitive checks over raw bytes - avoids the per-match
+        // `p.to_ascii_lowercase()` allocation. Endswith checks are also
+        // case-insensitive so `.B64` / `.BASE64` extensions still suppress.
+        let bytes = p.as_bytes();
+        if crate::ascii_ci::ends_with_ignore_ascii_case(bytes, b".b64")
+            || crate::ascii_ci::ends_with_ignore_ascii_case(bytes, b".base64")
+        {
             return true;
         }
         // Both `/` and `\` so Windows paths (`C:\foo\base64_x.txt`)
         // collapse to the same basename. Same rationale as the
         // fallback_entropy path-gate sibling.
-        let basename = lower.rsplit(['/', '\\']).next().unwrap_or(&lower);
-        basename.starts_with("base64_")
-            || basename.contains("base64_string")
-            || basename == "base64.txt"
+        let basename = bytes
+            .iter()
+            .rposition(|&b| b == b'/' || b == b'\\')
+            .map(|i| &bytes[i + 1..])
+            .unwrap_or(bytes);
+        basename
+            .get(..7)
+            .is_some_and(|p| p.eq_ignore_ascii_case(b"base64_"))
+            || crate::ascii_ci::ci_find(basename, b"base64_string")
+            || basename.eq_ignore_ascii_case(b"base64.txt")
     }) && source_type.is_some_and(|s| s == "filesystem")
     {
         crate::telemetry::record_example_suppression(

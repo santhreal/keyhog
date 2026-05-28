@@ -253,8 +253,11 @@ impl CompiledScanner {
             // alphabet-coincidence matches inside the base64 stream are
             // not credentials.
             if chunk.metadata.path.as_deref().is_some_and(|p| {
-                let lower = p.to_ascii_lowercase();
-                if lower.ends_with(".b64") || lower.ends_with(".base64") {
+                // Raw-byte case-insensitive checks, no per-match alloc.
+                let bytes = p.as_bytes();
+                if crate::ascii_ci::ends_with_ignore_ascii_case(bytes, b".b64")
+                    || crate::ascii_ci::ends_with_ignore_ascii_case(bytes, b".base64")
+                {
                     return true;
                 }
                 // Split on both `/` and `\` so Windows-form paths
@@ -263,8 +266,13 @@ impl CompiledScanner {
                 // backslash, every Windows scan misses this filename
                 // gate and emits FP entropy-* findings on legitimate
                 // base64-tagged files.
-                let basename = lower.rsplit(['/', '\\']).next().unwrap_or(&lower);
-                basename.starts_with("base64_") || basename.contains("base64_string")
+                let basename = bytes
+                    .iter()
+                    .rposition(|&b| b == b'/' || b == b'\\')
+                    .map(|i| &bytes[i + 1..])
+                    .unwrap_or(bytes);
+                crate::ascii_ci::starts_with_ignore_ascii_case(basename, b"base64_")
+                    || crate::ascii_ci::ci_find(basename, b"base64_string")
             }) {
                 continue;
             }
@@ -519,29 +527,35 @@ fn entropy_path_is_i18n_file(path: Option<&str>) -> bool {
 /// suppressed.
 #[cfg(feature = "entropy")]
 fn entropy_path_looks_like_filename(value: &str) -> bool {
-    const FILENAME_SUFFIXES: &[&str] = &[
-        ".jks",
-        ".yml",
-        ".yaml",
-        ".toml",
-        ".json",
-        ".properties",
-        ".pem",
-        ".key",
-        ".crt",
-        ".cer",
-        ".pfx",
-        ".p12",
-        ".keystore",
-        ".truststore",
-        ".conf",
-        ".ini",
-        ".env",
-        ".lock",
-        ".log",
+    // Per-entropy-candidate call; the entropy fallback typically fires
+    // multiple times per chunk on high-bandwidth scans. Pre-lowering
+    // `value` allocates per call - skim the raw bytes against pre-
+    // lowercased suffix literals with `eq_ignore_ascii_case` instead.
+    const FILENAME_SUFFIXES: &[&[u8]] = &[
+        b".jks",
+        b".yml",
+        b".yaml",
+        b".toml",
+        b".json",
+        b".properties",
+        b".pem",
+        b".key",
+        b".crt",
+        b".cer",
+        b".pfx",
+        b".p12",
+        b".keystore",
+        b".truststore",
+        b".conf",
+        b".ini",
+        b".env",
+        b".lock",
+        b".log",
     ];
-    let lower = value.to_ascii_lowercase();
-    FILENAME_SUFFIXES.iter().any(|s| lower.ends_with(s))
+    let bytes = value.as_bytes();
+    FILENAME_SUFFIXES
+        .iter()
+        .any(|s| crate::ascii_ci::ends_with_ignore_ascii_case(bytes, s))
 }
 
 #[cfg(feature = "entropy")]

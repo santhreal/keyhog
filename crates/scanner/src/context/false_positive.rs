@@ -1,35 +1,5 @@
 use super::inference::surrounding_line_window;
-
-/// Case-insensitive ASCII byte substring search.
-///
-/// `needle_lower` is assumed already-lowercase. `haystack` is matched against
-/// it without allocating a lowered copy. Used by every line-context check to
-/// avoid the `to_ascii_lowercase()` allocation that would otherwise fire once
-/// per surrounding line × per match in dense-hit chunks.
-///
-/// Uses `memchr::memchr2_iter` so on text where neither the lowercase nor
-/// uppercase first byte appears, we skim past whole 64 B chunks via SIMD
-/// rather than walking byte by byte.
-fn ci_find(haystack: &[u8], needle_lower: &[u8]) -> bool {
-    if needle_lower.is_empty() {
-        return true;
-    }
-    let n = needle_lower.len();
-    if haystack.len() < n {
-        return false;
-    }
-    let first_lower = needle_lower[0];
-    let first_upper = first_lower.to_ascii_uppercase();
-    for start in memchr::memchr2_iter(first_lower, first_upper, haystack) {
-        if start + n > haystack.len() {
-            break;
-        }
-        if haystack[start..start + n].eq_ignore_ascii_case(needle_lower) {
-            return true;
-        }
-    }
-    false
-}
+use crate::ascii_ci::ci_find;
 
 /// Returns `true` if the match is in a context that indicates a false positive.
 pub fn is_false_positive_match_context(
