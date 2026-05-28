@@ -764,3 +764,27 @@ fn update_subcommand_is_wired_with_its_flags() {
         );
     }
 }
+
+#[test]
+fn repair_subcommand_is_wired_with_its_flags() {
+    // Like `update`, `repair`'s download/reinstall path is network-bound; its
+    // shared logic is unit-tested in crate::installer. This confirms the
+    // subcommand + flags are registered.
+    let output = Command::new(binary())
+        .arg("repair")
+        .arg("--help")
+        .output()
+        .expect("run keyhog repair --help");
+    assert!(
+        output.status.success(),
+        "`keyhog repair --help` must succeed; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let help = String::from_utf8_lossy(&output.stdout);
+    for flag in ["--force", "--version", "--variant"] {
+        assert!(
+            help.contains(flag),
+            "`keyhog repair --help` must document {flag}; got:\n{help}"
+        );
+    }
+}

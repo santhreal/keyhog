@@ -73,6 +73,10 @@ pub enum Command {
     #[command(verbatim_doc_comment)]
     Update(UpdateArgs),
 
+    /// 🔧 Repair a broken install: reinstall a known-good binary, then verify
+    #[command(verbatim_doc_comment)]
+    Repair(RepairArgs),
+
     /// 🛰  Recursive system-wide scan: every mounted drive, every git history
     #[command(verbatim_doc_comment)]
     ScanSystem(ScanSystemArgs),
@@ -264,6 +268,23 @@ pub struct UpdateArgs {
     /// Asset variant: `cuda` selects the CUDA-accelerated Linux build;
     /// otherwise the portable WGPU+SIMD build is installed (the default,
     /// which still uses the GPU via WGPU and runs everywhere).
+    #[arg(long)]
+    pub variant: Option<String>,
+}
+
+/// Arguments for `keyhog repair` (reinstall a known-good binary from releases).
+#[derive(Parser)]
+pub struct RepairArgs {
+    /// Reinstall even if the scan-engine self-test currently passes.
+    #[arg(long)]
+    pub force: bool,
+
+    /// Reinstall a specific release tag instead of the latest (e.g. `v0.5.34`).
+    #[arg(long)]
+    pub version: Option<String>,
+
+    /// Asset variant: `cuda` for the CUDA Linux build; otherwise the portable
+    /// WGPU+SIMD build (default).
     #[arg(long)]
     pub variant: Option<String>,
 }
