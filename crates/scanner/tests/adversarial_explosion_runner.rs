@@ -285,6 +285,10 @@ fn every_contract_positive_fires_under_every_format_wrapper() {
 
     if !failures.is_empty() {
         let total = failures.len();
+        if let Ok(path) = std::env::var("KEYHOG_ADVERSARIAL_FULL_LOG") {
+            let _ = std::fs::write(&path, failures.join("\n"));
+            eprintln!("adversarial-explosion: full miss list written to {path}");
+        }
         let preview = failures
             .iter()
             .take(50)
