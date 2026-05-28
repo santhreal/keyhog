@@ -69,6 +69,10 @@ pub enum Command {
     #[command(verbatim_doc_comment)]
     Doctor(DoctorArgs),
 
+    /// ⬆️  Update keyhog to the latest release: verified download + self-replace
+    #[command(verbatim_doc_comment)]
+    Update(UpdateArgs),
+
     /// 🛰  Recursive system-wide scan: every mounted drive, every git history
     #[command(verbatim_doc_comment)]
     ScanSystem(ScanSystemArgs),
@@ -243,6 +247,26 @@ pub struct BackendArgs {
 /// (e.g. `--json`) without a breaking signature change.
 #[derive(Parser)]
 pub struct DoctorArgs {}
+
+/// Arguments for `keyhog update` (self-update from GitHub releases).
+#[derive(Parser)]
+pub struct UpdateArgs {
+    /// Only check whether a newer release is available; do not install.
+    /// Exits 10 when an update is available, 0 when already current.
+    #[arg(long)]
+    pub check: bool,
+
+    /// Install a specific release tag instead of the latest (e.g. `v0.5.34`).
+    /// Use this to pin a version or downgrade.
+    #[arg(long)]
+    pub version: Option<String>,
+
+    /// Asset variant: `cuda` selects the CUDA-accelerated Linux build;
+    /// otherwise the portable WGPU+SIMD build is installed (the default,
+    /// which still uses the GPU via WGPU and runs everywhere).
+    #[arg(long)]
+    pub variant: Option<String>,
+}
 
 #[derive(Parser)]
 pub struct WatchArgs {
