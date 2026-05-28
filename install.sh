@@ -475,6 +475,16 @@ verify_install() {
 
     if [ "$verify_status" = "0" ] && [ -z "$verify_err" ]; then
         ok "Installed $("$INSTALL_DIR/keyhog" --version)"
+        # Native post-install health check. `keyhog doctor` reuses the same
+        # hw_probe the scanner uses (so there's no shell-side GPU detection to
+        # drift from runtime) and runs an end-to-end scan self-test: it plants
+        # a synthetic secret and confirms the freshly-installed binary actually
+        # detects it on THIS host. Exit 4 means the self-test failed (broken
+        # binary) - surface it, but don't fail the install over a PATH warning.
+        say ""
+        if ! "$INSTALL_DIR/keyhog" doctor; then
+            warn "keyhog doctor reported issues above; the binary is installed but may not be fully healthy."
+        fi
         return 0
     fi
 
