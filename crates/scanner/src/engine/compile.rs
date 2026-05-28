@@ -107,9 +107,6 @@ impl CompiledScanner {
 
         log_quality_warnings(&state.quality_warnings);
 
-        #[cfg(feature = "simdsieve")]
-        let simdsieve_prefilter = crate::simdsieve_prefilter::SimdPrefilter::new();
-
         #[cfg(feature = "simd")]
         let (simd_prefilter, hs_index_map) =
             backend::build_simd_scanner(&state.ac_map, &state.fallback)
@@ -172,8 +169,6 @@ impl CompiledScanner {
             simd_prefilter,
             #[cfg(feature = "simd")]
             hs_index_map,
-            #[cfg(feature = "simdsieve")]
-            simdsieve_prefilter,
             config: ScannerConfig::default(),
             alphabet_screen,
             bigram_bloom,

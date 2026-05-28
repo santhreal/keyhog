@@ -25,13 +25,22 @@ pub(super) fn scan_worker(
     max_files: usize,
     throttle_ms: u64,
 ) {
-    // Pre-walk: cheap discovery pass so the UI shows a non-zero
-    // total in the stats panel before scanning starts. WalkDir is
-    // ~ms-per-1k-files so this is invisible in practice.
+    // Surface the pre-walk in the banner so a `keyhog tui ~/code`
+    // on a 50k-file tree doesn't look frozen for the second or two
+    // we spend enumerating. The banner shows "discovering files in
+    // <target>..." until walk_files returns; once we have a real
+    // entries list, the per-file loop below overwrites this with
+    // each path as it scans.
+    if let Ok(mut slot) = counters.current_file.write() {
+        *slot = format!("discovering files in {} ...", target.display());
+    }
     let entries: Vec<PathBuf> = walk_files(&target, max_files);
     counters
         .files_total
         .store(entries.len(), Ordering::Relaxed);
+    if let Ok(mut slot) = counters.current_file.write() {
+        slot.clear();
+    }
 
     let throttle = if throttle_ms == 0 {
         None

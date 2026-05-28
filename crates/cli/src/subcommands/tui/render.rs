@@ -44,7 +44,7 @@ pub(super) fn render(
         .read()
         .map(|s| s.clone())
         .unwrap_or_default();
-    render_banner(frame, chunks[0], target, backend_label, done, &current_file);
+    render_banner(frame, chunks[0], target, done, &current_file);
     render_feed(frame, chunks[1], findings_feed);
     render_stats(
         frame,
@@ -61,7 +61,6 @@ fn render_banner(
     frame: &mut ratatui::Frame<'_>,
     area: Rect,
     target: &Path,
-    backend_label: &str,
     done: bool,
     current_file: &str,
 ) {
@@ -90,18 +89,13 @@ fn render_banner(
 
     let line1 = Line::from(vec![
         Span::styled(
-            "keyhog tui",
+            "keyhog",
             Style::default()
                 .fg(Color::Rgb(0x64, 0xd2, 0xff))
                 .add_modifier(Modifier::BOLD),
         ),
         Span::raw("  v"),
         Span::raw(env!("CARGO_PKG_VERSION")),
-        Span::raw("  ·  GPU: "),
-        Span::styled(
-            backend_label.to_string(),
-            Style::default().fg(Color::Rgb(0xbf, 0x5a, 0xf2)),
-        ),
         Span::raw("  ·  "),
         title,
         Span::raw("  "),
@@ -238,17 +232,24 @@ fn render_stats(
     let bytes_done = counters.bytes_done.load(Ordering::Relaxed);
     let findings_total = counters.findings_total.load(Ordering::Relaxed);
     let secs = elapsed.as_secs_f64();
-    let throughput = if secs > 0.05 {
-        bytes_done as f64 / secs
+    let throughput_text = if bytes_done == 0 {
+        if files_total == 0 {
+            "discovering ...".to_string()
+        } else {
+            "warming up ...".to_string()
+        }
     } else {
-        0.0
+        let rate = bytes_done as f64 / secs.max(0.05);
+        format!("{}/s", format_bytes(rate as u64))
+    };
+    let files_text = if files_total == 0 {
+        "discovering ...".to_string()
+    } else {
+        format!("{files_done} / {files_total}")
     };
 
     let stats_lines = vec![
-        Line::from(vec![
-            stat_label("files"),
-            Span::raw(format!("{files_done} / {files_total}")),
-        ]),
+        Line::from(vec![stat_label("files"), Span::raw(files_text)]),
         Line::from(vec![stat_label("bytes"), Span::raw(format_bytes(bytes_done))]),
         Line::from(vec![
             stat_label("findings"),
@@ -270,7 +271,7 @@ fn render_stats(
         Line::from(vec![
             stat_label("throughput"),
             Span::styled(
-                format!("{}/s", format_bytes(throughput as u64)),
+                throughput_text,
                 Style::default().fg(Color::Rgb(0x30, 0xd1, 0x58)),
             ),
         ]),
@@ -278,15 +279,22 @@ fn render_stats(
 
     let backend_lines = vec![
         Line::from(vec![
-            stat_label("device"),
+            stat_label("engine"),
             Span::styled(
-                backend_label.to_string(),
+                preferred_backend.to_string(),
                 Style::default().fg(Color::Rgb(0xbf, 0x5a, 0xf2)),
             ),
         ]),
         Line::from(vec![
-            stat_label("preferred"),
-            Span::raw(preferred_backend.to_string()),
+            stat_label("gpu-stack"),
+            Span::styled(
+                if backend_label.is_empty() {
+                    "(none compiled)".to_string()
+                } else {
+                    backend_label.to_string()
+                },
+                Style::default().fg(Color::DarkGray),
+            ),
         ]),
         Line::from(vec![
             stat_label("patterns"),

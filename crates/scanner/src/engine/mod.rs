@@ -116,8 +116,6 @@ pub struct CompiledScanner {
     pub(crate) simd_prefilter: Option<crate::simd::backend::HsScanner>,
     #[cfg(feature = "simd")]
     pub(crate) hs_index_map: Vec<Vec<usize>>,
-    #[cfg(feature = "simdsieve")]
-    pub(crate) simdsieve_prefilter: crate::simdsieve_prefilter::SimdPrefilter,
     pub config: ScannerConfig,
     pub alphabet_screen: Option<crate::alphabet_filter::AlphabetScreen>,
     pub(crate) bigram_bloom: crate::bigram_bloom::BigramBloom,
@@ -262,12 +260,6 @@ impl CompiledScanner {
 
         if chunk.data.len() >= 64 && !self.bigram_bloom.maybe_overlaps(chunk.data.as_bytes()) {
             return Vec::new();
-        }
-
-        #[cfg(feature = "simdsieve")]
-        if chunk.data.len() > 100_000 {
-            let (_likely_hit, _confidence) =
-                self.simdsieve_prefilter.quick_screen(chunk.data.as_bytes());
         }
 
         let selected_backend =
