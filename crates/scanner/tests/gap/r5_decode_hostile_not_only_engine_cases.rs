@@ -8,7 +8,14 @@ fn r5_decode_hostile_not_only_engine_cases() {
     let hostile = std::fs::read_dir(&dir)
         .expect("a3_decode")
         .filter_map(|e| e.ok())
-        .filter(|e| e.file_name().to_string_lossy().starts_with("decode_hostile_"))
+        .filter(|e| {
+            e.file_name()
+                .to_string_lossy()
+                .starts_with("decode_hostile_")
+        })
         .count();
-    assert!(hostile >= 10, "KH-GAP-156: need standalone decode_hostile files, got {hostile}");
+    assert!(
+        hostile >= 10,
+        "KH-GAP-156: need standalone decode_hostile files, got {hostile}"
+    );
 }

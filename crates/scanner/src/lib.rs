@@ -60,13 +60,13 @@ pub mod jwt;
 // paths and the Tier-C audit cleanup don't churn the public API.
 pub use multiline::fragment_cache;
 pub(crate) mod homoglyph;
-pub(crate) mod suppression;
 /// Internal scan pipeline orchestration.
 pub mod pipeline;
 /// Prefix trie for efficient keyword propagation.
 pub mod prefix_trie;
 pub(crate) mod probabilistic_gate;
 pub(crate) mod structured;
+pub(crate) mod suppression;
 /// Per-scan telemetry: always-on counters + opt-in `--dogfood` events.
 pub mod telemetry;
 /// Unicode normalization and homoglyph defense.

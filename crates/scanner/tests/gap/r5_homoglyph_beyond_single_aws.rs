@@ -10,5 +10,8 @@ fn r5_homoglyph_beyond_single_aws() {
         .filter_map(|e| e.ok())
         .filter(|e| e.file_name().to_string_lossy().starts_with("homoglyph_"))
         .count();
-    assert!(count >= 6, "KH-GAP-158: homoglyph adversarial floor, got {count}");
+    assert!(
+        count >= 6,
+        "KH-GAP-158: homoglyph adversarial floor, got {count}"
+    );
 }

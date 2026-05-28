@@ -22,10 +22,7 @@ fn megakernel_spec_waiver_has_expiry() {
         raw.contains("expires = \""),
         "waiver must declare expires = \"YYYY-MM-DD\""
     );
-    assert!(
-        raw.contains("owner = \""),
-        "waiver must declare an owner"
-    );
+    assert!(raw.contains("owner = \""), "waiver must declare an owner");
     assert!(
         support::megakernel_waiver::megakernel_parity_waiver_active(),
         "SPEC waiver must not be expired — renew or wire megakernel parity before expiry"
