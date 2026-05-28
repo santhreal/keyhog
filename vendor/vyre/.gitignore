@@ -26,6 +26,11 @@ conform/regressions/
 perf.data*
 flamegraph.svg
 
+# Internal planning and ticket artifacts.
+.internals/
+.jules/
+tickets/
+
 # Editor / IDE scratch.
 .vscode/
 .idea/
