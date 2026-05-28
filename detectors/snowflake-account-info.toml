@@ -9,7 +9,13 @@ severity = "info"
 keywords = ["SNOWFLAKE", "snowflakecomputing", "SNOWSQL"]
 
 [[detector.patterns]]
-regex = "(?:SNOWFLAKE|snowflake)[._-]?(?:account|acct|accountname)[=:\\s\"'']+([a-z0-9]+(?:\\.[a-z0-9-]+)?)"
+# `(?-i)` forces case-sensitive matching. Account locators are lowercase (e.g.
+# xy12345.us-east-1), so the lowercase-only value charset then rejects an
+# uppercase placeholder like `YOUR_API_KEY_HERE_PLACEHOLDER_VALUE` (the regex
+# would otherwise capture the truncated `YOUR` under the global case-insensitive
+# compile). The user / warehouse / database / role patterns below stay
+# case-insensitive - those identifiers legitimately carry uppercase.
+regex = "(?-i)(?:SNOWFLAKE|snowflake)[._-]?(?:account|acct|accountname)[=:\\s\"'']+([a-z0-9]+(?:\\.[a-z0-9-]+)?)"
 description = "Snowflake account identifier"
 group = 1
 

@@ -185,13 +185,16 @@ fn strip_leading_inline_flags(pattern: &str) -> &str {
     if !pattern.starts_with("(?") {
         return pattern;
     }
-    // (?i), (?m), (?s), (?x), (?im), (?ims), (?imsx) etc. - flags only, no ':'
+    // (?i), (?m), (?s), (?x), (?im), (?ims), (?imsx) etc. - flags only, no ':'.
+    // Also the negative form (?-i), (?im-sx): the `-` toggles following flags
+    // off (keyhog uses (?-i) to make a pattern case-sensitive). A trailing `:`
+    // means a scoped group `(?-i:...)`, not a leading directive - left intact.
     let bytes = pattern.as_bytes();
     if bytes.len() < 4 || bytes[0] != b'(' || bytes[1] != b'?' {
         return pattern;
     }
     let mut i = 2;
-    while i < bytes.len() && matches!(bytes[i], b'i' | b'm' | b's' | b'x' | b'u' | b'U') {
+    while i < bytes.len() && matches!(bytes[i], b'i' | b'm' | b's' | b'x' | b'u' | b'U' | b'-') {
         i += 1;
     }
     if i < bytes.len() && bytes[i] == b')' {

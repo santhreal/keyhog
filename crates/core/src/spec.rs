@@ -72,6 +72,11 @@ pub struct PatternSpec {
     ///
     /// Per-pattern (not per-detector) so detectors that fire on both
     /// the public *and* the secret prefix can tag only the public one.
+    ///
+    /// Case sensitivity: keyhog compiles every regex `case_insensitive(true)`,
+    /// so to make a single pattern case-SENSITIVE (AWS `AKIA` is uppercase,
+    /// GCP/Snowflake ids are lowercase) prefix its regex with the inline flag
+    /// `(?-i)` in the TOML - no schema field needed.
     #[serde(default)]
     pub client_safe: bool,
 }

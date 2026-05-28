@@ -387,23 +387,13 @@ pub(crate) fn looks_like_credential_colliding_punctuation(value: &str) -> bool {
         return false;
     }
     let bytes = value.as_bytes();
-    if bytes[0] == b'!' || bytes[0] == b'/' {
-        return true;
-    }
-    let last = bytes[bytes.len() - 1];
-    // Trailing `!` (TypeScript non-null assertion on a variable name).
-    if last == b'!' && bytes.len() >= 4 {
-        let prefix = &bytes[..bytes.len() - 1];
-        // Variable-name shape: all `[A-Za-z0-9_]`, has letter
-        let pure_ident = prefix
-            .iter()
-            .all(|&b| b.is_ascii_alphanumeric() || b == b'_');
-        let has_letter = prefix.iter().any(|b| b.is_ascii_alphabetic());
-        if pure_ident && has_letter {
-            return true;
-        }
-    }
-    false
+    // NOTE: a *trailing* `!` is deliberately NOT treated as decoration. It was
+    // once a TS-non-null heuristic (`token!`), but a password ending in `!` is
+    // extremely common (`SnowFlakePass123!`), and the rule suppressed real
+    // secrets dropped into JSON envelopes (`{"secret":"SnowFlakePass123!"}`) -
+    // the only path that can catch those is the generic detector (Tier-B). The
+    // narrow TS-non-null gain didn't justify the recall loss.
+    bytes[0] == b'!' || bytes[0] == b'/'
 }
 
 /// Combined Tier-A + body-collision punctuation filter. Retained for the
