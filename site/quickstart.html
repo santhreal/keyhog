@@ -12,7 +12,7 @@
   <a href="index.html" class="brand">
     <span class="mark">k</span>
     keyhog
-    <span class="v">v0.5.16</span>
+    <span class="v">v0.5.35</span>
   </a>
   <nav class="top">
     <a href="detectors.html">Detectors</a>
@@ -77,7 +77,7 @@ Default output is human-readable text, redacted credentials, severity-sorted.</p
 
 <h3>What you'll see</h3>
 
-<pre><code><span class="a">keyhog v0.5.16 | 16 cores | SIMD: AVX-512 | Hyperscan | 891 detectors</span>
+<pre><code><span class="a">keyhog v0.5.35 | 16 cores | SIMD: AVX-512 | Hyperscan | 891 detectors</span>
 <span class="a">scanning 1,247 files…</span>
 
 <span class="c">.env.production:3</span>
@@ -165,7 +165,7 @@ Security Dashboard, or any SARIF-aware tool.</p>
 <pre><code><span class="prompt">$</span> keyhog scan . --verify</code></pre>
 
 <p>For findings that keyhog knows how to verify (GitHub PATs, AWS keys, Slack
-tokens, Stripe keys, OpenAI keys, ~80 services), keyhog hits the vendor API
+tokens, Stripe keys, OpenAI keys, 341 detectors with a vendor verifier endpoint), keyhog hits the vendor API
 read-only to confirm the credential is live. Unverified findings are marked
 with <code>[unverified]</code>; live ones get <code>[verified ✓]</code>.</p>
 

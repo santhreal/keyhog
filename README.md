@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://crates.io/crates/keyhog"><img src="https://img.shields.io/crates/v/keyhog?style=flat-square&color=ffd60a&labelColor=0a0a0a" alt="crates.io" /></a>&nbsp;
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-9aa0b4?style=flat-square&labelColor=0a0a0a" alt="MIT" /></a>&nbsp;
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-9aa0b4?style=flat-square&labelColor=0a0a0a" alt="MIT OR Apache-2.0" /></a>&nbsp;
   <a href="https://github.com/santhsecurity/keyhog/actions"><img src="https://img.shields.io/github/actions/workflow/status/santhsecurity/keyhog/ci.yml?style=flat-square&label=CI&labelColor=0a0a0a" alt="CI" /></a>&nbsp;
   <a href="https://star-history.com/#santhsecurity/keyhog&Date"><img src="https://img.shields.io/github/stars/santhsecurity/keyhog?style=flat-square&color=ffd60a&label=stars&labelColor=0a0a0a" alt="GitHub stars" /></a>
 </p>
@@ -239,8 +239,13 @@ recipes, Husky / lefthook, and the full SARIF schema:
 
 ```bash
 keyhog hook install                    # writes .git/hooks/pre-commit
-keyhog hook install --no-daemon        # ~1 s slower per commit
+keyhog hook uninstall                  # removes the keyhog-generated hook
 ```
+
+The installed hook calls `keyhog scan --fast --git-staged` on every
+commit. If `keyhog daemon start` is running, the in-process scan reuses
+the daemon's compiled scanner for sub-50 ms latency; otherwise the
+hook pays the ~3 s compile cost on each commit.
 
 Or via the `pre-commit` framework:
 
@@ -308,10 +313,15 @@ Enforces:
 - `PR_SET_DUMPABLE = 0` (always on, even outside lockdown) . disables
   core dumps, ptrace, `/proc/<pid>/mem` reads. macOS gets
   `PT_DENY_ATTACH`.
+- `setrlimit(RLIMIT_CORE, 0)` on Linux . kernel refuses to write any
+  core file regardless of the system `coredump_filter`, so anonymous
+  pages can never reach disk via the dump path.
 - Refuses to run if `~/.cache/keyhog/*` exists, refuses
   `--incremental` writes, refuses `--verify`, refuses
-  `--show-secrets`, refuses to start if kernel `coredump_filter`
-  would dump anonymous pages.
+  `--show-secrets`, refuses `--fast` / `--no-decode` / `--no-entropy` /
+  `--no-ml` / `--no-unicode-norm` / `--no-default-excludes` (each
+  trades off detection completeness for speed; lockdown is for the
+  highest-stakes runs where you want every gate engaged).
 
 The always-on hardening (everything except mlock + cache refusal) is
 applied to every keyhog invocation . even without `--lockdown` a
@@ -320,10 +330,15 @@ keyhog binary can't be coredumped or ptraced.
 ## Library API
 
 ```rust
-use keyhog_core::{Chunk, ChunkMetadata};
+use keyhog_core::{Chunk, ChunkMetadata, DetectorFile};
 use keyhog_scanner::CompiledScanner;
 
-let detectors = keyhog_core::embedded_detectors();   // 891 built-in
+// build.rs embeds every detectors/*.toml as a (name, toml-body) pair.
+let detectors: Vec<_> = keyhog_core::embedded_detector_tomls()
+    .iter()
+    .filter_map(|(_name, body)| toml::from_str::<DetectorFile>(body).ok())
+    .map(|file| file.detector)
+    .collect();
 let scanner = CompiledScanner::compile(detectors)?;
 
 let findings = scanner.scan(&Chunk {
@@ -390,7 +405,7 @@ crates/
   core/       Detector loading, finding types, reporting (text/JSON/SARIF), allowlists
   scanner/    Hardware routing, Hyperscan, GPU, decode-through, entropy, ML, multiline
   sources/    File system, git (staged/diff/history), stdin, Docker, S3, GitHub org, web
-  verifier/   Live credential verification against ~80 service APIs
+  verifier/   Live credential verification (341 detectors carry an active `[detector.verify]` endpoint)
   cli/        CLI binary, daemon, watch, baselines, calibrate, hook installer
 detectors/    891 TOML files (data, not code)
 site/         Documentation site (17 pages, GitHub-Pages-ready)

@@ -7,8 +7,9 @@ fires but before it becomes a finding. KeyHog applies them in layers.
 
 ### Test fixtures (always on, opt-out)
 
-`data/suppressions/test-fixtures.toml`, baked into the binary. Lists
-publicly documented credentials that vendor docs ship as examples:
+`crates/cli/data/suppressions/test-fixtures.toml`, baked into the
+binary. Lists publicly documented credentials that vendor docs ship
+as examples:
 
 ```toml
 [[fixture]]

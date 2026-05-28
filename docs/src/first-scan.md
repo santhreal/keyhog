@@ -57,8 +57,9 @@ Findings on these are suppressed by default. Examples:
 - GitHub's `ghp_aBcDeFgHiJ…` placeholder
 
 To see what was suppressed, pass `--no-suppress-test-fixtures`. The
-list lives in `data/suppressions/test-fixtures.toml` inside the binary
-and is the ONLY built-in suppression list - there's no opaque allow-list.
+list lives at `crates/cli/data/suppressions/test-fixtures.toml`
+inside the source tree, baked into the binary at build time, and is
+the ONLY built-in suppression list - there's no opaque allow-list.
 
 ## JSON output
 

@@ -12,7 +12,7 @@
   <a href="index.html" class="brand">
     <span class="mark">k</span>
     keyhog
-    <span class="v">v0.5.16</span>
+    <span class="v">v0.5.35</span>
   </a>
   <nav class="top">
     <a href="detectors.html">Detectors</a>
@@ -77,7 +77,7 @@
 
 <pre data-nocopy="true"><code><span class="prompt">$</span> <span class="k">cargo</span> install keyhog
 <span class="prompt">$</span> <span class="k">keyhog</span> scan .
-<span class="a">keyhog v0.5.16 | 16 cores | SIMD: AVX-512 | Hyperscan | 891 detectors</span>
+<span class="a">keyhog v0.5.35 | 16 cores | SIMD: AVX-512 | Hyperscan | 891 detectors</span>
 <span class="a">scanning 1,247 files…</span>
 
 <span class="c">findings/main.tf:14</span>
@@ -178,8 +178,8 @@ while maintaining near-zero false positives.
 <div class="grid three">
   <a href="install.html" class="card">
     <h3>1. Install</h3>
-    <p><code>cargo install keyhog</code> — works on Linux, macOS (Intel + Apple
-    Silicon), and Windows. No config.</p>
+    <p><code>curl -fsSL .../install.sh | sh</code> on Linux/macOS (Intel + Apple
+    Silicon), <code>iwr .../install.ps1 -useb | iex</code> on Windows. No config.</p>
   </a>
   <a href="quickstart.html" class="card">
     <h3>2. Scan</h3>

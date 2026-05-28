@@ -12,16 +12,19 @@ runtime error.
 |-------------------------------|------------------------------------------------|
 | `<PATH>`                      | Positional path. File or directory.            |
 | `--stdin`                     | Read from stdin instead. 10 MiB cap.           |
-| `--exclude-paths <GLOB>`      | Skip files matching glob. Repeatable.          |
-| `--include-extensions <EXT>`  | Only scan files with these extensions.         |
-| `--staged`                    | Scan git-staged files only (pre-commit mode).  |
-| `--git-history`               | Scan all commits, not just HEAD.               |
+| `--exclude-paths <GLOB>...`   | Skip files matching glob. Space-separated list, repeatable. |
+| `--git-staged`                | Scan git-staged files only (pre-commit mode).  |
+| `--git-history <PATH>`        | Walk commits added-line patches (default: HEAD only). |
+| `--git-diff <BASE_REF>`       | Scan only added lines since `BASE_REF`.        |
+| `--docker-image <IMAGE>`      | Scan a saved Docker image archive.             |
+| `--s3-bucket <BUCKET>`        | Scan an S3 bucket. Use `--s3-prefix` to narrow. |
+| `--url <URL>...`              | Fetch + scan one or more HTTPS URLs (JS/source-map/WASM/text). |
 
 ### Output
 
 | Flag                          | Effect                                         |
 |-------------------------------|------------------------------------------------|
-| `--format <human\|json\|sarif\|ndjson>` | Output format. Default `human`.      |
+| `--format <text\|json\|jsonl\|sarif>` | Output format. Default `text`.        |
 | `--quiet`                     | Suppress banner + footer. Findings only.       |
 | `--show-secrets`              | Show full credentials. Default redacts.        |
 | `--min-confidence <FLOAT>`    | Only emit findings >= confidence. 0.0..=1.0.   |
@@ -152,15 +155,22 @@ keyhog scan . --format json > pr.json
 keyhog diff baseline.json pr.json
 ```
 
-## `keyhog calibrate [PATH]`
+## `keyhog calibrate`
 
-Diagnostic tool that scans a directory at increasing detector counts
-and reports throughput. Used to verify hardware acceleration is
-active.
+Show or update the per-detector Bayesian (Beta-α/β) calibration
+counters. Used to teach the scorer that detector X has produced N
+true positives and M false positives in your environment so its
+confidence is adjusted on future scans.
 
 ```sh
-keyhog calibrate --show
+keyhog calibrate --show                       # print current counters
+keyhog calibrate --tp stripe-secret-key       # record one TP
+keyhog calibrate --fp generic-api-key         # record one FP
+keyhog calibrate --tp aws-access-key --show   # record + print
 ```
+
+Pass `--cache <PATH>` to point at a non-default counter file (the
+default lives under `$XDG_DATA_HOME/keyhog/`).
 
 ## `keyhog backend`
 
@@ -174,13 +184,20 @@ keyhog backend
 
 ## `keyhog scan-system`
 
-Scans well-known system locations (`~/.aws/credentials`, `~/.ssh/`,
-`~/.netrc`, `~/.npmrc`, `~/.docker/config.json`, etc.) for misplaced
-credentials in shell history files, environment dumps, etc.
-Intentionally narrow scope.
+Recursive system-wide credential audit. Walks every mounted drive
+(skipping pseudo-filesystems and, by default, network mounts),
+discovers every `.git` repository on the way, and runs the same
+scan + git-history pipeline that `keyhog scan --git-history` uses
+on each. Honors a hard `--space <N>` ceiling on total bytes scanned
+so it cannot accidentally exhaust a CI runner. Does NOT honor
+`.gitignore` unless `--respect-gitignore` is passed (an attacker
+stashing leaked keys would `.gitignore` them).
 
 ```sh
-keyhog scan-system
+keyhog scan-system                                  # local mounts, git history on
+keyhog scan-system --include-network                # also walk NFS/SMB/sshfs
+keyhog scan-system --space 50G --no-git-history     # cap + skip history walks
+keyhog scan-system --lockdown                       # forbids --include-network
 ```
 
 ## `keyhog completion <bash|zsh|fish|powershell>`

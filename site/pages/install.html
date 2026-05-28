@@ -1,34 +1,45 @@
 title = "Installation"
-description = "Install keyhog via cargo, prebuilt release binaries, Docker, or source."
+description = "Install keyhog via install.sh, install.ps1, prebuilt release binaries, Docker, or source."
 ---
 <h1>Installation</h1>
 <p class="lede">
-  keyhog is a single Rust binary. Install it with cargo, download a prebuilt
-  release, or build from source. Works on Linux, macOS (Intel + Apple Silicon),
-  and Windows with zero configuration.
+  keyhog is a single Rust binary. Install it with the one-line installer,
+  download a prebuilt release, pull the Docker image, or build from source.
+  Works on Linux, macOS (Intel + Apple Silicon), and Windows with zero
+  configuration. <strong>Crates.io publishing lands with the next tagged
+  release; <code>cargo install keyhog</code> doesn't work yet.</strong>
 </p>
 
-<h2>cargo install</h2>
+<h2>One-liner (recommended)</h2>
 
 <p>The simplest path. Includes SIMD, ML, entropy, decode-through, and multiline reassembly.</p>
 
-<pre><code><span class="prompt">$</span> cargo install keyhog</code></pre>
+<pre><code><span class="prompt">$</span> curl -fsSL https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.sh | sh</code></pre>
 
-<p>Requires <strong>Rust 1.89+</strong> and a C++ compiler (for the Hyperscan FFI).
-On Debian/Ubuntu install <code>build-essential cmake ragel libboost-dev</code>
-first; on macOS <code>xcode-select --install</code> is enough.</p>
+<p>Drops a binary in <code>~/.local/bin/keyhog</code>. The installer detects
+your OS, CPU, and GPU before downloading. On Ubuntu/Debian you'll also need
+the Hyperscan runtime: <code>sudo apt-get install -y libhyperscan5</code>
+(the installer prints this hint if the binary fails to start).</p>
 
-<h3>With GPU acceleration</h3>
+<h3>Windows</h3>
 
-<pre><code><span class="prompt">$</span> cargo install keyhog --features gpu</code></pre>
+<pre><code><span class="prompt">$</span> iwr https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.ps1 -useb | iex</code></pre>
 
-<p>Pulls the vyre GPU runtime + wgpu drivers. On NVIDIA you get zero-copy
-NVMe&nbsp;→&nbsp;VRAM DMA; on macOS/Linux without an NVIDIA card you get
-Metal/Vulkan compute via wgpu. See <a href="performance.html">Performance →</a>.</p>
+<p>Drops <code>keyhog.exe</code> in <code>%LOCALAPPDATA%\keyhog\bin</code>
+and adds it to your <code>PATH</code>.</p>
 
-<h3>Minimal (no SIMD, no ML)</h3>
+<h3>GPU selection</h3>
 
-<pre><code><span class="prompt">$</span> cargo install keyhog --no-default-features --features regex-engine</code></pre>
+<p>The default Linux build dispatches via WGPU on any compatible adapter and
+runs SIMD on the CPU path. If you have the full CUDA toolkit installed
+(<code>nvcc</code> on PATH or <code>$CUDA_HOME</code> set), pass
+<code>--variant=cuda</code> to install.sh for the native-CUDA build. See
+<a href="performance.html">Performance →</a>.</p>
+
+<h3>Minimal source build (no SIMD, no ML)</h3>
+
+<pre><code><span class="prompt">$</span> git clone https://github.com/santhsecurity/keyhog &amp;&amp; cd keyhog
+<span class="prompt">$</span> cargo build --release -p keyhog --no-default-features --features portable</code></pre>
 
 <p>Drops Hyperscan, ML scoring, and decode-through. ~3&nbsp;MB smaller binary,
 ~10× slower per pattern, no entropy/ML gating. Use this only for embedded or
@@ -36,16 +47,20 @@ locked-down build environments where pulling Hyperscan is a non-starter.</p>
 
 <h2>Prebuilt binaries</h2>
 
-<p>Every tagged release attaches platform binaries:</p>
+<p>Every tagged release attaches platform binaries (real names from
+<a href="https://github.com/santhsecurity/keyhog/releases">the releases
+page</a>):</p>
 
 <ul>
-  <li><code>keyhog-x86_64-unknown-linux-gnu.tar.gz</code></li>
-  <li><code>keyhog-aarch64-apple-darwin.tar.gz</code> <small class="muted">(coming soon to the matrix)</small></li>
-  <li><code>keyhog-x86_64-pc-windows-msvc.zip</code></li>
+  <li><code>keyhog-linux-x86_64</code> (WGPU + SIMD default)</li>
+  <li><code>keyhog-linux-x86_64-cuda</code> (native CUDA dispatch)</li>
+  <li><code>keyhog-macos-aarch64</code> (Apple Silicon)</li>
+  <li><code>keyhog-macos-x86_64</code> (Intel Mac)</li>
+  <li><code>keyhog-windows-x86_64.exe</code></li>
 </ul>
 
-<pre><code><span class="prompt">$</span> curl -L https://github.com/santhsecurity/keyhog/releases/latest/download/keyhog-x86_64-unknown-linux-gnu.tar.gz \
-    | tar -xz
+<pre><code><span class="prompt">$</span> curl -L https://github.com/santhsecurity/keyhog/releases/latest/download/keyhog-linux-x86_64 \
+    -o keyhog &amp;&amp; chmod +x keyhog
 <span class="prompt">$</span> sudo install keyhog /usr/local/bin/</code></pre>
 
 <h2>Docker</h2>
@@ -67,10 +82,10 @@ root runs the unmodified binary against your tree.</p>
 <h2>Verify the install</h2>
 
 <pre><code><span class="prompt">$</span> keyhog --version
-<span class="a">keyhog v0.5.16</span>
+<span class="a">keyhog v0.5.35</span>
 
 <span class="prompt">$</span> keyhog backend
-<span class="a">keyhog v0.5.16 | 16 cores | SIMD: AVX-512 | Hyperscan | 891 detectors</span>
+<span class="a">keyhog v0.5.35 | 16 cores | SIMD: AVX-512 | Hyperscan | 891 detectors</span>
 <span class="a">  routing matrix:</span>
 <span class="a">    &lt; 64 MiB         → simd-regex (Hyperscan)</span>
 <span class="a">    ≥ 64 MiB, &gt;2k pat → gpu-zero-copy</span>
@@ -90,7 +105,7 @@ root runs the unmodified binary against your tree.</p>
 
 <h2>Upgrading</h2>
 
-<pre><code><span class="prompt">$</span> cargo install keyhog --force</code></pre>
+<pre><code><span class="prompt">$</span> curl -fsSL https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.sh | sh</code></pre>
 
 <p>Or download a fresh release tarball. Baselines, ignore files, and the
 incremental cache are forward-compatible across patch releases; major

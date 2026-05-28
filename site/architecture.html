@@ -12,7 +12,7 @@
   <a href="index.html" class="brand">
     <span class="mark">k</span>
     keyhog
-    <span class="v">v0.5.16</span>
+    <span class="v">v0.5.35</span>
   </a>
   <nav class="top">
     <a href="detectors.html">Detectors</a>
@@ -84,7 +84,7 @@
   <code>wgpu::Instance::enumerate_adapters</code> for GPUs.
   Result cached for the process lifetime.</li>
   <li><strong>Detector load.</strong> 891 TOML files compiled in at build
-  time via the <code>embedded-detectors</code> feature. Disk-resident
+  time via the <code>build.rs</code> embedding (auto-bundled in <code>keyhog-core</code>; no feature flag). Disk-resident
   <code>detectors/</code> overrides the embedded set when present.</li>
   <li><strong>Database compile.</strong> All regexes feed into
   <code>hs_compile_multi</code>; the resulting NFA serializes to

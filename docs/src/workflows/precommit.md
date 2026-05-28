@@ -12,9 +12,13 @@ From inside a git repo:
 keyhog hook install
 ```
 
-That writes a `.git/hooks/pre-commit` script (or appends to an
-existing one) that calls `keyhog scan --staged --quiet`. The next
-`git commit` invokes it.
+That writes a `.git/hooks/pre-commit` script that calls
+`keyhog scan --fast --git-staged` (the same command
+`.pre-commit-hooks.yaml` exposes for the pre-commit framework).
+If a `pre-commit` hook already exists in the repo, `keyhog hook
+install` refuses to overwrite it - remove it (or run
+`keyhog hook uninstall`) and re-install. The next `git commit`
+invokes the hook.
 
 If your repo uses [pre-commit](https://pre-commit.com/) instead of
 raw git hooks, add the following to `.pre-commit-config.yaml`:
@@ -32,8 +36,8 @@ Then `pre-commit install` once, and it runs on every commit.
 
 ## What gets scanned
 
-`keyhog scan --staged` walks the **index** (the set of files git is
-about to commit), not the working tree. Why this matters:
+`keyhog scan --git-staged` walks the **index** (the set of files git
+is about to commit), not the working tree. Why this matters:
 
 - A file you've modified but not `git add`ed is NOT scanned. You're
   free to keep credentials in scratch files as long as you don't
@@ -110,6 +114,8 @@ commits. If yours feels slow:
 keyhog hook uninstall
 ```
 
-Removes the hook block from `.git/hooks/pre-commit`. If you used
-the pre-commit framework instead, delete the keyhog stanza from
+Removes the KeyHog `.git/hooks/pre-commit` file if it carries the
+generated KeyHog marker. If you hand-edited the hook,
+`keyhog hook uninstall` refuses to touch it - clean it up by hand.
+For the pre-commit framework, delete the keyhog stanza from
 `.pre-commit-config.yaml` and run `pre-commit clean`.

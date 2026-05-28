@@ -37,7 +37,7 @@ To distinguish "findings, but all dead" from "findings, some live"
 without parsing JSON:
 
 ```sh
-if ! keyhog scan . --verify --quiet --format ndjson \
+if ! keyhog scan . --verify --quiet --format jsonl \
      | grep -q 'verified-live'; then
   echo "No live credentials found."
 fi
