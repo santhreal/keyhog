@@ -8,7 +8,7 @@
 
 use crate::types::ScannerPreprocessedText;
 
-mod parsers;
+pub mod parsers;
 
 const MAX_STRUCTURED_PARSE_BYTES: usize = 2 * 1024 * 1024;
 

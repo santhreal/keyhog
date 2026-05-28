@@ -81,6 +81,11 @@ impl CompiledScanner {
                     self.scan_inner(&decoded_chunk, decoded_backend, deadline)
                 };
                 for m in decoded_matches {
+                    if crate::context::is_known_example_credential(&m.credential)
+                        && chunk.data.as_str().contains(m.credential.as_ref())
+                    {
+                        continue;
+                    }
                     let key = (Arc::clone(&m.detector_id), Arc::clone(&m.credential));
                     if seen.insert(key) {
                         matches.push(m);

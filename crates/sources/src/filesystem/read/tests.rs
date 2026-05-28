@@ -391,10 +391,8 @@ fn read_file_for_compressed_input_returns_none_for_missing_path() {
     // did `std::fs::read(path)?` and bubbled the error; the new
     // wrapper folds that into None to match the Option-shaped
     // API the windowed helper uses.)
-    let fb = read_file_for_compressed_input(
-        std::path::Path::new("/nonexistent/keyhog/test/path"),
-        1024,
-    );
+    let fb =
+        read_file_for_compressed_input(std::path::Path::new("/nonexistent/keyhog/test/path"), 1024);
     assert!(fb.is_none());
 }
 

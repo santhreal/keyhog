@@ -1,22 +1,33 @@
 //! Core scanning engine implementation.
 
 mod backend;
-mod boundary;
+mod backend_dispatch;
+mod backend_pattern_hits;
+mod backend_prepared;
+mod backend_triggered;
+pub mod boundary;
 mod compile;
 mod extract;
 mod fallback;
 mod fallback_entropy;
+mod fallback_entropy_helpers;
 mod fallback_generic;
 mod gpu_ac_phase1;
 mod gpu_cache;
 mod gpu_coalesce;
+#[allow(dead_code)]
+pub(crate) mod gpu_decode_scan;
 mod gpu_dispatch;
 mod gpu_forced;
 mod gpu_lazy;
 mod gpu_literal_phase1;
 mod gpu_megascan;
 mod gpu_phase2;
-mod gpu_postprocess;
+pub(crate) mod gpu_postprocess;
+#[allow(dead_code)]
+pub(crate) mod gpu_program_fusion;
+#[allow(dead_code)]
+pub(crate) mod gpu_regex_dfa;
 mod gpu_scan_wrappers;
 mod hot_patterns;
 mod process;
@@ -27,12 +38,13 @@ mod scan_postprocess;
 pub mod segment_attribution;
 mod windowed;
 
+pub(crate) use backend_prepared::{build_simd_scanner, PreparedChunk};
 pub use gpu_cache::{AcConstPacks, GpuConstPacks};
 pub use gpu_coalesce::coalesce_chunks;
 pub use gpu_scan_wrappers::GpuPhase1Output;
 pub use rule_pipeline::{
-    build_rule_pipeline, megascan_input_len, rule_pipeline_cached,
-    AC_GPU_MAX_MATCHES_PER_DISPATCH, MEGASCAN_INPUT_LEN, MEGASCAN_INPUT_LEN_DEFAULT,
+    build_rule_pipeline, megascan_input_len, rule_pipeline_cached, AC_GPU_MAX_MATCHES_PER_DISPATCH,
+    MEGASCAN_INPUT_LEN, MEGASCAN_INPUT_LEN_DEFAULT,
 };
 pub use windowed::{
     floor_char_boundary, line_number_for_offset, next_window_offset, record_window_match,
@@ -102,6 +114,12 @@ pub struct CompiledScanner {
     pub(crate) gpu_ac_const_packs: OnceLock<AcConstPacks>,
     pub(crate) ac_gpu_program: OnceLock<Option<vyre::Program>>,
     pub(crate) rule_pipeline: OnceLock<Option<vyre_libs::scan::RulePipeline>>,
+    /// Fused AC + rule pipeline program (single GPU dispatch instead of two).
+    /// Lazily built on first access via `fused_program()`.
+    pub(crate) fused_program: OnceLock<Option<vyre::Program>>,
+    /// Fused decode→scan programs for base64/hex GPU decode.
+    /// Lazily built on first access.
+    pub(crate) fused_decode_programs: OnceLock<Option<gpu_decode_scan::FusedDecodeScanPrograms>>,
     pub(crate) static_intern: Arc<crate::static_intern::StaticInterner>,
     pub(crate) ac_map: Vec<CompiledPattern>,
     pub(crate) prefix_propagation: Vec<Vec<usize>>,

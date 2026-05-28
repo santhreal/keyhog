@@ -39,21 +39,9 @@ pub fn preprocess_multiline(
     let mut mappings = Vec::new();
     let mut current_offset = 0usize;
     let mut index = 0;
-    // Track whether process_line_chain actually chained two or more
-    // lines together. Without this signal, a single-line input that
-    // happens to end in `\n` produces `joined_text` == input-without-\n,
-    // which compares not-equal to `text`. The eager append below would
-    // then duplicate the entire input into `final_text`, causing every
-    // detector to fire twice - once at the original offset, once at
-    // ~original_end + 1 (past EOF on the source file). #16 regression.
-    let mut any_real_join = false;
     while index < lines.len() {
         let (joined_line, lines_consumed, line_mappings) =
             process_line_chain(&lines, index, config, current_offset);
-
-        if lines_consumed > 1 {
-            any_real_join = true;
-        }
 
         if !joined_line.is_empty() {
             let total_len = joined_line.len();
@@ -70,7 +58,11 @@ pub fn preprocess_multiline(
     let mut final_text = text.to_string();
 
     let mut appended_any = false;
-    if any_real_join && joined_text != text && !joined_text.is_empty() {
+    let joined_trimmed = joined_text.trim();
+    let text_trimmed = text.trim();
+    let is_real_concatenation = joined_trimmed != text_trimmed;
+
+    if is_real_concatenation && !joined_text.is_empty() {
         final_text.push('\n');
         final_text.push_str(&joined_text);
 
@@ -209,14 +201,14 @@ fn extract_string_part(
         return (part, true, ContinuationType::Backslash);
     }
 
+    if let Some((part, continues)) = extract_function_concatenation(line) {
+        return (part, continues, ContinuationType::Implicit);
+    }
+
     if config.plus_concatenation {
         if let Some((part, continues)) = extract_plus_concatenation(line) {
             return (part, continues, ContinuationType::PlusOperator);
         }
-    }
-
-    if let Some((part, continues)) = extract_function_concatenation(line) {
-        return (part, continues, ContinuationType::Implicit);
     }
 
     if config.python_implicit {
@@ -353,8 +345,52 @@ fn extract_plus_concatenation(line: &str) -> Option<(String, bool)> {
 }
 
 fn extract_python_implicit_concatenation(line: &str) -> Option<(String, bool)> {
-    let parts = extract_quoted_strings(line);
-    if parts.is_empty() {
+    let chars: Vec<char> = line.chars().collect();
+    let mut parts = Vec::new();
+    let mut index = 0;
+    let mut last_end = None;
+
+    while index < chars.len() {
+        if chars[index] == '"' || chars[index] == '\'' {
+            let quote = chars[index];
+            let start = index;
+            let mut j = index + 1;
+            let mut content = String::new();
+            let mut escaped = false;
+            let mut closed = false;
+
+            while j < chars.len() {
+                if escaped {
+                    content.push(chars[j]);
+                    escaped = false;
+                } else if chars[j] == '\\' {
+                    escaped = true;
+                    content.push(chars[j]);
+                } else if chars[j] == quote {
+                    closed = true;
+                    break;
+                } else {
+                    content.push(chars[j]);
+                }
+                j += 1;
+            }
+
+            if closed {
+                if let Some(prev_end) = last_end {
+                    let gap = &chars[prev_end + 1..start];
+                    if gap.iter().any(|&c| !c.is_whitespace()) {
+                        return None;
+                    }
+                }
+                parts.push(content);
+                last_end = Some(j);
+                index = j;
+            }
+        }
+        index += 1;
+    }
+
+    if parts.len() < 2 {
         return None;
     }
     Some((parts.join(""), false))
@@ -362,7 +398,8 @@ fn extract_python_implicit_concatenation(line: &str) -> Option<(String, bool)> {
 
 fn extract_function_concatenation(line: &str) -> Option<(String, bool)> {
     let trimmed = line.trim();
-    if !trimmed.contains("paste0(") && !trimmed.contains("paste(") {
+    if !trimmed.contains("paste0(") && !trimmed.contains("paste(") && !trimmed.contains("concat!(")
+    {
         return None;
     }
     let parts = extract_quoted_strings(trimmed);

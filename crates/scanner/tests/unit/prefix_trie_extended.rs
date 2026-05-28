@@ -64,18 +64,18 @@ fn three_level_nesting_propagates_transitively() {
 
 #[test]
 fn multiple_branches_from_common_stem() {
-    // "github_pat_" and "ghp_" both start with "gh"
+    // "ghub_pat_" and "ghp_" both start with "gh"
     let prefixes = vec![
         "gh".to_string(),
         "ghp_".to_string(),
-        "github_pat_".to_string(),
+        "ghub_pat_".to_string(),
     ];
     let table = build_propagation_table(&prefixes);
     assert_eq!(table.len(), 3);
-    // "gh" (index 0) should propagate to both "ghp_" (1) and "github_pat_" (2)
+    // "gh" (index 0) should propagate to both "ghp_" (1) and "ghub_pat_" (2)
     assert!(table[0].contains(&1));
     assert!(table[0].contains(&2));
-    // "ghp_" and "github_pat_" don't propagate to each other (neither is prefix of the other)
+    // "ghp_" and "ghub_pat_" don't propagate to each other (neither is prefix of the other)
     assert!(!table[1].contains(&2));
     assert!(!table[2].contains(&1));
 }

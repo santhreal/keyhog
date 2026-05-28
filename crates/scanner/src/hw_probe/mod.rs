@@ -28,7 +28,10 @@ mod tier;
 pub mod thresholds;
 
 pub use banner::startup_banner;
-pub use select::{forced_backend_from_env, forced_backend_from_env_uncached, select_backend};
+pub use select::{
+    forced_backend_from_env, forced_backend_from_env_uncached, select_backend,
+    set_test_backend_override, clear_test_backend_override,
+};
 pub use tier::{
     classify_gpu_tier, gpu_min_bytes_for_tier, gpu_pattern_breakeven_for_tier,
     gpu_solo_bytes_for_tier, GpuTier,
@@ -157,6 +160,3 @@ pub fn probe_hardware() -> &'static HardwareCaps {
         caps
     })
 }
-
-#[cfg(test)]
-mod tests;

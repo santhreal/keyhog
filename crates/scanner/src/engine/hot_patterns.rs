@@ -51,6 +51,16 @@ impl CompiledScanner {
                             || byte == b'\r'
                             || byte == b'"'
                             || byte == b'\''
+                            || byte == b'\\'
+                            || byte == b';'
+                            || byte == b','
+                            || byte == b'('
+                            || byte == b')'
+                            || byte == b'['
+                            || byte == b']'
+                            || byte == b'{'
+                            || byte == b'}'
+                            || byte < 0x20
                     })
                     .unwrap_or(candidate.len());
 
@@ -171,8 +181,11 @@ impl CompiledScanner {
                         .rposition(|&b| b == b'/' || b == b'\\')
                         .map(|i| &bytes[i + 1..])
                         .unwrap_or(bytes);
-                    crate::ascii_ci::starts_with_ignore_ascii_case(basename, b"base64_")
-                        || crate::ascii_ci::ci_find(basename, b"base64_string")
+                    (crate::ascii_ci::starts_with_ignore_ascii_case(basename, b"base64_")
+                        || crate::ascii_ci::ci_find(basename, b"base64_string"))
+                        && !crate::ascii_ci::ends_with_ignore_ascii_case(basename, b".json")
+                        && !crate::ascii_ci::ends_with_ignore_ascii_case(basename, b".yml")
+                        && !crate::ascii_ci::ends_with_ignore_ascii_case(basename, b".yaml")
                 }) {
                     continue;
                 }

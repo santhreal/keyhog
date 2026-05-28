@@ -21,12 +21,19 @@ pub async fn run(args: DaemonArgs) -> Result<ExitCode> {
 
 async fn start(socket: Option<PathBuf>, detectors_dir: PathBuf) -> Result<ExitCode> {
     let socket = socket.unwrap_or_else(default_socket_path);
-    let detectors = keyhog_core::load_detectors(&detectors_dir).with_context(|| {
-        format!(
-            "daemon start: load detectors from {}",
-            detectors_dir.display()
-        )
-    })?;
+    // Use the same load-or-embedded fallback that `scan`, `watch`, `scan-system`
+    // and `explain` go through. Before this, `daemon start` ran
+    // `keyhog_core::load_detectors(&"detectors")` directly and bailed with
+    // `failed to read detector file detectors: No such file or directory`
+    // on every install where the user hadn't `cd`'d into a checked-out
+    // repo - which is every install via `install.sh` / `cargo install`.
+    let detectors = crate::orchestrator_config::load_detectors_or_embedded(&detectors_dir)
+        .with_context(|| {
+            format!(
+                "daemon start: load detectors from {}",
+                detectors_dir.display()
+            )
+        })?;
     server::run(socket, detectors).await?;
     Ok(ExitCode::SUCCESS)
 }

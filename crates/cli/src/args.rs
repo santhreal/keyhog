@@ -292,7 +292,6 @@ pub struct ExplainArgs {
     pub detectors: PathBuf,
 }
 
-
 #[derive(Parser)]
 pub struct DetectorArgs {
     /// Detector TOML directory

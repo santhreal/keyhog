@@ -1,5 +1,4 @@
 use super::*;
-use crate::context;
 use keyhog_core::RawMatch;
 
 impl CompiledScanner {

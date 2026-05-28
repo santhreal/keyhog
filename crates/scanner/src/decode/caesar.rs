@@ -22,7 +22,7 @@ use keyhog_core::Chunk;
 /// a codebase just hallucinates detector matches from random letter runs
 /// (helicone-api-key on a `//! Source trait` doc comment was the original
 /// reproducer; see dogfood-2026-05-21.md finding #5).
-pub(super) struct CaesarDecoder;
+pub struct CaesarDecoder;
 
 const MIN_CAESAR_LEN: usize = 16;
 const MIN_ALNUM_RUN: usize = 8;
@@ -37,7 +37,7 @@ const SOURCE_CODE_EXTENSIONS: &[&str] = &[
     ".sass", ".vue", ".svelte", ".md", ".rst", ".txt", ".adoc",
 ];
 
-fn is_source_code_path(path: Option<&str>) -> bool {
+pub fn is_source_code_path(path: Option<&str>) -> bool {
     let Some(p) = path else { return false };
     let lower = p.to_ascii_lowercase();
     SOURCE_CODE_EXTENSIONS
@@ -101,7 +101,7 @@ impl Decoder for CaesarDecoder {
     }
 }
 
-fn caesar_shift(input: &str, shift: u8) -> String {
+pub fn caesar_shift(input: &str, shift: u8) -> String {
     let mut out = String::with_capacity(input.len());
     for ch in input.chars() {
         let shifted = match ch {
@@ -122,7 +122,7 @@ fn caesar_shift(input: &str, shift: u8) -> String {
     out
 }
 
-fn looks_credential_shaped(s: &str) -> bool {
+pub fn looks_credential_shaped(s: &str) -> bool {
     let bytes = s.as_bytes();
     if !bytes.iter().any(|b| b.is_ascii_digit()) {
         return false;
@@ -158,88 +158,4 @@ fn looks_credential_shaped(s: &str) -> bool {
     crate::confidence::KNOWN_PREFIXES
         .iter()
         .any(|prefix| s.contains(prefix))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn rot13_round_trip() {
-        let s = "AKIA64ABDEFSEWKRUMSEK1NR";
-        let r13 = caesar_shift(s, 13);
-        assert_eq!(caesar_shift(&r13, 13), s);
-    }
-
-    #[test]
-    fn shift_preserves_non_letters() {
-        assert_eq!(caesar_shift("AB-CD_12", 1), "BC-DE_12");
-    }
-
-    #[test]
-    fn looks_credential_shaped_requires_digit_and_run() {
-        assert!(looks_credential_shaped("AKIA64ABDEFSEWKR"));
-        assert!(!looks_credential_shaped("HELLOWORLDFOOBAR")); // no digit
-        assert!(!looks_credential_shaped("12-34-56-78-")); // no 8-alnum run
-    }
-
-    #[test]
-    fn is_source_code_path_matches_known_extensions() {
-        assert!(is_source_code_path(Some("src/foo.rs")));
-        assert!(is_source_code_path(Some("/abs/path/bar.py")));
-        assert!(is_source_code_path(Some("RELATIVE.GO")));
-        assert!(is_source_code_path(Some("docs/README.md")));
-        assert!(!is_source_code_path(Some("config/secrets.env")));
-        assert!(!is_source_code_path(Some("blob.bin")));
-        assert!(!is_source_code_path(None));
-    }
-
-    #[test]
-    fn source_code_path_skips_caesar_decoder() {
-        use keyhog_core::{Chunk, ChunkMetadata};
-        // Comment in a Rust file that should never be Caesar-shifted - was the
-        // source.rs:1 false positive that fired helicone-api-key in production.
-        let chunk = Chunk {
-            data: "//! Source trait and chunk types: pluggable input backends.".into(),
-            metadata: ChunkMetadata {
-                base_offset: 0,
-                source_type: "filesystem".into(),
-                path: Some("crates/core/src/source.rs".into()),
-                ..Default::default()
-            },
-        };
-        let decoded = CaesarDecoder.decode_chunk(&chunk);
-        assert!(
-            decoded.is_empty(),
-            "Caesar decoder must not run on .rs source files; got {} decoded variants",
-            decoded.len()
-        );
-    }
-
-    #[test]
-    fn decode_chunk_round_trips_aws_shaped_token() {
-        use keyhog_core::{Chunk, ChunkMetadata};
-
-        // Plaintext: AKIAQR4DEFGHIJKL2345. Caesar +1 (letters only) →
-        // BLJBRS4EFGHIJKLM2345. Decoder runs all 25 non-trivial shifts;
-        // shift 25 (== inverse +1) recovers the original.
-        let chunk = Chunk {
-            data: "k = \"BLJBRS4EFGHIJKLM2345\";".into(),
-            metadata: ChunkMetadata {
-                base_offset: 0,
-                source_type: "test".into(),
-                ..Default::default()
-            },
-        };
-        let decoded = CaesarDecoder.decode_chunk(&chunk);
-        assert!(
-            decoded
-                .iter()
-                .any(|c| c.data.as_str() == concat!("AK", "IAQR4DEFGHIJKL2345")),
-            "Caesar decoder did not surface the round-trip plaintext among {} variants. \
-             Got: {:?}",
-            decoded.len(),
-            decoded.iter().map(|c| c.data.clone()).collect::<Vec<_>>(),
-        );
-    }
 }

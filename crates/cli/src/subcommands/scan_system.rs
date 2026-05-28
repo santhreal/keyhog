@@ -175,7 +175,6 @@ pub fn run(args: ScanSystemArgs) -> Result<ExitCode> {
     }
 }
 
-
 /// Recursively find `.git` directories (worktrees + bare repos) up to the
 /// space cap.
 ///

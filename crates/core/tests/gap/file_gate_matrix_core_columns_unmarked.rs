@@ -1,4 +1,4 @@
-//! KH-GAP-145: FILE_GATE_MATRIX must mark core error + adversarial coverage.
+//! KH-GAP-177: FILE_GATE_MATRIX must mark core error + adversarial coverage.
 
 use std::path::PathBuf;
 

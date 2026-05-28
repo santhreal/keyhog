@@ -1,4 +1,4 @@
-//! KH-GAP-146: every core src module must appear in FILE_GATE_MATRIX.
+//! KH-GAP-178: every core src module must appear in FILE_GATE_MATRIX.
 
 use std::path::{Path, PathBuf};
 

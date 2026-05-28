@@ -270,7 +270,7 @@ fn passes_strict_secret_checks(value: &str) -> bool {
 /// shape. Real API keys almost always include at least one digit (the
 /// few that don't are short - `<8` chars - and rejected upstream by
 /// length gates).
-fn looks_like_program_identifier(value: &str) -> bool {
+pub fn looks_like_program_identifier(value: &str) -> bool {
     // Letters + underscore only. Any digit, hyphen, slash, or special
     // char means it's not a typical identifier.
     if !value
@@ -345,72 +345,4 @@ fn is_placeholder_ci(bytes: &[u8], placeholder_keywords: &[String]) -> bool {
             bytes,
             b"null" | b"none" | b"undefined" | b"empty" | b"default" | b"secret" | b"password"
         )
-}
-
-#[cfg(test)]
-mod identifier_rejection_tests {
-    use super::*;
-
-    // Defect #81 regression: real-world Java/Go/TS identifiers that
-    // were firing as entropy-api-key in the 2026-05-21 dogfood pass.
-    #[test]
-    fn pascalcase_java_class_rejected() {
-        assert!(looks_like_program_identifier("BulkUpdateApiKeyResponse"));
-        assert!(looks_like_program_identifier("VersionedApiKeyDoc"));
-        assert!(looks_like_program_identifier("ApiKeyService"));
-    }
-
-    #[test]
-    fn camelcase_method_rejected() {
-        assert!(looks_like_program_identifier(
-            "convertSearchHitToVersionedApiKeyDoc"
-        ));
-        assert!(looks_like_program_identifier("targetVersionedDocs"));
-        assert!(looks_like_program_identifier("apiKeyDocCache"));
-    }
-
-    #[test]
-    fn snake_case_method_rejected() {
-        assert!(looks_like_program_identifier(
-            "my_long_helper_function_name"
-        ));
-    }
-
-    #[test]
-    fn all_caps_constant_not_flagged_as_identifier() {
-        // CONSTANT_NAME - could legitimately also be a secret. Don't
-        // reject via this filter; let other gates judge.
-        assert!(!looks_like_program_identifier("ALLOWED_HOSTS"));
-    }
-
-    #[test]
-    fn real_secret_with_digits_not_flagged() {
-        // AWS access keys, GitHub PATs, Slack tokens all contain digits
-        // - the identifier check must not reject them.
-        assert!(!looks_like_program_identifier(concat!(
-            "AK",
-            "IAIOSFODNN7EXAMPLE"
-        )));
-        assert!(!looks_like_program_identifier(
-            "ghp_K9pV2nL3xB5cD7eF8gH0iJ1kL2mN3oP4qR5sT"
-        ));
-    }
-
-    #[test]
-    fn short_pascal_word_not_an_identifier_pattern() {
-        // Single-segment PascalCase like `Foo` has no internal lower→Upper
-        // boundary - it might be an env-var, accept it.
-        assert!(!looks_like_program_identifier("Foo"));
-        assert!(!looks_like_program_identifier("Bar"));
-    }
-
-    #[test]
-    fn special_chars_disqualify_identifier_match() {
-        // A real-looking credential with hyphens/dots is not an identifier.
-        assert!(!looks_like_program_identifier(concat!(
-            "xox",
-            "b-1234-secret"
-        )));
-        assert!(!looks_like_program_identifier("my.dotted.value"));
-    }
 }

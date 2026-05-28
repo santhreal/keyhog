@@ -29,7 +29,7 @@ use super::{CONFIDENCE_MAX, CONFIDENCE_MIN};
 /// returned `None`). Treat +/-Inf the same way the original clamp would
 /// have, since clamp handles infinities correctly.
 #[inline]
-pub(crate) fn finalize_confidence(score: f64) -> f64 {
+pub fn finalize_confidence(score: f64) -> f64 {
     if score.is_nan() {
         return CONFIDENCE_MIN;
     }
@@ -180,68 +180,4 @@ pub fn apply_path_confidence_penalties(score: f64, path: Option<&str>) -> f64 {
 
     let adjusted = if is_test_like { score * 0.5 } else { score };
     finalize_confidence(adjusted)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// kimi-confidence regression: NaN entering any penalty function
-    /// must be sanitized rather than propagated. `f64::clamp` leaves
-    /// NaN alone, which is why we have the dedicated `finalize_confidence`
-    /// barrier - these tests pin that contract.
-    #[test]
-    fn finalize_confidence_replaces_nan_with_minimum() {
-        let out = finalize_confidence(f64::NAN);
-        assert_eq!(
-            out, CONFIDENCE_MIN,
-            "NaN must be replaced with CONFIDENCE_MIN, not propagated"
-        );
-        assert!(!out.is_nan(), "result must not be NaN");
-    }
-
-    #[test]
-    fn finalize_confidence_clamps_inf_to_max() {
-        assert_eq!(finalize_confidence(f64::INFINITY), CONFIDENCE_MAX);
-        assert_eq!(finalize_confidence(f64::NEG_INFINITY), CONFIDENCE_MIN);
-    }
-
-    #[test]
-    fn finalize_confidence_passes_through_in_range_value() {
-        assert_eq!(finalize_confidence(0.5), 0.5);
-        assert_eq!(finalize_confidence(0.0), CONFIDENCE_MIN.max(0.0));
-        assert_eq!(finalize_confidence(1.0), 1.0);
-    }
-
-    /// `apply_post_ml_penalties` must not emit a NaN finding even when
-    /// the GPU layer leaked one upstream. The previous flow ended in
-    /// `adjusted.clamp(0.0, 1.0)`, which would return NaN verbatim.
-    #[test]
-    fn apply_post_ml_penalties_sanitizes_nan_score() {
-        let out = apply_post_ml_penalties(f64::NAN, "sk_test_123");
-        assert!(!out.is_nan(), "NaN must not propagate through penalties");
-    }
-
-    /// `apply_calibration_multiplier` only multiplies and clamps; same
-    /// regression contract applies.
-    #[test]
-    fn apply_calibration_multiplier_sanitizes_nan_score() {
-        let out = apply_calibration_multiplier(f64::NAN, "stripe-secret-key");
-        assert!(!out.is_nan());
-    }
-
-    /// Path-based penalty likewise must not propagate NaN.
-    #[test]
-    fn apply_path_confidence_penalties_sanitizes_nan_score() {
-        let out = apply_path_confidence_penalties(f64::NAN, Some("tests/fixtures/.env"));
-        assert!(!out.is_nan());
-        let out_no_path = apply_path_confidence_penalties(f64::NAN, None);
-        // Even the no-path early-return runs through finalize_confidence
-        // now - the previous flow passed NaN through verbatim when no
-        // path was provided.
-        assert!(
-            !out_no_path.is_nan(),
-            "no-path branch must also sanitize NaN"
-        );
-    }
 }

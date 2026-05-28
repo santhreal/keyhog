@@ -22,7 +22,7 @@ use vyre_libs::scan::LiteralMatch;
 /// matches in start-ascending order; the per-pid fold collapses the
 /// duplicate `(pid, start, end)` triples that subgroup-ballot can
 /// emit when a hit straddles a workgroup boundary.
-pub(crate) fn fold_overlapping_same_pid_inplace(matches: &mut Vec<LiteralMatch>) {
+pub fn fold_overlapping_same_pid_inplace(matches: &mut Vec<LiteralMatch>) {
     matches.sort_unstable_by(|a, b| {
         a.pattern_id
             .cmp(&b.pattern_id)
@@ -35,11 +35,7 @@ pub(crate) fn fold_overlapping_same_pid_inplace(matches: &mut Vec<LiteralMatch>)
             && matches[read].start <= matches[write].end
         {
             if matches[read].end > matches[write].end {
-                matches[write] = LiteralMatch::new(
-                    matches[write].pattern_id,
-                    matches[write].start,
-                    matches[read].end,
-                );
+                matches[write].end = matches[read].end;
             }
         } else {
             write += 1;
@@ -61,7 +57,7 @@ pub(crate) fn fold_overlapping_same_pid_inplace(matches: &mut Vec<LiteralMatch>)
 /// `entries` MUST be ordered by `offset` ascending (the coalesce
 /// builder produces them that way). `matches` MUST be sorted by
 /// `start` ascending (call `fold_overlapping_same_pid_inplace` first).
-pub(crate) fn attribute_matches_to_chunks(
+pub fn attribute_matches_to_chunks(
     matches: &[LiteralMatch],
     entries: &[(usize, usize, usize)],
     total_patterns: usize,
@@ -95,62 +91,4 @@ pub(crate) fn attribute_matches_to_chunks(
         }
     }
     per_chunk_hits
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn fold_collapses_same_pid_overlap() {
-        let mut matches = vec![
-            LiteralMatch::new(1, 10, 20),
-            LiteralMatch::new(1, 15, 25),
-            LiteralMatch::new(2, 30, 35),
-        ];
-        fold_overlapping_same_pid_inplace(&mut matches);
-        assert_eq!(matches.len(), 2);
-        assert_eq!(matches[0].pattern_id, 1);
-        assert_eq!(matches[0].start, 10);
-        assert_eq!(matches[0].end, 25);
-        assert_eq!(matches[1].pattern_id, 2);
-    }
-
-    #[test]
-    fn fold_keeps_distinct_pids_with_same_range() {
-        let mut matches = vec![LiteralMatch::new(1, 10, 20), LiteralMatch::new(2, 10, 20)];
-        fold_overlapping_same_pid_inplace(&mut matches);
-        assert_eq!(matches.len(), 2);
-    }
-
-    #[test]
-    fn attribute_routes_to_correct_chunk() {
-        let entries = vec![(0, 0, 100), (1, 108, 50), (2, 166, 80)];
-        let matches = vec![
-            LiteralMatch::new(7, 50, 60),
-            LiteralMatch::new(7, 120, 130),
-            LiteralMatch::new(7, 200, 210),
-        ];
-        let per_chunk = attribute_matches_to_chunks(&matches, &entries, 10, 3);
-        assert_eq!(per_chunk[0], vec![(7, 50, 60)]);
-        assert_eq!(per_chunk[1], vec![(7, 12, 22)]);
-        assert_eq!(per_chunk[2], vec![(7, 34, 44)]);
-    }
-
-    #[test]
-    fn attribute_drops_cross_boundary_match() {
-        let entries = vec![(0, 0, 100), (1, 108, 50)];
-        let matches = vec![LiteralMatch::new(7, 95, 110)];
-        let per_chunk = attribute_matches_to_chunks(&matches, &entries, 10, 2);
-        assert!(per_chunk[0].is_empty());
-        assert!(per_chunk[1].is_empty());
-    }
-
-    #[test]
-    fn attribute_drops_unknown_pid() {
-        let entries = vec![(0, 0, 100)];
-        let matches = vec![LiteralMatch::new(999, 10, 20)];
-        let per_chunk = attribute_matches_to_chunks(&matches, &entries, 10, 1);
-        assert!(per_chunk[0].is_empty());
-    }
 }

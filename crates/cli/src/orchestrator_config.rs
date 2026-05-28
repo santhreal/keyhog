@@ -304,4 +304,3 @@ pub fn build_scanner_config(args: &ScanArgs) -> ScannerConfig {
     }
     config
 }
-

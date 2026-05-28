@@ -2,7 +2,7 @@
 
 #[test]
 fn hw_probe_no_inline_tests() {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/hw_probe.rs");
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/hw_probe/mod.rs");
     let src = std::fs::read_to_string(path).expect("source readable");
     assert!(
         !src.contains("#[cfg(test)]"),

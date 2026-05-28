@@ -30,4 +30,3 @@ pub fn format_bytes(n: u64) -> String {
         format!("{n} B")
     }
 }
-

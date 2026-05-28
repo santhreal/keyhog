@@ -1,19 +1,13 @@
 //! Logic for compiling detector specifications into an efficient scanning engine.
 
-use crate::error::{Result, ScanError};
+use crate::error::Result;
 use crate::types::*;
-use aho_corasick::{AhoCorasick, AhoCorasickBuilder};
-use keyhog_core::{CompanionSpec, DetectorSpec, PatternSpec};
+use keyhog_core::DetectorSpec;
 use regex::Regex;
 
-use super::compiler_prefix::{
-    extract_inner_literals, extract_literal_prefix, extract_literal_prefixes, is_escaped_literal,
-};
+use super::compiler_prefix::{extract_inner_literals, extract_literal_prefixes};
 
-use super::compiler_compile::{
-    compile_detector_companions, compile_detector_pattern, compile_pattern,
-    log_quality_warnings,
-};
+use super::compiler_compile::{compile_detector_companions, compile_pattern};
 
 pub struct CompileState {
     pub ac_literals: Vec<String>,
@@ -130,6 +124,7 @@ pub fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileState> {
                             detector_index,
                             regex: std::sync::Arc::new(re),
                             group: pattern.group,
+                            client_safe: pattern.client_safe,
                         },
                         detector.keywords.clone(),
                     ));
@@ -265,4 +260,3 @@ pub fn split_leading_inline_flag(s: &str) -> (&str, &str) {
         ("", s)
     }
 }
-

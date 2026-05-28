@@ -48,11 +48,11 @@ mod binary;
 #[cfg(feature = "docker")]
 mod docker;
 mod filesystem;
-mod har;
 #[cfg(feature = "git")]
 mod git;
 #[cfg(feature = "github")]
 mod github_org;
+mod har;
 #[cfg(feature = "s3")]
 pub mod s3;
 #[cfg(feature = "slack")]

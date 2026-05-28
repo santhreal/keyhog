@@ -216,7 +216,40 @@ pub fn compile_pattern(
             source: e,
         })?,
         group: spec.group,
+        client_safe: spec.client_safe,
     })
+}
+
+static REGEX_CACHE: std::sync::OnceLock<
+    parking_lot::RwLock<std::collections::HashMap<String, std::sync::Arc<Regex>>>,
+> = std::sync::OnceLock::new();
+
+pub fn shared_regex_compile(
+    pattern: &str,
+) -> std::result::Result<std::sync::Arc<Regex>, regex::Error> {
+    let regex = regex::RegexBuilder::new(pattern)
+        .case_insensitive(true)
+        .size_limit(REGEX_SIZE_LIMIT_BYTES)
+        .dfa_size_limit(REGEX_SIZE_LIMIT_BYTES)
+        .crlf(true)
+        .build()?;
+    Ok(std::sync::Arc::new(regex))
+}
+
+pub fn warm_shared_regex_cache(
+    compiled: Vec<(
+        String,
+        std::result::Result<std::sync::Arc<Regex>, regex::Error>,
+    )>,
+) {
+    let cache =
+        REGEX_CACHE.get_or_init(|| parking_lot::RwLock::new(std::collections::HashMap::new()));
+    let mut w = cache.write();
+    for (pattern, res) in compiled {
+        if let Ok(arc) = res {
+            w.insert(pattern, arc);
+        }
+    }
 }
 
 /// Compile a regex once per unique source string and share the compiled
@@ -226,26 +259,18 @@ pub fn compile_pattern(
 /// compile time and resident memory proportionally — see audits/legendary-
 /// 2026-04-26 sources_verifier_detectors_legendary.md.
 ///
-/// The cache is process-wide via a `parking_lot::Mutex<HashMap<...>>`.
-/// Lookup is rare (only at scanner construction) so the contention cost is
-/// negligible compared to the compile saving.
+/// The cache is process-wide via a `parking_lot::RwLock<HashMap<...>>`.
+/// Lookup is lock-free and extremely high-performance during the main parallel compile.
 fn shared_regex(pattern: &str) -> std::result::Result<std::sync::Arc<Regex>, regex::Error> {
-    use parking_lot::Mutex;
-    use std::collections::HashMap;
-    use std::sync::Arc;
-    use std::sync::OnceLock;
-    static CACHE: OnceLock<Mutex<HashMap<String, Arc<Regex>>>> = OnceLock::new();
-    let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
-    if let Some(hit) = cache.lock().get(pattern) {
-        return Ok(Arc::clone(hit));
+    let cache =
+        REGEX_CACHE.get_or_init(|| parking_lot::RwLock::new(std::collections::HashMap::new()));
+    if let Some(hit) = cache.read().get(pattern) {
+        return Ok(std::sync::Arc::clone(hit));
     }
-    let regex = regex::RegexBuilder::new(pattern)
-        .size_limit(REGEX_SIZE_LIMIT_BYTES)
-        .dfa_size_limit(REGEX_SIZE_LIMIT_BYTES)
-        .crlf(true)
-        .build()?;
-    let arc = Arc::new(regex);
-    cache.lock().insert(pattern.to_string(), Arc::clone(&arc));
+    let arc = shared_regex_compile(pattern)?;
+    cache
+        .write()
+        .insert(pattern.to_string(), std::sync::Arc::clone(&arc));
     Ok(arc)
 }
 

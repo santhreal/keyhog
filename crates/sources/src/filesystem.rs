@@ -86,7 +86,10 @@ mod display_path_tests {
     #[test]
     fn strip_unc_leaves_normal_paths_alone() {
         assert_eq!(strip_unc_prefix(r"C:\Users\me"), r"C:\Users\me");
-        assert_eq!(strip_unc_prefix("/home/me/src/app.env"), "/home/me/src/app.env");
+        assert_eq!(
+            strip_unc_prefix("/home/me/src/app.env"),
+            "/home/me/src/app.env"
+        );
     }
 
     #[test]
@@ -410,8 +413,8 @@ impl Source for FilesystemSource {
 /// Per-entry chunk extraction. Extracted from the inline `chunks()`
 /// closure so it can run on a rayon worker via
 /// `into_par_iter().for_each_with`. Reads the file (or archive, or
-/// compressed stream) and returns the resulting `Chunk`s in one batch
-/// - the parallel producer fans calls out across the rayon pool so
+/// compressed stream) and returns the resulting `Chunk`s in one batch;
+/// the parallel producer fans calls out across the rayon pool so
 /// per-file I/O overlaps freely.
 ///
 /// Pure function - captures nothing; all state arrives via parameters

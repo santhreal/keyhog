@@ -42,11 +42,11 @@ pub mod static_intern;
 pub mod types;
 
 // Internal modules.
+/// SIMD-accelerated alphabet pre-filtering.
+pub mod alphabet_filter;
 /// ASCII case-insensitive byte-search primitives shared by every hot path
 /// that needs to skim text without lowering the haystack first.
 pub(crate) mod ascii_ci;
-/// SIMD-accelerated alphabet pre-filtering.
-pub mod alphabet_filter;
 /// Bigram bloom filter for fast chunk gating.
 pub mod bigram_bloom;
 /// AVX-512 optimized entropy calculation.
@@ -60,6 +60,7 @@ pub mod jwt;
 // paths and the Tier-C audit cleanup don't churn the public API.
 pub use multiline::fragment_cache;
 pub(crate) mod homoglyph;
+pub(crate) mod suppression;
 /// Internal scan pipeline orchestration.
 pub mod pipeline;
 /// Prefix trie for efficient keyword propagation.
@@ -167,4 +168,45 @@ pub fn find_companion(
     companion: &types::CompiledCompanion,
 ) -> Option<String> {
     pipeline::find_companion(preprocessed, primary_line, companion)
+}
+
+pub mod testing {
+    pub use crate::compiler::{rewrite_alternation_prefix, split_leading_inline_flag};
+    pub use crate::confidence::penalties::finalize_confidence;
+    pub use crate::engine::boundary::scan_chunk_boundaries;
+    pub use crate::engine::gpu_postprocess::{
+        attribute_matches_to_chunks, fold_overlapping_same_pid_inplace,
+    };
+    pub use crate::engine::gpu_regex_dfa::extract_literal_core;
+    pub use crate::entropy::keywords::looks_like_program_identifier;
+    pub use crate::probabilistic_gate::ProbabilisticGate;
+    pub use crate::static_intern::seed_source_type_count;
+
+    pub mod ascii_ci {
+        pub use crate::ascii_ci::{ci_find, contains_path_segment, contains_path_segment_two};
+    }
+
+    pub use crate::decode::caesar::{
+        caesar_shift, is_source_code_path, looks_credential_shaped, CaesarDecoder,
+    };
+    pub use crate::decode::hex::find_hex_strings;
+    pub use crate::decode::reverse::{looks_reversible, reverse_str, ReverseDecoder};
+    pub use crate::decode::util::take_hex_digits;
+    pub use crate::gpu::{env_no_gpu, is_ci_environment};
+
+    pub unsafe fn calculate_shannon_entropy(chunk: &[u8]) -> f64 {
+        unsafe { crate::entropy_avx512::calculate_shannon_entropy(chunk) }
+    }
+
+    #[cfg(feature = "simd")]
+    pub use crate::simd::backend::HsScanner;
+
+    #[cfg(feature = "simdsieve")]
+    pub use crate::simdsieve_prefilter::{
+        HOT_PATTERN_DETECTOR_IDS, HOT_PATTERN_DISPLAY_NAMES, HOT_PATTERN_NAMES,
+    };
+
+    pub use crate::structured::parsers::{
+        parse_docker_compose, parse_env, parse_jupyter, parse_k8s_secret, parse_tfstate,
+    };
 }

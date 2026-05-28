@@ -1,9 +1,10 @@
-use keyhog_scanner::hw_probe::{select_backend, HardwareCaps, ScanBackend};
+use keyhog_scanner::hw_probe::{
+    clear_test_backend_override, select_backend, set_test_backend_override, HardwareCaps,
+    ScanBackend,
+};
 #[test]
 fn select_backend_env_gpu_override() {
-    unsafe {
-        std::env::set_var("KEYHOG_BACKEND", "gpu");
-    }
+    set_test_backend_override(Some(ScanBackend::Gpu));
     let caps = HardwareCaps {
         physical_cores: 4,
         logical_cores: 8,
@@ -19,7 +20,5 @@ fn select_backend_env_gpu_override() {
         hyperscan_available: true,
     };
     assert_eq!(select_backend(&caps, 0, 0), ScanBackend::Gpu);
-    unsafe {
-        std::env::remove_var("KEYHOG_BACKEND");
-    }
+    clear_test_backend_override();
 }

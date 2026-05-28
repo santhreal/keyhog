@@ -1,5 +1,5 @@
-use keyhog_scanner::alphabet_filter::AlphabetScreen;
 use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, Severity};
+use keyhog_scanner::alphabet_filter::AlphabetScreen;
 use keyhog_scanner::CompiledScanner;
 
 #[test]
@@ -36,30 +36,31 @@ fn test_nested_base64_decoding_gating() {
         companions: Vec::new(),
         verify: None,
         keywords: vec!["ghp_".into()],
-    ..Default::default()
+        ..Default::default()
     }];
 
     let scanner = CompiledScanner::compile(detectors).unwrap();
     let chunk = Chunk {
         data: format!("data = \"{}\"", b64_2).into(),
         metadata: ChunkMetadata {
-                    base_offset: 0,
+            base_offset: 0,
             source_type: "test".into(),
             ..Default::default()
-},
+        },
     };
 
     let matches = scanner.scan(&chunk);
-    let hit = matches
-        .iter()
-        .find(|m| m.detector_id.as_ref() == "github-pat" && m.credential.as_ref() == secret)
-        .unwrap_or_else(|| {
-            panic!(
+    let hit =
+        matches
+            .iter()
+            .find(|m| m.detector_id.as_ref() == "github-pat" && m.credential.as_ref() == secret)
+            .unwrap_or_else(|| {
+                panic!(
                 "nested-base64 decode must surface the GitHub PAT verbatim (got {} matches: {:?})",
                 matches.len(),
                 matches.iter().map(|m| m.detector_id.as_ref()).collect::<Vec<_>>()
             )
-        });
+            });
     assert_eq!(hit.detector_id.as_ref(), "github-pat");
     assert_eq!(hit.credential.as_ref(), secret);
 }

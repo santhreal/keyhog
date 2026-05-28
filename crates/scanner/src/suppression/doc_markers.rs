@@ -6,7 +6,7 @@
 //! `Suppress` means "this is a documentation specimen, suppress now";
 //! `KeepChecking` means "fall through to the rest of the decision tree".
 
-use super::super::shape_gates::{
+use super::shape_gates::{
     known_prefix_body, looks_like_prefixed_masked_sequence, RFC7519_EXAMPLE_JWT_PREFIX,
 };
 
@@ -63,7 +63,10 @@ pub(super) fn check_markers(
     // (see fn-doc): an attacker reversing/ROTating an EXAMPLE-suffixed AWS
     // test key is exactly the kind of leak the engine should report.
     if !from_evasion_decoder
-        && (upper_contains_token(upper, "EXAMPLE") || upper.ends_with("EXAMPLE"))
+        && (upper_contains_token(upper, "EXAMPLE")
+            || upper.ends_with("EXAMPLE")
+            || upper_contains_token(upper, "EXAMPLEKEY")
+            || upper.ends_with("EXAMPLEKEY"))
         && !credential.contains("example.com")
         && !credential.contains("example.org")
     {

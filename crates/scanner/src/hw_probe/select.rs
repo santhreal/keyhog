@@ -8,6 +8,22 @@ use super::tier::{
 };
 use super::{HardwareCaps, ScanBackend};
 
+thread_local! {
+    pub(crate) static TEST_BACKEND_OVERRIDE: std::cell::RefCell<Option<Option<ScanBackend>>> = std::cell::RefCell::new(None);
+}
+
+pub fn set_test_backend_override(val: Option<ScanBackend>) {
+    TEST_BACKEND_OVERRIDE.with(|cell| {
+        *cell.borrow_mut() = Some(val);
+    });
+}
+
+pub fn clear_test_backend_override() {
+    TEST_BACKEND_OVERRIDE.with(|cell| {
+        *cell.borrow_mut() = None;
+    });
+}
+
 /// Auto-route a scan to the best backend for this hardware + workload.
 ///
 /// Routing rules (highest-priority match wins):
@@ -92,30 +108,38 @@ pub fn forced_backend_from_env_uncached() -> Option<ScanBackend> {
     parse_backend_env()
 }
 
-#[cfg(not(test))]
-fn backend_env_override() -> Option<ScanBackend> {
-    // Cached at process start outside of test builds. `select_backend`
-    // is called per-file on multi-thousand-file scans, so reading the
-    // env var inside every call was a measurable syscall tax on Apple
-    // Silicon (~3% scan throughput hit measured against 30k-file linux
-    // clone). The env is process-global and the operator can't
-    // sensibly change it mid-run anyway. Cache once, read forever.
-    //
-    // Tests need the unchecked path because the hw_probe test suite
-    // sets/unsets KEYHOG_BACKEND inside individual cases to verify the
-    // override semantics; a cache from the first test would freeze
-    // those checks. `cfg(test)` swaps in the uncached variant only
-    // when this crate's own tests compile.
-    static CACHED: std::sync::OnceLock<Option<ScanBackend>> = std::sync::OnceLock::new();
-    *CACHED.get_or_init(parse_backend_env)
-}
-
-#[cfg(test)]
 pub(super) fn backend_env_override() -> Option<ScanBackend> {
-    parse_backend_env()
+    let is_test = cfg!(test)
+        || std::env::var("CARGO_MANIFEST_DIR").is_ok()
+        || std::env::current_exe()
+            .ok()
+            .and_then(|p| p.to_str().map(|s| s.contains("/deps/")))
+            .unwrap_or(false);
+
+    if is_test {
+        parse_backend_env()
+    } else {
+        // Cached at process start outside of test builds. `select_backend`
+        // is called per-file on multi-thousand-file scans, so reading the
+        // env var inside every call was a measurable syscall tax on Apple
+        // Silicon (~3% scan throughput hit measured against 30k-file linux
+        // clone). The env is process-global and the operator can't
+        // sensibly change it mid-run anyway. Cache once, read forever.
+        //
+        // Tests need the unchecked path because the hw_probe test suite
+        // sets/unsets KEYHOG_BACKEND inside individual cases to verify the
+        // override semantics; a cache from the first test would freeze
+        // those checks. `cfg!(test)` swaps in the uncached variant only
+        // when this crate's own tests compile.
+        static CACHED: std::sync::OnceLock<Option<ScanBackend>> = std::sync::OnceLock::new();
+        *CACHED.get_or_init(parse_backend_env)
+    }
 }
 
 pub(super) fn parse_backend_env() -> Option<ScanBackend> {
+    if let Some(forced) = TEST_BACKEND_OVERRIDE.with(|cell| *cell.borrow()) {
+        return forced;
+    }
     let raw = std::env::var("KEYHOG_BACKEND").ok()?;
     match raw.trim().to_ascii_lowercase().as_str() {
         "gpu" | "gpu-zero-copy" | "literal-set" => Some(ScanBackend::Gpu),

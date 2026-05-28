@@ -1,7 +1,4 @@
 use super::*;
-use crate::context;
-use crate::hw_probe::ScanBackend;
-use crate::unicode_hardening;
 use keyhog_core::Chunk;
 
 pub(crate) struct PreparedChunk<'a> {
@@ -34,10 +31,18 @@ impl<'a> PreparedChunk<'a> {
 }
 
 #[cfg(feature = "simd")]
+/// Returns the Hyperscan scanner, the hs_id -> ac_map index map, and the
+/// list of ac_map indices whose regex Hyperscan could NOT compile
+/// (over-long, or an unsupported construct like a large `{100,200}`
+/// bounded repeat). Those patterns produce zero HS matches, so the caller
+/// MUST route them into the backend-independent keyword fallback or they
+/// are silently dead in every HS-backed scan. Before this was returned,
+/// ~10 context-anchored detectors (line/paloalto/tower/keystonejs/...)
+/// never fired on their own positives. See contracts_runner.
 pub(crate) fn build_simd_scanner(
     ac_map: &[CompiledPattern],
     _fallback: &[(CompiledPattern, Vec<String>)],
-) -> Option<(crate::simd::backend::HsScanner, Vec<Vec<usize>>)> {
+) -> Option<(crate::simd::backend::HsScanner, Vec<Vec<usize>>, Vec<usize>)> {
     use std::collections::HashMap;
 
     let mut regex_to_hs_id: HashMap<String, usize> = HashMap::new();
@@ -75,12 +80,22 @@ pub(crate) fn build_simd_scanner(
 
     match crate::simd::backend::HsScanner::compile(&pattern_refs) {
         Ok((scanner, unsupported)) => {
+            // Map the unsupported hs_ids back to the ac_map indices that
+            // share each dropped regex. These never match under HS, so the
+            // caller reroutes them to the keyword fallback.
+            let unsupported_ac: Vec<usize> = unsupported
+                .iter()
+                .filter_map(|&hs_id| index_map.get(hs_id))
+                .flatten()
+                .copied()
+                .collect();
             tracing::info!(
                 compiled = scanner.pattern_count(),
                 unsupported = unsupported.len(),
+                unsupported_ac = unsupported_ac.len(),
                 "HS ready"
             );
-            Some((scanner, index_map))
+            Some((scanner, index_map, unsupported_ac))
         }
         Err(error) => {
             tracing::warn!("HS compilation failed: {error}");

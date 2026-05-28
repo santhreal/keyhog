@@ -40,10 +40,7 @@ fn entropy_uniform_256_distribution_is_eight() {
     // One occurrence of each of 256 symbols → H = log2(256) = 8.0
     let data: Vec<u8> = (0..=255u8).collect();
     let e = shannon_entropy_scalar(&data);
-    assert!(
-        (e - 8.0).abs() < 0.01,
-        "uniform-256 → H≈8.0, got {e}"
-    );
+    assert!((e - 8.0).abs() < 0.01, "uniform-256 → H≈8.0, got {e}");
 }
 
 #[test]
@@ -57,10 +54,7 @@ fn entropy_power_of_two_alphabet_matches_log2() {
     // 4 distinct equally-likely symbols → H = log2(4) = 2.0
     let data: Vec<u8> = [0u8, 1, 2, 3].iter().cycle().take(1000).copied().collect();
     let e = shannon_entropy_scalar(&data);
-    assert!(
-        (e - 2.0).abs() < 0.001,
-        "4-symbol uniform → H≈2.0, got {e}"
-    );
+    assert!((e - 2.0).abs() < 0.001, "4-symbol uniform → H≈2.0, got {e}");
 }
 
 #[test]
@@ -93,10 +87,7 @@ fn entropy_large_slice_does_not_overflow() {
     // 256 * 1024 = 262144 bytes, each value appearing 1024 times
     let data: Vec<u8> = (0..=255u8).cycle().take(256 * 1024).collect();
     let e = shannon_entropy_scalar(&data);
-    assert!(
-        (e - 8.0).abs() < 0.01,
-        "large uniform-256 → H≈8.0, got {e}"
-    );
+    assert!((e - 8.0).abs() < 0.01, "large uniform-256 → H≈8.0, got {e}");
 }
 
 // ── has_high_entropy_fast ─────────────────────────────────────────────────────
@@ -202,18 +193,29 @@ fn early_exit_agreement_with_full_computation() {
     let test_cases: Vec<(Vec<u8>, f64)> = vec![
         (vec![0x42u8; 512], 3.5),
         (vec![0x42u8; 512], 2.0),
-        ([0x40, 0x41].iter().copied().cycle().take(512).collect(), 3.0),
-        ([0x10, 0x11, 0x12].iter().copied().cycle().take(512).collect(), 2.5),
+        (
+            [0x40, 0x41].iter().copied().cycle().take(512).collect(),
+            3.0,
+        ),
+        (
+            [0x10, 0x11, 0x12]
+                .iter()
+                .copied()
+                .cycle()
+                .take(512)
+                .collect(),
+            2.5,
+        ),
     ];
     for (data, threshold) in &test_cases {
         let fast = has_high_entropy_fast(data, *threshold);
         let exact = shannon_entropy_scalar(data) >= *threshold;
         assert_eq!(
-            fast, exact,
+            fast,
+            exact,
             "early-exit disagreed with exact computation for threshold={threshold}, \
              actual_entropy={}",
             shannon_entropy_scalar(data),
         );
     }
 }
-

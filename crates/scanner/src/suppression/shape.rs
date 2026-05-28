@@ -1,0 +1,417 @@
+//! Value-shape predicates (`looks_like_*`, `contains_uuid_v4_substring`).
+//! These look only at the credential string itself; no path or context
+//! is involved. Sibling modules (`api`, `decision`) chain them together
+//! into actual suppression decisions.
+
+/// True if `credential` is an identifier / natural-language shape rather
+/// than a real credential. Covers three FP families seen in dogfood:
+///   * snake_case-no-digit (≥ 2 underscores) - C/Rust function names like
+///     `sk_SRP_user_pwd_new_null` (openssl) captured by `_pwd = ` regexes.
+///   * CamelCase-no-digit alphabetic - Java/JS method references like
+///     `getParameter` captured by `password = getParameter(...)` shapes
+///     (webgoat WebgoatContext.java, line 93).
+///   * Pure-alphabetic words ≥ 8 chars - natural-language strings like
+///     German "Benutzername" or English "yourpasswordisbasic" captured
+///     by `(?i)password[=:]<word>` shapes in i18n .properties files.
+///
+/// Real credentials almost always have a digit, hyphen, slash, or other
+/// non-letter byte - this filter never trips on those.
+pub(crate) fn looks_like_pure_identifier(credential: &str) -> bool {
+    let bytes = credential.as_bytes();
+    if bytes.is_empty() {
+        return false;
+    }
+    let mut underscore_count = 0usize;
+    let mut hyphen_count = 0usize;
+    let mut has_digit = false;
+    let mut has_upper = false;
+    let mut has_lower = false;
+    let mut alpha_count = 0usize;
+    for &b in bytes {
+        if b == b'_' {
+            underscore_count += 1;
+        } else if b == b'-' {
+            hyphen_count += 1;
+        } else if b.is_ascii_digit() {
+            has_digit = true;
+        } else if b.is_ascii_uppercase() {
+            has_upper = true;
+            alpha_count += 1;
+        } else if b.is_ascii_lowercase() {
+            has_lower = true;
+            alpha_count += 1;
+        } else {
+            // Any byte outside `[A-Za-z0-9_-]` means this is NOT a
+            // pure identifier: real credentials reach here through `!`,
+            // `=`, `/`, `+`, `:`, etc. in the value alphabet.
+            return false;
+        }
+    }
+    if has_digit {
+        return false;
+    }
+    // snake_case_no_digit: ≥ 2 underscores. Covers `sk_SRP_user_pwd_new_null`
+    // (openssl), `auth_decoders`, `gss_token`-style C/Rust identifiers.
+    if underscore_count >= 2 {
+        return true;
+    }
+    // CamelCase / pure-alphabetic / single-separator identifier: bytes
+    // are all `[A-Za-z_-]` (no digit), length 8..=40, ≤ 1 underscore,
+    // ≤ 1 hyphen, ≥ 8 alphabetic characters. Covers:
+    //   * `getParameter`, `Benutzername` - pure alphabetic CamelCase
+    //     or natural-language word
+    //   * `curlx_strdup`, `auth_decoders` - single-underscore C names
+    //   * `user-password`, `aria-secret`, `Get-Function` - kebab-case
+    //     / PowerShell verb-noun identifiers
+    // Bounded above 40 so a real long random alpha-only credential
+    // (rare) isn't suppressed. Real credentials have at least one
+    // digit / symbol - none of the FP shapes do.
+    if (underscore_count + hyphen_count) <= 1
+        && (8..=40).contains(&alpha_count)
+        && (has_upper || has_lower)
+    {
+        return true;
+    }
+    false
+}
+
+/// Word-separated identifier with embedded digits. Catches the FP class
+/// that `looks_like_pure_identifier` misses because digits short-circuit
+/// its `!has_digit` guard:
+///   * `s3_secret_access_key` (alist const.go) - snake_case constant
+///   * `d2i_PKCS7_bio`, `sqlite3_int`, `sqlite3_malloc64` (openssl, sqlite)
+///   * `curlx_memdup0` (curl ntlm_sspi.c)
+///   * `X-Shopify-Access-Token`, `Shopify-Storefront-Private-Token` (shopify-api-js headers)
+///
+/// Distinguishes from real credentials like `sk_live_4eC39HqLyjWDarjtT1zdp7dc`
+/// (Stripe) by requiring every separator-delimited word to be ≤ 10 chars.
+/// Real credentials have ≥1 long-random segment (24+ chars of base58/base64)
+/// AFTER the prefix; programmer identifiers are sequences of short
+/// dictionary-word fragments.
+pub(crate) fn looks_like_word_separated_identifier(value: &str) -> bool {
+    if value.len() < 8 || value.len() > 50 {
+        return false;
+    }
+    // Pure ASCII alphanumeric + `_` + `-`
+    if !value
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+    {
+        return false;
+    }
+    // Must have at least one separator
+    let sep_count = value.bytes().filter(|&b| b == b'_' || b == b'-').count();
+    if sep_count == 0 {
+        return false;
+    }
+    // Split on either separator. Real credentials use one consistent separator
+    // (or none); programmer identifiers can mix `_` and `-`.
+    let words: Vec<&str> = value.split(['_', '-']).collect();
+    // No empty words (rejects `--foo`, `foo--bar`, `_foo`, `foo_`)
+    if words.iter().any(|w| w.is_empty()) {
+        return false;
+    }
+    // Every word must contain at least one ASCII letter - pure-digit
+    // segments like `12345` are not identifier words.
+    if !words
+        .iter()
+        .all(|w| w.bytes().any(|b| b.is_ascii_alphabetic()))
+    {
+        return false;
+    }
+    // Max word length ≤ 10. Real credentials concentrate randomness in one
+    // long suffix (e.g. `sk_live_<24-char-base58>`); programmer identifiers
+    // are short dictionary fragments throughout.
+    let max_word_len = words.iter().map(|w| w.len()).max().unwrap_or(0);
+    if max_word_len > 10 {
+        return false;
+    }
+    true
+}
+
+/// True if `value` looks like a URI / URN / scheme-prefixed string.
+/// Captures these FP shapes seen in dogfood:
+///   * `urn:shopify:params:oauth:token-type:online-access-token`
+///     (shopify-api-js token-exchange.ts)
+///   * `secret-token:wjOtYCQypY5ky1AM_co1lTXNJdOe3Q_waNnnfdyl5u3eOKHCKL-galY9Wklf`
+///     (bat-go merchant README log-line example)
+///   * `something://...`
+///
+/// Pattern: starts with a lowercase-alpha scheme of length 3-15,
+/// followed by `:` and ≥2 more `:` chars (URN) OR `//` (URL).
+/// Real credentials never have this leading-scheme shape.
+pub(crate) fn looks_like_scheme_prefixed_uri(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    if bytes.len() < 6 {
+        return false;
+    }
+    // Find first `:`
+    let Some(colon_idx) = bytes.iter().position(|&b| b == b':') else {
+        return false;
+    };
+    if !(3..=15).contains(&colon_idx) {
+        return false;
+    }
+    // Scheme part [0..colon_idx) must be alpha (allow `-` for `secret-token`)
+    let scheme = &bytes[..colon_idx];
+    if !scheme.iter().all(|&b| b.is_ascii_alphabetic() || b == b'-') {
+        return false;
+    }
+    // Must have at least one letter in the scheme
+    if !scheme.iter().any(|b| b.is_ascii_alphabetic()) {
+        return false;
+    }
+    let after = &bytes[colon_idx + 1..];
+    // URL form: starts with `//`
+    if after.starts_with(b"//") {
+        return true;
+    }
+    // URN form: at least one more `:` in the rest of the value
+    if after.contains(&b':') {
+        return true;
+    }
+    // Compound-scheme single-colon form: scheme contains `-`
+    // (`secret-token`, `auth-token`, `bearer-token`). Real credentials don't
+    // have a colon `<8` chars in from the start; URI-like prefixes do.
+    if scheme.contains(&b'-') {
+        return true;
+    }
+    // Common content-addressable hash schemes - `sha256:<hex>`, `sha1:<hex>`,
+    // `md5:<hex>`. These are integrity digests, not credentials; the generic
+    // regex captures them when an `image: sha256:<hex>` config line appears.
+    let scheme_str = std::str::from_utf8(scheme).unwrap_or("");
+    if matches!(
+        scheme_str,
+        "sha256" | "sha512" | "sha1" | "md5" | "blake3" | "blake2"
+    ) {
+        return true;
+    }
+    // Type-annotation / documentation `<short-alpha>:<short-alpha>` shape:
+    // both sides are pure-alpha ≤ 10 chars, total length ≤ 20. Catches
+    // `bool:false`, `int:42`, `string:USD`, `kind:Secret` documentation
+    // examples (llama-cpp arg.cpp:2468 has
+    // `--override-kv tokenizer.ggml.add_bos_token=bool:false,...` whose
+    // `token=bool:false` substring captures as `bool:false`). Real
+    // credentials never have this shape.
+    if bytes.len() <= 20
+        && after.iter().all(|&b| b.is_ascii_alphabetic())
+        && !after.is_empty()
+        && after.len() <= 10
+    {
+        return true;
+    }
+    false
+}
+
+/// True if `value` looks like a `/`-separated path or URL fragment.
+/// Catches Go template paths `user/settings/password` (gogs setting.go),
+/// `user/auth/forgot_passwd` (gogs auth.go), URL fragments like
+/// `/api/v1/access_token` (alist 123_open/api.go). Real credentials don't
+/// have multiple `/` segments - they're random opaque tokens.
+///
+/// Pattern: value contains `/` AND every `/`-delimited non-empty segment
+/// looks like a path component (alphanumeric + `_-.`, contains a letter).
+/// Requires ≥ 2 segments to avoid suppressing single-`/` opaque tokens.
+pub(crate) fn looks_like_url_or_path_segment(value: &str) -> bool {
+    if !value.contains('/') {
+        return false;
+    }
+    let segments: Vec<&str> = value.split('/').filter(|s| !s.is_empty()).collect();
+    if segments.len() < 2 {
+        return false;
+    }
+    segments.iter().all(|s| {
+        s.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-' || b == b'.')
+            && s.bytes().any(|b| b.is_ascii_alphabetic())
+    })
+}
+
+/// True if `value` ends in a regex-literal sigil (`)/g`, `]+`, `})\\b`,
+/// `)?$`, etc.). These are JavaScript / Python / Go / Rust regex pattern
+/// definitions captured by a credential detector running on a *secret
+/// scanner's own source code* (e.g. claude-code's
+/// `teamMemorySync/secretScanner.ts` had `hot-aws_session_key` /
+/// `hot-slack_bot_token` findings on its own regex definitions).
+///
+/// Real credentials don't end in regex sigils.
+pub(crate) fn looks_like_regex_literal_tail(value: &str) -> bool {
+    const REGEX_SIGIL_SUFFIXES: &[&str] = &[
+        ")/g", ")/g,", // JS object literal: `key: /pattern/g, ...`
+        ")/gi", ")/gi,", ")/i", ")/i,", ")/m", ")/m,", ")\\b", "})\\b", "})\\\\b", "]+", "]*",
+        "]?", "]+/", "]+\\b", "*/g", "+/g", "+/i", ")*", ")+", ")?", ")?$", ")$",
+    ];
+    REGEX_SIGIL_SUFFIXES.iter().any(|sig| value.ends_with(sig))
+}
+
+/// True if `value` looks like an email address. Captures FP shapes where
+/// the entropy detector or generic regex grabs an email from a `USER=`
+/// or `FROM=` config line (gogs TestInit.golden.ini:89
+/// `USER=noreply@gogs.localhost`, then PASSWORD=…@host pattern fires).
+/// Real credentials are never email-shaped.
+pub(crate) fn looks_like_email_address(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    if bytes.len() < 5 || bytes.len() > 64 {
+        return false;
+    }
+    let at = match bytes.iter().position(|&b| b == b'@') {
+        Some(idx) => idx,
+        None => return false,
+    };
+    // Exactly one `@`
+    if bytes.iter().skip(at + 1).any(|&b| b == b'@') {
+        return false;
+    }
+    let local = &bytes[..at];
+    let domain = &bytes[at + 1..];
+    if local.is_empty() || domain.is_empty() {
+        return false;
+    }
+    // Local part: alphanumeric + `_`, `-`, `.`, `+`
+    if !local
+        .iter()
+        .all(|&b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-' || b == b'.' || b == b'+')
+    {
+        return false;
+    }
+    // Domain part: must contain at least one `.`
+    if !domain.contains(&b'.') {
+        return false;
+    }
+    // Domain alphabet: alphanumeric + `_`, `-`, `.`
+    domain
+        .iter()
+        .all(|&b| b.is_ascii_alphanumeric() || b == b'-' || b == b'.')
+}
+
+/// True if `value` contains a UUID v4 / RFC-4122 substring anywhere
+/// inside it. Catches `TOKEN_LIST=636765a9-1f92-4b40-ab0b-85ebd1e2c23d`
+/// (bat-go docker-compose.reputation.yml:42) - the entropy detector
+/// captures the whole env-var assignment but the actual high-entropy
+/// content is the UUID identifier, which is not a credential. Real
+/// credentials with UUIDs embedded as part of their structure
+/// (extremely rare) would also benefit from suppression here - UUIDs
+/// are public identifiers, not secrets.
+pub(crate) fn contains_uuid_v4_substring(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    if bytes.len() < 36 {
+        return false;
+    }
+    let mut i = 0;
+    while i + 36 <= bytes.len() {
+        let slice = &bytes[i..i + 36];
+        if slice[8] == b'-' && slice[13] == b'-' && slice[18] == b'-' && slice[23] == b'-' {
+            let all_hex_or_dash = slice.iter().enumerate().all(|(j, &c)| match j {
+                8 | 13 | 18 | 23 => c == b'-',
+                _ => c.is_ascii_hexdigit(),
+            });
+            if all_hex_or_dash {
+                return true;
+            }
+        }
+        i += 1;
+    }
+    false
+}
+
+/// True if `value` is a pure *syntactic* punctuation marker that is NEVER
+/// the body of a real credential, regardless of which detector matched:
+///   * leading `--` (CLI flag) - `--api-secret`, `--api-key`
+///   * leading `&` (C/Go pointer reference) - `&gss_recv_token`, `&password`
+///   * leading `@` (SQL/Ruby variable) - `@v_password`, `@api_key`
+///   * leading `$` (GraphQL/shell var, `${SECRET}` template placeholder)
+///   * trailing `:` after pure-alpha - `Password:`, `Username:`
+///
+/// These are grammar tokens, not secret bytes, so the filter is safe to
+/// apply universally (Tier A). Shapes that CAN legitimately appear as a
+/// credential body (`/`-led base64, `!`-led / `!`-trailed secrets) live in
+/// [`looks_like_credential_colliding_punctuation`] and must be Tier-B gated.
+pub(crate) fn looks_like_syntactic_punctuation_marker(value: &str) -> bool {
+    if value.is_empty() {
+        return false;
+    }
+    let bytes = value.as_bytes();
+    //   `--` - CLI flag (`--api-secret`). A SINGLE leading `-` is allowed
+    //          for tokens like `xoxb-…`, and `-----` (5+ dashes) is a PEM
+    //          block marker which is a legitimate private-key TP - only
+    //          reject `--X` where `X` is NOT another dash.
+    let starts_with_double_dash = bytes.starts_with(b"--") && bytes.len() >= 3 && bytes[2] != b'-';
+    if starts_with_double_dash {
+        return true;
+    }
+    // Leading `&`/`@`/`$` is a grammar marker ONLY when what follows is a bare
+    // identifier: `&password` (C pointer), `@api_key` (attribute), `$API_KEY`
+    // (shell/GraphQL var). When the remainder carries credential symbols
+    // (`%`, `!`, `+`, `-`, `=`, …) it is a real secret body that merely starts
+    // with the sigil - e.g. tower's `@gAdtFo%B!tcnSl+A-Rt5x…`. Requiring a
+    // pure-identifier tail keeps the FP suppression while letting anchored
+    // secrets through.
+    if matches!(bytes[0], b'&' | b'@' | b'$') {
+        let rest = &bytes[1..];
+        let pure_ident_tail =
+            !rest.is_empty() && rest.iter().all(|&b| b.is_ascii_alphanumeric() || b == b'_');
+        if pure_ident_tail {
+            return true;
+        }
+    }
+    let last = bytes[bytes.len() - 1];
+    // Trailing `:` after a value of pure-alpha + colon shape.
+    if last == b':' {
+        // Allow only if everything before the trailing `:` is alpha (UI label
+        // shape `Password:`, `Username:`). A real credential containing `:`
+        // mid-string lands elsewhere (scheme reject above).
+        let prefix = &bytes[..bytes.len() - 1];
+        if !prefix.is_empty() && prefix.iter().all(|&b| b.is_ascii_alphabetic()) {
+            return true;
+        }
+    }
+    false
+}
+
+/// True if `value` carries punctuation that *looks* like decoration but can
+/// equally be a legitimate credential body:
+///   * leading `/` - Unix path (`/etc/passwd:…`) OR base64 body (`/ZM9…`,
+///                    `/7j3…`). LINE channel tokens + paloalto keys start `/`.
+///   * leading `!` - JS truthy coercion (`!!token`) OR a session secret that
+///                    legitimately starts `!` (keystonejs `!t1c!_…`).
+///   * trailing `!` - TS non-null assertion (`token!`) OR a password ending
+///                    `!` (`SnowFlakePass123!`, `SourceTreePass1234!`).
+///
+/// For an *unanchored* generic/entropy match these are FP signals, so this is
+/// applied Tier-B only. A named, service-anchored detector (e.g. the regex
+/// already matched `snowflake.password=<value>`) has proven the bytes are the
+/// credential, so this filter must NOT fire there - doing so silently killed
+/// snowflake / sourcetree / paloalto / line / keystonejs / tower positives.
+pub(crate) fn looks_like_credential_colliding_punctuation(value: &str) -> bool {
+    if value.is_empty() {
+        return false;
+    }
+    let bytes = value.as_bytes();
+    if bytes[0] == b'!' || bytes[0] == b'/' {
+        return true;
+    }
+    let last = bytes[bytes.len() - 1];
+    // Trailing `!` (TypeScript non-null assertion on a variable name).
+    if last == b'!' && bytes.len() >= 4 {
+        let prefix = &bytes[..bytes.len() - 1];
+        // Variable-name shape: all `[A-Za-z0-9_]`, has letter
+        let pure_ident = prefix
+            .iter()
+            .all(|&b| b.is_ascii_alphanumeric() || b == b'_');
+        let has_letter = prefix.iter().any(|b| b.is_ascii_alphabetic());
+        if pure_ident && has_letter {
+            return true;
+        }
+    }
+    false
+}
+
+/// Combined Tier-A + body-collision punctuation filter. Retained for the
+/// generic/entropy fallback callers ([`fallback_generic`], [`fallback_entropy`]),
+/// which are unanchored by construction and so want the full (stricter) set.
+/// Named-detector suppression must use the split functions so the body-
+/// collision half stays Tier-B gated.
+pub(crate) fn looks_like_punctuation_decorated_identifier(value: &str) -> bool {
+    looks_like_syntactic_punctuation_marker(value)
+        || looks_like_credential_colliding_punctuation(value)
+}

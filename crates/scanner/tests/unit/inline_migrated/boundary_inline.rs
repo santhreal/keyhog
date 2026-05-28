@@ -1,8 +1,8 @@
 //! Migrated from src/engine/boundary.rs
 
 use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, RawMatch, Severity};
-use keyhog_scanner::CompiledScanner;
 use keyhog_scanner::testing::scan_chunk_boundaries;
+use keyhog_scanner::CompiledScanner;
 
 fn make_chunk(data: String, base_offset: usize, path: &str) -> Chunk {
     Chunk {

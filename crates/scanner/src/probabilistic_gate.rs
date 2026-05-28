@@ -20,18 +20,42 @@ impl ProbabilisticGate {
             if !seen[b as usize] {
                 seen[b as usize] = true;
                 count += 1;
+                if count >= 5 {
+                    break;
+                }
             }
         }
 
-        // UUID detection: exactly 4 dashes in 8-4-4-4-12 hex pattern
-        if s.len() >= 32 && s.len() <= 40 && s.matches('-').count() == 4 {
-            let parts: Vec<&str> = s.split('-').collect();
-            if parts.len() == 5
-                && parts
-                    .iter()
-                    .all(|p| p.chars().all(|c| c.is_ascii_hexdigit()))
-            {
-                return false;
+        // UUID detection: exactly 4 dashes in 8-4-4-4-12 hex pattern.
+        // Allocation-free, UTF-8 iteration-free optimized byte scanner.
+        if s.len() >= 32 && s.len() <= 40 {
+            let bytes = s.as_bytes();
+            let dash_count = bytes.iter().filter(|&&b| b == b'-').count();
+            if dash_count == 4 {
+                let mut valid = true;
+                let mut current_len = 0;
+                let mut part_count = 0;
+                for &b in bytes {
+                    if b == b'-' {
+                        if current_len == 0 {
+                            valid = false;
+                            break;
+                        }
+                        current_len = 0;
+                        part_count += 1;
+                    } else if b.is_ascii_hexdigit() {
+                        current_len += 1;
+                    } else {
+                        valid = false;
+                        break;
+                    }
+                }
+                if valid && current_len > 0 {
+                    part_count += 1;
+                }
+                if valid && part_count == 5 {
+                    return false;
+                }
             }
         }
 
@@ -86,38 +110,4 @@ fn bigram_slot_512(a: u8, b: u8) -> usize {
     h ^= b as u32;
     h = h.wrapping_mul(0x0100_0193);
     (h as usize) & 0x01ff
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn realistic_secret_passes() {
-        // GitHub PAT shape - varied bigrams, length 40.
-        assert!(ProbabilisticGate::looks_promising(concat!(
-            "gh",
-            "p_aBcD1234EFgh5678ijklMNop9012qrSTuvWX"
-        )));
-    }
-
-    #[test]
-    fn uuid_with_dashes_is_rejected() {
-        assert!(!ProbabilisticGate::looks_promising(
-            "550e8400-e29b-41d4-a716-446655440000"
-        ));
-    }
-
-    #[test]
-    fn short_input_passes_through() {
-        // <16 bytes - gating returns true regardless.
-        assert!(ProbabilisticGate::looks_promising("ghp_short"));
-    }
-
-    #[test]
-    fn pure_repetition_is_rejected() {
-        assert!(!ProbabilisticGate::looks_promising(
-            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-        ));
-    }
 }

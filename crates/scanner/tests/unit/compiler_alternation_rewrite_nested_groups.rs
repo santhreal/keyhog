@@ -10,7 +10,9 @@ fn compiler_alternation_rewrite_nested_groups() {
         "alternation with nested group must still yield literal prefix(es): {prefixes:?}"
     );
     assert!(
-        prefixes.iter().any(|p| p.starts_with("abc") || p.starts_with("def")),
+        prefixes
+            .iter()
+            .any(|p| p.starts_with("abc") || p.starts_with("def")),
         "expected abc or def branch prefix, got {prefixes:?}"
     );
 }

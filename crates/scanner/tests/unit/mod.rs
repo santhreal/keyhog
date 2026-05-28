@@ -6,6 +6,7 @@ pub mod a3_pipeline;
 // TODO: gate behind #[cfg(feature = "simd")] when CI enables it.
 // pub mod a4_lr2;
 pub mod alphabet_filter;
+pub mod ascii_ci;
 pub mod bigram_bloom;
 pub mod checksum;
 pub mod checksum_extended;
@@ -19,6 +20,7 @@ pub mod compiler_fallback_keyword_skips_short;
 pub mod compiler_gpu_literals_empty_disables_gpu;
 pub mod compiler_inner_literal_akia_mid_pattern;
 pub mod compiler_is_escaped_literal_bracket;
+pub mod compiler_tests;
 pub mod confidence;
 pub mod confidence_char_diversity_low_penalty;
 pub mod confidence_exact_max_score_one;
@@ -87,8 +89,7 @@ pub mod gpu_cases;
 // pub mod gpu_regex_dfa_basic;
 pub mod hw_probe;
 pub mod hw_probe_cases;
-// inline_migrated: requires `keyhog_scanner::testing` which needs `simd` feature.
-// pub mod inline_migrated;
+pub mod inline_migrated;
 pub mod is_sequential_placeholder_robustness;
 pub mod jwt_analysis;
 pub mod ml_scorer;

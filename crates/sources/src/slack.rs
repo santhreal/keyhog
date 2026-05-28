@@ -187,9 +187,7 @@ impl SlackSource {
             // distinguishes a malformed response from one with an actual
             // error code).
             let error_code = resp.error.as_deref().unwrap_or("<no error field>");
-            return Err(SourceError::Other(format!(
-                "Slack API error: {error_code}"
-            )));
+            return Err(SourceError::Other(format!("Slack API error: {error_code}")));
         }
         Ok(resp.data.channels)
     }
@@ -221,9 +219,7 @@ impl SlackSource {
             // distinguishes a malformed response from one with an actual
             // error code).
             let error_code = resp.error.as_deref().unwrap_or("<no error field>");
-            return Err(SourceError::Other(format!(
-                "Slack API error: {error_code}"
-            )));
+            return Err(SourceError::Other(format!("Slack API error: {error_code}")));
         }
         Ok(resp.data.messages)
     }

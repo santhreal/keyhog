@@ -114,7 +114,19 @@ impl CompiledScanner {
                 return self.collect_triggered_patterns_simd(text);
             };
             match matcher.scan(&**backend, text.as_bytes(), 10000) {
-                Ok(matches) => return self.triggered_patterns_from_gpu_matches(&matches),
+                Ok(matches) => {
+                    // Union with the AC literal triggers for the same
+                    // soundness reason as the SIMD path: the GPU literal
+                    // matcher must not be the sole gate for literal-anchored
+                    // patterns, or context-anchored detectors with large
+                    // bounded-repeat bodies silently never fire on GPU.
+                    let mut triggered = self.collect_triggered_patterns_cpu(text);
+                    let gpu = self.triggered_patterns_from_gpu_matches(&matches);
+                    for (slot, bits) in triggered.iter_mut().zip(gpu.iter()) {
+                        *slot |= *bits;
+                    }
+                    return triggered;
+                }
                 Err(error) => {
                     tracing::debug!("gpu scan failed: {error}");
                 }
@@ -126,7 +138,20 @@ impl CompiledScanner {
     fn collect_triggered_patterns_simd(&self, text: &str) -> Vec<u64> {
         #[cfg(feature = "simd")]
         if let Some(scanner) = &self.simd_prefilter {
-            let mut triggered_patterns = vec![0u64; self.ac_map.len().div_ceil(64)];
+            // Seed with the Aho-Corasick literal triggers. Hyperscan is the
+            // primary prefilter, but it is NOT a sound superset of the AC
+            // literal set: HS compiles some patterns (e.g. a context anchor
+            // followed by a large `{100,200}` bounded repeat - line /
+            // paloalto / tower / keystonejs / snowflake / bandwidth) without
+            // erroring, yet never reports a match for them at scan time, so
+            // they never enter the triggered bitmap and silently never fire
+            // under the HS backend (the default on Linux/CI) while passing
+            // under the CPU backend. A prefilter that drops a literal-
+            // anchored pattern is unsound; union the AC literal triggers so
+            // every pattern whose literal prefix appears is at least
+            // evaluated. Extraction still confirms via the full regex, so
+            // precision is unchanged - only the candidate set widens.
+            let mut triggered_patterns = self.collect_triggered_patterns_cpu(text);
             for (hs_id, _start, _end) in scanner.scan(text.as_bytes()) {
                 let Some((_detector_index, dedup_id, _has_group)) = scanner.pattern_info(hs_id)
                 else {

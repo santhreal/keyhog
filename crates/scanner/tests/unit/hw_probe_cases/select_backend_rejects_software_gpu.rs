@@ -1,6 +1,9 @@
-use keyhog_scanner::hw_probe::{select_backend, HardwareCaps, ScanBackend};
+use keyhog_scanner::hw_probe::{
+    clear_test_backend_override, select_backend, HardwareCaps, ScanBackend,
+};
 #[test]
 fn select_backend_rejects_software_gpu() {
+    clear_test_backend_override();
     let caps = HardwareCaps {
         physical_cores: 4,
         logical_cores: 8,

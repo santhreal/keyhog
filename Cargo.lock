@@ -2835,6 +2835,7 @@ dependencies = [
  "base64",
  "base64-simd",
  "bytemuck",
+ "chrono",
  "criterion",
  "dirs",
  "hex",

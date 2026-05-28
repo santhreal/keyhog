@@ -5,7 +5,10 @@ use keyhog_scanner::context::{documentation_line_flags, infer_context, CodeConte
 #[test]
 fn context_markdown_fence_marks_documentation() {
     let lines = vec!["```python", r#"api_key = "sk-proj-demo""#, "```"];
-    assert!(documentation_line_flags(&lines)[1], "fence interior is documentation");
+    assert!(
+        documentation_line_flags(&lines)[1],
+        "fence interior is documentation"
+    );
     assert_eq!(
         infer_context(&lines, 1, None),
         CodeContext::Documentation,

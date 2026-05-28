@@ -56,25 +56,3 @@ pub const HOT_PATTERN_DISPLAY_NAMES: &[&str] = &[
     "Hot Pattern: slack_user_token",
     "Hot Pattern: square_secret",
 ];
-
-#[cfg(test)]
-mod parallel_array_tests {
-    use super::*;
-
-    #[test]
-    fn detector_id_array_matches_names() {
-        assert_eq!(HOT_PATTERN_NAMES.len(), HOT_PATTERN_DETECTOR_IDS.len());
-        for (name, id) in HOT_PATTERN_NAMES.iter().zip(HOT_PATTERN_DETECTOR_IDS) {
-            assert_eq!(format!("hot-{name}"), *id);
-        }
-    }
-
-    #[test]
-    fn display_name_array_matches_names() {
-        assert_eq!(HOT_PATTERN_NAMES.len(), HOT_PATTERN_DISPLAY_NAMES.len());
-        for (name, display) in HOT_PATTERN_NAMES.iter().zip(HOT_PATTERN_DISPLAY_NAMES) {
-            assert_eq!(format!("Hot Pattern: {name}"), *display);
-        }
-    }
-}
-

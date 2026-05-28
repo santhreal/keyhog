@@ -35,9 +35,7 @@ pub(super) fn scan_worker(
         *slot = format!("discovering files in {} ...", target.display());
     }
     let entries: Vec<PathBuf> = walk_files(&target, max_files);
-    counters
-        .files_total
-        .store(entries.len(), Ordering::Relaxed);
+    counters.files_total.store(entries.len(), Ordering::Relaxed);
     if let Ok(mut slot) = counters.current_file.write() {
         slot.clear();
     }
@@ -137,9 +135,7 @@ fn walk_files(root: &Path, max_files: usize) -> Vec<PathBuf> {
         for entry in rd.flatten() {
             let path = entry.path();
             let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            if name.starts_with('.')
-                && (name == ".git" || name == ".cache" || name == ".idea")
-            {
+            if name.starts_with('.') && (name == ".git" || name == ".cache" || name == ".idea") {
                 continue;
             }
             if path.is_dir() {

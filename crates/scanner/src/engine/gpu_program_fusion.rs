@@ -162,8 +162,7 @@ pub fn try_fuse(programs: &[&vyre::Program]) -> std::result::Result<vyre::Progra
         return Err("Cannot fuse empty program list".to_string());
     }
     let owned_programs: Vec<vyre::Program> = programs.iter().map(|p| (*p).clone()).collect();
-    vyre_libs::scan::fuse_programs(&owned_programs)
-        .map_err(|e| e.to_string())
+    vyre_libs::scan::fuse_programs(&owned_programs).map_err(|e| e.to_string())
 }
 
 pub fn fuse_or_fallback(programs: &[&vyre::Program]) -> Option<vyre::Program> {
@@ -187,4 +186,3 @@ pub fn fusion_cache_key(programs: &[&vyre::Program]) -> String {
     }
     hex
 }
-

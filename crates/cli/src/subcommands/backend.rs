@@ -271,7 +271,9 @@ fn run_self_test() -> Result<ExitCode> {
         println!("\x1b[32m✓ GPU self-test passed\x1b[0m, scans on this box can route to GPU.");
         Ok(ExitCode::SUCCESS)
     } else {
-        eprintln!("\x1b[31m✗ GPU self-test failed\x1b[0m, keyhog will fall back to SIMD/CPU on this box.");
+        eprintln!(
+            "\x1b[31m✗ GPU self-test failed\x1b[0m, keyhog will fall back to SIMD/CPU on this box."
+        );
         Ok(ExitCode::from(EXIT_SELF_TEST_FAILED))
     }
 }

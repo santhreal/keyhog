@@ -1,4 +1,4 @@
-//! KH-GAP-143: FILE_GATE_MATRIX must mark scanner adversarial coverage.
+//! KH-GAP-175: FILE_GATE_MATRIX must mark scanner adversarial coverage.
 
 use std::path::PathBuf;
 

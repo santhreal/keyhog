@@ -46,6 +46,7 @@ fn evasion_url_encoded_finds_aws_or_openai_or_github() {
 #[test]
 fn evasion_base64_wrapped_decodes() {
     let matches = scan_fixture("base64_wrapped.json");
+    println!("base64_wrapped matches: {matches:?}");
     assert!(
         !matches.is_empty(),
         "base64_wrapped.json: zero findings - decode-through pipeline failing on YAML/JSON multiline base64"

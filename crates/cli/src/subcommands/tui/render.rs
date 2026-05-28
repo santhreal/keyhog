@@ -250,7 +250,10 @@ fn render_stats(
 
     let stats_lines = vec![
         Line::from(vec![stat_label("files"), Span::raw(files_text)]),
-        Line::from(vec![stat_label("bytes"), Span::raw(format_bytes(bytes_done))]),
+        Line::from(vec![
+            stat_label("bytes"),
+            Span::raw(format_bytes(bytes_done)),
+        ]),
         Line::from(vec![
             stat_label("findings"),
             Span::styled(
@@ -307,8 +310,7 @@ fn render_stats(
     ];
 
     frame.render_widget(
-        Paragraph::new(stats_lines)
-            .block(Block::default().borders(Borders::ALL).title(" stats ")),
+        Paragraph::new(stats_lines).block(Block::default().borders(Borders::ALL).title(" stats ")),
         columns[0],
     );
     frame.render_widget(

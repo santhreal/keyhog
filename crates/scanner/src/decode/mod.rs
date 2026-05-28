@@ -4,13 +4,13 @@
 //! CI/CD configs, and hex-encoded credentials.
 
 mod base64;
-mod caesar;
-mod hex;
+pub mod caesar;
+pub mod hex;
 mod json;
 mod pipeline;
-mod reverse;
+pub mod reverse;
 mod url;
-mod util;
+pub mod util;
 
 pub use base64::{base64_decode, find_base64_strings, z85_decode};
 pub use hex::hex_decode;
