@@ -229,6 +229,20 @@ function Verify-Install {
         Err "Installed binary at $BinPath does not run. The download may be corrupt."
         exit 1
     }
+    # Native post-install health check (parity with install.sh): reuses the
+    # scanner's own hw_probe and runs an end-to-end scan self-test, so the
+    # install ends by proving the binary actually detects a secret on this
+    # host - not just that it runs. Non-fatal; we only warn if doctor reports
+    # an issue (a PATH note shouldn't fail an otherwise-working install).
+    Say ""
+    try {
+        & $BinPath doctor
+        if ($LASTEXITCODE -ne 0) {
+            Warn "keyhog doctor reported issues above; the binary is installed but may not be fully healthy."
+        }
+    } catch {
+        Warn "Could not run 'keyhog doctor' for post-install verification: $_"
+    }
 }
 
 function Show-Summary {
