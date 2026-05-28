@@ -22,7 +22,6 @@ dogfood-output*.json
 
 # Pre-existing local-noise paths
 __pycache__/
-FP_AUDIT_REPORT.md
 .keyhog-cache.json
 detectors/.keyhog-cache.json
 

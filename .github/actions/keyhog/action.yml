@@ -120,14 +120,23 @@ runs:
       run: |
         set -euo pipefail
         cd "${{ github.action_path }}/../../.."
-        # macOS has no `libhyperscan-dev` in homebrew — drop simd via the
-        # `portable` cli feature alias and keep everything else.
-        if [[ "$(uname -s)" == "Darwin" ]]; then
-          cargo build --release -p keyhog --no-default-features --features portable
-        else
-          cargo build --release -p keyhog
-        fi
-        cp target/release/keyhog "$RUNNER_TEMP/keyhog"
+        # Only Linux ships keyhog's default `simd` feature (libhyperscan-dev).
+        # macOS has no homebrew formula for libhyperscan; Windows has no
+        # libhyperscan at all. Both fall to the `portable` feature subset
+        # which keeps every scanner-data and source-backend feature minus
+        # the Hyperscan link. Before this guard the Windows + macOS
+        # source-build path crashed at link time on a missing `-lhs`.
+        case "$(uname -s)" in
+          Linux*)
+            cargo build --release -p keyhog
+            ;;
+          *)
+            cargo build --release -p keyhog --no-default-features --features portable
+            ;;
+        esac
+        bin="target/release/keyhog"
+        [[ -x "$bin" ]] || bin="target/release/keyhog.exe"
+        cp "$bin" "$RUNNER_TEMP/$(basename "$bin")"
 
     - name: Add keyhog to PATH
       shell: bash

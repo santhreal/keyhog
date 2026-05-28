@@ -14,7 +14,7 @@
 #   -Uninstall       remove the binary
 #
 # Common flags:
-#   -Version v0.5.30      pin a release tag
+#   -Version v0.5.34      pin a release tag (default: latest release with assets)
 #   -InstallDir PATH      override $env:KEYHOG_INSTALL
 #   -Yes                  non-interactive: accept defaults, no prompts
 #   -NoColor              disable ANSI colors
@@ -123,14 +123,26 @@ function Resolve-Asset {
 
 function Resolve-Tag {
     if ($Version) { $Script:Tag = $Version; return }
+    # /releases/latest can return a release with zero assets (a release
+    # workflow that built but failed to upload). Walk the recent
+    # releases list, take the newest tag whose assets array is non-empty.
+    # This is the Windows mirror of install.sh's resolve_tag fallback.
     try {
-        $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases/latest"
-        $Script:Tag = $release.tag_name
+        $releases = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases?per_page=10"
     } catch {
-        Err "Could not resolve latest release tag from GitHub API: $_"
-        Err "Try -Version v0.5.30 (or another known tag) explicitly."
+        Err "Could not query GitHub releases API: $_"
+        Err "Try -Version v0.5.34 (or another known tag) explicitly."
         exit 1
     }
+    foreach ($r in $releases) {
+        if ($r.assets -and $r.assets.Count -gt 0) {
+            $Script:Tag = $r.tag_name
+            return
+        }
+    }
+    Err "No GitHub release in the last 10 has any assets uploaded."
+    Err "Try -Version v0.5.34 (or another known tag) explicitly."
+    exit 1
 }
 
 function Get-CurrentBinary {
@@ -264,8 +276,8 @@ function Post-Install-Wizard {
         }
     }
 
-    if (Confirm-Choice "Wire keyhog into a Claude Code pre-tool hook?" 'N') {
-        try { & (Join-Path $InstallDir 'keyhog.exe') hook install --agent claude-code }
+    if (Confirm-Choice "Install a git pre-commit hook in the current directory?" 'N') {
+        try { & (Join-Path $InstallDir 'keyhog.exe') hook install }
         catch { Warn "  hook subcommand not in this build, skipping (upgrade to v0.5.30+)." }
     }
 }

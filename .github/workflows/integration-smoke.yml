@@ -33,6 +33,20 @@ jobs:
           uname -a || systeminfo | head -5 || true
           echo "version input: ${{ inputs.version }}"
 
+      - name: Install runtime deps (Ubuntu only)
+        if: runner.os == 'Linux'
+        shell: bash
+        # The Linux release binary links against libhyperscan.so.5 at
+        # runtime. Hosted Ubuntu runners do NOT ship libhyperscan5 by
+        # default. install.sh's post-install verify_install step now
+        # surfaces the missing-shared-library case with a clear
+        # actionable message, but a smoke test wants to actually exit
+        # cleanly so it can run the rest of the matrix. Pre-install it.
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libhyperscan5
+
       - name: Install (unix)
         if: runner.os != 'Windows'
         shell: bash
@@ -46,9 +60,12 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $script = (Invoke-WebRequest -Uri "https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.ps1").Content
-          $tmp = New-TemporaryFile
-          Set-Content -Path $tmp -Value $script
+          # PowerShell's -File flag requires a .ps1 extension. New-TemporaryFile
+          # returns a .tmp path, which pwsh -File refuses. Save to an explicit
+          # .ps1 path under the runner temp dir so the installer actually runs.
+          $url = "https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.ps1"
+          $tmp = Join-Path $env:RUNNER_TEMP "install.ps1"
+          Invoke-WebRequest -Uri $url -OutFile $tmp -UseBasicParsing
           & powershell -ExecutionPolicy Bypass -File $tmp -Version "${{ inputs.version }}" -Yes
           Add-Content -Path $env:GITHUB_PATH -Value "$env:USERPROFILE\.local\bin"
 

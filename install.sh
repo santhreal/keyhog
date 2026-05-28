@@ -17,7 +17,7 @@
 #   --uninstall       remove the binary + optionally clean up hooks
 #
 # Common flags:
-#   --version=v0.5.30   pin a release tag
+#   --version=v0.5.34   pin a release tag (default: latest release with assets)
 #   --variant=cuda      force CUDA variant (Linux only)
 #   --variant=cpu       force the default WGPU + SIMD variant
 #   --install-dir=PATH  override $KEYHOG_INSTALL
@@ -323,12 +323,49 @@ resolve_tag() {
         TAG="$VERSION"
         return
     fi
-    TAG=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" \
-        | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' \
-        | head -n 1)
+
+    # /releases/latest reports the most recently-published release. But
+    # a release can exist with zero assets (e.g. the release-workflow
+    # built the workspace but failed to upload), in which case every
+    # subsequent download from that tag will 404. Walk back through
+    # /releases (most-recent first) and pick the newest tag that has
+    # ANY asset attached. This survives a one-off release-workflow
+    # failure without forcing the operator to pass --version manually.
+    releases_json=$(curl -fsSL "https://api.github.com/repos/$REPO/releases?per_page=10" 2>/dev/null || true)
+    if [ -z "$releases_json" ]; then
+        err "Could not query GitHub releases API."
+        err "Try --version=v0.5.34 (or another known tag) explicitly."
+        exit 1
+    fi
+
+    # Parse the first 10 releases. Each block contains a tag_name and an
+    # assets array. We accept the first release whose assets array is
+    # non-empty. POSIX awk-only, no jq dep.
+    TAG=$(printf '%s' "$releases_json" | awk '
+        /"tag_name": / {
+            sub(/.*"tag_name": *"/, "")
+            sub(/".*/, "")
+            tag = $0
+        }
+        /"assets": *\[/ {
+            in_assets = 1
+            asset_lines = 0
+        }
+        in_assets && /"name": / {
+            asset_lines++
+        }
+        /^  \]/ && in_assets {
+            in_assets = 0
+            if (asset_lines > 0 && tag != "") {
+                print tag
+                exit
+            }
+        }
+    ')
+
     if [ -z "$TAG" ]; then
-        err "Could not resolve latest release tag from GitHub API."
-        err "Try --version=v0.5.30 (or another known tag) explicitly."
+        err "No GitHub release in the last 10 has any assets uploaded."
+        err "Try --version=v0.5.34 (or another known tag) explicitly."
         exit 1
     fi
 }
@@ -430,11 +467,51 @@ stage_and_install() {
 }
 
 verify_install() {
-    if ! "$INSTALL_DIR/keyhog" --version >/dev/null 2>&1; then
-        err "Installed binary at $INSTALL_DIR/keyhog does not run. The download may be corrupt or wrong for this CPU."
-        exit 1
+    # Capture stderr so we can decode the real reason --version refused to run.
+    # The previous "may be corrupt" message hid the most common failure mode:
+    # a missing shared library on Linux (Hyperscan, libssl, etc.).
+    verify_err=$("$INSTALL_DIR/keyhog" --version 2>&1 >/dev/null) || verify_status=$?
+    verify_status="${verify_status:-0}"
+
+    if [ "$verify_status" = "0" ] && [ -z "$verify_err" ]; then
+        ok "Installed $("$INSTALL_DIR/keyhog" --version)"
+        return 0
     fi
-    ok "Installed $("$INSTALL_DIR/keyhog" --version)"
+
+    err "Installed binary at $INSTALL_DIR/keyhog could not run."
+    err "  exit=$verify_status"
+    [ -n "$verify_err" ] && err "  stderr: $verify_err"
+
+    # Surface dynamic-link failures on Linux. The Linux Hyperscan build
+    # depends on libhyperscan.so.5 at runtime; Ubuntu hosted runners
+    # ship libhyperscan-dev only when explicitly installed.
+    if [ "$OS" = "linux" ] && command -v ldd >/dev/null 2>&1; then
+        missing=$(ldd "$INSTALL_DIR/keyhog" 2>/dev/null | awk '/not found/ {print $1}' | sort -u | tr '\n' ' ')
+        if [ -n "$missing" ]; then
+            err "  Missing shared libraries: $missing"
+            case "$missing" in
+                *libhyperscan*)
+                    err "  Install Hyperscan runtime:"
+                    err "    Ubuntu/Debian: sudo apt-get install -y libhyperscan5"
+                    err "    Fedora/RHEL:   sudo dnf install -y hyperscan"
+                    err "    Arch:          sudo pacman -S vectorscan"
+                    err "  Or rebuild from source with no Hyperscan dep:"
+                    err "    cargo install keyhog --no-default-features --features portable"
+                    ;;
+                *libssl*|*libcrypto*)
+                    err "  Install OpenSSL runtime:"
+                    err "    Ubuntu/Debian: sudo apt-get install -y libssl3 ca-certificates"
+                    err "    Fedora/RHEL:   sudo dnf install -y openssl ca-certificates"
+                    ;;
+            esac
+            exit 1
+        fi
+    fi
+
+    err "The download may be corrupt or wrong for this CPU."
+    err "  Picked asset: $ASSET"
+    err "  Browse https://github.com/$REPO/releases to confirm asset availability."
+    exit 1
 }
 
 show_summary() {

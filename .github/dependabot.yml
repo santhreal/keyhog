@@ -1,0 +1,60 @@
+version: 2
+# Dependabot only opens PRs for the dependency channels we actually
+# consume; the secret-scanning + push-protection settings live in
+# .github/secret_scanning.yml (paths-ignore for fixture corpora).
+
+updates:
+  # Cargo workspace deps. Grouped so a single security fix doesn't
+  # fan out into 20 separate PRs; the security group is intentionally
+  # separate so high-severity advisories surface fast.
+  - package-ecosystem: cargo
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "07:11"
+      timezone: UTC
+    open-pull-requests-limit: 5
+    groups:
+      cargo-minor:
+        update-types: ["minor", "patch"]
+      cargo-security:
+        applies-to: security-updates
+    labels:
+      - dependencies
+      - rust
+    commit-message:
+      prefix: "deps"
+      include: scope
+
+  # GitHub Actions consumed in workflows under .github/workflows/.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "07:11"
+      timezone: UTC
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - github-actions
+    commit-message:
+      prefix: "ci"
+      include: scope
+
+  # Docker base image (Dockerfile at repo root).
+  - package-ecosystem: docker
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "07:11"
+      timezone: UTC
+    open-pull-requests-limit: 3
+    labels:
+      - dependencies
+      - docker
+    commit-message:
+      prefix: "docker"
+      include: scope
