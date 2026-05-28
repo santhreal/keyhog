@@ -1,8 +1,8 @@
-//! Security / taint compositions — the downstream analyzer-facing op surface.
+//! Security composition ops for taint and sanitizer-aware dataflow.
 //!
 //! Each op registers via `inventory::submit!(OpEntry { … })` and
-//! exports a `fn(...) -> Program`. Downstream analyzer's lowerer
-//! (`downstream analyzer/src/lower/mod.rs`) emits against these paths directly.
+//! exports a `fn(...) -> Program`. Compilers and dialect lowerers
+//! consume these paths directly during emission.
 //!
 //! All security ops compose GPU-parallel graph algorithms over the
 //! vyre IR: forward / backward reachability, dominator walks, and
@@ -88,9 +88,9 @@ pub use xss_escape::xss_escape;
 pub(crate) fn assert_security_inputs(op: &str, node_count: u32, buffers: &[(&str, &str)]) {
     assert!(
         node_count > 0,
-        "Fix: {op} node_count must be positive; got 0. \
+         "Fix: {op} node_count must be positive; got 0. \
          A taint analysis over an empty program graph has no meaningful \
-         result — downstream analyzer must skip empty translation units before lowering."
+         result — consumers must skip empty translation units before lowering."
     );
     for (role, name) in buffers {
         assert!(

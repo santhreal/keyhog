@@ -1,86 +1,100 @@
-# vyre + surgec Crate Graph
+# vyre crate graph (consumer-neutral platform view)
 
-Closes F-ORG bundle A (#155 >700 LOC mega-files), B (#156
-500-700 LOC files), C (#157 crate-graph + boundary violations).
+This document describes the platform crate boundaries, current implementation status, and dependency direction for `vyre`.
 
-## The graph (0.6)
+## Canonical status and audience
 
+| Crate / area | Status | Audience | Purpose |
+| --- | --- | --- | --- |
+| `vyre-core` | stable | end user | public facade and top-level API |
+| `vyre-spec` | stable | contract owner | frozen wire contracts, enums, schema |
+| `vyre-foundation` | stable | maintainer | IR, validation, optimizer core |
+| `vyre-intrinsics` | stable | end user | Tier-2 hardware-mapped intrinsics |
+| `vyre-primitives` | stable | end user | Tier-2.5 shared reusable substrate |
+| `vyre-libs` | stable | end user | Tier-3 compositions and dialect helpers |
+| `vyre-driver` | stable | maintainer | backend traits and routing abstraction |
+| `vyre-runtime` | stable | maintainer | megakernel orchestration and scheduling |
+| `vyre-reference` | stable | maintainer | CPU oracle for parity/correctness |
+| `vyre-macros` | stable | maintainer | compile-time registration/macros |
+| `vyre-driver-wgpu` | stable | end user | production backend |
+| `vyre-driver-megakernel` | stable | maintainer | megakernel backend |
+| `vyre-driver-spirv` | stable | maintainer | backend codegen bridge |
+| `vyre-driver-reference` | stable | maintainer | reference backend shim |
+| `vyre-emit-ptx` | stable | maintainer | PTX emitter adapter |
+| `vyre-emit-naga` | stable | maintainer | Naga conversion adapter |
+| `vyre-emit-spirv` | stable | maintainer | SPIR-V conversion adapter |
+| `vyre-driver-cuda` | planned | maintainer | CUDA backend implementation |
+| `vyre-driver-metal` | planned | maintainer | Metal backend implementation |
+| `vyre-driver-dxil` | planned | maintainer | DXIL/DirectX backend implementation |
+| `vyre-bench` | beta | maintainer | benchmark runners and baselines |
+| `vyre-aot` | beta | maintainer | ahead-of-time flow experiments |
+| `vyre-frontend-c` | beta | maintainer | C frontend pipeline |
+| `vyre-self-substrate` | beta | maintainer | graph dispatch + specialized adapters |
+
+## High-level dependency graph
+
+```text
+                             ┌──────────────────────┐
+                             │     external tools    │
+                             │   (frontends/consumers)│
+                             └──────────┬───────────┘
+                                        │ depends on
+                                        ▼
+                                   ┌────────┐
+                                   │vyre    │
+                                   └───┬────┘
+                                       │ depends on
+                          ┌────────────┼─────────────┐
+                          ▼            ▼             ▼
+                   ┌────────────┐ ┌────────────┐ ┌──────────────┐
+                   │vyre-core   │ │vyre-found. │ │vyre-driver   │
+                   └────┬───────┘ └─────┬──────┘ └───────┬──────┘
+                        │               │                │
+                        │         ┌─────┼─────┐      ┌──────┼─────┐
+                        │         ▼     ▼     ▼      ▼      ▼     ▼
+                 ┌───────────┐ ┌───────────────┐ ┌───────────────┐ ┌─────────────┐
+                 │vyre-spec  │ │vyre-intrinsics│ │vyre-primitives│ │vyre-runtime │
+                 └─────┬─────┘ └───────┬───────┘ └───────┬───────┘ └───────┬─────┘
+                       │               │                 │               │
+                ┌──────┼─────┐   ┌─────┼─────┐      ┌──────┼──────┐    ┌─────┼─────┐
+                ▼      ▼     ▼   ▼           ▼      ▼            ▼    ▼           ▼
+          ┌─────────┐ ┌───────┐ ┌───────┐ ┌───────────┐ ┌───────────┐ ┌───────┐
+          │ vyre-  │ │vyre-  │ │vyre-  │ │vyre-libs  │ │vyre-macros│ │vyre-  │
+          │ reference│ emit-*│ runtime│ │compositions│ │           │ │aot     │
+          └─────────┘ └───────┘ └───────┘ └───────┬───┘ └───────────┘ └───────┘
+                                                   │
+                                           ┌───────┼───────────┐
+                                           ▼                   ▼
+                                      ┌────────┐          ┌──────────┐
+                                      │backend │          │frontends │
+                                      │crates  │          │(C, etc.) │
+                                      └───────┬┘          └──────────┘
+                                              │
+                                      ┌───────┼────────────┐
+                                      ▼       ▼            ▼
+                                  ┌──────┐ ┌──────┐   ┌───────────────┐
+                                  │consumer││consumer││consumer│
+                                  └──────┘ └──────┘   └───────────────┘
 ```
-                       ┌──────────────────┐
-                       │  surgec (tool)   │
-                       └───────┬──────────┘
-                               │ depends
-                  ┌────────────┼────────────┐
-                  ▼                         ▼
-            ┌──────────┐              ┌──────────┐
-            │  surge   │              │  vyre    │ (facade)
-            │ (lang)   │              │  crate   │
-            └──────────┘              └───┬──────┘
-                                          │
-       ┌──────────────────────────────────┼────────────────────┐
-       ▼                                  ▼                    ▼
- ┌──────────┐    ┌──────────┐    ┌─────────────┐    ┌────────────┐
- │vyre-core │    │vyre-spec │    │vyre-driver  │    │vyre-runtime│
- └────┬─────┘    └──────────┘    └──────┬──────┘    └─────┬──────┘
-      │                                  │                 │
-      ├──────────────┬────────────┐      │                 │
-      ▼              ▼            ▼      ▼                 ▼
- ┌────────┐ ┌──────────────┐ ┌────────┐ ┌───────────────┐ ┌──────────────┐
- │vyre-   │ │vyre-primitives│ │vyre-  │ │vyre-driver-   │ │vyre-driver-  │
- │found.  │ │ (Tier 2.5)    │ │libs   │ │wgpu           │ │spirv         │
- └────────┘ └──────────────┘ └───┬────┘ └───────────────┘ └──────────────┘
-                                  │
-                       ┌──────────┴───────┐
-                       ▼                  ▼
-                ┌─────────────┐    ┌──────────────┐
-                │vyre-intrins.│    │(T3 dialect   │
-                │ (Tier 2)    │    │ splits — open)│
-                └─────────────┘    └──────────────┘
-```
 
-## Boundary rules
+## Rules enforced by architecture gates
 
-- `vyre-foundation` depends on nothing vyre-internal. Pure IR +
-  wire format. Frozen per minor.
-- `vyre-spec` depends on foundation. Contracts only, no ops.
-- `vyre-core` is the user-facing facade: re-exports, top-level
-  docs, public API surface.
-- `vyre-primitives` (Tier 2.5) depends on foundation + (optional)
-  intrinsics.
-- `vyre-intrinsics` (Tier 2) depends on foundation + primitives.
-- `vyre-libs` (Tier 3) depends on intrinsics + primitives. **No
-  cross-dialect imports** (VISION V5, lego-audit check_4 enforced).
-- `vyre-driver` is the backend abstraction; driver-wgpu + driver-
-  spirv implement against it.
-- `vyre-runtime` orchestrates dispatch, pipeline caching,
-  megakernel batching. Depends on driver + foundation.
-- `surgec` depends on `surge` + `vyre` facade + `vyre-primitives`
-  + optionally `vyre-driver-wgpu` (gpu feature).
-- `surge` (language crate) depends on nothing vyre-internal.
+- `foundation` does not import any substrate crate.
+- `spec` and `core` never depend on backend-specific crates.
+- `primitives` depend only on foundation/intrinsics contracts.
+- `libs` compose primitives and intrinsics; no duplicate runtime logic.
+- `driver` contracts are backend-agnostic; backends own target-specific lowering.
+- No upward edges across tiers.
+- Consumer/front-end crates live above the platform graph and must not be imported by platform crates.
 
-## Enforced today
+## Known refactors in progress
 
-- `cargo xtask lego-audit`:
-  - check_1 no-reinvention (fingerprint similarity across dialects)
-  - check_2 depth-of-composition
-  - check_3 primitive coverage (Tier 2.5 ≥ 2 callers)
-  - check_4 cross-dialect reach-through (VISION V5 landed 2026-04-23)
-  - check_6 composition-chain coverage
-- `cargo test -p vyre-libs --test region_chain_invariant`
-  (VISION V7 CI gate).
+- `vyre-self-substrate` is currently in a beta extraction phase: dispatch glue and consumer-oriented adapters are being normalized against the primitives authority.
+- `vyre-driver-dxil`, `vyre-driver-metal`, and `vyre-driver-cuda` are in the planned bucket.
+- The parser-heavy C frontend work is being moved toward explicit runtime adapter boundaries.
 
-## Open (tracked under F-ORG A/B/C)
+## Status notes
 
-- 5 files >700 LOC (F-ORG A #155) — splits in flight.
-- 8 files 500-700 LOC (F-ORG B #156) — splits in flight.
-- Tier-3 dialect split: `vyre-libs` is monolithic today; docs
-  land it as one crate with feature flags per domain. The formal
-  Phase K split into `vyre-libs-nn`, `vyre-libs-crypto`, …
-  (F-ORG C #157) is post-0.7.
-
-## Operating rule
-
-Every new crate must slot into the graph above without
-introducing a cycle. Adding a top-level crate requires updating
-this doc + `docs/library-tiers.md` + the lego-audit expected-
-dialect list.
+- This file is intended for architecture orientation only and should stay concise.
+- Operational release gating details live in `RELEASE.md` and the active contracts in `contracts/`.
+- Documentation freshness is tracked via `docs/INDEX.md`.
