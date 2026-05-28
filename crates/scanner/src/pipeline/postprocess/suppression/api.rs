@@ -5,10 +5,10 @@
 use super::decision::should_suppress_inner;
 use super::path_filter::{looks_like_secret_scanner_source, looks_like_vendored_minified_path};
 use super::shape::{
-    contains_uuid_v4_substring, looks_like_email_address,
-    looks_like_punctuation_decorated_identifier, looks_like_pure_identifier,
-    looks_like_regex_literal_tail, looks_like_scheme_prefixed_uri, looks_like_url_or_path_segment,
-    looks_like_word_separated_identifier,
+    contains_uuid_v4_substring, looks_like_credential_colliding_punctuation,
+    looks_like_email_address, looks_like_pure_identifier, looks_like_regex_literal_tail,
+    looks_like_scheme_prefixed_uri, looks_like_syntactic_punctuation_marker,
+    looks_like_url_or_path_segment, looks_like_word_separated_identifier,
 };
 use crate::context;
 
@@ -109,12 +109,27 @@ pub fn should_suppress_named_detector_finding(
         );
         return true;
     }
-    if looks_like_punctuation_decorated_identifier(credential) {
+    // Tier A: pure syntactic markers (`--flag`, `&ptr`, `@attr`, `$var`,
+    // `Label:`) are never a credential body - suppress for every detector.
+    if looks_like_syntactic_punctuation_marker(credential) {
         crate::telemetry::record_example_suppression(
             "pipeline",
             path,
             credential,
-            "punctuation_decorated_identifier",
+            "syntactic_punctuation_marker",
+        );
+        return true;
+    }
+    // Tier B: `/`-led base64, `!`-led / `!`-trailed secrets look decorated but
+    // are valid credential bodies. Only an FP signal for unanchored generic/
+    // entropy matches; a named service-anchored detector has already proven
+    // these bytes are the credential, so DON'T suppress there.
+    if apply_tier_b && looks_like_credential_colliding_punctuation(credential) {
+        crate::telemetry::record_example_suppression(
+            "pipeline",
+            path,
+            credential,
+            "credential_colliding_punctuation",
         );
         return true;
     }
